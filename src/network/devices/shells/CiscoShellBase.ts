@@ -13,7 +13,7 @@
  */
 
 import { vrfShowFamily } from '@/cli/commands/l3vpn/l3vpnFamily';
-import { refuseUnknownDiscoveryArgs } from './cisco/showSelectors';
+import { refuseUnknownDiscoveryArgs, refuseUnknownExecShowTail } from './cisco/showSelectors';
 import { vrfShowHostOf } from './cisco/l3vpnHost';
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
 import type { Equipment, EnableSecretAlgorithm } from '@/network/equipment/Equipment';
@@ -5366,7 +5366,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           alternatives: [{ keyword: 'statistics', description: 'Memory statistics' }],
         }],
         modes: exec, minPrivilege: 1,
-        run: () => showMemoryStatistics(this.getChassisProfile()),
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('memory', args.vue);
+          return showMemoryStatistics(this.getChassisProfile());
+        },
       },
       {
         id: 'clear-ntp-statistics', path: ['clear', 'ntp', 'statistics'],
@@ -5393,26 +5396,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         id: 'show-boot', description: 'Display boot variables',
         path: ['show', 'boot',
           { name: 'reste', type: 'REST', optional: true, description: 'Boot view' }],
-        modes: exec, minPrivilege: 15, run: () => this.fs().renderBootvar(),
+        modes: exec, minPrivilege: 15,
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('boot', args.reste);
+          return this.fs().renderBootvar();
+        },
       },
       {
         id: 'show-flash', description: 'Display flash filesystem',
         path: ['show', 'flash:',
           { name: 'reste', type: 'REST', optional: true, description: 'Flash view' }],
-        modes: exec, minPrivilege: 15, run: () => this.fs().renderShowFlash(),
+        modes: exec, minPrivilege: 15,
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('flash', args.reste);
+          return this.fs().renderShowFlash();
+        },
       },
       {
         id: 'show-controllers', description: 'Display controller status',
         path: ['show', 'controllers',
           { name: 'interface', type: 'REST', optional: true, description: 'Interface to show' }],
         modes: exec, minPrivilege: 1,
-        run: (_session, args) => showControllers(this.cs(), (args.interface ?? '').trim()),
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('controllers', args.interface);
+          return showControllers(this.cs(), (args.interface ?? '').trim());
+        },
       },
       {
         id: 'show-environment', description: 'Display environment',
         path: ['show', 'environment',
           { name: 'reste', type: 'REST', optional: true, description: 'Environment view' }],
-        modes: exec, minPrivilege: 1, run: () => showEnvironment(),
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('environment', args.reste);
+          return showEnvironment();
+        },
       },
       {
         id: 'show-line', description: 'Display TTY lines',
