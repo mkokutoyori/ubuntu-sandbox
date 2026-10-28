@@ -15,7 +15,7 @@ import { CommandTrie, formatInvalidInput } from '../CommandTrie';
 import { resolveCiscoInterfaceName } from '../cli-utils';
 import { classfulMask as classfulMaskString } from '@/network/core/ip';
 import { parseRateLimitRule } from '../../../qos/CarPolicer';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import {
   getGlobalConfig, DHCP_RELAY_INFO_POLICIES, CEF_LOAD_SHARING_ALGORITHMS,
   type DhcpRelayInfoPolicy,
@@ -597,6 +597,20 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   ],
 };
 
+const KNOWN_ENCAPSULATIONS: ReadonlySet<string> = new Set([
+  'dot1q', 'isl', 'ppp', 'hdlc', 'frame-relay', 'x25', 'lapb', 'sdlc', 'slip', 'atm-dxi',
+]);
+
+function judgeEigrpIntervalTail(args: readonly string[]): void {
+  if (args.length < 2) throw new CliIncomplete();
+  for (const at of [0, 1]) {
+    if (!/^\d+$/.test(args[at]) || Number(args[at]) < 1 || Number(args[at]) > 65535) {
+      throw new CliInvalidInput({ token: args[at] });
+    }
+  }
+  if (args.length > 2) throw new CliInvalidInput({ token: args[2] });
+}
+
 export function configIfSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) => buildConfigIfCommands(collector as unknown as CommandTrie, ctx),
@@ -684,6 +698,8 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.registerGreedy('negotiation', 'Set auto-negotiation', (args) => {
+    if (args[0]?.toLowerCase() !== 'auto') throw new CliInvalidInput({ token: args[0] });
+    if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
     if (!ctx.getSelectedInterface()) return '% No interface selected';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     if (port) port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
@@ -746,6 +762,11 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     return '';
   });
   trie.registerGreedy('ip tcp adjust-mss', 'Clamp TCP MSS on outgoing SYN', (args) => {
+    if (args.length < 1) return '% Incomplete command.';
+    if (!/^\d+$/.test(args[0]) || Number(args[0]) < 500 || Number(args[0]) > 1460) {
+      throw new CliInvalidInput({ token: args[0] });
+    }
+    if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
     if (!ctx.getSelectedInterface()) return '';
     const port = ctx.r().getPort(ctx.getSelectedInterface()!);
     const n = parseInt(args[0] ?? '', 10);
@@ -908,6 +929,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   // `ip hello-interval eigrp <as> <sec>` — the value drives the real
   // Hello timer (RFC 7868 §5.3.1), not just the running-config text.
   trie.registerGreedy('ip hello-interval eigrp', 'EIGRP hello interval', (args, raw) => {
+    judgeEigrpIntervalTail(args);
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     port?.addEigrpExtra(raw ?? `ip hello-interval eigrp ${args.join(' ')}`);
@@ -920,6 +942,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
   // `ip hold-time eigrp <as> <sec>` — independent of the Hello interval,
   // exactly as IOS keeps it: raising one does not raise the other.
   trie.registerGreedy('ip hold-time eigrp', 'EIGRP hold time', (args, raw) => {
+    judgeEigrpIntervalTail(args);
     const ifName = ctx.getSelectedInterface(); if (!ifName) return '';
     const port = ctx.r().getPort(ifName);
     port?.addEigrpExtra(raw ?? `ip hold-time eigrp ${args.join(' ')}`);
@@ -1037,12 +1060,17 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (!port) return '';
     const type = args[0]?.toLowerCase() ?? '';
     if (!type) return '% Incomplete command.';
+    if (!KNOWN_ENCAPSULATIONS.has(type)) throw new CliInvalidInput({ token: args[0] });
     let vlan: number | undefined;
     if (args[1] !== undefined) {
       if (!/^\d+$/.test(args[1])) return "% Invalid input detected at '^' marker.";
       vlan = parseInt(args[1], 10);
     } else if (type === 'dot1q' || type === 'isl') {
       return '% Incomplete command.';
+    }
+    const trailing = args.slice(2).filter((word) => word.toLowerCase() !== 'native');
+    if (trailing.length > 0 || args.slice(2).length > 1) {
+      throw new CliInvalidInput({ token: trailing[0] ?? args[3] });
     }
     (port as unknown as { encapsulation?: { type: string; vlan?: number; native?: boolean } }).encapsulation = {
       type, vlan, native: args.includes('native'),

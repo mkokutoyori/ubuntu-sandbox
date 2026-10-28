@@ -790,9 +790,17 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
-  configIfTrie.registerGreedy('ip ospf authentication', 'Enable OSPF authentication', (_args) => {
+  configIfTrie.registerGreedy('ip ospf authentication', 'Enable OSPF authentication', (args) => {
+    if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
+    if (args[0] !== undefined && args[0].toLowerCase() !== 'null') {
+      throw new CliInvalidInput({ token: args[0] });
+    }
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
+    if (args[0] !== undefined) {
+      setPendingOspfIf(ifName, { authType: 0 });
+      return '';
+    }
     const ospf = ctx.r()._getOSPFEngineInternal();
     const iface = ospf?.getInterface(ifName);
     // Only set to simple (1) if not already MD5 (2)
