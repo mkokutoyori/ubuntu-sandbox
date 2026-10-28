@@ -102,7 +102,7 @@ import {
   vrrpGlbpShowSpecs,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
-  buildBfdInterfaceCommands, bfdInterfaceSpecs, bfdShowSpecs,
+  bfdInterfaceSpecs, bfdShowSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
   igmpShowSpecs,
@@ -2427,10 +2427,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildBfdInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
     buildPimInterfaceCommands(this.configIfTrie, {
       selectedPorts: () => this.selectedPortsForConfigIf(),
       r: () => this.d(),

@@ -925,3 +925,28 @@ describe('igmp', () => {
     expect(await r.executeCommand('show ip igmp groups')).toContain('IGMP Connected Group Membership');
   });
 });
+
+/*
+ * Twenty-fourth batch (bfd interface): 0 of 4 fail before, by design. bfd interval and bfd neighbor
+ * were registered on the config-if trie and through the adapter; one declaration remains.
+ */
+describe('bfd interface commands', () => {
+  const onInterface = (...more: string[]) =>
+    router('interface GigabitEthernet0/0', 'ip address 10.0.0.1 255.255.255.0', ...more);
+  it('witness: bfd neighbor creates a session', async () => {
+    const r = await onInterface('bfd neighbor 10.0.0.2', 'end');
+    expect(await r.executeCommand('show bfd neighbors')).toContain('10.0.0.2');
+  });
+  it('no bfd neighbor removes it', async () => {
+    const r = await onInterface('bfd neighbor 10.0.0.2', 'no bfd neighbor 10.0.0.2', 'end');
+    expect(await r.executeCommand('show bfd neighbors')).not.toContain('10.0.0.2');
+  });
+  it('refuses a neighbor that is not an address', async () => {
+    const r = await onInterface();
+    expect(await r.executeCommand('bfd neighbor zorglub')).toContain('Invalid neighbor');
+  });
+  it('bfd interval answers incomplete alone', async () => {
+    const r = await onInterface();
+    expect(await r.executeCommand('bfd interval')).toContain('Incomplete');
+  });
+});
