@@ -1377,27 +1377,9 @@ que ces modes ; l'entree est ici pour que la table ne soit pas prise
 pour un oubli si un mode manquait vraiment. Rien a corriger tant qu'une
 transcription ne montre pas un sixieme mode.
 
-### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION
-`sequenceFamily` decrit la queue libre d'une commande par UNE place
-`REST` portant ses formes. Elles sont donc annoncees a chaque rang, sans
-savoir laquelle vient d'etre tapee, et une valeur qui SUIT une forme ne
-peut pas etre nommee du tout. Deux familles en souffrent aujourd'hui :
+### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION (reste : SNMP)
+`sequenceFamily` accepte desormais `options` (un `OptionBag`) a la place de la queue `REST` : `ntp server|peer <ip> [key N] [prefer] [source IF] [version N] [minpoll N] [maxpoll N] [burst] [iburst]` nomme la valeur attendue a chaque rang. Il reste `snmp-server host <ip> version ?` (1 / 2c / 3, puis auth / noauth / priv), dont la grammaire est positionnelle et non un sac d'options : elle demande les `continuations` de `loggingFamily` portees par `sequenceFamily`.
 
-    snmp-server host 10.0.0.1 version ?   attendu 1 / 2c / 3
-    snmp-server host 10.0.0.1 version 3 ? attendu auth / noauth / priv / WORD
-    ntp server 10.0.0.1 key ?             attendu <1-4294967295>
-    ntp server 10.0.0.1 version ?         attendu <1-4>
-
-**Mesure** : chacune rend les formes de la queue (`key`, `prefer`,
-`source`, `version` cote NTP) et jamais la valeur attendue. Depuis les
-lots SNMP et NTP, l'aide ne REFUSE plus a ces rangs et ne repropose plus
-une forme deja tapee ; ce qui manque est de NOMMER.
-**Report** : le mecanisme existe deja a cote — `loggingFamily` porte des
-`continuations` (« les mots-cles qui SUIVENT l'argument »,
-`logging host <ip> transport tcp`). Le donner a `sequenceFamily` est un
-enrichissement du declarateur PARTAGE, donc un lot a lui seul ; declarer
-a cote quelques chemins types ferait DEUX grammaires pour une commande,
-le defaut que ce depot passe son temps a refermer.
 ### [aide] `aaa` est un noeud GLOUTON, donc son aide s'arrete a deux mots
 `aaa authentication login ?` et `aaa authentication login default ?`
 annoncent `<cr>` — la touche Entree — alors que la machine repond

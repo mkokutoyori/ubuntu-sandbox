@@ -40,6 +40,7 @@ import { newSession, type CliSession } from '@/cli/CliSession';
 import { parseCommand, uniqueChild } from '@/cli/CommandParser';
 import { applyTransition } from '@/cli/CliEngine';
 import { argumentAccepts } from '@/cli/ArgumentTypes';
+import type { OptionSpec } from '@/cli/OptionBag';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import { SOCLE, continuationsPourLeSocle } from './cisco/ciscoContinuations';
 import type { ContinuationTable } from './cisco/ciscoContinuations';
@@ -141,7 +142,7 @@ import { CLIStateMachine, type ModeHierarchy } from './CLIStateMachine';
 import { estGenreAcces } from '../../ntp/accessGroups';
 import type { VrfHost } from './cisco/ciscoVrfStore';
 import { vrfDeclarationSpecs, type VrfDeclarationHost } from './cisco/vrfSpecs';
-import { NTP_VERSION, isNtpVersion, type NtpVersion } from '../../ntp/types';
+import { NTP_VERSION, type NtpVersion } from '../../ntp/types';
 import type { NtpAssociationOptions } from '../../ntp/NtpAgent';
 import {
   getGlobalConfig, CEF_LOAD_SHARING_ALGORITHMS, CEF_ACCOUNTING_KINDS,
@@ -282,15 +283,29 @@ const NTP_KEY_SPEC = {
   range: [1, 4294967295] as const, description: 'Key number',
 };
 
+const NTP_POLL_RANGE: readonly [number, number] = [4, 17];
+
+const NTP_ASSOCIATION_OPTIONS: readonly OptionSpec[] = [
+  { keyword: 'key', description: 'Configure peer authentication key',
+    argument: { ...NTP_KEY_SPEC, name: 'key-number' } },
+  { keyword: 'prefer', description: 'Prefer this peer when possible' },
+  { keyword: 'source', description: 'Interface for source address',
+    argument: { name: 'source-interface', type: 'INTERFACE',
+      description: 'Interface to use for source address' } },
+  { keyword: 'version', description: 'Configure NTP version',
+    argument: { name: 'ntp-version', type: 'INT', range: [1, 4], description: 'NTP version number' } },
+  { keyword: 'maxpoll', description: 'Maximum poll interval',
+    argument: { name: 'maxpoll-exponent', type: 'INT', range: [...NTP_POLL_RANGE], description: 'Poll interval as a power of two, in seconds' } },
+  { keyword: 'minpoll', description: 'Minimum poll interval',
+    argument: { name: 'minpoll-exponent', type: 'INT', range: [...NTP_POLL_RANGE], description: 'Poll interval as a power of two, in seconds' } },
+  { keyword: 'burst', description: 'Send a burst when the peer is reachable' },
+  { keyword: 'iburst', description: 'Send a burst when the peer is unreachable' },
+];
+
 interface QueueAssociationNtp {
   prefer: boolean;
   keyId?: number;
   options: NtpAssociationOptions;
-  refus?: string;
-}
-
-function estNumeroDeCleNtp(token: string | undefined): boolean {
-  return token !== undefined && argumentAccepts(NTP_KEY_SPEC, token);
 }
 
 const SNOOPING_BINDING_COLUMNS: ReadonlyArray<TableColumn<DHCPSnoopingBinding>> = [
@@ -4490,20 +4505,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
 
   protected ntpSpecs(): CommandSpec[] {
     const cle = NTP_KEY_SPEC;
-    const serveur: SequenceEntry['tail'] = {
-      name: 'options', type: 'REST', optional: true,
-      alternatives: [
-        { keyword: 'key', description: 'Configure peer authentication key' },
-        { keyword: 'prefer', description: 'Prefer this peer when possible' },
-        { keyword: 'source', description: 'Interface for source address' },
-        { keyword: 'version', description: 'Configure NTP version' },
-        { keyword: 'maxpoll', description: 'Maximum poll interval' },
-        { keyword: 'minpoll', description: 'Minimum poll interval' },
-        { keyword: 'burst', description: 'Send a burst when the peer is reachable' },
-        { keyword: 'iburst', description: 'Send a burst when the peer is unreachable' },
-      ],
-    };
-
     return sequenceFamily([
       { path: ['ntp', 'authenticate'], description: 'Authenticate time sources' },
       { path: ['ntp', 'logging'], description: 'Enable NTP message logging' },
@@ -4518,12 +4519,12 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['ntp', 'server'], description: 'Configure NTP server',
         args: [{ name: 'adresse', type: 'IP_ADDR', description: 'IP address of peer' }],
-        tail: serveur,
+        options: NTP_ASSOCIATION_OPTIONS,
       },
       {
         path: ['ntp', 'peer'], description: 'Configure NTP peer',
         args: [{ name: 'adresse', type: 'IP_ADDR', description: 'IP address of peer' }],
-        tail: serveur,
+        options: NTP_ASSOCIATION_OPTIONS,
       },
       {
         path: ['ntp', 'master'], description: 'Act as NTP master clock',
@@ -4611,13 +4612,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['sntp', 'server'], description: 'SNTP server (alias for ntp server)',
         args: [cible],
-        tail: {
-          name: 'options', type: 'REST', optional: true,
-          description: 'Preference of this server',
-          alternatives: [
-            { keyword: 'prefer', description: 'Prefer this peer when possible' },
-          ],
-        },
+        options: [{ keyword: 'prefer', description: 'Prefer this peer when possible' }],
       },
       {
         path: ['sntp', 'unicast'], description: 'SNTP unicast client',
@@ -8760,7 +8755,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           return `Translating "${args[1]}"...domain server (255.255.255.255)\n% Bad IP address or host name`;
         }
         const queue = this.lireQueueAssociationNtp(a, args);
-        if (queue.refus !== undefined) throw new CliInvalidInput({ token: queue.refus });
         if (a[0] === 'server') {
           agent.addServer(resolved, queue.prefer, queue.keyId, 'ntp', queue.options);
         } else {
@@ -8838,33 +8832,22 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     const queue: QueueAssociationNtp = { prefer: false, options: {} };
     for (let i = 2; i < minuscules.length; i++) {
       const mot = minuscules[i];
-      if (mot === 'prefer') { queue.prefer = true; continue; }
-      if (mot === 'iburst' || mot === 'burst') {
-        queue.options = { ...queue.options, [mot]: true };
-        continue;
-      }
       const valeur = minuscules[i + 1];
-      if (mot === 'minpoll' || mot === 'maxpoll') {
-        if (valeur === undefined || !/^\d+$/.test(valeur) || Number(valeur) < 4 || Number(valeur) > 17) {
-          return { ...queue, refus: valeur ?? mot };
-        }
+      if (mot === 'prefer') queue.prefer = true;
+      else if (mot === 'iburst' || mot === 'burst') queue.options = { ...queue.options, [mot]: true };
+      else if (mot === 'minpoll' || mot === 'maxpoll') {
         queue.options = { ...queue.options, [mot]: Number(valeur) };
         i++;
-        continue;
-      }
-      if (mot === 'key') {
-        if (!estNumeroDeCleNtp(valeur)) return { ...queue, refus: valeur ?? mot };
+      } else if (mot === 'key') {
         queue.keyId = Number(valeur);
+        i++;
       } else if (mot === 'version') {
-        if (!isNtpVersion(valeur)) return { ...queue, refus: valeur ?? mot };
         queue.options = { ...queue.options, version: Number(valeur) as NtpVersion };
+        i++;
       } else if (mot === 'source') {
-        if (!bruts[i + 1]) return { ...queue, refus: mot };
         queue.options = { ...queue.options, sourceInterface: bruts[i + 1] };
-      } else {
-        return { ...queue, refus: bruts[i] ?? mot };
+        i++;
       }
-      i++;
     }
     return queue;
   }

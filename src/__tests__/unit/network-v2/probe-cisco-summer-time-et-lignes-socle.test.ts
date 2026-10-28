@@ -335,3 +335,35 @@ describe('archive EXEC commands', () => {
     expect(await r.executeCommand('show archive log config statistics')).toContain('Config Log');
   });
 });
+
+/*
+ * Ninth batch (ntp server options as an option bag): 2 of 6 fail before (the help after `key` and
+ * after `version` named nothing); the other four are witnesses/non-regressions.
+ */
+describe('ntp server options named by position', () => {
+  it('witness: a server with key, version and prefer is stored', async () => {
+    const r = await router('ntp server 10.0.0.9 version 3 prefer');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config')).toContain('ntp server 10.0.0.9');
+  });
+  it('names the key number after key', async () => {
+    const r = await router();
+    expect(r.cliHelp('ntp server 10.0.0.9 key ')).toContain('<1-4294967295>');
+  });
+  it('names the version range after version', async () => {
+    const r = await router();
+    expect(r.cliHelp('ntp server 10.0.0.9 version ')).toContain('<1-4>');
+  });
+  it('refuses a version out of range at the value', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ntp server 10.0.0.9 version 5')).toContain('Invalid input');
+  });
+  it('refuses a poll exponent out of range', async () => {
+    const r = await router();
+    expect(await r.executeCommand('ntp server 10.0.0.9 minpoll 3')).toContain('Invalid input');
+  });
+  it('does not offer an option already given', async () => {
+    const r = await router();
+    expect(r.cliHelp('ntp server 10.0.0.9 prefer ')).not.toMatch(/^\s*prefer\b/m);
+  });
+});
