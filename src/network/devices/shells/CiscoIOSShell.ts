@@ -204,7 +204,7 @@ import {
   ikev2KeyringPeerSpecs, ikev2ProfileSpecs,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import {
-  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs, gdoiGlobalSpecs,
+  gdoiGroupSpecs, gdoiGlobalSpecs,
 } from './cisco/CiscoGdoiCommands';
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
@@ -2469,8 +2469,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIKEv2KeyringCommands(this.configIkev2KeyringTrie, this);
     buildIKEv2KeyringPeerCommands(this.configIkev2KeyringPeerTrie, this);
     buildIKEv2ProfileCommands(this.configIkev2ProfileTrie, this);
-    buildGdoiGlobalCommands(this.configTrie, this);
-    buildGdoiGroupCommands(this.configGdoiGroupTrie, this);
 
     buildSecurityConfigCommands(this.configTrie, this);
     buildSecurityInterfaceCommands(this.configIfTrie, this);

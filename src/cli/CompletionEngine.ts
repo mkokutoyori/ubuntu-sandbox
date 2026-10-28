@@ -165,7 +165,8 @@ function suggestionsAt(
   const argument = declaree && vivante
     ? { ...declaree, range: vivante } : declaree;
   if (argument && trigger === 'QUESTION_MARK'
-    && (argument.values || argument.alternatives || cursor.prefix.length === 0)) {
+    && (argument.values || argument.alternatives || argument.tabSuggestions
+      || cursor.prefix.length === 0)) {
     for (const suggestion of argumentSuggestions(argument)) {
       if (!suggestion.keyword.toLowerCase().startsWith(lowered)) continue;
       out.push({
@@ -174,18 +175,7 @@ function suggestionsAt(
     }
   }
 
-  if (argument && trigger === 'QUESTION_MARK') {
-    for (const word of argument.tabSuggestions ?? []) {
-      if (!word.toLowerCase().startsWith(lowered)) continue;
-      out.push({ value: word, description: argument.description ?? '', isArgument: true });
-    }
-  }
-
   if (argument && trigger === 'TAB') {
-    for (const word of argument.tabSuggestions ?? []) {
-      if (!word.toLowerCase().startsWith(lowered)) continue;
-      out.push({ value: word, description: '', isArgument: true, completable: true });
-    }
     for (const suggestion of argumentCompletableValues(argument)) {
       if (!suggestion.keyword.toLowerCase().startsWith(lowered)) continue;
       out.push({
