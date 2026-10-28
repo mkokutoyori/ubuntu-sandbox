@@ -2830,16 +2830,29 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
 
     const egress = this.r().getPort(nextHopStr);
+    const tailStart = egress ? (args[2] !== undefined && /[:]/.test(args[2]) ? 3 : 2) : 2;
+    const distanceWord = args[tailStart];
+    if (args.length > tailStart + 1) throw new CliInvalidInput({ token: args[tailStart + 1] });
+    let preference: number | undefined;
+    if (distanceWord !== undefined) {
+      if (!/^\d+$/.test(distanceWord) || Number(distanceWord) < 1 || Number(distanceWord) > 254) {
+        throw new CliInvalidInput({ token: distanceWord });
+      }
+      preference = Number(distanceWord);
+    }
+
     if (egress) {
-      const viaHop = args[2] ? parseIpv6OrNull(args[2]) : null;
-      if (args[2] && !viaHop) return '% Invalid next-hop address';
-      this.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0, { iface: egress.getName() });
+      const viaHop = tailStart === 3 ? parseIpv6OrNull(args[2]) : null;
+      if (tailStart === 3 && !viaHop) return '% Invalid next-hop address';
+      this.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0,
+        { iface: egress.getName(), ...(preference !== undefined ? { preference } : {}) });
       return '';
     }
 
     const nextHop = parseIpv6OrNull(nextHopStr);
     if (!nextHop) return '% Invalid next-hop address';
-    this.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
+    this.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop, 0,
+      preference !== undefined ? { preference } : undefined);
     return '';
   }
 
