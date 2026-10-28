@@ -4157,3 +4157,7 @@ Mesure : `probe-ipv6-se-fragmente-a-la-source-et-se-reassemble-a-l-arrivee` > «
 ## Rouges sur la base, vus par le lot IPSec (hors perimetre)
 
 Mesure au commit `2351448f2` (avant la serie telnet/Cisco), worktree dedie : `crypto-pki-trustpool` (cabundle url), `ike-real-diffie-hellman` (2 cas), `probe-linux-kerberos-tools-answer-like-mit` (5 cas de rejeu) — 8 cas rouges sur 57. Non diagnostiques.
+
+## Cisco: invalid inputs the fuzz scan still sees accepted
+
+Measured with a scan of ~90 invalid one-liners on a fresh router (the others are refused): `interface loopback 99999999999` (the number overflows a signed 32-bit integer, IOS stops at 2147483647), `hostname 1bad` and a 100-character hostname, `logging buffered 1` (IOS floors the buffer size), a 300-character `description` (IOS truncates or refuses past 240), `ip helper-address 0.0.0.0` / `224.0.0.1`, `ip address 127.0.0.1 255.0.0.0` on a physical interface, `clear ip route 999.1.1.1`. Not closed: each bound is an IOS fact whose documentation was not reachable, except the loopback overflow, which needs the interface-name parser (spread over `Router.ts` and the shell) rather than one place.
