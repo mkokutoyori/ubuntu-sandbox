@@ -4175,3 +4175,16 @@ range from an ACL, and the old handler accepted the keyword and ignored it.
 neither is rendered in the running-config (the interface identity is lost).
 `ip pim spt-threshold` is stored and rendered but the engine builds only
 (*,G) state, so it is never evaluated. Seen while migrating the PIM family.
+
+## Reds already present at the base commit 2351448f2 (full network-v2 sweep)
+
+Measured by running the same files on a clean worktree of the base: run-parts
+(5), basic-commandes #84 (L2-only switch IP), auditctl-other #128,
+fault-sigkill-residues, firewall/architecture-guards G8, linux-bash-details
+G11-01/02, linux-ls-tty-awareness, linux-rsyslog-imfile truncation,
+nano-colors/exec/tab oracles and probe-nano-exec, nss-resolution-unified,
+observability-bridge §JB, openssl-ocsp-probe (-port/-url), probe-base-de-paquets,
+probe-cle-privee-d-hote-est-privee, probe-couche-internet-un-seul-ttl,
+probe-ipv6-se-fragmente (tcpdump ICMPv6), probe-linux-ne-lit-pas-le-fuseau-du-
+processus, plus the Linux oracle and crypto reds listed above. None is caused by
+the Cisco socle series; they are recorded so a sweep is read against them.
