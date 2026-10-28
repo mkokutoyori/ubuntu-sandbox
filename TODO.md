@@ -4225,3 +4225,25 @@ environnement, probe-fuseau-linux-et-pare-feu, probe-fuser-porte-de-psmisc,
 probe-ldapsearch-linux-interroge-le-controleur-de-domaine,
 probe-oracle-sqlplus-silencieux-et-rman-a-froid, probe-proc-sys-write-reaches-
 the-store, probe-procfs-does-not-grow, scenario10-linux-audit, tail.
+
+## OSPF redistribute: route-map, tag, and sources the engine does not evaluate
+
+`redistribute static|connected|rip` under `router ospf` now judges its options,
+honours `metric` and `metric-type` in the LSAs the engine originates and is
+rendered in the running-config. Still open: `route-map` and `tag` are not
+declared (refused at the caret) because the engine neither evaluates a
+route-map on redistribution nor carries the external route tag; and
+`redistribute bgp|eigrp|ospf N` is stored and rendered but no route from those
+sources enters OSPF. IS-IS as a source is not declared. 
+
+## OSPF process settings stored and rendered, not evaluated
+
+`distance`, `compatible rfc1583`, `ispf`, `prefix-suppression`, `discard-route
+external`, `segment-routing mpls`, `timers lsa arrival`, `timers pacing flood`
+and `timers pacing retransmission` under `router ospf` are typed, stored and
+rendered in the running-config, and `show` nothing of them changes behaviour:
+the engine reads none of them. `shutdown` is stored and rendered but does not
+stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
+(administrative distance of installed routes, RFC 1583 external path selection,
+incremental SPF, the discard route, process shutdown).
+

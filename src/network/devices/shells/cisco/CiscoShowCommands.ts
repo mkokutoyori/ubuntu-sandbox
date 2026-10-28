@@ -1024,6 +1024,29 @@ function lignesDAire(
       spfThrottle?: { initial: number; hold: number; max: number };
       defaultInformation?: DefaultInformationOriginate;
       defaultMetric?: number;
+      redistributeStatic?: { subnets: boolean; metricType: number; metric?: number };
+      redistributeConnected?: { subnets: boolean; metric?: number; metricType?: number };
+      redistributeRip?: { subnets: boolean; metric?: number; metricType: number };
+      redistributeOther?: Array<{
+        protocol: string; id?: string; subnets: boolean; metric?: number; metricType?: number;
+      }>;
+      distributeList?: { aclId?: string; prefixListName?: string; direction: 'in' | 'out' };
+      maxLsa?: number;
+      maxMetric?: { enabled: boolean; onStartup?: number };
+      summaryAddresses?: Array<{ network: string; mask: string }>;
+      bfdAllInterfaces?: boolean;
+      gracefulRestart?: { enabled: boolean; gracePeriod: number };
+      maximumPaths?: number;
+      compatibleRfc1583?: boolean;
+      distance?: { all?: number; intraArea?: number; interArea?: number; external?: number };
+      timersLsaArrivalMs?: number;
+      timersPacingFloodMs?: number;
+      timersPacingRetransmissionMs?: number;
+      ispf?: boolean;
+      prefixSuppression?: boolean;
+      shutdown?: boolean;
+      segmentRoutingMpls?: boolean;
+      discardRouteExternal?: boolean;
     };
   })._getOSPFExtraConfig?.();
   for (const [id, voisin] of extra?.virtualLinks ?? []) {
@@ -1046,6 +1069,63 @@ function lignesDAire(
     lignes.push(`neighbor ${voisin.ip}`
       + `${voisin.priority !== undefined ? ` priority ${voisin.priority}` : ''}`
       + `${voisin.pollInterval !== undefined ? ` poll-interval ${voisin.pollInterval}` : ''}`);
+  }
+  const redistribute = (
+    source: string,
+    config: { subnets: boolean; metric?: number; metricType?: number },
+  ): string => ['redistribute', source,
+    ...(config.metric !== undefined ? ['metric', String(config.metric)] : []),
+    ...(config.metricType === 1 ? ['metric-type 1'] : []),
+    ...(config.subnets ? ['subnets'] : []),
+  ].join(' ');
+  if (extra?.redistributeStatic) lignes.push(redistribute('static', extra.redistributeStatic));
+  if (extra?.redistributeConnected) lignes.push(redistribute('connected', extra.redistributeConnected));
+  if (extra?.redistributeRip) lignes.push(redistribute('rip', extra.redistributeRip));
+  for (const other of extra?.redistributeOther ?? []) {
+    lignes.push(redistribute(`${other.protocol} ${other.id}`, other));
+  }
+  if (extra?.maximumPaths !== undefined) lignes.push(`maximum-paths ${extra.maximumPaths}`);
+  if (extra?.compatibleRfc1583) lignes.push('compatible rfc1583');
+  if (extra?.distance?.all !== undefined) lignes.push(`distance ${extra.distance.all}`);
+  const ospfDistance = extra?.distance;
+  if (ospfDistance && (ospfDistance.intraArea !== undefined
+    || ospfDistance.interArea !== undefined || ospfDistance.external !== undefined)) {
+    lignes.push(['distance ospf',
+      ...(ospfDistance.intraArea !== undefined ? [`intra-area ${ospfDistance.intraArea}`] : []),
+      ...(ospfDistance.interArea !== undefined ? [`inter-area ${ospfDistance.interArea}`] : []),
+      ...(ospfDistance.external !== undefined ? [`external ${ospfDistance.external}`] : []),
+    ].join(' '));
+  }
+  if (extra?.timersLsaArrivalMs !== undefined) {
+    lignes.push(`timers lsa arrival ${extra.timersLsaArrivalMs}`);
+  }
+  if (extra?.timersPacingFloodMs !== undefined) {
+    lignes.push(`timers pacing flood ${extra.timersPacingFloodMs}`);
+  }
+  if (extra?.timersPacingRetransmissionMs !== undefined) {
+    lignes.push(`timers pacing retransmission ${extra.timersPacingRetransmissionMs}`);
+  }
+  if (extra?.ispf) lignes.push('ispf');
+  if (extra?.prefixSuppression) lignes.push('prefix-suppression');
+  if (extra?.discardRouteExternal) lignes.push('discard-route external');
+  if (extra?.segmentRoutingMpls) lignes.push('segment-routing mpls');
+  if (extra?.shutdown) lignes.push('shutdown');
+  if (extra?.maxLsa) lignes.push(`max-lsa ${extra.maxLsa}`);
+  if (extra?.maxMetric?.enabled) {
+    lignes.push(`max-metric router-lsa${
+      extra.maxMetric.onStartup !== undefined ? ` on-startup ${extra.maxMetric.onStartup}` : ''}`);
+  }
+  for (const resume of extra?.summaryAddresses ?? []) {
+    lignes.push(`summary-address ${resume.network} ${resume.mask}`);
+  }
+  if (extra?.distributeList) {
+    const filtre = extra.distributeList;
+    lignes.push(`distribute-list ${filtre.prefixListName !== undefined
+      ? `prefix ${filtre.prefixListName}` : filtre.aclId} ${filtre.direction}`);
+  }
+  if (extra?.bfdAllInterfaces) lignes.push('bfd all-interfaces');
+  if (extra?.gracefulRestart?.enabled) {
+    lignes.push(`graceful-restart grace-period ${extra.gracefulRestart.gracePeriod}`);
   }
   if (extra?.defaultMetric !== undefined) lignes.push(`default-metric ${extra.defaultMetric}`);
   if (extra?.defaultInformation) lignes.push(defaultInformationLine(extra.defaultInformation));

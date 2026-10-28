@@ -37,6 +37,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import type { OptionSpec } from '@/cli/OptionBag';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { toutesLesSuites } from './ciscoContinuations';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
@@ -182,34 +183,9 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     segmentRoutingMpls?: boolean; discardRouteExternal?: boolean;
   };
 
-  trie.registerGreedy('maximum-paths', 'Forward equal-cost paths', (args) => {
-    const n = parseInt(args[0], 10);
-    if (isNaN(n) || n < 1) return '';
-    extra().maximumPaths = n;
-    ctx.r().setMaximumPaths('ospf', n);
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-  trie.registerGreedy('compatible', 'Compatibility mode', (args) => {
-    if (args[0]?.toLowerCase() === 'rfc1583') extra().compatibleRfc1583 = true;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
   trie.registerGreedy('default-metric', 'Default metric', (args) => {
     const n = parseInt(args[0], 10);
     if (!isNaN(n)) ctx.r()._getOSPFExtraConfig().defaultMetric = n;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-  trie.registerGreedy('distance', 'Administrative distance', (args) => {
-    if (args[0]?.toLowerCase() !== 'ospf') return '';
-    const d: { intraArea?: number; interArea?: number; external?: number } = {};
-    for (let i = 1; i < args.length; i++) {
-      if (args[i] === 'intra-area' && args[i + 1]) d.intraArea = parseInt(args[i + 1], 10);
-      if (args[i] === 'inter-area' && args[i + 1]) d.interArea = parseInt(args[i + 1], 10);
-      if (args[i] === 'external' && args[i + 1]) d.external = parseInt(args[i + 1], 10);
-    }
-    extra().distance = d;
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -220,33 +196,6 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
       holdMs: parseInt(args[1], 10),
       maxMs: parseInt(args[2], 10),
     };
-    return '';
-  });
-  trie.registerGreedy('timers lsa arrival', 'LSA arrival timer', (args) => {
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().timersLsaArrivalMs = n;
-    return '';
-  });
-  trie.registerGreedy('timers pacing flood', 'Pacing flood', (args) => {
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().timersPacingFloodMs = n;
-    return '';
-  });
-  trie.registerGreedy('timers pacing retransmission', 'Pacing retransmission', (args) => {
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().timersPacingRetransmissionMs = n;
-    return '';
-  });
-  trie.register('ispf', 'Enable incremental SPF', () => { extra().ispf = true; return ''; });
-  trie.register('prefix-suppression', 'Enable prefix suppression', () => { extra().prefixSuppression = true; return ''; });
-  trie.register('shutdown', 'Disable OSPF process', () => { extra().shutdown = true; return ''; });
-  trie.register('no shutdown', 'Re-enable OSPF process', () => { extra().shutdown = false; return ''; });
-  trie.registerGreedy('segment-routing', 'Segment routing', (args) => {
-    if (args[0]?.toLowerCase() === 'mpls') extra().segmentRoutingMpls = true;
-    return '';
-  });
-  trie.registerGreedy('discard-route', 'Discard route', (args) => {
-    if (args[0]?.toLowerCase() === 'external') extra().discardRouteExternal = true;
     return '';
   });
 
@@ -358,40 +307,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('redistribute', 'Redistribute routes from another routing protocol', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const protocol = args[0].toLowerCase();
-    const knownProtocols = ['connected', 'static', 'rip', 'eigrp', 'bgp', 'isis', 'ospf'];
-    if (!knownProtocols.includes(protocol)) return "% Invalid input detected at '^' marker.";
-    if (protocol === 'static') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      let metricType = 2; // default E2
-      for (let i = 0; i < args.length - 1; i++) {
-        if (args[i].toLowerCase() === 'metric-type') metricType = parseInt(args[i + 1], 10);
-      }
-      extra.redistributeStatic = { subnets, metricType };
-    } else if (protocol === 'connected') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      extra.redistributeConnected = { subnets };
-    } else if (protocol === 'rip') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      let metricType = 2;
-      let metric: number | undefined;
-      for (let i = 0; i < args.length - 1; i++) {
-        const tk = args[i].toLowerCase();
-        if (tk === 'metric-type') metricType = parseInt(args[i + 1], 10);
-        else if (tk === 'metric') {
-          const m = parseInt(args[i + 1], 10);
-          if (!Number.isNaN(m)) metric = m;
-        }
-      }
-      extra.redistributeRip = { subnets, metric, metricType };
-    }
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-
   trie.registerGreedy('distribute-list', 'Filter networks in routing updates', (args) => {
     if (args.length < 2) return '% Incomplete command.';
     const extra = ctx.r()._getOSPFExtraConfig();
@@ -410,21 +325,6 @@ function adresseReseau(ip: string, wildcard: string): string {
 
   trie.registerGreedy('no default-metric', 'Stop using a default metric', () => {
     ctx.r()._getOSPFExtraConfig().defaultMetric = undefined;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-
-  trie.registerGreedy('no redistribute', 'Stop redistributing routes', (args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const protocol = (args[0] ?? '').toLowerCase();
-    if (protocol === 'static') extra.redistributeStatic = undefined;
-    else if (protocol === 'connected') extra.redistributeConnected = undefined;
-    else if (protocol === 'rip') extra.redistributeRip = undefined;
-    else {
-      extra.redistributeStatic = undefined;
-      extra.redistributeConnected = undefined;
-      extra.redistributeRip = undefined;
-    }
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -1151,6 +1051,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 // ─── Show Commands ───────────────────────────────────────────────────
 
 
+const DEFAULT_OSPF_MAXIMUM_PATHS = 4;
+
 const OSPF_INT = (
   name: string, min: number, max: number, description: string,
 ): ArgumentSpec => ({ name, type: 'INT', range: [min, max], description });
@@ -1184,23 +1086,12 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   ],
   'router-id': { name: 'id', type: 'IP_ADDR', description: 'OSPF router-id in IP address format' },
   'default-metric': OSPF_INT('metrique', 1, 16777214, 'Default metric of redistributed routes'),
-  'maximum-paths': OSPF_INT('chemins', 1, 32, 'Number of equal-cost paths installed'),
   'max-lsa': OSPF_INT('lsas', 1, 4294967294, 'Maximum number of non self-generated LSAs'),
   'passive-interface': { name: 'interface', type: 'INTERFACE', description: 'Interface on which updates are suppressed' },
   area: AIRE,
   neighbor: { name: 'voisin', type: 'IP_ADDR', description: 'Neighbor address' },
   'timers throttle lsa': INTERVALLES_LSA,
   'timers throttle spf': INTERVALLES_SPF,
-  redistribute: [{
-    name: 'protocole', type: 'ENUM', description: 'Source protocol to redistribute',
-    values: [
-      { keyword: 'bgp', description: 'Border Gateway Protocol (BGP)' },
-      { keyword: 'connected', description: 'Connected' },
-      { keyword: 'eigrp', description: 'Enhanced Interior Gateway Routing Protocol (EIGRP)' },
-      { keyword: 'rip', description: 'Routing Information Protocol (RIP)' },
-      { keyword: 'static', description: 'Static routes' },
-    ],
-  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
   'distribute-list': [{
     name: 'filtre', type: 'WORD', description: 'Filter to apply',
     alternatives: [
@@ -1209,9 +1100,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'prefix', description: 'Filter prefixes in routing updates' },
     ],
   }, { name: 'options', type: 'REST', values: [], description: 'Direction and filter name' }],
-  shutdown: null,
-  ispf: null,
-  'prefix-suppression': null,
 };
 
 const ROUTER_OSPF_KEYWORDS:
@@ -1233,19 +1121,11 @@ Readonly<Record<string, ReadonlyArray<{
     { keyword: 'opaque', description: 'Opaque LSA' },
     { keyword: 'transit', description: 'Transit area capability' },
   ],
-  compatible: [{ keyword: 'rfc1583', description: 'RFC 1583 compatible route selection' }],
   'default-information originate': [
     { keyword: 'always', description: 'Always advertise the default route' },
     { keyword: 'metric', description: 'Metric used for generating the default route' },
     { keyword: 'metric-type', description: 'External link type of the default route' },
     { keyword: 'route-map', description: 'Generate the default route if the route map is satisfied' },
-  ],
-  'discard-route': [{ keyword: 'external', description: 'Discard route for external summary' }],
-  distance: [
-    { keyword: 'external', description: 'External type 5 and type 7 routes' },
-    { keyword: 'inter-area', description: 'Inter-area routes' },
-    { keyword: 'intra-area', description: 'Intra-area routes' },
-    { keyword: 'ospf', description: 'OSPF distance' },
   ],
   'graceful-restart': [{ keyword: 'grace-period', description: 'Grace period in seconds' }],
   'log-adjacency-changes': [{ keyword: 'detail', description: 'Detailed output' }],
@@ -1254,7 +1134,6 @@ Readonly<Record<string, ReadonlyArray<{
     { keyword: 'poll-interval', description: 'OSPF dead-neighbor polling interval' },
     { keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor' },
   ],
-  'segment-routing': [{ keyword: 'mpls', description: 'Segment Routing global block' }],
 };
 
 /**
@@ -1450,8 +1329,221 @@ function aireSpecs(ctx: CiscoShellContext): CommandSpec[] {
   })) as CommandSpec[];
 }
 
+type ProcessSettings = {
+  maximumPaths?: number; compatibleRfc1583?: boolean;
+  distance?: { all?: number; intraArea?: number; interArea?: number; external?: number };
+  timersLsaArrivalMs?: number;
+  timersPacingFloodMs?: number; timersPacingRetransmissionMs?: number;
+  ispf?: boolean; prefixSuppression?: boolean; shutdown?: boolean;
+  segmentRoutingMpls?: boolean; discardRouteExternal?: boolean;
+};
+
+const positiveNumber = (name: string, description: string): ArgumentSpec => ({
+  name, type: 'WORD', description, pattern: /^[1-9]\d{0,9}$|^0$/,
+  alternatives: [{ keyword: '<number>', description }],
+  formsAreExhaustive: true,
+});
+
+function processSettingSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
+  const settings = () => ctx.r()._getOSPFExtraConfig() as unknown as ProcessSettings;
+  const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const flag = (
+    id: string, path: string[], description: string, undoDescription: string,
+    field: 'ispf' | 'prefixSuppression' | 'shutdown' | 'segmentRoutingMpls'
+      | 'discardRouteExternal' | 'compatibleRfc1583',
+  ): CommandSpec => ({
+    ...base, id, path, description, undoDescription,
+    run: () => { settings()[field] = true; return converge(); },
+    undo: () => { settings()[field] = false; return converge(); },
+  });
+  const distanceOption = (keyword: string, description: string): OptionSpec => ({
+    keyword, description, argument: OSPF_INT(keyword, 1, 255, 'Administrative distance'),
+  });
+  const timer = (
+    id: string, path: string[], description: string,
+    field: 'timersLsaArrivalMs' | 'timersPacingFloodMs' | 'timersPacingRetransmissionMs',
+  ): CommandSpec => ({
+    ...base, id, path: [...path, positiveNumber('milliseconds', 'Milliseconds')], description,
+    undoDescription: 'Restore the default', undoOmitsArguments: true,
+    run: (_session, args) => { settings()[field] = Number(args.milliseconds); return ''; },
+    undo: () => { settings()[field] = undefined; return ''; },
+  });
+  return [
+    {
+      ...base, id: 'ospf-maximum-paths',
+      path: ['maximum-paths', OSPF_INT('paths', 1, 32, 'Number of equal-cost paths installed')],
+      description: 'Forward equal-cost paths', undoDescription: 'Restore the default',
+      undoOmitsArguments: true,
+      run: (_session, args) => {
+        settings().maximumPaths = Number(args.paths);
+        ctx.r().setMaximumPaths('ospf', Number(args.paths));
+        return converge();
+      },
+      undo: () => {
+        settings().maximumPaths = undefined;
+        ctx.r().setMaximumPaths('ospf', DEFAULT_OSPF_MAXIMUM_PATHS);
+        return converge();
+      },
+    },
+    flag('ospf-compatible-rfc1583', ['compatible', 'rfc1583'],
+      'RFC 1583 compatible route selection', 'Restore RFC 2328 route selection', 'compatibleRfc1583'),
+    flag('ospf-ispf', ['ispf'], 'Enable incremental SPF', 'Disable incremental SPF', 'ispf'),
+    flag('ospf-prefix-suppression', ['prefix-suppression'], 'Enable prefix suppression',
+      'Disable prefix suppression', 'prefixSuppression'),
+    flag('ospf-shutdown', ['shutdown'], 'Disable OSPF process', 'Re-enable OSPF process', 'shutdown'),
+    flag('ospf-segment-routing-mpls', ['segment-routing', 'mpls'],
+      'Segment Routing global block', 'Disable segment routing', 'segmentRoutingMpls'),
+    flag('ospf-discard-route-external', ['discard-route', 'external'],
+      'Discard route for external summary', 'Do not install the discard route', 'discardRouteExternal'),
+    {
+      ...base, id: 'ospf-distance-all',
+      path: ['distance', OSPF_INT('distance', 1, 255, 'Administrative distance')],
+      description: 'Administrative distance', undoDescription: 'Restore the default distance',
+      undoOmitsArguments: true,
+      run: (_session, args) => {
+        const current = settings().distance ?? {};
+        settings().distance = { ...current, all: Number(args.distance) };
+        return converge();
+      },
+      undo: () => { settings().distance = undefined; return converge(); },
+    },
+    {
+      ...base, id: 'ospf-distance-ospf', path: ['distance', 'ospf'],
+      options: [
+        distanceOption('intra-area', 'Intra-area routes'),
+        distanceOption('inter-area', 'Inter-area routes'),
+        distanceOption('external', 'External type 5 and type 7 routes'),
+      ],
+      requiresOneOption: true, description: 'OSPF distance',
+      undoDescription: 'Restore the default OSPF distances',
+      run: (_session, args) => {
+        const current = settings().distance ?? {};
+        settings().distance = {
+          ...current,
+          ...(args['intra-area'] !== undefined ? { intraArea: Number(args['intra-area']) } : {}),
+          ...(args['inter-area'] !== undefined ? { interArea: Number(args['inter-area']) } : {}),
+          ...(args.external !== undefined ? { external: Number(args.external) } : {}),
+        };
+        return converge();
+      },
+      undo: () => { settings().distance = undefined; return converge(); },
+    },
+    timer('ospf-timers-lsa-arrival', ['timers', 'lsa', 'arrival'], 'LSA arrival timer',
+      'timersLsaArrivalMs'),
+    timer('ospf-timers-pacing-flood', ['timers', 'pacing', 'flood'], 'Pacing flood',
+      'timersPacingFloodMs'),
+    timer('ospf-timers-pacing-retransmission', ['timers', 'pacing', 'retransmission'],
+      'Pacing retransmission', 'timersPacingRetransmissionMs'),
+  ];
+}
+
+const REDISTRIBUTE_OPTIONS: readonly OptionSpec[] = [
+  { keyword: 'subnets', description: 'Consider subnets for redistribution' },
+  {
+    keyword: 'metric', description: 'Metric for redistributed routes',
+    argument: OSPF_INT('metric', 0, 16777214, 'OSPF default metric'),
+  },
+  {
+    keyword: 'metric-type', description: 'OSPF/IS-IS exterior metric type for redistributed routes',
+    argument: {
+      name: 'metric-type', type: 'ENUM', description: 'External metric type',
+      values: [
+        { keyword: '1', description: 'Set OSPF External Type 1 metrics' },
+        { keyword: '2', description: 'Set OSPF External Type 2 metrics' },
+      ],
+    },
+  },
+];
+
+type RedistributeOther = NonNullable<
+  ReturnType<CiscoShellContext['r']> extends infer R
+    ? R extends { _getOSPFExtraConfig(): infer E } ? E : never : never
+>['redistributeOther'];
+
+function redistributeSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
+  const extra = () => ctx.r()._getOSPFExtraConfig();
+  const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const settings = (args: Record<string, string>) => ({
+    subnets: args.subnets !== undefined,
+    ...(args.metric !== undefined ? { metric: Number(args.metric) } : {}),
+    ...(args['metric-type'] !== undefined ? { metricType: Number(args['metric-type']) } : {}),
+  });
+  const own = (
+    protocol: 'static' | 'connected' | 'rip', description: string,
+  ): CommandSpec => ({
+    ...base, id: `ospf-redistribute-${protocol}`, path: ['redistribute', protocol],
+    options: REDISTRIBUTE_OPTIONS, description,
+    undoDescription: `Stop redistributing ${protocol} routes`,
+    run: (_session, args) => {
+      const config = settings(args);
+      if (protocol === 'static') {
+        extra().redistributeStatic = { ...config, metricType: config.metricType ?? 2 };
+      } else if (protocol === 'connected') {
+        extra().redistributeConnected = config;
+      } else {
+        extra().redistributeRip = { ...config, metricType: config.metricType ?? 2 };
+      }
+      return converge();
+    },
+    undo: () => {
+      if (protocol === 'static') extra().redistributeStatic = undefined;
+      else if (protocol === 'connected') extra().redistributeConnected = undefined;
+      else extra().redistributeRip = undefined;
+      return converge();
+    },
+  });
+  const other = (
+    protocol: 'bgp' | 'eigrp' | 'ospf', range: [number, number], description: string,
+  ): CommandSpec => ({
+    ...base, id: `ospf-redistribute-${protocol}`,
+    path: ['redistribute', protocol, OSPF_INT('id', range[0], range[1], 'Process or autonomous system number')],
+    options: REDISTRIBUTE_OPTIONS, description,
+    undoDescription: `Stop redistributing ${protocol} routes`,
+    run: (_session, args) => {
+      const list = (extra().redistributeOther ??= []) as NonNullable<RedistributeOther>;
+      const entry = { protocol, id: args.id, ...settings(args) };
+      const index = list.findIndex((item) => item.protocol === protocol && item.id === args.id);
+      if (index >= 0) list[index] = entry; else list.push(entry);
+      return converge();
+    },
+    undo: (_session, args) => {
+      const list = extra().redistributeOther;
+      if (list) {
+        extra().redistributeOther = list.filter(
+          (item) => !(item.protocol === protocol && item.id === args.id));
+      }
+      return converge();
+    },
+  });
+  return [
+    own('static', 'Static routes'),
+    own('connected', 'Connected'),
+    own('rip', 'Routing Information Protocol (RIP)'),
+    other('bgp', [1, 4294967295], 'Border Gateway Protocol (BGP)'),
+    other('eigrp', [1, 65535], 'Enhanced Interior Gateway Routing Protocol (EIGRP)'),
+    other('ospf', [1, 65535], 'Open Shortest Path First (OSPF)'),
+    {
+      ...base, id: 'ospf-redistribute-all', path: ['redistribute'],
+      description: 'Redistribute information from another routing protocol',
+      existsOnlyNegated: true, run: () => '% Incomplete command.',
+      undo: () => {
+        const config = extra();
+        config.redistributeStatic = undefined;
+        config.redistributeConnected = undefined;
+        config.redistributeRip = undefined;
+        config.redistributeOther = undefined;
+        return converge();
+      },
+    },
+  ];
+}
+
 export function routerOspfSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [
+    ...redistributeSpecs(ctx),
+    ...processSettingSpecs(ctx),
     ...specsFromTrieRegistrations(
       (collector) =>
         buildConfigRouterOSPFCommands(collector as unknown as CommandTrie, ctx),
