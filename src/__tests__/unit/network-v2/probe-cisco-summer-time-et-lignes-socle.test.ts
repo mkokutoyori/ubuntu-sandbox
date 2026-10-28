@@ -1016,3 +1016,30 @@ describe('crypto isakmp key address', () => {
     expect(await r.executeCommand('crypto isakmp key K address 10.0.0.2')).toBe('');
   });
 });
+
+/*
+ * Twenty-eighth batch (ip address): an interface address is a unicast host address and its mask is
+ * not /0. The typed places accepted 0.0.0.0, 224.0.0.1 (multicast), 255.255.255.255 and the mask
+ * 0.0.0.0, which no interface can hold; they are refused at the caret now. Fails before: the four
+ * refusals (4 of 6). Witnesses: an ordinary address and a /32 host address are still accepted.
+ */
+describe('interface address', () => {
+  const onInterface = () => router('interface GigabitEthernet0/0');
+  it.each([
+    ['ip address 0.0.0.0 255.255.255.0'],
+    ['ip address 224.0.0.1 255.255.255.0'],
+    ['ip address 255.255.255.255 255.255.255.0'],
+    ['ip address 10.0.0.1 0.0.0.0'],
+  ])('refuses %s', async (line) => {
+    const r = await onInterface();
+    expect(await r.executeCommand(line)).toContain('Invalid input');
+  });
+  it('witness: an ordinary address is accepted', async () => {
+    const r = await onInterface();
+    expect(await r.executeCommand('ip address 10.0.0.1 255.255.255.0')).toBe('');
+  });
+  it('witness: a /32 host address is accepted', async () => {
+    const r = await onInterface();
+    expect(await r.executeCommand('ip address 10.0.0.1 255.255.255.255')).toBe('');
+  });
+});
