@@ -4198,3 +4198,10 @@ reference for the IKEv2 forms could not be reached. `crypto ikev2 dpd` shares
 the 10-3600 / 2-60 ranges the IKEv2 profile `dpd` of the same file already
 declared. Fetch the IKEv2 pages, then declare the three ranges on the places in
 CiscoIPSecIKEv2Commands.ts.
+
+Also red at the base (27 tests, measured on the same clean worktree): other-commands,
+probe-arith-01-puissance, probe-date-suit-le-fuseau, probe-env-ne-rend-que-l-
+environnement, probe-fuseau-linux-et-pare-feu, probe-fuser-porte-de-psmisc,
+probe-ldapsearch-linux-interroge-le-controleur-de-domaine,
+probe-oracle-sqlplus-silencieux-et-rman-a-froid, probe-proc-sys-write-reaches-
+the-store, probe-procfs-does-not-grow, scenario10-linux-audit, tail.
