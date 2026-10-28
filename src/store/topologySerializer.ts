@@ -58,6 +58,7 @@ import {
 } from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
 import { withFactoryTwin } from './factoryTwin';
+import { downloadBlob } from '@/lib/download';
 import { diffDirectory, promotionKind, type DirectoryPromotion } from '@/network/devices/windows/server/ad/DirectoryDelta';
 import type { DirectoryDelta, DirectorySnapshot } from '@/network/devices/windows/server/ad/DirectoryStore';
 import { resetForestRegistry, withIsolatedForestRegistry, type ForestFsmoRoles } from '@/network/devices/windows/server/ad/forest/Forest';
@@ -1633,16 +1634,10 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
 
 export function downloadTopologyJSON(topology: TopologyExport): void {
   const json = JSON.stringify(topology, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${topology.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}.topology.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(
+    new Blob([json], { type: 'application/json' }),
+    `${topology.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}.topology.json`,
+  );
 }
 
 export function openTopologyFile(): Promise<TopologyExport> {

@@ -2,8 +2,9 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, RotateCcw, HelpCircle, Trash2, ScrollText, Undo2, Redo2, Settings } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, ImageDown, RotateCcw, HelpCircle, Trash2, ScrollText, Undo2, Redo2, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getLocale, translate } from '@/i18n';
 
 interface ToolbarProps {
   projectName: string;
@@ -11,6 +12,7 @@ interface ToolbarProps {
   onClearAll?: () => void;
   hasDevices?: boolean;
   onExport?: () => void;
+  onExportImage?: () => void;
   onImport?: () => void;
   onSave?: () => void;
   onOpen?: () => void;
@@ -27,7 +29,7 @@ interface ToolbarProps {
 
 export function Toolbar({
   projectName, onProjectNameChange, onClearAll, hasDevices,
-  onExport, onImport, onSave, onOpen, onReset, onHelp, onSettings,
+  onExport, onExportImage, onImport, onSave, onOpen, onReset, onHelp, onSettings,
   logsOpen, onToggleLogs, onUndo, onRedo, canUndo, canRedo,
 }: ToolbarProps) {
   return (
@@ -77,6 +79,10 @@ export function Toolbar({
         <ToolbarButton icon={FolderOpen} label="Open" onClick={onOpen} />
         <div className="w-px h-6 bg-white/10 mx-2" />
         <ToolbarButton icon={Download} label="Export" onClick={onExport} />
+        <ToolbarButton
+          icon={ImageDown} label={translate(getLocale(), 'export.image.button')}
+          title={translate(getLocale(), 'export.image.buttonTitle')} onClick={onExportImage}
+        />
         <ToolbarButton icon={Upload} label="Import" onClick={onImport} />
         <div className="w-px h-6 bg-white/10 mx-2" />
         <ToolbarButton icon={RotateCcw} label="Reset" onClick={onReset} />
@@ -102,12 +108,13 @@ export function Toolbar({
 interface ToolbarButtonProps {
   icon: React.ElementType;
   label: string;
+  title?: string;
   variant?: 'default' | 'primary';
   onClick?: () => void;
   disabled?: boolean;
 }
 
-function ToolbarButton({ icon: Icon, label, variant = 'default', onClick, disabled }: ToolbarButtonProps) {
+function ToolbarButton({ icon: Icon, label, title, variant = 'default', onClick, disabled }: ToolbarButtonProps) {
   return (
     <button
       onClick={onClick}
@@ -118,7 +125,7 @@ function ToolbarButton({ icon: Icon, label, variant = 'default', onClick, disabl
         variant === 'primary' && "bg-primary/20 text-primary hover:bg-primary/30",
         disabled && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-foreground/70"
       )}
-      title={label}
+      title={title ?? label}
     >
       <Icon className="w-4 h-4" />
       <span className="hidden lg:inline">{label}</span>

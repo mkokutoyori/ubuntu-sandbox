@@ -20,6 +20,7 @@ import { Toolbar } from './Toolbar';
 import { HelpDialog } from './HelpDialog';
 import { SettingsDialog } from '@/components/settings';
 import { SaveTopologyDialog } from './SaveTopologyDialog';
+import { ExportImageDialog } from './ExportImageDialog';
 import { OpenTopologyDialog } from './OpenTopologyDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { MessageDialog } from './MessageDialog';
@@ -65,6 +66,7 @@ export function NetworkDesigner() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [exportImageOpen, setExportImageOpen] = useState(false);
   const [message, setMessage] = useState<{ title: string; description: string } | null>(null);
 
   const { getDevices, clearAll, replaceTopology, deviceInstances, connections } = useNetworkStore();
@@ -93,6 +95,7 @@ export function NetworkDesigner() {
   }, [projectName, deviceInstances, connections]);
 
   const handleExport = useCallback(() => setExportConfirmOpen(true), []);
+  const handleExportImage = useCallback(() => setExportImageOpen(true), []);
 
   const runImport = useCallback(async () => {
     try {
@@ -421,6 +424,7 @@ export function NetworkDesigner() {
         onClearAll={handleClearAll}
         hasDevices={devices.length > 0}
         onExport={handleExport}
+        onExportImage={handleExportImage}
         onImport={handleImport}
         onSave={handleSave}
         onOpen={handleOpen}
@@ -436,6 +440,14 @@ export function NetworkDesigner() {
       />
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ExportImageDialog
+        open={exportImageOpen}
+        onOpenChange={setExportImageOpen}
+        projectName={projectName}
+        devices={devices}
+        connections={connections}
+        onError={(title, description) => setMessage({ title, description })}
+      />
       <SaveTopologyDialog
         open={saveDialogOpen}
         onOpenChange={setSaveDialogOpen}
