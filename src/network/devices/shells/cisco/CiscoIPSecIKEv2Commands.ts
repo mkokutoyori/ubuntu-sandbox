@@ -34,6 +34,16 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Name of the IKEv2 profile' },
 };
 
+const IKEV2_DPD_INTERVAL: ArgumentSpec = {
+  name: 'intervalle', type: 'INT', range: [10, 3600],
+  description: 'Interval between liveness checks, in seconds',
+};
+
+const IKEV2_DPD_RETRY: ArgumentSpec = {
+  name: 'reprise', type: 'INT', range: [2, 60],
+  description: 'Interval between retries, in seconds',
+};
+
 const positive = (name: string, description: string): ArgumentSpec => ({
   name, type: 'WORD', description, pattern: /^[1-9]\d{0,9}$/,
   alternatives: [{ keyword: '<number>', description }],
@@ -46,8 +56,8 @@ export function ikev2GlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
     {
       ...base, id: 'config-crypto-ikev2-dpd',
       path: ['crypto', 'ikev2', 'dpd',
-        positive('interval', 'DPD interval in seconds'),
-        positive('retry', 'DPD retry interval in seconds'),
+        { ...IKEV2_DPD_INTERVAL, name: 'interval' },
+        { ...IKEV2_DPD_RETRY, name: 'retry' },
         {
           name: 'mode', type: 'ENUM', description: 'DPD mode',
           values: [
@@ -442,7 +452,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
 const IKEV2_KEYRING_PEER_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   address: [{ name: 'adresse', type: 'IP_ADDR', description: 'Address of the peer' },
-    AUTRES],
+    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Mask of the peer network' }],
   'pre-shared-key': [{
     name: 'secret', type: 'WORD', description: 'The shared secret',
   }, AUTRES],
@@ -460,7 +470,7 @@ const IKEV2_PROFILE_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'match identity remote address': [
     { name: 'adresse', type: 'IP_ADDR', description: 'Address of the remote peer' },
-    AUTRES],
+    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Mask of the remote network' }],
   'authentication local': METHODE_AUTH,
   'authentication remote': METHODE_AUTH,
   keyring: { name: 'nom', type: 'WORD', description: 'Name of the IKEv2 keyring' },
@@ -477,8 +487,8 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     ['fqdn', 'Use a fully qualified domain name'],
   ]), AUTRES],
   dpd: [
-    { name: 'intervalle', type: 'INT', range: [10, 3600], description: 'Interval between liveness checks, in seconds' },
-    { name: 'reprise', type: 'INT', range: [2, 60], description: 'Interval between retries, in seconds' },
+    IKEV2_DPD_INTERVAL,
+    IKEV2_DPD_RETRY,
     IKEV2_ENUM('mode', 'When to send the liveness check', [
       ['on-demand', 'Only when there is no incoming traffic'],
       ['periodic', 'At every interval'],

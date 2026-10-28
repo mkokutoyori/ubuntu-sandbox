@@ -4189,12 +4189,12 @@ probe-ipv6-se-fragmente (tcpdump ICMPv6), probe-linux-ne-lit-pas-le-fuseau-du-
 processus, plus the Linux oracle and crypto reds listed above. None is caused by
 the Cisco socle series; they are recorded so a sweep is read against them.
 
-## IKEv2 global settings: upper bounds not enforced (source unreachable)
+## IKEv2 global settings: three upper bounds not enforced (source unreachable)
 
-`crypto ikev2 dpd`, `nat keepalive`, `cookie-challenge` and `window` now refuse
-non-numeric and zero values, but their upper bounds are not enforced and the
-help does not announce a range: the Cisco command reference for the IKEv2
-forms could not be reached (a search returned the IKEv1 `crypto isakmp
-keepalive` page, 10-3600 s periodic and 2-60 s retry, which is a different
-command and was not applied by analogy). Fetch the IKEv2 pages, then declare
-the ranges on the places in CiscoIPSecIKEv2Commands.ts.
+`crypto ikev2 nat keepalive`, `cookie-challenge` and `window` refuse
+non-numeric and zero values (cookie-challenge accepts zero), but their upper
+bounds are not enforced and the help announces no range: the Cisco command
+reference for the IKEv2 forms could not be reached. `crypto ikev2 dpd` shares
+the 10-3600 / 2-60 ranges the IKEv2 profile `dpd` of the same file already
+declared. Fetch the IKEv2 pages, then declare the three ranges on the places in
+CiscoIPSecIKEv2Commands.ts.
