@@ -13,6 +13,7 @@
  */
 
 import { vrfShowFamily } from '@/cli/commands/l3vpn/l3vpnFamily';
+import { refuseUnknownDiscoveryArgs } from './cisco/showSelectors';
 import { vrfShowHostOf } from './cisco/l3vpnHost';
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
 import type { Equipment, EnableSecretAlgorithm } from '@/network/equipment/Equipment';
@@ -5818,8 +5819,14 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         this.hasSwitchingHardware() && !this.providesOwnMacAddressTableView(),
       macAddressTable: () =>
         ['Mac Address Table', '--------------------------------', 'No entries'].join('\n'),
-      cdp: (args) => showCdp(this.cs(), args.join(' '), this.configState.isEnabled('cdp')),
-      lldp: (args) => showLldp(this.cs(), args.join(' '), this.configState.isEnabled('lldp')),
+      cdp: (args) => {
+        refuseUnknownDiscoveryArgs('cdp', args);
+        return showCdp(this.cs(), args.join(' '), this.configState.isEnabled('cdp'));
+      },
+      lldp: (args) => {
+        refuseUnknownDiscoveryArgs('lldp', args);
+        return showLldp(this.cs(), args.join(' '), this.configState.isEnabled('lldp'));
+      },
       snmp: () => showSnmp(this.cs(), this.getChassisProfile()),
       parserView: (args) => {
         const sec = getSecurityConfig(this.d());

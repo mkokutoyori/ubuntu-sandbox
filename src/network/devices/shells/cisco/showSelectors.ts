@@ -25,3 +25,27 @@ export function refuseUnknownSelector(args: readonly string[], allowed: Selector
   const bad = args.findIndex((word, at) => at >= allowed.max || !fits(word, allowed));
   if (bad >= 0) throw new CliInvalidInput({ token: args[bad] });
 }
+
+const NEIGHBOR_TAIL: SelectorWords = { keywords: ['detail'], interfaces: true, max: 2 };
+const SINGLE_INTERFACE: SelectorWords = { interfaces: true, max: 1 };
+const NO_TAIL: SelectorWords = { max: 0 };
+
+export function refuseUnknownDiscoveryArgs(protocol: 'cdp' | 'lldp', words: readonly string[]): void {
+  if (words.length === 0) return;
+  const first = words[0].toLowerCase();
+  const tail = words.slice(1);
+  const stems: ReadonlyArray<readonly [string, SelectorWords | 'free']> = [
+    ['neighbor', NEIGHBOR_TAIL], ['interface', SINGLE_INTERFACE], ['traffic', NO_TAIL],
+    ['entry', 'free'],
+    ...(protocol === 'lldp'
+      ? [['local', NO_TAIL], ['errors', NO_TAIL]] as const
+      : []),
+  ];
+  const match = stems.find(([stem]) => first.startsWith(stem));
+  if (!match) throw new CliInvalidInput({ token: words[0] });
+  if (match[1] === 'free') {
+    if (tail.length > 1) throw new CliInvalidInput({ token: tail[1] });
+    return;
+  }
+  refuseUnknownSelector(tail, match[1]);
+}
