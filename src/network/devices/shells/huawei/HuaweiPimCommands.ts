@@ -47,6 +47,10 @@ export function registerHuaweiPimInterfaceCommands(trie: CommandTrie, ctx: Huawe
       return HUAWEI_ERRORS.INCOMPLETE('pim');
     }
     const sub = args[0].toLowerCase();
+    const arity: Record<string, number> = { sm: 1, dm: 1, 'hello-option': 3, timer: 3 };
+    if (args.length > (arity[sub] ?? args.length)) {
+      return 'Error: Wrong parameter found at \'^\' position.';
+    }
 
     if (sub === 'sm') { a.enableInterface(iface, 'sparse'); return ''; }
     if (sub === 'dm') { a.enableInterface(iface, 'dense'); return HUAWEI_PIM_DM_NOTE; }

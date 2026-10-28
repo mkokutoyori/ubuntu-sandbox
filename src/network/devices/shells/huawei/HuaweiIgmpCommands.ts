@@ -38,6 +38,10 @@ export function registerHuaweiIgmpInterfaceCommands(trie: CommandTrie, ctx: Huaw
       return HUAWEI_ERRORS.INCOMPLETE('igmp');
     }
     const sub = args[0].toLowerCase();
+    const arity: Record<string, number> = { enable: 1, version: 2, 'static-group': 2 };
+    if (args.length > (arity[sub] ?? args.length)) {
+      return 'Error: Wrong parameter found at \'^\' position.';
+    }
 
     if (sub === 'enable') {
       a.enableInterface(iface, a.getInterfaceRuntime(iface)?.version ?? 2);
