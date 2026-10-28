@@ -1,7 +1,7 @@
 /*
  * The sub-commands of `neighbor <peer> ...` under `router bgp` are judged.
  *
- * Measured before the change: 19 of the 42 cases fall. Anything after the
+ * Measured before the change: 29 of the 59 cases fall. Anything after the
  * peer that the handler did not know was pushed verbatim into the neighbor's
  * attribute list and rendered back, so `update-source zorglub`,
  * `ebgp-multihop zorglub`, `ebgp-multihop 300`, `timers zorglub`, a
@@ -17,6 +17,12 @@
  * stray word after the RIP network, an EIGRP wildcard that is not an address,
  * and a BGP tail that is not `mask A.B.C.D`, `route-map NAME` or `backdoor`
  * were accepted and (for BGP) rendered back verbatim.
+ *
+ * The process-options block adds 10 failing cases: `passive-interface default
+ * zorglub`, `default-information zorglub` / `originate zorglub` (the handler
+ * ignored every argument), `bgp <unknown option>`, a flag option with a
+ * trailing word, and `timers bgp` with a non-number, one value, a third value
+ * or a first word that is not `bgp`.
  */
 import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -111,5 +117,41 @@ describe('network under rip, eigrp and bgp', () => {
   ])('witness: %s accepts `%s`', async (entry, line) => {
     const r = await inProtocol(entry);
     expect(await r.executeCommand(line)).toBe('');
+  });
+});
+
+describe('process options of rip, eigrp and bgp', () => {
+  const inside = async (...lines: string[]): Promise<Cli> => {
+    const r = new CiscoRouter('R1', 0, 0) as unknown as Cli & { powerOn(): void };
+    r.powerOn();
+    for (const l of ['enable', 'configure terminal', ...lines]) await r.executeCommand(l);
+    return r;
+  };
+
+  it.each([
+    ['router rip', 'passive-interface default zorglub'],
+    ['router rip', 'default-information zorglub'],
+    ['router rip', 'default-information originate zorglub'],
+    ['router eigrp 100', 'passive-interface default zorglub'],
+    ['router bgp 65001', 'bgp log-neighbor-changes zorglub'],
+    ['router bgp 65001', 'bgp zorglub'],
+    ['router bgp 65001', 'timers bgp zorglub'],
+    ['router bgp 65001', 'timers bgp 10'],
+    ['router bgp 65001', 'timers zorglub 10 30'],
+    ['router bgp 65001', 'timers bgp 10 30 40'],
+  ])('%s: refuses `%s`', async (entry, line) => {
+    expect(await (await inside(entry)).executeCommand(line)).toMatch(REFUSED);
+  });
+
+  it.each([
+    ['router rip', 'passive-interface default'],
+    ['router rip', 'default-information originate'],
+    ['router rip', 'default-information originate route-map RM'],
+    ['router bgp 65001', 'bgp log-neighbor-changes'],
+    ['router bgp 65001', 'bgp bestpath compare-routerid'],
+    ['router bgp 65001', 'bgp default local-preference 200'],
+    ['router bgp 65001', 'timers bgp 10 30'],
+  ])('witness: %s accepts `%s`', async (entry, line) => {
+    expect(await (await inside(entry)).executeCommand(line)).toBe('');
   });
 });

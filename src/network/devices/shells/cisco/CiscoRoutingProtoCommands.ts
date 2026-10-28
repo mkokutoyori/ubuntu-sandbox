@@ -316,6 +316,28 @@ const BGP_NEIGHBOR_TAILS: Readonly<Record<string, NeighborJudge>> = {
   'unsuppress-map': (words) => needsWord(words, 0),
 };
 
+const BGP_FLAG_OPTIONS = new Set([
+  'log-neighbor-changes', 'deterministic-med', 'always-compare-med', 'fast-external-fallover',
+  'redistribute-internal', 'suppress-inactive', 'graceful-restart',
+]);
+const BGP_VALUE_OPTIONS = new Set([
+  'bestpath', 'cluster-id', 'confederation', 'maxas-limit', 'asnotation', 'update-delay',
+  'listen', 'dampening', 'default', 'nexthop', 'additional-paths', 'always-compare-med',
+]);
+
+function judgeBgpProcessOption(words: readonly string[]): void {
+  const option = words[0]?.toLowerCase();
+  if (option === undefined) throw new CliIncomplete();
+  if (BGP_FLAG_OPTIONS.has(option)) {
+    if (words.length > 1 && !(option === 'graceful-restart')) {
+      throw new CliInvalidInput({ token: words[1] });
+    }
+    return;
+  }
+  if (!BGP_VALUE_OPTIONS.has(option)) throw new CliInvalidInput({ token: words[0] });
+  if (words.length < 2) throw new CliIncomplete();
+}
+
 function judgeBgpNetworkTail(args: readonly string[]): void {
   let at = 1;
   const seen = new Set<string>();
@@ -478,6 +500,7 @@ function buildRouterSubmodeOn(
     if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
+      if (a.length > 1) throw new CliInvalidInput({ token: a[1] });
       if (p === 'rip') repo.rip.passiveDefault = true;
       else if (p === 'eigrp') eigrp().passiveDefault = true;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, true);
@@ -492,6 +515,7 @@ function buildRouterSubmodeOn(
     if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
+      if (a.length > 1) throw new CliInvalidInput({ token: a[1] });
       if (p === 'rip') repo.rip.passiveDefault = false;
       else if (p === 'eigrp') eigrp().passiveDefault = false;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, false);
@@ -569,7 +593,16 @@ function buildRouterSubmodeOn(
     }
     return '';
   });
-  routerTrie.registerGreedy('default-information', 'Default route control', () => {
+  routerTrie.registerGreedy('default-information', 'Default route control', (a) => {
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (a[0].toLowerCase() !== 'originate') throw new CliInvalidInput({ token: a[0] });
+    const allowRouteMap = curProto(ctx).proto === 'rip';
+    if (a.length > 1 && !(allowRouteMap && a[1].toLowerCase() === 'route-map' && a.length === 3)) {
+      if (allowRouteMap && a[1].toLowerCase() === 'route-map' && a.length === 2) {
+        return CISCO_ERRORS.INCOMPLETE;
+      }
+      throw new CliInvalidInput({ token: a[1] });
+    }
     if (curProto(ctx).proto === 'rip') {
       repo.rip.defaultInfoOriginate = true;
       ctx.r().ripSetDefaultInformationOriginate(true);
@@ -625,8 +658,15 @@ function buildRouterSubmodeOn(
       });
       return '';
     }
-    // `timers bgp <keepalive> <hold>` was accepted and rendered nowhere.
-    if (p === 'bgp') { const b = bgp(); if (b) pushOnce(b.extras, line); }
+    if (p === 'bgp') {
+      if (a[0]?.toLowerCase() !== 'bgp') throw new CliInvalidInput({ token: a[0] });
+      if (a.length < 3) return CISCO_ERRORS.INCOMPLETE;
+      for (const at of [1, 2]) {
+        if (boundedInteger(a[at], 0, BGP_TIMER_MAX) === null) throw new CliInvalidInput({ token: a[at] });
+      }
+      if (a.length > 3) throw new CliInvalidInput({ token: a[3] });
+      const b = bgp(); if (b) pushOnce(b.extras, line);
+    }
     else if (p === 'eigrp') pushOnce(eigrp().extras, line);
     return '';
   });
@@ -907,8 +947,7 @@ function buildRouterSubmodeOn(
       bgpEng().getConfig().defaultLocalPref = lp;
       converge();
     } else {
-      // Every other `bgp <option>` — `log-neighbor-changes` and friends —
-      // was accepted and rendered nowhere. Keep the line as typed.
+      judgeBgpProcessOption(a);
       const b = bgp();
       if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     }
