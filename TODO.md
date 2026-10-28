@@ -4129,3 +4129,7 @@ atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à 
 ## Cisco: wording of the outbound transport refusals
 
 Measured: `transport output` is enforced for `telnet` and `ssh` launched from a console, aux or vty session (the vty block is found by the session's line index). The refusal wordings `% Telnet connections not permitted from this terminal` and `% SSH connections not permitted from this terminal` are written from memory of IOS: the Cisco documentation was not reachable to confirm them. Scripted and non-interactive `telnet`/`ssh` (`executeCommand`) do not consult the setting. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner`, also unconfirmed. `speed`, `databits`, `stopbits`, `parity` and `flowcontrol` are stored and rendered on console and aux lines but drive no serial-line model: the simulator has no UART.
+
+## Linux: known_hosts is written hashed, linux-hosts-hostname-hijack expects the plain name
+
+Measured: `src/__tests__/unit/network-v2/linux-hosts-hostname-hijack.test.ts` ("première connexion légitime enregistre la clé du vrai serveur sous le nom d'hôte") fails on the base commit too: `cat ~/.ssh/known_hosts` returns a `|1|salt|hash ssh-ed25519 …` line, the test expects `serveur-legitime.domaine.local` in clear. Either the client hashes by default (Ubuntu's `HashKnownHosts yes`, which would make the test's premise false) or the test predates the hashing. Not decided: it needs the OpenSSH `ssh_config` default of the distribution the simulator claims to be.
