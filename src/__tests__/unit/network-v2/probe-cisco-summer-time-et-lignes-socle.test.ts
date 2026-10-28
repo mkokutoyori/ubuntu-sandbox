@@ -839,3 +839,43 @@ describe('key chains', () => {
     expect(await r.executeCommand('send-id 300')).toContain('Invalid input');
   });
 });
+
+/*
+ * Twenty-second batch (track list submode): the options are typed. The handlers scanned the word
+ * list for up, down, weight and not and parsed with parseInt, so `delay up` (no value) and
+ * `delay up 999` were taken for something; `object 5 weight` stored NaN. Measured with git stash:
+ * 1 of 7 fails before (the bare threshold, which stored nothing and answered empty); the range and
+ * weight refusals were already given by the adapter's typed places, so they pass either way as
+ * non-regressions, like the witnesses.
+ */
+describe('track list submode', () => {
+  const list = (...more: string[]) => router('track 10 list boolean and', ...more);
+  it('witness: a boolean list takes an object with not', async () => {
+    const r = await list();
+    expect(await r.executeCommand('object 1 not')).toBe('');
+  });
+  it('witness: a delay is stored', async () => {
+    const r = await list();
+    expect(await r.executeCommand('delay up 10 down 20')).toBe('');
+  });
+  it('witness: no delay answers', async () => {
+    const r = await list('delay up 10');
+    expect(await r.executeCommand('no delay')).toBe('');
+  });
+  it('refuses a delay out of range', async () => {
+    const r = await list();
+    expect(await r.executeCommand('delay up 999')).toContain('Invalid input');
+  });
+  it('refuses a weight with no value', async () => {
+    const r = await list();
+    expect(await r.executeCommand('object 5 weight')).toMatch(/Incomplete|Invalid input/);
+  });
+  it('answers incomplete to a bare threshold', async () => {
+    const r = await list();
+    expect(await r.executeCommand('threshold')).toContain('Incomplete');
+  });
+  it('witness: threshold up and down are accepted', async () => {
+    const r = await list();
+    expect(await r.executeCommand('threshold up 2 down 1')).toBe('');
+  });
+});

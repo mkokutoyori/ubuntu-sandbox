@@ -118,7 +118,7 @@ import {
 } from './cisco/CiscoVxlanCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import {
-  buildTrackConfigCommands, trackShowSpecs, trackSubmodeSpecs,
+  trackShowSpecs, trackSubmodeSpecs,
   trackEntrySpecs, routerTrackEntryHost,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
@@ -625,7 +625,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaHttpRawSpecs(this),
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
-      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
+      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config', 'config-track']),
       ...keyChainFamily(() => this.keyChainHost(), (mode) => this.setMode(mode as CiscoShellMode)),
       ...routeMapSpecs(() => this.routeMapHost()),
       ...aclHeadSpecs(() => this.aclHeadHost()),
@@ -2447,7 +2447,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         r: () => this.d(),
       });
     }
-    buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
