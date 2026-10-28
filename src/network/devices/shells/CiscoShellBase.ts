@@ -80,7 +80,6 @@ import {
   parseSummerTimeRule, type SummerTimeRule,
 } from './cisco/clockSummerTime';
 import { pingRequestOfSpec } from './cisco/echoSpecs';
-import { toutesLesSuites } from './cisco/ciscoContinuations';
 import type { ParsedPing } from './cisco/ciscoPing';
 import { privilegeRuleSpecs, type PrivilegeRuleHost } from './cisco/privilegeRuleSpecs';
 import { ipSshSpecs, type IpSshHost } from './cisco/ipSshSpecs';
@@ -221,6 +220,7 @@ import {
 } from '../inspection/config/AliasRepository';
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
 import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
+import { sharedShowFamily, type SharedShowHost } from '../../../cli/commands/show/sharedShowFamily';
 import { outgoingSessionFamily, type OutgoingSessionHost } from '../../../cli/commands/session/outgoingSessionFamily';
 import { snmpHostFamily } from '../../../cli/commands/snmp/snmpHostFamily';
 import { summerTimeFamily } from '../../../cli/commands/clock/summerTimeFamily';
@@ -238,7 +238,7 @@ import { absoluteLineNumber } from '../router/aaa/SshSessionRegistry';
 import { setupInteractionPlan } from './cisco/CiscoSetupDialog';
 import {
   scopedTrie, PRIVILEGED_ONLY_SHOW_CHILDREN, PRIVILEGED_ONLY_PATHS,
-  PRIVILEGED_EXEC_ONLY, type ExecScope,
+  type ExecScope,
 } from './cisco/CiscoExecScope';
 import {
   loggingShowViews, severityValues,
@@ -540,42 +540,6 @@ const FICHIER_CISCO = (nom: string, description: string): ArgumentSpec => ({
  * DELEGATIONS — systeme de fichiers, sessions sortantes, EXEC du DNS —
  * la ou elles sont, migrees ou non.
  */
-const SHOW_PARTAGEES: ReadonlySet<string> = new Set([
-  'show interfaces counters errors', 'show mac address-table', 'terminal',
-  'show ntp packets', 'show cdp', 'show lldp', 'show snmp', 'show parser view',
-  'show hosts', 'show ip dns statistics',
-  'show redundancy', 'show aaa',
-]);
-/*
- * `show adjacency` n'est PAS partagee : le commutateur en enregistre une
- * autre, plus riche (elle lit sa table ARP et connait `detail` et
- * `summary`), qui gagnait dans le trie parce qu'elle est declaree apres.
- * La declarer au socle la ferait perdre — mesure par
- * `cisco-switch-l3-referential`.
- */
-
-const SHARED_SHOW_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'show snmp': { name: 'vue', type: 'REST', optional: true,
-    description: 'SNMP detail to display' },
-  'show hosts': null,
-  'show adjacency': { name: 'reste', type: 'REST', optional: true,
-    description: 'Adjacency detail to display' },
-  'show ip dns statistics': null,
-  'show interfaces counters errors': null,
-  'show redundancy': null,
-  'show aaa': { name: 'reste', type: 'REST', optional: true,
-    description: 'AAA detail to display' },
-  'show mac address-table': { name: 'filtre', type: 'REST', optional: true,
-    description: 'Filter the MAC address table' },
-  /*
-   * La place est EXIGEE : `terminal` seul est declare incomplet par le
-   * gestionnaire, et la place facultative de l'adaptateur ferait
-   * annoncer `<cr>` a une commande qui ne s'ecrit jamais seule.
-   */
-  terminal: { name: 'reglage', type: 'REST', description: 'Terminal parameter to set' },
-};
-
 const FILESYSTEM_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   dir: { ...FICHIER_CISCO('filesystem', 'Filesystem or directory to list'),
@@ -6010,16 +5974,47 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
    * seconde fois leverait un doublon.
    */
   protected sharedShowSpecs(): readonly CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerCommonShowCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['user', 'privileged'], minPrivilege: 1,
-        modesFor: (path) => PRIVILEGED_EXEC_ONLY.has(path) ? ['privileged'] : undefined,
-        skip: (path) => !SHOW_PARTAGEES.has(path),
-        argumentFor: (path) => SHARED_SHOW_ARGUMENTS[path],
-        keywordsFor: toutesLesSuites,
+    return sharedShowFamily(() => this.sharedShowHost());
+  }
+
+  private sharedShowHost(): SharedShowHost {
+    return {
+      errorCounters: () => renderInterfaceErrorCounters(this.d().getPortNames().map((name) => {
+        const c = this.d().getPort(name)?.getCounters();
+        const inErr = c?.errorsIn ?? 0;
+        return {
+          port: ciscoShortInterfaceName(name), alignErr: 0, fcsErr: inErr,
+          xmitErr: c?.errorsOut ?? 0, rcvErr: inErr, underSize: 0, outDiscards: 0,
+        };
+      })),
+      providesMacAddressTable: () =>
+        this.hasSwitchingHardware() && !this.providesOwnMacAddressTableView(),
+      macAddressTable: () =>
+        ['Mac Address Table', '--------------------------------', 'No entries'].join('\n'),
+      cdp: (args) => showCdp(this.cs(), args.join(' '), this.configState.isEnabled('cdp')),
+      lldp: (args) => showLldp(this.cs(), args.join(' '), this.configState.isEnabled('lldp')),
+      snmp: () => showSnmp(this.cs(), this.getChassisProfile()),
+      parserView: (args) => {
+        const sec = getSecurityConfig(this.d());
+        if (args.length === 0) {
+          return `Current view is '${this.activeParserView ?? 'root'}'`;
+        }
+        if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
+        if (sec.parserViews.size === 0) return 'No views are configured';
+        const lignes = ['Views/SuperViews Present in System:'];
+        for (const v of sec.parserViews.values()) {
+          lignes.push(v.superview ? `${v.name} *` : v.name);
+        }
+        lignes.push('-------(*) represent superview-------');
+        return lignes.join('\n');
       },
-    );
+      hosts: () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]),
+      dnsStatistics: () =>
+        showIpDnsStatistics(this.d() as unknown as Parameters<typeof showIpDnsStatistics>[0]),
+      hasRedundancy: () => this.hasSwitchingHardware(),
+      redundancy: () => showRedundancy(),
+      aaa: (args) => showAaa(getSecurityConfig(this.d() as unknown as Router), args.join(' ')),
+    };
   }
 
   protected sessionSpecs(): readonly CommandSpec[] {
@@ -9245,39 +9240,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // Elle repondait `% Invalid input`. Le rendu est le meme parce que
     // c'est la meme question : deux textes pour une question feraient
     // douter de la machine.
-    trie.registerGreedy('show interfaces counters errors', 'Display interface error counters', () =>
-      renderInterfaceErrorCounters(this.d().getPortNames().map((name) => {
-        const c = this.d().getPort(name)?.getCounters();
-        const inErr = c?.errorsIn ?? 0;
-        return {
-          port: ciscoShortInterfaceName(name), alignErr: 0, fcsErr: inErr,
-          xmitErr: c?.errorsOut ?? 0, rcvErr: inErr, underSize: 0, outDiscards: 0,
-        };
-      })));
     this.registerFileSystemCommands(target);
-    // La table des PAQUETS TECHNOLOGIQUES — celle que la machine imprime
-    // au demarrage — n'avait aucune commande pour la relire : elle
-    // defilait une fois et disparaissait. C'est une AUTRE table que
-    // celle de `show license`, qui liste les licences par
-    // fonctionnalite ; les confondre ferait croire qu'un routeur sans
-    // `uc` n'a pas de ligne `uc`. Meme source que le demarrage.
-    // `getMacTable` — minuscule — n'est défini sur AUCUN appareil : celui
-    // que `Switch` porte s'appelle `getMACTable()`. Le lecteur rendait
-    // donc `undefined`, et cette vue répondait « No entries » quoi que le
-    // commutateur ait appris — y compris après un DORA et un ping
-    // réussis, avec deux entrées bien présentes dans sa table. Exactement
-    // le défaut de `_getRunningConfigText` décrit trois lignes plus bas,
-    // dans ce même fichier.
-    //
-    // Pire : cette inscription MASQUAIT celle de `CiscoSwitchShell`, qui
-    // est complète (filtres `dynamic`/`static`/`vlan`/`interface`, tri,
-    // colonnes). Un commutateur avait donc une vue juste que personne
-    // n'atteignait. Elle n'est désormais posée que si l'appareil n'en
-    // fournit pas de meilleure.
-    if (this.hasSwitchingHardware() && !this.providesOwnMacAddressTableView()) {
-      trie.registerGreedy('show mac address-table', 'Display MAC address table', () =>
-        ['Mac Address Table', '--------------------------------', 'No entries'].join('\n'));
-    }
     // `_getRunningConfigText` n'est défini sur AUCUN appareil : il n'est
     // que lu, ici et à deux autres endroits. Mesuré avant correction,
     // `show running-config all` rendait donc « Building configuration... »
@@ -9301,52 +9264,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     // tous le tableau des associations. Chaque sous-commande est
     // desormais un chemin reel, et ce que la plateforme n'a pas est
     // refuse comme IOS refuse (meme defaut que `display vrrp`, lot V15).
-    trie.registerGreedy('show cdp', 'Display CDP information', (a) =>
-      showCdp(this.cs(), a.join(' '), this.configState.isEnabled('cdp')), [
-      { keyword: 'neighbors', description: 'CDP neighbor entries' },
-      { keyword: 'entry',     description: 'Information for specific neighbor entry' },
-      { keyword: 'interface', description: 'CDP interface status and configuration' },
-      { keyword: 'traffic',   description: 'CDP statistics' },
-    ]);
-    trie.registerGreedy('show lldp', 'Display LLDP information', (a) =>
-      showLldp(this.cs(), a.join(' '), this.configState.isEnabled('lldp')), [
-      { keyword: 'neighbors', description: 'LLDP neighbor entries' },
-      { keyword: 'entry',     description: 'Information for specific neighbor entry' },
-      { keyword: 'errors',    description: 'LLDP computational errors and overflows' },
-      { keyword: 'interface', description: 'LLDP interface status and configuration' },
-      { keyword: 'local-info', description: 'Local LLDP information' },
-      { keyword: 'traffic',   description: 'LLDP statistics' },
-    ]);
-    trie.registerGreedy('show snmp', 'Display SNMP status', () => showSnmp(this.cs(), this.getChassisProfile()));
-    /**
-     * `show parser view [all]`.
-     *
-     * Sans argument : la vue COURANTE de cette session. Avec `all` : les
-     * vues declarees sur l'equipement. Deux questions differentes, deux
-     * reponses -- c'est le defaut qu'on vient de refermer sur `show aaa`.
-     */
-    trie.registerGreedy('show parser view', 'Display CLI view information', (args) => {
-      const sec = getSecurityConfig(this.d());
-      if (args.length === 0) {
-        return `Current view is '${this.activeParserView ?? 'root'}'`;
-      }
-      if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
-      if (sec.parserViews.size === 0) return 'No views are configured';
-      // L'etoile est la SEULE information que cette vue apporte de plus
-      // que la configuration : laquelle des vues declarees est une
-      // supervue. Sans elle et sans sa legende, la commande recopie une
-      // liste de noms.
-      const lignes = ['Views/SuperViews Present in System:'];
-      for (const v of sec.parserViews.values()) {
-        lignes.push(v.superview ? `${v.name} *` : v.name);
-      }
-      lignes.push('-------(*) represent superview-------');
-      return lignes.join('\n');
-    });
-    // Le nœud intermédiaire porte sa description, APRÈS l'enregistrement
-    // qui le crée : `describeNode` sort en silence sur un nœud absent.
-    trie.describeNode('show parser', 'Display parser information');
-
     /*
      * `show ip http server status` et `... all` LISENT le service, elles
      * ne récitent pas un texte : le port, la méthode d'authentification
@@ -9356,18 +9273,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
      * aucune connexion n'est retenue, aucun module n'est déclaré — donc
      * `all` rend l'état et le dit, plutôt que d'inventer deux tableaux.
      */
-    trie.registerGreedy('show hosts', 'Display host cache', () => showHosts(this.d() as unknown as Parameters<typeof showHosts>[0]));
     registerCiscoDnsExecCommands(target, this.dnsCommandContext());
-    trie.registerGreedy('show ip dns statistics', 'Display DNS server statistics', () =>
-      showIpDnsStatistics(this.d() as unknown as Parameters<typeof showIpDnsStatistics>[0]));
-    if (this.hasSwitchingHardware()) {
-      trie.registerGreedy('show redundancy', 'Display redundancy state', () =>
-        showRedundancy());
-    }
-    trie.registerGreedy('show aaa', 'Display AAA state', (a) => {
-      const dev = this.d() as unknown as Router;
-      return showAaa(getSecurityConfig(dev), a.join(' '));
-    });
   }
 
   /** Map a CLI alias mode keyword to the repository's AliasMode. */

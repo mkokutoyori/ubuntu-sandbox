@@ -463,3 +463,48 @@ describe('outgoing session commands', () => {
     }
   });
 });
+
+/*
+ * Thirteenth batch (shared show commands): 0 of 8 fail before, by design. These commands were
+ * registered twice (the trie and the adapter) and one table (SHOW_PARTAGEES) listed names that no
+ * longer existed (`terminal`, `show ntp packets`); the cases pin the behaviour of the single
+ * declaration, including the two privilege rules the old scoped trie applied.
+ */
+describe('shared show commands', () => {
+  it('witness: show hosts answers in privileged mode', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show hosts')).toContain('Name servers');
+  });
+  it('show snmp is refused at the user prompt and answered at the privileged one', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show snmp')).not.toContain('Invalid input');
+    await r.executeCommand('disable');
+    expect(await r.executeCommand('show snmp')).toContain('Invalid input');
+  });
+  it('show cdp neighbors answers', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show cdp neighbors')).not.toContain('Invalid input');
+  });
+  it('show parser view answers with the current view', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show parser view')).toContain('Current view is');
+  });
+  it('show parser view refuses an unknown scope', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show parser view zorglub')).toContain('Invalid input');
+  });
+  it('names the cdp forms in help', async () => {
+    const r = await router('end');
+    const help = r.cliHelp('show cdp ');
+    expect(help).toContain('neighbors');
+    expect(help).toContain('traffic');
+  });
+  it('show interfaces counters errors answers', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show interfaces counters errors')).toContain('Port');
+  });
+  it('show aaa answers', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show aaa')).not.toContain('Invalid input');
+  });
+});
