@@ -4133,3 +4133,7 @@ Measured: `transport output` is enforced for `telnet` and `ssh` launched from a 
 ## Linux: known_hosts is written hashed, linux-hosts-hostname-hijack expects the plain name
 
 Measured: `src/__tests__/unit/network-v2/linux-hosts-hostname-hijack.test.ts` ("première connexion légitime enregistre la clé du vrai serveur sous le nom d'hôte") fails on the base commit too: `cat ~/.ssh/known_hosts` returns a `|1|salt|hash ssh-ed25519 …` line, the test expects `serveur-legitime.domaine.local` in clear. Either the client hashes by default (Ubuntu's `HashKnownHosts yes`, which would make the test's premise false) or the test predates the hashing. Not decided: it needs the OpenSSH `ssh_config` default of the distribution the simulator claims to be.
+
+## Cisco: `boot system` is not rendered in the running-config
+
+Measured: `boot system flash:image.bin` is stored (`CiscoFileSystem.addBootSystem`) and read back by `show boot` (`BOOT variable = flash:image.bin`), but `show running-config` on a router and on a switch never writes the line, so an exported topology loses it on import. The two renderers (`showRunningConfig` for the router, `buildRunningConfig` for the switch) do not reach the shell's file system. Not closed: they need a narrow port to the boot list.

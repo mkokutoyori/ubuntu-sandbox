@@ -646,3 +646,61 @@ describe('dns client and server configuration', () => {
     expect(r.cliHelp('ip domain-lookup ')).toContain('source-interface');
   });
 });
+
+/*
+ * Seventeenth batch (hostname, boot, line entry): 0 of 10 fail before, by design. These were the
+ * remains of registerCommonConfigCommands, registered on the config trie and re-adapted three
+ * times (line, identity and boot, services); that function and the three adapters are gone. The
+ * line head is now a typed path (kind keyword, then a ranged first and last), so the three
+ * hand-written checks of analyserTeteLigne are the parser's.
+ */
+describe('hostname, boot and line entry', () => {
+  it('witness: hostname changes the prompt name and no hostname restores it', async () => {
+    const r = await router('hostname EDGE1');
+    expect(await r.executeCommand('show running-config')).toContain('hostname EDGE1');
+    await r.executeCommand('no hostname');
+    expect(await r.executeCommand('show running-config')).not.toContain('hostname EDGE1');
+  });
+  it('answers incomplete to hostname alone', async () => {
+    const r = await router();
+    expect(await r.executeCommand('hostname')).toContain('Incomplete');
+  });
+  it('line vty 0 4 enters the line mode', async () => {
+    const r = await router('line vty 0 4');
+    expect(await r.executeCommand('exec-timeout 5 0')).toBe('');
+  });
+  it('refuses a line number out of range', async () => {
+    const r = await router();
+    expect(await r.executeCommand('line vty 99')).toContain('Invalid input');
+  });
+  it('refuses a reversed range', async () => {
+    const r = await router();
+    expect(await r.executeCommand('line vty 5 2')).toContain('Invalid input');
+  });
+  it('refuses an unknown line kind', async () => {
+    const r = await router();
+    expect(await r.executeCommand('line zorglub 0')).toContain('Invalid input');
+  });
+  it('answers incomplete to line vty alone', async () => {
+    const r = await router();
+    expect(await r.executeCommand('line vty')).toContain('Incomplete');
+  });
+  it('accepts the con abbreviation', async () => {
+    const r = await router('line con 0');
+    expect(await r.executeCommand('login local')).toBe('');
+  });
+  it('no line vty removes the block and refuses the console', async () => {
+    const r = await router('line vty 0 4', 'exit', 'no line vty 0 4');
+    expect(await r.executeCommand('no line console 0')).toContain("Can't delete console line");
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show running-config')).not.toContain('line vty 0 4');
+  });
+  it('boot system stores an image and no boot system removes it', async () => {
+    const r = await router('boot system flash:image.bin', 'end');
+    expect(await r.executeCommand('show boot')).toContain('flash:image.bin');
+    await r.executeCommand('configure terminal');
+    await r.executeCommand('no boot system');
+    await r.executeCommand('end');
+    expect(await r.executeCommand('show boot')).not.toContain('flash:image.bin');
+  });
+});

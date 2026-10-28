@@ -221,6 +221,7 @@ import {
 import { parseNtpBroadcast } from './cisco/ciscoNtpBroadcast';
 import { lineSettingsFamily, type LineSettingsHost } from '../../../cli/commands/line/lineSettingsFamily';
 import { httpServerFamily, type HttpServerHost } from '../../../cli/commands/http/httpServerFamily';
+import { identityBootFamily, type IdentityBootHost } from '../../../cli/commands/identity/identityBootFamily';
 import { fileSystemFamily } from '../../../cli/commands/filesystem/fileSystemFamily';
 import { sharedShowFamily, type SharedShowHost } from '../../../cli/commands/show/sharedShowFamily';
 import { outgoingSessionFamily, type OutgoingSessionHost } from '../../../cli/commands/session/outgoingSessionFamily';
@@ -456,28 +457,6 @@ const BANNER_SORTES: ReadonlyArray<readonly [BannerKind, string]> = [
   ['motd', 'Set Message of the Day banner'],
 ];
 
-const SERVICES_A_MOTEUR: ReadonlySet<string> = new Set([
-  'service sequence-numbers', 'service timestamps',
-]);
-
-const SERVICE_PLACES: Readonly<Record<string, readonly ArgumentSpec[]>> = {
-  'service timestamps': [
-    {
-      name: 'channel', type: 'ENUM', optional: true,
-      description: 'Message class to timestamp',
-      values: [
-        { keyword: 'debug', description: 'Timestamp debug messages' },
-        { keyword: 'log', description: 'Timestamp log messages' },
-      ],
-    },
-    {
-      name: 'format', type: 'REST', optional: true,
-      description: 'Timestamp format and options',
-      literal: 'LINE',
-    },
-  ],
-};
-
 function enumeration(
   name: string, description: string, valeurs: ReadonlyArray<readonly [string, string]>,
 ): ArgumentSpec {
@@ -575,59 +554,6 @@ const SORTES_DE_LIGNE: Readonly<Record<string, {
  */
 export const DERNIERE_LIGNE_ABSOLUE =
   absoluteLineNumber('vty', SORTES_DE_LIGNE.vty.max);
-
-type TeteLigne =
-  | { sorte: 'console' | 'vty' | 'aux' | 'tty'; premiere: number; derniere: number }
-  | { erreur: string };
-
-/**
- * La designation d'une ligne, lue UNE fois pour `line` et pour `no line`.
- *
- * Les deux commandes en avaient chacune leur lecture, et elles avaient
- * diverge jusqu'a l'absurde : `no line` verifiait la sorte, exigeait un
- * numero, le voulait entier et refusait une plage a l'envers, quand
- * `line` n'examinait rien du tout — `line zorglub`, `line vty` seul,
- * `line vty 99`, `line vty zorglub` et `line vty 5 2` etaient tous
- * acceptes et faisaient entrer dans le sous-mode. L'operateur pouvait
- * donc poser une plage que la negation refusait ensuite de retirer, et
- * taper ses reglages d'acces dans un sous-mode qui ne designait aucune
- * ligne.
- */
-function analyserTeteLigne(args: readonly string[]): TeteLigne {
-  const mot = (args[0] ?? '').toLowerCase();
-  if (mot === '') return { erreur: CISCO_ERRORS.INCOMPLETE };
-  const sorte = SORTES_DE_LIGNE[mot];
-  if (!sorte) throw new CliInvalidInput({ token: args[0] });
-  if (args[1] === undefined) return { erreur: CISCO_ERRORS.INCOMPLETE };
-
-  const borne = (jeton: string): number => {
-    if (!/^\d+$/.test(jeton)) throw new CliInvalidInput({ token: jeton });
-    const valeur = Number.parseInt(jeton, 10);
-    if (valeur > sorte.max) throw new CliInvalidInput({ token: jeton });
-    return valeur;
-  };
-  const premiere = borne(args[1]);
-  const derniere = args[2] === undefined ? premiere : borne(args[2]);
-  if (derniere < premiere) throw new CliInvalidInput({ token: args[2] as string });
-  if (args[3] !== undefined) throw new CliInvalidInput({ token: args[3] });
-  return { sorte: sorte.canonique, premiere, derniere };
-}
-
-const IDENTITE_ET_AMORCAGE: ReadonlySet<string> = new Set([
-  'boot system', 'boot enable-break', 'boot manual', 'config-register',
-  'hostname',
-]);
-
-const IDENTITE_PLACES:
-  Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[]>> = {
-  hostname: { name: 'nom', type: 'WORD', description: 'This system\'s network name' },
-  'config-register': {
-    name: 'valeur', type: 'WORD', description: 'Config register value, in hex',
-  },
-  'boot system': {
-    name: 'image', type: 'REST', description: 'System image file', literal: 'WORD',
-  },
-};
 
 type HardeningEntry = readonly [
   readonly string[], string, string,
@@ -2476,7 +2402,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   protected initializeCommands(): void {
     this.registerCommonUserCommands();
     this.registerCommonPrivilegedCommands();
-    this.registerCommonConfigCommands();
     this.registerDeviceCommands();
     this.pruneMigratedFromTries();
     this.privilegedTrie.importMissingFrom(this.userTrie);
@@ -5779,7 +5704,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       ...ipSshSpecs(() => this.ipSshHost()),
       ...ipSshPubkeySpecs(() => this.pubkeyChainHost()),
       ...ikePubkeySpecs(() => this.ikePubkeyHost()),
-      ...this.lineEntrySpecs(),
       ...this.showSocleSpecs(),
       ...this.archiveSubmodeSpecs(),
       ...this.identitySubmodeSpecs(),
@@ -6035,15 +5959,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         modes: ['config'], minPrivilege: 15,
         run: dhcp(true), undo: dhcp(false),
       },
-      ...specsFromTrieRegistrations(
-        (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
-        {
-          modes: ['config'], minPrivilege: 15,
-          undoFromNegatedPaths: true,
-          skip: (path) => !SERVICES_A_MOTEUR.has(path.replace(/^no /, '')),
-          argumentFor: (path) => SERVICE_PLACES[path.replace(/^no /, '')],
-        },
-      ),
       ...(identite === null ? [] : specsFromTrieRegistrations(
         (collector) =>
           buildIdentityConfigCommands(collector as unknown as CommandTrie, identite),
@@ -6988,49 +6903,58 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ];
   }
 
-  protected lineEntrySpecs(): CommandSpec[] {
-    const places = (max: number): ArgumentSpec[] => [
-      { name: 'premiere', type: 'INT', range: [0, max], description: 'First Line number' },
-      { name: 'derniere', type: 'INT', range: [0, max],
-        description: 'Last Line number', optional: true },
-    ];
-    /*
-     * `con` est l'abreviation de `console` et non une cinquieme sorte :
-     * le socle la resout par prefixe, donc seule la forme canonique se
-     * declare — la declarer deux fois rendrait `line ?` avec une ligne
-     * de trop, que `?` d'IOS n'ecrit pas.
-     */
-    const parCanonique = new Map(
-      Object.values(SORTES_DE_LIGNE).map(sorte => [sorte.canonique, sorte]));
-    const sortes = [...parCanonique.values()]
+  protected identityBootSpecs(): CommandSpec[] {
+    const kinds = [...new Map(
+      Object.values(SORTES_DE_LIGNE).map((sorte) => [sorte.canonique, sorte])).values()]
       .sort((a, b) => a.canonique.localeCompare(b.canonique))
-      .map(sorte => ({
-        keyword: sorte.canonique, description: sorte.description,
-        argument: places(sorte.max),
+      .map((sorte) => ({
+        keyword: sorte.canonique, max: sorte.max, description: sorte.description,
       }));
-
-    return specsFromTrieRegistrations(
-      (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['config', 'config-line'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        skip: (path) => path !== 'line' && path !== 'no line',
-        keywordsFor: () => sortes,
-      },
-    );
+    return identityBootFamily(() => this.identityBootHost(), kinds);
   }
 
-  protected identityBootSpecs(): CommandSpec[] {
-    return specsFromTrieRegistrations(
-      (collector) => this.registerCommonConfigCommands(collector as unknown as CommandTrie),
-      {
-        modes: ['config'], minPrivilege: 15,
-        undoFromNegatedPaths: true,
-        skip: (path) => !IDENTITE_ET_AMORCAGE.has(path.replace(/^no /, '')),
-        argumentFor: (path) => IDENTITE_PLACES[path],
-        keywordsFor: (path) => continuationsPourLeSocle(path, SOCLE),
+  private identityBootHost(): IdentityBootHost {
+    return {
+      addBootSystem: (image) => this.fs().addBootSystem(image),
+      removeBootSystem: (image) => this.fs().removeBootSystem(image),
+      hasConfigRegister: () => this.hasConfigRegister(),
+      setEnableBreak: (on) => this.fs().setEnableBreak(on),
+      setManualBoot: (on) => this.fs().setManualBoot(on),
+      setConfigRegister: (value) => this.fs().setConfigRegister(value),
+      setHostname: (name) => this.d()._setHostnameInternal(name),
+      resetHostname: () => {
+        const dev = this.d();
+        dev._setHostnameInternal(dev.defaultHostname());
       },
-    );
+      enterLine: (kind, first, last) => {
+        this.mode = 'config-line';
+        this.selectedVtyRange = null;
+        this.selectedConsoleLine = null;
+        this.selectedAuxLine = null;
+        if (kind === 'vty' || kind === 'tty') {
+          this.selectedVtyRange = { first, last };
+          const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
+          dev._getVtyLineConfig?.().upsert({ first, last });
+        } else if (kind === 'console') {
+          this.selectedConsoleLine = first;
+        } else {
+          this.selectedAuxLine = first;
+        }
+      },
+      removeLine: (kind, first, last) => {
+        if (kind === 'console' || kind === 'aux') {
+          return `% Can't delete ${kind === 'aux' ? 'AUX' : 'console'} line`;
+        }
+        const dev = this.d() as unknown as {
+          _getVtyLineConfig?: () => { remove: (a: number, b: number) => boolean };
+        };
+        dev._getVtyLineConfig?.().remove(first, last);
+        if (this.selectedVtyRange?.first === first && this.selectedVtyRange?.last === last) {
+          this.selectedVtyRange = null;
+        }
+        return '';
+      },
+    };
   }
 
   protected hardeningSpecs(): CommandSpec[] {
@@ -9551,170 +9475,6 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       command: cmd,
       password: offeredPassword,
     });
-  }
-
-  private registerCommonConfigCommands(trie: CommandTrie = this.configTrie): void {
-    // La séquence de démarrage. `config-register 0x2142` est la moitié
-    // de la récupération de mot de passe la plus enseignée du cours ;
-    // le registre est réellement stocké et son bit 0x40 réellement lu.
-    trie.registerGreedy('boot system', 'Specify system image to load', (args) => {
-      const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
-      if (!image) return '% Incomplete command.';
-      this.fs().addBootSystem(image);
-      return '';
-    });
-    trie.registerGreedy('no boot system', 'Remove a system image from the boot list', (args) => {
-      const image = (args[0] ?? '').replace(/^flash:\/?/i, '');
-      this.fs().removeBootSystem(image || undefined);
-      return '';
-    });
-    if (!this.hasConfigRegister()) {
-      // Les deux seuls reglages d'amorcage d'un Catalyst, et les deux
-      // seuls champs de son `show boot` qu'un operateur peut changer.
-      trie.register('boot enable-break', 'Enable the Break key during boot',
-        () => { this.fs().setEnableBreak(true); return ''; });
-      trie.register('no boot enable-break', 'Disable the Break key during boot',
-        () => { this.fs().setEnableBreak(false); return ''; });
-      trie.register('boot manual', 'Boot into the boot loader instead of the image',
-        () => { this.fs().setManualBoot(true); return ''; });
-      trie.register('no boot manual', 'Boot the image automatically',
-        () => { this.fs().setManualBoot(false); return ''; });
-    }
-    if (this.hasConfigRegister()) {
-      trie.registerGreedy('config-register', 'Set configuration register', (args) => {
-        const val = args[0] ?? '';
-        if (!this.fs().setConfigRegister(val)) {
-          return '% Invalid config register value';
-        }
-        return '';
-      });
-    }
-
-    trie.registerGreedy('hostname', 'Set system hostname', (args) => {
-      if (args.length < 1) return '% Incomplete command.';
-      this.d()._setHostnameInternal(args[0]);
-      return '';
-    });
-
-    trie.register('no hostname', 'Reset hostname', () => {
-      const dev = this.d();
-      dev._setHostnameInternal(dev.defaultHostname());
-      return '';
-    });
-
-    // `ip routing` / `ipv6 unicast-routing` enable forms are owned by
-    // the router (CiscoOspfCommands, device-specific); only record the
-    // negation here so it's recognised on both vendors without
-    // shadowing that specific handler.
-    trie.registerGreedy('no ip routing', 'Disable IP routing', () => {
-      this.configState.set('ip routing', false);
-      return '';
-    });
-    /**
-     * `parser view <nom>` — declarer une vue CLI (le RBAC d'IOS).
-     *
-     * Deux conditions d'IOS, et ce ne sont pas des formalites : il faut
-     * `aaa new-model` (une vue est un mecanisme d'autorisation, il vit
-     * dans AAA) et il faut etre dans la vue RACINE (sans quoi une vue
-     * restreinte pourrait s'octroyer des commandes, ce qui viderait le
-     * mecanisme de son sens).
-     */
-    // Même chemin exact que la forme d'EXEC privilégié : deux analyseurs
-    // pour une seule commande finiraient par se contredire sur la même
-    // date.
-    // `username <name> [privilege N] [secret|password] <pwd>` — captures
-    // the local-user database so the sshd dispatch can validate inbound
-    // logins. Anything we don't parse is still accepted silently.
-    // `service timestamps` has its own registration above and the trie
-    // routes to the more specific one, so the second parser this handler
-    // used to carry never ran — it could only ever contradict the first.
-    // `ip ssh …` : le handler qui vivait ici ecrivait un SECOND magasin
-    // (celui du gestionnaire) que rien ne lisait pour ces champs, et il
-    // etait de toute facon ombre sur le routeur par l'enregistrement plus
-    // specifique de `CiscoSecurityCommands`. Deux magasins pour un fait,
-    // avec des defauts qui se contredisaient : il n'en reste qu'un.
-    // Le commutateur garde son propre `ip ssh version`.
-
-    // `line {console|vty|aux} …` → shared config-line sub-mode.
-    // We remember the selected VTY range so subsequent directives
-    // (exec-timeout, access-class, transport input, …) land in the
-    // right VtyLineConfig block.
-    trie.registerGreedy('line', 'Enter line configuration', (args) => {
-      const tete = analyserTeteLigne(args);
-      if ('erreur' in tete) return tete.erreur;
-
-      this.mode = 'config-line';
-      this.selectedVtyRange = null;
-      this.selectedConsoleLine = null;
-      this.selectedAuxLine = null;
-      if (tete.sorte === 'vty' || tete.sorte === 'tty') {
-        this.selectedVtyRange = { first: tete.premiere, last: tete.derniere };
-        const dev = this.d() as unknown as { _getVtyLineConfig?: () => { upsert: (p: object) => void } };
-        dev._getVtyLineConfig?.().upsert({ first: tete.premiere, last: tete.derniere });
-      } else if (tete.sorte === 'console') {
-        this.selectedConsoleLine = tete.premiere;
-      } else {
-        this.selectedAuxLine = tete.premiere;
-      }
-      return '';
-    });
-    /**
-     * `no line <type> <first> [<last>]` remet ces lignes a leur
-     * configuration d'usine.
-     *
-     * `no ?` offrait `line` — « Remove line configuration » — et rien ne
-     * portait ce chemin : la commande etait annoncee et refusee au
-     * caret. Ce qu'elle fait est LU sur ce que `line` ecrit : le bloc
-     * VTY est le seul etat que la configuration de ligne persiste, donc
-     * le retirer EST le retour aux defauts, et la running-config cesse
-     * de le rendre. La console et l'AUX n'ont pas de bloc a supprimer :
-     * IOS refuse d'ailleurs `no line console 0`, une ligne qu'on ne peut
-     * pas retirer d'un chassis.
-     */
-    trie.registerGreedy('no line', 'Remove line configuration', (args) => {
-      const tete = analyserTeteLigne(args);
-      if ('erreur' in tete) return tete.erreur;
-      if (tete.sorte === 'console' || tete.sorte === 'aux') {
-        return `% Can't delete ${tete.sorte === 'aux' ? 'AUX' : 'console'} line`;
-      }
-      const dev = this.d() as unknown as {
-        _getVtyLineConfig?: () => { remove: (a: number, b: number) => boolean };
-      };
-      dev._getVtyLineConfig?.().remove(tete.premiere, tete.derniere);
-      if (this.selectedVtyRange?.first === tete.premiere
-        && this.selectedVtyRange?.last === tete.derniere) {
-        this.selectedVtyRange = null;
-      }
-      return '';
-    });
-    // Une ligne se DESIGNE : `line` seul, comme `no line` seul, repond
-    // « Incomplete », donc ni l'un ni l'autre n'annonce `<cr>`.
-    trie.requireArgs('line', 1);
-    trie.requireArgs('no line', 1);
-
-    // Les vingt mots-clés ci-dessus partagent UN handler, et
-    // `autoContinuations` lit le corps d'un handler pour deviner ses
-    // suites : chacun des vingt se voyait donc proposer l'union des
-    // mots de tous les autres — `login ?` offrait `password`, `size`,
-    // `synchronous`… La déclaration explicite prime sur l'extraction,
-    // et chaque suite ci-dessous est celle que ce handler DISPATCHE
-    // vraiment, pas celle qu'IOS documente : annoncer une forme que la
-    // machine refuse ensuite serait le défaut inverse.
-
-    // `exec-timeout <minutes> [seconds]` — persisted on the VTY block
-    // so show running-config can echo it back exactly.
-    /**
-     * La commande existe-t-elle dans l'arbre de ce mode ?
-     *
-     * On interroge l'arbre du MODE nomme, et non l'arbre privilegie pour
-     * tout : `commands configure include hostname` porte sur une commande
-     * de configuration, qui n'est dans aucun arbre exec.
-     */
-    // `login-timeout <secondes>` : le delai laisse pour s'identifier,
-    // distinct de `exec-timeout` qui compte l'inactivite APRES la
-    // connexion. La commande d'IOS etait refusee.
-
-    // ARP config commands (shared between router and switch)
   }
 
   /**
