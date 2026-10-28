@@ -178,7 +178,7 @@ import {
   type CiscoACLShellContext,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands,
-  registerACLShowCommands, aclShowSpecs,
+  aclShowSpecs,
   parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, ipv6AclHost,
   type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
@@ -2597,9 +2597,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     // DHCP show commands
     registerDhcpShowCommands(trie, getRouter);
-
-    // ACL show commands
-    registerACLShowCommands(trie, getRouter);
 
     // OSPF show commands
     registerOSPFShowCommands(trie, getRouter);

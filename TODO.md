@@ -4137,3 +4137,7 @@ Measured: `src/__tests__/unit/network-v2/linux-hosts-hostname-hijack.test.ts` ("
 ## Cisco: `boot system` is not rendered in the running-config
 
 Measured: `boot system flash:image.bin` is stored (`CiscoFileSystem.addBootSystem`) and read back by `show boot` (`BOOT variable = flash:image.bin`), but `show running-config` on a router and on a switch never writes the line, so an exported topology loses it on import. The two renderers (`showRunningConfig` for the router, `buildRunningConfig` for the switch) do not reach the shell's file system. Not closed: they need a narrow port to the boot list.
+
+## Oracles Linux rouges sur la base (hors perimetre Cisco)
+
+Mesure : `shell-fin-de-ligne-oracle` (`printf '…' | head|tail …`, 17 cas) et `auditctl-oracle` echouent deja au commit `2351448f2`, AVANT les travaux telnet/Cisco de cette serie — verifie dans un worktree de ce commit (21 cas rouges sur 262). Le lot de non-regression ACL en a revele d'autres de la meme nature (`aureport`, `ausearch`, `netcmds-oracle` nc-readwrite, `probe-oracle-sqlplus-silencieux-et-rman-a-froid`). Non diagnostique : les oracles rejouent des enregistrements de vrais binaires et l'ecart n'a pas ete lu cas par cas.

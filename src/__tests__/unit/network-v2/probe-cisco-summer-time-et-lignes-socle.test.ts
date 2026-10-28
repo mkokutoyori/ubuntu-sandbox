@@ -770,3 +770,27 @@ describe('show prefix-list and route-map', () => {
     expect(await r.executeCommand('show ip prefix-list detail')).not.toContain('Invalid input');
   });
 });
+
+/*
+ * Twentieth batch (show access-lists): 0 of 4 fail before, by design. The three show verbs were
+ * registered on the trie and through the adapter; one declaration remains. The cases pin the
+ * behaviour, including that a second word is refused at the caret.
+ */
+describe('show access-lists', () => {
+  it('witness: a named list is shown', async () => {
+    const r = await router('ip access-list standard EDGE', 'permit 10.0.0.0 0.255.255.255', 'end');
+    expect(await r.executeCommand('show access-lists EDGE')).toContain('EDGE');
+  });
+  it('show ip access-lists answers', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show ip access-lists')).not.toContain('Invalid input');
+  });
+  it('show ipv6 access-lists answers', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show ipv6 access-lists')).not.toContain('Invalid input');
+  });
+  it('refuses a second word', async () => {
+    const r = await router('end');
+    expect(await r.executeCommand('show access-lists A B')).toContain('Invalid input');
+  });
+});
