@@ -1175,6 +1175,46 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
 
 const isDottedIp = (s: string) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(s);
 
+const INVALID_ROUTE_TOKEN = "% Invalid input detected at '^' marker.";
+
+function parseStaticRouteTail(tokens: readonly string[]): string | {
+  ad?: number; trackId?: string; permanent: boolean; tag?: number; name?: string;
+} {
+  let ad: number | undefined;
+  let trackId: string | undefined;
+  let permanent = false;
+  let tag: number | undefined;
+  let name: string | undefined;
+  let at = 0;
+  if (tokens[at] !== undefined && /^\d+$/.test(tokens[at])) {
+    const distance = Number(tokens[at]);
+    if (distance < 1 || distance > 255) return INVALID_ROUTE_TOKEN;
+    ad = distance;
+    at++;
+  }
+  while (at < tokens.length) {
+    const word = tokens[at].toLowerCase();
+    if (word === 'permanent') { permanent = true; at++; continue; }
+    if (word === 'dhcp') { at++; continue; }
+    const value = tokens[at + 1];
+    if (word === 'track' || word === 'tag' || word === 'name') {
+      if (value === undefined) return '% Incomplete command.';
+      if (word === 'name') name = value;
+      else if (!/^\d+$/.test(value)) return INVALID_ROUTE_TOKEN;
+      else if (word === 'track') trackId = value;
+      else {
+        const number = Number(value);
+        if (number < 1 || number > 4294967295) return INVALID_ROUTE_TOKEN;
+        tag = number;
+      }
+      at += 2;
+      continue;
+    }
+    return INVALID_ROUTE_TOKEN;
+  }
+  return { ad, trackId, permanent, tag, name };
+}
+
 export function cmdIpRoute(router: Router, args: string[]): string {
   let cursor = 0;
   let vrfName: string | null = null;
@@ -1208,33 +1248,9 @@ export function cmdIpRoute(router: Router, args: string[]): string {
   if (nextHopStr && !isValidIPv4(nextHopStr)) {
     return "% Invalid input detected at '^' marker.";
   }
-  // `track <N>` — extracted before the AD-token scan below so its numeric
-  // argument is never mistaken for the administrative distance.
-  let trackId: string | undefined;
-  const trackIdx = rest.indexOf('track');
-  if (trackIdx >= 0 && rest[trackIdx + 1]) {
-    trackId = rest[trackIdx + 1];
-    rest = rest.slice(0, trackIdx).concat(rest.slice(trackIdx + 2));
-  }
-  // `permanent` — la route reste dans la table quand son interface de
-  // sortie tombe. Le mot-clé était accepté et jeté (il ne ressemble ni à
-  // une distance ni à `track`, donc rien ne le lisait) : la route
-  // disparaissait au `shutdown` comme une statique ordinaire, soit
-  // exactement ce que ce mot-clé sert à empêcher.
-  let permanent = false;
-  const permIdx = rest.indexOf('permanent');
-  if (permIdx >= 0) {
-    permanent = true;
-    rest = rest.slice(0, permIdx).concat(rest.slice(permIdx + 1));
-  }
-  // Optional administrative distance (RFC: 1-255).
-  let ad: number | undefined;
-  const adTok = rest.find((t) => /^\d+$/.test(t));
-  if (adTok !== undefined) {
-    const n = parseInt(adTok, 10);
-    if (n < 1 || n > 255) return "% Invalid input detected at '^' marker.";
-    ad = n;
-  }
+  const tail = parseStaticRouteTail(rest);
+  if (typeof tail === 'string') return tail;
+  const { ad, trackId, permanent, tag, name } = tail;
   if (vrfName) {
     const r = router as any;
     const vrfs = r._ciscoVrfRoutes ?? (r._ciscoVrfRoutes = new Map<string, any[]>());
@@ -1243,10 +1259,17 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     vrfs.set(vrfName, list);
     return '';
   }
-  const opts: { preference?: number; iface?: string; track?: string; permanent?: boolean } = {};
+  const opts: {
+    preference?: number; iface?: string; track?: string; permanent?: boolean;
+    tag?: number; description?: string;
+  } = {};
   if (ad !== undefined) opts.preference = ad;
   if (trackId !== undefined) opts.track = trackId;
   if (permanent) opts.permanent = true;
+  if (tag !== undefined) opts.tag = tag;
+  if (name !== undefined) opts.description = name;
+  const hasOptions = ad !== undefined || trackId !== undefined || permanent
+    || tag !== undefined || name !== undefined;
   if (outIface) {
     opts.iface = outIface;
     const nextHop = nextHopStr ? new IPAddress(nextHopStr) : new IPAddress('0.0.0.0');
@@ -1256,11 +1279,11 @@ export function cmdIpRoute(router: Router, args: string[]): string {
     const nextHop = new IPAddress(nextHopStr);
     if (netStr === '0.0.0.0' && maskStr === '0.0.0.0') {
       return router.setDefaultRoute(nextHop, 0,
-        (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
+        hasOptions ? opts : undefined)
         ? '' : '% Next-hop is not reachable';
     }
     return router.addStaticRoute(network, mask, nextHop, 0,
-      (ad !== undefined || trackId !== undefined || permanent) ? opts : undefined)
+      hasOptions ? opts : undefined)
       ? '' : '% Next-hop is not reachable';
   }
   return '% Incomplete command.';

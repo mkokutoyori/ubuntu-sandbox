@@ -128,7 +128,7 @@ export function showVersion(
 export function staticRouteTail(r: {
   nextHop: { toString(): string } | null; iface: string;
   ifaceConfigured?: boolean; preference?: number; permanent?: boolean;
-  track?: string;
+  track?: string; tag?: number; description?: string;
 }): string {
   const nh = r.nextHop ? r.nextHop.toString() : '';
   const parts: string[] = [];
@@ -139,8 +139,10 @@ export function staticRouteTail(r: {
     parts.push(nh);
   }
   if (r.preference !== undefined) parts.push(String(r.preference));
+  if (r.description) parts.push('name', r.description);
   if (r.track) parts.push('track', r.track);
   if (r.permanent) parts.push('permanent');
+  if (r.tag !== undefined) parts.push('tag', String(r.tag));
   return parts.join(' ');
 }
 
