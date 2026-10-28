@@ -92,7 +92,7 @@ const MODES: ReadonlyArray<readonly [string, readonly string[], readonly string[
   ],
   [
     'pool DHCP', ['ip dhcp pool P1'],
-    ['option ascii', 'option hex', 'utilization mark high', 'utilization mark low'],
+    ['option 43 ascii', 'option 43 hex', 'utilization mark high', 'utilization mark low'],
     ['utilization mark high 90', 'utilization mark low 10 log',
       'network 10.0.0.0 255.255.255.0', 'default-router 10.0.0.1'],
   ],

@@ -2,7 +2,8 @@
  * The DHCP pool sub-mode (`ip dhcp pool`) declared natively on the socle
  * instead of re-read from the trie.
  *
- * Measured before the change: 4 of the 8 cases fall. `option 43 ?` did not
+ * Measured before the change: 6 of the 12 cases fall (4 of the first 8 listed below, plus
+ * the two IPv6 prefix refusals). `option 43 ?` did not
  * name its formats (the old REST place announced the code and the formats
  * together on `option ?`), and the eight-address limit, the unusable host
  * addresses and the lease bounds were refused with the bare
@@ -74,5 +75,35 @@ describe('ip dhcp pool sub-mode on the socle', () => {
     r.powerOn();
     for (const l of ['enable', 'configure terminal']) await r.executeCommand(l);
     expect(await r.executeCommand('lease 1')).toMatch(/Invalid input|No DHCP pool/);
+  });
+});
+
+async function ipv6Pool(): Promise<Cli> {
+  const r = new CiscoRouter('R3', 0, 0) as unknown as Cli & { powerOn(): void };
+  r.powerOn();
+  for (const l of ['enable', 'configure terminal', 'ipv6 dhcp pool V6']) await r.executeCommand(l);
+  return r;
+}
+
+describe('ipv6 dhcp pool, show and debug on the socle', () => {
+  it('refuses an IPv6 prefix that is not a prefix', async () => {
+    expect(await (await ipv6Pool()).executeCommand('address prefix zorglub')).toMatch(CARET);
+  });
+
+  it('refuses an IPv6 prefix length beyond 128', async () => {
+    expect(await (await ipv6Pool()).executeCommand('address prefix 2001:db8::/129')).toMatch(CARET);
+  });
+
+  it('witness: a valid prefix with lifetimes is accepted', async () => {
+    const r = await ipv6Pool();
+    expect(await r.executeCommand('address prefix 2001:db8::/64 lifetime 3600 1800')).toBe('');
+  });
+
+  it('witness: show dhcp server and the debug pair still answer', async () => {
+    const r = await pool();
+    expect(await r.executeCommand('do show dhcp server')).toBe('DHCP server enabled.');
+    expect(await r.executeCommand('do debug ip dhcp server')).toBe('DHCP server debugging is on');
+    expect(await r.executeCommand('do no debug ip dhcp server'))
+      .toBe('DHCP server debugging is off');
   });
 });

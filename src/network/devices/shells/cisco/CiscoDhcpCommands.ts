@@ -8,41 +8,16 @@
  */
 
 import type { Router } from '../../Router';
-import { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
-import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import type { CiscoShellContext } from './CiscoConfigCommands';
-import { boundedInteger } from '@/cli/ArgumentTypes';
 import { CliInvalidInput } from '../cli/CliDiagnostic';
 import {
-  DHCP_OPTION_CODE_MIN, DHCP_OPTION_CODE_MAX, isDhcpOptionKind,
+  DHCP_OPTION_CODE_MIN, DHCP_OPTION_CODE_MAX,
   isDhcpClientIdentifier, type DhcpOptionKind,
 } from '../../../dhcp/optionSyntax';
 
 const INVALID_INPUT = "% Invalid input detected at '^' marker.";
-
-/**
- * IOS takes up to eight addresses on `default-router` and `dns-server`, and
- * each one has to be a usable host address: a mask, a multicast group, the
- * all-ones broadcast or anything out of 240.0.0.0/4 is refused at the
- * parser, not silently kept or silently dropped.
- */
-function parseAddressList(args: string[]): string[] | null {
-  if (args.length < 1 || args.length > 8) return null;
-  for (const a of args) {
-    const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(a);
-    if (!m) return null;
-    const o = m.slice(1).map(Number);
-    if (o.some(n => n > 255)) return null;
-    if (o[0] === 0 || o[0] >= 224) return null;
-  }
-  return args;
-}
-
-const REST = (literal: string, description: string): ArgumentSpec =>
-  ({ name: 'valeur', type: 'REST', literal, description });
 
 const NO_POOL = '% No DHCP pool selected';
 const USABLE_HOST_FIRST_OCTET = /^(?:[1-9]\d?|1\d\d|2[01]\d|22[0-3])\./;
@@ -300,237 +275,210 @@ export function dhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
   ];
 }
 
-export function buildConfigDhcpPoolClassCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('address range', 'DHCP class address range', (args) => {
-    const r = ctx.r() as any;
-    const p = ctx.getSelectedDHCPPool();
-    const className = r._ciscoDhcpPoolCurrentClass;
-    if (!p || !className) return '';
-    const classes = r._ciscoDhcpPoolClasses as Map<string, any[]> | undefined;
-    const list = classes?.get(p) ?? [];
-    const entry = list.find((c) => c.className === className);
-    if (entry && args.length >= 2) entry.ranges.push({ start: args[0], end: args[1] });
-    return '';
-  });
+interface DhcpPoolClass {
+  className: string;
+  ranges: Array<{ start: string; end: string }>;
 }
 
-export function buildConfigDhcpClassCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('option', 'DHCP class option matcher', (args, raw) => {
-    const r = ctx.r() as any;
-    const cur = r._ciscoDhcpCurrentClass;
-    const classes = r._ciscoDhcpClasses as Map<string, any> | undefined;
-    const c = cur ? classes?.get(cur) : null;
-    if (c) c.options.push(raw ?? `option ${args.join(' ')}`);
-    return '';
-  });
-  trie.registerGreedy('description', 'Set DHCP class description', (args) => {
-    const r = ctx.r() as any;
-    const cur = r._ciscoDhcpCurrentClass;
-    const c = cur ? (r._ciscoDhcpClasses as Map<string, any> | undefined)?.get(cur) : null;
-    if (c) c.description = args.join(' ');
-    return '';
-  });
+interface DhcpNamedClass {
+  options: string[];
+  description?: string;
 }
 
-export function buildConfigIpv6DhcpCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  const cur = () => {
-    const r = ctx.r() as any;
-    const name = r._ciscoIpv6DhcpCurrent;
-    if (!name) return null;
-    return (r._ciscoIpv6DhcpPools as Map<string, any> | undefined)?.get(name) ?? null;
-  };
-  const curName = (): string | null => (ctx.r() as any)._ciscoIpv6DhcpCurrent ?? null;
-  trie.registerGreedy('address prefix', 'IPv6 DHCP pool prefix', (args, raw) => {
-    const p = cur(); if (p) { p.prefix = args[0]; p.prefixLine = raw; }
-    const name = curName();
-    if (name && args[0]) {
-      const [prefix, lenStr] = args[0].split('/');
-      const len = parseInt(lenStr ?? '', 10);
-      if (prefix && !isNaN(len)) {
-        ctx.r()._getDHCPv6ServerInternal().configurePoolPrefix(name, prefix, len);
-        if (args[1]?.toLowerCase() === 'lifetime' && args[2] && args[3]) {
-          const valid = parseInt(args[2], 10);
-          const preferred = parseInt(args[3], 10);
-          if (!isNaN(valid) && !isNaN(preferred)) {
-            ctx.r()._getDHCPv6ServerInternal().configurePoolLifetime(name, preferred, valid);
-          }
-        }
-      }
-    }
-    return '';
-  });
-  trie.registerGreedy('dns-server', 'IPv6 DNS server', (args) => {
-    const p = cur(); if (p && args[0]) (p.dnsServers ??= []).push(args[0]);
-    const name = curName();
-    if (name && args[0]) {
-      const server = ctx.r()._getDHCPv6ServerInternal();
-      const pool = server.getPool(name);
-      server.configurePoolDns(name, [...(pool?.dnsServers ?? []), args[0]]);
-    }
-    return '';
-  });
-  trie.registerGreedy('domain-name', 'IPv6 domain name', (args) => {
-    const p = cur(); if (p && args[0]) p.domainName = args[0];
-    const name = curName();
-    if (name && args[0]) ctx.r()._getDHCPv6ServerInternal().configurePoolDomain(name, args[0]);
-    return '';
-  });
-  trie.registerGreedy('link-address', 'IPv6 DHCP link-address', (args) => {
-    const p = cur(); if (p && args[0]) p.linkAddress = args[0];
-    return '';
-  });
-  trie.registerGreedy('description', 'Pool description', (args) => {
-    const p = cur(); if (p) p.description = args.join(' ');
-    return '';
-  });
+interface Ipv6DhcpPool {
+  prefix?: string;
+  prefixLine?: string;
+  dnsServers?: string[];
+  domainName?: string;
+  linkAddress?: string;
+  description?: string;
 }
 
-// ─── DHCP Show Commands (registered on user/privileged show tries) ───
+interface DhcpProcessState {
+  _ciscoDhcpPoolClasses?: Map<string, DhcpPoolClass[]>;
+  _ciscoDhcpPoolCurrentClass?: string;
+  _ciscoDhcpClasses?: Map<string, DhcpNamedClass>;
+  _ciscoDhcpCurrentClass?: string;
+  _ciscoIpv6DhcpPools?: Map<string, Ipv6DhcpPool>;
+  _ciscoIpv6DhcpCurrent?: string;
+  _ciscoDhcpServerEnabled?: boolean;
+}
 
+const processState = (ctx: CiscoShellContext): DhcpProcessState =>
+  ctx.r() as unknown as DhcpProcessState;
 
-const DHCP_CLASS_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'address range': [
-    { name: 'debut', type: 'IP_ADDR', description: 'Start of the address range' },
-    { name: 'fin', type: 'IP_ADDR', description: 'End of the address range' },
-  ],
-  option: REST('<0-254>', 'DHCP option to match'),
-  description: REST('LINE', 'Class description'),
-};
-
-const IPV6_DHCP_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'address prefix': REST('X:X:X:X::X/<0-128>', 'IPv6 prefix given to clients'),
-  'dns-server': { name: 'serveur', type: 'IPV6_ADDR', description: 'DNS server IPv6 address' },
-  'domain-name': { name: 'domaine', type: 'WORD', description: 'Domain name given to clients' },
-  'link-address': { name: 'prefixe', type: 'WORD', description: 'Link address prefix' },
-};
+const IPV6_PREFIX_WITH_LENGTH = /^[0-9a-fA-F:]+\/(?:\d|[1-9]\d|1[01]\d|12[0-8])$/;
 
 export function dhcpPoolClassSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildConfigDhcpPoolClassCommands(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-dhcp-pool-class'], minPrivilege: 15,
-      argumentFor: (path) => DHCP_CLASS_ARGUMENTS[path],
+  return [{
+    id: 'dhcp-pool-class-address-range', modes: ['config-dhcp-pool-class'], minPrivilege: 15,
+    path: ['address', 'range',
+      { name: 'start', type: 'IP_ADDR', description: 'Start of the address range' },
+      { name: 'end', type: 'IP_ADDR', description: 'End of the address range' }],
+    description: 'DHCP class address range',
+    run: (_session, args) => {
+      const state = processState(ctx);
+      const pool = ctx.getSelectedDHCPPool();
+      const className = state._ciscoDhcpPoolCurrentClass;
+      if (!pool || !className) return '';
+      const entry = state._ciscoDhcpPoolClasses?.get(pool)?.find((c) => c.className === className);
+      entry?.ranges.push({ start: args.start, end: args.end });
+      return '';
     },
-  );
+  }];
 }
 
 export function dhcpClassSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildConfigDhcpClassCommands(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-dhcp-class'], minPrivilege: 15 };
+  const current = (): DhcpNamedClass | undefined => {
+    const state = processState(ctx);
+    const name = state._ciscoDhcpCurrentClass;
+    return name ? state._ciscoDhcpClasses?.get(name) : undefined;
+  };
+  return [
     {
-      modes: ['config-dhcp-class'], minPrivilege: 15,
-      argumentFor: (path) => DHCP_CLASS_ARGUMENTS[path],
+      ...base, id: 'dhcp-class-option',
+      path: ['option', {
+        name: 'matcher', type: 'REST', literal: '<0-254>', description: 'DHCP option to match',
+      }],
+      description: 'DHCP class option matcher',
+      run: (_session, args) => {
+        current()?.options.push(`option ${args.matcher.trim()}`);
+        return '';
+      },
     },
-  );
+    {
+      ...base, id: 'dhcp-class-description',
+      path: ['description', {
+        name: 'text', type: 'REST', literal: 'LINE', description: 'Class description',
+      }],
+      description: 'Set DHCP class description',
+      run: (_session, args) => {
+        const entry = current();
+        if (entry) entry.description = args.text.trim();
+        return '';
+      },
+    },
+  ];
 }
 
 export function ipv6DhcpPoolSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildConfigIpv6DhcpCommands(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-ipv6-dhcp'], minPrivilege: 15,
-      argumentFor: (path) => IPV6_DHCP_ARGUMENTS[path],
-    },
-  );
-}
-
-export function registerDhcpShowCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.register('show dhcp server', 'Display DHCP server status', () => {
-    const r = getRouter() as any;
-    return r._ciscoDhcpServerEnabled === false ? 'DHCP server disabled.' : 'DHCP server enabled.';
+  const base = { modes: ['config-ipv6-dhcp'], minPrivilege: 15 };
+  const server = () => ctx.r()._getDHCPv6ServerInternal();
+  const poolName = (): string | undefined => processState(ctx)._ciscoIpv6DhcpCurrent;
+  const pool = (): Ipv6DhcpPool | undefined => {
+    const name = poolName();
+    return name ? processState(ctx)._ciscoIpv6DhcpPools?.get(name) : undefined;
+  };
+  const lifetime = (name: string): ArgumentSpec => ({
+    name, type: 'INT', range: [0, 4294967295], description: 'Lifetime in seconds',
   });
-
-  trie.register('show ipv6 dhcp interface', 'Display IPv6 DHCP interface state', () => {
-    const router = getRouter();
-    const lines: string[] = [];
-    for (const [name, port] of router._getPortsInternal()) {
-      const poolRef = (port as any).ipv6DhcpPool as string | undefined;
-      const relays = (port as any).ipv6DhcpRelayDestinations as string[] | undefined;
-      if (poolRef) lines.push(`${name} is in DHCPv6 server mode, pool ${poolRef}`);
-      if (relays?.length) lines.push(`${name} is in DHCPv6 relay mode, destinations: ${relays.join(', ')}`);
+  const prefixPlace: ArgumentSpec = {
+    name: 'prefix', type: 'WORD', pattern: IPV6_PREFIX_WITH_LENGTH,
+    description: 'IPv6 prefix given to clients',
+    alternatives: [{ keyword: 'X:X:X:X::X/<0-128>', description: 'IPv6 prefix given to clients' }],
+  };
+  const applyPrefix = (args: Record<string, string>, line: string): string => {
+    const entry = pool();
+    if (entry) { entry.prefix = args.prefix; entry.prefixLine = line; }
+    const name = poolName();
+    if (!name) return '';
+    const [prefix, length] = args.prefix.split('/');
+    server().configurePoolPrefix(name, prefix, parseInt(length, 10));
+    if (args.valid !== undefined) {
+      server().configurePoolLifetime(name, Number(args.preferred), Number(args.valid));
     }
-    if (lines.length === 0) return 'No IPv6 DHCP interface configuration.';
-    return lines.join('\n');
-  });
-
-}
-
-export function dhcpIpv6ShowSpecs(getRouter: () => Router): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => registerDhcpShowCommands(collector as unknown as CommandTrie, getRouter),
+    return '';
+  };
+  return [
     {
-      modes: ['user', 'privileged'], minPrivilege: 1,
-      skip: (path) => !path.startsWith('show ipv6 dhcp'),
+      ...base, id: 'ipv6-dhcp-address-prefix', path: ['address', 'prefix', prefixPlace],
+      description: 'IPv6 DHCP pool prefix',
+      run: (_session, args) => applyPrefix(args, `address prefix ${args.prefix}`),
     },
-  );
+    {
+      ...base, id: 'ipv6-dhcp-address-prefix-lifetime',
+      path: ['address', 'prefix', prefixPlace, 'lifetime', lifetime('valid'), lifetime('preferred')],
+      description: 'IPv6 DHCP pool prefix with lifetimes',
+      run: (_session, args) => applyPrefix(
+        args, `address prefix ${args.prefix} lifetime ${args.valid} ${args.preferred}`),
+    },
+    {
+      ...base, id: 'ipv6-dhcp-dns-server',
+      path: ['dns-server', { name: 'server', type: 'IPV6_ADDR', description: 'DNS server IPv6 address' }],
+      description: 'IPv6 DNS server',
+      run: (_session, args) => {
+        const entry = pool();
+        if (entry) (entry.dnsServers ??= []).push(args.server);
+        const name = poolName();
+        if (name) {
+          server().configurePoolDns(name, [...(server().getPool(name)?.dnsServers ?? []), args.server]);
+        }
+        return '';
+      },
+    },
+    {
+      ...base, id: 'ipv6-dhcp-domain-name',
+      path: ['domain-name', { name: 'domain', type: 'WORD', description: 'Domain name given to clients' }],
+      description: 'IPv6 domain name',
+      run: (_session, args) => {
+        const entry = pool();
+        if (entry) entry.domainName = args.domain;
+        const name = poolName();
+        if (name) server().configurePoolDomain(name, args.domain);
+        return '';
+      },
+    },
+    {
+      ...base, id: 'ipv6-dhcp-link-address',
+      path: ['link-address', { name: 'prefix', type: 'WORD', description: 'Link address prefix' }],
+      description: 'IPv6 DHCP link-address',
+      run: (_session, args) => {
+        const entry = pool();
+        if (entry) entry.linkAddress = args.prefix;
+        return '';
+      },
+    },
+    {
+      ...base, id: 'ipv6-dhcp-description',
+      path: ['description', { name: 'text', type: 'REST', literal: 'LINE', description: 'Pool description' }],
+      description: 'Pool description',
+      run: (_session, args) => {
+        const entry = pool();
+        if (entry) entry.description = args.text.trim();
+        return '';
+      },
+    },
+  ];
 }
 
-// ─── DHCP Privileged Commands (debug, clear) ─────────────────────────
-
-export function registerDhcpPrivilegedCommands(trie: CommandTrie, getRouter: () => Router): void {
-  // debug commands
-  const debugSvc = () => getRouter().getDebugService();
-  trie.register('debug ip dhcp server', 'Debug DHCP server', () => {
-    const s = getRouter()._getDHCPServerInternal();
-    s.setDebugServerPacket(true);
-    s.setDebugServerEvents(true);
-    debugSvc().enable('ip.dhcp.server');
-    return 'DHCP server debugging is on';
-  });
-  trie.register('no debug ip dhcp server', 'Disable DHCP server debugging', () => {
-    const s = getRouter()._getDHCPServerInternal();
-    s.setDebugServerPacket(false);
-    s.setDebugServerEvents(false);
-    debugSvc().disable('ip.dhcp.server');
-    return 'DHCP server debugging is off';
-  });
-  // Le mot-clé d'IOS est `packets`, au PLURIEL — vérifié sur la
-  // référence de commandes Cisco, qui donne
-  // `debug ip dhcp server {events | packets | linkage}`. Il était
-  // enregistré au singulier, ce qui inversait la règle d'abréviation
-  // d'IOS : la forme complète était refusée et seule l'abrégée passait.
-  // Enregistrer la forme complète fait fonctionner les deux, `packet`
-  // devenant une abréviation non ambiguë comme n'importe quelle autre.
-  trie.register('debug ip dhcp server packets', 'Debug DHCP server packets', () => {
-    getRouter()._getDHCPServerInternal().setDebugServerPacket(true);
-    debugSvc().enable('ip.dhcp.server', 'packet');
-    return 'DHCP server packet debugging is on';
-  });
-  // Le troisième mot-clé de la même famille. Il n'existait pas, et
-  // `debug ip dhcp server ?` promettait donc deux choix là où IOS en a
-  // trois. Ce simulateur n'a pas de notion de liaison parent-enfant
-  // entre pools, donc la commande s'active et n'écrit rien de plus —
-  // et le dit, plutôt que de laisser croire à une sortie qui viendrait.
-  trie.register('debug ip dhcp server linkage', 'Debug DHCP database linkage', () => {
-    debugSvc().enable('ip.dhcp.server', 'linkage');
-    return 'DHCP server linkage debugging is on';
-  });
-  trie.register('no debug ip dhcp server linkage', 'Disable DHCP linkage debugging', () => {
-    debugSvc().disable('ip.dhcp.server');
-    return 'DHCP server linkage debugging is off';
-  });
-  trie.register('debug ip dhcp server events', 'Debug DHCP server events', () => {
-    getRouter()._getDHCPServerInternal().setDebugServerEvents(true);
-    debugSvc().enable('ip.dhcp.server', 'events');
-    return 'DHCP server event debugging is on';
-  });
-
-  // no debug commands
-  trie.register('no debug ip dhcp server packets', 'Disable DHCP packet debugging', () => {
-    const s = getRouter()._getDHCPServerInternal();
-    s.setDebugServerPacket(false);
-    if (!s.getDebugFlags().serverEvents) debugSvc().disable('ip.dhcp.server');
-    return 'DHCP server packet debugging is off';
-  });
-  trie.register('no debug ip dhcp server events', 'Disable DHCP event debugging', () => {
-    const s = getRouter()._getDHCPServerInternal();
-    s.setDebugServerEvents(false);
-    if (!s.getDebugFlags().serverPacket) debugSvc().disable('ip.dhcp.server');
-    return 'DHCP server event debugging is off';
-  });
-
-  // clear commands
+export function dhcpShowSpecs(getRouter: () => Router): CommandSpec[] {
+  const base = { modes: ['user', 'privileged'], minPrivilege: 1 };
+  return [
+    {
+      ...base, id: 'show-dhcp-server', path: ['show', 'dhcp', 'server'],
+      description: 'Display DHCP server status',
+      run: () => (getRouter() as unknown as DhcpProcessState)._ciscoDhcpServerEnabled === false
+        ? 'DHCP server disabled.' : 'DHCP server enabled.',
+    },
+    {
+      ...base, id: 'show-ipv6-dhcp-interface', path: ['show', 'ipv6', 'dhcp', 'interface'],
+      description: 'Display IPv6 DHCP interface state',
+      run: () => {
+        const lines: string[] = [];
+        for (const [name, port] of getRouter()._getPortsInternal()) {
+          const state = port as unknown as {
+            ipv6DhcpPool?: string; ipv6DhcpRelayDestinations?: string[];
+          };
+          if (state.ipv6DhcpPool) {
+            lines.push(`${name} is in DHCPv6 server mode, pool ${state.ipv6DhcpPool}`);
+          }
+          if (state.ipv6DhcpRelayDestinations?.length) {
+            lines.push(`${name} is in DHCPv6 relay mode, destinations: ${state.ipv6DhcpRelayDestinations.join(', ')}`);
+          }
+        }
+        return lines.length === 0 ? 'No IPv6 DHCP interface configuration.' : lines.join('\n');
+      },
+    },
+  ];
 }

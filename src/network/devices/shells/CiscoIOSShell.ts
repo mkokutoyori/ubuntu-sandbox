@@ -153,12 +153,9 @@ import {
   registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
 } from './cisco/CiscoConfigCommands';
 import {
-  buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
+  dhcpPoolSpecs,
   dhcpPoolClassSpecs, dhcpClassSpecs, ipv6DhcpPoolSpecs,
-  buildConfigDhcpClassCommands,
-  buildConfigIpv6DhcpCommands,
-  registerDhcpShowCommands, dhcpIpv6ShowSpecs,
-  registerDhcpPrivilegedCommands,
+  dhcpShowSpecs,
 } from './cisco/CiscoDhcpCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
@@ -290,7 +287,6 @@ const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
 ]);
 
 const VUES_SHOW_RESTANTES: ReadonlySet<string> = new Set([
-  'show dhcp server',
   'show crypto engine brief', 'show crypto engine configuration',
 ]);
 
@@ -672,7 +668,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
       ...ospfIpv6ShowSpecs(() => this.d()),
-      ...dhcpIpv6ShowSpecs(() => this.d()),
+      ...dhcpShowSpecs(() => this.d()),
       ...pimShowSpecs(this.multicastShowContext()),
       ...aclShowSpecs(() => this.d()),
       ...policyShowSpecs(this.policy),
@@ -808,7 +804,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return specsFromTrieRegistrations(
       (collector) => {
         const trie = collector as unknown as CommandTrie;
-        registerDhcpShowCommands(trie, () => this.d());
         buildIPSecPrivilegedCommands(trie, this);
       },
       {
@@ -2420,7 +2415,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     // ── Privileged mode ──
     this.registerShowCommands(this.privilegedTrie);
-    registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
 
     // ── Config mode ──
@@ -2436,9 +2430,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
-    buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
-    buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
-    buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     this.configRouterTrie.setCompletionFilter((path, keyword) =>
       routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
@@ -2572,9 +2563,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // project the real configured process state.
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
     trie.register('show ip rip', 'Display RIP information', () => Show.showIpProtocols(getRouter()));
-
-    // DHCP show commands
-    registerDhcpShowCommands(trie, getRouter);
 
     // OSPF show commands
     registerOSPFShowCommands(trie, getRouter);
