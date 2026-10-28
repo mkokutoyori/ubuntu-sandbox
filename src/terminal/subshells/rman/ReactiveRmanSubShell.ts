@@ -70,7 +70,7 @@ export class ReactiveRmanSubShell implements ISubShell {
    *   - every internal RmanEvent is re-published as a `rman.*` topic
    *     (via RmanBusBridge);
    *   - a RmanLoggerActor projects those topics into the shared `log`
-   *     topic so the network log panel records RMAN activity.
+   *     topic.
    *
    * Cross-session scoping is automatic — the sessionId is derived from
    * the device id and a wall-clock suffix.
