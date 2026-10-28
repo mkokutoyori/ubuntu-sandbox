@@ -311,17 +311,30 @@ export function argumentPlaceholder(spec: ArgumentSpec): string {
  * signifie « l'un ou l'autre ». Une seule fonction les rend toutes,
  * sinon chaque appelant en oublierait une autre.
  */
+function declaredTabValues(spec: ArgumentSpec): readonly EnumValue[] {
+  return (spec.tabSuggestions ?? []).map(keyword => ({
+    keyword, description: spec.description ?? '',
+  }));
+}
+
 export function argumentCompletableValues(spec: ArgumentSpec): readonly EnumValue[] {
   const placeholder = argumentPlaceholder(spec);
-  return [...(spec.alternatives ?? []), ...(spec.values ?? [])]
-    .filter(value => value.keyword !== placeholder)
-    .filter(value => !PLACEHOLDER_SHAPE.test(value.keyword))
-    .filter(value => /^[A-Za-z0-9][A-Za-z0-9:._+-]*$/.test(value.keyword));
+  return [
+    ...[...(spec.alternatives ?? []), ...(spec.values ?? [])]
+      .filter(value => value.keyword !== placeholder)
+      .filter(value => !PLACEHOLDER_SHAPE.test(value.keyword))
+      .filter(value => /^[A-Za-z0-9][A-Za-z0-9:._+-]*$/.test(value.keyword)),
+    ...declaredTabValues(spec),
+  ];
 }
 
 const PLACEHOLDER_SHAPE = /^(<.*>|[A-Z]\.[A-Z]\.[A-Z]\.[A-Z].*|WORD|LINE|STRING|NAME)$/;
 
 export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
+  return [...baseSuggestions(spec), ...declaredTabValues(spec)];
+}
+
+function baseSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
   const out: EnumValue[] = [];
   for (const form of spec.alternatives ?? []) out.push(form);
   if (spec.values) {

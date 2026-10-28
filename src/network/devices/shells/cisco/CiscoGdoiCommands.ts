@@ -1,138 +1,127 @@
-/**
- * CiscoGdoiCommands — GDOI / GET-VPN group configuration (RFC 6407)
- *
- * Handles:
- *   crypto gdoi group NAME        → config-gdoi-group
- *     identity number N
- *     match address ipv4 IP        (protected multicast group address)
- *     transform-set NAME
- *     address ipv4 IP              (key server's own local address override)
- *     server local                 (activate this router as the key server)
- *     server address ipv4 IP       (register with a remote key server)
- */
-
-import { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 
-function eng(ctx: CiscoShellContext) {
-  return (ctx.r() as any)._getOrCreateIPSecEngine();
+interface GdoiGroup {
+  identityNumber?: number;
+  groupAddress?: string;
+  transformSetName?: string;
+  localAddress?: string;
+  keyServerAddress?: string;
 }
 
-// ─── Global config mode ───────────────────────────────────────────────
-
-export function gdoiGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildGdoiGlobalCommands(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => path === 'crypto gdoi group'
-        ? { name: 'nom', type: 'WORD', description: 'Name of the GDOI group' } : null,
-    },
-  );
+interface GdoiEngine {
+  getOrCreateGdoiGroup(name: string): GdoiGroup;
+  removeGdoiGroup(name: string): void;
+  activateGdoiKeyServer(name: string): unknown;
+  registerWithGdoiKeyServer(name: string): void;
 }
 
-export function buildGdoiGlobalCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('crypto gdoi group', 'Define a GDOI GET-VPN group', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const name = args[0];
-    eng(ctx).getOrCreateGdoiGroup(name);
-    ctx.setSelectedGdoiGroup(name);
-    ctx.setMode('config-gdoi-group');
-    return '';
-  });
-
-  trie.registerGreedy('no crypto gdoi group', 'Remove a GDOI GET-VPN group', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    eng(ctx).removeGdoiGroup(args[0]);
-    return '';
-  });
+function engine(ctx: CiscoShellContext): GdoiEngine {
+  return (ctx.r() as unknown as { _getOrCreateIPSecEngine(): GdoiEngine })._getOrCreateIPSecEngine();
 }
 
-// ─── config-gdoi-group sub-mode ───────────────────────────────────────
+const NO_GROUP_SELECTED = '% No GDOI group selected';
 
-export function buildGdoiGroupCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-  trie.registerGreedy('identity number', 'Set the GDOI group identity number', (args) => {
-    const name = ctx.getSelectedGdoiGroup();
-    if (!name) return '% No GDOI group selected';
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).getOrCreateGdoiGroup(name).identityNumber = n;
-    return '';
-  });
-
-  trie.registerGreedy('match address ipv4', 'Set the protected multicast group address', (args) => {
-    const name = ctx.getSelectedGdoiGroup();
-    if (!name) return '% No GDOI group selected';
-    eng(ctx).getOrCreateGdoiGroup(name).groupAddress = args[0] || '';
-    return '';
-  });
-
-  trie.registerGreedy('transform-set', 'Set the transform-set used for the group SA', (args) => {
-    const name = ctx.getSelectedGdoiGroup();
-    if (!name) return '% No GDOI group selected';
-    eng(ctx).getOrCreateGdoiGroup(name).transformSetName = args[0] || '';
-    return '';
-  });
-
-  trie.registerGreedy('address ipv4', "Set the key server's own local address", (args) => {
-    const name = ctx.getSelectedGdoiGroup();
-    if (!name) return '% No GDOI group selected';
-    eng(ctx).getOrCreateGdoiGroup(name).localAddress = args[0] || '';
-    return '';
-  });
-
-  trie.register('server local', 'Activate this router as the GDOI key server', () => {
-    const name = ctx.getSelectedGdoiGroup();
-    if (!name) return '% No GDOI group selected';
-    const msa = eng(ctx).activateGdoiKeyServer(name);
-    return msa ? '' : '% GDOI group incomplete (need match address + transform-set)';
-  });
-
-  trie.registerGreedy('server address ipv4', 'Register as a group member with a GDOI key server', (args) => {
-    const name = ctx.getSelectedGdoiGroup();
-    if (!name) return '% No GDOI group selected';
-    if (args.length < 1) return '% Incomplete command.';
-    const group = eng(ctx).getOrCreateGdoiGroup(name);
-    group.keyServerAddress = args[0];
-    eng(ctx).registerWithGdoiKeyServer(name);
-    return '';
-  });
-}
-
-const GDOI_GROUP_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  'identity number': {
-    name: 'numero', type: 'INT', range: [1, 2147483647],
-    description: 'Identity of the GDOI group',
-  },
-  'match address ipv4': {
-    name: 'liste', type: 'WORD',
-    description: 'Access list name that selects the protected traffic',
-    alternatives: [
-      { keyword: '<100-199>', description: 'IP extended access list number' },
-    ],
-  },
-  'transform-set': {
-    name: 'nom', type: 'WORD', description: 'Name of the transform set',
-  },
-  'address ipv4': {
-    name: 'adresse', type: 'IP_ADDR', description: 'Local address of the key server',
-  },
-  'server address ipv4': {
-    name: 'adresse', type: 'IP_ADDR', description: 'Address of the key server to register with',
-  },
+const GROUP_NAME: ArgumentSpec = {
+  name: 'name', type: 'WORD', description: 'Name of the GDOI group',
 };
 
-export function gdoiGroupSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) =>
-      buildGdoiGroupCommands(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-gdoi-group'], minPrivilege: 15,
-      argumentFor: (path) => GDOI_GROUP_ARGUMENTS[path],
+export function gdoiGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [{
+    id: 'config-crypto-gdoi-group', path: ['crypto', 'gdoi', 'group', GROUP_NAME],
+    description: 'Define a GDOI GET-VPN group', undoDescription: 'Remove a GDOI GET-VPN group',
+    modes: ['config'], minPrivilege: 15,
+    run: (_session, args) => {
+      engine(ctx).getOrCreateGdoiGroup(args.name);
+      ctx.setSelectedGdoiGroup(args.name);
+      ctx.setMode('config-gdoi-group');
+      return '';
     },
-  );
+    undo: (_session, args) => {
+      engine(ctx).removeGdoiGroup(args.name);
+      return '';
+    },
+  }];
+}
+
+export function gdoiGroupSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-gdoi-group'], minPrivilege: 15 };
+  const onGroup = (apply: (group: GdoiGroup, name: string) => string): string => {
+    const name = ctx.getSelectedGdoiGroup();
+    if (!name) return NO_GROUP_SELECTED;
+    return apply(engine(ctx).getOrCreateGdoiGroup(name), name);
+  };
+  return [
+    {
+      ...base, id: 'gdoi-identity-number',
+      path: ['identity', 'number', {
+        name: 'number', type: 'INT', range: [1, 2147483647],
+        description: 'Identity of the GDOI group',
+      }],
+      description: 'Set the GDOI group identity number',
+      run: (_session, args) => onGroup((group) => {
+        group.identityNumber = Number(args.number);
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'gdoi-match-address-ipv4',
+      path: ['match', 'address', 'ipv4', {
+        name: 'group', type: 'WORD',
+        description: 'Access list name that selects the protected traffic',
+        alternatives: [
+          { keyword: '<100-199>', description: 'IP extended access list number' },
+          { keyword: 'A.B.C.D', description: 'Protected multicast group address' },
+        ],
+      }],
+      description: 'Set the protected multicast group address',
+      run: (_session, args) => onGroup((group) => {
+        group.groupAddress = args.group;
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'gdoi-transform-set',
+      path: ['transform-set', {
+        name: 'name', type: 'WORD', description: 'Name of the transform set',
+      }],
+      description: 'Set the transform-set used for the group SA',
+      run: (_session, args) => onGroup((group) => {
+        group.transformSetName = args.name;
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'gdoi-address-ipv4',
+      path: ['address', 'ipv4', {
+        name: 'address', type: 'IP_ADDR', description: 'Local address of the key server',
+      }],
+      description: "Set the key server's own local address",
+      run: (_session, args) => onGroup((group) => {
+        group.localAddress = args.address;
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'gdoi-server-local', path: ['server', 'local'],
+      description: 'Activate this router as the GDOI key server',
+      run: () => onGroup((_group, name) =>
+        engine(ctx).activateGdoiKeyServer(name)
+          ? '' : '% GDOI group incomplete (need match address + transform-set)'),
+    },
+    {
+      ...base, id: 'gdoi-server-address-ipv4',
+      path: ['server', 'address', 'ipv4', {
+        name: 'address', type: 'IP_ADDR',
+        description: 'Address of the key server to register with',
+      }],
+      description: 'Register as a group member with a GDOI key server',
+      run: (_session, args) => onGroup((group, name) => {
+        group.keyServerAddress = args.address;
+        engine(ctx).registerWithGdoiKeyServer(name);
+        return '';
+      }),
+    },
+  ];
 }

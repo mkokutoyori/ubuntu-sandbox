@@ -4208,3 +4208,20 @@ probe-cle-privee-d-hote-est-privee, probe-couche-internet-un-seul-ttl,
 probe-ipv6-se-fragmente (tcpdump ICMPv6), probe-linux-ne-lit-pas-le-fuseau-du-
 processus, plus the Linux oracle and crypto reds listed above. None is caused by
 the Cisco socle series; they are recorded so a sweep is read against them.
+
+## IKEv2 global settings: three upper bounds not enforced (source unreachable)
+
+`crypto ikev2 nat keepalive`, `cookie-challenge` and `window` refuse
+non-numeric and zero values (cookie-challenge accepts zero), but their upper
+bounds are not enforced and the help announces no range: the Cisco command
+reference for the IKEv2 forms could not be reached. `crypto ikev2 dpd` shares
+the 10-3600 / 2-60 ranges the IKEv2 profile `dpd` of the same file already
+declared. Fetch the IKEv2 pages, then declare the three ranges on the places in
+CiscoIPSecIKEv2Commands.ts.
+
+Also red at the base (27 tests, measured on the same clean worktree): other-commands,
+probe-arith-01-puissance, probe-date-suit-le-fuseau, probe-env-ne-rend-que-l-
+environnement, probe-fuseau-linux-et-pare-feu, probe-fuser-porte-de-psmisc,
+probe-ldapsearch-linux-interroge-le-controleur-de-domaine,
+probe-oracle-sqlplus-silencieux-et-rman-a-froid, probe-proc-sys-write-reaches-
+the-store, probe-procfs-does-not-grow, scenario10-linux-audit, tail.

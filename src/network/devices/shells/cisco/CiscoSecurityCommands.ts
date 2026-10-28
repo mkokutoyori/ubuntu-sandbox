@@ -14,9 +14,9 @@ import {
 import type { CiscoShellContext, CiscoShellMode } from './CiscoConfigCommands';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec, EnumValue } from '@/cli/ArgumentTypes';
-import { boundedInteger } from '@/cli/ArgumentTypes';
+import type { OptionSpec } from '@/cli/OptionBag';
 import {
-  specsFromTrieRegistrations, type AdapterKeyword,
+  specsFromTrieRegistrations,
 } from '@/cli/commands/trieAdapter';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
 import {
@@ -334,203 +334,15 @@ function verifierMethodesAaa(phase: AaaPhase, methods: readonly string[]): strin
   return null;
 }
 
-/**
- * Les trois sous-modes de la famille identite : `config-radius-server`,
- * `config-tacacs-server` et `config-aaa-group`. Extraits pour la meme
- * raison que les deux fonctions ci-dessus — sans eux, `tacacs server X`
- * ouvrirait un mode ou aucune commande n'existe.
- */
-export function buildIdentitySubmodeCommands(
-  radiusTrie: CommandTrie,
-  tacacsTrie: CommandTrie,
-  aaaGroupTrie: CommandTrie,
-  ctx: CiscoSecurityShellContext,
-): void {
-  buildRadiusServerSubmodeOn(radiusTrie, ctx);
-  buildTacacsServerSubmodeOn(tacacsTrie, ctx);
-  buildAaaGroupSubmodeOn(aaaGroupTrie, ctx);
-}
-
-export function buildRadiusServerSubmodeOn(
-  radiusTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  radiusTrie.registerGreedy('address', 'Radius address', (args) => {
-    const name = ctx.getRadiusServer?.();
-    if (!name) return '';
-    const s = sec().radiusServers.get(name);
-    if (!s) return '';
-    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === 'auth-port' && args[i + 1]) s.authPort = parseInt(args[i + 1], 10);
-      if (args[i] === 'acct-port' && args[i + 1]) s.acctPort = parseInt(args[i + 1], 10);
-    }
-    return '';
-  });
-  radiusTrie.registerGreedy('key', 'Radius key', (args) => {
-    const name = ctx.getRadiusServer?.();
-    if (!name) return '';
-    const s = sec().radiusServers.get(name);
-    if (s) s.key = args.join(' ');
-    return '';
-  });
-}
-
-export function buildTacacsServerSubmodeOn(
-  tacacsTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  tacacsTrie.registerGreedy('address', 'Tacacs address', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    if (!s) return '';
-    if (args[0] === 'ipv4' && args[1]) s.address = args[1];
-    return '';
-  });
-  tacacsTrie.registerGreedy('key', 'Tacacs key', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    if (s) s.key = args.join(' ');
-    return '';
-  });
-  tacacsTrie.registerGreedy('port', 'Tacacs port', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    const n = parseInt(args[0], 10);
-    if (s && !isNaN(n)) s.port = n;
-    return '';
-  });
-  tacacsTrie.registerGreedy('timeout', 'Tacacs timeout', (args) => {
-    const name = ctx.getTacacsServer?.();
-    if (!name) return '';
-    const s = sec().tacacsServers.get(name);
-    const n = parseInt(args[0], 10);
-    if (s && !isNaN(n)) s.timeoutSec = n;
-    return '';
-  });
-}
-
-export function buildAaaGroupSubmodeOn(
-  aaaGroupTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  /*
-   * Un groupe accepte DEUX formes de membre, et seule la moderne etait
-   * lue : `server name <nom>` designe un serveur declare par
-   * `tacacs server <nom>`, tandis que `server <ip>` — la forme heritee,
-   * celle qui accompagne `tacacs-server host` et que tous les cours
-   * emploient — etait acceptee et JETEE en silence. Un groupe monte a
-   * l'ancienne etait donc vide, et l'authentification ne trouvait aucun
-   * serveur sans que rien ne le dise.
-   */
-  aaaGroupTrie.registerGreedy('server', 'Add server', (args) => {
-    const name = ctx.getAaaGroup?.();
-    if (!name) return '';
-    const g = sec().aaaGroups.get(name);
-    if (!g) return '';
-    const membre = args[0] === 'name' ? args[1] : args[0];
-    if (!membre) return CISCO_ERRORS.INCOMPLETE;
-    if (!g.members.includes(membre)) g.members.push(membre);
-    return '';
-  });
-  aaaGroupTrie.registerGreedy('no server', 'Remove server', (args) => {
-    const name = ctx.getAaaGroup?.();
-    const g = name ? sec().aaaGroups.get(name) : undefined;
-    if (!g) return '';
-    const membre = args[0] === 'name' ? args[1] : args[0];
-    const i = membre ? g.members.indexOf(membre) : -1;
-    if (i >= 0) g.members.splice(i, 1);
-    return '';
-  });
-}
-
 export function buildSecuritySubmodeCommands(
-  cmapTrie: CommandTrie,
-  pmapTrie: CommandTrie,
   pmapClassTrie: CommandTrie,
-  cpTrie: CommandTrie,
-  zoneTrie: CommandTrie,
-  zonePairTrie: CommandTrie,
-  trTrie: CommandTrie,
-  radiusTrie: CommandTrie,
-  tacacsTrie: CommandTrie,
-  aaaGroupTrie: CommandTrie,
-  trustpointTrie: CommandTrie,
   ctx: CiscoSecurityShellContext,
 ): void {
-  buildClassMapSubmodeOn(cmapTrie, ctx);
-  buildPolicyMapSubmodeOn(pmapTrie, ctx);
   buildPolicyClassSubmodeOn(pmapClassTrie, ctx);
-  buildControlPlaneSubmodeOn(cpTrie, ctx);
-  buildZoneSubmodeOn(zoneTrie, ctx);
-  buildZonePairSubmodeOn(zonePairTrie, ctx);
-  buildIdentitySubmodeCommands(radiusTrie, tacacsTrie, aaaGroupTrie, ctx);
-  buildTrustpointSubmodeOn(trustpointTrie, ctx);
 }
 
 const CMAP_ACL_MIN = 1;
 const CMAP_ACL_MAX = 2799;
-
-export function buildClassMapSubmodeOn(
-  cmapTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  cmapTrie.registerGreedy('match', 'Match criteria', (args) => {
-    const name = ctx.getClassMap?.();
-    if (!name) return '';
-    const cm = sec().classMaps.get(name);
-    if (!cm) return '';
-    if (args[0] === 'access-group') {
-      if (args[1] === undefined) throw new CliIncomplete();
-      if (args[1] === 'name') {
-        if (args[2] === undefined) throw new CliIncomplete();
-        cm.matches.push({ kind: 'access-group-name', value: args[2] });
-      } else if (boundedInteger(args[1], CMAP_ACL_MIN, CMAP_ACL_MAX) !== null) {
-        cm.matches.push({ kind: 'access-group-num', value: args[1] });
-      } else {
-        throw new CliInvalidInput({ token: args[1] });
-      }
-    } else if (args[0] === 'protocol' && args[1]) {
-      cm.matches.push({ kind: 'protocol', value: args[1] });
-    } else if (args[0] === 'any') {
-      cm.matches.push({ kind: 'any' });
-    }
-    return '';
-  });
-}
-
-export function buildPolicyMapSubmodeOn(
-  pmapTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  pmapTrie.registerGreedy('class', 'Class for policy', (args) => {
-    const pname = ctx.getPolicyMap?.();
-    if (!pname) return '';
-    const pm = sec().policyMaps.get(pname);
-    if (!pm) return '';
-    let kind: 'class-default' | 'named' | 'inspect' = 'named';
-    let i = 0;
-    if (args[i] === 'type' && args[i + 1] === 'inspect') { kind = 'inspect'; i += 2; }
-    const cname = args[i] ?? '';
-    if (cname === 'class-default') kind = 'class-default';
-    let cls = pm.classes.find(c => c.className === cname);
-    if (!cls) {
-      cls = { className: cname, kind, actions: [] };
-      pm.classes.push(cls);
-    }
-    ctx.setPolicyClass?.(cname);
-    ctx.setMode('config-pmap-c' as CiscoShellMode);
-    return '';
-  });
-}
 
 export function buildPolicyClassSubmodeOn(
   pmapClassTrie: CommandTrie, ctx: CiscoSecurityShellContext,
@@ -547,132 +359,6 @@ export function buildPolicyClassSubmodeOn(
     if (spec.greedy) pmapClassTrie.registerGreedy(spec.words, spec.description, apply);
     else pmapClassTrie.register(spec.words, spec.description, () => apply([]));
   }
-}
-
-export function buildControlPlaneSubmodeOn(
-  cpTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  cpTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
-    if (args[0] === 'input' && args[1]) sec().controlPlane.servicePolicyInput = args[1];
-    if (args[0] === 'output' && args[1]) sec().controlPlane.servicePolicyOutput = args[1];
-    return '';
-  });
-}
-
-export function buildZoneSubmodeOn(
-  zoneTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  zoneTrie.registerGreedy('description', 'Zone description', (args) => {
-    const name = ctx.getZone?.();
-    if (!name) return '';
-    const z = sec().zones.get(name);
-    if (z) (z as unknown as { description?: string }).description = args.join(' ');
-    return '';
-  });
-}
-
-export function buildZonePairSubmodeOn(
-  zonePairTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  zonePairTrie.registerGreedy('service-policy', 'Apply policy', (args) => {
-    const name = ctx.getZonePair?.();
-    if (!name) return '';
-    const zp = sec().zonePairs.get(name);
-    if (!zp) return '';
-    if (args[0] === 'type' && args[1] === 'inspect' && args[2]) zp.servicePolicy = args[2];
-    return '';
-  });
-}
-
-export function buildTrustpointSubmodeOn(
-  trustpointTrie: CommandTrie, ctx: CiscoSecurityShellContext,
-): void {
-  const sec = () => getSecurityConfig(ctx.r());
-
-  const tp = () => {
-    const name = ctx.getPkiTrustpoint?.();
-    return name ? sec().pkiTrustpoints.get(name) ?? null : null;
-  };
-  trustpointTrie.registerGreedy('enrollment', 'Enrollment configuration', (args) => {
-    const t = tp(); if (!t) return '';
-    if (args.length === 0) return CISCO_ERRORS.INCOMPLETE;
-    const mot = args[0].toLowerCase();
-    if (mot === 'url') {
-      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
-      t.enrollmentUrl = args[1];
-      delete t.enrollmentProfile;
-      delete t.source;
-      return '';
-    }
-    if (mot === 'profile') {
-      if (!args[1]) return CISCO_ERRORS.INCOMPLETE;
-      t.enrollmentProfile = args[1];
-      delete t.enrollmentUrl;
-      delete t.source;
-      return '';
-    }
-    if (mot === 'selfsigned' || mot === 'self-signed') t.source = 'selfsigned';
-    else if (mot === 'terminal') t.source = 'terminal';
-    else throw new CliInvalidInput({ token: args[0] });
-    delete t.enrollmentUrl;
-    delete t.enrollmentProfile;
-    return '';
-  });
-  trustpointTrie.registerGreedy('subject-name', 'Set subject name', (args) => {
-    const t = tp(); if (!t) return '';
-    t.subjectName = args.join(' ');
-    return '';
-  });
-  trustpointTrie.registerGreedy('revocation-check', 'Set revocation check method', (args) => {
-    const t = tp(); if (!t) return '';
-    const mode = args.join(' ').toLowerCase();
-    if (mode === 'crl' || mode === 'none' || mode === 'ocsp' || mode === 'crl-or-ocsp' || mode === 'crl-then-ocsp') {
-      t.revocationCheck = mode as 'crl' | 'none' | 'ocsp' | 'crl-or-ocsp' | 'crl-then-ocsp';
-    }
-    return '';
-  });
-  trustpointTrie.registerGreedy('rsakeypair', 'Bind RSA keypair', (args) => {
-    const t = tp(); if (!t) return '';
-    t.rsaKeypair = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('fqdn', 'Set FQDN', (args) => {
-    const t = tp(); if (!t) return '';
-    t.fqdn = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('ip-address', 'Set IP', (args) => {
-    const t = tp(); if (!t) return '';
-    t.ipAddress = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('serial-number', 'Set serial number', (args) => {
-    const t = tp(); if (!t) return '';
-    t.serialNumber = args[0];
-    return '';
-  });
-  trustpointTrie.registerGreedy('auto-enroll', 'Auto-enrollment', (args) => {
-    const t = tp(); if (!t) return '';
-    const cfg: { percent?: number; regenerate?: boolean } = {};
-    for (let i = 0; i < args.length; i++) {
-      const n = parseInt(args[i], 10);
-      if (!isNaN(n)) cfg.percent = n;
-      if (args[i] === 'regenerate') cfg.regenerate = true;
-    }
-    t.autoEnroll = cfg;
-    return '';
-  });
-  trustpointTrie.registerGreedy('fingerprint', 'Set fingerprint', (args) => {
-    const t = tp(); if (!t) return '';
-    t.fingerprint = args.join(' ');
-    return '';
-  });
 }
 
 const REVOCATION_MODES: readonly EnumValue[] = [
@@ -696,20 +382,6 @@ function formes(
   return { name, type: 'REST', description, alternatives };
 }
 
-const CMAP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'access-group', description: 'Access group',
-    argument: formes('liste', 'Access list to match', [
-      { keyword: `<${CMAP_ACL_MIN}-${CMAP_ACL_MAX}>`, description: 'Access list index' },
-      { keyword: 'name', description: 'Named access list' },
-    ]),
-  },
-  {
-    keyword: 'protocol', description: 'Protocol',
-    argument: place('protocole', 'WORD', 'Protocol name'),
-  },
-  { keyword: 'any', description: 'Any packets', argument: null },
-];
 
 /**
  * Ce que la configuration globale de securite confie au socle.
@@ -754,31 +426,71 @@ export function securityGlobalSpecs(ctx: CiscoSecurityShellContext): CommandSpec
 }
 
 export function classMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildClassMapSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-cmap'], minPrivilege: 15,
-      keywordsFor: () => CMAP_KEYWORDS,
-      argumentFor: () => null,
+  const base = { modes: ['config-cmap'], minPrivilege: 15 };
+  const classMap = () => {
+    const name = ctx.getClassMap?.();
+    return name ? getSecurityConfig(ctx.r()).classMaps.get(name) : undefined;
+  };
+  const match = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>, description: string,
+    record: (args: Record<string, string>) => { kind: string; value?: string },
+  ): CommandSpec => ({
+    ...base, id, path: [...path], description,
+    run: (_session, args) => {
+      const entry = classMap();
+      if (entry) (entry.matches as Array<{ kind: string; value?: string }>).push(record(args));
+      return '';
     },
-  );
+  });
+  return [
+    match('cmap-match-access-group-name',
+      ['match', 'access-group', 'name', place('name', 'WORD', 'Named access list')],
+      'Named access list',
+      (args) => ({ kind: 'access-group-name', value: args.name })),
+    match('cmap-match-access-group-number',
+      ['match', 'access-group', place('number', 'INT', 'Access list index',
+        { range: [CMAP_ACL_MIN, CMAP_ACL_MAX] })],
+      'Access list index',
+      (args) => ({ kind: 'access-group-num', value: args.number })),
+    match('cmap-match-protocol',
+      ['match', 'protocol', place('protocol', 'WORD', 'Protocol name')],
+      'Protocol', (args) => ({ kind: 'protocol', value: args.protocol })),
+    match('cmap-match-any', ['match', 'any'], 'Any packets', () => ({ kind: 'any' })),
+  ];
 }
 
 export function policyMapSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildPolicyMapSubmodeOn(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-pmap'], minPrivilege: 15 };
+  const enter = (className: string, kind: 'class-default' | 'named' | 'inspect'): string => {
+    const name = ctx.getPolicyMap?.();
+    const policy = name ? getSecurityConfig(ctx.r()).policyMaps.get(name) : undefined;
+    if (!policy) return '';
+    if (!policy.classes.find((c) => c.className === className)) {
+      policy.classes.push({ className, kind, actions: [] });
+    }
+    ctx.setPolicyClass?.(className);
+    ctx.setMode('config-pmap-c' as CiscoShellMode);
+    return '';
+  };
+  return [
     {
-      modes: ['config-pmap'], minPrivilege: 15,
-      argumentFor: () => formes('classe', 'class-map name', [
-        { keyword: 'WORD', description: 'class-map name' },
-        {
-          keyword: 'class-default',
-          description: 'System default class matching otherwise unclassified packets',
-        },
-        { keyword: 'type', description: 'policy-map class type' },
-      ]),
+      ...base, id: 'pmap-class-default', path: ['class', 'class-default'],
+      description: 'System default class matching otherwise unclassified packets',
+      run: () => enter('class-default', 'class-default'),
     },
-  );
+    {
+      ...base, id: 'pmap-class-type-inspect',
+      path: ['class', 'type', 'inspect', place('class', 'WORD', 'class-map name')],
+      description: 'policy-map class type',
+      run: (_session, args) => enter(args.class, 'inspect'),
+    },
+    {
+      ...base, id: 'pmap-class',
+      path: ['class', place('class', 'WORD', 'class-map name')],
+      description: 'Class for policy',
+      run: (_session, args) => enter(args.class, 'named'),
+    },
+  ];
 }
 
 /**
@@ -868,170 +580,268 @@ export function policyClassSubmodeSpecs(ctx: CiscoSecurityShellContext): Command
   );
 }
 
-const SERVICE_POLICY_SENS: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'input', description: 'Assign a policy map to the input of the control plane',
-    argument: place('politique', 'WORD', 'Policy map name'),
-  },
-  {
-    keyword: 'output', description: 'Assign a policy map to the output of the control plane',
-    argument: place('politique', 'WORD', 'Policy map name'),
-  },
-];
 
 export function controlPlaneSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildControlPlaneSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-cp'], minPrivilege: 15,
-      keywordsFor: () => SERVICE_POLICY_SENS,
-      argumentFor: () => null,
+  const base = { modes: ['config-cp'], minPrivilege: 15 };
+  const direction = (
+    keyword: 'input' | 'output', field: 'servicePolicyInput' | 'servicePolicyOutput',
+  ): CommandSpec => ({
+    ...base, id: `cp-service-policy-${keyword}`,
+    path: ['service-policy', keyword, place('policy', 'WORD', 'Policy map name')],
+    description: `Assign a policy map to the ${keyword} of the control plane`,
+    run: (_session, args) => {
+      getSecurityConfig(ctx.r()).controlPlane[field] = args.policy;
+      return '';
     },
-  );
+  });
+  return [direction('input', 'servicePolicyInput'), direction('output', 'servicePolicyOutput')];
 }
 
 export function zoneSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildZoneSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-zone'], minPrivilege: 15,
-      argumentFor: () => place('texte', 'REST',
-        'Up to 200 characters describing this zone', { literal: 'LINE' }),
+  return [{
+    id: 'zone-description', modes: ['config-zone'], minPrivilege: 15,
+    path: ['description', place('text', 'REST',
+      'Up to 200 characters describing this zone', { literal: 'LINE' })],
+    description: 'Zone description',
+    run: (_session, args) => {
+      const name = ctx.getZone?.();
+      const zone = name ? getSecurityConfig(ctx.r()).zones.get(name) : undefined;
+      if (zone) zone.description = args.text.trim();
+      return '';
     },
-  );
+  }];
 }
 
 export function zonePairSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildZonePairSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-zone-pair'], minPrivilege: 15,
-      argumentFor: () => null,
-      keywordsFor: () => [{
-        keyword: 'type', description: 'Type of the service policy',
-        argument: formes('inspection', 'Inspection policy map to apply', [
-          { keyword: 'inspect', description: 'Apply an inspection policy map' },
-        ]),
-      }],
+  return [{
+    id: 'zone-pair-service-policy', modes: ['config-zone-pair'], minPrivilege: 15,
+    path: ['service-policy', 'type', 'inspect',
+      place('policy', 'WORD', 'Inspection policy map to apply')],
+    description: 'Apply policy',
+    run: (_session, args) => {
+      const name = ctx.getZonePair?.();
+      const pair = name ? getSecurityConfig(ctx.r()).zonePairs.get(name) : undefined;
+      if (pair) pair.servicePolicy = args.policy;
+      return '';
     },
-  );
+  }];
 }
-
-const RADIUS_SUBMODE_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'ipv4', description: 'IPv4 address of the RADIUS server',
-  argument: [
-    place('adresse', 'IP_ADDR', 'IP address of the RADIUS server'),
-    place('ports', 'REST', 'auth-port and acct-port of this server', { optional: true }),
-  ],
-}];
 
 export function radiusServerSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildRadiusServerSubmodeOn(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-radius-server'], minPrivilege: 15 };
+  const server = () => {
+    const name = ctx.getRadiusServer?.();
+    return name ? getSecurityConfig(ctx.r()).radiusServers.get(name) : undefined;
+  };
+  const portOption = (keyword: string, description: string): OptionSpec => ({
+    keyword, description,
+    argument: { name: keyword, type: 'INT', range: [1, 65535], description: 'Port number' },
+  });
+  return [
     {
-      modes: ['config-radius-server'], minPrivilege: 15,
-      argumentFor: (path) => path === 'key'
-        ? place('cle', 'REST', 'The shared key itself', { literal: 'LINE' }) : null,
-      keywordsFor: (path) => path === 'address' ? RADIUS_SUBMODE_KEYWORDS : undefined,
+      ...base, id: 'radius-server-address-ipv4',
+      path: ['address', 'ipv4',
+        place('address', 'IP_ADDR', 'IP address of the RADIUS server')],
+      options: [
+        portOption('auth-port', 'UDP port for RADIUS authentication server'),
+        portOption('acct-port', 'UDP port for RADIUS accounting server'),
+      ],
+      description: 'IPv4 address of the RADIUS server',
+      run: (_session, args) => {
+        const entry = server();
+        if (!entry) return '';
+        entry.address = args.address;
+        if (args['auth-port'] !== undefined) entry.authPort = Number(args['auth-port']);
+        if (args['acct-port'] !== undefined) entry.acctPort = Number(args['acct-port']);
+        return '';
+      },
     },
-  );
+    {
+      ...base, id: 'radius-server-key',
+      path: ['key', place('key', 'REST', 'The shared key itself', { literal: 'LINE' })],
+      description: 'Radius key',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.key = args.key.trim();
+        return '';
+      },
+    },
+  ];
 }
 
-const TACACS_SUBMODE_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'ipv4', description: 'IPv4 address of the TACACS+ server',
-  argument: place('adresse', 'IP_ADDR', 'IP address of the TACACS+ server'),
-}];
-
-const TACACS_SUBMODE_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  address: null,
-  key: place('cle', 'REST', 'The shared key itself', { literal: 'LINE' }),
-  port: place('port', 'INT', 'Port number', { range: [1, 65535] }),
-  timeout: place('secondes', 'INT', 'Wait time in seconds', { range: [1, 1000] }),
-};
-
 export function tacacsServerSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildTacacsServerSubmodeOn(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['config-tacacs-server'], minPrivilege: 15 };
+  const server = () => {
+    const name = ctx.getTacacsServer?.();
+    return name ? getSecurityConfig(ctx.r()).tacacsServers.get(name) : undefined;
+  };
+  return [
     {
-      modes: ['config-tacacs-server'], minPrivilege: 15,
-      argumentFor: (path) => TACACS_SUBMODE_ARGUMENTS[path],
-      keywordsFor: (path) => path === 'address' ? TACACS_SUBMODE_KEYWORDS : undefined,
+      ...base, id: 'tacacs-server-address-ipv4',
+      path: ['address', 'ipv4',
+        place('address', 'IP_ADDR', 'IP address of the TACACS+ server')],
+      description: 'IPv4 address of the TACACS+ server',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.address = args.address;
+        return '';
+      },
     },
-  );
+    {
+      ...base, id: 'tacacs-server-key',
+      path: ['key', place('key', 'REST', 'The shared key itself', { literal: 'LINE' })],
+      description: 'Tacacs key',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.key = args.key.trim();
+        return '';
+      },
+    },
+    {
+      ...base, id: 'tacacs-server-port',
+      path: ['port', place('port', 'INT', 'Port number', { range: [1, 65535] })],
+      description: 'Tacacs port',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.port = Number(args.port);
+        return '';
+      },
+    },
+    {
+      ...base, id: 'tacacs-server-timeout',
+      path: ['timeout', place('seconds', 'INT', 'Wait time in seconds', { range: [1, 1000] })],
+      description: 'Tacacs timeout',
+      run: (_session, args) => {
+        const entry = server();
+        if (entry) entry.timeoutSec = Number(args.seconds);
+        return '';
+      },
+    },
+  ];
 }
 
 export function aaaGroupSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildAaaGroupSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-aaa-group'], minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: () => formes('serveur', 'Server that joins the group', [
-        { keyword: 'A.B.C.D', description: 'Address of a server declared the legacy way' },
-        { keyword: 'name', description: 'Name of a server declared by `tacacs server`' },
-      ]),
+  const base = { modes: ['config-aaa-group'], minPrivilege: 15 };
+  const group = () => {
+    const name = ctx.getAaaGroup?.();
+    return name ? getSecurityConfig(ctx.r()).aaaGroups.get(name) : undefined;
+  };
+  const member = (path: ReadonlyArray<string | ArgumentSpec>, id: string, description: string,
+    placeName: string): CommandSpec => ({
+    ...base, id, path: [...path], description, undoDescription: 'Remove server',
+    run: (_session, args) => {
+      const entry = group();
+      if (entry && !entry.members.includes(args[placeName])) entry.members.push(args[placeName]);
+      return '';
     },
-  );
+    undo: (_session, args) => {
+      const entry = group();
+      const index = entry ? entry.members.indexOf(args[placeName]) : -1;
+      if (entry && index >= 0) entry.members.splice(index, 1);
+      return '';
+    },
+  });
+  return [
+    member(['server', 'name', place('name', 'WORD', 'Name of a server declared by `tacacs server`')],
+      'aaa-group-server-name', 'Name of a server declared by `tacacs server`', 'name'),
+    member(['server', place('address', 'IP_ADDR', 'Address of a server declared the legacy way')],
+      'aaa-group-server-address', 'Address of a server declared the legacy way', 'address'),
+  ];
 }
-
-const TRUSTPOINT_ENROLLMENT: ReadonlyArray<AdapterKeyword> = [
-  {
-    keyword: 'profile', description: 'Name of an enrollment profile',
-    argument: place('profil', 'WORD', 'Enrollment profile name'),
-  },
-  { keyword: 'self-signed', description: 'Generate a self-signed certificate', argument: null },
-  { keyword: 'selfsigned', description: 'Generate a self-signed certificate', argument: null },
-  { keyword: 'terminal', description: 'Cut and paste the certificate at the terminal', argument: null },
-  {
-    keyword: 'url', description: 'Enrollment URL of the certification authority',
-    argument: place('url', 'WORD', 'The enrollment URL itself'),
-  },
-];
-
-const TRUSTPOINT_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  enrollment: null,
-  'subject-name': place('sujet', 'REST',
-    'Distinguished name of the certificate subject', { literal: 'LINE' }),
-  'revocation-check': place('methode', 'ENUM', 'How to check the revocation status', {
-    values: REVOCATION_MODES,
-  }),
-  rsakeypair: place('cle', 'WORD', 'Name of the RSA key pair to bind'),
-  fqdn: formes('nom', 'Fully qualified domain name of the certificate', [
-    { keyword: 'WORD', description: 'The domain name itself' },
-    { keyword: 'none', description: 'Do not include a domain name' },
-  ]),
-  'ip-address': formes('adresse', 'IP address of the certificate', [
-    { keyword: 'A.B.C.D', description: 'The address itself' },
-    { keyword: 'none', description: 'Do not include an IP address' },
-  ]),
-  'serial-number': formes('serie', 'Serial number of the certificate', [
-    { keyword: 'none', description: 'Do not include a serial number' },
-  ]),
-  'auto-enroll': place('pourcentage', 'INT',
-    'Percentage of the certificate lifetime after which to re-enrol', {
-      optional: true,
-    }),
-  fingerprint: place('empreinte', 'REST', 'Fingerprint the certificate must carry', { literal: 'LINE' }),
-};
 
 export function trustpointSubmodeSpecs(ctx: CiscoSecurityShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildTrustpointSubmodeOn(collector as unknown as CommandTrie, ctx),
-    {
-      modes: ['config-ca-trustpoint'], minPrivilege: 15,
-      argumentFor: (path) => TRUSTPOINT_ARGUMENTS[path],
-      keywordsFor: (path) => path === 'enrollment' ? TRUSTPOINT_ENROLLMENT
-        : path === 'auto-enroll' ? AUTO_ENROLL_KEYWORDS : undefined,
+  const base = { modes: ['config-ca-trustpoint'], minPrivilege: 15 };
+  const trustpoint = () => {
+    const name = ctx.getPkiTrustpoint?.();
+    return name ? getSecurityConfig(ctx.r()).pkiTrustpoints.get(name) : undefined;
+  };
+  const setting = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>, description: string,
+    apply: (entry: NonNullable<ReturnType<typeof trustpoint>>, args: Record<string, string>) => void,
+  ): CommandSpec => ({
+    ...base, id, path: [...path], description,
+    run: (_session, args) => {
+      const entry = trustpoint();
+      if (entry) apply(entry, args);
+      return '';
     },
-  );
+  });
+  const forgetEnrollment = (entry: NonNullable<ReturnType<typeof trustpoint>>): void => {
+    delete entry.enrollmentUrl;
+    delete entry.enrollmentProfile;
+    delete entry.source;
+  };
+  const selfSigned = (keyword: string): CommandSpec => setting(
+    `trustpoint-enrollment-${keyword}`, ['enrollment', keyword],
+    'Generate a self-signed certificate',
+    (entry) => { forgetEnrollment(entry); entry.source = 'selfsigned'; });
+  return [
+    setting('trustpoint-enrollment-url',
+      ['enrollment', 'url', place('url', 'WORD', 'The enrollment URL itself')],
+      'Enrollment URL of the certification authority',
+      (entry, args) => { forgetEnrollment(entry); entry.enrollmentUrl = args.url; }),
+    setting('trustpoint-enrollment-profile',
+      ['enrollment', 'profile', place('profile', 'WORD', 'Enrollment profile name')],
+      'Name of an enrollment profile',
+      (entry, args) => { forgetEnrollment(entry); entry.enrollmentProfile = args.profile; }),
+    selfSigned('self-signed'),
+    selfSigned('selfsigned'),
+    setting('trustpoint-enrollment-terminal', ['enrollment', 'terminal'],
+      'Cut and paste the certificate at the terminal',
+      (entry) => { forgetEnrollment(entry); entry.source = 'terminal'; }),
+    setting('trustpoint-subject-name',
+      ['subject-name', place('subject', 'REST',
+        'Distinguished name of the certificate subject', { literal: 'LINE' })],
+      'Set subject name', (entry, args) => { entry.subjectName = args.subject.trim(); }),
+    setting('trustpoint-revocation-check',
+      ['revocation-check', place('method', 'ENUM', 'How to check the revocation status',
+        { values: REVOCATION_MODES })],
+      'Set revocation check method',
+      (entry, args) => { entry.revocationCheck = args.method.toLowerCase() as typeof entry.revocationCheck; }),
+    setting('trustpoint-rsakeypair',
+      ['rsakeypair', place('key', 'WORD', 'Name of the RSA key pair to bind')],
+      'Bind RSA keypair', (entry, args) => { entry.rsaKeypair = args.key; }),
+    setting('trustpoint-fqdn',
+      ['fqdn', place('name', 'WORD', 'Fully qualified domain name of the certificate',
+        { alternatives: [
+          { keyword: 'WORD', description: 'The domain name itself' },
+          { keyword: 'none', description: 'Do not include a domain name' },
+        ] })],
+      'Set FQDN', (entry, args) => { entry.fqdn = args.name; }),
+    setting('trustpoint-ip-address',
+      ['ip-address', place('address', 'IP_ADDR', 'The address itself')],
+      'Set IP', (entry, args) => { entry.ipAddress = args.address; }),
+    setting('trustpoint-ip-address-none', ['ip-address', 'none'],
+      'Do not include an IP address', (entry) => { entry.ipAddress = 'none'; }),
+    setting('trustpoint-serial-number-none', ['serial-number', 'none'],
+      'Do not include a serial number', (entry) => { entry.serialNumber = 'none'; }),
+    {
+      ...base, id: 'trustpoint-auto-enroll',
+      path: ['auto-enroll', place('percent', 'INT',
+        'Percentage of the certificate lifetime after which to re-enrol',
+        { optional: true, range: [1, 100] })],
+      options: [{
+        keyword: 'regenerate', description: 'Generate a new key pair when re-enrolling',
+      }],
+      description: 'Auto-enrollment',
+      run: (_session, args) => {
+        const entry = trustpoint();
+        if (entry) {
+          entry.autoEnroll = {
+            ...(args.percent !== undefined ? { percent: Number(args.percent) } : {}),
+            ...(args.regenerate !== undefined ? { regenerate: true } : {}),
+          };
+        }
+        return '';
+      },
+    },
+    setting('trustpoint-fingerprint',
+      ['fingerprint', place('fingerprint', 'REST',
+        'Fingerprint the certificate must carry', { literal: 'LINE' })],
+      'Set fingerprint', (entry, args) => { entry.fingerprint = args.fingerprint.trim(); }),
+  ];
 }
 
-const AUTO_ENROLL_KEYWORDS: ReadonlyArray<AdapterKeyword> = [{
-  keyword: 'regenerate', description: 'Generate a new key pair when re-enrolling',
-  argument: null, afterArguments: true,
-}];
 
 function addAction(
   ctx: CiscoSecurityShellContext,

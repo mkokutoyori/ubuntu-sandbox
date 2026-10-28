@@ -130,14 +130,14 @@ import { fhrpRunningConfigLines } from '../../fhrp/runningConfig';
 import { fhrpViewOf, formatArpTimeout } from './cisco/CiscoShowCommands';
 import { hsrpMaxGroup } from '../../hsrp/types';
 import {
-  buildIdentityConfigCommands, buildIdentitySubmodeCommands, getSecurityConfig,
+  buildIdentityConfigCommands, getSecurityConfig,
   type CiscoSecurityShellContext,
 } from './cisco/CiscoSecurityCommands';
 import {
   showSwitchVersion, showIpTraffic, iosClockConfigLines, ciscoShortInterfaceName,
 } from './cisco/CiscoCommonShow';
 import type { LoggingCommandContext } from './cisco/CiscoLoggingCommands';
-import { buildConfigDhcpCommands, dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
+import { dhcpPoolSpecs } from './cisco/CiscoDhcpCommands';
 import { compactVlanList, parseVlanList } from './cli/vlanList';
 
 /** La distance administrative d'une route statique sur IOS. */
@@ -5430,7 +5430,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // handful of accessors the pool commands actually call need to be
     // populated; the rest of CiscoShellContext is irrelevant on a
     // switch (no IPSec / routing-proto state here).
-    buildConfigDhcpCommands(this.configDhcpTrie, this.dhcpPoolContext());
 
     // ── AAA / TACACS+ / RADIUS / protection force brute ──
     // Un Catalyst 2960 connait toute cette famille ; elle vivait dans le
@@ -5439,10 +5438,6 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
     // inspect`). Extraite, elle sert les deux sans leur donner le reste.
     const identityCtx = this.identitySubmodeContext();
     buildIdentityConfigCommands(this.configTrie, identityCtx);
-    buildIdentitySubmodeCommands(
-      this.configRadiusServerTrie, this.configTacacsServerTrie,
-      this.configAaaGroupTrie, identityCtx,
-    );
 
     // ── Show commands ──────────────────────────────────────────────
     for (const t of [this.userTrie, this.privilegedTrie]) {
