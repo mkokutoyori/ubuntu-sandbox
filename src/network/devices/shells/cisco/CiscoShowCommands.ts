@@ -1030,6 +1030,12 @@ function lignesDAire(
       redistributeOther?: Array<{
         protocol: string; id?: string; subnets: boolean; metric?: number; metricType?: number;
       }>;
+      distributeList?: { aclId?: string; prefixListName?: string; direction: 'in' | 'out' };
+      maxLsa?: number;
+      maxMetric?: { enabled: boolean; onStartup?: number };
+      summaryAddresses?: Array<{ network: string; mask: string }>;
+      bfdAllInterfaces?: boolean;
+      gracefulRestart?: { enabled: boolean; gracePeriod: number };
     };
   })._getOSPFExtraConfig?.();
   for (const [id, voisin] of extra?.virtualLinks ?? []) {
@@ -1066,6 +1072,23 @@ function lignesDAire(
   if (extra?.redistributeRip) lignes.push(redistribute('rip', extra.redistributeRip));
   for (const other of extra?.redistributeOther ?? []) {
     lignes.push(redistribute(`${other.protocol} ${other.id}`, other));
+  }
+  if (extra?.maxLsa) lignes.push(`max-lsa ${extra.maxLsa}`);
+  if (extra?.maxMetric?.enabled) {
+    lignes.push(`max-metric router-lsa${
+      extra.maxMetric.onStartup !== undefined ? ` on-startup ${extra.maxMetric.onStartup}` : ''}`);
+  }
+  for (const resume of extra?.summaryAddresses ?? []) {
+    lignes.push(`summary-address ${resume.network} ${resume.mask}`);
+  }
+  if (extra?.distributeList) {
+    const filtre = extra.distributeList;
+    lignes.push(`distribute-list ${filtre.prefixListName !== undefined
+      ? `prefix ${filtre.prefixListName}` : filtre.aclId} ${filtre.direction}`);
+  }
+  if (extra?.bfdAllInterfaces) lignes.push('bfd all-interfaces');
+  if (extra?.gracefulRestart?.enabled) {
+    lignes.push(`graceful-restart grace-period ${extra.gracefulRestart.gracePeriod}`);
   }
   if (extra?.defaultMetric !== undefined) lignes.push(`default-metric ${extra.defaultMetric}`);
   if (extra?.defaultInformation) lignes.push(defaultInformationLine(extra.defaultInformation));

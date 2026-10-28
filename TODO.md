@@ -4214,8 +4214,4 @@ rendered in the running-config. Still open: `route-map` and `tag` are not
 declared (refused at the caret) because the engine neither evaluates a
 route-map on redistribution nor carries the external route tag; and
 `redistribute bgp|eigrp|ospf N` is stored and rendered but no route from those
-sources enters OSPF. IS-IS as a source is not declared. The same renderer gap
-(stored, accepted, not shown) still exists for `distribute-list`, `max-lsa`,
-`summary-address`, `max-metric router-lsa`, `bfd all-interfaces` and
-`graceful-restart` under `router ospf`.
-
+sources enters OSPF. IS-IS as a source is not declared. 

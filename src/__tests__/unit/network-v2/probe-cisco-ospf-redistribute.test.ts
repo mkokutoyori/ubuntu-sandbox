@@ -3,7 +3,7 @@
  * options judged, its metric honoured by the engine, and the whole thing
  * rendered in the running-config.
  *
- * Measured before the change: 8 of the 11 cases fall. The handler read its
+ * Measured before the change: 9 of the 12 cases fall. The handler read its
  * options with a positional parseInt scan: `metric zorglub` and
  * `metric-type 5` were accepted (the 5 stored as the external type), a
  * trailing word was accepted, `metric` on `static` and `connected` was
@@ -13,6 +13,10 @@
  * redistribution. The three that pass either way: the bare forms, `redistribute
  * zorglub` (the protocol keyword was already judged) and the default metric of
  * 20 when none is written.
+ *
+ * The last case (the other six accepted settings rendered) was added by the
+ * follow-up: max-lsa, max-metric, summary-address, distribute-list, bfd
+ * all-interfaces and graceful-restart were stored and never shown.
  *
  * Not declared, because the engine cannot evaluate them (TODO.md):
  * `route-map` and `tag`.
@@ -102,5 +106,19 @@ describe('the engine honours the metric the operator wrote', () => {
     const route = await advertised('metric 77 metric-type 1');
     expect(route?.metric).toBe(77);
     expect(route?.metricType).toBe(1);
+  });
+});
+
+describe('the other accepted OSPF settings are rendered too', () => {
+  it('shows max-lsa, max-metric, summary-address, distribute-list, bfd and graceful-restart', async () => {
+    const r = await ospf('max-lsa 5000', 'max-metric router-lsa on-startup 60',
+      'summary-address 172.16.0.0 255.255.0.0', 'distribute-list 10 out',
+      'bfd all-interfaces', 'graceful-restart grace-period 90');
+    const config = await section(r);
+    for (const line of [' max-lsa 5000', ' max-metric router-lsa on-startup 60',
+      ' summary-address 172.16.0.0 255.255.0.0', ' distribute-list 10 out',
+      ' bfd all-interfaces', ' graceful-restart grace-period 90']) {
+      expect(config, line).toContain(line);
+    }
   });
 });
