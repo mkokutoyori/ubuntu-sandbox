@@ -14,6 +14,7 @@ const PREFIX_LIST_VIEW: ArgumentSpec = {
   name: 'view', type: 'REST', optional: true, literal: 'WORD',
   description: 'Name of a prefix list',
   alternatives: [
+    { keyword: 'WORD', description: 'Name of a prefix list' },
     { keyword: 'detail', description: 'Detailed information' },
     { keyword: 'summary', description: 'Summary of the prefix lists' },
   ],

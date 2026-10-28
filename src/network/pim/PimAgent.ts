@@ -440,6 +440,14 @@ export class PimAgent {
     }
   }
 
+  setSptThreshold(threshold: 'infinity' | number | null): void {
+    this.config.sptThreshold = threshold;
+  }
+
+  getSptThreshold(): 'infinity' | number | null {
+    return this.config.sptThreshold;
+  }
+
   setJoinPruneInterval(seconds: number): void {
     this.config.joinPruneIntervalSec = Math.max(5, seconds);
     this.config.joinPruneHoldtimeSec = Math.max(15, Math.floor(seconds * 3.5));

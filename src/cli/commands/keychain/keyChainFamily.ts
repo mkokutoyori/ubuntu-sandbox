@@ -45,9 +45,10 @@ const YEAR: ArgumentSpec = {
   name: 'year', type: 'INT', range: [...SUMMER_TIME_YEAR_RANGE], description: 'Year',
 };
 
-function instant(side: string): ArgumentSpec[] {
+function instant(side: 'start' | 'end'): ArgumentSpec[] {
   return [
-    clockTime(`${side}-time`, 'Time of day (hh:mm:ss)', true),
+    clockTime(`${side}-time`,
+      side === 'start' ? 'Start time and date (hh:mm:ss)' : 'End time (hh:mm:ss)', true),
     monthOrDay(`${side}-first`, 'Day of the month or month'),
     monthOrDay(`${side}-second`, 'Month or day of the month'),
     { ...YEAR, name: `${side}-year` },

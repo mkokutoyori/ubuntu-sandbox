@@ -109,7 +109,7 @@ import {
   igmpInterfaceSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
-  buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
+  buildPimGlobalConfigCommands, registerPimShowCommands,
   pimInterfaceSpecs, pimGlobalSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
@@ -2427,10 +2427,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildPimInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
     buildPimGlobalConfigCommands(this.configTrie, { r: () => this.d() });
     if (this.hasVxlanHardware()) {
       buildVxlanInterfaceCommands(this.configIfTrie, {

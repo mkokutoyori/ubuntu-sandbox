@@ -192,6 +192,7 @@ export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] 
     {
       ...base, id: 'line-login', path: ['login'],
       description: 'Enable password checking',
+      undoDescription: 'Disable authentication on the line',
       run: () => { host().guard('login'); return host().setLogin('password'); },
       undo: () => guarded('login', () => host().clearLogin(false)),
     },
@@ -219,12 +220,12 @@ export function lineSettingsFamily(host: () => LineSettingsHost): CommandSpec[] 
         name: 'password', type: 'REST', literal: 'LINE',
         description: 'The UNENCRYPTED (cleartext) line password',
       }],
-      description: 'Set a password',
+      description: 'Set a password', undoDescription: 'Clear the line password',
       run: (_session, args) => guarded('password', () =>
         host().setLinePassword(args.password.trim().split(/\s+/))),
       undo: () => guarded('password', () => host().clearLinePassword()),
     },
-    undoOf(base, 'line-password', ['password'], 'Set a password',
+    undoOf(base, 'line-password', ['password'], 'Clear the line password',
       () => guarded('password', () => host().clearLinePassword())),
   ];
   const serialSpecs = SERIAL.flatMap(([keyword, place]): CommandSpec[] => [
