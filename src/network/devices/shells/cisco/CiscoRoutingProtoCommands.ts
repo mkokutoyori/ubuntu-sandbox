@@ -358,6 +358,79 @@ function judgeBgpProcessOption(words: readonly string[]): void {
   }
   if (!BGP_VALUE_OPTIONS.has(option)) throw new CliInvalidInput({ token: words[0] });
   if (words.length < 2) throw new CliIncomplete();
+  const refused = BGP_OPTION_VALUE_JUDGES[option]?.(words.slice(1));
+  if (refused !== undefined) throw new CliInvalidInput({ token: words[1 + refused] });
+}
+
+const BGP_OPTION_VALUE_JUDGES: Readonly<Record<string, (tail: readonly string[]) => number | undefined>> = {
+  'cluster-id': (tail) => {
+    if (tail.length > 1) return 1;
+    return isValidIPv4(tail[0]) || unsignedWithin(tail[0], 1, 4294967295) ? undefined : 0;
+  },
+  'maxas-limit': (tail) => {
+    if (tail.length > 1) return 1;
+    return unsignedWithin(tail[0], 1, 2000) ? undefined : 0;
+  },
+  'update-delay': (tail) => {
+    if (tail.length > 1) return 1;
+    return unsignedWithin(tail[0], 0, 3600) ? undefined : 0;
+  },
+  asnotation: (tail) => {
+    if (tail.length > 1) return 1;
+    return tail[0].toLowerCase() === 'dot' ? undefined : 0;
+  },
+  confederation: (tail) => {
+    const keyword = tail[0].toLowerCase();
+    if (keyword !== 'identifier' && keyword !== 'peers') return 0;
+    if (tail.length < 2) return tail.length;
+    const numbers = tail.slice(1);
+    const bad = numbers.findIndex((word) => !unsignedWithin(word, 1, 4294967295));
+    if (bad >= 0) return bad + 1;
+    return keyword === 'identifier' && numbers.length > 1 ? 2 : undefined;
+  },
+  default: (tail) => {
+    const keyword = tail[0].toLowerCase();
+    if (keyword === 'ipv4-unicast') return tail.length > 1 ? 1 : undefined;
+    if (keyword === 'route-target') {
+      return tail.length === 2 && tail[1].toLowerCase() === 'filter' ? undefined : Math.min(1, tail.length);
+    }
+    return 0;
+  },
+  bestpath: (tail) => {
+    const known = new Set(['as-path', 'compare-routerid', 'med', 'cost-community', 'igp-metric', 'aigp', 'bandwidth', 'prefix-validate']);
+    return known.has(tail[0].toLowerCase()) ? undefined : 0;
+  },
+  listen: (tail) => {
+    const keyword = tail[0].toLowerCase();
+    if (keyword === 'limit') {
+      return tail.length === 2 && unsignedWithin(tail[1], 1, 4294967295) ? undefined : Math.min(1, tail.length);
+    }
+    return keyword === 'range' ? undefined : 0;
+  },
+  dampening: (tail) => {
+    if (tail[0].toLowerCase() === 'route-map') return tail.length === 2 ? undefined : Math.min(1, tail.length);
+    const bad = tail.findIndex((word) => !unsignedWithin(word, 1, 45000));
+    return bad >= 0 ? bad : tail.length === 1 || tail.length === 4 ? undefined : tail.length;
+  },
+};
+
+function judgeProtoExtraTail(keyword: string, args: readonly string[]): number | undefined {
+  if (keyword === 'validate-update-source' || keyword === 'no validate-update-source') {
+    return args.length > 0 ? 0 : undefined;
+  }
+  if (keyword === 'output-delay' || keyword === 'flash-update-threshold') {
+    const [min, max] = keyword === 'output-delay' ? [8, 50] : [0, 30];
+    if (args.length === 0) return undefined;
+    if (args.length > 1) return 1;
+    return unsignedWithin(args[0], min, max) ? undefined : 0;
+  }
+  if (keyword === 'traffic-share') {
+    const first = args[0]?.toLowerCase();
+    if (first === 'balanced') return args.length > 1 ? 1 : undefined;
+    if (first === 'min') return args.length === 2 && args[1].toLowerCase() === 'across-interfaces' ? undefined : Math.min(1, args.length);
+    return args.length === 0 ? undefined : 0;
+  }
+  return undefined;
 }
 
 function judgeBgpNetworkTail(args: readonly string[]): void {
@@ -698,7 +771,14 @@ function buildRouterSubmodeOn(
       if (a.length > 3) throw new CliInvalidInput({ token: a[3] });
       const b = bgp(); if (b) pushOnce(b.extras, line);
     }
-    else if (p === 'eigrp') pushOnce(eigrp().extras, line);
+    else if (p === 'eigrp') {
+      if (a[0]?.toLowerCase() !== 'active-time') throw new CliInvalidInput({ token: a[0] });
+      if (a.length < 2) return CISCO_ERRORS.INCOMPLETE;
+      const disabled = a[1].toLowerCase() === 'disabled';
+      if (!disabled && !unsignedWithin(a[1], 1, 65535)) throw new CliInvalidInput({ token: a[1] });
+      if (a.length > 2) throw new CliInvalidInput({ token: a[2] });
+      pushOnce(eigrp().extras, line);
+    }
     return '';
   });
   routerTrie.registerGreedy('no timers', 'Restore default timers', (a) => {
@@ -1036,6 +1116,8 @@ function buildRouterSubmodeOn(
         const refus = jugerOffsetList(args);
         if (refus !== '') return refus;
       }
+      const tailRefused = judgeProtoExtraTail(kw, args);
+      if (tailRefused !== undefined) throw new CliInvalidInput({ token: args[tailRefused] });
       const p = curProto(ctx).proto;
       const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
       if (p === 'rip') pushOnce(repo.rip.extras, line);
