@@ -6769,7 +6769,10 @@ export class LinuxCommandExecutor {
         ),
         exitCode: 0,
       };
-      case 'du': return { output: cmdDu(c, args), exitCode: 0 };
+      case 'du': {
+        const out = cmdDu(c, args);
+        return { output: out, exitCode: /(^|\n)du: (cannot|invalid|warning|\S+: No such)/.test(out) ? 1 : 0 };
+      }
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });
       case 'mpstat': return cmdMpstat(args, {

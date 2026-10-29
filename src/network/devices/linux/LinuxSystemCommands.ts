@@ -244,73 +244,7 @@ export function cmdDf(ctx: DfContext, rawArgs: string[]): string {
   return [header, ...lines].join('\n');
 }
 
-export function cmdDu(ctx: ShellContext, args: string[]): string {
-  const set = GNU_OPTION_SETS.du;
-  let human = false;
-  let bytesFlag = false;
-  let megabytes = false;
-  let all = false;
-  let grandTotal = false;
-  let maxDepth = Infinity;
-  const targets: string[] = [];
-  for (const item of shortOptions(args, set.optstring, set.long)) {
-    if (item.kind === 'operand') { targets.push(item.value); continue; }
-    if (item.kind !== 'option') continue;
-    switch (item.letter) {
-      case 'h': human = true; break;
-      case 'b': bytesFlag = true; break;
-      case 'm': megabytes = true; break;
-      case 'k': megabytes = false; bytesFlag = false; human = false; break;
-      case 'a': all = true; break;
-      case 'c': grandTotal = true; break;
-      case 's': maxDepth = 0; break;
-      case 'd':
-        if (!/^\d+$/.test(item.argument ?? '')) return `du: invalid maximum depth '${item.argument}'`;
-        maxDepth = Number(item.argument);
-        break;
-      default: break;
-    }
-  }
-  if (targets.length === 0) targets.push('.');
-
-  const fmt = (bytes: number): string => {
-    if (bytesFlag) return String(bytes);
-    if (human) return formatBytesHuman(bytes);
-    if (megabytes) return String(Math.max(1, Math.ceil(bytes / 1048576)));
-    return String(Math.max(1, Math.ceil(bytes / 1024)));
-  };
-
-  const lines: string[] = [];
-  const errors: string[] = [];
-  let total = 0;
-  const visit = (path: string, display: string, depth: number): number => {
-    const stat = ctx.vfs.lstat(path);
-    if (!stat) return 0;
-    if (stat.type !== 'directory') {
-      if ((all || depth === 0) && depth <= maxDepth) lines.push(`${fmt(stat.size)}\t${display}`);
-      return stat.size;
-    }
-    let subtotal = 0;
-    for (const { name } of ctx.vfs.listDirectory(path) ?? []) {
-      if (name === '.' || name === '..') continue;
-      const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
-      const childDisplay = display === '.' ? `./${name}` : `${display}/${name}`;
-      subtotal += visit(childPath, childDisplay, depth + 1);
-    }
-    if (depth <= maxDepth) lines.push(`${fmt(subtotal)}\t${display}`);
-    return subtotal;
-  };
-  for (const target of targets) {
-    const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
-    if (!ctx.vfs.exists(absPath) || !ctx.vfs.lstat(absPath)) {
-      errors.push(`du: cannot access '${target}': No such file or directory`);
-      continue;
-    }
-    total += visit(absPath, target, 0);
-  }
-  if (grandTotal) lines.push(`${fmt(total)}\ttotal`);
-  return [...errors, ...lines].join('\n');
-}
+export { cmdDu } from './DuCommand';
 
 /**
  * `free` — report memory usage. Rendered from the host's {@link MemoryProfile}

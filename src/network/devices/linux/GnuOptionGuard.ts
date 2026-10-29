@@ -506,10 +506,14 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
   },
   du: {
-    optstring: 'abcd:hkms',
+    optstring: '0aB:bcd:DHhklLmPSst:xX:',
     long: [
-      flag('all', 'a'), flag('bytes', 'b'), flag('total', 'c'), valued('max-depth', 'd'),
-      flag('human-readable', 'h'), flag('summarize', 's'), ...HELP_VERSION,
+      flag('null', '0'), flag('all', 'a'), flag('apparent-size'), valued('block-size', 'B'), flag('bytes', 'b'),
+      flag('total', 'c'), flag('dereference-args', 'D'), valued('max-depth', 'd'), valued('files0-from'),
+      flag('human-readable', 'h'), flag('inodes'), flag('count-links', 'l'), flag('dereference', 'L'),
+      flag('no-dereference', 'P'), flag('separate-dirs', 'S'), flag('si'), flag('summarize', 's'),
+      valued('threshold', 't'), optional('time'), valued('time-style'), valued('exclude-from', 'X'),
+      valued('exclude'), flag('one-file-system', 'x'), ...HELP_VERSION,
     ],
     operands: true,
   },

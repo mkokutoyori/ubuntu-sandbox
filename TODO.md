@@ -4371,3 +4371,7 @@ Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, 
 ## ls: options accepted without effect
 
 Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `--block-size`, `-Z` shows `?` instead of a real SELinux context, `--quoting-style=shell*` and `locale` are approximated by literal and c, and `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
+
+## du: options accepted without full effect
+
+`du` evaluates every option of GNU du 9.4 except: `-x` (the file-system boundary is read from `ctx.deviceOf` only when the host supplies it), `--files0-from=-` (no stdin), the threshold suffix forms beyond K/M/G, and the readdir order of entries (the simulator lists in insertion order; the probe compares sorted lines). `--time` uses the file times of the simulator.
