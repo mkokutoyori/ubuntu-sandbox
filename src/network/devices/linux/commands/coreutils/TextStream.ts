@@ -548,65 +548,127 @@ function cmpRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { out
 // ─── split ──────────────────────────────────────────────────────────
 
 /** Les suffixes de `split` : aa, ab, … puis ba, bb, … */
-function suffixes(count: number): string[] {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+function suffixes(count: number, length: number, kind: 'alpha' | 'numeric' | 'hex', from: number): string[] | null {
+  const radix = kind === 'alpha' ? 26 : kind === 'hex' ? 16 : 10;
+  if (from + count > radix ** length) return null;
   const out: string[] = [];
-  for (let i = 0; i < count; i++) {
-    out.push(alphabet[Math.floor(i / 26) % 26] + alphabet[i % 26]);
+  for (let i = from; i < from + count; i++) {
+    let rest = i;
+    let text = '';
+    for (let place = 0; place < length; place++) {
+      const digit = rest % radix;
+      text = (kind === 'alpha' ? String.fromCharCode(97 + digit) : digit.toString(radix)) + text;
+      rest = Math.floor(rest / radix);
+    }
+    out.push(text);
   }
   return out;
 }
 
+function splitSize(raw: string, what: string): number | string {
+  const match = /^(\d+)([KMGkmg]?)$/.exec(raw);
+  if (match === null || Number(match[1]) < 1) return `split: invalid number of ${what}: '${raw}'`;
+  const units: Record<string, number> = { '': 1, k: 1024, K: 1024, m: 1048576, M: 1048576, g: 1073741824, G: 1073741824 };
+  return Number(match[1]) * units[match[2]];
+}
+
 export const splitCommand = coreutil(
-  'split', 'split [-l N | -b N | -n N] [FILE [PREFIX]]',
+  'split', 'split [OPTION]... [FILE [PREFIX]]',
   'Split a file into pieces, written to PREFIXaa, PREFIXab, ... -l splits\n'
-  + 'every N lines, -b every N bytes, -n into N chunks of equal size.',
+  + 'every N lines, -b every N bytes, -C at most N bytes of whole lines, -n into\n'
+  + 'N chunks of equal size. -a sets the suffix length, -d numeric and -x\n'
+  + 'hexadecimal suffixes, -e drops empty pieces.',
   [
     { flag: '-l', description: 'Lines per piece', takesArg: true, argName: 'N' },
     { flag: '-b', description: 'Bytes per piece', takesArg: true, argName: 'N' },
+    { flag: '-C', description: 'At most N bytes of whole lines per piece', takesArg: true, argName: 'N' },
     { flag: '-n', description: 'Number of chunks', takesArg: true, argName: 'N' },
+    { flag: '-a', description: 'Suffix length (2 by default)', takesArg: true, argName: 'N' },
+    { flag: '-d', description: 'Numeric suffixes' },
+    { flag: '-x', description: 'Hexadecimal suffixes' },
+    { flag: '-e', description: 'Do not generate empty output files' },
+    { flag: '-t', description: 'Record separator', takesArg: true, argName: 'SEP' },
+    { flag: '-u', description: 'Unbuffered output' },
+    { flag: '--additional-suffix', description: 'Append SUFFIX to the file names', takesArg: true, argName: 'SUFFIX' },
+    { flag: '--verbose', description: 'Print a diagnostic before each file' },
   ],
   (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'lbn', 'lbn');
-    let mode: 'lines' | 'bytes' | 'chunks' = 'lines';
+    const set = GNU_OPTION_SETS.split;
+    let mode: 'lines' | 'bytes' | 'lineBytes' | 'chunks' = 'lines';
     let size = 1000;
+    let suffixLength = 2;
+    let kind: 'alpha' | 'numeric' | 'hex' = 'alpha';
+    let from = 0;
+    let additional = '';
+    let elideEmpty = false;
+    let verbose = false;
+    let separator = '\n';
     const positional: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-l' && args[i + 1]) { mode = 'lines'; size = parseInt(args[i + 1], 10); i++; continue; }
-      if (a === '-b' && args[i + 1]) { mode = 'bytes'; size = parseInt(args[i + 1], 10); i++; continue; }
-      if (a === '-n' && args[i + 1]) { mode = 'chunks'; size = parseInt(args[i + 1], 10); i++; continue; }
-      if (!a.startsWith('-') || a === '-') positional.push(a);
+    for (const item of shortOptions(rawArgs, set.optstring, set.long)) {
+      if (item.kind === 'operand') { positional.push(item.value); continue; }
+      if (item.kind !== 'option') continue;
+      const value = item.argument ?? '';
+      if (item.letter === 'l' || item.letter === 'b' || item.letter === 'C') {
+        const parsed = item.letter === 'l' ? (/^[1-9]\d*$/.test(value) ? Number(value) : `split: invalid number of lines: '${value}'`)
+          : splitSize(value, item.letter === 'b' ? 'bytes' : 'bytes');
+        if (typeof parsed === 'string') return parsed;
+        size = parsed;
+        mode = item.letter === 'l' ? 'lines' : item.letter === 'b' ? 'bytes' : 'lineBytes';
+      } else if (item.letter === 'n') {
+        if (!/^[1-9]\d*$/.test(value)) return `split: invalid number of chunks: '${value}'`;
+        size = Number(value);
+        mode = 'chunks';
+      } else if (item.letter === 'a') {
+        if (!/^[1-9]\d*$/.test(value)) return `split: invalid suffix length: '${value}'`;
+        suffixLength = Number(value);
+      } else if (item.letter === 'd') {
+        kind = 'numeric';
+        if (value !== '') from = parseInt(value, 10) || 0;
+      } else if (item.letter === 'x') {
+        kind = 'hex';
+        if (value !== '') from = parseInt(value, 16) || 0;
+      } else if (item.letter === 'e') elideEmpty = true;
+      else if (item.letter === 't') separator = value === '\\0' ? '\0' : value;
+      else if (item.long === 'additional-suffix') additional = value;
+      else if (item.long === 'verbose') verbose = true;
     }
     const source = positional[0];
     const prefix = positional[1] ?? 'x';
     const content = source && source !== '-' ? readFile(ctx, source) : (stdin ?? '');
     if (content === null) return missing('split', source);
-    if (!Number.isFinite(size) || size < 1) return 'split: invalid number of lines';
 
-    const pieces: string[] = [];
+    let pieces: string[] = [];
     if (mode === 'bytes') {
       for (let i = 0; i < content.length; i += size) pieces.push(content.slice(i, i + size));
     } else if (mode === 'chunks') {
       const per = Math.ceil(content.length / size);
-      for (let i = 0; i < content.length; i += per) pieces.push(content.slice(i, i + per));
+      for (let i = 0; i < size; i++) pieces.push(content.slice(i * per, (i + 1) * per));
     } else {
-      const lines = toLines(content);
-      for (let i = 0; i < lines.length; i += size) {
-        pieces.push(lines.slice(i, i + size).join('\n') + '\n');
+      const records = toLines(content, separator);
+      if (mode === 'lines') {
+        for (let i = 0; i < records.length; i += size) pieces.push(records.slice(i, i + size).join(separator) + separator);
+      } else {
+        let current = '';
+        for (const record of records) {
+          const piece = record + separator;
+          if (current !== '' && current.length + piece.length > size) { pieces.push(current); current = ''; }
+          current += piece;
+        }
+        if (current !== '') pieces.push(current);
       }
     }
+    if (elideEmpty) pieces = pieces.filter((piece) => piece !== '');
 
-    // Les morceaux sont réellement écrits : `ls` les voit ensuite.
-    const names = suffixes(pieces.length);
+    const names = suffixes(pieces.length, suffixLength, kind, from);
+    if (names === null) return 'split: output file suffixes exhausted';
     const vfs = ctx.executor.vfs;
+    const log: string[] = [];
     pieces.forEach((piece, i) => {
-      vfs.writeFile(
-        vfs.normalizePath(`${prefix}${names[i]}`, ctx.executor.getCwd()),
-        piece, ctx.executor.getCurrentUid(), 0, 0o022,
-      );
+      const name = `${prefix}${names[i]}${additional}`;
+      vfs.writeFile(vfs.normalizePath(name, ctx.executor.getCwd()), piece, ctx.executor.getCurrentUid(), 0, 0o022);
+      if (verbose) log.push(`creating file '${name}'`);
     });
-    return '';
+    return log.join('\n');
   },
 );
 

@@ -251,6 +251,51 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
   },
   rev: { optstring: '0hV', long: [flag('zero', '0'), flag('help', 'h'), flag('version', 'V')], operands: true },
+  id: {
+    optstring: 'agGnruzZ',
+    long: [
+      flag('context', 'Z'), flag('group', 'g'), flag('groups', 'G'), flag('name', 'n'), flag('real', 'r'),
+      flag('user', 'u'), flag('zero', 'z'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  chown: {
+    optstring: 'cfhHLPRv',
+    long: [
+      flag('changes', 'c'), flag('dereference'), flag('no-dereference', 'h'), valued('from'), flag('no-preserve-root'),
+      flag('preserve-root'), flag('quiet', 'f'), flag('silent', 'f'), valued('reference'), flag('recursive', 'R'),
+      flag('verbose', 'v'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
+  readlink: {
+    optstring: 'efmnqsvz',
+    long: [
+      flag('canonicalize-existing', 'e'), flag('canonicalize', 'f'), flag('canonicalize-missing', 'm'),
+      flag('no-newline', 'n'), flag('quiet', 'q'), flag('silent', 's'), flag('verbose', 'v'), flag('zero', 'z'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  realpath: {
+    optstring: 'emLPqsz',
+    long: [
+      flag('canonicalize-existing', 'e'), flag('canonicalize-missing', 'm'), flag('logical', 'L'), flag('physical', 'P'),
+      flag('quiet', 'q'), valued('relative-to'), valued('relative-base'), flag('strip', 's'), flag('no-symlinks', 's'),
+      flag('zero', 'z'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  split: {
+    optstring: 'a:b:C:del:n:t:ux',
+    long: [
+      valued('suffix-length', 'a'), valued('bytes', 'b'), valued('line-bytes', 'C'), optional('numeric-suffixes', 'd'),
+      optional('hex-suffixes', 'x'), valued('additional-suffix'), flag('elide-empty-files', 'e'), valued('filter'),
+      valued('lines', 'l'), valued('number', 'n'), valued('separator', 't'), flag('unbuffered', 'u'),
+      flag('verbose'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
   uname: {
     optstring: 'asnrvmpio',
     long: [

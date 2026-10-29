@@ -4396,3 +4396,7 @@ Measured: `pwd --zorglub` prints the directory (bash answers `bash: pwd: --: inv
 
 `FindExpression.ts` now parses the GNU grammar (-o, -a, !, parentheses, -prune, -quit, actions suppress the default -print) and evaluates -regex, -links, -uid, -gid, -inum, -used, -nouser, -nogroup, -readable/-writable/-executable, -samefile, -lname, -printf, -daystart. Still answered `false` (fail closed) because the brick behind them is missing: `-fstype` and `-context` (no mount/SELinux label lookup from the shell context), `-ls`, `-fprint`, `-fprint0`, `-fprintf`, `-fls` (no output-file channel, no `ls -dils` line), `-ok`/`-okdir` (no prompt channel). `-exec`/`-execdir` still only echo the command line with `{}` replaced and run nothing, `+` is read as `;`; the `-printf` date directives other than `%A@ %C@ %T@` go through `formatLocalTime` and are not checked against findutils.
 
+
+## Linux split: --filter and -n l/N, K/N
+
+Measured: `split --filter=CMD` is refused as an unrecognized option and `-n l/3`, `-n 2/3` as `invalid number of chunks`, where GNU accepts both. `--filter` needs the shell to run CMD with each piece on its stdin and `$FILE` set; `l/N` and `K/N` need line-aligned chunking and stdout output. `-a -d -x -e -t -C -u --additional-suffix --verbose` are evaluated.
