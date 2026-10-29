@@ -18,8 +18,18 @@ const DEFAULT_SHELL_VARIABLES: Readonly<Record<string, string>> = {
 
 const BASH_VERSION_INFORMATION = ['5', '2', '21', '1', 'release', 'x86_64-pc-linux-gnu'];
 
+export const SHELL_ONLY_VARIABLES: unique symbol = Symbol('shellOnlyVariables');
+
+export type VariableSeed = Record<string, string> & { [SHELL_ONLY_VARIABLES]?: ReadonlySet<string> };
+
+export function seedWithShellOnly(variables: Record<string, string>, shellOnly: ReadonlySet<string>): VariableSeed {
+  const seed: VariableSeed = { ...variables };
+  Object.defineProperty(seed, SHELL_ONLY_VARIABLES, { value: shellOnly, enumerable: false });
+  return seed;
+}
+
 export interface EnvironmentOptions {
-  variables?: Record<string, string>;
+  variables?: VariableSeed;
   scriptName?: string;
   positionalArgs?: string[];
   initialExitCode?: number;
@@ -100,8 +110,9 @@ export class Environment implements ArithmeticScope {
     for (const [name, value] of Object.entries(DEFAULT_SHELL_VARIABLES)) this.store(name, value, false);
     BASH_VERSION_INFORMATION.forEach((value, index) => this.arrayEntry('BASH_VERSINFO').indexed.set(index, value));
     if (options.variables) {
+      const shellOnly = options.variables[SHELL_ONLY_VARIABLES];
       for (const [name, value] of Object.entries(options.variables)) {
-        this.store(name, value, !SHELL_LOCAL_VARIABLES.has(name));
+        this.store(name, value, !SHELL_LOCAL_VARIABLES.has(name) && shellOnly?.has(name) !== true);
       }
       this.backgroundPid = options.variables['!'] ?? '';
     }

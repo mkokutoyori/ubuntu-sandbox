@@ -99,6 +99,7 @@ import { defaultHostClockPort, type HostClockPort } from '../../core/time/HostCl
 import { KernelModuleTable } from './kernel/KernelModuleTable';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
+import { seedWithShellOnly } from '@/bash/runtime/Environment';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
 import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
@@ -4280,8 +4281,10 @@ export class LinuxCommandExecutor {
    */
   private cwdSetByDispatch: string | null = null;
 
+  private readonly shellOnlyVariables = new Set<string>();
+
   private applyInterpreterResult(
-    result: { output: string; exitCode?: number; env?: Record<string, string> },
+    result: { output: string; exitCode?: number; env?: Record<string, string>; exported?: string[] },
     initialPwd: string,
     initialVars: Record<string, string>,
   ): string {
@@ -4298,10 +4301,20 @@ export class LinuxCommandExecutor {
         this.cwd = initialPwd;
       }
       this.cwdSetByDispatch = null;
+      for (const key of [...this.env.keys()]) {
+        if (key in initialVars && !(key in result.env)) {
+          this.env.delete(key);
+          this.shellOnlyVariables.delete(key);
+        }
+      }
+      const exported = result.exported === undefined ? null : new Set(result.exported);
       for (const [key, value] of Object.entries(result.env)) {
         if (/^\d+$/.test(key) || ['?', '$', '!', '@', '#', '*', '0', 'PWD', 'OLDPWD'].includes(key)) continue;
-        if (value !== initialVars[key]) {
-          this.env.set(key, value);
+        const changed = value !== initialVars[key];
+        if (changed) this.env.set(key, value);
+        if (exported !== null && (changed || this.env.has(key))) {
+          if (exported.has(key)) this.shellOnlyVariables.delete(key);
+          else this.shellOnlyVariables.add(key);
         }
       }
     }
@@ -4866,7 +4879,7 @@ export class LinuxCommandExecutor {
     }
     if (parsed.scriptArgv.length > 0) {
       return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext()));
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), { ...this.commandEnvironment() }));
     }
     return { output: '', exitCode: 0 };
   }
@@ -4912,7 +4925,7 @@ export class LinuxCommandExecutor {
     if (!canExec) return { output: `${cmd}: Permission denied`, exitCode: 126 };
     const commandLine = ['/bin/bash', absPath, ...args].join(' ');
     return this.runScriptProcessAsync(commandLine, (identity, bridge) =>
-      runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity, this.buildIOContext()));
+      runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity, this.buildIOContext(), { ...this.commandEnvironment() }));
   }
 
   private shippedBinaryInvocation(argv: string[]): string[] {
@@ -5575,7 +5588,9 @@ export class LinuxCommandExecutor {
   }
 
   commandEnvironment(): Readonly<Record<string, string>> {
-    return { ...this.buildEnvVars(), ...(this._cmdEnv ?? {}) };
+    const inherited = this.buildEnvVars();
+    for (const name of this.shellOnlyVariables) delete inherited[name];
+    return { ...inherited, ...(this._cmdEnv ?? {}) };
   }
 
   private monitorMode(live: Readonly<Record<string, string>> = {}): boolean {
@@ -5610,11 +5625,14 @@ export class LinuxCommandExecutor {
     for (const [k, v] of this.env) {
       vars[k] = v;
     }
-    if (!forShell) return vars;
+    if (!forShell) {
+      for (const name of this.shellOnlyVariables) delete vars[name];
+      return vars;
+    }
     vars.SHELLOPTS ??= INTERACTIVE_SHELLOPTS;
     vars.COLUMNS ??= String(this.terminalColumns());
     vars.LINES ??= String(this.windowSize.rows > 0 ? this.windowSize.rows : DEFAULT_WINDOW_SIZE.rows);
-    return vars;
+    return seedWithShellOnly(vars, this.shellOnlyVariables);
   }
 
   private seedSetuidBinaries(): void {
@@ -6526,7 +6544,7 @@ export class LinuxCommandExecutor {
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext()));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), { ...this.commandEnvironment() }));
         }
         if (stdin !== undefined && stdin !== '') {
           return this.runScriptProcess(cmd, (identity, bridge) =>
@@ -7100,7 +7118,7 @@ export class LinuxCommandExecutor {
           if (this.vfs.getType(absPath) === 'directory') return { output: `${shellName}${cmd}: Is a directory`, exitCode: 126 };
           const commandLine = ['/bin/bash', absPath, ...args].join(' ');
           return this.runScriptProcess(commandLine, (identity, bridge) =>
-            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext()));
+            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), { ...this.commandEnvironment() }));
         }
 
         // `stdin` was popped off `args` above for the switch cases here that

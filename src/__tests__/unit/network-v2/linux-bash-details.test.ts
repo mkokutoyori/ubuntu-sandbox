@@ -594,21 +594,15 @@ describe('Bash Interpreter TDD Suite', () => {
 
   describe('G11: Erreurs de Syntaxe et Cas Limites', () => {
     it('G11-01: should fail on unclosed quote', async () => {
-      // In an interactive shell this prompts for more input. In a script it's a syntax error.
-      // Your implementation may choose either. A syntax error is a good default.
       const out = await server.executeCommand('echo "hello');
-      expect(out).toContain('syntax error');
+      expect(out).toContain("unexpected EOF while looking for matching `\"'");
     });
 
-    it('G11-02: bare reserved word `fi` outside any if-clause is a plain command (real-bash behaviour)', async () => {
-      // Real bash recognises `fi`, `done`, `esac`, etc. as reserved
-      // words ONLY when they terminate the matching compound — at the
-      // top level they are plain command words. Bash then reports
-      // "command not found" (exit 127), never "syntax error".
+    it('G11-02: a bare reserved word `fi` outside any if-clause is a syntax error (captured from bash)', async () => {
       const out = await server.executeCommand('fi');
-      expect(out).toMatch(/command not found|not found/);
+      expect(out).toContain("syntax error near unexpected token `fi'");
     });
-    
+
     it('G11-03: should fail on incomplete pipe', async () => {
       // A truly incomplete structure (missing fi) produces a syntax error
       const out = await server.executeCommand('if true; then echo hello');
