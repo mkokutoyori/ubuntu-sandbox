@@ -4351,3 +4351,7 @@ Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `
 ## column and awk: options accepted without effect
 
 `column` evaluates -t and -s only; -o, -c, -x, -J, -N, -n, -R, -H, -E, -l, -e, -d, -L and the tree options are accepted (table of util-linux 2.37 from memory) and ignored. `awk --zorglub` is still silent: the default awk of Ubuntu 22.04 is mawk, whose wording (`awk: not an option: --zorglub`, status 2) is not backed by a transcript, so no table was written.
+
+## Linux commands still silent on an unknown option (wording unsourced)
+
+Measured with `<cmd> --zorglub`: `lsof` (own parser, prints a version banner on error), `lsattr` (e2fsprogs getopt without long options: one error per letter), `tree` (`tree: Invalid argument` form), `pgrep`/`pkill` (procps usage block), `file`, `hostname`. Each prints a normal result or a different wording from the real program; no transcript or man page was reachable to write the exact lines, so none was guessed.
