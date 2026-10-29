@@ -907,7 +907,10 @@ Total steps: 339
 <empty>
 
 [145/339] lhq lhq$ ip neigh show nud permanent
-  Error: any valid prefix is expected rather than "nud".
+  10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
+  10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
 
 [146/339] lhq lhq$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -937,7 +940,9 @@ Total steps: 339
 <empty>
 
 [154/339] lbr lbr$ ip neigh show nud permanent
-  Error: any valid prefix is expected rather than "nud".
+  10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
+  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
 
 [155/339] lbr lbr$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -966,7 +971,9 @@ Total steps: 339
 <empty>
 
 [163/339] ldc ldc$ ip neigh show nud permanent
-  Error: any valid prefix is expected rather than "nud".
+  10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
+  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
 
 [164/339] ldc ldc$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -995,7 +1002,9 @@ Total steps: 339
 <empty>
 
 [172/339] srvdc srvdc$ ip neigh show nud permanent
-  Error: any valid prefix is expected rather than "nud".
+  10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
+  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
 
 [173/339] srvdc srvdc$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -1258,14 +1267,14 @@ Total steps: 339
 
 [232/339] lhq lhq$ arping -c 1 -D -I eth0 10.1.1.11
   ARPING 10.1.1.11 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  1.351ms
+  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  1.134ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [233/339] lhq lhq$ arping -c 2 -I eth0 10.1.1.1
   ARPING 10.1.1.1 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.913ms
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.744ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.792ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.617ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1279,14 +1288,14 @@ Total steps: 339
 
 [236/339] lbr lbr$ arping -c 1 -D -I eth0 10.2.2.10
   ARPING 10.2.2.10 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.608ms
+  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.784ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [237/339] lbr lbr$ arping -c 2 -I eth0 10.2.2.1
   ARPING 10.2.2.1 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.704ms
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.351ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.658ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.518ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1300,14 +1309,14 @@ Total steps: 339
 
 [240/339] ldc ldc$ arping -c 1 -D -I eth0 10.3.3.10
   ARPING 10.3.3.10 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.528ms
+  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.802ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [241/339] ldc ldc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.473ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.270ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.684ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.573ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1321,14 +1330,14 @@ Total steps: 339
 
 [244/339] srvdc srvdc$ arping -c 1 -D -I eth0 10.3.3.11
   ARPING 10.3.3.11 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.459ms
+  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.647ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [245/339] srvdc srvdc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.347ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  4.991ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.629ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.523ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1745,37 +1754,10 @@ Total steps: 339
     > arp -a                                     .... Displays the arp table.
 
 [319/339] whq whq$ arp -x
-  Displays and modifies the IP-to-Physical address translation tables used by
-  address resolution protocol (ARP).
   
-  ARP -s inet_addr eth_addr [if_addr]
-  ARP -d inet_addr [if_addr]
-  ARP -a [inet_addr] [-N if_addr] [-v]
-  
-    -a            Displays current ARP entries by interrogating the current
-                  protocol data.  If inet_addr is specified, the IP and Physical
-                  addresses for only the specified computer are displayed.  If
-                  more than one network interface uses ARP, entries for each ARP
-                  table are displayed.
-    -g            Same as -a.
-    -v            Displays current ARP entries in verbose mode.  All invalid
-                  entries and entries on the loop-back interface will be shown.
-    inet_addr     Specifies an internet address.
-    -N if_addr    Displays the ARP entries for the network interface specified
-                  by if_addr.
-    -d            Deletes the host specified by inet_addr. inet_addr may be
-                  wildcarded with * to delete all hosts.
-    -s            Adds the host and associates the Internet address inet_addr
-                  with the Physical address eth_addr.  The Physical address is
-                  given as 6 hexadecimal bytes separated by hyphens. The entry
-                  is permanent.
-    eth_addr      Specifies a physical address.
-    if_addr       If present, this specifies the Internet address of the
-                  interface whose address translation table should be modified.
-                  If not present, the first applicable interface will be used.
-  Example:
-    > arp -s 157.55.85.212   00-aa-00-62-c6-09  .... Adds a static entry.
-    > arp -a                                     .... Displays the arp table.
+  Interface: 10.1.1.11 --- 0x2
+    Internet Address      Physical Address      Type
+    10.1.1.10             02-00-00-00-00-47     dynamic
 
 
 --- [320] § ARP — désactivation debug & état final ---
