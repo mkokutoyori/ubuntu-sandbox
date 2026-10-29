@@ -4359,3 +4359,20 @@ store.test.ts` (6) also fail identically with the working tree stashed.
 a render rank, 96 distinct ranks for 97 tables) and
 `network-v2/probe-fuseau-linux-et-pare-feu.test.ts` (3) are red at the base
 commit 2351448f2 (checked in a worktree).
+
+`network-v2/linux-bash-details.test.ts` (2), `linux-ls-tty-awareness.test.ts`
+(1), `linux-rsyslog-imfile.test.ts` (1) and `openssl-ocsp-probe.test.ts` (2)
+are red at the base commit 2351448f2 (checked in a worktree), like
+`probe-fuser-porte-de-psmisc.test.ts`, `run-parts.test.ts`,
+`scenario10-linux-audit.test.ts` and `crypto-pki-trustpool.test.ts`.
+
+## Linux coreutils without an option table
+
+GnuOptionGuard (src/network/devices/linux/GnuOptionGuard.ts) covers whoami,
+groups, tty, nproc, free, env, printenv, uname, mkdir, rmdir, rm, cat, wc, tac,
+tee, basename and dirname. Measured with `<cmd> --zorglub` and still silent or
+treating the option as a file operand: ls, sort, uniq, head, cut, tr, du, find,
+date, base64, md5sum/sha256sum/cksum, rev, nl, fold, fmt, column, paste, comm,
+split, truncate, seq-less forms, which, passwd, sysctl, awk, lsof. Their option
+sets were not written down here: each needs its own table and a run of the
+tests that use it.

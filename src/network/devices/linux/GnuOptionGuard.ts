@@ -33,6 +33,56 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
+  mkdir: {
+    optstring: 'm:pvZ',
+    long: [valued('mode', 'm'), flag('parents', 'p'), flag('verbose', 'v'), valued('context'), ...HELP_VERSION],
+    operands: true,
+  },
+  rmdir: {
+    optstring: 'pv',
+    long: [flag('ignore-fail-on-non-empty'), flag('parents', 'p'), flag('verbose', 'v'), ...HELP_VERSION],
+    operands: true,
+  },
+  rm: {
+    optstring: 'fiIrRdv',
+    long: [
+      flag('force', 'f'), flag('interactive'), flag('one-file-system'), flag('no-preserve-root'),
+      flag('preserve-root'), flag('recursive', 'r'), flag('dir', 'd'), flag('verbose', 'v'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  cat: {
+    optstring: 'AbeEnstTuv',
+    long: [
+      flag('show-all', 'A'), flag('number-nonblank', 'b'), flag('show-ends', 'E'), flag('number', 'n'),
+      flag('squeeze-blank', 's'), flag('show-tabs', 'T'), flag('show-nonprinting', 'v'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  wc: {
+    optstring: 'cmlLw',
+    long: [
+      flag('bytes', 'c'), flag('chars', 'm'), flag('lines', 'l'), valued('files0-from'),
+      flag('max-line-length', 'L'), flag('words', 'w'), valued('total'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  tac: {
+    optstring: 'brs:',
+    long: [flag('before', 'b'), flag('regex', 'r'), valued('separator', 's'), ...HELP_VERSION],
+    operands: true,
+  },
+  tee: {
+    optstring: 'aip',
+    long: [flag('append', 'a'), flag('ignore-interrupts', 'i'), valued('output-error'), ...HELP_VERSION],
+    operands: true,
+  },
+  basename: {
+    optstring: 'as:z',
+    long: [flag('multiple', 'a'), valued('suffix', 's'), flag('zero', 'z'), ...HELP_VERSION],
+    operands: true,
+  },
+  dirname: { optstring: 'z', long: [flag('zero', 'z'), ...HELP_VERSION], operands: true },
   printenv: { optstring: '0', long: [flag('null', '0'), ...HELP_VERSION], operands: true },
   uname: {
     optstring: 'asnrvmpio',

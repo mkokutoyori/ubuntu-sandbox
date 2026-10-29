@@ -9,7 +9,9 @@
  * nproc): 6 of 10 cases fall (all refusals), 4 witnesses pass either way;
  * `uptime` was left out since its own implementation already refuses. Second
  * step (free, env, printenv, uname): 12 cases added, 6 fall (every refusal),
- * the 6 witnesses pass either way. Option tables are the GNU
+ * the 6 witnesses pass either way. Third step (mkdir, rmdir, rm, cat, wc, tac, tee, basename, dirname): `mkdir
+ * --zorglub` used to CREATE a directory named `--zorglub`; 16 cases added, 10
+ * refusals fall, the 6 valid forms pass either way. Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -25,7 +27,7 @@ function pc(): Sh {
 }
 
 describe('known options still work', () => {
-  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r'])('witness: `%s` is accepted', async (line) => {
+  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b'])('witness: `%s` is accepted', async (line) => {
     expect(await pc().executeCommand(line)).not.toMatch(/unrecognized option|invalid option|extra operand/);
   });
 });
@@ -44,6 +46,16 @@ describe('unknown options are refused the way GNU getopt does', () => {
     ['printenv --zorglub', "printenv: unrecognized option '--zorglub'"],
     ['uname --zorglub', "uname: unrecognized option '--zorglub'"],
     ['uname -z', "uname: invalid option -- 'z'"],
+    ['mkdir --zorglub', "mkdir: unrecognized option '--zorglub'"],
+    ['rm --zorglub', "rm: unrecognized option '--zorglub'"],
+    ['rm -z x', "rm: invalid option -- 'z'"],
+    ['cat --zorglub', "cat: unrecognized option '--zorglub'"],
+    ['wc --zorglub', "wc: unrecognized option '--zorglub'"],
+    ['tac --zorglub', "tac: unrecognized option '--zorglub'"],
+    ['tee --zorglub', "tee: unrecognized option '--zorglub'"],
+    ['basename --zorglub', "basename: unrecognized option '--zorglub'"],
+    ['dirname --zorglub', "dirname: unrecognized option '--zorglub'"],
+    ['rmdir --zorglub', "rmdir: unrecognized option '--zorglub'"],
   ])('`%s`', async (line, message) => {
     const output = await pc().executeCommand(line);
     expect(output).toContain(message);
