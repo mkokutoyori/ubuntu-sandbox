@@ -4300,3 +4300,14 @@ trailing `zorglub`) are accepted and stored verbatim. Only the
 rest was not reachable, so refusing them would be guessing (rule 8). Needs the
 Huawei command reference for sflow, bfd, isis, traffic classifier/behavior/
 policy, route-policy and `snmp-agent community`.
+
+## migration-guard: exact match vs concurrent prefix on `show crypto ipsec`
+
+`src/__tests__/unit/cli/migration-guard.test.ts` ("une correspondance EXACTE
+l'emporte sur un prefixe concurrent") fails: `show crypto ipsec sa` and `show
+crypto ipsec security-association lifetime` both answer `IPSec not
+configured.` on an unconfigured router. Seen at HEAD with the working tree
+stashed; not yet checked against the base commit, so it may come from an
+earlier change of the hardening series. Also red: `fortigate-battery-04-
+monitoring-telemetry-syslog.test.ts` (28 cases), same family as batteries
+06/09/10/11.

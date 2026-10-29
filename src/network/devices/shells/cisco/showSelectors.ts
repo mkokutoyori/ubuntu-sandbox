@@ -66,3 +66,32 @@ export function refuseUnknownExecShowTail(view: keyof typeof EXEC_SHOW_SELECTORS
     : words;
   refuseUnknownSelector(tokens, base);
 }
+
+const SNMP_VIEWS: readonly string[] = [
+  'chassis', 'community', 'contact', 'engineid', 'group', 'host', 'location', 'mib',
+  'pending', 'sessions', 'stats', 'user', 'view', 'context',
+];
+
+export function refuseUnknownSnmpView(words: readonly string[]): void {
+  if (words.length === 0) return;
+  if (!SNMP_VIEWS.includes(words[0].toLowerCase())) throw new CliInvalidInput({ token: words[0] });
+}
+
+const CEF_KEYWORDS: readonly string[] = ['detail', 'summary', 'unresolved', 'internal', 'vrf', 'traffic', 'drop', 'adjacency'];
+
+export function refuseUnknownCefSelector(words: readonly string[]): void {
+  for (let at = 0; at < words.length; at++) {
+    const word = words[at];
+    const lower = word.toLowerCase();
+    if (lower === 'vrf') {
+      if (words[at + 1] === undefined) return;
+      at += 1;
+      continue;
+    }
+    const prefix = /^(\d{1,3}(?:\.\d{1,3}){3})(?:\/(\d{1,2}))?$/.exec(word);
+    const isPrefix = prefix !== null && isValidIPv4(prefix[1]) && (prefix[2] === undefined || Number(prefix[2]) <= 32);
+    if (!CEF_KEYWORDS.includes(lower) && !isPrefix && !INTERFACE_NAME.test(word)) {
+      throw new CliInvalidInput({ token: word });
+    }
+  }
+}

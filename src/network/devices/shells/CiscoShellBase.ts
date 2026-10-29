@@ -13,7 +13,7 @@
  */
 
 import { vrfShowFamily } from '@/cli/commands/l3vpn/l3vpnFamily';
-import { refuseUnknownDiscoveryArgs, refuseUnknownExecShowTail } from './cisco/showSelectors';
+import { refuseUnknownDiscoveryArgs, refuseUnknownExecShowTail, refuseUnknownSnmpView } from './cisco/showSelectors';
 import { vrfShowHostOf } from './cisco/l3vpnHost';
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
 import type { Equipment, EnableSecretAlgorithm } from '@/network/equipment/Equipment';
@@ -5845,7 +5845,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         refuseUnknownDiscoveryArgs('lldp', args);
         return showLldp(this.cs(), args.join(' '), this.configState.isEnabled('lldp'));
       },
-      snmp: () => showSnmp(this.cs(), this.getChassisProfile()),
+      snmp: (words) => {
+        refuseUnknownSnmpView(words);
+        return showSnmp(this.cs(), this.getChassisProfile());
+      },
       parserView: (args) => {
         const sec = getSecurityConfig(this.d());
         if (args.length === 0) {
