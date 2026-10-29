@@ -4328,3 +4328,12 @@ an unmatched quote answers bash's own `unexpected eof` instead of an auditctl
 message), `ausearch-interpret-oracle.test.ts` (replays) and
 `new_firewall/fortigate-battery-08-cyber-defense-tls-pvlan.test.ts` (26 cases)
 fail on HEAD with `src` stashed. Not diagnosed.
+
+## Linux reds seen with the working tree stashed (identical with and without the option guard)
+
+`network-v2/basic-commandes.test.ts` (1), `linux-hosts-hostname-hijack.test.ts`
+(1), `probe-env-ne-rend-que-l-environnement.test.ts` (1),
+`probe-linux-ne-lit-pas-le-fuseau-du-processus.test.ts` (1), `run-parts.test.ts`
+(5), `scenario10-linux-audit.test.ts` (4) and
+`new_firewall/fortigate-battery-07-windows-active-directory.test.ts` (14). Not
+diagnosed.
