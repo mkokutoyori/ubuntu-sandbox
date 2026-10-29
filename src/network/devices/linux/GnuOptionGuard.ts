@@ -209,6 +209,48 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
+  nl: {
+    optstring: 'b:d:f:h:i:l:n:pv:w:s:',
+    long: [
+      valued('body-numbering', 'b'), valued('section-delimiter', 'd'), valued('footer-numbering', 'f'),
+      valued('header-numbering', 'h'), valued('line-increment', 'i'), valued('join-blank-lines', 'l'),
+      valued('number-format', 'n'), flag('no-renumber', 'p'), valued('number-separator', 's'),
+      valued('starting-line-number', 'v'), valued('number-width', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  fold: {
+    optstring: 'bsw:',
+    long: [flag('bytes', 'b'), flag('spaces', 's'), valued('width', 'w'), ...HELP_VERSION],
+    operands: true,
+  },
+  paste: {
+    optstring: 'd:sz',
+    long: [valued('delimiters', 'd'), flag('serial', 's'), flag('zero-terminated', 'z'), ...HELP_VERSION],
+    operands: true,
+  },
+  comm: {
+    optstring: '123z',
+    long: [
+      flag('check-order'), flag('nocheck-order'), valued('output-delimiter'), flag('total'),
+      flag('zero-terminated', 'z'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  base64: {
+    optstring: 'diw:',
+    long: [flag('decode', 'd'), flag('ignore-garbage', 'i'), valued('wrap', 'w'), ...HELP_VERSION],
+    operands: true,
+  },
+  du: {
+    optstring: 'abcd:hkms',
+    long: [
+      flag('all', 'a'), flag('bytes', 'b'), flag('total', 'c'), valued('max-depth', 'd'),
+      flag('human-readable', 'h'), flag('summarize', 's'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  rev: { optstring: '0hV', long: [flag('zero', '0'), flag('help', 'h'), flag('version', 'V')], operands: true },
   uname: {
     optstring: 'asnrvmpio',
     long: [

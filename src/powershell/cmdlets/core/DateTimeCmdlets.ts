@@ -100,6 +100,7 @@ export class GetDateCmdlet implements ICmdlet {
   readonly name = 'get-date';
   readonly aliases = [] as const;
   readonly parameters = ['Date', 'Format', 'UFormat', 'AsUTC', 'Year', 'Month', 'Day', 'Hour', 'Minute', 'Second', 'Millisecond', 'DisplayHint'] as const;
+  readonly closedParameterSet = true as const;
 
   execute(ctx: CmdletContext): PSValue {
     const fmt = ctx.named['format'] ? psValueToString(ctx.named['format']) : null;

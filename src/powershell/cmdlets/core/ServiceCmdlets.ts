@@ -125,6 +125,7 @@ export class GetServiceCmdlet implements ICmdlet {
   readonly name = 'get-service';
   readonly aliases = ['gsv'] as const;
   readonly parameters = ['Name', 'DisplayName', 'Include', 'Exclude', 'InputObject', 'DependentServices', 'RequiredServices', 'ComputerName'] as const;
+  readonly closedParameterSet = true as const;
   readonly parameterValues = { Name: 'serviceName' } as const;
 
   execute(ctx: CmdletContext): PSValue {

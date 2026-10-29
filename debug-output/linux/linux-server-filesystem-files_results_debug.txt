@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-filesystem-files
-Generated: 2026-10-26T23:39:20.262Z
+Generated: 2026-10-29T10:24:50.881Z
 Engine: linux
 host=L-SRV-FS-DBG (linux-server) — focus: système de fichiers & opérations fichiers
 Total commands: 327
@@ -82,126 +82,126 @@ $ [23/327]> ls -l
 
 $ [24/327]> ls -la
   total 16
-  drwxrwxrwt  2 root root 0 Oct 26 23:39 .
-  drwxr-xr-x 17 root root 0 Oct 26 23:39 ..
+  drwxrwxrwt  2 root root 0 Oct 29 10:24 .
+  drwxr-xr-x 17 root root 0 Oct 29 10:24 ..
 
 $ [25/327]> ls -al /etc
   total 640
-  drwxr-xr-x 32 root root       0 Oct 26 23:39 .
-  drwxr-xr-x 17 root root       0 Oct 26 23:39 ..
-  -rw-r--r--  1 root root     377 Oct 26 23:39 adduser.conf
-  -rw-r--r--  1 root root     335 Oct 26 23:39 anacrontab
-  drwxr-xr-x  7 root root       0 Oct 26 23:39 apache2
-  -rw-r-----  1 root daemon   144 Oct 26 23:39 at.deny
-  drwxr-x---  4 root root       0 Oct 26 23:39 audit
-  -rw-r--r--  1 root root     151 Oct 26 23:39 bash.bashrc
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 chrony
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 cron.d
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 cron.daily
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 cron.hourly
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 cron.monthly
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 cron.weekly
-  -rw-r--r--  1 root root     420 Oct 26 23:39 crontab
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 default
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 dhcp
-  -rw-r--r--  1 root root     106 Oct 26 23:39 environment
-  -rw-r--r--  1 root root     389 Oct 26 23:39 exports
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 fail2ban
-  drwxr-xr-x  3 root root       0 Oct 26 23:39 freeradius
-  -rw-r--r--  1 root root     534 Oct 26 23:39 fstab
-  -rw-r--r--  1 root root     132 Oct 26 23:39 ftpusers
-  -rw-r--r--  1 root root    2584 Oct 26 23:39 gai.conf
-  -rw-r--r--  1 root root     196 Oct 26 23:39 group
-  -rw-r--r--  1 root root     191 Oct 26 23:39 group-
-  -rw-r-----  1 root root     156 Oct 26 23:39 gshadow
-  -rw-------  1 root root     151 Oct 26 23:39 gshadow-
-  -rw-r--r--  1 root root      13 Oct 26 23:39 hostname
-  -rw-rw-rw-  1 root root     144 Oct 26 23:39 hosts
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 init.d
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 iptables
-  -rw-r--r--  1 root root      26 Oct 26 23:39 issue
-  -rw-r--r--  1 root root      19 Oct 26 23:39 issue.net
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 ldap
-  -rw-r--r--  1 root root     421 Oct 26 23:39 login.defs
-  -rw-r--r--  1 root root     592 Oct 26 23:39 logrotate.conf
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 logrotate.d
-  -rw-r--r--  1 root root     104 Oct 26 23:39 lsb-release
-  -rw-r--r--  1 root root      33 Oct 26 23:39 machine-id
-  -rw-r--r--  1 root root      68 Oct 26 23:39 motd
-  -r--r--r--  1 root root       0 Oct 26 23:39 mtab
-  -rw-r--r--  1 root root   11422 Oct 26 23:39 nanorc
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 netplan
-  drwxr-xr-x  7 root root       0 Oct 26 23:39 network
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 NetworkManager
-  -rw-r--r--  1 root root      96 Oct 26 23:39 networks
-  drwxr-xr-x  6 root root       0 Oct 26 23:39 nginx
-  -rw-r--r--  1 root root     510 Oct 26 23:39 nsswitch.conf
-  -rw-r--r--  1 root root     302 Oct 26 23:39 os-release
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 pam.d
-  -rw-r--r--  1 root root     295 Oct 26 23:39 passwd
-  -rw-r--r--  1 root root     295 Oct 26 23:39 passwd-
-  -rw-r--r--  1 root root     327 Oct 26 23:39 profile
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 profile.d
-  -rw-r--r--  1 root root    3144 Oct 26 23:39 protocols
-  -rw-r--r--  1 root root       0 Oct 26 23:39 resolv.conf
-  -rw-r--r--  1 root root     583 Oct 26 23:39 rpc
-  -rw-r--r--  1 root root    1136 Oct 26 23:39 rsyslog.conf
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 rsyslog.d
-  drwxr-xr-x  4 root root       0 Oct 26 23:39 security
-  -rw-r--r--  1 root root   12813 Oct 26 23:39 services
-  -rw-r-----  1 root root     269 Oct 26 23:39 shadow
-  -rw-------  1 root root     269 Oct 26 23:39 shadow-
-  -rw-r--r--  1 root root      18 Oct 26 23:39 shells
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 skel
-  drwxr-xr-x  4 root root       0 Oct 26 23:39 ssh
-  drwxr-xr-x  4 root root       0 Oct 26 23:39 ssl
-  -rw-r--r--  1 root root      72 Oct 26 23:39 subgid
-  -rw-r--r--  1 root root      72 Oct 26 23:39 subuid
-  -r--r-----  1 root root      75 Oct 26 23:39 sudoers
-  drwxr-xr-x  2 root root       0 Oct 26 23:39 sudoers.d
-  drwxr-xr-x  4 root root       0 Oct 26 23:39 systemd
-  -rw-r--r--  1 root root       8 Oct 26 23:39 timezone
-  drwxr-xr-x  3 root root       0 Oct 26 23:39 ufw
+  drwxr-xr-x 32 root root       0 Oct 29 10:24 .
+  drwxr-xr-x 17 root root       0 Oct 29 10:24 ..
+  -rw-r--r--  1 root root     377 Oct 29 10:24 adduser.conf
+  -rw-r--r--  1 root root     335 Oct 29 10:24 anacrontab
+  drwxr-xr-x  7 root root       0 Oct 29 10:24 apache2
+  -rw-r-----  1 root daemon   144 Oct 29 10:24 at.deny
+  drwxr-x---  4 root root       0 Oct 29 10:24 audit
+  -rw-r--r--  1 root root     151 Oct 29 10:24 bash.bashrc
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 chrony
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 cron.d
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 cron.daily
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 cron.hourly
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 cron.monthly
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 cron.weekly
+  -rw-r--r--  1 root root     420 Oct 29 10:24 crontab
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 default
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 dhcp
+  -rw-r--r--  1 root root     106 Oct 29 10:24 environment
+  -rw-r--r--  1 root root     389 Oct 29 10:24 exports
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 fail2ban
+  drwxr-xr-x  3 root root       0 Oct 29 10:24 freeradius
+  -rw-r--r--  1 root root     534 Oct 29 10:24 fstab
+  -rw-r--r--  1 root root     132 Oct 29 10:24 ftpusers
+  -rw-r--r--  1 root root    2584 Oct 29 10:24 gai.conf
+  -rw-r--r--  1 root root     196 Oct 29 10:24 group
+  -rw-r--r--  1 root root     191 Oct 29 10:24 group-
+  -rw-r-----  1 root root     156 Oct 29 10:24 gshadow
+  -rw-------  1 root root     151 Oct 29 10:24 gshadow-
+  -rw-r--r--  1 root root      13 Oct 29 10:24 hostname
+  -rw-rw-rw-  1 root root     144 Oct 29 10:24 hosts
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 init.d
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 iptables
+  -rw-r--r--  1 root root      26 Oct 29 10:24 issue
+  -rw-r--r--  1 root root      19 Oct 29 10:24 issue.net
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 ldap
+  -rw-r--r--  1 root root     421 Oct 29 10:24 login.defs
+  -rw-r--r--  1 root root     592 Oct 29 10:24 logrotate.conf
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 logrotate.d
+  -rw-r--r--  1 root root     104 Oct 29 10:24 lsb-release
+  -rw-r--r--  1 root root      33 Oct 29 10:24 machine-id
+  -rw-r--r--  1 root root      68 Oct 29 10:24 motd
+  -r--r--r--  1 root root       0 Oct 29 10:24 mtab
+  -rw-r--r--  1 root root   11422 Oct 29 10:24 nanorc
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 netplan
+  drwxr-xr-x  7 root root       0 Oct 29 10:24 network
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 NetworkManager
+  -rw-r--r--  1 root root      96 Oct 29 10:24 networks
+  drwxr-xr-x  6 root root       0 Oct 29 10:24 nginx
+  -rw-r--r--  1 root root     510 Oct 29 10:24 nsswitch.conf
+  -rw-r--r--  1 root root     302 Oct 29 10:24 os-release
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 pam.d
+  -rw-r--r--  1 root root     295 Oct 29 10:24 passwd
+  -rw-r--r--  1 root root     295 Oct 29 10:24 passwd-
+  -rw-r--r--  1 root root     327 Oct 29 10:24 profile
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 profile.d
+  -rw-r--r--  1 root root    3144 Oct 29 10:24 protocols
+  -rw-r--r--  1 root root       0 Oct 29 10:24 resolv.conf
+  -rw-r--r--  1 root root     583 Oct 29 10:24 rpc
+  -rw-r--r--  1 root root    1136 Oct 29 10:24 rsyslog.conf
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 rsyslog.d
+  drwxr-xr-x  4 root root       0 Oct 29 10:24 security
+  -rw-r--r--  1 root root   12813 Oct 29 10:24 services
+  -rw-r-----  1 root root     269 Oct 29 10:24 shadow
+  -rw-------  1 root root     269 Oct 29 10:24 shadow-
+  -rw-r--r--  1 root root      18 Oct 29 10:24 shells
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 skel
+  drwxr-xr-x  4 root root       0 Oct 29 10:24 ssh
+  drwxr-xr-x  4 root root       0 Oct 29 10:24 ssl
+  -rw-r--r--  1 root root      72 Oct 29 10:24 subgid
+  -rw-r--r--  1 root root      72 Oct 29 10:24 subuid
+  -r--r-----  1 root root      75 Oct 29 10:24 sudoers
+  drwxr-xr-x  2 root root       0 Oct 29 10:24 sudoers.d
+  drwxr-xr-x  4 root root       0 Oct 29 10:24 systemd
+  -rw-r--r--  1 root root       8 Oct 29 10:24 timezone
+  drwxr-xr-x  3 root root       0 Oct 29 10:24 ufw
 
 $ [26/327]> ls -lh /var/log
   total 104
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 apache2
-  drwxr-x--- 2 root adm     0 Oct 26 23:39 audit
-  -rw-r----- 1 root adm   309 Oct 26 23:39 auth.log
-  -rw-r----- 1 root adm  2145 Oct 26 23:39 boot.log
-  -rw-rw---- 1 root utmp    0 Oct 26 23:39 btmp
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 chrony
-  drwxr-sr-x 3 root adm     0 Oct 26 23:39 journal
-  -rw-r----- 1 root adm  1612 Oct 26 23:39 kern.log
-  -rw-rw-r-- 1 root utmp  292 Oct 26 23:39 lastlog
-  -rw-r--r-- 1 root root  332 Oct 26 23:39 messages
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 nginx
-  -rw-r----- 1 root adm  3654 Oct 26 23:39 syslog
-  -rw-rw-r-- 1 root utmp 1152 Oct 26 23:39 wtmp
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 apache2
+  drwxr-x--- 2 root adm     0 Oct 29 10:24 audit
+  -rw-r----- 1 root adm   309 Oct 29 10:24 auth.log
+  -rw-r----- 1 root adm  2145 Oct 29 10:24 boot.log
+  -rw-rw---- 1 root utmp    0 Oct 29 10:24 btmp
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 chrony
+  drwxr-sr-x 3 root adm     0 Oct 29 10:24 journal
+  -rw-r----- 1 root adm  1612 Oct 29 10:24 kern.log
+  -rw-rw-r-- 1 root utmp  292 Oct 29 10:24 lastlog
+  -rw-r--r-- 1 root root  332 Oct 29 10:24 messages
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 nginx
+  -rw-r----- 1 root adm  3654 Oct 29 10:24 syslog
+  -rw-rw-r-- 1 root utmp 1152 Oct 29 10:24 wtmp
 
 $ [27/327]> ls -lha /
   total 168
-  drwxr-xr-x 17 root root 0 Oct 26 23:39 .
-  drwxr-xr-x 17 root root 0 Oct 26 23:39 ..
-  lrwxrwxrwx  1 root root 7 Oct 26 23:39 bin -> usr/bin
-  drwxr-xr-x  2 root root 0 Oct 26 23:39 boot
-  drwxr-xr-x  3 root root 0 Oct 26 23:39 dev
-  drwxr-xr-x 32 root root 0 Oct 26 23:39 etc
-  drwxr-xr-x  7 root root 0 Oct 26 23:39 home
-  lrwxrwxrwx  1 root root 7 Oct 26 23:39 lib -> usr/lib
-  lrwxrwxrwx  1 root root 9 Oct 26 23:39 lib64 -> usr/lib64
-  drwxr-xr-x  2 root root 0 Oct 26 23:39 media
-  drwxr-xr-x  2 root root 0 Oct 26 23:39 mnt
-  drwxr-xr-x  2 root root 0 Oct 26 23:39 opt
-  drwxr-xr-x 45 root root 0 Oct 26 23:39 proc
-  drwx------  2 root root 0 Oct 26 23:39 root
-  drwxr-xr-x  6 root root 0 Oct 26 23:39 run
-  lrwxrwxrwx  1 root root 8 Oct 26 23:39 sbin -> usr/sbin
-  drwxr-xr-x  2 root root 0 Oct 26 23:39 srv
-  drwxr-xr-x  6 root root 0 Oct 26 23:39 sys
-  drwxrwxrwt  2 root root 0 Oct 26 23:39 tmp
-  drwxr-xr-x 12 root root 0 Oct 26 23:39 usr
-  drwxr-xr-x 13 root root 0 Oct 26 23:39 var
+  drwxr-xr-x 17 root root 0 Oct 29 10:24 .
+  drwxr-xr-x 17 root root 0 Oct 29 10:24 ..
+  lrwxrwxrwx  1 root root 7 Oct 29 10:24 bin -> usr/bin
+  drwxr-xr-x  2 root root 0 Oct 29 10:24 boot
+  drwxr-xr-x  3 root root 0 Oct 29 10:24 dev
+  drwxr-xr-x 32 root root 0 Oct 29 10:24 etc
+  drwxr-xr-x  7 root root 0 Oct 29 10:24 home
+  lrwxrwxrwx  1 root root 7 Oct 29 10:24 lib -> usr/lib
+  lrwxrwxrwx  1 root root 9 Oct 29 10:24 lib64 -> usr/lib64
+  drwxr-xr-x  2 root root 0 Oct 29 10:24 media
+  drwxr-xr-x  2 root root 0 Oct 29 10:24 mnt
+  drwxr-xr-x  2 root root 0 Oct 29 10:24 opt
+  drwxr-xr-x 45 root root 0 Oct 29 10:24 proc
+  drwx------  2 root root 0 Oct 29 10:24 root
+  drwxr-xr-x  6 root root 0 Oct 29 10:24 run
+  lrwxrwxrwx  1 root root 8 Oct 29 10:24 sbin -> usr/sbin
+  drwxr-xr-x  2 root root 0 Oct 29 10:24 srv
+  drwxr-xr-x  6 root root 0 Oct 29 10:24 sys
+  drwxrwxrwt  2 root root 0 Oct 29 10:24 tmp
+  drwxr-xr-x 12 root root 0 Oct 29 10:24 usr
+  drwxr-xr-x 13 root root 0 Oct 29 10:24 var
 
 $ [28/327]> ls -a
   .   ..
@@ -213,7 +213,7 @@ $ [30/327]> ls -d */
   ls: cannot access '*/': No such file or directory
 
 $ [31/327]> ls -ld /etc
-  drwxr-xr-x 32 root root 0 Oct 26 23:39 /etc
+  drwxr-xr-x 32 root root 0 Oct 29 10:24 /etc
 
 $ [32/327]> ls -R /etc
   /etc:
@@ -429,81 +429,81 @@ $ [32/327]> ls -R /etc
 
 $ [33/327]> ls -lt /var/log
   total 104
-  -rw-r----- 1 root adm  3654 Oct 26 23:39 syslog
-  -rw-r----- 1 root adm   309 Oct 26 23:39 auth.log
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 apache2
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 chrony
-  -rw-r----- 1 root adm  1612 Oct 26 23:39 kern.log
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 nginx
-  -rw-rw-r-- 1 root utmp  292 Oct 26 23:39 lastlog
-  -rw-rw-r-- 1 root utmp 1152 Oct 26 23:39 wtmp
-  -rw-rw---- 1 root utmp    0 Oct 26 23:39 btmp
-  -rw-r--r-- 1 root root  332 Oct 26 23:39 messages
-  drwxr-x--- 2 root adm     0 Oct 26 23:39 audit
-  -rw-r----- 1 root adm  2145 Oct 26 23:39 boot.log
-  drwxr-sr-x 3 root adm     0 Oct 26 23:39 journal
+  -rw-r----- 1 root adm  3654 Oct 29 10:24 syslog
+  -rw-r----- 1 root adm   309 Oct 29 10:24 auth.log
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 apache2
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 chrony
+  -rw-r----- 1 root adm  1612 Oct 29 10:24 kern.log
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 nginx
+  -rw-rw---- 1 root utmp    0 Oct 29 10:24 btmp
+  -rw-rw-r-- 1 root utmp  292 Oct 29 10:24 lastlog
+  -rw-rw-r-- 1 root utmp 1152 Oct 29 10:24 wtmp
+  -rw-r--r-- 1 root root  332 Oct 29 10:24 messages
+  drwxr-x--- 2 root adm     0 Oct 29 10:24 audit
+  -rw-r----- 1 root adm  2145 Oct 29 10:24 boot.log
+  drwxr-sr-x 3 root adm     0 Oct 29 10:24 journal
 
 $ [34/327]> ls -ltr /var/log
   total 104
-  drwxr-sr-x 3 root adm     0 Oct 26 23:39 journal
-  -rw-r----- 1 root adm  2145 Oct 26 23:39 boot.log
-  drwxr-x--- 2 root adm     0 Oct 26 23:39 audit
-  -rw-r--r-- 1 root root  332 Oct 26 23:39 messages
-  -rw-rw---- 1 root utmp    0 Oct 26 23:39 btmp
-  -rw-rw-r-- 1 root utmp 1152 Oct 26 23:39 wtmp
-  -rw-rw-r-- 1 root utmp  292 Oct 26 23:39 lastlog
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 nginx
-  -rw-r----- 1 root adm  1612 Oct 26 23:39 kern.log
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 chrony
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 apache2
-  -rw-r----- 1 root adm   309 Oct 26 23:39 auth.log
-  -rw-r----- 1 root adm  3654 Oct 26 23:39 syslog
+  drwxr-sr-x 3 root adm     0 Oct 29 10:24 journal
+  -rw-r----- 1 root adm  2145 Oct 29 10:24 boot.log
+  drwxr-x--- 2 root adm     0 Oct 29 10:24 audit
+  -rw-r--r-- 1 root root  332 Oct 29 10:24 messages
+  -rw-rw-r-- 1 root utmp 1152 Oct 29 10:24 wtmp
+  -rw-rw-r-- 1 root utmp  292 Oct 29 10:24 lastlog
+  -rw-rw---- 1 root utmp    0 Oct 29 10:24 btmp
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 nginx
+  -rw-r----- 1 root adm  1612 Oct 29 10:24 kern.log
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 chrony
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 apache2
+  -rw-r----- 1 root adm   309 Oct 29 10:24 auth.log
+  -rw-r----- 1 root adm  3654 Oct 29 10:24 syslog
 
 $ [35/327]> ls -lS /var/log
   total 104
-  -rw-r----- 1 root adm  3654 Oct 26 23:39 syslog
-  -rw-r----- 1 root adm  2145 Oct 26 23:39 boot.log
-  -rw-r----- 1 root adm  1612 Oct 26 23:39 kern.log
-  -rw-rw-r-- 1 root utmp 1152 Oct 26 23:39 wtmp
-  -rw-r--r-- 1 root root  332 Oct 26 23:39 messages
-  -rw-r----- 1 root adm   309 Oct 26 23:39 auth.log
-  -rw-rw-r-- 1 root utmp  292 Oct 26 23:39 lastlog
-  drwxr-sr-x 3 root adm     0 Oct 26 23:39 journal
-  drwxr-x--- 2 root adm     0 Oct 26 23:39 audit
-  -rw-rw---- 1 root utmp    0 Oct 26 23:39 btmp
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 nginx
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 chrony
-  drwxr-xr-x 2 root root    0 Oct 26 23:39 apache2
+  -rw-r----- 1 root adm  3654 Oct 29 10:24 syslog
+  -rw-r----- 1 root adm  2145 Oct 29 10:24 boot.log
+  -rw-r----- 1 root adm  1612 Oct 29 10:24 kern.log
+  -rw-rw-r-- 1 root utmp 1152 Oct 29 10:24 wtmp
+  -rw-r--r-- 1 root root  332 Oct 29 10:24 messages
+  -rw-r----- 1 root adm   309 Oct 29 10:24 auth.log
+  -rw-rw-r-- 1 root utmp  292 Oct 29 10:24 lastlog
+  drwxr-sr-x 3 root adm     0 Oct 29 10:24 journal
+  drwxr-x--- 2 root adm     0 Oct 29 10:24 audit
+  -rw-rw---- 1 root utmp    0 Oct 29 10:24 btmp
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 nginx
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 chrony
+  drwxr-xr-x 2 root root    0 Oct 29 10:24 apache2
 
 $ [36/327]> ls -lr
   total 0
 
 $ [37/327]> ls -i /etc
-  341 adduser.conf     595 gshadow-         592 passwd-
-  89 anacrontab        84 hostname          586 profile
-  1038 apache2         91 hosts             588 profile.d
-  90 at.deny           519 init.d           542 protocols
-  403 audit            38 iptables          171 resolv.conf
-  587 bash.bashrc      1000 issue           544 rpc
-  1033 chrony          1001 issue.net       1015 rsyslog.conf
-  31 cron.d            33 ldap              1016 rsyslog.d
-  28 cron.daily        339 login.defs       345 security
-  27 cron.hourly       537 logrotate.conf   541 services
-  30 cron.monthly      538 logrotate.d      385 shadow
-  29 cron.weekly       169 lsb-release      593 shadow-
-  88 crontab           610 machine-id       93 shells
-  336 default          999 motd             337 skel
-  1119 dhcp            606 mtab             85 ssh
-  383 environment      120 nanorc           24 ssl
-  1014 exports         1108 netplan         389 subgid
-  997 fail2ban         39 network           388 subuid
-  1125 freeradius      1113 NetworkManager  170 sudoers
-  545 fstab            543 networks         32 sudoers.d
-  372 ftpusers         1002 nginx           392 systemd
-  92 gai.conf          589 nsswitch.conf    611 timezone
-  386 group            116 os-release       36 ufw
-  594 group-           346 pam.d
-  387 gshadow          384 passwd
+  405 adduser.conf     659 gshadow-         656 passwd-
+  152 anacrontab       147 hostname         650 profile
+  1102 apache2         154 hosts            652 profile.d
+  153 at.deny          583 init.d           606 protocols
+  467 audit            38 iptables          234 resolv.conf
+  651 bash.bashrc      1064 issue           608 rpc
+  1097 chrony          1065 issue.net       1079 rsyslog.conf
+  31 cron.d            33 ldap              1080 rsyslog.d
+  28 cron.daily        403 login.defs       409 security
+  27 cron.hourly       601 logrotate.conf   605 services
+  30 cron.monthly      602 logrotate.d      449 shadow
+  29 cron.weekly       232 lsb-release      657 shadow-
+  151 crontab          674 machine-id       156 shells
+  400 default          1063 motd            401 skel
+  1183 dhcp            670 mtab             148 ssh
+  447 environment      183 nanorc           24 ssl
+  1078 exports         1172 netplan         453 subgid
+  1061 fail2ban        39 network           452 subuid
+  1189 freeradius      1177 NetworkManager  233 sudoers
+  609 fstab            607 networks         32 sudoers.d
+  436 ftpusers         1066 nginx           456 systemd
+  155 gai.conf         653 nsswitch.conf    675 timezone
+  450 group            179 os-release       36 ufw
+  658 group-           410 pam.d
+  451 gshadow          448 passwd
 
 $ [38/327]> ls -n /etc
   adduser.conf    environment     issue           nginx           shadow
@@ -606,6 +606,7 @@ $ [41/327]> ls --color=auto /
   boot   etc    lib    media  opt    root   sbin   sys    usr
 
 $ [42/327]> ls /etc /var /usr
+  /etc:
   adduser.conf    environment     issue           nginx           shadow
   anacrontab      exports         issue.net       nsswitch.conf   shadow-
   apache2         fail2ban        ldap            os-release      shells
@@ -621,16 +622,20 @@ $ [42/327]> ls /etc /var /usr
   crontab         hosts           network         rsyslog.d       ufw
   default         init.d          NetworkManager  security
   dhcp            iptables        networks        services
-  backups  lib      log      opt      spool    www
-  cache    local    mail     run      tmp
+  
+  /usr:
   bin      include  lib64    local    share
   games    lib      libexec  sbin     src
+  
+  /var:
+  backups  lib      log      opt      spool    www
+  cache    local    mail     run      tmp
 
 $ [43/327]> ls /bin/ls
   /bin/ls
 
 $ [44/327]> ls -l /bin/ls
-  -rwxr-xr-x 1 root root 29 Oct 26 23:39 /bin/ls
+  -rwxr-xr-x 1 root root 29 Oct 29 10:24 /bin/ls
 
 $ [45/327]> ls /etc/*.conf
   /etc/adduser.conf
@@ -641,9 +646,9 @@ $ [45/327]> ls /etc/*.conf
   /etc/rsyslog.conf
 
 $ [46/327]> ls /etc/passwd /etc/shadow /etc/group
+  /etc/group
   /etc/passwd
   /etc/shadow
-  /etc/group
 
 $ [47/327]> ls /repertoire_inexistant_xyz
   ls: cannot access '/repertoire_inexistant_xyz': No such file or directory
@@ -666,7 +671,8 @@ $ [48/327]> ls -Z /etc
   dhcp            iptables        networks        services
 
 $ [49/327]> ls --zorglub
-<empty>
+  ls: unrecognized option '--zorglub'
+  Try 'ls --help' for more information.
 
 
 --- [50] § arborescence & disque — tree/du/df ---
@@ -1025,6 +1031,7 @@ $ [57/327]> du -sh /etc
   110K	/etc
 
 $ [58/327]> du -a /etc | head
+  1	/etc/ssl/certs/ca-certificates.crt
   1	/etc/ssl/certs
   1	/etc/ssl/private
   1	/etc/ssl
@@ -1034,300 +1041,18 @@ $ [58/327]> du -a /etc | head
   1	/etc/cron.monthly
   1	/etc/cron.d
   1	/etc/sudoers.d
-  1	/etc/ldap
 
 $ [59/327]> du -h --max-depth=1 /
-  2K	//usr/bin
-  942B	//usr/sbin
-  84B	//usr/lib/x86_64-linux-gnu/sasl2
-  0B	//usr/lib/x86_64-linux-gnu/rsyslog
-  84B	//usr/lib/x86_64-linux-gnu
-  10B	//usr/lib/openssh
-  177B	//usr/lib/systemd/journald.conf.d
-  9K	//usr/lib/systemd/system
-  159B	//usr/lib/systemd/network
-  9K	//usr/lib/systemd
-  10B	//usr/lib/ufw
-  10B	//usr/lib/apparmor
-  10B	//usr/lib/apt
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/fs/ext4
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/fs/jbd2
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/fs/overlayfs
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/fs
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/crypto
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/drivers/md
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/drivers/net/ethernet
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/drivers/net/bonding
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/drivers/net
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/drivers
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net/bridge
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net/802
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net/llc
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net/8021q
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net/netfilter
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net/ipv4/netfilter
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net/ipv4
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel/net
-  0B	//usr/lib/modules/5.15.0-130-generic/kernel
-  0B	//usr/lib/modules/5.15.0-130-generic
-  0B	//usr/lib/modules
-  54B	//usr/lib/rsyslog
-  9K	//usr/lib
-  0B	//usr/lib64
-  0B	//usr/local/bin
-  0B	//usr/local/sbin
-  0B	//usr/local/share/ca-certificates
-  0B	//usr/local/share/man
-  0B	//usr/local/share
-  0B	//usr/local/games
-  0B	//usr/local/src
-  9B	//usr/local
-  0B	//usr/share/ca-certificates
-  0B	//usr/share/man
-  0B	//usr/share/info
-  801B	//usr/share/nano/debian
-  7K	//usr/share/nano/extra
-  52K	//usr/share/nano
-  10B	//usr/share/netfilter-persistent
-  52K	//usr/share
-  0B	//usr/games
-  0B	//usr/include
-  0B	//usr/libexec
-  0B	//usr/src
   65K	//usr
-  0B	//etc/ssl/certs
-  0B	//etc/ssl/private
-  0B	//etc/ssl
-  0B	//etc/cron.hourly
-  0B	//etc/cron.daily
-  0B	//etc/cron.weekly
-  0B	//etc/cron.monthly
-  0B	//etc/cron.d
-  0B	//etc/sudoers.d
-  333B	//etc/ldap
-  877B	//etc/ufw/applications.d
-  4K	//etc/ufw
-  0B	//etc/iptables
-  0B	//etc/network/interfaces.d
-  0B	//etc/network/if-up.d
-  0B	//etc/network/if-down.d
-  0B	//etc/network/if-pre-up.d
-  0B	//etc/network/if-post-down.d
-  335B	//etc/network
-  0B	//etc/ssh/ssh_config.d
-  0B	//etc/ssh/sshd_config.d
-  9K	//etc/ssh
-  704B	//etc/default
-  839B	//etc/skel
-  0B	//etc/security/limits.d
-  0B	//etc/security/namespace.d
-  21K	//etc/security
-  19K	//etc/pam.d
-  1K	//etc/systemd/system/multi-user.target.wants
-  1K	//etc/systemd/system
-  0B	//etc/systemd/network
-  4K	//etc/systemd
-  243B	//etc/audit/rules.d
-  880B	//etc/audit/plugins.d
-  2K	//etc/audit
-  10B	//etc/init.d
-  505B	//etc/logrotate.d
-  0B	//etc/profile.d
-  63B	//etc/fail2ban
-  210B	//etc/nginx/sites-available
-  26B	//etc/nginx/sites-enabled
-  0B	//etc/nginx/conf.d
-  0B	//etc/nginx/modules-enabled
-  674B	//etc/nginx
-  1K	//etc/rsyslog.d
-  2K	//etc/chrony
-  551B	//etc/apache2/sites-available
-  35B	//etc/apache2/sites-enabled
-  591B	//etc/apache2/mods-enabled
-  3K	//etc/apache2/mods-available
-  0B	//etc/apache2/conf-enabled
-  5K	//etc/apache2
-  168B	//etc/netplan
-  58B	//etc/NetworkManager
-  1K	//etc/dhcp
-  62B	//etc/freeradius/3.0
-  62B	//etc/freeradius
   110K	//etc
-  11K	//home/scripts
-  0B	//home/alice
-  0B	//home/bob
-  0B	//home/carl
-  0B	//home/dave
   11K	//home
   0B	//root
   0B	//tmp
-  248B	//var/lib/dhcp
-  0B	//var/lib/logrotate
-  0B	//var/lib/chrony
-  248B	//var/lib
-  8.0M	//var/log/journal/3e8f3da0764e08a380a76b990bba4520
-  8.0M	//var/log/journal
-  804B	//var/log/audit
-  0B	//var/log/nginx
-  0B	//var/log/chrony
-  0B	//var/log/apache2
-  8.0M	//var/log
-  0B	//var/tmp
-  0B	//var/cache
-  0B	//var/spool/mail
-  0B	//var/spool/cron/crontabs
-  0B	//var/spool/cron
-  0B	//var/spool
-  0B	//var/local
-  0B	//var/opt
-  0B	//var/backups
-  0B	//var/run/faillock
-  387B	//var/run
-  0B	//var/mail
-  1K	//var/www/html
-  1K	//var/www
   8.0M	//var
-  0B	//dev/pts
   0B	//dev
-  0B	//proc/sys/kernel
-  2B	//proc/sys/net/ipv4/conf/all
-  2B	//proc/sys/net/ipv4/conf/default
-  2B	//proc/sys/net/ipv4/conf/eth0
-  0B	//proc/sys/net/ipv4/conf/eth1
-  0B	//proc/sys/net/ipv4/conf/eth2
-  0B	//proc/sys/net/ipv4/conf/eth3
-  0B	//proc/sys/net/ipv4/conf/lo
-  6B	//proc/sys/net/ipv4/conf
-  0B	//proc/sys/net/ipv4/neigh/default
-  0B	//proc/sys/net/ipv4/neigh/eth0
-  0B	//proc/sys/net/ipv4/neigh
-  6B	//proc/sys/net/ipv4
-  0B	//proc/sys/net/ipv6
-  0B	//proc/sys/net/core
-  6B	//proc/sys/net
-  6B	//proc/sys
-  0B	//proc/net
-  42B	//proc/1/fd
-  64B	//proc/1
-  42B	//proc/2/fd
-  44B	//proc/2
-  42B	//proc/3/fd
-  44B	//proc/3
-  42B	//proc/4/fd
-  44B	//proc/4
-  42B	//proc/5/fd
-  44B	//proc/5
-  42B	//proc/6/fd
-  44B	//proc/6
-  42B	//proc/7/fd
-  44B	//proc/7
-  42B	//proc/8/fd
-  44B	//proc/8
-  42B	//proc/9/fd
-  44B	//proc/9
-  42B	//proc/10/fd
-  44B	//proc/10
-  42B	//proc/11/fd
-  44B	//proc/11
-  42B	//proc/12/fd
-  44B	//proc/12
-  42B	//proc/13/fd
-  44B	//proc/13
-  42B	//proc/14/fd
-  44B	//proc/14
-  42B	//proc/15/fd
-  44B	//proc/15
-  42B	//proc/16/fd
-  44B	//proc/16
-  42B	//proc/17/fd
-  44B	//proc/17
-  42B	//proc/18/fd
-  44B	//proc/18
-  42B	//proc/19/fd
-  44B	//proc/19
-  42B	//proc/20/fd
-  44B	//proc/20
-  42B	//proc/21/fd
-  44B	//proc/21
-  62B	//proc/22/fd
-  78B	//proc/22
-  42B	//proc/23/fd
-  68B	//proc/23
-  62B	//proc/24/fd
-  81B	//proc/24
-  42B	//proc/25/fd
-  58B	//proc/25
-  91B	//proc/26/fd
-  111B	//proc/26
-  42B	//proc/27/fd
-  56B	//proc/27
-  42B	//proc/28/fd
-  57B	//proc/28
-  83B	//proc/29/fd
-  114B	//proc/29
-  42B	//proc/30/fd
-  73B	//proc/30
-  42B	//proc/31/fd
-  71B	//proc/31
-  42B	//proc/32/fd
-  64B	//proc/32
-  42B	//proc/33/fd
-  59B	//proc/33
-  42B	//proc/34/fd
-  54B	//proc/34
-  42B	//proc/35/fd
-  73B	//proc/35
-  42B	//proc/36/fd
-  61B	//proc/36
-  42B	//proc/37/fd
-  96B	//proc/37
-  42B	//proc/38/fd
-  74B	//proc/38
-  42B	//proc/39/fd
-  66B	//proc/39
-  75B	//proc/40/fd
-  97B	//proc/40
-  30B	//proc/41/fd
-  49B	//proc/41
   2K	//proc
-  0B	//sys/power
-  0B	//sys/devices/virtual/dmi/id
-  0B	//sys/devices/virtual/dmi
-  0B	//sys/devices/virtual
-  0B	//sys/devices/system/cpu
-  0B	//sys/devices/system
-  0B	//sys/devices
-  0B	//sys/block/sda/queue
-  0B	//sys/block/sda/device
-  0B	//sys/block/sda/sda1
-  0B	//sys/block/sda/sda2
-  0B	//sys/block/sda
-  0B	//sys/block/sdb/queue
-  0B	//sys/block/sdb/device
-  0B	//sys/block/sdb/sdb1
-  0B	//sys/block/sdb
-  0B	//sys/block
-  0B	//sys/class/net/eth0/statistics
-  0B	//sys/class/net/eth0
-  0B	//sys/class/net/lo/statistics
-  0B	//sys/class/net/lo
-  0B	//sys/class/net/eth1/statistics
-  0B	//sys/class/net/eth1
-  0B	//sys/class/net/eth2/statistics
-  0B	//sys/class/net/eth2
-  0B	//sys/class/net/eth3/statistics
-  0B	//sys/class/net/eth3
-  0B	//sys/class/net
-  0B	//sys/class
   0B	//sys
   0B	//opt
-  0B	//run/sshd
-  3B	//run/fail2ban
-  0B	//run/systemd/sessions
-  0B	//run/systemd/users
-  217B	//run/systemd/resolve
-  217B	//run/systemd
-  0B	//run/user
   232B	//run
   0B	//mnt
   0B	//media
@@ -1343,6 +1068,7 @@ $ [60/327]> du -c /var/log
   1	/var/log/chrony
   1	/var/log/apache2
   8203	/var/log
+  8203	total
 
 $ [61/327]> df
   Filesystem     1K-blocks     Used Available Use% Mounted on
@@ -1364,7 +1090,7 @@ $ [63/327]> df -h /
 
 $ [64/327]> df -i
   Filesystem      Inodes  IUsed   IFree IUse% Mounted on
-  /dev/sda1       655360   1861  653499    1% /
+  /dev/sda1       655360   2048  653312    1% /
   /dev/sda2       131072  20972  110100   17% /boot
   tmpfs             1280     13    1267    2% /run/lock
   /dev/sdb1       6553600  1048576  5505024   16% /u01
@@ -1398,16 +1124,16 @@ $ [70/327]> touch fichier1.txt
 <empty>
 
 $ [71/327]> ls -l fichier1.txt
-  -rw-r--r-- 1 root root 0 Oct 26 23:39 fichier1.txt
+  -rw-r--r-- 1 root root 0 Oct 29 10:24 fichier1.txt
 
 $ [72/327]> touch fichier2.txt fichier3.txt fichier4.txt
 <empty>
 
 $ [73/327]> ls -l fichier*.txt
-  -rw-r--r-- 1 root root 0 Oct 26 23:39 fichier1.txt
-  -rw-r--r-- 1 root root 0 Oct 26 23:39 fichier2.txt
-  -rw-r--r-- 1 root root 0 Oct 26 23:39 fichier3.txt
-  -rw-r--r-- 1 root root 0 Oct 26 23:39 fichier4.txt
+  -rw-r--r-- 1 root root 0 Oct 29 10:24 fichier1.txt
+  -rw-r--r-- 1 root root 0 Oct 29 10:24 fichier2.txt
+  -rw-r--r-- 1 root root 0 Oct 29 10:24 fichier3.txt
+  -rw-r--r-- 1 root root 0 Oct 29 10:24 fichier4.txt
 
 $ [74/327]> echo "ligne unique" > simple.txt
 <empty>
@@ -1455,11 +1181,11 @@ $ [86/327]> touch fichier1.txt
 $ [87/327]> stat fichier1.txt
     File: fichier1.txt
     Size: 0	Blocks: 0	IO Block: 4096	regular file
-  Device: 0h/0d	Inode: 1862	Links: 1
+  Device: 0h/0d	Inode: 2055	Links: 1
   Access: (0644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-10-26 23:39:20.459000000 +0000
-  Modify: 2026-10-26 23:39:20.459000000 +0000
-  Change: 2026-10-26 23:39:20.459000000 +0000
+  Access: 2026-10-29 10:24:51.129000000 +0000
+  Modify: 2026-10-29 10:24:51.129000000 +0000
+  Change: 2026-10-29 10:24:51.129000000 +0000
 
 $ [88/327]> touch /repertoire/inexistant_xyz/fichier.txt
   touch: cannot touch '/repertoire/inexistant_xyz/fichier.txt': No such file or directory
@@ -1470,7 +1196,7 @@ $ [89/327]> mkdir projet
 <empty>
 
 $ [90/327]> ls -ld projet
-  drwxr-xr-x 2 root root 0 Oct 26 23:39 projet
+  drwxr-xr-x 2 root root 0 Oct 29 10:24 projet
 
 $ [91/327]> mkdir -p projet/src/lib/utils
 <empty>
@@ -1510,10 +1236,10 @@ $ [95/327]> mkdir -m 700 securisé
 <empty>
 
 $ [96/327]> ls -ld securisé
-  drwxr-xr-x 2 root root 0 Oct 26 23:39 securisé
+  drwx------ 2 root root 0 Oct 29 10:24 securisé
 
 $ [97/327]> mkdir projet
-  mkdir: cannot create directory 'projet'
+  mkdir: cannot create directory 'projet': File exists
 
 $ [98/327]> rmdir securisé
 <empty>
@@ -1546,7 +1272,8 @@ $ [104/327]> rmdir projet
   rmdir: failed to remove 'projet'
 
 $ [105/327]> mkdir
-<empty>
+  mkdir: missing operand
+  Try 'mkdir --help' for more information.
 
 $ [106/327]> rmdir /etc
   rmdir: failed to remove '/etc'
@@ -1564,7 +1291,7 @@ $ [109/327]> cat copie.txt
   ligne ajoutee
 
 $ [110/327]> cp simple.txt lettres.txt copie_vers/
-<empty>
+  cp: target 'copie_vers/': No such file or directory
 
 $ [111/327]> mkdir copie_vers
 <empty>
@@ -1573,38 +1300,45 @@ $ [112/327]> cp simple.txt lettres.txt copie_vers/
 <empty>
 
 $ [113/327]> ls copie_vers
-<empty>
+  lettres.txt  simple.txt
 
 $ [114/327]> cp -r projet projet_backup
-  cp: cannot copy 'projet' to 'projet_backup'
+<empty>
 
 $ [115/327]> ls -R projet_backup
-  ls: cannot access 'projet_backup': No such file or directory
+  projet_backup:
+  src
+  
+  projet_backup/src:
+  lib
+  
+  projet_backup/src/lib:
 
 $ [116/327]> cp -p simple.txt preserve.txt
 <empty>
 
 $ [117/327]> ls -l preserve.txt simple.txt
-  -rw-r--r-- 1 root root 27 Oct 26 23:39 preserve.txt
-  -rw-r--r-- 1 root root 27 Oct 26 23:39 simple.txt
+  -rw-r--r-- 1 root root 27 Oct 29 10:24 preserve.txt
+  -rw-r--r-- 1 root root 27 Oct 29 10:24 simple.txt
 
 $ [118/327]> cp -v lettres.txt verbose.txt
-<empty>
+  'lettres.txt' -> 'verbose.txt'
 
 $ [119/327]> cp -i simple.txt copie.txt
 <empty>
 
 $ [120/327]> cp -n simple.txt copie.txt
-<empty>
+  cp: warning: behavior of -n is non-portable and may change in future; use --update=none instead
 
 $ [121/327]> cp -a projet projet_archive
-  cp: cannot copy 'projet' to 'projet_archive'
+<empty>
 
 $ [122/327]> cp fichier_inexistant_xyz cible.txt
-  cp: cannot copy 'fichier_inexistant_xyz' to 'cible.txt'
+  cp: cannot stat 'fichier_inexistant_xyz': No such file or directory
 
 $ [123/327]> cp simple.txt
-  cp: missing operand
+  cp: missing destination file operand after 'simple.txt'
+  Try 'cp --help' for more information.
 
 
 --- [124] § déplacement & renommage — mv ---
@@ -1612,8 +1346,8 @@ $ [124/327]> mv copie.txt renomme.txt
 <empty>
 
 $ [125/327]> ls -l renomme.txt copie.txt
-  -rw-r--r-- 1 root root 27 Oct 26 23:39 renomme.txt
   ls: cannot access 'copie.txt': No such file or directory
+  -rw-r--r-- 1 root root 27 Oct 29 10:24 renomme.txt
 
 $ [126/327]> mkdir destination
 <empty>
@@ -1637,16 +1371,16 @@ $ [132/327]> mv -i simple.txt tee.txt
 <empty>
 
 $ [133/327]> mv -n simple.txt tee.txt
-  mv: cannot move 'simple.txt' to 'tee.txt'
+  mv: cannot stat 'simple.txt': No such file or directory
 
 $ [134/327]> mv projet_backup projet_renomme
-  mv: cannot move 'projet_backup' to 'projet_renomme'
+<empty>
 
 $ [135/327]> ls -ld projet_renomme
-  ls: cannot access 'projet_renomme': No such file or directory
+  drwxr-xr-x 3 root root 0 Oct 29 10:24 projet_renomme
 
 $ [136/327]> mv fichier_inexistant_xyz cible.txt
-  mv: cannot move 'fichier_inexistant_xyz' to 'cible.txt'
+  mv: cannot stat 'fichier_inexistant_xyz': No such file or directory
 
 $ [137/327]> mv destination
   mv: missing operand
@@ -1711,8 +1445,8 @@ $ [155/327]> ln cible_lien.txt lien_dur.txt
 <empty>
 
 $ [156/327]> ls -li cible_lien.txt lien_dur.txt
-  1887 -rw-r--r-- 2 root root 14 Oct 26 23:39 cible_lien.txt
-  1887 -rw-r--r-- 2 root root 14 Oct 26 23:39 lien_dur.txt
+  2087 -rw-r--r-- 2 root root 14 Oct 29 10:24 cible_lien.txt
+  2087 -rw-r--r-- 2 root root 14 Oct 29 10:24 lien_dur.txt
 
 $ [157/327]> cat lien_dur.txt
   cible du lien
@@ -1721,7 +1455,7 @@ $ [158/327]> ln -s cible_lien.txt lien_symbolique.txt
 <empty>
 
 $ [159/327]> ls -l lien_symbolique.txt
-  lrwxrwxrwx 1 root root 14 Oct 26 23:39 lien_symbolique.txt -> cible_lien.txt
+  lrwxrwxrwx 1 root root 14 Oct 29 10:24 lien_symbolique.txt -> cible_lien.txt
 
 $ [160/327]> cat lien_symbolique.txt
   cible du lien
@@ -1730,7 +1464,7 @@ $ [161/327]> ln -s /etc/passwd lien_passwd
 <empty>
 
 $ [162/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 root root 11 Oct 26 23:39 lien_passwd -> /etc/passwd
+  lrwxrwxrwx 1 root root 11 Oct 29 10:24 lien_passwd -> /etc/passwd
 
 $ [163/327]> readlink lien_symbolique.txt
   cible_lien.txt
@@ -1745,7 +1479,7 @@ $ [166/327]> ln -s cible_inexistante_xyz lien_casse
 <empty>
 
 $ [167/327]> ls -l lien_casse
-  lrwxrwxrwx 1 root root 21 Oct 26 23:39 lien_casse -> cible_inexistante_xyz
+  lrwxrwxrwx 1 root root 21 Oct 29 10:24 lien_casse -> cible_inexistante_xyz
 
 $ [168/327]> readlink lien_casse
   cible_inexistante_xyz
@@ -1754,7 +1488,7 @@ $ [169/327]> ln -sf /etc/hostname lien_passwd
 <empty>
 
 $ [170/327]> ls -l lien_passwd
-  lrwxrwxrwx 1 root root 13 Oct 26 23:39 lien_passwd -> /etc/hostname
+  lrwxrwxrwx 1 root root 13 Oct 29 10:24 lien_passwd -> /etc/hostname
 
 $ [171/327]> ln
   ln: missing file operand
@@ -1837,9 +1571,9 @@ $ [191/327]> stat /etc
     Size: 0	Blocks: 0	IO Block: 4096	directory
   Device: 0h/0d	Inode: 23	Links: 32
   Access: (0755/drwxr-xr-x)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-10-26 23:39:20.166000000 +0000
-  Modify: 2026-10-26 23:39:20.476000000 +0000
-  Change: 2026-10-26 23:39:20.166000000 +0000
+  Access: 2026-10-29 10:24:50.767000000 +0000
+  Modify: 2026-10-29 10:24:51.168000000 +0000
+  Change: 2026-10-29 10:24:50.767000000 +0000
 
 $ [192/327]> stat -c "%n %s %a %U:%G" /etc/passwd
   stat: cannot stat '/etc/passwd': No such file or directory
@@ -1853,11 +1587,11 @@ $ [194/327]> stat -c "%F" /etc/passwd
 $ [195/327]> stat --format="%a %n" /etc/hostname
     File: /etc/hostname
     Size: 13	Blocks: 8	IO Block: 4096	regular file
-  Device: 0h/0d	Inode: 84	Links: 1
+  Device: 0h/0d	Inode: 147	Links: 1
   Access: (0644/-rw-r--r--)  Uid: ( 0/ root)   Gid: ( 0/ root)
-  Access: 2026-10-26 23:39:20.482000000 +0000
-  Modify: 2026-10-26 23:39:20.213000000 +0000
-  Change: 2026-10-26 23:39:20.166000000 +0000
+  Access: 2026-10-29 10:24:51.181000000 +0000
+  Modify: 2026-10-29 10:24:50.824000000 +0000
+  Change: 2026-10-29 10:24:50.767000000 +0000
 
 $ [196/327]> stat -t /etc/passwd
   stat: cannot stat '/etc/passwd': No such file or directory
@@ -2129,7 +1863,6 @@ $ [216/327]> find /tmp -maxdepth 1
   /tmp
   /tmp/a
   /tmp/d
-  /tmp/700
   /tmp/copie_vers
   /tmp/cible_lien.txt
   /tmp/lien_dur.txt
@@ -2167,49 +1900,23 @@ $ [218/327]> find /etc -maxdepth 1 -newer /etc/hostname
   /etc/freeradius
 
 $ [219/327]> find /etc -maxdepth 1 -perm 644
-  /etc
-  /etc/ssl
-  /etc/cron.hourly
-  /etc/cron.daily
-  /etc/cron.weekly
-  /etc/cron.monthly
-  /etc/cron.d
-  /etc/sudoers.d
-  /etc/ldap
-  /etc/ufw
-  /etc/iptables
-  /etc/network
   /etc/hostname
-  /etc/ssh
   /etc/crontab
   /etc/anacrontab
-  /etc/at.deny
-  /etc/hosts
   /etc/gai.conf
   /etc/shells
   /etc/os-release
   /etc/nanorc
   /etc/lsb-release
-  /etc/sudoers
   /etc/resolv.conf
-  /etc/default
-  /etc/skel
   /etc/login.defs
   /etc/adduser.conf
-  /etc/security
-  /etc/pam.d
   /etc/ftpusers
   /etc/environment
-  /etc/shadow
   /etc/group
-  /etc/gshadow
   /etc/subuid
   /etc/subgid
-  /etc/systemd
-  /etc/audit
-  /etc/init.d
   /etc/logrotate.conf
-  /etc/logrotate.d
   /etc/services
   /etc/protocols
   /etc/networks
@@ -2217,29 +1924,16 @@ $ [219/327]> find /etc -maxdepth 1 -perm 644
   /etc/fstab
   /etc/profile
   /etc/bash.bashrc
-  /etc/profile.d
   /etc/nsswitch.conf
   /etc/passwd-
-  /etc/shadow-
   /etc/group-
-  /etc/gshadow-
-  /etc/mtab
   /etc/machine-id
   /etc/timezone
-  /etc/fail2ban
   /etc/motd
   /etc/issue
   /etc/issue.net
-  /etc/nginx
   /etc/exports
   /etc/rsyslog.conf
-  /etc/rsyslog.d
-  /etc/chrony
-  /etc/apache2
-  /etc/netplan
-  /etc/NetworkManager
-  /etc/dhcp
-  /etc/freeradius
 
 $ [220/327]> find /etc -maxdepth 1 -user root
   /etc
@@ -2366,280 +2060,10 @@ $ [222/327]> find /etc -maxdepth 1 -empty
   /etc/mtab
 
 $ [223/327]> find /chemin_inexistant_xyz
-<empty>
+  find: '/chemin_inexistant_xyz': No such file or directory
 
 $ [224/327]> find /etc -truc
-  /etc
-  /etc/ssl
-  /etc/ssl/certs
-  /etc/ssl/certs/ca-certificates.crt
-  /etc/ssl/private
-  /etc/cron.hourly
-  /etc/cron.daily
-  /etc/cron.weekly
-  /etc/cron.monthly
-  /etc/cron.d
-  /etc/sudoers.d
-  /etc/ldap
-  /etc/ldap/ldap.conf
-  /etc/ufw
-  /etc/ufw/applications.d
-  /etc/ufw/applications.d/openssh-server
-  /etc/ufw/applications.d/apache2
-  /etc/ufw/applications.d/nginx
-  /etc/ufw/ufw.conf
-  /etc/ufw/sysctl.conf
-  /etc/ufw/before.rules
-  /etc/ufw/after.rules
-  /etc/ufw/before6.rules
-  /etc/ufw/after6.rules
-  /etc/ufw/user.rules
-  /etc/ufw/user6.rules
-  /etc/iptables
-  /etc/network
-  /etc/network/interfaces.d
-  /etc/network/if-up.d
-  /etc/network/if-down.d
-  /etc/network/if-pre-up.d
-  /etc/network/if-post-down.d
-  /etc/network/interfaces
-  /etc/hostname
-  /etc/ssh
-  /etc/ssh/ssh_config.d
-  /etc/ssh/ssh_config
-  /etc/ssh/sshd_config.d
-  /etc/ssh/ssh_host_rsa_key.pub
-  /etc/ssh/ssh_host_rsa_key
-  /etc/ssh/ssh_host_ecdsa_key.pub
-  /etc/ssh/ssh_host_ecdsa_key
-  /etc/ssh/ssh_host_ed25519_key.pub
-  /etc/ssh/ssh_host_ed25519_key
-  /etc/ssh/sshd_config
-  /etc/crontab
-  /etc/anacrontab
-  /etc/at.deny
-  /etc/hosts
-  /etc/gai.conf
-  /etc/shells
-  /etc/os-release
-  /etc/nanorc
-  /etc/lsb-release
-  /etc/sudoers
-  /etc/resolv.conf
-  /etc/default
-  /etc/default/useradd
-  /etc/default/locale
-  /etc/default/keyboard
-  /etc/default/isc-dhcp-server
-  /etc/skel
-  /etc/skel/.bash_logout
-  /etc/skel/.bashrc
-  /etc/skel/.profile
-  /etc/login.defs
-  /etc/adduser.conf
-  /etc/security
-  /etc/security/pwquality.conf
-  /etc/security/limits.d
-  /etc/security/namespace.d
-  /etc/security/access.conf
-  /etc/security/faillock.conf
-  /etc/security/group.conf
-  /etc/security/limits.conf
-  /etc/security/namespace.conf
-  /etc/security/namespace.init
-  /etc/security/pam_env.conf
-  /etc/security/sepermit.conf
-  /etc/security/time.conf
-  /etc/security/opasswd
-  /etc/pam.d
-  /etc/pam.d/common-password
-  /etc/pam.d/chfn
-  /etc/pam.d/chpasswd
-  /etc/pam.d/chsh
-  /etc/pam.d/cron
-  /etc/pam.d/login
-  /etc/pam.d/newusers
-  /etc/pam.d/other
-  /etc/pam.d/passwd
-  /etc/pam.d/runuser
-  /etc/pam.d/runuser-l
-  /etc/pam.d/sshd
-  /etc/pam.d/su
-  /etc/pam.d/su-l
-  /etc/pam.d/sudo
-  /etc/pam.d/sudo-i
-  /etc/pam.d/vsftpd
-  /etc/pam.d/common-auth
-  /etc/pam.d/common-account
-  /etc/pam.d/common-session
-  /etc/pam.d/common-session-noninteractive
-  /etc/ftpusers
-  /etc/environment
-  /etc/shadow
-  /etc/group
-  /etc/gshadow
-  /etc/subuid
-  /etc/subgid
-  /etc/systemd
-  /etc/systemd/journald.conf
-  /etc/systemd/system
-  /etc/systemd/system/multi-user.target.wants
-  /etc/systemd/system/multi-user.target.wants/ssh.service
-  /etc/systemd/system/multi-user.target.wants/fail2ban.service
-  /etc/systemd/system/multi-user.target.wants/chrony.service
-  /etc/systemd/system/multi-user.target.wants/cron.service
-  /etc/systemd/system/multi-user.target.wants/rsyslog.service
-  /etc/systemd/system/multi-user.target.wants/auditd.service
-  /etc/systemd/system/multi-user.target.wants/atd.service
-  /etc/systemd/system/multi-user.target.wants/systemd-resolved.service
-  /etc/systemd/system/multi-user.target.wants/systemd-journald.service
-  /etc/systemd/system/multi-user.target.wants/systemd-logind.service
-  /etc/systemd/system/multi-user.target.wants/dbus.service
-  /etc/systemd/system/multi-user.target.wants/strongswan-starter.service
-  /etc/systemd/system/multi-user.target.wants/networking.service
-  /etc/systemd/system/multi-user.target.wants/systemd-networkd.service
-  /etc/systemd/system/multi-user.target.wants/ufw.service
-  /etc/systemd/system/multi-user.target.wants/netfilter-persistent.service
-  /etc/systemd/system/multi-user.target.wants/apparmor.service
-  /etc/systemd/system/multi-user.target.wants/oracle-ohasd.service
-  /etc/systemd/system/multi-user.target.wants/freeradius.service
-  /etc/systemd/system/multi-user.target.wants/apt-daily.timer
-  /etc/systemd/system/multi-user.target.wants/apt-daily-upgrade.timer
-  /etc/systemd/system/multi-user.target.wants/fstrim.timer
-  /etc/systemd/system/multi-user.target.wants/motd-news.timer
-  /etc/systemd/system/multi-user.target.wants/e2scrub_all.timer
-  /etc/systemd/system/multi-user.target.wants/systemd-tmpfiles-clean.timer
-  /etc/systemd/network
-  /etc/systemd/resolved.conf
-  /etc/audit
-  /etc/audit/rules.d
-  /etc/audit/rules.d/audit.rules
-  /etc/audit/plugins.d
-  /etc/audit/plugins.d/syslog.conf
-  /etc/audit/plugins.d/af_unix.conf
-  /etc/audit/auditd.conf
-  /etc/audit/audit.rules
-  /etc/init.d
-  /etc/init.d/init.ohasd
-  /etc/logrotate.conf
-  /etc/logrotate.d
-  /etc/logrotate.d/btmp
-  /etc/logrotate.d/wtmp
-  /etc/logrotate.d/rsyslog
-  /etc/services
-  /etc/protocols
-  /etc/networks
-  /etc/rpc
-  /etc/fstab
-  /etc/profile
-  /etc/bash.bashrc
-  /etc/profile.d
-  /etc/nsswitch.conf
-  /etc/passwd-
-  /etc/shadow-
-  /etc/group-
-  /etc/gshadow-
-  /etc/mtab
-  /etc/machine-id
-  /etc/timezone
-  /etc/fail2ban
-  /etc/fail2ban/jail.local
-  /etc/motd
-  /etc/issue
-  /etc/issue.net
-  /etc/nginx
-  /etc/nginx/sites-available
-  /etc/nginx/sites-available/default
-  /etc/nginx/sites-enabled
-  /etc/nginx/sites-enabled/default
-  /etc/nginx/conf.d
-  /etc/nginx/modules-enabled
-  /etc/nginx/nginx.conf
-  /etc/exports
-  /etc/rsyslog.conf
-  /etc/rsyslog.d
-  /etc/rsyslog.d/50-default.conf
-  /etc/chrony
-  /etc/chrony/chrony.conf
-  /etc/chrony/chrony.keys
-  /etc/apache2
-  /etc/apache2/sites-available
-  /etc/apache2/sites-available/000-default.conf
-  /etc/apache2/sites-available/default-ssl.conf
-  /etc/apache2/sites-enabled
-  /etc/apache2/sites-enabled/000-default.conf
-  /etc/apache2/mods-enabled
-  /etc/apache2/mods-enabled/access_compat.load
-  /etc/apache2/mods-enabled/alias.load
-  /etc/apache2/mods-enabled/auth_basic.load
-  /etc/apache2/mods-enabled/authn_core.load
-  /etc/apache2/mods-enabled/authn_file.load
-  /etc/apache2/mods-enabled/authz_core.load
-  /etc/apache2/mods-enabled/authz_host.load
-  /etc/apache2/mods-enabled/authz_user.load
-  /etc/apache2/mods-enabled/autoindex.load
-  /etc/apache2/mods-enabled/deflate.load
-  /etc/apache2/mods-enabled/dir.load
-  /etc/apache2/mods-enabled/env.load
-  /etc/apache2/mods-enabled/filter.load
-  /etc/apache2/mods-enabled/mime.load
-  /etc/apache2/mods-enabled/mpm_event.load
-  /etc/apache2/mods-enabled/negotiation.load
-  /etc/apache2/mods-enabled/reqtimeout.load
-  /etc/apache2/mods-enabled/setenvif.load
-  /etc/apache2/mods-enabled/status.load
-  /etc/apache2/mods-available
-  /etc/apache2/mods-available/ssl.conf
-  /etc/apache2/mods-available/access_compat.load
-  /etc/apache2/mods-available/alias.load
-  /etc/apache2/mods-available/auth_basic.load
-  /etc/apache2/mods-available/authn_core.load
-  /etc/apache2/mods-available/authn_file.load
-  /etc/apache2/mods-available/authz_core.load
-  /etc/apache2/mods-available/authz_groupfile.load
-  /etc/apache2/mods-available/authz_host.load
-  /etc/apache2/mods-available/authz_user.load
-  /etc/apache2/mods-available/autoindex.load
-  /etc/apache2/mods-available/cgi.load
-  /etc/apache2/mods-available/deflate.load
-  /etc/apache2/mods-available/dir.load
-  /etc/apache2/mods-available/env.load
-  /etc/apache2/mods-available/expires.load
-  /etc/apache2/mods-available/filter.load
-  /etc/apache2/mods-available/headers.load
-  /etc/apache2/mods-available/include.load
-  /etc/apache2/mods-available/info.load
-  /etc/apache2/mods-available/mime.load
-  /etc/apache2/mods-available/mpm_event.load
-  /etc/apache2/mods-available/mpm_prefork.load
-  /etc/apache2/mods-available/mpm_worker.load
-  /etc/apache2/mods-available/negotiation.load
-  /etc/apache2/mods-available/proxy.load
-  /etc/apache2/mods-available/proxy_balancer.load
-  /etc/apache2/mods-available/proxy_fcgi.load
-  /etc/apache2/mods-available/proxy_http.load
-  /etc/apache2/mods-available/reqtimeout.load
-  /etc/apache2/mods-available/rewrite.load
-  /etc/apache2/mods-available/setenvif.load
-  /etc/apache2/mods-available/socache_shmcb.load
-  /etc/apache2/mods-available/ssl.load
-  /etc/apache2/mods-available/status.load
-  /etc/apache2/mods-available/userdir.load
-  /etc/apache2/conf-enabled
-  /etc/apache2/apache2.conf
-  /etc/apache2/ports.conf
-  /etc/apache2/envvars
-  /etc/netplan
-  /etc/netplan/01-netcfg.yaml
-  /etc/NetworkManager
-  /etc/NetworkManager/NetworkManager.conf
-  /etc/dhcp
-  /etc/dhcp/dhcpd.conf
-  /etc/dhcp/dhcpd6.conf
-  /etc/freeradius
-  /etc/freeradius/3.0
-  /etc/freeradius/3.0/clients.conf
-  /etc/freeradius/3.0/users
+  find: unknown predicate `-truc'
 
 
 --- [225] § localisation — which/whereis/locate/type ---
@@ -2713,43 +2137,43 @@ $ [242/327]> touch perm.txt
 <empty>
 
 $ [243/327]> ls -l perm.txt
-  -rw-r--r-- 1 root root 0 Oct 26 23:39 perm.txt
+  -rw-r--r-- 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [244/327]> chmod 644 perm.txt
 <empty>
 
 $ [245/327]> ls -l perm.txt
-  -rw-r--r-- 1 root root 0 Oct 26 23:39 perm.txt
+  -rw-r--r-- 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [246/327]> chmod 755 perm.txt
 <empty>
 
 $ [247/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Oct 26 23:39 perm.txt
+  -rwxr-xr-x 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [248/327]> chmod u+x perm.txt
 <empty>
 
 $ [249/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Oct 26 23:39 perm.txt
+  -rwxr-xr-x 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [250/327]> chmod g-w perm.txt
 <empty>
 
 $ [251/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Oct 26 23:39 perm.txt
+  -rwxr-xr-x 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [252/327]> chmod o=r perm.txt
 <empty>
 
 $ [253/327]> ls -l perm.txt
-  -rwxr-xr-- 1 root root 0 Oct 26 23:39 perm.txt
+  -rwxr-xr-- 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [254/327]> chmod a+x perm.txt
 <empty>
 
 $ [255/327]> ls -l perm.txt
-  -rwxr-xr-x 1 root root 0 Oct 26 23:39 perm.txt
+  -rwxr-xr-x 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [256/327]> chmod 600 perm.txt
 <empty>
@@ -2764,13 +2188,13 @@ $ [259/327]> chmod -R 700 permdir
 <empty>
 
 $ [260/327]> ls -ld permdir
-  drwx------ 2 root root 0 Oct 26 23:39 permdir
+  drwx------ 2 root root 0 Oct 29 10:24 permdir
 
 $ [261/327]> umask
   0022
 
 $ [262/327]> umask -S
-  umask: -S: invalid octal number
+  u=rwx,g=rx,o=rx
 
 $ [263/327]> umask 022
 <empty>
@@ -2785,7 +2209,7 @@ $ [266/327]> touch apres_umask.txt
 <empty>
 
 $ [267/327]> ls -l apres_umask.txt
-  -rw------- 1 root root 0 Oct 26 23:39 apres_umask.txt
+  -rw------- 1 root root 0 Oct 29 10:24 apres_umask.txt
 
 $ [268/327]> chmod 999 perm.txt
   chmod: invalid mode: '999'
@@ -2802,25 +2226,25 @@ $ [271/327]> chown root perm.txt
 <empty>
 
 $ [272/327]> ls -l perm.txt
-  -rw------- 1 root root 0 Oct 26 23:39 perm.txt
+  -rw------- 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [273/327]> chown root:root perm.txt
 <empty>
 
 $ [274/327]> ls -l perm.txt
-  -rw------- 1 root root 0 Oct 26 23:39 perm.txt
+  -rw------- 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [275/327]> chgrp root perm.txt
 <empty>
 
 $ [276/327]> ls -l perm.txt
-  -rw------- 1 root root 0 Oct 26 23:39 perm.txt
+  -rw------- 1 root root 0 Oct 29 10:24 perm.txt
 
 $ [277/327]> chown -R root:root permdir
 <empty>
 
 $ [278/327]> ls -ld permdir
-  drwx------ 2 root root 0 Oct 26 23:39 permdir
+  drwx------ 2 root root 0 Oct 29 10:24 permdir
 
 $ [279/327]> chown utilisateur_inexistant_xyz perm.txt
 <empty>
@@ -2840,7 +2264,7 @@ $ [283/327]> basename /usr/local/bin/ls .sh
   ls
 
 $ [284/327]> basename /etc/
-<empty>
+  etc
 
 $ [285/327]> dirname /usr/local/bin/ls
   /usr/local/bin
@@ -2852,7 +2276,7 @@ $ [287/327]> dirname fichier_relatif.txt
   .
 
 $ [288/327]> realpath /etc/../etc/passwd
-  realpath: /etc/../etc/passwd: No such file or directory
+  /etc/passwd
 
 $ [289/327]> realpath .
   /tmp
@@ -2864,16 +2288,17 @@ $ [291/327]> readlink -f /etc/passwd
   /etc/passwd
 
 $ [292/327]> mktemp
-  /tmp/tmp.nsq5nhwv4b
+  /tmp/tmp.jqfWSkdQLP
 
 $ [293/327]> mktemp -d
-  /tmp/tmp.w90kn1f8by
+  /tmp/tmp.ECJi0bWnct
 
 $ [294/327]> mktemp /tmp/debug.XXXXXX
-  /tmp/debug.jpb2kc
+  /tmp/debug.a4MHvu
 
 $ [295/327]> basename
-<empty>
+  basename: missing operand
+  Try 'basename --help' for more information.
 
 $ [296/327]> dirname
   .
@@ -3018,7 +2443,6 @@ $ [315/327]> ls /etc 2> /tmp/err.txt; cat /tmp/err.txt
   crontab         hosts           network         security
   default         init.d          NetworkManager  services
   dhcp            iptables        networks        shadow
-  cat: /tmp/err.txt: No such file or directory
 
 $ [316/327]> cat < /etc/hostname
   L-SRV-FS-DBG
@@ -3040,44 +2464,46 @@ $ [320/327]> cat /tmp/fin.txt
 
 --- [321] § mal formées — fin de transcript ---
 $ [321/327]> lss -la
-  lss: command not found
+  bash: lss: command not found
 
 $ [322/327]> cpp a b
-  cpp: command not found
+  bash: cpp: command not found
 
 $ [323/327]> cat
 <empty>
 
 $ [324/327]> ls -
-  700                  debug.jpb2kc         liste_etc.txt
-  a                    fin.txt              perm.txt
-  apres_umask.txt      lien_casse           permdir
-  cible_lien.txt       lien_dur.txt         tmp.nsq5nhwv4b
-  copie_vers           lien_passwd          tmp.w90kn1f8by
-  d                    lien_symbolique.txt
+  a                    err.txt              liste_etc.txt
+  apres_umask.txt      fin.txt              perm.txt
+  cible_lien.txt       lien_casse           permdir
+  copie_vers           lien_dur.txt         tmp.ECJi0bWnct
+  d                    lien_passwd          tmp.jqfWSkdQLP
+  debug.a4MHvu         lien_symbolique.txt
 
 $ [325/327]> find
-  /tmp
-  a
-  a/b
-  d
-  d/e
-  d/e/f
-  700
-  copie_vers
-  cible_lien.txt
-  lien_dur.txt
-  lien_symbolique.txt
-  lien_casse
-  lien_passwd
-  perm.txt
-  permdir
-  apres_umask.txt
-  tmp.nsq5nhwv4b
-  tmp.w90kn1f8by
-  debug.jpb2kc
-  liste_etc.txt
-  fin.txt
+  .
+  ./a
+  ./a/b
+  ./d
+  ./d/e
+  ./d/e/f
+  ./copie_vers
+  ./copie_vers/simple.txt
+  ./copie_vers/lettres.txt
+  ./cible_lien.txt
+  ./lien_dur.txt
+  ./lien_symbolique.txt
+  ./lien_casse
+  ./lien_passwd
+  ./perm.txt
+  ./permdir
+  ./apres_umask.txt
+  ./tmp.jqfWSkdQLP
+  ./tmp.ECJi0bWnct
+  ./debug.a4MHvu
+  ./liste_etc.txt
+  ./err.txt
+  ./fin.txt
 
 $ [326/327]> stat
   stat: missing operand

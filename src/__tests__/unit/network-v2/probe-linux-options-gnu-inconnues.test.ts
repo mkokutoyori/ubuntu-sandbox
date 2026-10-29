@@ -17,7 +17,9 @@
  * either way. Fifth step (`date --zorglub` printed the date): 4 cases added, 1
  * falls, the 3 valid forms pass either way. Sixth step (md5sum, sha1sum, sha224sum,
  * sha256sum, sha384sum, sha512sum share one option set): 10 cases added, 6 refusals fall, the 4
- * valid forms pass either way. Option tables are the GNU
+ * valid forms pass either way. Seventh step (nl, fold, paste, comm, base64): 12 cases added, 5
+ * refusals fall, the 7 valid forms pass either way. Eighth step (du: -a, -c, -d/--max-depth were accepted and ignored,
+ * only the last target was reported): 10 cases added, 8 fall, 2 witnesses pass either way. Ninth step (rev): 3 cases added, 1 falls (the refusal), 2 witnesses pass either way. Tenth step (find: an unknown predicate was ignored): 10 cases added, 2 refusals fall, 8 valid forms pass either way. Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -33,7 +35,7 @@ function pc(): Sh {
 }
 
 describe('known options still work', () => {
-  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a', 'date -u', 'date --iso-8601=seconds', 'date +%Y', 'md5sum -b /etc/hostname', 'sha256sum --tag /etc/hostname', 'sha1sum -t /etc/hostname', 'sha512sum /etc/hostname'])('witness: `%s` is accepted', async (line) => {
+  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a', 'date -u', 'date --iso-8601=seconds', 'date +%Y', 'md5sum -b /etc/hostname', 'sha256sum --tag /etc/hostname', 'sha1sum -t /etc/hostname', 'sha512sum /etc/hostname', 'nl -ba /etc/hostname', 'fold -w5 -s /etc/hostname', 'paste -s -d, /etc/hostname', 'comm -12 /etc/hostname /etc/hostname', 'base64 -w0 /etc/hostname', 'base64 --wrap=0 /etc/hostname', 'nl -w3 -s: /etc/hostname', 'rev /etc/hostname', 'rev -0 /etc/hostname'])('witness: `%s` is accepted', async (line) => {
     expect(await pc().executeCommand(line)).not.toMatch(/unrecognized option|invalid option|extra operand/);
   });
 });
@@ -69,16 +71,60 @@ describe('unknown options are refused the way GNU getopt does', () => {
     ['uniq --zorglub', "uniq: unrecognized option '--zorglub'"],
     ['cut --zorglub', "cut: unrecognized option '--zorglub'"],
     ['tr --zorglub', "tr: unrecognized option '--zorglub'"],
+    ['rev --zorglub /etc/hostname', "rev: unrecognized option '--zorglub'"],
     ['rmdir --zorglub', "rmdir: unrecognized option '--zorglub'"],
     ['md5sum --zorglub', "md5sum: unrecognized option '--zorglub'"],
     ['md5sum -Q /etc/hostname', "md5sum: invalid option -- 'Q'"],
     ['sha1sum --zorglub', "sha1sum: unrecognized option '--zorglub'"],
     ['sha224sum --zorglub', "sha224sum: unrecognized option '--zorglub'"],
     ['sha256sum -Q /etc/hostname', "sha256sum: invalid option -- 'Q'"],
+    ['nl --zorglub /etc/hostname', "nl: unrecognized option '--zorglub'"],
+    ['fold --zorglub /etc/hostname', "fold: unrecognized option '--zorglub'"],
+    ['paste --zorglub /etc/hostname', "paste: unrecognized option '--zorglub'"],
+    ['comm --zorglub /etc/hostname /etc/hostname', "comm: unrecognized option '--zorglub'"],
+    ['base64 --zorglub /etc/hostname', "base64: unrecognized option '--zorglub'"],
     ['sha512sum --zorglub', "sha512sum: unrecognized option '--zorglub'"],
   ])('`%s`', async (line, message) => {
     const output = await pc().executeCommand(line);
     expect(output).toContain(message);
     expect(output).toContain(`Try '${line.split(' ')[0]} --help' for more information.`);
+  });
+});
+
+describe('du evaluates the options it accepts', () => {
+  async function du(line: string): Promise<string> {
+    const machine = pc() as Sh & { executeCommand(l: string): Promise<string> };
+    await machine.executeCommand('mkdir -p /tmp/d/e/g; printf hi > /tmp/d/a; printf hello > /tmp/d/e/f');
+    return machine.executeCommand(line);
+  }
+  it('witness: default lists directories only, deepest first', async () => {
+    expect(await du('du /tmp/d')).toBe('1\t/tmp/d/e/g\n1\t/tmp/d/e\n1\t/tmp/d');
+  });
+  it('witness: -sb is one line of bytes', async () => { expect(await du('du -sb /tmp/d')).toBe('7\t/tmp/d'); });
+  it('--zorglub is refused', async () => { expect(await du('du --zorglub /tmp/d')).toContain("du: unrecognized option '--zorglub'"); });
+  it('-a lists files too', async () => { expect(await du('du -ab /tmp/d')).toBe('0\t/tmp/d/e/g\n5\t/tmp/d/e/f\n5\t/tmp/d/e\n2\t/tmp/d/a\n7\t/tmp/d'); });
+  it('-d 1 stops at depth one', async () => { expect(await du('du -d 1 -b /tmp/d')).toBe('5\t/tmp/d/e\n7\t/tmp/d'); });
+  it('--max-depth=0 is -s', async () => { expect(await du('du --max-depth=0 -b /tmp/d')).toBe('7\t/tmp/d'); });
+  it('-c appends the total', async () => { expect((await du('du -sbc /tmp/d /tmp/d/e')).split('\n')).toEqual(['7\t/tmp/d', '5\t/tmp/d/e', '12\ttotal']); });
+  it('every target is reported', async () => { expect(await du('du -sb /tmp/d/a /tmp/d/e')).toBe('2\t/tmp/d/a\n5\t/tmp/d/e'); });
+  it('a bad depth is refused', async () => { expect(await du('du -d x /tmp/d')).toContain("du: invalid maximum depth 'x'"); });
+  it('a missing target is reported and the others still run', async () => {
+    expect(await du('du -sb /tmp/nope /tmp/d/e')).toBe("du: cannot access '/tmp/nope': No such file or directory\n5\t/tmp/d/e");
+  });
+});
+
+describe('find refuses a predicate GNU does not have', () => {
+  async function find(line: string): Promise<string> {
+    const machine = pc();
+    await machine.executeCommand('mkdir -p /tmp/d/e; printf hi > /tmp/d/e/f');
+    return machine.executeCommand(line);
+  }
+  it("--zorglub", async () => { expect(await find('find /tmp/d --zorglub')).toBe("find: unknown predicate `--zorglub'"); });
+  it("-zorglub x", async () => { expect(await find('find /tmp/d -zorglub x')).toBe("find: unknown predicate `-zorglub'"); });
+  it.each([
+    'find /tmp/d -name f', 'find /tmp/d -type f -size -2', 'find /tmp/d -links -3', 'find /tmp/d -regex ".*f"',
+    'find /tmp/d -maxdepth 1 -print', 'find /tmp/d -uid 0', 'find /tmp/d -newermt 2000-01-01', 'find /tmp/d -name f -o -name e',
+  ])('witness: `%s` is not refused', async (line) => {
+    expect(await find(line)).not.toContain('unknown predicate');
   });
 });

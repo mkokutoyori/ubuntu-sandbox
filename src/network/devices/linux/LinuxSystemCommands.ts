@@ -3,6 +3,8 @@ import type { MemoryProfile, StorageDevice } from '../host/hardware';
 import type { MountEntry } from './MountTable';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { expandShortOptionClusters } from './LinuxTextCommands';
+import { shortOptions } from './commands/Getopt';
+import { GNU_OPTION_SETS } from './GnuOptionGuard';
 
 export interface DfContext extends ShellContext {
   mounts: readonly MountEntry[];
@@ -243,70 +245,71 @@ export function cmdDf(ctx: DfContext, rawArgs: string[]): string {
 }
 
 export function cmdDu(ctx: ShellContext, args: string[]): string {
-  // Real GNU du accepts combined short options (`-sh`, `-sb`, `-bsh`).
-  // Split them so the flag tests below work uniformly.
-  const expand = (a: string): string[] => {
-    if (!a.startsWith('-') || a.startsWith('--') || a.length <= 2) return [a];
-    return a.slice(1).split('').map((c) => `-${c}`);
-  };
-  const expanded = args.flatMap(expand);
-  const human = expanded.includes('-h') || expanded.includes('--human-readable');
-  const summary = expanded.includes('-s') || expanded.includes('--summarize');
-  const bytesFlag = expanded.includes('-b') || expanded.includes('--bytes');
-  const targets = expanded.filter(a => !a.startsWith('-'));
-  const target = targets[targets.length - 1] ?? '.';
-  const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
-
-  if (!ctx.vfs.exists(absPath)) {
-    return `du: cannot access '${target}': No such file or directory`;
+  const set = GNU_OPTION_SETS.du;
+  let human = false;
+  let bytesFlag = false;
+  let megabytes = false;
+  let all = false;
+  let grandTotal = false;
+  let maxDepth = Infinity;
+  const targets: string[] = [];
+  for (const item of shortOptions(args, set.optstring, set.long)) {
+    if (item.kind === 'operand') { targets.push(item.value); continue; }
+    if (item.kind !== 'option') continue;
+    switch (item.letter) {
+      case 'h': human = true; break;
+      case 'b': bytesFlag = true; break;
+      case 'm': megabytes = true; break;
+      case 'k': megabytes = false; bytesFlag = false; human = false; break;
+      case 'a': all = true; break;
+      case 'c': grandTotal = true; break;
+      case 's': maxDepth = 0; break;
+      case 'd':
+        if (!/^\d+$/.test(item.argument ?? '')) return `du: invalid maximum depth '${item.argument}'`;
+        maxDepth = Number(item.argument);
+        break;
+      default: break;
+    }
   }
+  if (targets.length === 0) targets.push('.');
 
   const fmt = (bytes: number): string => {
     if (bytesFlag) return String(bytes);
     if (human) return formatBytesHuman(bytes);
-    // Default: 1024-byte blocks (GNU `du --block-size=1k`).
+    if (megabytes) return String(Math.max(1, Math.ceil(bytes / 1048576)));
     return String(Math.max(1, Math.ceil(bytes / 1024)));
   };
 
-  const node = ctx.vfs.lstat(absPath);
-  if (!node) return `du: cannot access '${target}': No such file or directory`;
-
-  // File leaf — single line of its size.
-  if (node.type !== 'directory') {
-    return `${fmt(node.size)}\t${target}`;
-  }
-
-  // Summary — total bytes under the directory, one line.
-  if (summary) {
-    return `${fmt(vfsDirectorySize(ctx, absPath))}\t${target}`;
-  }
-
-  // Full mode — emit one line per descendant directory (real du does
-  // post-order, deepest first), terminated by the total for `target`.
   const lines: string[] = [];
-  const visit = (path: string, display: string): number => {
+  const errors: string[] = [];
+  let total = 0;
+  const visit = (path: string, display: string, depth: number): number => {
     const stat = ctx.vfs.lstat(path);
     if (!stat) return 0;
-    if (stat.type !== 'directory') return stat.size;
-    let subtotal = 0;
-    const entries = ctx.vfs.listDirectory(path);
-    if (entries) {
-      for (const { name, inode } of entries) {
-        if (name === '.' || name === '..') continue;
-        const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
-        const childDisplay = display === '.' ? `./${name}` : `${display}/${name}`;
-        if (inode.type === 'directory') {
-          subtotal += visit(childPath, childDisplay);
-        } else {
-          subtotal += inode.size;
-        }
-      }
+    if (stat.type !== 'directory') {
+      if ((all || depth === 0) && depth <= maxDepth) lines.push(`${fmt(stat.size)}\t${display}`);
+      return stat.size;
     }
-    lines.push(`${fmt(subtotal)}\t${display}`);
+    let subtotal = 0;
+    for (const { name } of ctx.vfs.listDirectory(path) ?? []) {
+      if (name === '.' || name === '..') continue;
+      const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
+      const childDisplay = display === '.' ? `./${name}` : `${display}/${name}`;
+      subtotal += visit(childPath, childDisplay, depth + 1);
+    }
+    if (depth <= maxDepth) lines.push(`${fmt(subtotal)}\t${display}`);
     return subtotal;
   };
-  visit(absPath, target);
-  return lines.join('\n');
+  for (const target of targets) {
+    const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
+    if (!ctx.vfs.exists(absPath) || !ctx.vfs.lstat(absPath)) {
+      errors.push(`du: cannot access '${target}': No such file or directory`);
+      continue;
+    }
+    total += visit(absPath, target, 0);
+  }
+  if (grandTotal) lines.push(`${fmt(total)}\ttotal`);
+  return [...errors, ...lines].join('\n');
 }
 
 /**

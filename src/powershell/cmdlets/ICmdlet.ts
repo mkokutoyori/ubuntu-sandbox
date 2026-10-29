@@ -67,6 +67,7 @@ export interface ICmdlet {
    * means only the common parameters complete.
    */
   readonly parameters?: readonly string[];
+  readonly closedParameterSet?: true;
   /**
    * What a given parameter's VALUE is drawn from, so `-InterfaceAlias <Tab>`
    * offers this machine's adapters instead of falling through to file names.

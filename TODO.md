@@ -4383,4 +4383,16 @@ tests that use it.
 
 Measured: `Get-Process -Zorglub`, `Get-Service -Zorglub`, `Get-ChildItem -Zorglub`, `Get-Date -Zorglub`, `Get-NetIPAddress -Zorglub`, `Get-LocalUser -Zorglub` and `Get-Random -Zorglub` all run as if the parameter had not been typed; Windows PowerShell answers `A parameter cannot be found that matches parameter name 'Zorglub'.` (`NamedParameterNotFound`). Script functions with `param()` already refuse it (`PSParameterBinder.resolveName`).
 
-Why it is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion and is incomplete. Making `resolveParameterPrefixes` refuse a key absent from it broke 11 cases in `src/__tests__/unit/powershell` (Format-Table `-Width`, New-Item `-Target`, New-LocalUser `-NoPassword`, `-Force` on the Add-LocalGroupMember / Register-ScheduledTask family…), and a scan of the cmdlet classes finds ~40 more names read through `ctx.named[...]` and missing from their own list. The refusal can only be turned on once each cmdlet's list is audited against its handler, so the list becomes the single authority for both completion and binding.
+Closed so far, by opt-in (`ICmdlet.closedParameterSet`): Get-Date, Get-Location, Get-Service. Every other cmdlet still ignores the name.
+
+Why the rest is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion and is incomplete. Making `resolveParameterPrefixes` refuse a key absent from it broke 11 cases in `src/__tests__/unit/powershell` (Format-Table `-Width`, New-Item `-Target`, New-LocalUser `-NoPassword`, `-Force` on the Add-LocalGroupMember / Register-ScheduledTask family…), and a scan of the cmdlet classes finds ~40 more names read through `ctx.named[...]` and missing from their own list. The refusal can only be turned on once each cmdlet's list is audited against its handler, so the list becomes the single authority for both completion and binding.
+
+
+## Linux pwd: -L/-P and unknown options
+
+Measured: `pwd --zorglub` prints the directory (bash answers `bash: pwd: --: invalid option` and `pwd: usage: pwd [-LP]`), and `pwd -P` prints PWD unresolved. The builtin lives in `src/bash/runtime/Builtins.ts` with only the environment: resolving symbolic links for `-P` needs the VFS, which that layer does not hold, so the option can neither be refused cleanly nor honoured there yet.
+
+## Linux find: predicates that evaluate to false
+
+`FindExpression.ts` now parses the GNU grammar (-o, -a, !, parentheses, -prune, -quit, actions suppress the default -print) and evaluates -regex, -links, -uid, -gid, -inum, -used, -nouser, -nogroup, -readable/-writable/-executable, -samefile, -lname, -printf, -daystart. Still answered `false` (fail closed) because the brick behind them is missing: `-fstype` and `-context` (no mount/SELinux label lookup from the shell context), `-ls`, `-fprint`, `-fprint0`, `-fprintf`, `-fls` (no output-file channel, no `ls -dils` line), `-ok`/`-okdir` (no prompt channel). `-exec`/`-execdir` still only echo the command line with `{}` replaced and run nothing, `+` is read as `;`; the `-printf` date directives other than `%A@ %C@ %T@` go through `formatLocalTime` and are not checked against findutils.
+

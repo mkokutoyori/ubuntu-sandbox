@@ -46,6 +46,7 @@ export function PropertiesPanel() {
   } = useNetworkStore();
 
   const [expandedSections, setExpandedSections] = useState<string[]>(['general', 'interfaces']);
+  const [allInterfacesFor, setAllInterfacesFor] = useState<string | null>(null);
 
   const devices = getDevices();
   const selectedDevice = selectedDeviceId ? devices.find(d => d.id === selectedDeviceId) : null;
@@ -304,7 +305,7 @@ export function PropertiesPanel() {
 
           {expandedSections.includes('interfaces') && (
             <div className="px-3 pb-3 space-y-2 max-h-60 overflow-y-auto">
-              {selectedDevice.interfaces.slice(0, 8).map(iface => {
+              {(allInterfacesFor === selectedDevice.id ? selectedDevice.interfaces : selectedDevice.interfaces.slice(0, 8)).map(iface => {
                 // A cable being drawn is not the link being up: the peer
                 // may be shut down or switched off. The cable answers
                 // "is it wired?", the carrier answers "does it carry?",
@@ -350,9 +351,16 @@ export function PropertiesPanel() {
                 );
               })}
               {selectedDevice.interfaces.length > 8 && (
-                <div className="text-xs text-muted-foreground text-center py-2">
-                  {t('props.moreInterfaces', { count: selectedDevice.interfaces.length - 8 })}
-                </div>
+                <button
+                  type="button"
+                  data-testid="toggle-all-interfaces"
+                  onClick={() => setAllInterfacesFor(allInterfacesFor === selectedDevice.id ? null : selectedDevice.id)}
+                  className="w-full text-xs text-blue-400 hover:text-blue-300 hover:underline text-center py-2"
+                >
+                  {allInterfacesFor === selectedDevice.id
+                    ? t('props.showFewerInterfaces')
+                    : t('props.moreInterfaces', { count: selectedDevice.interfaces.length - 8 })}
+                </button>
               )}
             </div>
           )}

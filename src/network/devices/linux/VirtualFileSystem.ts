@@ -23,6 +23,8 @@ const FIND_TYPES = ['f', 'd', 'l', 'p', 's', 'c', 'b'] as const;
 
 export type FindType = typeof FIND_TYPES[number];
 
+export type FindVisit = void | 'prune' | 'stop';
+
 export function isFindType(text: string): text is FindType {
   return (FIND_TYPES as readonly string[]).includes(text);
 }
@@ -53,7 +55,7 @@ export interface RemoteMountPort {
 }
 
 export type FindTimeTest =
-  | { readonly kind: 'age'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly unit: 'day' | 'min'; readonly op: '+' | '-' | '='; readonly n: number }
+  | { readonly kind: 'age'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly unit: 'day' | 'min'; readonly op: '+' | '-' | '='; readonly n: number; readonly originMs?: number }
   | { readonly kind: 'newer'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly thanMs: number };
 
 const RELATIME_MAX_AGE_MS = 24 * 3600 * 1000;
@@ -1669,41 +1671,52 @@ export class VirtualFileSystem {
     deviceOf?: (absPath: string) => number;
   } = {}): string[] {
     const results: string[] = [];
-    this._findRecursive(startPath, startPath, 0, options, results);
+    this.walkFind(startPath, options, (path, inode, depth) => {
+      const baseMatches = this.matchesFindCriteria(path, inode, options);
+      const matches = options.not ? !baseMatches : baseMatches;
+      if (matches && (options.mindepth === undefined || depth >= options.mindepth)) results.push(path);
+    });
     return results;
   }
 
-  private _findRecursive(
-    rootPath: string,
+  walkFind(
+    startPath: string,
+    options: { maxdepth?: number; device?: number; deviceOf?: (absPath: string) => number; postOrder?: boolean },
+    visit: (path: string, inode: INode, depth: number) => FindVisit,
+  ): void {
+    this.walkFindNode(startPath, 0, options, visit, { stopped: false });
+  }
+
+  private walkFindNode(
     path: string,
     depth: number,
-    options: any,
-    results: string[],
+    options: { maxdepth?: number; device?: number; deviceOf?: (absPath: string) => number; postOrder?: boolean },
+    visit: (path: string, inode: INode, depth: number) => FindVisit,
+    state: { stopped: boolean },
   ): void {
+    if (state.stopped) return;
     const inode = this.resolveInode(path, depth === 0);
     if (!inode) return;
-
     if (options.maxdepth !== undefined && depth > options.maxdepth) return;
     if (options.deviceOf !== undefined && options.deviceOf(path) !== options.device) return;
 
-    const baseMatches = this._matchesFindCriteria(path, inode, options);
-    const matches = options.not ? !baseMatches : baseMatches;
-    if (matches && (options.mindepth === undefined || depth >= options.mindepth)) {
-      results.push(path);
+    let outcome: FindVisit;
+    if (options.postOrder !== true) {
+      outcome = visit(path, inode, depth);
+      if (outcome === 'stop') { state.stopped = true; return; }
     }
-
-    if (inode.type === 'directory') {
-      // Don't descend past maxdepth.
-      if (options.maxdepth !== undefined && depth + 1 > options.maxdepth) return;
+    const descend = inode.type === 'directory' && outcome !== 'prune'
+      && !(options.maxdepth !== undefined && depth + 1 > options.maxdepth);
+    if (descend) {
       for (const [name] of inode.children) {
         if (name === '.' || name === '..') continue;
-        const childPath = path.replace(/\/$/, '') + '/' + name;
-        this._findRecursive(rootPath, childPath, depth + 1, options, results);
+        this.walkFindNode(path.replace(/\/$/, '') + '/' + name, depth + 1, options, visit, state);
       }
     }
+    if (options.postOrder === true && !state.stopped && visit(path, inode, depth) === 'stop') state.stopped = true;
   }
 
-  private _matchesFindCriteria(path: string, inode: INode, options: any): boolean {
+  matchesFindCriteria(path: string, inode: INode, options: any): boolean {
     if (options.type !== undefined) {
       const typeMap: Record<FindType, FileType> = {
         f: 'file', d: 'directory', l: 'symlink', p: 'fifo', s: 'socket', c: 'chardev', b: 'chardev',
@@ -1754,7 +1767,7 @@ export class VirtualFileSystem {
         if (!(stamp > test.thanMs)) return false;
         continue;
       }
-      const ageSeconds = Math.max(0, Math.floor((now - stamp) / 1000));
+      const ageSeconds = Math.max(0, Math.floor(((test.originMs ?? now) - stamp) / 1000));
       const age = test.unit === 'day' ? Math.floor(ageSeconds / 86_400) : Math.ceil(ageSeconds / 60);
       if (test.op === '+' && !(age > test.n)) return false;
       if (test.op === '-' && !(age < test.n)) return false;
