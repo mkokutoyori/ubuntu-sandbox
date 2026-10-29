@@ -4387,6 +4387,3 @@ Closed so far, by opt-in (`ICmdlet.closedParameterSet`): Get-Date, Get-Location,
 
 Why the rest is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion and is incomplete. Making `resolveParameterPrefixes` refuse a key absent from it broke 11 cases in `src/__tests__/unit/powershell` (Format-Table `-Width`, New-Item `-Target`, New-LocalUser `-NoPassword`, `-Force` on the Add-LocalGroupMember / Register-ScheduledTask family…), and a scan of the cmdlet classes finds ~40 more names read through `ctx.named[...]` and missing from their own list. The refusal can only be turned on once each cmdlet's list is audited against its handler, so the list becomes the single authority for both completion and binding.
 
-## Linux nl: valid options accepted and not honoured
-
-Measured: `nl -w3 -s: file` prints the default layout (width 6, tab separator); `-n`, `-v`, `-i`, `-b` styles are likewise ignored. The option table now refuses unknown options but cannot refuse these without the numbering engine evaluating them (rule 6).

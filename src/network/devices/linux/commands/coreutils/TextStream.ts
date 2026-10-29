@@ -24,6 +24,7 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import { base64ToBytes, bytesToBase64, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
+import { numberLines, parseNumbering } from './NumberLines';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { padToWidth, renderTableText, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
@@ -133,32 +134,28 @@ export const tacCommand = coreutil(
 // ─── nl ─────────────────────────────────────────────────────────────
 
 export const nlCommand = coreutil(
-  'nl', 'nl [-b a|t] [FILE]...',
+  'nl', 'nl [OPTION]... [FILE]...',
   'Number the lines of each file. By default only non-empty lines are\n'
   + 'numbered (-b t); -b a numbers every line.',
-  [{ flag: '-b', description: 'Body numbering style: a (all) or t (non-empty)', takesArg: true, argName: 'STYLE' }],
+  [
+    { flag: '-b', description: 'Body numbering style: a, t, n or pBRE', takesArg: true, argName: 'STYLE' },
+    { flag: '-h', description: 'Header numbering style', takesArg: true, argName: 'STYLE' },
+    { flag: '-f', description: 'Footer numbering style', takesArg: true, argName: 'STYLE' },
+    { flag: '-n', description: 'Number format: ln, rn or rz', takesArg: true, argName: 'FORMAT' },
+    { flag: '-w', description: 'Number field width', takesArg: true, argName: 'NUMBER' },
+    { flag: '-s', description: 'Separator after the number', takesArg: true, argName: 'STRING' },
+    { flag: '-v', description: 'First line number', takesArg: true, argName: 'NUMBER' },
+    { flag: '-i', description: 'Line number increment', takesArg: true, argName: 'NUMBER' },
+    { flag: '-l', description: 'Count of blank lines numbered as one', takesArg: true, argName: 'NUMBER' },
+    { flag: '-d', description: 'Section delimiter characters', takesArg: true, argName: 'CC' },
+    { flag: '-p', description: 'Do not restart numbering at each logical page' },
+  ],
   (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'b', 'b');
-    let numberAll = false;
-    const files: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-b' && args[i + 1]) { numberAll = args[i + 1] === 'a'; i++; continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
-    }
-    const got = inputs(ctx, files, stdin, 'nl');
+    const parsed = parseNumbering(rawArgs);
+    if ('error' in parsed) return parsed.error;
+    const got = inputs(ctx, parsed.plan.files, stdin, 'nl');
     if (!Array.isArray(got)) return got;
-
-    const out: string[] = [];
-    let n = 0;
-    for (const content of got) {
-      for (const line of toLines(content)) {
-        if (line === '' && !numberAll) { out.push(''); continue; }
-        n += 1;
-        out.push(`${padToWidth(String(n), 6, 'right')}\t${line}`);
-      }
-    }
-    return out.join('\n');
+    return numberLines(parsed.plan, got, toLines);
   },
 );
 
