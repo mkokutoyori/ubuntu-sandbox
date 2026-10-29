@@ -18,6 +18,7 @@
  *   - huawei/HuaweiDhcpCommands.ts     — DHCP commands
  */
 
+import { judgeBgpEntry, judgeIsisEntry, judgeUserInterfaceVty } from './huawei/vrpEntryJudges';
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { Router } from '../Router';
@@ -1588,6 +1589,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
 
     t.registerGreedy('bgp', 'Configure BGP routing', (args) => {
+      const refused = judgeBgpEntry(args);
+      if (refused !== null) return refused;
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       getRouter().getHuaweiRoutingExtras().ensureBgp(asn);
@@ -1596,6 +1599,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.mode = 'bgp';
       return '';
     });
+    t.requireArgs('bgp', 1);
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
       if (!isNaN(asn)) {
@@ -1606,6 +1610,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
+      const refused = judgeIsisEntry(args);
+      if (refused !== null) return refused;
       const pid = args[0] ? parseInt(args[0], 10) : 1;
       const id = isNaN(pid) ? 1 : pid;
       getRouter().getHuaweiRoutingExtras().ensureIsis(id);
@@ -1931,12 +1937,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       ],
     }, {
       name: 'first-ui-number', type: 'INT',
-      description: 'First user-interface number', optional: true, range: [0, 20],
+      description: 'First user-interface number', range: [0, 20],
     }, {
       name: 'last-ui-number', type: 'INT',
       description: 'Last user-interface number', optional: true, range: [0, 20],
     }]);
     t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
+      const refused = judgeUserInterfaceVty(args);
+      if (refused !== null) return refused;
       const head = args[0]?.toLowerCase();
       if (head === 'vty') {
         this.uiLabel = args[1] && args[2] ? `${args[1]} ${args[2]}` : (args[1] ?? '0');
@@ -1955,6 +1963,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
+    t.requireArgs('user-interface', 2);
+
     // System-mode config commands
     buildSystemCommands(t, this);
 
@@ -1968,6 +1978,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerOSPFSystemCommands(t, this, (area) => { this.ospfArea = area; });
 
     t.registerGreedy('bgp', 'Configure BGP routing', (args) => {
+      const refused = judgeBgpEntry(args);
+      if (refused !== null) return refused;
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       this.r().getHuaweiRoutingExtras().ensureBgp(asn);
@@ -1976,6 +1988,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.mode = 'bgp';
       return '';
     });
+    t.requireArgs('bgp', 1);
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
       if (!isNaN(asn)) {
@@ -2016,6 +2029,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildBfdSubmodes();
 
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
+      const refused = judgeIsisEntry(args);
+      if (refused !== null) return refused;
       const pid = args[0] ? parseInt(args[0], 10) : 1;
       const id = isNaN(pid) ? 1 : pid;
       this.r().getHuaweiRoutingExtras().ensureIsis(id);

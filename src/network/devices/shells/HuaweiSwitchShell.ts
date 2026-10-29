@@ -13,6 +13,7 @@
  *   - ? help (prefix listing vs subcommand listing)
  */
 
+import { judgeUserInterfaceVty } from './huawei/vrpEntryJudges';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { CommandTrie } from './CommandTrie';
@@ -1276,7 +1277,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       ],
     }, {
       name: 'first-ui-number', type: 'INT',
-      description: 'First user-interface number', optional: true, range: [0, 20],
+      description: 'First user-interface number', range: [0, 20],
     }, {
       name: 'last-ui-number', type: 'INT',
       description: 'Last user-interface number', optional: true, range: [0, 20],
@@ -1284,6 +1285,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.systemTrie.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
       if (args.length === 0) return 'Error: Incomplete command.';
       if (args[0].toLowerCase() === 'maxvty') return ''; // global setting, no view
+      const refused = judgeUserInterfaceVty(args);
+      if (refused !== null) return refused;
       const type = args[0].toLowerCase();
       const first = args[1] ?? '0';
       const last = args[2];
