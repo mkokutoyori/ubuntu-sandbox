@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { useLocale } from '@/i18n/useLocale';
 import { defaultSettingsRegistry } from './defaultSettingsRegistry';
-import type { SettingsRegistry } from './settingsRegistry';
+import type { SettingsRegistry, SettingsSection } from './settingsRegistry';
 
 const SEARCH_MIN_SECTIONS = 5;
 
@@ -17,6 +18,10 @@ interface SettingsDialogProps {
 export function SettingsDialog({
   open, onOpenChange, registry = defaultSettingsRegistry, initialSectionId,
 }: SettingsDialogProps) {
+  const { t } = useLocale();
+  const labelOf = (section: SettingsSection) => (section.labelKey ? t(section.labelKey) : section.label);
+  const descriptionOf = (section: SettingsSection) =>
+    (section.descriptionKey ? t(section.descriptionKey) : section.description);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState(initialSectionId ?? registry.list()[0]?.id);
   useEffect(() => {
@@ -24,7 +29,11 @@ export function SettingsDialog({
     setQuery('');
     if (initialSectionId !== undefined) setSelectedId(initialSectionId);
   }, [open, initialSectionId]);
-  const matches = useMemo(() => registry.search(query), [registry, query]);
+  const matches = useMemo(
+    () => registry.search(query, (section) => [labelOf(section), descriptionOf(section)]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [registry, query, t],
+  );
   const active = matches.find((section) => section.id === selectedId) ?? matches[0];
   const Panel = active?.component;
   const searchable = registry.list().length >= SEARCH_MIN_SECTIONS;
@@ -36,8 +45,8 @@ export function SettingsDialog({
         data-testid="settings-dialog"
       >
         <aside className="flex shrink-0 flex-col gap-3 border-b border-white/10 p-4 sm:w-56 sm:border-b-0 sm:border-r">
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription className="sr-only">Preferences of the simulator, by category.</DialogDescription>
+          <DialogTitle>{t('settings.title')}</DialogTitle>
+          <DialogDescription className="sr-only">{t('settings.description')}</DialogDescription>
           {searchable && (
             <label className="relative block">
               <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -45,13 +54,13 @@ export function SettingsDialog({
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search settings"
-                aria-label="Search settings"
+                placeholder={t('settings.search')}
+                aria-label={t('settings.search')}
                 className="w-full rounded-md border border-white/10 bg-transparent py-2 pl-8 pr-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </label>
           )}
-          <nav aria-label="Settings categories" className="flex gap-1 overflow-x-auto sm:flex-col sm:overflow-visible">
+          <nav aria-label={t('settings.categories')} className="flex gap-1 overflow-x-auto sm:flex-col sm:overflow-visible">
             {matches.map((section) => {
               const Icon = section.icon;
               const current = section.id === active?.id;
@@ -68,12 +77,12 @@ export function SettingsDialog({
                   )}
                 >
                   <Icon className="h-4 w-4" />
-                  <span>{section.label}</span>
+                  <span>{labelOf(section)}</span>
                 </button>
               );
             })}
             {matches.length === 0 && (
-              <p className="px-3 py-2 text-sm text-muted-foreground" data-testid="settings-no-match">No matching settings.</p>
+              <p className="px-3 py-2 text-sm text-muted-foreground" data-testid="settings-no-match">{t('settings.noMatch')}</p>
             )}
           </nav>
         </aside>
@@ -81,8 +90,8 @@ export function SettingsDialog({
           {active && Panel && (
             <>
               <header className="mb-4 pr-6">
-                <h2 className="text-lg font-semibold text-foreground">{active.label}</h2>
-                <p className="text-sm text-muted-foreground">{active.description}</p>
+                <h2 className="text-lg font-semibold text-foreground">{labelOf(active)}</h2>
+                <p className="text-sm text-muted-foreground">{descriptionOf(active)}</p>
               </header>
               <Panel />
             </>

@@ -1,7 +1,11 @@
-export const SIMULATION_JUMPS: readonly { readonly label: string; readonly ms: number }[] = [
-  { label: '+1 min', ms: 60_000 },
-  { label: '+1 h', ms: 3_600_000 },
-  { label: '+1 d', ms: 86_400_000 },
+import type { MessageKey } from '@/i18n';
+
+export const SIMULATION_JUMPS: readonly {
+  readonly labelKey: MessageKey; readonly spanKey: MessageKey; readonly ms: number;
+}[] = [
+  { labelKey: 'clock.jumpMinute', spanKey: 'clock.spanMinute', ms: 60_000 },
+  { labelKey: 'clock.jumpHour', spanKey: 'clock.spanHour', ms: 3_600_000 },
+  { labelKey: 'clock.jumpDay', spanKey: 'clock.spanDay', ms: 86_400_000 },
 ];
 
 export const DISPLAY_REFRESH_MS = 250;

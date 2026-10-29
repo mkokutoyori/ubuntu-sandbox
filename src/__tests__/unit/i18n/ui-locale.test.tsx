@@ -24,6 +24,10 @@ import { OpenTopologyDialog } from '@/components/network/OpenTopologyDialog';
 import { TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
 import { PropertiesPanel } from '@/components/network/PropertiesPanel';
 import { useNetworkStore } from '@/store/networkStore';
+import { SettingsDialog, SettingsRegistry, type SettingsSection } from '@/components/settings';
+import { simulationSettingsSection } from '@/components/settings/sections/simulationSection';
+import { Timer } from 'lucide-react';
+import { SimulationClock, installSimulationClock, __resetSimulationClock } from '@/events/SimulationClock';
 import { DEVICE_CATEGORIES } from '@/network';
 import { getLocale, setLocale, categoryLabel, deviceTypeDescription } from '@/i18n';
 import { MESSAGES, FRENCH_DEVICE_DESCRIPTIONS } from '@/i18n/messages';
@@ -37,7 +41,7 @@ beforeEach(() => {
   setLocale('en');
   useNetworkStore.getState().clearAll();
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); __resetSimulationClock(); });
 
 describe('witness: English is unchanged', () => {
   it('the toolbar, the palette and the help dialog render their original English strings', () => {
@@ -135,6 +139,51 @@ describe('the properties panel follows the language', () => {
     expect(screen.getByText('Alimentation')).toBeInTheDocument();
     expect(screen.getByText('Allumé')).toBeInTheDocument();
     expect(screen.queryByText('General')).not.toBeInTheDocument();
+  });
+});
+
+describe('the settings dialog and the clock controls follow the language', () => {
+  const open = () => {
+    installSimulationClock(new SimulationClock({ startPump: () => () => undefined }));
+    render(<SettingsDialog open onOpenChange={() => undefined} />);
+  };
+
+  it('witness: English labels are unchanged', () => {
+    open();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.getAllByText('Simulation').length).toBeGreaterThan(0);
+    expect(screen.getByText('Clock')).toBeInTheDocument();
+    expect(screen.getByText('Advance every device by')).toBeInTheDocument();
+    expect(screen.getByTitle('Advance every device by 1 min')).toBeInTheDocument();
+  });
+
+  it('renders French labels, titles and jump buttons', () => {
+    act(() => setLocale('fr'));
+    open();
+    expect(screen.getByText('Paramètres')).toBeInTheDocument();
+    expect(screen.getByText('Horloge')).toBeInTheDocument();
+    expect(screen.getByText('Vitesse')).toBeInTheDocument();
+    expect(screen.getByText('Avancer tous les équipements de')).toBeInTheDocument();
+    expect(screen.getByTitle('Avancer tous les équipements de 1 j')).toBeInTheDocument();
+    expect(screen.getByText('+1 j')).toBeInTheDocument();
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+  });
+
+  it('searches the text the user reads, not the English source', () => {
+    act(() => setLocale('fr'));
+    const filler = (id: string): SettingsSection => ({
+      id, label: `Filler ${id}`, description: `Filler ${id} options`, icon: Timer, keywords: [], component: () => null,
+    });
+    const registry = new SettingsRegistry()
+      .register(simulationSettingsSection)
+      .register(filler('a')).register(filler('b')).register(filler('c')).register(filler('d'));
+    installSimulationClock(new SimulationClock({ startPump: () => () => undefined }));
+    render(<SettingsDialog open onOpenChange={() => undefined} registry={registry} />);
+    fireEvent.change(screen.getByLabelText('Rechercher un paramètre'), { target: { value: 'infrastructure simulée' } });
+    expect(screen.getByTestId('settings-nav-simulation')).toBeInTheDocument();
+    expect(screen.queryByTestId('settings-nav-a')).not.toBeInTheDocument();
+    act(() => setLocale('en'));
+    expect(screen.getByTestId('settings-no-match')).toBeInTheDocument();
   });
 });
 
