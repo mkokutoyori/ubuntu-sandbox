@@ -4309,9 +4309,8 @@ policy, route-policy and `snmp-agent community`.
 `src/__tests__/unit/cli/migration-guard.test.ts` ("une correspondance EXACTE
 l'emporte sur un prefixe concurrent") fails: `show crypto ipsec sa` and `show
 crypto ipsec security-association lifetime` both answer `IPSec not
-configured.` on an unconfigured router. Seen at HEAD with the working tree
-stashed; not yet checked against the base commit, so it may come from an
-earlier change of the hardening series. Also red: `fortigate-battery-04-
+configured.` on an unconfigured router. Confirmed red at the base commit 2351448f2
+(checked in a separate worktree), so it is not from the hardening series. Also red: `fortigate-battery-04-
 monitoring-telemetry-syslog.test.ts` (28 cases), same family as batteries
 06/09/10/11.
 
