@@ -3040,6 +3040,8 @@ export abstract class LinuxMachine extends EndHost
       return this.executor.handleLast(argv.slice(1), 'last').interleaved;
     }
     if (cmd === 'loginctl') {
+      const optionRefusal = refuseUnknownGnuOption(cmd, argv.slice(1));
+      if (optionRefusal) return optionRefusal.output;
       return renderLoginctl({
         table: this.sessionTable,
         utmp: this.utmpSync,

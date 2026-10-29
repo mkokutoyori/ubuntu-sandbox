@@ -62,7 +62,59 @@ const DIFF_OPTIONS: GnuOptionSet = {
   trailer: "diff: Try 'diff --help' for more information.",
 };
 
+
+const SYSTEMD_COMMON: readonly LongOption[] = [
+  flag('help', 'h'), flag('version'), valued('host', 'H'), valued('machine', 'M'), flag('no-pager'),
+  flag('no-ask-password'), flag('no-legend'), flag('legend'),
+];
+
+const SYSTEMCTL_OPTIONS: GnuOptionSet = {
+  optstring: 'ht:p:alqfs:n:o:riH:M:T',
+  long: [
+    ...SYSTEMD_COMMON, flag('system'), flag('user'), flag('global'), valued('type', 't'), valued('state'),
+    valued('property', 'p'), flag('all', 'a'), flag('failed'), flag('full', 'l'), flag('show-types'), flag('value'),
+    flag('recursive', 'r'), flag('reverse'), flag('after'), flag('before'), flag('with-dependencies'),
+    valued('job-mode'), flag('show-transaction', 'T'), flag('fail'), flag('irreversible'), flag('ignore-dependencies'),
+    flag('ignore-inhibitors', 'i'), flag('dry-run'), flag('quiet', 'q'), flag('no-block'), flag('wait'),
+    flag('no-wall'), flag('no-reload'), flag('no-warn'), flag('now'), flag('force', 'f'), valued('root'),
+    flag('runtime'), valued('preset-mode'), valued('lines', 'n'), valued('output', 'o'), flag('plain'),
+    flag('firmware-setup'), optional('boot-loader-menu'), valued('boot-loader-entry'), valued('signal', 's'),
+    valued('kill-who'), valued('kill-whom'), valued('kill-mode'), valued('check-inhibitors'), valued('message'),
+    valued('timestamp'), flag('mkdir'), flag('marked'), flag('stdin'), flag('read-only'), valued('what'),
+  ],
+  operands: true,
+};
+
+const LOGINCTL_OPTIONS: GnuOptionSet = {
+  optstring: 'hp:alno:s:H:M:',
+  long: [
+    ...SYSTEMD_COMMON, valued('property', 'p'), flag('all', 'a'), flag('full', 'l'), valued('lines', 'n'),
+    valued('output', 'o'), valued('signal', 's'), valued('kill-who'), valued('kill-whom'), flag('value'),
+    flag('no-wall'), valued('what'),
+  ],
+  operands: true,
+};
+
+const HOSTNAMECTL_OPTIONS: GnuOptionSet = {
+  optstring: 'hH:M:',
+  long: [...SYSTEMD_COMMON, flag('transient'), flag('static'), flag('pretty'), flag('json')],
+  operands: true,
+};
+
+const TIMEDATECTL_OPTIONS: GnuOptionSet = {
+  optstring: 'hH:M:p:a',
+  long: [
+    ...SYSTEMD_COMMON, flag('adjust-system-clock'), flag('monitor'), valued('property', 'p'), flag('all', 'a'),
+    flag('value'),
+  ],
+  operands: true,
+};
+
 export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
+  systemctl: SYSTEMCTL_OPTIONS,
+  loginctl: LOGINCTL_OPTIONS,
+  hostnamectl: HOSTNAMECTL_OPTIONS,
+  timedatectl: TIMEDATECTL_OPTIONS,
   diff: DIFF_OPTIONS,
   grep: GREP_OPTIONS,
   egrep: GREP_OPTIONS,
