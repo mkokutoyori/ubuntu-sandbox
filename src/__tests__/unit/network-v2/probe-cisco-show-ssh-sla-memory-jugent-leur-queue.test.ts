@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 
 async function show(line: string): Promise<string> {
-  const router = new CiscoRouter('router-cisco', 'R1', 0, 0);
+  const router = new CiscoRouter('R1');
   router.powerOn();
   const cli = router as unknown as { executeCommand(command: string): Promise<string> };
   await cli.executeCommand('enable');

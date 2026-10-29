@@ -4188,7 +4188,7 @@ Measured: `CiscoShellBase.hasVxlanHardware()` returns `false` and nothing overri
 
 ## Cisco: invalid inputs the fuzz scan still sees accepted
 
-Measured with a scan of ~90 invalid one-liners on a fresh router (the others are refused): `interface loopback 99999999999` (the number overflows a signed 32-bit integer, IOS stops at 2147483647), `hostname 1bad` and a 100-character hostname, `logging buffered 1` (IOS floors the buffer size), a 300-character `description` (IOS truncates or refuses past 240), `ip helper-address 0.0.0.0` / `224.0.0.1`, `ip address 127.0.0.1 255.0.0.0` on a physical interface, `clear ip route 999.1.1.1`. Not closed: each bound is an IOS fact whose documentation was not reachable, except the loopback overflow, which needs the interface-name parser (spread over `Router.ts` and the shell) rather than one place.
+Re-measured after the loopback/tunnel number bound: still accepted are `hostname 1bad`, a 100-character hostname and `hostname a_b` (IOS limits the characters and the length; the exact wording was not reachable), a 300-character `description`, `ip helper-address 0.0.0.0` / `224.0.0.1`, `ip address 127.0.0.1 255.0.0.0` on a physical interface. Closed: `logging buffered` floor, `clear ip route 999.1.1.1`, loopback/tunnel overflow.
 
 ## Cisco: `show` verbs whose free tail is accepted without being judged
 

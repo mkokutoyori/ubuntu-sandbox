@@ -162,6 +162,8 @@ export function typesInterfaceEnMotsCles(
   }));
 }
 
+const MAX_VIRTUAL_INTERFACE_NUMBER = 2147483647;
+
 export const NOM_INTERFACE_TAPE =
   /^[A-Za-z][A-Za-z-]*\d[\d/.]*$/i;
 
@@ -183,7 +185,12 @@ export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext
           'virtual-template': 'Virtual-Template',
           'port-channel': 'Port-channel', 'po': 'Port-channel',
         };
-        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        const typeName = typeMap[vMatch[1].toLowerCase()];
+        if ((typeName === 'Loopback' || typeName === 'Tunnel') && Number(vMatch[2]) > MAX_VIRTUAL_INTERFACE_NUMBER) {
+          const numberColumn = 'interface '.length + (args.length > 1 ? args[0].length + 1 : vMatch[1].length);
+          return formatInvalidInput(numberColumn);
+        }
+        const fullName = `${typeName}${vMatch[2]}`;
         ctx.r()._createVirtualInterface(fullName);
         ifName = fullName;
       }
