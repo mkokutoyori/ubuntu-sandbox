@@ -478,15 +478,14 @@ export const columnCommand = coreutil(
     { flag: '-s', description: 'Input delimiters', takesArg: true, argName: 'SEP' },
   ],
   (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'ts', 's');
+    const set = GNU_OPTION_SETS.column;
     let table = false;
     let sep: string | null = null;
     const files: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-t') { table = true; continue; }
-      if (a === '-s' && args[i + 1] !== undefined) { sep = args[i + 1]; i++; continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
+    for (const item of shortOptions(rawArgs, set.optstring, set.long)) {
+      if (item.kind === 'operand') files.push(item.value);
+      else if (item.kind === 'option' && item.letter === 't') table = true;
+      else if (item.kind === 'option' && item.letter === 's') sep = item.argument ?? null;
     }
     const got = inputs(ctx, files, stdin, 'column');
     if (!Array.isArray(got)) return got;

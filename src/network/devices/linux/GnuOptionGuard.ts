@@ -402,6 +402,18 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  column: {
+    optstring: 'c:dE:eH:hi:Jl:LN:n:O:o:p:R:rs:T:tVW:x',
+    long: [
+      valued('columns', 'c'), flag('table-noheadings', 'd'), valued('table-noextreme', 'E'), flag('table-header-repeat', 'e'),
+      valued('table-hide', 'H'), valued('tree-id', 'i'), flag('json', 'J'), valued('table-columns-limit', 'l'),
+      flag('keep-empty-lines', 'L'), valued('table-columns', 'N'), valued('table-name', 'n'), valued('table-order', 'O'),
+      valued('output-separator', 'o'), valued('tree-parent', 'p'), valued('table-right', 'R'), flag('tree', 'r'),
+      valued('separator', 's'), valued('table-truncate', 'T'), flag('table', 't'), valued('table-wrap', 'W'),
+      flag('fillrows', 'x'), flag('table-empty-lines'), valued('output-width'), flag('help', 'h'), flag('version', 'V'),
+    ],
+    operands: true,
+  },
   sysctl: {
     optstring: 'aAXbeNnp::fr:qwoxhV',
     long: [

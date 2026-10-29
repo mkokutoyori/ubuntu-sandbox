@@ -4347,3 +4347,7 @@ Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `
 ## mv and stat: options accepted without effect
 
 `mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` evaluates `-c`/`--format`; `--printf`, `-t` (terse), `-f` (filesystem), `-L` (follow) are accepted and ignored. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.
+
+## column and awk: options accepted without effect
+
+`column` evaluates -t and -s only; -o, -c, -x, -J, -N, -n, -R, -H, -E, -l, -e, -d, -L and the tree options are accepted (table of util-linux 2.37 from memory) and ignored. `awk --zorglub` is still silent: the default awk of Ubuntu 22.04 is mawk, whose wording (`awk: not an option: --zorglub`, status 2) is not backed by a transcript, so no table was written.
