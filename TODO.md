@@ -4391,3 +4391,8 @@ Why the rest is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion 
 ## Linux pwd: -L/-P and unknown options
 
 Measured: `pwd --zorglub` prints the directory (bash answers `bash: pwd: --: invalid option` and `pwd: usage: pwd [-LP]`), and `pwd -P` prints PWD unresolved. The builtin lives in `src/bash/runtime/Builtins.ts` with only the environment: resolving symbolic links for `-P` needs the VFS, which that layer does not hold, so the option can neither be refused cleanly nor honoured there yet.
+
+## Linux find: predicates that evaluate to false
+
+`FindExpression.ts` now parses the GNU grammar (-o, -a, !, parentheses, -prune, -quit, actions suppress the default -print) and evaluates -regex, -links, -uid, -gid, -inum, -used, -nouser, -nogroup, -readable/-writable/-executable, -samefile, -lname, -printf, -daystart. Still answered `false` (fail closed) because the brick behind them is missing: `-fstype` and `-context` (no mount/SELinux label lookup from the shell context), `-ls`, `-fprint`, `-fprint0`, `-fprintf`, `-fls` (no output-file channel, no `ls -dils` line), `-ok`/`-okdir` (no prompt channel). `-exec`/`-execdir` still only echo the command line with `{}` replaced and run nothing, `+` is read as `;`; the `-printf` date directives other than `%A@ %C@ %T@` go through `formatLocalTime` and are not checked against findutils.
+

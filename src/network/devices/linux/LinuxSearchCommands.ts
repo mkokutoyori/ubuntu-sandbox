@@ -2,247 +2,39 @@
  * Search commands: find, locate, which, whereis, command
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
 import { ShellContext } from './LinuxFileCommands';
-import { parseTouchDate } from './time/FileTimes';
-import { isFindType, type FindTimeTest, type FindType } from './VirtualFileSystem';
-
-/** Parse a `-size` argument: `2k`, `+10M`, `-100c`, `1G`. */
-function parseSizeSpec(raw: string): { op: '+' | '-' | '='; value: number } | null {
-  const m = /^([+-]?)(\d+)([cwbkMGT]?)$/.exec(raw);
-  if (!m) return null;
-  const [, prefix, numStr, unit] = m;
-  const n = parseInt(numStr, 10);
-  // GNU find unit conventions: c=bytes, w=2B, b=512B blocks (default),
-  // k=1024, M=1024², G=1024³, T=1024⁴. With no unit, the count is in
-  // 512-byte blocks (POSIX), which we treat as the same number of bytes
-  // for simulator scale.
-  const multipliers: Record<string, number> = {
-    '': 512,  c: 1,  w: 2,  b: 512,
-    k: 1024,  M: 1024 ** 2,  G: 1024 ** 3,  T: 1024 ** 4,
-  };
-  return { op: prefix === '+' ? '+' : prefix === '-' ? '-' : '=', value: n * multipliers[unit] };
-}
-
-const FIND_PREDICATES_WITH_ARGUMENT = new Set([
-  '-regex', '-iregex', '-regextype', '-links', '-inum', '-samefile', '-uid', '-gid', '-lname', '-ilname',
-  '-fstype', '-used', '-wholename', '-iwholename', '-fprint', '-fprint0', '-printf', '-fls', '-context',
-]);
-
-const FIND_PREDICATES_WITHOUT_ARGUMENT = new Set([
-  '-true', '-false', '-a', '-and', '-o', '-or', '-prune', '-ls', '-quit', '-nouser', '-nogroup', '-readable',
-  '-writable', '-executable', '-noleaf', '-follow', '-depth', '-d', '-daystart', '-ignore_readdir_race',
-  '-noignore_readdir_race', '-warn', '-nowarn', '-help', '--help', '-version', '--version', '-H', '-L', '-P',
-]);
+import { parseFind } from './FindExpression';
 
 export function cmdFind(ctx: ShellContext, args: string[]): string {
-  let startPath = '.';
-  let name: string | undefined;
-  let iname: string | undefined;
-  let pathPat: string | undefined;
-  let ipathPat: string | undefined;
-  let type: FindType | undefined;
-  let empty = false;
-  const timeTests: FindTimeTest[] = [];
-  let timeError: string | null = null;
-  let user: string | undefined;
-  let group: string | undefined;
-  let execCmd: string | undefined;
-  let size: { op: '+' | '-' | '='; value: number } | undefined;
-  let maxdepth: number | undefined;
-  let perm: { kind: 'exact' | 'all' | 'any'; mode: number } | undefined;
-  let xdev = false;
-  let argumentError: string | null = null;
-  let mindepth: number | undefined;
-  let notNext = false;
-  let notFlag = false;
-  let print0 = false;
-  let printFlag = false;
-  let deleteFlag = false;
-
-  let i = 0;
-
-  // First non-flag arg is the path. Real find accepts multiple starting
-  // points; pick the first to mirror the existing behaviour.
-  if (args.length > 0 && !args[0].startsWith('-') && args[0] !== '!') {
-    startPath = args[0];
-    i = 1;
-  }
-
-  while (i < args.length) {
-    const a = args[i];
-    // `!` is the POSIX synonym for `-not`. Sticky across the next test.
-    if (a === '!' || a === '-not') {
-      notNext = true;
-      i++;
+  const parsed = parseFind(ctx, args);
+  if ('error' in parsed) return parsed.error;
+  const { plan } = parsed;
+  const errors: string[] = [];
+  for (const start of plan.starts) {
+    const absStart = ctx.vfs.normalizePath(start, ctx.cwd);
+    if (!ctx.vfs.exists(absStart) && ctx.vfs.lstat(absStart) === null) {
+      errors.push(`find: '${start}': No such file or directory`);
       continue;
     }
-    switch (a) {
-      case '-name': name = args[++i]; break;
-      case '-iname': iname = args[++i]; break;
-      case '-path': pathPat = args[++i]; break;
-      case '-ipath': ipathPat = args[++i]; break;
-      case '-type': {
-        const t = args[++i];
-        if (t !== undefined && isFindType(t)) type = t;
-        else timeError = `find: Unknown argument to -type: ${t ?? ''}`;
-        break;
-      }
-      case '-empty': empty = true; break;
-      case '-mtime': case '-atime': case '-ctime': case '-mmin': case '-amin': case '-cmin': {
-        const operand = args[++i] ?? '';
-        const match = /^([+-]?)(\d+)$/.exec(operand);
-        if (match === null) { timeError = `find: invalid argument \`${operand}' to \`${a}'`; break; }
-        timeTests.push({
-          kind: 'age',
-          field: a[1] === 'a' ? 'atime' : a[1] === 'c' ? 'ctime' : 'mtime',
-          unit: a.endsWith('min') ? 'min' : 'day',
-          op: match[1] === '' ? '=' : (match[1] as '+' | '-'),
-          n: Number(match[2]),
-        });
-        break;
-      }
-      case '-newer': case '-anewer': case '-cnewer': {
-        const reference = ctx.vfs.resolveInode(ctx.vfs.normalizePath(args[++i] ?? '', ctx.cwd));
-        if (!reference) { timeError = `find: '${args[i] ?? ''}': No such file or directory`; break; }
-        timeTests.push({
-          kind: 'newer',
-          field: a === '-anewer' ? 'atime' : a === '-cnewer' ? 'ctime' : 'mtime',
-          thanMs: reference.mtime,
-        });
-        break;
-      }
-      case '-user': user = args[++i]; break;
-      case '-group': group = args[++i]; break;
-      case '-size': {
-        const spec = parseSizeSpec(args[++i] ?? '');
-        if (spec) size = spec;
-        break;
-      }
-      case '-perm': {
-        const operand = args[++i] ?? '';
-        const parsed = /^([-/]?)([0-7]{1,4})$/.exec(operand);
-        if (parsed === null) { argumentError = `find: Invalid mode '${operand}'`; break; }
-        perm = { kind: parsed[1] === '-' ? 'all' : parsed[1] === '/' ? 'any' : 'exact', mode: parseInt(parsed[2], 8) };
-        break;
-      }
-      case '-xdev': case '-mount': xdev = true; break;
-      case '-maxdepth': maxdepth = parseInt(args[++i], 10); break;
-      case '-mindepth': mindepth = parseInt(args[++i], 10); break;
-      case '-print': printFlag = true; break;
-      case '-print0': print0 = true; break;
-      case '-delete': deleteFlag = true; break;
-      case '-exec': {
-        // Collect until \;
-        const execParts: string[] = [];
-        i++;
-        while (i < args.length && args[i] !== '\\;' && args[i] !== ';') {
-          execParts.push(args[i]);
-          i++;
-        }
-        execCmd = execParts.join(' ');
-        break;
-      }
-      default: {
-        const newerXy = /^-newer([acm])([acmt])$/.exec(a);
-        if (newerXy !== null) {
-          const operand = args[++i] ?? '';
-          const field = (letter: string): 'atime' | 'mtime' | 'ctime' => (letter === 'a' ? 'atime' : letter === 'c' ? 'ctime' : 'mtime');
-          let thanMs: number | null;
-          if (newerXy[2] === 't') {
-            thanMs = parseTouchDate(operand, ctx.zone, ctx.nowMs?.() ?? simulationNowMs());
-            if (thanMs === null) { timeError = `find: I cannot figure out how to interpret '${operand}' as a date or time`; break; }
-          } else {
-            const reference = ctx.vfs.resolveInode(ctx.vfs.normalizePath(operand, ctx.cwd));
-            if (!reference) { timeError = `find: '${operand}': No such file or directory`; break; }
-            thanMs = reference[field(newerXy[2])];
-          }
-          timeTests.push({ kind: 'newer', field: field(newerXy[1]), thanMs });
-        } else if (FIND_PREDICATES_WITH_ARGUMENT.has(a)) {
-          i++;
-        } else if (a === '-fprintf') {
-          i += 2;
-        } else if (a === '-ok' || a === '-okdir' || a === '-execdir') {
-          while (i + 1 < args.length && args[i + 1] !== '\\;' && args[i + 1] !== ';') i++;
-          i++;
-        } else if (a.startsWith('-') && !FIND_PREDICATES_WITHOUT_ARGUMENT.has(a)) {
-          argumentError = `find: unknown predicate \`${a}'`;
-        }
-        break;
-      }
-    }
-    // The not flag, once seen, applies to the *next* predicate only.
-    if (notNext && a !== '!' && a !== '-not') {
-      notFlag = !notFlag;
-      notNext = false;
-    }
-    i++;
+    const typed = start.replace(/\/+$/, '') || '/';
+    const displayOf = (path: string): string => {
+      if (start.startsWith('/')) return path;
+      return path === absStart ? typed : `${typed === '/' ? '' : typed}${path.slice(absStart === '/' ? 0 : absStart.length)}`;
+    };
+    const walkOptions = {
+      maxdepth: plan.maxdepth, postOrder: plan.postOrder,
+      ...(!plan.crossDevices && ctx.deviceOf ? { device: ctx.deviceOf(absStart), deviceOf: ctx.deviceOf } : {}),
+    };
+    ctx.vfs.walkFind(absStart, walkOptions, (path, inode, depth) => {
+      if (plan.mindepth !== undefined && depth < plan.mindepth) return;
+      const run = { path, display: displayOf(path), start: typed, inode, depth, prune: false, quit: false };
+      plan.expression(run);
+      if (run.quit) return 'stop';
+      return run.prune ? 'prune' : undefined;
+    });
   }
-
-  if (timeError !== null) return timeError;
-  if (argumentError !== null) return argumentError;
-  const absStart = ctx.vfs.normalizePath(startPath, ctx.cwd);
-
-  const opts: any = {};
-  if (name) opts.name = name;
-  if (iname) opts.iname = iname;
-  if (pathPat) opts.path = pathPat;
-  if (ipathPat) opts.ipath = ipathPat;
-  if (type) opts.type = type;
-  if (empty) opts.empty = true;
-  if (timeTests.length > 0) opts.timeTests = timeTests;
-  if (size) opts.size = size;
-  if (maxdepth !== undefined) opts.maxdepth = maxdepth;
-  if (perm) opts.perm = perm;
-  if (xdev && ctx.deviceOf) { opts.device = ctx.deviceOf(absStart); opts.deviceOf = ctx.deviceOf; }
-  if (mindepth !== undefined) opts.mindepth = mindepth;
-  if (notFlag) opts.not = true;
-  if (user) {
-    const uid = ctx.userMgr.resolveUid(user);
-    if (uid >= 0) opts.user = uid;
-  }
-  if (group) {
-    const gid = ctx.userMgr.resolveGid(group);
-    if (gid >= 0) opts.group = gid;
-  }
-
-  const results = ctx.vfs.find(absStart, opts);
-
-  // -delete unlinks each match before the formatter runs. Real find
-  // deletes depth-first; our find emits parents before children so we
-  // reverse for the same effect.
-  if (deleteFlag) {
-    for (const r of [...results].reverse()) {
-      const node = ctx.vfs.lstat(r);
-      if (!node) continue;
-      if (node.type === 'directory') ctx.vfs.rmdir(r);
-      else ctx.vfs.deleteFile(r);
-    }
-  }
-
-  // Convert to relative paths from startPath
-  const displayResults = results.map(r => {
-    if (startPath.startsWith('/')) return r;
-    const typed = startPath.replace(/\/+$/, '') || '/';
-    return r === absStart ? typed : `${typed === '/' ? '' : typed}${r.slice(absStart === '/' ? 0 : absStart.length)}`;
-  });
-
-  if (execCmd) {
-    const outputs: string[] = [];
-    for (const f of displayResults) {
-      const cmd = execCmd.replace(/\{\}/g, f);
-      outputs.push(cmd.replace(/^echo\s+/, '') || f);
-    }
-    return outputs.join('\n');
-  }
-
-  // -print0 emits a NUL between matches instead of a newline. Useful when
-  // piping into xargs -0 to handle filenames with whitespace.
-  if (print0) return displayResults.join('\0');
-  if (printFlag || displayResults.length > 0 || !deleteFlag) {
-    return displayResults.join('\n');
-  }
-  return '';
+  const text = plan.output.map((record) => record.text + record.terminator).join('');
+  return [...errors, text.replace(/\n$/, '')].filter((part) => part !== '').join('\n');
 }
 
 export function cmdLocate(ctx: ShellContext, args: string[]): string {
