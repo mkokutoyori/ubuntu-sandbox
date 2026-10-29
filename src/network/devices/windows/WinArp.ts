@@ -110,7 +110,8 @@ function parseArgs(args: string[]): WinArpFlags {
       if (i + 3 < args.length && !args[i + 3].startsWith('-')) flags.staticIfAddr = args[i + 3];
       i += 4;
     } else {
-      i++;
+      flags.mode = 'help';
+      return flags;
     }
   }
 

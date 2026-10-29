@@ -131,7 +131,10 @@ export function parseWinTracertArgs(args: string[]): ParsedWinTracert {
       result.srcAddr = cleaned; i++; continue;
     }
 
-    if (a.startsWith('-') || a.startsWith('/')) continue;
+    if (a.startsWith('-') && a.length > 1) {
+      result.parseError = `Bad option ${a}.\n${TRACERT_HELP}`; return result;
+    }
+    if (a.startsWith('/')) continue;
 
     const cleaned = unquote(a);
     if (!cleaned) continue;
