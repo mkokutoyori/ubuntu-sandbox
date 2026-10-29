@@ -8,6 +8,7 @@ import { ShellContext, expandGlob } from './LinuxFileCommands';
 import { runAwk, type AwkHost } from './awk';
 import { runSed, type SedFileIO } from './sed';
 import { compilePosix } from './regex/PosixRegex';
+import { PosixRegexError } from './regex/PosixEre';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { shortOptions } from './commands/Getopt';
 import { GNU_OPTION_SETS } from './GnuOptionGuard';
@@ -272,12 +273,18 @@ export function cmdGrep(
 
   if (!patternGiven) return { output: "Usage: grep [OPTION]... PATTERNS [FILE]...\nTry 'grep --help' for more information.", exitCode: 2 };
 
-  const matchers = patterns.map(p => fl.perl
-    ? compilePcre(p, { ignoreCase: fl.caseInsensitive, wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true })
-    : compilePosix(p, {
-        extended: fl.extended, fixed: fl.fixed, ignoreCase: fl.caseInsensitive,
-        wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true,
-      }));
+  let matchers: RegExp[];
+  try {
+    matchers = patterns.map(p => fl.perl
+      ? compilePcre(p, { ignoreCase: fl.caseInsensitive, wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true })
+      : compilePosix(p, {
+          extended: fl.extended, fixed: fl.fixed, ignoreCase: fl.caseInsensitive,
+          wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true,
+        }));
+  } catch (error) {
+    if (error instanceof PosixRegexError) return { output: `grep: ${error.message}`, exitCode: 2 };
+    throw error;
+  }
   const lineMatches = (line: string): boolean => {
     const hit = matchers.some(re => { re.lastIndex = 0; return re.test(line); });
     return hit !== fl.invert;
@@ -1578,7 +1585,9 @@ function resolveAwkValue(val: string, fields: string[], fs: string, vars: Map<st
  * given the file is read; otherwise stdin is processed. Multiple scripts
  * may be provided via repeated `-e` or by joining with `;`.
  */
-export function cmdSed(ctx: ShellContext, args: string[], stdin?: string): string {
+export function cmdSed(
+  ctx: ShellContext, args: string[], stdin?: string,
+): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
   const io: SedFileIO = {
     readFile: (p) => ctx.vfs.readFile(ctx.vfs.normalizePath(p, ctx.cwd)),
     writeFile: (p, content) => { ctx.vfs.writeFile(ctx.vfs.normalizePath(p, ctx.cwd), content, ctx.uid, ctx.gid, 0o022); },
@@ -1588,5 +1597,11 @@ export function cmdSed(ctx: ShellContext, args: string[], stdin?: string): strin
     },
   };
   const r = runSed({ argv: args, stdin: stdin ?? '', io });
-  return r.error ?? r.output;
+  if (r.error !== null) {
+    if (r.exitCode === 0) return { output: `${r.error}\n`, exitCode: 0 };
+    const diagnostic = `${r.error}\n`;
+    return { output: '', stderr: diagnostic, interleaved: diagnostic, exitCode: r.exitCode };
+  }
+  if (r.stderr === '') return { output: r.output, exitCode: r.exitCode };
+  return { output: r.output, stderr: r.stderr, interleaved: r.stderr + r.output, exitCode: r.exitCode };
 }

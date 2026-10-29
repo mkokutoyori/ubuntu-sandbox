@@ -4103,7 +4103,7 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 ### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
-Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
 
 ### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
@@ -4379,3 +4379,7 @@ Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, wi
 ## grep: what is still approximated
 
 Evaluated and compared with GNU grep 3.11: the selection, output, context, binary-file, directory, null-data, initial-tab and colour options (see probe-linux-grep-evalue-ses-options). Still approximate: a file counts as binary only when it holds a NUL byte (grep also treats invalid UTF-8 in a UTF-8 locale as binary); `-D` (devices) and `-U`/`--line-buffered` are accepted and ignored; `-P` is JavaScript's RegExp with `\K` translated; `GREP_COLORS` is not read (the defaults are used); entries of `-r` follow the simulator's insertion order, not readdir.
+
+## sed: what is still approximate
+
+Evaluated and compared with GNU sed 4.9 (see probe-linux-sed-evalue-ses-options): syntax errors with their `-e expression #N, char C` position and exit status, `s///w`, `w`/`W`/`r`/`R` (truncation at start, `/dev/stdout`, `/dev/stderr`, files without trailing newline), `-z`, `-l N` and `l N` wrapping, `-s`, `-i`, `--sandbox`, `#n`, the append queue flushed by `n`/`N`, `0,/re/`, `addr,~N`, bracket expressions holding the delimiter, `\t \xHH \oNNN \dNNN \cX` in patterns and replacements, empty matches after a match. Still not evaluated: the `e` command and the `s///e` flag (a sed script cannot run a command: the executor is not reachable from `cmdSed`, so both are refused as unknown), `--debug` and `--posix` (accepted, no annotation, GNU extensions stay on), `L` (4.9 answers `INTERNAL ERROR: Bad cmd L`, 4.8 formats; the simulator says `unknown command`), `--follow-symlinks`. The `--version` banner is the 4.8 of Ubuntu 22.04, the dev container's real sed is 4.9. Matching uses JavaScript's leftmost-FIRST alternation, not POSIX leftmost-LONGEST: `s/\|o/x/` on `one` gives `xone` where sed gives `xne` (`CompiledEre.exec` has the longest rule, grep -o and awk use it; sed would need the `M` flag and group indices on it). With `-i`, `w /dev/stdout` goes to the edited file instead of the terminal. The relative order of "can't read FILE" and the output differs from a real pipe (stderr is unbuffered there).

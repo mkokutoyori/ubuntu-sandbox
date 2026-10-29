@@ -10,8 +10,14 @@
  */
 
 export class SedSyntaxError extends Error {
-  constructor(message: string) {
-    super(`sed: -e expression: ${message}`);
+  constructor(
+    message: string,
+    readonly position: number | null = null,
+    readonly bare = false,
+    readonly anchor: number | null = null,
+    readonly exitCode = 1,
+  ) {
+    super(message);
     this.name = 'SedSyntaxError';
   }
 }
@@ -33,6 +39,7 @@ export interface RawSub {
   pattern: string;
   replacement: string;
   flags: string;
+  writeFile?: string;
 }
 
 export interface RawY {
@@ -42,19 +49,21 @@ export interface RawY {
 
 // ── Token stream ────────────────────────────────────────────────────
 
-export type SedToken =
+export type SedTokenBody =
   | { type: 'addr'; addr: RawAddress }
   | { type: 'comma' }
   | { type: 'bang' }
   | { type: 'lbrace' }
   | { type: 'rbrace' }
-  | { type: 'sep' }
+  | { type: 'sep'; char: string }
   | { type: 'sub'; sub: RawSub }
   | { type: 'y'; y: RawY }
-  | { type: 'text'; name: string; text: string }   // a i c r w R W b t T :
-  | { type: 'quit'; name: string; code: number }    // q Q
-  | { type: 'op'; name: string }                     // p P d D n N g G h H x = z l
+  | { type: 'text'; name: string; text: string; textless?: boolean }
+  | { type: 'quit'; name: string; code: number }
+  | { type: 'op'; name: string; width?: number }
   | { type: 'eof' };
+
+export type SedToken = SedTokenBody & { readonly pos: number; readonly start: number };
 
 // ── Compiled AST ────────────────────────────────────────────────────
 
@@ -75,6 +84,7 @@ export interface SubCommand {
   global: boolean;
   nth: number;
   print: boolean;
+  writeFile?: string;
 }
 
 export interface Instruction {
@@ -85,7 +95,9 @@ export interface Instruction {
   sub?: SubCommand;
   y?: { from: string; to: string };
   text?: string;         // a/i/c/r/w/b/t/T/: payload
+  textless?: boolean;
   exitCode?: number;     // q/Q
+  width?: number;        // l
   blockEnd?: number;     // for '{': index of the matching '}'
 }
 

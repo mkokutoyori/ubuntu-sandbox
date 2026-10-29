@@ -42,6 +42,8 @@ specified, then the standard input is read.
 GNU sed home page: <https://www.gnu.org/software/sed/>.
 General help using GNU software: <https://www.gnu.org/gethelp/>.`;
 
+export const SED_HELP = `${SED_USAGE}\nE-mail bug reports to: <bug-sed@gnu.org>.`;
+
 export const SED_VERSION = `sed (GNU sed) 4.8
 Copyright (C) 2020 Free Software Foundation, Inc.
 License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
@@ -71,6 +73,9 @@ export interface SedCommandLine {
   readonly quiet: boolean;
   readonly extended: boolean;
   readonly separate: boolean;
+  readonly nullData: boolean;
+  readonly sandbox: boolean;
+  readonly lineLength: number | null;
   readonly inPlace: boolean;
   readonly backupSuffix: string;
   readonly scripts: readonly { readonly kind: 'text' | 'file'; readonly value: string }[];
@@ -85,6 +90,9 @@ export function parseSedArguments(argv: readonly string[]): SedArgumentsResult {
   let quiet = false;
   let extended = false;
   let separate = false;
+  let nullData = false;
+  let sandbox = false;
+  let lineLength: number | null = null;
   let inPlace = false;
   let backupSuffix = '';
   const scripts: { kind: 'text' | 'file'; value: string }[] = [];
@@ -92,17 +100,19 @@ export function parseSedArguments(argv: readonly string[]): SedArgumentsResult {
   for (const item of shortOptions(argv, 'nrEsuzbe:f:i::l:', SED_LONG)) {
     if (item.kind === 'operand') { operands.push(item.value); continue; }
     if (item.kind === 'option') {
-      if (item.long === 'help') return { kind: 'text', text: SED_USAGE, exitCode: 0 };
+      if (item.long === 'help') return { kind: 'text', text: SED_HELP, exitCode: 0 };
       if (item.long === 'version') return { kind: 'text', text: SED_VERSION, exitCode: 0 };
+      if (item.long === 'sandbox') { sandbox = true; continue; }
       switch (item.letter) {
         case 'n': quiet = true; break;
         case 'r': case 'E': extended = true; break;
         case 's': separate = true; break;
+        case 'z': nullData = true; break;
         case 'e': scripts.push({ kind: 'text', value: item.argument ?? '' }); break;
         case 'f': scripts.push({ kind: 'file', value: item.argument ?? '' }); break;
         case 'i': inPlace = true; backupSuffix = item.argument ?? ''; break;
         case 'l':
-          if (!/^\d+$/.test(item.argument ?? '')) return { kind: 'text', text: `sed: invalid line length: ${item.argument}`, exitCode: 1 };
+          lineLength = Math.max(0, Number.parseInt(item.argument ?? '', 10) || 0);
           break;
         default: break;
       }
@@ -110,5 +120,5 @@ export function parseSedArguments(argv: readonly string[]): SedArgumentsResult {
     }
     return { kind: 'text', text: `${getoptDiagnostic('sed', item)}\n${SED_USAGE}`, exitCode: 1 };
   }
-  return { kind: 'ok', line: { quiet, extended, separate, inPlace, backupSuffix, scripts, operands } };
+  return { kind: 'ok', line: { quiet, extended, separate, nullData, sandbox, lineLength, inPlace, backupSuffix, scripts, operands } };
 }

@@ -6171,7 +6171,7 @@ export class LinuxCommandExecutor {
         if (awkError !== null) return { output: '', stderr: `${awkError}\n`, exitCode: 2 };
         return { output: cmdAwk(c, args, stdin), exitCode: 0 };
       }
-      case 'sed': return { output: cmdSed(c, args, stdin), exitCode: 0 };
+      case 'sed': return cmdSed(c, args, stdin);
 
       // Search commands
       case 'find': return { output: cmdFind(c, args), exitCode: 0 };

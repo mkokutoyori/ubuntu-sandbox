@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-10-29T11:02:54.486Z
+Generated: 2026-10-29T23:06:31.721Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -257,7 +257,7 @@ $ [49/303]> grep -r root /etc/hostname
 <empty>
 
 $ [50/303]> grep --color=auto root /etc/passwd
-  [01;31mroot[m:x:0:0:[01;31mroot[m:/[01;31mroot[m:/bin/bash
+  [01;31m[Kroot[m[K:x:0:0:[01;31m[Kroot[m[K:/[01;31m[Kroot[m[K:/bin/bash
 
 $ [51/303]> grep -A1 bob gens.csv
   bob:25:lyon
@@ -360,8 +360,8 @@ $ [69/303]> grep root /etc/passwd /etc/group
   /etc/group:root:x:0:
 
 $ [70/303]> grep -rn paris gens.csv
-  gens.csv:1:alice:30:paris
-  gens.csv:3:carol:35:paris
+  1:alice:30:paris
+  3:carol:35:paris
 
 
 --- [71] § head & tail ---
@@ -1145,10 +1145,15 @@ $ [205/303]> diff fruits.txt fruits2.txt
   > mangue
 
 $ [206/303]> diff -u fruits.txt fruits2.txt
-  5c5
-  < fraise
-  ---
-  > mangue
+  --- fruits.txt	2026-10-29 23:06:31.917000000 +0000
+  +++ fruits2.txt	2026-10-29 23:06:32.014000000 +0000
+  @@ -2,5 +2,5 @@
+   pomme
+   CERISE
+   pomme
+  -fraise
+  +mangue
+   banane
 
 $ [207/303]> diff -y fruits.txt fruits2.txt
   5c5
@@ -1157,10 +1162,7 @@ $ [207/303]> diff -y fruits.txt fruits2.txt
   > mangue
 
 $ [208/303]> diff -q fruits.txt fruits2.txt
-  5c5
-  < fraise
-  ---
-  > mangue
+  Files fruits.txt and fruits2.txt differ
 
 $ [209/303]> diff fruits.txt fruits.txt
 <empty>
@@ -1192,7 +1194,7 @@ $ [214/303]> comm -3 a.sorted b.sorted
   	mangue
 
 $ [215/303]> cmp fruits.txt fruits2.txt
-  fruits.txt fruits2.txt differ: char 27, line 5
+  fruits.txt fruits2.txt differ: byte 27, line 5
 
 $ [216/303]> cmp fruits.txt fruits.txt
 <empty>
@@ -1206,16 +1208,8 @@ $ [218/303]> split -l 2 seq.txt morceau_
 <empty>
 
 $ [219/303]> ls morceau_*
-  morceau_aa
-  morceau_ab
-  morceau_ac
-  morceau_ad
-  morceau_ae
-  morceau_af
-  morceau_ag
-  morceau_ah
-  morceau_ai
-  morceau_aj
+  morceau_aa  morceau_ac	morceau_ae  morceau_ag	morceau_ai
+  morceau_ab  morceau_ad	morceau_af  morceau_ah	morceau_aj
 
 $ [220/303]> cat morceau_aa
   1
@@ -1225,9 +1219,7 @@ $ [221/303]> split -n 3 seq.txt part_
 <empty>
 
 $ [222/303]> ls part_*
-  part_aa
-  part_ab
-  part_ac
+  part_aa  part_ab  part_ac
 
 $ [223/303]> cat part_* | wc -l
   20
@@ -1236,10 +1228,7 @@ $ [224/303]> split -b 10 fruits.txt octets_
 <empty>
 
 $ [225/303]> ls octets_*
-  octets_aa
-  octets_ab
-  octets_ac
-  octets_ad
+  octets_aa  octets_ab  octets_ac  octets_ad
 
 
 --- [226] § expansion & espaces — expand/fmt/pr ---
@@ -1616,7 +1605,8 @@ $ [295/303]> grepp pomme fruits.txt
   bash: grepp: command not found
 
 $ [296/303]> grep
-  Usage: grep [OPTION]... PATTERN [FILE]...
+  Usage: grep [OPTION]... PATTERNS [FILE]...
+  Try 'grep --help' for more information.
 
 $ [297/303]> sed 's/incomplet
   bash: -c: line 1: unexpected EOF while looking for matching `''

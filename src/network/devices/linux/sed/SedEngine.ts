@@ -6,10 +6,16 @@ export interface SedHost {
   appendFile(path: string, content: string): void;
 }
 
+export interface SedInput {
+  readonly name: string;
+  readonly text: string;
+}
+
 export interface SedRunOptions {
-  quiet: boolean;            // -n
-  inputEndsNewline: boolean;
+  quiet: boolean;
   host?: SedHost | null;
+  nullData?: boolean;
+  lineWrap?: number;
 }
 
 interface RangeState {
@@ -20,22 +26,97 @@ interface RangeState {
 
 export interface SedResult {
   output: string;
+  stderr: string;
   exitCode: number;
 }
 
-export function runSedProgram(program: SedProgram, input: string, opts: SedRunOptions): SedResult {
-  const lines = splitLines(input);
-  const { instructions, labels } = program;
-  const ranges: RangeState[] = instructions.map(() => ({ active: false, endedThisLine: false }));
-  const out: string[] = [];
-  const host = opts.host ?? null;
+interface SedLine {
+  readonly text: string;
+  readonly chomped: boolean;
+  readonly file: string;
+}
 
-  let HS = '';
+interface PatternSpace {
+  text: string;
+  chomped: boolean;
+}
+
+const STDOUT = '/dev/stdout';
+const STDERR = '/dev/stderr';
+export const SED_DEFAULT_LINE_WRAP = 70;
+
+class Sink {
+  text = '';
+  private missingDelimiter = false;
+
+  constructor(private readonly delimiter: string) {}
+
+  pattern(text: string, chomped: boolean): void {
+    this.settle();
+    this.text += text;
+    if (chomped) this.text += this.delimiter;
+    else this.missingDelimiter = true;
+  }
+
+  raw(text: string): void {
+    this.settle();
+    this.text += text;
+  }
+
+  private settle(): void {
+    if (!this.missingDelimiter) return;
+    this.text += this.delimiter;
+    this.missingDelimiter = false;
+  }
+}
+
+export function sedWriteTargets(program: SedProgram): string[] {
+  const targets = new Set<string>();
+  for (const instruction of program.instructions) {
+    if ((instruction.name === 'w' || instruction.name === 'W') && instruction.text) targets.add(instruction.text);
+    if (instruction.sub?.writeFile) targets.add(instruction.sub.writeFile);
+  }
+  return [...targets].filter((target) => target !== STDOUT && target !== STDERR);
+}
+
+export function runSedProgram(program: SedProgram, inputs: readonly SedInput[], opts: SedRunOptions): SedResult {
+  const delimiter = opts.nullData ? '\0' : '\n';
+  const lines = splitInputs(inputs, delimiter);
+  const { instructions, labels } = program;
+  const ranges: RangeState[] = instructions.map((inst) => ({
+    active: inst.addr1?.kind === 'line' && inst.addr1.line === 0 && inst.addr2?.kind === 'regex',
+    endedThisLine: false,
+  }));
+  const stdout = new Sink(delimiter);
+  const stderr = new Sink(delimiter);
+  const files = new Map<string, Sink>();
+  const readers = new Map<string, string[]>();
+  const host = opts.host ?? null;
+  const lineWrap = opts.lineWrap ?? SED_DEFAULT_LINE_WRAP;
+
+  const sinkFor = (path: string): Sink => {
+    if (path === STDOUT) return stdout;
+    if (path === STDERR) return stderr;
+    let sink = files.get(path);
+    if (!sink) { sink = new Sink(delimiter); files.set(path, sink); }
+    return sink;
+  };
+
+  const writeFile = (path: string, ps: PatternSpace, text = ps.text): void => {
+    if (path === STDOUT || path === STDERR) { sinkFor(path).pattern(text, ps.chomped); return; }
+    const sink = sinkFor(path);
+    const before = sink.text.length;
+    sink.pattern(text, ps.chomped);
+    host?.appendFile(path, sink.text.slice(before));
+  };
+
+  let HS: PatternSpace = { text: '', chomped: true };
   let li = 0;
   let lineNo = 0;
   let quit = false;
   let exitCode = 0;
   let lastRegex: RegExp | null = null;
+  let currentFile = '-';
 
   const isLastLine = (): boolean => li >= lines.length;
 
@@ -64,15 +145,16 @@ export function runSedProgram(program: SedProgram, input: string, opts: SedRunOp
     } else if (!inst.addr2) {
       result = matchSingle(inst.addr1, PS);
     } else if (!st.active) {
-      const zeroStart = inst.addr1.kind === 'line' && inst.addr1.line === 0;
-      if (zeroStart || matchSingle(inst.addr1, PS)) {
+      if (matchSingle(inst.addr1, PS)) {
         st.active = true;
         const a2 = inst.addr2;
         if (a2.kind === 'line') { st.endLine = a2.line; if (a2.line! <= lineNo) { st.active = false; st.endedThisLine = true; } }
-        else if (a2.kind === 'plus') st.endLine = lineNo + a2.n!;
-        else if (a2.kind === 'tilde') st.endLine = a2.n! > 0 ? Math.ceil((lineNo + 1) / a2.n!) * a2.n! : lineNo;
+        else if (a2.kind === 'plus') { st.endLine = lineNo + a2.n!; if (a2.n === 0) { st.active = false; st.endedThisLine = true; } }
+        else if (a2.kind === 'tilde') {
+          st.endLine = a2.n! > 0 ? Math.ceil((lineNo + 1) / a2.n!) * a2.n! : lineNo;
+          if (st.endLine <= lineNo) { st.active = false; st.endedThisLine = true; }
+        }
         else st.endLine = undefined;
-        if (zeroStart && a2.kind === 'regex') { const re = resolveRegex(a2); if (re && re.test(PS)) { st.active = false; st.endedThisLine = true; } }
         result = true;
       } else {
         result = false;
@@ -87,19 +169,36 @@ export function runSedProgram(program: SedProgram, input: string, opts: SedRunOp
     return inst.negate ? !result : result;
   };
 
-  let emittedOnFinalLine = false;
+  const readerFor = (path: string): string[] => {
+    let reader = readers.get(path);
+    if (!reader) {
+      const text = host?.readFile(path) ?? null;
+      reader = text === null || text === '' ? [] : splitRecords(text, delimiter);
+      readers.set(path, reader);
+    }
+    return reader;
+  };
+
+  const readLine = (): SedLine => {
+    const line = lines[li]; li++; lineNo++;
+    currentFile = line.file;
+    return line;
+  };
+
   while (li < lines.length && !quit) {
-    const emittedBefore = out.length;
-    let PS = lines[li]; li++; lineNo++;
+    const first = readLine();
+    const PS: PatternSpace = { text: first.text, chomped: first.chomped };
     let tFlag = false;
     let deleted = false;
     const appendQueue: string[] = [];
     let pc = 0;
 
+    const jump = (label: string | undefined): number => (label ? (labels.get(label) ?? instructions.length) : instructions.length);
+
     while (pc < instructions.length) {
       const inst = instructions[pc];
       if (inst.name === '}' || inst.name === ':') { pc++; continue; }
-      const ok = applies(inst, pc, PS);
+      const ok = applies(inst, pc, PS.text);
       if (inst.name === '{') { pc = ok ? pc + 1 : inst.blockEnd! + 1; continue; }
       if (!ok) { pc++; continue; }
 
@@ -108,92 +207,143 @@ export function runSedProgram(program: SedProgram, input: string, opts: SedRunOp
           const re = inst.sub!.reuseLast ? lastRegex : inst.sub!.re;
           if (re) {
             lastRegex = re;
-            const r = substitute(PS, re, inst.sub!.replacement, inst.sub!.global, inst.sub!.nth);
-            if (r.changed) { PS = r.result; tFlag = true; if (inst.sub!.print) out.push(PS); }
+            const r = substitute(PS.text, re, inst.sub!.replacement, inst.sub!.global, inst.sub!.nth);
+            if (r.changed) {
+              PS.text = r.result; tFlag = true;
+              if (inst.sub!.print) stdout.pattern(PS.text, PS.chomped);
+              if (inst.sub!.writeFile) writeFile(inst.sub!.writeFile, PS);
+            }
           }
           pc++; break;
         }
-        case 'p': out.push(PS); pc++; break;
-        case 'P': out.push(PS.split('\n', 1)[0]); pc++; break;
+        case 'p': stdout.pattern(PS.text, PS.chomped); pc++; break;
+        case 'P': {
+          const cut = PS.text.indexOf(delimiter);
+          stdout.pattern(cut < 0 ? PS.text : PS.text.slice(0, cut), cut < 0 ? PS.chomped : true);
+          pc++; break;
+        }
         case 'd': deleted = true; pc = instructions.length; break;
         case 'D': {
-          const nl = PS.indexOf('\n');
+          const nl = PS.text.indexOf(delimiter);
           if (nl < 0) { deleted = true; pc = instructions.length; }
-          else { PS = PS.slice(nl + 1); pc = 0; }
+          else { PS.text = PS.text.slice(nl + 1); pc = 0; }
           break;
         }
         case 'n': {
-          if (!opts.quiet) out.push(PS);
-          if (isLastLine()) { deleted = true; quit = true; pc = instructions.length; break; }
-          PS = lines[li]; li++; lineNo++; pc++; break;
+          if (isLastLine()) { quit = true; pc = instructions.length; break; }
+          if (!opts.quiet) stdout.pattern(PS.text, PS.chomped);
+          for (const queued of appendQueue.splice(0)) stdout.raw(queued);
+          const next = readLine();
+          PS.text = next.text; PS.chomped = next.chomped; pc++; break;
         }
         case 'N': {
           if (isLastLine()) { pc = instructions.length; break; }
-          PS = PS + '\n' + lines[li]; li++; lineNo++; pc++; break;
+          for (const queued of appendQueue.splice(0)) stdout.raw(queued);
+          const next = readLine();
+          PS.text = PS.text + delimiter + next.text; PS.chomped = next.chomped; pc++; break;
         }
-        case 'g': PS = HS; pc++; break;
-        case 'G': PS = PS + '\n' + HS; pc++; break;
-        case 'h': HS = PS; pc++; break;
-        case 'H': HS = HS + '\n' + PS; pc++; break;
-        case 'x': { const t = PS; PS = HS; HS = t; pc++; break; }
-        case '=': out.push(String(lineNo)); pc++; break;
-        case 'z': PS = ''; pc++; break;
-        case 'l': out.push(formatL(PS)); pc++; break;
-        case 'F': out.push('-'); pc++; break;
-        case 'y': PS = transliterate(PS, inst.y!.from, inst.y!.to); pc++; break;
-        case 'a': appendQueue.push(inst.text ?? ''); pc++; break;
-        case 'i': out.push(inst.text ?? ''); pc++; break;
+        case 'g': PS.text = HS.text; PS.chomped = HS.chomped; pc++; break;
+        case 'G': PS.text = PS.text + delimiter + HS.text; PS.chomped = HS.chomped; pc++; break;
+        case 'h': HS = { text: PS.text, chomped: PS.chomped }; pc++; break;
+        case 'H': HS = { text: HS.text + delimiter + PS.text, chomped: PS.chomped }; pc++; break;
+        case 'x': { const t = { text: PS.text, chomped: PS.chomped }; PS.text = HS.text; PS.chomped = HS.chomped; HS = t; pc++; break; }
+        case '=': stdout.raw(`${lineNo}${delimiter}`); pc++; break;
+        case 'z': PS.text = ''; pc++; break;
+        case 'l': stdout.raw(formatL(PS.text, inst.width ?? lineWrap, delimiter)); pc++; break;
+        case 'F': stdout.raw(`${currentFile}${delimiter}`); pc++; break;
+        case 'y': PS.text = transliterate(PS.text, inst.y!.from, inst.y!.to); pc++; break;
+        case 'a': if (!inst.textless) appendQueue.push(`${inst.text ?? ''}\n`); pc++; break;
+        case 'i': if (!inst.textless) stdout.raw(`${inst.text ?? ''}\n`); pc++; break;
         case 'c': {
           deleted = true;
-          const endsHere = !inst.addr2 || ranges[pc].endedThisLine;
-          if (endsHere) out.push(inst.text ?? '');
+          const endsHere = !inst.addr2 || inst.negate || ranges[pc].endedThisLine;
+          if (endsHere && !inst.textless) stdout.raw(`${inst.text ?? ''}\n`);
           pc = instructions.length; break;
         }
-        case 'r': if (host) appendQueue.push(host.readFile(inst.text ?? '') ?? ''); pc++; break;
-        case 'w': if (host) host.appendFile(inst.text ?? '', PS + '\n'); pc++; break;
+        case 'r': if (host) { const content = host.readFile(inst.text ?? ''); if (content) appendQueue.push(content); } pc++; break;
+        case 'R': {
+          const record = readerFor(inst.text ?? '').shift();
+          if (record !== undefined) appendQueue.push(record);
+          pc++; break;
+        }
+        case 'w': writeFile(inst.text ?? '', PS); pc++; break;
+        case 'W': {
+          const cut = PS.text.indexOf(delimiter);
+          writeFile(inst.text ?? '', { text: PS.text, chomped: cut < 0 ? PS.chomped : true }, cut < 0 ? PS.text : PS.text.slice(0, cut));
+          pc++; break;
+        }
         case 'q': quit = true; exitCode = inst.exitCode ?? 0; pc = instructions.length; break;
-        case 'Q': quit = true; exitCode = inst.exitCode ?? 0; deleted = true; pc = instructions.length; break;
-        case 'b': pc = inst.text ? (labels.get(inst.text) ?? instructions.length) : instructions.length; break;
-        case 't': if (tFlag) { tFlag = false; pc = inst.text ? (labels.get(inst.text) ?? instructions.length) : instructions.length; } else pc++; break;
-        case 'T': if (!tFlag) { pc = inst.text ? (labels.get(inst.text) ?? instructions.length) : instructions.length; } else pc++; break;
+        case 'Q': quit = true; exitCode = inst.exitCode ?? 0; deleted = true; appendQueue.length = 0; pc = instructions.length; break;
+        case 'b': pc = jump(inst.text); break;
+        case 't': if (tFlag) { tFlag = false; pc = jump(inst.text); } else pc++; break;
+        case 'T': if (!tFlag) { pc = jump(inst.text); } else { tFlag = false; pc++; } break;
         default: pc++; break;
       }
     }
 
-    if (!opts.quiet && !deleted) out.push(PS);
-    for (const a of appendQueue) out.push(a);
-    if (li >= lines.length && out.length > emittedBefore) emittedOnFinalLine = true;
+    if (!opts.quiet && !deleted) stdout.pattern(PS.text, PS.chomped);
+    for (const a of appendQueue) stdout.raw(a);
   }
 
-  let output = out.join('\n');
-  if (out.length > 0 && !(emittedOnFinalLine && !opts.inputEndsNewline)) output += '\n';
-  return { output, exitCode };
+  return { output: stdout.text, stderr: stderr.text, exitCode };
 }
 
-function splitLines(input: string): string[] {
-  if (input === '') return [];
-  const lines = input.split('\n');
-  if (lines.length > 0 && lines[lines.length - 1] === '' && input.endsWith('\n')) lines.pop();
+function splitRecords(text: string, delimiter: string): string[] {
+  const records: string[] = [];
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(delimiter, from);
+    if (at < 0) { if (from < text.length) records.push(text.slice(from)); break; }
+    records.push(text.slice(from, at + 1));
+    from = at + 1;
+  }
+  return records;
+}
+
+function splitInputs(inputs: readonly SedInput[], delimiter: string): SedLine[] {
+  const lines: SedLine[] = [];
+  for (const input of inputs) {
+    if (input.text === '') continue;
+    const parts = input.text.split(delimiter);
+    const endsWithDelimiter = input.text.endsWith(delimiter);
+    if (endsWithDelimiter) parts.pop();
+    parts.forEach((text, index) => {
+      lines.push({ text, chomped: endsWithDelimiter || index < parts.length - 1, file: input.name });
+    });
+  }
   return lines;
 }
 
 function transliterate(s: string, from: string, to: string): string {
+  const source = [...from];
+  const target = [...to];
   let out = '';
   for (const ch of s) {
-    const idx = from.indexOf(ch);
-    out += idx >= 0 && idx < to.length ? to[idx] : ch;
+    const idx = source.indexOf(ch);
+    out += idx >= 0 && idx < target.length ? target[idx] : ch;
   }
   return out;
 }
 
-function formatL(s: string): string {
-  let out = '';
+const L_ESCAPES: Readonly<Record<string, string>> = {
+  '\\': '\\\\', '\u0007': '\\a', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\v': '\\v',
+};
+
+function formatL(s: string, lineWrap: number, delimiter: string): string {
+  const items: string[] = [];
   for (const ch of s) {
-    if (ch === '\\') out += '\\\\';
-    else if (ch === '\t') out += '\\t';
-    else if (ch === '\n') out += '\\n';
-    else if (ch === '\r') out += '\\r';
-    else out += ch;
+    const escape = L_ESCAPES[ch];
+    if (escape) { items.push(escape); continue; }
+    const code = ch.codePointAt(0)!;
+    if (code >= 0x20 && code < 0x7f) { items.push(ch); continue; }
+    items.push(...[...Buffer.from(ch, 'utf8')].map((byte) => `\\${byte.toString(8).padStart(3, '0')}`));
   }
-  return out + '$';
+  let out = '';
+  let width = 0;
+  for (const item of items) {
+    if (lineWrap > 0 && width + item.length > lineWrap - 1) { out += '\\\n'; width = 0; }
+    out += item;
+    width += item.length;
+  }
+  return `${out}$${delimiter}`;
 }
