@@ -1354,13 +1354,13 @@ describe('Cisco L2 Switch Command Suite', () => {
       expect(output.toLowerCase()).toContain('%'); // Only SVIs are allowed to have IP addresses on pure L2 switches
     });
 
-    it('156. should reject no switchport conversion commands on physical interfaces', async () => {
+    it('156. should accept no switchport on a physical interface of the Catalyst 3560', async () => {
       const { sw } = setupIsolatedSwitch();
       await sw.executeCommand('enable');
       await sw.executeCommand('configure terminal');
       await sw.executeCommand('interface FastEthernet0/2');
       const output = await sw.executeCommand('no switchport');
-      expect(output.toLowerCase()).toContain('%'); // L3 interface mode not supported on typical Layer 2 Switch
+      expect(output).not.toContain('%');
     });
 
     it('157. should reject configuring sub-interfaces on physical L2 ports (interface FastEthernet0/2.10)', async () => {

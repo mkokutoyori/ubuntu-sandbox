@@ -63,7 +63,8 @@ describe('ls > file / ls >> file — redirected stdout forces one entry per line
     await pc.executeCommand('ls > out.txt');
     const out = await pc.executeCommand('cat out.txt');
     const lines = out.split('\n').filter(l => l.length > 0);
-    expect(lines.length).toBe(12);
+    expect(lines.length).toBe(13);
+    expect(lines).toContain('out.txt');
   });
 
   it('a plain terminal ls right after is still multi-column (no lingering state)', async () => {
