@@ -1782,8 +1782,7 @@ function ipNeigh(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): 
   if (sub === 'help') {
     return 'Usage: ip neigh { add | del | flush | show } [ dev DEV ] [ lladdr LLADDR ] [ nud STATE ] ADDRESS';
   }
-  // bare call — treat as show
-  return ipNeighShow(ctx, args, opts);
+  return `Command "${sub}" is unknown, try "ip neigh help".`;
 }
 
 function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): string {
@@ -1793,7 +1792,9 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) { devFilter = args[++i]; }
     else if (/^\d{1,3}(\.\d{1,3}){3}$/.test(args[i])) addr = args[i];
+    else return `Error: any valid prefix is expected rather than "${args[i]}".`;
   }
+  if (devFilter && !ctx.getInterfaceInfo(devFilter)) return `Cannot find device "${devFilter}"`;
 
   let neighbors = ctx.getNeighborTable();
   if (devFilter) neighbors = neighbors.filter(n => n.iface === devFilter);

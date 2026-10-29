@@ -4281,7 +4281,8 @@ is the canvas's current selection or pan/zoom, by design.
 ## Reds measured at base outside the network-v2 sweep (new_firewall)
 
 `src/__tests__/unit/new_firewall/fortigate-battery-06-ipv6-ospf-bgp-ztna.test.ts`
-(32 cases), `fortigate-battery-09-tls-crypto-pki.test.ts` (44 cases),
+(32 cases), `fortigate-battery-05-ha-vrf-dpi-radius.test.ts` (34 cases),
+`fortigate-battery-09-tls-crypto-pki.test.ts` (44 cases),
 `fortigate-battery-10-sdwan-vxlan-pqc.test.ts` (28 cases) and
 `fortigate-battery-11-hybrid-cloud-evpn-k8s.test.ts` (28 cases)
 fail on a tree with no change from the CLI hardening series (checked by
