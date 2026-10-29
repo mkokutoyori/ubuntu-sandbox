@@ -4351,8 +4351,8 @@ diagnosed.
 `probe-linux-kerberos-tools-answer-like-mit.test.ts` (5) also fail identically
 with the working tree stashed.
 
-`audit/vacl-mac-clause.test.ts` (1), `network-v2/crypto-pki-trustpool.test.ts` (1),
-`nss-resolution-unified.test.ts` (1) also fail identically with the working tree stashed.
+`audit/vacl-mac-clause.test.ts` (1) and `network-v2/crypto-pki-trustpool.test.ts` (1)
+also fail identically with the working tree stashed.
 
 `network-v2/firewall/architecture-guards.test.ts` (G8: two schema tables share
 a render rank, 96 distinct ranks for 97 tables) and
