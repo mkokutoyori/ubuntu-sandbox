@@ -127,6 +127,51 @@ const PKILL_USAGE = [
   ''
 ].join('\n');
 
+const FILE_USAGE = [
+  "Usage: file [-bcCdEhikLlNnprsSvzZ0] [--apple] [--extension] [--mime-encoding]",
+  "            [--mime-type] [-e <testname>] [-F <separator>]  [-f <namefile>]",
+  "            [-m <magicfiles>] [-P <parameter=value>] [--exclude-quiet]",
+  "            <file> ...",
+  "       file -C [-m <magicfiles>]",
+  "       file [--help]"
+].join('\n');
+
+const HOSTNAME_USAGE = [
+  "Usage: hostname [-b] {hostname|-F file}         set host name (from file)",
+  "       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name",
+  "       hostname                                 display host name",
+  "",
+  "       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)",
+  "       {yp,nis,}domainname                      display NIS domain name",
+  "",
+  "       dnsdomainname                            display dns domain name",
+  "",
+  "       hostname -V|--version|-h|--help          print info and exit",
+  "",
+  "Program name:",
+  "       {yp,nis,}domainname=hostname -y",
+  "       dnsdomainname=hostname -d",
+  "",
+  "Program options:",
+  "    -a, --alias            alias names",
+  "    -A, --all-fqdns        all long host names (FQDNs)",
+  "    -b, --boot             set default hostname if none available",
+  "    -d, --domain           DNS domain name",
+  "    -f, --fqdn, --long     long host name (FQDN)",
+  "    -F, --file             read host name or NIS domain name from given file",
+  "    -i, --ip-address       addresses for the host name",
+  "    -I, --all-ip-addresses all addresses for the host",
+  "    -s, --short            short host name",
+  "    -y, --yp, --nis        NIS/YP domain name",
+  "",
+  "Description:",
+  "   This command can get or set the host name or the NIS domain name. You can",
+  "   also get the DNS domain or the FQDN (fully qualified domain name).",
+  "   Unless you are using bind or NIS for host lookups you can change the",
+  "   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is",
+  "   part of the FQDN) in the /etc/hosts file."
+].join('\n');
+
 const GREP_USAGE = 'Usage: grep [OPTION]... PATTERNS [FILE]...';
 
 const GREP_OPTIONS: GnuOptionSet = {
@@ -488,6 +533,33 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  file: {
+    optstring: 'bcCdEhikLlNnprsSvzZ0e:F:f:m:P:',
+    long: [
+      flag('brief', 'b'), flag('checking-printout', 'c'), flag('compile', 'C'), flag('debug', 'd'),
+      valued('exclude', 'e'), flag('exclude-quiet'), flag('extension'), valued('files-from', 'f'),
+      valued('separator', 'F'), flag('keep-going', 'k'), flag('list', 'l'), valued('magic-file', 'm'),
+      flag('mime', 'i'), flag('mime-encoding'), flag('mime-type'), flag('no-buffer', 'n'),
+      flag('no-dereference', 'h'), flag('dereference', 'L'), flag('no-pad', 'N'), valued('parameter', 'P'),
+      flag('preserve-date', 'p'), flag('print0', '0'), flag('raw', 'r'), flag('special-files', 's'),
+      flag('uncompress', 'z'), flag('uncompress-noreport', 'Z'), flag('apple'), flag('help'), flag('version', 'v'),
+    ],
+    operands: true,
+    usage: FILE_USAGE,
+    trailer: '',
+  },
+  hostname: {
+    optstring: 'aAbdfF:iIsyhV',
+    long: [
+      flag('alias', 'a'), flag('all-fqdns', 'A'), flag('boot', 'b'), flag('domain', 'd'), flag('fqdn', 'f'),
+      flag('long', 'f'), valued('file', 'F'), flag('ip-address', 'i'), flag('all-ip-addresses', 'I'),
+      flag('short', 's'), flag('yp', 'y'), flag('nis', 'y'), flag('help', 'h'), flag('version', 'V'),
+    ],
+    operands: true,
+    usage: HOSTNAME_USAGE,
+    trailer: '',
+    failureStatus: 255,
+  },
   pgrep: {
     optstring: 'd:lavwcfg:G:inoO:P:s:t:u:U:xF:Lr:AVh',
     long: [
@@ -661,7 +733,7 @@ export function refuseUnknownGnuOption(command: string, args: readonly string[])
     }
     if (item.kind === 'invalid' || item.kind === 'unrecognized'
       || item.kind === 'missing-argument' || item.kind === 'needless-argument') {
-      const lines = [getoptDiagnostic(program, item), ...(set.usage === undefined ? [] : [set.usage]), trailer];
+      const lines = [getoptDiagnostic(program, item), ...(set.usage === undefined ? [] : [set.usage]), ...(trailer === '' ? [] : [trailer])];
       return { output: lines.join('\n'), exitCode: set.failureStatus ?? 1 };
     }
   }

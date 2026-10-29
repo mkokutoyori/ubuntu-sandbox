@@ -4354,7 +4354,7 @@ Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `
 
 ## Linux commands still silent on an unknown option (wording unsourced)
 
-Measured with `<cmd> --zorglub` against the real binaries of the dev container (lsof 4.95, lsattr, file and hostname; pgrep/pkill are done): the simulator is silent where the real programs print `unrecognized option` plus a usage block (file: usage block, status 1; hostname: usage block, status 255; lsattr: one `invalid option -- '-'` per letter; lsof: its own `illegal option character` lines). Not written yet: each usage block is long and must be copied from the container's version, which is newer (Noble) than the Ubuntu 22.04 the simulator targets.
+Measured with `<cmd> --zorglub` against the real binaries of the dev container (lsof 4.95 and lsattr; pgrep, pkill, file and hostname are done): the simulator is silent where the real programs print `unrecognized option` plus a usage block (lsattr: one `invalid option -- '-'` per letter; lsof: its own `illegal option character` lines). Not written yet: each usage block is long and must be copied from the container's version, which is newer (Noble) than the Ubuntu 22.04 the simulator targets.
 
 ## Huawei VRP: `Too many parameters` has no echoed line and caret
 
@@ -4363,3 +4363,7 @@ Measured with `<cmd> --zorglub` against the real binaries of the dev container (
 ## Huawei VRP: config commands that take any trailing word
 
 Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, `arp static 1.1.1.1 0000-0000-0001`, `nat static global 1.1.1.1 inside 2.2.2.2`, `bfd` and `user privilege level 3` run as if the word were not typed. Each has optional tails on a real VRP (`privilege level`, `vid`/interface, `netmask`/`vrrp`...) whose full grammar was not reachable, so a ceiling would refuse valid forms.
+
+## file and hostname: options accepted without effect
+
+`file` evaluates -b, -i, --mime and --mime-type (ASCII text, empty, directory, symlink, special files, shell scripts only); -L, -z, -f, -F, -0, --extension, --apple and the rest are accepted and ignored. `hostname` refuses unknown options like net-tools but still ignores -F (read from a file), -b, -a and -y/--yp/--nis.

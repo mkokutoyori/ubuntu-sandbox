@@ -2,7 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
-import { asStderrResult, refuseUnknownGnuOption } from './GnuOptionGuard';
+import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -6828,9 +6828,25 @@ export class LinuxCommandExecutor {
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (!targets.length) return { output: 'Usage: file [-options] file...', exitCode: 1 };
-        return { output: targets.map(t => this.describeFile(t)).join('\n'), exitCode: 0 };
+        const targets: string[] = [];
+        let brief = false;
+        let mime: 'none' | 'type' | 'full' = 'none';
+        for (const item of shortOptions(args, gnuOptionSet('file').optstring, gnuOptionSet('file').long)) {
+          if (item.kind === 'operand') targets.push(item.value);
+          else if (item.kind === 'option') {
+            if (item.letter === 'b') brief = true;
+            else if (item.letter === 'i') mime = 'full';
+            else if (item.long === 'mime-type') mime = 'type';
+          }
+        }
+        if (!targets.length) return { output: 'Usage: file [-bcCdEhikLlNnprsSvzZ0] [--apple] [--extension] [--mime-encoding]\n            [--mime-type] [-e <testname>] [-F <separator>]  [-f <namefile>]\n            [-m <magicfiles>] [-P <parameter=value>] [--exclude-quiet]\n            <file> ...\n       file -C [-m <magicfiles>]\n       file [--help]', exitCode: 1 };
+        const render = (target: string): string => {
+          const described = this.describeFile(target);
+          const description = described.slice(target.length + 2);
+          const shown = mime === 'none' ? description : mimeOfDescription(description, mime === 'full');
+          return brief ? shown : `${target}: ${shown}`;
+        };
+        return { output: targets.map(render).join('\n'), exitCode: 0 };
       }
       case 'md5sum':
       case 'sha256sum':
@@ -9256,6 +9272,19 @@ export class LinuxCommandExecutor {
     if (/[\x00-\x08\x0e-\x1f]/.test(content)) return `${target}: data`;
     return `${target}: ASCII text`;
   }
+}
+
+function mimeOfDescription(description: string, withCharset: boolean): string {
+  let type = 'application/octet-stream';
+  let text = false;
+  if (description === 'ASCII text') { type = 'text/plain'; text = true; }
+  else if (description === 'empty') type = 'inode/x-empty';
+  else if (description === 'directory') type = 'inode/directory';
+  else if (description.startsWith('symbolic link')) type = 'inode/symlink';
+  else if (description === 'character special') type = 'inode/chardevice';
+  else if (description === 'socket') type = 'inode/socket';
+  else if (description.endsWith('script, ASCII text executable')) { type = 'text/x-shellscript'; text = true; }
+  return withCharset ? `${type}; charset=${text ? 'us-ascii' : 'binary'}` : type;
 }
 
 // ─── small parsing helpers (kept private to this file) ────────────────
