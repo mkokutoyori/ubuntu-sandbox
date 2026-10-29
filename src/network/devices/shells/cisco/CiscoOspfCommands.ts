@@ -19,6 +19,9 @@ import { isAreaId, isBackboneAreaId, type LSAHeader, type OSPFNeighborState, typ
 import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
 import { refuseUnknownSelector } from './showSelectors';
 
+const refuseUnknownLsdbSelector = (args: readonly string[]): void =>
+  refuseUnknownSelector(args, { keywords: ['detail', 'self-originate', 'adv-router'], addresses: true, max: 3 });
+
 import { CISCO_ERRORS } from '../cli-utils';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
 import { CommandTrie } from '../CommandTrie';
@@ -1797,10 +1800,22 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
   });
   trie.register('show ip ospf database', 'Display OSPF link-state database', () => showIpOspfDatabase(getRouter()));
   trie.register('show ip ospf database database-summary', 'Display LSDB counts', () => showIpOspfDatabaseSummaryCounts(getRouter()));
-  trie.registerGreedy('show ip ospf database router', 'Display Router LSAs', (args) => showIpOspfDatabaseRouter(getRouter(), args[0] === 'detail'));
-  trie.registerGreedy('show ip ospf database network', 'Display Network LSAs', (args) => showIpOspfDatabaseNetwork(getRouter(), args[0] === 'detail'));
-  trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail'));
-  trie.registerGreedy('show ip ospf database external', 'Display external LSAs', (args) => showIpOspfDatabaseExternal(getRouter(), args));
+  trie.registerGreedy('show ip ospf database router', 'Display Router LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseRouter(getRouter(), args[0] === 'detail');
+  });
+  trie.registerGreedy('show ip ospf database network', 'Display Network LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseNetwork(getRouter(), args[0] === 'detail');
+  });
+  trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail');
+  });
+  trie.registerGreedy('show ip ospf database external', 'Display external LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseExternal(getRouter(), args);
+  });
   trie.registerGreedy('show ip ospf interface', 'Display OSPF interface information', (args) => {
     refuseUnknownSelector(args, { keywords: ['brief'], interfaces: true, max: 1 });
     if (args[0] === 'brief') return showIpOspfInterfaceBrief(getRouter());
