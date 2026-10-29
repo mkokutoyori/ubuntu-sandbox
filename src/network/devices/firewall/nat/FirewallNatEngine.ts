@@ -551,11 +551,11 @@ function portMatches(
 export function clearVdomTranslations(vdoms: Iterable<{
   sessions: { view(): { all(): readonly FirewallSession[] }; close(s: FirewallSession, r: 'clear'): void };
   nat: { release(translation: NonNullable<FirewallSession['translation']>): void };
-}>): number {
+}>, matches: (session: FirewallSession) => boolean = () => true): number {
   let cleared = 0;
   for (const vdom of vdoms) {
     for (const session of vdom.sessions.view().all()) {
-      if (session.translation === undefined) continue;
+      if (session.translation === undefined || !matches(session)) continue;
       vdom.nat.release(session.translation);
       vdom.sessions.close(session, 'clear');
       cleared++;

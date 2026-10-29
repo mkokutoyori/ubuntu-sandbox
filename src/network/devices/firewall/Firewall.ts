@@ -1777,7 +1777,9 @@ export class Firewall extends Equipment {
     }, event, facts);
   }
 
-  clearTranslations(): number { return clearVdomTranslations(this.vdoms.all()); }
+  clearTranslations(matches?: (session: FirewallSession) => boolean): number {
+    return clearVdomTranslations(this.vdoms.all(), matches);
+  }
 
   setSchedule(schedule: ScheduleObject, vdom?: string): boolean {
     return this.getVdom(vdom).schedules.upsert(schedule);
