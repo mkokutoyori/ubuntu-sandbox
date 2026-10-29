@@ -4378,3 +4378,9 @@ date, base64, md5sum/sha256sum/cksum, rev, nl, fold, fmt, column, paste, comm,
 split, truncate, seq-less forms, which, passwd, sysctl, awk, lsof. Their option
 sets were not written down here: each needs its own table and a run of the
 tests that use it.
+
+## PowerShell: a built-in cmdlet ignores an unknown named parameter
+
+Measured: `Get-Process -Zorglub`, `Get-Service -Zorglub`, `Get-ChildItem -Zorglub`, `Get-Date -Zorglub`, `Get-NetIPAddress -Zorglub`, `Get-LocalUser -Zorglub` and `Get-Random -Zorglub` all run as if the parameter had not been typed; Windows PowerShell answers `A parameter cannot be found that matches parameter name 'Zorglub'.` (`NamedParameterNotFound`). Script functions with `param()` already refuse it (`PSParameterBinder.resolveName`).
+
+Why it is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion and is incomplete. Making `resolveParameterPrefixes` refuse a key absent from it broke 11 cases in `src/__tests__/unit/powershell` (Format-Table `-Width`, New-Item `-Target`, New-LocalUser `-NoPassword`, `-Force` on the Add-LocalGroupMember / Register-ScheduledTask family…), and a scan of the cmdlet classes finds ~40 more names read through `ctx.named[...]` and missing from their own list. The refusal can only be turned on once each cmdlet's list is audited against its handler, so the list becomes the single authority for both completion and binding.
