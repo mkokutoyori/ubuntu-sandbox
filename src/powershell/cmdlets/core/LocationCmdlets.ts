@@ -211,6 +211,7 @@ export class GetLocationCmdlet implements ICmdlet {
   readonly name = 'get-location';
   readonly displayName = 'Get-Location';
   readonly parameters = ['PSProvider', 'PSDrive', 'Stack', 'StackName'] as const;
+  readonly closedParameterSet = true as const;
   readonly switchParameters = ['Stack'] as const;
   readonly aliases = ['pwd', 'gl'] as const;
 
