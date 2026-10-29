@@ -9,6 +9,8 @@ import { runAwk, type AwkHost } from './awk';
 import { runSed, type SedFileIO } from './sed';
 import { compilePosix } from './regex/PosixRegex';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { shortOptions } from './commands/Getopt';
+import { GNU_OPTION_SETS } from './GnuOptionGuard';
 
 export type GrepVariant = 'grep' | 'egrep' | 'fgrep';
 
@@ -19,6 +21,8 @@ interface GrepFlags {
   forceFilename: boolean | null; extended: boolean; fixed: boolean; perl: boolean;
   maxCount: number; after: number; before: number;
   includeGlobs: string[]; excludeGlobs: string[];
+  excludeDirGlobs: string[];
+  nullSeparator: boolean; byteOffset: boolean; label: string; directories: 'read' | 'skip' | 'recurse';
   /**
    * `--color` etait analyse puis JETE — un `continue` sans rien
    * stocker — donc `grep --color=always` rendait exactement la meme
@@ -92,6 +96,88 @@ function compilePcre(
   return new RegExp(p, flags);
 }
 
+const GREP_VERSION = `grep (GNU grep) 3.7
+Copyright (C) 2021 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Mike Haertel and others; see
+<https://git.sv.gnu.org/cgit/grep.git/tree/AUTHORS>.`;
+
+const GREP_HELP = `Usage: grep [OPTION]... PATTERNS [FILE]...
+Search for PATTERNS in each FILE.
+Example: grep -i 'hello world' menu.h main.c
+PATTERNS can contain multiple patterns separated by newlines.
+
+Pattern selection and interpretation:
+  -E, --extended-regexp     PATTERNS are extended regular expressions
+  -F, --fixed-strings       PATTERNS are strings
+  -G, --basic-regexp        PATTERNS are basic regular expressions
+  -P, --perl-regexp         PATTERNS are Perl regular expressions
+  -e, --regexp=PATTERNS     use PATTERNS for matching
+  -f, --file=FILE           take PATTERNS from FILE
+  -i, --ignore-case         ignore case distinctions in patterns and data
+      --no-ignore-case      do not ignore case distinctions (default)
+  -w, --word-regexp         match only whole words
+  -x, --line-regexp         match only whole lines
+  -z, --null-data           a data line ends in 0 byte, not newline
+
+Miscellaneous:
+  -s, --no-messages         suppress error messages
+  -v, --invert-match        select non-matching lines
+  -V, --version             display version information and exit
+      --help                display this help text and exit
+
+Output control:
+  -m, --max-count=NUM       stop after NUM selected lines
+  -b, --byte-offset         print the byte offset with output lines
+  -n, --line-number         print line number with output lines
+      --line-buffered       flush output on every line
+  -H, --with-filename       print file name with output lines
+  -h, --no-filename         suppress the file name prefix on output
+      --label=LABEL         use LABEL as the standard input file name prefix
+  -o, --only-matching       show only nonempty parts of lines that match
+  -q, --quiet, --silent     suppress all normal output
+      --binary-files=TYPE   assume that binary files are TYPE;
+                            TYPE is 'binary', 'text', or 'without-match'
+  -a, --text                equivalent to --binary-files=text
+  -I                        equivalent to --binary-files=without-match
+  -d, --directories=ACTION  how to handle directories;
+                            ACTION is 'read', 'recurse', or 'skip'
+  -D, --devices=ACTION      how to handle devices, FIFOs and sockets;
+                            ACTION is 'read' or 'skip'
+  -r, --recursive           like --directories=recurse
+  -R, --dereference-recursive  likewise, but follow all symlinks
+      --include=GLOB        search only files that match GLOB (a file pattern)
+      --exclude=GLOB        skip files that match GLOB
+      --exclude-from=FILE   skip files that match any file pattern from FILE
+      --exclude-dir=GLOB    skip directories that match GLOB
+  -L, --files-without-match  print only names of FILEs with no selected lines
+  -l, --files-with-matches  print only names of FILEs with selected lines
+  -c, --count               print only a count of selected lines per FILE
+  -T, --initial-tab         make tabs line up (if needed)
+  -Z, --null                print 0 byte after FILE name
+
+Context control:
+  -B, --before-context=NUM  print NUM lines of leading context
+  -A, --after-context=NUM   print NUM lines of trailing context
+  -C, --context=NUM         print NUM lines of output context
+  -NUM                      same as --context=NUM
+      --color[=WHEN],
+      --colour[=WHEN]       use markers to highlight the matching strings;
+                            WHEN is 'always', 'never', or 'auto'
+  -U, --binary              do not strip CR characters at EOL (MSDOS/Windows)
+
+When FILE is '-', read standard input.  With no FILE, read '.' if
+recursive, '-' otherwise.  With fewer than two FILEs, assume -h.
+Exit status is 0 if any line is selected, 1 otherwise;
+if any error occurs and -q is not given, the exit status is 2.
+
+Report bugs to: bug-grep@gnu.org
+GNU grep home page: <https://www.gnu.org/software/grep/>
+General help using GNU software: <https://www.gnu.org/gethelp/>`;
+
 export function cmdGrep(
   ctx: ShellContext, args: string[], stdin?: string, variant: GrepVariant = 'grep',
 ): { output: string; exitCode: number } {
@@ -101,85 +187,75 @@ export function cmdGrep(
     wholeLine: false, onlyMatching: false, quiet: false, suppressErrors: false,
     forceFilename: null, extended: variant === 'egrep', fixed: variant === 'fgrep', perl: false,
     maxCount: Infinity, after: 0, before: 0, includeGlobs: [], excludeGlobs: [], color: false,
+    excludeDirGlobs: [], nullSeparator: false, byteOffset: false, label: '(standard input)', directories: 'read',
   };
   const patterns: string[] = [];
-  const files: string[] = [];
+  const operands: string[] = [];
   let patternGiven = false;
+  let previousWasDigit = false;
+  const set = GNU_OPTION_SETS.grep;
 
-  let i = 0;
-  for (; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--') { i++; break; }
-    if (a === '-e' || a === '--regexp') { patterns.push(args[++i] ?? ''); patternGiven = true; continue; }
-    if (a.startsWith('--regexp=')) { patterns.push(a.slice(9)); patternGiven = true; continue; }
-    if (a === '-f' || a === '--file') { addPatternsFromFile(ctx, args[++i] ?? '', patterns); patternGiven = true; continue; }
-    if (a.startsWith('--file=')) { addPatternsFromFile(ctx, a.slice(7), patterns); patternGiven = true; continue; }
-    if (a === '-m' || a === '--max-count') { fl.maxCount = parseInt(args[++i], 10) || 0; continue; }
-    if (a.startsWith('--max-count=')) { fl.maxCount = parseInt(a.slice(12), 10) || 0; continue; }
-    if (a === '-A' || a === '--after-context') { fl.after = parseInt(args[++i], 10) || 0; continue; }
-    if (a === '-B' || a === '--before-context') { fl.before = parseInt(args[++i], 10) || 0; continue; }
-    if (a === '-C' || a === '--context') { const n = parseInt(args[++i], 10) || 0; fl.after = n; fl.before = n; continue; }
-    if (a.startsWith('--include=')) { fl.includeGlobs.push(a.slice(10)); continue; }
-    if (a.startsWith('--exclude=')) { fl.excludeGlobs.push(a.slice(10)); continue; }
-    // `never` eteint, tout le reste allume. `auto` colore parce que la
-    // sortie de ce simulateur VA a un terminal : repondre non serait
-    // faux dans le cas courant, et le cas tuyau n'est pas distinguable
-    // ici.
-    if (a.startsWith('--color') || a.startsWith('--colour')) {
-      const valeur = a.includes('=') ? a.slice(a.indexOf('=') + 1) : 'auto';
-      fl.color = valeur !== 'never' && valeur !== 'none';
-      continue;
+  for (const item of shortOptions(args, set.optstring, set.long)) {
+    if (item.kind === 'operand') { operands.push(item.value); previousWasDigit = false; continue; }
+    if (item.kind !== 'option') continue;
+    const value = item.argument ?? '';
+    const isDigit = /^[0-9]$/.test(item.letter);
+    if (isDigit) {
+      const digits = (previousWasDigit ? String(fl.after) : '') + item.letter;
+      fl.after = fl.before = parseInt(digits, 10);
     }
-    if (a === '--line-number') { fl.lineNumbers = true; continue; }
-    if (a === '--ignore-case') { fl.caseInsensitive = true; continue; }
-    if (a === '--invert-match') { fl.invert = true; continue; }
-    if (a === '--word-regexp') { fl.wholeWord = true; continue; }
-    if (a === '--line-regexp') { fl.wholeLine = true; continue; }
-    if (a === '--only-matching') { fl.onlyMatching = true; continue; }
-    if (a === '--count') { fl.countOnly = true; continue; }
-    if (a === '--quiet' || a === '--silent') { fl.quiet = true; continue; }
-    if (a === '--no-messages') { fl.suppressErrors = true; continue; }
-    if (a === '--recursive') { fl.recursive = true; continue; }
-    if (a === '--fixed-strings') { fl.fixed = true; continue; }
-    if (a === '--extended-regexp') { fl.extended = true; continue; }
-    if (a === '--basic-regexp') { fl.extended = false; continue; }
-    if (a.startsWith('-') && a.length > 1 && !a.startsWith('--')) {
-      let at = 1;
-      while (at < a.length) {
-        const flag = a[at];
-        if (/[0-9]/.test(flag)) {
-          let end = at;
-          while (end < a.length && /[0-9]/.test(a[end])) end++;
-          fl.after = fl.before = parseInt(a.slice(at, end), 10);
-          at = end;
-          continue;
-        }
-        if ('ABCmefdD'.includes(flag)) {
-          const attached = a.slice(at + 1);
-          const value = attached !== '' ? attached : (args[++i] ?? '');
-          if (flag === 'A') fl.after = parseInt(value, 10) || 0;
-          else if (flag === 'B') fl.before = parseInt(value, 10) || 0;
-          else if (flag === 'C') { fl.after = parseInt(value, 10) || 0; fl.before = fl.after; }
-          else if (flag === 'm') fl.maxCount = parseInt(value, 10) || 0;
-          else if (flag === 'e') { patterns.push(value); patternGiven = true; }
-          else if (flag === 'f') { addPatternsFromFile(ctx, value, patterns); patternGiven = true; }
+    previousWasDigit = isDigit;
+    if (isDigit) continue;
+    if (item.letter === '') {
+      switch (item.long) {
+        case 'help': return { output: GREP_HELP, exitCode: 0 };
+        case 'no-ignore-case': fl.caseInsensitive = false; break;
+        case 'color': case 'colour': fl.color = !['never', 'no', 'none'].includes(item.argument ?? 'auto'); break;
+        case 'label': fl.label = value; break;
+        case 'exclude': fl.excludeGlobs.push(value); break;
+        case 'include': fl.includeGlobs.push(value); break;
+        case 'exclude-dir': fl.excludeDirGlobs.push(value); break;
+        case 'exclude-from': {
+          const text = ctx.vfs.readFile(ctx.vfs.normalizePath(value, ctx.cwd));
+          if (text === null) return { output: `grep: ${value}: No such file or directory`, exitCode: 2 };
+          fl.excludeGlobs.push(...splitInputLines(text));
           break;
         }
-        applyShortFlags(flag, fl);
-        at++;
+        default: break;
       }
       continue;
     }
-    if (a.startsWith('--')) continue; // unknown long option
-    if (!patternGiven) { patterns.push(a); patternGiven = true; continue; }
-    files.push(...expandGlob(ctx, a));
+    switch (item.letter) {
+      case 'e': patterns.push(value); patternGiven = true; break;
+      case 'f': {
+        const text = ctx.vfs.readFile(ctx.vfs.normalizePath(value, ctx.cwd));
+        if (text === null) return { output: `grep: ${value}: No such file or directory`, exitCode: 2 };
+        addPatternsFromFile(ctx, value, patterns);
+        patternGiven = true;
+        break;
+      }
+      case 'm': fl.maxCount = parseInt(value, 10) || 0; break;
+      case 'A': fl.after = parseInt(value, 10) || 0; break;
+      case 'B': fl.before = parseInt(value, 10) || 0; break;
+      case 'C': fl.after = fl.before = parseInt(value, 10) || 0; break;
+      case 'd':
+        if (value !== 'read' && value !== 'skip' && value !== 'recurse') return { output: `grep: invalid argument '${value}' for '--directories'\nValid arguments are:\n  - 'read'\n  - 'recurse'\n  - 'skip'\nUsage: grep [OPTION]... PATTERNS [FILE]...\nTry 'grep --help' for more information.`, exitCode: 2 };
+        fl.directories = value;
+        if (value === 'recurse') fl.recursive = true;
+        break;
+      case 'y': fl.caseInsensitive = true; break;
+      case 'Z': fl.nullSeparator = true; break;
+      case 'b': fl.byteOffset = true; break;
+      case 'V': return { output: GREP_VERSION, exitCode: 0 };
+      default: applyShortFlags(item.letter, fl);
+    }
   }
-  for (; i < args.length; i++) {
-    if (!patternGiven) { patterns.push(args[i]); patternGiven = true; continue; }
-    files.push(...expandGlob(ctx, args[i]));
-  }
+  const files: string[] = [];
+  const remaining = [...operands];
+  if (!patternGiven && remaining.length > 0) { patterns.push(remaining.shift() as string); patternGiven = true; }
+  for (const operand of remaining) files.push(...expandGlob(ctx, operand));
 
-  if (!patternGiven) return { output: 'Usage: grep [OPTION]... PATTERN [FILE]...', exitCode: 2 };
+  if (!patternGiven) return { output: "Usage: grep [OPTION]... PATTERNS [FILE]...\nTry 'grep --help' for more information.", exitCode: 2 };
 
   const matchers = patterns.map(p => fl.perl
     ? compilePcre(p, { ignoreCase: fl.caseInsensitive, wholeWord: fl.wholeWord, wholeLine: fl.wholeLine, global: true })
@@ -201,7 +277,7 @@ export function cmdGrep(
 
   if (files.length === 0) {
     const lines = splitInputLines(stdin ?? '');
-    const n = grepLines(lines, matchers, fl, false, '', lineMatches, results);
+    const n = grepLines(lines, matchers, fl, fl.forceFilename === true, fl.label, lineMatches, results);
     if (n > 0) anyMatch = true;
     if (fl.quiet) return { output: '', exitCode: anyMatch ? 0 : 1 };
     return { output: results.join('\n'), exitCode: anyMatch ? 0 : 1 };
@@ -210,7 +286,8 @@ export function cmdGrep(
   const fileList: string[] = [];
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    if (fl.recursive && ctx.vfs.getType(absPath) === 'directory') collectFiles(ctx, absPath, f, fileList);
+    if (fl.recursive && ctx.vfs.getType(absPath) === 'directory') collectFiles(ctx, absPath, f, fileList, fl.excludeDirGlobs);
+    else if (fl.directories === 'skip' && ctx.vfs.getType(absPath) === 'directory') continue;
     else fileList.push(f);
   }
   const filtered = fileList.filter(f => includeExcludeOk(baseName(f), fl));
@@ -240,6 +317,9 @@ export function cmdGrep(
   }
 
   const exitCode = errors.length > 0 ? 2 : anyMatch ? 0 : 1;
+  if (fl.nullSeparator && (fl.filesOnly || fl.filesWithout)) {
+    return { output: [...errors.map((line) => `${line}\n`), ...results.map((name) => `${name}\0`)].join(''), exitCode };
+  }
   return { output: [...errors, ...results].join('\n'), exitCode };
 }
 
@@ -318,7 +398,7 @@ function grepLines(
 
   if (fl.countOnly) {
     const count = matchIndices.length.toString();
-    results.push(showFilename ? `${filename}:${count}` : count);
+    results.push(showFilename ? `${filename}${fl.nullSeparator ? '\0' : ':'}${count}` : count);
     return matchIndices.length;
   }
 
@@ -328,12 +408,17 @@ function grepLines(
   }
   const sortedShow = [...showSet].sort((a, b) => a - b);
   const matchSet = new Set(matchIndices);
+  const offsets: number[] = [];
+  if (fl.byteOffset) {
+    let at = 0;
+    for (const line of lines) { offsets.push(at); at += fileTextToBytes(line).length + 1; }
+  }
 
   for (const idx of sortedShow) {
     const line = lines[idx];
     const isMatch = matchSet.has(idx);
-    const prefix = showFilename ? `${filename}:` : '';
-    const lineNum = fl.lineNumbers ? `${idx + 1}:` : '';
+    const prefix = showFilename ? `${filename}${fl.nullSeparator ? '\0' : ':'}` : '';
+    const lineNum = (fl.lineNumbers ? `${idx + 1}:` : '') + (fl.byteOffset && !(fl.onlyMatching && isMatch && !fl.invert) ? `${offsets[idx]}:` : '');
     if (fl.onlyMatching && isMatch && !fl.invert) {
       const hits: { index: number; text: string }[] = [];
       for (const re of matchers) {
@@ -347,7 +432,8 @@ function grepLines(
       hits.sort((a, b) => a.index - b.index);
       for (const h of hits) {
         const texte = fl.color ? GREP_MATCH_ON + h.text + GREP_MATCH_OFF : h.text;
-        results.push(`${prefix}${lineNum}${texte}`);
+        const hitOffset = fl.byteOffset ? `${offsets[idx] + fileTextToBytes(line.slice(0, h.index)).length}:` : '';
+        results.push(`${prefix}${lineNum}${hitOffset}${texte}`);
       }
     } else {
       // Une ligne de CONTEXTE (-A/-B) ne porte aucune correspondance :
@@ -360,7 +446,7 @@ function grepLines(
   return matchIndices.length;
 }
 
-function collectFiles(ctx: ShellContext, absDir: string, displayDir: string, out: string[]): void {
+function collectFiles(ctx: ShellContext, absDir: string, displayDir: string, out: string[], excludeDirs: readonly string[] = []): void {
   const entries = ctx.vfs.listDirectory(absDir);
   if (!entries) return;
   for (const e of entries) {
@@ -368,7 +454,8 @@ function collectFiles(ctx: ShellContext, absDir: string, displayDir: string, out
     const childAbs = absDir + '/' + e.name;
     const childDisplay = displayDir + '/' + e.name;
     if (e.inode.type === 'directory') {
-      collectFiles(ctx, childAbs, childDisplay, out);
+      if (excludeDirs.some((glob) => globToRegExp(glob).test(e.name))) continue;
+      collectFiles(ctx, childAbs, childDisplay, out, excludeDirs);
     } else if (e.inode.type === 'file') {
       out.push(childDisplay);
     }

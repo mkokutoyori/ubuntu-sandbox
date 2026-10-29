@@ -4404,3 +4404,7 @@ Measured: `split --filter=CMD` is refused as an unrecognized option and `-n l/3`
 ## Linux sed: options accepted without effect
 
 Measured: `-z`/`--null-data` (lines are still split on newline), `-l N`/`--line-length` (the `l` command keeps its own width), `--posix`, `--debug`, `--sandbox` (e/r/w stay enabled) and `--follow-symlinks` are read by `SedOptions.ts` and change nothing, because the engine has no NUL-separated record mode, no wrap parameter, no GNU-extension switch and no program annotation. A real sed honours all six. Unknown options, `--help`, `--version`, `-i[SUFFIX]` (backup), unreadable inputs and `-f` of a missing file are handled.
+
+## Linux grep: options accepted without effect
+
+Measured: `-T`/`--initial-tab`, `-z`/`--null-data`, `-a`/`--text`, `-I`, `-U`/`--binary`, `-u`, `--binary-files=TYPE`, `--devices=ACTION`, `--line-buffered` and `-R` (symlinks are not followed differently from `-r`) are read through `GREP_OPTIONS` and change nothing. The simulator has no binary-file detection (a NUL-bearing file is always printed as text), no NUL-separated record mode and no tab alignment of the prefix. Unknown options, `--help`, `-V`, `-Z`, `-b`, `--label`, `--exclude-dir`, `--exclude-from`, `--directories`, `--no-ignore-case` and the long spellings of every evaluated option are handled. The `--help` and `-V` texts are those of grep 3.7 from memory.

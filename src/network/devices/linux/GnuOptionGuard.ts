@@ -4,6 +4,9 @@ export interface GnuOptionSet {
   readonly optstring: string;
   readonly long: readonly LongOption[];
   readonly operands: boolean;
+  readonly usage?: string;
+  readonly failureStatus?: number;
+  readonly program?: string;
 }
 
 const flag = (name: string, letter = ''): LongOption => ({ name, letter, takesArgument: false });
@@ -11,7 +14,35 @@ const valued = (name: string, letter = ''): LongOption => ({ name, letter, takes
 const optional = (name: string, letter = ''): LongOption => ({ name, letter, takesArgument: false, optionalArgument: true });
 const HELP_VERSION: readonly LongOption[] = [flag('help'), flag('version')];
 
+
+const GREP_USAGE = 'Usage: grep [OPTION]... PATTERNS [FILE]...';
+
+const GREP_OPTIONS: GnuOptionSet = {
+  optstring: 'EFGPe:f:iyvwxcLlm:oqsbHhnTZzaIrRUVA:B:C:d:D:u0123456789',
+  long: [
+    flag('extended-regexp', 'E'), flag('fixed-strings', 'F'), flag('basic-regexp', 'G'), flag('perl-regexp', 'P'),
+    valued('regexp', 'e'), valued('file', 'f'), flag('ignore-case', 'i'), flag('no-ignore-case'), flag('invert-match', 'v'),
+    flag('word-regexp', 'w'), flag('line-regexp', 'x'), flag('count', 'c'), optional('color'), optional('colour'),
+    flag('files-without-match', 'L'), flag('files-with-matches', 'l'), valued('max-count', 'm'),
+    flag('only-matching', 'o'), flag('quiet', 'q'), flag('silent', 'q'), flag('no-messages', 's'),
+    flag('byte-offset', 'b'), flag('with-filename', 'H'), flag('no-filename', 'h'), valued('label'),
+    flag('line-number', 'n'), flag('initial-tab', 'T'), flag('null', 'Z'), flag('null-data', 'z'), flag('text', 'a'),
+    valued('binary-files'), valued('devices', 'D'), valued('directories', 'd'), valued('exclude'),
+    valued('exclude-from'), valued('exclude-dir'), valued('include'), flag('recursive', 'r'),
+    flag('dereference-recursive', 'R'), flag('line-buffered'), flag('unix-byte-offsets', 'u'), flag('binary', 'U'),
+    valued('after-context', 'A'), valued('before-context', 'B'), valued('context', 'C'), flag('help'),
+    flag('version', 'V'),
+  ],
+  operands: true,
+  usage: GREP_USAGE,
+  failureStatus: 2,
+  program: 'grep',
+};
+
 export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
+  grep: GREP_OPTIONS,
+  egrep: GREP_OPTIONS,
+  fgrep: GREP_OPTIONS,
   whoami: { optstring: '', long: HELP_VERSION, operands: false },
   groups: { optstring: '', long: HELP_VERSION, operands: true },
   tty: { optstring: 's', long: [flag('silent', 's'), flag('quiet', 's'), ...HELP_VERSION], operands: false },
@@ -315,14 +346,16 @@ export interface OptionRefusal {
 export function refuseUnknownGnuOption(command: string, args: readonly string[]): OptionRefusal | null {
   const set = GNU_OPTION_SETS[command];
   if (!set) return null;
-  const trailer = `Try '${command} --help' for more information.`;
+  const program = set.program ?? command;
+  const trailer = `Try '${program} --help' for more information.`;
   for (const item of shortOptions(args, set.optstring, set.long)) {
     if (item.kind === 'operand' && !set.operands) {
-      return { output: `${command}: extra operand '${item.value}'\n${trailer}`, exitCode: 1 };
+      return { output: `${command}: extra operand '${item.value}'\n${trailer}`, exitCode: set.failureStatus ?? 1 };
     }
     if (item.kind === 'invalid' || item.kind === 'unrecognized'
       || item.kind === 'missing-argument' || item.kind === 'needless-argument') {
-      return { output: `${getoptDiagnostic(command, item)}\n${trailer}`, exitCode: 1 };
+      const lines = [getoptDiagnostic(program, item), ...(set.usage === undefined ? [] : [set.usage]), trailer];
+      return { output: lines.join('\n'), exitCode: set.failureStatus ?? 1 };
     }
   }
   return null;
