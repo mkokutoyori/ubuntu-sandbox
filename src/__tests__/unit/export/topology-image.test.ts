@@ -222,3 +222,24 @@ describe('the cables follow the browser canvas', () => {
     expect(paths[0]).not.toBe(paths[1]);
   });
 });
+
+describe('equipment icons are the canvas icons', () => {
+  const canvasGlyph = async (type: string): Promise<string> => {
+    const { DEVICE_VISUALS } = await import('@/components/network/device-visuals');
+    const { glyphSvgBody } = await import('@/components/network/device-glyphs');
+    const visual = (DEVICE_VISUALS as Record<string, { glyph: Parameters<typeof glyphSvgBody>[0] }>)[type];
+    return glyphSvgBody(visual.glyph);
+  };
+
+  it.each(['router-cisco', 'switch-huawei', 'windows-pc'])('%s is drawn with the lucide glyph the canvas renders', async (type) => {
+    const model = { ...MODEL, devices: [{ id: 'd', name: 'D', type: type as never, x: 0, y: 0, isPoweredOn: true }], links: [] };
+    const body = await canvasGlyph(type);
+    expect(body.length).toBeGreaterThan(0);
+    expect(render(false, 'en', model).svg).toContain(body);
+  });
+
+  it('a switch is not drawn with a private shape: the canvas uses the hard-drive glyph', async () => {
+    const model = { ...MODEL, devices: [{ id: 'd', name: 'D', type: 'switch-huawei' as never, x: 0, y: 0, isPoweredOn: true }], links: [] };
+    expect(render(false, 'en', model).svg).not.toContain('M6 12h.01M10 12h.01M14 12h.01M18 12h.01');
+  });
+});

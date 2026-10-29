@@ -2,25 +2,11 @@
  * DeviceIcon - Icons for different device types
  */
 
-import {
-  Monitor,
-  Server,
-  Database,
-  Router,
-  Shield,
-  Wifi,
-  Cloud,
-  HardDrive,
-  Laptop
-} from 'lucide-react';
+import { Monitor, Database } from 'lucide-react';
 import type { DeviceType } from '@/network';
 import { cn } from '@/lib/utils';
-import { DEVICE_VISUALS, type DeviceGlyph, type DeviceVisual } from './device-visuals';
-
-const GLYPHS: Readonly<Record<DeviceGlyph, typeof Monitor>> = {
-  monitor: Monitor, laptop: Laptop, server: Server, router: Router, switch: HardDrive,
-  shield: Shield, wifi: Wifi, cloud: Cloud, hub: HardDrive,
-};
+import { DEVICE_VISUALS, type DeviceVisual } from './device-visuals';
+import { DEVICE_GLYPHS } from './device-glyphs';
 
 interface DeviceIconProps {
   type: DeviceType;
@@ -33,7 +19,7 @@ export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
 
   const visual = (DEVICE_VISUALS as Partial<Record<string, DeviceVisual>>)[type];
   if (visual) {
-    const Glyph = GLYPHS[visual.glyph];
+    const Glyph = DEVICE_GLYPHS[visual.glyph];
     return (
       <div className="relative">
         <Glyph {...iconProps} style={visual.glyphColor ? { color: visual.glyphColor } : undefined} />

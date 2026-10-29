@@ -1,7 +1,8 @@
 import { DEVICE_CATALOG } from '@/network';
 import type { ConnectionType, DeviceType } from '@/network';
 import { deviceTypeLabel, translate, type Locale } from '@/i18n';
-import { DEVICE_VISUALS, type DeviceGlyph, type DeviceVisual } from '@/components/network/device-visuals';
+import { DEVICE_VISUALS, type DeviceVisual } from '@/components/network/device-visuals';
+import { glyphSvgBody } from '@/components/network/device-glyphs';
 import {
   computeCableRoutes, computeEndpointAnchors, connectorSegment, getLinkAppearance,
   interfaceTagWidth, shouldShowPortLabels, DEVICE_BADGE_BOTTOM, DEVICE_BADGE_TOP,
@@ -82,22 +83,6 @@ const DEFAULT_GLYPH_COLOR = '#334155';
 const POWERED_OFF_OPACITY = 0.45;
 const CONNECTION_TYPES: readonly ConnectionType[] = ['ethernet', 'fiber', 'serial', 'console'];
 
-const GLYPH_PATHS: Readonly<Record<DeviceGlyph, string>> = {
-  monitor: '<rect x="2.5" y="4" width="19" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>',
-  laptop: '<rect x="5" y="5" width="14" height="10" rx="1.2"/><path d="M2.5 19h19"/>',
-  server: '<rect x="3" y="3.5" width="18" height="7" rx="1.5"/><rect x="3" y="13.5" width="18" height="7" rx="1.5"/>'
-    + '<path d="M7 7h.01M7 17h.01"/>',
-  router: '<circle cx="12" cy="12" r="8.5"/><path d="M12 6v12M6 12h12M9.5 8.5 12 6l2.5 2.5M9.5 15.5 12 18l2.5-2.5'
-    + 'M8.5 9.5 6 12l2.5 2.5M15.5 9.5 18 12l-2.5 2.5"/>',
-  switch: '<rect x="2.5" y="7" width="19" height="10" rx="1.5"/><path d="M6 12h.01M10 12h.01M14 12h.01M18 12h.01"/>',
-  hub: '<rect x="2.5" y="8" width="19" height="8" rx="1.5"/><circle cx="7" cy="12" r="1"/><circle cx="12" cy="12" r="1"/>'
-    + '<circle cx="17" cy="12" r="1"/>',
-  shield: '<path d="M12 3l8 3v6c0 4.5-3.2 7.6-8 9-4.8-1.4-8-4.5-8-9V6z"/>',
-  wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.8 16a5 5 0 0 1 6.4 0"/>'
-    + '<path d="M12 19.5h.01"/>',
-  cloud: '<path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4.2 4.2 0 0 1-.5 8.5z"/>',
-};
-
 export function escapeXml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;',
@@ -140,8 +125,8 @@ function glyphMarkup(
   const scale = size / 24;
   const color = visual.glyphColor ?? ink;
   return `<g transform="translate(${centerX - size / 2} ${centerY - size / 2}) scale(${scale})" `
-    + `fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">`
-    + `${GLYPH_PATHS[visual.glyph]}</g>`;
+    + `fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`
+    + `${glyphSvgBody(visual.glyph)}</g>`;
 }
 
 function badgeMarkup(visual: DeviceVisual, right: number, bottom: number, scale: number): string {
