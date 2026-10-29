@@ -4262,7 +4262,7 @@ export class LinuxCommandExecutor {
         (argv, env, background, outputPiped, stdin) => this.dispatchFromInterpreter(argv, env, background, outputPiped, stdin),
         initialVars,
         io,
-        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode, interactive: true },
+        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode, interactive: !this.childShellRunning },
         this.aliases,
         this.functions,
       );
@@ -4418,7 +4418,7 @@ export class LinuxCommandExecutor {
       (argv, env, background, outputPiped, stdin) => this.dispatchMaybeNetwork(argv, env, background, stdin, outputPiped),
       initialVars,
       io,
-      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, interactive: true },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, interactive: !this.childShellRunning },
       this.aliases,
       this.functions,
     );

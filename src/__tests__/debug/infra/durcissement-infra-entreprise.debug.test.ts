@@ -23,7 +23,7 @@
  * configure avec precaution en production.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -90,6 +90,7 @@ describe('les controles L2 appliquent-ils ?', () => {
     note(`[4] show interfaces status : ${itf.split('\n').filter((l) => /Fa0\/1|err/i.test(l)).join(' | ')}`);
     note(`[5] PC-A apres la violation : ${await perte(a, '10.0.0.1')}`);
 
+    mkdirSync('/tmp/mes', { recursive: true });
     writeFileSync('/tmp/mes/secu3.txt', notes.join('\n') + '\n');
     expect(true).toBe(true);
   }, 180000);

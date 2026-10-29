@@ -93,7 +93,7 @@ export function executeBuiltin(
     case 'type': return builtinType(args, functions, aliases);
     case 'set': return args.length === 0 ? declaration('declare', [], env, functions) : optionResult(runSet(args, env), env);
     case 'shopt': return optionResult(runShopt(args, env), env);
-    case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
+    case 'source': case '.': return args.length === 0 ? fail(`bash: ${name}: filename argument required\n${name}: usage: ${name} filename [arguments]`, 2) : { output: '', exitCode: 0 }; // handled at higher level
     case 'declare':
     case 'typeset':
     case 'local':
