@@ -4268,15 +4268,16 @@ stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
 incremental SPF, the discard route, process shutdown).
 
 
-## Topology image export: the rest of the UI is not translated
+## Interface translation: dialogs, designer messages and properties panel
 
-Only the export dialog and the image are translated (English / French,
-src/i18n); the rest of the interface (toolbar, palette, properties panel,
-dialogs) is still English-only, and there is no global language switch: the
-language is the one stored by the export dialog, else the browser's. The image
-draws the cables with the canvas's own router (`computeCableRoutes`, zoom 1),
-so it shows the same lanes, corners and port tags; what it does not reproduce
-is the canvas's current selection or pan/zoom, by design.
+The interface has a global EN/FR switch (toolbar, `src/i18n/useLocale.ts`) and
+the toolbar, the equipment palette and the help dialog are translated. Still
+English only: the save/open/confirm/message dialogs, the strings of
+NetworkDesigner, the properties panel, the simulation clock controls, the
+settings dialog and every terminal-side message (the simulated CLIs answer in
+the vendor's English by design). The topology image draws the cables with the
+canvas's own router (`computeCableRoutes`, zoom 1); it does not reproduce the
+canvas's selection or pan/zoom, by design.
 
 ## Reds measured at base outside the network-v2 sweep (new_firewall)
 
