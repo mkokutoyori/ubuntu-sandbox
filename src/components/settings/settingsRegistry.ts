@@ -1,10 +1,13 @@
 import type { ComponentType } from 'react';
 import type { LucideIcon } from 'lucide-react';
+import type { MessageKey } from '@/i18n';
 
 export interface SettingsSection {
   readonly id: string;
   readonly label: string;
   readonly description: string;
+  readonly labelKey?: MessageKey;
+  readonly descriptionKey?: MessageKey;
   readonly icon: LucideIcon;
   readonly keywords: readonly string[];
   readonly component: ComponentType;
@@ -29,10 +32,13 @@ export class SettingsRegistry {
     return this.sections.get(id);
   }
 
-  search(query: string): SettingsSection[] {
+  search(
+    query: string,
+    shown: (section: SettingsSection) => readonly string[] = (section) => [section.label, section.description],
+  ): SettingsSection[] {
     const needle = query.trim().toLowerCase();
     if (needle === '') return this.list();
     return this.list().filter((section) =>
-      [section.label, section.description, ...section.keywords].some((text) => text.toLowerCase().includes(needle)));
+      [...shown(section), ...section.keywords].some((text) => text.toLowerCase().includes(needle)));
   }
 }

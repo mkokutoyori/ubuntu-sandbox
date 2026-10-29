@@ -8,10 +8,8 @@ import { DEVICE_CATEGORIES, isFullyImplemented } from '@/network';
 import { DeviceIcon } from './DeviceIcon';
 import { useNetworkStore } from '@/store/networkStore';
 import { cn } from '@/lib/utils';
-
-const LIMITED_SIMULATION_HINT =
-  'Limited simulation: this device currently behaves as a generic substitute ' +
-  '(vendor-specific features are not implemented yet).';
+import { categoryLabel, deviceTypeDescription, deviceTypeLabel } from '@/i18n';
+import { useLocale } from '@/i18n/useLocale';
 
 /** Grid cascade so keyboard/click-added devices don't stack exactly on top of each other. */
 const ADD_GRID_COLS = 6;
@@ -19,6 +17,7 @@ const ADD_GRID_STEP = 90;
 const ADD_GRID_ORIGIN = { x: 160, y: 140 };
 
 export function DevicePalette() {
+  const { locale, t } = useLocale();
   const [expandedCategories, setExpandedCategories] = useState<string[]>(
     DEVICE_CATEGORIES.map(c => c.id)
   );
@@ -52,8 +51,8 @@ export function DevicePalette() {
   return (
     <div className="h-full flex flex-col bg-card/30 backdrop-blur-xl border-r border-white/10">
       <div className="p-4 border-b border-white/10">
-        <h2 className="text-sm font-semibold text-foreground/90">Equipment</h2>
-        <p className="text-xs text-muted-foreground mt-1">Drag to canvas</p>
+        <h2 className="text-sm font-semibold text-foreground/90">{t('palette.title')}</h2>
+        <p className="text-xs text-muted-foreground mt-1">{t('palette.hint')}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -73,7 +72,7 @@ export function DevicePalette() {
               ) : (
                 <ChevronRight className="w-4 h-4" aria-hidden="true" />
               )}
-              <span className="font-medium">{category.name}</span>
+              <span className="font-medium">{categoryLabel(category.id, locale, category.name)}</span>
             </button>
 
             {expandedCategories.includes(category.id) && (
@@ -88,7 +87,7 @@ export function DevicePalette() {
                       e.dataTransfer.effectAllowed = 'copy';
                     }}
                     onClick={() => addDeviceViaKeyboard(device.type)}
-                    aria-label={`Add ${device.name} to canvas${!isFullyImplemented(device.type) ? ' (limited simulation)' : ''}`}
+                    aria-label={t(isFullyImplemented(device.type) ? 'palette.add' : 'palette.addLimited', { name: deviceTypeLabel(device.type, locale) })}
                     className={cn(
                       "w-full flex items-center gap-3 px-3 py-2 rounded-lg cursor-grab text-left",
                       "bg-white/5 hover:bg-white/10 border border-transparent",
@@ -101,22 +100,22 @@ export function DevicePalette() {
                     <DeviceIcon type={device.type} size={20} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-foreground/90 truncate">
-                        {device.name}
+                        {deviceTypeLabel(device.type, locale)}
                       </p>
                       <p className="text-[10px] text-muted-foreground truncate">
-                        {device.description}
+                        {deviceTypeDescription(device.type, locale)}
                       </p>
                     </div>
                     {!isFullyImplemented(device.type) && (
                       <span
-                        title={LIMITED_SIMULATION_HINT}
+                        title={t('palette.limitedHint')}
                         className={cn(
                           'shrink-0 text-[9px] font-semibold uppercase tracking-wide',
                           'px-1.5 py-0.5 rounded border',
                           'bg-amber-500/15 text-amber-400 border-amber-500/30',
                         )}
                       >
-                        Limited
+                        {t('palette.limited')}
                       </span>
                     )}
                   </button>

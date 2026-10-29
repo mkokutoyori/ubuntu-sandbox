@@ -14,6 +14,7 @@
  *   - ANSI color parsing
  */
 
+import { useLocale } from '@/i18n/useLocale';
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
@@ -49,6 +50,7 @@ interface TerminalViewProps {
 export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // Subscribe to session changes — triggers re-render on every notify()
   useTerminalSession(session);
+  const { t } = useLocale();
 
   const theme = session.getTheme();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -391,7 +393,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
               name="terminalPassword"
               type="password"
               autoComplete="off"
-              aria-label={(inputMode as { promptText?: string }).promptText ?? 'Password'}
+              aria-label={(inputMode as { promptText?: string }).promptText ?? t('terminalView.password')}
               value={session.getPasswordBuf()}
               onChange={(e) => session.setPasswordBuf(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -509,7 +511,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
                 name="terminalInput"
                 type="text"
                 autoComplete="off"
-                aria-label={`Command line — ${session.getInfoBarContent().left}`}
+                aria-label={t('terminalView.commandLine', { context: session.getInfoBarContent().left })}
                 value={session.input}
                 onChange={(e) => {
                   session.setInput(e.target.value);

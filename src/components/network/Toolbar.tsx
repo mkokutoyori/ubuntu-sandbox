@@ -2,9 +2,10 @@
  * Toolbar - Top toolbar for network designer
  */
 
-import { Save, FolderOpen, Download, Upload, ImageDown, RotateCcw, HelpCircle, Trash2, Undo2, Redo2, Settings } from 'lucide-react';
+import { Save, FolderOpen, Download, Upload, ImageDown, RotateCcw, HelpCircle, Trash2, Undo2, Redo2, Settings, Languages } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getLocale, translate } from '@/i18n';
+import { LOCALES, LOCALE_NAMES, isLocale } from '@/i18n';
+import { useLocale } from '@/i18n/useLocale';
 
 interface ToolbarProps {
   projectName: string;
@@ -30,6 +31,7 @@ export function Toolbar({
   onExport, onExportImage, onImport, onSave, onOpen, onReset, onHelp, onSettings,
   onUndo, onRedo, canUndo, canRedo,
 }: ToolbarProps) {
+  const { locale, setLocale, t } = useLocale();
   return (
     <div className="h-14 bg-card/30 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4">
       {/* Left section - Project name */}
@@ -45,11 +47,11 @@ export function Toolbar({
             name="projectName"
             type="text"
             autoComplete="off"
-            aria-label="Project name"
+            aria-label={t('toolbar.projectName')}
             value={projectName}
             onChange={(e) => onProjectNameChange(e.target.value)}
             className="bg-transparent text-lg font-semibold text-foreground border-none focus:outline-none focus:ring-0 w-48"
-            placeholder="Untitled Network"
+            placeholder={t('toolbar.untitled')}
           />
         </div>
         {/* Clear All button - always visible when devices exist */}
@@ -60,36 +62,50 @@ export function Toolbar({
               "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
               "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30"
             )}
-            title="Clear All Devices"
+            title={t('toolbar.clearAllTitle')}
           >
             <Trash2 className="w-4 h-4" />
-            <span className="hidden lg:inline">Clear All</span>
+            <span className="hidden lg:inline">{t('toolbar.clearAll')}</span>
           </button>
         )}
       </div>
 
       {/* Center section - Actions */}
       <div className="flex items-center gap-1">
-        <ToolbarButton icon={Undo2} label="Undo" onClick={onUndo} disabled={!canUndo} />
-        <ToolbarButton icon={Redo2} label="Redo" onClick={onRedo} disabled={!canRedo} />
+        <ToolbarButton icon={Undo2} label={t('toolbar.undo')} onClick={onUndo} disabled={!canUndo} />
+        <ToolbarButton icon={Redo2} label={t('toolbar.redo')} onClick={onRedo} disabled={!canRedo} />
         <div className="w-px h-6 bg-white/10 mx-2" />
-        <ToolbarButton icon={Save} label="Save" onClick={onSave} />
-        <ToolbarButton icon={FolderOpen} label="Open" onClick={onOpen} />
+        <ToolbarButton icon={Save} label={t('toolbar.save')} onClick={onSave} />
+        <ToolbarButton icon={FolderOpen} label={t('toolbar.open')} onClick={onOpen} />
         <div className="w-px h-6 bg-white/10 mx-2" />
-        <ToolbarButton icon={Download} label="Export" onClick={onExport} />
+        <ToolbarButton icon={Download} label={t('toolbar.export')} onClick={onExport} />
         <ToolbarButton
-          icon={ImageDown} label={translate(getLocale(), 'export.image.button')}
-          title={translate(getLocale(), 'export.image.buttonTitle')} onClick={onExportImage}
+          icon={ImageDown} label={t('export.image.button')}
+          title={t('export.image.buttonTitle')} onClick={onExportImage}
         />
-        <ToolbarButton icon={Upload} label="Import" onClick={onImport} />
+        <ToolbarButton icon={Upload} label={t('toolbar.import')} onClick={onImport} />
         <div className="w-px h-6 bg-white/10 mx-2" />
-        <ToolbarButton icon={RotateCcw} label="Reset" onClick={onReset} />
+        <ToolbarButton icon={RotateCcw} label={t('toolbar.reset')} onClick={onReset} />
       </div>
 
       {/* Right section - Settings, Help */}
       <div className="flex items-center gap-2">
-        <ToolbarButton icon={Settings} label="Settings" onClick={onSettings} />
-        <ToolbarButton icon={HelpCircle} label="Help" onClick={onHelp} />
+        <label className="flex items-center gap-1 text-foreground/70">
+          <Languages className="w-4 h-4" aria-hidden="true" />
+          <span className="sr-only">{t('toolbar.language')}</span>
+          <select
+            value={locale}
+            onChange={(event) => { if (isLocale(event.target.value)) setLocale(event.target.value); }}
+            className="bg-transparent text-sm border border-white/10 rounded-md px-1 py-0.5"
+            data-testid="language-select"
+          >
+            {LOCALES.map(code => (
+              <option key={code} value={code} className="bg-card text-foreground">{LOCALE_NAMES[code]}</option>
+            ))}
+          </select>
+        </label>
+        <ToolbarButton icon={Settings} label={t('toolbar.settings')} onClick={onSettings} />
+        <ToolbarButton icon={HelpCircle} label={t('toolbar.help')} onClick={onHelp} />
       </div>
     </div>
   );

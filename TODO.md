@@ -4268,15 +4268,21 @@ stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
 incremental SPF, the discard route, process shutdown).
 
 
-## Topology image export: the rest of the UI is not translated
+## Interface translation: what stays English on purpose
 
-Only the export dialog and the image are translated (English / French,
-src/i18n); the rest of the interface (toolbar, palette, properties panel,
-dialogs) is still English-only, and there is no global language switch: the
-language is the one stored by the export dialog, else the browser's. The image
-draws the cables with the canvas's own router (`computeCableRoutes`, zoom 1),
-so it shows the same lanes, corners and port tags; what it does not reproduce
-is the canvas's current selection or pan/zoom, by design.
+The interface has a global EN/FR switch (toolbar, `src/i18n/useLocale.ts`)
+and every visible string of the designer is translated: toolbar, palette,
+help, save/open/confirm/message dialogs, designer messages, properties panel
+and its live-state statistics, settings, simulation clock, canvas, device
+action buttons, interface selector, cable accessible names, terminal title
+bar and taskbar. Still English, on purpose: what the simulated equipment
+prints (the CLIs, the shells and the databases answer in the vendor's English,
+as the real products do) and the platform names in the terminal title (Ubuntu
+Linux, Cisco IOS...). Not covered by a test: the `title` of palette devices
+whose English name is the vendor's (Cisco ASA, FortiGate, Palo Alto keep their
+product name in French). The topology image draws the cables with the canvas's
+own router (`computeCableRoutes`, zoom 1); it does not reproduce the canvas's
+selection or pan/zoom, by design.
 
 ## Reds measured at base outside the network-v2 sweep (new_firewall)
 
@@ -4348,3 +4354,33 @@ with the working tree stashed.
 `audit/vacl-mac-clause.test.ts` (1), `network-v2/crypto-pki-trustpool.test.ts` (1),
 `nss-resolution-unified.test.ts` (1) and `probe-proc-sys-write-reaches-the-
 store.test.ts` (6) also fail identically with the working tree stashed.
+
+`network-v2/firewall/architecture-guards.test.ts` (G8: two schema tables share
+a render rank, 96 distinct ranks for 97 tables) and
+`network-v2/probe-fuseau-linux-et-pare-feu.test.ts` (3) are red at the base
+commit 2351448f2 (checked in a worktree).
+
+`network-v2/linux-bash-details.test.ts` (2), `linux-ls-tty-awareness.test.ts`
+(1), `linux-rsyslog-imfile.test.ts` (1) and `openssl-ocsp-probe.test.ts` (2)
+are red at the base commit 2351448f2 (checked in a worktree), like
+`probe-fuser-porte-de-psmisc.test.ts`, `run-parts.test.ts`,
+`scenario10-linux-audit.test.ts`, `crypto-pki-trustpool.test.ts`,
+`probe-procfs-does-not-grow.test.ts` (3) and
+`probe-oracle-sqlplus-silencieux-et-rman-a-froid.test.ts` (1).
+
+## Linux coreutils without an option table
+
+GnuOptionGuard (src/network/devices/linux/GnuOptionGuard.ts) covers whoami,
+groups, tty, nproc, free, env, printenv, uname, mkdir, rmdir, rm, cat, wc, tac,
+tee, basename, dirname, ls, head, sort, uniq, cut, tr and date. Measured with `<cmd> --zorglub` and still silent or
+treating the option as a file operand: du, find,
+date, base64, md5sum/sha256sum/cksum, rev, nl, fold, fmt, column, paste, comm,
+split, truncate, seq-less forms, which, passwd, sysctl, awk, lsof. Their option
+sets were not written down here: each needs its own table and a run of the
+tests that use it.
+
+## PowerShell: a built-in cmdlet ignores an unknown named parameter
+
+Measured: `Get-Process -Zorglub`, `Get-Service -Zorglub`, `Get-ChildItem -Zorglub`, `Get-Date -Zorglub`, `Get-NetIPAddress -Zorglub`, `Get-LocalUser -Zorglub` and `Get-Random -Zorglub` all run as if the parameter had not been typed; Windows PowerShell answers `A parameter cannot be found that matches parameter name 'Zorglub'.` (`NamedParameterNotFound`). Script functions with `param()` already refuse it (`PSParameterBinder.resolveName`).
+
+Why it is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion and is incomplete. Making `resolveParameterPrefixes` refuse a key absent from it broke 11 cases in `src/__tests__/unit/powershell` (Format-Table `-Width`, New-Item `-Target`, New-LocalUser `-NoPassword`, `-Force` on the Add-LocalGroupMember / Register-ScheduledTask family…), and a scan of the cmdlet classes finds ~40 more names read through `ctx.named[...]` and missing from their own list. The refusal can only be turned on once each cmdlet's list is audited against its handler, so the list becomes the single authority for both completion and binding.

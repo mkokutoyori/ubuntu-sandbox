@@ -14,7 +14,7 @@ import type { DefaultInformationOriginate, OspfInterfaceSettings } from '../../r
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
 import { isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { formatIosElapsed } from './iosElapsed';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliIncomplete, CliInvalidInput } from '../cli/CliDiagnostic';
 import { isAreaId, isBackboneAreaId, type LSAHeader, type OSPFNeighborState, type OSPFNetworkType } from '../../../ospf/types';
 import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
 import { refuseUnknownSelector } from './showSelectors';
@@ -692,9 +692,12 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   configIfTrie.registerGreedy('ip ospf database-filter', 'OSPF database filter', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected';
-    if (args[0]?.toLowerCase() === 'all' && args[1]?.toLowerCase() === 'out') {
-      ifPending(ifName).databaseFilterAllOut = true;
-    }
+    if (args.length === 0) throw new CliIncomplete();
+    if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
+    if (args[1] === undefined) throw new CliIncomplete();
+    if (args[1].toLowerCase() !== 'out') throw new CliInvalidInput({ token: args[1] });
+    if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+    ifPending(ifName).databaseFilterAllOut = true;
     return '';
   });
 

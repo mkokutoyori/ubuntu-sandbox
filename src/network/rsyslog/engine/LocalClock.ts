@@ -4,13 +4,10 @@ import { syslogTimeFromEpochMs, TIME_TYPE_RFC5424, type SyslogTime } from '@/net
 import type { RsyslogHost } from './Host';
 
 export class LocalClock {
-  private zone: TimeZone | null = null;
-
   constructor(private readonly host: RsyslogHost, private readonly overrides: () => ReadonlyMap<string, { offsetMinutes: number }>) {}
 
   private timezone(): TimeZone {
-    if (this.zone === null) this.zone = TimeZone.parse(this.host.timezone() ?? 'UTC') ?? TimeZone.UTC;
-    return this.zone;
+    return TimeZone.parse(this.host.timezone() ?? 'UTC') ?? TimeZone.UTC;
   }
 
   at(epochMs: number): SyslogTime {

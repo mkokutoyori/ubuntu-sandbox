@@ -1,7 +1,7 @@
 import { DEVICE_CATALOG } from '@/network';
 import type { DeviceType } from '@/network';
 import {
-  FRENCH_DEVICE_LABELS, LOCALES, MESSAGES, type Locale, type MessageKey,
+  FRENCH_DEVICE_DESCRIPTIONS, FRENCH_DEVICE_LABELS, LOCALES, MESSAGES, type Locale, type MessageKey,
 } from './messages';
 
 export { LOCALES, LOCALE_NAMES, type Locale, type MessageKey } from './messages';
@@ -19,6 +19,7 @@ export function localeFromLanguageTag(tag: string | undefined): Locale {
 }
 
 export function getLocale(): Locale {
+  if (announced !== null) return announced;
   try {
     const stored = globalThis.localStorage?.getItem(STORAGE_KEY);
     if (isLocale(stored)) return stored;
@@ -28,12 +29,22 @@ export function getLocale(): Locale {
   return localeFromLanguageTag(globalThis.navigator?.language);
 }
 
+const listeners = new Set<() => void>();
+let announced: Locale | null = null;
+
+export function subscribeLocale(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
 export function setLocale(locale: Locale): void {
   try {
     globalThis.localStorage?.setItem(STORAGE_KEY, locale);
   } catch {
-    return;
+    announced = locale;
   }
+  if (globalThis.document?.documentElement) globalThis.document.documentElement.lang = locale;
+  for (const listener of [...listeners]) listener();
 }
 
 export function translate(
@@ -45,4 +56,13 @@ export function translate(
 
 export function deviceTypeLabel(type: DeviceType, locale: Locale): string {
   return locale === 'fr' ? FRENCH_DEVICE_LABELS[type] : DEVICE_CATALOG[type].label;
+}
+
+export function deviceTypeDescription(type: DeviceType, locale: Locale): string {
+  return locale === 'fr' ? FRENCH_DEVICE_DESCRIPTIONS[type] : DEVICE_CATALOG[type].description;
+}
+
+export function categoryLabel(id: string, locale: Locale, fallback: string): string {
+  const key = `category.${id}`;
+  return key in MESSAGES.en ? translate(locale, key as MessageKey) : fallback;
 }

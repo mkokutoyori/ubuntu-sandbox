@@ -2,6 +2,7 @@
  * PropertiesPanel - Right sidebar for device/connection properties
  */
 
+import { useLocale } from '@/i18n/useLocale';
 import { useState } from 'react';
 import { useMacTable, useConnectionPerf } from '@/react/hooks';
 import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, Trash2, Cable, Activity } from 'lucide-react';
@@ -33,6 +34,7 @@ function isSwitchInstance(obj: unknown): obj is SwitchInstance {
 }
 
 export function PropertiesPanel() {
+  const { t } = useLocale();
   const {
     getDevices,
     connections,
@@ -84,12 +86,12 @@ export function PropertiesPanel() {
     return (
       <div className="w-72 bg-card/30 backdrop-blur-xl border-l border-white/10 flex flex-col">
         <div className="p-4 border-b border-white/10">
-          <h2 className="text-sm font-semibold text-foreground/90">Properties</h2>
+          <h2 className="text-sm font-semibold text-foreground/90">{t('props.title')}</h2>
         </div>
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center text-muted-foreground">
             <Settings className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Select a device or connection to view properties</p>
+            <p className="text-sm">{t('props.empty')}</p>
           </div>
         </div>
       </div>
@@ -106,12 +108,12 @@ export function PropertiesPanel() {
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Cable className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold text-foreground/90">Connection</h2>
+            <h2 className="text-sm font-semibold text-foreground/90">{t('props.connection')}</h2>
           </div>
           <button
             onClick={() => selectDevice(null)}
-            title="Clear selection"
-            aria-label="Clear selection"
+            title={t('props.clearSelection')}
+            aria-label={t('props.clearSelection')}
             className="p-1 hover:bg-white/10 rounded transition-colors"
           >
             <X className="w-4 h-4 text-muted-foreground" />
@@ -121,7 +123,7 @@ export function PropertiesPanel() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Connection type */}
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground uppercase tracking-wider">Type</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">{t('props.type')}</label>
             <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm font-medium">
               {details.typeLabel}
             </div>
@@ -129,11 +131,11 @@ export function PropertiesPanel() {
 
           {/* Source device + interface */}
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground uppercase tracking-wider">Source</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">{t('props.source')}</label>
             <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm">
               <div className="flex items-center gap-2">
                 {sourceDevice && <DeviceIcon type={sourceDevice.type} size={16} />}
-                <span>{sourceDevice?.name || 'Unknown'}</span>
+                <span>{sourceDevice?.name || t('props.unknown')}</span>
               </div>
               <div className="text-xs text-blue-400 mt-1 font-mono">
                 {details.sourceInterface}
@@ -143,11 +145,11 @@ export function PropertiesPanel() {
 
           {/* Target device + interface */}
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground uppercase tracking-wider">Target</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">{t('props.target')}</label>
             <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm">
               <div className="flex items-center gap-2">
                 {targetDevice && <DeviceIcon type={targetDevice.type} size={16} />}
-                <span>{targetDevice?.name || 'Unknown'}</span>
+                <span>{targetDevice?.name || t('props.unknown')}</span>
               </div>
               <div className="text-xs text-blue-400 mt-1 font-mono">
                 {details.targetInterface}
@@ -159,15 +161,15 @@ export function PropertiesPanel() {
           <div className="space-y-2">
             <label className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1">
               <Activity className="w-3 h-3" />
-              Performance
+              {t('props.performance')}
             </label>
             <div className="grid grid-cols-2 gap-2">
               <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-                <div className="text-[10px] text-muted-foreground">Bandwidth</div>
+                <div className="text-[10px] text-muted-foreground">{t('props.bandwidth')}</div>
                 <div className="text-sm font-medium text-foreground/90">{perf.bandwidthLabel}</div>
               </div>
               <div className="px-3 py-2 rounded-lg bg-white/5 border border-white/10">
-                <div className="text-[10px] text-muted-foreground">Latency</div>
+                <div className="text-[10px] text-muted-foreground">{t('props.latency')}</div>
                 <div className="text-sm font-medium text-foreground/90">{perf.latencyLabel}</div>
               </div>
             </div>
@@ -175,7 +177,7 @@ export function PropertiesPanel() {
 
           {/* Status */}
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground uppercase tracking-wider">Status</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wider">{t('props.status')}</label>
             <div className={cn(
               "px-3 py-2 rounded-lg border text-sm flex items-center gap-2",
               isConnectionActive(selectedConnection)
@@ -186,7 +188,7 @@ export function PropertiesPanel() {
                 "w-2 h-2 rounded-full",
                 isConnectionActive(selectedConnection) ? "bg-green-500" : "bg-red-500"
               )} />
-              {isConnectionActive(selectedConnection) ? 'Active' : 'Inactive'}
+              {isConnectionActive(selectedConnection) ? t('props.active') : t('props.inactive')}
             </div>
           </div>
         </div>
@@ -207,8 +209,8 @@ export function PropertiesPanel() {
         </div>
         <button
           onClick={() => selectDevice(null)}
-          title="Clear selection"
-          aria-label="Clear selection"
+          title={t('props.clearSelection')}
+          aria-label={t('props.clearSelection')}
           className="p-1 hover:bg-white/10 rounded transition-colors"
         >
           <X className="w-4 h-4 text-muted-foreground" />
@@ -219,7 +221,7 @@ export function PropertiesPanel() {
         {/* Implementation status */}
         {!isImplemented && (
           <div className="mx-3 mt-3 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-xs text-yellow-400">
-            This device type is not fully implemented yet
+            {t('props.notImplemented')}
           </div>
         )}
 
@@ -229,7 +231,7 @@ export function PropertiesPanel() {
             onClick={() => toggleSection('general')}
             className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
           >
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">General</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('props.general')}</span>
             {expandedSections.includes('general') ? (
               <ChevronDown className="w-4 h-4 text-muted-foreground" />
             ) : (
@@ -240,7 +242,7 @@ export function PropertiesPanel() {
           {expandedSections.includes('general') && (
             <div className="px-3 pb-3 space-y-3">
               <div className="space-y-1">
-                <label htmlFor="device-name" className="text-xs text-muted-foreground">Name</label>
+                <label htmlFor="device-name" className="text-xs text-muted-foreground">{t('props.name')}</label>
                 <input
                   id="device-name"
                   name="deviceName"
@@ -253,7 +255,7 @@ export function PropertiesPanel() {
               </div>
 
               <div className="space-y-1">
-                <label htmlFor="device-hostname" className="text-xs text-muted-foreground">Hostname</label>
+                <label htmlFor="device-hostname" className="text-xs text-muted-foreground">{t('props.hostname')}</label>
                 <input
                   id="device-hostname"
                   name="deviceHostname"
@@ -266,7 +268,7 @@ export function PropertiesPanel() {
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Power</span>
+                <span className="text-xs text-muted-foreground">{t('props.power')}</span>
                 <button
                   onClick={() => updateDevice(selectedDevice.id, { isPoweredOn: !selectedDevice.isPoweredOn })}
                   className={cn(
@@ -277,7 +279,7 @@ export function PropertiesPanel() {
                   )}
                 >
                   <Power className="w-3 h-3" />
-                  {selectedDevice.isPoweredOn ? 'On' : 'Off'}
+                  {selectedDevice.isPoweredOn ? t('props.on') : t('props.off')}
                 </button>
               </div>
             </div>
@@ -291,7 +293,7 @@ export function PropertiesPanel() {
             className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
           >
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Interfaces ({selectedDevice.interfaces.length})
+              {t('props.interfaces', { count: selectedDevice.interfaces.length })}
             </span>
             {expandedSections.includes('interfaces') ? (
               <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -313,9 +315,9 @@ export function PropertiesPanel() {
                 );
                 const isConnected = isCabled && iface.isOperational !== false;
                 const status = !isCabled ? null
-                  : iface.isOperational !== false ? 'Connected'
-                  : iface.isUp === false ? 'Admin down'
-                  : 'No carrier';
+                  : iface.isOperational !== false ? t('props.connected')
+                  : iface.isUp === false ? t('props.adminDown')
+                  : t('props.noCarrier');
 
                 return (
                   <div
@@ -349,7 +351,7 @@ export function PropertiesPanel() {
               })}
               {selectedDevice.interfaces.length > 8 && (
                 <div className="text-xs text-muted-foreground text-center py-2">
-                  +{selectedDevice.interfaces.length - 8} more interfaces
+                  {t('props.moreInterfaces', { count: selectedDevice.interfaces.length - 8 })}
                 </div>
               )}
             </div>
@@ -364,7 +366,7 @@ export function PropertiesPanel() {
               className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
             >
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                MAC Table ({macTable.length})
+                {t('props.macTable', { count: macTable.length })}
               </span>
               {expandedSections.includes('macTable') ? (
                 <ChevronDown className="w-4 h-4 text-muted-foreground" />
@@ -382,14 +384,14 @@ export function PropertiesPanel() {
                     className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded bg-red-500/10 border border-red-500/30 text-xs text-red-400 hover:bg-red-500/20 transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
-                    Clear
+                    {t('props.macClear')}
                   </button>
                 </div>
 
                 {/* MAC Table entries */}
                 {macTable.length === 0 ? (
                   <div className="text-xs text-muted-foreground text-center py-4">
-                    No MAC addresses learned yet
+                    {t('props.macEmpty')}
                   </div>
                 ) : (
                   <div className="space-y-1 max-h-40 overflow-y-auto">
@@ -410,7 +412,7 @@ export function PropertiesPanel() {
                           </span>
                         </div>
                         <div className="text-muted-foreground mt-0.5">
-                          Port: {entry.interfaceId} | VLAN: {entry.vlan}
+                          {t('props.macEntry', { port: entry.interfaceId, vlan: entry.vlan })}
                         </div>
                       </div>
                     ))}
@@ -442,7 +444,7 @@ export function PropertiesPanel() {
             className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
           >
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Live state
+              {t('props.live')}
             </span>
             {expandedSections.includes('live') ? (
               <ChevronDown className="w-4 h-4 text-muted-foreground" />

@@ -2,6 +2,7 @@
  * NetworkCanvas - Main canvas for network topology design
  */
 
+import { useLocale } from '@/i18n/useLocale';
 import { useRef, useCallback, useState, useEffect } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, X } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
@@ -22,6 +23,7 @@ interface NetworkCanvasProps {
 }
 
 export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
+  const { t } = useLocale();
   const canvasRef = useRef<HTMLDivElement>(null);
   const mapLayerRef = useRef<HTMLDivElement>(null);
   const cableLayerRef = useRef<SVGSVGElement>(null);
@@ -66,24 +68,24 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   useEffect(() => {
     if (devices.length > prevDeviceCount.current) {
       const added = devices[devices.length - 1];
-      setAnnouncement(added ? `${added.name} added to canvas` : 'Device added to canvas');
+      setAnnouncement(added ? t('canvas.deviceAdded', { name: added.name }) : t('canvas.anyDeviceAdded'));
     } else if (devices.length < prevDeviceCount.current) {
-      setAnnouncement('Device removed from canvas');
+      setAnnouncement(t('canvas.deviceRemoved'));
     } else if (connections.length > prevConnectionCount.current) {
-      setAnnouncement('Devices connected');
+      setAnnouncement(t('canvas.connected'));
     } else if (connections.length < prevConnectionCount.current) {
-      setAnnouncement('Connection removed');
+      setAnnouncement(t('canvas.connectionRemoved'));
     } else if (selectedDeviceId && selectedDeviceId !== prevSelectedDeviceId.current) {
       const selected = devices.find(d => d.id === selectedDeviceId);
-      if (selected) setAnnouncement(`${selected.name} selected`);
+      if (selected) setAnnouncement(t('canvas.deviceSelected', { name: selected.name }));
     } else if (selectedConnectionId && selectedConnectionId !== prevSelectedConnectionId.current) {
-      setAnnouncement('Connection selected');
+      setAnnouncement(t('canvas.connectionSelected'));
     }
     prevDeviceCount.current = devices.length;
     prevConnectionCount.current = connections.length;
     prevSelectedDeviceId.current = selectedDeviceId;
     prevSelectedConnectionId.current = selectedConnectionId;
-  }, [devices, connections.length, selectedDeviceId, selectedConnectionId]);
+  }, [devices, connections.length, selectedDeviceId, selectedConnectionId, t]);
 
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
@@ -223,7 +225,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
   return (
     <div
       role="application"
-      aria-label="Network topology canvas"
+      aria-label={t('canvas.label')}
       className="relative flex-1 overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"
     >
       {/* Screen-reader-only status announcements for add/remove/select/connect. */}
@@ -247,7 +249,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
       {/* Drop zone indicator */}
       {isDraggingOver && (
         <div className="absolute inset-4 border-2 border-dashed border-primary/50 rounded-xl bg-primary/5 pointer-events-none z-10 flex items-center justify-center">
-          <span className="text-primary/70 text-lg font-medium">Drop here to add device</span>
+          <span className="text-primary/70 text-lg font-medium">{t('canvas.dropHere')}</span>
         </div>
       )}
 
@@ -255,7 +257,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
       {isConnecting && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2 bg-green-500/20 backdrop-blur-md border border-green-500/50 rounded-full">
           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-          <span className="text-green-400 text-sm font-medium">Click on a device to connect</span>
+          <span className="text-green-400 text-sm font-medium">{t('canvas.clickToConnect')}</span>
           <button
             onClick={cancelConnecting}
             className="ml-2 p-1 hover:bg-white/10 rounded-full transition-colors"
@@ -384,7 +386,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           onClick={() => setZoom(zoom - 0.1)}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
           disabled={zoom <= 0.25}
-          aria-label="Zoom out"
+          aria-label={t('canvas.zoomOut')}
         >
           <ZoomOut className="w-4 h-4 text-white/70" />
         </button>
@@ -395,7 +397,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
           onClick={() => setZoom(zoom + 0.1)}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
           disabled={zoom >= 2}
-          aria-label="Zoom in"
+          aria-label={t('canvas.zoomIn')}
         >
           <ZoomIn className="w-4 h-4 text-white/70" />
         </button>
@@ -403,7 +405,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
         <button
           onClick={() => { setZoom(1); setPan(0, 0); }}
           className="p-2 hover:bg-white/10 rounded-md transition-colors"
-          aria-label="Reset zoom and pan"
+          aria-label={t('canvas.resetView')}
         >
           <Maximize2 className="w-4 h-4 text-white/70" />
         </button>
@@ -418,8 +420,8 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
               </svg>
             </div>
-            <h3 className="text-lg font-medium text-white/50">No devices yet</h3>
-            <p className="text-sm text-white/30">Drag equipment from the sidebar to get started</p>
+            <h3 className="text-lg font-medium text-white/50">{t('canvas.emptyTitle')}</h3>
+            <p className="text-sm text-white/30">{t('canvas.emptyHint')}</p>
           </div>
         </div>
       )}

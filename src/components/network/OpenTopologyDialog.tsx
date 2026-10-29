@@ -4,6 +4,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Trash2 } from 'lucide-react';
 import { ConfirmDialog } from './ConfirmDialog';
+import { useLocale } from '@/i18n/useLocale';
 import { deleteTopologyFromBrowser, listSavedTopologies, type SavedTopologyEntry } from '@/store/localStorageTopology';
 
 interface OpenTopologyDialogProps {
@@ -20,6 +21,7 @@ interface OpenTopologyDialogProps {
  *  flow (rapport 09 audit, item #54) with a clickable list + delete
  *  button per entry. */
 export function OpenTopologyDialog({ open, onOpenChange, onOpen, confirmReplace }: OpenTopologyDialogProps) {
+  const { locale, t } = useLocale();
   const [entries, setEntries] = useState<SavedTopologyEntry[]>([]);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [pendingOpen, setPendingOpen] = useState<string | null>(null);
@@ -42,12 +44,12 @@ export function OpenTopologyDialog({ open, onOpenChange, onOpen, confirmReplace 
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Open topology</DialogTitle>
-            <DialogDescription>Choose a topology saved to your browser's local storage.</DialogDescription>
+            <DialogTitle>{t('open.title')}</DialogTitle>
+            <DialogDescription>{t('open.description')}</DialogDescription>
           </DialogHeader>
           {entries.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">
-              No saved topologies. Use "Save" first, or "Import" to load a JSON file.
+              {t('open.empty')}
             </p>
           ) : (
             <ScrollArea className="max-h-80">
@@ -69,14 +71,16 @@ export function OpenTopologyDialog({ open, onOpenChange, onOpen, confirmReplace 
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate">{entry.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {entry.deviceCount} device{entry.deviceCount === 1 ? '' : 's'} · saved {new Date(entry.savedAt).toLocaleString()}
+                        {t(entry.deviceCount === 1 ? 'open.deviceOne' : 'open.deviceMany', { count: entry.deviceCount })}
+                        {' · '}
+                        {t('open.saved', { date: new Date(entry.savedAt).toLocaleString(locale === 'fr' ? 'fr-FR' : undefined) })}
                       </div>
                     </div>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 shrink-0"
-                      aria-label={`Delete ${entry.name}`}
+                      aria-label={t('open.deleteLabel', { name: entry.name })}
                       onClick={(e) => { e.stopPropagation(); setPendingDelete(entry.name); }}
                     >
                       <Trash2 className="w-4 h-4" />
@@ -91,9 +95,9 @@ export function OpenTopologyDialog({ open, onOpenChange, onOpen, confirmReplace 
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
-        title="Delete saved topology?"
-        description={`"${pendingDelete}" will be permanently removed from your browser's storage. This cannot be undone.`}
-        confirmLabel="Delete"
+        title={t('open.deleteTitle')}
+        description={t('open.deleteDescription', { name: pendingDelete ?? '' })}
+        confirmLabel={t('open.delete')}
         destructive
         onConfirm={() => {
           if (pendingDelete) {
@@ -106,9 +110,9 @@ export function OpenTopologyDialog({ open, onOpenChange, onOpen, confirmReplace 
       <ConfirmDialog
         open={pendingOpen !== null}
         onOpenChange={(o) => { if (!o) setPendingOpen(null); }}
-        title="Replace current topology?"
-        description={`Loading "${pendingOpen}" will replace everything on the canvas now. Any unsaved changes will be lost.`}
-        confirmLabel="Replace"
+        title={t('open.replaceTitle')}
+        description={t('open.replaceDescription', { name: pendingOpen ?? '' })}
+        confirmLabel={t('open.replace')}
         destructive
         onConfirm={() => {
           if (pendingOpen) onOpen(pendingOpen);

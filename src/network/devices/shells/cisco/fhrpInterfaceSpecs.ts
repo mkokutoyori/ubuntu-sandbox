@@ -59,6 +59,7 @@ const ADRESSE: ArgumentSpec = {
 
 const CIBLE: ArgumentSpec = {
   name: 'cible', type: 'WORD', description: 'Tracked object number or interface',
+  pattern: /^(?:[1-9]\d{0,2}|1000|[A-Za-z][A-Za-z-]*\d+(?:\/\d+)*(?:\.\d+)?)$/,
 };
 
 const DECREMENT: ArgumentSpec = {

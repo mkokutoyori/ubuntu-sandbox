@@ -9,6 +9,7 @@
  * instead of creating terminal state internally.
  */
 
+import { useLocale } from '@/i18n/useLocale';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   X, Minus, Maximize2, Copy, Circle, Download, Settings2, Lightbulb, ClipboardPaste,
@@ -37,6 +38,7 @@ interface TerminalModalProps {
 }
 
 export function TerminalModal({ session, onClose, onMinimize, embedded = false }: TerminalModalProps) {
+  const { t } = useLocale();
   // Subscribe to session so we re-render on changes (e.g. Windows shell mode)
   useTerminalSession(session);
 
@@ -179,9 +181,9 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
         {!isPoweredOn && (
           <span
             className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 shrink-0"
-            title="Device is powered off — terminal is read-only"
+            title={t('terminal.offlineTitle')}
           >
-            OFFLINE
+            {t('terminal.offline')}
           </span>
         )}
       </div>
@@ -189,8 +191,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
         <button
           onClick={() => setShowScrollbackConfig(prev => !prev)}
           className="w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
-          title="Scrollback settings"
-          aria-label="Scrollback settings"
+          title={t('terminal.scrollbackSettings')}
+          aria-label={t('terminal.scrollbackSettings')}
           aria-expanded={showScrollbackConfig}
         >
           <Settings2 className="w-3 h-3 text-white/40 hover:text-white/70" />
@@ -202,10 +204,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
             "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
             session.isGhostTextEnabled() && "bg-amber-400/10"
           )}
-          title={session.isGhostTextEnabled()
-            ? 'Ghost text ON — inline completion preview (click to disable)'
-            : 'Ghost text OFF — click to enable inline completion preview'}
-          aria-label="Inline completion preview"
+          title={session.isGhostTextEnabled() ? t('terminal.ghostOn') : t('terminal.ghostOff')}
+          aria-label={t('terminal.ghostLabel')}
           aria-pressed={session.isGhostTextEnabled()}
         >
           <Lightbulb className={cn(
@@ -220,10 +220,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
             "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
             session.isMultilinePasteEnabled() && "bg-amber-400/10"
           )}
-          title={session.isMultilinePasteEnabled()
-            ? 'Multi-line paste ON — a pasted block runs line by line, like a real console (click to hold it back)'
-            : 'Multi-line paste OFF — a pasted block stays editable on the command line and runs nothing'}
-          aria-label="Multi-line paste"
+          title={session.isMultilinePasteEnabled() ? t('terminal.pasteOn') : t('terminal.pasteOff')}
+          aria-label={t('terminal.pasteLabel')}
           aria-pressed={session.isMultilinePasteEnabled()}
         >
           <ClipboardPaste className={cn(
@@ -237,10 +235,8 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
             "w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors",
             session.isRecording && "bg-red-500/10"
           )}
-          title={session.isRecording ? 'Stop recording & download' : 'Start recording session'}
-          aria-label={session.isRecording
-            ? 'Stop recording and download the session'
-            : 'Start recording the session'}
+          title={session.isRecording ? t('terminal.recordStop') : t('terminal.recordStart')}
+          aria-label={session.isRecording ? t('terminal.recordStopLabel') : t('terminal.recordStartLabel')}
           aria-pressed={session.isRecording}
         >
           {session.isRecording
@@ -248,16 +244,16 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
             : <Circle className="w-3 h-3 text-white/40 hover:text-white/70" />
           }
         </button>
-        <button onClick={onMinimize} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title="Minimize" aria-label="Minimize the terminal">
+        <button onClick={onMinimize} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title={t('terminal.minimize')} aria-label={t('terminal.minimizeLabel')}>
           <Minus className="w-4 h-4 text-white/70" />
         </button>
         {!embedded && (
-          <button onClick={toggleFullscreen} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title={isFullscreen ? 'Restore Down' : 'Maximize'}
-            aria-label={isFullscreen ? 'Restore the terminal down' : 'Maximize the terminal'}>
+          <button onClick={toggleFullscreen} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title={isFullscreen ? t('terminal.restore') : t('terminal.maximize')}
+            aria-label={isFullscreen ? t('terminal.restoreLabel') : t('terminal.maximizeLabel')}>
             {isFullscreen ? <Copy className="w-3.5 h-3.5 text-white/70" /> : <Maximize2 className="w-3.5 h-3.5 text-white/70" />}
           </button>
         )}
-        <button onClick={onClose} className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group" title="Close" aria-label="Close the terminal">
+        <button onClick={onClose} className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group" title={t('terminal.close')} aria-label={t('terminal.closeLabel')}>
           <X className="w-4 h-4 text-white/70 group-hover:text-white" />
         </button>
       </div>
@@ -273,7 +269,7 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
           className="absolute top-1 right-1 z-20 p-3 rounded-lg border shadow-xl"
           style={{ backgroundColor: '#1e1e1e', borderColor: '#3f3f3f' }}
         >
-          <label htmlFor="scrollback-limit" className="block text-[11px] text-white/60 mb-2">Scrollback limit</label>
+          <label htmlFor="scrollback-limit" className="block text-[11px] text-white/60 mb-2">{t('terminal.scrollbackLimit')}</label>
           <div className="flex items-center gap-2">
             <input
               id="scrollback-limit"
@@ -327,7 +323,7 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
         */
         role="dialog"
         aria-modal="true"
-        aria-label={`Terminal — ${deviceName}`}
+        aria-label={t('terminal.dialogLabel', { name: deviceName })}
         className={cn("flex flex-col relative", "bg-[#0c0c0c] overflow-hidden", "border border-[#3f3f3f] shadow-2xl shadow-black/70", "animate-in zoom-in-95 fade-in duration-200", isResizing && "select-none")}
         style={isFullscreen ? { width: '100vw', height: '100vh', borderRadius: 0 } : { width: `${dimensions.width}px`, height: `${dimensions.height}px` }}
       >

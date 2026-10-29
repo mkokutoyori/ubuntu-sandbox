@@ -28,6 +28,7 @@
  *                    across the round-trip, not just the narrow fields above.
  */
 
+import { MESSAGES } from '@/i18n/messages';
 import {
   Equipment, Cable, Port,
   IPAddress, SubnetMask, MACAddress,
@@ -78,9 +79,7 @@ import { WindowsServer } from '@/network/devices/WindowsServer';
  *  list in the header comment above: anything not listed there. */
 const UNSET_IPV4 = '0.0.0.0';
 
-export const TOPOLOGY_SAVE_CAVEATS =
-  "Terminal sessions, in-progress editors, and live TCP/SSH connections are not included — they close when this topology is loaded. " +
-  "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly.";
+export const TOPOLOGY_SAVE_CAVEATS = MESSAGES.en['topology.saveCaveats'];
 
 // ── Export schema ──
 
