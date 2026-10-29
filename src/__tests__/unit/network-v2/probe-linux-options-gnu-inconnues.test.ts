@@ -100,7 +100,7 @@ describe('du evaluates the options it accepts', () => {
     return machine.executeCommand(line);
   }
   it('witness: default lists directories only, deepest first', async () => {
-    expect(await du('du /tmp/d')).toBe('1\t/tmp/d/e/g\n1\t/tmp/d/e\n1\t/tmp/d');
+    expect(await du('du /tmp/d')).toBe('4\t/tmp/d/e/g\n12\t/tmp/d/e\n20\t/tmp/d');
   });
   it('witness: -sb is one line of bytes', async () => { expect(await du('du -sb /tmp/d')).toBe('7\t/tmp/d'); });
   it('--zorglub is refused', async () => { expect(await du('du --zorglub /tmp/d')).toContain("du: unrecognized option '--zorglub'"); });
