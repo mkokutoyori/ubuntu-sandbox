@@ -17,6 +17,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Toolbar } from '@/components/network/Toolbar';
 import { DevicePalette } from '@/components/network/DevicePalette';
 import { HelpDialog } from '@/components/network/HelpDialog';
+import { ConfirmDialog } from '@/components/network/ConfirmDialog';
+import { MessageDialog } from '@/components/network/MessageDialog';
+import { SaveTopologyDialog } from '@/components/network/SaveTopologyDialog';
+import { OpenTopologyDialog } from '@/components/network/OpenTopologyDialog';
+import { TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
 import { DEVICE_CATEGORIES } from '@/network';
 import { getLocale, setLocale, categoryLabel, deviceTypeDescription } from '@/i18n';
 import { MESSAGES, FRENCH_DEVICE_DESCRIPTIONS } from '@/i18n/messages';
@@ -64,6 +69,36 @@ describe('French', () => {
     expect(localStorage.getItem('ubuntu-sandbox.locale')).toBe('fr');
     expect(getLocale()).toBe('fr');
     expect(document.documentElement.lang).toBe('fr');
+  });
+});
+
+describe('dialogs follow the language', () => {
+  const dialogs = () => (
+    <>
+      <ConfirmDialog open onOpenChange={() => undefined} title="T" description="D" onConfirm={() => undefined} />
+      <MessageDialog open onOpenChange={() => undefined} title="T" description="D" />
+      <SaveTopologyDialog open onOpenChange={() => undefined} defaultName="Lab" onSave={() => undefined} />
+      <OpenTopologyDialog open onOpenChange={() => undefined} onOpen={() => undefined} />
+    </>
+  );
+
+  it('witness: English buttons and the English save caveat are unchanged', () => {
+    render(dialogs());
+    expect(screen.getAllByText('Cancel').length).toBeGreaterThan(0);
+    expect(screen.getByText('Confirm')).toBeInTheDocument();
+    expect(screen.getByText('Save topology')).toBeInTheDocument();
+    expect(screen.getByText(TOPOLOGY_SAVE_CAVEATS)).toBeInTheDocument();
+  });
+
+  it('renders French labels, the French save caveat and the empty list message', () => {
+    act(() => setLocale('fr'));
+    render(dialogs());
+    expect(screen.getAllByText('Annuler').length).toBeGreaterThan(0);
+    expect(screen.getByText('Confirmer')).toBeInTheDocument();
+    expect(screen.getByText('Enregistrer la topologie')).toBeInTheDocument();
+    expect(screen.getByText(/Les sessions de terminal/)).toBeInTheDocument();
+    expect(screen.getByText(/Aucune topologie enregistrée/)).toBeInTheDocument();
+    expect(screen.queryByText(TOPOLOGY_SAVE_CAVEATS)).not.toBeInTheDocument();
   });
 });
 
