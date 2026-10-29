@@ -4268,14 +4268,16 @@ stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
 incremental SPF, the discard route, process shutdown).
 
 
-## Interface translation: live stats, terminal chrome and logs
+## Interface translation: live-state statistics and cable labels
 
 The interface has a global EN/FR switch (toolbar, `src/i18n/useLocale.ts`).
 Translated: the toolbar, the equipment palette, the help dialog, the
 save/open/confirm/message dialogs, the strings of NetworkDesigner and the
-properties panel, the settings dialog and the simulation clock controls.
-Still English only: the live-state statistics section of the properties
-panel, the terminal modal chrome and the log panel. Every terminal-side
+properties panel, the settings dialog, the simulation clock controls, the
+canvas, the device action buttons, the interface selector, the terminal modal
+title bar and the terminal taskbar. Still English only: the live-state
+statistics section of the properties panel (devtools/LiveDeviceStats) and the
+cable aria-labels of ConnectionLine. Every terminal-side
 message stays in the vendor's English by design (the simulated CLIs answer as
 the real products do). The topology image draws the cables with the canvas's
 own router (`computeCableRoutes`, zoom 1); it does not reproduce the canvas's

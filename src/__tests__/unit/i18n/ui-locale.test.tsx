@@ -25,6 +25,8 @@ import { TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
 import { PropertiesPanel } from '@/components/network/PropertiesPanel';
 import { NetworkCanvas } from '@/components/network/NetworkCanvas';
 import { InterfaceSelectorPopover } from '@/components/network/InterfaceSelectorPopover';
+import { TerminalTaskbar } from '@/components/network/MinimizedTerminals';
+import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import { useNetworkStore } from '@/store/networkStore';
 import { SettingsDialog, SettingsRegistry, type SettingsSection } from '@/components/settings';
 import { simulationSettingsSection } from '@/components/settings/sections/simulationSection';
@@ -218,6 +220,34 @@ describe('the canvas, its devices and the interface selector follow the language
     );
     expect(screen.getByText('Source : R1')).toBeInTheDocument();
     expect(screen.getByLabelText('Annuler le choix de l\'interface')).toBeInTheDocument();
+  });
+});
+
+describe('the terminal taskbar follows the language', () => {
+  const session = { device: { getName: () => 'R1', getType: () => 'router-cisco' } } as unknown as TerminalSession;
+  const taskbar = () => (
+    <TerminalTaskbar
+      sessions={[['s1', session]]} minimizedIds={new Set()} onToggle={() => undefined}
+      onClose={() => undefined} tileLayout="stack" onLayoutChange={() => undefined}
+      focusedIndex={0} visibleCount={1} onFocusChange={() => undefined}
+      desktopPeek={false} onToggleDesktop={() => undefined}
+    />
+  );
+
+  it('witness: English layout and navigation titles are unchanged', () => {
+    render(taskbar());
+    expect(screen.getByTitle('Stack (Alt+S)')).toBeInTheDocument();
+    expect(screen.getByTitle('Split Horizontal (Alt+H)')).toBeInTheDocument();
+    expect(screen.getByText('Desktop')).toBeInTheDocument();
+  });
+
+  it('renders French layout names and the desktop toggle', () => {
+    act(() => setLocale('fr'));
+    render(taskbar());
+    expect(screen.getByTitle('Pile (Alt+S)')).toBeInTheDocument();
+    expect(screen.getByTitle('Division horizontale (Alt+H)')).toBeInTheDocument();
+    expect(screen.getByText('Bureau')).toBeInTheDocument();
+    expect(screen.getByLabelText('Disposer les terminaux : Grille (Alt+G)')).toBeInTheDocument();
   });
 });
 
