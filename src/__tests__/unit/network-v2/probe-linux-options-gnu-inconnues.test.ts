@@ -14,7 +14,8 @@
  * refusals fall, the 6 valid forms pass either way. Fourth step (ls, head, sort,
  * uniq, cut, tr; `ls --zorglub` listed the directory and `head --zorglub`
  * printed nothing): 14 cases added, 7 refusals fall, the 7 valid forms pass
- * either way. Option tables are the GNU
+ * either way. Fifth step (`date --zorglub` printed the date): 4 cases added, 1
+ * falls, the 3 valid forms pass either way. Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -30,7 +31,7 @@ function pc(): Sh {
 }
 
 describe('known options still work', () => {
-  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a'])('witness: `%s` is accepted', async (line) => {
+  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a', 'date -u', 'date --iso-8601=seconds', 'date +%Y'])('witness: `%s` is accepted', async (line) => {
     expect(await pc().executeCommand(line)).not.toMatch(/unrecognized option|invalid option|extra operand/);
   });
 });
@@ -59,6 +60,7 @@ describe('unknown options are refused the way GNU getopt does', () => {
     ['basename --zorglub', "basename: unrecognized option '--zorglub'"],
     ['dirname --zorglub', "dirname: unrecognized option '--zorglub'"],
     ['ls --zorglub', "ls: unrecognized option '--zorglub'"],
+    ['date --zorglub', "date: unrecognized option '--zorglub'"],
     ['ls -y', "ls: invalid option -- 'y'"],
     ['head --zorglub', "head: unrecognized option '--zorglub'"],
     ['sort --zorglub', "sort: unrecognized option '--zorglub'"],

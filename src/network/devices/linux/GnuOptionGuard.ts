@@ -101,6 +101,15 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
+  date: {
+    optstring: 'd:f:I::r:Rs:uV',
+    long: [
+      valued('date', 'd'), flag('debug'), valued('file', 'f'), optional('iso-8601', 'I'),
+      valued('reference', 'r'), flag('rfc-email', 'R'), valued('rfc-3339'), valued('set', 's'),
+      flag('utc', 'u'), flag('universal', 'u'), flag('resolution'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
   mkdir: {
     optstring: 'm:pvZ',
     long: [valued('mode', 'm'), flag('parents', 'p'), flag('verbose', 'v'), valued('context'), ...HELP_VERSION],
