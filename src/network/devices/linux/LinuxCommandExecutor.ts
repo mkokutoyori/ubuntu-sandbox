@@ -457,7 +457,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -6174,7 +6174,20 @@ export class LinuxCommandExecutor {
       case 'sed': return cmdSed(c, args, stdin);
 
       // Search commands
-      case 'find': return { output: cmdFind(c, args), exitCode: 0 };
+      case 'find': return cmdFind(c, args, {
+        interactive: stdin === undefined && this.hasControllingTty(),
+        run: (argv, cwd) => {
+          const saved = this.cwd;
+          this.cwd = cwd;
+          try {
+            const r = this.dispatch(argv[0], argv.slice(1), undefined, isSudo);
+            const closed = (text: string): string => (text === '' || text.endsWith('\n') ? text : `${text}\n`);
+            return { stdout: writesLines(argv) ? closed(r.output) : r.output, stderr: closed(r.stderr ?? ''), exitCode: r.exitCode };
+          } finally {
+            this.cwd = saved;
+          }
+        },
+      }, stdin);
       case 'locate': return { output: cmdLocate(c, args), exitCode: 0 };
       case 'which': return this.handleWhich(args);
       case 'whereis': return this.handleWhereis(args);

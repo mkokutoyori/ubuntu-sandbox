@@ -202,9 +202,9 @@ interface LsEntry {
   absPath: string;
 }
 
-const lsSize = (inode: INode): number => (inode.type === 'directory' ? DIRECTORY_BYTES : inode.size);
+export const lsSize = (inode: INode): number => (inode.type === 'directory' ? DIRECTORY_BYTES : inode.size);
 
-const lsBlocksKiB = (inode: INode): number => {
+export const lsBlocksKiB = (inode: INode): number => {
   if (inode.type === 'directory') return 4;
   if (inode.type === 'symlink' || inode.type === 'chardev') return 0;
   return Math.ceil(inode.size / 4096) * 4;

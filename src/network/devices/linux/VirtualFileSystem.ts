@@ -25,6 +25,15 @@ export type FindType = typeof FIND_TYPES[number];
 
 export type FindVisit = void | 'prune' | 'stop';
 
+export interface FindWalkOptions {
+  maxdepth?: number;
+  device?: number;
+  deviceOf?: (absPath: string) => number;
+  postOrder?: boolean;
+  follow?: 'none' | 'args' | 'all';
+  onError?: (message: string) => void;
+}
+
 export function isFindType(text: string): text is FindType {
   return (FIND_TYPES as readonly string[]).includes(text);
 }
@@ -1681,39 +1690,66 @@ export class VirtualFileSystem {
 
   walkFind(
     startPath: string,
-    options: { maxdepth?: number; device?: number; deviceOf?: (absPath: string) => number; postOrder?: boolean },
-    visit: (path: string, inode: INode, depth: number) => FindVisit,
+    options: FindWalkOptions,
+    visit: (path: string, inode: INode, depth: number, link: INode) => FindVisit,
   ): void {
-    this.walkFindNode(startPath, 0, options, visit, { stopped: false });
+    this.walkFindNode(startPath, 0, options, visit, { stopped: false, ancestors: new Map<number, string>() });
+  }
+
+  symlinkLoops(path: string): boolean {
+    let current = path;
+    for (let step = 0; step < 41; step++) {
+      const node = this.resolveInode(current, false);
+      if (node === null || node.type !== 'symlink') return false;
+      const slash = current.lastIndexOf('/');
+      current = this.normalizePath(this.resolutionTarget(node), slash <= 0 ? '/' : current.slice(0, slash));
+    }
+    return true;
   }
 
   private walkFindNode(
     path: string,
     depth: number,
-    options: { maxdepth?: number; device?: number; deviceOf?: (absPath: string) => number; postOrder?: boolean },
-    visit: (path: string, inode: INode, depth: number) => FindVisit,
-    state: { stopped: boolean },
+    options: FindWalkOptions,
+    visit: (path: string, inode: INode, depth: number, link: INode) => FindVisit,
+    state: { stopped: boolean; ancestors: Map<number, string> },
   ): void {
     if (state.stopped) return;
-    const inode = this.resolveInode(path, depth === 0);
-    if (!inode) return;
+    const link = this.resolveInode(path, false);
+    if (!link) return;
+    let inode = link;
+    const follow = options.follow === 'all' || (options.follow !== 'none' && depth === 0 && (options.follow === 'args' || options.follow === undefined));
+    if (follow && link.type === 'symlink') {
+      const target = this.resolveInode(path, true);
+      if (target) inode = target;
+      else if (this.symlinkLoops(path)) {
+        options.onError?.(`'${path}': Too many levels of symbolic links`);
+        return;
+      }
+    }
     if (options.maxdepth !== undefined && depth > options.maxdepth) return;
     if (options.deviceOf !== undefined && options.deviceOf(path) !== options.device) return;
+    if (inode.type === 'directory' && state.ancestors.has(inode.id)) {
+      options.onError?.(`File system loop detected; '${path}' is part of the same file system loop as '${state.ancestors.get(inode.id)}'.`);
+      return;
+    }
 
     let outcome: FindVisit;
     if (options.postOrder !== true) {
-      outcome = visit(path, inode, depth);
+      outcome = visit(path, inode, depth, link);
       if (outcome === 'stop') { state.stopped = true; return; }
     }
     const descend = inode.type === 'directory' && outcome !== 'prune'
       && !(options.maxdepth !== undefined && depth + 1 > options.maxdepth);
     if (descend) {
+      state.ancestors.set(inode.id, path);
       for (const [name] of inode.children) {
         if (name === '.' || name === '..') continue;
         this.walkFindNode(path.replace(/\/$/, '') + '/' + name, depth + 1, options, visit, state);
       }
+      state.ancestors.delete(inode.id);
     }
-    if (options.postOrder === true && !state.stopped && visit(path, inode, depth) === 'stop') state.stopped = true;
+    if (options.postOrder === true && !state.stopped && visit(path, inode, depth, link) === 'stop') state.stopped = true;
   }
 
   matchesFindCriteria(path: string, inode: INode, options: any): boolean {
