@@ -5295,7 +5295,8 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           description: 'Display SSH sessions', values: [],
         }],
         modes: exec, minPrivilege: 15,
-        run: () => {
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('ssh', args.reste);
           const dev = this.d() as unknown as {
             getSshSessionRegistry?: () =>
             { list: () => readonly { lineIndex: number; user: string; cipher: string; hmac: string }[] } | null;
@@ -5434,7 +5435,11 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         id: 'show-processes-memory', description: 'Display per-process memory',
         path: ['show', 'processes', 'memory', { name: 'vue', type: 'REST' as const, optional: true, description: 'Memory view' }],
-        modes: exec, minPrivilege: 1, run: () => showProcessesMemory(),
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('processes memory', args.vue);
+          return showProcessesMemory();
+        },
       },
       {
         id: 'show-boot', description: 'Display boot variables',

@@ -53,6 +53,8 @@ export function refuseUnknownDiscoveryArgs(protocol: 'cdp' | 'lldp', words: read
 export const EXEC_SHOW_SELECTORS: Readonly<Record<string, SelectorWords>> = {
   memory: { keywords: ['statistics', 'summary', 'free', 'io', 'processor', 'allocating-process', 'dead', 'fragment', 'failures'], max: 2 },
   boot: { max: 0 },
+  ssh: { keywords: ['sessions'], max: 1 },
+  'processes memory': { keywords: ['sorted', 'platform', 'allocated', 'getbufs', 'freed', 'holding', 'retbufs'], integer: [0, 4294967295], max: 2 },
   flash: { keywords: ['all', 'chips', 'detail', 'err', 'summary'], max: 1 },
   controllers: { interfaces: true, keywords: ['ethernet', 'gigabitethernet', 'fastethernet', 'serial'], integer: [0, 65535], max: 2 },
   environment: { keywords: ['all', 'fan', 'power', 'temperature', 'status', 'table', 'voltage', 'alarm', 'leds'], max: 1 },
