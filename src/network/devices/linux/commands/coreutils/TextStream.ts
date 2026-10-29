@@ -25,6 +25,8 @@ import { simulationDate } from '@/network/core/SystemClock';
 import { base64ToBytes, bytesToBase64, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
 import { numberLines, parseNumbering } from './NumberLines';
+import { shortOptions } from '../Getopt';
+import { GNU_OPTION_SETS } from '../../GnuOptionGuard';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { padToWidth, renderTableText, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
@@ -69,8 +71,8 @@ function missing(cmd: string, name: string): string {
 }
 
 /** Les lignes d'un contenu, sans la ligne vide finale d'un fichier terminé par \n. */
-function toLines(content: string): string[] {
-  const lines = content.split('\n');
+function toLines(content: string, terminator = '\n'): string[] {
+  const lines = content.split(terminator);
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines;
 }
@@ -171,15 +173,17 @@ export const pasteCommand = coreutil(
     { flag: '-d', description: 'Delimiter list', takesArg: true, argName: 'LIST' },
   ],
   (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'sd', 'd');
+    const set = GNU_OPTION_SETS.paste;
     let delims = '\t';
     let serial = false;
+    let terminator = '\n';
     const files: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-s') { serial = true; continue; }
-      if (a === '-d' && args[i + 1] !== undefined) { delims = args[i + 1]; i++; continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
+    for (const item of shortOptions(rawArgs, set.optstring, set.long)) {
+      if (item.kind === 'operand') files.push(item.value);
+      else if (item.kind !== 'option') continue;
+      else if (item.letter === 's') serial = true;
+      else if (item.letter === 'd') delims = item.argument ?? '\t';
+      else if (item.letter === 'z') terminator = '\0';
     }
     if (delims === '') delims = '\t';
     const got = inputs(ctx, files, stdin, 'paste');
@@ -188,10 +192,10 @@ export const pasteCommand = coreutil(
     const sep = (i: number) => delims[i % delims.length];
     if (serial) {
       return got
-        .map(c => toLines(c).reduce((acc, l, i) => (i === 0 ? l : acc + sep(i - 1) + l), ''))
-        .join('\n');
+        .map(c => toLines(c, terminator).reduce((acc, l, i) => (i === 0 ? l : acc + sep(i - 1) + l), ''))
+        .join(terminator);
     }
-    const columns = got.map(toLines);
+    const columns = got.map(c => toLines(c, terminator));
     const height = Math.max(0, ...columns.map(c => c.length));
     const rows: string[] = [];
     for (let r = 0; r < height; r++) {
@@ -199,14 +203,14 @@ export const pasteCommand = coreutil(
         .map(c => c[r] ?? '')
         .reduce((acc, cell, i) => (i === 0 ? cell : acc + sep(i - 1) + cell), ''));
     }
-    return rows.join('\n');
+    return rows.join(terminator);
   },
 );
 
 // ─── comm ───────────────────────────────────────────────────────────
 
 export const commCommand = coreutil(
-  'comm', 'comm [-123] FILE1 FILE2',
+  'comm', 'comm [OPTION]... FILE1 FILE2',
   'Compare two sorted files line by line, in three columns: lines only\n'
   + 'in FILE1, only in FILE2, and in both. -1/-2/-3 suppress the matching\n'
   + 'column, so -12 keeps only what is common and -3 only the differences.',
@@ -214,27 +218,48 @@ export const commCommand = coreutil(
     { flag: '-1', description: 'Suppress lines unique to FILE1' },
     { flag: '-2', description: 'Suppress lines unique to FILE2' },
     { flag: '-3', description: 'Suppress lines present in both' },
+    { flag: '--output-delimiter', description: 'Separate columns with STR', takesArg: true, argName: 'STR' },
+    { flag: '--check-order', description: 'Refuse input that is not sorted' },
+    { flag: '--total', description: 'Print a summary line' },
+    { flag: '-z', description: 'Lines end with NUL, not newline' },
   ],
   (ctx, rawArgs, stdin) => {
-    const args = rawArgs;
+    const set = GNU_OPTION_SETS.comm;
     const suppressed = new Set<number>();
     const files: string[] = [];
-    for (const a of args) {
-      if (/^-[123]+$/.test(a)) { for (const d of a.slice(1)) suppressed.add(Number(d)); continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
+    let delimiter = '\t';
+    let checkOrder = false;
+    let total = false;
+    let terminator = '\n';
+    for (const item of shortOptions(rawArgs, set.optstring, set.long)) {
+      if (item.kind === 'operand') files.push(item.value);
+      else if (item.kind !== 'option') continue;
+      else if (/^[123]$/.test(item.letter)) suppressed.add(Number(item.letter));
+      else if (item.long === 'output-delimiter') delimiter = item.argument ?? '\t';
+      else if (item.long === 'check-order') checkOrder = true;
+      else if (item.long === 'nocheck-order') checkOrder = false;
+      else if (item.long === 'total') total = true;
+      else if (item.letter === 'z') terminator = '\0';
     }
-    if (files.length !== 2) return 'comm: missing operand';
+    if (files.length < 2) return files.length === 0 ? 'comm: missing operand' : `comm: missing operand after '${files[0]}'`;
+    if (files.length > 2) return `comm: extra operand '${files[2]}'`;
     const got = inputs(ctx, files, stdin, 'comm');
     if (!Array.isArray(got)) return got;
 
-    const [a, b] = got.map(toLines);
+    const [a, b] = got.map(content => toLines(content, terminator));
+    if (checkOrder) {
+      for (const [index, lines] of [a, b].entries()) {
+        if (lines.some((line, at) => at > 0 && lines[at - 1] > line)) return `comm: file ${index + 1} is not in sorted order`;
+      }
+    }
     const out: string[] = [];
+    const counts = [0, 0, 0];
     const emit = (col: 1 | 2 | 3, value: string) => {
+      counts[col - 1]++;
       if (suppressed.has(col)) return;
-      // Chaque colonne conservée qui précède décale d'une tabulation.
       let indent = 0;
       for (let c = 1; c < col; c++) if (!suppressed.has(c)) indent++;
-      out.push('\t'.repeat(indent) + value);
+      out.push(delimiter.repeat(indent) + value);
     };
     let i = 0, j = 0;
     while (i < a.length && j < b.length) {
@@ -244,7 +269,8 @@ export const commCommand = coreutil(
     }
     while (i < a.length) { emit(1, a[i]); i++; }
     while (j < b.length) { emit(2, b[j]); j++; }
-    return out.join('\n');
+    if (total) out.push(`${counts[0]}${delimiter}${counts[1]}${delimiter}${counts[2]}${delimiter}total`);
+    return out.join(terminator);
   },
 );
 
@@ -465,7 +491,7 @@ export const columnCommand = coreutil(
     const got = inputs(ctx, files, stdin, 'column');
     if (!Array.isArray(got)) return got;
 
-    const lines = got.flatMap(toLines).filter(l => l !== '');
+    const lines = got.flatMap(content => toLines(content)).filter(l => l !== '');
     if (!table) return lines.join('\n');
 
     const splitter = sep === null
@@ -587,23 +613,47 @@ export const splitCommand = coreutil(
 // ─── base64 ─────────────────────────────────────────────────────────
 
 export const base64Command = coreutil(
-  'base64', 'base64 [-d] [FILE]',
-  'Encode or decode base64. -d decodes.',
-  [{ flag: '-d', description: 'Decode instead of encoding' }],
+  'base64', 'base64 [OPTION]... [FILE]',
+  'Encode or decode base64. -d decodes; -w wraps encoded lines after COLS\n'
+  + 'characters (76 by default, 0 never wraps); -i ignores non-alphabet\n'
+  + 'characters when decoding.',
+  [
+    { flag: '-d', description: 'Decode instead of encoding' },
+    { flag: '-i', description: 'When decoding, ignore non-alphabet characters' },
+    { flag: '-w', description: 'Wrap encoded lines after COLS characters', takesArg: true, argName: 'COLS' },
+  ],
   (ctx, args, stdin) => {
-    const decode = args.some(a => a === '-d' || a === '--decode');
-    const got = inputs(ctx, args.filter(a => !a.startsWith('-') || a === '-'), stdin, 'base64');
+    const set = GNU_OPTION_SETS.base64;
+    let decode = false;
+    let ignoreGarbage = false;
+    let wrap = 76;
+    const files: string[] = [];
+    for (const item of shortOptions(args, set.optstring, set.long)) {
+      if (item.kind === 'operand') files.push(item.value);
+      else if (item.kind === 'option' && item.letter === 'd') decode = true;
+      else if (item.kind === 'option' && item.letter === 'i') ignoreGarbage = true;
+      else if (item.kind === 'option' && item.letter === 'w') {
+        if (!/^\d+$/.test(item.argument ?? '')) return `base64: invalid wrap size: '${item.argument}'`;
+        wrap = Number(item.argument);
+      }
+    }
+    const got = inputs(ctx, files, stdin, 'base64');
     if (!Array.isArray(got)) return got;
     const input = got.join('');
     if (input === '') return '';
 
     try {
       if (decode) {
-        const bytes = base64ToBytes(input.replace(/\s+/g, ''));
+        const text = ignoreGarbage ? input.replace(/[^A-Za-z0-9+/=]/g, '') : input.replace(/\s+/g, '');
+        const bytes = base64ToBytes(text);
         const decoded = bytesToFileText(bytes);
         return /[\udc80-\udcff]/.test(decoded) ? decoded : decoded.replace(/\n$/, '');
       }
-      return `${bytesToBase64(fileTextToBytes(input)).replace(/(.{76})/g, '$1\n').replace(/\n$/, '')}\n`;
+      const encoded = bytesToBase64(fileTextToBytes(input));
+      if (wrap === 0) return encoded;
+      const lines: string[] = [];
+      for (let at = 0; at < encoded.length; at += wrap) lines.push(encoded.slice(at, at + wrap));
+      return `${lines.join('\n')}\n`;
     } catch {
       return 'base64: invalid input';
     }
