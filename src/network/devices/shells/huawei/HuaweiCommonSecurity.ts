@@ -390,8 +390,12 @@ export function registerHuaweiCommonSecurityDisplay(
     displaySshServerStatusVrp(getDevice?.()));
   trie.register('display ssh server session', 'Display SSH server sessions', () =>
     displaySshServerSessionVrp(getDevice?.()));
-  trie.registerGreedy('display snmp-agent', 'Display SNMP agent info', () =>
-    displaySnmpSysInfoVrp(getSnmpServiceDirect?.()));
+  trie.registerGreedy('display snmp-agent', 'Display SNMP agent info', (args) => {
+    if (args.length > 0) {
+      return HUAWEI_ERRORS.WRONG(`display snmp-agent ${args.join(' ')}`, 'display snmp-agent '.length);
+    }
+    return displaySnmpSysInfoVrp(getSnmpServiceDirect?.());
+  });
   trie.registerGreedy('display ntp-service', 'Display NTP status', (args) => {
     const agent = getNtpAgentDirect?.();
     if (!agent) return displayNtpStatus();

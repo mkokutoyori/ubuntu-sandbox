@@ -1414,6 +1414,10 @@ export function registerDisplayCommands(
   trie.registerGreedy('display ip routing-table', 'Display IP routing table', (args) => {
     if (args.length === 0) return displayIpRoutingTable(getRouter());
     if (/^\d+\.\d+\.\d+\.\d+$/.test(args[0])) return displayIpRoutingTableForDest(getRouter(), args[0]);
+    const known = ['statistics', 'verbose', 'vpn-instance', 'protocol', 'summary', 'limit', 'interface'];
+    if (!known.includes(args[0].toLowerCase())) {
+      return HUAWEI_ERRORS.WRONG(`display ip routing-table ${args.join(' ')}`, 'display ip routing-table '.length);
+    }
     return displayIpRoutingTable(getRouter());
   });
   trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
