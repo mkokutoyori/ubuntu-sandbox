@@ -67,6 +67,6 @@ describe('Scénario 3 — ce que bash refuse', () => {
     // présentée comme un résultat.
     const out = await pc.executeCommand('echo $((10 ** -1))');
     expect(out).not.toBe('0');
-    expect(out.toLowerCase()).toContain('arithmetic');
+    expect(out).toBe('bash: 10 ** -1: exponent less than 0 (error token is "-1")');
   });
 });

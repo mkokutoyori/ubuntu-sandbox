@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-eigrp-rip-bgp
-Generated: 2026-10-14T19:57:10.088Z
+Generated: 2026-10-29T17:53:20.921Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=RIP/EIGRP(classic+named)/BGP: peers, redist, policy, show
 Total steps: 355
@@ -883,13 +883,13 @@ Total steps: 355
   BGP router identifier 1.1.1.1, local AS number 65000
   
   Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd
-  10.0.0.2        4 65002      0        0       0    0    0 never    Idle
-  10.0.0.3        4 65003      0        0       0    0    0 never    Idle
-  10.0.0.4        4 65004      0        0       0    0    0 never    Idle
-  10.0.0.5        4 65005      0        0       0    0    0 never    Idle
-  10.0.0.6        4 65006      0        0       0    0    0 never    Idle
-  10.0.0.10       4 65000      0        0       0    0    0 never    Idle
-  10.0.0.1        4 0          0        0       0    0    0 0s       Established
+  10.0.0.2        4 65002        0        0       0    0    0    never Idle
+  10.0.0.3        4 65003        0        0       0    0    0    never Idle
+  10.0.0.4        4 65004        0        0       0    0    0    never Idle
+  10.0.0.5        4 65005        0        0       0    0    0    never Idle
+  10.0.0.6        4 65006        0        0       0    0    0    never Idle
+  10.0.0.10       4 65000        0        0       0    0    0    never Idle
+  10.0.0.1        4     0        2        4       0    0    0       0s Established
 
 [226/355] r1 R1# show ip bgp neighbors
   BGP neighbor is 10.0.0.2, remote AS 65002
@@ -1047,10 +1047,13 @@ Total steps: 355
   BGP local AS 65000, 7 neighbour(s), 1 established
 
 [239/355] r1 R1# show ip bgp vpnv4 all
-  BGP table version is 1, local router ID is 1.1.1.1
+  BGP table version is 0, local router ID is 1.1.1.1
+  Status codes: s suppressed, d damped, h history, * valid, > best, i - internal,
+                r RIB-failure, S Stale, m multipath, b backup-path, f RT-Filter,
+                x best-external, a additional-path, c RIB-compressed,
+  Origin codes: i - IGP, e - EGP, ? - incomplete
+  
        Network          Next Hop            Metric LocPrf Weight Path
-  *>   10.0.0.0/30      0.0.0.0             0         32768 i
-  *>   192.168.1.0/24   0.0.0.0             0         32768 i
 
 [240/355] r1 R1# clear ip bgp *
 <empty>
@@ -1096,7 +1099,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX5541B9W7
+  Processor board ID FTX7413KN6C
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1106,9 +1109,9 @@ Total steps: 355
 [248/355] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 4756 bytes
+  Current configuration : 4828 bytes
   !
-  ! Last configuration change at 19:57:11 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 17:53:21 UTC Thu Oct 29 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1256,6 +1259,9 @@ Total steps: 355
    timers bgp 10 30
    aggregate-address 192.168.0.0 255.255.0.0 summary-only
    aggregate-address 172.16.0.0 255.255.0.0 as-set
+   address-family vpnv4
+    neighbor 10.0.0.1 activate
+   exit-address-family
   !
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
@@ -1511,13 +1517,13 @@ Total steps: 355
   BGP router identifier 1.1.1.1, local AS number 65000
   
   Neighbor        V    AS  MsgRcvd  MsgSent  TblVer  InQ OutQ Up/Down  State/PfxRcd
-  10.0.0.2        4 65002      0        0       0    0    0 never    Idle
-  10.0.0.3        4 65003      0        0       0    0    0 never    Idle
-  10.0.0.4        4 65004      0        0       0    0    0 never    Idle
-  10.0.0.5        4 65005      0        0       0    0    0 never    Idle
-  10.0.0.6        4 65006      0        0       0    0    0 never    Idle
-  10.0.0.10       4 65000      0        0       0    0    0 never    Idle
-  10.0.0.1        4 0          0        0       0    0    0 0s       Established
+  10.0.0.2        4 65002        0        0       0    0    0    never Idle
+  10.0.0.3        4 65003        0        0       0    0    0    never Idle
+  10.0.0.4        4 65004        0        0       0    0    0    never Idle
+  10.0.0.5        4 65005        0        0       0    0    0    never Idle
+  10.0.0.6        4 65006        0        0       0    0    0    never Idle
+  10.0.0.10       4 65000        0        0       0    0    0    never Idle
+  10.0.0.1        4     0        0        0       0    0    0    never Active
 
 [265/355] r1 R1# show ip rip database
   192.168.1.0/24    directly connected, GigabitEthernet0/0
@@ -1598,11 +1604,11 @@ Total steps: 355
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 10 messages logged, xml disabled,
+      Console logging: level debugging, 11 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 10 messages logged, xml disabled,
+      Monitor logging: level debugging, 11 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 10 messages logged, xml disabled,
+      Buffer logging:  level debugging, 11 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -1611,21 +1617,22 @@ Total steps: 355
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 10 message lines logged
+      Trap logging: level informational, 11 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:57:10.081: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:57:10.082: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:57:10.084: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:57:10.084: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:57:10.218: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:10.511: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:10.783: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:11.050: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:11.438: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Oct 14 19:57:11.645: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:20.916: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:53:20.917: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:53:20.918: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:53:20.918: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:53:20.947: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.002: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.056: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.083: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.168: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Oct 29 17:53:21.203: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.234: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Down
 
 [282/355] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1636,8 +1643,8 @@ Total steps: 355
 [283/355] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE7A5D18.2A3D70A3 (19:57:12.165 UTC Wed Oct 14 2026)
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE8E0691.4E560418 (17:53:21.306 UTC Thu Oct 29 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1648,14 +1655,14 @@ Total steps: 355
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [285/355] r1 R1# show clock
-  *19:57:12.000 UTC Wed Oct 14 2026
+  *17:53:21.000 UTC Thu Oct 29 2026
 
 [286/355] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1831,7 +1838,7 @@ Total steps: 355
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX5541B9W7
+  Processor board ID FTX7413KN6C
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1841,9 +1848,9 @@ Total steps: 355
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 4756 bytes
+  Current configuration : 4828 bytes
   !
-  ! Last configuration change at 19:57:11 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 17:53:21 UTC Thu Oct 29 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1991,6 +1998,9 @@ Total steps: 355
    timers bgp 10 30
    aggregate-address 192.168.0.0 255.255.0.0 summary-only
    aggregate-address 172.16.0.0 255.255.0.0 as-set
+   address-family vpnv4
+    neighbor 10.0.0.1 activate
+   exit-address-family
   !
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
@@ -2185,11 +2195,11 @@ Total steps: 355
   
   No Active Message Discriminator.
   
-      Console logging: level debugging, 10 messages logged, xml disabled,
+      Console logging: level debugging, 11 messages logged, xml disabled,
                        filtering disabled
-      Monitor logging: level debugging, 10 messages logged, xml disabled,
+      Monitor logging: level debugging, 11 messages logged, xml disabled,
                        filtering disabled
-      Buffer logging:  level debugging, 10 messages logged, xml disabled,
+      Buffer logging:  level debugging, 11 messages logged, xml disabled,
                        filtering disabled
       Exception Logging: size (4096 bytes)
       Count and timestamp logging messages: disabled
@@ -2198,25 +2208,26 @@ Total steps: 355
       Sequence numbers: disabled
       Facility: local7
   
-      Trap logging: level informational, 10 message lines logged
+      Trap logging: level informational, 11 message lines logged
           No active syslog hosts
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:57:10.081: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:57:10.082: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:57:10.084: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:57:10.084: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:57:10.218: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:10.511: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:10.783: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:11.050: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:57:11.438: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
-  *Oct 14 19:57:11.645: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:20.916: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:53:20.917: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:53:20.918: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:53:20.918: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:53:20.947: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.002: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.056: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.083: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.168: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Up
+  *Oct 29 17:53:21.203: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:53:21.234: %BGP-5-ADJCHANGE: neighbor 10.0.0.1 Down
 
 [299/355] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX5541B9W7
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX7413KN6C
 
 [300/355] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2228,10 +2239,10 @@ Total steps: 355
   % Invalid input detected at '^' marker.
 
 [302/355] r1 R1# show ip vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [303/355] r1 R1# show vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [304/355] r1 R1# show hosts
   Default domain is not set
@@ -2319,7 +2330,7 @@ Total steps: 355
 [312/355] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 4756 bytes
+  Current configuration : 4828 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2456,6 +2467,9 @@ Total steps: 355
    timers bgp 10 30
    aggregate-address 192.168.0.0 255.255.0.0 summary-only
    aggregate-address 172.16.0.0 255.255.0.0 as-set
+   address-family vpnv4
+    neighbor 10.0.0.1 activate
+   exit-address-family
   ip community-list 1 permit 65000:100
   ip as-path access-list 1 permit ^65001$
   route-map RM-IN permit 10
@@ -2684,7 +2698,7 @@ Total steps: 355
     domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
-    domain-name        Define the default domain name
+    domain-name        Remove the default domain name
     finger             Enable finger service
     flow-cache         How long an active flow stays in the cache
     flow-export        Address of the NetFlow collector
@@ -2692,9 +2706,10 @@ Total steps: 355
     host               Add a host to the host table
     http               Enable HTTP server
     icmp               ICMP options
-    local              Apply local PBR
+    inspect            Limit the established sessions of an inspection rule
+    local              IP local address pool
     multicast-routing  Enable IP multicast routing
-    name-server        Specify address of name server to use
+    name-server        Remove a name server
     nat                Wipe NAT configuration
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
@@ -2706,6 +2721,7 @@ Total steps: 355
     source-route       Accept source-routed packets
     ssh                SSH protocol version to accept
     subnet-zero        Enable use of subnet zero
+    tcp                Enable TCP intercept for the connections an access list matches
     vrf                Define a VRF instance
 
 [350/355] r1 R1(config)# router ?
@@ -2715,58 +2731,66 @@ Total steps: 355
     rip    Enter RIP routing protocol configuration
 
 [351/355] r1 R1(config)# crypto ?
+    ca           Get the CA certificate and authenticate it
     dynamic-map  Define a dynamic crypto map
     gdoi         Define a GDOI GET-VPN group
-    ikev2        Define IKEv2 proposal
+    identity     Identity of the peers allowed to use a crypto map
+    ikev2        Global IKEv2 DPD interval / retry
     ipsec        Configure IPSec policy
-    isakmp       Enable ISAKMP
+    isakmp       Enable the default IKE policies
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
-    map          Define a crypto map entry
-    pki          Declare a PKI trustpoint
+    map          Remove a crypto map or one of its entries
+    pki          Get the CA certificate and authenticate it
 
 [352/355] r1 R1(config)# no ?
-    aaa            Enable NEW access control commands and functions
-    access-list    Remove an access list
-    alias          Remove a command alias
-    arp            Add static ARP entry
-    banner         Remove a banner
-    boot           Specify system image to load
-    cdp            Enable CDP globally
-    class-map      Remove a class map
-    clock          Remove hardware calendar is a valid time source
-    crypto         Restore the default DF bit handling
-    enable         Set enable secret
-    event          Register an EEM applet
-    hostname       Set system hostname
-    interface      Remove a virtual interface
-    ip             Disable IP routing
-    ipv6           Remove the IPv6 prefix pool
-    key            Define a key chain
-    line           Enter line configuration
-    lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
-    ntp            Authenticate time sources
-    object-group   Remove a network object group
-    parser         Remove a CLI view
-    policy-map     Remove a policy map
-    priority-list  Remove build a priority list
-    privilege      Remove a command privilege rule
-    queue-list     Remove build a custom queue list
-    radius         Remove a named RADIUS server
-    radius-server  Specify a RADIUS server
-    route-map      Remove a route-map
-    router         Enter RIP routing protocol configuration
-    service        Disable a network based service
-    snmp-server    Set community string and access privs
-    sntp           SNTP server (alias for ntp server)
-    tacacs         Remove a named TACACS+ server
-    tacacs-server  Specify a TACACS+ server
-    time-range     Remove a time range
-    track          Remove a tracked object
-    username       Remove a local user
-    vrf            Remove configure a vrf
+    aaa               Disable accounting update records
+    access-list       Remove an access list
+    alias             Remove a command alias
+    arp               Remove ARP entry
+    banner            Remove a banner
+    boot              Remove a system image from the boot list
+    cdp               Enable CDP globally
+    class-map         Remove a class map
+    clock             Remove hardware calendar is a valid time source
+    crypto            Remove every configured peer public key
+    enable            Remove the privileged level secret
+    event             Register an EEM applet
+    hostname          Reset hostname
+    interface         Remove a virtual interface
+    ip                Disable IP routing
+    ipv6              Remove the IPv6 prefix pool
+    kerberos          Remove the Kerberos realm of this router
+    key               Remove a key chain
+    l2                Remove the Layer 2 virtual forwarding instance
+    line              Remove line configuration
+    lldp              Enable LLDP globally
+    logging           Count every log message and timestamp last occurrence
+    login             Remove the login blocking period
+    mpls              Disable dynamic MPLS forwarding on the whole router
+    ntp               Authenticate time sources
+    object-group      Remove a network object group
+    parser            Remove a CLI view
+    policy-map        Remove a policy map
+    priority-list     Remove build a priority list
+    privilege         Remove a command privilege rule
+    pseudowire-class  Remove the pseudowire class
+    queue-list        Remove build a custom queue list
+    radius            Remove a named RADIUS server
+    radius-server     Specify a RADIUS server
+    route-map         Remove a route-map
+    router            Enter RIP routing protocol configuration
+    service           Disable a network based service
+    snmp-server       Set community string and access privs
+    sntp              SNTP server (alias for ntp server)
+    tacacs            Remove a named TACACS+ server
+    tacacs-server     Specify a TACACS+ server
+    time-range        Remove a time range
+    track             Remove a tracked object
+    username          Remove a local user
+    vrf               Remove configure a vrf
+    zone              Define security zone
+    zone-pair         Define zone-pair
 
 [353/355] r1 R1(config)# end
 <empty>

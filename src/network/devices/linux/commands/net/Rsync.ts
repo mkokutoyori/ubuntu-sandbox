@@ -4,6 +4,7 @@ import { makeArgCompleter } from '../completionHelpers';
 
 export const rsyncCommand: LinuxCommand = {
   name: 'rsync',
+  package: 'rsync',
   needsNetworkContext: true,
   opensWireSession: true,
   manSection: 1,
