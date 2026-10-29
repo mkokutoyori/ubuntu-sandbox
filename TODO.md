@@ -4268,15 +4268,15 @@ stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
 incremental SPF, the discard route, process shutdown).
 
 
-## Topology image export: straight links, and the rest of the UI is not translated
+## Topology image export: the rest of the UI is not translated
 
-The image export (toolbar button "Image") draws each cable as a straight line
-between device centres, not along the corridors the canvas routes them through
-(`useCableRoutes`), so a crowded topology can show crossings the canvas avoids.
 Only the export dialog and the image are translated (English / French,
 src/i18n); the rest of the interface (toolbar, palette, properties panel,
 dialogs) is still English-only, and there is no global language switch: the
-language is the one stored by the export dialog, else the browser's.
+language is the one stored by the export dialog, else the browser's. The image
+draws the cables with the canvas's own router (`computeCableRoutes`, zoom 1),
+so it shows the same lanes, corners and port tags; what it does not reproduce
+is the canvas's current selection or pan/zoom, by design.
 
 ## Reds measured at base outside the network-v2 sweep (new_firewall)
 

@@ -2,7 +2,12 @@ import { DEVICE_CATALOG } from '@/network';
 import type { ConnectionType, DeviceType } from '@/network';
 import { deviceTypeLabel, translate, type Locale } from '@/i18n';
 import { DEVICE_VISUALS, type DeviceGlyph, type DeviceVisual } from '@/components/network/device-visuals';
-import { getLinkAppearance } from '@/components/network/connection-line-logic';
+import {
+  computeCableRoutes, computeEndpointAnchors, connectorSegment, getLinkAppearance,
+  interfaceTagWidth, shouldShowPortLabels, DEVICE_BADGE_BOTTOM, DEVICE_BADGE_TOP,
+  NODE_CENTER_OFFSET_Y, NODE_HALF_HEIGHT, NODE_HALF_WIDTH, TAG_HEIGHT,
+  type CableRoute, type LabelPlacement, type RoutedLink,
+} from '@/components/network/connection-line-logic';
 
 export interface TopologyImageDevice {
   readonly id: string;
@@ -19,6 +24,8 @@ export interface TopologyImageLink {
   readonly sourceId: string;
   readonly targetId: string;
   readonly operational: boolean;
+  readonly sourceInterface: string;
+  readonly targetInterface: string;
 }
 
 export interface TopologyImageModel {
@@ -50,10 +57,9 @@ interface SourceConnection {
   targetDeviceId: string; targetInterfaceId: string;
 }
 
-const NODE_SIZE = 64;
+const NODE_SIZE = NODE_HALF_WIDTH * 2;
 const NODE_RADIUS = 12;
 const LABEL_FONT_SIZE = 12;
-const LABEL_GAP = 6;
 const MARGIN = 56;
 const HEADER_HEIGHT = 52;
 const TOP_GAP = 24;
@@ -121,6 +127,8 @@ export function buildTopologyImageModel(
         sourceId: source.id, targetId: target.id,
         operational: operational(source, connection.sourceInterfaceId)
           && operational(target, connection.targetInterfaceId),
+        sourceInterface: connection.sourceInterfaceId,
+        targetInterface: connection.targetInterfaceId,
       }];
     }),
   };
@@ -250,6 +258,90 @@ function buildLegend(model: TopologyImageModel, locale: Locale): LegendLayout {
   };
 }
 
+interface Box { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
+
+const LABEL_PILL_HEIGHT = DEVICE_BADGE_BOTTOM - DEVICE_BADGE_TOP + 2;
+const LABEL_PILL_PADDING = 8;
+const TAG_FILL = 'rgba(2,6,23,0.92)';
+const CABLE_CASING = '#ffffff';
+const POWER_ON = '#22c55e';
+const POWER_OFF = '#64748b';
+
+function cardCentre(device: TopologyImageDevice): { x: number; y: number } {
+  return { x: device.x, y: device.y + NODE_CENTER_OFFSET_Y };
+}
+
+function deviceBox(device: TopologyImageDevice): Box {
+  const centre = cardCentre(device);
+  const half = Math.max(NODE_HALF_WIDTH,
+    (textWidth(device.name, LABEL_FONT_SIZE) + 2 * LABEL_PILL_PADDING) / 2);
+  return {
+    left: centre.x - half, right: centre.x + half,
+    top: centre.y - NODE_HALF_HEIGHT, bottom: centre.y + DEVICE_BADGE_BOTTOM + 1,
+  };
+}
+
+function tagBox(placement: LabelPlacement): Box {
+  const length = interfaceTagWidth(placement.text) / 2;
+  const thickness = TAG_HEIGHT / 2;
+  const halfWidth = placement.vertical ? thickness : length;
+  const halfHeight = placement.vertical ? length : thickness;
+  return {
+    left: placement.at.x - halfWidth, right: placement.at.x + halfWidth,
+    top: placement.at.y - halfHeight, bottom: placement.at.y + halfHeight,
+  };
+}
+
+function routeBox(route: CableRoute): Box[] {
+  const xs = route.points.map((point) => point.x);
+  const ys = route.points.map((point) => point.y);
+  const shown = [route.sourceLabel, route.targetLabel].filter((label) => label.shown).map(tagBox);
+  return [{ left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) }, ...shown];
+}
+
+function portTagMarkup(placement: LabelPlacement, color: string): string {
+  const width = interfaceTagWidth(placement.text);
+  const { x, y } = placement.at;
+  const upright = placement.vertical ? ` transform="rotate(90 ${x} ${y})"` : '';
+  return `<g data-port-label=""${upright}>`
+    + `<rect x="${x - width / 2}" y="${y - TAG_HEIGHT / 2}" width="${width}" height="${TAG_HEIGHT}" `
+    + `rx="${TAG_HEIGHT / 2}" fill="${TAG_FILL}" stroke="${color}" stroke-width="1.1"/>`
+    + `<text x="${x}" y="${y + 3}" font-size="9" font-weight="600" font-family="monospace" `
+    + `fill="${color}" text-anchor="middle">${escapeXml(placement.text)}</text></g>`;
+}
+
+function cableMarkup(link: TopologyImageLink, route: CableRoute): string {
+  const { color, dash } = getLinkAppearance(link.type, link.operational);
+  const anchors = computeEndpointAnchors(route.points);
+  const connector = (anchor: typeof anchors.source): string => {
+    const { a, b } = connectorSegment(anchor);
+    return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${CABLE_CASING}" stroke-width="6" `
+      + `stroke-linecap="round"/><line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${color}" `
+      + `stroke-width="3" stroke-linecap="round"/>`;
+  };
+  return `<g data-link="${escapeXml(link.id)}" data-link-state="${link.operational ? 'up' : 'down'}">`
+    + `<path d="${route.path}" fill="none" stroke="${CABLE_CASING}" stroke-width="5" stroke-linecap="round" `
+    + `stroke-linejoin="round"/>`
+    + `<path d="${route.path}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" `
+    + `stroke-linejoin="round"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`
+    + connector(anchors.source) + connector(anchors.target) + '</g>';
+}
+
+function nodeMarkup(device: TopologyImageDevice): string {
+  const centre = cardCentre(device);
+  const left = centre.x - NODE_HALF_WIDTH;
+  const top = centre.y - NODE_HALF_HEIGHT;
+  const pillWidth = Math.max(NODE_SIZE, textWidth(device.name, LABEL_FONT_SIZE) + 2 * LABEL_PILL_PADDING);
+  const pillTop = centre.y + DEVICE_BADGE_TOP - 1;
+  return `<g>${nodeSwatch(device.type, left, top, NODE_SIZE, device.isPoweredOn)}`
+    + `<circle cx="${left + NODE_SIZE - 1}" cy="${top + 1}" r="5" fill="${device.isPoweredOn ? POWER_ON : POWER_OFF}" `
+    + `stroke="#ffffff" stroke-width="1.5"/>`
+    + `<rect x="${centre.x - pillWidth / 2}" y="${pillTop}" width="${pillWidth}" height="${LABEL_PILL_HEIGHT}" `
+    + `rx="5" fill="${TAG_FILL}"/>`
+    + `<text x="${centre.x}" y="${pillTop + LABEL_PILL_HEIGHT / 2 + 4.2}" font-size="${LABEL_FONT_SIZE}" `
+    + `fill="#ffffff" text-anchor="middle">${escapeXml(device.name)}</text></g>`;
+}
+
 export function renderTopologySvg(
   model: TopologyImageModel, options: TopologyImageOptions,
 ): RenderedTopologyImage {
@@ -257,20 +349,34 @@ export function renderTopologySvg(
   const t = (key: Parameters<typeof translate>[1], variables?: Record<string, string | number>) =>
     translate(locale, key, variables);
 
-  const xs = model.devices.map((device) => device.x);
-  const ys = model.devices.map((device) => device.y);
-  const minX = xs.length ? Math.min(...xs) : 0;
-  const minY = ys.length ? Math.min(...ys) : 0;
-  const maxX = xs.length ? Math.max(...xs) : 0;
-  const maxY = ys.length ? Math.max(...ys) : 0;
-  const labelWidths = model.devices.map((device) => textWidth(device.name, LABEL_FONT_SIZE));
-  const widestLabel = labelWidths.length ? Math.max(...labelWidths) : 0;
-  const halfNode = Math.max(NODE_SIZE, widestLabel) / 2;
+  const byId = new Map(model.devices.map((device) => [device.id, device] as const));
+  const routedLinks: RoutedLink[] = model.links.flatMap((link) => {
+    const source = byId.get(link.sourceId);
+    const target = byId.get(link.targetId);
+    if (!source || !target) return [];
+    return [{
+      id: link.id, sourceDeviceId: source.id, targetDeviceId: target.id,
+      source: { x: source.x, y: source.y }, target: { x: target.x, y: target.y },
+      sourceInterface: link.sourceInterface, targetInterface: link.targetInterface,
+    }];
+  });
+  const routes = computeCableRoutes(
+    routedLinks, model.devices.map((device) => ({ x: device.x, y: device.y })), 1);
+  const labelsShown = shouldShowPortLabels(1);
 
-  const diagramWidth = maxX - minX + 2 * halfNode + 2 * MARGIN;
-  const diagramHeight = maxY - minY + NODE_SIZE + LABEL_GAP + LABEL_FONT_SIZE + TOP_GAP + MARGIN;
-  const offsetX = MARGIN + halfNode - minX;
-  const offsetY = HEADER_HEIGHT + TOP_GAP + NODE_SIZE / 2 - minY;
+  const boxes: Box[] = [
+    ...model.devices.map(deviceBox),
+    ...[...routes.values()].flatMap(routeBox),
+  ];
+  const minX = boxes.length ? Math.min(...boxes.map((box) => box.left)) : 0;
+  const minY = boxes.length ? Math.min(...boxes.map((box) => box.top)) : 0;
+  const maxX = boxes.length ? Math.max(...boxes.map((box) => box.right)) : 0;
+  const maxY = boxes.length ? Math.max(...boxes.map((box) => box.bottom)) : 0;
+
+  const diagramWidth = maxX - minX + 2 * MARGIN;
+  const diagramHeight = maxY - minY + TOP_GAP + MARGIN;
+  const offsetX = MARGIN - minX;
+  const offsetY = HEADER_HEIGHT + TOP_GAP - minY;
 
   const legend = options.legend ? buildLegend(model, locale) : null;
   const title = model.title || '';
@@ -285,31 +391,27 @@ export function renderTopologySvg(
   const legendTop = HEADER_HEIGHT + diagramHeight;
   const height = Math.ceil(legend ? legendTop + legend.height + MARGIN : HEADER_HEIGHT + diagramHeight);
 
-  const byId = new Map(model.devices.map((device) => [device.id, device] as const));
-  const links = model.links.map((link) => {
-    const source = byId.get(link.sourceId);
-    const target = byId.get(link.targetId);
-    if (!source || !target) return '';
-    const { color, dash } = getLinkAppearance(link.type, link.operational);
-    return `<line x1="${source.x + offsetX}" y1="${source.y + offsetY}" x2="${target.x + offsetX}" `
-      + `y2="${target.y + offsetY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"`
-      + `${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+  const cables = model.links.map((link) => {
+    const route = routes.get(link.id);
+    return route ? cableMarkup(link, route) : '';
   }).join('');
-
-  const nodes = model.devices.map((device) => {
-    const cx = device.x + offsetX;
-    const cy = device.y + offsetY;
-    return `<g>${nodeSwatch(device.type, cx - NODE_SIZE / 2, cy - NODE_SIZE / 2, NODE_SIZE, device.isPoweredOn)}`
-      + `<text x="${cx}" y="${cy + NODE_SIZE / 2 + LABEL_GAP + LABEL_FONT_SIZE}" font-size="${LABEL_FONT_SIZE}" `
-      + `fill="${INK}" text-anchor="middle">${escapeXml(device.name)}</text></g>`;
+  const tags = model.links.map((link) => {
+    const route = routes.get(link.id);
+    if (!route || !labelsShown) return '';
+    const { color } = getLinkAppearance(link.type, link.operational);
+    return [route.sourceLabel, route.targetLabel]
+      .filter((placement) => placement.shown)
+      .map((placement) => portTagMarkup(placement, color)).join('');
   }).join('');
+  const nodes = model.devices.map(nodeMarkup).join('');
 
   const legendMarkup = legend ? legend.markup(MARGIN, legendTop) : '';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" `
     + `viewBox="0 0 ${width} ${height}" font-family="${FONT_FAMILY}">`
     + `<rect width="${width}" height="${height}" fill="${BACKGROUND}"/>`
     + `<text x="${MARGIN}" y="34" font-size="13" fill="${MUTED}">${escapeXml(headerText)}</text>`
-    + `<g>${links}</g>${nodes}${legendMarkup}</svg>`;
+    + `<g transform="translate(${offsetX} ${offsetY})"><g>${cables}</g>${nodes}<g>${tags}</g></g>`
+    + `${legendMarkup}</svg>`;
   return { svg, width, height };
 }
 
