@@ -1053,6 +1053,7 @@ function buildRouterSubmodeOn(
       const b = bgp();
       if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     } else if (a[0] === 'default' && a[1] === 'local-preference') {
+      if (a[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
       const lp = parseInt(a[2], 10);
       if (Number.isNaN(lp) || lp < 0) return '% Invalid local-preference';
       bgpEng().getConfig().defaultLocalPref = lp;
@@ -1618,7 +1619,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   bgp: {
     name: 'option', type: 'REST', description: 'BGP process option',
     alternatives: [
-      { keyword: 'default', description: 'Configure a BGP default' },
       { keyword: 'log-neighbor-changes', description: 'Log neighbour up/down events' },
     ],
   },
@@ -1645,7 +1645,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'default', description: 'Every interface, unless listed otherwise' },
     ],
   },
-  'default-information': { name: 'reste', type: 'REST', optional: true,
+  'default-information': { name: 'reste', type: 'REST',
     description: '`originate`' },
 };
 
@@ -1661,6 +1661,18 @@ const BGP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
     keyword: 'router-id', description: 'Router identifier of this BGP process',
     argument: { name: 'identifiant-bgp', type: 'IP_ADDR',
       description: 'Router identifier, in the shape of an IPv4 address' },
+  },
+  {
+    keyword: 'default', description: 'Configure a BGP default',
+    argument: [
+      { name: 'reglage-par-defaut', type: 'ENUM', description: 'Default to configure',
+        values: [
+          { keyword: 'ipv4-unicast', description: 'Activate ipv4-unicast for a peer by default' },
+          { keyword: 'local-preference', description: 'local preference (higher=more preferred)' },
+        ] },
+      { name: 'valeur', type: 'INT', optional: true, range: [0, 4294967295], rangeIsAdvisory: true,
+        description: 'Local preference value' },
+    ],
   },
 ];
 

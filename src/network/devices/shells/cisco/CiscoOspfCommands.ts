@@ -638,6 +638,30 @@ export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [...ospfTrieInterfaceSpecs(ctx), ...messageDigestKeyUndoSpecs(ctx)];
 }
 
+const NHRP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  { keyword: 'authentication', description: 'Authentication configuration',
+    argument: { name: 'string', type: 'WORD', description: 'Authentication string' } },
+  { keyword: 'holdtime', description: 'Hold time',
+    argument: { name: 'seconds', type: 'INT', range: [1, 65535], description: 'Time, in seconds, that NBMA addresses are advertised valid' } },
+  { keyword: 'map', description: 'Map dest IP addresses to NBMA addresses',
+    argument: [
+      { name: 'destination', type: 'WORD', literal: 'A.B.C.D', description: 'Protocol address of the destination',
+        alternatives: [{ keyword: 'multicast', description: 'Use this NBMA mapping for broadcasts and multicasts' }] },
+      { name: 'nbma-address', type: 'WORD', literal: 'A.B.C.D', description: 'NBMA address of the destination, or `dynamic`' },
+    ] },
+  { keyword: 'multicast', description: 'IP multicast',
+    argument: { name: 'reste', type: 'REST', optional: true, description: 'Multicast option' } },
+  { keyword: 'network-id', description: 'Network identifier',
+    argument: { name: 'identifier', type: 'INT', range: [1, 4294967295], description: 'Network identifier' } },
+  { keyword: 'nhs', description: 'Next Hop Server',
+    argument: [
+      { name: 'address', type: 'IP_ADDR', description: 'Address of the next hop server' },
+      { name: 'reste', type: 'REST', optional: true, description: 'Optional qualifiers' },
+    ] },
+  { keyword: 'redirect', description: 'Enable NHRP redirect traffic indication', argument: null },
+  { keyword: 'shortcut', description: 'Enable shortcut switching', argument: null },
+];
+
 function ospfTrieInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) =>
@@ -646,7 +670,7 @@ function ospfTrieInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
       modes: MODES_INTERFACE, minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => OSPF_IF_ARGUMENTS[path],
-      keywordsFor: toutesLesSuites,
+      keywordsFor: (path) => path === 'ip nhrp' ? NHRP_KEYWORDS : toutesLesSuites(path),
     },
   );
 }
@@ -949,7 +973,7 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 
   // Tunnel commands
 
-  configIfTrie.registerGreedy('ip nhrp', 'NHRP configuration', (args) => {
+  const configureNhrp = (args: string[]): string => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     const svc = ctx.r().getNhrpService();
@@ -961,20 +985,44 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
       && /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(word)
       && word.split('.').every(octet => Number(octet) <= 255);
     const two = args.slice(0, 2).join(' ').toLowerCase();
-    const shapeOk = (() => {
-      if (sub === 'shortcut' || sub === 'server-only' || sub === 'record') return args.length === 1;
-      if (sub === 'redirect') return args.length === 1;
-      if (two === 'cache non-authoritative') return args.length === 2;
-      if (sub === 'nhs') return args.length >= 2 && isIp(args[1]);
-      if (sub === 'map' && args[1]?.toLowerCase() === 'multicast') {
-        return args.length === 3 && (isIp(args[2]) || args[2].toLowerCase() === 'dynamic');
+    const fault = ((): CliIncomplete | CliInvalidInput | null => {
+      const invalidAt = (at: number) => new CliInvalidInput({ token: args[at] });
+      const wholeInteger = (word: string, max: number) => /^\d+$/.test(word) && Number(word) >= 1 && Number(word) <= max;
+      if (sub === 'shortcut' || sub === 'server-only' || sub === 'record' || sub === 'redirect') {
+        return args.length === 1 ? null : invalidAt(1);
       }
-      if (sub === 'map') return args.length === 3 && isIp(args[1]) && isIp(args[2]);
-      if (two === 'registration timeout') return args.length === 3 && /^\d+$/.test(args[2]) && Number(args[2]) >= 1 && Number(args[2]) <= 65535;
-      if (sub === 'use') return args.length === 2 && /^\d+$/.test(args[1]) && Number(args[1]) >= 1 && Number(args[1]) <= 65535;
-      return true;
+      if (two === 'cache non-authoritative') return args.length === 2 ? null : invalidAt(2);
+      if (sub === 'cache') return args.length === 1 ? new CliIncomplete() : invalidAt(1);
+      if (sub === 'nhs') {
+        if (args.length === 1) return new CliIncomplete();
+        return isIp(args[1]) ? null : invalidAt(1);
+      }
+      if (sub === 'map' && args[1]?.toLowerCase() === 'multicast') {
+        if (args.length === 2) return new CliIncomplete();
+        if (!(isIp(args[2]) || args[2].toLowerCase() === 'dynamic')) return invalidAt(2);
+        return args.length === 3 ? null : invalidAt(3);
+      }
+      if (sub === 'map') {
+        if (args.length === 1) return new CliIncomplete();
+        if (!isIp(args[1])) return invalidAt(1);
+        if (args.length === 2) return new CliIncomplete();
+        if (!isIp(args[2])) return invalidAt(2);
+        return args.length === 3 ? null : invalidAt(3);
+      }
+      if (two === 'registration timeout') {
+        if (args.length === 2) return new CliIncomplete();
+        if (!wholeInteger(args[2], 65535)) return invalidAt(2);
+        return args.length === 3 ? null : invalidAt(3);
+      }
+      if (sub === 'registration') return args.length === 1 ? new CliIncomplete() : invalidAt(1);
+      if (sub === 'use') {
+        if (args.length === 1) return new CliIncomplete();
+        if (!wholeInteger(args[1], 65535)) return invalidAt(1);
+        return args.length === 2 ? null : invalidAt(2);
+      }
+      return null;
     })();
-    if (!shapeOk) throw new CliInvalidInput();
+    if (fault) throw fault;
     const bounds = sub ? numericBounds[sub] : undefined;
     if (bounds && args[1] !== undefined) {
       const value = Number(args[1]);
@@ -1012,7 +1060,8 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     else if (sub === 'shortcut') svc.configure(ifName, { shortcut: true });
     else if (sub === 'redirect') svc.configure(ifName, { redirect: true });
     return '';
-  });
+  };
+  configIfTrie.registerGreedy('ip nhrp', 'NHRP configuration', configureNhrp);
 }
 
 // ─── Show Commands ───────────────────────────────────────────────────

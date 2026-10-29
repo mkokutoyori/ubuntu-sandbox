@@ -465,6 +465,11 @@ export const SPEED_PLACE: ArgumentSpec = {
   ],
 };
 
+const EIGRP_INTERVAL_PLACES: readonly ArgumentSpec[] = [
+  { name: 'as-number', type: 'INT', range: [1, 65535], description: 'Autonomous system number' },
+  { name: 'seconds', type: 'INT', range: [1, 65535], description: 'Interval, in seconds' },
+];
+
 const CONFIG_IF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   bandwidth: { name: 'kilobits', type: 'INT', range: [1, 10000000],
@@ -502,6 +507,10 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Transmit ring size, in packets' },
   'ipv6 eigrp': { name: 'as-number', type: 'INT', range: [1, 65535],
     description: 'Autonomous system number' },
+  'ip tcp adjust-mss': { name: 'max-segment-size', type: 'INT', range: [500, 1460],
+    description: 'Maximum segment size, in bytes' },
+  'ip hello-interval eigrp': EIGRP_INTERVAL_PLACES,
+  'ip hold-time eigrp': EIGRP_INTERVAL_PLACES,
   speed: SPEED_PLACE,
   encapsulation: {
     name: 'type', type: 'REST', description: 'Encapsulation type',
@@ -705,6 +714,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (port) port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
     return '';
   });
+  trie.requireArgs('negotiation', 1);
   trie.register('no keepalive', 'Disable keepalive', () => {
     if (!ctx.getSelectedInterface()) return '';
     ctx.r().getPort(ctx.getSelectedInterface()!)?.setKeepalive(null);

@@ -4412,3 +4412,7 @@ Measured: `-T`/`--initial-tab`, `-z`/`--null-data`, `-a`/`--text`, `-I`, `-U`/`-
 ## Linux diff: output styles accepted without effect
 
 Measured: `-y`/`--side-by-side` (and `-W`, `--left-column`, `--suppress-common-lines`), `-e`/`--ed`, `-f`, `-n`/`--rcs`, `-D`/`--ifdef`, `--line-format` and the group formats, `-p`/`--show-c-function`, `-F`, `-t`, `-T`, `--tabsize`, `-E`, `-I`, `-S`, `-x`'s sibling `-X`, `--from-file`/`--to-file`, `--color`, `--strip-trailing-cr`, `-a`, `-d`, `-l` are read through `DIFF_OPTIONS` and change nothing; a real diff prints a different layout for the first nine. `-u`/`-U N`, `-c`/`-C N`/`-NUM`, `-q`, `-s`, `-i`, `-w`, `-b`, `-Z`, `-B`, `-r`, `-N`, `-L`, `-x` and directory operands are evaluated. `diff -` (standard input) is not supported: the executor case receives no stdin. The hunk boundaries come from a plain LCS and can differ from GNU's heuristic on ambiguous input.
+
+## Cisco: `bgp default local-preference ?` announces <cr>
+
+Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `bgp default local-preference ?` names the range, but still announces `<cr>` after the keyword while the command answers `% Incomplete command.` without a value. The value place is optional because `ipv4-unicast` takes none and `AdapterKeyword` has no per-choice argument (OptionSpec has `choices`, the adapter does not). Closing it needs `choices` on `AdapterKeyword`, or a separate `bgp default local-preference` registration.

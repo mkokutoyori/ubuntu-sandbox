@@ -4539,28 +4539,36 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['ntp', 'broadcast'], description: 'Configure NTP broadcast service',
         modes: ['config-if', 'config-subif'],
-        tail: {
-          name: 'options', type: 'REST', optional: true, description: 'Broadcast options',
-          alternatives: [
-            { keyword: 'client', description: 'Listen to NTP broadcasts' },
-            { keyword: 'destination', description: 'Broadcast destination address' },
-            { keyword: 'key', description: 'Authentication key number' },
-            { keyword: 'version', description: 'NTP version' },
-          ],
-        },
+        options: [
+          { keyword: 'destination', description: 'Broadcast destination address',
+            argument: { name: 'broadcast-address', type: 'IP_ADDR', description: 'Address the broadcasts are sent to' } },
+          { keyword: 'key', description: 'Authentication key number',
+            argument: { ...NTP_KEY_SPEC, name: 'key-number' } },
+          { keyword: 'version', description: 'NTP version',
+            argument: { name: 'ntp-version', type: 'INT', range: [1, 4], description: 'NTP version number' } },
+        ],
+      },
+      {
+        path: ['ntp', 'broadcast', 'client'], description: 'Listen to NTP broadcasts',
+        modes: ['config-if', 'config-subif'],
       },
       {
         path: ['ntp', 'multicast'], description: 'Configure NTP multicast service',
         modes: ['config-if', 'config-subif'],
-        tail: {
-          name: 'options', type: 'REST', optional: true, description: 'Multicast options',
-          alternatives: [
-            { keyword: 'client', description: 'Listen to NTP multicast' },
-            { keyword: 'key', description: 'Authentication key number' },
-            { keyword: 'ttl', description: 'IP time-to-live of the multicast packets' },
-            { keyword: 'version', description: 'NTP version' },
-          ],
-        },
+        args: [{ name: 'multicast-address', type: 'IP_ADDR', optional: true, description: 'Multicast group the packets are sent to' }],
+        options: [
+          { keyword: 'key', description: 'Authentication key number',
+            argument: { ...NTP_KEY_SPEC, name: 'key-number' } },
+          { keyword: 'ttl', description: 'IP time-to-live of the multicast packets',
+            argument: { name: 'ttl', type: 'INT', range: [1, 255], description: 'Time to live' } },
+          { keyword: 'version', description: 'NTP version',
+            argument: { name: 'ntp-version', type: 'INT', range: [1, 4], description: 'NTP version number' } },
+        ],
+      },
+      {
+        path: ['ntp', 'multicast', 'client'], description: 'Listen to NTP multicast',
+        modes: ['config-if', 'config-subif'],
+        args: [{ name: 'multicast-group', type: 'IP_ADDR', optional: true, description: 'Multicast group to listen to' }],
       },
     ], () => ({
       apply: (words, negate) => {
@@ -4812,7 +4820,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       {
         path: ['clear', 'ip', 'bgp'], description: 'Reset BGP sessions',
         modes: exec, negatable: false,
-        tail: { name: 'cible', type: 'REST', optional: true, description: 'Neighbour to reset' },
+        tail: { name: 'cible', type: 'REST', description: 'Neighbour to reset' },
       },
       {
         path: ['clear', 'ip', 'eigrp'], description: 'Clear EIGRP neighbours or counters',
