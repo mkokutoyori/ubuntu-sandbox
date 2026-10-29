@@ -242,6 +242,14 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     long: [flag('decode', 'd'), flag('ignore-garbage', 'i'), valued('wrap', 'w'), ...HELP_VERSION],
     operands: true,
   },
+  du: {
+    optstring: 'abcd:hkms',
+    long: [
+      flag('all', 'a'), flag('bytes', 'b'), flag('total', 'c'), valued('max-depth', 'd'),
+      flag('human-readable', 'h'), flag('summarize', 's'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
   uname: {
     optstring: 'asnrvmpio',
     long: [

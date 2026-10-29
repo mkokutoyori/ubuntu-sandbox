@@ -18,7 +18,8 @@
  * falls, the 3 valid forms pass either way. Sixth step (md5sum, sha1sum, sha224sum,
  * sha256sum, sha384sum, sha512sum share one option set): 10 cases added, 6 refusals fall, the 4
  * valid forms pass either way. Seventh step (nl, fold, paste, comm, base64): 12 cases added, 5
- * refusals fall, the 7 valid forms pass either way. Option tables are the GNU
+ * refusals fall, the 7 valid forms pass either way. Eighth step (du: -a, -c, -d/--max-depth were accepted and ignored,
+ * only the last target was reported): 10 cases added, 8 fall, 2 witnesses pass either way. Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -86,5 +87,27 @@ describe('unknown options are refused the way GNU getopt does', () => {
     const output = await pc().executeCommand(line);
     expect(output).toContain(message);
     expect(output).toContain(`Try '${line.split(' ')[0]} --help' for more information.`);
+  });
+});
+
+describe('du evaluates the options it accepts', () => {
+  async function du(line: string): Promise<string> {
+    const machine = pc() as Sh & { executeCommand(l: string): Promise<string> };
+    await machine.executeCommand('mkdir -p /tmp/d/e/g; printf hi > /tmp/d/a; printf hello > /tmp/d/e/f');
+    return machine.executeCommand(line);
+  }
+  it('witness: default lists directories only, deepest first', async () => {
+    expect(await du('du /tmp/d')).toBe('1\t/tmp/d/e/g\n1\t/tmp/d/e\n1\t/tmp/d');
+  });
+  it('witness: -sb is one line of bytes', async () => { expect(await du('du -sb /tmp/d')).toBe('7\t/tmp/d'); });
+  it('--zorglub is refused', async () => { expect(await du('du --zorglub /tmp/d')).toContain("du: unrecognized option '--zorglub'"); });
+  it('-a lists files too', async () => { expect(await du('du -ab /tmp/d')).toBe('0\t/tmp/d/e/g\n5\t/tmp/d/e/f\n5\t/tmp/d/e\n2\t/tmp/d/a\n7\t/tmp/d'); });
+  it('-d 1 stops at depth one', async () => { expect(await du('du -d 1 -b /tmp/d')).toBe('5\t/tmp/d/e\n7\t/tmp/d'); });
+  it('--max-depth=0 is -s', async () => { expect(await du('du --max-depth=0 -b /tmp/d')).toBe('7\t/tmp/d'); });
+  it('-c appends the total', async () => { expect((await du('du -sbc /tmp/d /tmp/d/e')).split('\n')).toEqual(['7\t/tmp/d', '5\t/tmp/d/e', '12\ttotal']); });
+  it('every target is reported', async () => { expect(await du('du -sb /tmp/d/a /tmp/d/e')).toBe('2\t/tmp/d/a\n5\t/tmp/d/e'); });
+  it('a bad depth is refused', async () => { expect(await du('du -d x /tmp/d')).toContain("du: invalid maximum depth 'x'"); });
+  it('a missing target is reported and the others still run', async () => {
+    expect(await du('du -sb /tmp/nope /tmp/d/e')).toBe("du: cannot access '/tmp/nope': No such file or directory\n5\t/tmp/d/e");
   });
 });
