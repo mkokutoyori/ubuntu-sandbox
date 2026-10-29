@@ -52,6 +52,7 @@ import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
+import { IP_PROTO_TCP } from '@/network/core/types';
 import { Cable } from '@/network/hardware/Cable';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
@@ -263,9 +264,14 @@ describe('ldapsearch from a Linux host against a promoted domain controller', ()
     const { workstation, other } = await buildForestPair();
     const otherPort = other.getPort('eth0')!;
     const received = async (command: string) => {
-      const before = otherPort.getCounters().bytesIn;
+      let bytes = 0;
+      const detach = otherPort.attachTap(({ direction, frame }) => {
+        const packet = frame.payload as { protocol?: number; destinationIP?: { toString(): string } } | null;
+        if (direction === 'in' && packet?.protocol === IP_PROTO_TCP && packet.destinationIP?.toString() === OTHER_DC_ADDRESS) bytes += 1;
+      });
       const output = await workstation.executeCommand(command);
-      return { output, bytes: otherPort.getCounters().bytesIn - before };
+      detach();
+      return { output, bytes };
     };
     await received(`ldapsearch ${referralSearch}`);
     const plain = await received(`ldapsearch ${referralSearch}; echo "exit=$?"`);

@@ -4178,10 +4178,6 @@ Measured: `src/__tests__/unit/network-v2/linux-hosts-hostname-hijack.test.ts` ("
 
 Measured: `boot system flash:image.bin` is stored (`CiscoFileSystem.addBootSystem`) and read back by `show boot` (`BOOT variable = flash:image.bin`), but `show running-config` on a router and on a switch never writes the line, so an exported topology loses it on import. The two renderers (`showRunningConfig` for the router, `buildRunningConfig` for the switch) do not reach the shell's file system. Not closed: they need a narrow port to the boot list.
 
-## Oracles Linux rouges sur la base (hors perimetre Cisco)
-
-Mesure : `shell-fin-de-ligne-oracle` (`printf '…' | head|tail …`, 17 cas) et `auditctl-oracle` echouent deja au commit `2351448f2`, AVANT les travaux telnet/Cisco de cette serie — verifie dans un worktree de ce commit (21 cas rouges sur 262). Verifie de la meme facon au meme commit : `aureport-oracle`, `ausearch-oracle`, `ausearch-interpret-oracle` et `netcmds-oracle` (nc-readwrite) sont rouges aussi. `probe-oracle-sqlplus-silencieux-et-rman-a-froid` (« 60 sauvegardes de suite laissent la boucle d'evenements respirer ») est un test de TEMPS : rouge dans un lot charge, vert seul — a ne pas compter parmi les defauts. Non diagnostique : les oracles rejouent des enregistrements de vrais binaires et l'ecart n'a pas ete lu cas par cas.
-
 ## Cisco: key-chain lifetimes are stored, never evaluated
 
 Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-chain migration), stored on the key, rendered by `show key chain` and by the running-config, and read by nothing else: no routing protocol asks the key chain which key is valid NOW, so a key outside its lifetime still authenticates. Not closed: the brick is a clock-aware `validAt(instant)` on `KeyChainRepository` read by the protocols that take `key-chain` (EIGRP, RIP, OSPF auth), each of which also has to learn to pick among several valid keys.
@@ -4189,14 +4185,6 @@ Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-
 ## Cisco: the NVE / VXLAN CLI is unreachable on every platform
 
 Measured: `CiscoShellBase.hasVxlanHardware()` returns `false` and nothing overrides it, so `interface nve`'s `source-interface`, `member vni`, `peer-ip` and the four `show nve|vxlan|mac address-table vxlan` views are never declared on any router or switch, whatever the chassis profile. `VxlanAgent` works (its protocol tests drive it through the API); only the CLI door is shut. Not closed: which chassis profiles carry VXLAN hardware (the real Catalyst 9000 and Nexus lines do, the ISR lines do not) is a platform fact whose documentation was not reachable. Forcing the flag is not enough either: with `hasVxlanHardware()` patched to true, `interface nve1` cannot be created (no such port), so `source-interface` answers `% No interface selected` and `show nve vni` stays empty. The migration of these nine registrations to the socle was tried and reverted for that reason: it could not be probed.
-
-## Linux: tcpdump ICMPv6 « unreachable port » rouge sur la base
-
-Mesure : `probe-ipv6-se-fragmente-a-la-source-et-se-reassemble-a-l-arrivee` > « a datagram to a closed UDP port draws "unreachable port" naming the quoted destination and port » echoue deja au commit `2351448f2` (avant la serie telnet/Cisco), 1 cas sur 90. Non diagnostique.
-
-## Rouges sur la base, vus par le lot IPSec (hors perimetre)
-
-Mesure au commit `2351448f2` (avant la serie telnet/Cisco), worktree dedie : `crypto-pki-trustpool` (cabundle url), `ike-real-diffie-hellman` (2 cas), `probe-linux-kerberos-tools-answer-like-mit` (5 cas de rejeu) — 8 cas rouges sur 57. Non diagnostiques.
 
 ## Cisco: invalid inputs the fuzz scan still sees accepted
 
@@ -4216,19 +4204,6 @@ neither is rendered in the running-config (the interface identity is lost).
 `ip pim spt-threshold` is stored and rendered but the engine builds only
 (*,G) state, so it is never evaluated. Seen while migrating the PIM family.
 
-## Reds already present at the base commit 2351448f2 (full network-v2 sweep)
-
-Measured by running the same files on a clean worktree of the base: run-parts
-(5), basic-commandes #84 (L2-only switch IP), auditctl-other #128,
-fault-sigkill-residues, linux-bash-details
-G11-01/02, linux-ls-tty-awareness, linux-rsyslog-imfile truncation,
-nano-colors/exec/tab oracles and probe-nano-exec, nss-resolution-unified,
-observability-bridge §JB, openssl-ocsp-probe (-port/-url), probe-base-de-paquets,
-probe-cle-privee-d-hote-est-privee, probe-couche-internet-un-seul-ttl,
-probe-ipv6-se-fragmente (tcpdump ICMPv6), probe-linux-ne-lit-pas-le-fuseau-du-
-processus, plus the Linux oracle and crypto reds listed above. None is caused by
-the Cisco socle series; they are recorded so a sweep is read against them.
-
 ## IKEv2 global settings: three upper bounds not enforced (source unreachable)
 
 `crypto ikev2 nat keepalive`, `cookie-challenge` and `window` refuse
@@ -4238,13 +4213,6 @@ reference for the IKEv2 forms could not be reached. `crypto ikev2 dpd` shares
 the 10-3600 / 2-60 ranges the IKEv2 profile `dpd` of the same file already
 declared. Fetch the IKEv2 pages, then declare the three ranges on the places in
 CiscoIPSecIKEv2Commands.ts.
-
-Also red at the base (27 tests, measured on the same clean worktree): other-commands,
-probe-arith-01-puissance, probe-date-suit-le-fuseau, probe-env-ne-rend-que-l-
-environnement, probe-fuseau-linux-et-pare-feu, probe-fuser-porte-de-psmisc,
-probe-ldapsearch-linux-interroge-le-controleur-de-domaine,
-probe-oracle-sqlplus-silencieux-et-rman-a-froid, probe-proc-sys-write-reaches-
-the-store, probe-procfs-does-not-grow, scenario10-linux-audit, tail.
 
 ## OSPF redistribute: route-map, tag, and sources the engine does not evaluate
 
@@ -4323,30 +4291,6 @@ nothing: the engine models no route refresh. `clear ip bgp peer-group`,
 although IOS accepts them (BgpNeighborCfg carries no peer-group name, the
 engine no per-family reset). Hard reset by `*`, address, AS, external and
 internal is real (BGPEngine.resetPeers).
-
-## More reds seen with the working tree stashed (not caused by the hardening series)
-
-`new_firewall/fortigate-battery-08-cyber-defense-tls-pvlan.test.ts` (26 cases)
-fails on HEAD with `src` stashed. Not diagnosed.
-
-## Linux reds seen with the working tree stashed (identical with and without the option guard)
-
-`network-v2/basic-commandes.test.ts` (1), `linux-hosts-hostname-hijack.test.ts`
-(1), `probe-env-ne-rend-que-l-environnement.test.ts` (1),
-`probe-linux-ne-lit-pas-le-fuseau-du-processus.test.ts` (1), `run-parts.test.ts`
-(5), `scenario10-linux-audit.test.ts` (4) and
-`new_firewall/fortigate-battery-07-windows-active-directory.test.ts` (14). Not
-diagnosed.
-
-`network-v2/crypto-pki-trustpool.test.ts` (1)
-also fails identically with the working tree stashed.
-
-`network-v2/linux-bash-details.test.ts` (2), `linux-ls-tty-awareness.test.ts`
-(1), `linux-rsyslog-imfile.test.ts` (1) and `openssl-ocsp-probe.test.ts` (2)
-are red at the base commit 2351448f2 (checked in a worktree), like
-`probe-fuser-porte-de-psmisc.test.ts`, `run-parts.test.ts`,
-`scenario10-linux-audit.test.ts`, `crypto-pki-trustpool.test.ts`,
-`probe-oracle-sqlplus-silencieux-et-rman-a-froid.test.ts` (1).
 
 ## `sh -c` speaks bash, not dash
 
