@@ -1838,6 +1838,7 @@ export class FortiShell {
   private executeClear(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('what to clear');
     if (rest[0] === 'system' && rest[1] === 'arp' && rest[2] === 'table') {
+      if (rest[3] !== undefined) return FortiMessages.parseError(rest[3]);
       this.fw.getArpService().clear();
       return '';
     }

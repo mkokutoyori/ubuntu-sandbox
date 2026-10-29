@@ -4,10 +4,12 @@
  * and printed the object anyway, so `get system dns zorglub` answered like
  * `get system dns`. FortiOS answers `command parse error before 'zorglub'`.
  *
- * Measured before the change: 3 of the 7 cases fall (the three trailing-word
- * forms); the 4 witnesses (the bare forms, a table listing, and `get system
- * ha status`, a known view continuation that must keep working) pass either
- * way. Wording from the
+ * Measured before the change, in two steps. `get` on a singleton: 3 of 7 cases
+ * fall (the three trailing-word forms), 4 witnesses (the bare forms, a table
+ * listing, and `get system ha status`, a known view continuation that must
+ * keep working) pass either way. Second step, `execute clear system arp
+ * table zorglub`: 2 cases added, 1 falls, the bare form passes either way.
+ * Wording from the
  * product's own messages already in FortiMessages, not from a fetched page.
  */
 import { describe, it, expect } from 'vitest';
@@ -28,4 +30,15 @@ describe('get on a singleton', () => {
     '`%s` is refused', async (line) => {
       expect(await (await shell())(line)).toContain("command parse error before 'zorglub'");
     });
+});
+
+describe('execute clear system arp table', () => {
+  it('witness: the bare form is accepted', async () => {
+    expect(await (await shell())('execute clear system arp table')).toBe('');
+  });
+
+  it('refuses a trailing word', async () => {
+    expect(await (await shell())('execute clear system arp table zorglub'))
+      .toContain("command parse error before 'zorglub'");
+  });
 });
