@@ -15,7 +15,9 @@
  * uniq, cut, tr; `ls --zorglub` listed the directory and `head --zorglub`
  * printed nothing): 14 cases added, 7 refusals fall, the 7 valid forms pass
  * either way. Fifth step (`date --zorglub` printed the date): 4 cases added, 1
- * falls, the 3 valid forms pass either way. Option tables are the GNU
+ * falls, the 3 valid forms pass either way. Sixth step (md5sum, sha1sum, sha224sum,
+ * sha256sum, sha384sum, sha512sum share one option set): 10 cases added, 6 refusals fall, the 4
+ * valid forms pass either way. Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -31,7 +33,7 @@ function pc(): Sh {
 }
 
 describe('known options still work', () => {
-  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a', 'date -u', 'date --iso-8601=seconds', 'date +%Y'])('witness: `%s` is accepted', async (line) => {
+  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a', 'date -u', 'date --iso-8601=seconds', 'date +%Y', 'md5sum -b /etc/hostname', 'sha256sum --tag /etc/hostname', 'sha1sum -t /etc/hostname', 'sha512sum /etc/hostname'])('witness: `%s` is accepted', async (line) => {
     expect(await pc().executeCommand(line)).not.toMatch(/unrecognized option|invalid option|extra operand/);
   });
 });
@@ -68,6 +70,12 @@ describe('unknown options are refused the way GNU getopt does', () => {
     ['cut --zorglub', "cut: unrecognized option '--zorglub'"],
     ['tr --zorglub', "tr: unrecognized option '--zorglub'"],
     ['rmdir --zorglub', "rmdir: unrecognized option '--zorglub'"],
+    ['md5sum --zorglub', "md5sum: unrecognized option '--zorglub'"],
+    ['md5sum -Q /etc/hostname', "md5sum: invalid option -- 'Q'"],
+    ['sha1sum --zorglub', "sha1sum: unrecognized option '--zorglub'"],
+    ['sha224sum --zorglub', "sha224sum: unrecognized option '--zorglub'"],
+    ['sha256sum -Q /etc/hostname', "sha256sum: invalid option -- 'Q'"],
+    ['sha512sum --zorglub', "sha512sum: unrecognized option '--zorglub'"],
   ])('`%s`', async (line, message) => {
     const output = await pc().executeCommand(line);
     expect(output).toContain(message);

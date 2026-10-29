@@ -161,6 +161,54 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   dirname: { optstring: 'z', long: [flag('zero', 'z'), ...HELP_VERSION], operands: true },
   printenv: { optstring: '0', long: [flag('null', '0'), ...HELP_VERSION], operands: true },
+  md5sum: {
+    optstring: 'bctwz',
+    long: [
+      flag('binary', 'b'), flag('check', 'c'), flag('tag'), flag('text', 't'), flag('zero', 'z'),
+      flag('ignore-missing'), flag('quiet'), flag('status'), flag('strict'), flag('warn', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  sha1sum: {
+    optstring: 'bctwz',
+    long: [
+      flag('binary', 'b'), flag('check', 'c'), flag('tag'), flag('text', 't'), flag('zero', 'z'),
+      flag('ignore-missing'), flag('quiet'), flag('status'), flag('strict'), flag('warn', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  sha224sum: {
+    optstring: 'bctwz',
+    long: [
+      flag('binary', 'b'), flag('check', 'c'), flag('tag'), flag('text', 't'), flag('zero', 'z'),
+      flag('ignore-missing'), flag('quiet'), flag('status'), flag('strict'), flag('warn', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  sha256sum: {
+    optstring: 'bctwz',
+    long: [
+      flag('binary', 'b'), flag('check', 'c'), flag('tag'), flag('text', 't'), flag('zero', 'z'),
+      flag('ignore-missing'), flag('quiet'), flag('status'), flag('strict'), flag('warn', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  sha384sum: {
+    optstring: 'bctwz',
+    long: [
+      flag('binary', 'b'), flag('check', 'c'), flag('tag'), flag('text', 't'), flag('zero', 'z'),
+      flag('ignore-missing'), flag('quiet'), flag('status'), flag('strict'), flag('warn', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  sha512sum: {
+    optstring: 'bctwz',
+    long: [
+      flag('binary', 'b'), flag('check', 'c'), flag('tag'), flag('text', 't'), flag('zero', 'z'),
+      flag('ignore-missing'), flag('quiet'), flag('status'), flag('strict'), flag('warn', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
   uname: {
     optstring: 'asnrvmpio',
     long: [
