@@ -70,7 +70,7 @@ import { Cable } from '@/network/hardware/Cable';
 const PROC = '/proc/sys/net/ipv4';
 
 function asRoot(peer: ScriptedPeer, key: string, value: string): Promise<string> {
-  return peer.dut.executeCommand(`sudo sh -c 'echo ${value} > ${PROC}/${key}'`);
+  return peer.dut.executeCommand(`sudo bash -c 'echo ${value} > ${PROC}/${key}'`);
 }
 
 async function read(peer: ScriptedPeer, key: string): Promise<string> {
