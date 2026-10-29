@@ -23,6 +23,8 @@ interface GrepFlags {
   includeGlobs: string[]; excludeGlobs: string[];
   excludeDirGlobs: string[];
   nullSeparator: boolean; byteOffset: boolean; label: string; directories: 'read' | 'skip' | 'recurse';
+  binaryFiles: 'binary' | 'text' | 'without-match'; nullData: boolean; initialTab: boolean;
+  contextGiven: boolean; groupSeparator: string | null;
   /**
    * `--color` etait analyse puis JETE — un `continue` sans rien
    * stocker — donc `grep --color=always` rendait exactement la meme
@@ -36,8 +38,8 @@ interface GrepFlags {
  * GREP_COLORS, c'est-a-dire gras rouge. La sequence de fin est `\e[m`
  * (et non `\e[0m`), comme le vrai binaire l'ecrit.
  */
-const GREP_MATCH_ON = '\u001b[01;31m';
-const GREP_MATCH_OFF = '\u001b[m';
+const GREP_MATCH_ON = '\u001b[01;31m\u001b[K';
+const GREP_MATCH_OFF = '\u001b[m\u001b[K';
 
 /** Entoure chaque correspondance de la ligne, sans toucher au reste. */
 function colorierCorrespondances(ligne: string, matchers: RegExp[]): string {
@@ -188,6 +190,7 @@ export function cmdGrep(
     forceFilename: null, extended: variant === 'egrep', fixed: variant === 'fgrep', perl: false,
     maxCount: Infinity, after: 0, before: 0, includeGlobs: [], excludeGlobs: [], color: false,
     excludeDirGlobs: [], nullSeparator: false, byteOffset: false, label: '(standard input)', directories: 'read',
+    binaryFiles: 'binary', nullData: false, initialTab: false, contextGiven: false, groupSeparator: '--',
   };
   const patterns: string[] = [];
   const operands: string[] = [];
@@ -203,6 +206,7 @@ export function cmdGrep(
     if (isDigit) {
       const digits = (previousWasDigit ? String(fl.after) : '') + item.letter;
       fl.after = fl.before = parseInt(digits, 10);
+      fl.contextGiven = true;
     }
     previousWasDigit = isDigit;
     if (isDigit) continue;
@@ -212,6 +216,13 @@ export function cmdGrep(
         case 'no-ignore-case': fl.caseInsensitive = false; break;
         case 'color': case 'colour': fl.color = !['never', 'no', 'none'].includes(item.argument ?? 'auto'); break;
         case 'label': fl.label = value; break;
+        case 'group-separator': fl.groupSeparator = value; break;
+        case 'no-group-separator': fl.groupSeparator = null; break;
+        case 'binary-files': {
+          if (value !== 'binary' && value !== 'text' && value !== 'without-match') return { output: 'grep: unknown binary-files type', exitCode: 2 };
+          fl.binaryFiles = value;
+          break;
+        }
         case 'exclude': fl.excludeGlobs.push(value); break;
         case 'include': fl.includeGlobs.push(value); break;
         case 'exclude-dir': fl.excludeDirGlobs.push(value); break;
@@ -235,9 +246,13 @@ export function cmdGrep(
         break;
       }
       case 'm': fl.maxCount = parseInt(value, 10) || 0; break;
-      case 'A': fl.after = parseInt(value, 10) || 0; break;
-      case 'B': fl.before = parseInt(value, 10) || 0; break;
-      case 'C': fl.after = fl.before = parseInt(value, 10) || 0; break;
+      case 'A': fl.after = parseInt(value, 10) || 0; fl.contextGiven = true; break;
+      case 'B': fl.before = parseInt(value, 10) || 0; fl.contextGiven = true; break;
+      case 'C': fl.after = fl.before = parseInt(value, 10) || 0; fl.contextGiven = true; break;
+      case 'a': fl.binaryFiles = 'text'; break;
+      case 'I': fl.binaryFiles = 'without-match'; break;
+      case 'z': fl.nullData = true; break;
+      case 'T': fl.initialTab = true; break;
       case 'd':
         if (value !== 'read' && value !== 'skip' && value !== 'recurse') return { output: `grep: invalid argument '${value}' for '--directories'\nValid arguments are:\n  - 'read'\n  - 'recurse'\n  - 'skip'\nUsage: grep [OPTION]... PATTERNS [FILE]...\nTry 'grep --help' for more information.`, exitCode: 2 };
         fl.directories = value;
@@ -268,59 +283,70 @@ export function cmdGrep(
     return hit !== fl.invert;
   };
 
-  // Recursive default: when -r and no files, search the current directory.
   if (fl.recursive && files.length === 0) files.push('.');
 
-  const results: string[] = [];
-  const errors: string[] = [];
+  const run: GrepRun = { fl, matchers, lineMatches, showFilename: false, out: '', printedAny: false };
   let anyMatch = false;
+  let errorCount = 0;
+  const failWith = (message: string): void => {
+    errorCount++;
+    if (!fl.suppressErrors) { run.out += `${message}\n`; }
+  };
+  const finish = (): { output: string; exitCode: number } => ({
+    output: fl.nullData ? run.out : run.out.replace(/\n$/, ''),
+    exitCode: anyMatch && fl.quiet ? 0 : errorCount > 0 ? 2 : anyMatch ? 0 : 1,
+  });
+  const listName = (name: string): string => `${grepPaint(fl.color, GREP_FILENAME, name)}${fl.nullSeparator ? '\0' : '\n'}`;
 
   if (files.length === 0) {
-    const lines = splitInputLines(stdin ?? '');
-    const n = grepLines(lines, matchers, fl, fl.forceFilename === true, fl.label, lineMatches, results);
-    if (n > 0) anyMatch = true;
-    if (fl.quiet) return { output: '', exitCode: anyMatch ? 0 : 1 };
-    return { output: results.join('\n'), exitCode: anyMatch ? 0 : 1 };
+    run.showFilename = fl.forceFilename === true;
+    const content = stdin ?? '';
+    if (fl.quiet) {
+      const lines = splitInputLines(content);
+      return { output: '', exitCode: lines.some(lineMatches) ? 0 : 1 };
+    }
+    if (fl.filesOnly || fl.filesWithout) {
+      const has = splitInputLines(content).some(lineMatches);
+      if (has) anyMatch = true;
+      if ((fl.filesOnly && has) || (fl.filesWithout && !has)) run.out += listName(fl.label);
+      return finish();
+    }
+    if (grepStream(run, content, fl.label) > 0) anyMatch = true;
+    return finish();
   }
 
   const fileList: string[] = [];
   for (const f of files) {
     const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    if (fl.recursive && ctx.vfs.getType(absPath) === 'directory') collectFiles(ctx, absPath, f, fileList, fl.excludeDirGlobs);
-    else if (fl.directories === 'skip' && ctx.vfs.getType(absPath) === 'directory') continue;
+    const isDirectory = ctx.vfs.getType(absPath) === 'directory';
+    if (fl.recursive && isDirectory) collectFiles(ctx, absPath, f, fileList, fl.excludeDirGlobs);
+    else if (isDirectory && fl.directories === 'skip') continue;
+    else if (isDirectory) { failWith(`grep: ${f}: Is a directory`); continue; }
     else fileList.push(f);
   }
   const filtered = fileList.filter(f => includeExcludeOk(baseName(f), fl));
-  const showFilename = fl.forceFilename !== null ? fl.forceFilename : (filtered.length > 1 || fl.recursive);
+  const directoryOperand = files.some((f) => ctx.vfs.getType(ctx.vfs.normalizePath(f, ctx.cwd)) === 'directory');
+  run.showFilename = fl.forceFilename !== null ? fl.forceFilename : (files.length > 1 || (fl.recursive && directoryOperand));
 
   for (const f of filtered) {
     const content = ctx.vfs.readFile(ctx.vfs.normalizePath(f, ctx.cwd));
     if (content === null) {
-      if (!fl.suppressErrors) errors.push(`grep: ${f}: No such file or directory`);
+      failWith(`grep: ${f}: No such file or directory`);
       continue;
     }
-    const lines = splitInputLines(content);
-
     if (fl.quiet) {
-      if (lines.some(lineMatches)) { anyMatch = true; return { output: '', exitCode: 0 }; }
+      if (splitInputLines(content).some(lineMatches)) return { output: '', exitCode: 0 };
       continue;
     }
     if (fl.filesOnly || fl.filesWithout) {
-      const has = lines.some(lineMatches);
+      const has = splitInputLines(content).some(lineMatches);
       if (has) anyMatch = true;
-      if (fl.filesOnly && has) results.push(f);
-      if (fl.filesWithout && !has) results.push(f);
+      if ((fl.filesOnly && has) || (fl.filesWithout && !has)) run.out += listName(f);
       continue;
     }
-    const n = grepLines(lines, matchers, fl, showFilename, f, lineMatches, results);
-    if (n > 0) anyMatch = true;
+    if (grepStream(run, content, f) > 0) anyMatch = true;
   }
-
-  const exitCode = errors.length > 0 ? 2 : anyMatch ? 0 : 1;
-  if (fl.nullSeparator && (fl.filesOnly || fl.filesWithout)) {
-    return { output: [...errors.map((line) => `${line}\n`), ...results.map((name) => `${name}\0`)].join(''), exitCode };
-  }
-  return { output: [...errors, ...results].join('\n'), exitCode };
+  return finish();
 }
 
 function applyShortFlags(flagChars: string, fl: GrepFlags): boolean {
@@ -353,6 +379,7 @@ function applyShortFlags(flagChars: string, fl: GrepFlags): boolean {
 function addPatternsFromFile(ctx: ShellContext, path: string, patterns: string[]): void {
   const content = ctx.vfs.readFile(ctx.vfs.normalizePath(path, ctx.cwd));
   if (content === null) return;
+  if (content === '') return;
   const lines = content.split('\n');
   // A trailing newline must not introduce an empty (match-everything) pattern.
   if (lines.length > 0 && lines[lines.length - 1] === '' && content.endsWith('\n')) lines.pop();
@@ -386,64 +413,110 @@ function includeExcludeOk(name: string, fl: GrepFlags): boolean {
   return true;
 }
 
-/** Process lines for grep; returns the number of matching lines. */
-function grepLines(
-  lines: string[], matchers: RegExp[], fl: GrepFlags, showFilename: boolean, filename: string,
-  lineMatches: (line: string) => boolean, results: string[],
-): number {
-  const matchIndices: number[] = [];
-  for (let i = 0; i < lines.length && matchIndices.length < fl.maxCount; i++) {
-    if (lineMatches(lines[i])) matchIndices.push(i);
-  }
+const GREP_SELECTED = '01;31';
+const GREP_FILENAME = '35';
+const GREP_NUMBER = '32';
+const GREP_SEPARATOR = '36';
 
+const grepPaint = (enabled: boolean, code: string, text: string): string =>
+  (enabled ? `\u001b[${code}m\u001b[K${text}\u001b[m\u001b[K` : text);
+
+interface GrepRun {
+  readonly fl: GrepFlags;
+  readonly matchers: RegExp[];
+  readonly lineMatches: (line: string) => boolean;
+  showFilename: boolean;
+  out: string;
+  printedAny: boolean;
+}
+
+function grepEmit(run: GrepRun, record: string): void {
+  run.out += `${record}${run.fl.nullData ? '\0' : '\n'}`;
+  run.printedAny = true;
+}
+
+function onlyMatchingHits(line: string, matchers: RegExp[]): Array<{ index: number; text: string }> {
+  const hits: Array<{ index: number; text: string }> = [];
+  let position = 0;
+  while (position <= line.length) {
+    let best: { index: number; text: string } | null = null;
+    for (const re of matchers) {
+      re.lastIndex = position;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(line)) !== null && m[0] === '') re.lastIndex = m.index + 1;
+      if (m !== null && (best === null || m.index < best.index || (m.index === best.index && m[0].length > best.text.length))) {
+        best = { index: m.index, text: m[0] };
+      }
+    }
+    if (best === null) break;
+    hits.push(best);
+    position = best.index + best.text.length;
+  }
+  return hits;
+}
+
+function grepStream(run: GrepRun, content: string, name: string): number {
+  const { fl } = run;
+  const binary = !fl.nullData && fl.binaryFiles !== 'text' && content.includes('\0');
+  if (binary && fl.binaryFiles === 'without-match') return 0;
+  const lines = fl.nullData
+    ? (content.endsWith('\0') ? content.slice(0, -1) : content).split('\0')
+    : splitInputLines(content);
+  const selected: number[] = [];
+  for (let i = 0; i < lines.length && selected.length < fl.maxCount; i++) {
+    if (run.lineMatches(lines[i])) selected.push(i);
+  }
+  const nameText = grepPaint(fl.color, GREP_FILENAME, name);
+  const separator = (mark: string): string => (fl.nullSeparator ? '\0' : grepPaint(fl.color, GREP_SEPARATOR, mark));
   if (fl.countOnly) {
-    const count = matchIndices.length.toString();
-    results.push(showFilename ? `${filename}${fl.nullSeparator ? '\0' : ':'}${count}` : count);
-    return matchIndices.length;
+    run.out += `${run.showFilename ? `${nameText}${separator(':')}` : ''}${selected.length}\n`;
+    return selected.length;
   }
-
-  const showSet = new Set<number>();
-  for (const idx of matchIndices) {
-    for (let j = Math.max(0, idx - fl.before); j <= Math.min(lines.length - 1, idx + fl.after); j++) showSet.add(j);
+  if (binary && selected.length > 0) {
+    grepEmit(run, `grep: ${name}: binary file matches`);
+    return selected.length;
   }
-  const sortedShow = [...showSet].sort((a, b) => a - b);
-  const matchSet = new Set(matchIndices);
+  const shown = new Set<number>();
+  for (const index of selected) {
+    for (let j = Math.max(0, index - fl.before); j <= Math.min(lines.length - 1, index + fl.after); j++) shown.add(j);
+  }
+  const order = [...shown].sort((a, b) => a - b);
+  const selectedSet = new Set(selected);
   const offsets: number[] = [];
   if (fl.byteOffset) {
     let at = 0;
     for (const line of lines) { offsets.push(at); at += fileTextToBytes(line).length + 1; }
   }
-
-  for (const idx of sortedShow) {
-    const line = lines[idx];
-    const isMatch = matchSet.has(idx);
-    const prefix = showFilename ? `${filename}${fl.nullSeparator ? '\0' : ':'}` : '';
-    const lineNum = (fl.lineNumbers ? `${idx + 1}:` : '') + (fl.byteOffset && !(fl.onlyMatching && isMatch && !fl.invert) ? `${offsets[idx]}:` : '');
-    if (fl.onlyMatching && isMatch && !fl.invert) {
-      const hits: { index: number; text: string }[] = [];
-      for (const re of matchers) {
-        re.lastIndex = 0;
-        let m: RegExpExecArray | null;
-        while ((m = re.exec(line)) !== null) {
-          hits.push({ index: m.index, text: m[0] });
-          if (m[0] === '') re.lastIndex++;
-        }
-      }
-      hits.sort((a, b) => a.index - b.index);
-      for (const h of hits) {
-        const texte = fl.color ? GREP_MATCH_ON + h.text + GREP_MATCH_OFF : h.text;
-        const hitOffset = fl.byteOffset ? `${offsets[idx] + fileTextToBytes(line.slice(0, h.index)).length}:` : '';
-        results.push(`${prefix}${lineNum}${hitOffset}${texte}`);
-      }
-    } else {
-      // Une ligne de CONTEXTE (-A/-B) ne porte aucune correspondance :
-      // la colorer serait annoncer une trouvaille qui n'y est pas.
-      const texte = fl.color && isMatch && !fl.invert
-        ? colorierCorrespondances(line, matchers) : line;
-      results.push(`${prefix}${lineNum}${texte}`);
+  const width = fl.initialTab ? String(fileTextToBytes(content).length).length : 0;
+  const number = (value: number): string => String(value).padStart(width);
+  const head = (index: number, isSelected: boolean, offset: number): string => {
+    const mark = isSelected ? ':' : '-';
+    let text = '';
+    if (run.showFilename) text += `${nameText}${separator(mark)}`;
+    if (fl.lineNumbers) text += `${grepPaint(fl.color, GREP_NUMBER, number(index + 1))}${separator(mark)}`;
+    if (fl.byteOffset) text += `${grepPaint(fl.color, GREP_NUMBER, number(offset))}${separator(mark)}`;
+    return fl.initialTab && text !== '' ? `${text}\t` : text;
+  };
+  let previous: number | null = null;
+  for (const index of order) {
+    if (fl.contextGiven && fl.groupSeparator !== null && (previous === null ? run.printedAny : index !== previous + 1)) {
+      grepEmit(run, grepPaint(fl.color, GREP_SEPARATOR, fl.groupSeparator));
     }
+    previous = index;
+    const line = lines[index];
+    const isSelected = selectedSet.has(index);
+    if (fl.onlyMatching) {
+      if (!isSelected || fl.invert) continue;
+      for (const hit of onlyMatchingHits(line, run.matchers)) {
+        const offset = (offsets[index] ?? 0) + (fl.byteOffset ? fileTextToBytes(line.slice(0, hit.index)).length : 0);
+        grepEmit(run, `${head(index, true, offset)}${grepPaint(fl.color, GREP_SELECTED, hit.text)}`);
+      }
+      continue;
+    }
+    const colourMatches = fl.color && (isSelected !== fl.invert);
+    grepEmit(run, `${head(index, isSelected, offsets[index] ?? 0)}${colourMatches ? colorierCorrespondances(line, run.matchers) : line}`);
   }
-  return matchIndices.length;
+  return selected.length;
 }
 
 function collectFiles(ctx: ShellContext, absDir: string, displayDir: string, out: string[], excludeDirs: readonly string[] = []): void {

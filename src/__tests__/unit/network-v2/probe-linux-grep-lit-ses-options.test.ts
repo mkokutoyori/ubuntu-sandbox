@@ -70,5 +70,5 @@ describe('options that were skipped', () => {
   it('--exclude-dir prunes a directory', async () => { expect((await run('grep -r --exclude-dir=skip alpha /tmp/g')).split('\n').sort()).toEqual(['/tmp/g/f:alpha', '/tmp/g/keep/k:alpha keep']); });
   it('--label names standard input', async () => { expect(await run('printf "alpha\\n" | grep -H --label=INPUT alpha')).toBe('INPUT:alpha'); });
   it('--no-ignore-case overrides -i', async () => { expect(await run('grep -i --no-ignore-case ALPHA /tmp/g/f')).toBe(''); });
-  it('--directories=skip ignores a directory operand', async () => { expect(await run('grep --directories=skip alpha /tmp/g/skip /tmp/g/f')).toBe('alpha'); });
+  it('--directories=skip ignores a directory operand', async () => { expect(await run('grep --directories=skip alpha /tmp/g/skip /tmp/g/f')).toBe('/tmp/g/f:alpha'); });
 });

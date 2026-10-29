@@ -184,7 +184,7 @@ const GREP_OPTIONS: GnuOptionSet = {
     flag('only-matching', 'o'), flag('quiet', 'q'), flag('silent', 'q'), flag('no-messages', 's'),
     flag('byte-offset', 'b'), flag('with-filename', 'H'), flag('no-filename', 'h'), valued('label'),
     flag('line-number', 'n'), flag('initial-tab', 'T'), flag('null', 'Z'), flag('null-data', 'z'), flag('text', 'a'),
-    valued('binary-files'), valued('devices', 'D'), valued('directories', 'd'), valued('exclude'),
+    valued('binary-files'), valued('group-separator'), flag('no-group-separator'), valued('devices', 'D'), valued('directories', 'd'), valued('exclude'),
     valued('exclude-from'), valued('exclude-dir'), valued('include'), flag('recursive', 'r'),
     flag('dereference-recursive', 'R'), flag('line-buffered'), flag('unix-byte-offsets', 'u'), flag('binary', 'U'),
     valued('after-context', 'A'), valued('before-context', 'B'), valued('context', 'C'), flag('help'),

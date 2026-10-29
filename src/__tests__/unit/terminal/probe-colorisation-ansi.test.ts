@@ -127,8 +127,8 @@ describe('le parseur rend toute la palette', () => {
  * meme sortie que sans, et le motif trouve ne se distinguait de rien.
  */
 describe('`grep --color` entoure ce qu\'il a trouve', () => {
-  const ON = '\u001b[01;31m';
-  const OFF = '\u001b[m';
+  const ON = '\u001b[01;31m\u001b[K';
+  const OFF = '\u001b[m\u001b[K';
   const grep = async (args: string[], contenu: string) => {
     const { cmdGrep } = await import('@/network/devices/linux/LinuxTextCommands');
     // `cmdGrep(ctx, args, stdin)` : le contexte porte le VFS, qu'on ne

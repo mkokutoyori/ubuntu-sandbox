@@ -57,7 +57,7 @@ export function decodeBackslashEscapes(source: string, dialect: EscapeDialect): 
         continue;
       }
     }
-    if ((code === 'u' || code === 'U') && dialect !== 'echo') {
+    if (code === 'u' || code === 'U') {
       const digits = takeDigits(source, index, code === 'u' ? 4 : 8, /[0-9a-fA-F]/);
       if (digits !== '') {
         text += String.fromCodePoint(parseInt(digits, 16));
