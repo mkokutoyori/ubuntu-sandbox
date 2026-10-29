@@ -4355,3 +4355,7 @@ Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `
 ## Linux commands still silent on an unknown option (wording unsourced)
 
 Measured with `<cmd> --zorglub`: `lsof` (own parser, prints a version banner on error), `lsattr` (e2fsprogs getopt without long options: one error per letter), `tree` (`tree: Invalid argument` form), `pgrep`/`pkill` (procps usage block), `file`, `hostname`. Each prints a normal result or a different wording from the real program; no transcript or man page was reachable to write the exact lines, so none was guessed.
+
+## Huawei VRP: `Too many parameters` has no echoed line and caret
+
+`display acl all zorglub` answers a bare `Error: Too many parameters found at '^' position.`: `normaliserErreurVrp` decorates Incomplete, Unrecognized and Wrong parameter with the typed line and a caret, not this family, because the position of the extra word is known only to the handler. The declared ceiling `allowArgs` + `tropDeParametres` does render it fully but only supports one fixed ceiling per node.

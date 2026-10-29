@@ -2495,6 +2495,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const listes = engine?.getAccessListsInternal() ?? [];
       if (listes.length === 0) return 'Info: No ACL is configured.';
       const sel = (args[0] ?? 'all').toLowerCase();
+      if (args.length > (sel === 'name' && args[1] !== undefined ? 2 : 1)) return "Error: Too many parameters found at '^' position.";
       if (sel === 'all') {
         return listes.map((a) => this.renderAclOperational(a.name ?? String(a.id ?? ''))).join('\n');
       }
