@@ -61,7 +61,7 @@ import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, renderCat, parseCatFlags, cmdEcho, cmdCp, cpOperands, cmdInstall, installOperands, cmdMv, cmdRm, cmdMkdir, mkdirOperands, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
-import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
+import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, awkOptionError, cmdSed } from './LinuxTextCommands';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
@@ -6166,7 +6166,11 @@ export class LinuxCommandExecutor {
       case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
       case 'uniq': return { output: cmdUniq(c, args, stdin), exitCode: 0 };
       case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
-      case 'awk': return { output: cmdAwk(c, args, stdin), exitCode: 0 };
+      case 'awk': {
+        const awkError = awkOptionError(args);
+        if (awkError !== null) return { output: '', stderr: `${awkError}\n`, interleaved: `${awkError}\n`, exitCode: 2 };
+        return { output: cmdAwk(c, args, stdin), exitCode: 0 };
+      }
       case 'sed': return { output: cmdSed(c, args, stdin), exitCode: 0 };
 
       // Search commands

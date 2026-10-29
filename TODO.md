@@ -4350,11 +4350,11 @@ Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `
 
 ## column and awk: options accepted without effect
 
-`column` evaluates -t and -s only; -o, -c, -x, -J, -N, -n, -R, -H, -E, -l, -e, -d, -L and the tree options are accepted (table of util-linux 2.37 from memory) and ignored. `awk --zorglub` is still silent: the default awk of Ubuntu 22.04 is mawk, whose wording (`awk: not an option: --zorglub`, status 2) is not backed by a transcript, so no table was written.
+`column` evaluates -t and -s only; -o, -c, -x, -J, -N, -n, -R, -H, -E, -l, -e, -d, -L and the tree options are accepted (table of util-linux 2.37 from memory; the dev container has no `column` to compare with) and ignored. `awk -W version` prints nothing where mawk prints its banner (version and compile-time limits); the banner of Ubuntu 22.04's mawk 1.3.4-20200120 was not available to copy.
 
 ## Linux commands still silent on an unknown option (wording unsourced)
 
-Measured with `<cmd> --zorglub`: `lsof` (own parser, prints a version banner on error), `lsattr` (e2fsprogs getopt without long options: one error per letter), `tree` (`tree: Invalid argument` form), `pgrep`/`pkill` (procps usage block), `file`, `hostname`. Each prints a normal result or a different wording from the real program; no transcript or man page was reachable to write the exact lines, so none was guessed.
+Measured with `<cmd> --zorglub` against the real binaries of the dev container (lsof 4.95, lsattr, pgrep/pkill and file, hostname are installed there): the simulator is silent where the real programs print `unrecognized option` plus a usage block (pgrep/pkill: status 2 and a 30-line block; file: usage block, status 1; hostname: usage block, status 255; lsattr: one `invalid option -- '-'` per letter; lsof: its own `illegal option character` lines). Not written yet: each usage block is long and must be copied from the container's version, which is newer (Noble) than the Ubuntu 22.04 the simulator targets.
 
 ## Huawei VRP: `Too many parameters` has no echoed line and caret
 

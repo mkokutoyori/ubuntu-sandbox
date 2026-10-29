@@ -1,9 +1,9 @@
 /*
  * sysctl ignored an unknown option (`sysctl --zorglub` and `sysctl -Z` ran as
  * a plain listing). procps-ng prints the getopt line and its usage block on
- * stderr, status 1. The first line is getopt's; the usage text is procps-ng's
- * from memory (its source and man page were not reachable), so a mismatch in
- * the option descriptions is possible and is the one thing here not verified.
+ * stderr. The first line is getopt's; the usage block is copied from the real
+ * binary of the dev container (procps-ng 4.0.4). Ubuntu 22.04 ships 3.3.17,
+ * whose block may differ in the descriptions of --dry-run, -o and -x.
  *
  * Measured with `git stash`: 6 cases, 2 fall before the change (the two
  * refusals); the 4 witnesses (read, write, -n, -N) pass either way.

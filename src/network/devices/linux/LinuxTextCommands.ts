@@ -1126,6 +1126,30 @@ function expandCharSet(s: string): string {
   return result;
 }
 
+export function awkOptionError(args: readonly string[]): string | null {
+  const valued = new Set(['-F', '-v', '-f', '-W']);
+  let programSeen = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (programSeen) return null;
+    if (a === '--') return null;
+    if (valued.has(a)) {
+      if (i + 1 >= args.length) return `awk: option ${a} lacks argument`;
+      i++;
+      if (a === '-f') programSeen = true;
+      continue;
+    }
+    if (/^-[FvfW]/.test(a)) {
+      if (a.startsWith('-f')) programSeen = true;
+      continue;
+    }
+    if (a === '--version' || a === '--help') continue;
+    if (a.startsWith('-') && a.length > 1) return `awk: not an option: ${a}`;
+    programSeen = true;
+  }
+  return null;
+}
+
 export function cmdAwk(ctx: ShellContext, args: string[], stdin?: string): string {
   let fieldSep: string | undefined;
   let program: string | null = null;
