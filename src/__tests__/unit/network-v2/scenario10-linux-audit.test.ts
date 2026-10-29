@@ -124,17 +124,17 @@ ROOT_LOGIN=$(sshd -T 2>/dev/null | awk '/^permitrootlogin/ {print $2}')
 
 section "3. COMPTES ET PRIVILEGES"
 
-awk -F: '$3 == 0 && $1 != "root" {print "CRITICAL: Compte avec UID=0:", $1}' /etc/passwd | while read line; do
+while read line; do
   finding "CRITICAL" "$line"
-done
+done < <(awk -F: '$3 == 0 && $1 != "root" {print "CRITICAL: Compte avec UID=0:", $1}' /etc/passwd)
 
-awk -F: '$2 == "" {print $1}' /etc/shadow | while read account; do
+while read account; do
   finding "CRITICAL" "Compte sans mot de passe: $account"
-done
+done < <(awk -F: '$2 == "" {print $1}' /etc/shadow)
 
-awk -F: '$3 < 1000 && $1 != "root" && $7 != "/sbin/nologin" && $7 != "/usr/sbin/nologin" && $7 != "/bin/false" && $7 != "" {print $1, $3, $7}' /etc/passwd | while read name uid shell; do
+while read name uid shell; do
   finding "MEDIUM" "Compte systeme avec shell interactif: $name (UID=$uid, shell=$shell)"
-done
+done < <(awk -F: '$3 < 1000 && $1 != "root" && $7 != "/sbin/nologin" && $7 != "/usr/sbin/nologin" && $7 != "/bin/false" && $7 != "" {print $1, $3, $7}' /etc/passwd)
 
 section "4. PORTS ET SERVICES RESEAU"
 
