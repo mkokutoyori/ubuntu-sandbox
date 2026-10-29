@@ -6168,7 +6168,7 @@ export class LinuxCommandExecutor {
       case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
       case 'awk': {
         const awkError = awkOptionError(args);
-        if (awkError !== null) return { output: '', stderr: `${awkError}\n`, interleaved: `${awkError}\n`, exitCode: 2 };
+        if (awkError !== null) return { output: '', stderr: `${awkError}\n`, exitCode: 2 };
         return { output: cmdAwk(c, args, stdin), exitCode: 0 };
       }
       case 'sed': return { output: cmdSed(c, args, stdin), exitCode: 0 };
