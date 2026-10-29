@@ -4268,18 +4268,19 @@ stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
 incremental SPF, the discard route, process shutdown).
 
 
-## Interface translation: live-state statistics and cable labels
+## Interface translation: what stays English on purpose
 
-The interface has a global EN/FR switch (toolbar, `src/i18n/useLocale.ts`).
-Translated: the toolbar, the equipment palette, the help dialog, the
-save/open/confirm/message dialogs, the strings of NetworkDesigner and the
-properties panel, the settings dialog, the simulation clock controls, the
-canvas, the device action buttons, the interface selector, the terminal modal
-title bar and the terminal taskbar. Still English only: the live-state
-statistics section of the properties panel (devtools/LiveDeviceStats) and the
-cable aria-labels of ConnectionLine. Every terminal-side
-message stays in the vendor's English by design (the simulated CLIs answer as
-the real products do). The topology image draws the cables with the canvas's
+The interface has a global EN/FR switch (toolbar, `src/i18n/useLocale.ts`)
+and every visible string of the designer is translated: toolbar, palette,
+help, save/open/confirm/message dialogs, designer messages, properties panel
+and its live-state statistics, settings, simulation clock, canvas, device
+action buttons, interface selector, cable accessible names, terminal title
+bar and taskbar. Still English, on purpose: what the simulated equipment
+prints (the CLIs, the shells and the databases answer in the vendor's English,
+as the real products do) and the platform names in the terminal title (Ubuntu
+Linux, Cisco IOS...). Not covered by a test: the `title` of palette devices
+whose English name is the vendor's (Cisco ASA, FortiGate, Palo Alto keep their
+product name in French). The topology image draws the cables with the canvas's
 own router (`computeCableRoutes`, zoom 1); it does not reproduce the canvas's
 selection or pan/zoom, by design.
 

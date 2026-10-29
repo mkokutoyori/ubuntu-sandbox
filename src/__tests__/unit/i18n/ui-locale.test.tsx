@@ -26,6 +26,7 @@ import { PropertiesPanel } from '@/components/network/PropertiesPanel';
 import { NetworkCanvas } from '@/components/network/NetworkCanvas';
 import { InterfaceSelectorPopover } from '@/components/network/InterfaceSelectorPopover';
 import { TerminalTaskbar } from '@/components/network/MinimizedTerminals';
+import { LiveDeviceStats } from '@/components/network/devtools/LiveDeviceStats';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import { useNetworkStore } from '@/store/networkStore';
 import { SettingsDialog, SettingsRegistry, type SettingsSection } from '@/components/settings';
@@ -33,7 +34,7 @@ import { simulationSettingsSection } from '@/components/settings/sections/simula
 import { Timer } from 'lucide-react';
 import { SimulationClock, installSimulationClock, __resetSimulationClock } from '@/events/SimulationClock';
 import { DEVICE_CATEGORIES } from '@/network';
-import { getLocale, setLocale, categoryLabel, deviceTypeDescription } from '@/i18n';
+import { getLocale, setLocale, categoryLabel, deviceTypeDescription, translate } from '@/i18n';
 import { MESSAGES, FRENCH_DEVICE_DESCRIPTIONS } from '@/i18n/messages';
 
 const toolbar = () => (
@@ -248,6 +249,53 @@ describe('the terminal taskbar follows the language', () => {
     expect(screen.getByTitle('Division horizontale (Alt+H)')).toBeInTheDocument();
     expect(screen.getByText('Bureau')).toBeInTheDocument();
     expect(screen.getByLabelText('Disposer les terminaux : Grille (Alt+G)')).toBeInTheDocument();
+  });
+});
+
+describe('the live statistics follow the language', () => {
+  it('witness: English headings are unchanged', () => {
+    const device = useNetworkStore.getState().addDevice('linux-pc', 100, 100);
+    render(<LiveDeviceStats deviceId={device.id} />);
+    expect(screen.getByText('Host stats')).toBeInTheDocument();
+    expect(screen.getByText('ARP table')).toBeInTheDocument();
+    expect(screen.getAllByText('(empty)').length).toBeGreaterThan(0);
+  });
+
+  it('renders French headings and counters; protocol names stay', () => {
+    act(() => setLocale('fr'));
+    const device = useNetworkStore.getState().addDevice('linux-pc', 100, 100);
+    render(<LiveDeviceStats deviceId={device.id} />);
+    expect(screen.getByText('Statistiques de l\'hôte')).toBeInTheDocument();
+    expect(screen.getByText('Table de routage')).toBeInTheDocument();
+    expect(screen.getByText('Table ARP')).toBeInTheDocument();
+    expect(screen.getAllByText('(vide)').length).toBeGreaterThan(0);
+    expect(screen.getByText(/Cache ARP : \d+ · NDP : \d+ · Routes : \d+/)).toBeInTheDocument();
+  });
+
+  it('says so in French when no device is selected', () => {
+    act(() => setLocale('fr'));
+    render(<LiveDeviceStats deviceId="nope" />);
+    expect(screen.getByText('Aucun équipement sélectionné.')).toBeInTheDocument();
+  });
+});
+
+describe('the cable accessible name', () => {
+  const variables = {
+    type: 'ethernet', source: 'R1', sourceInterface: 'Gi0/0', target: 'SW1', targetInterface: 'Gi0/1',
+  };
+
+  it('witness: English keeps the original sentence, with and without selection', () => {
+    expect(translate('en', 'cable.label', { ...variables, state: translate('en', 'cable.up'), selected: '' }))
+      .toBe('ethernet cable: R1 Gi0/0 to SW1 Gi0/1, link up');
+    expect(translate('en', 'cable.label', {
+      ...variables, state: translate('en', 'cable.down'), selected: translate('en', 'cable.selected'),
+    })).toBe('ethernet cable: R1 Gi0/0 to SW1 Gi0/1, link down, selected');
+  });
+
+  it('is a French sentence that still says the state, not only the colour', () => {
+    expect(translate('fr', 'cable.label', {
+      ...variables, state: translate('fr', 'cable.down'), selected: translate('fr', 'cable.selected'),
+    })).toBe('Câble ethernet : R1 Gi0/0 vers SW1 Gi0/1, lien coupé, sélectionné');
   });
 });
 

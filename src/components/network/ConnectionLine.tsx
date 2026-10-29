@@ -1,3 +1,4 @@
+import { useLocale } from '@/i18n/useLocale';
 import { memo, useMemo } from 'react';
 import { Connection, isConnectionActive } from '@/store/networkStore';
 import { NetworkDeviceUI, useNetworkStore } from '@/store/networkStore';
@@ -24,6 +25,7 @@ interface ConnectionLabelProps extends ConnectionLineProps {
 }
 
 function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps) {
+  const { t } = useLocale();
   // Scoped selectors, not a bare useNetworkStore() — this component
   // shouldn't re-render just because the user panned, zoomed, or moved
   // an unrelated device (rapport 09 audit, §1).
@@ -54,11 +56,15 @@ function ConnectionLineImpl({ connection, devices, route }: ConnectionLineProps)
   // The state belongs in the label, not only in the colour: a red line
   // says nothing to a screen reader, and nothing to a colour-blind
   // operator either.
-  const connectionLabel =
-    `${connection.type} cable: ${sourceDevice.name} ${connection.sourceInterfaceId} ` +
-    `to ${targetDevice.name} ${connection.targetInterfaceId}` +
-    `, ${isOperational ? 'link up' : 'link down'}` +
-    `${isSelected ? ', selected' : ''}`;
+  const connectionLabel = t('cable.label', {
+    type: connection.type,
+    source: sourceDevice.name,
+    sourceInterface: connection.sourceInterfaceId,
+    target: targetDevice.name,
+    targetInterface: connection.targetInterfaceId,
+    state: isOperational ? t('cable.up') : t('cable.down'),
+    selected: isSelected ? t('cable.selected') : '',
+  });
 
   // A plain SVG shape has no way to receive keyboard focus or announce
   // itself to a screen reader, so a cable could only be selected/deleted
