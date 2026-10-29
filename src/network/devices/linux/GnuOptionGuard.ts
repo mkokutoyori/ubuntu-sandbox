@@ -402,6 +402,19 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  dmesg: {
+    optstring: 'CcDdE:eF:f:HhJkL::l:n:PrSs:TtuVWwx',
+    long: [
+      flag('clear', 'c'), flag('read-clear', 'C'), flag('console-off', 'D'), flag('show-delta', 'd'),
+      valued('console-on', 'E'), flag('reltime', 'e'), valued('file', 'F'), valued('facility', 'f'),
+      flag('human', 'H'), flag('json', 'J'), flag('kernel', 'k'), optional('color', 'L'), valued('level', 'l'),
+      valued('console-level', 'n'), flag('force-prefix', 'P'), flag('raw', 'r'), flag('syslog', 'S'),
+      valued('buffer-size', 's'), flag('ctime', 'T'), flag('notime', 't'), flag('userspace', 'u'),
+      flag('follow-new', 'W'), flag('follow', 'w'), flag('decode', 'x'), flag('nopager'), flag('noescape'),
+      valued('since'), valued('until'), valued('time-format'), flag('help', 'h'), flag('version', 'V'),
+    ],
+    operands: false,
+  },
   column: {
     optstring: 'c:dE:eH:hi:Jl:LN:n:O:o:p:R:rs:T:tVW:x',
     long: [
