@@ -27,7 +27,7 @@ export const fuserCommand: LinuxCommand = {
   ],
   runWithStatusSync: (ctx, args, stdin) => {
     const outcome = runFuser(new FuserProcHost(ctx, stdin), args);
-    return { output: outcome.stdout, stderr: outcome.stderr, interleaved: outcome.interleaved, exitCode: outcome.exitCode };
+    return { output: outcome.stdout, stderr: outcome.stderr, interleaved: outcome.interleaved, chunks: outcome.chunks, exitCode: outcome.exitCode };
   },
   run: (ctx, args, stdin) => {
     const outcome = runFuser(new FuserProcHost(ctx, stdin), args);

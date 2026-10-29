@@ -63,6 +63,7 @@ export interface ExternalCommandResult {
    */
   stderr?: string;
   interleaved?: string;
+  chunks?: ReadonlyArray<{ readonly fd: 1 | 2; readonly text: string }>;
   backgroundPid?: number;
   lineOriented?: boolean;
 }
@@ -1253,13 +1254,19 @@ export class BashInterpreter {
   }
 
   private emitResult(
-    result: { output: string; stderr?: string; interleaved?: string; lineOriented?: boolean },
+    result: { output: string; stderr?: string; interleaved?: string; chunks?: ReadonlyArray<{ readonly fd: 1 | 2; readonly text: string }>; lineOriented?: boolean },
     exitCode: number,
     source: { builtin?: string; childShell?: boolean } = {},
   ): void {
     const newline: Newline = result.lineOriented === true ? 'always' : result.lineOriented === false ? 'never' : 'terminal';
     if (result.stderr === undefined) {
       this.log.write(1, result.output, newline, exitCode !== 0);
+      return;
+    }
+    if (result.chunks !== undefined && result.chunks.length > 0) {
+      for (const chunk of result.chunks) {
+        this.log.write(chunk.fd, chunk.text, 'never');
+      }
       return;
     }
     if (result.interleaved !== undefined && result.interleaved !== '') {

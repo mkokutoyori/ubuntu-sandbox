@@ -2,16 +2,18 @@ export interface ToolOutput {
   stdout: string;
   stderr: string;
   combined: string;
+  chunks: Array<{ readonly fd: 1 | 2; readonly text: string }>;
   exitCode: number;
 }
 
 export function outputOf(): ToolOutput {
-  return { stdout: '', stderr: '', combined: '', exitCode: 0 };
+  return { stdout: '', stderr: '', combined: '', chunks: [], exitCode: 0 };
 }
 
 export function emit(out: ToolOutput, stream: 'stdout' | 'stderr', text: string): void {
   out[stream] += text;
   out.combined += text;
+  out.chunks.push({ fd: stream === 'stdout' ? 1 : 2, text });
 }
 
 export const KINIT_USAGE = [

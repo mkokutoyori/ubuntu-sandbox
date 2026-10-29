@@ -767,6 +767,7 @@ export interface FuserOutcome {
   readonly stdout: string;
   readonly stderr: string;
   readonly interleaved: string;
+  readonly chunks: ReadonlyArray<{ readonly fd: 1 | 2; readonly text: string }>;
   readonly exitCode: number;
 }
 
@@ -779,5 +780,5 @@ export function runFuser(host: FuserHost, args: readonly string[]): FuserOutcome
     if (!(error instanceof ExitSignal)) throw error;
     exitCode = error.code;
   }
-  return { stdout: out.stdout, stderr: out.stderr, interleaved: out.interleaved, exitCode };
+  return { stdout: out.stdout, stderr: out.stderr, interleaved: out.interleaved, chunks: out.chunks, exitCode };
 }

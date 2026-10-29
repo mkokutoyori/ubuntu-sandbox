@@ -184,7 +184,7 @@ export interface LinuxCommand {
     ctx: LinuxCommandContext,
     args: string[],
     stdin?: string,
-  ): Promise<{ output: string; exitCode: number; stderr?: string; interleaved?: string }>;
+  ): Promise<{ output: string; exitCode: number; stderr?: string; interleaved?: string; chunks?: ReadonlyArray<{ readonly fd: 1 | 2; readonly text: string }> }>;
 
   /**
    * Synchronous counterpart to `runWithStatus`, for commands whose logic
@@ -200,7 +200,7 @@ export interface LinuxCommand {
     ctx: LinuxCommandContext,
     args: string[],
     stdin?: string,
-  ): { output: string; exitCode: number; stderr?: string; interleaved?: string };
+  ): { output: string; exitCode: number; stderr?: string; interleaved?: string; chunks?: ReadonlyArray<{ readonly fd: 1 | 2; readonly text: string }> };
 
   /**
    * Optional tab-completion callback. Called when the user presses TAB
