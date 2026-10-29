@@ -43,16 +43,6 @@ export function HelpDialog({ open, onOpenChange }: HelpDialogProps) {
             <h3 className="font-semibold text-foreground mb-1">{t('help.protocols')}</h3>
             <p className="text-muted-foreground">{t('help.protocolsList')}</p>
           </section>
-
-          <section>
-            <h3 className="font-semibold text-foreground mb-1">{t('help.feedback')}</h3>
-            <p className="text-muted-foreground">
-              {t('help.feedbackText', {
-                link: 'github.com/anthropics/claude-code/issues',
-                command: '/help',
-              })}
-            </p>
-          </section>
         </div>
       </DialogContent>
     </Dialog>
