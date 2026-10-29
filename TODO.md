@@ -4278,10 +4278,9 @@ rest was not reachable, so refusing them would be guessing (rule 8). Needs the
 Huawei command reference for sflow, bfd, isis, traffic classifier/behavior/
 policy, route-policy and `snmp-agent community`.
 
-## FortiGate batteries 04–11
+## FortiGate batteries 04–11 encode an aspirational simulator
 
-`fortigate-battery-04-monitoring-telemetry-syslog.test.ts` (28 cases), same family as batteries
-05/06/07/08/09/10/11, are red at the base commit 2351448f2. Not diagnosed.
+`fortigate-battery-04` to `-11` (about 300 cases) are red at the base commit 2351448f2. Measured on battery 09: its first step is `systemctl start nginx-tls13`, which answers `Failed to start nginx-tls13.service: Unit nginx-tls13.service not found.`; the same files start `nginx-pqc`, `api-gateway`, `otel-collector` and others no machine ships, then read `openssl s_client` output that only exists if the unit ran (`connect:errno=111` otherwise). The premise is false, not the engine: the units must either be created by the test through the real unit-file path, or the cases rewritten. Not closed because each battery needs its own lab audit.
 
 ## clear ip bgp soft / in / out and peer-group targets
 
