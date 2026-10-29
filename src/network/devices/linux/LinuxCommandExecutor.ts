@@ -6066,7 +6066,7 @@ export class LinuxCommandExecutor {
           this.publishSyscall('rename', abs);
         }
         const outMv = cmdMv(c, args);
-        return { output: outMv, exitCode: outMv.startsWith('mv:') ? 1 : 0 };
+        return { output: outMv, exitCode: /^mv:/m.test(outMv) ? 1 : 0 };
       }
       case 'rm': {
         for (const p of args.filter(a => !a.startsWith('-'))) {

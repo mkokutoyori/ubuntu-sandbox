@@ -6,6 +6,8 @@ import { formatStatTime } from './time/FileTimes';
 import { ShellContext, expandGlob, actorOf } from './LinuxFileCommands';
 import { INode } from './VirtualFileSystem';
 import { parseChmodMode } from './ChmodMode';
+import { gnuOptionSet } from './GnuOptionGuard';
+import { shortOptions } from './commands/Getopt';
 
 export function cmdChmod(ctx: ShellContext, args: string[]): string {
   let recursive = false;
@@ -163,16 +165,13 @@ export function cmdStat(ctx: ShellContext, args: string[]): string {
   let formatStr: string | undefined;
   const files: string[] = [];
 
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-c' || a === '--format') {
-      formatStr = args[++i];
-      continue;
-    }
-    if (!a.startsWith('-')) files.push(a);
+  const set = gnuOptionSet('stat');
+  for (const item of shortOptions(args, set.optstring, set.long)) {
+    if (item.kind === 'operand') files.push(item.value);
+    else if (item.kind === 'option' && item.letter === 'c') formatStr = item.argument;
   }
 
-  if (files.length === 0) return 'stat: missing operand';
+  if (files.length === 0) return "stat: missing operand\nTry 'stat --help' for more information.";
 
   const results: string[] = [];
 

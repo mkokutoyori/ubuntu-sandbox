@@ -377,6 +377,38 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  touch: {
+    optstring: 'acfhmr:t:d:',
+    long: [
+      valued('time'), flag('no-create', 'c'), valued('date', 'd'), flag('no-dereference', 'h'),
+      valued('reference', 'r'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  stat: {
+    optstring: 'c:fLtZ',
+    long: [
+      flag('dereference', 'L'), flag('file-system', 'f'), valued('format', 'c'), valued('printf'),
+      flag('terse', 't'), flag('context', 'Z'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  truncate: {
+    optstring: 'cor:s:',
+    long: [flag('no-create', 'c'), flag('io-blocks', 'o'), valued('reference', 'r'), valued('size', 's'), ...HELP_VERSION],
+    operands: true,
+  },
+  mv: {
+    optstring: 'bfinS:t:TuvZ',
+    long: [
+      optional('backup'), flag('force', 'f'), flag('interactive', 'i'), flag('no-clobber', 'n'),
+      flag('strip-trailing-slashes'), valued('suffix', 'S'), valued('target-directory', 't'),
+      flag('no-target-directory', 'T'), flag('update', 'u'), flag('verbose', 'v'), optional('context', 'Z'),
+      ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  mkfifo: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
   cksum: { optstring: '', long: [...HELP_VERSION], operands: true },
   sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },
   expand: { optstring: 'it:0123456789,', long: [flag('initial', 'i'), valued('tabs', 't'), ...HELP_VERSION], operands: true },
@@ -420,6 +452,12 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: false,
   },
 };
+
+export function gnuOptionSet(command: string): GnuOptionSet {
+  const set = GNU_OPTION_SETS[command];
+  if (!set) throw new Error(`no option set for ${command}`);
+  return set;
+}
 
 export interface OptionRefusal {
   readonly output: string;

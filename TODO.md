@@ -4343,3 +4343,7 @@ Measured: `-y`/`--side-by-side` (and `-W`, `--left-column`, `--suppress-common-l
 ## Cisco: `bgp default local-preference ?` announces <cr>
 
 Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `bgp default local-preference ?` names the range, but still announces `<cr>` after the keyword while the command answers `% Incomplete command.` without a value. The value place is optional because `ipv4-unicast` takes none and `AdapterKeyword` has no per-choice argument (OptionSpec has `choices`, the adapter does not). Closing it needs `choices` on `AdapterKeyword`, or a separate `bgp default local-preference` registration.
+
+## mv and stat: options accepted without effect
+
+`mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` evaluates `-c`/`--format`; `--printf`, `-t` (terse), `-f` (filesystem), `-L` (follow) are accepted and ignored. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.

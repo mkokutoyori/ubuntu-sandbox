@@ -7,6 +7,8 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import { gnuOptionSet } from './GnuOptionGuard';
+import { shortOptions } from './commands/Getopt';
 import { parseChmodMode } from './ChmodMode';
 import { interpretEscapes } from './LinuxShellParser';
 import type { PathActor } from './VfsPath';
@@ -917,32 +919,74 @@ export function cmdInstall(ctx: ShellContext, args: string[]): string {
 }
 
 export function cmdMv(ctx: ShellContext, args: string[]): string {
-  const nonFlags = args.filter(a => !a.startsWith('-'));
-  if (nonFlags.length < 2) return 'mv: missing operand';
+  const set = gnuOptionSet('mv');
+  const operands: string[] = [];
+  let noClobber = false;
+  let update = false;
+  let verbose = false;
+  let noTargetDirectory = false;
+  let targetDirectory: string | undefined;
+  for (const item of shortOptions(args, set.optstring, set.long)) {
+    if (item.kind === 'operand') operands.push(item.value);
+    else if (item.kind === 'option') {
+      if (item.letter === 'n') noClobber = true;
+      else if (item.letter === 'u') update = true;
+      else if (item.letter === 'v') verbose = true;
+      else if (item.letter === 'T') noTargetDirectory = true;
+      else if (item.letter === 't') targetDirectory = item.argument;
+    }
+  }
   const actor = actorOf(ctx);
-  const srcPath = ctx.vfs.path(nonFlags[0], ctx.cwd, actor);
-  const dstPath = ctx.vfs.path(nonFlags[1], ctx.cwd, actor);
-  if (!srcPath.exists()) return `mv: cannot stat '${nonFlags[0]}': No such file or directory`;
-  if (ctx.uid !== 0) {
-    const srcParent = srcPath.parent();
-    const sp = srcParent.inode();
-    if (sp && (!srcParent.canWrite() || !srcParent.canExecute())) {
-      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Permission denied`;
-    }
-    const srcInode = srcPath.lstatNode();
-    if (srcInode && sp && (sp.permissions & 0o1000) !== 0
-        && srcInode.uid !== ctx.uid && sp.uid !== ctx.uid) {
-      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Operation not permitted`;
-    }
-    const destDir = dstPath.isDirectory() ? dstPath : dstPath.parent();
-    if (destDir.inode() && !destDir.isWritableDir()) {
-      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Permission denied`;
-    }
+  const tryHelp = "Try 'mv --help' for more information.";
+  let sources: string[];
+  let destination: string;
+  if (targetDirectory !== undefined) {
+    sources = operands;
+    destination = targetDirectory;
+    if (sources.length === 0) return `mv: missing file operand\n${tryHelp}`;
+    if (!ctx.vfs.path(destination, ctx.cwd, actor).isDirectory()) return `mv: target directory '${destination}': No such file or directory`;
+  } else {
+    if (operands.length === 0) return `mv: missing file operand\n${tryHelp}`;
+    if (operands.length === 1) return `mv: missing destination file operand after '${operands[0]}'\n${tryHelp}`;
+    sources = operands.slice(0, -1);
+    destination = operands[operands.length - 1];
+    if (noTargetDirectory && operands.length > 2) return `mv: extra operand '${operands[2]}'\n${tryHelp}`;
+    if (sources.length > 1 && !ctx.vfs.path(destination, ctx.cwd, actor).isDirectory()) return `mv: target '${destination}' is not a directory\n${tryHelp}`;
   }
-  if (!ctx.vfs.rename(srcPath.value, dstPath.value)) {
-    return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}'`;
+  const destinationIsDirectory = !noTargetDirectory && ctx.vfs.path(destination, ctx.cwd, actor).isDirectory();
+  const lines: string[] = [];
+  for (const source of sources) {
+    const srcPath = ctx.vfs.path(source, ctx.cwd, actor);
+    const baseName = source.replace(/\/+$/, '').split('/').pop() ?? source;
+    const shownDestination = destinationIsDirectory ? `${destination.replace(/\/+$/, '')}/${baseName}` : destination;
+    const dstPath = ctx.vfs.path(shownDestination, ctx.cwd, actor);
+    if (!srcPath.exists()) { lines.push(`mv: cannot stat '${source}': No such file or directory`); continue; }
+    if (srcPath.value === dstPath.value) { lines.push(`mv: '${source}' and '${shownDestination}' are the same file`); continue; }
+    if (dstPath.exists()) {
+      if (noClobber) continue;
+      const srcNode = srcPath.lstatNode();
+      const dstNode = dstPath.lstatNode();
+      if (update && srcNode && dstNode && dstNode.mtime >= srcNode.mtime) continue;
+    }
+    if (ctx.uid !== 0) {
+      const srcParent = srcPath.parent();
+      const sp = srcParent.inode();
+      if (sp && (!srcParent.canWrite() || !srcParent.canExecute())) {
+        lines.push(`mv: cannot move '${source}' to '${shownDestination}': Permission denied`); continue;
+      }
+      const srcInode = srcPath.lstatNode();
+      if (srcInode && sp && (sp.permissions & 0o1000) !== 0 && srcInode.uid !== ctx.uid && sp.uid !== ctx.uid) {
+        lines.push(`mv: cannot move '${source}' to '${shownDestination}': Operation not permitted`); continue;
+      }
+      const destDir = dstPath.parent();
+      if (destDir.inode() && !destDir.isWritableDir()) {
+        lines.push(`mv: cannot move '${source}' to '${shownDestination}': Permission denied`); continue;
+      }
+    }
+    if (!ctx.vfs.rename(srcPath.value, dstPath.value)) { lines.push(`mv: cannot move '${source}' to '${shownDestination}'`); continue; }
+    if (verbose) lines.push(`renamed '${source}' -> '${shownDestination}'`);
   }
-  return '';
+  return lines.join('\n');
 }
 
 export function cmdRm(ctx: ShellContext, args: string[]): string {
