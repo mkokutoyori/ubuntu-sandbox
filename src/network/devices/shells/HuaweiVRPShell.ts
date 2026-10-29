@@ -2154,6 +2154,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const ps = r._huaweiCpuDefendPolicies ??= new Map<string, VrpNamedLines>();
       const name = args[0];
       if (!name) return 'Error: Incomplete command.';
+      if (args.length > 1 && !(args.length === 2 && args[1].toLowerCase() === 'global')) return "Error: Unrecognized command found at '^' position.";
       if (!ps.has(name)) ps.set(name, { name, lines: [] });
       r._huaweiCpuDefendCurrent = name;
       r._huaweiCpuDefendLines = r._huaweiCpuDefendLines || [];
