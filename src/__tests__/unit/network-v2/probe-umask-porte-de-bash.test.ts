@@ -123,7 +123,7 @@ describe('umask', () => {
 
   it('sorts the operands of ls and keeps the dd report on stderr', async () => {
     await root('touch b; mkdir a; touch c');
-    expect(await root('ls -d c b a')).toBe('a\nb\nc');
+    expect(await root('ls -1d c b a')).toBe('a\nb\nc');
     expect(await root('dd if=/dev/null of=out 2>/dev/null; echo end')).toBe('end');
   });
 });

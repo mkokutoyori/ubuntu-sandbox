@@ -8,6 +8,9 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
 import { gnuOptionSet } from './GnuOptionGuard';
+import { fnmatch } from './fs/Glob';
+import { versionCompare } from './LinuxTextCommands';
+import { lsColumns, lsCommas, lsEscapeNonPrinting, lsExtension, lsHideControl, lsHumanSize, lsQuoteC, type LsFormat } from './LsLayout';
 import { shortOptions } from './commands/Getopt';
 import { parseChmodMode } from './ChmodMode';
 import { interpretEscapes } from './LinuxShellParser';
@@ -151,82 +154,269 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
   return errors.join('\n');
 }
 
-export function cmdLs(ctx: ShellContext, args: string[]): string {
-  let longFormat = false;
-  let showAll = false;
-  let showInode = false;
-  let sortBySize = false;
-  let sortByTime = false;
-  let recursive = false;
-  let dirOnly = false;
-  let classify = false;   // -F: append indicator (/ @ * |)
-  // -1 forces single column explicitly; a non-tty stdout (piped or
-  // redirected) does the same implicitly, matching real coreutils'
-  // isatty(STDOUT_FILENO) check.
-  let onePerLine = ctx.isPiped === true;
-  let useColor = ctx.color === true;
-  const timing: LsTiming = { field: 'mtime', style: null, reverse: false };
-  const paths: string[] = [];
+const DIRECTORY_BYTES = 4096;
+const DEFAULT_LINE_WIDTH = 80;
 
-  for (const arg of args) {
-    if (arg.startsWith('-') && !arg.startsWith('--')) {
-      const flags = arg.slice(1);
-      for (const f of flags) {
-        switch (f) {
-          case 'l': longFormat = true; break;
-          case 'a': showAll = true; break;
-          case 'i': showInode = true; break;
-          case 'S': sortBySize = true; break;
-          case 't': sortByTime = true; break;
-          case 'R': recursive = true; break;
-          case 'd': dirOnly = true; break;
-          case 'F': classify = true; break;
-          case '1': onePerLine = true; break;
-          case 'r': timing.reverse = true; break;
-          case 'c': timing.field = 'ctime'; break;
-          case 'u': timing.field = 'atime'; break;
-        }
+type LsSort = 'name' | 'size' | 'time' | 'extension' | 'version' | 'width' | 'none';
+type LsIndicator = 'none' | 'slash' | 'file-type' | 'classify';
+type LsQuoting = 'literal' | 'c' | 'escape';
+type LsAll = 'none' | 'almost' | 'all';
+
+interface LsTiming {
+  field: 'mtime' | 'atime' | 'ctime';
+  style: LsTimeStyle | null;
+  reverse: boolean;
+}
+
+interface LsOpts {
+  timing: LsTiming;
+  format: LsFormat;
+  all: LsAll;
+  showInode: boolean;
+  showSize: boolean;
+  human: 1024 | 1000 | null;
+  indicator: LsIndicator;
+  quoting: LsQuoting;
+  hideControl: boolean;
+  useColor: boolean;
+  sort: LsSort;
+  groupDirectoriesFirst: boolean;
+  recursive: boolean;
+  ignore: string[];
+  hide: string[];
+  ignoreBackups: boolean;
+  width: number;
+  tabSize: number;
+  zero: boolean;
+  context: boolean;
+  hideOwner: boolean;
+  hideGroup: boolean;
+  numeric: boolean;
+  author: boolean;
+  dereference: 'none' | 'arguments' | 'all';
+}
+
+interface LsEntry {
+  name: string;
+  inode: INode;
+  absPath: string;
+}
+
+const lsSize = (inode: INode): number => (inode.type === 'directory' ? DIRECTORY_BYTES : inode.size);
+
+const lsBlocksKiB = (inode: INode): number => {
+  if (inode.type === 'directory') return 4;
+  if (inode.type === 'symlink' || inode.type === 'chardev') return 0;
+  return Math.ceil(inode.size / 4096) * 4;
+};
+
+const LS_ARGUMENT_CHOICES: Readonly<Record<string, readonly string[]>> = {
+  color: ["'always', 'yes', 'force'", "'never', 'no', 'none'", "'auto', 'tty', 'if-tty'"],
+  classify: ["'always', 'yes', 'force'", "'never', 'no', 'none'", "'auto', 'tty', 'if-tty'"],
+  sort: ["'none'", "'time'", "'size'", "'extension'", "'version'", "'width'"],
+  format: ["'verbose', 'long'", "'commas'", "'horizontal', 'across'", "'vertical'", "'single-column'"],
+  time: ["'atime', 'access', 'use'", "'ctime', 'status'", "'mtime', 'modification'", "'birth', 'creation'"],
+  'indicator-style': ["'none'", "'slash'", "'file-type'", "'classify'"],
+  'quoting-style': ["'literal'", "'shell'", "'shell-always'", "'shell-escape'", "'shell-escape-always'", "'c'", "'c-maybe'", "'escape'", "'locale'", "'clocale'"],
+};
+
+function lsInvalidArgument(option: string, value: string): string {
+  const choices = LS_ARGUMENT_CHOICES[option];
+  const lines = [`ls: invalid argument '${value}' for '--${option}'`];
+  if (choices !== undefined) lines.push('Valid arguments are:', ...choices.map((choice) => `  - ${choice}`), "Try 'ls --help' for more information.");
+  return lines.join('\n');
+}
+
+function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: LsOpts; paths: string[]; dirOnly: boolean } | string {
+  const set = gnuOptionSet('ls');
+  const opts: LsOpts = {
+    timing: { field: 'mtime', style: null, reverse: false },
+    format: ctx.isPiped === true ? 'single' : 'columns',
+    all: 'none', showInode: false, showSize: false, human: null, indicator: 'none', quoting: 'literal',
+    hideControl: false, useColor: ctx.color === true, sort: 'name', groupDirectoriesFirst: false,
+    recursive: false, ignore: [], hide: [], ignoreBackups: false, width: DEFAULT_LINE_WIDTH, zero: false, tabSize: 8,
+    context: false, hideOwner: false, hideGroup: false, numeric: false, author: false, dereference: 'none',
+  };
+  const paths: string[] = [];
+  let dirOnly = false;
+  let sortChosen = false;
+  const setFormat = (word: string): boolean => {
+    const formats: Record<string, LsFormat> = {
+      long: 'long', verbose: 'long', 'single-column': 'single', across: 'across', horizontal: 'across',
+      vertical: 'columns', commas: 'commas',
+    };
+    const format = formats[word];
+    if (format === undefined) return false;
+    opts.format = format;
+    return true;
+  };
+  for (const item of shortOptions(args, set.optstring, set.long)) {
+    if (item.kind === 'operand') { paths.push(item.value); continue; }
+    if (item.kind !== 'option') continue;
+    const long = item.long;
+    const argument = item.argument;
+    switch (long ?? item.letter) {
+      case 'l': opts.format = 'long'; break;
+      case 'g': opts.format = 'long'; opts.hideOwner = true; break;
+      case 'o': opts.format = 'long'; opts.hideGroup = true; break;
+      case 'n': opts.format = 'long'; opts.numeric = true; break;
+      case 'G': opts.hideGroup = true; break;
+      case 'a': opts.all = 'all'; break;
+      case 'A': if (opts.all !== 'all') opts.all = 'almost'; break;
+      case 'f': opts.all = 'all'; opts.sort = 'none'; sortChosen = true; opts.showSize = false; opts.useColor = false; break;
+      case 'i': opts.showInode = true; break;
+      case 's': opts.showSize = true; break;
+      case 'S': opts.sort = 'size'; sortChosen = true; break;
+      case 't': opts.sort = 'time'; sortChosen = true; break;
+      case 'X': opts.sort = 'extension'; sortChosen = true; break;
+      case 'v': opts.sort = 'version'; sortChosen = true; break;
+      case 'U': opts.sort = 'none'; sortChosen = true; break;
+      case 'R': opts.recursive = true; break;
+      case 'd': dirOnly = true; break;
+      case 'r': opts.timing.reverse = true; break;
+      case 'c': opts.timing.field = 'ctime'; break;
+      case 'u': opts.timing.field = 'atime'; break;
+      case '1': opts.format = 'single'; break;
+      case 'C': opts.format = 'columns'; break;
+      case 'x': opts.format = 'across'; break;
+      case 'm': opts.format = 'commas'; break;
+      case 'p': opts.indicator = 'slash'; break;
+      case 'F': opts.indicator = 'classify'; break;
+      case 'h': opts.human = 1024; break;
+      case 'k': opts.human = null; break;
+      case 'H': opts.dereference = 'arguments'; break;
+      case 'L': opts.dereference = 'all'; break;
+      case 'Q': opts.quoting = 'c'; break;
+      case 'N': opts.quoting = 'literal'; opts.hideControl = false; break;
+      case 'b': opts.quoting = 'escape'; break;
+      case 'q': opts.hideControl = true; break;
+      case 'B': opts.ignoreBackups = true; break;
+      case 'Z': opts.context = true; break;
+      case 'I': opts.ignore.push(argument ?? ''); break;
+      case 'w': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid line width: '${argument ?? ''}'`;
+        opts.width = Number(argument);
+        break;
       }
-    } else if (arg.startsWith('--')) {
-      if (arg === '--color' || arg === '--color=always' || arg === '--color=yes') useColor = true;
-      else if (arg === '--color=never' || arg === '--color=no' || arg === '--color=none') useColor = false;
-      else if (arg === '--color=auto') useColor = ctx.color === true;
-      else if (arg === '--reverse') timing.reverse = true;
-      else if (arg === '--full-time') { longFormat = true; timing.style = 'full-iso'; }
-      else if (arg.startsWith('--time-style=')) {
-        const style = parseLsTimeStyle(arg.slice('--time-style='.length));
-        if (style === null) return `ls: invalid argument '${arg.slice('--time-style='.length)}' for '--time-style'`;
-        timing.style = style;
-      } else if (arg.startsWith('--time=')) {
-        const which = arg.slice('--time='.length);
-        if (/^(atime|access|use)$/.test(which)) timing.field = 'atime';
-        else if (/^(ctime|status)$/.test(which)) timing.field = 'ctime';
-        else if (which === 'mtime' || which === 'modify') timing.field = 'mtime';
+      case 'T': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid tab size: '${argument ?? ''}'`;
+        opts.tabSize = Number(argument);
+        break;
       }
-    } else {
-      paths.push(arg);
+      case 'color': {
+        const when = argument ?? 'always';
+        if (/^(always|yes|force)$/.test(when)) opts.useColor = true;
+        else if (/^(never|no|none)$/.test(when)) opts.useColor = false;
+        else if (/^(auto|tty|if-tty)$/.test(when)) opts.useColor = ctx.color === true;
+        else return lsInvalidArgument('color', when);
+        break;
+      }
+      case 'reverse': opts.timing.reverse = true; break;
+      case 'full-time': opts.format = 'long'; opts.timing.style = 'full-iso'; break;
+      case 'time-style': {
+        const style = parseLsTimeStyle(argument ?? '');
+        if (style === null) return `ls: invalid argument '${argument ?? ''}' for '--time-style'`;
+        opts.timing.style = style;
+        break;
+      }
+      case 'time': {
+        const which = argument ?? '';
+        if (/^(atime|access|use)$/.test(which)) opts.timing.field = 'atime';
+        else if (/^(ctime|status)$/.test(which)) opts.timing.field = 'ctime';
+        else if (/^(mtime|modify|modification|birth|creation)$/.test(which)) opts.timing.field = 'mtime';
+        else return lsInvalidArgument('time', which);
+        break;
+      }
+      case 'format': if (!setFormat(argument ?? '')) return lsInvalidArgument('format', argument ?? ''); break;
+      case 'sort': {
+        const sorts: Record<string, LsSort> = { none: 'none', size: 'size', time: 'time', version: 'version', extension: 'extension', width: 'width' };
+        const sort = sorts[argument ?? ''];
+        if (sort === undefined) return lsInvalidArgument('sort', argument ?? '');
+        opts.sort = sort;
+        sortChosen = true;
+        break;
+      }
+      case 'indicator-style': {
+        const styles: Record<string, LsIndicator> = { none: 'none', slash: 'slash', 'file-type': 'file-type', classify: 'classify' };
+        const style = styles[argument ?? ''];
+        if (style === undefined) return lsInvalidArgument('indicator-style', argument ?? '');
+        opts.indicator = style;
+        break;
+      }
+      case 'classify': {
+        const when = argument ?? 'always';
+        if (/^(always|yes|force)$/.test(when)) opts.indicator = 'classify';
+        else if (/^(auto|tty|if-tty)$/.test(when)) { if (ctx.color === true) opts.indicator = 'classify'; }
+        else if (!/^(never|no|none)$/.test(when)) return lsInvalidArgument('classify', when);
+        break;
+      }
+      case 'file-type': opts.indicator = 'file-type'; break;
+      case 'quote-name': opts.quoting = 'c'; break;
+      case 'quoting-style': {
+        const styles: Record<string, LsQuoting> = { literal: 'literal', c: 'c', 'c-maybe': 'c', escape: 'escape', locale: 'c', clocale: 'c', shell: 'literal', 'shell-always': 'literal', 'shell-escape': 'literal', 'shell-escape-always': 'literal' };
+        const style = styles[argument ?? ''];
+        if (style === undefined) return lsInvalidArgument('quoting-style', argument ?? '');
+        opts.quoting = style;
+        break;
+      }
+      case 'literal': opts.quoting = 'literal'; break;
+      case 'escape': opts.quoting = 'escape'; break;
+      case 'hide-control-chars': opts.hideControl = true; break;
+      case 'show-control-chars': opts.hideControl = false; break;
+      case 'ignore-backups': opts.ignoreBackups = true; break;
+      case 'ignore': opts.ignore.push(argument ?? ''); break;
+      case 'hide': opts.hide.push(argument ?? ''); break;
+      case 'all': opts.all = 'all'; break;
+      case 'almost-all': if (opts.all !== 'all') opts.all = 'almost'; break;
+      case 'group-directories-first': opts.groupDirectoriesFirst = true; break;
+      case 'human-readable': opts.human = 1024; break;
+      case 'si': opts.human = 1000; break;
+      case 'kibibytes': opts.human = null; break;
+      case 'inode': opts.showInode = true; break;
+      case 'size': opts.showSize = true; break;
+      case 'recursive': opts.recursive = true; break;
+      case 'directory': dirOnly = true; break;
+      case 'numeric-uid-gid': opts.format = 'long'; opts.numeric = true; break;
+      case 'no-group': opts.hideGroup = true; break;
+      case 'author': opts.author = true; break;
+      case 'context': opts.context = true; break;
+      case 'zero': opts.zero = true; break;
+      case 'dereference': opts.dereference = 'all'; break;
+      case 'dereference-command-line': opts.dereference = 'arguments'; break;
+      case 'tabsize': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid tab size: '${argument ?? ''}'`;
+        opts.tabSize = Number(argument);
+        break;
+      }
+      case 'width': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid line width: '${argument ?? ''}'`;
+        opts.width = Number(argument);
+        break;
+      }
+      default: break;
     }
   }
+  if (opts.zero && opts.format !== 'long') opts.format = 'single';
+  if (!sortChosen && opts.format !== 'long' && opts.timing.field !== 'mtime') opts.sort = 'time';
+  return { opts, paths, dirOnly };
+}
 
-  if (paths.length === 0) paths.push('.');
+export function cmdLs(ctx: ShellContext, args: string[]): string {
+  const parsed = parseLsArguments(ctx, args);
+  if (typeof parsed === 'string') return parsed;
+  const { opts, dirOnly } = parsed;
+  const paths = parsed.paths.length === 0 ? ['.'] : parsed.paths;
 
   const failures: string[] = [];
-  const listedFiles: Array<{ name: string; inode: INode; absPath: string }> = [];
+  const listedFiles: LsEntry[] = [];
   const listedDirectories: Array<{ name: string; absPath: string }> = [];
 
   for (const rawPath of paths) {
-    const expandedPaths = expandGlob(ctx, rawPath);
-
-    for (const p of expandedPaths) {
+    for (const p of expandGlob(ctx, rawPath)) {
       const absPath = ctx.vfs.normalizePath(p, ctx.cwd);
-      // `ls <lien>` liste ce que le lien DESIGNE ; `ls -l` et `ls -d`
-      // decrivent le lien lui-meme. C'est le comportement de coreutils,
-      // releve sur la machine reelle : `ls /lib` liste `usr/lib`, tandis
-      // que `ls -l /lib` rend la ligne `lib -> usr/lib`.
-      const suitLeLien = !longFormat && !dirOnly;
-      const inode = ctx.vfs.resolveInode(absPath, suitLeLien)
+      const followsLink = opts.dereference !== 'none' || (opts.format !== 'long' && !dirOnly);
+      const inode = ctx.vfs.resolveInode(absPath, followsLink)
         ?? ctx.vfs.resolveInode(absPath, false);
-
       if (!inode) {
         failures.push(`ls: cannot access '${p}': No such file or directory`);
       } else if (inode.type !== 'directory' || dirOnly) {
@@ -238,197 +428,178 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   }
 
   const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
-  listedFiles.sort(byName);
-  listedDirectories.sort(byName);
-  const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
-  const allOutput: string[] = [...failures];
-  for (const file of listedFiles) allOutput.push(formatEntry(ctx, file.name, file.inode, file.absPath, opts));
-  const headed = paths.length > 1 && !recursive;
+  if (opts.sort !== 'none') {
+    listedFiles.sort(byName);
+    listedDirectories.sort(byName);
+  }
+  const eol = opts.zero ? '\0' : '\n';
+  const out: string[] = [...failures];
+  if (listedFiles.length > 0) out.push(...renderEntries(ctx, listedFiles, opts, false).lines);
+  const headed = paths.length > 1 && !opts.recursive;
   listedDirectories.forEach((directory, index) => {
-    if (headed) allOutput.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${directory.name}:`);
-    allOutput.push(listDir(ctx, directory.absPath, directory.name, longFormat, showAll, showInode,
-      sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing));
+    if (headed) out.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${directory.name}:`);
+    out.push(listDir(ctx, directory.absPath, directory.name, opts));
   });
-
-  return allOutput.join('\n').trimEnd();
+  const text = out.join(eol);
+  return opts.zero ? `${text}\0` : text.trimEnd();
 }
 
-interface LsTiming {
-  field: 'mtime' | 'atime' | 'ctime';
-  style: LsTimeStyle | null;
-  reverse: boolean;
+function lsIgnored(name: string, opts: LsOpts): boolean {
+  if (opts.all === 'none' && name.startsWith('.')) return true;
+  if (opts.all === 'almost' && (name === '.' || name === '..')) return true;
+  if (opts.ignoreBackups && opts.all !== 'all' && name.endsWith('~')) return true;
+  if (opts.ignore.some((pattern) => fnmatch(pattern, name, { period: false }))) return true;
+  if (opts.all === 'none' && opts.hide.some((pattern) => fnmatch(pattern, name, { period: false }))) return true;
+  return false;
 }
 
-interface LsOpts {
-  timing: LsTiming;
-  longFormat: boolean;
-  showInode: boolean;
-  classify: boolean;
-  onePerLine: boolean;
-  useColor?: boolean;
+function lsCompare(opts: LsOpts, a: LsEntry, b: LsEntry): number {
+  const byName = a.name.localeCompare(b.name);
+  switch (opts.sort) {
+    case 'size': return (lsSize(b.inode) - lsSize(a.inode)) || byName;
+    case 'time': return (b.inode[opts.timing.field] - a.inode[opts.timing.field]) || byName;
+    case 'extension': return lsExtension(a.name).localeCompare(lsExtension(b.name)) || byName;
+    case 'version': return versionCompare(a.name, b.name) || byName;
+    case 'width': return (a.name.length - b.name.length) || byName;
+    default: return byName;
+  }
 }
 
-function listDir(ctx: ShellContext, absPath: string, displayPath: string,
-  longFormat: boolean, showAll: boolean, showInode: boolean,
-  sortBySize: boolean, sortByTime: boolean, recursive: boolean,
-  classify: boolean = false, onePerLine: boolean = false, useColor: boolean = false,
-  timing: LsTiming = { field: 'mtime', style: null, reverse: false }): string {
+function sortEntries(entries: LsEntry[], opts: LsOpts): LsEntry[] {
+  if (opts.sort === 'none') return entries;
+  const direction = opts.timing.reverse ? -1 : 1;
+  return [...entries].sort((a, b) => {
+    if (opts.groupDirectoriesFirst) {
+      const dirA = a.inode.type === 'directory' ? 0 : 1;
+      const dirB = b.inode.type === 'directory' ? 0 : 1;
+      if (dirA !== dirB) return dirA - dirB;
+    }
+    return direction * lsCompare(opts, a, b);
+  });
+}
+
+function listDir(ctx: ShellContext, absPath: string, displayPath: string, opts: LsOpts): string {
   const entries = ctx.vfs.listDirectory(absPath);
   if (!entries) return `ls: cannot access '${displayPath}': No such file or directory`;
   if (ctx.uid !== 0 && !ctx.vfs.path(absPath, '/', actorOf(ctx)).canRead()) {
     return `ls: cannot open directory '${displayPath}': Permission denied`;
   }
 
-  let filtered = entries.filter(e => showAll || !e.name.startsWith('.'));
-
-  // Sort
-  if (sortBySize) {
-    filtered.sort((a, b) => b.inode.size - a.inode.size);
-  } else if (sortByTime) {
-    filtered.sort((a, b) => (b.inode[timing.field] - a.inode[timing.field]) || a.name.localeCompare(b.name));
-  } else {
-    filtered.sort((a, b) => a.name.localeCompare(b.name));
+  const listed: LsEntry[] = [];
+  const visible = entries.filter((e) => e.name !== '.' && e.name !== '..' && !lsIgnored(e.name, opts));
+  if (opts.all === 'all' && !opts.ignore.some((p) => fnmatch(p, '.', {}))) {
+    const self = ctx.vfs.resolveInode(absPath, true);
+    const parentPath = absPath === '/' ? '/' : absPath.replace(/\/[^/]*$/, '') || '/';
+    const parent = ctx.vfs.resolveInode(parentPath, true);
+    if (self) listed.push({ name: '.', inode: self, absPath });
+    if (parent) listed.push({ name: '..', inode: parent, absPath: parentPath });
   }
-  if (timing.reverse) filtered.reverse();
+  for (const entry of visible) {
+    const childPath = absPath === '/' ? `/${entry.name}` : `${absPath}/${entry.name}`;
+    const inode = opts.dereference === 'all' ? (ctx.vfs.resolveInode(childPath, true) ?? entry.inode) : entry.inode;
+    listed.push({ name: entry.name, inode, absPath: childPath });
+  }
+  const filtered = sortEntries(listed, opts);
 
-  const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
   const lines: string[] = [];
+  if (opts.recursive) lines.push(`${displayPath}:`);
+  const rendered = renderEntries(ctx, filtered, opts, true);
+  lines.push(...rendered.lines);
 
-  if (recursive) {
-    lines.push(`${displayPath}:`);
-  }
-
-  if (longFormat) {
-    // Compute total blocks (simulate 4K blocks)
-    let totalBlocks = 0;
-    for (const entry of filtered) {
-      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      totalBlocks += Math.ceil(Math.max(entry.inode.size, 1) / 4096) * 8;
-    }
-    lines.push(`total ${totalBlocks}`);
-
-    // Pre-compute column widths for proper alignment
-    const displayEntries: { name: string; inode: INode; childPath: string }[] = [];
-    for (const entry of filtered) {
-      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      const childPath = absPath === '/' ? '/' + entry.name : absPath + '/' + entry.name;
-      displayEntries.push({ name: entry.name, inode: entry.inode, childPath });
-    }
-
-    let maxLinks = 1, maxOwner = 1, maxGroup = 1, maxSize = 1;
-    for (const e of displayEntries) {
-      maxLinks = Math.max(maxLinks, String(e.inode.linkCount).length);
-      maxOwner = Math.max(maxOwner, ctx.userMgr.uidToName(e.inode.uid).length);
-      maxGroup = Math.max(maxGroup, ctx.userMgr.gidToName(e.inode.gid).length);
-      maxSize = Math.max(maxSize, String(e.inode.size).length);
-    }
-
-    for (const e of displayEntries) {
-      lines.push(formatEntryLong(ctx, e.name, e.inode, e.childPath, opts,
-        maxLinks, maxOwner, maxGroup, maxSize));
-    }
-  } else {
-    // Short format: multi-column horizontal layout (like real ls)
-    const names: string[] = [];
-    const rawLens: number[] = []; // lengths without ANSI codes for column calc
-    for (const entry of filtered) {
-      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      let displayName = colorName(entry.name, entry.inode, useColor);
-      let rawName = entry.name;
-      if (classify) {
-        const suffix = classifySuffix(entry.inode);
-        displayName += suffix;
-        rawName += suffix;
-      }
-      if (showInode) {
-        displayName = `${entry.inode.id} ${displayName}`;
-        rawName = `${entry.inode.id} ${rawName}`;
-      }
-      names.push(displayName);
-      rawLens.push(rawName.length);
-    }
-
-    if (onePerLine || names.length === 0) {
-      lines.push(...names);
-    } else {
-      lines.push(formatColumns(names, rawLens));
-    }
-  }
-
-  if (recursive) {
+  if (opts.recursive) {
     for (const entry of filtered) {
       if (entry.name === '.' || entry.name === '..') continue;
-      if (entry.inode.type === 'directory') {
-        const childPath = absPath === '/' ? '/' + entry.name : absPath + '/' + entry.name;
-        const childDisplay = displayPath === '.' ? entry.name : displayPath + '/' + entry.name;
-        lines.push('');
-        lines.push(listDir(ctx, childPath, childDisplay, longFormat, showAll, showInode,
-          sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing));
-      }
+      const real = ctx.vfs.resolveInode(entry.absPath, false);
+      if (real?.type !== 'directory') continue;
+      const childDisplay = displayPath.endsWith('/') ? `${displayPath}${entry.name}` : `${displayPath}/${entry.name}`;
+      lines.push('');
+      lines.push(listDir(ctx, entry.absPath, childDisplay, opts));
     }
   }
-
-  return lines.join('\n');
+  return lines.join(opts.zero ? '\0' : '\n');
 }
 
-/**
- * Format multi-column horizontal layout like real `ls`.
- * Fills columns left-to-right, top-to-bottom (column-major order).
- * Assumes terminal width of 80 characters.
- * rawLens: visible lengths of each name (excluding ANSI codes).
- */
-function formatColumns(names: string[], rawLens?: number[], termWidth: number = 80): string {
-  if (names.length === 0) return '';
-  if (names.length === 1) return names[0];
-
-  const lens = rawLens ?? names.map(n => n.length);
-  const maxLen = Math.max(...lens);
-  const colWidth = maxLen + 2; // 2-space gap between columns
-
-  if (colWidth >= termWidth) {
-    return names.join('\n');
-  }
-
-  const numCols = Math.max(1, Math.floor(termWidth / colWidth));
-  const numRows = Math.ceil(names.length / numCols);
-
-  const lines: string[] = [];
-  for (let row = 0; row < numRows; row++) {
-    const parts: string[] = [];
-    for (let col = 0; col < numCols; col++) {
-      const idx = col * numRows + row;
-      if (idx < names.length) {
-        const isLast = col === numCols - 1 || (col + 1) * numRows + row >= names.length;
-        if (isLast) {
-          parts.push(names[idx]);
-        } else {
-          // Pad based on visible length, not string length (ANSI codes are invisible)
-          const padding = colWidth - lens[idx];
-          parts.push(names[idx] + ' '.repeat(Math.max(0, padding)));
-        }
-      }
-    }
-    lines.push(parts.join(''));
-  }
-  return lines.join('\n');
-}
-
-/** Returns the -F suffix character for an inode type */
-function classifySuffix(inode: INode): string {
+function indicatorOf(inode: INode, style: LsIndicator, long = false): string {
+  if (style === 'none') return '';
+  if (long && inode.type === 'symlink') return '';
+  if (inode.type === 'directory') return '/';
+  if (style === 'slash') return '';
   switch (inode.type) {
-    case 'directory': return '/';
     case 'symlink': return '@';
     case 'fifo': return '|';
     case 'socket': return '=';
-    case 'file':
-      // Executable check: any execute bit set
-      if (inode.permissions & 0o111) return '*';
-      return '';
+    case 'file': return style === 'classify' && (inode.permissions & 0o111) ? '*' : '';
     default: return '';
   }
 }
 
-/** Colorize a filename based on its inode type, matching GNU ls --color=auto */
+function quotedName(name: string, opts: LsOpts): string {
+  if (opts.quoting === 'c') return lsQuoteC(name);
+  if (opts.quoting === 'escape') return lsEscapeNonPrinting(name);
+  return opts.hideControl ? lsHideControl(name) : name;
+}
+
+function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, withTotal: boolean): { lines: string[] } {
+  const long = opts.format === 'long';
+  const sizeText = (blocksKiB: number): string => (opts.human === null ? String(blocksKiB) : lsHumanSize(blocksKiB * 1024, opts.human));
+  const inodeWidth = opts.showInode ? Math.max(...entries.map((e) => String(e.inode.id).length), 1) : 0;
+  const blocksWidth = opts.showSize ? Math.max(...entries.map((e) => sizeText(lsBlocksKiB(e.inode)).length), 1) : 0;
+  const prefixOf = (e: LsEntry): string => {
+    let prefix = '';
+    if (opts.showInode) prefix += `${padToWidth(String(e.inode.id), inodeWidth, 'right')} `;
+    if (opts.showSize) prefix += `${padToWidth(sizeText(lsBlocksKiB(e.inode)), blocksWidth, 'right')} `;
+    if (opts.context && !long) prefix += '? ';
+    return prefix;
+  };
+  const lines: string[] = [];
+
+  if (long) {
+    const sizeOf = (e: LsEntry): string => (opts.human === null ? String(lsSize(e.inode)) : lsHumanSize(lsSize(e.inode), opts.human));
+    const ownerOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.uid) : ctx.userMgr.uidToName(e.inode.uid));
+    const groupOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.gid) : ctx.userMgr.gidToName(e.inode.gid));
+    const widths = {
+      links: Math.max(1, ...entries.map((e) => String(e.inode.linkCount).length)),
+      owner: Math.max(1, ...entries.map((e) => ownerOf(e).length)),
+      group: Math.max(1, ...entries.map((e) => groupOf(e).length)),
+      size: Math.max(1, ...entries.map((e) => sizeOf(e).length)),
+    };
+    if (withTotal) {
+      const total = entries.reduce((sum, e) => sum + lsBlocksKiB(e.inode), 0);
+      lines.push(`total ${sizeText(total)}`);
+    }
+    for (const e of entries) {
+      const cells = [ctx.vfs.formatPermissions(e.inode), padToWidth(String(e.inode.linkCount), widths.links, 'right')];
+      if (!opts.hideOwner) cells.push(padToWidth(ownerOf(e), widths.owner));
+      if (!opts.hideGroup) cells.push(padToWidth(groupOf(e), widths.group));
+      if (opts.author) cells.push(padToWidth(ownerOf(e), widths.owner));
+      if (opts.context) cells.push('?');
+      cells.push(padToWidth(sizeOf(e), widths.size, 'right'));
+      cells.push(formatLsTime(opts.timing.style, e.inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs()));
+      const name = colorName(quotedName(e.name, opts), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator, true);
+      let line = `${prefixOf(e)}${cells.join(' ')} ${name}`;
+      if (e.inode.type === 'symlink' && opts.dereference !== 'all') line += ` -> ${ctx.vfs.linkTarget(e.inode)}`;
+      lines.push(line);
+    }
+    return { lines };
+  }
+
+  if (withTotal && opts.showSize) {
+    lines.push(`total ${sizeText(entries.reduce((sum, e) => sum + lsBlocksKiB(e.inode), 0))}`);
+  }
+  const shown: string[] = [];
+  const lengths: number[] = [];
+  for (const e of entries) {
+    const base = quotedName(e.name, opts) + indicatorOf(e.inode, opts.indicator);
+    const prefix = prefixOf(e);
+    shown.push(prefix + colorName(quotedName(e.name, opts), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator));
+    lengths.push(prefix.length + base.length);
+  }
+  if (opts.format === 'single' || shown.length === 0) lines.push(...shown);
+  else if (opts.format === 'commas') lines.push(...lsCommas(shown, lengths, opts.width));
+  else lines.push(...lsColumns(shown, lengths, opts.width, opts.format === 'across', opts.tabSize));
+  return { lines };
+}
+
 function colorName(name: string, inode: INode, useColor = true): string {
   if (!useColor) return name;
   switch (inode.type) {
@@ -449,47 +620,6 @@ function colorName(name: string, inode: INode, useColor = true): string {
       return name;
     default: return name;
   }
-}
-
-function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath: string,
-  opts: LsOpts, maxLinks: number, maxOwner: number, maxGroup: number, maxSize: number): string {
-  let line = '';
-
-  if (opts.showInode) {
-    line += `${inode.id} `;
-  }
-
-  const perms = ctx.vfs.formatPermissions(inode);
-  const owner = ctx.userMgr.uidToName(inode.uid);
-  const group = ctx.userMgr.gidToName(inode.gid);
-  const dateStr = formatLsTime(opts.timing.style, inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs());
-
-  const coloredName = colorName(name, inode, opts.useColor ?? false);
-  line += `${perms} ${padToWidth(String(inode.linkCount), maxLinks, 'right')} ${padToWidth(owner, maxOwner)} ${padToWidth(group, maxGroup)} ${padToWidth(String(inode.size), maxSize, 'right')} ${dateStr} ${coloredName}`;
-
-  // Symlink target
-  if (inode.type === 'symlink') {
-    line += ` -> ${ctx.vfs.linkTarget(inode)}`;
-  }
-
-  return line;
-}
-
-function formatEntry(ctx: ShellContext, name: string, inode: INode, absPath: string,
-  opts: LsOpts): string {
-  if (opts.longFormat) {
-    return formatEntryLong(ctx, name, inode, absPath, opts, 1, 1, 1, 1);
-  }
-
-  let line = '';
-  if (opts.showInode) {
-    line += `${inode.id} `;
-  }
-  line += colorName(name, inode, opts.useColor ?? false);
-  if (opts.classify) {
-    line += classifySuffix(inode);
-  }
-  return line;
 }
 
 export interface CatFlags {

@@ -120,7 +120,7 @@ describe('Bash Interpreter TDD Suite', () => {
     
     it('G2-06: should correctly perform word splitting without quotes', async () => {
       // touch expects two separate arguments
-      const out = await server.executeCommand('FILES="file1 file2"; touch $FILES; ls file*');
+      const out = await server.executeCommand('FILES="file1 file2"; touch $FILES; ls -1 file*');
       expect(out.trim()).toBe('file1\nfile2');
     });
 
@@ -533,19 +533,19 @@ describe('Bash Interpreter TDD Suite', () => {
   describe('G9: Globbing (Wildcards)', () => {
     it('G9-01: should expand * to match multiple files', async () => {
       await server.executeCommand('touch file1.txt file2.txt data.log');
-      const out = await server.executeCommand('ls *.txt');
+      const out = await server.executeCommand('ls -1 *.txt');
       expect(out.trim()).toBe('file1.txt\nfile2.txt');
     });
 
     it('G9-02: should expand ? to match single character', async () => {
       await server.executeCommand('touch data1.log data2.log data10.log');
-      const out = await server.executeCommand('ls data?.log');
+      const out = await server.executeCommand('ls -1 data?.log');
       expect(out.trim()).toBe('data1.log\ndata2.log');
     });
 
     it('G9-03: should expand [...] to match character sets', async () => {
       await server.executeCommand('touch file_a file_b file_c file_d');
-      const out = await server.executeCommand('ls file_[ac]');
+      const out = await server.executeCommand('ls -1 file_[ac]');
       expect(out.trim()).toBe('file_a\nfile_c');
     });
 

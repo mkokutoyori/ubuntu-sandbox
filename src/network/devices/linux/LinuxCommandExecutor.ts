@@ -6015,8 +6015,8 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
         }
         const out = cmdLs(c, args);
-        const isErr = out.includes('cannot access');
-        return { output: out, exitCode: isErr ? 2 : 0 };
+        const exitCode = /^ls: invalid argument/.test(out) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(out) ? 2 : 0;
+        return { output: out, exitCode };
       }
       case 'cat': {
         // If no file args and stdin is provided, output stdin (cat from stdin).

@@ -251,7 +251,7 @@ describe('the first word comes from the PATH', () => {
     expect((await l.tab('ssh-keyg')).input).toBe('ssh-keygen ');
     expect((await l.tab('ssh-cop')).input).toBe('ssh-copy-id ');
     expect(await l.pc1.executeCommand('which ssh-keygen')).toBe('/usr/bin/ssh-keygen');
-    expect(await l.pc1.executeCommand('ls /usr/bin/ssh-*')).toBe(
+    expect(await l.pc1.executeCommand('ls -1 /usr/bin/ssh-*')).toBe(
       ['/usr/bin/ssh-add', '/usr/bin/ssh-agent', '/usr/bin/ssh-copy-id', '/usr/bin/ssh-keygen', '/usr/bin/ssh-keyscan'].join('\n'),
     );
   });

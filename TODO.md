@@ -4367,3 +4367,7 @@ Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, 
 ## file and hostname: options accepted without effect
 
 `file` evaluates -b, -i, --mime and --mime-type (ASCII text, empty, directory, symlink, special files, shell scripts only); -L, -z, -f, -F, -0, --extension, --apple and the rest are accepted and ignored. `hostname` refuses unknown options like net-tools but still ignores -F (read from a file), -b, -a and -y/--yp/--nis.
+
+## ls: options accepted without effect
+
+Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `--block-size`, `-Z` shows `?` instead of a real SELinux context, `--quoting-style=shell*` and `locale` are approximated by literal and c, and `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.

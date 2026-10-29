@@ -287,7 +287,7 @@ describe('Group 1: Gestion des Fichiers et Répertoires', () => {
       await pc.executeCommand('ln original_hard.txt hardlink.txt');
       
       // Vérifier qu'ils partagent le même inode
-      const inodeCheck = await pc.executeCommand('ls -i original_hard.txt hardlink.txt');
+      const inodeCheck = await pc.executeCommand('ls -1i original_hard.txt hardlink.txt');
       const inodes = inodeCheck.split('\n').map(line => line.split(' ')[0]);
       expect(inodes[0]).toBe(inodes[1]);
       

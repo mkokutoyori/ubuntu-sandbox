@@ -659,7 +659,7 @@ function humanToBytes(s: string): number {
 
 /** Version-sort comparator (GNU `sort -V`). Splits into runs of digits
  *  and non-digits, comparing numerically where both runs are numeric. */
-function versionCompare(a: string, b: string): number {
+export function versionCompare(a: string, b: string): number {
   const split = (s: string): string[] => s.match(/(\d+|\D+)/g) ?? [];
   const aa = split(a), bb = split(b);
   for (let i = 0; i < Math.max(aa.length, bb.length); i++) {
