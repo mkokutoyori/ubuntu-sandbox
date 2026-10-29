@@ -4375,3 +4375,7 @@ Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, wi
 ## du: options accepted without full effect
 
 `du` evaluates every option of GNU du 9.4 except: `-x` (the file-system boundary is read from `ctx.deviceOf` only when the host supplies it), `--files0-from=-` (no stdin), the threshold suffix forms beyond K/M/G, and the readdir order of entries (the simulator lists in insertion order; the probe compares sorted lines). `--time` uses the file times of the simulator.
+
+## grep: what is still approximated
+
+Evaluated and compared with GNU grep 3.11: the selection, output, context, binary-file, directory, null-data, initial-tab and colour options (see probe-linux-grep-evalue-ses-options). Still approximate: a file counts as binary only when it holds a NUL byte (grep also treats invalid UTF-8 in a UTF-8 locale as binary); `-D` (devices) and `-U`/`--line-buffered` are accepted and ignored; `-P` is JavaScript's RegExp with `\K` translated; `GREP_COLORS` is not read (the defaults are used); entries of `-r` follow the simulator's insertion order, not readdir.

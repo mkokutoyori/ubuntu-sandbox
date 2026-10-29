@@ -16,7 +16,9 @@
  * (readdir order differs). Not covered: -P specifics, locale-dependent
  * classes, devices (-D).
  *
- * Measured with `git stash`: see the commit message.
+ * Measured against the commit before the rewrite (worktree): 83 cases, 34 fall;
+ * the 49 that pass either way are the plain searches (-n -c -i -v -w -x -l
+ * -L -H -h -m -E -F -e -A -B -C and the missing-file messages).
  */
 import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
