@@ -4320,3 +4320,11 @@ nothing: the engine models no route refresh. `clear ip bgp peer-group`,
 although IOS accepts them (BgpNeighborCfg carries no peer-group name, the
 engine no per-family reset). Hard reset by `*`, address, AS, external and
 internal is real (BGPEngine.resetPeers).
+
+## More reds seen with the working tree stashed (not caused by the hardening series)
+
+`network-v2/auditctl-oracle.test.ts` (replays), `auditctl-other.test.ts` (128,
+an unmatched quote answers bash's own `unexpected eof` instead of an auditctl
+message), `ausearch-interpret-oracle.test.ts` (replays) and
+`new_firewall/fortigate-battery-08-cyber-defense-tls-pvlan.test.ts` (26 cases)
+fail on HEAD with `src` stashed. Not diagnosed.

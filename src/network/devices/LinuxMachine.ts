@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { refuseUnknownGnuOption } from './linux/GnuOptionGuard';
 import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -644,6 +645,8 @@ export abstract class LinuxMachine extends EndHost
       const unavailable = this.registryDependencyFailure(registered, cmd);
       if (unavailable) return unavailable;
       const { argv, input } = splitRegistryStdin(registered, args, stdin);
+      const optionRefusal = refuseUnknownGnuOption(cmd, argv);
+      if (optionRefusal) return optionRefusal;
       if (registered.runWithStatusSync) {
         return registered.runWithStatusSync(this.buildCommandContext(outputPiped, cmd), argv, input);
       }
@@ -856,6 +859,8 @@ export abstract class LinuxMachine extends EndHost
         const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
         if (denial) { restore(); return Promise.resolve(denial); }
       }
+      const optionRefusal = refuseUnknownGnuOption(argv[0], args);
+      if (optionRefusal) { restore(); return Promise.resolve(optionRefusal); }
       const ctx = this.buildCommandContext(outputPiped, argv[0]);
       if (cmd.runWithStatusSync) {
         try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }
@@ -4252,6 +4257,11 @@ export abstract class LinuxMachine extends EndHost
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
         async () => {
+          const optionRefusal = refuseUnknownGnuOption(firstCmd, cmdArgs);
+          if (optionRefusal) {
+            this.executor.lastExitCode = optionRefusal.exitCode;
+            return optionRefusal.output;
+          }
           if (cmd.runWithStatusSync) {
             const result = cmd.runWithStatusSync(this.buildCommandContext(), cmdArgs);
             this.executor.lastExitCode = result.exitCode;
