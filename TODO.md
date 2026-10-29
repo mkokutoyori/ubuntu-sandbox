@@ -4366,9 +4366,7 @@ are red at the base commit 2351448f2 (checked in a worktree), like
 `probe-fuser-porte-de-psmisc.test.ts`, `run-parts.test.ts`,
 `scenario10-linux-audit.test.ts`, `crypto-pki-trustpool.test.ts`,
 `probe-procfs-does-not-grow.test.ts` (3) and
-`probe-oracle-sqlplus-silencieux-et-rman-a-froid.test.ts` (1) and
-`probe-date-suit-le-fuseau.test.ts` (3: it expects CEST, the clock of the day
-is past the end of summer time, so the probe depends on the calendar date).
+`probe-oracle-sqlplus-silencieux-et-rman-a-froid.test.ts` (1).
 
 ## Linux coreutils without an option table
 

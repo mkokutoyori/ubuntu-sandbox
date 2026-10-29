@@ -41,6 +41,11 @@
  * minute. Une machine Windows a UNE heure, que `time /t` et
  * `Get-TimeZone` decrivent chacun a leur facon.
  *
+ * Les cas qui attendent `CEST` (et un ecart de deux heures) supposaient que
+ * l'horloge du jour tombe en heure d'ete ; apres le dernier dimanche d'octobre
+ * ils tombaient pour une raison de calendrier. L'instant est donc fige en
+ * juillet 2026 : le test ne depend plus de la date de son execution.
+ *
  * ── Discrimination ──────────────────────────────────────────────────
  *
  * `git stash push -u -- src/network src/powershell` fait tomber **7 des
@@ -56,19 +61,25 @@
  *     ci-dessus : `%s` valait deja l'instant reel, et le lot ne devait
  *     pas le lui prendre en decalant le `Date` rendu.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 
+const SUMMER_INSTANT = new Date('2026-07-15T10:30:00Z');
+
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(SUMMER_INSTANT);
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
   Logger.reset();
 });
+
+afterEach(() => { vi.useRealTimers(); });
 
 async function posteA(zone: string): Promise<LinuxPC> {
   const pc = new LinuxPC('linux-pc', 'PC', 0, 0);
