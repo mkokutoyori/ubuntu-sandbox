@@ -4359,3 +4359,7 @@ Measured with `<cmd> --zorglub`: `lsof` (own parser, prints a version banner on 
 ## Huawei VRP: `Too many parameters` has no echoed line and caret
 
 `display acl all zorglub` answers a bare `Error: Too many parameters found at '^' position.`: `normaliserErreurVrp` decorates Incomplete, Unrecognized and Wrong parameter with the typed line and a caret, not this family, because the position of the extra word is known only to the handler. The declared ceiling `allowArgs` + `tropDeParametres` does render it fully but only supports one fixed ceiling per node.
+
+## Huawei VRP: config commands that take any trailing word
+
+Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, `arp static 1.1.1.1 0000-0000-0001`, `nat static global 1.1.1.1 inside 2.2.2.2`, `bfd` and `user privilege level 3` run as if the word were not typed. Each has optional tails on a real VRP (`privilege level`, `vid`/interface, `netmask`/`vrrp`...) whose full grammar was not reachable, so a ceiling would refuse valid forms.
