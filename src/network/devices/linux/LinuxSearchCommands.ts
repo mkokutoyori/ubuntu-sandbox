@@ -24,6 +24,17 @@ function parseSizeSpec(raw: string): { op: '+' | '-' | '='; value: number } | nu
   return { op: prefix === '+' ? '+' : prefix === '-' ? '-' : '=', value: n * multipliers[unit] };
 }
 
+const FIND_PREDICATES_WITH_ARGUMENT = new Set([
+  '-regex', '-iregex', '-regextype', '-links', '-inum', '-samefile', '-uid', '-gid', '-lname', '-ilname',
+  '-fstype', '-used', '-wholename', '-iwholename', '-fprint', '-fprint0', '-printf', '-fls', '-context',
+]);
+
+const FIND_PREDICATES_WITHOUT_ARGUMENT = new Set([
+  '-true', '-false', '-a', '-and', '-o', '-or', '-prune', '-ls', '-quit', '-nouser', '-nogroup', '-readable',
+  '-writable', '-executable', '-noleaf', '-follow', '-depth', '-d', '-daystart', '-ignore_readdir_race',
+  '-noignore_readdir_race', '-warn', '-nowarn', '-help', '--help', '-version', '--version', '-H', '-L', '-P',
+]);
+
 export function cmdFind(ctx: ShellContext, args: string[]): string {
   let startPath = '.';
   let name: string | undefined;
@@ -147,6 +158,15 @@ export function cmdFind(ctx: ShellContext, args: string[]): string {
             thanMs = reference[field(newerXy[2])];
           }
           timeTests.push({ kind: 'newer', field: field(newerXy[1]), thanMs });
+        } else if (FIND_PREDICATES_WITH_ARGUMENT.has(a)) {
+          i++;
+        } else if (a === '-fprintf') {
+          i += 2;
+        } else if (a === '-ok' || a === '-okdir' || a === '-execdir') {
+          while (i + 1 < args.length && args[i + 1] !== '\\;' && args[i + 1] !== ';') i++;
+          i++;
+        } else if (a.startsWith('-') && !FIND_PREDICATES_WITHOUT_ARGUMENT.has(a)) {
+          argumentError = `find: unknown predicate \`${a}'`;
         }
         break;
       }

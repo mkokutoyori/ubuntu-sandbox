@@ -19,7 +19,7 @@
  * sha256sum, sha384sum, sha512sum share one option set): 10 cases added, 6 refusals fall, the 4
  * valid forms pass either way. Seventh step (nl, fold, paste, comm, base64): 12 cases added, 5
  * refusals fall, the 7 valid forms pass either way. Eighth step (du: -a, -c, -d/--max-depth were accepted and ignored,
- * only the last target was reported): 10 cases added, 8 fall, 2 witnesses pass either way. Ninth step (rev): 3 cases added, 1 falls (the refusal), 2 witnesses pass either way. Option tables are the GNU
+ * only the last target was reported): 10 cases added, 8 fall, 2 witnesses pass either way. Ninth step (rev): 3 cases added, 1 falls (the refusal), 2 witnesses pass either way. Tenth step (find: an unknown predicate was ignored): 10 cases added, 2 refusals fall, 8 valid forms pass either way. Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -110,5 +110,21 @@ describe('du evaluates the options it accepts', () => {
   it('a bad depth is refused', async () => { expect(await du('du -d x /tmp/d')).toContain("du: invalid maximum depth 'x'"); });
   it('a missing target is reported and the others still run', async () => {
     expect(await du('du -sb /tmp/nope /tmp/d/e')).toBe("du: cannot access '/tmp/nope': No such file or directory\n5\t/tmp/d/e");
+  });
+});
+
+describe('find refuses a predicate GNU does not have', () => {
+  async function find(line: string): Promise<string> {
+    const machine = pc();
+    await machine.executeCommand('mkdir -p /tmp/d/e; printf hi > /tmp/d/e/f');
+    return machine.executeCommand(line);
+  }
+  it("--zorglub", async () => { expect(await find('find /tmp/d --zorglub')).toBe("find: unknown predicate `--zorglub'"); });
+  it("-zorglub x", async () => { expect(await find('find /tmp/d -zorglub x')).toBe("find: unknown predicate `-zorglub'"); });
+  it.each([
+    'find /tmp/d -name f', 'find /tmp/d -type f -size -2', 'find /tmp/d -links -3', 'find /tmp/d -regex ".*f"',
+    'find /tmp/d -maxdepth 1 -print', 'find /tmp/d -uid 0', 'find /tmp/d -newermt 2000-01-01', 'find /tmp/d -name f -o -name e',
+  ])('witness: `%s` is not refused', async (line) => {
+    expect(await find(line)).not.toContain('unknown predicate');
   });
 });
