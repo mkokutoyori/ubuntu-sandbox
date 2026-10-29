@@ -4311,3 +4311,12 @@ stashed; not yet checked against the base commit, so it may come from an
 earlier change of the hardening series. Also red: `fortigate-battery-04-
 monitoring-telemetry-syslog.test.ts` (28 cases), same family as batteries
 06/09/10/11.
+
+## clear ip bgp soft / in / out and peer-group targets
+
+`clear ip bgp <target> soft [in|out]` and `in`/`out` are accepted and do
+nothing: the engine models no route refresh. `clear ip bgp peer-group`,
+`vpnv4`, `ipv4 unicast` and `vrf` targets are refused as invalid input
+although IOS accepts them (BgpNeighborCfg carries no peer-group name, the
+engine no per-family reset). Hard reset by `*`, address, AS, external and
+internal is real (BGPEngine.resetPeers).
