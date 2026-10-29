@@ -888,7 +888,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
   // ─── 14. EXEC & DEBUG COMMANDS ──────────────────────────────────
 
   describe('Exec & Debug Commands', () => {
-    it('51. "clear ip route rip *" should purge dynamic RIP routes', async () => {
+    it('51. "clear ip route *" should purge dynamic RIP routes', async () => {
       const { r1, r2 } = setupTwoRouterTopology();
       await configureAddressesR1R2(r1, r2);
 
@@ -907,7 +907,7 @@ describe('Cisco IOS RIP Protocol Unit Tests', () => {
       let routes = await r2.executeCommand('show ip route rip');
       expect(routes).toContain('192.168.1.0');
 
-      await r2.executeCommand('clear ip route rip *');
+      await r2.executeCommand('clear ip route *');
 
       routes = await r2.executeCommand('show ip route rip');
       expect(routes).not.toContain('192.168.1.0');

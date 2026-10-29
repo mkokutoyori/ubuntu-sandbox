@@ -4828,6 +4828,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ], () => ({ apply: (words) => this.applyClear(words) }));
   }
 
+  private clearBgpSessions(words: readonly string[]): string {
+    const [target, ...suffix] = words;
+    if (target === undefined) throw new CliIncomplete();
+    const lower = target.toLowerCase();
+    const engine = (this.d() as unknown as {
+      getBGPEngine?: () => { asn: number; resetPeers(m: (ip: string, c: { remoteAs?: number }) => boolean): readonly string[] } | null;
+    }).getBGPEngine?.();
+    let matches: (ip: string, cfg: { remoteAs?: number }) => boolean;
+    if (target === '*') matches = () => true;
+    else if (isValidIPv4(target)) matches = (ip) => ip === target;
+    else if (/^\d+$/.test(target) && Number(target) >= 1 && Number(target) <= 4294967295) {
+      matches = (_ip, cfg) => cfg.remoteAs === Number(target);
+    } else if (lower === 'external') matches = (_ip, cfg) => cfg.remoteAs !== engine?.asn;
+    else if (lower === 'internal') matches = (_ip, cfg) => cfg.remoteAs === engine?.asn;
+    else throw new CliInvalidInput({ token: target });
+    const soft = suffix[0]?.toLowerCase() === 'soft' || ['in', 'out'].includes(suffix[0]?.toLowerCase() ?? '');
+    const allowed = soft ? ['soft', 'in', 'out', 'prefix-filter'] : [];
+    const badAt = suffix.findIndex((word) => !allowed.includes(word.toLowerCase()));
+    if (badAt >= 0) throw new CliInvalidInput({ token: suffix[badAt] });
+    if (soft || !engine) return '';
+    return engine.resetPeers(matches).length === 0 && target !== '*' ? '% No matching BGP neighbor' : '';
+  }
+
   private applyClear(words: string[]): string {
     const [tete, ...reste] = words;
 
@@ -4879,6 +4902,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       _clearArpEntry?: (ip?: string) => number;
       arpTable?: Map<string, unknown>;
       _clearDynamicRoutes?: () => void;
+      _clearDynamicRoute?: (network: string, mask?: string) => number;
       getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
     };
 
@@ -4889,7 +4913,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev.arpTable?.clear();
       return '';
     }
-    if (reste[0] === 'route') { dev._clearDynamicRoutes?.(); return ''; }
+    if (reste[0] === 'route') {
+      const [target, mask, ...extra] = reste.slice(1);
+      if (target === undefined || target === '*') {
+        if (mask !== undefined) throw new CliInvalidInput({ token: mask });
+        dev._clearDynamicRoutes?.();
+        return '';
+      }
+      if (!isValidIPv4(target)) throw new CliInvalidInput({ token: target });
+      if (mask !== undefined && !isValidIPv4(mask)) throw new CliInvalidInput({ token: mask });
+      if (extra.length > 0) throw new CliInvalidInput({ token: extra[0] });
+      return (dev._clearDynamicRoute?.(target, mask) ?? 0) === 0 ? '% Network not in table' : '';
+    }
+    if (reste[0] === 'bgp') return this.clearBgpSessions(reste.slice(1));
     if (reste[0] === 'eigrp') {
       const moteur = dev.getEIGRPEngine?.();
       if (!moteur) return '';
