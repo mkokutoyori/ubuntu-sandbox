@@ -77,6 +77,7 @@ import {
   type ArchiveCtx,
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
+import { formatStatTime } from './time/FileTimes';
 import { runXargs } from './coreutils/Xargs';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
@@ -5891,7 +5892,7 @@ export class LinuxCommandExecutor {
     return `augenrules: failed to load some rules (invalid syntax): ${invalid.join(', ')}`;
   }
 
-  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
+  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
     const parentUmask = this.umask;
     let result: { output: string; exitCode: number };
     try {
@@ -5934,7 +5935,7 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
+  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
     stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
@@ -6834,10 +6835,20 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: 0 };
       }
-      case 'diff': return cmdDiff({
+      case 'diff': {
+        const compared = cmdDiff({
         readFile: (p) => this.vfs.readFile(p),
         normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+        stat: (p) => {
+          const node = this.vfs.resolveInode(p);
+          if (!node) return null;
+          return { type: node.type === 'directory' ? 'directory' : node.type === 'file' ? 'file' : 'other', mtimeMs: node.mtime };
+        },
+        list: (p) => this.vfs.listDirectory(p)?.map((entry) => entry.name) ?? null,
+        formatTime: (ms) => formatStatTime(ms, this.identity.timezone),
       }, this.cwd, args);
+        return compared.exitCode === 2 ? { output: '', stderr: compared.output, exitCode: 2 } : { ...compared, stderr: '' };
+      }
       case 'tar': return cmdTar(this.archiveCtx(), args);
       case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
       case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');

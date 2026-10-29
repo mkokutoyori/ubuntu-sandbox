@@ -7,6 +7,7 @@ export interface GnuOptionSet {
   readonly usage?: string;
   readonly failureStatus?: number;
   readonly program?: string;
+  readonly trailer?: string;
 }
 
 const flag = (name: string, letter = ''): LongOption => ({ name, letter, takesArgument: false });
@@ -39,7 +40,30 @@ const GREP_OPTIONS: GnuOptionSet = {
   program: 'grep',
 };
 
+
+const DIFF_OPTIONS: GnuOptionSet = {
+  optstring: 'abBcC:dD:eEfF:hiI:lL:nNpqrsS:tTuU:vwW:x:X:yZ0123456789',
+  long: [
+    flag('normal'), flag('brief', 'q'), flag('report-identical-files', 's'), optional('context', 'c'),
+    optional('unified', 'u'), flag('ed', 'e'), flag('rcs', 'n'), flag('side-by-side', 'y'), valued('width', 'W'),
+    flag('left-column'), flag('suppress-common-lines'), flag('show-c-function', 'p'), valued('show-function-line', 'F'),
+    valued('label', 'L'), flag('expand-tabs', 't'), flag('initial-tab', 'T'), valued('tabsize'),
+    flag('suppress-blank-empty'), flag('paginate', 'l'), flag('recursive', 'r'), flag('no-dereference'),
+    flag('new-file', 'N'), flag('unidirectional-new-file'), flag('ignore-file-name-case'),
+    flag('no-ignore-file-name-case'), valued('exclude', 'x'), valued('exclude-from', 'X'), valued('starting-file', 'S'),
+    valued('from-file'), valued('to-file'), flag('ignore-case', 'i'), flag('ignore-tab-expansion', 'E'),
+    flag('ignore-trailing-space', 'Z'), flag('ignore-space-change', 'b'), flag('ignore-all-space', 'w'),
+    flag('ignore-blank-lines', 'B'), valued('ignore-matching-lines', 'I'), flag('text', 'a'), flag('strip-trailing-cr'),
+    valued('ifdef', 'D'), valued('line-format'), flag('minimal', 'd'), valued('horizon-lines'),
+    flag('speed-large-files'), optional('color'), valued('palette'), flag('help'), flag('version', 'v'),
+  ],
+  operands: true,
+  failureStatus: 2,
+  trailer: "diff: Try 'diff --help' for more information.",
+};
+
 export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
+  diff: DIFF_OPTIONS,
   grep: GREP_OPTIONS,
   egrep: GREP_OPTIONS,
   fgrep: GREP_OPTIONS,
@@ -347,7 +371,7 @@ export function refuseUnknownGnuOption(command: string, args: readonly string[])
   const set = GNU_OPTION_SETS[command];
   if (!set) return null;
   const program = set.program ?? command;
-  const trailer = `Try '${program} --help' for more information.`;
+  const trailer = set.trailer ?? `Try '${program} --help' for more information.`;
   for (const item of shortOptions(args, set.optstring, set.long)) {
     if (item.kind === 'operand' && !set.operands) {
       return { output: `${command}: extra operand '${item.value}'\n${trailer}`, exitCode: set.failureStatus ?? 1 };
