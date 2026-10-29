@@ -4400,3 +4400,7 @@ Measured: `pwd --zorglub` prints the directory (bash answers `bash: pwd: --: inv
 ## Linux split: --filter and -n l/N, K/N
 
 Measured: `split --filter=CMD` is refused as an unrecognized option and `-n l/3`, `-n 2/3` as `invalid number of chunks`, where GNU accepts both. `--filter` needs the shell to run CMD with each piece on its stdin and `$FILE` set; `l/N` and `K/N` need line-aligned chunking and stdout output. `-a -d -x -e -t -C -u --additional-suffix --verbose` are evaluated.
+
+## Linux sed: options accepted without effect
+
+Measured: `-z`/`--null-data` (lines are still split on newline), `-l N`/`--line-length` (the `l` command keeps its own width), `--posix`, `--debug`, `--sandbox` (e/r/w stay enabled) and `--follow-symlinks` are read by `SedOptions.ts` and change nothing, because the engine has no NUL-separated record mode, no wrap parameter, no GNU-extension switch and no program annotation. A real sed honours all six. Unknown options, `--help`, `--version`, `-i[SUFFIX]` (backup), unreadable inputs and `-f` of a missing file are handled.

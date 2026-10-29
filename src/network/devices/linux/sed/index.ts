@@ -2,6 +2,7 @@ import { tokenizeSed } from './SedLexer';
 import { parseSed } from './SedParser';
 import { runSedProgram, SedHost, SedResult } from './SedEngine';
 import { SedSyntaxError } from './SedAst';
+import { parseSedArguments, SED_USAGE } from './SedOptions';
 
 export type { SedHost } from './SedEngine';
 
@@ -23,41 +24,32 @@ export interface RunSedOutput {
   error: string | null;
 }
 
+function backupName(path: string, suffix: string): string {
+  if (!suffix.includes('*')) return `${path}${suffix}`;
+  const slash = path.lastIndexOf('/');
+  const directory = slash < 0 ? '' : path.slice(0, slash + 1);
+  const base = slash < 0 ? path : path.slice(slash + 1);
+  const name = suffix.replace(/\*/g, base);
+  return name.includes('/') ? name : `${directory}${name}`;
+}
+
 export function runSed(options: RunSedOptions): RunSedOutput {
   const { argv, stdin, io } = options;
-  let quiet = false;
-  let extended = false;
-  let inPlace = false;
-  let separate = false;
+  const parsed = parseSedArguments(argv);
+  if (parsed.kind === 'text') return { output: '', exitCode: parsed.exitCode, error: parsed.text };
+  const { quiet, extended, separate, inPlace, backupSuffix } = parsed.line;
   const scriptParts: string[] = [];
-  const files: string[] = [];
-  let scriptTaken = false;
-
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--') { for (let j = i + 1; j < argv.length; j++) files.push(argv[j]); break; }
-    if (a === '-n' || a === '--quiet' || a === '--silent') { quiet = true; continue; }
-    if (a === '-E' || a === '-r' || a === '--regexp-extended') { extended = true; continue; }
-    if (a === '-s' || a === '--separate') { separate = true; continue; }
-    if (a === '-z' || a === '--null-data' || a === '--posix') { continue; }
-    if (a === '-e' || a === '--expression') { scriptParts.push(argv[++i] ?? ''); scriptTaken = true; continue; }
-    if (a.startsWith('-e')) { scriptParts.push(a.slice(2)); scriptTaken = true; continue; }
-    if (a === '-f' || a === '--file') { scriptParts.push(io.readFile(argv[++i] ?? '') ?? ''); scriptTaken = true; continue; }
-    if (a.startsWith('-f')) { scriptParts.push(io.readFile(a.slice(2)) ?? ''); scriptTaken = true; continue; }
-    if (a === '-i' || a === '--in-place' || a.startsWith('-i') || a.startsWith('--in-place')) { inPlace = true; continue; }
-    if (a.startsWith('-') && a.length > 1) {
-      // bundled short flags like -ne, -nE
-      let recognized = true;
-      for (const f of a.slice(1)) {
-        if (f === 'n') quiet = true;
-        else if (f === 'E' || f === 'r') extended = true;
-        else if (f === 's') separate = true;
-        else { recognized = false; break; }
-      }
-      if (recognized) continue;
-    }
-    if (!scriptTaken) { scriptParts.push(a); scriptTaken = true; continue; }
-    files.push(a);
+  const files = [...parsed.line.operands];
+  for (const script of parsed.line.scripts) {
+    if (script.kind === 'text') { scriptParts.push(script.value); continue; }
+    const text = io.readFile(script.value);
+    if (text === null) return { output: '', exitCode: 1, error: `sed: couldn't open file ${script.value}: No such file or directory` };
+    scriptParts.push(text);
+  }
+  if (scriptParts.length === 0) {
+    const first = files.shift();
+    if (first === undefined) return { output: '', exitCode: 1, error: SED_USAGE };
+    scriptParts.push(first);
   }
 
   const script = scriptParts.join('\n');
@@ -83,30 +75,42 @@ export function runSed(options: RunSedOptions): RunSedOutput {
     return { output: r.output, exitCode: r.exitCode, error: null };
   }
 
+  const unreadable: string[] = [];
+  const readable = files.filter((f) => {
+    if (io.readFile(f) !== null) return true;
+    unreadable.push(`sed: can't read ${f}: No such file or directory`);
+    return false;
+  });
+  const finish = (output: string, code: number): RunSedOutput => ({
+    output: unreadable.map((line) => `${line}\n`).join('') + output,
+    exitCode: unreadable.length > 0 && code === 0 ? 2 : code,
+    error: null,
+  });
+
   if (inPlace) {
     let code = 0;
-    for (const f of files) {
+    for (const f of readable) {
       const content = io.readFile(f) ?? '';
       const r = runOne(content);
+      if (backupSuffix !== '') io.writeFile(backupName(f, backupSuffix), content);
       io.writeFile(f, r.output);
       if (r.exitCode) code = r.exitCode;
     }
-    return { output: '', exitCode: code, error: null };
+    return finish('', code);
   }
 
   if (separate) {
     const outputs: string[] = [];
     let code = 0;
-    for (const f of files) {
+    for (const f of readable) {
       const r = runOne(io.readFile(f) ?? '');
       outputs.push(r.output);
       if (r.exitCode) code = r.exitCode;
     }
-    return { output: outputs.join(''), exitCode: code, error: null };
+    return finish(outputs.join(''), code);
   }
 
-  // Default: concatenate all files into a single stream.
-  const combined = files.map(f => io.readFile(f) ?? '').join('');
+  const combined = readable.map(f => io.readFile(f) ?? '').join('');
   const r = runOne(combined);
-  return { output: r.output, exitCode: r.exitCode, error: null };
+  return finish(r.output, r.exitCode);
 }
