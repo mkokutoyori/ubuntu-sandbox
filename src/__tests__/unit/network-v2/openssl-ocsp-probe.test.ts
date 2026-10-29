@@ -115,9 +115,9 @@ describe('répondeur HTTP sur le fil (-port) et client (-url)', () => {
     const crt = await responder.executeCommand(`cat ${CA}/ca.crt`);
     const good = await responder.executeCommand('cat /tmp/good.crt');
     const bad = await responder.executeCommand('cat /tmp/bad.crt');
-    await client.executeCommand(`sh -c 'printf "${crt.replace(/\n/g, '\\n')}" > ${CA}/ca.crt'`);
-    await client.executeCommand(`sh -c 'printf "${good.replace(/\n/g, '\\n')}" > /tmp/good.crt'`);
-    await client.executeCommand(`sh -c 'printf "${bad.replace(/\n/g, '\\n')}" > /tmp/bad.crt'`);
+    await client.executeCommand(`sh -c 'printf -- "${crt.replace(/\n/g, '\\n')}" > ${CA}/ca.crt'`);
+    await client.executeCommand(`sh -c 'printf -- "${good.replace(/\n/g, '\\n')}" > /tmp/good.crt'`);
+    await client.executeCommand(`sh -c 'printf -- "${bad.replace(/\n/g, '\\n')}" > /tmp/bad.crt'`);
     const a = await client.executeCommand(`openssl ocsp ${ISSUER} -cert /tmp/good.crt -url http://10.0.0.1:2560 -CAfile ${CA}/ca.crt 2>&1`);
     expect(a).toContain('Response verify OK');
     expect(a).toContain('/tmp/good.crt: good');
@@ -131,8 +131,8 @@ describe('répondeur HTTP sur le fil (-port) et client (-url)', () => {
     const crt = await responder.executeCommand(`cat ${CA}/ca.crt`);
     const good = await responder.executeCommand('cat /tmp/good.crt');
     await client.executeCommand(`mkdir -p ${CA}`);
-    await client.executeCommand(`sh -c 'printf "${crt.replace(/\n/g, '\\n')}" > ${CA}/ca.crt'`);
-    await client.executeCommand(`sh -c 'printf "${good.replace(/\n/g, '\\n')}" > /tmp/good.crt'`);
+    await client.executeCommand(`sh -c 'printf -- "${crt.replace(/\n/g, '\\n')}" > ${CA}/ca.crt'`);
+    await client.executeCommand(`sh -c 'printf -- "${good.replace(/\n/g, '\\n')}" > /tmp/good.crt'`);
     const out = await client.executeCommand(`openssl ocsp ${ISSUER} -cert /tmp/good.crt -url http://10.0.0.1:2560 -CAfile ${CA}/ca.crt 2>&1`);
     expect(out).toContain('Response verify OK');
     expect(out).not.toContain('Nonce Verify error');
