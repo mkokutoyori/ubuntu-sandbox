@@ -4387,3 +4387,7 @@ Closed so far, by opt-in (`ICmdlet.closedParameterSet`): Get-Date, Get-Location,
 
 Why the rest is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion and is incomplete. Making `resolveParameterPrefixes` refuse a key absent from it broke 11 cases in `src/__tests__/unit/powershell` (Format-Table `-Width`, New-Item `-Target`, New-LocalUser `-NoPassword`, `-Force` on the Add-LocalGroupMember / Register-ScheduledTask family…), and a scan of the cmdlet classes finds ~40 more names read through `ctx.named[...]` and missing from their own list. The refusal can only be turned on once each cmdlet's list is audited against its handler, so the list becomes the single authority for both completion and binding.
 
+
+## Linux pwd: -L/-P and unknown options
+
+Measured: `pwd --zorglub` prints the directory (bash answers `bash: pwd: --: invalid option` and `pwd: usage: pwd [-LP]`), and `pwd -P` prints PWD unresolved. The builtin lives in `src/bash/runtime/Builtins.ts` with only the environment: resolving symbolic links for `-P` needs the VFS, which that layer does not hold, so the option can neither be refused cleanly nor honoured there yet.
