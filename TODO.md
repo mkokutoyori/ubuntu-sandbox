@@ -4281,7 +4281,9 @@ is the canvas's current selection or pan/zoom, by design.
 ## Reds measured at base outside the network-v2 sweep (new_firewall)
 
 `src/__tests__/unit/new_firewall/fortigate-battery-06-ipv6-ospf-bgp-ztna.test.ts`
-(32 cases), `fortigate-battery-05-ha-vrf-dpi-radius.test.ts` (34 cases),
+(32 cases), `fortigate-battery-02-advanced-transit.test.ts` and
+`fortigate-battery-03-security-pbr-ipsec-qos.test.ts` (together ~70 cases, seen
+in a Windows ping sweep), `fortigate-battery-05-ha-vrf-dpi-radius.test.ts` (34 cases),
 `fortigate-battery-09-tls-crypto-pki.test.ts` (44 cases),
 `fortigate-battery-10-sdwan-vxlan-pqc.test.ts` (28 cases) and
 `fortigate-battery-11-hybrid-cloud-evpn-k8s.test.ts` (28 cases)
@@ -4343,3 +4345,7 @@ diagnosed.
 `network-v2/probe-fuser-porte-de-psmisc.test.ts` (2) and
 `probe-linux-kerberos-tools-answer-like-mit.test.ts` (5) also fail identically
 with the working tree stashed.
+
+`audit/vacl-mac-clause.test.ts` (1), `network-v2/crypto-pki-trustpool.test.ts` (1),
+`nss-resolution-unified.test.ts` (1) and `probe-proc-sys-write-reaches-the-
+store.test.ts` (6) also fail identically with the working tree stashed.

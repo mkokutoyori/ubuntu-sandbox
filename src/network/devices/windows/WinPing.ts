@@ -216,7 +216,9 @@ export function parseWinPingArgs(args: string[]): ParsedWinPing {
       continue;
     }
 
-    if (a.startsWith('-')) continue;
+    if (a.startsWith('-') && a.length > 1) {
+      result.parseError = `Bad option ${a}.\n${PING_HELP}`; return result;
+    }
     const cleaned = unquote(a);
     if (!cleaned) continue;
     if (result.targetStr === '') {
