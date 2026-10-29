@@ -4352,9 +4352,9 @@ Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `
 
 `column` evaluates -t and -s only; -o, -c, -x, -J, -N, -n, -R, -H, -E, -l, -e, -d, -L and the tree options are accepted (table of util-linux 2.37 from memory; the dev container has no `column` to compare with) and ignored. `awk -W version` prints nothing where mawk prints its banner (version and compile-time limits); the banner of Ubuntu 22.04's mawk 1.3.4-20200120 was not available to copy.
 
-## Linux commands still silent on an unknown option (wording unsourced)
+## lsof: an unknown option is ignored
 
-Measured with `<cmd> --zorglub` against the real binaries of the dev container (lsof 4.95 and lsattr; pgrep, pkill, file and hostname are done): the simulator is silent where the real programs print `unrecognized option` plus a usage block (lsattr: one `invalid option -- '-'` per letter; lsof: its own `illegal option character` lines). Not written yet: each usage block is long and must be copied from the container's version, which is newer (Noble) than the Ubuntu 22.04 the simulator targets.
+`lsof -q` and `lsof --zorglub` list files. The real lsof (4.95 in the dev container; Ubuntu 22.04 ships 4.93.2) has its own parser: it reports every bad character (`lsof: illegal option character: z`, then `illegal process group ID: lub` for the rest of `--zorglub`, which it reads as `-g lub`), prints a version banner whose text depends on the release, then a usage block, status 1. Faithful refusal needs that whole parser (`+`/`-` options with attached or separate arguments); a table in the style of the GNU guard would give a wrong second line. Not written.
 
 ## Huawei VRP: `Too many parameters` has no echoed line and caret
 

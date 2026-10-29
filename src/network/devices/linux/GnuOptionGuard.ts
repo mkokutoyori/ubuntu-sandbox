@@ -533,6 +533,13 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  lsattr: {
+    optstring: 'RVadlpv',
+    long: [],
+    operands: true,
+    usage: 'Usage: lsattr [-RVadlpv] [files...]',
+    trailer: '',
+  },
   file: {
     optstring: 'bcCdEhikLlNnprsSvzZ0e:F:f:m:P:',
     long: [
