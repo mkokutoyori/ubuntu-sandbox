@@ -8,6 +8,7 @@ export interface GnuOptionSet {
 
 const flag = (name: string, letter = ''): LongOption => ({ name, letter, takesArgument: false });
 const valued = (name: string, letter = ''): LongOption => ({ name, letter, takesArgument: true });
+const optional = (name: string, letter = ''): LongOption => ({ name, letter, takesArgument: false, optionalArgument: true });
 const HELP_VERSION: readonly LongOption[] = [flag('help'), flag('version')];
 
 export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
@@ -30,6 +31,73 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     long: [
       flag('ignore-environment', 'i'), flag('null', '0'), valued('unset', 'u'), valued('chdir', 'C'),
       valued('split-string', 'S'), flag('debug', 'v'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  ls: {
+    optstring: 'aAbBcCdDfFgGhHI:iklLmnNopqQrRsStT:uUvw:xXZ1',
+    long: [
+      flag('all', 'a'), flag('almost-all', 'A'), flag('author'), flag('escape', 'b'),
+      valued('block-size'), flag('ignore-backups', 'B'), optional('color'), optional('classify', 'F'),
+      flag('file-type'), valued('format'), flag('full-time'), flag('group-directories-first'),
+      flag('no-group', 'G'), flag('human-readable', 'h'), flag('si'),
+      flag('dereference-command-line', 'H'), flag('dereference-command-line-symlink-to-dir'),
+      valued('hide'), optional('hyperlink'), valued('indicator-style'), flag('inode', 'i'),
+      valued('ignore', 'I'), flag('kibibytes', 'k'), flag('dereference', 'L'),
+      flag('numeric-uid-gid', 'n'), flag('literal', 'N'), flag('hide-control-chars', 'q'),
+      flag('show-control-chars'), flag('quote-name', 'Q'), valued('quoting-style'),
+      flag('reverse', 'r'), flag('recursive', 'R'), flag('size', 's'), valued('sort'), valued('time'),
+      valued('time-style'), valued('tabsize', 'T'), valued('width', 'w'), flag('context', 'Z'),
+      flag('zero'), flag('directory', 'd'), flag('dired', 'D'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  head: {
+    optstring: 'c:n:qvz0123456789',
+    long: [
+      valued('bytes', 'c'), valued('lines', 'n'), flag('quiet', 'q'), flag('silent', 'q'),
+      flag('verbose', 'v'), flag('zero-terminated', 'z'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  sort: {
+    optstring: 'bcCdfghiMnrRsuVzmk:t:o:S:T:',
+    long: [
+      flag('ignore-leading-blanks', 'b'), optional('check', 'c'), flag('check-silent', 'C'),
+      flag('dictionary-order', 'd'), flag('ignore-case', 'f'), flag('general-numeric-sort', 'g'),
+      flag('human-numeric-sort', 'h'), flag('ignore-nonprinting', 'i'), flag('month-sort', 'M'),
+      flag('numeric-sort', 'n'), optional('random-sort', 'R'), flag('reverse', 'r'), flag('stable', 's'),
+      flag('unique', 'u'), flag('version-sort', 'V'), flag('zero-terminated', 'z'), flag('merge', 'm'),
+      flag('debug'), valued('batch-size'), valued('buffer-size', 'S'), valued('compress-program'),
+      valued('files0-from'), valued('key', 'k'), valued('field-separator', 't'), valued('output', 'o'),
+      valued('parallel'), valued('random-source'), valued('temporary-directory', 'T'), valued('sort'),
+      ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  uniq: {
+    optstring: 'cdDf:iuzs:w:',
+    long: [
+      flag('count', 'c'), flag('repeated', 'd'), optional('all-repeated', 'D'), valued('skip-fields', 'f'),
+      optional('group'), flag('ignore-case', 'i'), valued('skip-chars', 's'), flag('unique', 'u'),
+      flag('zero-terminated', 'z'), valued('check-chars', 'w'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  cut: {
+    optstring: 'b:c:d:f:nsz',
+    long: [
+      valued('bytes', 'b'), valued('characters', 'c'), valued('delimiter', 'd'), valued('fields', 'f'),
+      flag('complement'), flag('only-delimited', 's'), valued('output-delimiter'),
+      flag('zero-terminated', 'z'), ...HELP_VERSION,
+    ],
+    operands: true,
+  },
+  tr: {
+    optstring: 'cCdst',
+    long: [
+      flag('complement', 'c'), flag('delete', 'd'), flag('squeeze-repeats', 's'),
+      flag('truncate-set1', 't'), ...HELP_VERSION,
     ],
     operands: true,
   },

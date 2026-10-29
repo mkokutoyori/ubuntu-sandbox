@@ -4364,14 +4364,16 @@ commit 2351448f2 (checked in a worktree).
 (1), `linux-rsyslog-imfile.test.ts` (1) and `openssl-ocsp-probe.test.ts` (2)
 are red at the base commit 2351448f2 (checked in a worktree), like
 `probe-fuser-porte-de-psmisc.test.ts`, `run-parts.test.ts`,
-`scenario10-linux-audit.test.ts` and `crypto-pki-trustpool.test.ts`.
+`scenario10-linux-audit.test.ts`, `crypto-pki-trustpool.test.ts`,
+`probe-procfs-does-not-grow.test.ts` (3) and
+`probe-oracle-sqlplus-silencieux-et-rman-a-froid.test.ts` (1).
 
 ## Linux coreutils without an option table
 
 GnuOptionGuard (src/network/devices/linux/GnuOptionGuard.ts) covers whoami,
 groups, tty, nproc, free, env, printenv, uname, mkdir, rmdir, rm, cat, wc, tac,
-tee, basename and dirname. Measured with `<cmd> --zorglub` and still silent or
-treating the option as a file operand: ls, sort, uniq, head, cut, tr, du, find,
+tee, basename, dirname, ls, head, sort, uniq, cut and tr. Measured with `<cmd> --zorglub` and still silent or
+treating the option as a file operand: du, find,
 date, base64, md5sum/sha256sum/cksum, rev, nl, fold, fmt, column, paste, comm,
 split, truncate, seq-less forms, which, passwd, sysctl, awk, lsof. Their option
 sets were not written down here: each needs its own table and a run of the
