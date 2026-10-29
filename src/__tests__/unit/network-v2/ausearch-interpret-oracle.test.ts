@@ -7,7 +7,7 @@
  * truncation of the output at the first NUL byte of the callsign.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { runAusearch } from '@/network/devices/linux/audit/tools/AusearchTool';
 import { hostClock } from '@/network/devices/linux/audit/tools/AuditHostClock';
 import type { AuditSearchHost } from '@/network/devices/linux/audit/tools/AuditToolHost';
@@ -71,7 +71,6 @@ function replay(c: Case): string | null {
 describe('ausearch -i against the real 3.1.2 binary', () => {
   it('replays', () => {
     const failures = fixture.cases.map(replay).filter((f): f is string => f !== null);
-    writeFileSync('/tmp/claude-0/scratch/ausearch-interpret-failures.txt', `${failures.length}/${fixture.cases.length}\n` + failures.join('\n=====\n'));
-    expect(failures.length).toBe(0);
+    expect(failures).toEqual([]);
   });
 });

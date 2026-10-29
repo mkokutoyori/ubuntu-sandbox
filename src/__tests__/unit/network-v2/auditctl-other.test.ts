@@ -1096,7 +1096,7 @@ describe('Linux auditctl Advanced Integration Suite', () => {
     it('128. should reject rule delete command if the targeted filter name has unmatched quotes', async () => {
       const pc = await setupAdvancedAuditPC();
       const output = await pc.executeCommand('auditctl -W "/etc/passwd');
-      expect(output.toLowerCase()).toMatch(/invalid|quote|syntax/);
+      expect(output).toContain('unexpected EOF while looking for matching `"\'');
     });
 
     it('129. should drop runtime-only rules when auditd restarts because augenrules --load begins with -D', async () => {
