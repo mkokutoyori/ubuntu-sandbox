@@ -8,6 +8,7 @@ export interface GnuOptionSet {
   readonly failureStatus?: number;
   readonly program?: string;
   readonly trailer?: string;
+  readonly signalOperands?: boolean;
 }
 
 const flag = (name: string, letter = ''): LongOption => ({ name, letter, takesArgument: false });
@@ -41,6 +42,89 @@ const SYSCTL_USAGE = [
   ' -h, --help     display this help and exit',
   ' -V, --version  output version information and exit',
   '',
+].join('\n');
+
+const PGREP_USAGE = [
+  '',
+  'Usage:',
+  ' pgrep [options] <pattern>',
+  '',
+  'Options:',
+  ' -d, --delimiter <string>  specify output delimiter',
+  ' -l, --list-name           list PID and process name',
+  ' -a, --list-full           list PID and full command line',
+  ' -v, --inverse             negates the matching',
+  ' -w, --lightweight         list all TID',
+  ' -c, --count               count of matching processes',
+  ' -f, --full                use full process name to match',
+  ' -g, --pgroup <PGID,...>   match listed process group IDs',
+  ' -G, --group <GID,...>     match real group IDs',
+  ' -i, --ignore-case         match case insensitively',
+  ' -n, --newest              select most recently started',
+  ' -o, --oldest              select least recently started',
+  ' -O, --older <seconds>     select where older than seconds',
+  ' -P, --parent <PPID,...>   match only child processes of the given parent',
+  ' -s, --session <SID,...>   match session IDs',
+  '     --signal <sig>        signal to send (either number or name)',
+  ' -t, --terminal <tty,...>  match by controlling terminal',
+  ' -u, --euid <ID,...>       match by effective IDs',
+  ' -U, --uid <ID,...>        match by real IDs',
+  ' -x, --exact               match exactly with the command name',
+  ' -F, --pidfile <file>      read PIDs from file',
+  ' -L, --logpidfile          fail if PID file is not locked',
+  ' -r, --runstates <state>   match runstates [D,S,Z,...]',
+  ' -A, --ignore-ancestors    exclude our ancestors from results',
+  ' --cgroup <grp,...>        match by cgroup v2 names',
+  ' --ns <PID>                match the processes that belong to the same',
+  '                           namespace as <pid>',
+  ' --nslist <ns,...>         list which namespaces will be considered for',
+  '                           the --ns option.',
+  '                           Available namespaces: ipc, mnt, net, pid, user, uts',
+  '',
+  ' -h, --help     display this help and exit',
+  ' -V, --version  output version information and exit',
+  ''
+].join('\n');
+
+const PKILL_USAGE = [
+  '',
+  'Usage:',
+  ' pkill [options] <pattern>',
+  '',
+  'Options:',
+  ' -<sig>                    signal to send (either number or name)',
+  ' -H, --require-handler     match only if signal handler is present',
+  ' -q, --queue <value>       integer value to be sent with the signal',
+  ' -e, --echo                display what is killed',
+  ' -c, --count               count of matching processes',
+  ' -f, --full                use full process name to match',
+  ' -g, --pgroup <PGID,...>   match listed process group IDs',
+  ' -G, --group <GID,...>     match real group IDs',
+  ' -i, --ignore-case         match case insensitively',
+  ' -n, --newest              select most recently started',
+  ' -o, --oldest              select least recently started',
+  ' -O, --older <seconds>     select where older than seconds',
+  ' -P, --parent <PPID,...>   match only child processes of the given parent',
+  ' -s, --session <SID,...>   match session IDs',
+  '     --signal <sig>        signal to send (either number or name)',
+  ' -t, --terminal <tty,...>  match by controlling terminal',
+  ' -u, --euid <ID,...>       match by effective IDs',
+  ' -U, --uid <ID,...>        match by real IDs',
+  ' -x, --exact               match exactly with the command name',
+  ' -F, --pidfile <file>      read PIDs from file',
+  ' -L, --logpidfile          fail if PID file is not locked',
+  ' -r, --runstates <state>   match runstates [D,S,Z,...]',
+  ' -A, --ignore-ancestors    exclude our ancestors from results',
+  ' --cgroup <grp,...>        match by cgroup v2 names',
+  ' --ns <PID>                match the processes that belong to the same',
+  '                           namespace as <pid>',
+  ' --nslist <ns,...>         list which namespaces will be considered for',
+  '                           the --ns option.',
+  '                           Available namespaces: ipc, mnt, net, pid, user, uts',
+  '',
+  ' -h, --help     display this help and exit',
+  ' -V, --version  output version information and exit',
+  ''
 ].join('\n');
 
 const GREP_USAGE = 'Usage: grep [OPTION]... PATTERNS [FILE]...';
@@ -404,6 +488,39 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  pgrep: {
+    optstring: 'd:lavwcfg:G:inoO:P:s:t:u:U:xF:Lr:AVh',
+    long: [
+      valued('delimiter', 'd'), flag('list-name', 'l'), flag('list-full', 'a'), flag('inverse', 'v'),
+      flag('lightweight', 'w'), flag('count', 'c'), flag('full', 'f'), valued('signal'),
+      valued('pgroup', 'g'), valued('group', 'G'), flag('ignore-case', 'i'), flag('newest', 'n'), flag('oldest', 'o'),
+      valued('older', 'O'), valued('parent', 'P'), valued('session', 's'), valued('terminal', 't'),
+      valued('euid', 'u'), valued('uid', 'U'), flag('exact', 'x'), valued('pidfile', 'F'), flag('logpidfile', 'L'),
+      valued('runstates', 'r'), flag('ignore-ancestors', 'A'), valued('cgroup'), valued('ns'), valued('nslist'),
+      flag('help', 'h'), flag('version', 'V'),
+    ],
+    operands: true,
+    usage: PGREP_USAGE,
+    trailer: 'For more details see pgrep(1).',
+    failureStatus: 2,
+  },
+  pkill: {
+    optstring: 'Hq:ecfvinoxAg:G:O:P:s:t:u:U:F:Lr:Vh',
+    long: [
+      flag('require-handler', 'H'), valued('queue', 'q'), flag('echo', 'e'), flag('count', 'c'), flag('full', 'f'),
+      flag('inverse', 'v'), valued('signal'),
+      valued('pgroup', 'g'), valued('group', 'G'), flag('ignore-case', 'i'), flag('newest', 'n'), flag('oldest', 'o'),
+      valued('older', 'O'), valued('parent', 'P'), valued('session', 's'), valued('terminal', 't'),
+      valued('euid', 'u'), valued('uid', 'U'), flag('exact', 'x'), valued('pidfile', 'F'), flag('logpidfile', 'L'),
+      valued('runstates', 'r'), flag('ignore-ancestors', 'A'), valued('cgroup'), valued('ns'), valued('nslist'),
+      flag('help', 'h'), flag('version', 'V'),
+    ],
+    operands: true,
+    usage: PKILL_USAGE,
+    trailer: 'For more details see pgrep(1).',
+    failureStatus: 2,
+    signalOperands: true,
+  },
   dmesg: {
     optstring: 'CcDdE:eF:f:HhJkL::l:n:PrSs:TtuVWwx',
     long: [
@@ -537,7 +654,8 @@ export function refuseUnknownGnuOption(command: string, args: readonly string[])
   if (!set) return null;
   const program = set.program ?? command;
   const trailer = set.trailer ?? `Try '${program} --help' for more information.`;
-  for (const item of shortOptions(args, set.optstring, set.long)) {
+  const scanned = set.signalOperands ? args.filter((word) => !/^-(\d+|[A-Z][A-Z0-9]+)$/.test(word)) : args;
+  for (const item of shortOptions(scanned, set.optstring, set.long)) {
     if (item.kind === 'operand' && !set.operands) {
       return { output: `${command}: extra operand '${item.value}'\n${trailer}`, exitCode: set.failureStatus ?? 1 };
     }
