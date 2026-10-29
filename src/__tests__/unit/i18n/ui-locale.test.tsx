@@ -299,6 +299,26 @@ describe('the cable accessible name', () => {
   });
 });
 
+describe('remaining accessible names', () => {
+  it('translates the not-found page and keeps the English text as a witness', async () => {
+    const { MemoryRouter } = await import('react-router-dom');
+    const { default: NotFound } = await import('@/pages/NotFound');
+    render(<MemoryRouter><NotFound /></MemoryRouter>);
+    expect(screen.getByText('Oops! Page not found')).toBeInTheDocument();
+    cleanup();
+    act(() => setLocale('fr'));
+    render(<MemoryRouter><NotFound /></MemoryRouter>);
+    expect(screen.getByText('Oups ! Page introuvable')).toBeInTheDocument();
+    expect(screen.getByText('Retour à l\'accueil')).toBeInTheDocument();
+  });
+
+  it('formats the terminal command-line name in both languages', () => {
+    expect(translate('en', 'terminalView.commandLine', { context: 'R1' })).toBe('Command line — R1');
+    expect(translate('fr', 'terminalView.commandLine', { context: 'R1' })).toBe('Ligne de commande — R1');
+    expect(translate('fr', 'terminalView.password')).toBe('Mot de passe');
+  });
+});
+
 describe('the catalogues are complete', () => {
   it('French defines every key English defines, with no empty text', () => {
     const english = Object.keys(MESSAGES.en).sort();

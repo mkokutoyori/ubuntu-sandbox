@@ -276,6 +276,10 @@ const EN = {
   'cable.up': 'link up',
   'cable.down': 'link down',
   'cable.selected': ', selected',
+  'notFound.title': 'Oops! Page not found',
+  'notFound.home': 'Return to Home',
+  'terminalView.password': 'Password',
+  'terminalView.commandLine': 'Command line — {context}',
 } as const;
 
 export type MessageKey = keyof typeof EN;
@@ -547,6 +551,10 @@ const FR: Readonly<Record<MessageKey, string>> = {
   'cable.up': 'lien actif',
   'cable.down': 'lien coupé',
   'cable.selected': ', sélectionné',
+  'notFound.title': 'Oups ! Page introuvable',
+  'notFound.home': 'Retour à l\'accueil',
+  'terminalView.password': 'Mot de passe',
+  'terminalView.commandLine': 'Ligne de commande — {context}',
 };
 
 export const MESSAGES: Readonly<Record<Locale, Readonly<Record<MessageKey, string>>>> = {
