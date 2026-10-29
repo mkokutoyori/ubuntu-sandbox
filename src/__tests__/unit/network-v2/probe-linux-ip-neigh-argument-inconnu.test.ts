@@ -1,10 +1,14 @@
 /*
  * `ip neigh` answered an empty table (and exit 0) to any argument it did not
  * know: `ip neigh zorglub`, `ip neigh show zorglub`, `ip neigh show dev
- * zorglub`.
+ * zorglub`; `ip link set <absent device>` was silent too.
  *
- * Measured before the change: 3 of the 6 cases fall; the 3 witnesses (`ip
- * neigh`, `ip neigh show`, `ip neigh show dev eth0`) pass either way.
+ * Measured before the change: 3 of the 6 first cases fall; the 3 witnesses (`ip
+ * neigh`, `ip neigh show`, `ip neigh show dev eth0`) pass either way. Second step
+ * (`ip link set <absent device>` with no up/down, answered silently with
+ * exit 0): 3 cases added, 1 falls (`ip link set zorglub`); the promisc form
+ * already named the absent device and the witness `ip link set eth0 up`
+ * passes either way.
  * iproute2 answers `Command "zorglub" is unknown, try "ip neigh help".` to an
  * unknown sub-command and `Cannot find device "zorglub"` to an absent device;
  * for an unparsable filter it prints `Error: any valid prefix is expected
@@ -23,7 +27,7 @@ function pc(): Sh {
 }
 
 describe('ip neigh arguments', () => {
-  it.each(['ip neigh', 'ip neigh show', 'ip neigh show dev eth0'])('witness: `%s` is accepted', async (line) => {
+  it.each(['ip neigh', 'ip neigh show', 'ip neigh show dev eth0', 'ip link set eth0 up'])('witness: `%s` is accepted', async (line) => {
     expect(await pc().executeCommand(line)).not.toMatch(/unknown|Cannot find|Error/);
   });
 
@@ -31,6 +35,8 @@ describe('ip neigh arguments', () => {
     ['ip neigh zorglub', 'Command "zorglub" is unknown, try "ip neigh help".'],
     ['ip neigh show zorglub', 'any valid prefix is expected rather than "zorglub"'],
     ['ip neigh show dev zorglub', 'Cannot find device "zorglub"'],
+    ['ip link set zorglub', 'Cannot find device "zorglub"'],
+    ['ip link set dev zorglub promisc on', 'Cannot find device "zorglub"'],
   ])('`%s`', async (line, message) => {
     expect(await pc().executeCommand(line)).toContain(message);
   });

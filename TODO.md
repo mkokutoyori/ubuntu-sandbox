@@ -4338,3 +4338,8 @@ fail on HEAD with `src` stashed. Not diagnosed.
 (5), `scenario10-linux-audit.test.ts` (4) and
 `new_firewall/fortigate-battery-07-windows-active-directory.test.ts` (14). Not
 diagnosed.
+
+`debug/infra/durcissement-infra-entreprise.debug.test.ts` (1),
+`network-v2/probe-fuser-porte-de-psmisc.test.ts` (2) and
+`probe-linux-kerberos-tools-answer-like-mit.test.ts` (5) also fail identically
+with the working tree stashed.

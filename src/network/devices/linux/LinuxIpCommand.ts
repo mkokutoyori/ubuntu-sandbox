@@ -1225,6 +1225,7 @@ function ipLinkSet(ctx: IpNetworkContext, args: string[]): string {
   }
 
   if (!devName) return 'Not enough information: arguments are required.';
+  if (!ctx.getInterfaceInfo(devName)) return `Cannot find device "${devName}"`;
 
   if (mtu !== null) {
     if (isNaN(mtu)) return 'Error: argument "mtu" is wrong: invalid numeric value';
