@@ -654,6 +654,14 @@ const SESSION_UMASK = 0o022;
 
 const RUNS_IN_CURRENT_SHELL: ReadonlySet<string> = new Set(['umask', 'eval', 'source', '.', 'builtin', 'command', 'exec', 'time']);
 
+const SYSTEMCTL_STATE_QUERIES: ReadonlySet<string> = new Set(['is-active', 'is-enabled', 'is-failed', 'is-system-running']);
+
+function printsResultOnFailure(cmd: string, args: readonly string[], exitCode: number): boolean {
+  if (exitCode === 0) return false;
+  if (cmd === 'cmp' || cmd === 'grep' || cmd === 'egrep' || cmd === 'fgrep') return exitCode === 1;
+  return cmd === 'systemctl' && args.some((arg) => SYSTEMCTL_STATE_QUERIES.has(arg));
+}
+
 export class LinuxCommandExecutor {
   interactiveTerminal = false;
   interactiveOutput: ((line: string) => void) | null = null;
@@ -5894,14 +5902,14 @@ export class LinuxCommandExecutor {
 
   private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
     const parentUmask = this.umask;
-    let result: { output: string; exitCode: number };
+    let result: { output: string; exitCode: number; stderr?: string };
     try {
       result = this.dispatchCommand(cmd, args, stdin, isSudo, outputPiped);
     } finally {
       if (!RUNS_IN_CURRENT_SHELL.has(cmd)) this.umask = parentUmask;
     }
     this.replayProgramTrace(cmd, args, result);
-    return result;
+    return result.stderr === undefined && printsResultOnFailure(cmd, args, result.exitCode) ? { ...result, stderr: '' } : result;
   }
 
   private tracedOperands(cmd: string, args: readonly string[]): string[] | null {

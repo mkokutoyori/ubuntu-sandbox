@@ -525,11 +525,11 @@ export const cmpCommand: LinuxCommand = {
   },
 };
 
-function cmpRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { output: string; exitCode: number } {
+function cmpRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
   const files = args.filter(a => !a.startsWith('-') || a === '-');
-  if (files.length < 2) return { output: 'cmp: missing operand', exitCode: 2 };
+  if (files.length < 2) return { output: '', stderr: 'cmp: missing operand', exitCode: 2 };
   const got = inputs(ctx, files.slice(0, 2), stdin, 'cmp');
-  if (!Array.isArray(got)) return { output: got, exitCode: 2 };
+  if (!Array.isArray(got)) return { output: '', stderr: got, exitCode: 2 };
 
   const [a, b] = got;
   const silent = args.some((argument) => argument === '-s' || argument === '--silent' || argument === '--quiet');
@@ -538,11 +538,13 @@ function cmpRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { out
   for (let i = 0; i < min; i++) {
     if (a[i] !== b[i]) {
       const line = a.slice(0, i).split('\n').length;
-      // `char`, pas `byte` : c'est le mot que GNU cmp imprime.
-      return { output: silent ? '' : `${files[0]} ${files[1]} differ: char ${i + 1}, line ${line}`, exitCode: 1 };
+      return { output: silent ? '' : `${files[0]} ${files[1]} differ: byte ${i + 1}, line ${line}`, stderr: '', exitCode: 1 };
     }
   }
-  return { output: silent ? '' : `cmp: EOF on ${a.length < b.length ? files[0] : files[1]}`, exitCode: 1 };
+  const shorter = a.length < b.length ? a : b;
+  const name = a.length < b.length ? files[0] : files[1];
+  const where = shorter === '' ? 'which is empty' : `after byte ${shorter.length}, line ${shorter.split('\n').length - 1}`;
+  return { output: '', stderr: silent ? '' : `cmp: EOF on ${name} ${where}`, exitCode: 1 };
 }
 
 // ─── split ──────────────────────────────────────────────────────────
