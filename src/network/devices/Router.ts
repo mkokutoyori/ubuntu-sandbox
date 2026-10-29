@@ -436,6 +436,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.routingTable = this.routingTable.filter(r =>
       r.type === 'connected' || r.type === 'static' || r.type === 'default');
   }
+
+  _clearDynamicRoute(network: string, mask?: string): number {
+    const before = this.routingTable.length;
+    this.routingTable = this.routingTable.filter(r =>
+      r.type === 'connected' || r.type === 'static' || r.type === 'default'
+      || r.network.toString() !== network || (mask !== undefined && r.mask.toString() !== mask));
+    return before - this.routingTable.length;
+  }
   private packetQueue: QueuedPacket[] = [];
   private readonly defaultTTL = 255; // Cisco/Huawei default
   private readonly interfaceMTU = 1500; // Standard Ethernet MTU

@@ -83,6 +83,18 @@ Examples:
     > ipconfig /allcompartments /all ... Show detailed information about all
                                          compartments`.trim();
 
+const IPCONFIG_SWITCHES_WITHOUT_OPERANDS = ['/all', '/flushdns', '/displaydns', '/registerdns'];
+const IPCONFIG_SWITCHES_WITH_OPERANDS = [
+  '/renew', '/release', '/renew6', '/release6',
+  '/showclassid', '/setclassid', '/showclassid6', '/setclassid6',
+];
+
+function ipconfigSyntaxFault(words: readonly string[]): boolean {
+  if (words.length === 0) return false;
+  if (IPCONFIG_SWITCHES_WITHOUT_OPERANDS.includes(words[0])) return words.length > 1;
+  return !IPCONFIG_SWITCHES_WITH_OPERANDS.includes(words[0]);
+}
+
 export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
   const lower = args.map(a => a.toLowerCase());
   // /allcompartments has no visible effect: this simulator, like a real
@@ -92,6 +104,10 @@ export function cmdIpconfig(ctx: WinCommandContext, args: string[]): string {
 
   if (restLower.includes('/?') || restLower.includes('/help') || restLower.includes('-?')) {
     return IPCONFIG_HELP;
+  }
+
+  if (ipconfigSyntaxFault(restLower)) {
+    return `error: unrecognized or incomplete command line.\n${IPCONFIG_HELP}`;
   }
 
   if (restLower.includes('/release6')) {

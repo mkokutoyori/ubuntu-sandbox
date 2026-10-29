@@ -24,9 +24,12 @@ const MODEL: TopologyImageModel = {
     { id: 'p2', name: 'PC-2', type: 'windows-pc', x: 320, y: 460, isPoweredOn: false },
   ],
   links: [
-    { id: 'l1', type: 'ethernet', sourceId: 'r1', targetId: 's1', operational: true },
-    { id: 'l2', type: 'serial', sourceId: 's1', targetId: 'p1', operational: true },
-    { id: 'l3', type: 'ethernet', sourceId: 's1', targetId: 'p2', operational: false },
+    { id: 'l1', type: 'ethernet', sourceId: 'r1', targetId: 's1', operational: true,
+      sourceInterface: 'GigabitEthernet0/0', targetInterface: 'GigabitEthernet0/1' },
+    { id: 'l2', type: 'serial', sourceId: 's1', targetId: 'p1', operational: true,
+      sourceInterface: 'Serial0/0', targetInterface: 'eth0' },
+    { id: 'l3', type: 'ethernet', sourceId: 's1', targetId: 'p2', operational: false,
+      sourceInterface: 'GigabitEthernet0/2', targetInterface: 'eth0' },
   ],
 };
 
@@ -111,13 +114,14 @@ describe('the picture frames the diagram', () => {
       devices: MODEL.devices.map((device) => ({ ...device, x: device.x - 900, y: device.y - 700 })),
     };
     const { svg, width, height } = render(true, 'en', shifted);
-    const centres = [...svg.matchAll(/<text x="([\d.]+)" y="([\d.]+)" font-size="12"/g)];
+    const [, shiftX, shiftY] = /<g transform="translate\((-?[\d.]+) (-?[\d.]+)\)">/.exec(svg) ?? [];
+    const centres = [...svg.matchAll(/<text x="(-?[\d.]+)" y="(-?[\d.]+)" font-size="12"/g)];
     expect(centres.length).toBe(4);
     for (const [, x, y] of centres) {
-      expect(Number(x)).toBeGreaterThan(0);
-      expect(Number(x)).toBeLessThan(width);
-      expect(Number(y)).toBeGreaterThan(0);
-      expect(Number(y)).toBeLessThan(height);
+      expect(Number(x) + Number(shiftX)).toBeGreaterThan(0);
+      expect(Number(x) + Number(shiftX)).toBeLessThan(width);
+      expect(Number(y) + Number(shiftY)).toBeGreaterThan(0);
+      expect(Number(y) + Number(shiftY)).toBeLessThan(height);
     }
   });
 
@@ -167,5 +171,54 @@ describe('rasterisation is bounded', () => {
     const huge = pngScaleFor(40000, 30000, 2);
     expect(huge).toBeLessThan(1);
     expect(40000 * huge).toBeLessThanOrEqual(16384);
+  });
+});
+
+
+describe('the cables follow the browser canvas', () => {
+  it('witness: every link is drawn, with its up or down state', () => {
+    const { svg } = render(false);
+    expect(svg.match(/data-link="/g)).toHaveLength(3);
+    expect(svg.match(/data-link-state="up"/g)).toHaveLength(2);
+    expect(svg.match(/data-link-state="down"/g)).toHaveLength(1);
+  });
+
+  it('routes cables as the canvas does: right-angle paths, not straight lines', () => {
+    const { svg } = render(false);
+    expect(svg).not.toMatch(/<line [^>]*stroke-width="2.5"/);
+    const paths = [...svg.matchAll(/<path d="([^"]+)" fill="none" stroke="#(?!ffffff)/g)];
+    expect(paths.length).toBe(3);
+    for (const [, d] of paths) expect(d).toMatch(/^M /);
+  });
+
+  it('names the ports at both ends with the canvas abbreviations', () => {
+    const { svg } = render(false);
+    for (const text of ['Gi0/0', 'Gi0/1', 'Gi0/2', 'Se0/0']) expect(svg, text).toContain(`>${text}<`);
+    expect(svg).not.toContain('>GigabitEthernet0/0<');
+  });
+
+  it('draws connector ticks where a cable meets a device', () => {
+    const { svg } = render(false);
+    expect(svg.match(/stroke-width="3" stroke-linecap="round"\/>/g)?.length).toBe(6);
+  });
+
+  it('marks power state on each device', () => {
+    const { svg } = render(false);
+    expect(svg.match(/fill="#22c55e"/g)).toHaveLength(3);
+    expect(svg.match(/fill="#64748b"/g)).toHaveLength(1);
+  });
+
+  it('keeps two cables between the same devices on separate lanes', () => {
+    const doubled = {
+      ...MODEL,
+      links: [
+        MODEL.links[0],
+        { ...MODEL.links[0], id: 'l1b', sourceInterface: 'GigabitEthernet0/3', targetInterface: 'GigabitEthernet0/4' },
+      ],
+    };
+    const { svg } = render(false, 'en', doubled);
+    const paths = [...svg.matchAll(/<path d="([^"]+)" fill="none" stroke="#(?!ffffff)/g)].map((m) => m[1]);
+    expect(paths).toHaveLength(2);
+    expect(paths[0]).not.toBe(paths[1]);
   });
 });

@@ -1,3 +1,4 @@
+import { refuseUnknownSelector } from './showSelectors';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { Router } from '../../Router';
@@ -238,7 +239,10 @@ export function igmpShowSpecs(ctx: ShowCtx): CommandSpec[] {
         alternatives: [{ keyword: 'detail', description: 'Detailed output' }],
       }],
       description: 'Display IGMP group membership',
-      run: (_session, args) => showIgmpGroups(ctx, words(args.selection)),
+      run: (_session, args) => {
+        refuseUnknownSelector(words(args.selection), { keywords: ['detail'], addresses: true, interfaces: true, max: 2 });
+        return showIgmpGroups(ctx, words(args.selection));
+      },
     },
     {
       ...base, id: 'show-ip-igmp-interface',
@@ -246,7 +250,10 @@ export function igmpShowSpecs(ctx: ShowCtx): CommandSpec[] {
         name: 'interface', type: 'REST', optional: true, literal: 'WORD', description: 'Interface name',
       }],
       description: 'Display IGMP interface state',
-      run: (_session, args) => showIgmpInterface(ctx, words(args.interface)),
+      run: (_session, args) => {
+        refuseUnknownSelector(words(args.interface), { interfaces: true, max: 1 });
+        return showIgmpInterface(ctx, words(args.interface));
+      },
     },
   ];
 }

@@ -1,3 +1,4 @@
+import { refuseUnknownCefSelector } from './showSelectors';
 import { routerRsaKey } from '../../../ipsec/RouterRsaKey';
 import { encodeRsaPublicKey, groupedHex } from '../../../ipsec/RsaPublicKeyDer';
 
@@ -1201,6 +1202,7 @@ export function buildSecurityShowCommands(trie: CommandTrie, getRouter: () => Ro
     showIpTraffic(getRouter()._getPortsInternal().values()));
 
   trie.registerGreedy('show ip cef', 'Display CEF FIB', (args) => {
+    refuseUnknownCefSelector(args);
     if (!sec().ipCef) return 'IP CEF is not enabled';
     const router = getRouter();
     const installed = router.installedRoutes();

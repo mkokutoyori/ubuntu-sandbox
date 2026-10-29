@@ -4268,12 +4268,83 @@ stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
 incremental SPF, the discard route, process shutdown).
 
 
-## Topology image export: straight links, and the rest of the UI is not translated
+## Topology image export: the rest of the UI is not translated
 
-The image export (toolbar button "Image") draws each cable as a straight line
-between device centres, not along the corridors the canvas routes them through
-(`useCableRoutes`), so a crowded topology can show crossings the canvas avoids.
 Only the export dialog and the image are translated (English / French,
 src/i18n); the rest of the interface (toolbar, palette, properties panel,
 dialogs) is still English-only, and there is no global language switch: the
-language is the one stored by the export dialog, else the browser's.
+language is the one stored by the export dialog, else the browser's. The image
+draws the cables with the canvas's own router (`computeCableRoutes`, zoom 1),
+so it shows the same lanes, corners and port tags; what it does not reproduce
+is the canvas's current selection or pan/zoom, by design.
+
+## Reds measured at base outside the network-v2 sweep (new_firewall)
+
+`src/__tests__/unit/new_firewall/fortigate-battery-06-ipv6-ospf-bgp-ztna.test.ts`
+(32 cases), `fortigate-battery-02-advanced-transit.test.ts` and
+`fortigate-battery-03-security-pbr-ipsec-qos.test.ts` (together ~70 cases, seen
+in a Windows ping sweep), `fortigate-battery-05-ha-vrf-dpi-radius.test.ts` (34 cases),
+`fortigate-battery-09-tls-crypto-pki.test.ts` (44 cases),
+`fortigate-battery-10-sdwan-vxlan-pqc.test.ts` (28 cases) and
+`fortigate-battery-11-hybrid-cloud-evpn-k8s.test.ts` (28 cases)
+fail on a tree with no change from the CLI hardening series (checked by
+stashing `src`). Seen while running the tests that mention `router bgp` and
+`ipv6 address`. Not diagnosed: nothing was done beyond establishing that the
+failures predate the series.
+
+## Huawei management configurators record unknown forms as raw lines
+
+`RouterManagementService.configureNtp|configureSflow|configureClock|
+configureTelnet|configureStelnet` end in `recordRaw(feature, line)` when the
+form is not recognised, so `sflow zorglub`, `bfd zorglub`, `isis 1 zorglub`,
+`clock datetime zorglub` and others (seen by fuzzing a HuaweiRouter with a
+trailing `zorglub`) are accepted and stored verbatim. Only the
+`<feature> enable|disable <extra>` forms were closed. The VRP grammar for the
+rest was not reachable, so refusing them would be guessing (rule 8). Needs the
+Huawei command reference for sflow, bfd, isis, traffic classifier/behavior/
+policy, route-policy and `snmp-agent community`.
+
+## migration-guard: exact match vs concurrent prefix on `show crypto ipsec`
+
+`src/__tests__/unit/cli/migration-guard.test.ts` ("une correspondance EXACTE
+l'emporte sur un prefixe concurrent") fails: `show crypto ipsec sa` and `show
+crypto ipsec security-association lifetime` both answer `IPSec not
+configured.` on an unconfigured router. Confirmed red at the base commit 2351448f2
+(checked in a separate worktree), so it is not from the hardening series. Also red: `fortigate-battery-04-
+monitoring-telemetry-syslog.test.ts` (28 cases), same family as batteries
+06/09/10/11.
+
+## clear ip bgp soft / in / out and peer-group targets
+
+`clear ip bgp <target> soft [in|out]` and `in`/`out` are accepted and do
+nothing: the engine models no route refresh. `clear ip bgp peer-group`,
+`vpnv4`, `ipv4 unicast` and `vrf` targets are refused as invalid input
+although IOS accepts them (BgpNeighborCfg carries no peer-group name, the
+engine no per-family reset). Hard reset by `*`, address, AS, external and
+internal is real (BGPEngine.resetPeers).
+
+## More reds seen with the working tree stashed (not caused by the hardening series)
+
+`network-v2/auditctl-oracle.test.ts` (replays), `auditctl-other.test.ts` (128,
+an unmatched quote answers bash's own `unexpected eof` instead of an auditctl
+message), `ausearch-interpret-oracle.test.ts` (replays) and
+`new_firewall/fortigate-battery-08-cyber-defense-tls-pvlan.test.ts` (26 cases)
+fail on HEAD with `src` stashed. Not diagnosed.
+
+## Linux reds seen with the working tree stashed (identical with and without the option guard)
+
+`network-v2/basic-commandes.test.ts` (1), `linux-hosts-hostname-hijack.test.ts`
+(1), `probe-env-ne-rend-que-l-environnement.test.ts` (1),
+`probe-linux-ne-lit-pas-le-fuseau-du-processus.test.ts` (1), `run-parts.test.ts`
+(5), `scenario10-linux-audit.test.ts` (4) and
+`new_firewall/fortigate-battery-07-windows-active-directory.test.ts` (14). Not
+diagnosed.
+
+`debug/infra/durcissement-infra-entreprise.debug.test.ts` (1),
+`network-v2/probe-fuser-porte-de-psmisc.test.ts` (2) and
+`probe-linux-kerberos-tools-answer-like-mit.test.ts` (5) also fail identically
+with the working tree stashed.
+
+`audit/vacl-mac-clause.test.ts` (1), `network-v2/crypto-pki-trustpool.test.ts` (1),
+`nss-resolution-unified.test.ts` (1) and `probe-proc-sys-write-reaches-the-
+store.test.ts` (6) also fail identically with the working tree stashed.

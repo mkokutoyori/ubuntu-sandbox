@@ -188,6 +188,7 @@ export class RouterManagementService {
 
   configureStelnet(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
+    if (head === 'server' && ['enable', 'disable'].includes(args[1]?.toLowerCase()) && args.length > 2) return args[2];
     if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.sshServer.enabled = !negated;
     else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.sshServer.enabled = false;
     else if (head === 'server') return args[1] ?? head;
@@ -212,6 +213,7 @@ export class RouterManagementService {
 
   configureTelnet(args: string[], negated = false): string | null {
     const head = (args[0] ?? '').toLowerCase();
+    if (head === 'server' && ['enable', 'disable'].includes(args[1]?.toLowerCase()) && args.length > 2) return args[2];
     if (head === 'server' && args[1]?.toLowerCase() === 'enable') this.telnetServer.enabled = !negated;
     else if (head === 'server' && args[1]?.toLowerCase() === 'disable') this.telnetServer.enabled = false;
     else if (head === 'server' && args[1]?.toLowerCase() === 'port') {
@@ -357,8 +359,9 @@ export class RouterManagementService {
     return { maxAuthTries: this.sshServer.retries, loginGraceTime: this.sshServer.timeout };
   }
 
-  configureNtp(args: string[]): void {
+  configureNtp(args: string[]): string | null {
     const head = (args[0] ?? '').toLowerCase();
+    if (head === 'authentication' && args[1]?.toLowerCase() === 'enable' && args.length > 2) return args[2];
     if (head === 'unicast-server' && args[1]) {
       this.recordRaw('ntp', `unicast-server ${args.slice(1).join(' ')}`);
     } else if (head === 'source-interface' && args[1]) {
@@ -380,6 +383,7 @@ export class RouterManagementService {
     } else {
       this.recordRaw('ntp', args.join(' '));
     }
+    return null;
   }
   getNtp(): typeof this.ntpService { return this.ntpService; }
 

@@ -7,7 +7,7 @@ export interface SharedShowHost {
   macAddressTable(): string;
   cdp(words: readonly string[]): string;
   lldp(words: readonly string[]): string;
-  snmp(): string;
+  snmp(words: readonly string[]): string;
   parserView(words: readonly string[]): string;
   hosts(): string;
   dnsStatistics(): string;
@@ -70,7 +70,8 @@ export function sharedShowFamily(host: () => SharedShowHost): CommandSpec[] {
     },
     {
       ...base, modes: ['privileged'], id: 'show-snmp', path: ['show', 'snmp', rest('view', 'SNMP detail to display')],
-      description: 'Display SNMP status', run: () => host().snmp(),
+      description: 'Display SNMP status',
+      run: (_session, args) => host().snmp(words(args.view)),
     },
     {
       ...base, modes: ['privileged'], id: 'show-parser-view',

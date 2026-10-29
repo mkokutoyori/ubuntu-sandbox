@@ -13,6 +13,7 @@
  */
 
 import { vrfShowFamily } from '@/cli/commands/l3vpn/l3vpnFamily';
+import { refuseUnknownDiscoveryArgs, refuseUnknownExecShowTail, refuseUnknownSnmpView } from './cisco/showSelectors';
 import { vrfShowHostOf } from './cisco/l3vpnHost';
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
 import type { Equipment, EnableSecretAlgorithm } from '@/network/equipment/Equipment';
@@ -4827,6 +4828,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
     ], () => ({ apply: (words) => this.applyClear(words) }));
   }
 
+  private clearBgpSessions(words: readonly string[]): string {
+    const [target, ...suffix] = words;
+    if (target === undefined) throw new CliIncomplete();
+    const lower = target.toLowerCase();
+    const engine = (this.d() as unknown as {
+      getBGPEngine?: () => { asn: number; resetPeers(m: (ip: string, c: { remoteAs?: number }) => boolean): readonly string[] } | null;
+    }).getBGPEngine?.();
+    let matches: (ip: string, cfg: { remoteAs?: number }) => boolean;
+    if (target === '*') matches = () => true;
+    else if (isValidIPv4(target)) matches = (ip) => ip === target;
+    else if (/^\d+$/.test(target) && Number(target) >= 1 && Number(target) <= 4294967295) {
+      matches = (_ip, cfg) => cfg.remoteAs === Number(target);
+    } else if (lower === 'external') matches = (_ip, cfg) => cfg.remoteAs !== engine?.asn;
+    else if (lower === 'internal') matches = (_ip, cfg) => cfg.remoteAs === engine?.asn;
+    else throw new CliInvalidInput({ token: target });
+    const soft = suffix[0]?.toLowerCase() === 'soft' || ['in', 'out'].includes(suffix[0]?.toLowerCase() ?? '');
+    const allowed = soft ? ['soft', 'in', 'out', 'prefix-filter'] : [];
+    const badAt = suffix.findIndex((word) => !allowed.includes(word.toLowerCase()));
+    if (badAt >= 0) throw new CliInvalidInput({ token: suffix[badAt] });
+    if (soft || !engine) return '';
+    return engine.resetPeers(matches).length === 0 && target !== '*' ? '% No matching BGP neighbor' : '';
+  }
+
   private applyClear(words: string[]): string {
     const [tete, ...reste] = words;
 
@@ -4878,6 +4902,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       _clearArpEntry?: (ip?: string) => number;
       arpTable?: Map<string, unknown>;
       _clearDynamicRoutes?: () => void;
+      _clearDynamicRoute?: (network: string, mask?: string) => number;
       getEIGRPEngine?: () => { clearNeighbors?: () => void; resetTraffic?: () => void };
     };
 
@@ -4888,7 +4913,19 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
       dev.arpTable?.clear();
       return '';
     }
-    if (reste[0] === 'route') { dev._clearDynamicRoutes?.(); return ''; }
+    if (reste[0] === 'route') {
+      const [target, mask, ...extra] = reste.slice(1);
+      if (target === undefined || target === '*') {
+        if (mask !== undefined) throw new CliInvalidInput({ token: mask });
+        dev._clearDynamicRoutes?.();
+        return '';
+      }
+      if (!isValidIPv4(target)) throw new CliInvalidInput({ token: target });
+      if (mask !== undefined && !isValidIPv4(mask)) throw new CliInvalidInput({ token: mask });
+      if (extra.length > 0) throw new CliInvalidInput({ token: extra[0] });
+      return (dev._clearDynamicRoute?.(target, mask) ?? 0) === 0 ? '% Network not in table' : '';
+    }
+    if (reste[0] === 'bgp') return this.clearBgpSessions(reste.slice(1));
     if (reste[0] === 'eigrp') {
       const moteur = dev.getEIGRPEngine?.();
       if (!moteur) return '';
@@ -5365,7 +5402,10 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
           alternatives: [{ keyword: 'statistics', description: 'Memory statistics' }],
         }],
         modes: exec, minPrivilege: 1,
-        run: () => showMemoryStatistics(this.getChassisProfile()),
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('memory', args.vue);
+          return showMemoryStatistics(this.getChassisProfile());
+        },
       },
       {
         id: 'clear-ntp-statistics', path: ['clear', 'ntp', 'statistics'],
@@ -5392,26 +5432,41 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         id: 'show-boot', description: 'Display boot variables',
         path: ['show', 'boot',
           { name: 'reste', type: 'REST', optional: true, description: 'Boot view' }],
-        modes: exec, minPrivilege: 15, run: () => this.fs().renderBootvar(),
+        modes: exec, minPrivilege: 15,
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('boot', args.reste);
+          return this.fs().renderBootvar();
+        },
       },
       {
         id: 'show-flash', description: 'Display flash filesystem',
         path: ['show', 'flash:',
           { name: 'reste', type: 'REST', optional: true, description: 'Flash view' }],
-        modes: exec, minPrivilege: 15, run: () => this.fs().renderShowFlash(),
+        modes: exec, minPrivilege: 15,
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('flash', args.reste);
+          return this.fs().renderShowFlash();
+        },
       },
       {
         id: 'show-controllers', description: 'Display controller status',
         path: ['show', 'controllers',
           { name: 'interface', type: 'REST', optional: true, description: 'Interface to show' }],
         modes: exec, minPrivilege: 1,
-        run: (_session, args) => showControllers(this.cs(), (args.interface ?? '').trim()),
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('controllers', args.interface);
+          return showControllers(this.cs(), (args.interface ?? '').trim());
+        },
       },
       {
         id: 'show-environment', description: 'Display environment',
         path: ['show', 'environment',
           { name: 'reste', type: 'REST', optional: true, description: 'Environment view' }],
-        modes: exec, minPrivilege: 1, run: () => showEnvironment(),
+        modes: exec, minPrivilege: 1,
+        run: (_session, args) => {
+          refuseUnknownExecShowTail('environment', args.reste);
+          return showEnvironment();
+        },
       },
       {
         id: 'show-line', description: 'Display TTY lines',
@@ -5818,9 +5873,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         this.hasSwitchingHardware() && !this.providesOwnMacAddressTableView(),
       macAddressTable: () =>
         ['Mac Address Table', '--------------------------------', 'No entries'].join('\n'),
-      cdp: (args) => showCdp(this.cs(), args.join(' '), this.configState.isEnabled('cdp')),
-      lldp: (args) => showLldp(this.cs(), args.join(' '), this.configState.isEnabled('lldp')),
-      snmp: () => showSnmp(this.cs(), this.getChassisProfile()),
+      cdp: (args) => {
+        refuseUnknownDiscoveryArgs('cdp', args);
+        return showCdp(this.cs(), args.join(' '), this.configState.isEnabled('cdp'));
+      },
+      lldp: (args) => {
+        refuseUnknownDiscoveryArgs('lldp', args);
+        return showLldp(this.cs(), args.join(' '), this.configState.isEnabled('lldp'));
+      },
+      snmp: (words) => {
+        refuseUnknownSnmpView(words);
+        return showSnmp(this.cs(), this.getChassisProfile());
+      },
       parserView: (args) => {
         const sec = getSecurityConfig(this.d());
         if (args.length === 0) {

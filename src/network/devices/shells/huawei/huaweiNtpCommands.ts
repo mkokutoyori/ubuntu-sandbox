@@ -149,6 +149,7 @@ export function analyserNtpVrp(args: readonly string[]): AnalyseNtpVrp {
     case 'authentication':
       if (!reste[0]) return incomplet();
       if (reste[0].toLowerCase() !== 'enable') return mauvais(reste[0]);
+      if (reste[1] !== undefined) return mauvais(reste[1]);
       return { statut: 'ok', action: { quoi: 'authentication', actif: true } };
     case 'authentication-keyid': {
       // La forme est `<id> authentication-mode <algo> <cle>`. L'ancien

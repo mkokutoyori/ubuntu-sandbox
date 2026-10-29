@@ -47,6 +47,8 @@ function bindingTypeText(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
+const ADDRESS_OR_STAR = /^(\*|\d{1,3}(\.\d{1,3}){3})$/;
+
 export function formatDhcpBindings(
   server: DhcpViewServer, filter?: string, localTime: LocalClockReading = UTC_READING,
 ): string {
@@ -136,25 +138,40 @@ export function showIpDhcpSpecs(
     {
       id: 'clear-ip-dhcp-binding',
       path: ['clear', 'ip', 'dhcp', 'binding',
-        { name: 'cible', type: 'WORD' as const, description: 'Address, or * for every binding' }],
+        { name: 'cible', type: 'WORD' as const, pattern: ADDRESS_OR_STAR, literal: 'A.B.C.D|*',
+          description: 'Address, or * for every automatic binding' }],
       description: 'Clear DHCP address bindings',
       modes: PRIVILEGED, minPrivilege: 15,
       run: (_session, args) => {
         const engine = server();
         if (!engine) return '';
         const cible = String(args.cible ?? '');
-        if (cible === '*') engine.clearBindings();
-        else engine.clearBinding(cible);
+        const bindings = engine.getBindings();
+        if (cible === '*') {
+          for (const [address, binding] of [...bindings]) {
+            if (binding.type === 'automatic') engine.clearBinding(address);
+          }
+          return '';
+        }
+        if (bindings.get(cible)?.type !== 'automatic') return '% No matching binding found';
+        engine.clearBinding(cible);
         return '';
       },
     },
     {
       id: 'clear-ip-dhcp-conflict',
       path: ['clear', 'ip', 'dhcp', 'conflict',
-        { name: 'cible', type: 'WORD' as const, description: 'Address, or * for every conflict' }],
+        { name: 'cible', type: 'WORD' as const, pattern: ADDRESS_OR_STAR, literal: 'A.B.C.D|*',
+          description: 'Address, or * for every conflict' }],
       description: 'Clear DHCP address conflicts',
       modes: PRIVILEGED, minPrivilege: 15,
-      run: withServer(s => { s.clearConflicts(); return ''; }),
+      run: (_session, args) => {
+        const engine = server();
+        if (!engine) return '';
+        const cible = String(args.cible ?? '');
+        if (cible === '*') { engine.clearConflicts(); return ''; }
+        return engine.clearConflict(cible) ? '' : '% No matching conflict found';
+      },
     },
     {
       id: 'clear-ip-dhcp-server-statistics',

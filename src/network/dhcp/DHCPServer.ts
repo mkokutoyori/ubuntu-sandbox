@@ -1324,6 +1324,12 @@ export class DHCPServer implements IProtocolEngine {
     this.conflicts = [];
   }
 
+  clearConflict(ip: string): boolean {
+    const before = this.conflicts.length;
+    this.conflicts = this.conflicts.filter(c => c.ipAddress !== ip);
+    return this.conflicts.length !== before;
+  }
+
   /** Record a conflict detected by the server (e.g., via ping/ARP before offering) */
   addConflict(ip: string, method: string): void {
     this.recordConflict(ip, method);
