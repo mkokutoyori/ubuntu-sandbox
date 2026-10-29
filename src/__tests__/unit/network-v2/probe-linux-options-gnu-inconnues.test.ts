@@ -17,7 +17,8 @@
  * either way. Fifth step (`date --zorglub` printed the date): 4 cases added, 1
  * falls, the 3 valid forms pass either way. Sixth step (md5sum, sha1sum, sha224sum,
  * sha256sum, sha384sum, sha512sum share one option set): 10 cases added, 6 refusals fall, the 4
- * valid forms pass either way. Option tables are the GNU
+ * valid forms pass either way. Seventh step (nl, fold, paste, comm, base64): 12 cases added, 5
+ * refusals fall, the 7 valid forms pass either way. Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -33,7 +34,7 @@ function pc(): Sh {
 }
 
 describe('known options still work', () => {
-  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a', 'date -u', 'date --iso-8601=seconds', 'date +%Y', 'md5sum -b /etc/hostname', 'sha256sum --tag /etc/hostname', 'sha1sum -t /etc/hostname', 'sha512sum /etc/hostname'])('witness: `%s` is accepted', async (line) => {
+  it.each(['whoami', 'groups', 'tty -s', 'nproc', 'free -m', 'free -h', 'env', 'printenv', 'uname -a', 'uname -r', 'mkdir -p /tmp/a/b', 'rm -rf /tmp/a', 'cat -n /etc/hostname', 'wc -l /etc/hostname', 'basename /a/b', 'dirname /a/b', 'ls -la', 'ls --color=auto', 'head -5 /etc/hostname', 'sort -rn /etc/hostname', 'uniq -c /etc/hostname', 'cut -d: -f1 /etc/passwd', 'tr -d a', 'date -u', 'date --iso-8601=seconds', 'date +%Y', 'md5sum -b /etc/hostname', 'sha256sum --tag /etc/hostname', 'sha1sum -t /etc/hostname', 'sha512sum /etc/hostname', 'nl -ba /etc/hostname', 'fold -w5 -s /etc/hostname', 'paste -s -d, /etc/hostname', 'comm -12 /etc/hostname /etc/hostname', 'base64 -w0 /etc/hostname', 'base64 --wrap=0 /etc/hostname', 'nl -w3 -s: /etc/hostname'])('witness: `%s` is accepted', async (line) => {
     expect(await pc().executeCommand(line)).not.toMatch(/unrecognized option|invalid option|extra operand/);
   });
 });
@@ -75,6 +76,11 @@ describe('unknown options are refused the way GNU getopt does', () => {
     ['sha1sum --zorglub', "sha1sum: unrecognized option '--zorglub'"],
     ['sha224sum --zorglub', "sha224sum: unrecognized option '--zorglub'"],
     ['sha256sum -Q /etc/hostname', "sha256sum: invalid option -- 'Q'"],
+    ['nl --zorglub /etc/hostname', "nl: unrecognized option '--zorglub'"],
+    ['fold --zorglub /etc/hostname', "fold: unrecognized option '--zorglub'"],
+    ['paste --zorglub /etc/hostname', "paste: unrecognized option '--zorglub'"],
+    ['comm --zorglub /etc/hostname /etc/hostname', "comm: unrecognized option '--zorglub'"],
+    ['base64 --zorglub /etc/hostname', "base64: unrecognized option '--zorglub'"],
     ['sha512sum --zorglub', "sha512sum: unrecognized option '--zorglub'"],
   ])('`%s`', async (line, message) => {
     const output = await pc().executeCommand(line);

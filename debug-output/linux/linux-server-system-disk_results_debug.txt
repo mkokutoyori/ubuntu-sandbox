@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-server-system-disk
-Generated: 2026-10-29T09:12:59.468Z
+Generated: 2026-10-29T09:30:35.958Z
 Engine: linux
 host=L-SRV-SYS-DBG (linux-server) — focus: système, disque, noyau & paquets
 Total commands: 300
@@ -111,39 +111,39 @@ $ [23/300]> cat /etc/hostname
   L-SRV-SYS-DBG
 
 $ [24/300]> date
-  Thu Oct 29 09:12:59 UTC 2026
+  Thu Oct 29 09:30:36 UTC 2026
 
 $ [25/300]> date -u
-  Thu Oct 29 09:12:59 UTC 2026
+  Thu Oct 29 09:30:36 UTC 2026
 
 $ [26/300]> date +%Y-%m-%d
   2026-10-29
 
 $ [27/300]> date "+%H:%M:%S"
-  09:12:59
+  09:30:36
 
 $ [28/300]> date +%s
-  1793265179
+  1793266236
 
 $ [29/300]> date -d "2026-01-01"
   Thu Jan 01 00:00:00 UTC 2026
 
 $ [30/300]> date --iso-8601=seconds
-  Thu Oct 29 09:12:59 UTC 2026
+  Thu Oct 29 09:30:36 UTC 2026
 
 $ [31/300]> timedatectl
-                 Local time: Thu 2026-10-29 09:12:59 UTC
-             Universal time: Thu 2026-10-29 09:12:59 UTC
-                   RTC time: Thu 2026-10-29 09:12:59
+                 Local time: Thu 2026-10-29 09:30:36 UTC
+             Universal time: Thu 2026-10-29 09:30:36 UTC
+                   RTC time: Thu 2026-10-29 09:30:36
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: no
                 NTP service: active
             RTC in local TZ: no
 
 $ [32/300]> timedatectl status
-                 Local time: Thu 2026-10-29 09:12:59 UTC
-             Universal time: Thu 2026-10-29 09:12:59 UTC
-                   RTC time: Thu 2026-10-29 09:12:59
+                 Local time: Thu 2026-10-29 09:30:36 UTC
+             Universal time: Thu 2026-10-29 09:30:36 UTC
+                   RTC time: Thu 2026-10-29 09:30:36
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: no
                 NTP service: active
@@ -160,13 +160,13 @@ $ [33/300]> cal
                         
 
 $ [34/300]> uptime
-   09:12:59 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   09:30:36 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [35/300]> uptime -p
   up 0 minutes
 
 $ [36/300]> uptime -s
-  2026-10-29 09:12:59
+  2026-10-29 09:30:35
 
 $ [37/300]> date --truc
   date: unrecognized option '--truc'
@@ -661,16 +661,16 @@ $ [108/300]> dmesg | head
   [    0.400000] usbcore: registered new interface driver usbfs
 
 $ [109/300]> dmesg -T | head
-  [Thu Oct 29 09:12:29 2026] Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
-  [Thu Oct 29 09:12:29 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
-  [Thu Oct 29 09:12:29 2026] DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
-  [Thu Oct 29 09:12:29 2026] Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
-  [Thu Oct 29 09:12:29 2026] PCI: Using configuration type 1 for base access
-  [Thu Oct 29 09:12:29 2026] pci 0000:00:01.0: PIIX/ICH IDE controller
-  [Thu Oct 29 09:12:29 2026] smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
-  [Thu Oct 29 09:12:29 2026] NET: Registered PF_INET protocol family
-  [Thu Oct 29 09:12:29 2026] NET: Registered PF_INET6 protocol family
-  [Thu Oct 29 09:12:29 2026] usbcore: registered new interface driver usbfs
+  [Thu Oct 29 09:30:05 2026] Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+  [Thu Oct 29 09:30:05 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
+  [Thu Oct 29 09:30:05 2026] DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
+  [Thu Oct 29 09:30:05 2026] Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
+  [Thu Oct 29 09:30:06 2026] PCI: Using configuration type 1 for base access
+  [Thu Oct 29 09:30:06 2026] pci 0000:00:01.0: PIIX/ICH IDE controller
+  [Thu Oct 29 09:30:06 2026] smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  [Thu Oct 29 09:30:06 2026] NET: Registered PF_INET protocol family
+  [Thu Oct 29 09:30:06 2026] NET: Registered PF_INET6 protocol family
+  [Thu Oct 29 09:30:06 2026] usbcore: registered new interface driver usbfs
 
 $ [110/300]> dmesg --level=err
 <empty>
@@ -1215,7 +1215,7 @@ $ [161/300]> tar -cf arch.tar arch_src
 <empty>
 
 $ [162/300]> ls -l arch.tar
-  -rw-r--r-- 1 root root 330 Oct 29 09:12 arch.tar
+  -rw-r--r-- 1 root root 330 Oct 29 09:30 arch.tar
 
 $ [163/300]> tar -tf arch.tar
   arch_src/
@@ -1226,7 +1226,7 @@ $ [164/300]> tar -czf arch.tar.gz arch_src
 <empty>
 
 $ [165/300]> ls -l arch.tar.gz
-  -rw-r--r-- 1 root root 456 Oct 29 09:12 arch.tar.gz
+  -rw-r--r-- 1 root root 456 Oct 29 09:30 arch.tar.gz
 
 $ [166/300]> tar -tzf arch.tar.gz
   arch_src/
@@ -1248,25 +1248,25 @@ $ [169/300]> gzip arch_src/a.txt
 
 $ [170/300]> ls -l arch_src
   total 16
-  -rw-r--r-- 1 root root 67 Oct 29 09:12 a.txt.gz
-  -rw-r--r-- 1 root root  6 Oct 29 09:12 b.txt
+  -rw-r--r-- 1 root root 67 Oct 29 09:30 a.txt.gz
+  -rw-r--r-- 1 root root  6 Oct 29 09:30 b.txt
 
 $ [171/300]> gunzip arch_src/a.txt.gz
 <empty>
 
 $ [172/300]> ls -l arch_src
   total 16
-  -rw-r--r-- 1 root root 6 Oct 29 09:12 a.txt
-  -rw-r--r-- 1 root root 6 Oct 29 09:12 b.txt
+  -rw-r--r-- 1 root root 6 Oct 29 09:30 a.txt
+  -rw-r--r-- 1 root root 6 Oct 29 09:30 b.txt
 
 $ [173/300]> gzip -k arch_src/b.txt
 <empty>
 
 $ [174/300]> ls -l arch_src
   total 24
-  -rw-r--r-- 1 root root  6 Oct 29 09:12 a.txt
-  -rw-r--r-- 1 root root  6 Oct 29 09:12 b.txt
-  -rw-r--r-- 1 root root 67 Oct 29 09:12 b.txt.gz
+  -rw-r--r-- 1 root root  6 Oct 29 09:30 a.txt
+  -rw-r--r-- 1 root root  6 Oct 29 09:30 b.txt
+  -rw-r--r-- 1 root root 67 Oct 29 09:30 b.txt.gz
 
 $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/ (stored 0%)
@@ -1275,16 +1275,16 @@ $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/b.txt.gz (deflated 23%)
 
 $ [176/300]> ls -l arch.zip
-  -rw-r--r-- 1 root root 514 Oct 29 09:12 arch.zip
+  -rw-r--r-- 1 root root 514 Oct 29 09:30 arch.zip
 
 $ [177/300]> unzip -l arch.zip
   Archive:  arch.zip
     Length      Date    Time    Name
   ---------  ---------- -----   ----
-          0  2026-10-29 09:12   arch_src/
-          6  2026-10-29 09:12   arch_src/b.txt
-          6  2026-10-29 09:12   arch_src/a.txt
-         67  2026-10-29 09:12   arch_src/b.txt.gz
+          0  2026-10-29 09:30   arch_src/
+          6  2026-10-29 09:30   arch_src/b.txt
+          6  2026-10-29 09:30   arch_src/a.txt
+         67  2026-10-29 09:30   arch_src/b.txt.gz
   ---------                     -------
          79                     4 files
 
@@ -1328,65 +1328,65 @@ $ [188/300]> logger -t debugtag "tag debug"
 <empty>
 
 $ [189/300]> journalctl -n 10 --no-pager
-  Oct 29 09:12:59 L-SRV-SYS-DBG chrony[103]: Listening on UDP 0.0.0.0:123
-  Oct 29 09:12:59 L-SRV-SYS-DBG oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
-  Oct 29 09:12:59 L-SRV-SYS-DBG chrony[105]: Listening on UDP 0.0.0.0:123
-  Oct 29 09:12:59 L-SRV-SYS-DBG systemd-resolved[106]: Listening on UDP 127.0.0.53:53
-  Oct 29 09:12:59 L-SRV-SYS-DBG systemd-resolved[107]: Listening on TCP 127.0.0.53:53
-  Oct 29 09:12:59 L-SRV-SYS-DBG oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
-  Oct 29 09:12:59 L-SRV-SYS-DBG tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
-  Oct 29 09:12:59 L-SRV-SYS-DBG root[110]: message de test debug
-  Oct 29 09:12:59 L-SRV-SYS-DBG root[111]: info debug
-  Oct 29 09:12:59 L-SRV-SYS-DBG debugtag[112]: tag debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG chrony[103]: Listening on UDP 0.0.0.0:123
+  Oct 29 09:30:36 L-SRV-SYS-DBG oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
+  Oct 29 09:30:36 L-SRV-SYS-DBG chrony[105]: Listening on UDP 0.0.0.0:123
+  Oct 29 09:30:36 L-SRV-SYS-DBG systemd-resolved[106]: Listening on UDP 127.0.0.53:53
+  Oct 29 09:30:36 L-SRV-SYS-DBG systemd-resolved[107]: Listening on TCP 127.0.0.53:53
+  Oct 29 09:30:36 L-SRV-SYS-DBG oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
+  Oct 29 09:30:36 L-SRV-SYS-DBG tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
+  Oct 29 09:30:36 L-SRV-SYS-DBG root[110]: message de test debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG root[111]: info debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG debugtag[112]: tag debug
 
 $ [190/300]> journalctl -p err -n 5
   -- No entries --
 
 $ [191/300]> journalctl -b
-  Oct 29 09:12:29 localhost kernel: Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
-  Oct 29 09:12:29 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
-  Oct 29 09:12:29 localhost kernel: DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
-  Oct 29 09:12:29 localhost kernel: Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
-  Oct 29 09:12:29 localhost kernel: PCI: Using configuration type 1 for base access
-  Oct 29 09:12:29 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
-  Oct 29 09:12:29 localhost kernel: smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
-  Oct 29 09:12:29 localhost kernel: NET: Registered PF_INET protocol family
-  Oct 29 09:12:29 localhost kernel: NET: Registered PF_INET6 protocol family
-  Oct 29 09:12:29 localhost kernel: usbcore: registered new interface driver usbfs
-  Oct 29 09:12:29 localhost kernel: usbcore: registered new interface driver hub
-  Oct 29 09:12:29 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
-  Oct 29 09:12:29 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
-  Oct 29 09:12:30 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Oct 29 09:12:30 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Oct 29 09:12:31 localhost systemd-journald: Journal started
-  Oct 29 09:12:31 localhost systemd-journald: System Journal (/var/log/journal/148b99c804af656dd56a39f576ef4480) is 8.0M, max 4.0G, 3.9G free.
-  Oct 29 09:12:31 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Oct 29 09:12:31 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Oct 29 09:12:31 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Oct 29 09:12:31 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Oct 29 09:12:31 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Oct 29 09:12:32 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Oct 29 09:12:32 localhost systemd-logind[456]: New seat seat0.
-  Oct 29 09:12:32 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Oct 29 09:12:59 L-SRV-SYS-DBG auditd[27]: No plugins found, not dispatching events
-  Oct 29 09:12:59 L-SRV-SYS-DBG auditd[27]: Init complete, auditd 3.1.2 listening for events (startup state enable)
-  Oct 29 09:12:59 L-SRV-SYS-DBG rsyslogd[26]: imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2610.0]
-  Oct 29 09:12:59 L-SRV-SYS-DBG rsyslogd[26]: [origin software="rsyslogd" swVersion="8.2610.0" x-pid="26" x-info="https://www.rsyslog.com"] start
-  Oct 29 09:12:59 L-SRV-SYS-DBG chrony[100]: Listening on UDP 0.0.0.0:123
-  Oct 29 09:12:59 L-SRV-SYS-DBG chrony[101]: Listening on UDP 0.0.0.0:123
-  Oct 29 09:12:59 L-SRV-SYS-DBG sshd[22]: Server listening on 0.0.0.0 port 22.
-  Oct 29 09:12:59 L-SRV-SYS-DBG sshd[22]: Server listening on :: port 22.
-  Oct 29 09:12:59 L-SRV-SYS-DBG tcp-53[102]: Server listening on 127.0.0.53 port 53.
-  Oct 29 09:12:59 L-SRV-SYS-DBG chrony[103]: Listening on UDP 0.0.0.0:123
-  Oct 29 09:12:59 L-SRV-SYS-DBG oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
-  Oct 29 09:12:59 L-SRV-SYS-DBG chrony[105]: Listening on UDP 0.0.0.0:123
-  Oct 29 09:12:59 L-SRV-SYS-DBG systemd-resolved[106]: Listening on UDP 127.0.0.53:53
-  Oct 29 09:12:59 L-SRV-SYS-DBG systemd-resolved[107]: Listening on TCP 127.0.0.53:53
-  Oct 29 09:12:59 L-SRV-SYS-DBG oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
-  Oct 29 09:12:59 L-SRV-SYS-DBG tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
-  Oct 29 09:12:59 L-SRV-SYS-DBG root[110]: message de test debug
-  Oct 29 09:12:59 L-SRV-SYS-DBG root[111]: info debug
-  Oct 29 09:12:59 L-SRV-SYS-DBG debugtag[112]: tag debug
+  Oct 29 09:30:05 localhost kernel: Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+  Oct 29 09:30:05 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
+  Oct 29 09:30:05 localhost kernel: DMI: QEMU Standard PC (Q35 + ICH9, 2009), BIOS 1.16.0-1 04/01/2014
+  Oct 29 09:30:05 localhost kernel: Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
+  Oct 29 09:30:06 localhost kernel: PCI: Using configuration type 1 for base access
+  Oct 29 09:30:06 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
+  Oct 29 09:30:06 localhost kernel: smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  Oct 29 09:30:06 localhost kernel: NET: Registered PF_INET protocol family
+  Oct 29 09:30:06 localhost kernel: NET: Registered PF_INET6 protocol family
+  Oct 29 09:30:06 localhost kernel: usbcore: registered new interface driver usbfs
+  Oct 29 09:30:06 localhost kernel: usbcore: registered new interface driver hub
+  Oct 29 09:30:06 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
+  Oct 29 09:30:06 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
+  Oct 29 09:30:06 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Oct 29 09:30:07 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Oct 29 09:30:07 localhost systemd-journald: Journal started
+  Oct 29 09:30:07 localhost systemd-journald: System Journal (/var/log/journal/148b99c804af656dd56a39f576ef4480) is 8.0M, max 4.0G, 3.9G free.
+  Oct 29 09:30:08 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Oct 29 09:30:08 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Oct 29 09:30:08 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Oct 29 09:30:08 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Oct 29 09:30:08 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Oct 29 09:30:08 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Oct 29 09:30:08 localhost systemd-logind[456]: New seat seat0.
+  Oct 29 09:30:08 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Oct 29 09:30:35 L-SRV-SYS-DBG auditd[27]: No plugins found, not dispatching events
+  Oct 29 09:30:35 L-SRV-SYS-DBG auditd[27]: Init complete, auditd 3.1.2 listening for events (startup state enable)
+  Oct 29 09:30:36 L-SRV-SYS-DBG rsyslogd[26]: imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2610.0]
+  Oct 29 09:30:36 L-SRV-SYS-DBG rsyslogd[26]: [origin software="rsyslogd" swVersion="8.2610.0" x-pid="26" x-info="https://www.rsyslog.com"] start
+  Oct 29 09:30:36 L-SRV-SYS-DBG chrony[100]: Listening on UDP 0.0.0.0:123
+  Oct 29 09:30:36 L-SRV-SYS-DBG chrony[101]: Listening on UDP 0.0.0.0:123
+  Oct 29 09:30:36 L-SRV-SYS-DBG sshd[22]: Server listening on 0.0.0.0 port 22.
+  Oct 29 09:30:36 L-SRV-SYS-DBG sshd[22]: Server listening on :: port 22.
+  Oct 29 09:30:36 L-SRV-SYS-DBG tcp-53[102]: Server listening on 127.0.0.53 port 53.
+  Oct 29 09:30:36 L-SRV-SYS-DBG chrony[103]: Listening on UDP 0.0.0.0:123
+  Oct 29 09:30:36 L-SRV-SYS-DBG oracle-ohasd[104]: Listening on TCP 0.0.0.0:1521
+  Oct 29 09:30:36 L-SRV-SYS-DBG chrony[105]: Listening on UDP 0.0.0.0:123
+  Oct 29 09:30:36 L-SRV-SYS-DBG systemd-resolved[106]: Listening on UDP 127.0.0.53:53
+  Oct 29 09:30:36 L-SRV-SYS-DBG systemd-resolved[107]: Listening on TCP 127.0.0.53:53
+  Oct 29 09:30:36 L-SRV-SYS-DBG oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
+  Oct 29 09:30:36 L-SRV-SYS-DBG tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
+  Oct 29 09:30:36 L-SRV-SYS-DBG root[110]: message de test debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG root[111]: info debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG debugtag[112]: tag debug
 
 $ [192/300]> journalctl --disk-usage
   Archived and active journals take up 8.0M in the file system.
@@ -1404,28 +1404,28 @@ $ [193/300]> dmesg | tail
   [    1.200000] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
 
 $ [194/300]> tail -n 5 /var/log/syslog
-  Oct 29 09:12:59 L-SRV-SYS-DBG oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
-  Oct 29 09:12:59 L-SRV-SYS-DBG tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
-  Oct 29 09:12:59 L-SRV-SYS-DBG root: message de test debug
-  Oct 29 09:12:59 L-SRV-SYS-DBG root: info debug
-  Oct 29 09:12:59 L-SRV-SYS-DBG debugtag: tag debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG oracle-ohasd[108]: Listening on TCP 0.0.0.0:1521
+  Oct 29 09:30:36 L-SRV-SYS-DBG tcp-1812[109]: Server listening on 0.0.0.0 port 1812.
+  Oct 29 09:30:36 L-SRV-SYS-DBG root: message de test debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG root: info debug
+  Oct 29 09:30:36 L-SRV-SYS-DBG debugtag: tag debug
 
 $ [195/300]> ls -l /var/log
   total 112
-  drwxr-xr-x 2 root root    0 Oct 29 09:12 apache2
-  drwxr-x--- 2 root adm     0 Oct 29 09:12 audit
-  -rw-r----- 1 root adm   313 Oct 29 09:12 auth.log
-  -rw-r----- 1 root adm  2145 Oct 29 09:12 boot.log
-  -rw-rw---- 1 root utmp    0 Oct 29 09:12 btmp
-  drwxr-xr-x 2 root root    0 Oct 29 09:12 chrony
-  drwxr-sr-x 3 root adm     0 Oct 29 09:12 journal
-  -rw-r----- 1 root adm  1627 Oct 29 09:12 kern.log
-  -rw-rw-r-- 1 root utmp  292 Oct 29 09:12 lastlog
-  -rw-r--r-- 1 root root  332 Oct 29 09:12 messages
-  drwxr-xr-x 2 root root    0 Oct 29 09:12 nginx
-  -rw-r----- 1 root adm  3846 Oct 29 09:12 syslog
-  -rw-r----- 1 root adm   155 Oct 29 09:12 user.log
-  -rw-rw-r-- 1 root utmp 1152 Oct 29 09:12 wtmp
+  drwxr-xr-x 2 root root    0 Oct 29 09:30 apache2
+  drwxr-x--- 2 root adm     0 Oct 29 09:30 audit
+  -rw-r----- 1 root adm   313 Oct 29 09:30 auth.log
+  -rw-r----- 1 root adm  2145 Oct 29 09:30 boot.log
+  -rw-rw---- 1 root utmp    0 Oct 29 09:30 btmp
+  drwxr-xr-x 2 root root    0 Oct 29 09:30 chrony
+  drwxr-sr-x 3 root adm     0 Oct 29 09:30 journal
+  -rw-r----- 1 root adm  1627 Oct 29 09:30 kern.log
+  -rw-rw-r-- 1 root utmp  292 Oct 29 09:30 lastlog
+  -rw-r--r-- 1 root root  332 Oct 29 09:30 messages
+  drwxr-xr-x 2 root root    0 Oct 29 09:30 nginx
+  -rw-r----- 1 root adm  3846 Oct 29 09:30 syslog
+  -rw-r----- 1 root adm   155 Oct 29 09:30 user.log
+  -rw-rw-r-- 1 root utmp 1152 Oct 29 09:30 wtmp
 
 
 --- [196] § utilitaires divers ---
@@ -1468,7 +1468,7 @@ $ [204/300]> yes | head -3
   y
 
 $ [205/300]> watch -n 1 -c 1 date
-  Every 1s: 1 date	L-SRV-SYS-DBG: 09:12:59
+  Every 1s: 1 date	L-SRV-SYS-DBG: 09:30:36
   
   bash: 1: command not found
 
@@ -1503,7 +1503,7 @@ $ [209/300]> echo "=== HOST ==="; hostname; uname -r
 $ [210/300]> echo "=== CPU ==="; nproc; uptime
   === CPU ===
   2
-   09:12:59 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   09:30:36 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [211/300]> echo "=== MEM ==="; free -h | head -2
   === MEM ===
@@ -1652,16 +1652,16 @@ $ [246/300]> date "+%Z %z"
   UTC +0000
 
 $ [247/300]> date -u "+%Y-%m-%dT%H:%M:%SZ"
-  2026-10-29T09:12:59Z
+  2026-10-29T09:30:36Z
 
 $ [248/300]> date -d "next monday"
   Mon Nov 02 00:00:00 UTC 2026
 
 $ [249/300]> date -d "yesterday"
-  Wed Oct 28 09:12:59 UTC 2026
+  Wed Oct 28 09:30:36 UTC 2026
 
 $ [250/300]> date -d "1 hour ago"
-  Thu Oct 29 08:12:59 UTC 2026
+  Thu Oct 29 08:30:36 UTC 2026
 
 $ [251/300]> date -d "@0"
   Thu Jan 01 00:00:00 UTC 1970
@@ -1670,7 +1670,7 @@ $ [252/300]> date -d "@1700000000"
   Tue Nov 14 22:13:20 UTC 2023
 
 $ [253/300]> TZ=UTC date
-  Thu Oct 29 09:12:59 UTC 2026
+  Thu Oct 29 09:30:36 UTC 2026
 
 $ [254/300]> cal -3
                               2026
@@ -1830,27 +1830,27 @@ $ [276/300]> getconf -a | head
 --- [277] § snapshot processus & charge ---
 $ [277/300]> ps aux | head
   USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-  root           1  0.0  0.3 169000 13000 ?        Ss   09:12   0:00 /sbin/init
-  root           2  0.0  0.0      0     0 ?        S    09:12   0:00 [kthreadd]
-  root           3  0.0  0.0      0     0 ?        S    09:12   0:00 [rcu_gp]
-  root           4  0.0  0.0      0     0 ?        S    09:12   0:00 [rcu_par_gp]
-  root           5  0.0  0.0      0     0 ?        I    09:12   0:00 [slub_flushwq]
-  root           6  0.0  0.0      0     0 ?        S    09:12   0:00 [netns]
-  root           7  0.0  0.0      0     0 ?        I    09:12   0:00 [kworker/0:0-events]
-  root           8  0.0  0.0      0     0 ?        I    09:12   0:00 [kworker/0:1-events]
-  root           9  0.0  0.0      0     0 ?        I    09:12   0:00 [kworker/1:0-events]
+  root           1  0.0  0.3 169000 13000 ?        Ss   09:30   0:00 /sbin/init
+  root           2  0.0  0.0      0     0 ?        S    09:30   0:00 [kthreadd]
+  root           3  0.0  0.0      0     0 ?        S    09:30   0:00 [rcu_gp]
+  root           4  0.0  0.0      0     0 ?        S    09:30   0:00 [rcu_par_gp]
+  root           5  0.0  0.0      0     0 ?        I    09:30   0:00 [slub_flushwq]
+  root           6  0.0  0.0      0     0 ?        S    09:30   0:00 [netns]
+  root           7  0.0  0.0      0     0 ?        I    09:30   0:00 [kworker/0:0-events]
+  root           8  0.0  0.0      0     0 ?        I    09:30   0:00 [kworker/0:1-events]
+  root           9  0.0  0.0      0     0 ?        I    09:30   0:00 [kworker/1:0-events]
 
 $ [278/300]> ps -ef | head
   UID          PID    PPID  C STIME TTY          TIME CMD
-  root           1       0  0 09:12 ?        00:00:00 /sbin/init
-  root           2       0  0 09:12 ?        00:00:00 [kthreadd]
-  root           3       2  0 09:12 ?        00:00:00 [rcu_gp]
-  root           4       2  0 09:12 ?        00:00:00 [rcu_par_gp]
-  root           5       2  0 09:12 ?        00:00:00 [slub_flushwq]
-  root           6       2  0 09:12 ?        00:00:00 [netns]
-  root           7       2  0 09:12 ?        00:00:00 [kworker/0:0-events]
-  root           8       2  0 09:12 ?        00:00:00 [kworker/0:1-events]
-  root           9       2  0 09:12 ?        00:00:00 [kworker/1:0-events]
+  root           1       0  0 09:30 ?        00:00:00 /sbin/init
+  root           2       0  0 09:30 ?        00:00:00 [kthreadd]
+  root           3       2  0 09:30 ?        00:00:00 [rcu_gp]
+  root           4       2  0 09:30 ?        00:00:00 [rcu_par_gp]
+  root           5       2  0 09:30 ?        00:00:00 [slub_flushwq]
+  root           6       2  0 09:30 ?        00:00:00 [netns]
+  root           7       2  0 09:30 ?        00:00:00 [kworker/0:0-events]
+  root           8       2  0 09:30 ?        00:00:00 [kworker/0:1-events]
+  root           9       2  0 09:30 ?        00:00:00 [kworker/1:0-events]
 
 $ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
       PID    PPID %CPU %MEM COMMAND
@@ -1860,7 +1860,7 @@ $ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
         4       2  0.0  0.0 rcu_par_gp
 
 $ [280/300]> top -b -n 1 | head -12
-  top - 09:12:59 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
+  top - 09:30:36 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
   Tasks: 42 total,  1 running, 41 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3888.0 total,  1434.0 free,  1229.0 used,  1225.0 buff/cache
@@ -1874,7 +1874,7 @@ $ [280/300]> top -b -n 1 | head -12
         5 root       20    0       0      0      0 I   0.0   0.0   0:00.00 slub_flus+
 
 $ [281/300]> uptime
-   09:12:59 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   09:30:36 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [282/300]> cat /proc/loadavg
   0.00 0.00 0.00 1/41 41
@@ -1906,11 +1906,11 @@ $ [286/300]> timedatectl show
   CanNTP=yes
   NTP=yes
   NTPSynchronized=no
-  TimeUSec=1793265179869000
+  TimeUSec=1793266236350000
   TimezoneOffset=0
 
 $ [287/300]> date +%s
-  1793265179
+  1793266236
 
 $ [288/300]> cat /proc/uptime | awk '{print $1" secondes"}'
   0.00 secondes
@@ -1919,12 +1919,12 @@ $ [289/300]> uptime -p
   up 0 minutes
 
 $ [290/300]> who -b
-  system boot  2026-10-29 09:12
+  system boot  2026-10-29 09:30
 
 $ [291/300]> last reboot 2>/dev/null | head
-  reboot   system boot  5.15.0-130-gener Thu Oct 29 09:12   still running
+  reboot   system boot  5.15.0-130-gener Thu Oct 29 09:30   still running
   
-  wtmp begins Thu Oct 29 09:12:59 2026
+  wtmp begins Thu Oct 29 09:30:35 2026
 
 
 --- [292] § mal formées — fin de transcript ---
