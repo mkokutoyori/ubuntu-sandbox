@@ -4365,8 +4365,11 @@ commit 2351448f2 (checked in a worktree).
 are red at the base commit 2351448f2 (checked in a worktree), like
 `probe-fuser-porte-de-psmisc.test.ts`, `run-parts.test.ts`,
 `scenario10-linux-audit.test.ts`, `crypto-pki-trustpool.test.ts`,
-`probe-procfs-does-not-grow.test.ts` (3) and
 `probe-oracle-sqlplus-silencieux-et-rman-a-froid.test.ts` (1).
+
+## `sh -c` speaks bash, not dash
+
+Measured: `sudo sh -c 'echo 3 > /proc/sys/net/ipv4/zorglub'` answers `sh: line 1: /proc/sys/net/ipv4/zorglub: No such file or directory`; Ubuntu's `sh` is dash and says `sh: 1: cannot create /proc/sys/net/ipv4/zorglub: Directory nonexistent`. `probe-procfs-does-not-grow` now runs `bash -c`. A dash diagnostic table is not written.
 
 ## Linux coreutils without an option table
 
