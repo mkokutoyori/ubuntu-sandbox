@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
-import { refuseUnknownGnuOption } from './linux/GnuOptionGuard';
+import { asStderrResult, refuseUnknownGnuOption } from './linux/GnuOptionGuard';
 import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -646,7 +646,7 @@ export abstract class LinuxMachine extends EndHost
       if (unavailable) return unavailable;
       const { argv, input } = splitRegistryStdin(registered, args, stdin);
       const optionRefusal = refuseUnknownGnuOption(cmd, argv);
-      if (optionRefusal) return optionRefusal;
+      if (optionRefusal) return asStderrResult(optionRefusal);
       if (registered.runWithStatusSync) {
         return registered.runWithStatusSync(this.buildCommandContext(outputPiped, cmd), argv, input);
       }
@@ -860,7 +860,7 @@ export abstract class LinuxMachine extends EndHost
         if (denial) { restore(); return Promise.resolve(denial); }
       }
       const optionRefusal = refuseUnknownGnuOption(argv[0], args);
-      if (optionRefusal) { restore(); return Promise.resolve(optionRefusal); }
+      if (optionRefusal) { restore(); return Promise.resolve(asStderrResult(optionRefusal)); }
       const ctx = this.buildCommandContext(outputPiped, argv[0]);
       if (cmd.runWithStatusSync) {
         try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }

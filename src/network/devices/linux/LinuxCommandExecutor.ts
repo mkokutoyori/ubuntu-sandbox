@@ -2,7 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
-import { refuseUnknownGnuOption } from './GnuOptionGuard';
+import { asStderrResult, refuseUnknownGnuOption } from './GnuOptionGuard';
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -5991,7 +5991,7 @@ export class LinuxCommandExecutor {
     }
 
     const optionRefusal = refuseUnknownGnuOption(cmd, args);
-    if (optionRefusal) return optionRefusal;
+    if (optionRefusal) return asStderrResult(optionRefusal);
 
     switch (cmd) {
       // File commands

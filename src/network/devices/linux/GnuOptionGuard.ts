@@ -376,6 +376,13 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
+  yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  cksum: { optstring: '', long: [...HELP_VERSION], operands: true },
+  sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },
+  expand: { optstring: 'it:0123456789,', long: [flag('initial', 'i'), valued('tabs', 't'), ...HELP_VERSION], operands: true },
+  unexpand: { optstring: 'at:0123456789,', long: [flag('all', 'a'), flag('first-only'), valued('tabs', 't'), ...HELP_VERSION], operands: true },
+  nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125 },
+  nohup: { optstring: '+', long: [...HELP_VERSION], operands: true, failureStatus: 125 },
   readlink: {
     optstring: 'efmnqsvz',
     long: [
@@ -417,6 +424,11 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
 export interface OptionRefusal {
   readonly output: string;
   readonly exitCode: number;
+}
+
+export function asStderrResult(refusal: OptionRefusal): { output: string; stderr: string; interleaved: string; exitCode: number } {
+  const diagnostic = `${refusal.output}\n`;
+  return { output: '', stderr: diagnostic, interleaved: diagnostic, exitCode: refusal.exitCode };
 }
 
 export function refuseUnknownGnuOption(command: string, args: readonly string[]): OptionRefusal | null {
