@@ -23,6 +23,8 @@ import { SaveTopologyDialog } from '@/components/network/SaveTopologyDialog';
 import { OpenTopologyDialog } from '@/components/network/OpenTopologyDialog';
 import { TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
 import { PropertiesPanel } from '@/components/network/PropertiesPanel';
+import { NetworkCanvas } from '@/components/network/NetworkCanvas';
+import { InterfaceSelectorPopover } from '@/components/network/InterfaceSelectorPopover';
 import { useNetworkStore } from '@/store/networkStore';
 import { SettingsDialog, SettingsRegistry, type SettingsSection } from '@/components/settings';
 import { simulationSettingsSection } from '@/components/settings/sections/simulationSection';
@@ -184,6 +186,38 @@ describe('the settings dialog and the clock controls follow the language', () =>
     expect(screen.queryByTestId('settings-nav-a')).not.toBeInTheDocument();
     act(() => setLocale('en'));
     expect(screen.getByTestId('settings-no-match')).toBeInTheDocument();
+  });
+});
+
+describe('the canvas, its devices and the interface selector follow the language', () => {
+  it('witness: English canvas labels are unchanged', () => {
+    render(<NetworkCanvas />);
+    expect(screen.getByLabelText('Network topology canvas')).toBeInTheDocument();
+    expect(screen.getByText('No devices yet')).toBeInTheDocument();
+    expect(screen.getByLabelText('Zoom in')).toBeInTheDocument();
+  });
+
+  it('renders the French canvas, empty state and device action labels', () => {
+    act(() => setLocale('fr'));
+    const device = useNetworkStore.getState().addDevice('linux-pc', 100, 100);
+    render(<NetworkCanvas />);
+    expect(screen.getByLabelText('Canevas de la topologie réseau')).toBeInTheDocument();
+    expect(screen.getByLabelText('Zoom avant')).toBeInTheDocument();
+    act(() => useNetworkStore.getState().selectDevice(device.id));
+    expect(screen.getByLabelText(`Supprimer ${device.name}`)).toBeInTheDocument();
+    expect(screen.getByLabelText(`Relier ${device.name} à un autre équipement`)).toBeInTheDocument();
+  });
+
+  it('translates the interface selector header and cancel button', () => {
+    act(() => setLocale('fr'));
+    render(
+      <InterfaceSelectorPopover
+        deviceId="d1" deviceName="R1" interfaces={[]} connections={[]}
+        position={{ x: 0, y: 0 }} isSource onSelect={() => undefined} onCancel={() => undefined}
+      />,
+    );
+    expect(screen.getByText('Source : R1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Annuler le choix de l\'interface')).toBeInTheDocument();
   });
 });
 
