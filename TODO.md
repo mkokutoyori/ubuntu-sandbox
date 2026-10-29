@@ -4220,7 +4220,7 @@ neither is rendered in the running-config (the interface identity is lost).
 
 Measured by running the same files on a clean worktree of the base: run-parts
 (5), basic-commandes #84 (L2-only switch IP), auditctl-other #128,
-fault-sigkill-residues, firewall/architecture-guards G8, linux-bash-details
+fault-sigkill-residues, linux-bash-details
 G11-01/02, linux-ls-tty-awareness, linux-rsyslog-imfile truncation,
 nano-colors/exec/tab oracles and probe-nano-exec, nss-resolution-unified,
 observability-bridge §JB, openssl-ocsp-probe (-port/-url), probe-base-de-paquets,
@@ -4353,11 +4353,6 @@ with the working tree stashed.
 
 `network-v2/crypto-pki-trustpool.test.ts` (1)
 also fails identically with the working tree stashed.
-
-`network-v2/firewall/architecture-guards.test.ts` (G8: two schema tables share
-a render rank, 96 distinct ranks for 97 tables) and
-`network-v2/probe-fuseau-linux-et-pare-feu.test.ts` (3) are red at the base
-commit 2351448f2 (checked in a worktree).
 
 `network-v2/linux-bash-details.test.ts` (2), `linux-ls-tty-awareness.test.ts`
 (1), `linux-rsyslog-imfile.test.ts` (1) and `openssl-ocsp-probe.test.ts` (2)
