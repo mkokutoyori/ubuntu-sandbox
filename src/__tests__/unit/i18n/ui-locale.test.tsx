@@ -22,6 +22,8 @@ import { MessageDialog } from '@/components/network/MessageDialog';
 import { SaveTopologyDialog } from '@/components/network/SaveTopologyDialog';
 import { OpenTopologyDialog } from '@/components/network/OpenTopologyDialog';
 import { TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
+import { PropertiesPanel } from '@/components/network/PropertiesPanel';
+import { useNetworkStore } from '@/store/networkStore';
 import { DEVICE_CATEGORIES } from '@/network';
 import { getLocale, setLocale, categoryLabel, deviceTypeDescription } from '@/i18n';
 import { MESSAGES, FRENCH_DEVICE_DESCRIPTIONS } from '@/i18n/messages';
@@ -30,7 +32,11 @@ const toolbar = () => (
   <Toolbar projectName="Lab" onProjectNameChange={() => undefined} hasDevices onClearAll={() => undefined} />
 );
 
-beforeEach(() => { localStorage.clear(); setLocale('en'); });
+beforeEach(() => {
+  localStorage.clear();
+  setLocale('en');
+  useNetworkStore.getState().clearAll();
+});
 afterEach(cleanup);
 
 describe('witness: English is unchanged', () => {
@@ -99,6 +105,36 @@ describe('dialogs follow the language', () => {
     expect(screen.getByText(/Les sessions de terminal/)).toBeInTheDocument();
     expect(screen.getByText(/Aucune topologie enregistrée/)).toBeInTheDocument();
     expect(screen.queryByText(TOPOLOGY_SAVE_CAVEATS)).not.toBeInTheDocument();
+  });
+});
+
+describe('the properties panel follows the language', () => {
+  const selectNewDevice = () => {
+    const device = useNetworkStore.getState().addDevice('linux-pc', 100, 100);
+    act(() => useNetworkStore.getState().selectDevice(device.id));
+  };
+
+  it('witness: English text is unchanged for an empty selection and a selected device', () => {
+    render(<PropertiesPanel />);
+    expect(screen.getByText('Select a device or connection to view properties')).toBeInTheDocument();
+    cleanup();
+    selectNewDevice();
+    render(<PropertiesPanel />);
+    expect(screen.getByText('General')).toBeInTheDocument();
+    expect(screen.getByText('Power')).toBeInTheDocument();
+  });
+
+  it('shows French for an empty selection and for a selected device', () => {
+    act(() => setLocale('fr'));
+    render(<PropertiesPanel />);
+    expect(screen.getByText(/Sélectionnez un équipement ou une connexion/)).toBeInTheDocument();
+    cleanup();
+    selectNewDevice();
+    render(<PropertiesPanel />);
+    expect(screen.getByText('Général')).toBeInTheDocument();
+    expect(screen.getByText('Alimentation')).toBeInTheDocument();
+    expect(screen.getByText('Allumé')).toBeInTheDocument();
+    expect(screen.queryByText('General')).not.toBeInTheDocument();
   });
 });
 
