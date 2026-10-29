@@ -16,6 +16,31 @@ const optional = (name: string, letter = ''): LongOption => ({ name, letter, tak
 const HELP_VERSION: readonly LongOption[] = [flag('help'), flag('version')];
 
 
+const SYSCTL_USAGE = [
+  '', 'Usage:', ' sysctl [options] [variable[=value] ...]', '', 'Options:',
+  '  -a, --all            display all variables',
+  '  -A                   alias of -a',
+  '  -X                   alias of -a',
+  '      --deprecated     include deprecated parameters to listing',
+  '      --dry-run        Do not actually set any variables',
+  '  -b, --binary         print value without new line',
+  '  -e, --ignore         ignore unknown variables errors',
+  '  -N, --names          print variable names without values',
+  '  -n, --values         print only values of the given variable(s)',
+  '  -p, --load[=<file>]  read values from file',
+  '  -f                   alias of -p',
+  '      --system         read values from all system directories',
+  '  -r, --pattern <expression>',
+  '                       select setting that match expression',
+  '  -q, --quiet          do not echo variable set',
+  '  -w, --write          enable writing a value to variable',
+  '  -o                   does nothing, exists for BSD compatibility',
+  '  -x                   does nothing, exists for BSD compatibility',
+  '  -h, --help     display this help and exit',
+  '  -V, --version  output version information and exit',
+  '',
+].join('\n');
+
 const GREP_USAGE = 'Usage: grep [OPTION]... PATTERNS [FILE]...';
 
 const GREP_OPTIONS: GnuOptionSet = {
@@ -377,6 +402,17 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
+  sysctl: {
+    optstring: 'aAXbeNnp::fr:qwoxhV',
+    long: [
+      flag('all', 'a'), flag('deprecated'), flag('dry-run'), flag('binary', 'b'), flag('ignore', 'e'),
+      flag('names', 'N'), flag('values', 'n'), optional('load', 'p'), flag('system'),
+      valued('pattern', 'r'), flag('quiet', 'q'), flag('write', 'w'), flag('help', 'h'), flag('version', 'V'),
+    ],
+    operands: true,
+    usage: SYSCTL_USAGE,
+    trailer: 'For more details see sysctl(8).',
+  },
   touch: {
     optstring: 'acfhmr:t:d:',
     long: [
