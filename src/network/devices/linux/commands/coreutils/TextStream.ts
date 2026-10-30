@@ -762,7 +762,29 @@ export const cksumCommand = coreutil(
   },
 );
 
+export const lessCommand = coreutil(
+  'less', 'less [OPTIONS] [FILE]...',
+  'View a file one screen at a time. Without a terminal on its output,\n'
+  + 'less prints the files as cat does.',
+  [
+    { flag: '-N', description: 'Display line numbers' },
+    { flag: '-S', description: 'Chop long lines' },
+    { flag: '-i', description: 'Ignore case in searches that do not contain uppercase' },
+    { flag: '-I', description: 'Ignore case in searches and in patterns' },
+    { flag: '-F', description: 'Quit if the entire file fits on the first screen' },
+    { flag: '-X', description: 'Do not use the alternate screen' },
+    { flag: '-R', description: 'Output raw control characters' },
+  ],
+  (ctx, args, stdin) => {
+    const files = args.filter(a => !a.startsWith('-') && !a.startsWith('+') || a === '-');
+    const got = inputs(ctx, files, stdin, 'less');
+    if (!Array.isArray(got)) return got.replace(/^less: /, '');
+    return got.join('');
+  },
+);
+
 export const TEXT_STREAM_COMMANDS: LinuxCommand[] = [
+  lessCommand,
   tacCommand, nlCommand, pasteCommand, commCommand, foldCommand,
   expandCommand, unexpandCommand, fmtCommand, prCommand, columnCommand,
   cmpCommand, splitCommand, base64Command, cksumCommand,
