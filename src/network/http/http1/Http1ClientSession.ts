@@ -7,6 +7,7 @@ import { randomRequestId } from '../events';
 export interface Http1SendResult {
   ok: boolean;
   error?: string;
+  failure?: 'refused' | 'timeout' | 'unreachable' | 'prohibited';
   response?: HttpMessage;
 }
 
@@ -31,10 +32,20 @@ export class Http1ClientSession {
 
   private connectIfNeeded(): TcpSocket | null {
     if (this.socket && this.socket.state === 'established') return this.socket;
-    const socket = this.tcpStack.connect(this.targetIp, this.port);
-    if (!socket || socket.state !== 'established') return null;
-    this.socket = socket;
-    return socket;
+    const opened = this.tcpStack.open(this.targetIp, this.port);
+    if (opened.socket === null || opened.socket.state !== 'established') {
+      this.connectFailure = opened.outcome === 'open' ? 'refused' : opened.outcome === 'host-unreachable' ? 'unreachable' : opened.outcome;
+      return null;
+    }
+    this.socket = opened.socket;
+    return opened.socket;
+  }
+
+  private connectFailure: NonNullable<Http1SendResult['failure']> = 'refused';
+
+  private connectError(): string {
+    const reason = { refused: 'Connection refused', timeout: 'Connection timed out', unreachable: 'No route to host', prohibited: 'Connection refused' }[this.connectFailure];
+    return `Failed to connect to ${this.targetIp} port ${this.port}: ${reason}`;
   }
 
   send(request: HttpMessage, opts?: Http1EncodeOptions): Http1SendResult {
@@ -49,7 +60,7 @@ export class Http1ClientSession {
     };
 
     const socket = this.connectIfNeeded();
-    if (!socket) return fail(`Failed to connect to ${this.targetIp} port ${this.port}: Connection refused`);
+    if (!socket) return { ...fail(this.connectError()), failure: this.connectFailure };
 
     let raw: string | null = null;
     const unsubscribe = socket.onData((data) => { raw = String(data); });
@@ -99,7 +110,7 @@ export class Http1ClientSession {
     };
 
     const socket = this.connectIfNeeded();
-    if (!socket) return fail(`Failed to connect to ${this.targetIp} port ${this.port}: Connection refused`);
+    if (!socket) return { ...fail(this.connectError()), failure: this.connectFailure };
 
     let raw: string | null = null;
     const unsubscribe = socket.onData((data) => { raw = String(data); });

@@ -1,6 +1,6 @@
 import { NGINX_CONF_PATH } from './NginxFiles';
 import {
-  NGINX_SSL_DIRECTIVES, checkSslDirective, resolveSslSettings, sslMergeProblem,
+  NGINX_SSL_DIRECTIVES, checkSslDirective, resolveSslSettings, sslMergeProblem, parseNginxSeconds,
   type NginxSslDirective, type NginxSslSettings,
 } from './NginxSsl';
 import {
@@ -73,7 +73,7 @@ const APPLIED_DIRECTIVES = new Set([
   // §P6 — `proxy_pass` DÉCIDE vers où la requête part, `proxy_set_header`
   // ce qu'elle emporte, et `server` (dans un bloc `upstream`) nomme la
   // cible. Les trois agissent ; elles ne peuvent pas être inertes.
-  'proxy_pass', 'proxy_set_header',
+  'proxy_pass', 'proxy_set_header', 'proxy_connect_timeout',
 ]);
 
 /**
@@ -97,7 +97,7 @@ const ACCEPTED_INERT = new Set([
   // n'existe pas (la livraison des trames est synchrone), donc aucun
   // délai ne peut expirer, et il n'y a pas de tampon à dimensionner.
   'proxy_buffering', 'proxy_buffers', 'proxy_buffer_size',
-  'proxy_read_timeout', 'proxy_connect_timeout', 'proxy_send_timeout',
+  'proxy_read_timeout', 'proxy_send_timeout',
   'proxy_http_version', 'proxy_next_upstream', 'keepalive',
 ]);
 
@@ -286,6 +286,14 @@ function parseBlock(
       continue;
     }
 
+    if (name === 'proxy_connect_timeout') {
+      if (args.length !== 1) {
+        return { ok: false, error: emerg('invalid number of arguments in "proxy_connect_timeout" directive', file, line) };
+      }
+      if (parseNginxSeconds(args[0]) === null) {
+        return { ok: false, error: emerg('"proxy_connect_timeout" directive invalid value', file, line) };
+      }
+    }
     // `proxy_pass` n'a de sens que dans une `location` : c'est elle qui
     // dit QUELLES requêtes partent vers l'amont. Écrite dans un `server`,
     // nginx la refuse — et le refus doit être celui-là, pas

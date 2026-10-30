@@ -844,8 +844,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       if (target502.groupe) {
         this.noterEchec(target502.groupe, target502.host, target502.port);
       }
-      return this.badGateway(server, location,
-        sent.error ?? 'no response from upstream', peer);
+      return this.badGateway(server, location, upstreamFailure(sent), peer, sent.failure === 'timeout' ? 504 : 502);
     }
     const res = sent.response;
     for (const hop of HOP_BY_HOP) res.headers.delete(hop);
@@ -1015,12 +1014,12 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    */
   private badGateway(
     server: NginxServerBlock, location: NginxLocation, reason: string,
-    peer?: Http1Peer,
+    peer?: Http1Peer, status: 502 | 504 = 502,
   ): HttpMessage {
     this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
       `${formatErrorTime(this.host.now())} [error] 0#0: *1 ${reason}, `
       + `client: ${peer?.ip ?? '0.0.0.0'}, server: ${server.serverNames[0] ?? '_'}`);
-    return this.errorResponse(502, badGatewayPage(), server, location);
+    return this.errorResponse(status, status === 504 ? (errorPage(504, NGINX_VERSION) ?? '') : badGatewayPage(), server, location);
   }
 
   private applyHeaders(res: HttpMessage, server?: NginxServerBlock, location?: NginxLocation | null): void {
@@ -1083,4 +1082,17 @@ function formatLogTime(d: Date): string {
 
 function formatErrorTime(d: Date): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function upstreamFailure(
+  sent: { readonly error?: string; readonly failure?: 'refused' | 'timeout' | 'unreachable' | 'prohibited' },
+): string {
+  if (sent.failure === undefined) return sent.error ?? 'no response from upstream';
+  const phrase = {
+    refused: 'connect() failed (111: Connection refused)',
+    prohibited: 'connect() failed (111: Connection refused)',
+    unreachable: 'connect() failed (113: No route to host)',
+    timeout: 'upstream timed out (110: Connection timed out)',
+  }[sent.failure];
+  return `${phrase} while connecting to upstream`;
 }
