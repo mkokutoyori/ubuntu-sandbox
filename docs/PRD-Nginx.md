@@ -1209,7 +1209,7 @@ Source : nginx 1.24.0, `ngx_http_static_module.c`, `ngx_http_core_module.c` (`ng
 
 ### 9.19 `proxy_cookie_domain` et `proxy_cookie_path`
 
-Source : `ngx_http_proxy_module.c` (`ngx_http_proxy_rewrite_cookie`, `_domain_handler`, `_complex_handler`, `_regex_handler`, `ngx_http_proxy_rewrite`, `ngx_http_proxy_cookie_domain`, `ngx_http_proxy_cookie_path`). Seuls `Domain` et `Path` d'un `Set-Cookie` de l'amont sont lus ; la première règle qui correspond gagne ; le domaine se compare en entier, sans casse, point de tête ignoré et conservé ; le chemin par préfixe avec casse ; `~` et `~*` remplacent la valeur entière ; un cookie réécrit est recomposé avec `; ` ; `off` coupe, et `off` après une règle est un doublon. Les règles s'héritent par remplacement (`ngx_conf_merge_ptr_value`). `proxy_cookie_flags` n'existe pas encore.
+Source : `ngx_http_proxy_module.c` (`ngx_http_proxy_rewrite_cookie`, `_domain_handler`, `_complex_handler`, `_regex_handler`, `ngx_http_proxy_rewrite`, `ngx_http_proxy_cookie_domain`, `ngx_http_proxy_cookie_path`). Seuls `Domain` et `Path` d'un `Set-Cookie` de l'amont sont lus ; la première règle qui correspond gagne ; le domaine se compare en entier, sans casse, point de tête ignoré et conservé ; le chemin par préfixe avec casse ; `~` et `~*` remplacent la valeur entière ; un cookie réécrit est recomposé avec `; ` ; `off` coupe, et `off` après une règle est un doublon. Les règles s'héritent par remplacement (`ngx_conf_merge_ptr_value`).
 
 ### 9.20 Le module rewrite : `set`, `if`, `rewrite`, `break`, `return` dans l'ordre
 
@@ -1221,3 +1221,5 @@ Source : `ngx_http_rewrite_module.c` (`ngx_http_rewrite`, `_if`, `_if_condition`
 - Variables : `$arg_*`, `$cookie_*`, `$document_root`, `$request_filename`, `$server_protocol`, `$content_type`, `$content_length`, et celles posées par `set`. Une variable posée par `set` est connue de toute la configuration, y compris avant son `set` : la configuration est donc lue deux fois (une première lecture relève les noms, la seconde valide). Une variable prédéfinie ne peut pas être posée (« the duplicate "host" variable »).
 
 Mesure des chemins ajoutés par §9.17 à §9.20 (200 requêtes par ligne, `NGINX_PERF=1`) : `rewrite … last` 2,0 ms, `if`/`set`/`return` 2,4 ms, `Range` 206 2,2 ms, 304 sur `If-None-Match` 1,8 ms, contre 1,7 ms pour un `return` simple et 3,7 ms pour un fichier statique complet ; dérive du dix-millième tour sur le premier : 0,87. Aucun de ces chemins ne retient d'état par requête au-delà du seau `WeakMap` des variables, libéré avec la requête.
+
+`proxy_cookie_flags` (même source) : `off`, ou un cookie (nom sans casse, ou `~` expression sans casse) suivi de `secure`, `nosecure`, `httponly`, `nohttponly`, `samesite=strict|lax|none`, `nosamesite` ; la première règle qui nomme le cookie gagne ; un drapeau déjà présent n'est pas dupliqué, les absents sont ajoutés dans l'ordre Secure, HttpOnly, SameSite.

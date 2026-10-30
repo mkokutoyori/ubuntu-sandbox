@@ -762,7 +762,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private rewriteUpstreamCookies(res: HttpMessage, location: NginxLocation, variables: NginxVariableContext): void {
     const cookies = res.headers.getAll('Set-Cookie');
-    if (cookies.length === 0 || (location.cookies.domains === null && location.cookies.paths === null)) return;
+    if (cookies.length === 0 || (location.cookies.domains === null && location.cookies.paths === null && location.cookies.flags === null)) return;
     res.headers.delete('Set-Cookie');
     for (const cookie of cookies) res.headers.append('Set-Cookie', rewriteSetCookie(cookie, location.cookies, variables));
   }

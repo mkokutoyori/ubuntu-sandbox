@@ -121,3 +121,44 @@ describe('off et validation', () => {
     expect(out).toHaveLength(2);
   });
 });
+
+describe('proxy_cookie_flags (ngx_http_proxy_cookie_flags, ngx_http_proxy_rewrite_cookie_flags, ngx_http_proxy_edit_cookie_flags)', () => {
+  it('ajoute Secure et SameSite apres les attributs existants, une fois chacun', async () => {
+    const out = await cookies('    proxy_cookie_flags sid secure samesite=strict;\n');
+    expect(out[0]).toBe('sid=abc; Domain=.backend.local; Path=/app/x; HttpOnly; Secure; SameSite=Strict');
+    expect(out[1]).toBe('lang=fr; Path=/Other');
+  });
+
+  it('nohttponly retire HttpOnly ; ~ est une expression sans casse sur le NOM du cookie', async () => {
+    const out = await cookies('    proxy_cookie_flags ~^SID$ nohttponly;\n');
+    expect(out[0]).toBe('sid=abc; Domain=.backend.local; Path=/app/x');
+  });
+
+  it('un cookie qui n\'est pas nomme n\'est pas touche', async () => {
+    const out = await cookies('    proxy_cookie_flags lang httponly;\n');
+    expect(out[0]).toBe('sid=abc; Domain=.backend.local; Path=/app/x; HttpOnly');
+    expect(out[1]).toBe('lang=fr; Path=/Other; HttpOnly');
+  });
+
+  it('samesite remplace une valeur differente', async () => {
+    const out = await cookies('    proxy_cookie_flags lang samesite=lax;\n    proxy_cookie_flags sid samesite=none;\n');
+    expect(out[0]).toContain('SameSite=None');
+    expect(out[1]).toBe('lang=fr; Path=/Other; SameSite=Lax');
+  });
+
+  it('la premiere regle qui nomme le cookie gagne', async () => {
+    const out = await cookies('    proxy_cookie_flags sid secure;\n    proxy_cookie_flags sid nohttponly;\n');
+    expect(out[0]).toBe('sid=abc; Domain=.backend.local; Path=/app/x; HttpOnly; Secure');
+  });
+
+  it('off coupe la reecriture des drapeaux', async () => {
+    const out = await cookies('    proxy_cookie_flags off;\n');
+    expect(out[0]).toBe('sid=abc; Domain=.backend.local; Path=/app/x; HttpOnly');
+  });
+
+  it('un seul argument autre que off est refuse', async () => {
+    const lab = labo();
+    await lab.front.executeCommand(ecrireConf(SITE('    proxy_cookie_flags whatever;\n')));
+    expect(await lab.front.executeCommand('nginx -t')).toContain('invalid parameter "whatever"');
+  });
+});
