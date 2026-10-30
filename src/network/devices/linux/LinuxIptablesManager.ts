@@ -16,6 +16,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import type { IpsetManager } from './ipset/IpsetManager';
 import { HashlimitTables, hashlimitListing, parseHashlimit } from './IptablesHashlimit';
 import {
   dscpListing, lengthListing, mssListing, parseDscp, parseLengthRange, parseMssRange, parseTos, tosListing, tosMatches, parseTimeWindow, timeWindowHolds, timeWindowListing,
@@ -68,13 +69,13 @@ export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
   'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
-  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit', 'dscp', 'tos', 'tcpmss',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit', 'dscp', 'tos', 'tcpmss', 'set',
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
 const CONNECTION_TRACKING_MODULES: ReadonlySet<string> = new Set(['state', 'conntrack', 'connmark']);
 
-type ModuleOptionFlags = '' | 'I' | 'M' | 'F' | 'IM' | 'IF';
+type ModuleOptionFlags = '' | 'I' | 'M' | 'F' | 'IM' | 'IF' | 'I2';
 
 const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOptionFlags>>>> = {
   state: { '--state': 'IM' },
@@ -101,6 +102,7 @@ const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOpti
   },
   pkttype: { '--pkt-type': 'IM' },
   length: { '--length': 'IM' },
+  set: { '--match-set': 'I2' },
   tcpmss: { '--mss': 'IM' },
   dscp: { '--dscp': 'I', '--dscp-class': 'I' },
   tos: { '--tos': 'IM' },
@@ -136,6 +138,7 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   comment: ['--comment'],
   addrtype: ['--src-type', '--dst-type'],
   pkttype: ['--pkt-type'],
+  set: ['--match-set'],
   hashlimit: [
     '--hashlimit-upto', '--hashlimit-above', '--hashlimit-burst', '--hashlimit-mode', '--hashlimit-name', '--hashlimit-srcmask',
     '--hashlimit-dstmask', '--hashlimit-htable-size', '--hashlimit-htable-max', '--hashlimit-htable-gcinterval', '--hashlimit-htable-expire',
@@ -311,6 +314,7 @@ const TARGET_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   DNAT: ['--to-destination', '--random', '--persistent'],
   SNAT: ['--to-source', '--random', '--random-fully', '--persistent'],
   REDIRECT: ['--to-ports', '--random'],
+  SET: ['--add-set', '--del-set', '--exist', '--timeout'],
   MARK: ['--set-mark', '--set-xmark', '--and-mark', '--or-mark', '--xor-mark'],
 };
 
@@ -472,7 +476,7 @@ export type NatHookOutcome =
   | { readonly kind: 'accept'; readonly translation: NatTranslation | null; readonly error: ErrorTranslation | null };
 
 const TARGET_FLAG_OPTIONS: ReadonlySet<string> = new Set([
-  '--random', '--random-fully', '--persistent', '--log-tcp-sequence', '--log-tcp-options', '--log-ip-options', '--log-uid',
+  '--exist', '--random', '--random-fully', '--persistent', '--log-tcp-sequence', '--log-tcp-options', '--log-ip-options', '--log-uid',
 ]);
 
 const LOOPBACK_ADDRESS = '127.0.0.1';
@@ -493,7 +497,7 @@ function protocolNumberOf(text: string): number | null {
   return null;
 }
 const VALID_BUILTIN_POLICIES = new Set<string>(['ACCEPT', 'DROP']);
-const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', 'MARK', 'NOTRACK']);
+const VALID_TARGETS = new Set<string>(['ACCEPT', 'DROP', 'REJECT', 'LOG', 'MASQUERADE', 'DNAT', 'SNAT', 'REDIRECT', 'RETURN', 'MARK', 'NOTRACK', 'SET']);
 
 // Real netfilter's xt_nat hook mask (verified against a real `iptables`
 // binary, not assumed): DNAT/REDIRECT only take effect before a routing
@@ -521,6 +525,7 @@ export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
   private resolveService: IptablesServiceResolver | null = null;
   private ownerNames: IptablesOwnerNames | null = null;
+  private ipsets: { lookup(): IpsetManager } | null = null;
   private readonly hashlimits = new HashlimitTables();
   private hotDropped = false;
   private tables: Map<TableName, IptablesTable> = new Map();
@@ -544,12 +549,13 @@ export class LinuxIptablesManager {
   constructor(
     vfs?: VirtualFileSystem,
     resolveService?: IptablesServiceResolver,
-    opts?: { family?: 4 | 6; ownerNames?: IptablesOwnerNames },
+    opts?: { family?: 4 | 6; ownerNames?: IptablesOwnerNames; ipsets?: { lookup(): IpsetManager } },
   ) {
     if (vfs) this.vfs = vfs;
     if (resolveService) this.resolveService = resolveService;
     this.family = opts?.family ?? 4;
     this.ownerNames = opts?.ownerNames ?? null;
+    this.ipsets = opts?.ipsets ?? null;
     this.connections = new ConnectionTracker(this.family);
     this.initializeTables();
   }
@@ -797,6 +803,9 @@ export class LinuxIptablesManager {
           case 'MARK': // MARK doesn't terminate
             this.lastMark = rule.targetOptions['--set-mark'] ?? rule.targetOptions['--set-xmark'] ?? this.lastMark;
             continue;
+          case 'SET':
+            this.applySetTarget(rule.targetOptions, pkt);
+            continue;
           case 'NOTRACK': continue; // NOTRACK doesn't terminate
           default: continue;
         }
@@ -900,6 +909,9 @@ export class LinuxIptablesManager {
       if (m.module === 'recent') {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
+      }
+      if (m.module === 'set') {
+        if (this.setHolds(m.options.get('--match-set') ?? '', pkt) === inverted('--match-set')) return false;
       }
       if (m.module === 'hashlimit') {
         const config = parseHashlimit(m.options, m.negated ?? new Set());
@@ -1008,6 +1020,56 @@ export class LinuxIptablesManager {
       return sameGroup(daddr ? original.dstIP : original.srcIP);
     });
     return counted + (state === 'NEW' ? 1 : 0) > limit;
+  }
+
+  private setHolds(spec: string, pkt: PacketInfo): boolean {
+    const [name, directions = ''] = spec.split(' ');
+    const sets = this.ipsets?.lookup();
+    if (sets === undefined || !sets.hasSet(name)) return false;
+    const [first, second] = directions.split(',');
+    const address = first === 'src' ? pkt.srcIP : pkt.dstIP;
+    if (second === undefined) return sets.contains(name, address);
+    const protocol = pkt.protocol === IP_PROTO_TCP ? 'tcp' : pkt.protocol === IP_PROTO_UDP ? 'udp' : null;
+    if (protocol === null) return false;
+    return sets.contains(name, address, { protocol, port: second === 'src' ? pkt.srcPort : pkt.dstPort });
+  }
+
+  private applySetTarget(options: TargetOptions, pkt: PacketInfo): void {
+    const sets = this.ipsets?.lookup();
+    if (sets === undefined) return;
+    for (const option of ['--add-set', '--del-set'] as const) {
+      const spec = options[option];
+      if (spec === undefined) continue;
+      const [name, directions = ''] = spec.split(' ');
+      if (!sets.hasSet(name)) continue;
+      const [first, second] = directions.split(',');
+      const address = first === 'src' ? pkt.srcIP : pkt.dstIP;
+      let port: { protocol: string; port: number } | null = null;
+      if (second !== undefined) {
+        const protocol = pkt.protocol === IP_PROTO_TCP ? 'tcp' : pkt.protocol === IP_PROTO_UDP ? 'udp' : null;
+        if (protocol === null) continue;
+        port = { protocol, port: second === 'src' ? pkt.srcPort : pkt.dstPort };
+      }
+      if (option === '--add-set') {
+        const timeout = options['--timeout'] === undefined ? null : Number(options['--timeout']);
+        sets.addAddress(name, address, port, '--exist' in options, timeout);
+      } else {
+        sets.removeAddress(name, address, port);
+      }
+    }
+  }
+
+  setReferences(name: string): number {
+    let total = 0;
+    for (const table of this.tables.values()) {
+      for (const chain of table.chains.values()) {
+        for (const rule of chain.rules) {
+          if (rule.matches.some((m) => m.module === 'set' && (m.options.get('--match-set') ?? '').split(' ')[0] === name)) total++;
+          if (rule.target === 'SET' && ['--add-set', '--del-set'].some((o) => (rule.targetOptions[o] ?? '').split(' ')[0] === name)) total++;
+        }
+      }
+    }
+    return total;
   }
 
   private maskedAddress(ip: string, bits: number | null): string {
@@ -1484,6 +1546,10 @@ export class LinuxIptablesManager {
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
       case 'owner': return this.ownerListing(m, numeric);
+      case 'set': {
+        const [name, directions = ''] = (o.get('--match-set') ?? '').split(' ');
+        return `${inverts(m, '--match-set') ? '! ' : ''}match-set ${name} ${directions}`;
+      }
       case 'hashlimit': {
         const config = parseHashlimit(o, m.negated ?? new Set());
         return typeof config === 'string' ? '' : hashlimitListing(config, this.family === 6 ? 128 : 32);
@@ -1564,6 +1630,15 @@ export class LinuxIptablesManager {
   }
 
   private fmtTargetExtras(opts: TargetOptions): string {
+    if ('--add-set' in opts || '--del-set' in opts) {
+      const named = [
+        '--add-set' in opts ? `add-set ${opts['--add-set']}` : '',
+        '--exist' in opts ? 'exist' : '',
+        '--timeout' in opts ? `timeout ${opts['--timeout']}` : '',
+        '--del-set' in opts ? `del-set ${opts['--del-set']}` : '',
+      ];
+      return named.filter((part) => part !== '').join(' ');
+    }
     const parts: string[] = [];
     for (const [k, v] of Object.entries(opts)) {
       switch (k) {
@@ -1640,13 +1715,15 @@ export class LinuxIptablesManager {
     for (const m of rule.matches) {
       p.push(`-m ${m.module}`);
       for (const [opt, val] of m.options) {
-        p.push(`${inverts(m, opt) ? '! ' : ''}${val === '' ? opt : `${opt} ${this.quote(val)}`}`);
+        p.push(`${inverts(m, opt) ? '! ' : ''}${val === '' ? opt : `${opt} ${m.module === 'set' ? val : this.quote(val)}`}`);
       }
     }
     if (rule.target) {
       p.push(`${rule.goto ? '-g' : '-j'} ${rule.target}`);
       if (rule.natRange === null) {
-        for (const [opt, val] of Object.entries(rule.targetOptions)) p.push(`${opt} ${this.quote(val)}`);
+        for (const [opt, val] of Object.entries(rule.targetOptions)) {
+          p.push(val === '' && TARGET_FLAG_OPTIONS.has(opt) ? opt : `${opt} ${opt === '--add-set' || opt === '--del-set' ? val : this.quote(val)}`);
+        }
       } else {
         p.push(...natSaveOptions(rule.target as NatTargetName, rule.natRange));
       }
@@ -2324,6 +2401,10 @@ export class LinuxIptablesManager {
               rule.targetOptions[optName] = '';
             } else if (i < args.length) {
               rule.targetOptions[optName] = args[i]; i++;
+              if ((optName === '--add-set' || optName === '--del-set') && i < args.length) {
+                rule.targetOptions[optName] += ` ${args[i]}`;
+                i++;
+              }
             } else {
               rule.targetOptions[optName] = '';
             }
@@ -2371,12 +2452,28 @@ export class LinuxIptablesManager {
               if (i >= args.length) return this.parameterProblem(`${module}: option "${name}" requires an argument.\n`);
               value = args[i];
               i++;
+              if (flags.includes('2')) {
+                if (i >= args.length || args[i].startsWith('-') || args[i] === '!') return this.parameterProblem(`${name} requires two args.`);
+                value = `${value} ${args[i]}`;
+                i++;
+              }
             }
             options.set(name, value);
             if (inverted) negated.add(name);
           }
           const missing = Object.entries(accepted).find(([name, flags]) => flags.includes('M') && !options.has(name));
           if (missing !== undefined) return this.parameterProblem(`${module}: option "${missing[0]}" must be specified\n`);
+          if (module === 'set') {
+            if (!options.has('--match-set')) return this.parameterProblem("You must specify `--match-set' with proper arguments");
+            const [setName, directions] = (options.get('--match-set') ?? '').split(' ');
+            const sets = this.ipsets?.lookup();
+            if (sets === undefined || !sets.hasSet(setName)) return this.parameterProblem(`Set ${setName} doesn't exist.`);
+            const dimension = sets.dimensionOf(setName) ?? 1;
+            const parts = directions.split(',');
+            if (parts.length !== dimension || parts.some((part) => part !== 'src' && part !== 'dst')) {
+              return this.parameterProblem(`Invalid flags for set ${setName}: ${directions}`);
+            }
+          }
           const incomplete = LinuxIptablesManager.moduleProblem(module, options, negated);
           if (incomplete !== null) return this.parameterProblem(incomplete);
           rule.matches.push({ module, options, negated });

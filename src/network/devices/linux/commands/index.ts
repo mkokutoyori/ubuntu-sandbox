@@ -80,6 +80,7 @@ import { nftCommand } from './net/Nft';
 import { firewallCmdCommand } from './net/FirewallCmd';
 import { fail2banClientCommand } from './net/Fail2banClient';
 import { iptablesCommand } from './net/Iptables';
+import { ipsetCommand } from './net/Ipset';
 import { ip6tablesCommand } from './net/Ip6tables';
 import { chageCommand } from './iam/Chage';
 import { useraddCommand } from './iam/Useradd';
@@ -235,6 +236,7 @@ export {
   firewallCmdCommand,
   fail2banClientCommand,
   iptablesCommand,
+  ipsetCommand,
   ip6tablesCommand,
   chageCommand,
   useraddCommand,
@@ -410,6 +412,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   firewallCmdCommand,
   fail2banClientCommand,
   iptablesCommand,
+  ipsetCommand,
   ip6tablesCommand,
   chageCommand,
   useraddCommand,

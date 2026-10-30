@@ -80,4 +80,20 @@ describe.skipIf(!enabled)('listages du pare-feu', () => {
       report(`connlimit-ms-per-packet-with-${flows}-flows`, ((performance.now() - t0) / 100).toFixed(3));
     }
   }, 600000);
+
+  it('ipset : coût d\'un test d\'appartenance et d\'un ajout selon la taille de l\'ensemble', async () => {
+    const srv = new LinuxServer('linux-server', 'srv', 0, 0);
+    srv.powerOn();
+    const manager = (srv as unknown as { executor: { ipset: { execute(a: string[]): unknown; contains(n: string, ip: string): boolean } } }).executor.ipset;
+    manager.execute(['create', 'big', 'hash:ip', 'maxelem', '200000', 'timeout', '600']);
+    const baseline = heapMb();
+    let added = 0;
+    for (const size of [1000, 10000, 60000]) {
+      for (; added < size; added++) manager.execute(['add', 'big', `10.${(added >> 16) & 255}.${(added >> 8) & 255}.${added & 255}`]);
+      const t0 = performance.now();
+      for (let i = 0; i < 2000; i++) manager.contains('big', `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`);
+      report(`ipset-contains-us-with-${size}-elements`, (((performance.now() - t0) * 1000) / 2000).toFixed(2));
+    }
+    report('ipset-bytes-per-element', (((heapMb() - baseline) * 1048576) / 60000).toFixed(0));
+  }, 600000);
 });
