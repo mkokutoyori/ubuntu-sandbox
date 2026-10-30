@@ -167,3 +167,39 @@ describe('nginx -t', () => {
     expect(await config('  location / { if ($arg_x = 1) { return 403; } rewrite ^/a /b last; set $v 1; }\n')).toContain('successful');
   });
 });
+
+describe('if : la configuration du bloc (add_header, root, proxy_pass) vaut pour la requete (ngx_http_rewrite_handler / ngx_http_script_if_code : r->loc_conf = le bloc)', () => {
+  it('add_header dans un if vrai ; absent sinon', async () => {
+    const srv = await up('  location / { if ($arg_cors) { add_header X-Cors yes; } }\n');
+    expect(header(await get(srv, '/tiny.html?cors=1'), 'X-Cors')).toBe('yes');
+    expect(header(await get(srv, '/tiny.html'), 'X-Cors')).toBeUndefined();
+  });
+
+  it('root dans un if change le fichier servi', async () => {
+    const srv = await up('  location / { if ($arg_alt) { root /var/www/alt; } }\n');
+    await sh(srv, 'mkdir -p /var/www/alt');
+    await sh(srv, `sh -c 'printf "alt" > /var/www/alt/tiny.html'`);
+    expect(body(await get(srv, '/tiny.html?alt=1'))).toBe('alt');
+    expect(body(await get(srv, '/tiny.html'))).toBe('hi');
+  });
+
+  it('proxy_pass dans un if envoie la requete a l\'amont', async () => {
+    const { labo, demarrer } = await import('./_nginxProxyLab');
+    const { Http1ServerSession } = await import('@/network/http/http1/Http1ServerSession');
+    const { createResponse } = await import('@/network/http/semantics/types');
+    const lab = labo();
+    new Http1ServerSession(lab.back.getTcpStack(), 9000, () => {
+      const res = createResponse(200, 'OK');
+      res.body = new TextEncoder().encode('depuis-l-amont');
+      return res;
+    }).start();
+    await lab.front.executeCommand(`sh -c 'printf "local" > /var/www/html/tiny.html'`);
+    await demarrer(lab, 'server {\n  listen 80;\n  root /var/www/html;\n  location / {\n    if ($arg_up) { proxy_pass http://10.0.0.2:9000; }\n  }\n}\n');
+    expect(await lab.back.executeCommand('curl -s "http://10.0.0.1/tiny.html?up=1"')).toContain('depuis-l-amont');
+    expect(await lab.back.executeCommand('curl -s "http://10.0.0.1/tiny.html"')).toContain('local');
+  });
+
+  it('au niveau server, la configuration d\'un if est refusee en le disant', async () => {
+    expect(await config('  if ($arg_x) { add_header X-A b; }\n')).toContain('not supported inside "if" at server level');
+  });
+});
