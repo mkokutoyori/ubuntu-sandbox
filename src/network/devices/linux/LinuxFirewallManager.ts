@@ -125,6 +125,13 @@ const LIVE_RULE_MESSAGE: Readonly<Record<RuleWriteOutcome, string>> = {
   absent: 'Could not delete non-existent rule',
 };
 
+function attributes(rule: UfwRule, numbered: boolean): string {
+  const attribs: string[] = [];
+  if (rule.log) attribs.push(rule.log);
+  if (numbered && rule.direction === 'out' && !rule.route) attribs.push('out');
+  return attribs.length > 0 ? ` (${attribs.join(', ')})` : '';
+}
+
 interface StatusRow {
   readonly group: number;
   readonly num: string;
@@ -145,6 +152,7 @@ interface UfwRule {
   comment: string;    // optional comment
   fromPort?: string;  // source port or range, empty = any
   proto?: string;     // explicit protocol when the rule names no destination port
+  log?: 'log' | 'log-all';
   route: boolean;     // true = route rule (FORWARD chain) vs normal rule (INPUT/OUTPUT)
 }
 
@@ -255,6 +263,7 @@ export class LinuxFirewallManager {
     ipt.createChain('filter', 'ufw-user-forward');
     ipt.createChain('filter', 'ufw-user-limit');
     ipt.createChain('filter', 'ufw-user-limit-accept');
+    for (const hook of HOOKS) ipt.createChain('filter', `ufw-user-logging-${hook}`);
 
     ipt.appendRule('filter', 'ufw-user-limit', LinuxIptablesManager.createRule({
       target: 'REJECT', targetOptions: { '--reject-with': 'icmp-port-unreachable' },
@@ -329,6 +338,7 @@ export class LinuxFirewallManager {
     // Flush UFW chains
     const ufwChains = [
       'ufw-user-input', 'ufw-user-output', 'ufw-user-forward', 'ufw-user-limit', 'ufw-user-limit-accept',
+      ...HOOKS.map(h => `ufw-user-logging-${h}`),
       'ufw-before-input', 'ufw-before-output', 'ufw-before-forward',
       'ufw-after-input', 'ufw-after-output', 'ufw-after-forward',
       'ufw-skip-to-policy-input', 'ufw-skip-to-policy-output', 'ufw-skip-to-policy-forward',
@@ -451,6 +461,19 @@ export class LinuxFirewallManager {
         return rule;
       };
 
+      if (ufwRule.log) {
+        const logChain = chain.replace('-user-', '-user-logging-');
+        const verdict = ufwRule.action === 'ALLOW' ? 'ALLOW' : ufwRule.action === 'LIMIT' ? 'LIMIT' : 'BLOCK';
+        const logging = LinuxIptablesManager.createRule({ ...spec, target: 'LOG', targetOptions: { '--log-prefix': `[UFW ${verdict}] ` } });
+        if (ufwRule.log === 'log') logging.matches.push({ module: 'conntrack', options: new Map([['--ctstate', 'NEW']]) });
+        logging.matches.push({
+          module: 'limit', options: new Map([['--limit', '3/min'], ['--limit-burst', '10']]),
+        });
+        ipt.appendRule('filter', logChain, logging);
+        ipt.appendRule('filter', logChain, LinuxIptablesManager.createRule({ ...spec, target: 'RETURN' }));
+        ipt.appendRule('filter', chain, LinuxIptablesManager.createRule({ ...spec, target: logChain }));
+      }
+
       if (ufwRule.action === 'LIMIT') {
         for (const rule of limitRules(spec, ufwRule.v6)) {
           ipt.appendRule('filter', chain, commented(rule));
@@ -475,6 +498,7 @@ export class LinuxFirewallManager {
       ipt.flushChain('filter', 'ufw-user-input');
       ipt.flushChain('filter', 'ufw-user-output');
       ipt.flushChain('filter', 'ufw-user-forward');
+      for (const hook of HOOKS) ipt.flushChain('filter', `ufw-user-logging-${hook}`);
     }
 
     // Re-inject all rules — each to its own family's engine
@@ -608,6 +632,16 @@ export class LinuxFirewallManager {
    */
   private parseUfwRulesFile(content: string, v6: boolean): UfwRule[] {
     const rules: UfwRule[] = [];
+    const logKinds = new Map<string, 'log' | 'log-all'>();
+    const criteriaOf = (tokens: string[]): string => {
+      const end = tokens.findIndex((t, k) => t === '-j' || (t === '-m' && (tokens[k + 1] === 'conntrack' || tokens[k + 1] === 'limit')));
+      return tokens.slice(1, end < 0 ? tokens.length : end).join(' ');
+    };
+    for (const raw of content.split('\n')) {
+      const tokens = raw.trim().split(/\s+/);
+      if (tokens[0] !== '-A' || !/-user-logging-(input|output|forward)$/.test(tokens[1] ?? '') || !raw.includes('-j LOG')) continue;
+      logKinds.set(criteriaOf(tokens.slice(1)), raw.includes('--ctstate NEW') ? 'log' : 'log-all');
+    }
 
     for (const raw of content.split('\n')) {
       const line = raw.trim();
@@ -667,6 +701,7 @@ export class LinuxFirewallManager {
         iface: route ? iface : (direction === 'out' ? outIface : iface),
         v6, comment, route,
         ...(sport ? { fromPort: sport } : {}), ...portless,
+        ...(logKinds.has(criteriaOf(tokens)) ? { log: logKinds.get(criteriaOf(tokens)) } : {}),
       };
       if (route) (rule as unknown as { outIface: string }).outIface = outIface;
       rules.push(rule);
@@ -757,7 +792,7 @@ export class LinuxFirewallManager {
         to: `${destPart}${v6Tag}${toInterface ? ` on ${toInterface}` : ''}`,
         action: showDirection ? `${rule.action} ${directionWord}` : rule.action,
         from: `${sourcePart}${v6Tag}${fromInterface ? ` on ${fromInterface}` : ''}`,
-        comment: rule.comment ? ` # ${rule.comment}` : '',
+        comment: `${attributes(rule, numbered)}${rule.comment ? ` # ${rule.comment}` : ''}`,
       };
     };
     const rows = orderedRules.map(toRow);
@@ -837,7 +872,7 @@ export class LinuxFirewallManager {
       && r.iface === parsed.iface && r.route === parsed.route;
 
     const existing = this.rules.find(r => sameTarget(r, false));
-    if (existing && existing.action === parsed.action) {
+    if (existing && existing.action === parsed.action && existing.log === parsed.log) {
       return this.ruleWriteResult('skipped-existing', addsV6);
     }
     if (existing) {
@@ -900,24 +935,43 @@ export class LinuxFirewallManager {
   private parseRuleArgs(action: Action, args: string[]): UfwRule | string {
     let i = 0;
 
-    // Parse optional direction: in | out
     let direction: RuleDirection = 'in';
     let narrowed = false;
-    if (args[i] === 'in' || args[i] === 'out') {
-      direction = args[i] as RuleDirection;
-      narrowed = true;
-      i++;
-    }
-
-    // Parse optional interface: on <iface>
     let iface = '';
-    if (i < args.length && args[i] === 'on') {
-      i++;
-      if (i >= args.length) return 'ERROR: missing interface name';
-      iface = args[i];
-      narrowed = true;
-      i++;
+    let log: 'log' | 'log-all' | undefined;
+    let directionSeen = false;
+    let ifaceSeen = false;
+    for (; i < args.length; ) {
+      const word = args[i];
+      if ((word === 'in' || word === 'out') && !directionSeen) {
+        direction = word;
+        directionSeen = true;
+        narrowed = true;
+        i++;
+      } else if (word === 'log' || word === 'log-all') {
+        log = word;
+        i++;
+      } else if (word === 'on' && !ifaceSeen) {
+        i++;
+        if (i >= args.length) return 'ERROR: missing interface name';
+        iface = args[i];
+        ifaceSeen = true;
+        narrowed = true;
+        i++;
+      } else {
+        break;
+      }
     }
+    const rest = args.slice(i);
+    const rule = this.parseRuleTarget(action, direction, iface, narrowed || log !== undefined, rest);
+    if (typeof rule !== 'string' && log !== undefined) rule.log = log;
+    return rule;
+  }
+
+  private parseRuleTarget(
+    action: Action, direction: RuleDirection, iface: string, narrowed: boolean, args: string[],
+  ): UfwRule | string {
+    let i = 0;
 
     if (i >= args.length) {
       if (!narrowed) return 'ERROR: wrong number of arguments';
@@ -1429,11 +1483,13 @@ export class LinuxFirewallManager {
       const parts: string[] = ['ufw'];
       if (rule.route) parts.push('route');
       parts.push(rule.action.toLowerCase());
+      if (rule.route && rule.log) parts.push(rule.log);
       if (rule.route) {
         if (rule.iface) { parts.push('in'); parts.push('on'); parts.push(rule.iface); }
         if ((rule as any).outIface) { parts.push('out'); parts.push('on'); parts.push((rule as any).outIface); }
       } else {
         if (rule.direction !== 'in') parts.push(rule.direction);
+        if (rule.log) parts.push(rule.log);
         if (rule.iface) {
           parts.push('on');
           parts.push(rule.iface);
@@ -1629,6 +1685,14 @@ export class LinuxFirewallManager {
         parts.push(`-d ${rule.to}`);
       }
 
+      if (rule.log) {
+        const criteria = parts.slice(1).join(' ');
+        const logChain = chain.replace('-user-', '-user-logging-');
+        const verdict = rule.action === 'ALLOW' ? 'ALLOW' : rule.action === 'LIMIT' ? 'LIMIT' : 'BLOCK';
+        lines.push(`-A ${logChain} ${criteria} ${rule.log === 'log' ? '-m conntrack --ctstate NEW ' : ''}-m limit --limit 3/min --limit-burst 10 -j LOG --log-prefix "[UFW ${verdict}] "`);
+        lines.push(`-A ${logChain} ${criteria} -j RETURN`);
+        lines.push(`-A ${chain} ${criteria} -j ${logChain}`);
+      }
       parts.push(`-j ${target}`);
 
       // Comment
