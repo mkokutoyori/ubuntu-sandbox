@@ -1182,7 +1182,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (opened === null) return false;
     const view = opened.view;
     const controller = createRemoteEditorController(localEditorTransport(opened), view, () => this.onRemoteEditorUpdate());
-    this.inputMode = { type: 'remote-editor', editorType: view.kind === 'vim' ? view.variant : view.kind, filePath: view.filePath, controller };
+    this.inputMode = { type: 'remote-editor', editorType: 'less', filePath: view.filePath, controller };
     this.notify();
     return true;
   }

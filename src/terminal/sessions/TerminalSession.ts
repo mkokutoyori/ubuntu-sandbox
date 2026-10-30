@@ -41,7 +41,7 @@ import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
 import { createRemoteEditorController } from '@/terminal/editors/RemoteEditorController';
-import type { NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { parseEditorLaunch, type NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
 import { matchFullScreenProgram } from '@/network/devices/linux/editors/FullScreenPrograms';
 import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 
@@ -612,7 +612,7 @@ export abstract class TerminalSession {
       );
       this.inputMode = {
         type: 'remote-editor',
-        editorType: view.kind === 'vim' ? view.variant : view.kind,
+        editorType: parseEditorLaunch(line)?.editor ?? 'less',
         filePath: view.filePath,
         controller,
       };
