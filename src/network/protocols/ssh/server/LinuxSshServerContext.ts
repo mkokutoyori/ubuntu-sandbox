@@ -63,8 +63,7 @@ import { NestedSshLogin, type NestedSshLaunch } from '@/shell/NestedSshLogin';
 import { firstConfiguredIp } from '@/network/protocols/ssh/sessionLiveness';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { LinuxEditorFsContext } from '@/terminal/sessions/LinuxEditorFsContext';
-import { editorLaunchFailure, launchedFilePath, parseEditorLaunch, withRcfiles } from '@/network/devices/linux/editors/editorLaunch';
-import { createEditorSession } from '@/network/devices/linux/editors/EditorView';
+import { openFullScreenProgram } from '@/network/devices/linux/editors/FullScreenPrograms';
 import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 import { SSHD_LISTEN_BACKLOG } from '@/network/devices/linux/ports/ListenBacklogs';
 import { formatLoginDate } from '../loginBanner';
@@ -702,23 +701,11 @@ export class LinuxSshServerContext implements ISshServerContext {
         },
         openEditor: (commandLine: string) => {
           installDefaultEditors();
-          const parsed = parseEditorLaunch(commandLine);
-          if (!parsed) return null;
-          const fs = new LinuxEditorFsContext(device, session);
-          const launch = withRcfiles(fs, parsed);
-          if (editorLaunchFailure(fs, launch) !== null) return null;
-          const filePath = launchedFilePath(fs, launch);
-          const content = filePath === '' ? null : fs.readFile(filePath);
-          return createEditorSession(launch.editor, {
-            fs,
-            filePath,
-            content: content ?? '',
-            isNewFile: content === null,
+          return openFullScreenProgram(commandLine, {
+            fs: new LinuxEditorFsContext(device, session),
             owner: userCtx.username,
-            nano: launch.nano,
-            displayName: launch.filePath,
-            initialCursorLine: launch.initialCursorLine,
-            initialCursorCol: launch.initialCursorCol,
+            windowSize: session.windowSize,
+            runCommand: (line) => device.executeCommandInSession(line, session),
           });
         },
         getPrompt: () => {

@@ -6,6 +6,7 @@ import { IPAddress } from '../../core/types';
 import { requireWindowsService } from './WinFeatureGate';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
+import type { EndHost } from '../EndHost';
 
 const WINDOWS_PING_INTERVAL_MS = 1000;
 
@@ -441,4 +442,57 @@ export function pingExitCode(output: string): number {
   const received = /Received = (\d+)/.exec(output);
   if (received !== null) return Number(received[1]) > 0 ? 0 : 1;
   return /transmit failed|could not find host|Invalid|Bad |usage:/i.test(output) ? 1 : 0;
+}
+
+export interface WinPingStreamIO {
+  line(text: string): void;
+  error(text: string): void;
+  cancelled(): boolean;
+  delay(ms: number): Promise<void>;
+}
+
+export interface WinPingStream {
+  run(): Promise<void>;
+  emitStats(): void;
+}
+
+export function parseWinPingCommand(commandLine: string): ParsedWinPing | null {
+  const tokens = commandLine.trim().split(/\s+/);
+  if (tokens[0].toLowerCase() !== 'ping') return null;
+  if (/[|<>&]/.test(commandLine)) return null;
+  const parsed = parseWinPingArgs(tokens.slice(1));
+  return parsed.targetStr ? parsed : null;
+}
+
+export function createWinPingStream(
+  device: Pick<EndHost, 'pingStreamInSession'>,
+  parsed: ParsedWinPing,
+  io: WinPingStreamIO,
+): WinPingStream {
+  const results: PingResult[] = [];
+  let label = parsed.targetStr;
+  const emitStats = (): void => {
+    for (const text of formatWinPingStats(label, results.length, results)) io.line(text);
+  };
+  const run = async (): Promise<void> => {
+    const outcome = await device.pingStreamInSession(parsed.targetStr, {
+      count: parsed.continuous ? 0 : parsed.count,
+      ttl: parsed.ttl,
+      timeoutMs: 2000,
+      intervalMs: 1000,
+      onResolved: (ip, hostname) => { label = ip.toString(); io.line(formatWinPingHeader(ip, parsed.size, hostname)); },
+      onResult: (r) => { results.push(r); io.line(formatWinPingReplyLine(r, parsed.size)); },
+      shouldStop: () => io.cancelled(),
+      sleep: (ms) => io.delay(ms),
+    });
+    if (io.cancelled()) return;
+    if (!outcome.resolved && results.length === 0) {
+      io.error(outcome.reason === 'name'
+        ? `Ping request could not find host ${parsed.targetStr}. Please check the name and try again.`
+        : 'Request timed out.');
+      return;
+    }
+    emitStats();
+  };
+  return { run, emitStats };
 }

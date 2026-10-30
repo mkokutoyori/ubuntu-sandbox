@@ -175,6 +175,7 @@ export class LessEngine {
   private windowSize: number | null = null;
   private halfWindowSize: number | null = null;
   private done = false;
+  private helpOnly = false;
 
   constructor(sources: readonly LessSource[], options: LessOptions = DEFAULT_LESS_OPTIONS, rows = 24, cols = 80) {
     this.sources = sources;
@@ -194,6 +195,11 @@ export class LessEngine {
     this.top = 0;
     this.firstPrompt = true;
     this.rebuild();
+  }
+
+  showHelpFirst(exitWhenDone: boolean): void {
+    this.openHelp();
+    this.helpOnly = exitWhenDone;
   }
 
   feed(keys: string): void {
@@ -429,7 +435,7 @@ export class LessEngine {
   }
 
   private leave(): void {
-    if (this.helping) {
+    if (this.helping && !this.helpOnly) {
       this.helping = false;
       this.rebuild();
       return;

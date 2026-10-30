@@ -19,6 +19,15 @@ describe('less launch', () => {
     expect(parseLessLaunch('less -Z x')).toEqual({ kind: 'error', message: 'There is no Z option ("less --help" for help)' });
   });
 
+  it('answers --help with the help screen and -V with the version text', () => {
+    const help = parseLessLaunch('less --help');
+    expect(help.kind === 'open' && help.launch.help).toBe(true);
+    expect(help.kind === 'open' && help.launch.files).toEqual([]);
+    const version = parseLessLaunch('less -V');
+    expect(version.kind === 'print' && version.lines[0]).toBe('less 590 (GNU regular expressions)');
+    expect(parseLessLaunch('less --nonesuch')).toEqual({ kind: 'error', message: 'There is no --nonesuch option ("less --help" for help)' });
+  });
+
   it('leaves redirections and other commands to the shell', () => {
     expect(parseLessLaunch('less a > b').kind).toBe('none');
     expect(parseLessLaunch('cat a').kind).toBe('none');

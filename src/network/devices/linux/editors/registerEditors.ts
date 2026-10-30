@@ -13,7 +13,13 @@ import { NanoEngine } from './NanoEngine';
 import { VimEngine } from './VimEngine';
 import { viVariantFor } from './editorLaunch';
 import { findPackage } from '../packages/PackageDatabase';
+import { registerFullScreenProgram } from './FullScreenPrograms';
+import { editorLaunchFailure, launchedFilePath, parseEditorLaunch, withRcfiles } from './editorLaunch';
+import { parseLessLaunch } from './lessLaunch';
+import { createLessSession } from './LessSession';
+import { LessEngine, type LessSource } from './LessEngine';
 import {
+  createEditorSession,
   registerEditorSession,
   type EditorSession,
   type EditorSessionSeed,
@@ -125,4 +131,60 @@ export function installDefaultEditors(): void {
   registerEditorSession('vim', (seed) => vimSession('vim', seed));
   registerEditorSession('vi', (seed) => vimSession(viVariant(), seed));
   registerEditorSession('nano', nanoSession);
+
+  registerFullScreenProgram({
+    name: 'editor',
+    parse: parseEditorLaunch,
+    open: (host, parsed) => {
+      const launch = withRcfiles(host.fs, parsed);
+      if (editorLaunchFailure(host.fs, launch) !== null) return null;
+      const filePath = launchedFilePath(host.fs, launch);
+      const content = filePath === '' ? null : host.fs.readFile(filePath);
+      return createEditorSession(launch.editor, {
+        fs: host.fs,
+        filePath,
+        content: content ?? '',
+        isNewFile: content === null,
+        owner: host.owner,
+        nano: launch.nano,
+        displayName: launch.filePath,
+        initialCursorLine: launch.initialCursorLine,
+        initialCursorCol: launch.initialCursorCol,
+      });
+    },
+  });
+
+  registerFullScreenProgram({
+    name: 'less',
+    parse: (commandLine) => {
+      const parsed = parseLessLaunch(commandLine);
+      return parsed.kind === 'open' ? parsed.launch : null;
+    },
+    open: async (host, less) => {
+      const sources: LessSource[] = [];
+      if (less.piped) {
+        const output = await host.runCommand(less.prefix);
+        sources.push({ title: '', content: output === '' || output.endsWith('\n') ? output : `${output}\n` });
+      } else if (less.files.length === 0) {
+        if (!less.help) return null;
+        sources.push({ title: '', content: '' });
+      } else {
+        for (const file of less.files) {
+          const content = host.fs.readFile(host.fs.resolvePath(file));
+          if (content === null) return null;
+          sources.push({ title: file, content });
+        }
+      }
+      const { rows, cols } = host.windowSize;
+      if (less.quitIfOneScreen && new LessEngine(sources, less.options, rows, cols).fitsOnOneScreen()) return null;
+      return createLessSession({
+        sources,
+        options: less.options,
+        initialKeys: less.initialKeys,
+        help: !less.help ? null : less.files.length === 0 && !less.piped ? 'only' : 'first',
+        rows,
+        cols,
+      });
+    },
+  });
 }

@@ -1,39 +1,28 @@
 import React, { useRef, useEffect, useCallback, useReducer } from 'react';
-import { LessEngine, type LessOptions, type LessSource } from '@/network/devices/linux/editors/LessEngine';
+import type { LessEngine } from '@/network/devices/linux/editors/LessEngine';
 import { GridRows } from './EditorGrid';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
 import { useGridGeometry, type GridSize } from '../gridGeometry';
 import { editorKeyOf } from './browserKeys';
 
+export type LessDriver = Pick<LessEngine, 'screen' | 'applyKey' | 'resize' | 'scrollView' | 'exited'>;
+
 interface LessViewerProps {
-  sources: readonly LessSource[];
-  options: LessOptions;
-  quitIfOneScreen: boolean;
-  initialKeys: string;
-  onExit: (printed: string) => void;
+  driver: LessDriver;
+  onExit: () => void;
 }
 
 const WHEEL_LINES = 3;
 
-export const LessViewer: React.FC<LessViewerProps> = ({ sources, options, quitIfOneScreen, initialKeys, onExit }) => {
-  const engineRef = useRef<LessEngine>();
-  if (!engineRef.current) {
-    engineRef.current = new LessEngine(sources, options);
-    if (initialKeys !== '') engineRef.current.feed(initialKeys);
-  }
-  const engine = engineRef.current;
+export const LessViewer: React.FC<LessViewerProps> = ({ driver: engine, onExit }) => {
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const resized = useCallback((size: GridSize) => {
     engine.resize(Math.max(2, size.rows), size.cols);
-    if (quitIfOneScreen && engine.fitsOnOneScreen()) {
-      onExit(engine.plainContent);
-      return;
-    }
     bump();
-  }, [engine, bump, quitIfOneScreen, onExit]);
+  }, [engine, bump]);
   useGridGeometry(containerRef, engine, resized, GRID_LINE_HEIGHT);
 
   useEffect(() => {
@@ -44,7 +33,7 @@ export const LessViewer: React.FC<LessViewerProps> = ({ sources, options, quitIf
     e.preventDefault();
     engine.applyKey(editorKeyOf(e));
     if (engine.exited) {
-      onExit('');
+      onExit();
       return;
     }
     bump();
@@ -56,6 +45,7 @@ export const LessViewer: React.FC<LessViewerProps> = ({ sources, options, quitIf
     bump();
   }, [engine, bump]);
 
+  const screen = engine.screen;
   return (
     <div
       ref={containerRef}
@@ -71,10 +61,10 @@ export const LessViewer: React.FC<LessViewerProps> = ({ sources, options, quitIf
         className="absolute inset-0 outline-none"
       >
         <GridRows
-          screen={engine.screen}
+          screen={screen}
           caret="block"
           cursorTestId="less-cursor"
-          rowTestId={(_row, index) => (index === engine.screen.rows.length - 1 ? 'less-status' : 'less-line')}
+          rowTestId={(_row, index) => (index === screen.rows.length - 1 ? 'less-status' : 'less-line')}
         />
       </div>
     </div>
