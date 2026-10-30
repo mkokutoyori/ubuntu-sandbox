@@ -9,6 +9,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { typeCommand, typePassword } from './helpers/sshLab';
 
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(
@@ -47,20 +48,6 @@ async function openTerminal(page: Page, deviceId: string): Promise<void> {
   await expect(page.locator('[data-testid="terminal-modal"]')).toBeVisible({ timeout: 8_000 });
 }
 
-async function typeCommand(page: Page, command: string): Promise<void> {
-  const input = page.locator('[data-testid="terminal-modal"] input[type="text"]').last();
-  await input.focus();
-  await input.fill(command);
-  await input.press('Enter');
-}
-
-async function typePassword(page: Page, password: string): Promise<void> {
-  const input = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-  await input.focus();
-  await input.fill(password);
-  await input.press('Enter');
-}
-
 /** Snapshot every visible line inside the terminal modal. */
 async function dumpTerminal(page: Page): Promise<string> {
   return page.locator('[data-testid="terminal-modal"]').innerText();
@@ -76,8 +63,6 @@ test.describe('Linux → SSH → Windows', () => {
     const { pc1Id } = await setupLinuxWindowsLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh carl@192.168.1.20');
-    await expect(page.locator('[data-testid="terminal-modal"]').getByText('password', { exact: false }))
-      .toBeVisible({ timeout: 12_000 });
     await typePassword(page, 'carl');
 
     // Wait a bit for prompt to settle, then capture.
@@ -94,8 +79,6 @@ test.describe('Linux → SSH → Windows', () => {
     const { pc1Id } = await setupLinuxWindowsLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh carl@192.168.1.20');
-    await expect(page.locator('[data-testid="terminal-modal"]').getByText('password', { exact: false }))
-      .toBeVisible({ timeout: 12_000 });
     await typePassword(page, 'carl');
     await page.waitForTimeout(300);
 

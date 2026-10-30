@@ -24,6 +24,11 @@ async function waitForStore(page: Page): Promise<void> {
   );
 }
 
+async function acceptHostKey(page: Page): Promise<void> {
+  await expect(inTerminal(page, 'Are you sure you want to continue connecting')).toBeVisible({ timeout: 12_000 });
+  await typeCommand(page, 'yes');
+}
+
 /**
  * Create PC1 (192.168.1.10/24) and PC2 (192.168.1.20/24), directly cabled.
  * Returns their store IDs.
@@ -170,7 +175,7 @@ test.describe('SSH – graphical terminal', () => {
     await typeCommand(page, 'ssh user@10.99.99.99');
 
     await expect(
-      inTerminal(page, 'No route to host').or(inTerminal(page, 'connect to host')),
+      inTerminal(page, 'Network is unreachable').or(inTerminal(page, 'No route to host')).or(inTerminal(page, 'connect to host')),
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -180,6 +185,7 @@ test.describe('SSH – graphical terminal', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await acceptHostKey(page);
 
     await expect(
       inTerminal(page, 'Warning: Permanently added').or(
@@ -194,6 +200,7 @@ test.describe('SSH – graphical terminal', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await acceptHostKey(page);
 
     // Wait for the known-hosts line first.
     await expect(inTerminal(page, 'known host')).toBeVisible({ timeout: 12_000 });
@@ -208,6 +215,7 @@ test.describe('SSH – graphical terminal', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await acceptHostKey(page);
 
     await expect(inTerminal(page, 'password')).toBeVisible({ timeout: 12_000 });
 
@@ -222,6 +230,7 @@ test.describe('SSH – graphical terminal', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await acceptHostKey(page);
 
     // Wait for first prompt.
     await expect(inTerminal(page, 'password')).toBeVisible({ timeout: 12_000 });
@@ -249,6 +258,7 @@ test.describe('SSH – graphical terminal', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await acceptHostKey(page);
 
     await expect(inTerminal(page, 'password')).toBeVisible({ timeout: 12_000 });
     await typePassword(page, 'admin');
@@ -264,6 +274,7 @@ test.describe('SSH – graphical terminal', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await acceptHostKey(page);
 
     await expect(inTerminal(page, 'password')).toBeVisible({ timeout: 12_000 });
     await typePassword(page, 'admin');
@@ -288,6 +299,7 @@ test.describe('SSH – graphical terminal', () => {
     const { pc1Id } = await setupTwoMachineLan(page);
     await openTerminal(page, pc1Id);
     await typeCommand(page, 'ssh user@192.168.1.20');
+    await acceptHostKey(page);
 
     await expect(inTerminal(page, 'password')).toBeVisible({ timeout: 12_000 });
 

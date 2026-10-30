@@ -103,6 +103,12 @@ export function firstSviAddress(dev: Equipment): string | undefined {
   return sviAddresses(dev)[0];
 }
 
+function hasEgressTo(device: Equipment, address: string): boolean {
+  const stack = (device as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } }).getTcpStack?.();
+  if (!stack || !IPAddress.isValid(address)) return true;
+  return stack.hasEgressTo(address);
+}
+
 function reachedThroughGateway(device: Equipment, address: string): boolean {
   if (!IPAddress.isValid(address)) return false;
   const stack = (device as unknown as { getTcpStack?: () => { hasEgressTo(ip: string): boolean } }).getTcpStack?.();
@@ -129,9 +135,9 @@ function isOwnAddress(device: Equipment, address: string): boolean {
  * a dead link.
  */
 export function peerLiveness(sourceDevice: Equipment, peerHost: string): () => boolean {
-  const sourceIp = firstConfiguredIp(sourceDevice);
-  if (!sourceIp) return () => true;
   if (isOwnAddress(sourceDevice, peerHost)) return () => true;
+  const sourceIp = firstConfiguredIp(sourceDevice);
+  if (!sourceIp) return () => hasEgressTo(sourceDevice, peerHost);
   if (!topologyHoldsAddress(peerHost, sourceDevice) && reachedThroughGateway(sourceDevice, peerHost)) return () => true;
   return pathLiveness(sourceIp, peerHost, sourceDevice);
 }

@@ -566,6 +566,8 @@ export interface Dhcpv6InformationState {
 const ICMP_TIMESTAMP_BYTES = 12;
 const MS_PER_DAY = 86_400_000;
 
+const TRACE_IDENT_MEMORY = 64;
+
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
   /** Per-device socket table — tracks listening and established sockets */
@@ -1149,6 +1151,8 @@ export abstract class EndHost extends Equipment {
     );
   }
 
+  private readonly traceIdents = new Set<number>();
+
   /** Bus emission helper for ICMP echo failed (TTL exceeded / unreachable). */
   protected emitIcmpEchoFailed(payload: {
     fromIp: string; toIp: string; id: number; seq: number; reason: string; icmp6?: Icmp6ErrorReport;
@@ -1157,6 +1161,7 @@ export abstract class EndHost extends Equipment {
       topic: 'host.icmp.echo-failed',
       payload: { ...this.hostRef(), ...payload },
     });
+    if (payload.id === -1 || this.traceIdents.has(payload.id)) return;
     Logger.warn(
       this.id, 'icmp:echo-failed',
       `${this.name}: ICMP echo to ${payload.toIp} failed (${payload.reason}) id=${payload.id} seq=${payload.seq}`,
@@ -5813,6 +5818,8 @@ export abstract class EndHost extends Equipment {
     const hops: TracerouteHopResult[] = [];
     let udpPort = method.kind === 'default-udp' ? method.port : 0;
     const traceIdent = this.allocateEchoIdent();
+    this.traceIdents.add(traceIdent);
+    if (this.traceIdents.size > TRACE_IDENT_MEMORY) this.traceIdents.delete(this.traceIdents.values().next().value as number);
     let traceSequence = 0;
     const sourcePort = socket.sourcePort ?? 32768 + (this.pingIdCounter % 28000);
 
