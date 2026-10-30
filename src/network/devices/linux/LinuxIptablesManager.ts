@@ -23,7 +23,7 @@ import {
   IP_PROTO_DCCP, IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_SCTP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, PORT_BEARING_PROTOCOLS,
 } from '../../core/types';
 import { answersWithTcpReset, rejectTypeOf } from '../../core/IcmpErrors';
-import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { renderTable, IPTABLES_LISTING_TABLE, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 import { ConnectionTracker, type ConnectionState, type ConnectionTuple, type ErrorTranslation, type NatTranslation, type TrackedEntry } from './ConnectionTracker';
 import type { NatManipulation } from './NatMapping';
 import { NAT_ADDRESS_OPTION, natListing, natRangeOfTarget, natSaveOptions, type NatRange, type NatTargetName } from './NatRange';
@@ -360,6 +360,11 @@ interface IptablesChain {
 interface IptablesTable {
   name: TableName;
   chains: Map<string, IptablesChain>;
+}
+
+interface ListedRule {
+  readonly r: IptablesRule;
+  readonly index: number;
 }
 
 export interface ListFormat {
@@ -1142,12 +1147,15 @@ export class LinuxIptablesManager {
     let numeric = false, verbose = false, lineNumbers = false, exact = false;
 
     for (const arg of args) {
-      switch (arg) {
-        case '-n': case '--numeric': numeric = true; break;
-        case '-v': case '--verbose': verbose = true; break;
-        case '-x': case '--exact': exact = true; break;
-        case '--line-numbers': lineNumbers = true; break;
-        default: if (!arg.startsWith('-')) chainName = arg; break;
+      const flags = /^-[nvx]+$/.test(arg) ? [...arg.slice(1)].map((c) => `-${c}`) : [arg];
+      for (const flag of flags) {
+        switch (flag) {
+          case '-n': case '--numeric': numeric = true; break;
+          case '-v': case '--verbose': verbose = true; break;
+          case '-x': case '--exact': exact = true; break;
+          case '--line-numbers': lineNumbers = true; break;
+          default: if (!flag.startsWith('-')) chainName = flag; break;
+        }
       }
     }
 
@@ -1191,43 +1199,42 @@ export class LinuxIptablesManager {
       lines.push(`Chain ${chain.name} (${this.countRefs(chain.name, table)} references)`);
     }
 
-    const numCol = lineNumbers ? 'num   ' : '';
+    const rows = chain.rules.map((r, i) => ({ r, index: i + 1 }));
+    const anyIface = numeric ? '*' : 'any';
+    const counterWidth = exact ? 9 : 6;
+    const counter = (pick: (row: ListedRule) => number, header: string, headerWidth: number): TableColumn<ListedRule> => ({
+      header: `${header} `, width: counterWidth, headerWidth, align: 'right',
+      value: (row) => `${count(pick(row))} `,
+    });
+    const columns: Array<TableColumn<ListedRule>> = [];
+    if (lineNumbers) columns.push({ header: 'num', width: 5, value: (row) => String(row.index) });
     if (verbose) {
-      lines.push(exact
-        ? `${numCol}    pkts      bytes target     prot opt in     out     source               destination`
-        : `${numCol} pkts bytes target     prot opt in     out     source               destination`);
-    } else {
-      lines.push(`${numCol}target     prot opt source               destination`);
+      columns.push(counter((row) => row.r.pkts, 'pkts', exact ? 9 : 6));
+      columns.push(counter((row) => row.r.bytes, 'bytes', exact ? 11 : 6));
     }
-
-    for (let i = 0; i < chain.rules.length; i++) {
-      const r = chain.rules[i];
-      const num = lineNumbers ? `${i + 1}     `.slice(0, 6) : '';
-      const target = padToWidth(r.target, 10);
-      const prot = padToWidth((r.negProtocol ? '!' : '') + (r.protocol || 'all'), 4);
-      const opt = r.fragment === 'only' ? '-f  ' : r.fragment === 'not' ? '!f  ' : '--  ';
-      const src = this.fmtAddr(r.source, r.negSource, numeric);
-      const dst = this.fmtAddr(r.destination, r.negDestination, numeric);
-      const extra = this.fmtRuleExtras(r, numeric);
-
-      if (verbose) {
-        const width = exact ? 8 : 5;
-        const pkts = padToWidth(count(r.pkts), width, 'right');
-        const bytes = padToWidth(count(r.bytes), width, 'right');
-        const inIf = padToWidth((r.negInInterface ? '!' : '') + (r.inInterface || '*'), 6);
-        const outIf = padToWidth((r.negOutInterface ? '!' : '') + (r.outInterface || '*'), 6);
-        lines.push(`${num}${pkts} ${bytes} ${target} ${prot} ${opt}${inIf} ${outIf} ${padToWidth(src, 20)} ${dst}${extra}`);
-      } else {
-        lines.push(`${num}${target} ${prot} ${opt}${padToWidth(src, 20)} ${dst}${extra}`);
-      }
+    columns.push(
+      { header: 'target', width: 10, value: (row) => `${row.r.target} ` },
+      { header: ' prot ', width: 6, value: (row) => `${row.r.negProtocol ? '!' : ' '}${row.r.protocol || 'all'}` },
+      { header: 'opt', width: 3, value: (row) => (row.r.fragment === 'only' ? '-f ' : row.r.fragment === 'not' ? '!f ' : '-- ') },
+    );
+    if (verbose) {
+      columns.push(
+        { header: ' in', width: 8, value: (row) => ` ${(row.r.negInInterface ? '!' : '') + (row.r.inInterface || anyIface)}` },
+        { header: 'out', width: 7, value: (row) => (row.r.negOutInterface ? '!' : '') + (row.r.outInterface || anyIface) },
+      );
     }
+    columns.push(
+      { header: ' source', width: 21, value: (row) => this.fmtAddr(row.r.source, row.r.negSource, numeric) },
+      { header: ' destination', width: 21, value: (row) => this.fmtAddr(row.r.destination, row.r.negDestination, numeric) },
+      { header: '', width: 0, value: (row) => this.fmtRuleExtras(row.r, numeric) },
+    );
+    lines.push(...renderTable(rows, columns, IPTABLES_LISTING_TABLE));
     return lines.join('\n');
   }
 
   private fmtAddr(addr: string, neg: boolean, numeric: boolean): string {
-    const n = neg ? '!' : '';
-    if (!addr) return numeric ? `${n}0.0.0.0/0` : `${n}anywhere`;
-    return `${n}${addr}`;
+    const text = addr || (numeric ? '0.0.0.0/0' : 'anywhere');
+    return `${neg ? '!' : ' '}${text}`;
   }
 
   private fmtRuleExtras(r: IptablesRule, numeric: boolean): string {

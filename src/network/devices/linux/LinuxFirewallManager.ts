@@ -27,7 +27,7 @@ import type { VirtualFileSystem } from './VirtualFileSystem';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
 import type { ListFormat } from './LinuxIptablesManager';
 import { IPAddress, IPv6Address } from '@/network/core/types';
-import { padToWidth, renderTable, type TableColumn } from '@/network/devices/shells/cli/TextTable';
+import { padToWidth, renderTable, UFW_STATUS_TABLE, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 // Re-export types from LinuxIptablesManager for backward compatibility
 export type { FirewallVerdict, PacketInfo } from './LinuxIptablesManager';
@@ -124,6 +124,14 @@ const LIVE_RULE_MESSAGE: Readonly<Record<RuleWriteOutcome, string>> = {
   'skipped-inserting': 'Skipping inserting existing rule',
   absent: 'Could not delete non-existent rule',
 };
+
+interface StatusRow {
+  readonly group: number;
+  readonly num: string;
+  readonly to: string;
+  readonly action: string;
+  readonly from: string;
+}
 
 interface UfwRule {
   action: Action;
@@ -713,7 +721,6 @@ export class LinuxFirewallManager {
       lines.push(`Logging: ${this.logging ? `on (${this.loggingLevel})` : 'off'}`);
       lines.push(`Default: ${this.defaultIncoming} (incoming), ${this.defaultOutgoing} (outgoing), ${this.defaultRouted} (routed)`);
       lines.push(`New profiles: ${this.defaultApplication}`);
-      lines.push('');
     }
 
     if (this.rules.length === 0) {
@@ -721,31 +728,37 @@ export class LinuxFirewallManager {
     }
 
     const orderedRules = this.getOrderedRules();
-    const rows: string[][] = [];
-
-    orderedRules.forEach((rule, idx) => {
-      const num = numbered ? `[ ${idx + 1}] ` : '';
+    const toRow = (rule: UfwRule, idx: number): StatusRow => {
+      const outIface = (rule as UfwRule & { outIface?: string }).outIface ?? '';
       const v6Tag = rule.v6 ? ' (v6)' : '';
-      const ifaceTag = rule.iface ? ` on ${rule.iface}` : '';
-      const outIfaceTag = (rule as any).outIface ? ` on ${(rule as any).outIface}` : '';
-      // 'To' column: show destination if specific, otherwise just port
       const destPart = rule.to !== 'Anywhere' ? `${rule.to} ${rule.port}` : rule.port;
-      const toStr = `${destPart}${v6Tag}`;
-      const fromStr = `${rule.from}${v6Tag}`;
-      const dirStr = rule.route ? 'FWD' : (rule.direction === 'out' ? 'OUT' : 'IN');
-      const actionStr = rule.route
-        ? `${rule.action} ${dirStr}${ifaceTag}${outIfaceTag}`
-        : `${rule.action} ${dirStr}${ifaceTag}`;
-      rows.push([num, toStr, actionStr, fromStr]);
-    });
+      const toInterface = rule.route ? outIface : (rule.direction === 'out' ? '' : rule.iface);
+      const fromInterface = rule.route ? rule.iface : (rule.direction === 'out' ? rule.iface : '');
+      const directionWord = rule.route ? 'FWD' : (rule.direction === 'out' ? 'OUT' : 'IN');
+      const showDirection = rule.route || rule.direction === 'out' || verbose || numbered;
+      return {
+        group: rule.route ? 2 : (rule.direction === 'out' ? 1 : 0),
+        num: numbered ? `[${String(idx + 1).padStart(2)}] ` : '',
+        to: `${destPart}${v6Tag}${toInterface ? ` on ${toInterface}` : ''}`,
+        action: showDirection ? `${rule.action} ${directionWord}` : rule.action,
+        from: `${rule.from}${v6Tag}${fromInterface ? ` on ${fromInterface}` : ''}`,
+      };
+    };
+    const rows = orderedRules.map(toRow);
+    if (!numbered) rows.sort((x, y) => x.group - y.group);
 
-    const columns: TableColumn<string[]>[] = [
-      { header: '', width: numbered ? 5 : 0 },
-      { header: 'To', width: 27 },
-      { header: 'Action', width: 16 },
-      { header: 'From' },
-    ].map((column, i) => ({ ...column, value: (cells: string[]) => cells[i] }));
-    lines.push(...renderTable(rows, columns, { gap: 0, rule: true, ruleFitsHeader: true }));
+    const columns: Array<TableColumn<StatusRow>> = [
+      { header: '', width: numbered ? 5 : 0, value: (row) => row.num },
+      { header: 'To', width: 27, value: (row) => row.to },
+      { header: 'Action', width: 12, value: (row) => row.action },
+      { header: 'From', width: 26, value: (row) => row.from },
+    ];
+    const table = renderTable(rows, columns, UFW_STATUS_TABLE);
+    lines.push('', table[0].trimEnd(), table[1].trimEnd());
+    rows.forEach((row, i) => {
+      if (!numbered && i > 0 && rows[i - 1].group !== row.group) lines.push('');
+      lines.push(table[i + 2]);
+    });
 
     return lines.join('\n');
   }
@@ -871,8 +884,10 @@ export class LinuxFirewallManager {
 
     // Parse optional direction: in | out
     let direction: RuleDirection = 'in';
+    let narrowed = false;
     if (args[i] === 'in' || args[i] === 'out') {
       direction = args[i] as RuleDirection;
+      narrowed = true;
       i++;
     }
 
@@ -882,15 +897,19 @@ export class LinuxFirewallManager {
       i++;
       if (i >= args.length) return 'ERROR: missing interface name';
       iface = args[i];
+      narrowed = true;
       i++;
     }
 
-    if (i >= args.length) return 'ERROR: wrong number of arguments';
+    if (i >= args.length) {
+      if (!narrowed) return 'ERROR: wrong number of arguments';
+      return { action, direction, port: 'Anywhere', from: 'Anywhere', to: 'Anywhere', iface, v6: false, comment: '', route: false };
+    }
     const first = args[i];
     const remaining = args.slice(i);
 
     // ufw allow [in|out] [on <iface>] from <ip> [to <dest> [port <port> [proto <proto>]]]
-    if (first === 'from') {
+    if (first === 'from' || first === 'to' || first === 'proto') {
       return this.parseFromRule(action, direction, iface, remaining);
     }
 
@@ -927,6 +946,11 @@ export class LinuxFirewallManager {
     let comment = '';
 
     let i = 0;
+    if (args[i] === 'proto') {
+      if (i + 1 >= args.length) return 'ERROR: missing protocol';
+      proto = args[i + 1];
+      i += 2;
+    }
     // 'from'
     if (args[i] === 'from') {
       i++;
@@ -958,7 +982,7 @@ export class LinuxFirewallManager {
     }
 
     // 'proto <proto>'
-    if (i < args.length && args[i] === 'proto') {
+    if (proto === '' && i < args.length && args[i] === 'proto') {
       i++;
       if (i >= args.length) return 'ERROR: missing protocol';
       proto = args[i];

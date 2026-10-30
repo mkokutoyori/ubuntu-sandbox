@@ -151,6 +151,10 @@ export const NMAP_TABLE: TableStyle = { gap: 1, rule: false };
 
 export const LSOF_TABLE: TableStyle = NMAP_TABLE;
 
+export const UFW_STATUS_TABLE: TableStyle = { gap: 0, rule: true, ruleFitsHeader: true, padTrailing: true };
+
+export const IPTABLES_LISTING_TABLE: TableStyle = { gap: 0, rule: false, padTrailing: true };
+
 const ANSI_ESCAPE = /\u001b\[[0-9;]*[A-Za-z]/g;
 
 function isWide(code: number): boolean {
