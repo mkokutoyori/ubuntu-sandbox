@@ -1333,26 +1333,38 @@ export class LinuxIptablesManager {
       if (!chain) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
       return { output: this.fmtChainRules(chain), exitCode: 0 };
     }
-    const parts: string[] = [];
-    for (const chain of table.chains.values()) parts.push(this.fmtChainRules(chain));
-    return { output: parts.join('\n'), exitCode: 0 };
+    const lines: string[] = [];
+    for (const chain of table.chains.values()) lines.push(this.fmtChainDeclaration(chain));
+    for (const chain of table.chains.values()) lines.push(...this.fmtChainRuleLines(chain));
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private fmtChainDeclaration(chain: IptablesChain): string {
+    return chain.policy !== null ? `-P ${chain.name} ${chain.policy}` : `-N ${chain.name}`;
+  }
+
+  private fmtChainRuleLines(chain: IptablesChain): string[] {
+    return chain.rules.map((rule) => this.fmtRuleCmd('A', chain.name, rule));
   }
 
   private fmtChainRules(chain: IptablesChain): string {
-    const lines: string[] = [];
-    if (chain.policy !== null) lines.push(`-P ${chain.name} ${chain.policy}`);
-    for (const rule of chain.rules) lines.push(this.fmtRuleCmd('A', chain.name, rule));
-    return lines.join('\n');
+    return [this.fmtChainDeclaration(chain), ...this.fmtChainRuleLines(chain)].join('\n');
+  }
+
+  private hostMasked(address: string): string {
+    return address.includes('/') ? address : `${address}/${this.family === 6 ? 128 : 32}`;
   }
 
   fmtRuleCmd(action: string, chainName: string, rule: IptablesRule): string {
     const p: string[] = [`-${action} ${chainName}`];
-    if (rule.source)       { if (rule.negSource) p.push('!'); p.push(`-s ${rule.source}`); }
-    if (rule.destination)  { if (rule.negDestination) p.push('!'); p.push(`-d ${rule.destination}`); }
+    if (rule.source)       { if (rule.negSource) p.push('!'); p.push(`-s ${this.hostMasked(rule.source)}`); }
+    if (rule.destination)  { if (rule.negDestination) p.push('!'); p.push(`-d ${this.hostMasked(rule.destination)}`); }
     if (rule.inInterface)  { if (rule.negInInterface) p.push('!'); p.push(`-i ${rule.inInterface}`); }
     if (rule.outInterface) { if (rule.negOutInterface) p.push('!'); p.push(`-o ${rule.outInterface}`); }
     if (rule.protocol && rule.protocol !== 'all') { if (rule.negProtocol) p.push('!'); p.push(`-p ${rule.protocol}`); }
     if (rule.fragment !== '') p.push(rule.fragment === 'not' ? '! -f' : '-f');
+    const carrier = this.protocolModule(rule);
+    if (carrier !== '') p.push(`-m ${carrier}`);
     if (rule.sport) p.push(`${rule.negSport ? '! ' : ''}--sport ${rule.sport}`);
     if (rule.dport) p.push(`${rule.negDport ? '! ' : ''}--dport ${rule.dport}`);
     if (rule.tcpOption !== null) p.push(`${rule.tcpOption.invert ? '! ' : ''}--tcp-option ${rule.tcpOption.kind}`);
@@ -1377,6 +1389,14 @@ export class LinuxIptablesManager {
       }
     }
     return p.join(' ');
+  }
+
+  private protocolModule(rule: IptablesRule): string {
+    if (rule.sport || rule.dport || rule.tcpOption !== null || rule.tcpFlags !== null) {
+      return rule.protocol === 'tcp' || rule.protocol === 'udp' ? rule.protocol : '';
+    }
+    if (rule.icmpType !== null) return this.family === 6 ? 'icmp6' : 'icmp';
+    return '';
   }
 
   private quote(v: string): string { return v.includes(' ') ? `"${v}"` : v; }

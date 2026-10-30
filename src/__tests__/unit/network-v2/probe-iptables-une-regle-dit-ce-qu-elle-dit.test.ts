@@ -371,10 +371,10 @@ describe('what the parser cannot say is refused, with the words of xtables, and 
   it('TEMOIN : the words that are options of something are still taken', async () => {
     const host = new LinuxPC('H', 0, 0);
     for (const rule of [
-      '-A INPUT -p tcp --dport 22 -j ACCEPT', '-w -A INPUT -p tcp --dport 23 -j ACCEPT', '-A INPUT -w 2 -p tcp --dport 24 -j ACCEPT',
-      '-A INPUT -c 5 600 -p udp --dport 53 -j ACCEPT', '-A INPUT -p tcp --dport 25 -m comment --comment "mail" -j ACCEPT',
+      '-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT', '-w -A INPUT -p tcp --dport 23 -j ACCEPT', '-A INPUT -w 2 -p tcp --dport 24 -j ACCEPT',
+      '-A INPUT -c 5 600 -p udp -m udp --dport 53 -j ACCEPT', '-A INPUT -p tcp --dport 25 -m comment --comment "mail" -j ACCEPT',
       '-A INPUT -m state --state NEW,ESTABLISHED -j ACCEPT', '-A INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT',
-      '-A INPUT -j LOG --log-prefix "x: " --log-level 4', '-A INPUT -p tcp --dport 26 -j REJECT --reject-with tcp-reset',
+      '-A INPUT -j LOG --log-prefix "x: " --log-level 4', '-A INPUT -p tcp -m tcp --dport 26 -j REJECT --reject-with tcp-reset',
     ]) expect(await host.executeCommand(`sudo iptables ${rule}`)).toBe('');
   });
 });
@@ -413,16 +413,16 @@ describe('the rule is written back the way it was said, one representation per f
     ]) await host.executeCommand(`sudo iptables -A INPUT ${rule}`);
     expect(await host.executeCommand('sudo iptables -S INPUT')).toBe([
       '-P INPUT ACCEPT',
-      '-A INPUT -p tcp --tcp-flags FIN,SYN,RST,ACK SYN -j DROP',
-      '-A INPUT -p tcp ! --dport 22 -j DROP',
-      '-A INPUT -p tcp --sport 1024:65535 --dport 80 -j ACCEPT',
-      '-A INPUT -p tcp --tcp-flags FIN,SYN,RST,ACK SYN -j DROP',
-      '-A INPUT -p tcp --tcp-flags FIN,SYN,RST,PSH,ACK,URG NONE -j DROP',
-      '-A INPUT -p tcp ! --tcp-option 8 -j DROP',
-      '-A INPUT -p icmp --icmp-type 8 -j DROP',
-      '-A INPUT -p icmp ! --icmp-type 3/3 -j DROP',
-      '-A INPUT -p icmp --icmp-type any -j DROP',
-      '-A INPUT -p icmp --icmp-type 3 -j DROP',
+      '-A INPUT -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j DROP',
+      '-A INPUT -p tcp -m tcp ! --dport 22 -j DROP',
+      '-A INPUT -p tcp -m tcp --sport 1024:65535 --dport 80 -j ACCEPT',
+      '-A INPUT -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j DROP',
+      '-A INPUT -p tcp -m tcp --tcp-flags FIN,SYN,RST,PSH,ACK,URG NONE -j DROP',
+      '-A INPUT -p tcp -m tcp ! --tcp-option 8 -j DROP',
+      '-A INPUT -p icmp -m icmp --icmp-type 8 -j DROP',
+      '-A INPUT -p icmp -m icmp ! --icmp-type 3/3 -j DROP',
+      '-A INPUT -p icmp -m icmp --icmp-type any -j DROP',
+      '-A INPUT -p icmp -m icmp --icmp-type 3 -j DROP',
       '-A INPUT -f -j DROP',
       '-A INPUT ! -f -j DROP',
     ].join('\n'));
@@ -434,8 +434,8 @@ describe('the rule is written back the way it was said, one representation per f
     await host.executeCommand('sudo ip6tables -A INPUT -p icmpv6 ! --icmpv6-type 1/4 -j ACCEPT');
     expect(await host.executeCommand('sudo ip6tables -S INPUT')).toBe([
       '-P INPUT ACCEPT',
-      '-A INPUT -p icmpv6 --icmpv6-type 128 -j ACCEPT',
-      '-A INPUT -p icmpv6 ! --icmpv6-type 1/4 -j ACCEPT',
+      '-A INPUT -p icmpv6 -m icmp6 --icmpv6-type 128 -j ACCEPT',
+      '-A INPUT -p icmpv6 -m icmp6 ! --icmpv6-type 1/4 -j ACCEPT',
     ].join('\n'));
   });
 
@@ -664,7 +664,7 @@ describe('every name of the two xtables tables means its type and its codes', ()
   it.each(ICMPV4_SOURCE_TABLE)('IPv4 : %s -> type %i, codes %i..%i', async (name, type, min, max) => {
     const host = new LinuxPC('H', 0, 0);
     expect(await host.executeCommand(`sudo iptables -A INPUT -p icmp --icmp-type ${name} -j DROP`)).toBe('');
-    expect(await host.executeCommand('sudo iptables -S INPUT')).toContain(`-A INPUT -p icmp --icmp-type ${written(type, min, max)} -j DROP`);
+    expect(await host.executeCommand('sudo iptables -S INPUT')).toContain(`-A INPUT -p icmp -m icmp --icmp-type ${written(type, min, max)} -j DROP`);
     const manager = managerOf(host, 4);
     if (type === 255) {
       expect(manager.filterPacket(icmp(8))).toBe('drop');
@@ -680,7 +680,7 @@ describe('every name of the two xtables tables means its type and its codes', ()
   it.each(ICMPV6_SOURCE_TABLE)('IPv6 : %s -> type %i, codes %i..%i', async (name, type, min, max) => {
     const host = new LinuxPC('H', 0, 0);
     expect(await host.executeCommand(`sudo ip6tables -A INPUT -p icmpv6 --icmpv6-type ${name} -j DROP`)).toBe('');
-    expect(await host.executeCommand('sudo ip6tables -S INPUT')).toContain(`-A INPUT -p icmpv6 --icmpv6-type ${written(type, min, max)} -j DROP`);
+    expect(await host.executeCommand('sudo ip6tables -S INPUT')).toContain(`-A INPUT -p icmpv6 -m icmp6 --icmpv6-type ${written(type, min, max)} -j DROP`);
     const manager = managerOf(host, 6);
     expect(manager.filterPacket(icmpv6(type, min))).toBe('drop');
     expect(manager.filterPacket(icmpv6(type, max))).toBe('drop');

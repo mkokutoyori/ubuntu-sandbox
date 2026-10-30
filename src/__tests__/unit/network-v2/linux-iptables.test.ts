@@ -128,7 +128,7 @@ describe('iptables', () => {
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j ACCEPT');
       const out = await server.executeCommand('iptables -S INPUT');
       expect(out).toContain('-P INPUT ACCEPT');
-      expect(out).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
     });
   });
 
@@ -200,19 +200,19 @@ describe('iptables', () => {
     it('should append a simple ACCEPT rule', async () => {
       await server.executeCommand('iptables -A INPUT -p tcp --dport 22 -j ACCEPT');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
     });
 
     it('should append a DROP rule', async () => {
       await server.executeCommand('iptables -A INPUT -p tcp --dport 23 -j DROP');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -p tcp --dport 23 -j DROP');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --dport 23 -j DROP');
     });
 
     it('should append with source IP', async () => {
       await server.executeCommand('iptables -A INPUT -s 10.0.0.1 -j DROP');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -s 10.0.0.1 -j DROP');
+      expect(out).toContain('-A INPUT -s 10.0.0.1/32 -j DROP');
     });
 
     it('should append with source CIDR', async () => {
@@ -224,25 +224,25 @@ describe('iptables', () => {
     it('should append with destination IP', async () => {
       await server.executeCommand('iptables -A OUTPUT -d 8.8.8.8 -j ACCEPT');
       const out = await server.executeCommand('iptables -S OUTPUT');
-      expect(out).toContain('-A OUTPUT -d 8.8.8.8 -j ACCEPT');
+      expect(out).toContain('-A OUTPUT -d 8.8.8.8/32 -j ACCEPT');
     });
 
     it('should append with interface -i for INPUT', async () => {
       await server.executeCommand('iptables -A INPUT -i eth0 -p tcp --dport 80 -j ACCEPT');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -i eth0 -p tcp --dport 80 -j ACCEPT');
+      expect(out).toContain('-A INPUT -i eth0 -p tcp -m tcp --dport 80 -j ACCEPT');
     });
 
     it('should append with interface -o for OUTPUT', async () => {
       await server.executeCommand('iptables -A OUTPUT -o eth0 -p tcp --dport 443 -j ACCEPT');
       const out = await server.executeCommand('iptables -S OUTPUT');
-      expect(out).toContain('-A OUTPUT -o eth0 -p tcp --dport 443 -j ACCEPT');
+      expect(out).toContain('-A OUTPUT -o eth0 -p tcp -m tcp --dport 443 -j ACCEPT');
     });
 
     it('should append with multiple criteria', async () => {
       await server.executeCommand('iptables -A INPUT -s 10.0.0.0/8 -p tcp --dport 22 -j ACCEPT');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -s 10.0.0.0/8 -p tcp --dport 22 -j ACCEPT');
+      expect(out).toContain('-A INPUT -s 10.0.0.0/8 -p tcp -m tcp --dport 22 -j ACCEPT');
     });
 
     it('should append to FORWARD chain', async () => {
@@ -254,7 +254,7 @@ describe('iptables', () => {
     it('should append UDP rule', async () => {
       await server.executeCommand('iptables -A INPUT -p udp --dport 53 -j ACCEPT');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -p udp --dport 53 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p udp -m udp --dport 53 -j ACCEPT');
     });
 
     it('should append ICMP rule', async () => {
@@ -266,13 +266,13 @@ describe('iptables', () => {
     it('should append with source port --sport', async () => {
       await server.executeCommand('iptables -A INPUT -p tcp --sport 1024 -j ACCEPT');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -p tcp --sport 1024 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --sport 1024 -j ACCEPT');
     });
 
     it('should append with port range', async () => {
       await server.executeCommand('iptables -A INPUT -p tcp --dport 6000:6007 -j ACCEPT');
       const out = await server.executeCommand('iptables -S INPUT');
-      expect(out).toContain('-A INPUT -p tcp --dport 6000:6007 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --dport 6000:6007 -j ACCEPT');
     });
 
     it('should preserve rule order', async () => {
@@ -608,8 +608,8 @@ describe('iptables', () => {
       expect(out).toContain(':INPUT ACCEPT');
       expect(out).toContain(':FORWARD DROP');
       expect(out).toContain(':OUTPUT ACCEPT');
-      expect(out).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
-      expect(out).toContain('-A INPUT -p tcp --dport 80 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --dport 80 -j ACCEPT');
       expect(out).toContain('COMMIT');
     });
 
@@ -634,7 +634,7 @@ describe('iptables', () => {
       await server.executeCommand('iptables-restore < /tmp/rules.v4');
       const out = await server.executeCommand('iptables -S');
       expect(out).toContain('-P FORWARD DROP');
-      expect(out).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+      expect(out).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
     });
   });
 
@@ -704,7 +704,7 @@ describe('iptables', () => {
       expect(natOut).toContain('--to-destination 192.168.1.10:8080');
 
       const fwdOut = await server.executeCommand('iptables -S FORWARD');
-      expect(fwdOut).toContain('-d 192.168.1.10');
+      expect(fwdOut).toContain('-d 192.168.1.10/32');
     });
   });
 
@@ -886,7 +886,7 @@ describe('iptables', () => {
       const fileContent = await server.executeCommand('cat /etc/iptables/rules.v4');
       expect(fileContent).toContain('*filter');
       expect(fileContent).toContain(':INPUT DROP');
-      expect(fileContent).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+      expect(fileContent).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
 
       // Flush rules
       await server.executeCommand('iptables -F');
@@ -902,8 +902,8 @@ describe('iptables', () => {
       // Verify rules are back
       const afterRestore = await server.executeCommand('iptables -S');
       expect(afterRestore).toContain('-P INPUT DROP');
-      expect(afterRestore).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
-      expect(afterRestore).toContain('-A INPUT -p tcp --dport 80 -j ACCEPT');
+      expect(afterRestore).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
+      expect(afterRestore).toContain('-A INPUT -p tcp -m tcp --dport 80 -j ACCEPT');
     });
 
     it('should require root for iptables on non-root user', async () => {
@@ -1159,7 +1159,7 @@ describe('iptables', () => {
     it('should add DNAT rules to PREROUTING', async () => {
       await server.executeCommand('iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80');
       const out = await server.executeCommand('iptables -t nat -S PREROUTING');
-      expect(out).toContain('-A PREROUTING -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80');
+      expect(out).toContain('-A PREROUTING -p tcp -m tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80');
     });
 
     it('should add SNAT rules to POSTROUTING', async () => {
