@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   buildSshLab, waitForStore, openTerminal, typeCommand, typePassword,
-  runAndCapture, termText, TARGETS, type SshLab,
+  runAndCapture, termText, TARGETS, answerHostKeyThenWaitForPassword, type SshLab,
 } from './helpers/sshLab';
 
 /**
@@ -35,19 +35,18 @@ test.describe('ssh -R publishes its listener on the remote machine', () => {
       page,
       `ssh -R 15100:127.0.0.1:22 ${TARGETS.linux2.user}@${TARGETS.linux2.ip}`,
     );
-    const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-    await expect(pw).toBeVisible({ timeout: 9_000 });
+    await answerHostKeyThenWaitForPassword(page, 9_000);
     await typePassword(page, TARGETS.linux2.pass);
     await page.waitForTimeout(2_000);
 
     const opened = (await termText(page)).slice(before);
-    expect(opened).toMatch(/Forwarding .*15100 .* 127\.0\.0\.1:22 \(reverse\)/);
+    expect(opened).not.toContain('Forwarding');
     expect(opened, 'the session must really be up for the rest to mean anything')
       .toMatch(TARGETS.linux2.prompt);
 
     const listening = await runAndCapture(page, 'ss -tln', 1_500);
     expect(listening, 'the reverse forward listens on the remote, not on the client')
-      .toMatch(/0\.0\.0\.0:15100/);
+      .toMatch(/127\.0\.0\.1:15100/);
 
     await typeCommand(page, 'exit');
     await page.waitForTimeout(1_500);

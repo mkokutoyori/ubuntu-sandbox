@@ -123,6 +123,7 @@ export async function typeCommand(page: Page, command: string): Promise<void> {
 }
 
 export async function typePassword(page: Page, password: string): Promise<void> {
+  await answerHostKeyThenWaitForPassword(page, 9_000);
   const input = page.locator('[data-testid="terminal-modal"] input[type="password"]');
   await input.focus();
   await input.fill(password);
@@ -164,13 +165,14 @@ export function sshCommand(user: string, ip: string): string {
   return `ssh ${options}${user}@${ip}`;
 }
 
-export async function answerHostKeyThenWaitForPassword(page: Page, timeout: number, since = 0): Promise<void> {
+const HOST_KEY_QUESTION = '(yes/no/[fingerprint])?';
+
+export async function answerHostKeyThenWaitForPassword(page: Page, timeout: number): Promise<void> {
   const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
   const deadline = Date.now() + timeout;
   for (;;) {
     if (await pw.count() > 0) return;
-    const fresh = (await termText(page)).slice(since);
-    if (fresh.includes('Are you sure you want to continue connecting')) {
+    if ((await termText(page)).trimEnd().endsWith(HOST_KEY_QUESTION)) {
       await typeCommand(page, 'yes');
       await expect(pw).toBeVisible({ timeout });
       return;
@@ -183,7 +185,7 @@ export async function answerHostKeyThenWaitForPassword(page: Page, timeout: numb
 export async function sshLogin(page: Page, target: string, user: string, pass: string, settleMs = 800): Promise<string> {
   const before = (await termText(page)).length;
   await typeCommand(page, sshCommand(user, target));
-  await answerHostKeyThenWaitForPassword(page, 9_000, before);
+  await answerHostKeyThenWaitForPassword(page, 9_000);
   await typePassword(page, pass);
   await page.waitForTimeout(settleMs);
   return (await termText(page)).slice(before);
@@ -194,7 +196,7 @@ export async function sshHop(page: Page, sshCmd: string, pass: string, settleMs 
   const legacy = sshCmd.startsWith('ssh ') && sshCmd.includes(TARGETS.ciscoR1.ip) && !sshCmd.includes('KexAlgorithms');
   await typeCommand(page, legacy ? `ssh ${LEGACY_IOS_OPTIONS} ${sshCmd.slice(4)}` : sshCmd);
   try {
-    await answerHostKeyThenWaitForPassword(page, 9_000, before);
+    await answerHostKeyThenWaitForPassword(page, 9_000);
     await typePassword(page, pass);
   } catch {
     void 0;

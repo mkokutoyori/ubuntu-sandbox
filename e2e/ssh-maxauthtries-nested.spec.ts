@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
   buildSshLab, waitForStore, openTerminal, typeCommand, typePassword,
-  termText, sshHop, TARGETS, type SshLab,
+  termText, sshHop, TARGETS, answerHostKeyThenWaitForPassword, type SshLab,
 } from './helpers/sshLab';
 
 /**
@@ -79,14 +79,13 @@ test.describe('MaxAuthTries seen from the terminal', () => {
 
     const before = (await termText(page)).length;
     await typeCommand(page, `ssh user@${lab.ip.linux1}`);
-    const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-    await expect(pw).toBeVisible({ timeout: 9_000 });
+    await answerHostKeyThenWaitForPassword(page, 9_000);
     await typePassword(page, 'wrong');
     await page.waitForTimeout(1_800);
 
     const after = (await termText(page)).slice(before);
     expect(countPrompts(after)).toBe(1);
-    expect(after).toContain('Permission denied');
+    expect(after).toContain('Too many authentication failures');
     expect(after).not.toContain('Permission denied, please try again.');
   });
 
@@ -97,8 +96,7 @@ test.describe('MaxAuthTries seen from the terminal', () => {
     const before = (await termText(page)).length;
     await typeCommand(page, `ssh user@${lab.ip.linux1}`);
     for (let i = 0; i < 3; i++) {
-      const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-      await expect(pw).toBeVisible({ timeout: 9_000 });
+      await answerHostKeyThenWaitForPassword(page, 9_000);
       await typePassword(page, 'wrong');
       await page.waitForTimeout(700);
     }
