@@ -143,6 +143,8 @@ interface UfwRule {
   iface: string;      // e.g. '', 'eth0', 'ens33' — empty = all interfaces
   v6: boolean;        // IPv6 duplicate rule
   comment: string;    // optional comment
+  fromPort?: string;  // source port or range, empty = any
+  proto?: string;     // explicit protocol when the rule names no destination port
   route: boolean;     // true = route rule (FORWARD chain) vs normal rule (INPUT/OUTPUT)
 }
 
@@ -413,10 +415,10 @@ export class LinuxFirewallManager {
     // Parse port spec
     const portMatch = ufwRule.port.match(/^(.+)\/(tcp|udp)$/);
     const portNum = portMatch ? portMatch[1] : (ufwRule.port !== 'Anywhere' && /^\d/.test(ufwRule.port) ? ufwRule.port : '');
-    const proto = portMatch ? portMatch[2] : '';
+    const proto = portMatch ? portMatch[2] : (ufwRule.proto ?? '');
 
     // For rules without specific protocol (e.g. port "53" → both tcp and udp)
-    const protos = proto ? [proto] : (portNum ? ['tcp', 'udp'] : ['']);
+    const protos = proto ? [proto] : (portNum || ufwRule.fromPort ? ['tcp', 'udp'] : ['']);
 
     for (const p of protos) {
       // For route rules, iface is the in-interface and outIface is the out-interface
@@ -437,6 +439,7 @@ export class LinuxFirewallManager {
         inInterface: inIf,
         outInterface: outIf,
         dport: portNum,
+        sport: ufwRule.fromPort ?? '',
       };
       const commented = (rule: ReturnType<typeof LinuxIptablesManager.createRule>) => {
         if (ufwRule.comment) {
@@ -616,6 +619,7 @@ export class LinuxFirewallManager {
 
       let proto = '';
       let dport = '';
+      let sport = '';
       let source = '';
       let destination = '';
       let iface = '';
@@ -627,6 +631,7 @@ export class LinuxFirewallManager {
         const tok = tokens[i];
         if (tok === '-p') proto = tokens[++i] ?? '';
         else if (tok === '--dport') dport = tokens[++i] ?? '';
+        else if (tok === '--sport') sport = tokens[++i] ?? '';
         else if (tok === '-s') source = tokens[++i] ?? '';
         else if (tok === '-d') destination = tokens[++i] ?? '';
         else if (tok === '-i') iface = tokens[++i] ?? '';
@@ -653,6 +658,7 @@ export class LinuxFirewallManager {
       const direction: RuleDirection = chainKind === 'output' ? 'out' : 'in';
       const route = chainKind === 'forward';
       const port = dport ? (proto ? `${dport}/${proto}` : dport) : 'Anywhere';
+      const portless = !dport && proto ? { proto } : {};
 
       const rule: UfwRule = {
         action, direction, port,
@@ -660,6 +666,7 @@ export class LinuxFirewallManager {
         to: destination || 'Anywhere',
         iface: route ? iface : (direction === 'out' ? outIface : iface),
         v6, comment, route,
+        ...(sport ? { fromPort: sport } : {}), ...portless,
       };
       if (route) (rule as unknown as { outIface: string }).outIface = outIface;
       rules.push(rule);
@@ -732,7 +739,14 @@ export class LinuxFirewallManager {
     const toRow = (rule: UfwRule, idx: number): StatusRow => {
       const outIface = (rule as UfwRule & { outIface?: string }).outIface ?? '';
       const v6Tag = rule.v6 ? ' (v6)' : '';
-      const destPart = rule.to !== 'Anywhere' ? `${rule.to} ${rule.port}` : rule.port;
+      const protoSuffix = rule.proto && !rule.fromPort ? `/${rule.proto}` : '';
+      const destPart = rule.port === 'Anywhere'
+        ? `${rule.to}${protoSuffix}`
+        : (rule.to !== 'Anywhere' ? `${rule.to} ${rule.port}` : rule.port);
+      const sourceProto = rule.fromPort ? (rule.proto ?? rule.port.match(/\/(tcp|udp)$/)?.[1] ?? '') : '';
+      const sourcePart = rule.fromPort
+        ? `${rule.from !== 'Anywhere' ? `${rule.from} ` : ''}${rule.fromPort}${sourceProto ? `/${sourceProto}` : ''}`
+        : rule.from;
       const toInterface = rule.route ? outIface : (rule.direction === 'out' ? '' : rule.iface);
       const fromInterface = rule.route ? rule.iface : (rule.direction === 'out' ? rule.iface : '');
       const directionWord = rule.route ? 'FWD' : (rule.direction === 'out' ? 'OUT' : 'IN');
@@ -742,7 +756,7 @@ export class LinuxFirewallManager {
         num: numbered ? `[${String(idx + 1).padStart(2)}] ` : '',
         to: `${destPart}${v6Tag}${toInterface ? ` on ${toInterface}` : ''}`,
         action: showDirection ? `${rule.action} ${directionWord}` : rule.action,
-        from: `${rule.from}${v6Tag}${fromInterface ? ` on ${fromInterface}` : ''}`,
+        from: `${sourcePart}${v6Tag}${fromInterface ? ` on ${fromInterface}` : ''}`,
         comment: rule.comment ? ` # ${rule.comment}` : '',
       };
     };
@@ -818,6 +832,7 @@ export class LinuxFirewallManager {
 
     const sameTarget = (r: UfwRule, v6: boolean): boolean =>
       r.v6 === v6 && r.port === parsed.port && r.from === parsed.from
+      && (r.fromPort ?? '') === (parsed.fromPort ?? '') && (r.proto ?? '') === (parsed.proto ?? '')
       && r.to === parsed.to && r.direction === parsed.direction
       && r.iface === parsed.iface && r.route === parsed.route;
 
@@ -941,77 +956,56 @@ export class LinuxFirewallManager {
   }
 
   private parseFromRule(action: Action, direction: RuleDirection, iface: string, args: string[]): UfwRule | string {
-    // from <source> [to <dest>|any [port <port> [proto <proto>]]] [comment <text>]
     let from = 'Anywhere';
     let to = 'Anywhere';
+    let fromPort = '';
     let port = '';
     let proto = '';
     let comment = '';
 
     let i = 0;
-    if (args[i] === 'proto') {
-      if (i + 1 >= args.length) return 'ERROR: missing protocol';
-      proto = args[i + 1];
-      i += 2;
-    }
-    // 'from'
-    if (args[i] === 'from') {
-      i++;
-      if (i >= args.length) return 'ERROR: missing source address';
-      if (args[i] !== 'any' && !LinuxFirewallManager.validAddress(args[i])) {
-        return 'ERROR: Bad source address';
+    while (i < args.length) {
+      const word = args[i];
+      if (word === 'proto') {
+        if (i + 1 >= args.length) return 'ERROR: missing protocol';
+        proto = args[i + 1];
+        i += 2;
+      } else if (word === 'from' || word === 'to') {
+        const label = word === 'from' ? 'source' : 'destination';
+        if (i + 1 >= args.length) return `ERROR: missing ${label} address`;
+        const given = args[i + 1];
+        if (given !== 'any' && !LinuxFirewallManager.validAddress(given)) {
+          return word === 'from' ? 'ERROR: Bad source address' : 'ERROR: Bad destination address';
+        }
+        const resolved = given === 'any' ? 'Anywhere' : given;
+        i += 2;
+        let boundPort = '';
+        if (args[i] === 'port') {
+          if (i + 1 >= args.length) return 'ERROR: missing port number';
+          boundPort = args[i + 1];
+          i += 2;
+        }
+        if (word === 'from') { from = resolved; fromPort = boundPort; } else { to = resolved; port = boundPort; }
+      } else if (word === 'comment') {
+        if (i + 1 >= args.length) return 'ERROR: missing comment text';
+        comment = args.slice(i + 1).join(' ');
+        i = args.length;
+      } else {
+        return 'ERROR: invalid rule syntax';
       }
-      from = args[i] === 'any' ? 'Anywhere' : args[i];
-      i++;
     }
 
-    // 'to <dest>'
-    if (i < args.length && args[i] === 'to') {
-      i++; // 'to'
-      if (i >= args.length) return 'ERROR: missing destination address';
-      if (args[i] !== 'any' && !LinuxFirewallManager.validAddress(args[i])) {
-        return 'ERROR: Bad destination address';
-      }
-      to = args[i] === 'any' ? 'Anywhere' : args[i];
-      i++;
-    }
-
-    // 'port <port>'
-    if (i < args.length && args[i] === 'port') {
-      i++;
-      if (i >= args.length) return 'ERROR: missing port number';
-      port = args[i];
-      i++;
-    }
-
-    // 'proto <proto>'
-    if (proto === '' && i < args.length && args[i] === 'proto') {
-      i++;
-      if (i >= args.length) return 'ERROR: missing protocol';
-      proto = args[i];
-      i++;
-    }
-
-    // 'comment <text>'
-    if (i < args.length && args[i] === 'comment') {
-      i++;
-      if (i >= args.length) return 'ERROR: missing comment text';
-      comment = args.slice(i).join(' ');
-      i = args.length;
-    }
-
-    const portStr = port
-      ? (proto ? `${port}/${proto}` : port)
-      : 'Anywhere';
-
-    // Validate port if specified
-    if (port) {
-      const fullPort = proto ? `${port}/${proto}` : port;
-      const err = this.validatePort(fullPort.match(/^\d/) ? fullPort : port);
+    for (const bound of [port, fromPort]) {
+      if (bound === '') continue;
+      const err = this.validatePort(proto && bound.match(/^\d/) ? `${bound}/${proto}` : bound);
       if (err) return err;
     }
 
-    return { action, direction, port: portStr, from, to, iface, v6: false, comment, route: false };
+    const portStr = port ? (proto ? `${port}/${proto}` : port) : 'Anywhere';
+    return {
+      action, direction, port: portStr, from, to, iface, v6: false, comment, route: false,
+      ...(fromPort ? { fromPort } : {}), ...(proto && !port ? { proto } : {}),
+    };
   }
 
   private getOrderedRules(): UfwRule[] {
@@ -1160,12 +1154,14 @@ export class LinuxFirewallManager {
       if (!target.v6) {
         const hasV6 = this.rules.some(r =>
           r.v6 && r.action === target.action && r.port === target.port &&
-          r.from === target.from && r.direction === target.direction && r.iface === target.iface
+          r.from === target.from && (r.fromPort ?? '') === (target.fromPort ?? '') && (r.proto ?? '') === (target.proto ?? '') &&
+          r.direction === target.direction && r.iface === target.iface
         );
         this.rules = this.rules.filter(r => {
           if (r === target) return false;
           if (r.v6 && r.action === target.action && r.port === target.port &&
-              r.from === target.from && r.direction === target.direction && r.iface === target.iface) return false;
+              r.from === target.from && (r.fromPort ?? '') === (target.fromPort ?? '') && (r.proto ?? '') === (target.proto ?? '') &&
+              r.direction === target.direction && r.iface === target.iface) return false;
           return true;
         });
         this.rebuildIptablesRules();
@@ -1188,12 +1184,14 @@ export class LinuxFirewallManager {
 
       const hadV6 = this.rules.some(r =>
         r.v6 && r.action === parsed.action && r.port === parsed.port &&
-        r.from === parsed.from && r.direction === parsed.direction && r.iface === parsed.iface
+        r.from === parsed.from && (r.fromPort ?? '') === (parsed.fromPort ?? '') && (r.proto ?? '') === (parsed.proto ?? '') &&
+        r.direction === parsed.direction && r.iface === parsed.iface
       );
       const before = this.rules.length;
       this.rules = this.rules.filter(r =>
         !(r.action === parsed.action && r.port === parsed.port &&
-          r.from === parsed.from && r.direction === parsed.direction && r.iface === parsed.iface)
+          r.from === parsed.from && (r.fromPort ?? '') === (parsed.fromPort ?? '') && (r.proto ?? '') === (parsed.proto ?? '') &&
+          r.direction === parsed.direction && r.iface === parsed.iface)
       );
       if (this.rules.length === before) {
         return this.ruleWriteResult('absent', hadV6);
@@ -1441,12 +1439,17 @@ export class LinuxFirewallManager {
           parts.push(rule.iface);
         }
       }
-      if (rule.from !== 'Anywhere' || rule.to !== 'Anywhere') {
+      if (rule.from !== 'Anywhere' || rule.to !== 'Anywhere' || rule.fromPort || rule.proto) {
         parts.push('from');
         parts.push(rule.from === 'Anywhere' ? 'any' : rule.from);
-        if (rule.to !== 'Anywhere' || rule.port !== 'Anywhere') {
+        if (rule.fromPort) { parts.push('port'); parts.push(rule.fromPort); }
+        if (rule.to !== 'Anywhere' || rule.port !== 'Anywhere' || rule.fromPort || rule.proto) {
           parts.push('to');
           parts.push(rule.to === 'Anywhere' ? 'any' : rule.to);
+        }
+        if (rule.port === 'Anywhere' && rule.proto) {
+          parts.push('proto');
+          parts.push(rule.proto);
         }
         if (rule.port !== 'Anywhere') {
           const portMatch = rule.port.match(/^(.+)\/(tcp|udp)$/);
@@ -1611,7 +1614,10 @@ export class LinuxFirewallManager {
       } else if (rule.port !== 'Anywhere' && /^\d+/.test(rule.port)) {
         parts.push(`-p tcp --dport ${rule.port}`);
         parts.push(`-p udp --dport ${rule.port}`);
+      } else if (rule.proto) {
+        parts.push(`-p ${rule.proto}`);
       }
+      if (rule.fromPort) parts.push(`--sport ${rule.fromPort}`);
 
       // Source
       if (rule.from !== 'Anywhere') {
