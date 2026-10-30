@@ -16,6 +16,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { HashlimitTables, hashlimitListing, parseHashlimit } from './IptablesHashlimit';
 import {
   dscpListing, lengthListing, mssListing, parseDscp, parseLengthRange, parseMssRange, parseTos, tosListing, tosMatches, parseTimeWindow, timeWindowHolds, timeWindowListing,
 } from './IptablesTimeLength';
@@ -134,6 +135,11 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
   addrtype: ['--src-type', '--dst-type'],
+  pkttype: ['--pkt-type'],
+  hashlimit: [
+    '--hashlimit-upto', '--hashlimit-above', '--hashlimit-burst', '--hashlimit-mode', '--hashlimit-name', '--hashlimit-srcmask',
+    '--hashlimit-dstmask', '--hashlimit-htable-size', '--hashlimit-htable-max', '--hashlimit-htable-gcinterval', '--hashlimit-htable-expire',
+  ],
   tcpmss: ['--mss'],
   dscp: ['--dscp', '--dscp-class'],
   tos: ['--tos'],
@@ -406,6 +412,14 @@ export interface ListFormat {
   exact: boolean;
 }
 
+const PKTTYPE_NAMES: Readonly<Record<string, 'unicast' | 'broadcast' | 'multicast'>> = {
+  unicast: 'unicast', host: 'unicast', broadcast: 'broadcast', bcast: 'broadcast', multicast: 'multicast', mcast: 'multicast',
+};
+
+function pkttypeOf(name: string): 'unicast' | 'broadcast' | 'multicast' | null {
+  return PKTTYPE_NAMES[name.toLowerCase()] ?? null;
+}
+
 function markListing(option: string, value: string): string {
   const [markText, maskText] = value.split('/');
   const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
@@ -507,6 +521,8 @@ export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
   private resolveService: IptablesServiceResolver | null = null;
   private ownerNames: IptablesOwnerNames | null = null;
+  private readonly hashlimits = new HashlimitTables();
+  private hotDropped = false;
   private tables: Map<TableName, IptablesTable> = new Map();
   private readonly limitBuckets = new WeakMap<IptablesRule, { tokens: number; at: number }>();
   private readonly recentLists = new Map<string, Map<string, number[]>>();
@@ -784,6 +800,9 @@ export class LinuxIptablesManager {
           case 'NOTRACK': continue; // NOTRACK doesn't terminate
           default: continue;
         }
+      } else if (this.hotDropped) {
+        this.hotDropped = false;
+        return 'drop';
       }
     }
 
@@ -882,6 +901,23 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
+      if (m.module === 'hashlimit') {
+        const config = parseHashlimit(m.options, m.negated ?? new Set());
+        if (typeof config === 'string') return false;
+        const outcome = this.hashlimits.evaluate(config, pkt, simulationNowMs(), (ip, bits) => this.maskedAddress(ip, bits));
+        if (outcome === 'hotdrop') {
+          this.hotDropped = true;
+          return false;
+        }
+        if ((outcome === 'over') !== config.above) return false;
+      }
+      if (m.module === 'pkttype') {
+        const kind = pkttypeOf(m.options.get('--pkt-type') ?? '');
+        const actual = pkt.dstAddrType ?? pkt.addressTypeOf?.(pkt.dstIP);
+        if (kind === null || actual === undefined) return false;
+        const carried = actual === 'BROADCAST' ? 'broadcast' : actual === 'MULTICAST' ? 'multicast' : 'unicast';
+        if ((carried === kind) === inverted('--pkt-type')) return false;
+      }
       if (m.module === 'tcpmss') {
         const range = parseMssRange(m.options.get('--mss') ?? '');
         if (typeof range === 'string') return false;
@@ -972,6 +1008,14 @@ export class LinuxIptablesManager {
       return sameGroup(daddr ? original.dstIP : original.srcIP);
     });
     return counted + (state === 'NEW' ? 1 : 0) > limit;
+  }
+
+  private maskedAddress(ip: string, bits: number | null): string {
+    if (bits === null || this.family === 6) return ip;
+    const value = this.ipToNumber(ip);
+    if (value === null) return ip;
+    const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+    return String((value & mask) >>> 0);
   }
 
   private addressMatcher(spec: string): (ip: string) => boolean {
@@ -1440,6 +1484,10 @@ export class LinuxIptablesManager {
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
       case 'owner': return this.ownerListing(m, numeric);
+      case 'hashlimit': {
+        const config = parseHashlimit(o, m.negated ?? new Set());
+        return typeof config === 'string' ? '' : hashlimitListing(config, this.family === 6 ? 128 : 32);
+      }
       case 'tcpmss': {
         const range = parseMssRange(o.get('--mss') ?? '');
         return typeof range === 'string' ? '' : mssListing(range, inverts(m, '--mss'));
@@ -1474,7 +1522,7 @@ export class LinuxIptablesManager {
         const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
         return `mark match${inverts(m, '--mark') ? ' !' : ''} ${hex(mark)}${mask === undefined ? '' : `/${hex(mask)}`}`;
       }
-      case 'pkttype': return `PKTTYPE ${inverts(m, '--pkt-type') ? '!' : ''}= ${o.get('--pkt-type') ?? ''}`;
+      case 'pkttype': return `PKTTYPE ${inverts(m, '--pkt-type') ? '!' : ''}= ${pkttypeOf(o.get('--pkt-type') ?? '') ?? o.get('--pkt-type') ?? ''}`;
       case 'iprange': {
         const ranges: string[] = [];
         if (o.has('--src-range')) ranges.push(`source IP range${inverts(m, '--src-range') ? ' !' : ''} ${o.get('--src-range')}`);
@@ -2073,6 +2121,13 @@ export class LinuxIptablesManager {
   private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'hashlimit') {
+      const config = parseHashlimit(options, negated);
+      if (typeof config === 'string') return config;
+    }
+    if (module === 'pkttype' && pkttypeOf(options.get('--pkt-type') ?? '') === null) {
+      return `Bad packet type '${options.get('--pkt-type') ?? ''}'`;
     }
     if (module === 'tcpmss') {
       const range = parseMssRange(options.get('--mss') ?? '');
