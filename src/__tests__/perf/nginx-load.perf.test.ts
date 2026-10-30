@@ -4,7 +4,7 @@
  * Inactif par défaut (il durerait des dizaines de secondes dans une
  * passe ordinaire). Pour le jouer :
  *
- *   NGINX_PERF=1 PERF_OUT=/tmp/perf.txt node --expose-gc node_modules/vitest/vitest.mjs run \
+ *   NGINX_PERF=1 PERF_OUT=/tmp/perf.txt node_modules/.bin/vitest run \
  *     src/__tests__/perf/nginx-load.perf.test.ts
  *
  * Il écrit son rapport sur la sortie standard, sous forme de lignes
@@ -18,6 +18,8 @@
  */
 
 import { appendFileSync } from 'node:fs';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { describe, it, expect } from 'vitest';
 import { Http1ClientSession } from '@/network/http/http1/Http1ClientSession';
 import { createRequest } from '@/network/http/semantics/types';
@@ -27,10 +29,12 @@ import { demarrer, labo, type Labo } from '../unit/network-v2/_nginxProxyLab';
 
 const enabled = process.env.NGINX_PERF === '1';
 
-declare const gc: undefined | (() => void);
+v8.setFlagsFromString('--expose-gc');
+const collect = vm.runInNewContext('gc') as () => void;
 
 function heapMb(): number {
-  if (typeof gc === 'function') gc();
+  collect();
+  collect();
   return process.memoryUsage().heapUsed / 1024 / 1024;
 }
 

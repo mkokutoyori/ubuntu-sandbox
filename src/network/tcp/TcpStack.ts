@@ -992,6 +992,7 @@ export class TcpStack {
   }
 
   listSockets(): TcpSocket[] {
+    this.ensureIndexes();
     return this.sortedSockets.slice();
   }
 
@@ -1186,6 +1187,22 @@ export class TcpStack {
     if (bucket.size === 0) this.socketsByLocalPort.delete(socket.localPort);
   }
 
+  private ensureIndexes(): void {
+    if (this.sortedSockets.length === this.sockets.size) return;
+    const keyed = Array.from(this.sockets.values(), (socket) => [socket.key(), socket] as const);
+    keyed.sort((a, b) => SOCKET_KEY_COLLATOR.compare(a[0], b[0]));
+    this.sortedKeys.length = 0;
+    this.sortedSockets.length = 0;
+    this.socketsByLocalPort.clear();
+    for (const [key, socket] of keyed) {
+      this.sortedKeys.push(key);
+      this.sortedSockets.push(socket);
+      const bucket = this.socketsByLocalPort.get(socket.localPort);
+      if (bucket === undefined) this.socketsByLocalPort.set(socket.localPort, new Set([socket]));
+      else bucket.add(socket);
+    }
+  }
+
   private sortedIndexOf(key: string): number {
     let low = 0;
     let high = this.sortedKeys.length;
@@ -1215,6 +1232,7 @@ export class TcpStack {
   }
 
   private portHeldBySocket(port: number, localIp: string | undefined): boolean {
+    this.ensureIndexes();
     const bucket = this.socketsByLocalPort.get(port);
     if (bucket === undefined) return false;
     if (!localIp) return true;
@@ -1235,6 +1253,7 @@ export class TcpStack {
     if (!reuseAddress) return this.localPortInUse(port, rawRemoteIp);
     const remoteIp = canonicalIpText(rawRemoteIp);
     const localIp = this.resolveEgress(remoteIp)?.srcIp;
+    this.ensureIndexes();
     for (const socket of this.socketsByLocalPort.get(port.value) ?? []) {
       if (socket.localIp === localIp && socket.remoteIp === remoteIp
         && socket.remotePort === remotePort && socket.state !== 'time-wait') return true;
@@ -3470,6 +3489,7 @@ export class TcpStack {
   }
 
   hasFreeEphemeralPort(localIp?: string): boolean {
+    this.ensureIndexes();
     const inUse = new Set<number>();
     for (const [port, bucket] of this.socketsByLocalPort) {
       if (port < this.ephemeralMin || port > this.ephemeralMax) continue;
