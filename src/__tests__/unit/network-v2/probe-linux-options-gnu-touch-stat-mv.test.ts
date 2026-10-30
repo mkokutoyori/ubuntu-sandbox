@@ -72,7 +72,7 @@ describe('mv evaluates the options it accepts', () => {
   });
   it('-n keeps an existing destination', async () => {
     const machine = pc();
-    expect(await machine.executeCommand('echo one > /tmp/a; echo two > /tmp/b; mv -n /tmp/a /tmp/b; cat /tmp/b; ls -1 /tmp')).toBe('two\na\nb');
+    expect(await machine.executeCommand('echo one > /tmp/a; echo two > /tmp/b; mv -n /tmp/a /tmp/b; cat /tmp/b; ls -1 /tmp')).toBe("mv: not replacing '/tmp/b'\ntwo\na\nb");
   });
   it('several sources into a plain file are refused', async () => {
     const machine = pc();

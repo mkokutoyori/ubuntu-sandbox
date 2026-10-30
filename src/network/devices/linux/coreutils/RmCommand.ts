@@ -1,6 +1,7 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
 import { actorOf, type ShellContext } from '../LinuxFileCommands';
 import type { INode } from '../VirtualFileSystem';
+import { argumentFailure } from './BackupControl';
 import { Streams, docsResult, quoteShell, usageFailure, type CoreutilsRun } from './CoreutilsKit';
 
 const LONG_OPTIONS: readonly LongOption[] = [
@@ -49,15 +50,7 @@ export function runRm(ctx: ShellContext, args: readonly string[], stdin: string 
         {
           const match = WHEN_CHOICES.find(([name]) => name === item.argument);
           if (match === undefined) {
-            const failure = new Streams();
-            failure.diagnostic(`rm: invalid argument ‘${item.argument}’ for ‘--interactive’`);
-            failure.diagnostic('Valid arguments are:');
-            failure.diagnostic("  - ‘never’, ‘no’, ‘none’");
-            failure.diagnostic("  - ‘once’");
-            failure.diagnostic("  - ‘always’, ‘yes’");
-            failure.diagnostic("Try 'rm --help' for more information.");
-            failure.exitCode = 1;
-            return failure.result();
+            return usageFailure('rm', argumentFailure('rm', 'invalid', item.argument, '--interactive', ['never, no, none', 'once', 'always, yes']));
           }
           interaction = match[1];
           force = false;

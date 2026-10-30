@@ -72,6 +72,8 @@ import { runRm } from './coreutils/RmCommand';
 import { runBasename, runDirname } from './coreutils/PathNameCommands';
 import { runSeq } from './coreutils/SeqCommand';
 import { runCat } from './coreutils/CatCommand';
+import { runOd } from './coreutils/OdCommand';
+import { useLocaleQuotes } from './coreutils/CoreutilsKit';
 import { runCp, cpOperands } from './coreutils/CpCommand';
 import { runMv, mvOperands } from './coreutils/MvCommand';
 import { runLn } from './coreutils/LnCommand';
@@ -331,7 +333,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
   'dd', 'fallocate', 'sync', 'install',
-  'expr', 'seq', '[',
+  'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
   'tac', 'nl', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
@@ -404,7 +406,7 @@ function parseSudoLead(args: readonly string[]): {
 const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'rm', 'cp', 'mv', 'sh', 'bash', 'dash', 'xargs']);
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
-  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac',
+  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac', 'od',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
@@ -437,6 +439,7 @@ const OPTIONS_TAKING_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
   fgrep: new Set(['-e', '-f', '-m', '-A', '-B', '-C', '-d', '-D', '--regexp', '--file', '--max-count', '--after-context', '--before-context', '--context']),
   sed: new Set(['-e', '-f', '-l', '--expression', '--file', '--line-length']),
   awk: new Set(['-F', '-v', '-f', '--field-separator', '--assign', '--file']),
+  od: new Set(['-A', '-j', '-N', '-S', '-t']),
 };
 
 const OPTIONS_GIVING_THE_PROGRAM: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -467,6 +470,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
       if (!attached && valued.has(word)) index++;
       continue;
     }
+    if (command === 'od' && word.startsWith('+') && operands === 0 && args.includes('--traditional')) continue;
     operands++;
   }
   if (READ_STDIN_WITHOUT_OPERAND.has(command)) return operands === 0;
@@ -475,7 +479,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -5982,6 +5986,7 @@ export class LinuxCommandExecutor {
   private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
     stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
+    useLocaleQuotes(this.env.get('LC_ALL') || this.env.get('LC_CTYPE') || this.env.get('LANG') || '');
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
     // A registered LinuxCommand's own `privilege` field is authoritative
@@ -6959,6 +6964,9 @@ export class LinuxCommandExecutor {
       }
       case 'seq': {
         return asDispatch(runSeq(args));
+      }
+      case 'od': {
+        return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
       case 'rev': {
         const input = stdin || '';

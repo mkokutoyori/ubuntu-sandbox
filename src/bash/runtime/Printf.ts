@@ -170,7 +170,7 @@ function exponential(value: number, precision: number): string {
   return `${body}e${sign}${String(Math.abs(exponent)).padStart(2, '0')}`;
 }
 
-function general(value: number, precision: number, alternate: boolean): string {
+export function formatGeneral(value: number, precision: number, alternate: boolean): string {
   const effective = precision === 0 ? 1 : precision;
   if (value === 0) return alternate ? `0.${'0'.repeat(effective - 1)}` : '0';
   const probe = exponential(value, effective - 1);
@@ -326,7 +326,7 @@ export function formatPrintf(format: string, args: readonly string[], clock?: Pr
           if (!Number.isFinite(value)) body = Number.isNaN(value) ? 'nan' : 'inf';
           else if (conversion === 'f' || conversion === 'F') body = fixed(value, places);
           else if (conversion === 'e' || conversion === 'E') body = exponential(value, places);
-          else if (conversion === 'g' || conversion === 'G') body = general(value, precision ?? 6, flags.includes('#'));
+          else if (conversion === 'g' || conversion === 'G') body = formatGeneral(value, precision ?? 6, flags.includes('#'));
           else body = hexFloat(value, upper);
           if (upper) body = body.toUpperCase();
           text = signed(body, value < 0 || Object.is(value, -0), flags);

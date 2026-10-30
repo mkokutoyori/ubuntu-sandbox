@@ -35,6 +35,7 @@ const LONG_OPTIONS: readonly LongOption[] = [
   { name: 'version', letter: 'W', takesArgument: false },
 ];
 
+const NO_CLOBBER_WARNING = 'cp: warning: behavior of -n is non-portable and may change in future; use --update=none instead';
 const OPTSTRING = 'abdfHilLnpPRrsS:t:TuvxZ';
 const PRESERVE_ATTRIBUTES = ['mode', 'timestamps', 'ownership', 'links', 'context', 'xattr'] as const;
 type PreserveAttribute = typeof PRESERVE_ATTRIBUTES[number];
@@ -299,6 +300,7 @@ export function runCp(ctx: ShellContext, args: readonly string[], stdin: string 
       : 'cp: missing file operand');
   }
   const copier = new Copier(ctx, request, stdin);
+  if (request.noClobber) copier.streams.diagnostic(NO_CLOBBER_WARNING);
   const actor = actorOf(ctx);
   const destination = ctx.vfs.path(destinationName, ctx.cwd, actor);
   const destinationIsDirectory = destination.isDirectory();

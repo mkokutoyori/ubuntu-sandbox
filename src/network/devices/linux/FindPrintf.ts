@@ -1,5 +1,6 @@
 import type { ShellContext } from './LinuxFileCommands';
 import { lsBlocksKiB, lsSize } from './LinuxFileCommands';
+import { formatGeneral } from '@/bash/runtime/Printf';
 import { formatLocalTime } from './system/SystemInfo';
 import type { INode } from './VirtualFileSystem';
 
@@ -113,12 +114,6 @@ export function compilePrintf(format: string): CompiledPrintf {
   return { parts, warnings };
 }
 
-function formatG(value: number): string {
-  if (value === 0) return '0';
-  const text = Number(value.toPrecision(6)).toString();
-  return text.includes('e') ? Number(value.toPrecision(6)).toExponential().replace(/\.?0+e/, 'e') : text;
-}
-
 function typeLetter(inode: INode): string {
   switch (inode.type) {
     case 'directory': return 'd';
@@ -173,7 +168,7 @@ function fieldText(part: Extract<Part, { kind: 'field' }>, subject: PrintfSubjec
     case 'U': return String(inode.uid);
     case 'G': return String(inode.gid);
     case 's': return String(lsSize(inode));
-    case 'S': { const size = lsSize(inode); return size === 0 ? '1' : formatG((lsBlocksKiB(inode) * 1024) / size); }
+    case 'S': { const size = lsSize(inode); return size === 0 ? '1' : formatGeneral((lsBlocksKiB(inode) * 1024) / size, 6, false); }
     case 'b': return String(lsBlocksKiB(inode) * 2);
     case 'k': return String(lsBlocksKiB(inode));
     case 'y': return typeLetter(inode);

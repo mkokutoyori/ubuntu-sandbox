@@ -140,6 +140,7 @@ export function runMv(ctx: ShellContext, args: readonly string[], stdin: string 
         const answer = answers.shift();
         if (answer === undefined || !/^[yY]/.test(answer)) { streams.exitCode = 1; continue; }
       } else if (noClobber) {
+        fail(`not replacing ${quoteShell(shown)}`);
         continue;
       }
       if (update && existing.mtime >= sourceNode.mtime) continue;

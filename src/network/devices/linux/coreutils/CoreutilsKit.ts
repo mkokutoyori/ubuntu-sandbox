@@ -75,13 +75,19 @@ export function asDispatch(run: CoreutilsRun): { output: string; exitCode: numbe
   return { output: run.stdout, exitCode: run.exitCode, stderr: run.stderr, interleaved: run.interleaved };
 }
 
-export const quoteLocale = (text: string): string => `‘${text}’`;
+let curlyQuotes = true;
+
+export function useLocaleQuotes(locale: string): void {
+  curlyQuotes = /utf-?8/i.test(locale);
+}
+
+export const quoteLocale = (text: string): string => (curlyQuotes ? `‘${text}’` : `'${text}'`);
 export const quoteShell = (text: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? `'${text}'` : `'${text.replace(/'/g, `'\\''`)}'`);
 
 export const quotef = (text: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`);
 
 const SUFFIX_FACTORS: Readonly<Record<string, number>> = {
-  b: 512, kB: 1000, k: 1024, K: 1024, KiB: 1024, MB: 1000 ** 2, M: 1024 ** 2, MiB: 1024 ** 2, GB: 1000 ** 3, G: 1024 ** 3, GiB: 1024 ** 3,
+  b: 512, kB: 1000, KB: 1000, k: 1024, K: 1024, KiB: 1024, MB: 1000 ** 2, M: 1024 ** 2, MiB: 1024 ** 2, GB: 1000 ** 3, G: 1024 ** 3, GiB: 1024 ** 3,
   TB: 1000 ** 4, T: 1024 ** 4, TiB: 1024 ** 4, PB: 1000 ** 5, P: 1024 ** 5, PiB: 1024 ** 5, EB: 1000 ** 6, E: 1024 ** 6, EiB: 1024 ** 6,
   ZB: 1000 ** 7, Z: 1024 ** 7, ZiB: 1024 ** 7, YB: 1000 ** 8, Y: 1024 ** 8, YiB: 1024 ** 8,
 };
