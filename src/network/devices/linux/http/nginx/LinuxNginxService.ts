@@ -25,6 +25,7 @@ import type { OcspWireDeps } from '@/network/http/ocsp/OcspHttpClient';
 import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './NginxTls';
 import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
+import { applyGzipFilter } from './NginxGzip';
 import { findServerByName, serverNameMatches, type ServerNameEntry } from './NginxServerNames';
 import { NGINX_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
 import { binaryStringToBytes as bytes } from '@/crypto/encoding';
@@ -490,6 +491,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       ?? (server
         ? this.serve(server, target, req, peer)
         : this.errorResponse(404, 'Not Found', notFoundPage()));
+    if (server) applyGzipFilter(req, response, (matchLocation(server, target) ?? server).gzip);
     this.logRequest(server, req, response, target, peer);
     return response;
   }

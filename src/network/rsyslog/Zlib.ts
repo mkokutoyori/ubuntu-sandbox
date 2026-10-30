@@ -266,6 +266,18 @@ export class GzipStreamWriter {
   }
 }
 
+export function gzipCompress(data: Uint8Array, level: number): Uint8Array {
+  const writer = new GzipStreamWriter(Math.max(1, Math.min(9, level)));
+  const parts: Uint8Array[] = [];
+  let offset = 0;
+  do {
+    parts.push(writer.write(data.subarray(offset, offset + GZIP_PENDING_FLUSH_BYTES), false));
+    offset += GZIP_PENDING_FLUSH_BYTES;
+  } while (offset < data.length);
+  parts.push(writer.finish());
+  return concatenate(parts);
+}
+
 function zlibHeader(level: number): [number, number] {
   let flevel = 3;
   if (level < 2) flevel = 0;

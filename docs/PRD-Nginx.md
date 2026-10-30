@@ -888,3 +888,63 @@ entre deux requêtes) ; il n'y a pas de contrôle de santé ACTIF
 libre que ce simulateur imite) ; et `ip_hash` répartit sur le cycle des
 membres vivants, si bien qu'une panne redistribue les clients — comme
 chez nginx sans `zone`.
+
+### 9.11 `gzip on;` compresse, et le codec n'etait pas a ecrire
+
+Le TODO affirmait qu'« aucun codec DEFLATE n'existe ici ». C'etait faux :
+`rsyslog/Zlib.ts` porte compression, `Inflater` et gzip complets
+(CRC-32, trailer). Le `nginx.conf` livre dit `gzip on;`, les huit
+directives `gzip*` etaient dans `ACCEPTED_INERT` : acceptees, rendues,
+sans effet. Un client envoyant `Accept-Encoding: gzip` recevait le corps
+en clair, sans `Content-Encoding`.
+
+Source : nginx 1.24.0, `ngx_http_gzip_filter_module.c`
+(`ngx_http_gzip_header_filter`) et `ngx_http_core_module.c`
+(`ngx_http_gzip_ok`, `ngx_http_gzip_accept_encoding`/`_quantity`).
+
+**Ce qui decide, dans l'ordre de nginx** : `gzip on`, statut 200/403/404,
+pas de `Content-Encoding` deja pose, longueur >= `gzip_min_length`
+(20 par defaut), type dans `gzip_types` (`text/html` toujours, `*` pour
+tout), pas HEAD ; alors seulement `Vary` (si `gzip_vary on`, y compris
+pour un client qui n'accepte pas gzip) ; puis `Accept-Encoding` lu comme
+nginx le lit (`xgzip` et `gzipx` refuses, `q=0`, `q=0.000` refuses,
+`q=1.5` refuse — le defaut de la source est porte tel quel), `Via` +
+`gzip_proxied` (off par defaut ; `off` l'emporte sur `any` ; `expired`,
+`no-cache`, `no-store`, `private`, `no_last_modified`, `no_etag`,
+`auth`), puis `gzip_disable` (`msie6` selon `ngx_http_process_user_agent`,
+expressions sans casse). La reponse perd `Content-Length` et
+`Accept-Ranges`, devient `Transfer-Encoding: chunked`, et un `ETag` fort
+devient faible (`ngx_http_weak_etag`). Le journal d'acces compte les
+octets COMPRIMES.
+
+**Heritage http -> server -> location** : un reglage hors d'un bloc le
+remplace sans le cumuler (`gzip_types` s'accumule seulement DANS un
+meme bloc). Les reglages sont resolus une fois au parse ; un bloc sans
+directive `gzip*` partage l'objet de son parent.
+
+**`nginx -t` juge** : `invalid value "maybe" in "gzip" directive, it must
+be "on" or "off"`, `value must be between 1 and 9`, `"gzip_comp_level"
+directive invalid number`, `"gzip" directive is duplicate`, nombre
+d'arguments, contexte.
+
+**Le codec n'a pas ete reecrit** : `gzipCompress` a ete ajoute a
+`Zlib.ts`, la ou le codec vit. Il nourrit `GzipStreamWriter` par tranches
+de 16 Kio, car ce writer fait `push(...segment)` et un seul gros `write`
+depasserait la pile. Mesure : 1 Mio en ~140 ms, 4 Mio en ~0,6 s, lineaire.
+
+**Defaut ferme au passage** : les fichiers inclus etaient relus avec
+`parent = null`. Une directive a la racine d'un fichier inclus dans
+`http {}` etait donc jugee « not allowed here » ; le parent reel est
+desormais transmis.
+
+**Limites assumees** : au-dela de 1 Mio le corps n'est pas compresse
+(plafond memoire du simulateur, `GZIP_MAX_BODY_BYTES`) ; `gzip_http_version`
+est valide mais toujours satisfait (le modele de requete ne connait pas
+HTTP/1.0) ; `gzip_buffers` reste accepte et inerte ; `gzip_disable` prend
+des regex JavaScript, le message d'erreur de PCRE2 n'est donc pas
+reproductible a l'identique.
+
+`nginx-gzip.test.ts` (62 cas), **41 tombent par `git stash`**. Les 21 qui
+passent des deux cotes sont des refus (sans `Accept-Encoding`, `gzip off`,
+`q=0`, HEAD, 301/502, trop court…) et le temoin « la configuration
+livree reste valide ».

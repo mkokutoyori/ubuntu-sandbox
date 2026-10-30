@@ -3,6 +3,10 @@ import {
   NGINX_SSL_DIRECTIVES, checkSslDirective, resolveSslSettings, sslMergeProblem,
   type NginxSslDirective, type NginxSslSettings,
 } from './NginxSsl';
+import {
+  NGINX_GZIP_DIRECTIVES, DEFAULT_GZIP_SETTINGS, checkGzipDirective, resolveGzipSettings,
+  type NginxGzipSettings,
+} from './NginxGzip';
 
 export interface NginxToken {
   readonly value: string;
@@ -45,7 +49,7 @@ const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'lea
 
 
 const APPLIED_DIRECTIVES = new Set([
-  ...NGINX_SSL_DIRECTIVES,
+  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES,
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
   'add_header', 'default_type',
@@ -71,8 +75,7 @@ const ACCEPTED_INERT = new Set([
   'multi_accept', 'sendfile', 'tcp_nopush', 'tcp_nodelay', 'keepalive_timeout',
   'keepalive_requests', 'types_hash_max_size', 'server_tokens', 'server_names_hash_bucket_size',
   'client_max_body_size', 'client_body_timeout', 'client_header_timeout', 'send_timeout',
-  'gzip', 'gzip_disable', 'gzip_vary', 'gzip_proxied', 'gzip_comp_level',
-  'gzip_buffers', 'gzip_http_version', 'gzip_types', 'gzip_min_length',
+  'gzip_buffers',
   'log_format', 'charset', 'etag', 'expires', 'error_page_recursive',
   'reset_timedout_connection', 'open_file_cache', 'aio', 'directio',
   // §P6 — réglages du mandataire sans effet observable ici : le temps
@@ -249,7 +252,7 @@ function parseBlock(
         seen.add(path);
         const text = source.read(path);
         if (text === null) continue;
-        const nested = parseBlock({ tokens: tokenize(text, path), pos: 0 }, source, 0, seen);
+        const nested = parseBlock({ tokens: tokenize(text, path), pos: 0 }, source, 0, seen, parent);
         if (nested.ok === false) return nested;
         out.push(...nested.tree);
       }
@@ -293,6 +296,11 @@ function parseBlock(
         return { ok: false, error: emerg(`"${name}" directive is not allowed here`, file, line) };
       }
       const problem = checkSslDirective(name, args, out.some((d) => d.name === name));
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+
+    if (NGINX_GZIP_DIRECTIVES.has(name)) {
+      const problem = checkGzipDirective(name, args, out.some((d) => d.name === name), parent);
       if (problem) return { ok: false, error: emerg(problem, file, line) };
     }
 
@@ -505,6 +513,7 @@ export interface NginxLocation {
   /** §P6 */
   readonly proxyPass?: NginxProxyPass;
   readonly proxySetHeaders: readonly (readonly [string, string])[];
+  readonly gzip: NginxGzipSettings;
 }
 
 export interface NginxServerBlock {
@@ -521,6 +530,7 @@ export interface NginxServerBlock {
   readonly sslLine: number;
   /** §P6 — hérités par les `location` qui n'en déclarent pas. */
   readonly proxySetHeaders: readonly (readonly [string, string])[];
+  readonly gzip: NginxGzipSettings;
 }
 
 function parseListen(args: readonly string[]): { port: number; defaultServer: boolean; ssl: boolean } | null {
@@ -619,14 +629,15 @@ export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream
   return out;
 }
 
-function collectLocation(node: NginxDirective, inheritedRoot: string): NginxLocation {
+function collectLocation(node: NginxDirective, inheritedRoot: string, inheritedGzip: NginxGzipSettings): NginxLocation {
   const loc: {
     path: string; root?: string; index?: string[]; tryFiles?: string[];
     returnStatus?: number; returnTarget?: string; autoindex?: boolean;
     addHeaders: (readonly [string, string])[];
     proxyPass?: NginxProxyPass;
     proxySetHeaders: (readonly [string, string])[];
-  } = { path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [] };
+    gzip: NginxGzipSettings;
+  } = { path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [], gzip: inheritedGzip };
 
   for (const d of node.block ?? []) {
     if (d.name === 'root') loc.root = d.args[0];
@@ -646,10 +657,11 @@ function collectLocation(node: NginxDirective, inheritedRoot: string): NginxLoca
     }
   }
   if (!loc.root) loc.root = inheritedRoot;
+  loc.gzip = resolveGzipSettings(inheritedGzip, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
   return loc as NginxLocation;
 }
 
-function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[] }): NginxServerBlock {
+function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; gzip: NginxGzipSettings }): NginxServerBlock {
   const listen: { port: number; defaultServer: boolean; ssl: boolean }[] = [];
   let serverNames: string[] = [];
   let root = '/var/www/html';
@@ -676,14 +688,15 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
       proxySetHeaders.push([d.args[0], d.args.slice(1).join(' ')]);
     }
   }
+  const gzip = resolveGzipSettings(httpDefaults.gzip, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
   for (const d of node.block ?? []) {
-    if (d.name === 'location') locations.push(collectLocation(d, root));
+    if (d.name === 'location') locations.push(collectLocation(d, root, gzip));
   }
 
   return {
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
     ssl: resolveSslSettings(httpDefaults.sslDirectives, serverSslDirectives),
-    sslFile: node.file, sslLine: node.line, proxySetHeaders,
+    sslFile: node.file, sslLine: node.line, proxySetHeaders, gzip,
   };
 }
 
@@ -692,6 +705,7 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
   const defaults = {
     accessLog: null as string | null, errorLog: null as string | null,
     sslDirectives: [] as NginxSslDirective[],
+    gzip: DEFAULT_GZIP_SETTINGS,
   };
 
   const walk = (nodes: readonly NginxDirective[], inHttp: boolean): void => {
@@ -699,6 +713,9 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
       if (node.name === 'access_log' && !inHttp) defaults.accessLog = node.args[0] === 'off' ? null : node.args[0];
       if (node.name === 'error_log' && !inHttp) defaults.errorLog = node.args[0];
       if (node.name === 'http') {
+        defaults.gzip = resolveGzipSettings(
+          DEFAULT_GZIP_SETTINGS, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)),
+        );
         for (const d of node.block ?? []) {
           if (d.name === 'access_log') defaults.accessLog = d.args[0] === 'off' ? null : d.args[0];
           if (d.name === 'error_log') defaults.errorLog = d.args[0];
