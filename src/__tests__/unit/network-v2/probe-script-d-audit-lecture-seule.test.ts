@@ -55,7 +55,7 @@ describe('read-only audit script', () => {
     expect(await pc.executeCommand('cd /tmp/fp; find . -type f -perm -111')).toBe('./b');
     expect(await pc.executeCommand('cd /tmp/fp; find . -type f -perm -0002')).toBe('./a');
     expect(await pc.executeCommand('cd /tmp/fp; find . -type f -perm /022 | sort')).toBe('./a');
-    expect(await pc.executeCommand('find /etc -perm 99')).toBe("find: Invalid mode '99'");
+    expect(await pc.executeCommand('find /etc -perm 99')).toBe("find: invalid mode '99'");
   });
 
   it('`test` reports errors with the script prefix and bash wording', async () => {

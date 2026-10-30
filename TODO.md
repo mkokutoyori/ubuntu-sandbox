@@ -4103,7 +4103,7 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 ### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
-Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
 
 ### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
@@ -4178,10 +4178,6 @@ Measured: `src/__tests__/unit/network-v2/linux-hosts-hostname-hijack.test.ts` ("
 
 Measured: `boot system flash:image.bin` is stored (`CiscoFileSystem.addBootSystem`) and read back by `show boot` (`BOOT variable = flash:image.bin`), but `show running-config` on a router and on a switch never writes the line, so an exported topology loses it on import. The two renderers (`showRunningConfig` for the router, `buildRunningConfig` for the switch) do not reach the shell's file system. Not closed: they need a narrow port to the boot list.
 
-## Oracles Linux rouges sur la base (hors perimetre Cisco)
-
-Mesure : `shell-fin-de-ligne-oracle` (`printf '…' | head|tail …`, 17 cas) et `auditctl-oracle` echouent deja au commit `2351448f2`, AVANT les travaux telnet/Cisco de cette serie — verifie dans un worktree de ce commit (21 cas rouges sur 262). Verifie de la meme facon au meme commit : `aureport-oracle`, `ausearch-oracle`, `ausearch-interpret-oracle` et `netcmds-oracle` (nc-readwrite) sont rouges aussi. `probe-oracle-sqlplus-silencieux-et-rman-a-froid` (« 60 sauvegardes de suite laissent la boucle d'evenements respirer ») est un test de TEMPS : rouge dans un lot charge, vert seul — a ne pas compter parmi les defauts. Non diagnostique : les oracles rejouent des enregistrements de vrais binaires et l'ecart n'a pas ete lu cas par cas.
-
 ## Cisco: key-chain lifetimes are stored, never evaluated
 
 Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-chain migration), stored on the key, rendered by `show key chain` and by the running-config, and read by nothing else: no routing protocol asks the key chain which key is valid NOW, so a key outside its lifetime still authenticates. Not closed: the brick is a clock-aware `validAt(instant)` on `KeyChainRepository` read by the protocols that take `key-chain` (EIGRP, RIP, OSPF auth), each of which also has to learn to pick among several valid keys.
@@ -4190,21 +4186,13 @@ Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-
 
 Measured: `CiscoShellBase.hasVxlanHardware()` returns `false` and nothing overrides it, so `interface nve`'s `source-interface`, `member vni`, `peer-ip` and the four `show nve|vxlan|mac address-table vxlan` views are never declared on any router or switch, whatever the chassis profile. `VxlanAgent` works (its protocol tests drive it through the API); only the CLI door is shut. Not closed: which chassis profiles carry VXLAN hardware (the real Catalyst 9000 and Nexus lines do, the ISR lines do not) is a platform fact whose documentation was not reachable. Forcing the flag is not enough either: with `hasVxlanHardware()` patched to true, `interface nve1` cannot be created (no such port), so `source-interface` answers `% No interface selected` and `show nve vni` stays empty. The migration of these nine registrations to the socle was tried and reverted for that reason: it could not be probed.
 
-## Linux: tcpdump ICMPv6 « unreachable port » rouge sur la base
-
-Mesure : `probe-ipv6-se-fragmente-a-la-source-et-se-reassemble-a-l-arrivee` > « a datagram to a closed UDP port draws "unreachable port" naming the quoted destination and port » echoue deja au commit `2351448f2` (avant la serie telnet/Cisco), 1 cas sur 90. Non diagnostique.
-
-## Rouges sur la base, vus par le lot IPSec (hors perimetre)
-
-Mesure au commit `2351448f2` (avant la serie telnet/Cisco), worktree dedie : `crypto-pki-trustpool` (cabundle url), `ike-real-diffie-hellman` (2 cas), `probe-linux-kerberos-tools-answer-like-mit` (5 cas de rejeu) — 8 cas rouges sur 57. Non diagnostiques.
-
 ## Cisco: invalid inputs the fuzz scan still sees accepted
 
-Measured with a scan of ~90 invalid one-liners on a fresh router (the others are refused): `interface loopback 99999999999` (the number overflows a signed 32-bit integer, IOS stops at 2147483647), `hostname 1bad` and a 100-character hostname, `logging buffered 1` (IOS floors the buffer size), a 300-character `description` (IOS truncates or refuses past 240), `ip helper-address 0.0.0.0` / `224.0.0.1`, `ip address 127.0.0.1 255.0.0.0` on a physical interface, `clear ip route 999.1.1.1`. Not closed: each bound is an IOS fact whose documentation was not reachable, except the loopback overflow, which needs the interface-name parser (spread over `Router.ts` and the shell) rather than one place.
+Re-measured after the loopback/tunnel number bound: still accepted are `hostname 1bad`, a 100-character hostname and `hostname a_b` (IOS limits the characters and the length; the exact wording was not reachable), a 300-character `description`, `ip helper-address 0.0.0.0` / `224.0.0.1`, `ip address 127.0.0.1 255.0.0.0` on a physical interface. Closed: `logging buffered` floor, `clear ip route 999.1.1.1`, loopback/tunnel overflow.
 
 ## Cisco: `show` verbs whose free tail is accepted without being judged
 
-Measured by appending the word `zorglub` to 75 `show` verbs on a fresh router (the others answer `% Invalid input`): `show ip ospf neighbor`, `show ip eigrp neighbors`, `show cdp neighbors`, `show lldp neighbors`, `show snmp`, `show flash:`, `show boot`, `show environment`, `show processes memory`, `show memory`, `show ip sla summary`, `show ip cef`, `show ip mroute`, `show ip pim neighbor`, `show ip igmp groups`, `show ssh`, `show class-map`, `show policy-map` answer without `% Invalid input`. Not all ignore the word: `show ip ospf neighbor` filters its lines by substring (a word that matches nothing leaves only the header), which is a judgement of sorts but not the IOS grammar (interface, neighbor id, `detail`); the others (`show boot`, `show memory`, `show ssh`…) print their normal output whatever follows. Several are right to take a tail (an interface, a name, `detail`, `statistics`): what is missing is the judgement of the tail, which needs each verb's own grammar (interface name, neighbor id, `detail`). Not closed: one lot per family, each with the IOS forms it must keep.
+Measured by appending the word `zorglub` to 75 `show` verbs on a fresh router (the others answer `% Invalid input`): `show ip ospf neighbor`, `show ip eigrp neighbors`, `show cdp neighbors`, `show lldp neighbors`, `show snmp`, `show flash:`, `show boot`, `show environment`, `show memory`, `show ip cef`, `show ip mroute`, `show ip pim neighbor`, `show ip igmp groups`, `show class-map`, `show policy-map` answer without `% Invalid input`. Not all ignore the word: `show ip ospf neighbor` filters its lines by substring (a word that matches nothing leaves only the header), which is a judgement of sorts but not the IOS grammar (interface, neighbor id, `detail`); the others (`show boot`, `show memory`, `show ssh`…) print their normal output whatever follows. Several are right to take a tail (an interface, a name, `detail`, `statistics`): what is missing is the judgement of the tail, which needs each verb's own grammar (interface name, neighbor id, `detail`). Not closed: one lot per family, each with the IOS forms it must keep.
 
 ## PIM: rp-candidate / bsr-candidate group-list, interval and running-config
 
@@ -4216,19 +4204,6 @@ neither is rendered in the running-config (the interface identity is lost).
 `ip pim spt-threshold` is stored and rendered but the engine builds only
 (*,G) state, so it is never evaluated. Seen while migrating the PIM family.
 
-## Reds already present at the base commit 2351448f2 (full network-v2 sweep)
-
-Measured by running the same files on a clean worktree of the base: run-parts
-(5), basic-commandes #84 (L2-only switch IP), auditctl-other #128,
-fault-sigkill-residues, firewall/architecture-guards G8, linux-bash-details
-G11-01/02, linux-ls-tty-awareness, linux-rsyslog-imfile truncation,
-nano-colors/exec/tab oracles and probe-nano-exec, nss-resolution-unified,
-observability-bridge §JB, openssl-ocsp-probe (-port/-url), probe-base-de-paquets,
-probe-cle-privee-d-hote-est-privee, probe-couche-internet-un-seul-ttl,
-probe-ipv6-se-fragmente (tcpdump ICMPv6), probe-linux-ne-lit-pas-le-fuseau-du-
-processus, plus the Linux oracle and crypto reds listed above. None is caused by
-the Cisco socle series; they are recorded so a sweep is read against them.
-
 ## IKEv2 global settings: three upper bounds not enforced (source unreachable)
 
 `crypto ikev2 nat keepalive`, `cookie-challenge` and `window` refuse
@@ -4238,13 +4213,6 @@ reference for the IKEv2 forms could not be reached. `crypto ikev2 dpd` shares
 the 10-3600 / 2-60 ranges the IKEv2 profile `dpd` of the same file already
 declared. Fetch the IKEv2 pages, then declare the three ranges on the places in
 CiscoIPSecIKEv2Commands.ts.
-
-Also red at the base (27 tests, measured on the same clean worktree): other-commands,
-probe-arith-01-puissance, probe-date-suit-le-fuseau, probe-env-ne-rend-que-l-
-environnement, probe-fuseau-linux-et-pare-feu, probe-fuser-porte-de-psmisc,
-probe-ldapsearch-linux-interroge-le-controleur-de-domaine,
-probe-oracle-sqlplus-silencieux-et-rman-a-froid, probe-proc-sys-write-reaches-
-the-store, probe-procfs-does-not-grow, scenario10-linux-audit, tail.
 
 ## OSPF redistribute: route-map, tag, and sources the engine does not evaluate
 
@@ -4310,15 +4278,9 @@ rest was not reachable, so refusing them would be guessing (rule 8). Needs the
 Huawei command reference for sflow, bfd, isis, traffic classifier/behavior/
 policy, route-policy and `snmp-agent community`.
 
-## migration-guard: exact match vs concurrent prefix on `show crypto ipsec`
+## FortiGate batteries 04–11 encode an aspirational simulator
 
-`src/__tests__/unit/cli/migration-guard.test.ts` ("une correspondance EXACTE
-l'emporte sur un prefixe concurrent") fails: `show crypto ipsec sa` and `show
-crypto ipsec security-association lifetime` both answer `IPSec not
-configured.` on an unconfigured router. Confirmed red at the base commit 2351448f2
-(checked in a separate worktree), so it is not from the hardening series. Also red: `fortigate-battery-04-
-monitoring-telemetry-syslog.test.ts` (28 cases), same family as batteries
-06/09/10/11.
+`fortigate-battery-03` (13 cases) and `-04` to `-11` (about 300 cases) are red at the base commit 2351448f2. Measured on battery 09: its first step is `systemctl start nginx-tls13`, which answers `Failed to start nginx-tls13.service: Unit nginx-tls13.service not found.`; the same files start `nginx-pqc`, `api-gateway`, `otel-collector` and others no machine ships, then read `openssl s_client` output that only exists if the unit ran (`connect:errno=111` otherwise). The premise is false, not the engine: the units must either be created by the test through the real unit-file path, or the cases rewritten. Not closed because each battery needs its own lab audit.
 
 ## clear ip bgp soft / in / out and peer-group targets
 
@@ -4329,44 +4291,9 @@ although IOS accepts them (BgpNeighborCfg carries no peer-group name, the
 engine no per-family reset). Hard reset by `*`, address, AS, external and
 internal is real (BGPEngine.resetPeers).
 
-## More reds seen with the working tree stashed (not caused by the hardening series)
+## `sh -c` speaks bash, not dash
 
-`network-v2/auditctl-oracle.test.ts` (replays), `auditctl-other.test.ts` (128,
-an unmatched quote answers bash's own `unexpected eof` instead of an auditctl
-message), `ausearch-interpret-oracle.test.ts` (replays) and
-`new_firewall/fortigate-battery-08-cyber-defense-tls-pvlan.test.ts` (26 cases)
-fail on HEAD with `src` stashed. Not diagnosed.
-
-## Linux reds seen with the working tree stashed (identical with and without the option guard)
-
-`network-v2/basic-commandes.test.ts` (1), `linux-hosts-hostname-hijack.test.ts`
-(1), `probe-env-ne-rend-que-l-environnement.test.ts` (1),
-`probe-linux-ne-lit-pas-le-fuseau-du-processus.test.ts` (1), `run-parts.test.ts`
-(5), `scenario10-linux-audit.test.ts` (4) and
-`new_firewall/fortigate-battery-07-windows-active-directory.test.ts` (14). Not
-diagnosed.
-
-`debug/infra/durcissement-infra-entreprise.debug.test.ts` (1),
-`network-v2/probe-fuser-porte-de-psmisc.test.ts` (2) and
-`probe-linux-kerberos-tools-answer-like-mit.test.ts` (5) also fail identically
-with the working tree stashed.
-
-`audit/vacl-mac-clause.test.ts` (1), `network-v2/crypto-pki-trustpool.test.ts` (1),
-`nss-resolution-unified.test.ts` (1) and `probe-proc-sys-write-reaches-the-
-store.test.ts` (6) also fail identically with the working tree stashed.
-
-`network-v2/firewall/architecture-guards.test.ts` (G8: two schema tables share
-a render rank, 96 distinct ranks for 97 tables) and
-`network-v2/probe-fuseau-linux-et-pare-feu.test.ts` (3) are red at the base
-commit 2351448f2 (checked in a worktree).
-
-`network-v2/linux-bash-details.test.ts` (2), `linux-ls-tty-awareness.test.ts`
-(1), `linux-rsyslog-imfile.test.ts` (1) and `openssl-ocsp-probe.test.ts` (2)
-are red at the base commit 2351448f2 (checked in a worktree), like
-`probe-fuser-porte-de-psmisc.test.ts`, `run-parts.test.ts`,
-`scenario10-linux-audit.test.ts`, `crypto-pki-trustpool.test.ts`,
-`probe-procfs-does-not-grow.test.ts` (3) and
-`probe-oracle-sqlplus-silencieux-et-rman-a-froid.test.ts` (1).
+Measured: `sudo sh -c 'echo 3 > /proc/sys/net/ipv4/zorglub'` answers `sh: line 1: /proc/sys/net/ipv4/zorglub: No such file or directory`; Ubuntu's `sh` is dash and says `sh: 1: cannot create /proc/sys/net/ipv4/zorglub: Directory nonexistent`. `probe-procfs-does-not-grow` now runs `bash -c`. A dash diagnostic table is not written.
 
 ## Linux coreutils without an option table
 
@@ -4396,3 +4323,79 @@ Measured: `pwd --zorglub` prints the directory (bash answers `bash: pwd: --: inv
 
 `FindExpression.ts` now parses the GNU grammar (-o, -a, !, parentheses, -prune, -quit, actions suppress the default -print) and evaluates -regex, -links, -uid, -gid, -inum, -used, -nouser, -nogroup, -readable/-writable/-executable, -samefile, -lname, -printf, -daystart. Still answered `false` (fail closed) because the brick behind them is missing: `-fstype` and `-context` (no mount/SELinux label lookup from the shell context), `-ls`, `-fprint`, `-fprint0`, `-fprintf`, `-fls` (no output-file channel, no `ls -dils` line), `-ok`/`-okdir` (no prompt channel). `-exec`/`-execdir` still only echo the command line with `{}` replaced and run nothing, `+` is read as `;`; the `-printf` date directives other than `%A@ %C@ %T@` go through `formatLocalTime` and are not checked against findutils.
 
+
+## Linux split: --filter and -n l/N, K/N
+
+Measured: `split --filter=CMD` is refused as an unrecognized option and `-n l/3`, `-n 2/3` as `invalid number of chunks`, where GNU accepts both. `--filter` needs the shell to run CMD with each piece on its stdin and `$FILE` set; `l/N` and `K/N` need line-aligned chunking and stdout output. `-a -d -x -e -t -C -u --additional-suffix --verbose` are evaluated.
+
+## Linux sed: options accepted without effect
+
+Measured: `-z`/`--null-data` (lines are still split on newline), `-l N`/`--line-length` (the `l` command keeps its own width), `--posix`, `--debug`, `--sandbox` (e/r/w stay enabled) and `--follow-symlinks` are read by `SedOptions.ts` and change nothing, because the engine has no NUL-separated record mode, no wrap parameter, no GNU-extension switch and no program annotation. A real sed honours all six. Unknown options, `--help`, `--version`, `-i[SUFFIX]` (backup), unreadable inputs and `-f` of a missing file are handled.
+
+## Linux grep: options accepted without effect
+
+Measured: `-T`/`--initial-tab`, `-z`/`--null-data`, `-a`/`--text`, `-I`, `-U`/`--binary`, `-u`, `--binary-files=TYPE`, `--devices=ACTION`, `--line-buffered` and `-R` (symlinks are not followed differently from `-r`) are read through `GREP_OPTIONS` and change nothing. The simulator has no binary-file detection (a NUL-bearing file is always printed as text), no NUL-separated record mode and no tab alignment of the prefix. Unknown options, `--help`, `-V`, `-Z`, `-b`, `--label`, `--exclude-dir`, `--exclude-from`, `--directories`, `--no-ignore-case` and the long spellings of every evaluated option are handled. The `--help` and `-V` texts are those of grep 3.7 from memory.
+
+## Linux diff: output styles accepted without effect
+
+Measured: `-y`/`--side-by-side` (and `-W`, `--left-column`, `--suppress-common-lines`), `-e`/`--ed`, `-f`, `-n`/`--rcs`, `-D`/`--ifdef`, `--line-format` and the group formats, `-p`/`--show-c-function`, `-F`, `-t`, `-T`, `--tabsize`, `-E`, `-I`, `-S`, `-x`'s sibling `-X`, `--from-file`/`--to-file`, `--color`, `--strip-trailing-cr`, `-a`, `-d`, `-l` are read through `DIFF_OPTIONS` and change nothing; a real diff prints a different layout for the first nine. `-u`/`-U N`, `-c`/`-C N`/`-NUM`, `-q`, `-s`, `-i`, `-w`, `-b`, `-Z`, `-B`, `-r`, `-N`, `-L`, `-x` and directory operands are evaluated. `diff -` (standard input) is not supported: the executor case receives no stdin. The hunk boundaries come from a plain LCS and can differ from GNU's heuristic on ambiguous input.
+
+## Cisco: `bgp default local-preference ?` announces <cr>
+
+Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `bgp default local-preference ?` names the range, but still announces `<cr>` after the keyword while the command answers `% Incomplete command.` without a value. The value place is optional because `ipv4-unicast` takes none and `AdapterKeyword` has no per-choice argument (OptionSpec has `choices`, the adapter does not). Closing it needs `choices` on `AdapterKeyword`, or a separate `bgp default local-preference` registration.
+
+## mv and stat: options accepted without effect
+
+`mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` evaluates `-c`/`--format`; `--printf`, `-t` (terse), `-f` (filesystem), `-L` (follow) are accepted and ignored. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.
+
+## column and awk: options accepted without effect
+
+`column` evaluates -t and -s only; -o, -c, -x, -J, -N, -n, -R, -H, -E, -l, -e, -d, -L and the tree options are accepted (table of util-linux 2.37 from memory; the dev container has no `column` to compare with) and ignored. `awk -W version` prints nothing where mawk prints its banner (version and compile-time limits); the banner of Ubuntu 22.04's mawk 1.3.4-20200120 was not available to copy.
+
+## lsof: an unknown option is ignored
+
+`lsof -q` and `lsof --zorglub` list files. The real lsof (4.95 in the dev container; Ubuntu 22.04 ships 4.93.2) has its own parser: it reports every bad character (`lsof: illegal option character: z`, then `illegal process group ID: lub` for the rest of `--zorglub`, which it reads as `-g lub`), prints a version banner whose text depends on the release, then a usage block, status 1. Faithful refusal needs that whole parser (`+`/`-` options with attached or separate arguments); a table in the style of the GNU guard would give a wrong second line. Not written.
+
+## Huawei VRP: `Too many parameters` has no echoed line and caret
+
+`display acl all zorglub` answers a bare `Error: Too many parameters found at '^' position.`: `normaliserErreurVrp` decorates Incomplete, Unrecognized and Wrong parameter with the typed line and a caret, not this family, because the position of the extra word is known only to the handler. The declared ceiling `allowArgs` + `tropDeParametres` does render it fully but only supports one fixed ceiling per node.
+
+## Huawei VRP: config commands that take any trailing word
+
+Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, `arp static 1.1.1.1 0000-0000-0001`, `nat static global 1.1.1.1 inside 2.2.2.2`, `bfd` and `user privilege level 3` run as if the word were not typed. Each has optional tails on a real VRP (`privilege level`, `vid`/interface, `netmask`/`vrrp`...) whose full grammar was not reachable, so a ceiling would refuse valid forms.
+
+## file and hostname: options accepted without effect
+
+`file` evaluates -b, -i, --mime and --mime-type (ASCII text, empty, directory, symlink, special files, shell scripts only); -L, -z, -f, -F, -0, --extension, --apple and the rest are accepted and ignored. `hostname` refuses unknown options like net-tools but still ignores -F (read from a file), -b, -a and -y/--yp/--nis.
+
+## ls: options accepted without effect
+
+Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `--block-size`, `-Z` shows `?` instead of a real SELinux context, `--quoting-style=shell*` and `locale` are approximated by literal and c, and `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
+
+## du: options accepted without full effect
+
+`du` evaluates every option of GNU du 9.4 except: `-x` (the file-system boundary is read from `ctx.deviceOf` only when the host supplies it), `--files0-from=-` (no stdin), the threshold suffix forms beyond K/M/G, and the readdir order of entries (the simulator lists in insertion order; the probe compares sorted lines). `--time` uses the file times of the simulator.
+
+## grep: what is still approximated
+
+Evaluated and compared with GNU grep 3.11: the selection, output, context, binary-file, directory, null-data, initial-tab and colour options (see probe-linux-grep-evalue-ses-options). Still approximate: a file counts as binary only when it holds a NUL byte (grep also treats invalid UTF-8 in a UTF-8 locale as binary); `-D` (devices) and `-U`/`--line-buffered` are accepted and ignored; `-P` is JavaScript's RegExp with `\K` translated; `GREP_COLORS` is not read (the defaults are used); entries of `-r` follow the simulator's insertion order, not readdir.
+
+## sed: what is still approximate
+
+Evaluated and compared with GNU sed 4.9 (see probe-linux-sed-evalue-ses-options): syntax errors with their `-e expression #N, char C` position and exit status, `s///w`, `w`/`W`/`r`/`R` (truncation at start, `/dev/stdout`, `/dev/stderr`, files without trailing newline), `-z`, `-l N` and `l N` wrapping, `-s`, `-i`, `--sandbox`, `#n`, the append queue flushed by `n`/`N`, `0,/re/`, `addr,~N`, bracket expressions holding the delimiter, `\t \xHH \oNNN \dNNN \cX` in patterns and replacements, empty matches after a match. Still not evaluated: the `e` command and the `s///e` flag (a sed script cannot run a command: the executor is not reachable from `cmdSed`, so both are refused as unknown), `--debug` and `--posix` (accepted, no annotation, GNU extensions stay on), `L` (4.9 answers `INTERNAL ERROR: Bad cmd L`, 4.8 formats; the simulator says `unknown command`), `--follow-symlinks`. The `--version` banner is the 4.8 of Ubuntu 22.04, the dev container's real sed is 4.9. Matching uses JavaScript's leftmost-FIRST alternation, not POSIX leftmost-LONGEST: `s/\|o/x/` on `one` gives `xone` where sed gives `xne` (`CompiledEre.exec` has the longest rule, grep -o and awk use it; sed would need the `M` flag and group indices on it). With `-i`, `w /dev/stdout` goes to the edited file instead of the terminal. The relative order of "can't read FILE" and the output differs from a real pipe (stderr is unbuffered there).
+
+## find: what is still approximate
+
+Evaluated and compared with GNU find 4.9 (see probe-linux-find-evalue-ses-options): every test, action (`-exec/-execdir/-ok/-okdir` through the shell executor, `-ls`, `-fls`, `-fprint*`, `-printf` with widths and flags), `-H/-L/-P/-follow`, `-xtype`, `-fstype` (from /proc/mounts), `-files0-from`, `-O`, `,`, and the diagnostics with their exit status. Still not modelled: the debug traces of `-D exec|opt|rates|search|stat|time|tree` (the flags are accepted and print nothing; `-D help` and unknown flags answer like find); `-exec ... +` runs one command per start directory, never splitting at ARG_MAX; `-context` and `%Z` always fail as on a machine without SELinux; `-warn` prints only the "global option after the argument" warning (find has more positional warnings); `-ok` reads its answer from the command's stdin only; the `--version` banner is 4.8.0 (the dev container's real find is 4.9.0); entries of a directory come in the simulator's insertion order, not readdir order; `-newerBm` and friends are refused like a system without birth time.
+
+## coreutils text tools: what is still approximate
+
+head, tail, wc, cut, sort, uniq and tr are compared with GNU coreutils 9.4 (see probe-linux-coreutils-texte-evalue-ses-options). Still approximate: `sort --debug` is accepted and prints nothing extra; `sort -R` hashes with FNV and a per-run salt (no `--random-source`); the collation is the C locale; `wc -m`/`-L` count code points and a fixed width table, not wcwidth; `wc` takes column width 7 for any standard input, where real wc reads the size of a regular file redirected to it; `tr` classes are the ASCII ones; `--help` texts are those of 9.4 under an 8.32 banner; `od` does not exist (`od -c`, `od -An -tx1` fail with command not found); `tail -f` on several files in the dispatcher path (no terminal sink) prints the snapshot and exits instead of following; the error of an unreadable file comes before the output in the interleaved stream, where a pipe would show stderr first only by buffering accident.
+
+## coreutils file tools: what is still approximate
+
+cp, mv, ln, rm, rmdir, mkdir, chmod, cat, basename, dirname, seq, echo and printf are compared with GNU coreutils 9.4 (see probe-linux-coreutils-fichiers-evalue-ses-options). Still approximate: the behaviours that changed between releases follow the 9.4 of the recorded transcripts (the `cp -n` warning, `mv -n` answering "not replacing" with status 1), under an 8.32 banner; `cp --reflink=always` fails with "Operation not supported" because the virtual disk has no copy-on-write extents, and `--sparse` is accepted without changing anything because file content is stored as text, not as extents; `cp --copy-contents` and `-x` are accepted and have nothing to act on (no fifo or device copies, one filesystem); `--preserve=context,xattr,links` is validated but the virtual disk keeps neither security context, extended attributes nor link groups; `rm -rv` walks in the directory's own order, which is not the order of a real ext4 readdir; `rm -I` prompts only for the count, not for the recursive form; the prompts of `-i`/`-I` end the stderr stream with a newline the shell adds, where a real prompt has none.
+
+## od: what is still approximate
+
+od is compared with GNU coreutils 9.4 (see probe-linux-od-evalue-ses-options). Still approximate: `-w0` aborts in the real command and prints the dump with the minimum width here; in `--traditional` mode an offset operand ending in `.` (decimal) is refused as an extra operand, as the real command does, but the label form is only checked against one file; `-S` does not quote non-printing bytes inside a string; reading a directory reports "Is a directory" and prints the final address like the real command, but a read error on a file that opened is not distinguishable here.

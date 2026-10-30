@@ -5,64 +5,8 @@
 import { formatStatTime } from './time/FileTimes';
 import { ShellContext, expandGlob, actorOf } from './LinuxFileCommands';
 import { INode } from './VirtualFileSystem';
-import { parseChmodMode } from './ChmodMode';
-
-export function cmdChmod(ctx: ShellContext, args: string[]): string {
-  let recursive = false;
-  const nonFlags: string[] = [];
-
-  for (const a of args) {
-    if (a === '-R') { recursive = true; continue; }
-    nonFlags.push(a);
-  }
-
-  if (nonFlags.length < 2) return 'chmod: missing operand';
-
-  const modeStr = nonFlags[0];
-  const targets = nonFlags.slice(1);
-
-  if (!chmodModeIsValid(modeStr)) return `chmod: invalid mode: '${modeStr}'`;
-
-  for (const target of targets) {
-    const expanded = expandGlob(ctx, target);
-    for (const t of expanded) {
-      const absPath = ctx.vfs.normalizePath(t, ctx.cwd);
-      const inode = ctx.vfs.resolveInode(absPath);
-      if (!inode) return `chmod: cannot access '${t}': No such file or directory`;
-      if (ctx.uid !== 0 && inode.uid !== ctx.uid) {
-        return `chmod: changing permissions of '${t}': Operation not permitted`;
-      }
-
-      const newMode = parseChmodMode(modeStr, inode.permissions);
-      if (newMode === null) return `chmod: invalid mode: '${modeStr}'`;
-
-      ctx.vfs.chmod(absPath, newMode);
-
-      if (recursive && inode.type === 'directory') {
-        chmodRecursive(ctx, absPath, modeStr);
-      }
-    }
-  }
-
-  return '';
-}
-
-function chmodRecursive(ctx: ShellContext, path: string, modeStr: string): void {
-  const entries = ctx.vfs.listDirectory(path);
-  if (!entries) return;
-  for (const e of entries) {
-    if (e.name === '.' || e.name === '..') continue;
-    const childPath = path + '/' + e.name;
-    const newMode = parseChmodMode(modeStr, e.inode.permissions);
-    if (newMode !== null) ctx.vfs.chmod(childPath, newMode);
-    if (e.inode.type === 'directory') chmodRecursive(ctx, childPath, modeStr);
-  }
-}
-
-function chmodModeIsValid(modeStr: string): boolean {
-  return parseChmodMode(modeStr, 0) !== null;
-}
-
+import { gnuOptionSet } from './GnuOptionGuard';
+import { shortOptions } from './commands/Getopt';
 
 export function cmdChown(ctx: ShellContext, args: string[]): string {
   let recursive = false;
@@ -163,16 +107,13 @@ export function cmdStat(ctx: ShellContext, args: string[]): string {
   let formatStr: string | undefined;
   const files: string[] = [];
 
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-c' || a === '--format') {
-      formatStr = args[++i];
-      continue;
-    }
-    if (!a.startsWith('-')) files.push(a);
+  const set = gnuOptionSet('stat');
+  for (const item of shortOptions(args, set.optstring, set.long)) {
+    if (item.kind === 'operand') files.push(item.value);
+    else if (item.kind === 'option' && item.letter === 'c') formatStr = item.argument;
   }
 
-  if (files.length === 0) return 'stat: missing operand';
+  if (files.length === 0) return "stat: missing operand\nTry 'stat --help' for more information.";
 
   const results: string[] = [];
 

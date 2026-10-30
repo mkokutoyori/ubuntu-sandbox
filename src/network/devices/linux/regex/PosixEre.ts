@@ -1,6 +1,6 @@
 export class PosixRegexError extends Error {}
 
-const MESSAGES = {
+export const MESSAGES = {
   pattern: 'Invalid regular expression',
   collate: 'Invalid collation character',
   ctype: 'Invalid character class name',
@@ -12,6 +12,7 @@ const MESSAGES = {
   badBrace: 'Invalid content of \\{\\}',
   range: 'Invalid range end',
   repeat: 'Invalid preceding regular expression',
+  rparen: 'Unmatched ) or \\)',
   size: 'Regular expression too big',
 } as const;
 
@@ -76,7 +77,7 @@ class EreParser {
   hasAlternation = false;
   hasQuantifier = false;
 
-  constructor(pattern: string, private readonly ignoreCase = false, private readonly directCompile: { readonly notBol?: boolean } | null = null) {
+  constructor(pattern: string, private readonly ignoreCase = false, private readonly directCompile: { readonly notBol?: boolean } | null = null, private readonly rightParenIsError = false) {
     this.chars = Array.from(pattern);
   }
 
@@ -137,6 +138,9 @@ class EreParser {
       case '(': return this.parseDuplications(this.parseGroup(depth));
       case '[': return this.parseDuplications(this.parseBracket());
       case '.': return this.parseDuplications('[^]');
+      case ')':
+        if (this.rightParenIsError) throw new PosixRegexError(MESSAGES.rparen);
+        return this.parseDuplications(literal(character));
       default: return this.parseDuplications(literal(character));
     }
   }
@@ -359,6 +363,6 @@ export function compileEre(pattern: string, ignoreCase: boolean): CompiledEre {
   return new CompiledEre(pattern, ignoreCase);
 }
 
-export function ereToJsSource(pattern: string, ignoreCase = false): string {
-  return new EreParser(pattern, ignoreCase).parse();
+export function ereToJsSource(pattern: string, ignoreCase = false, rightParenIsError = false): string {
+  return new EreParser(pattern, ignoreCase, null, rightParenIsError).parse();
 }

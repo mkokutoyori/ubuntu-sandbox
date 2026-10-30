@@ -337,7 +337,10 @@ class ImfileMonitor {
     const actives = this.allActive();
     if (change.kind === 'modified') {
       for (const act of actives) {
-        if (act.watched && act.edge.isFile && !act.isSymlink && act.inode === change.inode) this.pollFile(act);
+        if (!act.watched || !act.edge.isFile || act.isSymlink || act.inode !== change.inode) continue;
+        if (act.bytesProcessed > 0 && this.host.files.statSize(act.name) === 0) {
+          this.cancelers.push(this.host.schedule(() => this.pollFile(act), 0));
+        } else this.pollFile(act);
       }
       return;
     }

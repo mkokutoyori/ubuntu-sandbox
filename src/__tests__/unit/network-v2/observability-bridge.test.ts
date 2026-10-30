@@ -115,13 +115,24 @@ describe('observability: lastlog / journalctl coherency', () => {
 
       bus.emit({ kind: 'auth_success', user: 'alice', method: 'password', ip: '10.0.0.2' });
 
-      // /var/log/auth.log path still works (legacy)
-      const auth = vfs.readFile('/var/log/auth.log') ?? '';
-      expect(auth).toContain('Accepted password for alice from 10.0.0.2');
-
       // The new bridge: journalctl -u sshd must surface the same event.
       const journal = runJournalctl(journalctlHost(exec), ['-u', 'ssh']).stdout;
       expect(journal).toContain('Accepted password for alice from 10.0.0.2');
+    });
+
+    it('reaches /var/log/auth.log through the running rsyslog of a booted machine', async () => {
+      const { LinuxServer } = await import('@/network/devices/LinuxServer');
+      const { SshServerEventBus } = await import('@/network/protocols/ssh/server/SshServerEvent');
+      const { SshSyslogger } = await import('@/network/protocols/ssh/logging/SshSyslogger');
+      const server = new LinuxServer('linux-server', 'S1');
+      server.powerOn();
+      const booted = (server as unknown as { executor: LinuxCommandExecutor }).executor;
+      const bus = new SshServerEventBus();
+      new SshSyslogger(booted.vfs, bus, { hostname: 'box', sshdPid: 4242, logMgr: booted.logMgr });
+
+      bus.emit({ kind: 'auth_success', user: 'alice', method: 'password', ip: '10.0.0.2' });
+
+      expect(await server.executeCommand('cat /var/log/auth.log')).toContain('Accepted password for alice from 10.0.0.2');
     });
 
     it('records auth_failure in journalctl too', async () => {

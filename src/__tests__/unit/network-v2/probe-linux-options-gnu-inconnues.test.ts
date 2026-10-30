@@ -19,7 +19,9 @@
  * sha256sum, sha384sum, sha512sum share one option set): 10 cases added, 6 refusals fall, the 4
  * valid forms pass either way. Seventh step (nl, fold, paste, comm, base64): 12 cases added, 5
  * refusals fall, the 7 valid forms pass either way. Eighth step (du: -a, -c, -d/--max-depth were accepted and ignored,
- * only the last target was reported): 10 cases added, 8 fall, 2 witnesses pass either way. Ninth step (rev): 3 cases added, 1 falls (the refusal), 2 witnesses pass either way. Tenth step (find: an unknown predicate was ignored): 10 cases added, 2 refusals fall, 8 valid forms pass either way. Option tables are the GNU
+ * only the last target was reported): 10 cases added, 8 fall, 2 witnesses pass either way. Ninth step (rev): 3 cases added, 1 falls (the refusal), 2 witnesses pass either way. Tenth step (find: an unknown predicate was ignored): 10 cases added, 2 refusals fall, 8 valid forms pass either way. Eleventh step (id, chown, sleep, readlink, realpath refuse an unknown option; split evaluates -a -d -x
+ * -e -t -C -u --additional-suffix --verbose, and -n always writes N pieces): 15 cases added, 13 fall, 2 pass either way
+ * (the split witness and the unchanged `-l 2` layout). Option tables are the GNU
  * coreutils/procps ones from memory, not from a fetched page; they sit on
  * the existing getopt reader in commands/Getopt.ts.
  */
@@ -98,7 +100,7 @@ describe('du evaluates the options it accepts', () => {
     return machine.executeCommand(line);
   }
   it('witness: default lists directories only, deepest first', async () => {
-    expect(await du('du /tmp/d')).toBe('1\t/tmp/d/e/g\n1\t/tmp/d/e\n1\t/tmp/d');
+    expect(await du('du /tmp/d')).toBe('4\t/tmp/d/e/g\n12\t/tmp/d/e\n20\t/tmp/d');
   });
   it('witness: -sb is one line of bytes', async () => { expect(await du('du -sb /tmp/d')).toBe('7\t/tmp/d'); });
   it('--zorglub is refused', async () => { expect(await du('du --zorglub /tmp/d')).toContain("du: unrecognized option '--zorglub'"); });
@@ -126,5 +128,44 @@ describe('find refuses a predicate GNU does not have', () => {
     'find /tmp/d -maxdepth 1 -print', 'find /tmp/d -uid 0', 'find /tmp/d -newermt 2000-01-01', 'find /tmp/d -name f -o -name e',
   ])('witness: `%s` is not refused', async (line) => {
     expect(await find(line)).not.toContain('unknown predicate');
+  });
+});
+
+describe('id, chown, sleep, readlink, realpath and split refuse an unknown option', () => {
+  it.each([
+    ['id --zorglub', "id: unrecognized option '--zorglub'"],
+    ['chown --zorglub user /etc/hostname', "chown: unrecognized option '--zorglub'"],
+    ['sleep -z 1', "sleep: invalid option -- 'z'"],
+    ['readlink --zorglub /etc/hostname', "readlink: unrecognized option '--zorglub'"],
+    ['realpath --zorglub /etc', "realpath: unrecognized option '--zorglub'"],
+    ['split --zorglub /etc/hostname', "split: unrecognized option '--zorglub'"],
+  ])('`%s`', async (line, message) => {
+    expect(await pc().executeCommand(line)).toContain(message);
+  });
+});
+
+describe('split evaluates the options it accepts', () => {
+  async function split(args: string): Promise<string[]> {
+    const machine = pc();
+    await machine.executeCommand('mkdir -p /tmp/s; printf "1\\n2\\n3\\n4\\n5\\n" > /tmp/s/in');
+    await machine.executeCommand(`cd /tmp/s; split ${args} in`);
+    return (await machine.executeCommand('ls -1 /tmp/s')).split('\n');
+  }
+  it('witness: -l 2 writes xaa xab xac', async () => { expect(await split('-l 2')).toEqual(['in', 'xaa', 'xab', 'xac']); });
+  it('-a 3 lengthens the suffix', async () => { expect(await split('-l 2 -a 3')).toEqual(['in', 'xaaa', 'xaab', 'xaac']); });
+  it('-d numbers the pieces', async () => { expect(await split('-l 2 -d')).toEqual(['in', 'x00', 'x01', 'x02']); });
+  it('--hex-suffixes starts from a hexadecimal value', async () => { expect(await split('-l 2 --hex-suffixes=a')).toEqual(['in', 'x0a', 'x0b', 'x0c']); });
+  it('--additional-suffix', async () => { expect(await split('-l 3 --additional-suffix=.txt')).toEqual(['in', 'xaa.txt', 'xab.txt']); });
+  it('-n 2 always writes two pieces', async () => { expect(await split('-n 2')).toEqual(['in', 'xaa', 'xab']); });
+  it('-C keeps whole lines under the byte limit', async () => { expect(await split('-C 4')).toEqual(['in', 'xaa', 'xab', 'xac']); });
+  it('--verbose names each file', async () => {
+    const machine = pc();
+    await machine.executeCommand('mkdir -p /tmp/s; printf "1\\n2\\n" > /tmp/s/in');
+    expect(await machine.executeCommand('cd /tmp/s; split -l 1 --verbose in')).toBe("creating file 'xaa'\ncreating file 'xab'");
+  });
+  it('a suffix space too small is refused', async () => {
+    const machine = pc();
+    await machine.executeCommand('mkdir -p /tmp/s; printf "1\\n2\\n3\\n" > /tmp/s/in');
+    expect(await machine.executeCommand('cd /tmp/s; split -l 1 -a 1 -d --numeric-suffixes=9 in')).toContain('output file suffixes exhausted');
   });
 });

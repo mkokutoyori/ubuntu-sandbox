@@ -47,10 +47,10 @@ async function configure(r: Machine, lignes: string[]): Promise<void> {
 }
 
 describe('le trie ne porte plus aucune commande NAT', () => {
-  it('TEMOIN : le trie porte bien des chemins, dont ceux de `crypto isakmp nat`', async () => {
+  it('TEMOIN : le trie porte bien des chemins, dont ceux de `show crypto isakmp`', async () => {
     const chemins = (await routeur()).getShell().enumerateAllCommandPaths();
     expect(chemins.length).toBeGreaterThan(100);
-    expect(chemins).toContain('crypto isakmp nat keepalive');
+    expect(chemins).toContain('show crypto isakmp sa');
   });
 
   it('aucun chemin du trie ne porte `ip nat`', async () => {

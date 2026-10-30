@@ -1482,7 +1482,8 @@ export function registerDisplayCommands(
     ].join('\n');
   });
 
-  trie.registerGreedy('display history-command', 'Display CLI history', () => {
+  trie.registerGreedy('display history-command', 'Display CLI history', (args) => {
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'all-users')) return "Error: Unrecognized command found at '^' position.";
     const dev = getRouter() as unknown as { getShell?: () => { getCmdHistory?: () => readonly string[] } };
     const shell = dev.getShell?.();
     const history = shell?.getCmdHistory?.() ?? [];

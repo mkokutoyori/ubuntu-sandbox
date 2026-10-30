@@ -145,7 +145,7 @@ export function icmp6Text(message: readonly number[], context: Icmp6Context): st
         else if (code === 2) text += ` ${addressAt(message, 32, context)}, source address ${addressAt(message, 16, context)}`;
         else if (code === 4) {
           const next = message[14];
-          const port = be16(message, 48);
+          const port = be16(message, 50);
           if (next === 6 || next === 17) text += `, ${addressAt(message, 32, context)} ${next === 6 ? 'tcp' : 'udp'} port ${context.port(port, next === 6 ? 'tcp' : 'udp')}`;
           else text += `, ${addressAt(message, 32, context)} protocol ${next} port ${port} unreachable`;
         } else if (context.verbose <= 1) {

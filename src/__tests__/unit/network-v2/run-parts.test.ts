@@ -1067,7 +1067,7 @@ describe('Linux run-parts System Suite', () => {
     it('108. should support executing scripts written in alternative shells (sh instead of bash)', async () => {
       const pc = await setupRunPartsPC();
       await pc.executeCommand('mkdir /tmp/parts');
-      await pc.executeCommand('echo "#!/bin/sh\\necho \'sh_shell\'" > /tmp/parts/scripta');
+      await pc.executeCommand('printf "#!/bin/sh\\necho \'sh_shell\'\\n" > /tmp/parts/scripta');
       await pc.executeCommand('chmod +x /tmp/parts/scripta');
       
       const output = await pc.executeCommand('run-parts /tmp/parts');
@@ -1111,7 +1111,7 @@ describe('Linux run-parts System Suite', () => {
       await pc.executeCommand('mkdir /tmp/parts');
       // \$ keeps the arithmetic literal in the file (the outer echo must
       // not expand it); the parentheses need no backslashes.
-      await pc.executeCommand('echo "VAR=0\\nfor i in 1 2 3; do\\nVAR=\\$((VAR+i))\\ndone\\necho \\$VAR" > /tmp/parts/scripta');
+      await pc.executeCommand('printf "VAR=0\\nfor i in 1 2 3; do\\nVAR=\\$((VAR+i))\\ndone\\necho \\$VAR\\n" > /tmp/parts/scripta');
       await pc.executeCommand('chmod +x /tmp/parts/scripta');
       
       const output = await pc.executeCommand('run-parts /tmp/parts');
@@ -1173,7 +1173,7 @@ describe('Linux run-parts System Suite', () => {
     it('118. should support executing scripts containing functions declaration', async () => {
       const pc = await setupRunPartsPC();
       await pc.executeCommand('mkdir /tmp/parts');
-      await pc.executeCommand('echo "my_func() {\\necho \'func\'\\n}\\nmy_func" > /tmp/parts/scripta');
+      await pc.executeCommand('printf "my_func() {\\necho \'func\'\\n}\\nmy_func\\n" > /tmp/parts/scripta');
       await pc.executeCommand('chmod +x /tmp/parts/scripta');
       
       const output = await pc.executeCommand('run-parts /tmp/parts');
@@ -1183,7 +1183,7 @@ describe('Linux run-parts System Suite', () => {
     it('119. should allow executing scripts containing conditional if/else blocks', async () => {
       const pc = await setupRunPartsPC();
       await pc.executeCommand('mkdir /tmp/parts');
-      await pc.executeCommand('echo "if [ 1 -eq 1 ]; then\\necho \'yes\'\\nelse\\necho \'no\'\\nfi" > /tmp/parts/scripta');
+      await pc.executeCommand('printf "if [ 1 -eq 1 ]; then\\necho \'yes\'\\nelse\\necho \'no\'\\nfi\\n" > /tmp/parts/scripta');
       await pc.executeCommand('chmod +x /tmp/parts/scripta');
       
       const output = await pc.executeCommand('run-parts /tmp/parts');
@@ -1425,7 +1425,7 @@ describe('Linux run-parts System Suite', () => {
     it('146. should reject directory execution if path parameters has quote mismatch', async () => {
       const pc = await setupRunPartsPC();
       const output = await pc.executeCommand('run-parts "/tmp/parts');
-      expect(output.toLowerCase()).toMatch(/error|quote|invalid/);
+      expect(output.toLowerCase()).toMatch(/error|quote|invalid|unexpected eof/);
     });
 
     it('147. should log failed script execution parameters to syslog with exit status details', async () => {

@@ -7,6 +7,11 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import { gnuOptionSet } from './GnuOptionGuard';
+import { fnmatch } from './fs/Glob';
+import { versionCompare } from './LinuxTextCommands';
+import { lsColumns, lsCommas, lsEscapeNonPrinting, lsExtension, lsHideControl, lsHumanSize, lsQuoteC, type LsFormat } from './LsLayout';
+import { shortOptions } from './commands/Getopt';
 import { parseChmodMode } from './ChmodMode';
 import { interpretEscapes } from './LinuxShellParser';
 import type { PathActor } from './VfsPath';
@@ -149,82 +154,269 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
   return errors.join('\n');
 }
 
-export function cmdLs(ctx: ShellContext, args: string[]): string {
-  let longFormat = false;
-  let showAll = false;
-  let showInode = false;
-  let sortBySize = false;
-  let sortByTime = false;
-  let recursive = false;
-  let dirOnly = false;
-  let classify = false;   // -F: append indicator (/ @ * |)
-  // -1 forces single column explicitly; a non-tty stdout (piped or
-  // redirected) does the same implicitly, matching real coreutils'
-  // isatty(STDOUT_FILENO) check.
-  let onePerLine = ctx.isPiped === true;
-  let useColor = ctx.color === true;
-  const timing: LsTiming = { field: 'mtime', style: null, reverse: false };
-  const paths: string[] = [];
+const DIRECTORY_BYTES = 4096;
+const DEFAULT_LINE_WIDTH = 80;
 
-  for (const arg of args) {
-    if (arg.startsWith('-') && !arg.startsWith('--')) {
-      const flags = arg.slice(1);
-      for (const f of flags) {
-        switch (f) {
-          case 'l': longFormat = true; break;
-          case 'a': showAll = true; break;
-          case 'i': showInode = true; break;
-          case 'S': sortBySize = true; break;
-          case 't': sortByTime = true; break;
-          case 'R': recursive = true; break;
-          case 'd': dirOnly = true; break;
-          case 'F': classify = true; break;
-          case '1': onePerLine = true; break;
-          case 'r': timing.reverse = true; break;
-          case 'c': timing.field = 'ctime'; break;
-          case 'u': timing.field = 'atime'; break;
-        }
+type LsSort = 'name' | 'size' | 'time' | 'extension' | 'version' | 'width' | 'none';
+type LsIndicator = 'none' | 'slash' | 'file-type' | 'classify';
+type LsQuoting = 'literal' | 'c' | 'escape';
+type LsAll = 'none' | 'almost' | 'all';
+
+interface LsTiming {
+  field: 'mtime' | 'atime' | 'ctime';
+  style: LsTimeStyle | null;
+  reverse: boolean;
+}
+
+interface LsOpts {
+  timing: LsTiming;
+  format: LsFormat;
+  all: LsAll;
+  showInode: boolean;
+  showSize: boolean;
+  human: 1024 | 1000 | null;
+  indicator: LsIndicator;
+  quoting: LsQuoting;
+  hideControl: boolean;
+  useColor: boolean;
+  sort: LsSort;
+  groupDirectoriesFirst: boolean;
+  recursive: boolean;
+  ignore: string[];
+  hide: string[];
+  ignoreBackups: boolean;
+  width: number;
+  tabSize: number;
+  zero: boolean;
+  context: boolean;
+  hideOwner: boolean;
+  hideGroup: boolean;
+  numeric: boolean;
+  author: boolean;
+  dereference: 'none' | 'arguments' | 'all';
+}
+
+interface LsEntry {
+  name: string;
+  inode: INode;
+  absPath: string;
+}
+
+export const lsSize = (inode: INode): number => (inode.type === 'directory' ? DIRECTORY_BYTES : inode.size);
+
+export const lsBlocksKiB = (inode: INode): number => {
+  if (inode.type === 'directory') return 4;
+  if (inode.type === 'symlink' || inode.type === 'chardev') return 0;
+  return Math.ceil(inode.size / 4096) * 4;
+};
+
+const LS_ARGUMENT_CHOICES: Readonly<Record<string, readonly string[]>> = {
+  color: ["'always', 'yes', 'force'", "'never', 'no', 'none'", "'auto', 'tty', 'if-tty'"],
+  classify: ["'always', 'yes', 'force'", "'never', 'no', 'none'", "'auto', 'tty', 'if-tty'"],
+  sort: ["'none'", "'time'", "'size'", "'extension'", "'version'", "'width'"],
+  format: ["'verbose', 'long'", "'commas'", "'horizontal', 'across'", "'vertical'", "'single-column'"],
+  time: ["'atime', 'access', 'use'", "'ctime', 'status'", "'mtime', 'modification'", "'birth', 'creation'"],
+  'indicator-style': ["'none'", "'slash'", "'file-type'", "'classify'"],
+  'quoting-style': ["'literal'", "'shell'", "'shell-always'", "'shell-escape'", "'shell-escape-always'", "'c'", "'c-maybe'", "'escape'", "'locale'", "'clocale'"],
+};
+
+function lsInvalidArgument(option: string, value: string): string {
+  const choices = LS_ARGUMENT_CHOICES[option];
+  const lines = [`ls: invalid argument '${value}' for '--${option}'`];
+  if (choices !== undefined) lines.push('Valid arguments are:', ...choices.map((choice) => `  - ${choice}`), "Try 'ls --help' for more information.");
+  return lines.join('\n');
+}
+
+function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: LsOpts; paths: string[]; dirOnly: boolean } | string {
+  const set = gnuOptionSet('ls');
+  const opts: LsOpts = {
+    timing: { field: 'mtime', style: null, reverse: false },
+    format: ctx.isPiped === true ? 'single' : 'columns',
+    all: 'none', showInode: false, showSize: false, human: null, indicator: 'none', quoting: 'literal',
+    hideControl: false, useColor: ctx.color === true, sort: 'name', groupDirectoriesFirst: false,
+    recursive: false, ignore: [], hide: [], ignoreBackups: false, width: DEFAULT_LINE_WIDTH, zero: false, tabSize: 8,
+    context: false, hideOwner: false, hideGroup: false, numeric: false, author: false, dereference: 'none',
+  };
+  const paths: string[] = [];
+  let dirOnly = false;
+  let sortChosen = false;
+  const setFormat = (word: string): boolean => {
+    const formats: Record<string, LsFormat> = {
+      long: 'long', verbose: 'long', 'single-column': 'single', across: 'across', horizontal: 'across',
+      vertical: 'columns', commas: 'commas',
+    };
+    const format = formats[word];
+    if (format === undefined) return false;
+    opts.format = format;
+    return true;
+  };
+  for (const item of shortOptions(args, set.optstring, set.long)) {
+    if (item.kind === 'operand') { paths.push(item.value); continue; }
+    if (item.kind !== 'option') continue;
+    const long = item.long;
+    const argument = item.argument;
+    switch (long ?? item.letter) {
+      case 'l': opts.format = 'long'; break;
+      case 'g': opts.format = 'long'; opts.hideOwner = true; break;
+      case 'o': opts.format = 'long'; opts.hideGroup = true; break;
+      case 'n': opts.format = 'long'; opts.numeric = true; break;
+      case 'G': opts.hideGroup = true; break;
+      case 'a': opts.all = 'all'; break;
+      case 'A': if (opts.all !== 'all') opts.all = 'almost'; break;
+      case 'f': opts.all = 'all'; opts.sort = 'none'; sortChosen = true; opts.showSize = false; opts.useColor = false; break;
+      case 'i': opts.showInode = true; break;
+      case 's': opts.showSize = true; break;
+      case 'S': opts.sort = 'size'; sortChosen = true; break;
+      case 't': opts.sort = 'time'; sortChosen = true; break;
+      case 'X': opts.sort = 'extension'; sortChosen = true; break;
+      case 'v': opts.sort = 'version'; sortChosen = true; break;
+      case 'U': opts.sort = 'none'; sortChosen = true; break;
+      case 'R': opts.recursive = true; break;
+      case 'd': dirOnly = true; break;
+      case 'r': opts.timing.reverse = true; break;
+      case 'c': opts.timing.field = 'ctime'; break;
+      case 'u': opts.timing.field = 'atime'; break;
+      case '1': opts.format = 'single'; break;
+      case 'C': opts.format = 'columns'; break;
+      case 'x': opts.format = 'across'; break;
+      case 'm': opts.format = 'commas'; break;
+      case 'p': opts.indicator = 'slash'; break;
+      case 'F': opts.indicator = 'classify'; break;
+      case 'h': opts.human = 1024; break;
+      case 'k': opts.human = null; break;
+      case 'H': opts.dereference = 'arguments'; break;
+      case 'L': opts.dereference = 'all'; break;
+      case 'Q': opts.quoting = 'c'; break;
+      case 'N': opts.quoting = 'literal'; opts.hideControl = false; break;
+      case 'b': opts.quoting = 'escape'; break;
+      case 'q': opts.hideControl = true; break;
+      case 'B': opts.ignoreBackups = true; break;
+      case 'Z': opts.context = true; break;
+      case 'I': opts.ignore.push(argument ?? ''); break;
+      case 'w': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid line width: '${argument ?? ''}'`;
+        opts.width = Number(argument);
+        break;
       }
-    } else if (arg.startsWith('--')) {
-      if (arg === '--color' || arg === '--color=always' || arg === '--color=yes') useColor = true;
-      else if (arg === '--color=never' || arg === '--color=no' || arg === '--color=none') useColor = false;
-      else if (arg === '--color=auto') useColor = ctx.color === true;
-      else if (arg === '--reverse') timing.reverse = true;
-      else if (arg === '--full-time') { longFormat = true; timing.style = 'full-iso'; }
-      else if (arg.startsWith('--time-style=')) {
-        const style = parseLsTimeStyle(arg.slice('--time-style='.length));
-        if (style === null) return `ls: invalid argument '${arg.slice('--time-style='.length)}' for '--time-style'`;
-        timing.style = style;
-      } else if (arg.startsWith('--time=')) {
-        const which = arg.slice('--time='.length);
-        if (/^(atime|access|use)$/.test(which)) timing.field = 'atime';
-        else if (/^(ctime|status)$/.test(which)) timing.field = 'ctime';
-        else if (which === 'mtime' || which === 'modify') timing.field = 'mtime';
+      case 'T': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid tab size: '${argument ?? ''}'`;
+        opts.tabSize = Number(argument);
+        break;
       }
-    } else {
-      paths.push(arg);
+      case 'color': {
+        const when = argument ?? 'always';
+        if (/^(always|yes|force)$/.test(when)) opts.useColor = true;
+        else if (/^(never|no|none)$/.test(when)) opts.useColor = false;
+        else if (/^(auto|tty|if-tty)$/.test(when)) opts.useColor = ctx.color === true;
+        else return lsInvalidArgument('color', when);
+        break;
+      }
+      case 'reverse': opts.timing.reverse = true; break;
+      case 'full-time': opts.format = 'long'; opts.timing.style = 'full-iso'; break;
+      case 'time-style': {
+        const style = parseLsTimeStyle(argument ?? '');
+        if (style === null) return `ls: invalid argument '${argument ?? ''}' for '--time-style'`;
+        opts.timing.style = style;
+        break;
+      }
+      case 'time': {
+        const which = argument ?? '';
+        if (/^(atime|access|use)$/.test(which)) opts.timing.field = 'atime';
+        else if (/^(ctime|status)$/.test(which)) opts.timing.field = 'ctime';
+        else if (/^(mtime|modify|modification|birth|creation)$/.test(which)) opts.timing.field = 'mtime';
+        else return lsInvalidArgument('time', which);
+        break;
+      }
+      case 'format': if (!setFormat(argument ?? '')) return lsInvalidArgument('format', argument ?? ''); break;
+      case 'sort': {
+        const sorts: Record<string, LsSort> = { none: 'none', size: 'size', time: 'time', version: 'version', extension: 'extension', width: 'width' };
+        const sort = sorts[argument ?? ''];
+        if (sort === undefined) return lsInvalidArgument('sort', argument ?? '');
+        opts.sort = sort;
+        sortChosen = true;
+        break;
+      }
+      case 'indicator-style': {
+        const styles: Record<string, LsIndicator> = { none: 'none', slash: 'slash', 'file-type': 'file-type', classify: 'classify' };
+        const style = styles[argument ?? ''];
+        if (style === undefined) return lsInvalidArgument('indicator-style', argument ?? '');
+        opts.indicator = style;
+        break;
+      }
+      case 'classify': {
+        const when = argument ?? 'always';
+        if (/^(always|yes|force)$/.test(when)) opts.indicator = 'classify';
+        else if (/^(auto|tty|if-tty)$/.test(when)) { if (ctx.color === true) opts.indicator = 'classify'; }
+        else if (!/^(never|no|none)$/.test(when)) return lsInvalidArgument('classify', when);
+        break;
+      }
+      case 'file-type': opts.indicator = 'file-type'; break;
+      case 'quote-name': opts.quoting = 'c'; break;
+      case 'quoting-style': {
+        const styles: Record<string, LsQuoting> = { literal: 'literal', c: 'c', 'c-maybe': 'c', escape: 'escape', locale: 'c', clocale: 'c', shell: 'literal', 'shell-always': 'literal', 'shell-escape': 'literal', 'shell-escape-always': 'literal' };
+        const style = styles[argument ?? ''];
+        if (style === undefined) return lsInvalidArgument('quoting-style', argument ?? '');
+        opts.quoting = style;
+        break;
+      }
+      case 'literal': opts.quoting = 'literal'; break;
+      case 'escape': opts.quoting = 'escape'; break;
+      case 'hide-control-chars': opts.hideControl = true; break;
+      case 'show-control-chars': opts.hideControl = false; break;
+      case 'ignore-backups': opts.ignoreBackups = true; break;
+      case 'ignore': opts.ignore.push(argument ?? ''); break;
+      case 'hide': opts.hide.push(argument ?? ''); break;
+      case 'all': opts.all = 'all'; break;
+      case 'almost-all': if (opts.all !== 'all') opts.all = 'almost'; break;
+      case 'group-directories-first': opts.groupDirectoriesFirst = true; break;
+      case 'human-readable': opts.human = 1024; break;
+      case 'si': opts.human = 1000; break;
+      case 'kibibytes': opts.human = null; break;
+      case 'inode': opts.showInode = true; break;
+      case 'size': opts.showSize = true; break;
+      case 'recursive': opts.recursive = true; break;
+      case 'directory': dirOnly = true; break;
+      case 'numeric-uid-gid': opts.format = 'long'; opts.numeric = true; break;
+      case 'no-group': opts.hideGroup = true; break;
+      case 'author': opts.author = true; break;
+      case 'context': opts.context = true; break;
+      case 'zero': opts.zero = true; break;
+      case 'dereference': opts.dereference = 'all'; break;
+      case 'dereference-command-line': opts.dereference = 'arguments'; break;
+      case 'tabsize': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid tab size: '${argument ?? ''}'`;
+        opts.tabSize = Number(argument);
+        break;
+      }
+      case 'width': {
+        if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid line width: '${argument ?? ''}'`;
+        opts.width = Number(argument);
+        break;
+      }
+      default: break;
     }
   }
+  if (opts.zero && opts.format !== 'long') opts.format = 'single';
+  if (!sortChosen && opts.format !== 'long' && opts.timing.field !== 'mtime') opts.sort = 'time';
+  return { opts, paths, dirOnly };
+}
 
-  if (paths.length === 0) paths.push('.');
+export function cmdLs(ctx: ShellContext, args: string[]): string {
+  const parsed = parseLsArguments(ctx, args);
+  if (typeof parsed === 'string') return parsed;
+  const { opts, dirOnly } = parsed;
+  const paths = parsed.paths.length === 0 ? ['.'] : parsed.paths;
 
   const failures: string[] = [];
-  const listedFiles: Array<{ name: string; inode: INode; absPath: string }> = [];
+  const listedFiles: LsEntry[] = [];
   const listedDirectories: Array<{ name: string; absPath: string }> = [];
 
   for (const rawPath of paths) {
-    const expandedPaths = expandGlob(ctx, rawPath);
-
-    for (const p of expandedPaths) {
+    for (const p of expandGlob(ctx, rawPath)) {
       const absPath = ctx.vfs.normalizePath(p, ctx.cwd);
-      // `ls <lien>` liste ce que le lien DESIGNE ; `ls -l` et `ls -d`
-      // decrivent le lien lui-meme. C'est le comportement de coreutils,
-      // releve sur la machine reelle : `ls /lib` liste `usr/lib`, tandis
-      // que `ls -l /lib` rend la ligne `lib -> usr/lib`.
-      const suitLeLien = !longFormat && !dirOnly;
-      const inode = ctx.vfs.resolveInode(absPath, suitLeLien)
+      const followsLink = opts.dereference !== 'none' || (opts.format !== 'long' && !dirOnly);
+      const inode = ctx.vfs.resolveInode(absPath, followsLink)
         ?? ctx.vfs.resolveInode(absPath, false);
-
       if (!inode) {
         failures.push(`ls: cannot access '${p}': No such file or directory`);
       } else if (inode.type !== 'directory' || dirOnly) {
@@ -236,197 +428,178 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
   }
 
   const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
-  listedFiles.sort(byName);
-  listedDirectories.sort(byName);
-  const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
-  const allOutput: string[] = [...failures];
-  for (const file of listedFiles) allOutput.push(formatEntry(ctx, file.name, file.inode, file.absPath, opts));
-  const headed = paths.length > 1 && !recursive;
+  if (opts.sort !== 'none') {
+    listedFiles.sort(byName);
+    listedDirectories.sort(byName);
+  }
+  const eol = opts.zero ? '\0' : '\n';
+  const out: string[] = [...failures];
+  if (listedFiles.length > 0) out.push(...renderEntries(ctx, listedFiles, opts, false).lines);
+  const headed = paths.length > 1 && !opts.recursive;
   listedDirectories.forEach((directory, index) => {
-    if (headed) allOutput.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${directory.name}:`);
-    allOutput.push(listDir(ctx, directory.absPath, directory.name, longFormat, showAll, showInode,
-      sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing));
+    if (headed) out.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${directory.name}:`);
+    out.push(listDir(ctx, directory.absPath, directory.name, opts));
   });
-
-  return allOutput.join('\n').trimEnd();
+  const text = out.join(eol);
+  return opts.zero ? `${text}\0` : text.trimEnd();
 }
 
-interface LsTiming {
-  field: 'mtime' | 'atime' | 'ctime';
-  style: LsTimeStyle | null;
-  reverse: boolean;
+function lsIgnored(name: string, opts: LsOpts): boolean {
+  if (opts.all === 'none' && name.startsWith('.')) return true;
+  if (opts.all === 'almost' && (name === '.' || name === '..')) return true;
+  if (opts.ignoreBackups && opts.all !== 'all' && name.endsWith('~')) return true;
+  if (opts.ignore.some((pattern) => fnmatch(pattern, name, { period: false }))) return true;
+  if (opts.all === 'none' && opts.hide.some((pattern) => fnmatch(pattern, name, { period: false }))) return true;
+  return false;
 }
 
-interface LsOpts {
-  timing: LsTiming;
-  longFormat: boolean;
-  showInode: boolean;
-  classify: boolean;
-  onePerLine: boolean;
-  useColor?: boolean;
+function lsCompare(opts: LsOpts, a: LsEntry, b: LsEntry): number {
+  const byName = a.name.localeCompare(b.name);
+  switch (opts.sort) {
+    case 'size': return (lsSize(b.inode) - lsSize(a.inode)) || byName;
+    case 'time': return (b.inode[opts.timing.field] - a.inode[opts.timing.field]) || byName;
+    case 'extension': return lsExtension(a.name).localeCompare(lsExtension(b.name)) || byName;
+    case 'version': return versionCompare(a.name, b.name) || byName;
+    case 'width': return (a.name.length - b.name.length) || byName;
+    default: return byName;
+  }
 }
 
-function listDir(ctx: ShellContext, absPath: string, displayPath: string,
-  longFormat: boolean, showAll: boolean, showInode: boolean,
-  sortBySize: boolean, sortByTime: boolean, recursive: boolean,
-  classify: boolean = false, onePerLine: boolean = false, useColor: boolean = false,
-  timing: LsTiming = { field: 'mtime', style: null, reverse: false }): string {
+function sortEntries(entries: LsEntry[], opts: LsOpts): LsEntry[] {
+  if (opts.sort === 'none') return entries;
+  const direction = opts.timing.reverse ? -1 : 1;
+  return [...entries].sort((a, b) => {
+    if (opts.groupDirectoriesFirst) {
+      const dirA = a.inode.type === 'directory' ? 0 : 1;
+      const dirB = b.inode.type === 'directory' ? 0 : 1;
+      if (dirA !== dirB) return dirA - dirB;
+    }
+    return direction * lsCompare(opts, a, b);
+  });
+}
+
+function listDir(ctx: ShellContext, absPath: string, displayPath: string, opts: LsOpts): string {
   const entries = ctx.vfs.listDirectory(absPath);
   if (!entries) return `ls: cannot access '${displayPath}': No such file or directory`;
   if (ctx.uid !== 0 && !ctx.vfs.path(absPath, '/', actorOf(ctx)).canRead()) {
     return `ls: cannot open directory '${displayPath}': Permission denied`;
   }
 
-  let filtered = entries.filter(e => showAll || !e.name.startsWith('.'));
-
-  // Sort
-  if (sortBySize) {
-    filtered.sort((a, b) => b.inode.size - a.inode.size);
-  } else if (sortByTime) {
-    filtered.sort((a, b) => (b.inode[timing.field] - a.inode[timing.field]) || a.name.localeCompare(b.name));
-  } else {
-    filtered.sort((a, b) => a.name.localeCompare(b.name));
+  const listed: LsEntry[] = [];
+  const visible = entries.filter((e) => e.name !== '.' && e.name !== '..' && !lsIgnored(e.name, opts));
+  if (opts.all === 'all' && !opts.ignore.some((p) => fnmatch(p, '.', {}))) {
+    const self = ctx.vfs.resolveInode(absPath, true);
+    const parentPath = absPath === '/' ? '/' : absPath.replace(/\/[^/]*$/, '') || '/';
+    const parent = ctx.vfs.resolveInode(parentPath, true);
+    if (self) listed.push({ name: '.', inode: self, absPath });
+    if (parent) listed.push({ name: '..', inode: parent, absPath: parentPath });
   }
-  if (timing.reverse) filtered.reverse();
+  for (const entry of visible) {
+    const childPath = absPath === '/' ? `/${entry.name}` : `${absPath}/${entry.name}`;
+    const inode = opts.dereference === 'all' ? (ctx.vfs.resolveInode(childPath, true) ?? entry.inode) : entry.inode;
+    listed.push({ name: entry.name, inode, absPath: childPath });
+  }
+  const filtered = sortEntries(listed, opts);
 
-  const opts: LsOpts = { timing, longFormat, showInode, classify, onePerLine, useColor };
   const lines: string[] = [];
+  if (opts.recursive) lines.push(`${displayPath}:`);
+  const rendered = renderEntries(ctx, filtered, opts, true);
+  lines.push(...rendered.lines);
 
-  if (recursive) {
-    lines.push(`${displayPath}:`);
-  }
-
-  if (longFormat) {
-    // Compute total blocks (simulate 4K blocks)
-    let totalBlocks = 0;
-    for (const entry of filtered) {
-      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      totalBlocks += Math.ceil(Math.max(entry.inode.size, 1) / 4096) * 8;
-    }
-    lines.push(`total ${totalBlocks}`);
-
-    // Pre-compute column widths for proper alignment
-    const displayEntries: { name: string; inode: INode; childPath: string }[] = [];
-    for (const entry of filtered) {
-      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      const childPath = absPath === '/' ? '/' + entry.name : absPath + '/' + entry.name;
-      displayEntries.push({ name: entry.name, inode: entry.inode, childPath });
-    }
-
-    let maxLinks = 1, maxOwner = 1, maxGroup = 1, maxSize = 1;
-    for (const e of displayEntries) {
-      maxLinks = Math.max(maxLinks, String(e.inode.linkCount).length);
-      maxOwner = Math.max(maxOwner, ctx.userMgr.uidToName(e.inode.uid).length);
-      maxGroup = Math.max(maxGroup, ctx.userMgr.gidToName(e.inode.gid).length);
-      maxSize = Math.max(maxSize, String(e.inode.size).length);
-    }
-
-    for (const e of displayEntries) {
-      lines.push(formatEntryLong(ctx, e.name, e.inode, e.childPath, opts,
-        maxLinks, maxOwner, maxGroup, maxSize));
-    }
-  } else {
-    // Short format: multi-column horizontal layout (like real ls)
-    const names: string[] = [];
-    const rawLens: number[] = []; // lengths without ANSI codes for column calc
-    for (const entry of filtered) {
-      if (!showAll && (entry.name === '.' || entry.name === '..')) continue;
-      let displayName = colorName(entry.name, entry.inode, useColor);
-      let rawName = entry.name;
-      if (classify) {
-        const suffix = classifySuffix(entry.inode);
-        displayName += suffix;
-        rawName += suffix;
-      }
-      if (showInode) {
-        displayName = `${entry.inode.id} ${displayName}`;
-        rawName = `${entry.inode.id} ${rawName}`;
-      }
-      names.push(displayName);
-      rawLens.push(rawName.length);
-    }
-
-    if (onePerLine || names.length === 0) {
-      lines.push(...names);
-    } else {
-      lines.push(formatColumns(names, rawLens));
-    }
-  }
-
-  if (recursive) {
+  if (opts.recursive) {
     for (const entry of filtered) {
       if (entry.name === '.' || entry.name === '..') continue;
-      if (entry.inode.type === 'directory') {
-        const childPath = absPath === '/' ? '/' + entry.name : absPath + '/' + entry.name;
-        const childDisplay = displayPath === '.' ? entry.name : displayPath + '/' + entry.name;
-        lines.push('');
-        lines.push(listDir(ctx, childPath, childDisplay, longFormat, showAll, showInode,
-          sortBySize, sortByTime, recursive, classify, onePerLine, useColor, timing));
-      }
+      const real = ctx.vfs.resolveInode(entry.absPath, false);
+      if (real?.type !== 'directory') continue;
+      const childDisplay = displayPath.endsWith('/') ? `${displayPath}${entry.name}` : `${displayPath}/${entry.name}`;
+      lines.push('');
+      lines.push(listDir(ctx, entry.absPath, childDisplay, opts));
     }
   }
-
-  return lines.join('\n');
+  return lines.join(opts.zero ? '\0' : '\n');
 }
 
-/**
- * Format multi-column horizontal layout like real `ls`.
- * Fills columns left-to-right, top-to-bottom (column-major order).
- * Assumes terminal width of 80 characters.
- * rawLens: visible lengths of each name (excluding ANSI codes).
- */
-function formatColumns(names: string[], rawLens?: number[], termWidth: number = 80): string {
-  if (names.length === 0) return '';
-  if (names.length === 1) return names[0];
-
-  const lens = rawLens ?? names.map(n => n.length);
-  const maxLen = Math.max(...lens);
-  const colWidth = maxLen + 2; // 2-space gap between columns
-
-  if (colWidth >= termWidth) {
-    return names.join('\n');
-  }
-
-  const numCols = Math.max(1, Math.floor(termWidth / colWidth));
-  const numRows = Math.ceil(names.length / numCols);
-
-  const lines: string[] = [];
-  for (let row = 0; row < numRows; row++) {
-    const parts: string[] = [];
-    for (let col = 0; col < numCols; col++) {
-      const idx = col * numRows + row;
-      if (idx < names.length) {
-        const isLast = col === numCols - 1 || (col + 1) * numRows + row >= names.length;
-        if (isLast) {
-          parts.push(names[idx]);
-        } else {
-          // Pad based on visible length, not string length (ANSI codes are invisible)
-          const padding = colWidth - lens[idx];
-          parts.push(names[idx] + ' '.repeat(Math.max(0, padding)));
-        }
-      }
-    }
-    lines.push(parts.join(''));
-  }
-  return lines.join('\n');
-}
-
-/** Returns the -F suffix character for an inode type */
-function classifySuffix(inode: INode): string {
+function indicatorOf(inode: INode, style: LsIndicator, long = false): string {
+  if (style === 'none') return '';
+  if (long && inode.type === 'symlink') return '';
+  if (inode.type === 'directory') return '/';
+  if (style === 'slash') return '';
   switch (inode.type) {
-    case 'directory': return '/';
     case 'symlink': return '@';
     case 'fifo': return '|';
     case 'socket': return '=';
-    case 'file':
-      // Executable check: any execute bit set
-      if (inode.permissions & 0o111) return '*';
-      return '';
+    case 'file': return style === 'classify' && (inode.permissions & 0o111) ? '*' : '';
     default: return '';
   }
 }
 
-/** Colorize a filename based on its inode type, matching GNU ls --color=auto */
+function quotedName(name: string, opts: LsOpts): string {
+  if (opts.quoting === 'c') return lsQuoteC(name);
+  if (opts.quoting === 'escape') return lsEscapeNonPrinting(name);
+  return opts.hideControl ? lsHideControl(name) : name;
+}
+
+function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, withTotal: boolean): { lines: string[] } {
+  const long = opts.format === 'long';
+  const sizeText = (blocksKiB: number): string => (opts.human === null ? String(blocksKiB) : lsHumanSize(blocksKiB * 1024, opts.human));
+  const inodeWidth = opts.showInode ? Math.max(...entries.map((e) => String(e.inode.id).length), 1) : 0;
+  const blocksWidth = opts.showSize ? Math.max(...entries.map((e) => sizeText(lsBlocksKiB(e.inode)).length), 1) : 0;
+  const prefixOf = (e: LsEntry): string => {
+    let prefix = '';
+    if (opts.showInode) prefix += `${padToWidth(String(e.inode.id), inodeWidth, 'right')} `;
+    if (opts.showSize) prefix += `${padToWidth(sizeText(lsBlocksKiB(e.inode)), blocksWidth, 'right')} `;
+    if (opts.context && !long) prefix += '? ';
+    return prefix;
+  };
+  const lines: string[] = [];
+
+  if (long) {
+    const sizeOf = (e: LsEntry): string => (opts.human === null ? String(lsSize(e.inode)) : lsHumanSize(lsSize(e.inode), opts.human));
+    const ownerOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.uid) : ctx.userMgr.uidToName(e.inode.uid));
+    const groupOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.gid) : ctx.userMgr.gidToName(e.inode.gid));
+    const widths = {
+      links: Math.max(1, ...entries.map((e) => String(e.inode.linkCount).length)),
+      owner: Math.max(1, ...entries.map((e) => ownerOf(e).length)),
+      group: Math.max(1, ...entries.map((e) => groupOf(e).length)),
+      size: Math.max(1, ...entries.map((e) => sizeOf(e).length)),
+    };
+    if (withTotal) {
+      const total = entries.reduce((sum, e) => sum + lsBlocksKiB(e.inode), 0);
+      lines.push(`total ${sizeText(total)}`);
+    }
+    for (const e of entries) {
+      const cells = [ctx.vfs.formatPermissions(e.inode), padToWidth(String(e.inode.linkCount), widths.links, 'right')];
+      if (!opts.hideOwner) cells.push(padToWidth(ownerOf(e), widths.owner));
+      if (!opts.hideGroup) cells.push(padToWidth(groupOf(e), widths.group));
+      if (opts.author) cells.push(padToWidth(ownerOf(e), widths.owner));
+      if (opts.context) cells.push('?');
+      cells.push(padToWidth(sizeOf(e), widths.size, 'right'));
+      cells.push(formatLsTime(opts.timing.style, e.inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs()));
+      const name = colorName(quotedName(e.name, opts), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator, true);
+      let line = `${prefixOf(e)}${cells.join(' ')} ${name}`;
+      if (e.inode.type === 'symlink' && opts.dereference !== 'all') line += ` -> ${ctx.vfs.linkTarget(e.inode)}`;
+      lines.push(line);
+    }
+    return { lines };
+  }
+
+  if (withTotal && opts.showSize) {
+    lines.push(`total ${sizeText(entries.reduce((sum, e) => sum + lsBlocksKiB(e.inode), 0))}`);
+  }
+  const shown: string[] = [];
+  const lengths: number[] = [];
+  for (const e of entries) {
+    const base = quotedName(e.name, opts) + indicatorOf(e.inode, opts.indicator);
+    const prefix = prefixOf(e);
+    shown.push(prefix + colorName(quotedName(e.name, opts), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator));
+    lengths.push(prefix.length + base.length);
+  }
+  if (opts.format === 'single' || shown.length === 0) lines.push(...shown);
+  else if (opts.format === 'commas') lines.push(...lsCommas(shown, lengths, opts.width));
+  else lines.push(...lsColumns(shown, lengths, opts.width, opts.format === 'across', opts.tabSize));
+  return { lines };
+}
+
 function colorName(name: string, inode: INode, useColor = true): string {
   if (!useColor) return name;
   switch (inode.type) {
@@ -447,47 +620,6 @@ function colorName(name: string, inode: INode, useColor = true): string {
       return name;
     default: return name;
   }
-}
-
-function formatEntryLong(ctx: ShellContext, name: string, inode: INode, absPath: string,
-  opts: LsOpts, maxLinks: number, maxOwner: number, maxGroup: number, maxSize: number): string {
-  let line = '';
-
-  if (opts.showInode) {
-    line += `${inode.id} `;
-  }
-
-  const perms = ctx.vfs.formatPermissions(inode);
-  const owner = ctx.userMgr.uidToName(inode.uid);
-  const group = ctx.userMgr.gidToName(inode.gid);
-  const dateStr = formatLsTime(opts.timing.style, inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs());
-
-  const coloredName = colorName(name, inode, opts.useColor ?? false);
-  line += `${perms} ${padToWidth(String(inode.linkCount), maxLinks, 'right')} ${padToWidth(owner, maxOwner)} ${padToWidth(group, maxGroup)} ${padToWidth(String(inode.size), maxSize, 'right')} ${dateStr} ${coloredName}`;
-
-  // Symlink target
-  if (inode.type === 'symlink') {
-    line += ` -> ${ctx.vfs.linkTarget(inode)}`;
-  }
-
-  return line;
-}
-
-function formatEntry(ctx: ShellContext, name: string, inode: INode, absPath: string,
-  opts: LsOpts): string {
-  if (opts.longFormat) {
-    return formatEntryLong(ctx, name, inode, absPath, opts, 1, 1, 1, 1);
-  }
-
-  let line = '';
-  if (opts.showInode) {
-    line += `${inode.id} `;
-  }
-  line += colorName(name, inode, opts.useColor ?? false);
-  if (opts.classify) {
-    line += classifySuffix(inode);
-  }
-  return line;
 }
 
 export interface CatFlags {
@@ -549,39 +681,6 @@ export function renderCat(contents: readonly string[], flags: CatFlags): string 
   return out;
 }
 
-export function cmdCat(ctx: ShellContext, args: string[]): string {
-  const contents: string[] = [];
-  for (const arg of args) {
-    if (arg.startsWith('-')) continue;
-    const path = ctx.vfs.normalizePath(arg, ctx.cwd);
-    const inode = ctx.vfs.resolveInode(path, true);
-    if (inode && ctx.uid !== 0 && !ctx.vfs.path(path, '/', actorOf(ctx)).canRead()) {
-      return `cat: ${arg}: Permission denied`;
-    }
-    const content = ctx.vfs.readFile(path);
-    if (content === null) {
-      return `cat: ${arg}: No such file or directory`;
-    }
-    contents.push(content);
-  }
-  return renderCat(contents, parseCatFlags(args));
-}
-
-function canReadInode(
-  inode: { permissions: number; uid: number; gid: number },
-  ctx: ShellContext,
-): boolean {
-  const mode = inode.permissions;
-  if (ctx.uid === inode.uid) return (mode & 0o400) !== 0;
-  const groups = (ctx.userMgr as unknown as {
-    getUserGroups?: (n: string) => Array<{ gid: number }>;
-  }).getUserGroups?.(ctx.userMgr.currentUser) ?? [];
-  if (inode.gid === ctx.gid || groups.some((g) => g.gid === inode.gid)) {
-    return (mode & 0o040) !== 0;
-  }
-  return (mode & 0o004) !== 0;
-}
-
 export function cmdEcho(ctx: ShellContext, args: string[]): string {
   let interpretEsc = false;
   let noNewline = false;
@@ -598,199 +697,6 @@ export function cmdEcho(ctx: ShellContext, args: string[]): string {
     text = interpretEscapes(text);
   }
   return text;
-}
-
-interface CpRequest {
-  readonly recursive: boolean;
-  readonly preserve: boolean;
-  readonly noClobber: boolean;
-  readonly verbose: boolean;
-  readonly updateOnly: boolean;
-  readonly hardLink: boolean;
-  readonly symbolicLink: boolean;
-  readonly backup: boolean;
-  readonly noTargetDirectory: boolean;
-  readonly targetDirectory: string | null;
-  readonly dereference: 'always' | 'command-line' | 'never' | null;
-  readonly operands: string[];
-}
-
-function parseCpArguments(args: readonly string[]): CpRequest | string {
-  const flags = {
-    recursive: false, preserve: false, noClobber: false, verbose: false, updateOnly: false, hardLink: false, symbolicLink: false,
-    backup: false, noTargetDirectory: false,
-  };
-  let targetDirectory: string | null = null;
-  let dereference: CpRequest['dereference'] = null;
-  const operands: string[] = [];
-  const invalid = (text: string): string => `cp: invalid option -- '${text}'\nTry 'cp --help' for more information.`;
-  let optionsEnded = false;
-  for (let index = 0; index < args.length; index++) {
-    const argument = args[index];
-    if (optionsEnded || !argument.startsWith('-') || argument === '-') {
-      operands.push(argument);
-    } else if (argument === '--') {
-      optionsEnded = true;
-    } else if (argument.startsWith('--')) {
-      if (argument === '--recursive') flags.recursive = true;
-      else if (argument === '--archive') { flags.recursive = true; flags.preserve = true; dereference ??= 'never'; }
-      else if (argument === '--preserve' || argument.startsWith('--preserve=')) flags.preserve = true;
-      else if (argument === '--no-clobber') flags.noClobber = true;
-      else if (argument === '--verbose') flags.verbose = true;
-      else if (argument === '--update' || argument.startsWith('--update=')) flags.updateOnly = true;
-      else if (argument === '--link') flags.hardLink = true;
-      else if (argument === '--symbolic-link') flags.symbolicLink = true;
-      else if (argument === '--backup' || argument.startsWith('--backup=')) flags.backup = true;
-      else if (argument === '--no-target-directory') flags.noTargetDirectory = true;
-      else if (argument === '--dereference') dereference = 'always';
-      else if (argument === '--no-dereference') dereference = 'never';
-      else if (argument.startsWith('--target-directory=')) targetDirectory = argument.slice('--target-directory='.length);
-      else if (argument === '--target-directory') targetDirectory = args[++index] ?? null;
-      else if (argument !== '--force' && argument !== '--one-file-system') return `cp: unrecognized option '${argument}'\nTry 'cp --help' for more information.`;
-    } else {
-      for (let letter = 1; letter < argument.length; letter++) {
-        const flag = argument[letter];
-        if (flag === 'r' || flag === 'R') flags.recursive = true;
-        else if (flag === 'a') { flags.recursive = true; flags.preserve = true; dereference ??= 'never'; }
-        else if (flag === 'p') flags.preserve = true;
-        else if (flag === 'n') flags.noClobber = true;
-        else if (flag === 'v') flags.verbose = true;
-        else if (flag === 'u') flags.updateOnly = true;
-        else if (flag === 'l') flags.hardLink = true;
-        else if (flag === 's') flags.symbolicLink = true;
-        else if (flag === 'b') flags.backup = true;
-        else if (flag === 'T') flags.noTargetDirectory = true;
-        else if (flag === 'L') dereference = 'always';
-        else if (flag === 'H') dereference = 'command-line';
-        else if (flag === 'P' || flag === 'd') dereference = 'never';
-        else if (flag === 't') {
-          const attached = argument.slice(letter + 1);
-          if (attached !== '') targetDirectory = attached;
-          else if (index + 1 < args.length) targetDirectory = args[++index];
-          else return "cp: option requires an argument -- 't'\nTry 'cp --help' for more information.";
-          break;
-        } else if (flag !== 'f' && flag !== 'x' && flag !== 'Z' && flag !== 'i') return invalid(flag);
-      }
-    }
-  }
-  return { ...flags, targetDirectory, dereference, operands };
-}
-
-export function cpOperands(args: readonly string[]): string[] {
-  const request = parseCpArguments(args);
-  return typeof request === 'string' ? [] : request.operands;
-}
-
-const PERMISSION_BITS = 0o777;
-const ALL_MODE_BITS = 0o7777;
-const CP_NO_CLOBBER_WARNING = 'cp: warning: behavior of -n is non-portable and may change in future; use --update=none instead';
-
-function copyTree(
-  ctx: ShellContext, request: CpRequest, source: string, target: string, sourceName: string, targetName: string, messages: string[],
-  depth = 0,
-): void {
-  const link = ctx.vfs.lstat(source);
-  if (link === null) {
-    messages.push(`cp: cannot stat '${sourceName}': No such file or directory`);
-    return;
-  }
-  const follow = request.dereference === 'always'
-    || (depth === 0 && (request.dereference === 'command-line' || (request.dereference === null && !request.recursive)));
-  const inode = link.type === 'symlink' && follow ? ctx.vfs.resolveInode(source) ?? link : link;
-  const exists = ctx.vfs.lstat(target) !== null;
-  if (inode.type === 'directory') {
-    if (!request.recursive) {
-      messages.push(`cp: -r not specified; omitting directory '${sourceName}'`);
-      return;
-    }
-    if (target === source || target.startsWith(`${source}/`)) {
-      messages.push(`cp: cannot copy a directory, '${sourceName}', into itself, '${targetName}'`);
-      return;
-    }
-    if (!exists && !ctx.vfs.mkdir(target, request.preserve ? inode.permissions & ALL_MODE_BITS : inode.permissions & PERMISSION_BITS & ~ctx.umask, ctx.uid, ctx.gid)) {
-      messages.push(`cp: cannot create directory '${targetName}'`);
-      return;
-    }
-    if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
-    for (const entry of ctx.vfs.listDirectory(source) ?? []) {
-      if (entry.name === '.' || entry.name === '..') continue;
-      copyTree(ctx, request, `${source}/${entry.name}`, `${target}/${entry.name}`, `${sourceName}/${entry.name}`, `${targetName}/${entry.name}`, messages, depth + 1);
-    }
-    if (request.preserve) {
-      ctx.vfs.chmod(target, inode.permissions & ALL_MODE_BITS);
-      if (ctx.uid === 0) ctx.vfs.chown(target, inode.uid, inode.gid);
-    }
-    return;
-  }
-  if (exists && request.noClobber) return;
-  if (exists && request.updateOnly && (ctx.vfs.lstat(target)?.mtime ?? 0) >= inode.mtime) return;
-  if (exists && request.backup) ctx.vfs.rename(target, `${target}~`);
-  if (request.hardLink || request.symbolicLink) {
-    if (ctx.vfs.lstat(target) !== null) ctx.vfs.deleteFile(target);
-    const made = request.symbolicLink ? ctx.vfs.createSymlink(target, sourceName, ctx.uid, ctx.gid) : ctx.vfs.createHardLink(target, source);
-    if (!made) messages.push(`cp: cannot create ${request.symbolicLink ? 'symbolic' : 'hard'} link '${targetName}' to '${sourceName}'`);
-    else if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
-    return;
-  }
-  if (inode.type === 'symlink') {
-    if (exists) ctx.vfs.deleteFile(target);
-    if (!ctx.vfs.createSymlink(target, inode.target, ctx.uid, ctx.gid)) messages.push(`cp: cannot create symbolic link '${targetName}'`);
-    else if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
-    return;
-  }
-  if (inode.type !== 'file') {
-    messages.push(`cp: cannot copy '${sourceName}' to '${targetName}'`);
-    return;
-  }
-  const created = ctx.vfs.createFileAt(target, inode.content, inode.permissions & PERMISSION_BITS & ~ctx.umask, ctx.uid, ctx.gid);
-  if (created === null) {
-    messages.push(`cp: cannot create regular file '${targetName}'`);
-    return;
-  }
-  if (request.preserve) {
-    ctx.vfs.chmod(target, inode.permissions & ALL_MODE_BITS);
-    if (ctx.uid === 0) ctx.vfs.chown(target, inode.uid, inode.gid);
-  }
-  if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
-}
-
-export function cmdCp(ctx: ShellContext, args: string[]): string {
-  const parsed = parseCpArguments(args);
-  if (typeof parsed === 'string') return parsed;
-  const request = parsed;
-  const operands = [...request.operands];
-  const destinationName = request.targetDirectory ?? operands.pop();
-  if (destinationName === undefined) return "cp: missing file operand\nTry 'cp --help' for more information.";
-  if (operands.length === 0) {
-    return request.targetDirectory === null
-      ? `cp: missing destination file operand after '${destinationName}'\nTry 'cp --help' for more information.`
-      : "cp: missing file operand\nTry 'cp --help' for more information.";
-  }
-  const actor = actorOf(ctx);
-  const destination = ctx.vfs.path(destinationName, ctx.cwd, actor);
-  const intoDirectory = request.targetDirectory !== null || (!request.noTargetDirectory && destination.isDirectory());
-  if (request.targetDirectory !== null && !destination.isDirectory()) return `cp: target '${destinationName}': ${destination.exists() ? 'Not a directory' : 'No such file or directory'}`;
-  if (operands.length > 1 && !intoDirectory) return `cp: target '${destinationName}': ${destination.exists() ? 'Not a directory' : 'No such file or directory'}`;
-  const messages: string[] = request.noClobber ? [CP_NO_CLOBBER_WARNING] : [];
-  for (const sourceName of operands) {
-    const source = ctx.vfs.path(sourceName, ctx.cwd, actor);
-    if (ctx.uid !== 0) {
-      if (source.exists() && !source.canRead()) {
-        messages.push(`cp: cannot open '${sourceName}' for reading: Permission denied`);
-        continue;
-      }
-      const destinationDirectory = intoDirectory ? destination : destination.parent();
-      if (destinationDirectory.inode() && !destinationDirectory.isWritableDir()) {
-        messages.push(`cp: cannot create regular file '${destinationName}': Permission denied`);
-        continue;
-      }
-    }
-    const base = source.value.split('/').filter(Boolean).pop() ?? '';
-    const target = intoDirectory ? `${destination.value.replace(/\/$/, '')}/${base}` : destination.value;
-    const targetName = intoDirectory ? `${destinationName.replace(/\/$/, '')}/${base}` : destinationName;
-    copyTree(ctx, request, source.value, target, sourceName, targetName, messages);
-  }
-  return messages.join('\n');
 }
 
 const INSTALL_DEFAULT_MODE = 0o755;
@@ -916,324 +822,11 @@ export function cmdInstall(ctx: ShellContext, args: string[]): string {
   return messages.join('\n');
 }
 
-export function cmdMv(ctx: ShellContext, args: string[]): string {
-  const nonFlags = args.filter(a => !a.startsWith('-'));
-  if (nonFlags.length < 2) return 'mv: missing operand';
-  const actor = actorOf(ctx);
-  const srcPath = ctx.vfs.path(nonFlags[0], ctx.cwd, actor);
-  const dstPath = ctx.vfs.path(nonFlags[1], ctx.cwd, actor);
-  if (!srcPath.exists()) return `mv: cannot stat '${nonFlags[0]}': No such file or directory`;
-  if (ctx.uid !== 0) {
-    const srcParent = srcPath.parent();
-    const sp = srcParent.inode();
-    if (sp && (!srcParent.canWrite() || !srcParent.canExecute())) {
-      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Permission denied`;
-    }
-    const srcInode = srcPath.lstatNode();
-    if (srcInode && sp && (sp.permissions & 0o1000) !== 0
-        && srcInode.uid !== ctx.uid && sp.uid !== ctx.uid) {
-      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Operation not permitted`;
-    }
-    const destDir = dstPath.isDirectory() ? dstPath : dstPath.parent();
-    if (destDir.inode() && !destDir.isWritableDir()) {
-      return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}': Permission denied`;
-    }
-  }
-  if (!ctx.vfs.rename(srcPath.value, dstPath.value)) {
-    return `mv: cannot move '${nonFlags[0]}' to '${nonFlags[1]}'`;
-  }
-  return '';
-}
-
-export function cmdRm(ctx: ShellContext, args: string[]): string {
-  let recursive = false;
-  let force = false;
-  let preserveRoot = true;
-  const paths: string[] = [];
-
-  for (const arg of args) {
-    if (arg === '--') continue;
-    if (arg.startsWith('--')) {
-      if (arg === '--recursive') recursive = true;
-      else if (arg === '--force') force = true;
-      else if (arg === '--no-preserve-root') preserveRoot = false;
-      else if (arg === '--preserve-root') preserveRoot = true;
-      continue;
-    }
-    if (arg.startsWith('-') && arg.length > 1) {
-      for (const ch of arg.slice(1)) {
-        if (ch === 'r' || ch === 'R') recursive = true;
-        else if (ch === 'f') force = true;
-      }
-      continue;
-    }
-    paths.push(arg);
-  }
-
-  const actor = actorOf(ctx);
-
-  for (const p of paths) {
-    // Expand globs
-    const expanded = expandGlob(ctx, p);
-    for (const ep of expanded) {
-      const path = ctx.vfs.path(ep, ctx.cwd, actor);
-      const absPath = path.value;
-      if (absPath === '/' && recursive && preserveRoot) {
-        return `rm: it is dangerous to operate recursively on '/'\nrm: use --no-preserve-root to override this failsafe`;
-      }
-      const inode = path.lstatNode();
-      if (!inode) {
-        if (!force) return `rm: cannot remove '${ep}': No such file or directory`;
-        continue;
-      }
-      if (inode.type === 'directory' && !recursive) {
-        return `rm: cannot remove '${ep}': Is a directory`;
-      }
-      if (ctx.uid !== 0) {
-        const parent = path.parent();
-        const pnode = parent.inode();
-        if (pnode && (!parent.canWrite() || !parent.canExecute())) {
-          return `rm: cannot remove '${ep}': Permission denied`;
-        }
-        if (pnode && (pnode.permissions & 0o1000) !== 0
-            && inode.uid !== ctx.uid && pnode.uid !== ctx.uid) {
-          return `rm: cannot remove '${ep}': Operation not permitted`;
-        }
-      }
-      if (inode.type === 'directory') {
-        ctx.vfs.rmrf(absPath);
-      } else {
-        ctx.vfs.deleteFile(absPath);
-      }
-    }
-  }
-  return '';
-}
-
-function displayedComponent(typed: string, absolute: string, components: readonly string[], component: string): string {
+export function displayedComponent(typed: string, absolute: string, components: readonly string[], component: string): string {
   const trimmed = typed.replace(/\/+$/, '');
   const segments = trimmed.split('/');
   const dropped = components.length - 1 - components.indexOf(component);
   return segments.slice(0, Math.max(1, segments.length - dropped)).join('/') || absolute;
-}
-
-const MKDIR_INTERMEDIATE_BITS = 0o300;
-const MKDIR_DEFAULT_MODE = 0o777;
-
-interface MkdirRequest {
-  readonly parents: boolean;
-  readonly verbose: boolean;
-  readonly modeText: string | null;
-  readonly paths: string[];
-}
-
-function parseMkdirArguments(args: readonly string[]): MkdirRequest | string {
-  let parents = false;
-  let verbose = false;
-  let modeText: string | null = null;
-  const paths: string[] = [];
-  for (let index = 0; index < args.length; index++) {
-    const argument = args[index];
-    if (argument === '--') {
-      paths.push(...args.slice(index + 1));
-      break;
-    }
-    if (argument === '--parents') parents = true;
-    else if (argument === '--verbose') verbose = true;
-    else if (argument.startsWith('--mode=')) modeText = argument.slice('--mode='.length);
-    else if (argument === '--mode') modeText = args[++index] ?? null;
-    else if (argument.startsWith('-') && argument.length > 1 && !argument.startsWith('--')) {
-      for (let letter = 1; letter < argument.length; letter++) {
-        const flag = argument[letter];
-        if (flag === 'p') parents = true;
-        else if (flag === 'v') verbose = true;
-        else if (flag === 'm') {
-          const attached = argument.slice(letter + 1);
-          if (attached !== '') modeText = attached;
-          else if (index + 1 < args.length) modeText = args[++index];
-          else return "mkdir: option requires an argument -- 'm'\nTry 'mkdir --help' for more information.";
-          break;
-        }
-      }
-    } else {
-      paths.push(argument);
-    }
-  }
-  return { parents, verbose, modeText, paths };
-}
-
-export function mkdirOperands(args: readonly string[]): string[] {
-  const request = parseMkdirArguments(args);
-  return typeof request === 'string' ? [] : request.paths;
-}
-
-export function cmdMkdir(ctx: ShellContext, args: string[]): string {
-  const request = parseMkdirArguments(args);
-  if (typeof request === 'string') return request;
-  if (request.paths.length === 0) return "mkdir: missing operand\nTry 'mkdir --help' for more information.";
-  const defaultMode = MKDIR_DEFAULT_MODE & ~ctx.umask;
-  let finalMode = defaultMode;
-  if (request.modeText !== null) {
-    const parsed = parseChmodMode(request.modeText, MKDIR_DEFAULT_MODE);
-    if (parsed === null) return `mkdir: invalid mode '${request.modeText}'`;
-    finalMode = parsed;
-  }
-
-  const actor = actorOf(ctx);
-  const messages: string[] = [];
-  const created = (name: string): void => {
-    if (request.verbose) messages.push(`mkdir: created directory '${name}'`);
-  };
-  for (const p of request.paths) {
-    const path = ctx.vfs.path(p, ctx.cwd, actor);
-    const absPath = path.value;
-    if (absPath.startsWith('/proc/') && !path.exists()) return `mkdir: cannot create directory '${p}': No such file or directory`;
-    if (request.parents) {
-      if (ctx.uid !== 0 && !path.exists()) {
-        let anc = path.parent();
-        while (!anc.exists() && anc.value !== '/') anc = anc.parent();
-        if (!anc.isWritableDir()) {
-          return [...messages, `mkdir: cannot create directory '${p}': Permission denied`].join('\n');
-        }
-      }
-      const missing: string[] = [];
-      for (let probe = absPath; probe !== '/' && !ctx.vfs.exists(probe); probe = probe.slice(0, probe.lastIndexOf('/')) || '/') missing.unshift(probe);
-      for (const component of missing) {
-        const isLast = component === absPath;
-        ctx.vfs.mkdir(component, isLast ? finalMode : defaultMode | MKDIR_INTERMEDIATE_BITS, ctx.uid, ctx.gid);
-        created(displayedComponent(p, absPath, missing, component));
-      }
-    } else {
-      if (ctx.uid !== 0 && path.parent().inode() && !path.parent().isWritableDir()) {
-        return [...messages, `mkdir: cannot create directory '${p}': Permission denied`].join('\n');
-      }
-      if (ctx.vfs.exists(absPath)) {
-        messages.push(`mkdir: cannot create directory '${p}': File exists`);
-        continue;
-      }
-      if (!ctx.vfs.mkdir(absPath, finalMode, ctx.uid, ctx.gid)) {
-        // A directory costs an inode; on an exhausted volume that is the
-        // real reason, and the one an operator has to be told about.
-        if (ctx.vfs.freeInodes() === 0) {
-          return [...messages, `mkdir: cannot create directory '${p}': No space left on device`].join('\n');
-        }
-        const parentType = ctx.vfs.getType(absPath.slice(0, absPath.lastIndexOf('/')) || '/');
-        const reason = parentType === null ? ': No such file or directory' : parentType === 'directory' ? '' : ': Not a directory';
-        messages.push(`mkdir: cannot create directory '${p}'${reason}`);
-        continue;
-      }
-      created(p);
-    }
-  }
-  return messages.join('\n');
-}
-
-export function cmdRmdir(ctx: ShellContext, args: string[]): string {
-  const actor = actorOf(ctx);
-  for (const arg of args) {
-    if (arg.startsWith('-')) continue;
-    const path = ctx.vfs.path(arg, ctx.cwd, actor);
-    if (ctx.uid !== 0) {
-      const parent = path.parent();
-      const pnode = parent.inode();
-      if (pnode && (!parent.canWrite() || !parent.canExecute())) {
-        return `rmdir: failed to remove '${arg}': Permission denied`;
-      }
-      const inode = path.lstatNode();
-      if (inode && pnode && (pnode.permissions & 0o1000) !== 0
-          && inode.uid !== ctx.uid && pnode.uid !== ctx.uid) {
-        return `rmdir: failed to remove '${arg}': Operation not permitted`;
-      }
-    }
-    if (!ctx.vfs.rmdir(path.value)) {
-      return `rmdir: failed to remove '${arg}'`;
-    }
-  }
-  return '';
-}
-
-export function cmdLn(ctx: ShellContext, args: string[]): string {
-  const flags = { symbolic: false, force: false, noDereference: false, verbose: false, relative: false, noTargetDirectory: false };
-  const paths: string[] = [];
-  let targetDirectory: string | null = null;
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '--') { paths.push(...args.slice(i + 1)); break; }
-    if (arg.startsWith('--')) {
-      const long = arg.slice(2);
-      if (long === 'symbolic') flags.symbolic = true;
-      else if (long === 'force') flags.force = true;
-      else if (long === 'no-dereference') flags.noDereference = true;
-      else if (long === 'verbose') flags.verbose = true;
-      else if (long === 'relative') flags.relative = true;
-      else if (long === 'no-target-directory') flags.noTargetDirectory = true;
-      else return `ln: unrecognized option '${arg}'\nTry 'ln --help' for more information.`;
-      continue;
-    }
-    if (arg.startsWith('-') && arg.length > 1) {
-      for (const letter of arg.slice(1)) {
-        if (letter === 's') flags.symbolic = true;
-        else if (letter === 'f') flags.force = true;
-        else if (letter === 'n') flags.noDereference = true;
-        else if (letter === 'v') flags.verbose = true;
-        else if (letter === 'r') flags.relative = true;
-        else if (letter === 'T') flags.noTargetDirectory = true;
-        else if (letter === 't') { targetDirectory = args[++i] ?? null; break; }
-        else return `ln: invalid option -- '${letter}'\nTry 'ln --help' for more information.`;
-      }
-      continue;
-    }
-    paths.push(arg);
-  }
-  const sources = targetDirectory !== null ? paths : paths.slice(0, -1);
-  const destination = targetDirectory ?? paths[paths.length - 1];
-  if (paths.length === 0 || (targetDirectory === null && paths.length < 2)) {
-    return paths.length === 0 ? "ln: missing file operand\nTry 'ln --help' for more information." : `ln: missing destination file operand after '${paths[0]}'\nTry 'ln --help' for more information.`;
-  }
-
-  const actor = actorOf(ctx);
-  const output: string[] = [];
-  for (const source of sources) {
-    const destP = ctx.vfs.path(destination, ctx.cwd, actor);
-    const intoDirectory = !flags.noTargetDirectory && destP.isDirectory();
-    const name = source.replace(/\/+$/, '').split('/').pop() ?? source;
-    const linkText = intoDirectory ? `${destination.replace(/\/+$/, '')}/${name}` : destination;
-    const linkP = ctx.vfs.path(linkText, ctx.cwd, actor);
-    const linkPath = linkP.value;
-
-    if (ctx.uid !== 0 && linkP.parent().inode() && !linkP.parent().isWritableDir()) {
-      const kind = flags.symbolic ? 'symbolic link' : 'hard link';
-      return `ln: failed to create ${kind} '${linkText}': Permission denied`;
-    }
-    if (ctx.vfs.lstat(linkPath)) {
-      if (!flags.force) {
-        return `ln: failed to create ${flags.symbolic ? 'symbolic' : 'hard'} link '${linkText}': File exists`;
-      }
-      ctx.vfs.deleteFile(linkPath);
-    }
-
-    let target = source;
-    if (flags.symbolic && flags.relative) {
-      const absTarget = ctx.vfs.normalizePath(source, ctx.cwd);
-      const base = linkPath.split('/').slice(0, -1);
-      const goal = absTarget.split('/');
-      let common = 0;
-      while (common < base.length && common < goal.length && base[common] === goal[common]) common++;
-      target = [...base.slice(common).map(() => '..'), ...goal.slice(common)].join('/') || '.';
-    }
-    if (flags.symbolic) {
-      if (!ctx.vfs.createSymlink(linkPath, target, ctx.uid, ctx.gid)) {
-        return `ln: failed to create symbolic link '${linkText}'`;
-      }
-    } else {
-      const absTarget = ctx.vfs.normalizePath(source, ctx.cwd);
-      if (!ctx.vfs.createHardLink(linkPath, absTarget)) {
-        return `ln: failed to create hard link '${linkText}'`;
-      }
-    }
-    if (flags.verbose) output.push(`'${linkText}' ${flags.symbolic ? '->' : '=>'} '${target}'`);
-  }
-  return output.join('\n');
 }
 
 export function cmdPwd(ctx: ShellContext): string {

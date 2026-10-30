@@ -71,39 +71,19 @@ export function bfdInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
     {
       ...base, id: 'config-if-bfd-interval',
       path: ['bfd', 'interval', {
-        name: 'values', type: 'REST',
-        description: 'Transmit interval in milliseconds, then min_rx and multiplier',
-        alternatives: [
-          { keyword: '<1-9999>', description: 'Transmit interval in milliseconds' },
-          { keyword: 'min_rx', description: 'Minimum receive interval in milliseconds' },
-          { keyword: 'multiplier', description: 'Detection multiplier' },
-        ],
+        name: 'transmit', type: 'INT', range: [1, 9999], description: 'Transmit interval in milliseconds',
       }],
+      options: [
+        { keyword: 'min_rx', description: 'Minimum receive interval in milliseconds',
+          argument: { name: 'min_rx', type: 'INT', range: [1, 9999], description: 'Minimum receive interval in milliseconds' } },
+        { keyword: 'multiplier', description: 'Detection multiplier',
+          argument: { name: 'multiplier', type: 'INT', range: [3, 50], description: 'Detection multiplier' } },
+      ],
       description: 'BFD timers (ms)',
       run: (_session, args) => withAgent((a) => {
-        const list = words(args.values);
-        const pairs: Record<string, number> = {};
-        const hasLeading = /^\d+$/.test(list[0] ?? '');
-        if (hasLeading) {
-          if (Number(list[0]) < 1 || Number(list[0]) > 9999) throw new CliInvalidInput({ token: list[0] });
-          pairs['interval'] = Number(list[0]);
-        }
-        const bounds: Record<string, [number, number]> = {
-          min_rx: [1, 9999], 'min-rx': [1, 9999], multiplier: [3, 50],
-        };
-        for (let i = hasLeading ? 1 : 0; i < list.length; i += 2) {
-          const k = list[i].toLowerCase();
-          if (!(k in bounds)) throw new CliInvalidInput({ token: list[i] });
-          if (list[i + 1] === undefined) throw new CliIncomplete();
-          if (!/^\d+$/.test(list[i + 1]) || Number(list[i + 1]) < bounds[k][0]
-            || Number(list[i + 1]) > bounds[k][1]) {
-            throw new CliInvalidInput({ token: list[i + 1] });
-          }
-          pairs[k] = Number(list[i + 1]);
-        }
-        const tx = pairs['interval'] ?? 1000;
-        const rx = pairs['min_rx'] ?? pairs['min-rx'] ?? 1000;
-        const mult = pairs['multiplier'] ?? 3;
+        const tx = Number(args.transmit);
+        const rx = args.min_rx === undefined ? 1000 : Number(args.min_rx);
+        const mult = args.multiplier === undefined ? 3 : Number(args.multiplier);
         for (const port of ctx.selectedPorts()) {
           for (const s of a.listSessions().filter((x) => x.iface === port)) {
             a.setTimers(port, s.neighborIp, tx, rx, mult);

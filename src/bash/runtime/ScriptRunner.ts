@@ -22,6 +22,7 @@ export interface ScriptResult {
   exitCode: number;
   /** Final environment variables after execution (for state sync). */
   env?: Record<string, string>;
+  exported?: string[];
   /**
    * Pure stderr stream (content routed to fd 2). `output` remains the
    * merged terminal view; this lets callers route stderr independently.
@@ -47,6 +48,7 @@ export function runScript(
   invocation: 'direct' | 'interpreter' = 'direct',
   identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean },
   io?: IOContext,
+  inherited?: Record<string, string>,
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -79,7 +81,7 @@ export function runScript(
   const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContent(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), scriptIo, identity, aliases, functions,
+    inherited ?? buildEnvVars(ctx), scriptIo, identity, aliases, functions,
   );
 }
 
@@ -127,13 +129,13 @@ export function runScriptContent(
     for (const [k, v] of interp.env.getAll()) {
       finalEnv[k] = v;
     }
-    return { ...result, env: finalEnv };
+    return { ...result, env: finalEnv, exported: Object.keys(interp.env.getExported()) };
   } catch (e: unknown) {
     if (e instanceof DaemonParkSignal) {
       const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
       const finalEnv: Record<string, string> = {};
       if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
-      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+      return { output: e.output, exitCode: 0, env: finalEnv, exported: parkedInterp ? Object.keys(parkedInterp.env.getExported()) : [], parked: true, interp: parkedInterp };
     }
     const msg = e instanceof Error ? e.message : String(e);
     // Normalize lexer/parser errors to "syntax error" format for compatibility
@@ -160,6 +162,7 @@ export async function runScriptAsync(
   invocation: 'direct' | 'interpreter' = 'direct',
   identity?: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean },
   io?: IOContext,
+  inherited?: Record<string, string>,
 ): Promise<ScriptResult> {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -187,7 +190,7 @@ export async function runScriptAsync(
   const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContentAsync(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), scriptIo, identity, aliases, functions,
+    inherited ?? buildEnvVars(ctx), scriptIo, identity, aliases, functions,
   );
 }
 
@@ -235,13 +238,13 @@ export async function runScriptContentAsync(
     for (const [k, v] of interp.env.getAll()) {
       finalEnv[k] = v;
     }
-    return { ...result, env: finalEnv };
+    return { ...result, env: finalEnv, exported: Object.keys(interp.env.getExported()) };
   } catch (e: unknown) {
     if (e instanceof DaemonParkSignal) {
       const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
       const finalEnv: Record<string, string> = {};
       if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
-      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+      return { output: e.output, exitCode: 0, env: finalEnv, exported: parkedInterp ? Object.keys(parkedInterp.env.getExported()) : [], parked: true, interp: parkedInterp };
     }
     const msg = e instanceof Error ? e.message : String(e);
     const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');

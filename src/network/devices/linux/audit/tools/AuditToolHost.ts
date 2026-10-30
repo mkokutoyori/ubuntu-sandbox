@@ -42,15 +42,18 @@ export class ToolOutput {
   readonly out: string[] = [];
   readonly err: string[] = [];
   readonly order: string[] = [];
+  readonly chunks: Array<{ readonly fd: 1 | 2; readonly text: string }> = [];
 
   printf(text: string): void {
     this.out.push(text);
     this.order.push(text);
+    this.chunks.push({ fd: 1, text });
   }
 
   eprintf(text: string): void {
     this.err.push(text);
     this.order.push(text);
+    this.chunks.push({ fd: 2, text });
   }
 
   get interleaved(): string {

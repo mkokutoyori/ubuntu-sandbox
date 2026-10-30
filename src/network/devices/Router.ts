@@ -2727,8 +2727,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private nat64Forward4(ipPkt: IPv4Packet): void {
-    if (this.nat64 === null || ipPkt.ttl <= 1) return;
-    const result = this.nat64.translate4to6Fitted({ ...ipPkt, ttl: ipPkt.ttl - 1 });
+    if (this.nat64 === null) return;
+    const hop = decrementForForwarding(ipPkt);
+    if (hop.kind !== 'forward') return;
+    const result = this.nat64.translate4to6Fitted(hop.packet);
     if (result.ok === false) {
       Logger.info(this.id, 'nat64:drop',
         `${this.name}: NAT64 dropped ${ipPkt.sourceIP} -> ${ipPkt.destinationIP} (${result.reason})`);

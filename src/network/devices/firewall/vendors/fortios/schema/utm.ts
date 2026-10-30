@@ -579,7 +579,7 @@ export const IPS_CUSTOM: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'utmgrp',
-  renderOrder: 460,
+  renderOrder: 466,
   help: 'Configure IPS custom signature.',
   attributes: [
     { ...word('tag', 'Signature tag.'), readOnly: true },

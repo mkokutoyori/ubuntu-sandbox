@@ -93,7 +93,7 @@ export function executeBuiltin(
     case 'type': return builtinType(args, functions, aliases);
     case 'set': return args.length === 0 ? declaration('declare', [], env, functions) : optionResult(runSet(args, env), env);
     case 'shopt': return optionResult(runShopt(args, env), env);
-    case 'source': case '.': return { output: '', exitCode: 0 }; // handled at higher level
+    case 'source': case '.': return args.length === 0 ? fail(`bash: ${name}: filename argument required\n${name}: usage: ${name} filename [arguments]`, 2) : { output: '', exitCode: 0 }; // handled at higher level
     case 'declare':
     case 'typeset':
     case 'local':
@@ -337,7 +337,7 @@ function builtinPrintf(args: string[], env: Environment, io?: BuiltinIO): Builti
     }
     return fail(`bash: printf: ${args[index]}: invalid option\nprintf: usage: printf [-v var] format [arguments]`, 2);
   }
-  if (index >= args.length) return fail('bash: printf: usage: printf [-v var] format [arguments]', 2);
+  if (index >= args.length) return fail('printf: usage: printf [-v var] format [arguments]', 2);
   const clock = io?.wallClock === undefined ? undefined : {
     nowMs: () => io.wallClock!().nowMs(),
     format: (pattern: string, epochMs: number) => io.wallClock!().format(pattern, epochMs),

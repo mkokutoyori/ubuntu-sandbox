@@ -162,6 +162,8 @@ export function typesInterfaceEnMotsCles(
   }));
 }
 
+const MAX_VIRTUAL_INTERFACE_NUMBER = 2147483647;
+
 export const NOM_INTERFACE_TAPE =
   /^[A-Za-z][A-Za-z-]*\d[\d/.]*$/i;
 
@@ -183,7 +185,12 @@ export function registerInterfaceEntry(trie: CommandTrie, ctx: CiscoShellContext
           'virtual-template': 'Virtual-Template',
           'port-channel': 'Port-channel', 'po': 'Port-channel',
         };
-        const fullName = `${typeMap[vMatch[1].toLowerCase()]}${vMatch[2]}`;
+        const typeName = typeMap[vMatch[1].toLowerCase()];
+        if ((typeName === 'Loopback' || typeName === 'Tunnel') && Number(vMatch[2]) > MAX_VIRTUAL_INTERFACE_NUMBER) {
+          const numberColumn = 'interface '.length + (args.length > 1 ? args[0].length + 1 : vMatch[1].length);
+          return formatInvalidInput(numberColumn);
+        }
+        const fullName = `${typeName}${vMatch[2]}`;
         ctx.r()._createVirtualInterface(fullName);
         ifName = fullName;
       }
@@ -465,6 +472,11 @@ export const SPEED_PLACE: ArgumentSpec = {
   ],
 };
 
+const EIGRP_INTERVAL_PLACES: readonly ArgumentSpec[] = [
+  { name: 'as-number', type: 'INT', range: [1, 65535], description: 'Autonomous system number' },
+  { name: 'seconds', type: 'INT', range: [1, 65535], description: 'Interval, in seconds' },
+];
+
 const CONFIG_IF_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   bandwidth: { name: 'kilobits', type: 'INT', range: [1, 10000000],
@@ -502,6 +514,10 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Transmit ring size, in packets' },
   'ipv6 eigrp': { name: 'as-number', type: 'INT', range: [1, 65535],
     description: 'Autonomous system number' },
+  'ip tcp adjust-mss': { name: 'max-segment-size', type: 'INT', range: [500, 1460],
+    description: 'Maximum segment size, in bytes' },
+  'ip hello-interval eigrp': EIGRP_INTERVAL_PLACES,
+  'ip hold-time eigrp': EIGRP_INTERVAL_PLACES,
   speed: SPEED_PLACE,
   encapsulation: {
     name: 'type', type: 'REST', description: 'Encapsulation type',
@@ -705,6 +721,7 @@ export function buildConfigIfCommands(trie: CommandTrie, ctx: CiscoShellContext)
     if (port) port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
     return '';
   });
+  trie.requireArgs('negotiation', 1);
   trie.register('no keepalive', 'Disable keepalive', () => {
     if (!ctx.getSelectedInterface()) return '';
     ctx.r().getPort(ctx.getSelectedInterface()!)?.setKeepalive(null);

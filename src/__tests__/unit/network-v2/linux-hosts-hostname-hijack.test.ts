@@ -131,7 +131,10 @@ describe('Scénario 3 — hijack /etc/hosts + SSH: TOFU détecte la redirection'
     );
     expect(out).not.toMatch(/Host key verification failed/i);
     const kh = await client.executeCommand('cat ~/.ssh/known_hosts');
-    expect(kh).toContain('serveur-legitime.domaine.local');
+    expect(kh).toMatch(/^\|1\|\S+\|\S+ ssh-/m);
+    expect(kh).not.toContain('serveur-legitime.domaine.local');
+    const found = await client.executeCommand('ssh-keygen -F serveur-legitime.domaine.local');
+    expect(found).toContain('Host serveur-legitime.domaine.local found');
   });
 
   it('rediriger le nom vers le serveur pirate déclenche l\'alerte MITM malgré le hijack DNS/hosts', async () => {

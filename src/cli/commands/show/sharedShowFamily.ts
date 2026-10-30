@@ -30,6 +30,53 @@ function rest(
   };
 }
 
+
+interface DiscoveryBase {
+  readonly modes: string[];
+  readonly minPrivilege: number;
+}
+
+function discoveryFamily(
+  protocol: 'cdp' | 'lldp', base: DiscoveryBase, run: (words: readonly string[]) => string,
+): CommandSpec[] {
+  const label = protocol === 'cdp' ? 'CDP' : 'LLDP';
+  const interfaceArgument: ArgumentSpec = {
+    name: 'interface', type: 'INTERFACE', optional: true, description: `Interface to show the ${label} status of`,
+  };
+  const leaf = (stem: string, description: string, extra: Partial<CommandSpec> & { arguments?: ArgumentSpec[] } = {}): CommandSpec => ({
+    ...base, id: `show-${protocol}-${stem}`, path: ['show', protocol, stem, ...(extra.arguments ?? [])],
+    description, run: () => run([stem]),
+  } as CommandSpec);
+  const specs: CommandSpec[] = [
+    { ...base, id: `show-${protocol}`, path: ['show', protocol], description: `Display ${label} information`, run: () => run([]) },
+    {
+      ...base, id: `show-${protocol}-neighbors`,
+      path: ['show', protocol, 'neighbors', rest('detail', 'Interface or detail selector', [['detail', 'Show detailed information']])],
+      description: `${label} neighbor entries`,
+      run: (_session, args) => run(['neighbors', ...words(args.detail)]),
+    },
+    {
+      ...base, id: `show-${protocol}-entry`,
+      path: ['show', protocol, 'entry', { name: 'device', type: 'WORD', description: 'Name of the neighbor entry' }, rest('selector', 'Entry detail')],
+      description: 'Information for specific neighbor entry',
+      run: (_session, args) => run(['entry', String(args.device), ...words(args.selector)]),
+    },
+    {
+      ...base, id: `show-${protocol}-interface`, path: ['show', protocol, 'interface', interfaceArgument],
+      description: `${label} interface status and configuration`,
+      run: (_session, args) => run(['interface', ...words(args.interface)]),
+    },
+    leaf('traffic', `${label} statistics`),
+  ];
+  if (protocol === 'lldp') {
+    specs.push(
+      leaf('errors', 'LLDP computational errors and overflows'),
+      { ...base, id: 'show-lldp-local-info', path: ['show', 'lldp', 'local-info'], description: 'Local LLDP information', run: () => run(['local-info']) },
+    );
+  }
+  return specs;
+}
+
 export function sharedShowFamily(host: () => SharedShowHost): CommandSpec[] {
   const base = { modes: ['user', 'privileged'], minPrivilege: 1 };
   return [
@@ -44,30 +91,8 @@ export function sharedShowFamily(host: () => SharedShowHost): CommandSpec[] {
       description: 'Display MAC address table',
       run: () => host().macAddressTable(),
     }] : []),
-    {
-      ...base, id: 'show-cdp',
-      path: ['show', 'cdp', rest('detail', 'CDP detail to display', [
-        ['neighbors', 'CDP neighbor entries'],
-        ['entry', 'Information for specific neighbor entry'],
-        ['interface', 'CDP interface status and configuration'],
-        ['traffic', 'CDP statistics'],
-      ])],
-      description: 'Display CDP information',
-      run: (_session, args) => host().cdp(words(args.detail)),
-    },
-    {
-      ...base, id: 'show-lldp',
-      path: ['show', 'lldp', rest('detail', 'LLDP detail to display', [
-        ['neighbors', 'LLDP neighbor entries'],
-        ['entry', 'Information for specific neighbor entry'],
-        ['errors', 'LLDP computational errors and overflows'],
-        ['interface', 'LLDP interface status and configuration'],
-        ['local-info', 'Local LLDP information'],
-        ['traffic', 'LLDP statistics'],
-      ])],
-      description: 'Display LLDP information',
-      run: (_session, args) => host().lldp(words(args.detail)),
-    },
+    ...discoveryFamily('cdp', base, (words) => host().cdp(words)),
+    ...discoveryFamily('lldp', base, (words) => host().lldp(words)),
     {
       ...base, modes: ['privileged'], id: 'show-snmp', path: ['show', 'snmp', rest('view', 'SNMP detail to display')],
       description: 'Display SNMP status',

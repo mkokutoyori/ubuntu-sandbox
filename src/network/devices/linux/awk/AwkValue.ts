@@ -1,3 +1,5 @@
+import { formatGeneral } from '@/bash/runtime/Printf';
+
 export class StrNum {
   constructor(readonly raw: string) {}
 }
@@ -181,13 +183,8 @@ function applyExp(n: number, precision: number, upper: boolean): string {
 }
 
 function applyGeneral(n: number, precision: number, upper: boolean): string {
-  const p = precision === 0 ? 1 : precision;
-  let s = n.toPrecision(p);
-  if (s.indexOf('.') >= 0 && s.indexOf('e') < 0) s = s.replace(/\.?0+$/, '');
-  else if (s.indexOf('e') >= 0) {
-    s = s.replace(/\.?0+e/, 'e').replace(/e([+-])(\d)$/, 'e$10$2');
-  }
-  return upper ? s.toUpperCase() : s;
+  const text = Number.isFinite(n) ? formatGeneral(n, precision, false) : n.toPrecision(precision === 0 ? 1 : precision);
+  return upper ? text.toUpperCase() : text;
 }
 
 function pad(body: string, width: number | null, flags: string, numeric: boolean): string {

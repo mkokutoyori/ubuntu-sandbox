@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { runAureport } from '@/network/devices/linux/audit/tools/AureportTool';
 import { hostClock } from '@/network/devices/linux/audit/tools/AuditHostClock';
 import type { AuditToolHost } from '@/network/devices/linux/audit/tools/AuditToolHost';
@@ -42,7 +42,6 @@ describe.each(FIXTURES)('aureport against the real 3.1.2 binary (%s)', (file) =>
 
   it('replays', () => {
     const failures = fixture.cases.map(replay).filter((f): f is string => f !== null);
-    writeFileSync(`/tmp/claude-0/scratch/aureport-${file}-failures.txt`, `${failures.length}/${fixture.cases.length}\n` + failures.join('\n=====\n'));
-    expect(failures.length).toBe(0);
+    expect(failures).toEqual([]);
   });
 });

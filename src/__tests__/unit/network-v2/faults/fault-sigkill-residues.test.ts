@@ -93,7 +93,8 @@ describe('un démon qui tourne a ses fichiers d\'exécution', () => {
     const ssh = await srv.executeCommand('cat /usr/lib/systemd/system/ssh.service');
     expect(ssh).toContain(`PIDFile=${SSHD_PID}`);
     // sshd écrit à même /run : rien ne nettoiera derrière lui.
-    expect(ssh).not.toContain('RuntimeDirectory=');
+    expect(ssh).toContain('RuntimeDirectory=sshd\n');
+    expect(ssh).not.toContain('RuntimeDirectory=sshd.pid');
 
     const f2b = await srv.executeCommand('cat /usr/lib/systemd/system/fail2ban.service');
     expect(f2b).toContain('RuntimeDirectory=fail2ban');

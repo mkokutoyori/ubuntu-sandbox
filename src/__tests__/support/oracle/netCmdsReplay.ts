@@ -90,6 +90,7 @@ export async function replayNetCmdsCase(lab: NetCmdsCase): Promise<NetCmdsRun> {
   const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
   pc.powerOn();
   const asRoot = (line: string): Promise<string> => (pc as unknown as RootRunner).executor.runAsUser('root', () => pc.executeCommand(line));
+  await asRoot('export LANG=C');
   for (const daemon of DAEMONS) await asRoot(`systemctl stop ${daemon}`);
   for (const address of lab.addresses) await asRoot(`ip addr add ${address} dev eth0`);
   if (lab.addresses.length > 0) await asRoot('ip link set eth0 up');

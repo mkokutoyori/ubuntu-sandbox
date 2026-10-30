@@ -3,38 +3,65 @@
  */
 
 import { ShellContext } from './LinuxFileCommands';
-import { parseFind } from './FindExpression';
+import { parseFind, type FindHost } from './FindExpression';
 
-export function cmdFind(ctx: ShellContext, args: string[]): string {
-  const parsed = parseFind(ctx, args);
-  if ('error' in parsed) return parsed.error;
+export interface FindResult {
+  output: string;
+  exitCode: number;
+  stderr?: string;
+  interleaved?: string;
+}
+
+export function cmdFind(ctx: ShellContext, args: string[], host?: FindHost, stdin?: string): FindResult {
+  const parsed = parseFind(ctx, args, host, stdin);
+  if ('text' in parsed) return { output: parsed.text, exitCode: parsed.exitCode };
+  if ('error' in parsed) {
+    const diagnostic = `${parsed.error}\n`;
+    return { output: '', stderr: diagnostic, interleaved: diagnostic, exitCode: parsed.exitCode };
+  }
   const { plan } = parsed;
-  const errors: string[] = [];
+  const emitError = (message: string): void => {
+    plan.output.push({ text: message, terminator: '\n', stream: 'stderr' });
+    plan.state.exitCode = 1;
+  };
   for (const start of plan.starts) {
     const absStart = ctx.vfs.normalizePath(start, ctx.cwd);
-    if (!ctx.vfs.exists(absStart) && ctx.vfs.lstat(absStart) === null) {
-      errors.push(`find: '${start}': No such file or directory`);
+    if (start === '' || (!ctx.vfs.exists(absStart) && ctx.vfs.lstat(absStart) === null)) {
+      emitError(`find: '${start}': No such file or directory`);
       continue;
     }
     const typed = start.replace(/\/+$/, '') || '/';
     const displayOf = (path: string): string => {
-      if (start.startsWith('/')) return path;
-      return path === absStart ? typed : `${typed === '/' ? '' : typed}${path.slice(absStart === '/' ? 0 : absStart.length)}`;
+      const tail = start.startsWith('/') ? path : path === absStart ? typed : `${typed === '/' ? '' : typed}${path.slice(absStart === '/' ? 0 : absStart.length)}`;
+      return path === absStart ? start : tail;
     };
+    const follow = plan.follow === 'none' && start.length > 1 && start.endsWith('/') ? 'args' : plan.follow;
     const walkOptions = {
-      maxdepth: plan.maxdepth, postOrder: plan.postOrder,
+      maxdepth: plan.maxdepth, postOrder: plan.postOrder, follow,
+      onError: (message: string) => emitError(`find: ${message.split(absStart).join(typed)}`),
       ...(!plan.crossDevices && ctx.deviceOf ? { device: ctx.deviceOf(absStart), deviceOf: ctx.deviceOf } : {}),
     };
-    ctx.vfs.walkFind(absStart, walkOptions, (path, inode, depth) => {
+    ctx.vfs.walkFind(absStart, walkOptions, (path, inode, depth, link) => {
       if (plan.mindepth !== undefined && depth < plan.mindepth) return;
-      const run = { path, display: displayOf(path), start: typed, inode, depth, prune: false, quit: false };
+      const run = { path, display: displayOf(path), start, inode, link, depth, prune: false, quit: false };
       plan.expression(run);
       if (run.quit) return 'stop';
       return run.prune ? 'prune' : undefined;
     });
   }
-  const text = plan.output.map((record) => record.text + record.terminator).join('');
-  return [...errors, text.replace(/\n$/, '')].filter((part) => part !== '').join('\n');
+  plan.finish();
+  for (const [path, content] of plan.files) ctx.vfs.writeFile(path, content, ctx.uid, ctx.gid, 0o022);
+  const render = (stream: 'stdout' | 'stderr' | 'both'): string => plan.output
+    .filter((record) => stream === 'both' || record.stream === stream)
+    .map((record) => record.text + record.terminator).join('');
+  const stdout = render('stdout');
+  const stderr = render('stderr');
+  const result: FindResult = { output: stdout, exitCode: plan.state.exitCode };
+  if (stderr !== '') {
+    result.stderr = stderr;
+    result.interleaved = render('both');
+  }
+  return result;
 }
 
 export function cmdLocate(ctx: ShellContext, args: string[]): string {

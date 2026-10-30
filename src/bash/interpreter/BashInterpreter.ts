@@ -63,6 +63,7 @@ export interface ExternalCommandResult {
    */
   stderr?: string;
   interleaved?: string;
+  chunks?: ReadonlyArray<{ readonly fd: 1 | 2; readonly text: string }>;
   backgroundPid?: number;
   lineOriented?: boolean;
 }
@@ -937,7 +938,7 @@ export class BashInterpreter {
   private procSubCounter = 63;
   private pendingOutSubs: Array<{ command: string; path: string }> = [];
 
-  private materializeProcSubs(node: SimpleCommand): SimpleCommand {
+  private *materializeProcSubs(node: SimpleCommand): Effects<SimpleCommand> {
     const hasProcSub = (w: Word): boolean =>
       w.type === 'ProcessSubstitution'
       || (w.type === 'CompoundWord' && w.parts.some(hasProcSub));
@@ -945,18 +946,18 @@ export class BashInterpreter {
         && !node.redirections.some(r => hasProcSub(r.target))) {
       return node;
     }
-    return {
-      ...node,
-      words: node.words.map(w => this.materializeWord(w)),
-      redirections: node.redirections.map(r => ({ ...r, target: this.materializeWord(r.target) })),
-    };
+    const words: Word[] = [];
+    for (const word of node.words) words.push(yield* this.materializeWord(word));
+    const redirections: Redirection[] = [];
+    for (const redirection of node.redirections) redirections.push({ ...redirection, target: yield* this.materializeWord(redirection.target) });
+    return { ...node, words, redirections };
   }
 
-  private materializeWord(word: Word): Word {
+  private *materializeWord(word: Word): Effects<Word> {
     if (word.type === 'ProcessSubstitution') {
       const path = this.allocateProcSubPath();
       if (word.direction === 'in') {
-        const output = this.executeSubcommand(word.command);
+        const output = yield* this.subcommandG(word.command);
         this.io?.writeFile(path, output, false);
       } else {
         this.io?.writeFile(path, '', false);
@@ -965,7 +966,9 @@ export class BashInterpreter {
       return { type: 'LiteralWord', value: path, position: word.position };
     }
     if (word.type === 'CompoundWord') {
-      return { ...word, parts: word.parts.map(p => this.materializeWord(p)) };
+      const parts: Word[] = [];
+      for (const part of word.parts) parts.push(yield* this.materializeWord(part));
+      return { ...word, parts } as Word;
     }
     return word;
   }
@@ -1059,7 +1062,7 @@ export class BashInterpreter {
     if (rawNode.position !== undefined) this.currentLine = rawNode.position.line;
     yield* this.fireSignalTrap('DEBUG');
     const bareExec = rawNode.words.length === 1 && literalHeadName(rawNode) === 'exec';
-    const node = bareExec ? rawNode : this.materializeProcSubs(rawNode);
+    const node = bareExec ? rawNode : yield* this.materializeProcSubs(rawNode);
     this.lastSubstitutionStatus = null;
     if (!this.interactive && isShellOptionEnabled(this.env, 'noexec')) return;
 
@@ -1251,13 +1254,19 @@ export class BashInterpreter {
   }
 
   private emitResult(
-    result: { output: string; stderr?: string; interleaved?: string; lineOriented?: boolean },
+    result: { output: string; stderr?: string; interleaved?: string; chunks?: ReadonlyArray<{ readonly fd: 1 | 2; readonly text: string }>; lineOriented?: boolean },
     exitCode: number,
     source: { builtin?: string; childShell?: boolean } = {},
   ): void {
     const newline: Newline = result.lineOriented === true ? 'always' : result.lineOriented === false ? 'never' : 'terminal';
     if (result.stderr === undefined) {
       this.log.write(1, result.output, newline, exitCode !== 0);
+      return;
+    }
+    if (result.chunks !== undefined && result.chunks.length > 0) {
+      for (const chunk of result.chunks) {
+        this.log.write(chunk.fd, chunk.text, 'never');
+      }
       return;
     }
     if (result.interleaved !== undefined && result.interleaved !== '') {
@@ -1450,7 +1459,7 @@ export class BashInterpreter {
       return plan;
     };
     for (const redir of redirections) {
-      const target = yield* this.expandWordG(this.materializeWord(redir.target));
+      const target = yield* this.expandWordG(yield* this.materializeWord(redir.target));
       const op = redir.op;
       if (op === '<<<' || op === '<<') {
         plan.stdin = target + '\n';

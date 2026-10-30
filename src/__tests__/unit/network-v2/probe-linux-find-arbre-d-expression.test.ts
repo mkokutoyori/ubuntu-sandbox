@@ -84,6 +84,6 @@ describe('malformed expressions are refused', () => {
     expect(await find('\\( -name a.txt')).toContain("find: invalid expression; I was expecting to find a ')' somewhere but did not see one.");
   });
   it('a missing argument', async () => { expect(await find('-name')).toBe("find: missing argument to `-name'"); });
-  it('a path after the expression', async () => { expect(await find('-name a.txt /tmp')).toBe("find: paths must precede expression: `/tmp'"); });
+  it('a path after the expression', async () => { expect(await find('-name a.txt /tmp')).toBe("find: paths must precede expression: `/tmp'\nfind: possible unquoted pattern after predicate `-name'?"); });
   it('an unknown user', async () => { expect(await find('-user zorglub')).toBe("find: 'zorglub' is not the name of a known user"); });
 });

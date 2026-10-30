@@ -107,6 +107,7 @@ describe('VACL — `match mac address` and the per-packet-type rule', () => {
 
   it('a map carrying only MAC clauses FORWARDS IP traffic', async () => {
     const { device, left } = await lan('MB', 'mb1', 'mb2');
+    expect(await left.executeCommand('ping -c 1 10.0.0.2')).toContain(', 0% packet loss');
     await configure(device, [
       'enable', 'configure terminal',
       'mac access-list extended MACL', 'permit any any', 'exit',

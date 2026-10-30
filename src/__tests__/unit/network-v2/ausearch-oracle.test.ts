@@ -7,7 +7,7 @@
  * aureport.  Time-of-day dependent cases (-te DATE, -ts TIME) are not recorded because the real tool reads the clock.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { runAusearch } from '@/network/devices/linux/audit/tools/AusearchTool';
 import { hostClock } from '@/network/devices/linux/audit/tools/AuditHostClock';
 import type { AuditSearchHost } from '@/network/devices/linux/audit/tools/AuditToolHost';
@@ -56,7 +56,6 @@ describe.each(FIXTURES)('ausearch against the real 3.1.2 binary (%s)', (file) =>
 
   it('replays', () => {
     const failures = fixture.cases.map(replay).filter((f): f is string => f !== null);
-    writeFileSync(`/tmp/claude-0/scratch/ausearch-${file}-failures.txt`, `${failures.length}/${fixture.cases.length}\n` + failures.join('\n=====\n'));
-    expect(failures.length).toBe(0);
+    expect(failures).toEqual([]);
   });
 });

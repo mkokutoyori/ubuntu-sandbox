@@ -51,6 +51,7 @@ export type DebugCategory =
   | 'stp.bpdu';
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { isMulticastIpv4 } from '@/network/core/ip';
 
 import type { IEventBus } from '@/events/EventBus';
 import { attachOrderedCapture, type FrameSource } from '@/network/hardware/PortTap';
@@ -418,8 +419,7 @@ export class RouterDebugService implements TerminalDebugSource {
 
   private concernsThisRouter(ip: { src: string; dst: string }, dir: 'rcvd' | 'sent'): boolean {
     if (dir === 'sent') return this.ownsAddress(ip.src);
-    const firstOctet = Number(ip.dst.split('.')[0]);
-    return firstOctet >= 224 || this.ownsAddress(ip.dst);
+    return isMulticastIpv4(ip.dst) || ip.dst === '255.255.255.255' || this.ownsAddress(ip.dst);
   }
 
   private aclMatchFn?: (aclName: string, line: string, faits?: DebugPacketFacts) => boolean;
