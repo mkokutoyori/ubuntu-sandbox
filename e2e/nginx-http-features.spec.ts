@@ -151,4 +151,35 @@ test.describe('nginx : gzip, redirections et pages d\'erreur dans le terminal', 
     await typeCmd(page, `curl -s -i -H 'Range: bytes=20-30' http://${SRV}/digits.txt`);
     expect(await lastLines(page, 20)).toContain('HTTP/1.1 416 Requested Range Not Satisfiable');
   });
+
+  test('rewrite, if et set dans le terminal', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const serverId = await addDevice(page, 'linux-server', 300, 250);
+    const clientId = await addDevice(page, 'linux-server', 600, 250);
+    await cable(page, serverId, clientId);
+
+    await openTerminal(page, serverId);
+    await typeCmd(page, `ip addr add ${SRV}/24 dev eth0`);
+    await writeSite(page,
+      'server {\n  listen 80 default_server;\n'
+      + '  location /old/ { rewrite ^/old/(.*)$ /new/$1 last; }\n'
+      + '  location /new/ { set $who "$arg_who"; return 200 "new:$uri:$who"; }\n'
+      + '  location /g { if ($arg_x = 1) { return 403; } return 200 ok; }\n}\n');
+    await typeCmd(page, 'nginx -t');
+    expect(await lastLines(page, 4)).toContain('test is successful');
+    await typeCmd(page, 'systemctl start nginx');
+    await closeTerminal(page);
+
+    await openTerminal(page, clientId);
+    await typeCmd(page, `ip addr add ${CLI}/24 dev eth0`);
+    await typeCmd(page, `curl -s "http://${SRV}/old/x?who=zoe"`);
+    expect(await lastLines(page, 4)).toContain('new:/new/x:zoe');
+    await typeCmd(page, `curl -s -o /dev/null -w "code=%{http_code}\\n" "http://${SRV}/g?x=1"`);
+    expect(await lastLines(page, 4)).toContain('code=403');
+    await typeCmd(page, `curl -s -o /dev/null -w "code=%{http_code}\\n" "http://${SRV}/g?x=2"`);
+    expect(await lastLines(page, 4)).toContain('code=200');
+  });
 });
