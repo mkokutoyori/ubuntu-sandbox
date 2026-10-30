@@ -648,15 +648,15 @@ describe('Group 3: Gestion des Permissions', () => {
       expect(perms).toContain('drwsr-sr-t');
       
       // Notation octale avec bits spéciaux
-      await pc.executeCommand('chmod 2755 special_dir');  // setgid
+      await pc.executeCommand('chmod 02755 special_dir');  // setgid
       perms = await pc.executeCommand('ls -ld special_dir');
       expect(perms).toContain('drwxr-sr-x');
       
-      await pc.executeCommand('chmod 4755 special_dir');  // setuid
+      await pc.executeCommand('chmod 04755 special_dir');  // setuid
       perms = await pc.executeCommand('ls -ld special_dir');
       expect(perms).toContain('drwsr-xr-x');
       
-      await pc.executeCommand('chmod 1777 special_dir');  // sticky
+      await pc.executeCommand('chmod 01777 special_dir');  // sticky
       perms = await pc.executeCommand('ls -ld special_dir');
       expect(perms).toContain('drwxrwxrwt');
       

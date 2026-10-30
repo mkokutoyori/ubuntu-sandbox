@@ -1,6 +1,6 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
 import {
-  Streams, docsResult, fromBytes, quoteLocale, quotef, toBytes, usageFailure,
+  Streams, docsResult, fromBytes, quoteLocale, quotef, readFailureText, toBytes, usageFailure,
   type CoreutilsIO, type CoreutilsRun,
 } from './CoreutilsKit';
 
@@ -143,7 +143,7 @@ export function runCut(args: readonly string[], io: CoreutilsIO): CoreutilsRun {
   for (const name of names) {
     const read = name === '-' ? { kind: 'ok' as const, text: io.stdin ?? '' } : io.read(name);
     if (read.kind !== 'ok') {
-      streams.diagnostic(`cut: ${quotef(name)}: ${read.kind === 'directory' ? 'Is a directory' : read.kind === 'denied' ? 'Permission denied' : 'No such file or directory'}`);
+      streams.diagnostic(`cut: ${quotef(name)}: ${readFailureText(read)}`);
       streams.exitCode = 1;
       continue;
     }

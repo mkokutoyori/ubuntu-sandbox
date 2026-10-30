@@ -77,7 +77,7 @@ describe('mv evaluates the options it accepts', () => {
   it('several sources into a plain file are refused', async () => {
     const machine = pc();
     expect(await machine.executeCommand('touch /tmp/a /tmp/b /tmp/c; mv /tmp/a /tmp/b /tmp/c'))
-      .toBe("mv: target '/tmp/c' is not a directory\nTry 'mv --help' for more information.");
+      .toBe("mv: target '/tmp/c': Not a directory");
   });
   it('-v names every move and a failure does not stop the others', async () => {
     const machine = pc();
@@ -86,6 +86,6 @@ describe('mv evaluates the options it accepts', () => {
   });
   it('a missing destination is named', async () => {
     expect(await pc().executeCommand('mv /tmp/a'))
-      .toBe("mv: missing destination file operand after '/tmp/a'\nTry 'mv --help' for more information.");
+      .toBe("mv: missing destination file operand after ‘/tmp/a’\nTry 'mv --help' for more information.");
   });
 });

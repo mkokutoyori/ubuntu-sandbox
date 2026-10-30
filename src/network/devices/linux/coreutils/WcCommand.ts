@@ -2,6 +2,7 @@ import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Get
 import {
   Streams, docsResult, quoteLocale, quoteShell, quotef, usageFailure, utf8Bytes,
   type CoreutilsIO, type CoreutilsRun,
+  readFailureText,
 } from './CoreutilsKit';
 
 const LONG_OPTIONS: readonly LongOption[] = [
@@ -152,7 +153,7 @@ export function runWc(args: readonly string[], io: CoreutilsIO): CoreutilsRun {
     } else if (read.kind === 'directory') {
       results.push({ name, counts: { lines: 0, words: 0, chars: 0, bytes: 0, maxLine: 0 }, failure: `wc: ${quotef(name)}: Is a directory`, directory: true });
     } else {
-      results.push({ name, counts: null, failure: `wc: ${quotef(name)}: ${read.kind === 'denied' ? 'Permission denied' : 'No such file or directory'}`, directory: false });
+      results.push({ name, counts: null, failure: `wc: ${quotef(name)}: ${readFailureText(read)}`, directory: false });
     }
   });
 

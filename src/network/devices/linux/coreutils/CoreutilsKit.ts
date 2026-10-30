@@ -12,7 +12,8 @@ export type FileRead =
   | { readonly kind: 'ok'; readonly text: string }
   | { readonly kind: 'missing' }
   | { readonly kind: 'directory' }
-  | { readonly kind: 'denied' };
+  | { readonly kind: 'denied' }
+  | { readonly kind: 'loop' };
 
 export interface CoreutilsIO {
   readonly stdin: string | undefined;
@@ -43,6 +44,15 @@ export class Streams {
 
   result(): CoreutilsRun {
     return { stdout: this.out, stderr: this.err, interleaved: this.both, exitCode: this.exitCode };
+  }
+}
+
+export function readFailureText(read: FileRead): string {
+  switch (read.kind) {
+    case 'directory': return 'Is a directory';
+    case 'denied': return 'Permission denied';
+    case 'loop': return 'Too many levels of symbolic links';
+    default: return 'No such file or directory';
   }
 }
 

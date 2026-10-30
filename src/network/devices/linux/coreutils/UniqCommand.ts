@@ -1,5 +1,5 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
-import { Streams, docsResult, quotef, quoteLocale, quoteShell, usageFailure, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
+import { Streams, docsResult, quotef, quoteLocale, quoteShell, readFailureText, usageFailure, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
 
 const LONG_OPTIONS: readonly LongOption[] = [
   { name: 'count', letter: 'c', takesArgument: false },
@@ -120,7 +120,7 @@ export function runUniq(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
   if (read.kind !== 'ok') {
     const name = inputName as string;
     streams.diagnostic(read.kind === 'directory' ? `uniq: error reading ${quoteShell(name)}: Is a directory`
-      : `uniq: ${quotef(name)}: ${read.kind === 'denied' ? 'Permission denied' : 'No such file or directory'}`);
+      : `uniq: ${quotef(name)}: ${readFailureText(read)}`);
     streams.exitCode = 1;
     return streams.result();
   }

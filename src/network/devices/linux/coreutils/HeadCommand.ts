@@ -2,6 +2,7 @@ import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Get
 import {
   Streams, docsResult, parseSizeWithSuffix, quoteLocale, quoteShell, takeBytes, usageFailure, utf8Bytes,
   type CoreutilsIO, type CoreutilsRun,
+  readFailureText,
 } from './CoreutilsKit';
 
 const LONG_OPTIONS: readonly LongOption[] = [
@@ -99,8 +100,8 @@ export function runHead(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
     const label = name === '-' ? 'standard input' : name;
     const quick = name !== '-' && options.unit === 'bytes' && !options.allButLast ? io.readBytes?.(name, options.count) ?? null : null;
     const read = name === '-' ? { kind: 'ok' as const, text: io.stdin ?? '' } : quick !== null ? { kind: 'ok' as const, text: quick } : io.read(name);
-    if (read.kind === 'missing' || read.kind === 'denied') {
-      streams.diagnostic(`head: cannot open ${quoteShell(name)} for reading: ${read.kind === 'missing' ? 'No such file or directory' : 'Permission denied'}`);
+    if (read.kind === 'missing' || read.kind === 'denied' || read.kind === 'loop') {
+      streams.diagnostic(`head: cannot open ${quoteShell(name)} for reading: ${readFailureText(read)}`);
       streams.exitCode = 1;
       continue;
     }

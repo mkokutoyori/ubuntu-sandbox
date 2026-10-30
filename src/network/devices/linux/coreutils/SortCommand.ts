@@ -1,5 +1,5 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
-import { Streams, docsResult, fromBytes, parseSizeWithSuffix, quotef, quoteLocale, quoteShell, toBytes, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
+import { Streams, docsResult, fromBytes, parseSizeWithSuffix, quotef, quoteLocale, quoteShell, readFailureText, toBytes, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
 
 const LONG_OPTIONS: readonly LongOption[] = [
   { name: 'ignore-leading-blanks', letter: 'b', takesArgument: false },
@@ -431,7 +431,7 @@ export function runSort(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
     if (name === '-') stdinUsed = true;
     if (read.kind !== 'ok') {
       streams.diagnostic(check !== '' ? `sort: open failed: ${quotef(name)}: No such file or directory` : read.kind === 'directory' ? `sort: read failed: ${quotef(name)}: Is a directory`
-        : `sort: cannot read: ${quotef(name)}: ${read.kind === 'denied' ? 'Permission denied' : 'No such file or directory'}`);
+        : `sort: cannot read: ${quotef(name)}: ${readFailureText(read)}`);
       streams.exitCode = 2;
       continue;
     }

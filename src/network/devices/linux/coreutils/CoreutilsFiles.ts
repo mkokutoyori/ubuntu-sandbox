@@ -7,7 +7,7 @@ export function coreutilsIO(ctx: ShellContext, stdin: string | undefined): Coreu
     read: (name): FileRead => {
       const path = ctx.vfs.normalizePath(name, ctx.cwd);
       const inode = ctx.vfs.resolveInode(path, true);
-      if (inode === null) return { kind: 'missing' };
+      if (inode === null) return ctx.vfs.symlinkLoops(path) ? { kind: 'loop' } : { kind: 'missing' };
       if (ctx.uid !== 0 && !ctx.vfs.path(path, '/', actorOf(ctx)).canRead()) return { kind: 'denied' };
       if (inode.type === 'directory') return { kind: 'directory' };
       const text = ctx.vfs.readFile(path);

@@ -1,3 +1,5 @@
+import { bytesToFileText } from '@/crypto/encoding';
+
 export type EscapeDialect = 'ansi-c' | 'echo' | 'printf-b' | 'printf-format';
 
 export interface DecodedEscapes {
@@ -17,14 +19,7 @@ function byteCharacter(value: number): string {
 
 function resolveBytes(text: string): string {
   if (!/[\uf780-\uf7ff]/.test(text)) return text;
-  return text.replace(/[\uf780-\uf7ff]+/g, (run) => {
-    const bytes = Uint8Array.from([...run].map((character) => character.charCodeAt(0) - BYTE_MARKER_BASE));
-    try {
-      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    } catch {
-      return [...bytes].map((byte) => String.fromCharCode(byte)).join('');
-    }
-  });
+  return text.replace(/[\uf780-\uf7ff]+/g, (run) => bytesToFileText(Uint8Array.from([...run].map((character) => character.charCodeAt(0) - BYTE_MARKER_BASE))));
 }
 
 function controlCharacter(character: string): string {
@@ -83,7 +78,7 @@ export function decodeBackslashEscapes(source: string, dialect: EscapeDialect): 
         continue;
       }
     }
-    if (/[0-7]/.test(code) && !(code === '0' && (dialect === 'echo' || dialect === 'printf-b'))) {
+    if (/[0-7]/.test(code) && code !== '0' && dialect !== 'echo') {
       const digits = code + takeDigits(source, index, 2, /[0-7]/);
       text += byteCharacter(parseInt(digits, 8) & 0xff);
       index += digits.length - 1;

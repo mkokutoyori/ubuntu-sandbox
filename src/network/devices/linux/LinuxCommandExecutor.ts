@@ -60,13 +60,23 @@ import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
-import { type ShellContext, cmdTouch, cmdLs, cmdCat, renderCat, parseCatFlags, cmdEcho, cmdCp, cpOperands, cmdInstall, installOperands, cmdMv, cmdRm, cmdMkdir, mkdirOperands, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
+import { type ShellContext, cmdTouch, cmdLs, cmdEcho, cmdInstall, installOperands, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdAwk, awkOptionError, cmdSed } from './LinuxTextCommands';
 import { runHead } from './coreutils/HeadCommand';
 import { runWc } from './coreutils/WcCommand';
 import { runCut } from './coreutils/CutCommand';
 import { runTr } from './coreutils/TrCommand';
 import { runUniq } from './coreutils/UniqCommand';
+import { runChmod } from './coreutils/ChmodCommand';
+import { runRm } from './coreutils/RmCommand';
+import { runBasename, runDirname } from './coreutils/PathNameCommands';
+import { runSeq } from './coreutils/SeqCommand';
+import { runCat } from './coreutils/CatCommand';
+import { runCp, cpOperands } from './coreutils/CpCommand';
+import { runMv, mvOperands } from './coreutils/MvCommand';
+import { runLn } from './coreutils/LnCommand';
+import { runMkdir, mkdirOperands } from './coreutils/MkdirCommand';
+import { runRmdir } from './coreutils/RmdirCommand';
 import { runSort } from './coreutils/SortCommand';
 import { asDispatch } from './coreutils/CoreutilsKit';
 import { coreutilsIO } from './coreutils/CoreutilsFiles';
@@ -75,10 +85,10 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChown, cmdChgrp, cmdStat, cmdMkfifo } from './LinuxPermCommands';
 import { runUmask } from './umask/Umask';
 import {
-  runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
+  runTest, runExpr, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
   runTail,
   cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
@@ -391,7 +401,7 @@ function parseSudoLead(args: readonly string[]): {
   return { flags, user, environment: assigned, rest };
 }
 
-const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'sh', 'bash', 'dash', 'xargs']);
+const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'rm', 'cp', 'mv', 'sh', 'bash', 'dash', 'xargs']);
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
   'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac',
@@ -400,7 +410,7 @@ const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
 
 const NEVER_READ_STDIN: ReadonlySet<string> = new Set([
-  'mkdir', 'rmdir', 'rm', 'mv', 'cp', 'ln', 'touch', 'chmod', 'chown', 'chgrp', 'ls', 'stat', 'umask', 'cd', 'pwd', 'sleep', 'id', 'whoami',
+  'mkdir', 'rmdir', 'ln', 'touch', 'chmod', 'chown', 'chgrp', 'ls', 'stat', 'umask', 'cd', 'pwd', 'sleep', 'id', 'whoami',
   'date', 'hostname', 'uname', 'df', 'du', 'free', 'ps', 'kill', 'which', 'whereis', 'find', 'basename', 'dirname', 'realpath', 'readlink',
   'mktemp', 'ip', 'ss', 'netstat', 'ping', 'echo', 'true', 'false', 'test', '[', 'type', 'command', 'uptime', 'who', 'last', 'getent',
   'systemctl', 'journalctl', 'restorecon',
@@ -465,7 +475,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -6027,30 +6037,14 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode };
       }
       case 'cat': {
-        // If no file args and stdin is provided, output stdin (cat from stdin).
-        // `cat` is a byte-exact passthrough — it must not drop stdin's own
-        // trailing newline, or `cat <<EOF > file` silently truncates the
-        // last line when written to a file (terminal display already
-        // tolerates the newline via `ensureTrailingNewline`, which is a
-        // no-op when one is already present).
-        const fileArgs = args.filter(a => !a.startsWith('-'));
-        if (fileArgs.length === 0 && stdin) {
-          return { output: renderCat([stdin], parseCatFlags(args)), exitCode: 0 };
-        }
-        for (const arg of fileArgs) {
-          const p = this.path(arg);
-          if (p.exists() && !p.canRead()) {
-            return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
-          }
-        }
+        const fileArgs = args.filter((a) => !a.startsWith('-') || a === '-');
         const traced = this.auditRules.hasExitRules && this.tracedOperands('cat', args) !== null;
         for (const arg of fileArgs) {
+          if (arg === '-') continue;
           this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
           if (!traced) this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd), 'r');
         }
-        const out = cmdCat(c, args);
-        const isError = out.includes('No such file');
-        return { output: out, exitCode: isError ? 1 : 0 };
+        return asDispatch(runCat(args, coreutilsIO(c, stdin)));
       }
       case 'echo': {
         // Expand env vars in args before echo
@@ -6059,8 +6053,7 @@ export class LinuxCommandExecutor {
       }
       case 'cp': {
         for (const p of cpOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
-        const outCp = cmdCp(c, args);
-        return { output: outCp, exitCode: /^cp: (?!warning:)/m.test(outCp) ? 1 : 0 };
+        return asDispatch(runCp(c, args, stdin));
       }
       case 'install': {
         for (const p of installOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
@@ -6068,13 +6061,12 @@ export class LinuxCommandExecutor {
         return { output: outInstall, exitCode: /^install:/m.test(outInstall) ? 1 : 0 };
       }
       case 'mv': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
+        for (const p of mvOperands(args)) {
           const abs = this.vfs.normalizePath(p, this.cwd);
           this.publishFsAccess(abs, 'w', 'rename');
           this.publishSyscall('rename', abs);
         }
-        const outMv = cmdMv(c, args);
-        return { output: outMv, exitCode: /^mv:/m.test(outMv) ? 1 : 0 };
+        return asDispatch(runMv(c, args, stdin));
       }
       case 'rm': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -6083,8 +6075,7 @@ export class LinuxCommandExecutor {
           if (exists) this.publishFsAccess(abs, 'w', 'unlink');
           this.publishSyscallOutcome('unlink', abs, exists, exists ? 0 : -2);
         }
-        const out = cmdRm(c, args);
-        return { output: out, exitCode: out.startsWith('rm:') ? 1 : 0 };
+        return asDispatch(runRm(c, args, stdin));
       }
       case 'mkdir': {
         for (const p of mkdirOperands(args)) {
@@ -6092,8 +6083,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', 'mkdir');
           this.publishSyscall('mkdir', abs);
         }
-        const outMk = cmdMkdir(c, args);
-        return { output: outMk, exitCode: /^mkdir:/m.test(outMk) ? 1 : 0 };
+        return asDispatch(runMkdir(c, args));
       }
       case 'rmdir': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -6101,8 +6091,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', 'rmdir');
           this.publishSyscall('rmdir', abs);
         }
-        const outRd = cmdRmdir(c, args);
-        return { output: outRd, exitCode: outRd.startsWith('rmdir:') ? 1 : 0 };
+        return asDispatch(runRmdir(c, args));
       }
       case 'ln': {
         const isSymlink = args.includes('-s');
@@ -6113,8 +6102,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', sc);
           this.publishSyscall(sc, abs);
         }
-        const outLn = cmdLn(c, args);
-        return { output: outLn, exitCode: outLn.startsWith('ln:') ? 1 : 0 };
+        return asDispatch(runLn(c, args, stdin));
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': {
@@ -6215,8 +6203,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'a', 'chmod');
           this.publishSyscall('chmod', abs);
         }
-        const out = cmdChmod(c, args);
-        return { output: out, exitCode: out.startsWith('chmod:') ? 1 : 0 };
+        return asDispatch(runChmod(c, args));
       }
       case 'chown': {
         for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
@@ -6971,8 +6958,7 @@ export class LinuxCommandExecutor {
         return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
       }
       case 'seq': {
-        const r = runSeq(args);
-        return { output: r.output, exitCode: r.exitCode };
+        return asDispatch(runSeq(args));
       }
       case 'rev': {
         const input = stdin || '';
@@ -6980,27 +6966,8 @@ export class LinuxCommandExecutor {
         const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
         return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
       }
-      case 'basename': {
-        const names: string[] = [];
-        let suffix = '';
-        let multiple = false;
-        for (let i = 0; i < args.length; i++) {
-          const word = args[i];
-          if (word === '-a' || word === '--multiple') multiple = true;
-          else if (word === '-s' || word === '--suffix') { suffix = args[++i] ?? ''; multiple = true; }
-          else if (word.startsWith('--suffix=')) { suffix = word.slice('--suffix='.length); multiple = true; }
-          else names.push(word);
-        }
-        if (names.length === 0) return { output: "basename: missing operand\nTry 'basename --help' for more information.", exitCode: 1 };
-        if (!multiple && names.length > 1) { suffix = names[1]; names.length = 1; }
-        const base = (name: string): string => {
-          const trimmed = name.replace(/\/+$/, '');
-          if (trimmed === '') return name === '' ? '' : '/';
-          const leaf = trimmed.slice(trimmed.lastIndexOf('/') + 1);
-          return suffix !== '' && leaf !== suffix && leaf.endsWith(suffix) ? leaf.slice(0, leaf.length - suffix.length) : leaf;
-        };
-        return { output: names.map(base).join('\n'), exitCode: 0 };
-      }
+      case 'basename': return asDispatch(runBasename(args));
+      case 'dirname': return asDispatch(runDirname(args));
 
       // Non-interactive fallbacks for commands the GUI normally routes to
       // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
@@ -7104,7 +7071,6 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
 
-      case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
       case 'readlink': {
         const canon = args.includes('-f') || args.includes('-e') || args.includes('-m');
         const targets = args.filter(a => !a.startsWith('-'));

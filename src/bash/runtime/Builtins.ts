@@ -337,7 +337,7 @@ function builtinPrintf(args: string[], env: Environment, io?: BuiltinIO): Builti
     }
     return fail(`bash: printf: ${args[index]}: invalid option\nprintf: usage: printf [-v var] format [arguments]`, 2);
   }
-  if (index >= args.length) return fail('bash: printf: usage: printf [-v var] format [arguments]', 2);
+  if (index >= args.length) return fail('printf: usage: printf [-v var] format [arguments]', 2);
   const clock = io?.wallClock === undefined ? undefined : {
     nowMs: () => io.wallClock!().nowMs(),
     format: (pattern: string, epochMs: number) => io.wallClock!().format(pattern, epochMs),
