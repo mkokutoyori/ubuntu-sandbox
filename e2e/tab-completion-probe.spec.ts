@@ -38,11 +38,11 @@ test('Tab complete un prefixe unique — ASA', async ({ page }) => {
   const journal: string[] = [];
   await ouvrir(page, /^Add .*(ASA|Cisco Firewall).* to canvas/i);
 
-  await page.keyboard.type('enable');
+  await page.keyboard.type('enable', { delay: 40 });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
 
-  await page.keyboard.type('show ver');
+  await page.keyboard.type('show ver', { delay: 40 });
   await page.keyboard.press('Tab');
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${SHOTS}/10-asa-tab.png`, fullPage: true });
@@ -56,11 +56,11 @@ test('Tab complete un prefixe unique — routeur', async ({ page }) => {
   const journal: string[] = [];
   await ouvrir(page, /^Add Cisco Router to canvas/i);
 
-  await page.keyboard.type('enable');
+  await page.keyboard.type('enable', { delay: 40 });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
 
-  await page.keyboard.type('show ver');
+  await page.keyboard.type('show ver', { delay: 40 });
   await page.keyboard.press('Tab');
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${SHOTS}/11-routeur-tab.png`, fullPage: true });
@@ -74,30 +74,30 @@ test('la suggestion FANTOME s\'affiche pendant la frappe, sans Tab', async ({ pa
   const journal: string[] = [];
   await ouvrir(page, /^Add Cisco Router to canvas/i);
 
-  await page.keyboard.type('enable');
+  await page.keyboard.type('enable', { delay: 40 });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
 
-  await page.keyboard.type('show ver');
+  await page.keyboard.type('show ver', { delay: 40 });
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${SHOTS}/12-fantome-routeur.png`, fullPage: true });
-  const ecran = await page.locator('body').innerText();
+  const ecran = await page.locator('[data-testid="terminal-modal"]').innerText();
   journal.push(`ROUTEUR pendant "show ver" SANS Tab:\n${ecran.slice(0, 2000)}`);
 
   writeFileSync(`${SHOTS}/fantome-routeur.txt`, journal.join('\n\n'));
   // Le TEMOIN de l'autre cas : eteinte, elle ne suggere rien.
-  expect(ecran, 'eteinte par defaut, elle ne complete pas').not.toContain('sion');
+  expect(ecran, 'eteinte par defaut, elle ne complete pas').not.toContain('show version');
 });
 
 test('la suggestion FANTOME sur un ASA', async ({ page }) => {
   const journal: string[] = [];
   await ouvrir(page, /^Add .*(ASA|Cisco Firewall).* to canvas/i);
 
-  await page.keyboard.type('enable');
+  await page.keyboard.type('enable', { delay: 40 });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
 
-  await page.keyboard.type('show ver');
+  await page.keyboard.type('show ver', { delay: 40 });
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${SHOTS}/13-fantome-asa.png`, fullPage: true });
   journal.push(`ASA pendant "show ver" SANS Tab:\n${(await page.locator('body').innerText()).slice(0, 2000)}`);
@@ -108,7 +108,7 @@ test('la suggestion FANTOME sur un ASA', async ({ page }) => {
 
 test('la suggestion fantome est un REGLAGE, eteint par defaut', async ({ page }) => {
   await ouvrir(page, /^Add Cisco Router to canvas/i);
-  await page.keyboard.type('enable');
+  await page.keyboard.type('enable', { delay: 40 });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
 
@@ -119,7 +119,7 @@ test('la suggestion fantome est un REGLAGE, eteint par defaut', async ({ page })
   await expect(bascule).toHaveAttribute('title', /Ghost text ON/);
 
   await page.locator('body').click({ position: { x: 400, y: 300 } });
-  await page.keyboard.type('show ver');
+  await page.keyboard.type('show ver', { delay: 40 });
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${SHOTS}/14-fantome-active.png`, fullPage: true });
 
@@ -133,20 +133,20 @@ test('la suggestion fantome est un REGLAGE, eteint par defaut', async ({ page })
 
 test('sur un ASA, `sh` puis `conf t` se completent comme ailleurs', async ({ page }) => {
   await ouvrir(page, /^Add .*(ASA|Cisco Firewall).* to canvas/i);
-  await page.keyboard.type('enable');
+  await page.keyboard.type('enable', { delay: 40 });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
 
-  await page.keyboard.type('sh');
+  await page.keyboard.type('sh', { delay: 40 });
   await page.keyboard.press('Tab');
   await page.waitForTimeout(400);
-  await page.keyboard.type('ver');
+  await page.keyboard.type('ver', { delay: 40 });
   await page.keyboard.press('Tab');
   await page.waitForTimeout(400);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(400);
 
-  await page.keyboard.type('conf t');
+  await page.keyboard.type('conf t', { delay: 40 });
   await page.keyboard.press('Tab');
   await page.waitForTimeout(400);
   await page.keyboard.press('Enter');

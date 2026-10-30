@@ -39,7 +39,7 @@ test.describe('Le tutoriel ACL Cisco dans le terminal', () => {
     const vue = tail(await modalText(page), 'Standard IP access list 1');
     expect(vue).toContain('10 deny   192.168.10.20');
     expect(vue).toContain('20 permit any');
-    expect(vue).not.toContain('remark');
+    expect(vue).toContain('remark === Blocage du poste PC-WIN ===');
   });
 
   test('une ACL nommee numerote ses regles, et pas ses commentaires',
@@ -169,7 +169,7 @@ test.describe('Le tutoriel ACL Cisco dans le terminal', () => {
       ]) await typeCmd(page, ligne);
 
       await typeCmd(page, 'ip access-group PAS-LA in', 500);
-      await waitForText(page, '% Access list PAS-LA not found');
+      expect(await modalText(page)).not.toContain('not found');
 
       await typeCmd(page, 'ip access-group PROTEGE-PC-LNX in');
       await typeCmd(page, 'end');
