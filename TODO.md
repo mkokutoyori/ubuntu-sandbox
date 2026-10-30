@@ -511,21 +511,6 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ---
 
-### [curl] `-m` ne borne que la connexion : un serveur muet repond (52) au lieu de (28)
-`Http1ClientSession.sendAsync` attend la reponse pendant un nombre fixe
-de tours de micro-taches, sans horloge. Une fois la connexion ouverte, le
-transfert ne consomme donc aucun temps virtuel : `curl -m 5` vers un
-serveur qui accepte la connexion puis se tait repond aussitot
-`curl: (52) Empty reply from server`, la ou curl 8.5.0 (`lib/multi.c`,
-`multi_handle_timeout`) attendrait 5 s puis dirait `curl: (28) Operation
-timed out after 5000 milliseconds with 0 bytes received`.
-**Mesure** : `nc -l -p 8080` sur le serveur, `curl -m 5
-http://10.0.0.2:8080/` depuis le client.
-**Pourquoi ce n'est pas ferme** : borner le transfert demande que le
-client HTTP attende sur l'horloge de la pile au lieu de compter des tours
-de micro-taches, ce qui touche tous les lecteurs de `sendAsync` (IOS avec
-AAA, nginx, Apache, IIS). `-m` borne deja la connexion, HTTP, HTTPS et FTP.
-
 ### [tcp] deux types pour un segment TCP : `TCPPacket` (core) et `TcpSegment` (pile)
 La pile (`tcp/TcpStack`) emet des `TcpSegment` (`sequence`,
 `acknowledgement`, `window`, `options`) ; `core/types.ts` declare encore
@@ -563,27 +548,6 @@ une session (sonde fortigate-icmp-error-follows-its-session).
 « Command fail. Return code -61 / entry not set for "service" », mais
 `show firewall policy 62` affiche encore l'entree (sans effet sur le
 trafic). Mesure en travaillant la batterie 02, test 94.
-
-### [nginx] un amont injoignable donne 502 tout de suite, pas 504 au bout de proxy_connect_timeout
-Le mandataire de `LinuxNginxService` envoie sa requete amont de facon
-synchrone : un SYN jete repond aussitot `502 Bad Gateway`, la ou nginx
-attend `proxy_connect_timeout` (60 s par defaut) puis rend `504 Gateway
-Time-out`. Un RST (port ferme) donne bien 502 des deux cotes. Meme cause
-que l'entree [curl] -m : le client HTTP n'attend pas sur l'horloge.
-
-### [curl] deux versions de curl
-Le catalogue de paquets dit `curl 7.81.0-1ubuntu1.15` (jammy), `curl
---version` dit `curl 8.5.0` ; un seul des deux doit rester.
-
-### [gzip] la commande `gzip` ecrit un pseudo-format, pas du gzip
-`gzip -k /tmp/a` ecrit `!<simgz>\n{"name":"a",…}` (63 octets pour
-« hello »), lu par `unpackGzip` a cote du vrai gzip que decode
-`rsyslog/Zlib.ts` (`unpackRealGzip`). Deux formats pour une commande ;
-un `.gz` fabrique ici ne se lit pas avec un vrai `gzip -d`. Vu en
-branchant `gzip on` d'nginx sur `gzipCompress` ; `curl --compressed`
-(docs/PRD-Nginx.md §9.12) lit lui le vrai format. Le fermer : `cmdGzip`
-doit ecrire `gzipCompress` et `unpackGzip` ne garder que la lecture
-reelle ; non fait ici car `tar -z` et `gzipText` en dependent.
 
 ### [fortios] `diagnose log test` n'existe pas
 La commande repond « unknown command » (batterie 02, test 98). Sur un vrai

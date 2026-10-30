@@ -1,3 +1,4 @@
+import { fileTextToBytes } from '@/crypto/encoding';
 /*
  * omfile parameters that were parsed, stored and never evaluated: ioBufferSize/flushOnTXEnd/asyncWriting/flushInterval
  * (the stream buffer), zipLevel/veryRobustZip and compression.driver (gzip and zstd streams), rotation.sizeLimit and
@@ -114,7 +115,7 @@ describe('compression', () => {
     await configure(host, 'local4.* action(type="omfile" file="/var/log/packed.log.zst" zipLevel="3")');
     await log(host, 'local4', 'zstd-one');
     const frame = (host as unknown as { executor: { vfs: { readFile(path: string): string | null } } }).executor.vfs.readFile('/var/log/packed.log.zst') ?? '';
-    expect([...frame.slice(0, 4)].map((character) => character.charCodeAt(0))).toEqual([0x28, 0xb5, 0x2f, 0xfd]);
+    expect([...fileTextToBytes(frame).slice(0, 4)]).toEqual([0x28, 0xb5, 0x2f, 0xfd]);
   }, 60_000);
 });
 

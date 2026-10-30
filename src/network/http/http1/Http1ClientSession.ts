@@ -7,8 +7,13 @@ import { randomRequestId } from '../events';
 export interface Http1SendResult {
   ok: boolean;
   error?: string;
-  failure?: 'refused' | 'timeout' | 'unreachable' | 'prohibited';
+  failure?: 'refused' | 'timeout' | 'unreachable' | 'prohibited' | 'response-timeout';
+  elapsedMs?: number;
   response?: HttpMessage;
+}
+
+export interface Http1ResponseWait {
+  readonly timeoutMs: number;
 }
 
 /**
@@ -98,7 +103,7 @@ export class Http1ClientSession {
    * passe. Un délai en millisecondes ne se déclencherait pas du tout
    * sous une horloge virtuelle qu'aucun test n'avance.
    */
-  async sendAsync(request: HttpMessage, opts?: Http1EncodeOptions): Promise<Http1SendResult> {
+  async sendAsync(request: HttpMessage, opts?: Http1EncodeOptions, wait?: Http1ResponseWait): Promise<Http1SendResult> {
     const requestId = randomRequestId();
     const method = request.method ?? 'GET';
     const target = request.target ?? '';
@@ -117,6 +122,20 @@ export class Http1ClientSession {
     socket.write(encodeRequest(request, opts));
     for (let tour = 0; raw === null && tour < MICROTASK_BUDGET; tour++) {
       await Promise.resolve();
+    }
+    let waitedMs = 0;
+    if (raw === null && wait !== undefined) {
+      const clock = this.tcpStack.clock();
+      const startedAt = clock.now();
+      await new Promise<void>((resolve) => {
+        const timer = clock.setTimeout(resolve, wait.timeoutMs);
+        const stop = socket.onData((data) => { raw = String(data); clock.clear(timer); stop(); resolve(); });
+      });
+      waitedMs = Math.round(clock.now() - startedAt);
+      if (raw === null) {
+        unsubscribe();
+        return { ...fail('Operation timed out'), failure: 'response-timeout', elapsedMs: waitedMs };
+      }
     }
     unsubscribe();
 

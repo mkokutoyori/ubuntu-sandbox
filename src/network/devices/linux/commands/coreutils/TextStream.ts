@@ -763,7 +763,7 @@ export const cksumCommand = coreutil(
   },
 );
 
-export const lessCommand = coreutil(
+export const lessCommand: LinuxCommand = { package: 'less', ...coreutil(
   'less', 'less [OPTIONS] [FILE]...',
   'View a file one screen at a time. Without a terminal on its output,\n'
   + 'less prints the files as cat does.',
@@ -786,7 +786,7 @@ export const lessCommand = coreutil(
     if (!Array.isArray(got)) return got.replace(/^less: /, '');
     return got.join('');
   },
-);
+) };
 
 export const TEXT_STREAM_COMMANDS: LinuxCommand[] = [
   lessCommand,
