@@ -37,6 +37,18 @@ interface Lab {
   fgtA: string;
   fgtB: string;
   pcA: string;
+  pcB: string;
+}
+
+async function configurerPoste(page: Page, id: string, lignes: string[]): Promise<void> {
+  await page.evaluate(async ({ id, lignes }) => {
+    const store = (window as Record<string, unknown>).__networkStore as {
+      getState(): { deviceInstances: Map<string, Record<string, unknown>> };
+    };
+    const dev = store.getState().deviceInstances.get(id) as Record<string, unknown>;
+    const exec = dev.executeCommand as (c: string) => Promise<string>;
+    for (const ligne of lignes) await exec.call(dev, ligne);
+  }, { id, lignes });
 }
 
 async function poserLaboratoire(page: Page): Promise<Lab> {
@@ -72,7 +84,7 @@ async function poserLaboratoire(page: Page): Promise<Lab> {
     cable(pcA, 'eth0', fgtA, 'port1');
     cable(pcB, 'eth0', fgtB, 'port1');
 
-    return { fgtA, fgtB, pcA };
+    return { fgtA, fgtB, pcA, pcB };
   });
 }
 
@@ -97,10 +109,10 @@ function configuration(
     'config router static', 'edit 1',
     `set dst ${remote}.0 255.255.255.0`, `set device "${name}"`, 'next', 'end',
     'config firewall policy',
-    'edit 1', 'set srcintf "port1"', `set dstintf "${name}"`,
+    'edit 1', 'set name "vers-tunnel"', 'set srcintf "port1"', `set dstintf "${name}"`,
     'set srcaddr "all"', 'set dstaddr "all"',
     'set action accept', 'set schedule "always"', 'set service "ALL"', 'next',
-    'edit 2', `set srcintf "${name}"`, 'set dstintf "port1"',
+    'edit 2', 'set name "depuis-tunnel"', `set srcintf "${name}"`, 'set dstintf "port1"',
     'set srcaddr "all"', 'set dstaddr "all"',
     'set action accept', 'set schedule "always"', 'set service "ALL"', 'next', 'end',
   ];
@@ -128,6 +140,12 @@ test.describe('FortiGate — le trafic traverse le tunnel', () => {
     }
     await closeTerminal(page);
 
+    await configurerPoste(page, lab.pcB, [
+      'ip link set eth0 up',
+      'ip addr add 192.168.2.10/24 dev eth0',
+      'ip route add default via 192.168.2.1',
+    ]);
+
     await openTerminal(page, lab.pcA);
     for (const c of [
       'ip link set eth0 up',
@@ -136,14 +154,16 @@ test.describe('FortiGate — le trafic traverse le tunnel', () => {
       'ping -c 2 192.168.2.10',
     ]) await typeCmd(page, c);
 
-    await waitForText(page, '0% packet loss', 40_000);
+    await waitForText(page, ', 0% packet loss', 40_000);
     await closeTerminal(page);
 
-    await openTerminal(page, lab.fgtA);
-    await typeCmd(page, 'diagnose vpn tunnel list');
-    await waitForText(page, 'name=vers_b');
-
-    const texte = await modalText(page);
+    const texte = await page.evaluate(async (id) => {
+      const store = (window as Record<string, unknown>).__networkStore as {
+        getState(): { deviceInstances: Map<string, { executeCommand(c: string): Promise<string> }> };
+      };
+      return store.getState().deviceInstances.get(id)!.executeCommand('diagnose vpn tunnel list');
+    }, lab.fgtA);
+    expect(texte).toContain('name=vers_b');
     const compteur = /txp=(\d+)/.exec(texte);
     expect(compteur).not.toBeNull();
     expect(Number(compteur![1])).toBeGreaterThan(0);

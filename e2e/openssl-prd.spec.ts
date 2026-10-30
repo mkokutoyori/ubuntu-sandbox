@@ -39,6 +39,10 @@ async function typeCmd(page: Page, command: string): Promise<void> {
   await input.fill(command);
   await input.press('Enter');
   await page.waitForTimeout(350);
+  await expect.poll(
+    async () => /[#$]$/.test((await page.locator('[data-testid="terminal-modal"]').innerText()).trimEnd()),
+    { timeout: 90_000 },
+  ).toBe(true);
 }
 
 async function lastLines(page: Page, n = 14): Promise<string> {
@@ -111,7 +115,7 @@ test.describe('openssl in the real terminal', () => {
     await openTerminal(page, await addDevice(page, 'linux-server', 400, 300));
 
     await typeCmd(page, 'openssl genrsa -out /tmp/key.pem 2048');
-    await typeCmd(page, 'cat /tmp/key.pem');
+    await typeCmd(page, 'head -1 /tmp/key.pem');
     expect(await lastLines(page, 4)).toContain('BEGIN PRIVATE KEY');
 
     await typeCmd(page,

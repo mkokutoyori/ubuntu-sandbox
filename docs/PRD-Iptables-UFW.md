@@ -697,3 +697,11 @@ indépendante de toutes les autres.
   explicitement réviser ce test pour refléter le nouveau comportement plutôt
   que de le laisser affirmer un gap désormais comblé, ce qui le rendrait
   trompeur sans le faire échouer.
+
+## Correspondances décidées ajoutées après coup (length, time, ttl, addrtype, connlimit, dscp, tos, tcpmss)
+
+Ces modules étaient refusés ou rangés sans effet (règle 6). Ils décident maintenant avec des faits déjà portés par le paquet (taille IP, TTL ou hop limit, TOS ou classe de trafic, MSS du SYN), l'horloge de simulation (`time`, en UTC), la table de suivi (`connlimit`) ou une fonction de résolution du type d'adresse (`addrtype`, appelée seulement si une règle l'emploie : aucun coût sur le chemin d'un paquet sans cette règle). Un fait absent fait échouer la règle FERMÉE. Mesure de `connlimit` : 0,08 ms par paquet avec 100 flux suivis, 0,7 ms avec 1 000, 2,2 ms avec 4 000 (linéaire : le comptage parcourt les flux ; le noyau indexe par adresse). Restent refusés, faute de sous-système : `physdev` (pas de pont filtrant).
+
+## ipset 7.15 et `-m set` / `-j SET`
+
+`ipset` (`create add del test list save restore flush destroy rename swap version`, options `-exist -n -t -q -o save`) porte les ensembles `hash:ip` (révision 5), `hash:net` (7) et `hash:ip,port` (6), avec `timeout` (expiration sur l'horloge de simulation, délai restant au listage), `netmask`, `maxelem`, `hashsize`, `comment`, `forceadd`. Formats et messages viennent de `lib/session.c` (listage), `lib/errcode.c` (erreurs) et des fichiers `tests/*.t.list*` de l'archive source. Les ensembles sont tenus par la machine (un seul état, que `iptables` et `ip6tables` lisent par un résolveur étroit) ; `-m set --match-set NOM src|dst[,src|dst]` décide, `-j SET --add-set/--del-set` agit sur l'adresse du paquet, `References` compte les règles qui les citent et un `destroy` ou `rename` d'un ensemble cité est refusé. Mesure : un test d'appartenance coûte environ 1 µs de 1 000 à 60 000 éléments (table de hachage), 161 octets par élément ; l'expiration ne parcourt l'ensemble que lorsque la prochaine échéance est passée. Voir `TODO.md` pour ce qui n'est pas construit.

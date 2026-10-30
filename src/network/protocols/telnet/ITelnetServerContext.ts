@@ -18,6 +18,10 @@ export interface TelnetVtyShell {
   execute(rawInput: string): string | Promise<string>;
   getPrompt(): string;
   lastEndedSession(): boolean;
+  /** A challenge the last line raised, awaiting one value from the client. */
+  lastPendingInput?(): { kind: 'password' | 'text'; promptText: string } | null;
+  /** Hand back the value the client typed for that challenge. */
+  handleInput?(value: string): Promise<string>;
   subscribeAsyncOutput?(sink: (line: string) => void): () => void;
   dispose?(): void;
 }

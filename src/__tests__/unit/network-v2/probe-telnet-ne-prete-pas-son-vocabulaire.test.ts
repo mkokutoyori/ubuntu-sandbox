@@ -92,9 +92,11 @@ function key(k: string): KeyEvent {
 const tick = () => new Promise<void>((r) => setTimeout(r, 25));
 
 async function typeLine(host: TerminalSession, line: string): Promise<void> {
-  const fg = host;
-  fg.setInput(line);
-  fg.setInputBuf(line);
+  if (host.currentInputMode.type === 'password') host.setPasswordBuf(line);
+  else {
+    host.setInput(line);
+    host.setInputBuf(line);
+  }
   host.handleKey(key('Enter'));
   for (let i = 0; i < 14; i++) await tick();
 }

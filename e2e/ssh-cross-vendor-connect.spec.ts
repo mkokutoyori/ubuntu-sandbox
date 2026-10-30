@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   buildSshLab, waitForStore, openTerminal, typeCommand, typePassword,
-  termText, runAndCapture, sshLogin, inTerminal, TARGETS, type SshLab,
+  termText, runAndCapture, sshLogin, inTerminal, TARGETS, sshCommand, answerHostKeyThenWaitForPassword, type SshLab,
 } from './helpers/sshLab';
 
 test.describe('SSH connection behaviour (cross-vendor)', () => {
@@ -28,9 +28,8 @@ test.describe('SSH connection behaviour (cross-vendor)', () => {
   });
 
   test('a wrong password is rejected with "Permission denied"', async ({ page }) => {
-    await typeCommand(page, `ssh user@${TARGETS.linux2.ip}`);
-    const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-    await expect(pw).toBeVisible({ timeout: 9_000 });
+    await typeCommand(page, sshCommand('user', TARGETS.linux2.ip));
+    await answerHostKeyThenWaitForPassword(page, 9_000);
     await typePassword(page, 'definitely-wrong');
     await expect(inTerminal(page, 'Permission denied')).toBeVisible({ timeout: 8_000 });
   });

@@ -79,7 +79,12 @@ test.describe('systemctl repond a la question posee', () => {
     await openTerminal(page, pc);
 
     await typeCmd(page, 'clear');
-    await typeCmd(page, 'ss -tlnp | grep :22');
+    await typeCmd(page, 'sudo ss -tlnp | grep :22');
+    const motDePasse = page.locator('[data-testid="terminal-modal"] input[type="password"]').last();
+    await motDePasse.waitFor({ state: 'attached', timeout: 5_000 });
+    await motDePasse.fill('admin');
+    await motDePasse.press('Enter');
+    await page.waitForTimeout(500);
     const parSs = /pid=(\d+)/.exec(await modalText(page))?.[1];
     expect(parSs).toBeTruthy();
 

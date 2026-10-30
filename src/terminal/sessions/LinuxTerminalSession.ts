@@ -1170,11 +1170,53 @@ export class LinuxTerminalSession extends TerminalSession {
    * checked).
    */
   private openEditorFromCmd(cmd: string): boolean {
-    const noSudo = cmd.startsWith('sudo ') ? cmd.slice(5).trim() : cmd;
+    const elevated = cmd.startsWith('sudo ');
+    const noSudo = elevated ? cmd.slice(5).trim() : cmd;
     const parts = splitShellWords(noSudo).words;
     const head = parts[0];
     if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
-    return this.openEditor(head, parts.slice(1));
+    if (!elevated || !this.shell || this.shell.uid === 0) return this.openEditor(head, parts.slice(1));
+    return this.beginElevatedEditor(cmd, head, parts.slice(1));
+  }
+
+  private _editorElevation: { user: string; uid: number; gid: number } | null = null;
+
+  private beginElevatedEditor(command: string, editorCmd: 'nano' | 'vi' | 'vim', args: string[]): boolean {
+    const shell = this.shell;
+    if (!shell) return false;
+    const steps = this.buildDeviceFlowSteps(command, shell.user, shell.uid);
+    if (steps === null) return false;
+    this.startFlowFromSteps(steps.map((step) => (step.type === 'execute' && step.action
+      ? {
+        ...step,
+        action: async (ctx: FlowContext) => {
+          ctx.metadata.set('enter_editor', JSON.stringify({ editorCmd, args }));
+        },
+      }
+      : step)), command);
+    return true;
+  }
+
+  private openEditorAsRoot(editorCmd: 'nano' | 'vi' | 'vim', args: string[]): boolean {
+    const shell = this.shell;
+    if (!shell) return false;
+    this._editorElevation = { user: shell.user, uid: shell.uid, gid: shell.gid };
+    shell.user = 'root';
+    shell.uid = 0;
+    shell.gid = 0;
+    if (this.openEditor(editorCmd, args)) return true;
+    this.restoreAfterElevatedEditor();
+    return false;
+  }
+
+  private restoreAfterElevatedEditor(): void {
+    const saved = this._editorElevation;
+    const shell = this.shell;
+    this._editorElevation = null;
+    if (saved === null || !shell) return;
+    shell.user = saved.user;
+    shell.uid = saved.uid;
+    shell.gid = saved.gid;
   }
 
   /**
@@ -1549,6 +1591,7 @@ export class LinuxTerminalSession extends TerminalSession {
    * corresponds to an abort (nano ^X→N, vim :q!), exit code 1.
    */
   override editorExit(saved: boolean = true, notice: string = ''): void {
+    this.restoreAfterElevatedEditor();
     if (this._pendingCrontabEdit) { this.finishCrontabEdit(saved); return; }
     if (this._pendingVisudoEdit) { this.finishVisudoEdit(saved); return; }
     this.inputMode = { type: 'normal' };
@@ -1722,6 +1765,12 @@ export class LinuxTerminalSession extends TerminalSession {
       const { command, argv } = JSON.parse(captureTool) as { command: string; argv: string[] };
       const dev = this.device;
       if (dev instanceof LinuxMachine && this.shell) this.runStreamPlan(command, planCaptureTool(dev, this.shell, argv, true));
+      return;
+    }
+    const editorLaunch = ctx.metadata.get('enter_editor') as string | undefined;
+    if (editorLaunch) {
+      const { editorCmd, args } = JSON.parse(editorLaunch) as { editorCmd: 'nano' | 'vi' | 'vim'; args: string[] };
+      this.openEditorAsRoot(editorCmd, args);
       return;
     }
     const rmanArgs = ctx.metadata.get('enter_rman') as string | undefined;

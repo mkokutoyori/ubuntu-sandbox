@@ -13,6 +13,8 @@ import type { ISubShell, SubShellKeyResult, SubShellResult } from './ISubShell';
 
 const MAX_COLLECT_TICKS = 24;
 
+const HIDDEN_PROMPT = /[Pp]assword:\s*$/;
+
 export interface NetkitTelnetSimDeps extends Omit<DeviceNetkitDeps, 'tty'> {}
 
 export function deviceWireDeps(
@@ -138,6 +140,13 @@ export class NetkitTelnetSubShell implements ISubShell {
     return this.render(await this.collect(), echoed);
   }
 
+  async handleInput(value: string): Promise<SubShellResult> {
+    if (this.exited) return this.finish([]);
+    this.client.input(this.send(value, this.client.lineEditing || this.client.currentState === 'command', true));
+    await this.client.idle();
+    return this.render(await this.collect(), null);
+  }
+
   dispose(): void {
     this.client.dispose();
     this.exited = true;
@@ -187,7 +196,11 @@ export class NetkitTelnetSubShell implements ISubShell {
       }
       return this.finish(output);
     }
-    return { output, exit: false, prompt: this.prompt };
+    const hidden = HIDDEN_PROMPT.test(this.prompt);
+    return {
+      output, exit: false, prompt: this.prompt,
+      ...(hidden ? { pendingInput: { kind: 'password' as const, promptText: this.prompt } } : {}),
+    };
   }
 
   private finish(output: string[]): SubShellResult {

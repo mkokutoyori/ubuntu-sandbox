@@ -46,14 +46,14 @@ test.describe('Scénario (e2e) — nano et échec d\'écriture (permission refus
     await expect(titlebar).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.type('tmpfs /mnt/ramtest tmpfs defaults 0 0');
-    await expect(titlebar).toContainText('Modified');
+    await expect(titlebar).toContainText(/ \*\s*$/);
 
     await page.keyboard.press('Control+o');
     await page.keyboard.press('Enter');
 
     const status = page.locator('[data-testid="nano-status-message"]');
     await expect(status).toContainText('Error writing /etc/fstab');
-    await expect(titlebar).toContainText('Modified');
+    await expect(titlebar).toContainText(/ \*\s*$/);
   });
 
   test('^X puis Y sur le même fichier n\'exécute pas la sortie : nano reste ouvert', async ({ page }) => {

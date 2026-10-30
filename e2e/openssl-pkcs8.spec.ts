@@ -38,12 +38,12 @@ async function openTerminal(page: Page, id: string): Promise<void> {
 }
 
 async function typeCmd(page: Page, command: string): Promise<void> {
-  const input = page.locator('[data-testid="terminal-modal"] input[type="text"]').last();
+  const input = page.locator('[data-testid="terminal-modal"] input').last();
   await input.waitFor({ state: 'attached', timeout: 15_000 });
   await input.focus();
   await input.fill(command);
   await input.press('Enter');
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(1500);
 }
 
 async function lastLines(page: Page, n = 8): Promise<string> {
@@ -75,6 +75,8 @@ test.describe('une clé privée protégée par une phrase de passe', () => {
     // La commande ordinaire ne sait pas la lire : c'est le seul sens que
     // « chiffrée » puisse avoir pour l'opérateur.
     await typeCmd(page, 'openssl rsa -in /tmp/k8.pem -noout -modulus');
+    expect(await lastLines(page, 4)).toContain('Enter pass phrase for /tmp/k8.pem:');
+    await typeCmd(page, '');
     expect(await lastLines(page, 4)).toContain('unable to load Private Key');
 
     await typeCmd(page,
@@ -97,14 +99,17 @@ test.describe('une clé privée protégée par une phrase de passe', () => {
     expect(await lastLines(page, 4)).toContain('No such file');
   });
 
-  test('sans phrase ni -nocrypt, la commande refuse plutôt que de rendre du clair', async ({ page }) => {
+  test('sans phrase ni -nocrypt, la commande demande une phrase plutôt que de rendre du clair', async ({ page }) => {
     test.setTimeout(180_000);
     await poste(page);
 
     await typeCmd(page, 'openssl pkcs8 -topk8 -in /tmp/k.pem -out /tmp/nu.pem');
-    expect(await lastLines(page, 4)).toContain('unable to write key');
-    await typeCmd(page, 'cat /tmp/nu.pem');
-    expect(await lastLines(page, 4)).toContain('No such file');
+    expect(await lastLines(page, 4)).toContain('Enter Encryption Password:');
+    await typeCmd(page, 'secret');
+    expect(await lastLines(page, 4)).toContain('Verifying - Enter Encryption Password:');
+    await typeCmd(page, 'secret');
+    await typeCmd(page, 'head -1 /tmp/nu.pem');
+    expect(await lastLines(page, 4)).toContain('BEGIN ENCRYPTED PRIVATE KEY');
 
     // Et `-nocrypt` est la façon de demander explicitement ce que le
     // défaut ne donne plus.

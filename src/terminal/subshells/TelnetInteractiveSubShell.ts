@@ -19,7 +19,9 @@ import type { ISubShell, SubShellResult } from './ISubShell';
 import type { TelnetClientSession } from '@/network/protocols/telnet/TelnetClientSession';
 
 /** How many event-loop turns to wait for a quiet wire before answering. */
-const MAX_COLLECT_TICKS = 24;
+const MAX_COLLECT_TICKS = 120;
+
+const HIDDEN_PROMPT = /[Pp]assword:\s*$/;
 
 export class TelnetInteractiveSubShell implements ISubShell {
   readonly kind = 'telnet';
@@ -51,6 +53,12 @@ export class TelnetInteractiveSubShell implements ISubShell {
     if (this.client.closed) return this.finish([this.farewell]);
     this.client.send(line);
     return this.render(await this.collect(), line);
+  }
+
+  async handleInput(value: string): Promise<SubShellResult> {
+    if (this.client.closed) return this.finish([this.farewell]);
+    this.client.send(value);
+    return this.render(await this.collect(), null);
   }
 
   dispose(): void {
@@ -94,7 +102,11 @@ export class TelnetInteractiveSubShell implements ISubShell {
       output.push(this.farewell);
       return this.finish(output);
     }
-    return { output, exit: false, prompt: this.prompt };
+    const hidden = HIDDEN_PROMPT.test(this.prompt);
+    return {
+      output, exit: false, prompt: this.prompt,
+      ...(hidden ? { pendingInput: { kind: 'password' as const, promptText: this.prompt } } : {}),
+    };
   }
 
   private finish(output: string[]): SubShellResult {

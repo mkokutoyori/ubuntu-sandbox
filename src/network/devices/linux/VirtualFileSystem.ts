@@ -498,6 +498,7 @@ export class VirtualFileSystem {
 
     // iptables binary stubs
     this.createFileAt('/usr/sbin/iptables', '#!/bin/bash\n# iptables binary stub\n', 0o755, 0, 0);
+    this.createFileAt('/usr/sbin/ipset', '#!/bin/bash\n# ipset binary stub\n', 0o755, 0, 0);
     this.createFileAt('/usr/sbin/iptables-save', '#!/bin/bash\n# iptables-save binary stub\n', 0o755, 0, 0);
     this.createFileAt('/usr/sbin/iptables-restore', '#!/bin/bash\n# iptables-restore binary stub\n', 0o755, 0, 0);
 

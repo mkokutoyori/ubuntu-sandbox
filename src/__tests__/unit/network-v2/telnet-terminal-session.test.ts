@@ -54,6 +54,12 @@ interface AnySession {
  * A terminal reads normal-mode input from `input` and sub-shell input
  * from `_inputBuf`; setting both lets one helper drive either mode.
  */
+async function typePassword(session: AnySession, secret: string): Promise<void> {
+  (session as LinuxTerminalSession).setPasswordBuf(secret);
+  session.handleKey(key('Enter'));
+  await flush();
+}
+
 async function type(session: AnySession, cmd: string): Promise<void> {
   session.setInput(cmd);
   session.setInputBuf(cmd);
@@ -89,7 +95,7 @@ async function buildLan(): Promise<Lan> {
   win.getPorts()[0].configureIP(new IPAddress(WIN_IP), mask);
 
   for (const cmd of [
-    'enable', 'configure terminal',
+    'enable', 'configure terminal', 'enable secret s3cret',
     'interface GigabitEthernet0/0', `ip address ${CISCO_IP} ${MASK}`, 'no shutdown', 'end',
   ]) await cisco.executeCommand(cmd);
   for (const cmd of [
@@ -130,6 +136,8 @@ describe('telnet from a Linux terminal', () => {
     const term = new LinuxTerminalSession('t1', pc);
     await type(term, `telnet ${CISCO_IP}`);
     await type(term, 'enable');
+    expect(term.currentInputMode.type).toBe('password');
+    await typePassword(term, 's3cret');
     expect(term.getPrompt()).toContain(`${cisco.getHostname()}#`);
     await type(term, 'configure terminal');
     expect(term.getPrompt()).toContain(`${cisco.getHostname()}(config)#`);
@@ -140,6 +148,7 @@ describe('telnet from a Linux terminal', () => {
     const term = new LinuxTerminalSession('t1', pc);
     await type(term, `telnet ${CISCO_IP}`);
     await type(term, 'enable');
+    await typePassword(term, 's3cret');
     await type(term, 'configure terminal');
     await type(term, 'hostname R-TELNET');
     expect(cisco.getHostname()).toBe('R-TELNET');

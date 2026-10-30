@@ -35,7 +35,7 @@ export const IOS_TELNET_OPTION_POLICY: TelnetOptionPolicy = {
   request: [OPT_TERMINAL_TYPE, OPT_TERMINAL_SPEED, OPT_X_DISPLAY_LOCATION, OPT_NEW_ENVIRON],
 };
 
-type Phase = 'username' | 'password' | 'exec' | 'closed';
+type Phase = 'username' | 'password' | 'challenge' | 'exec' | 'closed';
 
 const DEFAULT_MAX_AUTH_ATTEMPTS = 3;
 
@@ -65,6 +65,7 @@ class TelnetSession {
   private carry: readonly number[] = [];
   private lineBuffer = '';
   private phase: Phase = 'exec';
+  private challengeKind: 'password' | 'text' = 'text';
   private username: string | null = null;
   private attempts = 0;
   private shell: TelnetVtyShell | null = null;
@@ -203,7 +204,7 @@ class TelnetSession {
    * a real telnet server deliberately leaves invisible.
    */
   private echo(text: string): void {
-    if (this.phase === 'password') return;
+    if (this.phase === 'password' || (this.phase === 'challenge' && this.challengeKind === 'password')) return;
     if (this.netkit ? !this.netkit.echoes : !this.negotiator.isLocalEnabled(OPT_ECHO)) return;
     this.send(toNvtText(text));
   }
@@ -226,6 +227,7 @@ class TelnetSession {
       return;
     }
     if (this.phase === 'password') { await this.verifyPassword(line); return; }
+    if (this.phase === 'challenge') { await this.answerChallenge(line); return; }
     await this.runCommand(line);
   }
 
@@ -279,12 +281,31 @@ class TelnetSession {
     const shell = this.shell;
     if (!shell) { this.writePrompt(); return; }
     this.ctx.touchSession?.(this.sessionId ?? '', line.length, 0);
-    const output = await shell.execute(line);
+    await this.finishLine(shell, await shell.execute(line));
+  }
+
+  private async answerChallenge(value: string): Promise<void> {
+    const shell = this.shell;
+    if (!shell?.handleInput) { this.phase = 'exec'; this.writePrompt(); return; }
+    if (this.challengeKind === 'password') this.write('\n');
+    this.phase = 'exec';
+    await this.finishLine(shell, await shell.handleInput(value));
+  }
+
+  private async finishLine(shell: TelnetVtyShell, output: string): Promise<void> {
     if (this.phase === 'closed') return;
     if (output) this.write(`${output}\n`);
     if (shell.lastEndedSession()) {
       this.teardown('logout');
       this.conn.close();
+      return;
+    }
+    const pending = shell.lastPendingInput?.() ?? null;
+    if (pending !== null) {
+      this.challengeKind = pending.kind;
+      this.phase = 'challenge';
+      this.write(pending.promptText);
+      this.rearmIdle();
       return;
     }
     this.writePrompt();

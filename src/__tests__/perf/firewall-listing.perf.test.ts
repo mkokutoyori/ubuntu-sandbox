@@ -66,4 +66,34 @@ describe.skipIf(!enabled)('listages du pare-feu', () => {
     report('ufw-status-drift-ratio', (last / first).toFixed(2));
     expect(last / first).toBeLessThan(2);
   }, 600000);
+
+  it('filterPacket : coût d\'une règle connlimit selon le nombre de flux suivis', async () => {
+    const srv = new LinuxServer('linux-server', 'srv', 0, 0);
+    srv.powerOn();
+    await srv.executeCommand('iptables -A INPUT -p tcp -m connlimit --connlimit-above 100000 -j DROP');
+    const manager = (srv as unknown as { executor: { iptables: { filterPacket(p: object, s?: object): string } } }).executor.iptables;
+    const syn = (port: number) => ({ direction: 'in', protocol: 6, srcIP: '10.0.0.2', dstIP: '10.0.0.1', srcPort: port, dstPort: 22, iface: 'eth0', tcpFlags: 2, ipPacketBytes: 60 });
+    for (const flows of [100, 1000, 4000]) {
+      for (let i = 0; i < flows; i++) manager.filterPacket(syn(10000 + i), {});
+      const t0 = performance.now();
+      for (let i = 0; i < 100; i++) manager.filterPacket(syn(60000 + i), {});
+      report(`connlimit-ms-per-packet-with-${flows}-flows`, ((performance.now() - t0) / 100).toFixed(3));
+    }
+  }, 600000);
+
+  it('ipset : coût d\'un test d\'appartenance et d\'un ajout selon la taille de l\'ensemble', async () => {
+    const srv = new LinuxServer('linux-server', 'srv', 0, 0);
+    srv.powerOn();
+    const manager = (srv as unknown as { executor: { ipset: { execute(a: string[]): unknown; contains(n: string, ip: string): boolean } } }).executor.ipset;
+    manager.execute(['create', 'big', 'hash:ip', 'maxelem', '200000', 'timeout', '600']);
+    const baseline = heapMb();
+    let added = 0;
+    for (const size of [1000, 10000, 60000]) {
+      for (; added < size; added++) manager.execute(['add', 'big', `10.${(added >> 16) & 255}.${(added >> 8) & 255}.${added & 255}`]);
+      const t0 = performance.now();
+      for (let i = 0; i < 2000; i++) manager.contains('big', `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`);
+      report(`ipset-contains-us-with-${size}-elements`, (((performance.now() - t0) * 1000) / 2000).toFixed(2));
+    }
+    report('ipset-bytes-per-element', (((heapMb() - baseline) * 1048576) / 60000).toFixed(0));
+  }, 600000);
 });

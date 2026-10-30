@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   buildSshLab, waitForStore, openTerminal, typeCommand, typePassword,
-  termText, runAndCapture, sshLogin, TARGETS, type SshLab,
+  termText, runAndCapture, sshLogin, TARGETS, sshCommand, answerHostKeyThenWaitForPassword, type SshLab,
 } from './helpers/sshLab';
 
 test.describe('SSH data styling & presentation (cross-vendor)', () => {
@@ -17,9 +17,8 @@ test.describe('SSH data styling & presentation (cross-vendor)', () => {
 
   for (const t of Object.values(TARGETS)) {
     test(`${t.label}: the password is never echoed (no asterisks), like real OpenSSH`, async ({ page }) => {
-      await typeCommand(page, `ssh ${t.user}@${t.ip}`);
-      const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-      await expect(pw).toBeVisible({ timeout: 9_000 });
+      await typeCommand(page, sshCommand(t.user, t.ip));
+      await answerHostKeyThenWaitForPassword(page, 9_000);
       await typePassword(page, t.pass);
       await page.waitForTimeout(700);
       const full = await termText(page);

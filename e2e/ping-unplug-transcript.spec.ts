@@ -35,7 +35,7 @@ test.describe('ping keeps reporting when a cable is pulled', () => {
 
   test('linux: every lost probe is named, then a summary counts them', async ({ page }) => {
     await openTerminal(page, lab.linux1);
-    await typeCommand(page, 'ping 10.0.0.2');
+    await typeCommand(page, 'ping -O 10.0.0.2');
     await page.waitForTimeout(2_500);
     expect(await termText(page), 'replies first').toMatch(/bytes from 10\.0\.0\.2/);
 
@@ -46,7 +46,7 @@ test.describe('ping keeps reporting when a cable is pulled', () => {
     expect(
       out,
       'the pulled cable must produce visible per-probe lines, not silence',
-    ).toMatch(/Request timeout for icmp_seq|Destination Host Unreachable/);
+    ).toMatch(/no answer yet for icmp_seq|Destination Host Unreachable/);
 
     await page.keyboard.press('Control+c');
     await page.waitForTimeout(1_200);

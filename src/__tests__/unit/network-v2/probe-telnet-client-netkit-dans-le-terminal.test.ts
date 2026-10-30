@@ -38,6 +38,8 @@ async function flush(times = 60): Promise<void> {
 }
 
 interface Typing {
+  readonly currentInputMode: { readonly type: string };
+  setPasswordBuf(text: string): void;
   setInput(text: string): void;
   setInputBuf(text: string): void;
   handleKey(e: KeyEvent): boolean;
@@ -46,8 +48,11 @@ interface Typing {
 }
 
 async function type(term: Typing, text: string): Promise<void> {
-  term.setInput(text);
-  term.setInputBuf(text);
+  if (term.currentInputMode.type === 'password') term.setPasswordBuf(text);
+  else {
+    term.setInput(text);
+    term.setInputBuf(text);
+  }
   term.handleKey(key('Enter'));
   await flush();
 }

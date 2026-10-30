@@ -85,7 +85,7 @@ async function buildCiscoLan(): Promise<{ pc: LinuxPC; cisco: CiscoRouter }> {
   new Cable('c2').connect(cisco.getPorts()[0], sw.getPorts()[1]);
   pc.getPorts()[0].configureIP(new IPAddress(PC_IP), new SubnetMask(MASK));
   for (const cmd of [
-    'enable', 'configure terminal',
+    'enable', 'configure terminal', 'enable secret s3cret',
     'interface GigabitEthernet0/0',
     `ip address ${CISCO_IP} ${MASK}`,
     'no shutdown', 'end',
@@ -222,6 +222,8 @@ describe('Cisco telnet server — the session is real', () => {
     const client = await connectTelnet(pc, CISCO_IP);
     await settle();
     client.send('enable');
+    await settle();
+    client.send('s3cret');
     await settle();
     expect(client.received).toContain(`${cisco.getHostname()}#`);
     client.clear();

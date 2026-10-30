@@ -78,6 +78,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'networking and traffic control tools', },
   { name: 'iptables', version: '1.8.7-1ubuntu5', arch: 'amd64',
     summary: 'administration tools for packet filtering and NAT', },
+  { name: 'ipset', version: '7.15-1build1', arch: 'amd64',
+    summary: 'administration tool for kernel IP sets', },
   { name: 'iputils-ping', version: '3:20211215-1', arch: 'amd64',
     summary: 'Tools to test the reachability of network hosts', },
   { name: 'hping3', version: '3.a2.ds2-9', arch: 'amd64',

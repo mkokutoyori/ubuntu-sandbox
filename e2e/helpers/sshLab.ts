@@ -155,11 +155,33 @@ export const TARGETS: Record<'linux2' | 'win1' | 'ciscoR1' | 'hwR1', SshTarget> 
   hwR1: { ip: '10.0.0.8', user: 'admin', pass: 'Admin@123', prompt: /<hwR1>/, label: 'Huawei' },
 };
 
+const LEGACY_IOS_OPTIONS = '-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa';
+
+export function sshCommand(user: string, ip: string): string {
+  const options = ip === TARGETS.ciscoR1.ip ? `${LEGACY_IOS_OPTIONS} ` : '';
+  return `ssh ${options}${user}@${ip}`;
+}
+
+export async function answerHostKeyThenWaitForPassword(page: Page, timeout: number, since = 0): Promise<void> {
+  const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (await pw.count() > 0) return;
+    const fresh = (await termText(page)).slice(since);
+    if (fresh.includes('Are you sure you want to continue connecting')) {
+      await typeCommand(page, 'yes');
+      await expect(pw).toBeVisible({ timeout });
+      return;
+    }
+    if (Date.now() > deadline) throw new Error('ssh never reached a password prompt');
+    await page.waitForTimeout(100);
+  }
+}
+
 export async function sshLogin(page: Page, target: string, user: string, pass: string, settleMs = 800): Promise<string> {
   const before = (await termText(page)).length;
-  await typeCommand(page, `ssh ${user}@${target}`);
-  const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-  await expect(pw).toBeVisible({ timeout: 9_000 });
+  await typeCommand(page, sshCommand(user, target));
+  await answerHostKeyThenWaitForPassword(page, 9_000, before);
   await typePassword(page, pass);
   await page.waitForTimeout(settleMs);
   return (await termText(page)).slice(before);
@@ -167,13 +189,10 @@ export async function sshLogin(page: Page, target: string, user: string, pass: s
 
 export async function sshHop(page: Page, sshCmd: string, pass: string, settleMs = 1000): Promise<string> {
   const before = (await termText(page)).length;
-  await typeCommand(page, sshCmd);
-  const pw = page.locator('[data-testid="terminal-modal"] input[type="password"]');
-  const hostKeyPrompt = page.locator('[data-testid="terminal-modal"]').getByText('Are you sure you want to continue connecting');
+  const legacy = sshCmd.startsWith('ssh ') && sshCmd.includes(TARGETS.ciscoR1.ip) && !sshCmd.includes('KexAlgorithms');
+  await typeCommand(page, legacy ? `ssh ${LEGACY_IOS_OPTIONS} ${sshCmd.slice(4)}` : sshCmd);
   try {
-    await expect(pw.or(hostKeyPrompt)).toBeVisible({ timeout: 7_000 });
-    if (await hostKeyPrompt.isVisible()) await typeCommand(page, 'yes');
-    await expect(pw).toBeVisible({ timeout: 7_000 });
+    await answerHostKeyThenWaitForPassword(page, 9_000, before);
     await typePassword(page, pass);
   } catch {
     void 0;

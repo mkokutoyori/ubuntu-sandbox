@@ -47,6 +47,11 @@ async function openWireShell(
 
 type Reply = { stdout: string; stderr: string; exitCode: number; prompt?: string };
 
+async function enableOn(channel: { runLine(l: string): Promise<unknown>; provideInput(v: string): Promise<unknown> }): Promise<Reply> {
+  await channel.runLine('enable');
+  return await channel.provideInput('s3cret') as Reply;
+}
+
 async function ciscoLab(): Promise<{ pc: LinuxPC; r: CiscoRouter }> {
   const pc = new LinuxPC('linux-pc', 'PC1');
   const r = new CiscoRouter('router-cisco', 'R1');
@@ -60,6 +65,7 @@ async function ciscoLab(): Promise<{ pc: LinuxPC; r: CiscoRouter }> {
   // EXEC to privileged and back, and a privilege-15 account is already
   // in privileged EXEC the moment it lands, as on real IOS.
   await r.executeCommand('username admin privilege 1 secret adminpw');
+  await r.executeCommand('enable secret s3cret');
   // IOS runs no SSH server without RSA host keys, and refuses to
   // generate them without a domain name — this is the real setup that
   // makes the router reachable over ssh, not decoration.
@@ -74,7 +80,7 @@ describe('a router SSH shell keeps its mode across lines (docs/PRD-SSH-Unificati
     const { pc, r } = await ciscoLab();
     const ch = await openWireShell(pc, '10.0.4.2', 'admin', 'adminpw');
 
-    expect((await ch.runLine('enable') as Reply).stderr).not.toContain('not recognised');
+    expect((await enableOn(ch)).stderr).not.toContain('not recognised');
     expect((await ch.runLine('configure terminal') as Reply).stderr).not.toContain('not recognised');
     await ch.runLine('hostname R99');
 
@@ -84,7 +90,7 @@ describe('a router SSH shell keeps its mode across lines (docs/PRD-SSH-Unificati
   it('the change is visible in the running config read back over the wire', async () => {
     const { pc } = await ciscoLab();
     const ch = await openWireShell(pc, '10.0.4.2', 'admin', 'adminpw');
-    await ch.runLine('enable');
+    await enableOn(ch);
     await ch.runLine('configure terminal');
     await ch.runLine('hostname R99');
     await ch.runLine('end');
@@ -98,7 +104,7 @@ describe('a router SSH shell keeps its mode across lines (docs/PRD-SSH-Unificati
     const ch = await openWireShell(pc, '10.0.4.2', 'admin', 'adminpw');
 
     expect((await ch.runLine('show clock') as Reply).prompt).toContain('R1>');
-    expect((await ch.runLine('enable') as Reply).prompt).toContain('R1#');
+    expect((await enableOn(ch)).prompt).toContain('R1#');
     expect((await ch.runLine('configure terminal') as Reply).prompt).toContain('R1(config)#');
   }, 30000);
 
@@ -115,7 +121,7 @@ describe('sessions are isolated like real VTY lines (docs/PRD-SSH-Unification.md
     const a = await openWireShell(pc, '10.0.4.2', 'admin', 'adminpw');
     const b = await openWireShell(pc, '10.0.4.2', 'admin', 'adminpw');
 
-    await a.runLine('enable');
+    await enableOn(a);
     await a.runLine('configure terminal');
 
     // b never enabled, so it is still in user EXEC.
@@ -125,14 +131,14 @@ describe('sessions are isolated like real VTY lines (docs/PRD-SSH-Unification.md
     // …yet the device config a changed is the one b sees, once b enables
     // (show running-config is privilege 15, so b cannot read it from >).
     expect(r.getHostname()).toBe('R42');
-    await b.runLine('enable');
+    await enableOn(b);
     expect((await b.runLine('show running-config') as Reply).stdout).toContain('hostname R42');
   }, 30000);
 
   it('an SSH session in config mode leaves the local console mode alone', async () => {
     const { pc, r } = await ciscoLab();
     const ch = await openWireShell(pc, '10.0.4.2', 'admin', 'adminpw');
-    await ch.runLine('enable');
+    await enableOn(ch);
     await ch.runLine('configure terminal');
 
     const consolePrompt = r.getShell().getPrompt(r);

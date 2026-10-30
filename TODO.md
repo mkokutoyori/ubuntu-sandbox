@@ -4422,9 +4422,8 @@ et proftpd n'ont pas pu etre clones ici, donc leurs lignes de connexion (vsftpd 
 `xferlog`/`vsftpd.log`, `CONNECT: Client "ip"` avec `log_ftp_protocol`) restent a
 relever dans leurs sources avant d'en ecrire.
 
-
-### [nginx] `Range` : des intervalles qui se chevauchent
-nginx 1.24 (`ngx_http_range_test_overlapped`, ngx_http_range_filter_module.c) abandonne la connexion avec « range in overlapped buffers » quand les intervalles d'un `Range` multiple ne sont pas croissants ou se recouvrent. Le simulateur sert le corps entier en 200 (`NginxRange.ts`, `ascending`). Vu en comparant le C au rendu ; non fermé parce qu'abandonner une connexion en pleine réponse demande un chemin de coupure côté session HTTP/1 que le serveur nginx n'a pas.
-
 ### [iptables] des correspondances que le vrai iptables accepte sont refusées ici, et les noms d'utilisateur ne sont pas résolus
-Mesuré avec `iptables -A INPUT -m <module> … -j ACCEPT` (iptables 1.8.7) : `set` et `physdev` ne se retrouvent pas dans `iptables -L` après la saisie (refusées ou sans ligne), alors que le vrai iptables les accepte. `hashlimit` s'écrit avec le texte brut de ses options au lieu de son `hashlimit_mt_print` (`recent` et `string` suivent désormais leur `*_print`). Chacune demande son évaluation au noyau simulé avant d'être acceptée (règle 6), donc elles ne sont pas stockées sans effet.
+Mesuré avec `iptables -A INPUT -m <module> … -j ACCEPT` (iptables 1.8.7) : `physdev` ne se retrouve pas dans `iptables -L` après la saisie (refusées ou sans ligne), alors que le vrai iptables les accepte. `hashlimit` est décidé et listé pour les débits en paquets ; les débits en octets (`100kb/s`) sont refusés en le disant, et `--hashlimit-rate-match` / `--hashlimit-rate-interval` sont acceptés sans être évalués (la règle ne correspond alors pas). Chacune demande son évaluation au noyau simulé avant d'être acceptée (règle 6), donc elles ne sont pas stockées sans effet.
+
+### [ipset] ce qui n'est pas construit
+`ipset` (7.15) couvre `hash:ip`, `hash:net` et `hash:ip,port` avec `create/add/del/test/list/save/restore/flush/destroy/rename/swap/version`, `timeout`, `netmask`, `comment`, `forceadd`, `maxelem`, `hashsize` et la cible/correspondance iptables `set` / `SET`. Manquent : les compteurs et `skbinfo` (refuses en le disant), les autres types (`bitmap:*`, `hash:net,port`, `hash:ip,mark`, `list:set`…), `--return-nomatch` et `nomatch`, `--map-set`, `ipset list -o xml`, le mode interactif, la persistance au redémarrage, et la résolution de noms d'hôte. « Size in memory » est une approximation (200 + 64 par élément) : le noyau l'obtient de ses allocations, sans formule exploitable depuis les sources. `-m physdev` reste refusé : pas de pont filtrant dans le simulateur.

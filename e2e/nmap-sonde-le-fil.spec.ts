@@ -183,7 +183,7 @@ test.describe('nmap sonde le fil', () => {
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
     await typeCmd(page, 'sudo tcpdump -i eth0 -w /tmp/arp.pcap &');
-    await typeCmd(page, `nmap -sn --reason ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -sn --reason ${CIBLE}`);
 
     const rapport = await lastLines(page, 10);
     expect(rapport).toContain('Host is up');
@@ -238,7 +238,7 @@ test.describe('nmap sonde le fil', () => {
 
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
-    await typeCmd(page, `nmap -v -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -v -sT -p 22 ${CIBLE}`);
 
     const sortie = await lastLines(page, 16);
     expect(sortie).toContain('Initiating ARP Ping Scan');
@@ -288,13 +288,13 @@ test.describe('nmap sonde le fil', () => {
 
     // Le meme segment que `-sF`, lu comme un `-sS` : le port ouvert
     // ressort `filtered` la ou `-sF` rendrait `open|filtered`.
-    await typeCmd(page, `nmap -Pn --scanflags FIN -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn --scanflags FIN -p 22 ${CIBLE}`);
     expect(await lastLines(page, 8)).toMatch(/22\/tcp\s+filtered/);
 
-    await typeCmd(page, `nmap -Pn -sF -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sF -p 22 ${CIBLE}`);
     expect(await lastLines(page, 8)).toMatch(/22\/tcp\s+open\|filtered/);
 
-    await typeCmd(page, `nmap -Pn --scanflags 300 -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn --scanflags 300 -p 22 ${CIBLE}`);
     expect(await lastLines(page, 6)).toContain('--scanflags option must be a number');
   });
 
@@ -331,7 +331,7 @@ test.describe('nmap sonde le fil', () => {
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
     await typeCmd(page, 'ip route add default via 10.73.0.1');
-    await typeCmd(page, 'nmap --traceroute -n -p 22 10.73.1.10');
+    await typeCmd(page, 'sudo nmap --traceroute -n -p 22 10.73.1.10');
     const trace = await lastLines(page, 16);
     expect(trace).not.toContain('not implemented');
     expect(trace).toContain('TRACEROUTE');
@@ -347,7 +347,7 @@ test.describe('nmap sonde le fil', () => {
     await closeTerminal(page);
 
     await openTerminal(page, scannerId);
-    await typeCmd(page, 'nmap --traceroute -n -p 22 10.73.0.30');
+    await typeCmd(page, 'sudo nmap --traceroute -n -p 22 10.73.0.30');
     const direct = await lastLines(page, 14);
     expect(direct).toContain('TRACEROUTE');
     expect(direct).not.toContain('using proto');
@@ -371,7 +371,7 @@ test.describe('nmap sonde le fil', () => {
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
 
-    await typeCmd(page, `nmap -Pn -sS --packet-trace -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS --packet-trace -p 22 ${CIBLE}`);
     const demiOuvert = await lastLines(page, 20);
     expect(demiOuvert).not.toContain('not implemented');
     expect(demiOuvert).toMatch(
@@ -435,16 +435,16 @@ test.describe('nmap sonde le fil', () => {
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
 
-    await typeCmd(page, `nmap -Pn -sS -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS -p 22 ${CIBLE}`);
     const temoin = await lastLines(page, 8);
     expect(temoin).toMatch(/22\/tcp\s+open\s+ssh/);
 
-    await typeCmd(page, `nmap -Pn -sS --badsum -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS --badsum -p 22 ${CIBLE}`);
     const corrompu = await lastLines(page, 8);
     expect(corrompu).not.toContain('not implemented');
     expect(corrompu).toMatch(/22\/tcp\s+filtered\s+ssh/);
 
-    await typeCmd(page, `nmap -Pn -sS -g 53 --packet-trace -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS -g 53 --packet-trace -p 22 ${CIBLE}`);
     const source = await lastLines(page, 20);
     expect(source).toMatch(
       new RegExp(`SENT \\([^)]+\\) TCP \\[${SCANNER}:53 > ${CIBLE}:22 S seq=`));
@@ -474,7 +474,7 @@ test.describe('nmap sonde le fil', () => {
 
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
-    await typeCmd(page, `nmap -Pn -sS -f -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS -f -p 22 ${CIBLE}`);
     const rapport = await lastLines(page, 8);
     expect(rapport).not.toContain('not implemented');
     expect(rapport).toMatch(/22\/tcp\s+open\s+ssh/);
@@ -505,12 +505,12 @@ test.describe('nmap sonde le fil', () => {
 
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
-    await typeCmd(page, `nmap -Pn -sS -D 10.0.0.31,ME,10.0.0.32 -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS -D 10.0.0.31,ME,10.0.0.32 -p 22 ${CIBLE}`);
     const rapport = await lastLines(page, 8);
     expect(rapport).not.toContain('not implemented');
     expect(rapport).toMatch(/22\/tcp\s+open\s+ssh/);
 
-    await typeCmd(page, `nmap -Pn -sS -S 10.73.0.99 -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS -S 10.73.0.99 -p 22 ${CIBLE}`);
     const usurpe = await lastLines(page, 8);
     expect(usurpe).toMatch(/22\/tcp\s+filtered\s+ssh/);
     await closeTerminal(page);
@@ -576,7 +576,7 @@ test.describe('nmap sonde le fil', () => {
 
     await openTerminal(page, scannerId);
     await typeCmd(page, `ip addr add ${SCANNER}/24 dev eth0`);
-    await typeCmd(page, `nmap -Pn -sS --data-string SALUTLABO -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS --data-string SALUTLABO -p 22 ${CIBLE}`);
     const rapport = await lastLines(page, 8);
     expect(rapport).not.toContain('not implemented');
     expect(rapport).toMatch(/22\/tcp\s+open\s+ssh/);
@@ -644,11 +644,11 @@ test.describe('nmap sonde le fil', () => {
     expect(iflist).toMatch(/eth0 +\(eth0\) +10\.73\.0\.20\/24 +ethernet +up +1500/);
     expect(iflist).toMatch(/lo +\(lo\) +127\.0\.0\.1\/8 +loopback/);
 
-    await typeCmd(page, `nmap -Pn -sS -e eth0 -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS -e eth0 -p 22 ${CIBLE}`);
     const choisi = await lastLines(page, 8);
     expect(choisi).toMatch(/22\/tcp\s+open\s+ssh/);
 
-    await typeCmd(page, `nmap -Pn -sS -e zorglub -p 22 ${CIBLE}`);
+    await typeCmd(page, `sudo nmap -Pn -sS -e zorglub -p 22 ${CIBLE}`);
     const refus = await lastLines(page, 4);
     expect(refus).toContain('does it even exist?');
   });

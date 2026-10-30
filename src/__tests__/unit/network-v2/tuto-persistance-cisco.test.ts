@@ -44,7 +44,7 @@ beforeEach(() => {
   Logger.reset();
 });
 
-interface Vty { execute(c: string): Promise<string> | string }
+interface Vty { execute(c: string): Promise<string> | string; handleInput(v: string): Promise<string> }
 
 async function routeur(nom = 'R1-PROD'): Promise<CiscoRouter> {
   const r = new CiscoRouter('R1');
@@ -305,11 +305,14 @@ describe('Partie 6 — la flash est une, et elle a des répertoires', () => {
   it('toutes les sessions de la machine voient le MÊME flash:', async () => {
     const r = await routeur();
     await r.executeCommand('copy running-config flash:depuis-console.cfg');
+    for (const c of ['configure terminal', 'enable secret s3cret', 'end']) await r.executeCommand(c);
     const vty = (r as unknown as { createVtyShell(u?: string): Vty }).createVtyShell('admin');
     await vty.execute('enable');
+    await vty.handleInput('s3cret');
     // Le défaut : le shell portait son propre système de fichiers.
     expect(await vty.execute('dir flash:')).toContain('depuis-console.cfg');
     await vty.execute('copy running-config flash:depuis-ssh.cfg');
+    await vty.handleInput('');
     expect(await r.executeCommand('dir flash:')).toContain('depuis-ssh.cfg');
   }, 30_000);
 

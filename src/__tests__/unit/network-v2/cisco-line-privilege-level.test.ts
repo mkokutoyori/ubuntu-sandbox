@@ -95,10 +95,12 @@ describe('M1 — le niveau de la ligne s applique par TOUTES les portes', () => 
 describe('M2 — le reglage de la ligne appartient a l EQUIPEMENT', () => {
   it('tape depuis une session vty, il vaut pour la CONSOLE', async () => {
     const r = await lab([], 1);
+    await jouer(r, ['enable', 'configure terminal', 'enable secret s3cret', 'end', 'exit']);
     const vty = r.createVtyShell('admin');
     for (const c of ['enable', 'configure terminal', 'line console 0',
       'privilege level 15', 'exit', 'end']) {
       await vty.execute(c);
+      if (c === 'enable') await vty.handleInput('s3cret');
     }
     vty.dispose();
 
@@ -108,13 +110,15 @@ describe('M2 — le reglage de la ligne appartient a l EQUIPEMENT', () => {
 
   it('il survit a la disparition du shell qui l a pose', async () => {
     const r = await lab([], 1);
+    await jouer(r, ['enable', 'configure terminal', 'enable secret s3cret', 'end', 'exit']);
     const vty = r.createVtyShell('admin');
     for (const c of ['enable', 'configure terminal', 'line console 0',
       'privilege level 12', 'exit', 'end']) {
       await vty.execute(c);
+      if (c === 'enable') await vty.handleInput('s3cret');
     }
     vty.dispose();
-    await jouer(r, ['enable']);
+    await r.executeCommand('enable', { passwordInput: 's3cret' });
     expect(await r.executeCommand('show running-config'))
       .toMatch(/^line console 0\n(?: .*\n)* privilege level 12$/m);
   });
