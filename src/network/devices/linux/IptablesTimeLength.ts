@@ -193,3 +193,17 @@ export function tosListing(match: TosMatch, inverted: boolean): string {
   const hex = (n: number): string => `0x${n.toString(16).padStart(2, '0')}`;
   return `tos match${inverted ? '!' : ''}${hex(match.value)}/${hex(match.mask)}`;
 }
+
+export function parseMssRange(text: string): LengthRange | string {
+  const match = /^(\d+)(?::(\d+))?$/.exec(text);
+  if (match === null || Number(match[1]) > 65535 || Number(match[2] ?? 0) > 65535) {
+    return 'tcpmss: bad value for option "--mss", or out of range (0-65535).\n';
+  }
+  const min = Number(match[1]);
+  const max = match[2] === undefined ? min : Number(match[2]);
+  return max < min ? 'tcpmss: invalid range given' : { min, max };
+}
+
+export function mssListing(range: LengthRange, inverted: boolean): string {
+  return `tcpmss match ${inverted ? '!' : ''}${range.min === range.max ? range.min : `${range.min}:${range.max}`}`;
+}

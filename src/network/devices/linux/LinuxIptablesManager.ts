@@ -17,7 +17,7 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 import {
-  dscpListing, lengthListing, parseDscp, parseLengthRange, parseTos, tosListing, tosMatches, parseTimeWindow, timeWindowHolds, timeWindowListing,
+  dscpListing, lengthListing, mssListing, parseDscp, parseLengthRange, parseMssRange, parseTos, tosListing, tosMatches, parseTimeWindow, timeWindowHolds, timeWindowListing,
 } from './IptablesTimeLength';
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
@@ -55,6 +55,7 @@ export interface PacketInfo {
   ipPacketBytes?: number;
   ttl?: number;
   tos?: number;
+  tcpMss?: number;
   srcAddrType?: string;
   dstAddrType?: string;
   addressTypeOf?: (ip: string) => string;
@@ -66,7 +67,7 @@ export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
   'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
-  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit', 'dscp', 'tos',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit', 'dscp', 'tos', 'tcpmss',
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
@@ -99,6 +100,7 @@ const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOpti
   },
   pkttype: { '--pkt-type': 'IM' },
   length: { '--length': 'IM' },
+  tcpmss: { '--mss': 'IM' },
   dscp: { '--dscp': 'I', '--dscp-class': 'I' },
   tos: { '--tos': 'IM' },
   connlimit: {
@@ -132,6 +134,7 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
   addrtype: ['--src-type', '--dst-type'],
+  tcpmss: ['--mss'],
   dscp: ['--dscp', '--dscp-class'],
   tos: ['--tos'],
   connlimit: ['--connlimit-above', '--connlimit-upto', '--connlimit-mask', '--connlimit-saddr', '--connlimit-daddr'],
@@ -879,6 +882,12 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
+      if (m.module === 'tcpmss') {
+        const range = parseMssRange(m.options.get('--mss') ?? '');
+        if (typeof range === 'string') return false;
+        const holds = pkt.tcpMss !== undefined && pkt.tcpMss >= range.min && pkt.tcpMss <= range.max;
+        if (pkt.tcpMss === undefined ? !inverted('--mss') : holds === inverted('--mss')) return false;
+      }
       if (m.module === 'dscp') {
         const wanted = parseDscp(m.options);
         if (typeof wanted === 'string' || pkt.tos === undefined) return false;
@@ -1416,6 +1425,10 @@ export class LinuxIptablesManager {
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
       case 'owner': return this.ownerListing(m, numeric);
+      case 'tcpmss': {
+        const range = parseMssRange(o.get('--mss') ?? '');
+        return typeof range === 'string' ? '' : mssListing(range, inverts(m, '--mss'));
+      }
       case 'dscp': {
         const value = parseDscp(o);
         return typeof value === 'string' ? '' : dscpListing(value, (m.negated?.size ?? 0) > 0);
@@ -2045,6 +2058,10 @@ export class LinuxIptablesManager {
   private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'tcpmss') {
+      const range = parseMssRange(options.get('--mss') ?? '');
+      if (typeof range === 'string') return range;
     }
     if (module === 'dscp') {
       const value = parseDscp(options);

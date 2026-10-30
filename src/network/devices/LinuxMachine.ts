@@ -4864,12 +4864,15 @@ export abstract class LinuxMachine extends EndHost
     };
   }
 
-  private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[] } {
+  private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[]; tcpMss?: number } {
     const segment = payload as TCPPacket | TcpSegment | undefined;
     if (segment?.type !== 'tcp') return {};
+    const options = 'options' in segment ? segment.options : [];
+    const mss = options.find((option) => option.kind === 'mss');
     return {
       tcpFlags: tcpFlagBits(segment.flags),
-      tcpOptions: 'options' in segment ? segment.options.map(tcpOptionKindNumber) : [],
+      tcpOptions: options.map(tcpOptionKindNumber),
+      ...(mss !== undefined && 'value' in mss ? { tcpMss: mss.value } : {}),
     };
   }
 

@@ -222,6 +222,44 @@ describe('-m dscp et -m tos (xt_dscp : (tos >> 2) == dscp ; xt_tos : (tos & masq
   });
 });
 
+describe('-m tcpmss (xt_tcpmss : le MSS annonce dans le SYN ; sans option MSS le resultat est « invert »)', () => {
+  it('une valeur, une plage, et le « ! »', async () => {
+    expect(await verdict('-p tcp -m tcpmss --mss 1460 -j DROP', packet({ tcpMss: 1460 }))).toBe('drop');
+    expect(await verdict('-p tcp -m tcpmss --mss 1460 -j DROP', packet({ tcpMss: 1400 }))).toBe('accept');
+    expect(await verdict('-p tcp -m tcpmss --mss 1400:1500 -j DROP', packet({ tcpMss: 1460 }))).toBe('drop');
+    expect(await verdict('-p tcp -m tcpmss ! --mss 1400:1500 -j DROP', packet({ tcpMss: 1200 }))).toBe('drop');
+  });
+
+  it('sans option MSS dans le paquet, seule la forme inversee correspond', async () => {
+    expect(await verdict('-p tcp -m tcpmss --mss 1460 -j DROP', packet())).toBe('accept');
+    expect(await verdict('-p tcp -m tcpmss ! --mss 1460 -j DROP', packet())).toBe('drop');
+  });
+
+  it('se liste comme tcpmss_print, une plage inversee est refusee', async () => {
+    expect(await listed('-p tcp -m tcpmss --mss 1400:1500 -j DROP')).toBe('tcpmss match 1400:1500');
+    expect(await listed('-p tcp -m tcpmss ! --mss 1460 -j DROP')).toBe('tcpmss match !1460');
+    const host = new LinuxPC('H', 0, 0);
+    expect(await host.executeCommand('sudo iptables -A INPUT -p tcp -m tcpmss --mss 1500:1400 -j DROP')).toContain('tcpmss: invalid range given');
+  });
+
+  it('le MSS d\'un vrai SYN arrive a la regle', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV');
+    const cli = new LinuxServer('linux-server', 'CLI');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    srv.powerOn();
+    cli.powerOn();
+    new Cable('a').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+    srv.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await srv.executeCommand('iptables -A INPUT -p tcp --syn -m tcpmss --mss 1459 -j DROP');
+    expect(await cli.executeCommand('nc -zv -w 1 10.0.0.2 22 2>&1')).toMatch(/succeeded|open/i);
+    await srv.executeCommand('iptables -F');
+    await srv.executeCommand('iptables -A INPUT -p tcp --syn -m tcpmss --mss 1400:1500 -j DROP');
+    expect(await cli.executeCommand('nc -zv -w 1 10.0.0.2 22 2>&1')).not.toMatch(/succeeded|open/i);
+  });
+});
+
 describe('-m time', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2024-03-04T10:30:00Z')); });
   afterEach(() => { vi.useRealTimers(); });
