@@ -18,6 +18,7 @@ import { useLocale } from '@/i18n/useLocale';
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { NanoEditor } from '@/components/editors/NanoEditor';
 import { VimEditor } from '@/components/editors/VimEditor';
+import { LessViewer } from '@/components/editors/LessViewer';
 import { useGridGeometry } from '../gridGeometry';
 import { copySelectionToClipboard, pasteFromClipboard } from './clipboard';
 import type {
@@ -266,6 +267,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             onExit={done}
           />
         )}
+      </div>
+    );
+  }
+
+  if (session.currentInputMode.type === 'less') {
+    const less = session.currentInputMode;
+    return (
+      <div className="h-full w-full flex flex-col">
+        <LessViewer
+          sources={less.sources}
+          options={less.options}
+          quitIfOneScreen={less.quitIfOneScreen}
+          initialKeys={less.initialKeys}
+          onExit={(printed) => session.editorExit(true, printed)}
+        />
       </div>
     );
   }
