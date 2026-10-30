@@ -271,15 +271,6 @@ pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonct
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
 
-### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
-**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
-`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
-simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
-FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
-**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
-« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
-meme port d'horloge dans `IRmanOracleContext`.
-
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
 BYMINUTE et BYSECOND dans le fuseau du serveur. `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`, `BYDATE`, `INCLUDE` /

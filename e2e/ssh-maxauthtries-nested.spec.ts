@@ -86,6 +86,7 @@ test.describe('MaxAuthTries seen from the terminal', () => {
     const after = (await termText(page)).slice(before);
     expect(countPrompts(after)).toBe(1);
     expect(after).toContain('Too many authentication failures');
+    expect(after.match(/Received disconnect from/g) ?? []).toHaveLength(1);
     expect(after).not.toContain('Permission denied, please try again.');
   });
 

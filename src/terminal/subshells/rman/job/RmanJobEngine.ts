@@ -16,7 +16,6 @@
  * The engine never throws — every error becomes a JOB_FAILED event.
  */
 
-import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { ok, err, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
@@ -77,7 +76,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   ) {}
 
   run(job: RmanJob): Result<void, RmanError> {
-    const start = simulationNowMs();
+    const start = rmanNowMs(this._ctx);
 
     if (this._cancelled.has(job.id)) {
       return err({ code: 'JOB_CANCELLED', message: `Job ${job.id} was cancelled`, jobId: job.id });
@@ -118,7 +117,7 @@ export class RmanJobEngine implements IRmanJobEngine {
       //    SubShell sees CHANNEL_RELEASED before the "Finished" line.
       this._bus.emit({
         type: 'JOB_COMPLETED', jobId: job.id, operation: job.operation,
-        elapsedMs: simulationNowMs() - start,
+        elapsedMs: rmanNowMs(this._ctx) - start,
       });
     } catch (e) {
       this._pool.release(channel);
@@ -1287,7 +1286,7 @@ export class RmanJobEngine implements IRmanJobEngine {
   private _emitFailed(job: RmanJob, error: RmanError, start: number): void {
     this._bus.emit({
       type: 'JOB_FAILED', jobId: job.id, operation: job.operation,
-      error, elapsedMs: simulationNowMs() - start,
+      error, elapsedMs: rmanNowMs(this._ctx) - start,
     });
   }
 }
