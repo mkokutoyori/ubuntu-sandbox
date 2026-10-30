@@ -94,9 +94,11 @@ async function sshLogin(
 }
 
 async function typeLine(host: TerminalSession, line: string): Promise<void> {
-  const foreground = host;
-  foreground.setInput(line);
-  foreground.setInputBuf(line);
+  if (host.currentInputMode.type === 'password') host.setPasswordBuf(line);
+  else {
+    host.setInput(line);
+    host.setInputBuf(line);
+  }
   host.handleKey(key('Enter'));
   for (let i = 0; i < 10; i++) await tick();
 }

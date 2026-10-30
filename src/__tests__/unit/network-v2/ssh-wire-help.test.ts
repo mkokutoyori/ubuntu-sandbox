@@ -60,6 +60,7 @@ async function cisco(): Promise<CiscoRouter> {
   await r.executeCommand('configure terminal');
   await r.executeCommand('hostname R1');
   await r.executeCommand('username admin privilege 1 secret adminpw');
+  await r.executeCommand('enable secret s3cret');
   // IOS runs no SSH server without RSA host keys, and refuses to
   // generate them without a domain name — this is the real setup that
   // makes the router reachable over ssh, not decoration.
@@ -88,6 +89,7 @@ describe('IOS contextual help over the wire (docs/PRD-SSH-Unification.md §4bis 
     const ch = await shellTo(await cisco() as never, '10.0.11.2', 'admin', 'adminpw');
     const asUser = (await ch.runLine('?') as Reply).stdout;
     await ch.runLine('enable');
+    await ch.provideInput('s3cret');
     const asPrivileged = (await ch.runLine('?') as Reply).stdout;
     expect(asPrivileged).not.toEqual(asUser);
     expect(asPrivileged).toContain('configure');
@@ -96,6 +98,7 @@ describe('IOS contextual help over the wire (docs/PRD-SSH-Unification.md §4bis 
   it('asking for help leaves the session mode untouched', async () => {
     const ch = await shellTo(await cisco() as never, '10.0.11.2', 'admin', 'adminpw');
     await ch.runLine('enable');
+    await ch.provideInput('s3cret');
     await ch.runLine('?');
     expect((await ch.runLine('show clock') as Reply).prompt).toContain('R1#');
   }, 30000);
