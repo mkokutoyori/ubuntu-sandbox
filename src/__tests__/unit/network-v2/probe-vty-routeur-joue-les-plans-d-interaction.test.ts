@@ -11,13 +11,14 @@
  * pendingInput / provideInput pair (the Windows and Linux contexts use it);
  * the router context did not forward it.
  *
- * Discriminated with `git stash push -- src/network`: 4 of the 5 cases fall
- * before the fix. The one that passes either way is the WITNESS: the lab's
+ * Discriminated with `git stash push -- src/network`: 4 of the 5 router cases
+ * and both switch cases fall before the fix. The one that passes either way is the WITNESS: the lab's
  * router really carries an enable secret (the console accepts it
  * headlessly), so a refusal on the vty is the vty's doing.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -78,5 +79,23 @@ describe('a router vty plays interaction plans', () => {
     await vty.handleInput('s3cret');
     await vty.execute('ssh -l admin 10.0.0.8');
     expect(vty.lastPendingInput()?.promptText).toMatch(/Password/i);
+  });
+});
+
+describe('a switch vty plays interaction plans too', () => {
+  it('enable asks for the secret on a Cisco switch vty', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0);
+    for (const c of ['enable', 'configure terminal', 'enable secret s3cret', 'end', 'disable']) await sw.executeCommand(c);
+    const vty = (sw as unknown as { createVtyShell(u?: string): Vty }).createVtyShell('guest');
+    await vty.execute('enable');
+    expect(vty.lastPendingInput()?.kind).toBe('password');
+    await vty.handleInput('s3cret');
+    expect(vty.getPrompt()).toContain('#');
+  });
+
+  it('a Cisco switch vty with no enable secret refuses', async () => {
+    const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0);
+    const vty = (sw as unknown as { createVtyShell(u?: string): Vty }).createVtyShell('guest');
+    expect(await vty.execute('enable')).toContain('% No password set');
   });
 });

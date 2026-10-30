@@ -64,7 +64,8 @@ import { lineIdleTimeoutMs, vtyLoginModeOf } from './router/vty/VtyLineConfig';
 import { VtyIncomingPolicy, type VtyAdmissionVerdict, type VtyTransportKind } from './router/vty/VtyIncomingPolicy';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
-import { InteractionPlanRunner, type PlanAdvanceResult, type PlanPendingInput } from '@/shell/interaction/InteractionPlanRunner';
+import type { PlanPendingInput } from '@/shell/interaction/InteractionPlanRunner';
+import { VtyInteraction } from '@/shell/interaction/VtyInteraction';
 import {
   hasHeadlessAnswers, opensOutboundSession, runInteractionPlanHeadless, type HeadlessAnswers,
 } from '@/shell/interaction/HeadlessInteraction';
@@ -1850,41 +1851,19 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     shell.adoptDeviceStores?.(this.shell);
     shell.beginExecSession?.(this.resolveVtyExecLevel(user), user);
     let ended = false;
-    let planRunner: InteractionPlanRunner | null = null;
-    let pending: PlanPendingInput | null = null;
-    const settle = (out: string): string => {
-      ended = shell.execSessionClosed?.() === true;
-      return out;
-    };
-    const planStep = (step: PlanAdvanceResult): string => {
-      planRunner = step.done ? null : planRunner;
-      pending = step.done ? null : step.pending ?? null;
-      return settle(step.lines.join('\n'));
-    };
-    const execOnShell = async (line: string): Promise<string> => settle(await shell.execute(this, line));
+    const interaction = new VtyInteraction({
+      shell,
+      device: this,
+      run: (line) => shell.execute(this, line),
+      settle: (out) => {
+        ended = shell.execSessionClosed?.() === true;
+        return out;
+      },
+    });
     return {
-      execute: (rawInput: string) => {
-        pending = null;
-        const plan = isInteractionPlanner(shell)
-          ? shell.interactionPlanFor(rawInput, {
-              mode: (shell as unknown as { getMode?: () => string }).getMode?.() ?? 'privileged',
-              device: this,
-              onVtyLine: true,
-            })
-          : null;
-        if (plan) {
-          const runner = new InteractionPlanRunner(plan, execOnShell);
-          planRunner = runner;
-          return runner.start().then(planStep);
-        }
-        const result = shell.execute(this, rawInput);
-        return result instanceof Promise ? result.then(settle) : settle(result);
-      },
-      lastPendingInput: () => pending,
-      handleInput: async (value: string) => {
-        if (!planRunner) return '';
-        return planStep(await planRunner.provide(value));
-      },
+      execute: (rawInput: string) => interaction.execute(rawInput),
+      lastPendingInput: () => interaction.lastPendingInput(),
+      handleInput: (value: string) => interaction.handleInput(value),
       getPrompt: () => shell.getPrompt(this),
       // The shell's own candidates, so they follow its CLI mode.
       getCompletions: (line: string) => shell.tabCandidates(line, this),
