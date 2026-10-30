@@ -1065,3 +1065,60 @@ Les 12 qui passent des deux cotes sont des refus ou des temoins (un autre
 hote, un autre port, la casse, un `Location` relatif d'amont, `off`, un
 corps sans redirection). `nginx-variables.test.ts` (14 cas) : le module
 n'existe pas avant, tous tombent.
+
+### 9.14 `return`, les lignes de statut de nginx, `default_type` et `types`
+
+Un audit des directives classees « appliquees » (`NginxConfig.ts`,
+`APPLIED_DIRECTIVES`) a montre que `return` (hors `location`),
+`default_type`, `error_page` et `try_files` etaient stockees puis lues par
+personne : le defaut de §P2, rouvert. Ce lot ferme les deux premieres et
+leurs dependances ; `error_page` et `try_files` suivent (§9.15).
+
+Mesure avant : `return 200 "hello"` repondait `200 Found` avec
+`Location: hello` et un corps vide ; `return 404;` repondait `404 Found`
+sans page ; un `return` au niveau `server` — la redirection http -> https
+que tout le monde ecrit — etait ignore ; `302` s'appelait `Found` ;
+`/etc/nginx/mime.types`, inclus par le `nginx.conf` livre, n'existait pas,
+si bien que `include` l'ignorait en silence et que tout `.png` sortait en
+`application/octet-stream`.
+
+Source : `ngx_http_rewrite_module.c` (`ngx_http_rewrite_return`),
+`ngx_http_script.c` (`ngx_http_script_return_code`),
+`ngx_http_core_module.c` (`ngx_http_send_response`,
+`ngx_http_set_content_type`), `ngx_http_header_filter_module.c`
+(`ngx_http_status_lines`), `ngx_http_special_response.c`, `conf/mime.types`.
+
+**Les phrases ne sont pas celles de la RFC.** nginx a sa table : `302
+Moved Temporarily` (mais la page dit `302 Found`), `405 Not Allowed`,
+`408 Request Time-out`, `504 Gateway Time-out`, `401 Unauthorized` (page :
+`401 Authorization Required`). `NginxStatus.ts` porte les deux tables,
+generees depuis la source ; `notFoundPage()` & co. n'en sont plus que des
+alias, sans second texte.
+
+**`return`** : `return code`, `return code texte`, `return code url`,
+`return url` (302). A un code de redirection, nginx repond avec la page
+HTML du code, `Content-Type: text/html` et `Location` absolu (filtre
+d'en-tetes de §9.13) ; a un code >= 400 sans texte, avec sa page d'erreur ;
+sinon le texte EST le corps, type choisi par l'extension de l'URI puis
+`default_type`. Au niveau `server` il s'execute avant le choix de la
+`location`, qui n'est alors jamais atteinte. Le texte est une valeur
+complexe (`$host`, `$request_uri`, `$scheme`…).
+
+**`default_type` et `types`** : le `nginx.conf` livre dit
+`default_type application/octet-stream` — c'est pourquoi un `return 200
+"x"` y sort en octet-stream, piege que le simulateur reproduit. `types
+{ ... }` d'un bloc REMPLACE la table heritee ; l'extension est comparee
+sans casse. `/etc/nginx/mime.types` est seme depuis la source de nginx
+1.24.0.
+
+**Une seule couche d'heritage** : gzip, redirection et types circulaient
+par trois arguments separes ; `resolveInherited` les resout ensemble et un
+bloc sans directive concernee partage l'objet de son parent.
+
+**Limites** : un code sans page dans la table (418…) rend un corps vide ;
+`add_header` s'applique aux erreurs, ce que nginx ne fait pas sans
+`always` ; les blocs `if` sont toujours analyses sans etre evalues.
+
+`nginx-return-mime.test.ts` (36 cas) : **32 tombent par `git stash`**. Les
+4 qui passent des deux cotes sont des temoins (le site statique, la
+configuration livree, un 404 inchange, `mime.types` deja inclus).

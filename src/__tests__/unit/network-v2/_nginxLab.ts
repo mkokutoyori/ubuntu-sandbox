@@ -4,7 +4,7 @@ import { machine, sh } from './_httpsLab';
 export const ROWS = 200;
 
 export async function site(srv: LinuxServer, body: string): Promise<void> {
-  const text = body.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/'/g, `'\\''`);
+  const text = body.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\$/g, '\\$').replace(/'/g, `'\\''`);
   await sh(srv, `sh -c 'printf "${text}" > /etc/nginx/sites-available/default'`);
 }
 

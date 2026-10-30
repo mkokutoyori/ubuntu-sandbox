@@ -4,6 +4,11 @@ import {
   type NginxSslDirective, type NginxSslSettings,
 } from './NginxSsl';
 import {
+  NGINX_MIME_DIRECTIVES, DEFAULT_CONTENT_TYPES, checkMimeDirective, checkTypesEntry, resolveContentTypes,
+  type NginxContentTypes,
+} from './NginxMime';
+import { parseReturn, type NginxReturnRule } from './NginxReturn';
+import {
   NGINX_REDIRECT_DIRECTIVES, DEFAULT_REDIRECT_SETTINGS, checkRedirectDirective, resolveRedirectSettings,
   type NginxRedirectSettings,
 } from './NginxRedirect';
@@ -40,7 +45,7 @@ export interface NginxFileSource {
   list(dir: string): string[] | null;
 }
 
-const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'upstream']);
+const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'upstream', 'types']);
 
 /**
  * Les méthodes d'équilibrage. `least_conn` est REFUSÉE plutôt
@@ -53,10 +58,10 @@ const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'lea
 
 
 const APPLIED_DIRECTIVES = new Set([
-  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES,
+  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES, ...NGINX_MIME_DIRECTIVES,
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
-  'add_header', 'default_type',
+  'add_header',
   // §P5 — these two DECIDE which certificate a `listen … ssl` port
   // presents, so they belong here and not in `ACCEPTED_INERT`.
   // §P6 — `proxy_pass` DÉCIDE vers où la requête part, `proxy_set_header`
@@ -234,7 +239,19 @@ function parseBlock(
 
     const terminator = state.tokens[state.pos];
 
+    if (parent === 'types' && terminator.punct === ';') {
+      state.pos++;
+      const problem = checkTypesEntry(args, name);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+      out.push({ name, args, line, file });
+      continue;
+    }
+
     if (terminator.punct === '{') {
+      if (name === 'types') {
+        const problem = checkMimeDirective(name, args, false, parent);
+        if (problem) return { ok: false, error: emerg(problem, file, line) };
+      }
       if (!APPLIED_BLOCKS.has(name)) {
         return { ok: false, error: unknownOrUnsupported(name, file, line) };
       }
@@ -308,6 +325,14 @@ function parseBlock(
       if (problem) return { ok: false, error: emerg(problem, file, line) };
     }
 
+    if (name === 'default_type') {
+      const problem = checkMimeDirective(name, args, out.some((d) => d.name === name), parent);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+    if (name === 'return') {
+      const rule = parseReturn(args);
+      if (typeof rule === 'string') return { ok: false, error: emerg(rule, file, line) };
+    }
     if (NGINX_REDIRECT_DIRECTIVES.has(name)) {
       const problem = checkRedirectDirective(name, args, out, parent);
       if (problem) return { ok: false, error: emerg(problem, file, line) };
@@ -516,8 +541,7 @@ export interface NginxLocation {
   readonly root?: string;
   readonly index?: readonly string[];
   readonly tryFiles?: readonly string[];
-  readonly returnStatus?: number;
-  readonly returnTarget?: string;
+  readonly returnRule?: NginxReturnRule;
   readonly autoindex?: boolean;
   readonly addHeaders: readonly (readonly [string, string])[];
   /** §P6 */
@@ -525,6 +549,7 @@ export interface NginxLocation {
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
   readonly redirect: NginxRedirectSettings;
+  readonly contentTypes: NginxContentTypes;
 }
 
 export interface NginxServerBlock {
@@ -543,6 +568,8 @@ export interface NginxServerBlock {
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
   readonly redirect: NginxRedirectSettings;
+  readonly contentTypes: NginxContentTypes;
+  readonly returnRule?: NginxReturnRule;
 }
 
 function parseListen(args: readonly string[]): { port: number; defaultServer: boolean; ssl: boolean } | null {
@@ -641,21 +668,49 @@ export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream
   return out;
 }
 
+interface InheritedSettings {
+  readonly gzip: NginxGzipSettings;
+  readonly redirect: NginxRedirectSettings;
+  readonly contentTypes: NginxContentTypes;
+}
+
+const DEFAULT_INHERITED: InheritedSettings = Object.freeze({
+  gzip: DEFAULT_GZIP_SETTINGS,
+  redirect: DEFAULT_REDIRECT_SETTINGS,
+  contentTypes: DEFAULT_CONTENT_TYPES,
+});
+
+function resolveInherited(parent: InheritedSettings, block: readonly NginxDirective[]): InheritedSettings {
+  const gzip = resolveGzipSettings(parent.gzip, block.filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
+  const redirect = resolveRedirectSettings(parent.redirect, block.filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)));
+  const contentTypes = resolveContentTypes(parent.contentTypes, block.filter((d) => NGINX_MIME_DIRECTIVES.has(d.name)));
+  return gzip === parent.gzip && redirect === parent.redirect && contentTypes === parent.contentTypes
+    ? parent
+    : { gzip, redirect, contentTypes };
+}
+
+function firstReturn(block: readonly NginxDirective[]): NginxReturnRule | undefined {
+  const directive = block.find((d) => d.name === 'return');
+  if (directive === undefined) return undefined;
+  const rule = parseReturn(directive.args);
+  return typeof rule === 'string' ? undefined : rule;
+}
+
 function collectLocation(
-  node: NginxDirective, inheritedRoot: string, inheritedGzip: NginxGzipSettings,
-  inheritedRedirect: NginxRedirectSettings,
+  node: NginxDirective, inheritedRoot: string, inherited: InheritedSettings,
 ): NginxLocation {
   const loc: {
     path: string; root?: string; index?: string[]; tryFiles?: string[];
-    returnStatus?: number; returnTarget?: string; autoindex?: boolean;
+    returnRule?: NginxReturnRule; autoindex?: boolean;
     addHeaders: (readonly [string, string])[];
     proxyPass?: NginxProxyPass;
     proxySetHeaders: (readonly [string, string])[];
     gzip: NginxGzipSettings;
     redirect: NginxRedirectSettings;
+    contentTypes: NginxContentTypes;
   } = {
     path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [],
-    gzip: inheritedGzip, redirect: inheritedRedirect,
+    ...inherited,
   };
 
   for (const d of node.block ?? []) {
@@ -667,23 +722,15 @@ function collectLocation(
     else if (d.name === 'proxy_pass') loc.proxyPass = parseProxyPass(d.args[0]) ?? undefined;
     else if (d.name === 'proxy_set_header' && d.args.length >= 2) {
       loc.proxySetHeaders.push([d.args[0], d.args.slice(1).join(' ')]);
-    } else if (d.name === 'return') {
-      const status = Number(d.args[0]);
-      if (Number.isInteger(status)) {
-        loc.returnStatus = status;
-        loc.returnTarget = d.args[1];
-      }
     }
   }
   if (!loc.root) loc.root = inheritedRoot;
-  loc.gzip = resolveGzipSettings(inheritedGzip, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
-  loc.redirect = resolveRedirectSettings(
-    inheritedRedirect, (node.block ?? []).filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)),
-  );
+  loc.returnRule = firstReturn(node.block ?? []);
+  Object.assign(loc, resolveInherited(inherited, node.block ?? []));
   return loc as NginxLocation;
 }
 
-function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; gzip: NginxGzipSettings; redirect: NginxRedirectSettings }): NginxServerBlock {
+function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; inherited: InheritedSettings }): NginxServerBlock {
   const listen: { port: number; defaultServer: boolean; ssl: boolean }[] = [];
   let serverNames: string[] = [];
   let root = '/var/www/html';
@@ -710,18 +757,16 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
       proxySetHeaders.push([d.args[0], d.args.slice(1).join(' ')]);
     }
   }
-  const gzip = resolveGzipSettings(httpDefaults.gzip, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
-  const redirect = resolveRedirectSettings(
-    httpDefaults.redirect, (node.block ?? []).filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)),
-  );
+  const inherited = resolveInherited(httpDefaults.inherited, node.block ?? []);
   for (const d of node.block ?? []) {
-    if (d.name === 'location') locations.push(collectLocation(d, root, gzip, redirect));
+    if (d.name === 'location') locations.push(collectLocation(d, root, inherited));
   }
 
   return {
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
     ssl: resolveSslSettings(httpDefaults.sslDirectives, serverSslDirectives),
-    sslFile: node.file, sslLine: node.line, proxySetHeaders, gzip, redirect,
+    sslFile: node.file, sslLine: node.line, proxySetHeaders, ...inherited,
+    returnRule: firstReturn(node.block ?? []),
   };
 }
 
@@ -730,8 +775,7 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
   const defaults = {
     accessLog: null as string | null, errorLog: null as string | null,
     sslDirectives: [] as NginxSslDirective[],
-    gzip: DEFAULT_GZIP_SETTINGS,
-    redirect: DEFAULT_REDIRECT_SETTINGS,
+    inherited: DEFAULT_INHERITED,
   };
 
   const walk = (nodes: readonly NginxDirective[], inHttp: boolean): void => {
@@ -739,12 +783,7 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
       if (node.name === 'access_log' && !inHttp) defaults.accessLog = node.args[0] === 'off' ? null : node.args[0];
       if (node.name === 'error_log' && !inHttp) defaults.errorLog = node.args[0];
       if (node.name === 'http') {
-        defaults.gzip = resolveGzipSettings(
-          DEFAULT_GZIP_SETTINGS, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)),
-        );
-        defaults.redirect = resolveRedirectSettings(
-          DEFAULT_REDIRECT_SETTINGS, (node.block ?? []).filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)),
-        );
+        defaults.inherited = resolveInherited(DEFAULT_INHERITED, node.block ?? []);
         for (const d of node.block ?? []) {
           if (d.name === 'access_log') defaults.accessLog = d.args[0] === 'off' ? null : d.args[0];
           if (d.name === 'error_log') defaults.errorLog = d.args[0];

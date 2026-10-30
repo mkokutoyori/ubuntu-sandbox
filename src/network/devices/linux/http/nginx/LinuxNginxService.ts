@@ -6,7 +6,6 @@ import { x509VerifyError } from '@/network/pki/x509VerifyErrors';
 import type { TlsServerCredential } from '@/network/tls/TlsServerSession';
 import type { HttpsServerConfig } from '@/network/http/https/HttpsServerSession';
 import { createResponse, type HttpMessage } from '@/network/http/semantics/types';
-import { contentTypeForPath } from '@/network/http/HttpTypes';
 import type { PortSpec } from '../../../../core/ports/PortNumber';
 import type { ServiceSocketServer } from '../../ports/ServiceSocketServer';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
@@ -26,6 +25,9 @@ import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './
 import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
 import { applyGzipFilter } from './NginxGzip';
+import { nginxReason, errorPage } from './NginxStatus';
+import { contentTypeFor } from './NginxMime';
+import type { NginxReturnRule } from './NginxReturn';
 import { expandNginxVariables, type NginxVariableContext } from './NginxVariables';
 import {
   absoluteLocationValue, isRedirectStatus, rewriteRedirectValue, type NginxRedirectSettings,
@@ -467,7 +469,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     const response = gated
       ?? (server
         ? this.serve(server, target, req, peer, port)
-        : this.errorResponse(404, 'Not Found', notFoundPage()));
+        : this.errorResponse(404, notFoundPage()));
     if (server) applyGzipFilter(req, response, (matchLocation(server, target) ?? server).gzip);
     this.logRequest(server, req, response, target, peer);
     return response;
@@ -481,7 +483,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       if (server.ssl.verifyClient !== 'off') {
         this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
           `${formatErrorTime(this.host.now())} [info] 0#0: *1 client attempted to request the server name different from the one that was negotiated, client: ${peer?.ip ?? '0.0.0.0'}`);
-        return this.errorResponse(421, 'Misdirected Request', misdirectedPage(), server);
+        return this.errorResponse(421, misdirectedPage(), server);
       }
     }
     const settings = server.ssl;
@@ -507,7 +509,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
       `${formatErrorTime(this.host.now())} [info] 0#0: *1 ${detail}, client: ${peer?.ip ?? '0.0.0.0'}, server: ${server.serverNames[0] ?? '_'}`);
     return this.errorResponse(
-      400, 'Bad Request', verdict.status === 495 ? sslCertificateErrorPage() : sslNoCertificatePage(), server,
+      400, verdict.status === 495 ? sslCertificateErrorPage() : sslNoCertificatePage(), server,
     );
   }
 
@@ -520,22 +522,16 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     server: NginxServerBlock, target: string,
     req?: HttpMessage, peer?: Http1Peer, port = 0,
   ): HttpMessage {
+    if (server.returnRule && req) return this.returnResponse(server.returnRule, server, null, req, port, peer);
+
     const location = matchLocation(server, target);
 
     if (location?.proxyPass && req) {
       return this.proxy(server, location, location.proxyPass, target, req, peer, port);
     }
 
-    if (location?.returnStatus !== undefined) {
-      const res = createResponse(location.returnStatus, location.returnStatus === 301 ? 'Moved Permanently' : 'Found');
-      res.headers.set('Server', `nginx/${NGINX_VERSION}`);
-      if (location.returnTarget) {
-        res.headers.set('Location', req && isRedirectStatus(location.returnStatus)
-          ? this.absolutize(location.returnTarget, location.redirect, server, req, port, peer)
-          : location.returnTarget);
-      }
-      res.headers.set('Content-Length', '0');
-      return res;
+    if (location?.returnRule && req) {
+      return this.returnResponse(location.returnRule, server, location, req, port, peer);
     }
 
     const root = location?.root ?? server.root;
@@ -549,12 +545,12 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     for (const candidate of candidates) {
       if (!this.host.fs.exists(candidate) || this.host.fs.isDirectory(candidate)) continue;
       if (!this.host.fs.readableBy(candidate, NGINX_UID, NGINX_GID)) {
-        return this.errorResponse(403, 'Forbidden', forbiddenPage(), server, location);
+        return this.errorResponse(403, forbiddenPage(), server, location);
       }
       const body = this.host.fs.read(candidate) ?? '';
       const res = createResponse(200, 'OK');
       res.headers.set('Server', `nginx/${NGINX_VERSION}`);
-      res.headers.set('Content-Type', contentTypeForPath(candidate));
+      res.headers.set('Content-Type', contentTypeFor((location ?? server).contentTypes, candidate));
       this.applyHeaders(res, server, location);
       res.body = bytes(body);
       return res;
@@ -572,9 +568,32 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     }
 
     if (this.host.fs.isDirectory(fsPath)) {
-      return this.errorResponse(403, 'Forbidden', forbiddenPage(), server, location);
+      return this.errorResponse(403, forbiddenPage(), server, location);
     }
-    return this.errorResponse(404, 'Not Found', notFoundPage(), server, location);
+    return this.errorResponse(404, notFoundPage(), server, location);
+  }
+
+  private returnResponse(
+    rule: NginxReturnRule, server: NginxServerBlock, location: NginxLocation | null,
+    req: HttpMessage, port: number, peer?: Http1Peer,
+  ): HttpMessage {
+    const text = rule.text === null
+      ? null
+      : expandNginxVariables(rule.text, this.variablesFor(server, req, port, peer, null));
+    if (isRedirectStatus(rule.status)) {
+      const res = this.errorResponse(rule.status, errorPage(rule.status, NGINX_VERSION) ?? '', server, location);
+      res.headers.set('Location', this.absolutize(text ?? '', (location ?? server).redirect, server, req, port, peer));
+      return res;
+    }
+    if (rule.status >= 400 && (text === null || text === '')) {
+      return this.errorResponse(rule.status, errorPage(rule.status, NGINX_VERSION) ?? '', server, location);
+    }
+    const res = createResponse(rule.status, nginxReason(rule.status));
+    res.headers.set('Server', `nginx/${NGINX_VERSION}`);
+    res.headers.set('Content-Type', contentTypeFor((location ?? server).contentTypes, (req.target ?? '/').split('?')[0]));
+    this.applyHeaders(res, server, location);
+    res.body = bytes(text ?? '');
+    return res;
   }
 
   /**
@@ -820,7 +839,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
       `${formatErrorTime(this.host.now())} [error] 0#0: *1 ${reason}, `
       + `client: ${peer?.ip ?? '0.0.0.0'}, server: ${server.serverNames[0] ?? '_'}`);
-    return this.errorResponse(502, 'Bad Gateway', badGatewayPage(), server, location);
+    return this.errorResponse(502, badGatewayPage(), server, location);
   }
 
   private applyHeaders(res: HttpMessage, server?: NginxServerBlock, location?: NginxLocation | null): void {
@@ -829,10 +848,10 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   }
 
   private errorResponse(
-    status: number, reason: string, body: string,
+    status: number, body: string,
     server?: NginxServerBlock, location?: NginxLocation | null,
   ): HttpMessage {
-    const res = createResponse(status, reason);
+    const res = createResponse(status, nginxReason(status));
     res.headers.set('Server', `nginx/${NGINX_VERSION}`);
     res.headers.set('Content-Type', 'text/html');
     this.applyHeaders(res, server, location);
