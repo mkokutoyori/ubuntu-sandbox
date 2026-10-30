@@ -62,7 +62,7 @@ test.describe('Scénario 12 (e2e) — objets de texte vim', () => {
   test('daw supprime un mot et l\'espace qui suit, écrit correctement sur disque', async ({ page }) => {
     await typeCmd(page, "printf 'foo bar baz\\n' > /tmp/text-obj-word.txt");
     await typeCmd(page, 'vim /tmp/text-obj-word.txt');
-    await expect(page.getByText('text-obj-word.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*text\-obj\-word\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await moveToCol(page, 5); // inside "bar"
     await page.keyboard.press('d');
@@ -79,7 +79,7 @@ test.describe('Scénario 12 (e2e) — objets de texte vim', () => {
   test('ci" remplace le contenu entre guillemets, sauvegardé fidèlement', async ({ page }) => {
     await typeCmd(page, "printf 'msg=\"old value\" end\\n' > /tmp/text-obj-quote.txt");
     await typeCmd(page, 'vim /tmp/text-obj-quote.txt');
-    await expect(page.getByText('text-obj-quote.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*text\-obj\-quote\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await moveToCol(page, 6); // inside "old value"
     await page.keyboard.press('c');
@@ -98,7 +98,7 @@ test.describe('Scénario 12 (e2e) — objets de texte vim', () => {
   test('di( supprime le contenu entre parenthèses (paire la plus interne, imbriquée)', async ({ page }) => {
     await typeCmd(page, "printf 'outer(inner(deep), sibling)\\n' > /tmp/text-obj-paren.txt");
     await typeCmd(page, 'vim /tmp/text-obj-paren.txt');
-    await expect(page.getByText('text-obj-paren.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*text\-obj\-paren\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await moveToCol(page, 13); // inside "deep"
     await page.keyboard.press('d');

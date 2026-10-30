@@ -58,7 +58,7 @@ test.describe('Scénario 13 (e2e) — auto-indentation vim', () => {
   test(':set autoindent fait hériter la nouvelle ligne (Entrée) de l\'indentation, écrite fidèlement sur disque', async ({ page }) => {
     await typeCmd(page, "printf '    indented\\n' > /tmp/ai-e2e.txt");
     await typeCmd(page, 'vim /tmp/ai-e2e.txt');
-    await expect(page.getByText('ai-e2e.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*ai\-e2e\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, 'set autoindent');
     await page.keyboard.press('A');
@@ -76,7 +76,7 @@ test.describe('Scénario 13 (e2e) — auto-indentation vim', () => {
   test('sans autoindent, Entrée ne recopie aucune indentation', async ({ page }) => {
     await typeCmd(page, "printf '    indented\\n' > /tmp/noai-e2e.txt");
     await typeCmd(page, 'vim /tmp/noai-e2e.txt');
-    await expect(page.getByText('noai-e2e.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*noai\-e2e\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('A');
     await page.keyboard.press('Enter');

@@ -62,7 +62,7 @@ test.describe('Scénario 5 (e2e) — macros et registres vim', () => {
       'host server3 status old',
     ]);
     await typeCmd(page, 'vim /tmp/macro.txt');
-    await expect(page.getByText('macro.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*macro\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('q'); await page.keyboard.press('a');
     await expect(page.getByText('recording @a')).toBeVisible();
@@ -90,7 +90,7 @@ test.describe('Scénario 5 (e2e) — macros et registres vim', () => {
   test('"ayy / "byy / "ap / "bp keep independent named registers', async ({ page }) => {
     await seedFile(page, '/tmp/registers.txt', ['line-a', 'line-b', 'line-c']);
     await typeCmd(page, 'vim /tmp/registers.txt');
-    await expect(page.getByText('registers.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*registers\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('"'); await page.keyboard.press('a'); await page.keyboard.press('y'); await page.keyboard.press('y');
     await page.keyboard.press('j');

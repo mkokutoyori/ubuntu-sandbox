@@ -802,7 +802,10 @@ export class VimEngine {
 
     if (this.awaitingMacroName) {
       this.awaitingMacroName = false;
-      if (/^[a-z]$/.test(key)) this.recordingMacro = { name: key, keys: [] };
+      if (/^[a-z]$/.test(key)) {
+        this.recordingMacro = { name: key, keys: [] };
+        this._message = '';
+      }
       return;
     }
     if (this.awaitingMacroPlayback) {
