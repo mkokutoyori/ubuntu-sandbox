@@ -221,7 +221,7 @@ test.describe('Windows — PS Test-NetConnection through the real UI', () => {
     await waitForText(page, /PingSucceeded\s*:\s*True/);
     const text = await modalText(page);
     expect(text).toMatch(/SourceAddress\s*:\s*192\.168\.1\.10/);
-    expect(text).toMatch(/InterfaceAlias\s*:\s*eth0/);
+    expect(text).toMatch(/InterfaceAlias\s*:\s*Ethernet/);
   });
 
   test('closed port: TcpTestSucceeded False', async ({ page }) => {

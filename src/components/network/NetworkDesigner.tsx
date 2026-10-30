@@ -172,10 +172,10 @@ export function NetworkDesigner() {
     });
   }, [deviceInstances]);
 
-  const handleOpenTerminal = useCallback((device: Equipment) => {
+  const handleOpenTerminal = useCallback((device: Equipment, line?: 'console' | 'vty') => {
     if (!device.getIsPoweredOn()) return;
 
-    const sessionId = manager.openTerminal(device);
+    const sessionId = manager.openTerminal(device, line);
     if (sessionId) {
       // Opening a terminal should surface it, even if the user was
       // peeking at the desktop.
@@ -332,6 +332,7 @@ export function NetworkDesigner() {
             session={session}
             onClose={() => handleCloseTerminal(sessionId)}
             onMinimize={() => handleMinimizeTerminal(sessionId)}
+            onNewVtyWindow={() => handleOpenTerminal(session.device, 'vty')}
             embedded
           />
         </div>

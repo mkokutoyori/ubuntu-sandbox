@@ -38,13 +38,9 @@ test.describe('Two concurrent terminals on the same Cisco switch do not share li
     // Open terminal A
     await deviceIcon.dblclick({ timeout: 8_000 });
     await page.waitForTimeout(800);
-    // Peek at the topology (terminal A stays open, just not on top) so the
-    // device icon becomes clickable again, then open terminal B — a second,
-    // independent terminal to the same switch. Opening B auto-clears the
-    // peek, so both end up tiled together, neither minimized.
-    await page.locator('button[title="Show topology (terminals stay open)"]').click();
-    await page.waitForTimeout(300);
-    await deviceIcon.dblclick({ timeout: 8_000 });
+    // A chassis has one console, so a second window is a virtual terminal
+    // line, opened from the first window's title bar.
+    await page.getByRole('button', { name: 'Open another window on a virtual terminal line' }).click();
     await page.waitForTimeout(800);
 
     const modals = page.locator('[data-testid="terminal-modal"]');
