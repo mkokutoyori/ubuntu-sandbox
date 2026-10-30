@@ -89,8 +89,8 @@ export class LinuxJournald {
   }
 
   private store(items: Uint8Array[], priority: number, target: WriteTarget): void {
-    const realtime = this.stamp !== null ? this.stamp.realtimeUsec : this.platform.nowUsec();
-    const monotonic = Math.max(0, realtime - this.platform.bootUsec());
+    const realtime = Math.floor(this.stamp !== null ? this.stamp.realtimeUsec : this.platform.nowUsec());
+    const monotonic = Math.max(0, realtime - Math.floor(this.platform.bootUsec()));
     const stored = target.stored ? this.storage.write(items, priority, target.uid, realtime, monotonic, this.bootId) : null;
     const record = stored ?? buildRecord(distinctPayloads(items), realtime, monotonic, this.unstoredSequence++, this.storage.seqnumId, this.bootId);
     for (const listener of [...this.listeners]) listener(record);
