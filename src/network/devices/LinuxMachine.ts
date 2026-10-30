@@ -4804,6 +4804,7 @@ export abstract class LinuxMachine extends EndHost
       icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
       fragmentOffset: ipPkt.fragmentOffset,
       ipPacketBytes: ipPkt.totalLength,
+      ttl: ipPkt.ttl,
       related: this.quotedTuple(ipPkt),
       ...this.tcpFacts(ipPkt.payload),
     };
@@ -4837,6 +4838,7 @@ export abstract class LinuxMachine extends EndHost
       icmpCode: transport?.type === 'icmpv6' ? transport.code : undefined,
       icmpId: transport?.type === 'icmpv6' ? transport.id : undefined,
       ipPacketBytes: ipv6PacketBytes(ipv6Pkt),
+      ttl: ipv6Pkt.hopLimit,
       related: this.quotedTuple6(ipv6Pkt),
       ...this.tcpFacts(ipv6Pkt.payload),
     };

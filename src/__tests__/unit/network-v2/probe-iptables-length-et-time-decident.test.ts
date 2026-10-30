@@ -9,6 +9,10 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { LinuxServer } from '@/network/devices/LinuxServer';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
+import { Cable } from '@/network/hardware/Cable';
+import { IPAddress, SubnetMask } from '@/network/core/types';
 import type { LinuxIptablesManager, PacketInfo } from '@/network/devices/linux/LinuxIptablesManager';
 
 interface Firewalled { executor: { iptables: LinuxIptablesManager } }
@@ -50,6 +54,47 @@ describe('-m length', () => {
   it('se liste comme length_print', async () => {
     expect(await listed('-m length --length 100:200 -j DROP')).toBe('length 100:200');
     expect(await listed('-m length ! --length 60 -j DROP')).toBe('length !60');
+  });
+});
+
+describe('-m ttl (libipt_ttl.c, ipt_ttl.c : eq, ne, lt, gt sur le TTL du paquet)', () => {
+  it('--ttl-eq, --ttl-gt et --ttl-lt', async () => {
+    expect(await verdict('-m ttl --ttl-eq 64 -j DROP', packet({ ttl: 64 }))).toBe('drop');
+    expect(await verdict('-m ttl --ttl-eq 64 -j DROP', packet({ ttl: 63 }))).toBe('accept');
+    expect(await verdict('-m ttl --ttl-gt 10 -j DROP', packet({ ttl: 11 }))).toBe('drop');
+    expect(await verdict('-m ttl --ttl-gt 10 -j DROP', packet({ ttl: 10 }))).toBe('accept');
+    expect(await verdict('-m ttl --ttl-lt 10 -j DROP', packet({ ttl: 9 }))).toBe('drop');
+    expect(await verdict('-m ttl --ttl-lt 10 -j DROP', packet({ ttl: 10 }))).toBe('accept');
+  });
+
+  it('« ! --ttl-eq » est « different de »', async () => {
+    expect(await verdict('-m ttl ! --ttl-eq 64 -j DROP', packet({ ttl: 63 }))).toBe('drop');
+    expect(await verdict('-m ttl ! --ttl-eq 64 -j DROP', packet({ ttl: 64 }))).toBe('accept');
+  });
+
+  it('sans le fait « ttl », la regle ne correspond pas (echec ferme)', async () => {
+    expect(await verdict('-m ttl --ttl-eq 64 -j DROP', packet())).toBe('accept');
+  });
+});
+
+describe('le TTL d\'un vrai paquet recu arrive a la regle', () => {
+  async function pingWith(rule: string): Promise<string> {
+    const srv = new LinuxServer('linux-server', 'SRV');
+    const cli = new LinuxServer('linux-server', 'CLI');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    srv.powerOn();
+    cli.powerOn();
+    new Cable('a').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+    srv.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await srv.executeCommand(`iptables -A INPUT ${rule}`);
+    return cli.executeCommand('ping -c 1 -W 1 10.0.0.2');
+  }
+
+  it('TTL 64 de l\'emetteur : la regle sur 64 jette l\'echo, celle sur 63 le laisse passer', async () => {
+    expect(await pingWith('-p icmp -m ttl --ttl-eq 64 -j DROP')).toContain('100% packet loss');
+    expect(await pingWith('-p icmp -m ttl --ttl-eq 63 -j DROP')).toContain('0% packet loss');
   });
 });
 

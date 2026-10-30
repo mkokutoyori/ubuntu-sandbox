@@ -53,6 +53,7 @@ export interface PacketInfo {
   tcpOptions?: readonly number[];
   fragmentOffset?: number;
   ipPacketBytes?: number;
+  ttl?: number;
   related?: ConnectionTuple;
 }
 
@@ -122,6 +123,7 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
   length: ['--length'],
+  ttl: ['--ttl-eq', '--ttl-gt', '--ttl-lt'],
   time: ['--timestart', '--timestop', '--weekdays', '--monthdays', '--datestart', '--datestop', '--utc', '--kerneltz'],
   recent: ['--name', '--set', '--rcheck', '--update', '--remove', '--seconds', '--hitcount', '--rsource', '--rdest', '--mask', '--reap'],
 };
@@ -863,6 +865,13 @@ export class LinuxIptablesManager {
       if (m.module === 'recent') {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
+      }
+      if (m.module === 'ttl') {
+        if (pkt.ttl === undefined) return false;
+        const wanted = Number(m.options.get('--ttl-eq') ?? m.options.get('--ttl-gt') ?? m.options.get('--ttl-lt'));
+        const holds = m.options.has('--ttl-eq') ? pkt.ttl === wanted
+          : m.options.has('--ttl-gt') ? pkt.ttl > wanted : pkt.ttl < wanted;
+        if (holds === inverted('--ttl-eq')) return false;
       }
       if (m.module === 'length') {
         const range = parseLengthRange(m.options.get('--length') ?? '');
