@@ -1180,3 +1180,13 @@ du server.
 `nginx-try-files-error-page.test.ts` (44 cas) : **34 tombent par `git stash`**.
 Les 10 qui passent des deux cotes sont des temoins ou des refus (GET/HEAD
 d'un fichier, configuration valide, code non liste).
+
+### 9.16 Charge, mémoire et dérive : ce qui a été mesuré et ce qui a changé
+
+Bancs : `src/__tests__/perf/nginx-load.perf.test.ts` (`NGINX_PERF=1`) et `firewall-listing.perf.test.ts` (`FIREWALL_PERF=1`), lancés à la main parce qu'ils durent des dizaines de secondes.
+
+- **Table des sockets TCP** : le parcours linéaire par connexion est remplacé par des index (`socketsByLocalPort`, tableaux triés, index de connexions de `SocketTable`). `ensureIndexes()` resynchronise quand la table est modifiée par-derrière (`scenario-11` vide `sockets` directement). Dérive du coût par requête : 2,19 avant, 0,84 après (1 = plat).
+- **Mémoire** : l'état TCP retenu est borné par les minuteries TIME_WAIT, pas une fuite. La croissance qui restait venait du journal (trois sources de lignes en double) ; elle a disparu avec les correctifs `journalctl -f`. La mesure utilise `gc` exposé dans le worker (`v8.setFlagsFromString('--expose-gc')`), sans quoi les chiffres de « mémoire retenue » étaient faux.
+- **Journal** : horodatages arrondis à la microseconde entière dans `LinuxJournald.store`, sinon le curseur `--after-cursor` ne retrouve pas son propre enregistrement et `-f` rejoue des lignes.
+- **`tree -a` et `lsof`** : `tree` ne descend plus dans `.` et `..` (dépassement de pile) ; `lsof` passe par l'API de table.
+- **Listages du pare-feu** (2000 règles pour `iptables -L INPUT -vn`, 300 pour `ufw status numbered`) : 16 ms et 4 ms par appel, rapport de dérive 0,89 et 0,75, mémoire retenue après 200 appels 0,03 Mo. Aucune optimisation justifiée : le rendu est linéaire en nombre de règles et ne garde rien.
