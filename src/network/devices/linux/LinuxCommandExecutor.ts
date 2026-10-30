@@ -61,7 +61,15 @@ import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
 import { type ShellContext, cmdTouch, cmdLs, cmdCat, renderCat, parseCatFlags, cmdEcho, cmdCp, cpOperands, cmdInstall, installOperands, cmdMv, cmdRm, cmdMkdir, mkdirOperands, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
-import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, awkOptionError, cmdSed } from './LinuxTextCommands';
+import { cmdGrep, cmdAwk, awkOptionError, cmdSed } from './LinuxTextCommands';
+import { runHead } from './coreutils/HeadCommand';
+import { runWc } from './coreutils/WcCommand';
+import { runCut } from './coreutils/CutCommand';
+import { runTr } from './coreutils/TrCommand';
+import { runUniq } from './coreutils/UniqCommand';
+import { runSort } from './coreutils/SortCommand';
+import { asDispatch } from './coreutils/CoreutilsKit';
+import { coreutilsIO } from './coreutils/CoreutilsFiles';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
@@ -457,7 +465,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cut', 'uniq', 'sort', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -6149,23 +6157,28 @@ export class LinuxCommandExecutor {
       case 'egrep': return cmdGrep(c, args, stdin, 'egrep');
       case 'fgrep': return cmdGrep(c, args, stdin, 'fgrep');
       case 'rgrep': return cmdGrep(c, ['-r', ...args], stdin);
-      case 'head': return { output: cmdHead(c, args, stdin), exitCode: 0 };
+      case 'head': return asDispatch(runHead(args, coreutilsIO(c, stdin)));
       case 'tail': {
         const r = runTail(this.tailFs(), this.cwd, args, stdin);
-        if (r.kind === 'snapshot') return { output: r.output, exitCode: r.exitCode };
+        if (r.kind === 'snapshot') return asDispatch({ stdout: r.output, stderr: r.stderr ?? '', interleaved: r.interleaved ?? '', exitCode: r.exitCode });
         // Follow mode reached the dispatcher (no interactive sink available):
         // emit the snapshot and exit 0 so non-streaming callers degrade
         // gracefully. Interactive callers should use `startTailFollow()`.
-        return { output: r.preflight().output, exitCode: 0 };
+        const preflight = r.preflight();
+        const missing = r.options.files.length > 0 && preflight.exitCode !== 0 && r.options.follow !== 'name'
+          && r.options.files.every((name) => this.vfs.readFile(this.vfs.normalizePath(name, this.cwd)) === null);
+        if (missing) {
+          const note = 'tail: no files remaining\n';
+          const diagnostics = (preflight.stderr ?? '') + note;
+          return asDispatch({ stdout: preflight.output, stderr: diagnostics, interleaved: diagnostics, exitCode: 1 });
+        }
+        return asDispatch({ stdout: preflight.output, stderr: preflight.stderr ?? '', interleaved: preflight.interleaved ?? '', exitCode: preflight.exitCode });
       }
-      case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
-      case 'sort': {
-        const sorted = cmdSort(c, args, stdin);
-        return sorted.startsWith('sort: cannot read: ') ? { output: '', stderr: `${sorted}\n`, exitCode: 2 } : { output: sorted, exitCode: 0 };
-      }
-      case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
-      case 'uniq': return { output: cmdUniq(c, args, stdin), exitCode: 0 };
-      case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
+      case 'wc': return asDispatch(runWc(args, coreutilsIO(c, stdin)));
+      case 'sort': return asDispatch(runSort(args, coreutilsIO(c, stdin)));
+      case 'cut': return asDispatch(runCut(args, coreutilsIO(c, stdin)));
+      case 'uniq': return asDispatch(runUniq(args, coreutilsIO(c, stdin)));
+      case 'tr': return asDispatch(runTr(args, coreutilsIO(c, stdin)));
       case 'awk': {
         const awkError = awkOptionError(args);
         if (awkError !== null) return { output: '', stderr: `${awkError}\n`, exitCode: 2 };
@@ -8404,6 +8417,7 @@ export class LinuxCommandExecutor {
       readFile: (p) => this.vfs.readFile(p),
       exists: (p) => this.vfs.exists(p),
       normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+      isDirectory: (p) => this.vfs.getType(p) === 'directory',
       onWrite: (p, listener) => this.vfs.onWrite(p, listener),
     };
   }

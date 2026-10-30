@@ -315,55 +315,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  head: {
-    optstring: 'c:n:qvz0123456789',
-    long: [
-      valued('bytes', 'c'), valued('lines', 'n'), flag('quiet', 'q'), flag('silent', 'q'),
-      flag('verbose', 'v'), flag('zero-terminated', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  sort: {
-    optstring: 'bcCdfghiMnrRsuVzmk:t:o:S:T:',
-    long: [
-      flag('ignore-leading-blanks', 'b'), optional('check', 'c'), flag('check-silent', 'C'),
-      flag('dictionary-order', 'd'), flag('ignore-case', 'f'), flag('general-numeric-sort', 'g'),
-      flag('human-numeric-sort', 'h'), flag('ignore-nonprinting', 'i'), flag('month-sort', 'M'),
-      flag('numeric-sort', 'n'), optional('random-sort', 'R'), flag('reverse', 'r'), flag('stable', 's'),
-      flag('unique', 'u'), flag('version-sort', 'V'), flag('zero-terminated', 'z'), flag('merge', 'm'),
-      flag('debug'), valued('batch-size'), valued('buffer-size', 'S'), valued('compress-program'),
-      valued('files0-from'), valued('key', 'k'), valued('field-separator', 't'), valued('output', 'o'),
-      valued('parallel'), valued('random-source'), valued('temporary-directory', 'T'), valued('sort'),
-      ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  uniq: {
-    optstring: 'cdDf:iuzs:w:',
-    long: [
-      flag('count', 'c'), flag('repeated', 'd'), optional('all-repeated', 'D'), valued('skip-fields', 'f'),
-      optional('group'), flag('ignore-case', 'i'), valued('skip-chars', 's'), flag('unique', 'u'),
-      flag('zero-terminated', 'z'), valued('check-chars', 'w'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  cut: {
-    optstring: 'b:c:d:f:nsz',
-    long: [
-      valued('bytes', 'b'), valued('characters', 'c'), valued('delimiter', 'd'), valued('fields', 'f'),
-      flag('complement'), flag('only-delimited', 's'), valued('output-delimiter'),
-      flag('zero-terminated', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  tr: {
-    optstring: 'cCdst',
-    long: [
-      flag('complement', 'c'), flag('delete', 'd'), flag('squeeze-repeats', 's'),
-      flag('truncate-set1', 't'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
   date: {
     optstring: 'd:f:I::r:Rs:uV',
     long: [
@@ -396,14 +347,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     long: [
       flag('show-all', 'A'), flag('number-nonblank', 'b'), flag('show-ends', 'E'), flag('number', 'n'),
       flag('squeeze-blank', 's'), flag('show-tabs', 'T'), flag('show-nonprinting', 'v'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  wc: {
-    optstring: 'cmlLw',
-    long: [
-      flag('bytes', 'c'), flag('chars', 'm'), flag('lines', 'l'), valued('files0-from'),
-      flag('max-line-length', 'L'), flag('words', 'w'), valued('total'), ...HELP_VERSION,
     ],
     operands: true,
   },

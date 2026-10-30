@@ -9,6 +9,24 @@ const SIMPLE: Readonly<Record<string, string>> = {
   a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v', '\\': '\\',
 };
 
+const BYTE_MARKER_BASE = 0xf700;
+
+function byteCharacter(value: number): string {
+  return value < 0x80 ? String.fromCharCode(value) : String.fromCharCode(BYTE_MARKER_BASE + value);
+}
+
+function resolveBytes(text: string): string {
+  if (!/[\uf780-\uf7ff]/.test(text)) return text;
+  return text.replace(/[\uf780-\uf7ff]+/g, (run) => {
+    const bytes = Uint8Array.from([...run].map((character) => character.charCodeAt(0) - BYTE_MARKER_BASE));
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      return [...bytes].map((byte) => String.fromCharCode(byte)).join('');
+    }
+  });
+}
+
 function controlCharacter(character: string): string {
   if (character === '?') return '\x7f';
   return String.fromCharCode(character.toUpperCase().charCodeAt(0) & 0x1f);
@@ -47,12 +65,12 @@ export function decodeBackslashEscapes(source: string, dialect: EscapeDialect): 
         index++;
         continue;
       }
-      if (dialect !== 'ansi-c') return { text, stopped: true };
+      if (dialect !== 'ansi-c') return { text: resolveBytes(text), stopped: true };
     }
     if (code === 'x') {
       const digits = takeDigits(source, index, 2, /[0-9a-fA-F]/);
       if (digits !== '') {
-        text += String.fromCharCode(parseInt(digits, 16));
+        text += byteCharacter(parseInt(digits, 16));
         index += digits.length;
         continue;
       }
@@ -67,17 +85,17 @@ export function decodeBackslashEscapes(source: string, dialect: EscapeDialect): 
     }
     if (/[0-7]/.test(code) && !(code === '0' && (dialect === 'echo' || dialect === 'printf-b'))) {
       const digits = code + takeDigits(source, index, 2, /[0-7]/);
-      text += String.fromCharCode(parseInt(digits, 8) & 0xff);
+      text += byteCharacter(parseInt(digits, 8) & 0xff);
       index += digits.length - 1;
       continue;
     }
     if (code === '0') {
       const digits = takeDigits(source, index, 3, /[0-7]/);
-      text += String.fromCharCode(parseInt(digits === '' ? '0' : digits, 8) & 0xff);
+      text += byteCharacter(parseInt(digits === '' ? '0' : digits, 8) & 0xff);
       index += digits.length;
       continue;
     }
     text += `\\${code}`;
   }
-  return { text, stopped: false };
+  return { text: resolveBytes(text), stopped: false };
 }

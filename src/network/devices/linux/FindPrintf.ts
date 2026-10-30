@@ -150,7 +150,6 @@ function fieldText(part: Extract<Part, { kind: 'field' }>, subject: PrintfSubjec
   const { ctx } = env;
   const inode = subject.inode;
   const display = subject.display;
-  const slash = display.lastIndexOf('/');
   const startPrefix = subject.start.replace(/\/+$/, '');
   switch (part.directive) {
     case 'p': return display;

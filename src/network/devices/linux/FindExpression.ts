@@ -153,7 +153,9 @@ const SIZE_UNITS: Readonly<Record<string, number>> = { b: 512, c: 1, w: 2, k: 10
 function parseSizeSpec(raw: string): { op: '+' | '-' | '='; count: number; unit: number } {
   if (raw === '') throw new FindSyntaxError('find: invalid null argument to -size');
   const match = /^([+-]?)(\d*)(.*)$/s.exec(raw) as RegExpExecArray;
-  let [, sign, digits, rest] = match;
+  const [, signText, digits, restText] = match;
+  let sign = signText;
+  let rest = restText;
   if (digits === '') { rest = raw; sign = ''; }
   let unitLetter = 'b';
   if (rest !== '') {
