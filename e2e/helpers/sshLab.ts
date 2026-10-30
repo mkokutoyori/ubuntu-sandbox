@@ -82,6 +82,8 @@ export async function buildSshLab(page: Page): Promise<SshLab> {
     await exec(hwR1, 'quit');
     await exec(hwR1, 'rsa local-key-pair create');
     await exec(hwR1, 'stelnet server enable');
+    await exec(hwR1, 'ssh server key-exchange dh_group14_sha1');
+    await exec(hwR1, 'ssh server publickey rsa');
     await exec(hwR1, 'user-interface vty 0 4');
     await exec(hwR1, 'authentication-mode aaa');
     await exec(hwR1, 'protocol inbound ssh');
