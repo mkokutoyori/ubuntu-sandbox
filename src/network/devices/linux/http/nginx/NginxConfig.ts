@@ -22,6 +22,10 @@ import {
   NGINX_CONDITIONAL_DIRECTIVES, DEFAULT_CONDITIONAL_SETTINGS, checkConditionalDirective, resolveConditionalSettings,
   type NginxConditionalSettings,
 } from './NginxConditional';
+import {
+  NGINX_COOKIE_DIRECTIVES, DEFAULT_COOKIE_SETTINGS, checkCookieDirective, resolveCookieSettings,
+  type NginxCookieSettings,
+} from './NginxCookie';
 
 export interface NginxToken {
   readonly value: string;
@@ -64,7 +68,7 @@ const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'lea
 
 
 const APPLIED_DIRECTIVES = new Set([
-  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES, ...NGINX_MIME_DIRECTIVES, ...NGINX_CONDITIONAL_DIRECTIVES,
+  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES, ...NGINX_MIME_DIRECTIVES, ...NGINX_CONDITIONAL_DIRECTIVES, ...NGINX_COOKIE_DIRECTIVES,
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
   'add_header',
@@ -339,6 +343,11 @@ function parseBlock(
       if (problem) return { ok: false, error: emerg(problem, file, line) };
     }
 
+    if (NGINX_COOKIE_DIRECTIVES.has(name)) {
+      const problem = checkCookieDirective(name, args, out, parent);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+
     if (NGINX_CONDITIONAL_DIRECTIVES.has(name)) {
       const problem = checkConditionalDirective(name, args, out.some((d) => d.name === name), parent);
       if (problem) return { ok: false, error: emerg(problem, file, line) };
@@ -575,6 +584,7 @@ export interface NginxLocation {
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
   readonly conditional: NginxConditionalSettings;
+  readonly cookies: NginxCookieSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
   readonly tryFiles?: NginxTryFiles;
@@ -597,6 +607,7 @@ export interface NginxServerBlock {
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
   readonly conditional: NginxConditionalSettings;
+  readonly cookies: NginxCookieSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
   readonly tryFiles?: NginxTryFiles;
@@ -703,6 +714,7 @@ export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream
 interface InheritedSettings {
   readonly gzip: NginxGzipSettings;
   readonly conditional: NginxConditionalSettings;
+  readonly cookies: NginxCookieSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
   readonly tryFiles: NginxTryFiles | undefined;
@@ -712,6 +724,7 @@ interface InheritedSettings {
 const DEFAULT_INHERITED: InheritedSettings = Object.freeze({
   gzip: DEFAULT_GZIP_SETTINGS,
   conditional: DEFAULT_CONDITIONAL_SETTINGS,
+  cookies: DEFAULT_COOKIE_SETTINGS,
   redirect: DEFAULT_REDIRECT_SETTINGS,
   contentTypes: DEFAULT_CONTENT_TYPES,
   tryFiles: undefined,
@@ -721,14 +734,15 @@ const DEFAULT_INHERITED: InheritedSettings = Object.freeze({
 function resolveInherited(parent: InheritedSettings, block: readonly NginxDirective[]): InheritedSettings {
   const gzip = resolveGzipSettings(parent.gzip, block.filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
   const conditional = resolveConditionalSettings(parent.conditional, block.filter((d) => NGINX_CONDITIONAL_DIRECTIVES.has(d.name)));
+  const cookies = resolveCookieSettings(parent.cookies, block.filter((d) => NGINX_COOKIE_DIRECTIVES.has(d.name)));
   const redirect = resolveRedirectSettings(parent.redirect, block.filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)));
   const contentTypes = resolveContentTypes(parent.contentTypes, block.filter((d) => NGINX_MIME_DIRECTIVES.has(d.name)));
   const tryFiles = resolveTryFiles(parent.tryFiles, block);
   const errorPages = resolveErrorPages(parent.errorPages, block);
-  return gzip === parent.gzip && conditional === parent.conditional && redirect === parent.redirect && contentTypes === parent.contentTypes
+  return gzip === parent.gzip && conditional === parent.conditional && cookies === parent.cookies && redirect === parent.redirect && contentTypes === parent.contentTypes
     && tryFiles === parent.tryFiles && errorPages === parent.errorPages
     ? parent
-    : { gzip, conditional, redirect, contentTypes, tryFiles, errorPages };
+    : { gzip, conditional, cookies, redirect, contentTypes, tryFiles, errorPages };
 }
 
 function firstReturn(block: readonly NginxDirective[]): NginxReturnRule | undefined {
@@ -749,6 +763,7 @@ function collectLocation(
     proxySetHeaders: (readonly [string, string])[];
     gzip: NginxGzipSettings;
     conditional: NginxConditionalSettings;
+    cookies: NginxCookieSettings;
     redirect: NginxRedirectSettings;
     contentTypes: NginxContentTypes;
     tryFiles: NginxTryFiles | undefined;

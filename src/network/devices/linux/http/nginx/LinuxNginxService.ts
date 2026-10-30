@@ -27,6 +27,7 @@ import { clientCertificateVerdict } from './NginxSsl';
 import { applyGzipFilter } from './NginxGzip';
 import { evaluateConditional, fileValidators, httpDate } from './NginxConditional';
 import { applyRangeFilter } from './NginxRange';
+import { rewriteSetCookie } from './NginxCookie';
 import { nginxReason, errorPage } from './NginxStatus';
 import { contentTypeFor } from './NginxMime';
 import type { NginxReturnRule } from './NginxReturn';
@@ -692,6 +693,13 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return { response: refused, location: outcome.location };
   }
 
+  private rewriteUpstreamCookies(res: HttpMessage, location: NginxLocation, variables: NginxVariableContext): void {
+    const cookies = res.headers.getAll('Set-Cookie');
+    if (cookies.length === 0 || (location.cookies.domains === null && location.cookies.paths === null)) return;
+    res.headers.delete('Set-Cookie');
+    for (const cookie of cookies) res.headers.append('Set-Cookie', rewriteSetCookie(cookie, location.cookies, variables));
+  }
+
   private conditional(
     res: HttpMessage, req: HttpMessage, fsPath: string, server: NginxServerBlock, location: NginxLocation | null,
   ): HttpMessage {
@@ -849,6 +857,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     const res = sent.response;
     for (const hop of HOP_BY_HOP) res.headers.delete(hop);
     this.rewriteUpstreamRedirects(res, server, location, pass, req, port, peer, target502);
+    this.rewriteUpstreamCookies(res, location, this.variablesFor(server, req, port, peer, target502));
     res.headers.set('Server', `nginx/${NGINX_VERSION}`);
     this.applyHeaders(res, server, location);
     return res;
