@@ -16,6 +16,9 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import {
+  lengthListing, parseLengthRange, parseTimeWindow, timeWindowHolds, timeWindowListing,
+} from './IptablesTimeLength';
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import {
@@ -58,7 +61,7 @@ export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
   'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
-  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time',
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
@@ -91,6 +94,10 @@ const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOpti
   },
   pkttype: { '--pkt-type': 'IM' },
   length: { '--length': 'IM' },
+  time: {
+    '--timestart': '', '--timestop': '', '--weekdays': 'I', '--monthdays': 'I', '--datestart': '', '--datestop': '',
+    '--utc': 'F', '--kerneltz': 'F',
+  },
   ttl: { '--ttl-eq': 'I', '--ttl-gt': '', '--ttl-lt': '' },
   hashlimit: {
     '--hashlimit-upto': 'I', '--hashlimit-above': 'I', '--hashlimit-burst': '', '--hashlimit-mode': '', '--hashlimit-srcmask': '',
@@ -114,6 +121,8 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   mac: ['--mac-source'],
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
+  length: ['--length'],
+  time: ['--timestart', '--timestop', '--weekdays', '--monthdays', '--datestart', '--datestop', '--utc', '--kerneltz'],
   recent: ['--name', '--set', '--rcheck', '--update', '--remove', '--seconds', '--hitcount', '--rsource', '--rdest', '--mask', '--reap'],
 };
 
@@ -855,6 +864,16 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
+      if (m.module === 'length') {
+        const range = parseLengthRange(m.options.get('--length') ?? '');
+        if (typeof range === 'string' || pkt.ipPacketBytes === undefined) return false;
+        const inside = pkt.ipPacketBytes >= range.min && pkt.ipPacketBytes <= range.max;
+        if (inside === inverted('--length')) return false;
+      }
+      if (m.module === 'time') {
+        const window = parseTimeWindow(m.options, m.negated ?? new Set());
+        if (typeof window === 'string' || !timeWindowHolds(window, simulationNowMs())) return false;
+      }
       if (m.module === 'state' || m.module === 'conntrack') {
         const option = m.module === 'state' ? '--state' : '--ctstate';
         const wanted = (m.options.get(option) ?? '').toUpperCase();
@@ -1333,6 +1352,14 @@ export class LinuxIptablesManager {
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
       case 'owner': return this.ownerListing(m, numeric);
+      case 'length': {
+        const range = parseLengthRange(o.get('--length') ?? '');
+        return typeof range === 'string' ? '' : lengthListing(range, inverts(m, '--length'));
+      }
+      case 'time': {
+        const window = parseTimeWindow(o, m.negated ?? new Set());
+        return typeof window === 'string' ? '' : timeWindowListing(window);
+      }
       case 'ttl': {
         const modes: Array<[string, string]> = [['--ttl-eq', '=='], ['--ttl-gt', '>'], ['--ttl-lt', '<']];
         const [option, sign] = modes.find(([name]) => o.has(name)) ?? ['--ttl-eq', '=='];
@@ -1939,9 +1966,17 @@ export class LinuxIptablesManager {
       : 'multiport only works with TCP, UDP, UDPLITE, SCTP and DCCP');
   }
 
-  private static moduleProblem(module: string, options: ReadonlyMap<string, string>): string | null {
+  private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'time') {
+      const window = parseTimeWindow(options, negated);
+      if (typeof window === 'string') return window;
+    }
+    if (module === 'length') {
+      const range = parseLengthRange(options.get('--length') ?? '');
+      if (typeof range === 'string') return range;
     }
     if (module === 'string' && !options.has('--string') && !options.has('--hex-string')) {
       return "STRING match: You must specify `--string' or `--hex-string'";
@@ -2168,7 +2203,7 @@ export class LinuxIptablesManager {
           }
           const missing = Object.entries(accepted).find(([name, flags]) => flags.includes('M') && !options.has(name));
           if (missing !== undefined) return this.parameterProblem(`${module}: option "${missing[0]}" must be specified\n`);
-          const incomplete = LinuxIptablesManager.moduleProblem(module, options);
+          const incomplete = LinuxIptablesManager.moduleProblem(module, options, negated);
           if (incomplete !== null) return this.parameterProblem(incomplete);
           rule.matches.push({ module, options, negated });
           continue;
