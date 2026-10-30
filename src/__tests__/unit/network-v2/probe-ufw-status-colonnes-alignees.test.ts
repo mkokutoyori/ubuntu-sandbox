@@ -115,3 +115,10 @@ describe('groupes entrant, sortant, routage', () => {
     expect(out[blank + 1]).toBe(row('Anywhere', 'ALLOW OUT', 'Anywhere on eth0'));
   });
 });
+
+describe('commentaire de regle', () => {
+  it('s\'ecrit apres la colonne From, « # texte » (get_status : comment_str)', async () => {
+    await srv.executeCommand('ufw allow from 10.0.0.1 to any port 22 proto tcp comment ssh-admin');
+    expect((await status())[4]).toBe(`${row('22/tcp', 'ALLOW', '10.0.0.1')} # ssh-admin`);
+  });
+});

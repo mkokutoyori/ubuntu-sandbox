@@ -131,6 +131,7 @@ interface StatusRow {
   readonly to: string;
   readonly action: string;
   readonly from: string;
+  readonly comment: string;
 }
 
 interface UfwRule {
@@ -742,6 +743,7 @@ export class LinuxFirewallManager {
         to: `${destPart}${v6Tag}${toInterface ? ` on ${toInterface}` : ''}`,
         action: showDirection ? `${rule.action} ${directionWord}` : rule.action,
         from: `${rule.from}${v6Tag}${fromInterface ? ` on ${fromInterface}` : ''}`,
+        comment: rule.comment ? ` # ${rule.comment}` : '',
       };
     };
     const rows = orderedRules.map(toRow);
@@ -752,6 +754,7 @@ export class LinuxFirewallManager {
       { header: 'To', width: 27, value: (row) => row.to },
       { header: 'Action', width: 12, value: (row) => row.action },
       { header: 'From', width: 26, value: (row) => row.from },
+      { header: '', width: 0, value: (row) => row.comment },
     ];
     const table = renderTable(rows, columns, UFW_STATUS_TABLE);
     lines.push('', table[0].trimEnd(), table[1].trimEnd());
