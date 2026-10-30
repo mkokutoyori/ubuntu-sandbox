@@ -1303,6 +1303,30 @@ export class LinuxIptablesManager {
         const [option, label] = listed;
         return `multiport ${label} ${inverts(m, option) ? ' !' : ''}${o.get(option)}`;
       }
+      case 'owner': return this.ownerListing(m);
+      case 'ttl': {
+        const modes: Array<[string, string]> = [['--ttl-eq', '=='], ['--ttl-gt', '>'], ['--ttl-lt', '<']];
+        const [option, sign] = modes.find(([name]) => o.has(name)) ?? ['--ttl-eq', '=='];
+        return `TTL match TTL ${inverts(m, option) ? '!=' : sign} ${o.get(option) ?? ''}`;
+      }
+      case 'mark': {
+        const [mark, mask] = (o.get('--mark') ?? '0').split('/');
+        const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
+        return `mark match${inverts(m, '--mark') ? ' !' : ''} ${hex(mark)}${mask === undefined ? '' : `/${hex(mask)}`}`;
+      }
+      case 'pkttype': return `PKTTYPE ${inverts(m, '--pkt-type') ? '!' : ''}= ${o.get('--pkt-type') ?? ''}`;
+      case 'iprange': {
+        const ranges: string[] = [];
+        if (o.has('--src-range')) ranges.push(`source IP range${inverts(m, '--src-range') ? ' !' : ''} ${o.get('--src-range')}`);
+        if (o.has('--dst-range')) ranges.push(`destination IP range${inverts(m, '--dst-range') ? ' !' : ''} ${o.get('--dst-range')}`);
+        return ranges.join(' ');
+      }
+      case 'addrtype': {
+        const types: string[] = ['ADDRTYPE match'];
+        if (o.has('--src-type')) types.push(`src-type ${inverts(m, '--src-type') ? '!' : ''}${o.get('--src-type')}`);
+        if (o.has('--dst-type')) types.push(`dst-type ${inverts(m, '--dst-type') ? '!' : ''}${o.get('--dst-type')}`);
+        return types.join(' ');
+      }
       case 'comment':   return `/* ${o.get('--comment') ?? ''} */`;
       case 'limit':     return `limit: avg ${o.get('--limit') ?? ''} burst ${o.get('--limit-burst') ?? '5'}`;
       case 'mac':       return o.get('--mac-source') ? `MAC ${inverts(m, '--mac-source') ? '!' : ''}${o.get('--mac-source')}` : '';
@@ -1312,6 +1336,20 @@ export class LinuxIptablesManager {
         return parts.join(' ');
       }
     }
+  }
+
+  private ownerListing(m: MatchExtension): string {
+    const items: Array<[string, string]> = [
+      ['--socket-exists', 'owner socket exists'], ['--uid-owner', 'owner UID match'],
+      ['--gid-owner', 'owner GID match'], ['--suppl-groups', 'incl. suppl. groups'],
+    ];
+    const out: string[] = [];
+    for (const [option, label] of items) {
+      if (!m.options.has(option)) continue;
+      const value = m.options.get(option) ?? '';
+      out.push(`${inverts(m, option) ? '! ' : ''}${label}${value === '' ? '' : ` ${value}`}`);
+    }
+    return out.join(' ');
   }
 
   private fmtTargetExtras(opts: TargetOptions): string {

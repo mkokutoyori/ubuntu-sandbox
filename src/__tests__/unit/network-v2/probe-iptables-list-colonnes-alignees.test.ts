@@ -119,3 +119,33 @@ describe('la cible MARK (libxt_MARK.c, mark_tg_print : toujours en hexadecimal)'
     expect(await listed(option)).toMatch(new RegExp(`${text.replace(/[/]/g, '\\/')}$`));
   });
 });
+
+describe('les correspondances qui se listent avec leur propre libelle (extensions/*.c, fonctions *_print)', () => {
+  const extras = async (rule: string): Promise<string> => {
+    await srv.executeCommand(`iptables -A INPUT ${rule} -j ACCEPT`);
+    return (await srv.executeCommand('iptables -L INPUT -n')).split('\n')[2].slice(60).trim();
+  };
+
+  it.each([
+    ['-m owner --uid-owner 1000', 'owner UID match 1000'],
+    ['-m owner ! --gid-owner 5', '! owner GID match 5'],
+    ['-m owner --uid-owner 1000-2000', 'owner UID match 1000-2000'],
+    ['-m ttl --ttl-eq 64', 'TTL match TTL == 64'],
+    ['-m ttl --ttl-gt 10', 'TTL match TTL > 10'],
+    ['-m mark --mark 0x1', 'mark match 0x1'],
+    ['-m mark --mark 0x1/0xff', 'mark match 0x1/0xff'],
+    ['-m mark ! --mark 3', 'mark match ! 0x3'],
+    ['-m pkttype --pkt-type broadcast', 'PKTTYPE = broadcast'],
+    ['-m pkttype ! --pkt-type multicast', 'PKTTYPE != multicast'],
+    ['-m iprange --src-range 10.0.0.1-10.0.0.9', 'source IP range 10.0.0.1-10.0.0.9'],
+    ['-m iprange --dst-range 10.0.0.1-10.0.0.9', 'destination IP range 10.0.0.1-10.0.0.9'],
+    ['-m addrtype --dst-type LOCAL', 'ADDRTYPE match dst-type LOCAL'],
+    ['-m addrtype ! --src-type BROADCAST', 'ADDRTYPE match src-type !BROADCAST'],
+  ])('%s est ecrit « %s »', async (rule, text) => {
+    expect(await extras(rule)).toBe(text);
+  });
+
+  it('TEMOIN : conntrack et state gardent leur libelle', async () => {
+    expect(await extras('-m conntrack --ctstate NEW')).toBe('ctstate NEW');
+  });
+});
