@@ -168,6 +168,32 @@ describe('hash:net et hash:ip,port', () => {
   });
 });
 
+describe('bitmap:ip (lib/ipset_bitmap_ip.c, tests/bitmap:ip.t et sa liste)', () => {
+  it('une plage trop grande est refusee, une plage valide se cree et se liste', async () => {
+    expect(await run('ipset create test bitmap:ip range 2.0.0.1-2.1.0.1 timeout 5'))
+      .toBe('ipset v7.15: The range you specified exceeds the size limit of the set type');
+    expect(await run('ipset create test bitmap:ip range 2.0.0.1-2.1.0.0 timeout 5')).toBe('');
+    const lines = (await run('ipset list test')).split('\n');
+    expect(lines.slice(0, 4)).toEqual(['Name: test', 'Type: bitmap:ip', 'Revision: 3', 'Header: range 2.0.0.1-2.1.0.0 timeout 5']);
+  });
+
+  it('les bornes sont dans l\'ensemble, le reste hors plage est refuse a l\'ajout et absent au test', async () => {
+    await run('ipset create test bitmap:ip range 2.0.0.1-2.1.0.0 timeout 5');
+    expect(await run('ipset add test 2.0.0.1 timeout 4')).toBe('');
+    expect(await run('ipset add test 2.1.0.0 timeout 0')).toBe('');
+    expect(await run('ipset test test 2.1.0.0')).toContain('is in set');
+    expect(await run('ipset test test 2.0.0.2')).toContain('NOT in set');
+    expect(await run('ipset test test 2.0.0.0')).toContain('NOT in set');
+    expect(await run('ipset add test 2.0.0.0')).toBe('ipset v7.15: Element is out of the range of the set');
+  });
+
+  it('un CIDR donne la plage, save l\'ecrit sans famille', async () => {
+    await run('ipset create net bitmap:ip range 192.168.0.0/24');
+    expect((await run('ipset list net')).split('\n')[3]).toBe('Header: range 192.168.0.0-192.168.0.255');
+    expect(await run('ipset save net')).toBe('create net bitmap:ip range 192.168.0.0-192.168.0.255');
+  });
+});
+
 describe('list -o xml (lib/session.c, mode IPSET_LIST_XML)', () => {
   it('ecrit l\'arbre de session.c : header, memsize, references, numentries, members', async () => {
     await run('ipset create x hash:ip timeout 10');
