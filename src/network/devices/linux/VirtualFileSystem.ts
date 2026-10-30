@@ -19,6 +19,25 @@ import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from
 
 export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket';
 
+const FIND_TYPES = ['f', 'd', 'l', 'p', 's', 'c', 'b'] as const;
+
+export type FindType = typeof FIND_TYPES[number];
+
+export type FindVisit = void | 'prune' | 'stop';
+
+export interface FindWalkOptions {
+  maxdepth?: number;
+  device?: number;
+  deviceOf?: (absPath: string) => number;
+  postOrder?: boolean;
+  follow?: 'none' | 'args' | 'all';
+  onError?: (message: string) => void;
+}
+
+export function isFindType(text: string): text is FindType {
+  return (FIND_TYPES as readonly string[]).includes(text);
+}
+
 export interface RemoteMountStat {
   readonly type: FileType;
   readonly permissions: number;
@@ -45,7 +64,7 @@ export interface RemoteMountPort {
 }
 
 export type FindTimeTest =
-  | { readonly kind: 'age'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly unit: 'day' | 'min'; readonly op: '+' | '-' | '='; readonly n: number }
+  | { readonly kind: 'age'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly unit: 'day' | 'min'; readonly op: '+' | '-' | '='; readonly n: number; readonly originMs?: number }
   | { readonly kind: 'newer'; readonly field: 'atime' | 'mtime' | 'ctime'; readonly thanMs: number };
 
 const RELATIME_MAX_AGE_MS = 24 * 3600 * 1000;
@@ -350,7 +369,7 @@ export class VirtualFileSystem {
     this.createCharDev('/dev/pts/ptmx', 'ptmx');
     // The local console VT is a static device node present from boot,
     // unlike pty slaves which come and go with sessions.
-    this.createCharDev('/dev/tty1', 'tty');
+    for (let console = 0; console <= 63; console++) this.createCharDev(`/dev/tty${console}`, 'tty');
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
@@ -487,7 +506,7 @@ export class VirtualFileSystem {
       'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
       'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'cd', 'bash', 'sh',
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'tee', 'sleep',
-      'kill', 'locate', 'updatedb'];
+      'kill', 'locate', 'updatedb', 'install'];
     for (const bin of binaries) {
       this.createFileAt(`/usr/bin/${bin}`, `#!/bin/bash\n# ${bin} binary stub\n`, 0o755, 0, 0);
     }
@@ -1381,14 +1400,14 @@ export class VirtualFileSystem {
 
   // ─── Link Operations ──────────────────────────────────────────────
 
-  createSymlink(path: string, target: string, uid: number, gid: number): boolean {
+  createSymlink(path: string, target: string, uid: number, gid: number, permissions = 0o777): boolean {
     const parent = this.resolveParent(path);
     if (!parent) return false;
     const [parentInode, basename] = parent;
 
     if (parentInode.children.has(basename)) return false;
 
-    const inode = this.allocInode('symlink', 0o777, uid, gid);
+    const inode = this.allocInode('symlink', permissions, uid, gid);
     inode.target = target;
     this.resize(inode, target.length);
     parentInode.children.set(basename, inode.id);
@@ -1549,22 +1568,6 @@ export class VirtualFileSystem {
 
   // ─── Copy / Move Operations ───────────────────────────────────────
 
-  copy(srcPath: string, dstPath: string, uid: number, gid: number, umask: number): boolean {
-    const srcInode = this.resolveInode(srcPath);
-    if (!srcInode || srcInode.type !== 'file') return false;
-
-    // If dst is a directory, copy into it
-    const dstInode = this.resolveInode(dstPath);
-    let finalDst = dstPath;
-    if (dstInode?.type === 'directory') {
-      const srcBasename = srcPath.split('/').filter(Boolean).pop()!;
-      finalDst = dstPath.replace(/\/$/, '') + '/' + srcBasename;
-    }
-
-    const perms = 0o666 & ~umask;
-    return this.createFileAt(finalDst, srcInode.content, perms, uid, gid) !== null;
-  }
-
   rename(srcPath: string, dstPath: string): boolean {
     const remote = this.remoteFor(srcPath);
     if (remote && this.remoteFor(dstPath) === remote) {
@@ -1659,7 +1662,7 @@ export class VirtualFileSystem {
     iname?: string;        // case-insensitive -name
     path?: string;         // glob against the full path
     ipath?: string;        // case-insensitive -path
-    type?: 'f' | 'd' | 'l';
+    type?: FindType;
     empty?: boolean;
     user?: number;
     group?: number;
@@ -1672,44 +1675,88 @@ export class VirtualFileSystem {
     mindepth?: number;
     /** If true, every individual predicate is logically negated (-not). */
     not?: boolean;
+    perm?: { kind: 'exact' | 'all' | 'any'; mode: number };
+    device?: number;
+    deviceOf?: (absPath: string) => number;
   } = {}): string[] {
     const results: string[] = [];
-    this._findRecursive(startPath, startPath, 0, options, results);
+    this.walkFind(startPath, options, (path, inode, depth) => {
+      const baseMatches = this.matchesFindCriteria(path, inode, options);
+      const matches = options.not ? !baseMatches : baseMatches;
+      if (matches && (options.mindepth === undefined || depth >= options.mindepth)) results.push(path);
+    });
     return results;
   }
 
-  private _findRecursive(
-    rootPath: string,
-    path: string,
-    depth: number,
-    options: any,
-    results: string[],
+  walkFind(
+    startPath: string,
+    options: FindWalkOptions,
+    visit: (path: string, inode: INode, depth: number, link: INode) => FindVisit,
   ): void {
-    const inode = this.resolveInode(path);
-    if (!inode) return;
-
-    if (options.maxdepth !== undefined && depth > options.maxdepth) return;
-
-    const baseMatches = this._matchesFindCriteria(path, inode, options);
-    const matches = options.not ? !baseMatches : baseMatches;
-    if (matches && (options.mindepth === undefined || depth >= options.mindepth)) {
-      results.push(path);
-    }
-
-    if (inode.type === 'directory') {
-      // Don't descend past maxdepth.
-      if (options.maxdepth !== undefined && depth + 1 > options.maxdepth) return;
-      for (const [name] of inode.children) {
-        if (name === '.' || name === '..') continue;
-        const childPath = path.replace(/\/$/, '') + '/' + name;
-        this._findRecursive(rootPath, childPath, depth + 1, options, results);
-      }
-    }
+    this.walkFindNode(startPath, 0, options, visit, { stopped: false, ancestors: new Map<number, string>() });
   }
 
-  private _matchesFindCriteria(path: string, inode: INode, options: any): boolean {
+  symlinkLoops(path: string): boolean {
+    let current = path;
+    for (let step = 0; step < 41; step++) {
+      const node = this.resolveInode(current, false);
+      if (node === null || node.type !== 'symlink') return false;
+      const slash = current.lastIndexOf('/');
+      current = this.normalizePath(this.resolutionTarget(node), slash <= 0 ? '/' : current.slice(0, slash));
+    }
+    return true;
+  }
+
+  private walkFindNode(
+    path: string,
+    depth: number,
+    options: FindWalkOptions,
+    visit: (path: string, inode: INode, depth: number, link: INode) => FindVisit,
+    state: { stopped: boolean; ancestors: Map<number, string> },
+  ): void {
+    if (state.stopped) return;
+    const link = this.resolveInode(path, false);
+    if (!link) return;
+    let inode = link;
+    const follow = options.follow === 'all' || (options.follow !== 'none' && depth === 0 && (options.follow === 'args' || options.follow === undefined));
+    if (follow && link.type === 'symlink') {
+      const target = this.resolveInode(path, true);
+      if (target) inode = target;
+      else if (this.symlinkLoops(path)) {
+        options.onError?.(`'${path}': Too many levels of symbolic links`);
+        return;
+      }
+    }
+    if (options.maxdepth !== undefined && depth > options.maxdepth) return;
+    if (options.deviceOf !== undefined && options.deviceOf(path) !== options.device) return;
+    if (inode.type === 'directory' && state.ancestors.has(inode.id)) {
+      options.onError?.(`File system loop detected; '${path}' is part of the same file system loop as '${state.ancestors.get(inode.id)}'.`);
+      return;
+    }
+
+    let outcome: FindVisit;
+    if (options.postOrder !== true) {
+      outcome = visit(path, inode, depth, link);
+      if (outcome === 'stop') { state.stopped = true; return; }
+    }
+    const descend = inode.type === 'directory' && outcome !== 'prune'
+      && !(options.maxdepth !== undefined && depth + 1 > options.maxdepth);
+    if (descend) {
+      state.ancestors.set(inode.id, path);
+      for (const [name] of inode.children) {
+        if (name === '.' || name === '..') continue;
+        this.walkFindNode(path.replace(/\/$/, '') + '/' + name, depth + 1, options, visit, state);
+      }
+      state.ancestors.delete(inode.id);
+    }
+    if (options.postOrder === true && !state.stopped && visit(path, inode, depth, link) === 'stop') state.stopped = true;
+  }
+
+  matchesFindCriteria(path: string, inode: INode, options: any): boolean {
     if (options.type !== undefined) {
-      const typeMap: Record<string, FileType> = { f: 'file', d: 'directory', l: 'symlink' };
+      const typeMap: Record<FindType, FileType> = {
+        f: 'file', d: 'directory', l: 'symlink', p: 'fifo', s: 'socket', c: 'chardev', b: 'chardev',
+      };
       if (inode.type !== typeMap[options.type]) return false;
     }
 
@@ -1723,6 +1770,14 @@ export class VirtualFileSystem {
 
     if (options.empty && inode.type === 'file' && inode.size > 0) return false;
     if (options.empty && inode.type === 'directory' && inode.children.size > 2) return false;
+
+    if (options.perm !== undefined) {
+      const bits = inode.permissions & 0o7777;
+      const { kind, mode } = options.perm;
+      if (kind === 'exact' && bits !== mode) return false;
+      if (kind === 'all' && (bits & mode) !== mode) return false;
+      if (kind === 'any' && mode !== 0 && (bits & mode) === 0) return false;
+    }
 
     if (options.user !== undefined && inode.uid !== options.user) return false;
     if (options.group !== undefined && inode.gid !== options.group) return false;
@@ -1748,7 +1803,7 @@ export class VirtualFileSystem {
         if (!(stamp > test.thanMs)) return false;
         continue;
       }
-      const ageSeconds = Math.max(0, Math.floor((now - stamp) / 1000));
+      const ageSeconds = Math.max(0, Math.floor(((test.originMs ?? now) - stamp) / 1000));
       const age = test.unit === 'day' ? Math.floor(ageSeconds / 86_400) : Math.ceil(ageSeconds / 60);
       if (test.op === '+' && !(age > test.n)) return false;
       if (test.op === '-' && !(age < test.n)) return false;
@@ -1761,16 +1816,16 @@ export class VirtualFileSystem {
     return fnmatch(pattern, text);
   }
 
-  globExpand(pattern: string, cwd: string): string[] {
-    const absolute = this.normalizePath(pattern, cwd);
+  globExpand(pattern: string, cwd: string, options: { dotglob?: boolean; nocaseglob?: boolean; globstar?: boolean } = {}): string[] {
+    const resolve = (path: string): string => this.normalizePath(path === '' ? '.' : path, cwd);
     return globPaths({
       listNames: (directory) => {
-        const node = this.resolveInode(directory);
+        const node = this.resolveInode(resolve(directory));
         return node?.type === 'directory' ? [...node.children.keys()].filter((name) => name !== '.' && name !== '..') : null;
       },
-      existsNoFollow: (path) => this.existsNoFollow(path) || this.exists(path),
-      isDirectory: (path) => this.getType(path) === 'directory',
-    }, absolute);
+      existsNoFollow: (path) => this.existsNoFollow(resolve(path)) || this.exists(resolve(path)),
+      isDirectory: (path) => this.getType(resolve(path)) === 'directory',
+    }, pattern, options);
   }
 
   // ─── Utility ──────────────────────────────────────────────────────

@@ -13,6 +13,7 @@
  *   - ? help (prefix listing vs subcommand listing)
  */
 
+import { judgeUserInterfaceVty } from './huawei/vrpEntryJudges';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { CommandTrie } from './CommandTrie';
@@ -34,6 +35,7 @@ import {
 import type { ISwitchShell } from './ISwitchShell';
 import type { Switch } from '../Switch';
 import { MACAddress, IPAddress, SubnetMask, type PortViolationMode } from '../../core/types';
+import { parseHuaweiPing, parseHuaweiTracert, formatHuaweiPing, formatHuaweiTracert } from './huawei/huaweiPing';
 import { parsePipeFilter, applyPipeFilter, resolveHuaweiNav, HUAWEI_ERRORS, refuseUnknownUndo, normaliserErreurVrp, tropDeParametres, huaweiTypeInterface, refuseMotInattenduVrp, rendreErreurVrp } from './cli-utils';
 import { vlansMappedToInstanceZero } from '@/network/stp/MstConfigId';
 import { getCredentialStore } from '@/network/equipment/RouterServiceCapabilities';
@@ -81,11 +83,12 @@ import {
 } from './huawei/HuaweiConfigCommands';
 import { VRP_STATIC_PREFERENCE } from '../SwitchSvi';
 import {
-  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, remoteAccessConfigBlocksVrp,
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, registerHuaweiUserClock, remoteAccessConfigBlocksVrp,
 } from './huawei/HuaweiCommonSecurity';
 import { registerHuaweiKeypairCommands } from './huawei/HuaweiKeypairCommands';
 import { RsaPeerPublicKeyEditor } from './huawei/HuaweiRsaPeerPublicKeyEditor';
 import { lignesConfigSnmpVrp } from './huawei/huaweiSnmpCommands';
+import { lignesConfigNtpVrp } from './huawei/huaweiNtpCommands';
 import { buildDhcpPoolCommands } from './huawei/HuaweiDhcpCommands';
 import { formatHuaweiAcl, formatHuaweiAclConfig } from './huawei/HuaweiAclFormat';
 import { analyserRegleVrp } from './huawei/HuaweiAclRule';
@@ -274,6 +277,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private selectedAclType: 'basic' | 'adv' = 'basic';
 
   private swRef: HuaweiSwitchDevice | null = null;
+
+  private pendingAsync: Promise<string> | null = null;
 
   /** Le magasin unique de l'etat `debugging` de ce switch. */
   private debugService(): HuaweiDebugService | null {
@@ -712,7 +717,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
 
   // ─── Main Execute ─────────────────────────────────────────────────
 
-  execute(sw: Switch, input: string): string {
+  execute(sw: Switch, input: string): string | Promise<string> {
     const trimmed = input.trim();
     if (!trimmed) return '';
     if (this.peerKeys.isEditing()) {
@@ -807,6 +812,11 @@ export class HuaweiSwitchShell implements ISwitchShell {
     }
 
     this.swRef = null;
+    if (this.pendingAsync) {
+      const asyncOutput = this.pendingAsync;
+      this.pendingAsync = null;
+      return filter ? asyncOutput.then((text) => applyPipeFilter(text, filter)) : asyncOutput;
+    }
     // Apply the pipe filter only to successful output (errors pass through).
     return filter && !output.startsWith('Error:')
       ? applyPipeFilter(output, filter)
@@ -958,6 +968,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // display + common management commands
     this.registerDisplayCommands(this.userTrie);
     this.registerCommonMgmt(this.userTrie);
+    registerHuaweiUserClock(this.userTrie,
+      () => this.swRef === null ? undefined : commeRouteur(this.swRef),
+      (epochMs) => commeRouteur(this.swRef)._setSystemClock(epochMs));
   }
 
   // ─── Command Tree: System View ([hostname]) ───────────────────────
@@ -1264,7 +1277,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       ],
     }, {
       name: 'first-ui-number', type: 'INT',
-      description: 'First user-interface number', optional: true, range: [0, 20],
+      description: 'First user-interface number', range: [0, 20],
     }, {
       name: 'last-ui-number', type: 'INT',
       description: 'Last user-interface number', optional: true, range: [0, 20],
@@ -1272,6 +1285,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     this.systemTrie.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
       if (args.length === 0) return 'Error: Incomplete command.';
       if (args[0].toLowerCase() === 'maxvty') return ''; // global setting, no view
+      const refused = judgeUserInterfaceVty(args);
+      if (refused !== null) return refused;
       const type = args[0].toLowerCase();
       const first = args[1] ?? '0';
       const last = args[2];
@@ -2252,7 +2267,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
         this.mode = 'interface';
         this.selectedInterface = membre;
         const sortie = this.execute(sw, input);
-        if (sortie.trim()) sorties.push(sortie);
+        if (typeof sortie === 'string' && sortie.trim()) sorties.push(sortie);
       }
     } finally {
       this.mode = modeAvant;
@@ -2480,6 +2495,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       const listes = engine?.getAccessListsInternal() ?? [];
       if (listes.length === 0) return 'Info: No ACL is configured.';
       const sel = (args[0] ?? 'all').toLowerCase();
+      if (args.length > (sel === 'name' && args[1] !== undefined ? 2 : 1)) return "Error: Too many parameters found at '^' position.";
       if (sel === 'all') {
         return listes.map((a) => this.renderAclOperational(a.name ?? String(a.id ?? ''))).join('\n');
       }
@@ -3123,12 +3139,51 @@ export class HuaweiSwitchShell implements ISwitchShell {
     ]);
   }
 
+  private registerEchoCommands(trie: CommandTrie): void {
+    trie.registerGreedy('ping', 'Send ICMP echo messages', (args, line) => this.handlePing(args, line));
+    trie.registerGreedy('tracert', 'Trace route to destination', (args, line) => this.handleTracert(args, line));
+  }
+
+  private refuseIpv6Echo(args: readonly string[], line: string | undefined, ipv6: boolean): string | null {
+    if (!ipv6) return null;
+    const text = line ?? args.join(' ');
+    const position = args[0]?.toLowerCase() === 'ipv6' ? text.toLowerCase().indexOf('ipv6') : text.length - 1;
+    return HUAWEI_ERRORS.UNRECOGNIZED(text, Math.max(position, 0));
+  }
+
+  private handlePing(args: string[], line: string | undefined): string {
+    const sw = this.swRef;
+    if (!sw) return '';
+    const request = parseHuaweiPing(args);
+    if (typeof request === 'string') return request;
+    const refusal = this.refuseIpv6Echo(args, line, request.ipv6);
+    if (refusal !== null) return refusal;
+    const { target, count, timeoutMs, sourceIP } = request;
+    this.pendingAsync = sw.executePingSequence(new IPAddress(target), count, timeoutMs, sourceIP ?? undefined)
+      .then((results) => formatHuaweiPing(target, count, results));
+    return '';
+  }
+
+  private handleTracert(args: string[], line: string | undefined): string {
+    const sw = this.swRef;
+    if (!sw) return '';
+    const request = parseHuaweiTracert(args);
+    if (typeof request === 'string') return request;
+    const refusal = this.refuseIpv6Echo(args, line, request.ipv6);
+    if (refusal !== null) return refusal;
+    const { target, maxHops, timeoutMs, probesPerHop } = request;
+    this.pendingAsync = sw.executeTraceroute(new IPAddress(target), maxHops, timeoutMs, probesPerHop)
+      .then((hops) => formatHuaweiTracert(target, maxHops, hops));
+    return '';
+  }
+
   /**
    * VRP lifecycle / management commands common to every view + the
    * router shell (save, reboot, reset, commit, screen-length, header).
    * Single source via huawei/HuaweiCommonConfig (DRY).
    */
   private registerCommonMgmt(trie: CommandTrie): void {
+    this.registerEchoCommands(trie);
     registerHuaweiCommonMgmt(
       trie,
       { service: () => this.debugService(), platform: 'switch' },
@@ -3457,7 +3512,10 @@ export class HuaweiSwitchShell implements ISwitchShell {
     trie.registerGreedy('negotiation', 'Auto-negotiation', (args) => {
       const port = portSelectionne();
       if (!port) return 'Error: Incomplete command.';
-      port.setNegotiationAuto(args[0]?.toLowerCase() === 'auto');
+      if (args.length !== 1 || args[0].toLowerCase() !== 'auto') {
+        return args.length === 0 ? HUAWEI_ERRORS.INCOMPLETE('negotiation') : HUAWEI_ERRORS.WRONG(`negotiation ${args.join(' ')}`);
+      }
+      port.setNegotiationAuto(true);
       return '';
     });
     trie.registerGreedy('mac-address', 'Interface MAC address configuration', (args, ligne) => {
@@ -4622,6 +4680,8 @@ export class HuaweiSwitchShell implements ISwitchShell {
     const mgmt = sw.getManagementService?.();
     const snmpLignes = lignesConfigSnmpVrp(sw.getSnmpService?.());
     if (snmpLignes.length > 0) { lines.push(...snmpLignes); lines.push('#'); }
+    const ntpLignes = lignesConfigNtpVrp(sw.peekNtpAgent() ?? undefined);
+    if (ntpLignes.length > 0) { lines.push(...ntpLignes); lines.push('#'); }
     for (const block of mgmt ? remoteAccessConfigBlocksVrp(mgmt) : []) {
       lines.push(...block);
       lines.push('#');
@@ -4658,6 +4718,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
       for (const svi of svis) {
         const name = `Vlanif${svi.vlan}`;
         lines.push(`interface ${name}`);
+        if (!svi.adminUp) lines.push(' shutdown');
         if (svi.dhcpClient) lines.push(' ip address dhcp-alloc');
         else if (svi.ip && svi.mask) lines.push(` ip address ${svi.ip} ${svi.mask}`);
         if (svi.arpTimeoutSec != null && svi.arpTimeoutSec !== sw.defaultArpTimeoutSec()) {

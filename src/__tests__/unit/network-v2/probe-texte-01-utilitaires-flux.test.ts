@@ -76,7 +76,7 @@ describe('Scénario 2 — mettre côte à côte et comparer', () => {
     const pc = await lab();
     expect(await pc.executeCommand('cmp a.txt a.txt; echo "rc=$?"')).toBe('rc=0');
     // Le vrai cmp dit « char », pas « byte ».
-    expect(await pc.executeCommand('cmp a.txt b.txt')).toBe('a.txt b.txt differ: char 1, line 1');
+    expect(await pc.executeCommand('cmp a.txt b.txt')).toBe('a.txt b.txt differ: byte 1, line 1');
   });
 });
 

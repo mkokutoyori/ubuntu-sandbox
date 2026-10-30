@@ -102,14 +102,13 @@ import {
   vrrpGlbpShowSpecs,
 } from './cisco/CiscoVrrpGlbpCommands';
 import {
-  buildBfdInterfaceCommands, bfdInterfaceSpecs, bfdShowSpecs,
+  bfdInterfaceSpecs, bfdShowSpecs,
 } from './cisco/CiscoBfdCommands';
 import {
-  buildIgmpInterfaceCommands, registerIgmpShowCommands, igmpShowSpecs,
+  igmpShowSpecs,
   igmpInterfaceSpecs,
 } from './cisco/CiscoIgmpCommands';
 import {
-  buildPimInterfaceCommands, buildPimGlobalConfigCommands, registerPimShowCommands,
   pimInterfaceSpecs, pimGlobalSpecs,
   pimShowSpecs,
 } from './cisco/CiscoPimCommands';
@@ -118,14 +117,12 @@ import {
 } from './cisco/CiscoVxlanCommands';
 import { FhrpRepository } from '../inspection/config/FhrpRepository';
 import {
-  buildTrackConfigCommands, trackShowSpecs, trackSubmodeSpecs,
+  trackShowSpecs, trackSubmodeSpecs,
   trackEntrySpecs, routerTrackEntryHost,
 } from './cisco/CiscoTrackCommands';
 import { KeyChainRepository } from '../inspection/config/KeyChainRepository';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
-import {
-  keyChainSubmodeSpecs, keyChainKeySubmodeSpecs, keyChainGlobalSpecs, keyChainShowSpecs,
-} from './cisco/CiscoKeyChainCommands';
+import { keyChainFamily, type KeyChainHost } from '@/cli/commands/keychain/keyChainFamily';
 import {
   buildIpSlaConfigCommands, registerIpSlaTypeSubModes,
   ipSlaSubmodeSpecs, ipSlaTypeSubmodeSpecs, ipSlaHttpRawSpecs, ipSlaGlobalSpecs,
@@ -137,7 +134,7 @@ import { describeCiscoArguments } from './cisco/ciscoArgumentHelp';
 import { renderStartupConfig } from './cisco/ciscoConfigSerializer';
 import { PolicyRepository } from '../inspection/config/PolicyRepository';
 import {
-  registerPolicyShow, policyShowSpecs,
+  policyShowSpecs,
 } from './cisco/CiscoPolicyCommands';
 
 // Extracted command modules
@@ -156,19 +153,10 @@ import {
   registerInterfaceEntry, INTERFACE_TYPES, typesInterfaceEnMotsCles, NOM_INTERFACE_TAPE,
 } from './cisco/CiscoConfigCommands';
 import {
-  buildConfigDhcpCommands, buildConfigDhcpPoolClassCommands, dhcpPoolSpecs,
+  dhcpPoolSpecs,
   dhcpPoolClassSpecs, dhcpClassSpecs, ipv6DhcpPoolSpecs,
-  buildConfigDhcpClassCommands,
-  buildConfigIpv6DhcpCommands,
-  registerDhcpShowCommands, dhcpIpv6ShowSpecs,
-  registerDhcpPrivilegedCommands,
+  dhcpShowSpecs,
 } from './cisco/CiscoDhcpCommands';
-import {
-  registerKeyChainGlobalCommands,
-  buildKeyChainSubmode,
-  buildKeyChainKeySubmode,
-  registerKeyChainShowCommands,
-} from './cisco/CiscoKeyChainCommands';
 import {
   buildRoutingProtoConfig, registerRoutingProtoShow, routerKeywordBelongsTo,
   routingProtoShowSpecs, routerSubmodeSpecs,
@@ -178,7 +166,7 @@ import {
   type CiscoACLShellContext,
   buildNamedStdACLCommands, buildNamedExtACLCommands,
   buildIPv6ACLGlobalCommands,
-  registerACLShowCommands, aclShowSpecs,
+  aclShowSpecs,
   parseCiscoAce, texteDeRemarque, standardAclHost, extendedAclHost, ipv6AclHost,
   type NamedAclEditContext,
 } from './cisco/CiscoAclCommands';
@@ -213,7 +201,7 @@ import {
   ikev2KeyringPeerSpecs, ikev2ProfileSpecs,
 } from './cisco/CiscoIPSecIKEv2Commands';
 import {
-  buildGdoiGlobalCommands, buildGdoiGroupCommands, gdoiGroupSpecs, gdoiGlobalSpecs,
+  gdoiGroupSpecs, gdoiGlobalSpecs,
 } from './cisco/CiscoGdoiCommands';
 import { registerIPSecShowCommands, cryptoShowSpecs } from './cisco/CiscoIPSecShowCommands';
 import {
@@ -229,7 +217,6 @@ import {
   buildEemNetflowArchiveConfigCommands, buildEemAppletSubmode, netflowSpecs,
   eemPorteSpecs,
   buildFlowExporterSubmode, buildFlowRecordSubmode, buildFlowMonitorSubmode,
-  buildArchiveSubmode, buildArchiveLogSubmode,
   eemAppletSpecs, flowExporterSpecs, flowRecordSpecs, flowMonitorSpecs,
   buildEemNetflowArchiveInterfaceCommands, buildEemNetflowArchiveShowCommands,
   netflowEemShowSpecs,
@@ -300,7 +287,6 @@ const ROUTER_SHOW_VIEWS: ReadonlySet<string> = new Set([
 ]);
 
 const VUES_SHOW_RESTANTES: ReadonlySet<string> = new Set([
-  'show dhcp server',
   'show crypto engine brief', 'show crypto engine configuration',
 ]);
 
@@ -634,11 +620,8 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaHttpRawSpecs(this),
       ...this.vrfSubmodeSpecs(),
       ...trackSubmodeSpecs(this),
-      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config']),
-      ...keyChainGlobalSpecs(this),
-      ...keyChainShowSpecs(this),
-      ...keyChainSubmodeSpecs(this),
-      ...keyChainKeySubmodeSpecs(this),
+      ...trackEntrySpecs(() => routerTrackEntryHost(this), ['config', 'config-track']),
+      ...keyChainFamily(() => this.keyChainHost(), (mode) => this.setMode(mode as CiscoShellMode)),
       ...routeMapSpecs(() => this.routeMapHost()),
       ...aclHeadSpecs(() => this.aclHeadHost()),
       ...avecNumeroDeSequence(
@@ -685,7 +668,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...dhcpClassSpecs(this),
       ...ipv6DhcpPoolSpecs(this),
       ...ospfIpv6ShowSpecs(() => this.d()),
-      ...dhcpIpv6ShowSpecs(() => this.d()),
+      ...dhcpShowSpecs(() => this.d()),
       ...pimShowSpecs(this.multicastShowContext()),
       ...aclShowSpecs(() => this.d()),
       ...policyShowSpecs(this.policy),
@@ -821,7 +804,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     return specsFromTrieRegistrations(
       (collector) => {
         const trie = collector as unknown as CommandTrie;
-        registerDhcpShowCommands(trie, () => this.d());
         buildIPSecPrivilegedCommands(trie, this);
       },
       {
@@ -1315,6 +1297,20 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   /** Real config-driven HSRP/VRRP/GLBP state (router-only; L2 switches none). */
   private get fhrp(): FhrpRepository { return this.d().getFhrpRepository(); }
   private readonly keyChains = new KeyChainRepository();
+  private keyChainHost(): KeyChainHost {
+    return {
+      chains: () => this.getKeyChains(),
+      selectedChain: () => this.getSelectedKeyChain(),
+      selectChain: (name) => this.setSelectedKeyChain(name),
+      selectedKey: () => {
+        const chain = this.getSelectedKeyChain();
+        const id = this.getSelectedKeyChainKey();
+        return chain === null || id === null ? null : this.getKeyChains().ensureKey(chain, id);
+      },
+      selectKey: (id) => this.setSelectedKeyChainKey(id),
+    };
+  }
+
   getKeyChains(): KeyChainRepository { return this.keyChains; }
   private readonly policy = new PolicyRepository();
   private readonly routingCfg = new RoutingConfigRepository();
@@ -2419,25 +2415,11 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
     // ── Privileged mode ──
     this.registerShowCommands(this.privilegedTrie);
-    registerDhcpPrivilegedCommands(this.privilegedTrie, () => this.d());
     buildIPSecPrivilegedCommands(this.privilegedTrie, this);
 
     // ── Config mode ──
     buildConfigCommands(this.configTrie, this);
     buildConfigIfCommands(this.configIfTrie, this);
-    buildBfdInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
-    buildIgmpInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
-    buildPimInterfaceCommands(this.configIfTrie, {
-      selectedPorts: () => this.selectedPortsForConfigIf(),
-      r: () => this.d(),
-    });
-    buildPimGlobalConfigCommands(this.configTrie, { r: () => this.d() });
     if (this.hasVxlanHardware()) {
       buildVxlanInterfaceCommands(this.configIfTrie, {
         selectedInterface: () => this.getSelectedInterface(),
@@ -2445,19 +2427,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
         r: () => this.d(),
       });
     }
-    buildTrackConfigCommands(this.configTrie, this.configTrackTrie, this);
     buildIpSlaConfigCommands(this.configTrie, this.configIpSlaTrie,
       this.configIpSlaHttpRawTrie, this);
     registerIpSlaTypeSubModes(this.configIpSlaTypeTries, this.configIpSlaHttpRawTrie, this);
-    buildConfigDhcpCommands(this.configDhcpTrie, this);
-    buildConfigDhcpPoolClassCommands(this.configDhcpPoolClassTrie, this);
-    buildConfigDhcpClassCommands(this.configDhcpClassTrie, this);
-    buildConfigIpv6DhcpCommands(this.configIpv6DhcpTrie, this);
-    registerKeyChainGlobalCommands(this.configTrie, this);
-    buildKeyChainSubmode(this.configKeychainTrie, this);
-    buildKeyChainKeySubmode(this.configKeychainKeyTrie, this);
-    registerKeyChainShowCommands(this.privilegedTrie, this);
-    registerKeyChainShowCommands(this.userTrie, this);
     buildRoutingProtoConfig(this.configTrie, this.configRouterTrie, this, this.routingCfg);
     this.configRouterTrie.setCompletionFilter((path, keyword) =>
       routerKeywordBelongsTo(path.length > 0 ? path[0] : keyword,
@@ -2487,25 +2459,10 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildIKEv2KeyringCommands(this.configIkev2KeyringTrie, this);
     buildIKEv2KeyringPeerCommands(this.configIkev2KeyringPeerTrie, this);
     buildIKEv2ProfileCommands(this.configIkev2ProfileTrie, this);
-    buildGdoiGlobalCommands(this.configTrie, this);
-    buildGdoiGroupCommands(this.configGdoiGroupTrie, this);
 
     buildSecurityConfigCommands(this.configTrie, this);
     buildSecurityInterfaceCommands(this.configIfTrie, this);
-    buildSecuritySubmodeCommands(
-      this.configCmapTrie,
-      this.configPmapTrie,
-      this.configPmapClassTrie,
-      this.configCpTrie,
-      this.configZoneTrie,
-      this.configZonePairTrie,
-      this.configTimeRangeTrie,
-      this.configRadiusServerTrie,
-      this.configTacacsServerTrie,
-      this.configAaaGroupTrie,
-      this.configCaTrustpointTrie,
-      this,
-    );
+    buildSecuritySubmodeCommands(this.configPmapClassTrie, this);
     buildSecurityShowCommands(this.userTrie, () => this.d());
     buildSecurityShowCommands(this.privilegedTrie, () => this.d());
 
@@ -2514,8 +2471,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     buildFlowExporterSubmode(this.configFlowExporterTrie, this);
     buildFlowRecordSubmode(this.configFlowRecordTrie, this);
     buildFlowMonitorSubmode(this.configFlowMonitorTrie, this);
-    buildArchiveSubmode(this.configArchiveTrie, this);
-    buildArchiveLogSubmode(this.configArchiveLogTrie, this);
     buildEemNetflowArchiveInterfaceCommands(this.configIfTrie, this);
     buildEemNetflowArchiveShowCommands(this.userTrie, () => this.d());
     buildEemNetflowArchiveShowCommands(this.privilegedTrie, () => this.d());
@@ -2525,10 +2480,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
 
   private registerShowCommands(trie: CommandTrie): void {
     registerRoutingProtoShow(trie, this, this.routingCfg);
-    registerIgmpShowCommands(trie, this.multicastShowContext());
-    registerPimShowCommands(trie, this.multicastShowContext());
     if (this.hasVxlanHardware()) registerVxlanShowCommands(trie, { r: () => this.d() });
-    registerPolicyShow(trie, this.policy);
     this.registerRouterShowViews(trie);
     trie.pruneSubtreeChildren('show', HORS_PLATEFORME_ISR);
   }
@@ -2598,12 +2550,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     // project the real configured process state.
     trie.register('show counters', 'Display traffic counters', () => Show.showCounters(getRouter()));
     trie.register('show ip rip', 'Display RIP information', () => Show.showIpProtocols(getRouter()));
-
-    // DHCP show commands
-    registerDhcpShowCommands(trie, getRouter);
-
-    // ACL show commands
-    registerACLShowCommands(trie, getRouter);
 
     // OSPF show commands
     registerOSPFShowCommands(trie, getRouter);
@@ -2746,6 +2692,9 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     if (sourceIP) {
       const resolved = this._resolveSourceIP(router, sourceIP);
       if (resolved) sourceIP = resolved;
+      else if (parsed.protocol !== 'ipv6' && /^[\d.]+$/.test(sourceIP)) {
+        throw new CliInvalidInput({ token: sourceIP });
+      }
     }
 
     if (parsed.protocol === 'ipv6') {
@@ -2773,15 +2722,6 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     });
 
     return '';
-  }
-
-  protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
-    if (isValidIPv4(cible)) return Promise.resolve(cible);
-    const svc = (appareil as {
-      getDnsService?: () => { resolve(n: string): Promise<string | null> };
-    }).getDnsService?.();
-    if (!svc) return Promise.resolve(null);
-    return svc.resolve(cible);
   }
 
   private _handleTraceroute(demande: TracerouteRequest): string {
@@ -2849,7 +2789,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
   }
 
   private _resolveSourceIP(router: any, source: string): string | null {
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(source)) return source;
+    if (isValidIPv4(source)) return source;
     const ports = router._getPortsInternal?.() as Map<string, any> | undefined;
     if (!ports) return null;
     const port = ports.get(source);
@@ -2890,16 +2830,29 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
     }
 
     const egress = this.r().getPort(nextHopStr);
+    const tailStart = egress ? (args[2] !== undefined && /[:]/.test(args[2]) ? 3 : 2) : 2;
+    const distanceWord = args[tailStart];
+    if (args.length > tailStart + 1) throw new CliInvalidInput({ token: args[tailStart + 1] });
+    let preference: number | undefined;
+    if (distanceWord !== undefined) {
+      if (!/^\d+$/.test(distanceWord) || Number(distanceWord) < 1 || Number(distanceWord) > 254) {
+        throw new CliInvalidInput({ token: distanceWord });
+      }
+      preference = Number(distanceWord);
+    }
+
     if (egress) {
-      const viaHop = args[2] ? parseIpv6OrNull(args[2]) : null;
-      if (args[2] && !viaHop) return '% Invalid next-hop address';
-      this.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0, { iface: egress.getName() });
+      const viaHop = tailStart === 3 ? parseIpv6OrNull(args[2]) : null;
+      if (tailStart === 3 && !viaHop) return '% Invalid next-hop address';
+      this.r().addIPv6StaticRoute(prefixAddr, prefixLen, viaHop, 0,
+        { iface: egress.getName(), ...(preference !== undefined ? { preference } : {}) });
       return '';
     }
 
     const nextHop = parseIpv6OrNull(nextHopStr);
     if (!nextHop) return '% Invalid next-hop address';
-    this.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop);
+    this.r().addIPv6StaticRoute(prefixAddr, prefixLen, nextHop, 0,
+      preference !== undefined ? { preference } : undefined);
     return '';
   }
 

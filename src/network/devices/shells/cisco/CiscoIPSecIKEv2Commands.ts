@@ -32,25 +32,81 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Name of the IKEv2 keyring' },
   'crypto ikev2 profile': { name: 'nom', type: 'WORD',
     description: 'Name of the IKEv2 profile' },
-  'crypto ikev2 dpd': { name: 'reste', type: 'REST',
-    description: 'Interval and retry, then `periodic` or `on-demand`' },
-  'crypto ikev2 cookie-challenge': { name: 'seuil', type: 'REST',
-    description: 'Number of half-open sessions above which a cookie is required' },
-  'crypto ikev2 window': { name: 'taille', type: 'REST',
-    description: 'Number of outstanding requests allowed' },
-  'crypto ikev2 nat keepalive': { name: 'secondes', type: 'REST',
-    description: 'Interval between NAT keepalives, in seconds' },
 };
 
+const IKEV2_DPD_INTERVAL: ArgumentSpec = {
+  name: 'intervalle', type: 'INT', range: [10, 3600],
+  description: 'Interval between liveness checks, in seconds',
+};
+
+const IKEV2_DPD_RETRY: ArgumentSpec = {
+  name: 'reprise', type: 'INT', range: [2, 60],
+  description: 'Interval between retries, in seconds',
+};
+
+const positive = (name: string, description: string): ArgumentSpec => ({
+  name, type: 'WORD', description, pattern: /^[1-9]\d{0,9}$/,
+  alternatives: [{ keyword: '<number>', description }],
+  formsAreExhaustive: true,
+});
+
 export function ikev2GlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
-  return specsFromTrieRegistrations(
+  const base = { modes: ['config'], minPrivilege: 15 };
+  const native: CommandSpec[] = [
+    {
+      ...base, id: 'config-crypto-ikev2-dpd',
+      path: ['crypto', 'ikev2', 'dpd',
+        { ...IKEV2_DPD_INTERVAL, name: 'interval' },
+        { ...IKEV2_DPD_RETRY, name: 'retry' },
+        {
+          name: 'mode', type: 'ENUM', description: 'DPD mode',
+          values: [
+            { keyword: 'on-demand', description: 'Send DPD only when there is traffic to send' },
+            { keyword: 'periodic', description: 'Send DPD at the configured interval' },
+          ],
+        }],
+      description: 'Global IKEv2 DPD interval / retry',
+      run: (_session, args) => {
+        eng(ctx).setIkev2GlobalDpd(Number(args.interval), Number(args.retry), args.mode.toLowerCase());
+        return '';
+      },
+    },
+    {
+      ...base, id: 'config-crypto-ikev2-nat-keepalive',
+      path: ['crypto', 'ikev2', 'nat', 'keepalive',
+        positive('seconds', 'Interval between NAT keepalives, in seconds')],
+      description: 'Set IKEv2 NAT keepalive',
+      run: (_session, args) => { eng(ctx).setIkev2NatKeepalive(Number(args.seconds)); return ''; },
+    },
+    {
+      ...base, id: 'config-crypto-ikev2-cookie-challenge',
+      path: ['crypto', 'ikev2', 'cookie-challenge', {
+        name: 'threshold', type: 'WORD', pattern: /^\d{1,10}$/,
+        description: 'Number of half-open sessions above which a cookie is required',
+        alternatives: [{
+          keyword: '<number>',
+          description: 'Number of half-open sessions above which a cookie is required',
+        }],
+        formsAreExhaustive: true,
+      }],
+      description: 'Set IKEv2 cookie-challenge threshold',
+      run: (_session, args) => { eng(ctx).setIkev2CookieChallenge(Number(args.threshold)); return ''; },
+    },
+    {
+      ...base, id: 'config-crypto-ikev2-window',
+      path: ['crypto', 'ikev2', 'window', positive('size', 'Number of outstanding requests allowed')],
+      description: 'Set IKEv2 window size',
+      run: (_session, args) => { eng(ctx).setIkev2WindowSize(Number(args.size)); return ''; },
+    },
+  ];
+  return [...native, ...specsFromTrieRegistrations(
     (collector) => buildIKEv2GlobalCommands(collector as unknown as CommandTrie, ctx),
     {
       modes: ['config'], minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => IKEV2_GLOBAL_ARGUMENTS[path],
     },
-  );
+  )];
 }
 
 export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
@@ -117,32 +173,6 @@ export function buildIKEv2GlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
   trie.registerGreedy('no crypto ikev2 profile', 'Remove IKEv2 profile', (args) => {
     if (args.length < 1) return '% Incomplete command.';
     eng(ctx).removeIKEv2Profile(args[0]);
-    return '';
-  });
-
-  trie.registerGreedy('crypto ikev2 dpd', 'Global IKEv2 DPD interval / retry', (args) => {
-    const interval = parseInt(args[0] ?? '', 10);
-    const retry = parseInt(args[1] ?? '', 10);
-    eng(ctx).setIkev2GlobalDpd(
-      Number.isFinite(interval) ? interval : undefined,
-      Number.isFinite(retry) ? retry : undefined,
-      args[2]?.toLowerCase(),
-    );
-    return '';
-  });
-  trie.registerGreedy('crypto ikev2 nat keepalive', 'Set IKEv2 NAT keepalive', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setIkev2NatKeepalive(n);
-    return '';
-  });
-  trie.registerGreedy('crypto ikev2 cookie-challenge', 'Set IKEv2 cookie-challenge threshold', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setIkev2CookieChallenge(n);
-    return '';
-  });
-  trie.registerGreedy('crypto ikev2 window', 'Set IKEv2 window size', (args) => {
-    const n = parseInt(args[0] ?? '', 10);
-    if (Number.isFinite(n)) eng(ctx).setIkev2WindowSize(n);
     return '';
   });
 }
@@ -354,6 +384,15 @@ const AUTRES: ArgumentSpec = {
   name: 'autres', type: 'REST', optional: true, values: [], description: '',
 };
 
+const MAX_LISTED = 8;
+
+const listOf = (first: ArgumentSpec): ArgumentSpec[] => [
+  first,
+  ...Array.from({ length: MAX_LISTED - 1 }, (_unused, index): ArgumentSpec => ({
+    ...first, name: `${first.name}${index + 2}`, optional: true,
+  })),
+];
+
 const GROUPES_DH: ReadonlyArray<readonly [string, string]> = [
   ['1', 'Diffie-Hellman group 1 (768 bit)'],
   ['2', 'Diffie-Hellman group 2 (1024 bit)'],
@@ -383,7 +422,7 @@ const METHODE_AUTH = IKEV2_ENUM('methode', 'Authentication method', [
 
 const IKEV2_PROPOSAL_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  encryption: [IKEV2_ENUM('algorithme', 'Encryption algorithm', [
+  encryption: listOf(IKEV2_ENUM('algorithme', 'Encryption algorithm', [
     ['3des', 'Three key triple DES'],
     ['aes-cbc-128', 'AES-CBC with a 128 bit key'],
     ['aes-cbc-192', 'AES-CBC with a 192 bit key'],
@@ -391,16 +430,15 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     ['aes-gcm-128', 'AES-GCM with a 128 bit key'],
     ['aes-gcm-256', 'AES-GCM with a 256 bit key'],
     ['des', 'DES - Data Encryption Standard (56 bit keys)'],
-  ]), AUTRES],
-  integrity: [IKEV2_ENUM('algorithme', 'Integrity algorithm', CONDENSES), AUTRES],
-  group: [IKEV2_ENUM('groupe', 'Diffie-Hellman group', GROUPES_DH), AUTRES],
-  prf: [IKEV2_ENUM('fonction', 'Pseudo-random function', CONDENSES), AUTRES],
+  ])),
+  integrity: listOf(IKEV2_ENUM('algorithme', 'Integrity algorithm', CONDENSES)),
+  group: listOf(IKEV2_ENUM('groupe', 'Diffie-Hellman group', GROUPES_DH)),
+  prf: listOf(IKEV2_ENUM('fonction', 'Pseudo-random function', CONDENSES)),
 };
 
 const IKEV2_POLICY_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  proposal: [{ name: 'nom', type: 'WORD', description: 'Name of the IKEv2 proposal' },
-    AUTRES],
+  proposal: listOf({ name: 'nom', type: 'WORD', description: 'Name of the IKEv2 proposal' }),
   'match address local': {
     name: 'adresse', type: 'IP_ADDR', description: 'Local address the policy matches',
   },
@@ -414,7 +452,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
 const IKEV2_KEYRING_PEER_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   address: [{ name: 'adresse', type: 'IP_ADDR', description: 'Address of the peer' },
-    AUTRES],
+    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Mask of the peer network' }],
   'pre-shared-key': [{
     name: 'secret', type: 'WORD', description: 'The shared secret',
   }, AUTRES],
@@ -432,7 +470,7 @@ const IKEV2_PROFILE_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   'match identity remote address': [
     { name: 'adresse', type: 'IP_ADDR', description: 'Address of the remote peer' },
-    AUTRES],
+    { name: 'masque', type: 'SUBNET_MASK', optional: true, description: 'Mask of the remote network' }],
   'authentication local': METHODE_AUTH,
   'authentication remote': METHODE_AUTH,
   keyring: { name: 'nom', type: 'WORD', description: 'Name of the IKEv2 keyring' },
@@ -449,8 +487,8 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     ['fqdn', 'Use a fully qualified domain name'],
   ]), AUTRES],
   dpd: [
-    { name: 'intervalle', type: 'INT', range: [10, 3600], description: 'Interval between liveness checks, in seconds' },
-    { name: 'reprise', type: 'INT', range: [2, 60], description: 'Interval between retries, in seconds' },
+    IKEV2_DPD_INTERVAL,
+    IKEV2_DPD_RETRY,
     IKEV2_ENUM('mode', 'When to send the liveness check', [
       ['on-demand', 'Only when there is no incoming traffic'],
       ['periodic', 'At every interval'],

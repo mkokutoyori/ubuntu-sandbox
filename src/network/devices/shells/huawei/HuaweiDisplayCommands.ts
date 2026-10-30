@@ -1414,6 +1414,10 @@ export function registerDisplayCommands(
   trie.registerGreedy('display ip routing-table', 'Display IP routing table', (args) => {
     if (args.length === 0) return displayIpRoutingTable(getRouter());
     if (/^\d+\.\d+\.\d+\.\d+$/.test(args[0])) return displayIpRoutingTableForDest(getRouter(), args[0]);
+    const known = ['statistics', 'verbose', 'vpn-instance', 'protocol', 'summary', 'limit', 'interface'];
+    if (!known.includes(args[0].toLowerCase())) {
+      return HUAWEI_ERRORS.WRONG(`display ip routing-table ${args.join(' ')}`, 'display ip routing-table '.length);
+    }
     return displayIpRoutingTable(getRouter());
   });
   trie.register('display ip traffic', 'Display IP traffic statistics', () => displayCounters(getRouter()));
@@ -1478,7 +1482,8 @@ export function registerDisplayCommands(
     ].join('\n');
   });
 
-  trie.registerGreedy('display history-command', 'Display CLI history', () => {
+  trie.registerGreedy('display history-command', 'Display CLI history', (args) => {
+    if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'all-users')) return "Error: Unrecognized command found at '^' position.";
     const dev = getRouter() as unknown as { getShell?: () => { getCmdHistory?: () => readonly string[] } };
     const shell = dev.getShell?.();
     const history = shell?.getCmdHistory?.() ?? [];

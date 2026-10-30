@@ -1,6 +1,7 @@
 import {
   IPAddress, IP_PROTO_ICMPV6, type IPv6Address, type IPv4Packet, type IPv6Packet,
 } from '@/network/core/types';
+import { decrementForForwarding } from '@/network/layers/internet/InternetLayer';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
 import { Nat64Translator, type Nat64NexthopMtu } from '@/network/nat/nat64/Nat64Translator';
 import type { PolicyDecision } from '../policy/PolicyEvaluator';
@@ -101,8 +102,9 @@ export class FirewallNat64 {
   forward4(packet: IPv4Packet): boolean {
     const pool = this.deps.pools().find((p) => p.nat64 && poolContains(p, packet.destinationIP.toString()));
     if (pool === undefined) return false;
-    if (packet.ttl <= 1) return true;
-    const result = this.translatorFor(pool).translate4to6Fitted({ ...packet, ttl: packet.ttl - 1 });
+    const hop = decrementForForwarding(packet);
+    if (hop.kind !== 'forward') return true;
+    const result = this.translatorFor(pool).translate4to6Fitted(hop.packet);
     if (result.ok === false) {
       this.deps.log(`NAT64 dropped ${packet.sourceIP} -> ${packet.destinationIP} (${result.reason})`);
       return true;

@@ -120,7 +120,7 @@ describe('Bash Interpreter TDD Suite', () => {
     
     it('G2-06: should correctly perform word splitting without quotes', async () => {
       // touch expects two separate arguments
-      const out = await server.executeCommand('FILES="file1 file2"; touch $FILES; ls file*');
+      const out = await server.executeCommand('FILES="file1 file2"; touch $FILES; ls -1 file*');
       expect(out.trim()).toBe('file1\nfile2');
     });
 
@@ -533,19 +533,19 @@ describe('Bash Interpreter TDD Suite', () => {
   describe('G9: Globbing (Wildcards)', () => {
     it('G9-01: should expand * to match multiple files', async () => {
       await server.executeCommand('touch file1.txt file2.txt data.log');
-      const out = await server.executeCommand('ls *.txt');
+      const out = await server.executeCommand('ls -1 *.txt');
       expect(out.trim()).toBe('file1.txt\nfile2.txt');
     });
 
     it('G9-02: should expand ? to match single character', async () => {
       await server.executeCommand('touch data1.log data2.log data10.log');
-      const out = await server.executeCommand('ls data?.log');
+      const out = await server.executeCommand('ls -1 data?.log');
       expect(out.trim()).toBe('data1.log\ndata2.log');
     });
 
     it('G9-03: should expand [...] to match character sets', async () => {
       await server.executeCommand('touch file_a file_b file_c file_d');
-      const out = await server.executeCommand('ls file_[ac]');
+      const out = await server.executeCommand('ls -1 file_[ac]');
       expect(out.trim()).toBe('file_a\nfile_c');
     });
 
@@ -594,21 +594,15 @@ describe('Bash Interpreter TDD Suite', () => {
 
   describe('G11: Erreurs de Syntaxe et Cas Limites', () => {
     it('G11-01: should fail on unclosed quote', async () => {
-      // In an interactive shell this prompts for more input. In a script it's a syntax error.
-      // Your implementation may choose either. A syntax error is a good default.
       const out = await server.executeCommand('echo "hello');
-      expect(out).toContain('syntax error');
+      expect(out).toContain("unexpected EOF while looking for matching `\"'");
     });
 
-    it('G11-02: bare reserved word `fi` outside any if-clause is a plain command (real-bash behaviour)', async () => {
-      // Real bash recognises `fi`, `done`, `esac`, etc. as reserved
-      // words ONLY when they terminate the matching compound — at the
-      // top level they are plain command words. Bash then reports
-      // "command not found" (exit 127), never "syntax error".
+    it('G11-02: a bare reserved word `fi` outside any if-clause is a syntax error (captured from bash)', async () => {
       const out = await server.executeCommand('fi');
-      expect(out).toMatch(/command not found|not found/);
+      expect(out).toContain("syntax error near unexpected token `fi'");
     });
-    
+
     it('G11-03: should fail on incomplete pipe', async () => {
       // A truly incomplete structure (missing fi) produces a syntax error
       const out = await server.executeCommand('if true; then echo hello');

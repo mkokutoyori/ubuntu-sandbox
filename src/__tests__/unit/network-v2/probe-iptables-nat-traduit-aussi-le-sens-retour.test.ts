@@ -493,21 +493,21 @@ describe('the nat rule grammar is the one of libipt_DNAT, libipt_SNAT, libipt_MA
   };
 
   it.each([
-    ['-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080', '-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080'],
-    ['-A PREROUTING -p udp --dport 53 -j DNAT --to-destination 10.0.0.2-10.0.0.4:5353 --persistent --random', '-A PREROUTING -p udp --dport 53 -j DNAT --to-destination 10.0.0.2-10.0.0.4:5353 --random --persistent'],
-    ['-A PREROUTING -p tcp --dport 8000 -j DNAT --to-destination 10.0.0.9:8000-8010/9000', '-A PREROUTING -p tcp --dport 8000 -j DNAT --to-destination 10.0.0.9:8000-8010/9000'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080', '-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080'],
+    ['-A PREROUTING -p udp -m udp --dport 53 -j DNAT --to-destination 10.0.0.2-10.0.0.4:5353 --persistent --random', '-A PREROUTING -p udp -m udp --dport 53 -j DNAT --to-destination 10.0.0.2-10.0.0.4:5353 --random --persistent'],
+    ['-A PREROUTING -p tcp -m tcp --dport 8000 -j DNAT --to-destination 10.0.0.9:8000-8010/9000', '-A PREROUTING -p tcp -m tcp --dport 8000 -j DNAT --to-destination 10.0.0.9:8000-8010/9000'],
     ['-A POSTROUTING -o eth1 -p tcp -j MASQUERADE --to-ports 1024-2048', '-A POSTROUTING -o eth1 -p tcp -j MASQUERADE --to-ports 1024-2048'],
     ['-A POSTROUTING -o eth1 -j MASQUERADE --random-fully', '-A POSTROUTING -o eth1 -j MASQUERADE --random-fully'],
     ['-A POSTROUTING -o eth2 -p udp -j SNAT --to-source 1.2.3.4-1.2.3.8:100-200 --random', '-A POSTROUTING -o eth2 -p udp -j SNAT --to-source 1.2.3.4-1.2.3.8:100-200 --random'],
-    ['-A PREROUTING -p tcp --dport 8080 -j REDIRECT --to-ports 3128', '-A PREROUTING -p tcp --dport 8080 -j REDIRECT --to-ports 3128'],
-    ['-A PREROUTING -p tcp --dport 9090 -j REDIRECT', '-A PREROUTING -p tcp --dport 9090 -j REDIRECT'],
-    ['-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080-8080', '-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080'],
-    ['-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination :8080', '-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination :8080'],
-    ['-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:65535', '-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:65535'],
-    ['-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8000-8010/65535', '-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8000-8010/65535'],
-    ['-A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 65535', '-A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 65535'],
-    ['-A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 010', '-A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8'],
-    ['-A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 0x1f90', '-A PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8080'],
+    ['-A PREROUTING -p tcp -m tcp --dport 8080 -j REDIRECT --to-ports 3128', '-A PREROUTING -p tcp -m tcp --dport 8080 -j REDIRECT --to-ports 3128'],
+    ['-A PREROUTING -p tcp -m tcp --dport 9090 -j REDIRECT', '-A PREROUTING -p tcp -m tcp --dport 9090 -j REDIRECT'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080-8080', '-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination :8080', '-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination :8080'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:65535', '-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:65535'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8000-8010/65535', '-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8000-8010/65535'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 65535', '-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 65535'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 010', '-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 0x1f90', '-A PREROUTING -p tcp -m tcp --dport 80 -j REDIRECT --to-ports 8080'],
     ['-A PREROUTING -p 132 -j DNAT --to-destination 10.0.0.2:8080', '-A PREROUTING -p 132 -j DNAT --to-destination 10.0.0.2:8080'],
     ['-A PREROUTING -p 33 -j DNAT --to-destination 10.0.0.2:8080', '-A PREROUTING -p 33 -j DNAT --to-destination 10.0.0.2:8080'],
     ['-A POSTROUTING -o eth1 -p tcp -j MASQUERADE --to-ports 80-80', '-A POSTROUTING -o eth1 -p tcp -j MASQUERADE --to-ports 80'],
@@ -518,12 +518,12 @@ describe('the nat rule grammar is the one of libipt_DNAT, libipt_SNAT, libipt_MA
   });
 
   it.each([
-    ['-A PREROUTING -p tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080', 'tcp dpt:80 to:10.0.0.2:8080'],
-    ['-A PREROUTING -p udp --dport 53 -j DNAT --to-destination 10.0.0.2-10.0.0.4:5353 --persistent --random', 'to:10.0.0.2-10.0.0.4:5353 random persistent'],
+    ['-A PREROUTING -p tcp -m tcp --dport 80 -j DNAT --to-destination 10.0.0.2:8080', 'tcp dpt:80 to:10.0.0.2:8080'],
+    ['-A PREROUTING -p udp -m udp --dport 53 -j DNAT --to-destination 10.0.0.2-10.0.0.4:5353 --persistent --random', 'to:10.0.0.2-10.0.0.4:5353 random persistent'],
     ['-A POSTROUTING -o eth1 -p tcp -j MASQUERADE --to-ports 1024-2048', 'masq ports: 1024-2048'],
     ['-A POSTROUTING -o eth1 -j MASQUERADE --random-fully', 'random-fully'],
     ['-A POSTROUTING -o eth2 -p udp -j SNAT --to-source 1.2.3.4-1.2.3.8:100-200 --random', 'to:1.2.3.4-1.2.3.8:100-200 random'],
-    ['-A PREROUTING -p tcp --dport 8080 -j REDIRECT --to-ports 3128', 'redir ports 3128'],
+    ['-A PREROUTING -p tcp -m tcp --dport 8080 -j REDIRECT --to-ports 3128', 'redir ports 3128'],
   ])('%s is listed with %s', async (rule, shown) => {
     const host = new LinuxPC('H', 0, 0);
     await sudo(host, `iptables -t nat ${rule}`);

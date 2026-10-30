@@ -94,7 +94,7 @@ export async function launchTelnet(
   const socket = dialed as TelnetClientTransport;
 
   for (const line of dialect.connected(host, found.ip)) deps.emit(line);
-  return new TelnetInteractiveSubShell(new TelnetClientSession(socket), host);
+  return new TelnetInteractiveSubShell(new TelnetClientSession(socket), host, undefined, dialect.closedByPeer?.(host));
 }
 
 function telnetPort(): number {

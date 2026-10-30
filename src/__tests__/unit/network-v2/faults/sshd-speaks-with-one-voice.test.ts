@@ -67,7 +67,7 @@ describe('sshd is the same process everywhere it is named', () => {
   it('the pid in auth.log is the pid `ps` shows', async () => {
     const srv = await afterOneLogin();
 
-    const ps = await srv.executeCommand('ps aux');
+    const ps = await srv.executeCommand('ps auxww');
     const auth = await srv.executeCommand('cat /var/log/auth.log');
     const accepted = /sshd\[(\d+)\]: Accepted password for alice/.exec(auth)?.[1];
 
@@ -80,7 +80,7 @@ describe('sshd is the same process everywhere it is named', () => {
   it('no line names an sshd that does not exist', async () => {
     const srv = await afterOneLogin();
 
-    const ps = await srv.executeCommand('ps aux');
+    const ps = await srv.executeCommand('ps auxww');
     const auth = await srv.executeCommand('cat /var/log/auth.log');
 
     // Every `sshd[<pid>]` in the log must correspond to a real process:
@@ -113,7 +113,7 @@ describe('sshd is the same process everywhere it is named', () => {
   it('`Server listening` est écrit par le démon qui a lié les sockets, une ligne par socket', async () => {
     const srv = await afterOneLogin();
 
-    const pid = sshdPidFrom(await srv.executeCommand('ps aux'));
+    const pid = sshdPidFrom(await srv.executeCommand('ps auxww'));
     const auth = await srv.executeCommand('cat /var/log/auth.log');
 
     const listening = auth.split('\n').filter((l) => l.includes('Server listening'));

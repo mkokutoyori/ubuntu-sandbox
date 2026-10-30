@@ -12,6 +12,7 @@ import type { AsaFirewall } from './AsaFirewall';
 import type { SimulatedFlow, SimulatedProtocol } from '../../pipeline/SimulatedPacket';
 import type { FirewallSession } from '../../session/SessionTable';
 import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IPAddress } from '../../../../core/types';
+import { isValidIPv4 } from '@/network/core/ip';
 import { ASA_NAT_SECTIONS, ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
 
 const ASA_MANAGEMENT_SERVICES = ['ping', 'ssh', 'telnet', 'http', 'https', 'snmp'] as const;
@@ -107,6 +108,10 @@ function connLine(
     + ` idle ${idleClock(now - session.lastSeenAt)}, bytes ${bytes},`
     + ` flags ${connFlags(session)}`;
 }
+
+const ASA_PROTOCOL_NUMBERS: Readonly<Record<string, number>> = {
+  tcp: IP_PROTO_TCP, udp: IP_PROTO_UDP, icmp: IP_PROTO_ICMP,
+};
 
 function xlateLine(
   session: FirewallSession, now: number, zoneName: (iface: string) => string,
@@ -805,10 +810,65 @@ export class AsaShell implements AsaShowHost {
       ...translated.map(session => xlateLine(session, now, this.zoneName.bind(this)))].join('\n');
   }
 
+  private connectionFilter(words: readonly string[]): ((session: FirewallSession) => boolean) | null {
+    const tests: Array<(session: FirewallSession) => boolean> = [];
+    for (let at = 0; at < words.length; at++) {
+      const keyword = words[at].toLowerCase();
+      const value = words[at + 1];
+      if (keyword === 'all') continue;
+      if (value === undefined) return null;
+      at++;
+      if (keyword === 'address' && isValidIPv4(value)) {
+        tests.push(session => [session.c2s.sourceIP, session.c2s.destIP].includes(value));
+      } else if (keyword === 'port' && /^\d{1,5}$/.test(value) && Number(value) <= 65535) {
+        tests.push(session => [session.c2s.sourcePort, session.c2s.destPort].includes(Number(value)));
+      } else if (keyword === 'protocol' && value.toLowerCase() in ASA_PROTOCOL_NUMBERS) {
+        tests.push(session => session.c2s.protocol === ASA_PROTOCOL_NUMBERS[value.toLowerCase()]);
+      } else {
+        return null;
+      }
+    }
+    return session => tests.every(test => test(session));
+  }
+
+  private translationFilter(words: readonly string[]): ((session: FirewallSession) => boolean) | null {
+    const tests: Array<(session: FirewallSession) => boolean> = [];
+    for (let at = 0; at < words.length; at += 2) {
+      const keyword = words[at].toLowerCase();
+      const value = words[at + 1];
+      if (value === undefined) return null;
+      if (keyword === 'global' && isValidIPv4(value)) {
+        tests.push(session => session.translation?.translatedSource === value);
+      } else if (keyword === 'local' && isValidIPv4(value)) {
+        tests.push(session => session.translation?.originalSource === value);
+      } else if (keyword === 'gport' && /^\d{1,5}$/.test(value)) {
+        tests.push(session => session.translation?.translatedSourcePort === Number(value));
+      } else if (keyword === 'lport' && /^\d{1,5}$/.test(value)) {
+        tests.push(session => session.translation?.originalSourcePort === Number(value));
+      } else if (keyword === 'interface' && this.interfaceNamed(value)) {
+        tests.push(session => session.ingressZone === value || session.egressZone === value);
+      } else {
+        return null;
+      }
+    }
+    return session => tests.every(test => test(session));
+  }
+
   private clearCommand(rest: string[]): string {
-    if (rest[0] === 'conn') { this.fw.getSessionTable().clear(); return ''; }
-    if (rest[0] === 'xlate') { this.fw.clearTranslations(); return ''; }
+    if (rest[0] === 'conn') {
+      const matches = this.connectionFilter(rest.slice(1));
+      if (matches === null) return ASA_INVALID_INPUT;
+      this.fw.getSessionTable().clearMatching(matches);
+      return '';
+    }
+    if (rest[0] === 'xlate') {
+      const matches = this.translationFilter(rest.slice(1));
+      if (matches === null) return ASA_INVALID_INPUT;
+      this.fw.clearTranslations(matches);
+      return '';
+    }
     if (rest[0] === 'logging' && rest[1] === 'buffer') {
+      if (rest.length > 2) return ASA_INVALID_INPUT;
       this.fw.getLoggingConfig().clearBuffer();
       return '';
     }

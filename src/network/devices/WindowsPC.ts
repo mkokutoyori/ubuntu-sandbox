@@ -166,6 +166,7 @@ import { cmdNetsh } from './windows/WinNetsh';
 import { cmdPing, pingExitCode } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
+import { findInvalidWindowsArgument, invalidArgumentError, SYSTEMINFO_SWITCHES } from './windows/WinSwitchGuard';
 import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
@@ -3820,7 +3821,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         }, args, splitCmdArgs(expanded, true).slice(1)));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;
-      case 'systeminfo': return this.cmdSysteminfo();
+      case 'systeminfo': return this.cmdSysteminfoChecked(args);
       case 'whoami':  return cmdWhoami({ hostname: this.hostname, logonDomain: this.getEnvVars().get('USERDOMAIN'), userManager: this.userMgr, domainSession: this.domainSession }, args);
       case 'icacls':  return cmdIcacls({ fs: this.fs, cwd: this.cwd, userManager: this.userMgr }, args);
       case 'runas':   return this.cmdRunas(args);
@@ -4604,7 +4605,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'ssh-keygen' || lower === 'ssh-keyscan') {
       return this.runOpenSshTool(lower, args);
     }
-    if (lower === 'systeminfo') return this.cmdSysteminfo();
+    if (lower === 'systeminfo') return this.cmdSysteminfoChecked(args);
     if (lower === 'ver') return WindowsPC.VER_STRING;
     if (lower === 'hostname') return this.hostname;
     if (lower === 'vol')  return this.cmdVol(args);
@@ -4845,6 +4846,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.procMgr.killProcess(proc.pid, true, true);
   }
 
+  private cmdSysteminfoChecked(args: string[]): string {
+    const invalid = findInvalidWindowsArgument(args, SYSTEMINFO_SWITCHES);
+    return invalid !== null ? invalidArgumentError('systeminfo', invalid) : this.cmdSysteminfo();
+  }
+
   private cmdSysteminfo(): string {
     return WinSys.cmdSysteminfo(this.buildSystemContext());
   }
@@ -4997,6 +5003,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   setDnsServers(ifName: string, servers: string[]): void {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
+  staticDnsServers(): { interface: string; servers: string[] }[] {
+    return [...this.dnsConfig]
+      .filter(([, config]) => config.mode === 'static' && config.servers.length > 0)
+      .map(([ifName, config]) => ({ interface: ifName, servers: [...config.servers] }));
   }
 
   getClassId(ifName: string): string | null { return this.dhcpClassIds.get(ifName) ?? null; }
@@ -6560,6 +6572,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private _w32time: W32TimeService | null = null;
+
+  reapplyTimeConfiguration(): void {
+    if (this.svcMgr.isStarted('W32Time')) this.getW32Time().applyConfiguration();
+  }
+
   getW32Time(): W32TimeService {
     if (!this._w32time) {
       this._w32time = new W32TimeService({

@@ -757,7 +757,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
       expect(out).toContain('Rules updated');
 
       await server.executeCommand('ufw enable');
-      const status = await server.executeCommand('ufw status');
+      const status = await server.executeCommand('ufw status verbose');
       expect(status).toContain('ALLOW IN');
       expect(status).toContain('22/tcp');
     });
@@ -791,7 +791,7 @@ describe('Group 8: UFW (Uncomplicated Firewall)', () => {
 
       await server.executeCommand('ufw enable');
       const status = await server.executeCommand('ufw status');
-      expect(status).toContain('DENY OUT on ens33');
+      expect(status).toMatch(/^25\/tcp +DENY OUT +Anywhere on ens33 *$/m);
     });
 
     it('should allow direction with from syntax', async () => {

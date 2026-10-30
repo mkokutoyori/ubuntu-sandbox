@@ -107,14 +107,14 @@ describe('Group 2: Oracle background processes in ps', () => {
 
   it('T08 — ps aux shows Oracle background processes after sync', async () => {
     syncOracleProcessesToDevice(server, db);
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     expect(output).toContain('ora_pmon');
     expect(output).toContain('ora_smon');
   });
 
   it('T09 — Oracle processes run under oracle user', async () => {
     syncOracleProcessesToDevice(server, db);
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     const lines = output.split('\n').filter(l => l.includes('ora_'));
     for (const line of lines) {
       expect(line).toMatch(/^oracle\s/);
@@ -123,7 +123,7 @@ describe('Group 2: Oracle background processes in ps', () => {
 
   it('T10 — Oracle process names include SID', async () => {
     syncOracleProcessesToDevice(server, db);
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     const sidLower = SID.toLowerCase();
     const oraLines = output.split('\n').filter(l => l.includes('ora_'));
     for (const line of oraLines) {
@@ -134,7 +134,7 @@ describe('Group 2: Oracle background processes in ps', () => {
   it('T11 — listener process appears in ps when listener is running', async () => {
     db.instance.startListener();
     syncOracleProcessesToDevice(server, db);
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     expect(output).toContain('tnslsnr');
     expect(output).toContain('LISTENER');
   });
@@ -145,7 +145,7 @@ describe('Group 2: Oracle background processes in ps', () => {
       db.instance.stopListener();
     }
     syncOracleProcessesToDevice(server, db);
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     expect(output).not.toContain('tnslsnr');
   });
 
@@ -156,7 +156,7 @@ describe('Group 2: Oracle background processes in ps', () => {
     expect(output).toContain('PID');
     expect(output).toContain('CMD');
     // The init process belongs to root, shown only if current user is root
-    expect(output).toContain('-bash');
+    expect(output).toMatch(/^\s*\d+ pts\/\d+\s+\d+:\d+:\d+ bash$/m);
   });
 
   it('T14 — ps -ef also shows Oracle processes', async () => {
@@ -168,7 +168,7 @@ describe('Group 2: Oracle background processes in ps', () => {
 
   it('T15 — background processes include DBWR, LGWR, CKPT, etc.', async () => {
     syncOracleProcessesToDevice(server, db);
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     // Standard Oracle background processes
     expect(output).toContain('ora_pmon');
     expect(output).toContain('ora_smon');
@@ -270,7 +270,7 @@ describe('Group 5: V$DIAG_INFO uses dynamic paths', () => {
 describe('Group 6: ps command basics', () => {
 
   it('T23 — ps aux shows header with USER PID columns', async () => {
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     expect(output).toContain('USER');
     expect(output).toContain('PID');
     expect(output).toContain('COMMAND');
@@ -284,12 +284,12 @@ describe('Group 6: ps command basics', () => {
   });
 
   it('T25 — ps always shows /sbin/init (PID 1)', async () => {
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     expect(output).toContain('/sbin/init');
   });
 
   it('T26 — ps always shows current shell (-bash)', async () => {
-    const output = await server.executeCommand('ps aux');
+    const output = await server.executeCommand('ps auxww');
     expect(output).toContain('-bash');
   });
 });

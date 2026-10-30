@@ -96,13 +96,18 @@ const MODE: CommandSpec = {
   },
 };
 
+const IPV4_OCTET = '(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)';
+
+const TUNNEL_SOURCE_PATTERN = new RegExp(
+  `^(?:${IPV4_OCTET}(?:\\.${IPV4_OCTET}){3}|[A-Za-z][A-Za-z-]*\\d+(?:/\\d+)*(?:\\.\\d+)?)$`);
+
 export const TUNNEL_FAMILY: readonly CommandSpec[] = Object.freeze([
   PATH_MTU_DISCOVERY,
   // `tunnel source` prend une adresse OU un nom d'interface : le socle
   // ne sait pas encore declarer une union, et annoncer une seule des deux
   // decrirait faux la moitie des usages. `WORD` dit ce qu'on sait.
   setter('tunnel-source', 'source', 'tunnelSource', 'Set tunnel source',
-    { name: 'value', type: 'WORD' }),
+    { name: 'value', type: 'WORD', pattern: TUNNEL_SOURCE_PATTERN }),
   setter('tunnel-destination', 'destination', 'tunnelDest', 'Set tunnel destination',
     { name: 'value', type: 'IP_ADDR' }),
   MODE,

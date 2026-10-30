@@ -11,12 +11,16 @@ export interface IpAddressHost {
 
 const MODES = ['config-if', 'config-subif'] as const;
 
+const UNICAST_FIRST_OCTET = /^(?!0\.|2(?:2[4-9]|[3-5]\d)\.)/;
+
 const ADRESSE: ArgumentSpec = {
   name: 'adresse', type: 'IP_ADDR', description: 'IP address',
+  pattern: UNICAST_FIRST_OCTET,
 };
 
 const MASQUE: ArgumentSpec = {
   name: 'masque', type: 'SUBNET_MASK', description: 'IP subnet mask',
+  pattern: /^(?!0\.0\.0\.0$)/,
 };
 
 export function ipAddressInterfaceSpecs(ctx: () => IpAddressHost): CommandSpec[] {

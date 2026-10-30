@@ -16,6 +16,9 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import {
+  dscpListing, lengthListing, mssListing, parseDscp, parseLengthRange, parseMssRange, parseTos, tosListing, tosMatches, parseTimeWindow, timeWindowHolds, timeWindowListing,
+} from './IptablesTimeLength';
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import {
@@ -23,7 +26,7 @@ import {
   IP_PROTO_DCCP, IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_SCTP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, PORT_BEARING_PROTOCOLS,
 } from '../../core/types';
 import { answersWithTcpReset, rejectTypeOf } from '../../core/IcmpErrors';
-import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { renderTable, IPTABLES_LISTING_TABLE, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 import { ConnectionTracker, type ConnectionState, type ConnectionTuple, type ErrorTranslation, type NatTranslation, type TrackedEntry } from './ConnectionTracker';
 import type { NatManipulation } from './NatMapping';
 import { NAT_ADDRESS_OPTION, natListing, natRangeOfTarget, natSaveOptions, type NatRange, type NatTargetName } from './NatRange';
@@ -50,6 +53,12 @@ export interface PacketInfo {
   tcpOptions?: readonly number[];
   fragmentOffset?: number;
   ipPacketBytes?: number;
+  ttl?: number;
+  tos?: number;
+  tcpMss?: number;
+  srcAddrType?: string;
+  dstAddrType?: string;
+  addressTypeOf?: (ip: string) => string;
   related?: ConnectionTuple;
 }
 
@@ -58,7 +67,7 @@ export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
   'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
-  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit', 'dscp', 'tos', 'tcpmss',
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
@@ -91,6 +100,16 @@ const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOpti
   },
   pkttype: { '--pkt-type': 'IM' },
   length: { '--length': 'IM' },
+  tcpmss: { '--mss': 'IM' },
+  dscp: { '--dscp': 'I', '--dscp-class': 'I' },
+  tos: { '--tos': 'IM' },
+  connlimit: {
+    '--connlimit-above': 'I', '--connlimit-upto': '', '--connlimit-mask': '', '--connlimit-saddr': 'F', '--connlimit-daddr': 'F',
+  },
+  time: {
+    '--timestart': '', '--timestop': '', '--weekdays': 'I', '--monthdays': 'I', '--datestart': '', '--datestop': '',
+    '--utc': 'F', '--kerneltz': 'F',
+  },
   ttl: { '--ttl-eq': 'I', '--ttl-gt': '', '--ttl-lt': '' },
   hashlimit: {
     '--hashlimit-upto': 'I', '--hashlimit-above': 'I', '--hashlimit-burst': '', '--hashlimit-mode': '', '--hashlimit-srcmask': '',
@@ -114,6 +133,14 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   mac: ['--mac-source'],
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
+  addrtype: ['--src-type', '--dst-type'],
+  tcpmss: ['--mss'],
+  dscp: ['--dscp', '--dscp-class'],
+  tos: ['--tos'],
+  connlimit: ['--connlimit-above', '--connlimit-upto', '--connlimit-mask', '--connlimit-saddr', '--connlimit-daddr'],
+  length: ['--length'],
+  ttl: ['--ttl-eq', '--ttl-gt', '--ttl-lt'],
+  time: ['--timestart', '--timestop', '--weekdays', '--monthdays', '--datestart', '--datestop', '--utc', '--kerneltz'],
   recent: ['--name', '--set', '--rcheck', '--update', '--remove', '--seconds', '--hitcount', '--rsource', '--rdest', '--mask', '--reap'],
 };
 
@@ -362,11 +389,33 @@ interface IptablesTable {
   chains: Map<string, IptablesChain>;
 }
 
+interface ListedRule {
+  readonly r: IptablesRule;
+  readonly index: number;
+}
+
+export interface IptablesOwnerNames {
+  readonly user: (uid: number) => string | null;
+  readonly group: (gid: number) => string | null;
+}
+
 export interface ListFormat {
   verbose: boolean;
   numeric: boolean;
   lineNumbers: boolean;
   exact: boolean;
+}
+
+function markListing(option: string, value: string): string {
+  const [markText, maskText] = value.split('/');
+  const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
+  switch (option) {
+    case '--or-mark': return `MARK or ${hex(markText)}`;
+    case '--and-mark': return `MARK and ${hex(markText)}`;
+    case '--xor-mark': return `MARK xor ${hex(markText)}`;
+    case '--set-xmark': return maskText === undefined ? `MARK set ${hex(markText)}` : `MARK xset ${hex(markText)}/${hex(maskText)}`;
+    default: return `MARK set ${hex(markText)}`;
+  }
 }
 
 function abbreviateCounter(n: number): string {
@@ -457,6 +506,7 @@ export type IptablesServiceResolver = (port: number, proto: string) => string | 
 export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
   private resolveService: IptablesServiceResolver | null = null;
+  private ownerNames: IptablesOwnerNames | null = null;
   private tables: Map<TableName, IptablesTable> = new Map();
   private readonly limitBuckets = new WeakMap<IptablesRule, { tokens: number; at: number }>();
   private readonly recentLists = new Map<string, Map<string, number[]>>();
@@ -478,11 +528,12 @@ export class LinuxIptablesManager {
   constructor(
     vfs?: VirtualFileSystem,
     resolveService?: IptablesServiceResolver,
-    opts?: { family?: 4 | 6 },
+    opts?: { family?: 4 | 6; ownerNames?: IptablesOwnerNames },
   ) {
     if (vfs) this.vfs = vfs;
     if (resolveService) this.resolveService = resolveService;
     this.family = opts?.family ?? 4;
+    this.ownerNames = opts?.ownerNames ?? null;
     this.connections = new ConnectionTracker(this.family);
     this.initializeTables();
   }
@@ -831,6 +882,52 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
+      if (m.module === 'tcpmss') {
+        const range = parseMssRange(m.options.get('--mss') ?? '');
+        if (typeof range === 'string') return false;
+        const holds = pkt.tcpMss !== undefined && pkt.tcpMss >= range.min && pkt.tcpMss <= range.max;
+        if (pkt.tcpMss === undefined ? !inverted('--mss') : holds === inverted('--mss')) return false;
+      }
+      if (m.module === 'dscp') {
+        const wanted = parseDscp(m.options);
+        if (typeof wanted === 'string' || pkt.tos === undefined) return false;
+        if (((pkt.tos >> 2) === wanted) === (m.negated !== undefined && m.negated.size > 0)) return false;
+      }
+      if (m.module === 'tos') {
+        const wanted = parseTos(m.options.get('--tos') ?? '');
+        if (typeof wanted === 'string' || pkt.tos === undefined) return false;
+        if (tosMatches(wanted, pkt.tos) === inverted('--tos')) return false;
+      }
+      if (m.module === 'connlimit') {
+        if (this.connlimitExceeded(m, pkt, state) === this.connlimitView(m).inverted) return false;
+      }
+      if (m.module === 'addrtype') {
+        for (const [option, actual] of [
+          ['--src-type', pkt.srcAddrType ?? pkt.addressTypeOf?.(pkt.srcIP)], ['--dst-type', pkt.dstAddrType ?? pkt.addressTypeOf?.(pkt.dstIP)],
+        ] as const) {
+          const wanted = m.options.get(option);
+          if (wanted === undefined) continue;
+          if (actual === undefined) return false;
+          if (wanted.toUpperCase().split(',').includes(actual) === inverted(option)) return false;
+        }
+      }
+      if (m.module === 'ttl') {
+        if (pkt.ttl === undefined) return false;
+        const wanted = Number(m.options.get('--ttl-eq') ?? m.options.get('--ttl-gt') ?? m.options.get('--ttl-lt'));
+        const holds = m.options.has('--ttl-eq') ? pkt.ttl === wanted
+          : m.options.has('--ttl-gt') ? pkt.ttl > wanted : pkt.ttl < wanted;
+        if (holds === inverted('--ttl-eq')) return false;
+      }
+      if (m.module === 'length') {
+        const range = parseLengthRange(m.options.get('--length') ?? '');
+        if (typeof range === 'string' || pkt.ipPacketBytes === undefined) return false;
+        const inside = pkt.ipPacketBytes >= range.min && pkt.ipPacketBytes <= range.max;
+        if (inside === inverted('--length')) return false;
+      }
+      if (m.module === 'time') {
+        const window = parseTimeWindow(m.options, m.negated ?? new Set());
+        if (typeof window === 'string' || !timeWindowHolds(window, simulationNowMs())) return false;
+      }
       if (m.module === 'state' || m.module === 'conntrack') {
         const option = m.module === 'state' ? '--state' : '--ctstate';
         const wanted = (m.options.get(option) ?? '').toUpperCase();
@@ -855,6 +952,40 @@ export class LinuxIptablesManager {
     }
 
     return true;
+  }
+
+  private connlimitView(m: MatchExtension): { limit: number; mask: number; daddr: boolean; inverted: boolean } {
+    const above = m.options.get('--connlimit-above');
+    const limit = Number(above ?? m.options.get('--connlimit-upto') ?? 0);
+    const mask = Number(m.options.get('--connlimit-mask') ?? (this.family === 6 ? 128 : 32));
+    const inverted = above === undefined || inverts(m, '--connlimit-above');
+    return { limit, mask, daddr: m.options.has('--connlimit-daddr'), inverted };
+  }
+
+  private connlimitExceeded(m: MatchExtension, pkt: PacketInfo, state: ConnectionState): boolean {
+    const { limit, mask, daddr } = this.connlimitView(m);
+    const subject = daddr ? pkt.dstIP : pkt.srcIP;
+    const group = `${subject}/${mask}`;
+    const sameGroup = this.addressMatcher(group);
+    const counted = this.connections.count((original, tcpState) => {
+      if (tcpState === 'TIME_WAIT' || tcpState === 'CLOSE') return false;
+      return sameGroup(daddr ? original.dstIP : original.srcIP);
+    });
+    return counted + (state === 'NEW' ? 1 : 0) > limit;
+  }
+
+  private addressMatcher(spec: string): (ip: string) => boolean {
+    if (this.family === 6) return (ip) => this.ipMatchesSpec(ip, spec);
+    const [network, prefixText] = spec.split('/');
+    const prefix = Number(prefixText);
+    const networkNumber = this.ipToNumber(network);
+    if (networkNumber === null || Number.isNaN(prefix)) return () => false;
+    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    const wanted = networkNumber & mask;
+    return (ip) => {
+      const value = this.ipToNumber(ip);
+      return value !== null && (value & mask) === wanted;
+    };
   }
 
   private ipMatchesSpec(ip: string, spec: string): boolean {
@@ -1142,12 +1273,15 @@ export class LinuxIptablesManager {
     let numeric = false, verbose = false, lineNumbers = false, exact = false;
 
     for (const arg of args) {
-      switch (arg) {
-        case '-n': case '--numeric': numeric = true; break;
-        case '-v': case '--verbose': verbose = true; break;
-        case '-x': case '--exact': exact = true; break;
-        case '--line-numbers': lineNumbers = true; break;
-        default: if (!arg.startsWith('-')) chainName = arg; break;
+      const flags = /^-[nvx]+$/.test(arg) ? [...arg.slice(1)].map((c) => `-${c}`) : [arg];
+      for (const flag of flags) {
+        switch (flag) {
+          case '-n': case '--numeric': numeric = true; break;
+          case '-v': case '--verbose': verbose = true; break;
+          case '-x': case '--exact': exact = true; break;
+          case '--line-numbers': lineNumbers = true; break;
+          default: if (!flag.startsWith('-')) chainName = flag; break;
+        }
       }
     }
 
@@ -1191,43 +1325,42 @@ export class LinuxIptablesManager {
       lines.push(`Chain ${chain.name} (${this.countRefs(chain.name, table)} references)`);
     }
 
-    const numCol = lineNumbers ? 'num   ' : '';
+    const rows = chain.rules.map((r, i) => ({ r, index: i + 1 }));
+    const anyIface = numeric ? '*' : 'any';
+    const counterWidth = exact ? 9 : 6;
+    const counter = (pick: (row: ListedRule) => number, header: string, headerWidth: number): TableColumn<ListedRule> => ({
+      header: `${header} `, width: counterWidth, headerWidth, align: 'right',
+      value: (row) => `${count(pick(row))} `,
+    });
+    const columns: Array<TableColumn<ListedRule>> = [];
+    if (lineNumbers) columns.push({ header: 'num', width: 5, value: (row) => String(row.index) });
     if (verbose) {
-      lines.push(exact
-        ? `${numCol}    pkts      bytes target     prot opt in     out     source               destination`
-        : `${numCol} pkts bytes target     prot opt in     out     source               destination`);
-    } else {
-      lines.push(`${numCol}target     prot opt source               destination`);
+      columns.push(counter((row) => row.r.pkts, 'pkts', exact ? 9 : 6));
+      columns.push(counter((row) => row.r.bytes, 'bytes', exact ? 11 : 6));
     }
-
-    for (let i = 0; i < chain.rules.length; i++) {
-      const r = chain.rules[i];
-      const num = lineNumbers ? `${i + 1}     `.slice(0, 6) : '';
-      const target = padToWidth(r.target, 10);
-      const prot = padToWidth((r.negProtocol ? '!' : '') + (r.protocol || 'all'), 4);
-      const opt = r.fragment === 'only' ? '-f  ' : r.fragment === 'not' ? '!f  ' : '--  ';
-      const src = this.fmtAddr(r.source, r.negSource, numeric);
-      const dst = this.fmtAddr(r.destination, r.negDestination, numeric);
-      const extra = this.fmtRuleExtras(r, numeric);
-
-      if (verbose) {
-        const width = exact ? 8 : 5;
-        const pkts = padToWidth(count(r.pkts), width, 'right');
-        const bytes = padToWidth(count(r.bytes), width, 'right');
-        const inIf = padToWidth((r.negInInterface ? '!' : '') + (r.inInterface || '*'), 6);
-        const outIf = padToWidth((r.negOutInterface ? '!' : '') + (r.outInterface || '*'), 6);
-        lines.push(`${num}${pkts} ${bytes} ${target} ${prot} ${opt}${inIf} ${outIf} ${padToWidth(src, 20)} ${dst}${extra}`);
-      } else {
-        lines.push(`${num}${target} ${prot} ${opt}${padToWidth(src, 20)} ${dst}${extra}`);
-      }
+    columns.push(
+      { header: 'target', width: 10, value: (row) => `${row.r.target} ` },
+      { header: ' prot ', width: 6, value: (row) => `${row.r.negProtocol ? '!' : ' '}${row.r.protocol || 'all'}` },
+      { header: 'opt', width: 3, value: (row) => (row.r.fragment === 'only' ? '-f ' : row.r.fragment === 'not' ? '!f ' : '-- ') },
+    );
+    if (verbose) {
+      columns.push(
+        { header: ' in', width: 8, value: (row) => ` ${(row.r.negInInterface ? '!' : '') + (row.r.inInterface || anyIface)}` },
+        { header: 'out', width: 7, value: (row) => (row.r.negOutInterface ? '!' : '') + (row.r.outInterface || anyIface) },
+      );
     }
+    columns.push(
+      { header: ' source', width: 21, value: (row) => this.fmtAddr(row.r.source, row.r.negSource, numeric) },
+      { header: ' destination', width: 21, value: (row) => this.fmtAddr(row.r.destination, row.r.negDestination, numeric) },
+      { header: '', width: 0, value: (row) => this.fmtRuleExtras(row.r, numeric) },
+    );
+    lines.push(...renderTable(rows, columns, IPTABLES_LISTING_TABLE));
     return lines.join('\n');
   }
 
   private fmtAddr(addr: string, neg: boolean, numeric: boolean): string {
-    const n = neg ? '!' : '';
-    if (!addr) return numeric ? `${n}0.0.0.0/0` : `${n}anywhere`;
-    return `${n}${addr}`;
+    const text = addr || (numeric ? '0.0.0.0/0' : 'anywhere');
+    return `${neg ? '!' : ' '}${text}`;
   }
 
   private fmtRuleExtras(r: IptablesRule, numeric: boolean): string {
@@ -1244,7 +1377,7 @@ export class LinuxIptablesManager {
     if (transport.length > 0) parts.push(`${r.protocol} ${transport.join(' ')}`);
     if (r.icmpType !== null) parts.push(this.icmpListText(r.icmpType, numeric));
     for (const m of r.matches) {
-      const s = this.fmtMatch(m);
+      const s = this.fmtMatch(m, numeric);
       if (s) parts.push(s);
     }
     const t = r.natRange === null ? this.fmtTargetExtras(r.targetOptions) : natListing(r.target as NatTargetName, r.natRange);
@@ -1271,7 +1404,7 @@ export class LinuxIptablesManager {
     return this.resolveService(parseInt(spec, 10), proto || 'tcp') ?? spec;
   }
 
-  private fmtMatch(m: MatchExtension): string {
+  private fmtMatch(m: MatchExtension, numeric: boolean): string {
     const o = m.options;
     const bang = (option: string): string => (inverts(m, option) ? '! ' : '');
     switch (m.module) {
@@ -1284,6 +1417,76 @@ export class LinuxIptablesManager {
         const [option, label] = listed;
         return `multiport ${label} ${inverts(m, option) ? ' !' : ''}${o.get(option)}`;
       }
+      case 'recent': {
+        const flags: Array<[string, string]> = [['--set', 'SET'], ['--rcheck', 'CHECK'], ['--update', 'UPDATE'], ['--remove', 'REMOVE']];
+        const named = flags.filter(([option]) => o.has(option));
+        const inverted = named.some(([option]) => inverts(m, option));
+        const parts = [`${inverted ? '! ' : ''}recent:`, ...named.map(([, label]) => label)];
+        if (o.has('--seconds')) parts.push(`seconds: ${o.get('--seconds')}`);
+        if (o.has('--reap')) parts.push('reap');
+        if (o.has('--hitcount')) parts.push(`hit_count: ${o.get('--hitcount')}`);
+        if (o.has('--rttl')) parts.push('TTL-Match');
+        parts.push(`name: ${o.get('--name') || 'DEFAULT'}`, `side: ${o.has('--rdest') ? 'dest' : 'source'}`);
+        parts.push(`mask: ${o.get('--mask') || (this.family === 6 ? 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff' : '255.255.255.255')}`);
+        return parts.join(' ');
+      }
+      case 'string': {
+        const quoted = (o.get('--string') ?? '').replace(/["\\]/g, (c) => `\\${c}`);
+        const tail = [`ALGO name ${o.get('--algo') ?? 'bm'}`];
+        if (o.has('--from') && o.get('--from') !== '0') tail.push(`FROM ${o.get('--from')}`);
+        const to = o.get('--to') ?? '65535';
+        if (to !== '0') tail.push(`TO ${to}`);
+        if (o.has('--icase')) tail.push('ICASE');
+        return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
+      }
+      case 'owner': return this.ownerListing(m, numeric);
+      case 'tcpmss': {
+        const range = parseMssRange(o.get('--mss') ?? '');
+        return typeof range === 'string' ? '' : mssListing(range, inverts(m, '--mss'));
+      }
+      case 'dscp': {
+        const value = parseDscp(o);
+        return typeof value === 'string' ? '' : dscpListing(value, (m.negated?.size ?? 0) > 0);
+      }
+      case 'tos': {
+        const value = parseTos(o.get('--tos') ?? '');
+        return typeof value === 'string' ? '' : tosListing(value, inverts(m, '--tos'));
+      }
+      case 'connlimit': {
+        const view = this.connlimitView(m);
+        return `#conn ${view.daddr ? 'dst' : 'src'}/${view.mask} ${view.inverted ? '<=' : '>'} ${view.limit}`;
+      }
+      case 'length': {
+        const range = parseLengthRange(o.get('--length') ?? '');
+        return typeof range === 'string' ? '' : lengthListing(range, inverts(m, '--length'));
+      }
+      case 'time': {
+        const window = parseTimeWindow(o, m.negated ?? new Set());
+        return typeof window === 'string' ? '' : timeWindowListing(window);
+      }
+      case 'ttl': {
+        const modes: Array<[string, string]> = [['--ttl-eq', '=='], ['--ttl-gt', '>'], ['--ttl-lt', '<']];
+        const [option, sign] = modes.find(([name]) => o.has(name)) ?? ['--ttl-eq', '=='];
+        return `TTL match TTL ${inverts(m, option) ? '!=' : sign} ${o.get(option) ?? ''}`;
+      }
+      case 'mark': {
+        const [mark, mask] = (o.get('--mark') ?? '0').split('/');
+        const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
+        return `mark match${inverts(m, '--mark') ? ' !' : ''} ${hex(mark)}${mask === undefined ? '' : `/${hex(mask)}`}`;
+      }
+      case 'pkttype': return `PKTTYPE ${inverts(m, '--pkt-type') ? '!' : ''}= ${o.get('--pkt-type') ?? ''}`;
+      case 'iprange': {
+        const ranges: string[] = [];
+        if (o.has('--src-range')) ranges.push(`source IP range${inverts(m, '--src-range') ? ' !' : ''} ${o.get('--src-range')}`);
+        if (o.has('--dst-range')) ranges.push(`destination IP range${inverts(m, '--dst-range') ? ' !' : ''} ${o.get('--dst-range')}`);
+        return ranges.join(' ');
+      }
+      case 'addrtype': {
+        const types: string[] = ['ADDRTYPE match'];
+        if (o.has('--src-type')) types.push(`src-type ${inverts(m, '--src-type') ? '!' : ''}${o.get('--src-type')}`);
+        if (o.has('--dst-type')) types.push(`dst-type ${inverts(m, '--dst-type') ? '!' : ''}${o.get('--dst-type')}`);
+        return types.join(' ');
+      }
       case 'comment':   return `/* ${o.get('--comment') ?? ''} */`;
       case 'limit':     return `limit: avg ${o.get('--limit') ?? ''} burst ${o.get('--limit-burst') ?? '5'}`;
       case 'mac':       return o.get('--mac-source') ? `MAC ${inverts(m, '--mac-source') ? '!' : ''}${o.get('--mac-source')}` : '';
@@ -1295,6 +1498,23 @@ export class LinuxIptablesManager {
     }
   }
 
+  private ownerListing(m: MatchExtension, numeric: boolean): string {
+    const items: Array<[string, string]> = [
+      ['--socket-exists', 'owner socket exists'], ['--uid-owner', 'owner UID match'],
+      ['--gid-owner', 'owner GID match'], ['--suppl-groups', 'incl. suppl. groups'],
+    ];
+    const out: string[] = [];
+    for (const [option, label] of items) {
+      if (!m.options.has(option)) continue;
+      const raw = m.options.get(option) ?? '';
+      const names = numeric ? null : this.ownerNames;
+      const resolver = option === '--uid-owner' ? names?.user : option === '--gid-owner' ? names?.group : undefined;
+      const value = resolver !== undefined && /^\d+$/.test(raw) ? (resolver(Number(raw)) ?? raw) : raw;
+      out.push(`${inverts(m, option) ? '! ' : ''}${label}${value === '' ? '' : ` ${value}`}`);
+    }
+    return out.join(' ');
+  }
+
   private fmtTargetExtras(opts: TargetOptions): string {
     const parts: string[] = [];
     for (const [k, v] of Object.entries(opts)) {
@@ -1304,7 +1524,9 @@ export class LinuxIptablesManager {
         case '--reject-with':    parts.push(`reject-with ${v}`); break;
         case '--log-prefix':     parts.push(`LOG flags 0 level 4 prefix "${v}"`); break;
         case '--log-level':      break;
-        case '--set-mark': case '--set-xmark': parts.push(`MARK set ${v}`); break;
+        case '--set-mark': case '--or-mark': case '--and-mark': case '--xor-mark': case '--set-xmark':
+          parts.push(markListing(k, v));
+          break;
         default:                 parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, '')); break;
       }
     }
@@ -1326,26 +1548,38 @@ export class LinuxIptablesManager {
       if (!chain) return { output: 'iptables: No chain/target/match by that name.', exitCode: 1 };
       return { output: this.fmtChainRules(chain), exitCode: 0 };
     }
-    const parts: string[] = [];
-    for (const chain of table.chains.values()) parts.push(this.fmtChainRules(chain));
-    return { output: parts.join('\n'), exitCode: 0 };
+    const lines: string[] = [];
+    for (const chain of table.chains.values()) lines.push(this.fmtChainDeclaration(chain));
+    for (const chain of table.chains.values()) lines.push(...this.fmtChainRuleLines(chain));
+    return { output: lines.join('\n'), exitCode: 0 };
+  }
+
+  private fmtChainDeclaration(chain: IptablesChain): string {
+    return chain.policy !== null ? `-P ${chain.name} ${chain.policy}` : `-N ${chain.name}`;
+  }
+
+  private fmtChainRuleLines(chain: IptablesChain): string[] {
+    return chain.rules.map((rule) => this.fmtRuleCmd('A', chain.name, rule));
   }
 
   private fmtChainRules(chain: IptablesChain): string {
-    const lines: string[] = [];
-    if (chain.policy !== null) lines.push(`-P ${chain.name} ${chain.policy}`);
-    for (const rule of chain.rules) lines.push(this.fmtRuleCmd('A', chain.name, rule));
-    return lines.join('\n');
+    return [this.fmtChainDeclaration(chain), ...this.fmtChainRuleLines(chain)].join('\n');
+  }
+
+  private hostMasked(address: string): string {
+    return address.includes('/') ? address : `${address}/${this.family === 6 ? 128 : 32}`;
   }
 
   fmtRuleCmd(action: string, chainName: string, rule: IptablesRule): string {
     const p: string[] = [`-${action} ${chainName}`];
-    if (rule.source)       { if (rule.negSource) p.push('!'); p.push(`-s ${rule.source}`); }
-    if (rule.destination)  { if (rule.negDestination) p.push('!'); p.push(`-d ${rule.destination}`); }
+    if (rule.source)       { if (rule.negSource) p.push('!'); p.push(`-s ${this.hostMasked(rule.source)}`); }
+    if (rule.destination)  { if (rule.negDestination) p.push('!'); p.push(`-d ${this.hostMasked(rule.destination)}`); }
     if (rule.inInterface)  { if (rule.negInInterface) p.push('!'); p.push(`-i ${rule.inInterface}`); }
     if (rule.outInterface) { if (rule.negOutInterface) p.push('!'); p.push(`-o ${rule.outInterface}`); }
     if (rule.protocol && rule.protocol !== 'all') { if (rule.negProtocol) p.push('!'); p.push(`-p ${rule.protocol}`); }
     if (rule.fragment !== '') p.push(rule.fragment === 'not' ? '! -f' : '-f');
+    const carrier = this.protocolModule(rule);
+    if (carrier !== '') p.push(`-m ${carrier}`);
     if (rule.sport) p.push(`${rule.negSport ? '! ' : ''}--sport ${rule.sport}`);
     if (rule.dport) p.push(`${rule.negDport ? '! ' : ''}--dport ${rule.dport}`);
     if (rule.tcpOption !== null) p.push(`${rule.tcpOption.invert ? '! ' : ''}--tcp-option ${rule.tcpOption.kind}`);
@@ -1370,6 +1604,14 @@ export class LinuxIptablesManager {
       }
     }
     return p.join(' ');
+  }
+
+  private protocolModule(rule: IptablesRule): string {
+    if (rule.sport || rule.dport || rule.tcpOption !== null || rule.tcpFlags !== null) {
+      return rule.protocol === 'tcp' || rule.protocol === 'udp' ? rule.protocol : '';
+    }
+    if (rule.icmpType !== null) return this.family === 6 ? 'icmp6' : 'icmp';
+    return '';
   }
 
   private quote(v: string): string { return v.includes(' ') ? `"${v}"` : v; }
@@ -1828,9 +2070,32 @@ export class LinuxIptablesManager {
       : 'multiport only works with TCP, UDP, UDPLITE, SCTP and DCCP');
   }
 
-  private static moduleProblem(module: string, options: ReadonlyMap<string, string>): string | null {
+  private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'tcpmss') {
+      const range = parseMssRange(options.get('--mss') ?? '');
+      if (typeof range === 'string') return range;
+    }
+    if (module === 'dscp') {
+      const value = parseDscp(options);
+      if (typeof value === 'string') return value;
+    }
+    if (module === 'tos') {
+      const value = parseTos(options.get('--tos') ?? '');
+      if (typeof value === 'string') return value;
+    }
+    if (module === 'connlimit' && !options.has('--connlimit-above') && !options.has('--connlimit-upto')) {
+      return 'You must specify "--connlimit-above" or "--connlimit-upto".';
+    }
+    if (module === 'time') {
+      const window = parseTimeWindow(options, negated);
+      if (typeof window === 'string') return window;
+    }
+    if (module === 'length') {
+      const range = parseLengthRange(options.get('--length') ?? '');
+      if (typeof range === 'string') return range;
     }
     if (module === 'string' && !options.has('--string') && !options.has('--hex-string')) {
       return "STRING match: You must specify `--string' or `--hex-string'";
@@ -2057,7 +2322,7 @@ export class LinuxIptablesManager {
           }
           const missing = Object.entries(accepted).find(([name, flags]) => flags.includes('M') && !options.has(name));
           if (missing !== undefined) return this.parameterProblem(`${module}: option "${missing[0]}" must be specified\n`);
-          const incomplete = LinuxIptablesManager.moduleProblem(module, options);
+          const incomplete = LinuxIptablesManager.moduleProblem(module, options, negated);
           if (incomplete !== null) return this.parameterProblem(incomplete);
           rule.matches.push({ module, options, negated });
           continue;

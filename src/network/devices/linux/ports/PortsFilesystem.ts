@@ -5,6 +5,7 @@ import {
 } from './ProcNetTables';
 import type { ProtocolCounters } from '../../../layers/internet/ProtocolCounters';
 import type { KernelIpFacts } from '../LinuxIpv4Settings';
+import type { UnixSocketRow } from '../unix/UnixSocketTable';
 import { linuxSnmpSnapshot, renderProcNetSnmp, renderProcNetSnmp6 } from './ProcNetSnmp';
 
 /** Canonical filesystem locations the port subsystem maintains. */
@@ -31,6 +32,7 @@ export class PortsFilesystem {
 
   registerProcNet(
     rows: () => KernelSocketRow[], counters?: () => ProtocolCounters, kernel?: () => KernelIpFacts,
+    unix: () => readonly UnixSocketRow[] = () => [],
   ): void {
     this.vfs.mkdirp(PORT_PATHS.procNetDir, 0o555, 0, 0);
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetTcp, () => renderProcNetTcp(rows(), 4));
@@ -41,8 +43,8 @@ export class PortsFilesystem {
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetUdpLite6, () => renderProcNetUdp(rows(), 6, 'udplite'));
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetRaw, () => renderProcNetRaw(4));
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetRaw6, () => renderProcNetRaw(6));
-    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUnix, () => renderProcNetUnix());
-    this.vfs.registerGeneratedFile(PORT_PATHS.procNetSockstat, () => renderProcNetSockstat(rows()));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetUnix, () => renderProcNetUnix(unix()));
+    this.vfs.registerGeneratedFile(PORT_PATHS.procNetSockstat, () => renderProcNetSockstat(rows(), unix().length));
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetSockstat6, () => renderProcNetSockstat6(rows()));
     this.vfs.registerGeneratedFile(PORT_PATHS.procNetSnmp, () =>
       renderProcNetSnmp(linuxSnmpSnapshot(counters?.(), kernel?.())),

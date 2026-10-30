@@ -3887,7 +3887,7 @@ export class PSRuntime {
     return returned.length === 0 ? positional : [...returned, ...positional];
   }
 
-  private resolveParameterPrefixes(declaredNames: readonly string[] | undefined, named: Record<string, PSValue>): void {
+  private resolveParameterPrefixes(declaredNames: readonly string[] | undefined, named: Record<string, PSValue>, closed = false): void {
     if (declaredNames === undefined) return;
     const declared = declaredNames.map(name => name.toLowerCase());
     for (const key of Object.keys(named)) {
@@ -3902,6 +3902,11 @@ export class PSRuntime {
       } else if (candidates.length > 1) {
         throw new PSRuntimeError(
           `Parameter cannot be processed because the parameter name '${this.typedParameterName(key)}' is ambiguous. Possible matches include:${candidates.map(c => ` -${c}`).join('')}.`,
+          'System.Management.Automation.ParameterBindingException',
+        );
+      } else if (closed) {
+        throw new PSRuntimeError(
+          `A parameter cannot be found that matches parameter name '${this.typedParameterName(key)}'.`,
           'System.Management.Automation.ParameterBindingException',
         );
       }
@@ -3978,7 +3983,7 @@ export class PSRuntime {
     const cmdlet = resolved && resolved.coreOnly === true && this.edition === 'desktop' ? undefined : resolved;
     if (cmdlet) {
       this.rejectCoreOnlyParameters(cmdlet, cmdletNamed);
-      this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed);
+      this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed, cmdlet.closedParameterSet === true);
       positional = this.returnSwitchArguments(cmdlet, cmdletNamed, positional);
       const declared = new Set(
         ((cmdlet.parameters ?? []) as readonly string[]).map(p => p.toLowerCase()));

@@ -67,7 +67,7 @@ describe('les nombres premiers sont ceux des RFC', () => {
 
 describe('l`echange de cles est reel', () => {
   it('les groupes implementes sont ceux qu`on calcule vraiment', () => {
-    expect(implementedIkeGroups()).toEqual([1, 2, 5, 14, 15, 16, 19, 31]);
+    expect(implementedIkeGroups()).toEqual([1, 2, 5, 14, 15, 16, 17, 18, 19, 31]);
   });
 
   it.each([1, 2, 5, 14, 15, 16, 19, 31])(
@@ -112,8 +112,8 @@ describe('l`echange de cles est reel', () => {
   });
 
   it('un groupe sans implementation ne rend aucune part', () => {
-    expect(isImplementedIkeGroup(18)).toBe(false);
-    expect(generateIkeKeyShare(18)).toBeNull();
+    expect(isImplementedIkeGroup(20)).toBe(false);
+    expect(generateIkeKeyShare(20)).toBeNull();
   });
 
   it('un groupe discordant ne produit aucun secret', () => {

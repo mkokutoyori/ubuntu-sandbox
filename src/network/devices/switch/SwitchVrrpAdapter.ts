@@ -21,6 +21,7 @@ import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import type { Port } from '../../hardware/Port';
 import type { FhrpHost } from '../../fhrp/types';
 import type { Switch } from '../Switch';
+import type { SystemClock } from '../../core/SystemClock';
 
 /** Match `Vlanif10`, `Vlan10`, `vlanif10`, `vlan10` (case-insensitive). */
 export function parseVlanIfName(name: string): number | null {
@@ -78,13 +79,16 @@ export function makeSwitchVrrpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHo
  * PHYSIQUES (il y suit les liens), NTP a besoin des SVI. Les fondre
  * casserait l'un des deux.
  */
-export function makeSwitchNtpHost(sw: Switch, bridge: SwitchVlanBridge): FhrpHost & UdpEgressHost {
+export function makeSwitchNtpHost(
+  sw: Switch, bridge: SwitchVlanBridge,
+): FhrpHost & UdpEgressHost & { getSystemClock(): SystemClock } {
   const base = makeSwitchVrrpHost(sw, bridge);
   return {
     ...base,
     getPorts: () => sw.getSvis()
       .map((svi) => makeVlanifSyntheticPort(sw, bridge, svi.vlan, `Vlanif${svi.vlan}`)),
     sendUdpDatagram: (request) => sw.sendUdpDatagram(request),
+    getSystemClock: () => sw.getSystemClock(),
   };
 }
 

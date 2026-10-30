@@ -165,7 +165,8 @@ function suggestionsAt(
   const argument = declaree && vivante
     ? { ...declaree, range: vivante } : declaree;
   if (argument && trigger === 'QUESTION_MARK'
-    && (argument.values || argument.alternatives || cursor.prefix.length === 0)) {
+    && (argument.values || argument.alternatives || argument.tabSuggestions
+      || cursor.prefix.length === 0)) {
     for (const suggestion of argumentSuggestions(argument)) {
       if (!suggestion.keyword.toLowerCase().startsWith(lowered)) continue;
       out.push({

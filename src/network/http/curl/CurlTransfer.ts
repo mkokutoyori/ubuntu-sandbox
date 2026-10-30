@@ -31,6 +31,7 @@ import { judgeCertStatus } from './CurlCertStatus';
 import { loadCurlClientCredential } from './CurlClientCertificate';
 import { parseGroupList } from '@/network/tls/legacy/sslConf';
 import { encodeRequest } from '../http1/Http1Wire';
+import { ACCEPT_ENCODING_VALUE, decodeContentCodings } from '../ContentCodings';
 import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 
@@ -238,6 +239,7 @@ function buildRequest(
     if (header.value !== null) request.headers.append(header.name, header.value);
   }
   if (!overridden('Accept')) request.headers.set('Accept', '*/*');
+  if (opts.compressed && !overridden('Accept-Encoding')) request.headers.set('Accept-Encoding', ACCEPT_ENCODING_VALUE);
   if (opts.referer !== null && !overridden('Referer')) request.headers.set('Referer', opts.referer);
   if (jar) {
     const envoyes = jar.cookiesFor(url.host, url.path.split('?')[0], {
@@ -706,6 +708,17 @@ async function performHttpRequest(
     if (opts.cookieJar !== null) {
       host.writeFile(opts.cookieJar, serializeNetscapeCookies(jar.entries()));
     }
+    const codings = response.headers.getAll('Content-Encoding');
+    const decoded = opts.compressed && method !== 'HEAD' && response.body && codings.length > 0
+      ? decodeContentCodings(response.body, codings.join(','))
+      : null;
+    if (decoded !== null && decoded.ok === false) {
+      return {
+        ok: false, code: 61, message: `curl: (61) ${decoded.message}`,
+        url, remoteIp, method, numRedirects: redirects, trace,
+      };
+    }
+    const received = decoded !== null && decoded.ok ? decoded.body : response.body;
     return {
       ok: true,
       url,
@@ -716,7 +729,7 @@ async function performHttpRequest(
       reasonPhrase: response.reasonPhrase ?? '',
       httpVersion: response.httpVersion,
       headers: headerPairs(response),
-      body: response.body ? bytesToBinaryString(response.body) : '',
+      body: received ? bytesToBinaryString(received) : '',
       method,
       numRedirects: redirects,
       trace,

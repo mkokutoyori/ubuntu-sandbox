@@ -40,7 +40,7 @@ describe('Scénario 6 — édition sécurisée de /etc/hosts avec nano', () => {
     const original = await pc.executeCommand('cat /etc/hosts');
     await pc.executeCommand('cp /etc/hosts /tmp/hosts.bak');
 
-    const fsCtx = new LinuxEditorFsContext(pc);
+    const fsCtx = new LinuxEditorFsContext(pc, pc.openShellSession({ user: 'root' }));
     const nano = new NanoEngine(fsCtx, '/etc/hosts', fsCtx.readFile('/etc/hosts')!, false);
 
     // Navigate to end of buffer and append the new entries.

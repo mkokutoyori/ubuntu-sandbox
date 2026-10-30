@@ -14,9 +14,13 @@ import type { DefaultInformationOriginate, OspfInterfaceSettings } from '../../r
 import { normalizeOspfRouteType, ospfRouteCode } from '@/network/ospf/routeCodes';
 import { isLearnedRouteType, renderIpRouteTable, routerRouteTableHost } from './CiscoShowCommands';
 import { formatIosElapsed } from './iosElapsed';
-import { CliInvalidInput } from '../cli/CliDiagnostic';
+import { CliIncomplete, CliInvalidInput } from '../cli/CliDiagnostic';
 import { isAreaId, isBackboneAreaId, type LSAHeader, type OSPFNeighborState, type OSPFNetworkType } from '../../../ospf/types';
-import { boundedInteger } from '@/cli/ArgumentTypes';
+import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
+import { refuseUnknownSelector } from './showSelectors';
+
+const refuseUnknownLsdbSelector = (args: readonly string[]): void =>
+  refuseUnknownSelector(args, { keywords: ['detail', 'self-originate', 'adv-router'], addresses: true, max: 3 });
 
 import { CISCO_ERRORS } from '../cli-utils';
 import { inSameSubnet, isValidIPv4 } from '../../../core/ip';
@@ -37,6 +41,7 @@ import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { AdapterKeyword } from '@/cli/commands/trieAdapter';
 import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
+import type { OptionSpec } from '@/cli/OptionBag';
 import { MODES_INTERFACE } from './CiscoConfigCommands';
 import { toutesLesSuites } from './ciscoContinuations';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
@@ -182,34 +187,9 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
     segmentRoutingMpls?: boolean; discardRouteExternal?: boolean;
   };
 
-  trie.registerGreedy('maximum-paths', 'Forward equal-cost paths', (args) => {
-    const n = parseInt(args[0], 10);
-    if (isNaN(n) || n < 1) return '';
-    extra().maximumPaths = n;
-    ctx.r().setMaximumPaths('ospf', n);
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-  trie.registerGreedy('compatible', 'Compatibility mode', (args) => {
-    if (args[0]?.toLowerCase() === 'rfc1583') extra().compatibleRfc1583 = true;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
   trie.registerGreedy('default-metric', 'Default metric', (args) => {
     const n = parseInt(args[0], 10);
     if (!isNaN(n)) ctx.r()._getOSPFExtraConfig().defaultMetric = n;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-  trie.registerGreedy('distance', 'Administrative distance', (args) => {
-    if (args[0]?.toLowerCase() !== 'ospf') return '';
-    const d: { intraArea?: number; interArea?: number; external?: number } = {};
-    for (let i = 1; i < args.length; i++) {
-      if (args[i] === 'intra-area' && args[i + 1]) d.intraArea = parseInt(args[i + 1], 10);
-      if (args[i] === 'inter-area' && args[i + 1]) d.interArea = parseInt(args[i + 1], 10);
-      if (args[i] === 'external' && args[i + 1]) d.external = parseInt(args[i + 1], 10);
-    }
-    extra().distance = d;
     ctx.r()._ospfAutoConverge?.();
     return '';
   });
@@ -220,33 +200,6 @@ export function buildConfigRouterOSPFCommands(trie: CommandTrie, ctx: CiscoShell
       holdMs: parseInt(args[1], 10),
       maxMs: parseInt(args[2], 10),
     };
-    return '';
-  });
-  trie.registerGreedy('timers lsa arrival', 'LSA arrival timer', (args) => {
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().timersLsaArrivalMs = n;
-    return '';
-  });
-  trie.registerGreedy('timers pacing flood', 'Pacing flood', (args) => {
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().timersPacingFloodMs = n;
-    return '';
-  });
-  trie.registerGreedy('timers pacing retransmission', 'Pacing retransmission', (args) => {
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) extra().timersPacingRetransmissionMs = n;
-    return '';
-  });
-  trie.register('ispf', 'Enable incremental SPF', () => { extra().ispf = true; return ''; });
-  trie.register('prefix-suppression', 'Enable prefix suppression', () => { extra().prefixSuppression = true; return ''; });
-  trie.register('shutdown', 'Disable OSPF process', () => { extra().shutdown = true; return ''; });
-  trie.register('no shutdown', 'Re-enable OSPF process', () => { extra().shutdown = false; return ''; });
-  trie.registerGreedy('segment-routing', 'Segment routing', (args) => {
-    if (args[0]?.toLowerCase() === 'mpls') extra().segmentRoutingMpls = true;
-    return '';
-  });
-  trie.registerGreedy('discard-route', 'Discard route', (args) => {
-    if (args[0]?.toLowerCase() === 'external') extra().discardRouteExternal = true;
     return '';
   });
 
@@ -334,7 +287,6 @@ function adresseReseau(ip: string, wildcard: string): string {
    * `capability` et `auto-cost` OUVRENT une famille : ils ne sont pas
    * des commandes. Les deux annoncaient `<cr>` et refusaient ensuite.
    */
-  trie.requireArgs('capability', 1);
   trie.requireArgs('auto-cost', 1);
   trie.registerGreedy('auto-cost', 'Calculate OSPF interface cost according to bandwidth', (args) => {
     if (args.length < 2 || args[0].toLowerCase() !== 'reference-bandwidth') {
@@ -358,47 +310,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('redistribute', 'Redistribute routes from another routing protocol', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const protocol = args[0].toLowerCase();
-    const knownProtocols = ['connected', 'static', 'rip', 'eigrp', 'bgp', 'isis', 'ospf'];
-    if (!knownProtocols.includes(protocol)) return "% Invalid input detected at '^' marker.";
-    if (protocol === 'static') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      let metricType = 2; // default E2
-      for (let i = 0; i < args.length - 1; i++) {
-        if (args[i].toLowerCase() === 'metric-type') metricType = parseInt(args[i + 1], 10);
-      }
-      extra.redistributeStatic = { subnets, metricType };
-    } else if (protocol === 'connected') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      extra.redistributeConnected = { subnets };
-    } else if (protocol === 'rip') {
-      const subnets = args.some(a => a.toLowerCase() === 'subnets');
-      let metricType = 2;
-      let metric: number | undefined;
-      for (let i = 0; i < args.length - 1; i++) {
-        const tk = args[i].toLowerCase();
-        if (tk === 'metric-type') metricType = parseInt(args[i + 1], 10);
-        else if (tk === 'metric') {
-          const m = parseInt(args[i + 1], 10);
-          if (!Number.isNaN(m)) metric = m;
-        }
-      }
-      extra.redistributeRip = { subnets, metric, metricType };
-    }
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-
-  trie.registerGreedy('distribute-list', 'Filter networks in routing updates', (args) => {
-    if (args.length < 2) return '% Incomplete command.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.distributeList = { aclId: args[0], direction: args[1].toLowerCase() as 'in' | 'out' };
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('no default-information originate', 'Stop distributing default route', (args) => {
     const parsed = parseDefaultInformation(args);
@@ -414,26 +325,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('no redistribute', 'Stop redistributing routes', (args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    const protocol = (args[0] ?? '').toLowerCase();
-    if (protocol === 'static') extra.redistributeStatic = undefined;
-    else if (protocol === 'connected') extra.redistributeConnected = undefined;
-    else if (protocol === 'rip') extra.redistributeRip = undefined;
-    else {
-      extra.redistributeStatic = undefined;
-      extra.redistributeConnected = undefined;
-      extra.redistributeRip = undefined;
-    }
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
-
-  trie.registerGreedy('no distribute-list', 'Remove distribute-list filter', () => {
-    ctx.r()._getOSPFExtraConfig().distributeList = undefined;
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('timers throttle spf', 'Set OSPF SPF throttle timers', (args) => {
     if (args.length < 3) return '% Incomplete command.';
@@ -461,24 +352,7 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('graceful-restart', 'Configure graceful restart', (args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    let gracePeriod = 120;
-    for (let i = 0; i < args.length - 1; i++) {
-      if (args[i].toLowerCase() === 'grace-period') gracePeriod = parseInt(args[i + 1], 10);
-    }
-    extra.gracefulRestart = { enabled: true, gracePeriod };
-    return '';
-  });
 
-  trie.registerGreedy('bfd', 'BFD configuration', (args) => {
-    if (args.length >= 1 && args[0].toLowerCase() === 'all-interfaces') {
-      const extra = ctx.r()._getOSPFExtraConfig();
-      extra.bfdAllInterfaces = true;
-    }
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('log-adjacency-changes', 'Log OSPF adjacency changes', (args) => {
     if (args.length > 1 || (args.length === 1 && args[0].toLowerCase() !== 'detail')) {
@@ -496,45 +370,8 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('max-metric router-lsa', 'Configure OSPF max metric (stub router RFC 3137)', (args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    let onStartup: number | undefined;
-    for (let i = 0; i < args.length - 1; i++) {
-      if (args[i].toLowerCase() === 'on-startup') {
-        onStartup = parseInt(args[i + 1], 10);
-      }
-    }
-    extra.maxMetric = { enabled: true, onStartup };
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
-  trie.registerGreedy('no max-metric router-lsa', 'Remove stub router configuration', (_args) => {
-    const extra = ctx.r()._getOSPFExtraConfig();
-    extra.maxMetric = { enabled: false };
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
-  trie.registerGreedy('neighbor', 'Configure NBMA neighbor', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const ip = args[0];
-    const extra = ctx.r()._getOSPFExtraConfig();
-    if (!extra.nbmaNeighbors) extra.nbmaNeighbors = [];
-    let priority: number | undefined;
-    let pollInterval: number | undefined;
-    for (let i = 1; i < args.length - 1; i++) {
-      if (args[i].toLowerCase() === 'priority') priority = parseInt(args[i + 1], 10);
-      if (args[i].toLowerCase() === 'poll-interval') pollInterval = parseInt(args[i + 1], 10);
-    }
-    // Replace or add neighbor
-    const existing = extra.nbmaNeighbors.findIndex(n => n.ip === ip);
-    const entry = { ip, priority, pollInterval };
-    if (existing >= 0) extra.nbmaNeighbors[existing] = entry;
-    else extra.nbmaNeighbors.push(entry);
-    ctx.r()._ospfAutoConverge?.();
-    return '';
-  });
 
   trie.registerGreedy('summary-address', 'Summarize external routes for ASBR', (args) => {
     if (args.length < 2) return '% Incomplete command.';
@@ -548,15 +385,6 @@ function adresseReseau(ip: string, wildcard: string): string {
     return '';
   });
 
-  trie.registerGreedy('capability', 'Configure OSPF capability', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const extra = ctx.r()._getOSPFExtraConfig();
-    if (!extra.capabilities) extra.capabilities = {};
-    const cap = args[0].toLowerCase();
-    if (cap === 'transit') extra.capabilities.transit = true;
-    else if (cap === 'opaque') extra.capabilities.opaque = true;
-    return '';
-  });
 
   trie.register('version 2', 'Use RIPv2', () => {
     const r = ctx.r() as unknown as { _setRipVersion?: (v: 1 | 2) => void };
@@ -810,6 +638,30 @@ export function ospfInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [...ospfTrieInterfaceSpecs(ctx), ...messageDigestKeyUndoSpecs(ctx)];
 }
 
+const NHRP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
+  { keyword: 'authentication', description: 'Authentication configuration',
+    argument: { name: 'string', type: 'WORD', description: 'Authentication string' } },
+  { keyword: 'holdtime', description: 'Hold time',
+    argument: { name: 'seconds', type: 'INT', range: [1, 65535], description: 'Time, in seconds, that NBMA addresses are advertised valid' } },
+  { keyword: 'map', description: 'Map dest IP addresses to NBMA addresses',
+    argument: [
+      { name: 'destination', type: 'WORD', literal: 'A.B.C.D', description: 'Protocol address of the destination',
+        alternatives: [{ keyword: 'multicast', description: 'Use this NBMA mapping for broadcasts and multicasts' }] },
+      { name: 'nbma-address', type: 'WORD', literal: 'A.B.C.D', description: 'NBMA address of the destination, or `dynamic`' },
+    ] },
+  { keyword: 'multicast', description: 'IP multicast',
+    argument: { name: 'reste', type: 'REST', optional: true, description: 'Multicast option' } },
+  { keyword: 'network-id', description: 'Network identifier',
+    argument: { name: 'identifier', type: 'INT', range: [1, 4294967295], description: 'Network identifier' } },
+  { keyword: 'nhs', description: 'Next Hop Server',
+    argument: [
+      { name: 'address', type: 'IP_ADDR', description: 'Address of the next hop server' },
+      { name: 'reste', type: 'REST', optional: true, description: 'Optional qualifiers' },
+    ] },
+  { keyword: 'redirect', description: 'Enable NHRP redirect traffic indication', argument: null },
+  { keyword: 'shortcut', description: 'Enable shortcut switching', argument: null },
+];
+
 function ospfTrieInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) =>
@@ -818,7 +670,7 @@ function ospfTrieInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
       modes: MODES_INTERFACE, minPrivilege: 15,
       undoFromNegatedPaths: true,
       argumentFor: (path) => OSPF_IF_ARGUMENTS[path],
-      keywordsFor: toutesLesSuites,
+      keywordsFor: (path) => path === 'ip nhrp' ? NHRP_KEYWORDS : toutesLesSuites(path),
     },
   );
 }
@@ -864,9 +716,12 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
   configIfTrie.registerGreedy('ip ospf database-filter', 'OSPF database filter', (args) => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '% No interface selected';
-    if (args[0]?.toLowerCase() === 'all' && args[1]?.toLowerCase() === 'out') {
-      ifPending(ifName).databaseFilterAllOut = true;
-    }
+    if (args.length === 0) throw new CliIncomplete();
+    if (args[0].toLowerCase() !== 'all') throw new CliInvalidInput({ token: args[0] });
+    if (args[1] === undefined) throw new CliIncomplete();
+    if (args[1].toLowerCase() !== 'out') throw new CliInvalidInput({ token: args[1] });
+    if (args[2] !== undefined) throw new CliInvalidInput({ token: args[2] });
+    ifPending(ifName).databaseFilterAllOut = true;
     return '';
   });
 
@@ -966,9 +821,17 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     return '';
   });
 
-  configIfTrie.registerGreedy('ip ospf authentication', 'Enable OSPF authentication', (_args) => {
+  configIfTrie.registerGreedy('ip ospf authentication', 'Enable OSPF authentication', (args) => {
+    if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
+    if (args[0] !== undefined && args[0].toLowerCase() !== 'null') {
+      throw new CliInvalidInput({ token: args[0] });
+    }
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
+    if (args[0] !== undefined) {
+      setPendingOspfIf(ifName, { authType: 0 });
+      return '';
+    }
     const ospf = ctx.r()._getOSPFEngineInternal();
     const iface = ospf?.getInterface(ifName);
     // Only set to simple (1) if not already MD5 (2)
@@ -1110,11 +973,63 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
 
   // Tunnel commands
 
-  configIfTrie.registerGreedy('ip nhrp', 'NHRP configuration', (args) => {
+  const configureNhrp = (args: string[]): string => {
     const ifName = ctx.getSelectedInterface();
     if (!ifName) return '';
     const svc = ctx.r().getNhrpService();
     const sub = args[0]?.toLowerCase();
+    const numericBounds: Record<string, [number, number]> = {
+      'network-id': [1, 4294967295], holdtime: [1, 65535],
+    };
+    const isIp = (word: string | undefined) => word !== undefined
+      && /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(word)
+      && word.split('.').every(octet => Number(octet) <= 255);
+    const two = args.slice(0, 2).join(' ').toLowerCase();
+    const fault = ((): CliIncomplete | CliInvalidInput | null => {
+      const invalidAt = (at: number) => new CliInvalidInput({ token: args[at] });
+      const wholeInteger = (word: string, max: number) => /^\d+$/.test(word) && Number(word) >= 1 && Number(word) <= max;
+      if (sub === 'shortcut' || sub === 'server-only' || sub === 'record' || sub === 'redirect') {
+        return args.length === 1 ? null : invalidAt(1);
+      }
+      if (two === 'cache non-authoritative') return args.length === 2 ? null : invalidAt(2);
+      if (sub === 'cache') return args.length === 1 ? new CliIncomplete() : invalidAt(1);
+      if (sub === 'nhs') {
+        if (args.length === 1) return new CliIncomplete();
+        return isIp(args[1]) ? null : invalidAt(1);
+      }
+      if (sub === 'map' && args[1]?.toLowerCase() === 'multicast') {
+        if (args.length === 2) return new CliIncomplete();
+        if (!(isIp(args[2]) || args[2].toLowerCase() === 'dynamic')) return invalidAt(2);
+        return args.length === 3 ? null : invalidAt(3);
+      }
+      if (sub === 'map') {
+        if (args.length === 1) return new CliIncomplete();
+        if (!isIp(args[1])) return invalidAt(1);
+        if (args.length === 2) return new CliIncomplete();
+        if (!isIp(args[2])) return invalidAt(2);
+        return args.length === 3 ? null : invalidAt(3);
+      }
+      if (two === 'registration timeout') {
+        if (args.length === 2) return new CliIncomplete();
+        if (!wholeInteger(args[2], 65535)) return invalidAt(2);
+        return args.length === 3 ? null : invalidAt(3);
+      }
+      if (sub === 'registration') return args.length === 1 ? new CliIncomplete() : invalidAt(1);
+      if (sub === 'use') {
+        if (args.length === 1) return new CliIncomplete();
+        if (!wholeInteger(args[1], 65535)) return invalidAt(1);
+        return args.length === 2 ? null : invalidAt(2);
+      }
+      return null;
+    })();
+    if (fault) throw fault;
+    const bounds = sub ? numericBounds[sub] : undefined;
+    if (bounds && args[1] !== undefined) {
+      const value = Number(args[1]);
+      if (!/^\d+$/.test(args[1]) || value < bounds[0] || value > bounds[1] || args.length > 2) {
+        throw new CliInvalidInput();
+      }
+    }
     if (sub === 'authentication' && args[1]) svc.configure(ifName, { authentication: args[1] });
     else if (sub === 'network-id' && args[1]) svc.configure(ifName, { networkId: parseInt(args[1], 10) });
     else if (sub === 'holdtime' && args[1]) svc.configure(ifName, { holdtimeSec: parseInt(args[1], 10) });
@@ -1145,19 +1060,27 @@ export function registerOSPFInterfaceCommands(configIfTrie: CommandTrie, ctx: Ci
     else if (sub === 'shortcut') svc.configure(ifName, { shortcut: true });
     else if (sub === 'redirect') svc.configure(ifName, { redirect: true });
     return '';
-  });
+  };
+  configIfTrie.registerGreedy('ip nhrp', 'NHRP configuration', configureNhrp);
 }
 
 // ─── Show Commands ───────────────────────────────────────────────────
 
 
+const DEFAULT_OSPF_MAXIMUM_PATHS = 4;
+
 const OSPF_INT = (
   name: string, min: number, max: number, description: string,
 ): ArgumentSpec => ({ name, type: 'INT', range: [min, max], description });
 
+const AREA_ID_PATTERN = new RegExp('^(?:'
+  + '[0-3]?\\d{1,9}|4[01]\\d{8}|42[0-8]\\d{7}|429[0-3]\\d{6}|4294[0-8]\\d{5}'
+  + '|42949[0-5]\\d{4}|429496[0-6]\\d{3}|4294967[01]\\d{2}|42949672[0-8]\\d|429496729[0-5]'
+  + '|(?:\\d{1,3}\\.){3}\\d{1,3})$');
+
 const AIRE: ArgumentSpec = {
   name: 'aire', type: 'WORD', literal: '<0-4294967295>',
-  description: 'OSPF area ID',
+  description: 'OSPF area ID', pattern: AREA_ID_PATTERN,
 };
 
 const INTERVALLES_LSA: readonly ArgumentSpec[] = [
@@ -1184,34 +1107,11 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   ],
   'router-id': { name: 'id', type: 'IP_ADDR', description: 'OSPF router-id in IP address format' },
   'default-metric': OSPF_INT('metrique', 1, 16777214, 'Default metric of redistributed routes'),
-  'maximum-paths': OSPF_INT('chemins', 1, 32, 'Number of equal-cost paths installed'),
   'max-lsa': OSPF_INT('lsas', 1, 4294967294, 'Maximum number of non self-generated LSAs'),
   'passive-interface': { name: 'interface', type: 'INTERFACE', description: 'Interface on which updates are suppressed' },
   area: AIRE,
-  neighbor: { name: 'voisin', type: 'IP_ADDR', description: 'Neighbor address' },
   'timers throttle lsa': INTERVALLES_LSA,
   'timers throttle spf': INTERVALLES_SPF,
-  redistribute: [{
-    name: 'protocole', type: 'ENUM', description: 'Source protocol to redistribute',
-    values: [
-      { keyword: 'bgp', description: 'Border Gateway Protocol (BGP)' },
-      { keyword: 'connected', description: 'Connected' },
-      { keyword: 'eigrp', description: 'Enhanced Interior Gateway Routing Protocol (EIGRP)' },
-      { keyword: 'rip', description: 'Routing Information Protocol (RIP)' },
-      { keyword: 'static', description: 'Static routes' },
-    ],
-  }, { name: 'options', type: 'REST', optional: true, values: [], description: '' }],
-  'distribute-list': [{
-    name: 'filtre', type: 'WORD', description: 'Filter to apply',
-    alternatives: [
-      { keyword: '<1-199>', description: 'IP access list number' },
-      { keyword: 'gateway', description: 'Filtering incoming updates based on gateway' },
-      { keyword: 'prefix', description: 'Filter prefixes in routing updates' },
-    ],
-  }, { name: 'options', type: 'REST', values: [], description: 'Direction and filter name' }],
-  shutdown: null,
-  ispf: null,
-  'prefix-suppression': null,
 };
 
 const ROUTER_OSPF_KEYWORDS:
@@ -1228,33 +1128,13 @@ Readonly<Record<string, ReadonlyArray<{
     keyword: 'reference-bandwidth', description: 'Reference bandwidth for cost calculation',
     argument: OSPF_INT('bande-passante', 1, 4294967, 'Reference bandwidth in Mbps'),
   }],
-  bfd: [{ keyword: 'all-interfaces', description: 'Enable BFD on all interfaces' }],
-  capability: [
-    { keyword: 'opaque', description: 'Opaque LSA' },
-    { keyword: 'transit', description: 'Transit area capability' },
-  ],
-  compatible: [{ keyword: 'rfc1583', description: 'RFC 1583 compatible route selection' }],
   'default-information originate': [
     { keyword: 'always', description: 'Always advertise the default route' },
     { keyword: 'metric', description: 'Metric used for generating the default route' },
     { keyword: 'metric-type', description: 'External link type of the default route' },
     { keyword: 'route-map', description: 'Generate the default route if the route map is satisfied' },
   ],
-  'discard-route': [{ keyword: 'external', description: 'Discard route for external summary' }],
-  distance: [
-    { keyword: 'external', description: 'External type 5 and type 7 routes' },
-    { keyword: 'inter-area', description: 'Inter-area routes' },
-    { keyword: 'intra-area', description: 'Intra-area routes' },
-    { keyword: 'ospf', description: 'OSPF distance' },
-  ],
-  'graceful-restart': [{ keyword: 'grace-period', description: 'Grace period in seconds' }],
   'log-adjacency-changes': [{ keyword: 'detail', description: 'Detailed output' }],
-  'max-metric router-lsa': [{ keyword: 'on-startup', description: 'Set maximum metric temporarily after reboot' }],
-  neighbor: [
-    { keyword: 'poll-interval', description: 'OSPF dead-neighbor polling interval' },
-    { keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor' },
-  ],
-  'segment-routing': [{ keyword: 'mpls', description: 'Segment Routing global block' }],
 };
 
 /**
@@ -1450,8 +1330,344 @@ function aireSpecs(ctx: CiscoShellContext): CommandSpec[] {
   })) as CommandSpec[];
 }
 
+type ProcessSettings = {
+  maximumPaths?: number; compatibleRfc1583?: boolean;
+  distance?: { all?: number; intraArea?: number; interArea?: number; external?: number };
+  timersLsaArrivalMs?: number;
+  timersPacingFloodMs?: number; timersPacingRetransmissionMs?: number;
+  ispf?: boolean; prefixSuppression?: boolean; shutdown?: boolean;
+  segmentRoutingMpls?: boolean; discardRouteExternal?: boolean;
+};
+
+const positiveNumber = (name: string, description: string): ArgumentSpec => ({
+  name, type: 'WORD', description, pattern: /^[1-9]\d{0,9}$|^0$/,
+  alternatives: [{ keyword: '<number>', description }],
+  formsAreExhaustive: true,
+});
+
+const DIRECTION: ArgumentSpec = {
+  name: 'direction', type: 'ENUM', description: 'Filter direction',
+  values: [
+    { keyword: 'in', description: 'Filter incoming routing updates' },
+    { keyword: 'out', description: 'Filter outgoing routing updates' },
+  ],
+};
+
+function processFeatureSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
+  const extra = () => ctx.r()._getOSPFExtraConfig();
+  const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const neighbor: CommandSpec = {
+    ...base, id: 'ospf-neighbor',
+    path: ['neighbor', { name: 'neighbor', type: 'IP_ADDR', description: 'Neighbor address' }],
+    options: [
+      {
+        keyword: 'priority', description: 'OSPF priority of non-broadcast neighbor',
+        argument: OSPF_INT('priority', 0, 255, 'Priority'),
+      },
+      {
+        keyword: 'poll-interval', description: 'OSPF dead-neighbor polling interval',
+        argument: positiveNumber('poll-interval', 'Seconds'),
+      },
+    ],
+    description: 'Configure NBMA neighbor', undoDescription: 'Remove the NBMA neighbor',
+    run: (_session, args) => {
+      const config = extra();
+      const list = (config.nbmaNeighbors ??= []);
+      const entry = {
+        ip: args.neighbor,
+        priority: args.priority !== undefined ? Number(args.priority) : undefined,
+        pollInterval: args['poll-interval'] !== undefined ? Number(args['poll-interval']) : undefined,
+      };
+      const index = list.findIndex((item) => item.ip === args.neighbor);
+      if (index >= 0) list[index] = entry; else list.push(entry);
+      return converge();
+    },
+    undo: (_session, args) => {
+      const config = extra();
+      config.nbmaNeighbors = (config.nbmaNeighbors ?? []).filter((item) => item.ip !== args.neighbor);
+      return converge();
+    },
+  };
+  const capability = (keyword: 'opaque' | 'transit', description: string): CommandSpec => ({
+    ...base, id: `ospf-capability-${keyword}`, path: ['capability', keyword], description,
+    undoDescription: `Disable the ${keyword} capability`,
+    run: () => { extra().capabilities = { ...extra().capabilities, [keyword]: true }; return ''; },
+    undo: () => { extra().capabilities = { ...extra().capabilities, [keyword]: false }; return ''; },
+  });
+  const distribute = (
+    id: string, path: ReadonlyArray<string | ArgumentSpec>,
+    store: (args: Record<string, string>) => { aclId?: string; prefixListName?: string },
+  ): CommandSpec => ({
+    ...base, id, path: [...path, DIRECTION],
+    description: 'Filter networks in routing updates',
+    undoDescription: 'Remove distribute-list filter', undoOmitsArguments: true,
+    run: (_session, args) => {
+      extra().distributeList = { ...store(args), direction: args.direction as 'in' | 'out' };
+      return converge();
+    },
+    undo: () => { extra().distributeList = undefined; return converge(); },
+  });
+  return [
+    neighbor,
+    capability('opaque', 'Opaque LSA'),
+    capability('transit', 'Transit area capability'),
+    {
+      ...base, id: 'ospf-bfd-all-interfaces', path: ['bfd', 'all-interfaces'],
+      description: 'Enable BFD on all interfaces', undoDescription: 'Disable BFD on all interfaces',
+      run: () => { extra().bfdAllInterfaces = true; return converge(); },
+      undo: () => { extra().bfdAllInterfaces = false; return converge(); },
+    },
+    {
+      ...base, id: 'ospf-graceful-restart', path: ['graceful-restart'],
+      description: 'Configure graceful restart', undoDescription: 'Disable graceful restart',
+      run: () => { extra().gracefulRestart = { enabled: true, gracePeriod: 120 }; return ''; },
+      undo: () => { extra().gracefulRestart = undefined; return ''; },
+    },
+    {
+      ...base, id: 'ospf-graceful-restart-grace-period',
+      path: ['graceful-restart', 'grace-period', positiveNumber('seconds', 'Grace period in seconds')],
+      description: 'Grace period in seconds', undoDescription: 'Disable graceful restart',
+      run: (_session, args) => {
+        extra().gracefulRestart = { enabled: true, gracePeriod: Number(args.seconds) };
+        return '';
+      },
+      undo: () => { extra().gracefulRestart = undefined; return ''; },
+    },
+    {
+      ...base, id: 'ospf-max-metric-router-lsa', path: ['max-metric', 'router-lsa'],
+      options: [{
+        keyword: 'on-startup', description: 'Set maximum metric temporarily after reboot',
+        argument: positiveNumber('seconds', 'Seconds after startup'),
+      }],
+      description: 'Configure OSPF max metric (stub router RFC 3137)',
+      undoDescription: 'Remove stub router configuration',
+      run: (_session, args) => {
+        extra().maxMetric = {
+          enabled: true,
+          ...(args.seconds !== undefined ? { onStartup: Number(args.seconds) } : {}),
+        };
+        return converge();
+      },
+      undo: () => { extra().maxMetric = { enabled: false }; return converge(); },
+    },
+    distribute('ospf-distribute-list-prefix',
+      ['distribute-list', 'prefix', { name: 'name', type: 'WORD', description: 'IP prefix-list name' }],
+      (args) => ({ prefixListName: args.name })),
+    distribute('ospf-distribute-list',
+      ['distribute-list', {
+        name: 'acl', type: 'WORD', description: 'IP access list',
+        alternatives: [
+          { keyword: '<1-199>', description: 'IP access list number' },
+          { keyword: '<1300-2699>', description: 'IP expanded access list number' },
+          { keyword: 'WORD', description: 'IP access list name' },
+        ],
+      }],
+      (args) => ({ aclId: args.acl })),
+  ];
+}
+
+function processSettingSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
+  const settings = () => ctx.r()._getOSPFExtraConfig() as unknown as ProcessSettings;
+  const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const flag = (
+    id: string, path: string[], description: string, undoDescription: string,
+    field: 'ispf' | 'prefixSuppression' | 'shutdown' | 'segmentRoutingMpls'
+      | 'discardRouteExternal' | 'compatibleRfc1583',
+  ): CommandSpec => ({
+    ...base, id, path, description, undoDescription,
+    run: () => { settings()[field] = true; return converge(); },
+    undo: () => { settings()[field] = false; return converge(); },
+  });
+  const distanceOption = (keyword: string, description: string): OptionSpec => ({
+    keyword, description, argument: OSPF_INT(keyword, 1, 255, 'Administrative distance'),
+  });
+  const timer = (
+    id: string, path: string[], description: string,
+    field: 'timersLsaArrivalMs' | 'timersPacingFloodMs' | 'timersPacingRetransmissionMs',
+  ): CommandSpec => ({
+    ...base, id, path: [...path, positiveNumber('milliseconds', 'Milliseconds')], description,
+    undoDescription: 'Restore the default', undoOmitsArguments: true,
+    run: (_session, args) => { settings()[field] = Number(args.milliseconds); return ''; },
+    undo: () => { settings()[field] = undefined; return ''; },
+  });
+  return [
+    {
+      ...base, id: 'ospf-maximum-paths',
+      path: ['maximum-paths', OSPF_INT('paths', 1, 32, 'Number of equal-cost paths installed')],
+      description: 'Forward equal-cost paths', undoDescription: 'Restore the default',
+      undoOmitsArguments: true,
+      run: (_session, args) => {
+        settings().maximumPaths = Number(args.paths);
+        ctx.r().setMaximumPaths('ospf', Number(args.paths));
+        return converge();
+      },
+      undo: () => {
+        settings().maximumPaths = undefined;
+        ctx.r().setMaximumPaths('ospf', DEFAULT_OSPF_MAXIMUM_PATHS);
+        return converge();
+      },
+    },
+    flag('ospf-compatible-rfc1583', ['compatible', 'rfc1583'],
+      'RFC 1583 compatible route selection', 'Restore RFC 2328 route selection', 'compatibleRfc1583'),
+    flag('ospf-ispf', ['ispf'], 'Enable incremental SPF', 'Disable incremental SPF', 'ispf'),
+    flag('ospf-prefix-suppression', ['prefix-suppression'], 'Enable prefix suppression',
+      'Disable prefix suppression', 'prefixSuppression'),
+    flag('ospf-shutdown', ['shutdown'], 'Disable OSPF process', 'Re-enable OSPF process', 'shutdown'),
+    flag('ospf-segment-routing-mpls', ['segment-routing', 'mpls'],
+      'Segment Routing global block', 'Disable segment routing', 'segmentRoutingMpls'),
+    flag('ospf-discard-route-external', ['discard-route', 'external'],
+      'Discard route for external summary', 'Do not install the discard route', 'discardRouteExternal'),
+    {
+      ...base, id: 'ospf-distance-all',
+      path: ['distance', OSPF_INT('distance', 1, 255, 'Administrative distance')],
+      description: 'Administrative distance', undoDescription: 'Restore the default distance',
+      undoOmitsArguments: true,
+      run: (_session, args) => {
+        const current = settings().distance ?? {};
+        settings().distance = { ...current, all: Number(args.distance) };
+        return converge();
+      },
+      undo: () => { settings().distance = undefined; return converge(); },
+    },
+    {
+      ...base, id: 'ospf-distance-ospf', path: ['distance', 'ospf'],
+      options: [
+        distanceOption('intra-area', 'Intra-area routes'),
+        distanceOption('inter-area', 'Inter-area routes'),
+        distanceOption('external', 'External type 5 and type 7 routes'),
+      ],
+      requiresOneOption: true, description: 'OSPF distance',
+      undoDescription: 'Restore the default OSPF distances',
+      run: (_session, args) => {
+        const current = settings().distance ?? {};
+        settings().distance = {
+          ...current,
+          ...(args['intra-area'] !== undefined ? { intraArea: Number(args['intra-area']) } : {}),
+          ...(args['inter-area'] !== undefined ? { interArea: Number(args['inter-area']) } : {}),
+          ...(args.external !== undefined ? { external: Number(args.external) } : {}),
+        };
+        return converge();
+      },
+      undo: () => { settings().distance = undefined; return converge(); },
+    },
+    timer('ospf-timers-lsa-arrival', ['timers', 'lsa', 'arrival'], 'LSA arrival timer',
+      'timersLsaArrivalMs'),
+    timer('ospf-timers-pacing-flood', ['timers', 'pacing', 'flood'], 'Pacing flood',
+      'timersPacingFloodMs'),
+    timer('ospf-timers-pacing-retransmission', ['timers', 'pacing', 'retransmission'],
+      'Pacing retransmission', 'timersPacingRetransmissionMs'),
+  ];
+}
+
+const REDISTRIBUTE_OPTIONS: readonly OptionSpec[] = [
+  { keyword: 'subnets', description: 'Consider subnets for redistribution' },
+  {
+    keyword: 'metric', description: 'Metric for redistributed routes',
+    argument: OSPF_INT('metric', 0, 16777214, 'OSPF default metric'),
+  },
+  {
+    keyword: 'metric-type', description: 'OSPF/IS-IS exterior metric type for redistributed routes',
+    argument: {
+      name: 'metric-type', type: 'ENUM', description: 'External metric type',
+      values: [
+        { keyword: '1', description: 'Set OSPF External Type 1 metrics' },
+        { keyword: '2', description: 'Set OSPF External Type 2 metrics' },
+      ],
+    },
+  },
+];
+
+type RedistributeOther = NonNullable<
+  ReturnType<CiscoShellContext['r']> extends infer R
+    ? R extends { _getOSPFExtraConfig(): infer E } ? E : never : never
+>['redistributeOther'];
+
+function redistributeSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-router-ospf'], minPrivilege: 15 };
+  const extra = () => ctx.r()._getOSPFExtraConfig();
+  const converge = (): string => { ctx.r()._ospfAutoConverge?.(); return ''; };
+  const settings = (args: Record<string, string>) => ({
+    subnets: args.subnets !== undefined,
+    ...(args.metric !== undefined ? { metric: Number(args.metric) } : {}),
+    ...(args['metric-type'] !== undefined ? { metricType: Number(args['metric-type']) } : {}),
+  });
+  const own = (
+    protocol: 'static' | 'connected' | 'rip', description: string,
+  ): CommandSpec => ({
+    ...base, id: `ospf-redistribute-${protocol}`, path: ['redistribute', protocol],
+    options: REDISTRIBUTE_OPTIONS, description,
+    undoDescription: `Stop redistributing ${protocol} routes`,
+    run: (_session, args) => {
+      const config = settings(args);
+      if (protocol === 'static') {
+        extra().redistributeStatic = { ...config, metricType: config.metricType ?? 2 };
+      } else if (protocol === 'connected') {
+        extra().redistributeConnected = config;
+      } else {
+        extra().redistributeRip = { ...config, metricType: config.metricType ?? 2 };
+      }
+      return converge();
+    },
+    undo: () => {
+      if (protocol === 'static') extra().redistributeStatic = undefined;
+      else if (protocol === 'connected') extra().redistributeConnected = undefined;
+      else extra().redistributeRip = undefined;
+      return converge();
+    },
+  });
+  const other = (
+    protocol: 'bgp' | 'eigrp' | 'ospf', range: [number, number], description: string,
+  ): CommandSpec => ({
+    ...base, id: `ospf-redistribute-${protocol}`,
+    path: ['redistribute', protocol, OSPF_INT('id', range[0], range[1], 'Process or autonomous system number')],
+    options: REDISTRIBUTE_OPTIONS, description,
+    undoDescription: `Stop redistributing ${protocol} routes`,
+    run: (_session, args) => {
+      const list = (extra().redistributeOther ??= []) as NonNullable<RedistributeOther>;
+      const entry = { protocol, id: args.id, ...settings(args) };
+      const index = list.findIndex((item) => item.protocol === protocol && item.id === args.id);
+      if (index >= 0) list[index] = entry; else list.push(entry);
+      return converge();
+    },
+    undo: (_session, args) => {
+      const list = extra().redistributeOther;
+      if (list) {
+        extra().redistributeOther = list.filter(
+          (item) => !(item.protocol === protocol && item.id === args.id));
+      }
+      return converge();
+    },
+  });
+  return [
+    own('static', 'Static routes'),
+    own('connected', 'Connected'),
+    own('rip', 'Routing Information Protocol (RIP)'),
+    other('bgp', [1, 4294967295], 'Border Gateway Protocol (BGP)'),
+    other('eigrp', [1, 65535], 'Enhanced Interior Gateway Routing Protocol (EIGRP)'),
+    other('ospf', [1, 65535], 'Open Shortest Path First (OSPF)'),
+    {
+      ...base, id: 'ospf-redistribute-all', path: ['redistribute'],
+      description: 'Redistribute information from another routing protocol',
+      existsOnlyNegated: true, run: () => '% Incomplete command.',
+      undo: () => {
+        const config = extra();
+        config.redistributeStatic = undefined;
+        config.redistributeConnected = undefined;
+        config.redistributeRip = undefined;
+        config.redistributeOther = undefined;
+        return converge();
+      },
+    },
+  ];
+}
+
 export function routerOspfSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [
+    ...redistributeSpecs(ctx),
+    ...processSettingSpecs(ctx),
+    ...processFeatureSpecs(ctx),
     ...specsFromTrieRegistrations(
       (collector) =>
         buildConfigRouterOSPFCommands(collector as unknown as CommandTrie, ctx),
@@ -1531,6 +1747,14 @@ export function routerOspfv3Specs(ctx: CiscoShellContext): CommandSpec[] {
 
 export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Router): void {
   trie.registerGreedy('show ip ospf neighbor', 'Display OSPF neighbor table (filtered)', (args) => {
+    const keyword = args[0]?.toLowerCase();
+    const selectorOk = args.length === 0 || keyword === 'detail' || keyword === 'all'
+      || isValidIPv4(args[0]) || INTERFACE_NAME.test(args[0]);
+    if (!selectorOk) throw new CliInvalidInput({ token: args[0] });
+    const extraAt = keyword === 'detail' || keyword === 'all' ? 1 : 2;
+    if (args.length > extraAt || (args.length === 2 && args[1].toLowerCase() !== 'detail')) {
+      throw new CliInvalidInput({ token: args[Math.min(args.length - 1, 1)] });
+    }
     if (!args.length || args[0].toLowerCase() === 'detail') return showIpOspfNeighbor(getRouter());
     const full = showIpOspfNeighbor(getRouter());
     const lines = full.split('\n');
@@ -1622,14 +1846,30 @@ export function registerOSPFShowCommands(trie: CommandTrie, getRouter: () => Rou
     }
     throw new CliInvalidInput({ token: subArgs[0] });
   });
-  trie.registerGreedy('show ip ospf neighbor detail', 'Display detailed OSPF neighbor info', (_args) => showIpOspfNeighborDetail(getRouter()));
+  trie.registerGreedy('show ip ospf neighbor detail', 'Display detailed OSPF neighbor info', (args) => {
+    if (args.length > 0) throw new CliInvalidInput({ token: args[0] });
+    return showIpOspfNeighborDetail(getRouter());
+  });
   trie.register('show ip ospf database', 'Display OSPF link-state database', () => showIpOspfDatabase(getRouter()));
   trie.register('show ip ospf database database-summary', 'Display LSDB counts', () => showIpOspfDatabaseSummaryCounts(getRouter()));
-  trie.registerGreedy('show ip ospf database router', 'Display Router LSAs', (args) => showIpOspfDatabaseRouter(getRouter(), args[0] === 'detail'));
-  trie.registerGreedy('show ip ospf database network', 'Display Network LSAs', (args) => showIpOspfDatabaseNetwork(getRouter(), args[0] === 'detail'));
-  trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail'));
-  trie.registerGreedy('show ip ospf database external', 'Display external LSAs', (args) => showIpOspfDatabaseExternal(getRouter(), args));
+  trie.registerGreedy('show ip ospf database router', 'Display Router LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseRouter(getRouter(), args[0] === 'detail');
+  });
+  trie.registerGreedy('show ip ospf database network', 'Display Network LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseNetwork(getRouter(), args[0] === 'detail');
+  });
+  trie.registerGreedy('show ip ospf database summary', 'Display Summary LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseSummary(getRouter(), args[0] === 'detail');
+  });
+  trie.registerGreedy('show ip ospf database external', 'Display external LSAs', (args) => {
+    refuseUnknownLsdbSelector(args);
+    return showIpOspfDatabaseExternal(getRouter(), args);
+  });
   trie.registerGreedy('show ip ospf interface', 'Display OSPF interface information', (args) => {
+    refuseUnknownSelector(args, { keywords: ['brief'], interfaces: true, max: 1 });
     if (args[0] === 'brief') return showIpOspfInterfaceBrief(getRouter());
     return showIpOspfInterface(getRouter(), args[0]);
   });

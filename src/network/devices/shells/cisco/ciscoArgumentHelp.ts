@@ -192,15 +192,6 @@ function describeArgumentTypes(tries: ArgumentHelpTries): void {
   tries.config.describeArgs('ipv6 route', [
     { name: 'prefix', type: 'WORD', description: 'IPv6 prefix', literal: 'X:X:X:X::X/<0-128>' },
   ]);
-  // La forme nue est acceptée sur IOS et vaut `debug uptime` : le canal
-  // est donc OPTIONNEL, sans quoi une commande valide serait refusée.
-  tries.config.describeArgs('service timestamps', [
-    { name: 'channel', type: 'ENUM', description: 'Message class to timestamp', optional: true,
-      values: [
-        { keyword: 'debug', description: 'Timestamp debug messages' },
-        { keyword: 'log', description: 'Timestamp log messages' },
-      ] },
-  ]);
   // Les NOMS restent des `WORD`, mais avec leur propre description.
   tries.config.describeArgs('username', [WORD('name', 'Name of the local user')]);
   tries.config.describeArgs('ip domain-list', [WORD('name', 'Domain name to append to the list')]);
@@ -656,11 +647,6 @@ export function describeCiscoArguments(tries: ArgumentHelpTries): void {
     ]), optional: true },
   ]);
 
-  tries.configLine.describeArgs('exec-timeout', [
-    INT('minutes', [0, 35791], 'Timeout in minutes'),
-    { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
-      range: [0, 2147483] },
-  ]);
   // `tacacs server <nom>` et `tacacs-server host <adresse>` : les deux
   // mots-clés absorbent leur argument, et faute de le décrire l'aide
   // reproposait la liste d'options à sa place.
@@ -830,14 +816,6 @@ export function describeCiscoSwitchArguments(tries: SwitchArgumentHelpTries): vo
     WORD('name', 'The ascii name for the VLAN'),
   ]);
 
-  tries.configLine.describeArgs('exec-timeout', [
-    INT('minutes', [0, 35791], 'Timeout in minutes'),
-    { name: 'seconds', type: 'INT', description: 'Timeout in seconds', optional: true,
-      range: [0, 2147483] },
-  ]);
-  tries.configLine.describeArgs('login-timeout', [
-    INT('seconds', [1, 300], 'Timeout in seconds'),
-  ]);
   tries.configLine.describeArgs('password', [
     LINE('password', 'The UNENCRYPTED (cleartext) line password'),
   ]);

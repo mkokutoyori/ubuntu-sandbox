@@ -71,7 +71,6 @@ async function surIface(): Promise<Cli> {
  */
 const REGLAGES: ReadonlyArray<string> = [
   'bfd interval 300 min_rx 300 multiplier 3',
-  'bfd interval 300 min-rx 300 multiplier 5',
   'bfd interval 50',
   'bfd neighbor 10.0.0.2',
   'no bfd neighbor 10.0.0.2',
@@ -157,7 +156,8 @@ describe('`?` nomme la place au lieu d\'un mot muet', () => {
   const ATTENDU: ReadonlyArray<readonly [string, string]> = [
     ['bfd ', 'BFD static neighbor'],
     ['bfd neighbor ', 'A.B.C.D'],
-    ['bfd interval ', 'min_rx'],
+    ['bfd interval ', '<1-9999>'],
+    ['bfd interval 50 ', 'min_rx'],
     ['ip igmp ', 'Set IGMP version'],
     ['ip igmp join-group ', 'A.B.C.D'],
     ['ip pim ', 'Enable PIM sparse mode'],

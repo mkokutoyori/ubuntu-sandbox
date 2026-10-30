@@ -54,7 +54,7 @@ describe('chmod : le mode numerique est OCTAL', () => {
     const pc = await machine();
 
     expect(await pc.executeCommand('chmod 999 /tmp/f'))
-      .toBe("chmod: invalid mode: '999'");
+      .toBe("chmod: invalid mode: ‘999’\nTry 'chmod --help' for more information.");
   });
 
   it('et le fichier garde ses permissions', async () => {
@@ -68,7 +68,7 @@ describe('chmod : le mode numerique est OCTAL', () => {
     const pc = await machine();
 
     expect(await pc.executeCommand('chmod 8888 /tmp/f'))
-      .toBe("chmod: invalid mode: '8888'");
+      .toBe("chmod: invalid mode: ‘8888’\nTry 'chmod --help' for more information.");
     expect(await mode(pc)).toBe('644');
   });
 
@@ -105,7 +105,7 @@ describe('chmod : le mode numerique est OCTAL', () => {
     const pc = await machine();
 
     expect(await pc.executeCommand('chmod 999 /tmp/absent'))
-      .toBe("chmod: invalid mode: '999'");
+      .toBe("chmod: invalid mode: ‘999’\nTry 'chmod --help' for more information.");
   });
 
   it('NON-REGRESSION — le mode symbolique passe par le meme parseur', async () => {
@@ -114,6 +114,6 @@ describe('chmod : le mode numerique est OCTAL', () => {
     expect(await pc.executeCommand('chmod u+x,go-r /tmp/f')).toBe('');
     expect(await mode(pc)).toBe('700');
     expect(await pc.executeCommand('chmod zorglub /tmp/f'))
-      .toBe("chmod: invalid mode: 'zorglub'");
+      .toBe("chmod: invalid mode: ‘zorglub’\nTry 'chmod --help' for more information.");
   });
 });

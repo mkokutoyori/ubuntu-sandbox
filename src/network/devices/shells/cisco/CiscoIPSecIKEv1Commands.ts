@@ -55,8 +55,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
    */
   'crypto isakmp policy': { name: 'priorite', type: 'INT',
     description: 'Priority of this IKE policy', range: [1, 10000] },
-  'crypto isakmp key': { name: 'reste', type: 'REST',
-    description: 'The key, then `address <A.B.C.D>` or `hostname <nom>`' },
   'crypto isakmp identity': {
     name: 'forme', type: 'ENUM', description: 'Identity this peer announces',
     values: [
@@ -65,10 +63,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'dn', description: 'Use the distinguished name' },
     ],
   },
-  'crypto isakmp keepalive': { name: 'reste', type: 'REST',
-    description: 'Interval in seconds, then `periodic` or `on-demand`' },
-  'crypto isakmp nat keepalive': { name: 'secondes', type: 'REST',
-    description: 'Interval between NAT keepalives, in seconds' },
   'crypto isakmp invalid-spi-recovery': null,
   'crypto isakmp aggressive-mode disable': null,
   'crypto isakmp profile': { name: 'nom', type: 'WORD',
@@ -96,7 +90,121 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
     description: 'Name and sequence number' },
 };
 
+const KEY_PLACE: ArgumentSpec = {
+  name: 'key', type: 'WORD', description: 'The pre-shared key itself',
+};
+
+const PEER_ADDRESS: ArgumentSpec = {
+  name: 'address', type: 'IP_ADDR', description: 'Address of the peer',
+};
+
+const PEER_MASK: ArgumentSpec = {
+  name: 'mask', type: 'SUBNET_MASK', optional: true, description: 'Mask of the peer network',
+};
+
+const PEER_HOSTNAME: ArgumentSpec = {
+  name: 'hostname', type: 'WORD', description: 'Name of the peer',
+  pattern: /^(?!\d+\.\d+\.\d+\.\d+$)\S+$/,
+};
+
+const DEFAULT_DPD_RETRY_SECONDS = 2;
+
+function isakmpKeySpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config'], minPrivilege: 15 };
+  const byAddress = (key: string | undefined, address: string): string => {
+    eng(ctx).addPreSharedKey(address, key ?? '');
+    return '';
+  };
+  return [
+    {
+      ...base, id: 'config-crypto-isakmp-key-address',
+      path: ['crypto', 'isakmp', 'key', KEY_PLACE, 'address', PEER_ADDRESS, PEER_MASK],
+      description: 'Set IKE pre-shared key',
+      undoDescription: 'Remove IKE pre-shared key',
+      run: (_session, args) => byAddress(args.key, args.address),
+      undo: (_session, args) => { eng(ctx).removePreSharedKey(args.address); return ''; },
+    },
+    {
+      ...base, id: 'config-crypto-isakmp-key-hostname',
+      path: ['crypto', 'isakmp', 'key', KEY_PLACE, 'hostname', PEER_HOSTNAME],
+      description: 'Set IKE pre-shared key by peer name',
+      undoDescription: 'Remove IKE pre-shared key',
+      run: (_session, args) => {
+        eng(ctx).addPreSharedKey(args.hostname.toLowerCase(), args.key, true);
+        return '';
+      },
+      undo: (_session, args) => {
+        eng(ctx).removePreSharedKey(args.hostname.toLowerCase());
+        return '';
+      },
+    },
+    {
+      ...base, id: 'config-crypto-isakmp-key-address-only',
+      path: ['crypto', 'isakmp', 'key', 'address', PEER_ADDRESS],
+      description: 'Remove IKE pre-shared key', existsOnlyNegated: true,
+      run: () => '% Incomplete command.',
+      undo: (_session, args) => { eng(ctx).removePreSharedKey(args.address); return ''; },
+    },
+    {
+      ...base, id: 'config-crypto-isakmp-key-hostname-only',
+      path: ['crypto', 'isakmp', 'key', 'hostname', PEER_HOSTNAME],
+      description: 'Remove IKE pre-shared key', existsOnlyNegated: true,
+      run: () => '% Incomplete command.',
+      undo: (_session, args) => {
+        eng(ctx).removePreSharedKey(args.hostname.toLowerCase());
+        return '';
+      },
+    },
+  ];
+}
+
+function isakmpKeepaliveSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config'], minPrivilege: 15 };
+  const interval: ArgumentSpec = {
+    name: 'interval', type: 'INT', range: [10, 3600], description: 'Seconds between DPD messages',
+  };
+  const retries: ArgumentSpec = {
+    name: 'retries', type: 'INT', range: [2, 60], description: 'Seconds between DPD retries',
+  };
+  const keepalive = (withRetries: boolean, mode: 'periodic' | 'on-demand' | undefined): CommandSpec => ({
+    ...base, undoOmitsArguments: true,
+    id: `config-crypto-isakmp-keepalive${withRetries ? '-retries' : ''}${mode ? `-${mode}` : ''}`,
+    path: ['crypto', 'isakmp', 'keepalive', interval,
+      ...(withRetries ? [retries] : []), ...(mode ? [mode] : [])],
+    description: 'Configure IKE DPD keepalive', undoDescription: 'Disable IKE DPD',
+    run: (_session, args) => {
+      eng(ctx).setDPD(Number(args.interval), Number(args.retries ?? DEFAULT_DPD_RETRY_SECONDS),
+        mode ?? 'periodic');
+      return '';
+    },
+    undo: () => {
+      (eng(ctx) as unknown as { dpdConfig: unknown }).dpdConfig = null;
+      return '';
+    },
+  });
+  return [
+    ...[false, true].flatMap((withRetries) =>
+      [undefined, 'periodic', 'on-demand'].map((mode) =>
+        keepalive(withRetries, mode as 'periodic' | 'on-demand' | undefined))),
+    {
+      ...base, id: 'config-crypto-isakmp-nat-keepalive',
+      path: ['crypto', 'isakmp', 'nat', 'keepalive', {
+        name: 'seconds', type: 'WORD', pattern: /^[1-9]\d{0,9}$/,
+        description: 'Interval between NAT keepalives, in seconds',
+        alternatives: [{ keyword: '<number>', description: 'Interval between NAT keepalives, in seconds' }],
+        formsAreExhaustive: true,
+      }],
+      description: 'Configure NAT keepalive interval',
+      run: (_session, args) => { eng(ctx).setNATKeepalive(Number(args.seconds)); return ''; },
+    },
+  ];
+}
+
 export function ipsecGlobalSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [...isakmpKeySpecs(ctx), ...isakmpKeepaliveSpecs(ctx), ...ipsecGlobalTrieSpecs(ctx)];
+}
+
+function ipsecGlobalTrieSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) => buildIPSecGlobalCommands(collector as unknown as CommandTrie, ctx),
     {
@@ -135,50 +243,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // ── crypto isakmp key KEY address IP ─────────────────────────────
-  /**
-   * `crypto isakmp key KEY {address IP | hostname NOM}`
-   *
-   * La forme `hostname` était refusée, alors que tout ce qu'il lui faut
-   * existait déjà : un pair configuré `crypto isakmp identity hostname`
-   * annonce son nom dans l'offre IKE, et le répondeur cherche la clé par
-   * cette identité AVANT l'adresse source. Il ne manquait que la
-   * commande qui pose la clé sous un nom — l'authentification par nom
-   * marche donc pour de vrai, elle n'est pas mémorisée pour l'affichage.
-   */
-  trie.registerGreedy('crypto isakmp key', 'Set IKE pre-shared key', (args) => {
-    const idx = args.findIndex((a) => a === 'address' || a === 'hostname');
-    if (idx <= 0) {
-      return '% Incomplete command. Usage: crypto isakmp key KEY {address IP | hostname NAME}';
-    }
-    const cible = args[idx + 1];
-    if (!cible) return '% Incomplete command.';
-    const key = args.slice(0, idx).join(' ');
-    if (args[idx] === 'hostname') {
-      // Un nom, pas une adresse : le refuser ici évite qu'une faute de
-      // frappe soit stockée comme une identité que rien n'annoncera.
-      if (isIPv4Literal(cible)) return "% Invalid input detected at '^' marker.";
-      // Minuscule à la pose : un nom d'hôte est insensible à la casse
-      // (RFC 4343), et la table `ip host` de l'équipement le range déjà
-      // ainsi. Sans cette normalisation, `hostname rB` ne se retrouvait
-      // pas depuis un `ip host rB …` rangé en `rb` — mesuré : le tunnel
-      // ne montait pas alors que les deux côtés étaient bien configurés.
-      eng(ctx).addPreSharedKey(cible.toLowerCase(), key, true);
-      return '';
-    }
-    eng(ctx).addPreSharedKey(cible, key);
-    return '';
-  });
-
-  // ── crypto isakmp nat keepalive N ─────────────────────────────────
-  trie.registerGreedy('crypto isakmp nat keepalive', 'Configure NAT keepalive interval', (args) => {
-    if (args.length < 1) return '% Incomplete command.';
-    const n = parseInt(args[0], 10);
-    if (!isNaN(n)) eng(ctx).setNATKeepalive(n);
-    return '';
-  });
-
-  // ── crypto isakmp keepalive N R [periodic|on-demand] ─────────────
   trie.register('crypto isakmp invalid-spi-recovery', 'Enable invalid SPI recovery', () => {
     eng(ctx).setInvalidSpiRecovery(true);
     return '';
@@ -194,19 +258,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     const priority = parseInt(args[0], 10);
     if (isNaN(priority)) return '% Invalid priority.';
     eng(ctx).removeISAKMPPolicy(priority);
-    return '';
-  });
-
-  // ── no crypto isakmp key KEY {address IP | hostname NOM} ────────
-  // La forme `hostname` retirait l'entrée `0.0.0.0` au lieu de la
-  // bonne : `indexOf('address')` ne la voyait pas et le repli sur le
-  // joker s'appliquait, si bien que la clé nommée survivait à son
-  // propre `no` — et qu'une clé joker configurée disparaissait à sa
-  // place.
-  trie.registerGreedy('no crypto isakmp key', 'Remove IKE pre-shared key', (args) => {
-    const idx = args.findIndex((a) => a === 'address' || a === 'hostname');
-    const cible = idx >= 0 ? (args[idx + 1] || '0.0.0.0') : '0.0.0.0';
-    eng(ctx).removePreSharedKey(args[idx] === 'hostname' ? cible.toLowerCase() : cible);
     return '';
   });
 
@@ -299,22 +350,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
     return '';
   });
 
-  // ── crypto isakmp keepalive ───────────────────────────────────
-  trie.registerGreedy('crypto isakmp keepalive', 'Configure IKE DPD keepalive', (args) => {
-    if (args.length < 2) return '% Usage: crypto isakmp keepalive INTERVAL RETRIES [periodic|on-demand]';
-    const interval = parseInt(args[0], 10);
-    const retries = parseInt(args[1], 10);
-    if (isNaN(interval) || isNaN(retries)) return '% Invalid values.';
-    const mode = (args[2]?.toLowerCase() === 'on-demand' ? 'on-demand' : 'periodic') as 'periodic' | 'on-demand';
-    eng(ctx).setDPD(interval, retries, mode);
-    return '';
-  });
-
-  trie.register('no crypto isakmp keepalive', 'Disable IKE DPD', () => {
-    (eng(ctx) as any).dpdConfig = null;
-    return '';
-  });
-
   // ── crypto ipsec security-policy NAME action direction selectors ─────
   // RFC 4301 SPD configuration:
   //   crypto ipsec security-policy NAME PROTECT|BYPASS|DISCARD in|out [src SRC WILDCARD] [dst DST WILDCARD] [proto N]
@@ -402,15 +437,6 @@ export function buildIPSecGlobalCommands(trie: CommandTrie, ctx: CiscoShellConte
 // ─── config-isakmp sub-mode ───────────────────────────────────────────
 
 export function buildISAKMPPolicyCommands(trie: CommandTrie, ctx: CiscoShellContext): void {
-
-  trie.registerGreedy('encryption', 'Set encryption algorithm', (args) => {
-    const p = ctx.getSelectedISAKMPPriority();
-    if (p === null) return '% No policy selected';
-    const policy = eng(ctx).getOrCreateISAKMPPolicy(p);
-    // Normalize: 'aes 256' or 'aes' or '3des'
-    policy.encryption = args.join(' ').toLowerCase();
-    return '';
-  });
 
   trie.registerGreedy('hash', 'Set hash algorithm', (args) => {
     const p = ctx.getSelectedISAKMPPriority();
@@ -831,17 +857,8 @@ const CRYPTO_ENUM = (
   values: valeurs.map(([keyword, texte]) => ({ keyword, description: texte })),
 });
 
-const SUITE_LIBRE: ArgumentSpec = {
-  name: 'suite', type: 'REST', optional: true, values: [], description: '',
-};
-
 const ISAKMP_ARGUMENTS:
 Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  encryption: [CRYPTO_ENUM('algorithme', 'Encryption algorithm', [
-    ['3des', 'Three key triple DES'],
-    ['aes', 'AES - Advanced Encryption Standard'],
-    ['des', 'DES - Data Encryption Standard (56 bit keys)'],
-  ]), SUITE_LIBRE],
   hash: CRYPTO_ENUM('condense', 'Hash algorithm', [
     ['md5', 'Message Digest 5'],
     ['sha', 'Secure Hash Standard'],
@@ -994,7 +1011,44 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   },
 };
 
+function isakmpEncryptionSpecs(ctx: CiscoShellContext): CommandSpec[] {
+  const base = { modes: ['config-isakmp'], minPrivilege: 15 };
+  const apply = (value: string): string => {
+    const priority = ctx.getSelectedISAKMPPriority();
+    if (priority === null) return '% No policy selected';
+    eng(ctx).getOrCreateISAKMPPolicy(priority).encryption = value;
+    return '';
+  };
+  return [
+    {
+      ...base, id: 'isakmp-encryption-3des', path: ['encryption', '3des'],
+      description: 'Three key triple DES', run: () => apply('3des'),
+    },
+    {
+      ...base, id: 'isakmp-encryption-des', path: ['encryption', 'des'],
+      description: 'DES - Data Encryption Standard (56 bit keys)', run: () => apply('des'),
+    },
+    {
+      ...base, id: 'isakmp-encryption-aes',
+      path: ['encryption', 'aes', {
+        name: 'size', type: 'ENUM', optional: true, description: 'Key size',
+        values: [
+          { keyword: '128', description: 'Key size 128' },
+          { keyword: '192', description: 'Key size 192' },
+          { keyword: '256', description: 'Key size 256' },
+        ],
+      }],
+      description: 'AES - Advanced Encryption Standard',
+      run: (_session, args) => apply(args.size ? `aes ${args.size}` : 'aes'),
+    },
+  ];
+}
+
 export function isakmpPolicySpecs(ctx: CiscoShellContext): CommandSpec[] {
+  return [...isakmpEncryptionSpecs(ctx), ...isakmpPolicyTrieSpecs(ctx)];
+}
+
+function isakmpPolicyTrieSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return specsFromTrieRegistrations(
     (collector) =>
       buildISAKMPPolicyCommands(collector as unknown as CommandTrie, ctx),

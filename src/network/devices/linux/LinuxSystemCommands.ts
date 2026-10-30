@@ -2,6 +2,9 @@ import type { ShellContext } from './LinuxFileCommands';
 import type { MemoryProfile, StorageDevice } from '../host/hardware';
 import type { MountEntry } from './MountTable';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { expandShortOptionClusters } from './LinuxTextCommands';
+import { shortOptions } from './commands/Getopt';
+import { GNU_OPTION_SETS } from './GnuOptionGuard';
 
 export interface DfContext extends ShellContext {
   mounts: readonly MountEntry[];
@@ -159,7 +162,8 @@ function dfTableAll(ctx: DfContext): DfEntry[] {
   return ctx.mounts.map((e) => dfRow(ctx, e, sizes.get(e.source)));
 }
 
-export function cmdDf(ctx: DfContext, args: string[]): string {
+export function cmdDf(ctx: DfContext, rawArgs: string[]): string {
+  const args = expandShortOptionClusters(rawArgs, 'txB');
   const human = args.includes('-h') || args.includes('--human-readable');
   const inodes = args.includes('-i');
   let showType = args.includes('-T') || args.includes('--print-type');
@@ -174,7 +178,6 @@ export function cmdDf(ctx: DfContext, args: string[]): string {
     if (a === '-x' || a === '--exclude-type') { excludeTypes.push(args[++i] ?? ''); continue; }
     if (a.startsWith('-')) {
       if (!['-h', '--human-readable', '-i', '-T', '--print-type', '-a', '--all', '-H', '-k', '-m', '-l', '--local', '-P', '--portability', '-B', '--block-size'].includes(a)) {
-        if (/^-h+$/.test(a) && a.length > 2) return `df: invalid option -- '${a.slice(1)}'`;
         return `df: invalid option -- '${a.replace(/^-+/, '')}'`;
       }
       continue;
@@ -241,72 +244,7 @@ export function cmdDf(ctx: DfContext, args: string[]): string {
   return [header, ...lines].join('\n');
 }
 
-export function cmdDu(ctx: ShellContext, args: string[]): string {
-  // Real GNU du accepts combined short options (`-sh`, `-sb`, `-bsh`).
-  // Split them so the flag tests below work uniformly.
-  const expand = (a: string): string[] => {
-    if (!a.startsWith('-') || a.startsWith('--') || a.length <= 2) return [a];
-    return a.slice(1).split('').map((c) => `-${c}`);
-  };
-  const expanded = args.flatMap(expand);
-  const human = expanded.includes('-h') || expanded.includes('--human-readable');
-  const summary = expanded.includes('-s') || expanded.includes('--summarize');
-  const bytesFlag = expanded.includes('-b') || expanded.includes('--bytes');
-  const targets = expanded.filter(a => !a.startsWith('-'));
-  const target = targets[targets.length - 1] ?? '.';
-  const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
-
-  if (!ctx.vfs.exists(absPath)) {
-    return `du: cannot access '${target}': No such file or directory`;
-  }
-
-  const fmt = (bytes: number): string => {
-    if (bytesFlag) return String(bytes);
-    if (human) return formatBytesHuman(bytes);
-    // Default: 1024-byte blocks (GNU `du --block-size=1k`).
-    return String(Math.max(1, Math.ceil(bytes / 1024)));
-  };
-
-  const node = ctx.vfs.lstat(absPath);
-  if (!node) return `du: cannot access '${target}': No such file or directory`;
-
-  // File leaf — single line of its size.
-  if (node.type !== 'directory') {
-    return `${fmt(node.size)}\t${target}`;
-  }
-
-  // Summary — total bytes under the directory, one line.
-  if (summary) {
-    return `${fmt(vfsDirectorySize(ctx, absPath))}\t${target}`;
-  }
-
-  // Full mode — emit one line per descendant directory (real du does
-  // post-order, deepest first), terminated by the total for `target`.
-  const lines: string[] = [];
-  const visit = (path: string, display: string): number => {
-    const stat = ctx.vfs.lstat(path);
-    if (!stat) return 0;
-    if (stat.type !== 'directory') return stat.size;
-    let subtotal = 0;
-    const entries = ctx.vfs.listDirectory(path);
-    if (entries) {
-      for (const { name, inode } of entries) {
-        if (name === '.' || name === '..') continue;
-        const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
-        const childDisplay = display === '.' ? `./${name}` : `${display}/${name}`;
-        if (inode.type === 'directory') {
-          subtotal += visit(childPath, childDisplay);
-        } else {
-          subtotal += inode.size;
-        }
-      }
-    }
-    lines.push(`${fmt(subtotal)}\t${display}`);
-    return subtotal;
-  };
-  visit(absPath, target);
-  return lines.join('\n');
-}
+export { cmdDu } from './DuCommand';
 
 /**
  * `free` — report memory usage. Rendered from the host's {@link MemoryProfile}

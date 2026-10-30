@@ -436,6 +436,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.routingTable = this.routingTable.filter(r =>
       r.type === 'connected' || r.type === 'static' || r.type === 'default');
   }
+
+  _clearDynamicRoute(network: string, mask?: string): number {
+    const before = this.routingTable.length;
+    this.routingTable = this.routingTable.filter(r =>
+      r.type === 'connected' || r.type === 'static' || r.type === 'default'
+      || r.network.toString() !== network || (mask !== undefined && r.mask.toString() !== mask));
+    return before - this.routingTable.length;
+  }
   private packetQueue: QueuedPacket[] = [];
   private readonly defaultTTL = 255; // Cisco/Huawei default
   private readonly interfaceMTU = 1500; // Standard Ethernet MTU
@@ -2719,8 +2727,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private nat64Forward4(ipPkt: IPv4Packet): void {
-    if (this.nat64 === null || ipPkt.ttl <= 1) return;
-    const result = this.nat64.translate4to6Fitted({ ...ipPkt, ttl: ipPkt.ttl - 1 });
+    if (this.nat64 === null) return;
+    const hop = decrementForForwarding(ipPkt);
+    if (hop.kind !== 'forward') return;
+    const result = this.nat64.translate4to6Fitted(hop.packet);
     if (result.ok === false) {
       Logger.info(this.id, 'nat64:drop',
         `${this.name}: NAT64 dropped ${ipPkt.sourceIP} -> ${ipPkt.destinationIP} (${result.reason})`);
@@ -5770,6 +5780,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       attempts, withinSeconds, blockSeconds,
       onQuietMode: (change) => this.getSecurityAuditLog().recordQuietMode(change),
     });
+  }
+
+  _removeLoginBlock(): void {
+    this._loginBlockConfig = null;
+    if (this._loginBlocker) this._loginBlocker.detach();
+    this._loginBlocker = null;
   }
 
   /** `aaa local authentication attempts max-fail <n>` — per-account lockout. */

@@ -759,16 +759,16 @@ describe('Cisco IOS Interface Subnet configurations', () => {
     expect(output).toContain('%'); // Rejected on layer-2 port
   });
 
-  it('84. should reject IP on physical ports of an L2-only switch (no routed ports)', async () => {
-    // The simulated switch is a pure Layer-2 device: physical ports cannot be
-    // converted to routed L3 ports, so an IP address stays rejected.
+  it('84. should accept IP on a physical port of the Catalyst 3560 once it is a routed port', async () => {
     const sw = new CiscoSwitch('switch-cisco', 'SW1', 24, 0, 0);
     await sw.executeCommand('enable');
     await sw.executeCommand('configure terminal');
     await sw.executeCommand('interface FastEthernet0/2');
     await sw.executeCommand('no switchport');
     const output = await sw.executeCommand('ip address 10.1.1.1 255.255.255.0');
-    expect(output).toContain('%');
+    expect(output).not.toContain('%');
+    await sw.executeCommand('end');
+    expect(await sw.executeCommand('show ip interface brief')).toMatch(/FastEthernet0\/2\s+10\.1\.1\.1/);
   });
 
   it('85. should support virtual software loopback interface allocations', async () => {

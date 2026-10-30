@@ -18,6 +18,7 @@
  *   - huawei/HuaweiDhcpCommands.ts     — DHCP commands
  */
 
+import { judgeBgpEntry, judgeIsisEntry, judgeUserInterfaceVty } from './huawei/vrpEntryJudges';
 import { runRouterOutboundSsh } from '@/terminal/ssh/routerOutboundSsh';
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { Router } from '../Router';
@@ -42,7 +43,8 @@ import {
   type VrpTimeRange, type VrpNamedLines, type VrpInterfaceBucket,
 } from './huawei/vrpShellStores';
 import { EquipmentParamResolver } from './EquipmentParamResolver';
-import { findHostByAddress, isPathReachable } from '../linux/network/HostLookup';
+import type { TcpStack } from '@/network/tcp/TcpStack';
+import { findHostByAddress } from '../linux/network/HostLookup';
 import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
@@ -52,10 +54,12 @@ import { huaweiCaptureHost } from './huawei/CapturePacket';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
 import { applyVrpLocalUser } from './huawei/huaweiLocalUser';
 import {
-  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay,
+  registerHuaweiCommonSecurity, registerHuaweiCommonSecurityDisplay, registerHuaweiUserClock,
 } from './huawei/HuaweiCommonSecurity';
 import { IPAddress, IPv6Address, SubnetMask } from '../../core/types';
-import { looksLikeIPv6 } from './cisco/ciscoPing';
+import {
+  parseHuaweiPing, parseHuaweiTracert, formatHuaweiPing, formatHuaweiPing6, formatHuaweiTracert,
+} from './huawei/huaweiPing';
 
 // Extracted command modules
 import {
@@ -914,42 +918,31 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     const router = this.routerRef as unknown as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
       _getHostsTable?: () => { resolve: (n: string) => string | null };
+      getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'>;
     };
     if (!router) return 'Error: device not bound';
     let host = display;
     const resolved = router._getHostsTable?.().resolve(host);
     if (resolved) host = resolved;
 
-    let sourceIp: string | null = null;
+    const failure = `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    let hasSource = false;
     for (const [, p] of router._getPortsInternal()) {
-      const ip = p.getIPAddress();
-      if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
+      if (p.getIPAddress() && p.getIsUp()) { hasSource = true; break; }
     }
-    if (!sourceIp) return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    if (!hasSource) return failure;
 
     const remote = findHostByAddress(host, undefined, this.routerRef as never);
-    if (!remote || remote.poweredOff || remote.interfaceDown) {
-      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
+    if (!remote || remote.poweredOff || remote.interfaceDown) return failure;
+    const stack = router.getTcpStack?.();
+    if (!stack || !stack.hasEgressTo(remote.ip)) return failure;
+    const socket = stack.connect(remote.ip, port);
+    if (!socket || !socket.everEstablished) {
+      socket?.close();
+      return failure;
     }
-    if (!isPathReachable(sourceIp, remote.ip, this.routerRef as never)) {
-      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
-    }
-    if (!this.remoteAcceptsTelnet(remote.device, port)) {
-      return `Trying ${display} ...\nError: Failed to connect to the remote host.`;
-    }
+    socket.close();
     return `Trying ${display} ...\nPress CTRL+K to abort\nConnected to ${display} ...\n`;
-  }
-
-  private remoteAcceptsTelnet(device: unknown, port: number): boolean {
-    if (port !== 23) return false;
-    const d = device as { getDeviceType?: () => string; constructor: { name: string } };
-    const cls = d.constructor?.name ?? '';
-    const type = (d.getDeviceType?.() ?? '').toLowerCase();
-    const isNetworkCli = /Router|Switch/.test(cls) || /router|switch/.test(type);
-    if (!isNetworkCli) return false;
-    const transport = (device as { _getVtyTransportInput?: () => string })._getVtyTransportInput?.();
-    if (transport === undefined) return true;
-    return transport === 'telnet' || transport === 'all';
   }
 
   private sessionExecFermee = false;
@@ -1559,6 +1552,9 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     // VRP lifecycle/management commands (shared with the switch, DRY)
     registerHuaweiCommonMgmt(t, { service: () => this.debugService(), platform: 'router' }, undefined, undefined, huaweiCaptureHost(() => this.r()), huaweiHeaderHost(() => this.r()));
     this.registerScreenSizeCommands(t);
+    registerHuaweiUserClock(t,
+      () => this.r() as unknown as { getManagementService: () => import('../router/management/RouterManagementService').RouterManagementService } | undefined,
+      (epochMs) => this.r()?._setSystemClock(epochMs));
     registerHuaweiCommonSecurityDisplay(t, undefined,
       () => this.r()?.getSnmpService(), () => this.r());
 
@@ -1593,6 +1589,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     });
 
     t.registerGreedy('bgp', 'Configure BGP routing', (args) => {
+      const refused = judgeBgpEntry(args);
+      if (refused !== null) return refused;
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       getRouter().getHuaweiRoutingExtras().ensureBgp(asn);
@@ -1601,6 +1599,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.mode = 'bgp';
       return '';
     });
+    t.requireArgs('bgp', 1);
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
       if (!isNaN(asn)) {
@@ -1611,6 +1610,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
+      const refused = judgeIsisEntry(args);
+      if (refused !== null) return refused;
       const pid = args[0] ? parseInt(args[0], 10) : 1;
       const id = isNaN(pid) ? 1 : pid;
       getRouter().getHuaweiRoutingExtras().ensureIsis(id);
@@ -1936,12 +1937,14 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       ],
     }, {
       name: 'first-ui-number', type: 'INT',
-      description: 'First user-interface number', optional: true, range: [0, 20],
+      description: 'First user-interface number', range: [0, 20],
     }, {
       name: 'last-ui-number', type: 'INT',
       description: 'Last user-interface number', optional: true, range: [0, 20],
     }]);
     t.registerGreedy('user-interface', 'Enter user-interface view', (args) => {
+      const refused = judgeUserInterfaceVty(args);
+      if (refused !== null) return refused;
       const head = args[0]?.toLowerCase();
       if (head === 'vty') {
         this.uiLabel = args[1] && args[2] ? `${args[1]} ${args[2]}` : (args[1] ?? '0');
@@ -1960,6 +1963,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
+    t.requireArgs('user-interface', 2);
+
     // System-mode config commands
     buildSystemCommands(t, this);
 
@@ -1973,6 +1978,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     registerOSPFSystemCommands(t, this, (area) => { this.ospfArea = area; });
 
     t.registerGreedy('bgp', 'Configure BGP routing', (args) => {
+      const refused = judgeBgpEntry(args);
+      if (refused !== null) return refused;
       const asn = parseInt(args[0] ?? '', 10);
       if (isNaN(asn)) return 'Error: Invalid AS number';
       this.r().getHuaweiRoutingExtras().ensureBgp(asn);
@@ -1981,6 +1988,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       this.mode = 'bgp';
       return '';
     });
+    t.requireArgs('bgp', 1);
     t.registerGreedy('undo bgp', 'Remove BGP', (args) => {
       const asn = parseInt(args[0] ?? '', 10);
       if (!isNaN(asn)) {
@@ -2021,6 +2029,8 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     this.buildBfdSubmodes();
 
     t.registerGreedy('isis', 'Configure IS-IS routing', (args) => {
+      const refused = judgeIsisEntry(args);
+      if (refused !== null) return refused;
       const pid = args[0] ? parseInt(args[0], 10) : 1;
       const id = isNaN(pid) ? 1 : pid;
       this.r().getHuaweiRoutingExtras().ensureIsis(id);
@@ -2144,6 +2154,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       const ps = r._huaweiCpuDefendPolicies ??= new Map<string, VrpNamedLines>();
       const name = args[0];
       if (!name) return 'Error: Incomplete command.';
+      if (args.length > 1 && !(args.length === 2 && args[1].toLowerCase() === 'global')) return "Error: Unrecognized command found at '^' position.";
       if (!ps.has(name)) ps.set(name, { name, lines: [] });
       r._huaweiCpuDefendCurrent = name;
       r._huaweiCpuDefendLines = r._huaweiCpuDefendLines || [];
@@ -3211,190 +3222,28 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
   // ─── Tracert command ──────────────────────────────────────────────
 
   private _handleTracert(args: string[]): string {
-    if (args.length === 0) {
-      return 'Error: Please specify a destination IP address.';
-    }
-
-    let target = '';
-    let maxHops = 30;
-    let timeoutMs = 2000;
-    let probesPerHop = 3;
-
-    let ipv6 = false;
-    if (args[0]?.toLowerCase() === 'ipv6') {
-      ipv6 = true;
-      args = args.slice(1);
-    }
-
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i].toLowerCase();
-      if (a === '-h' && args[i + 1]) { maxHops = parseInt(args[i + 1], 10) || 30; i++; }
-      else if (a === '-w' && args[i + 1]) { timeoutMs = (parseInt(args[i + 1], 10) || 2) * 1000; i++; }
-      else if (a === '-q' && args[i + 1]) { probesPerHop = parseInt(args[i + 1], 10) || 3; i++; }
-      else if (!a.startsWith('-')) { target = args[i]; }
-    }
-
-    if (!target) return 'Error: Please specify a destination IP address.';
-
-    if (ipv6 || looksLikeIPv6(target)) {
-      if (!looksLikeIPv6(target)) return `Error: Unknown host ${target}.`;
-      this._pendingAsync = this.r()
-        .executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
-        .then(hops => this._formatHuaweiTracert(target, maxHops, hops));
-      return '';
-    }
-
-    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipMatch) return `Error: Unknown host ${target}.`;
-    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
-    if (octets.some(o => o > 255)) return `Error: Invalid IP address ${target}.`;
-
-    const targetIP = new IPAddress(target);
-    const router = this.r();
-
-    this._pendingAsync = router.executeTraceroute(targetIP, maxHops, timeoutMs, probesPerHop).then(hops =>
-      this._formatHuaweiTracert(target, maxHops, hops),
-    );
-
+    const request = parseHuaweiTracert(args);
+    if (typeof request === 'string') return request;
+    const { target, maxHops, timeoutMs, probesPerHop } = request;
+    const hops = request.ipv6
+      ? this.r().executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
+      : this.r().executeTraceroute(new IPAddress(target), maxHops, timeoutMs, probesPerHop);
+    this._pendingAsync = hops.then((reached) => formatHuaweiTracert(target, maxHops, reached));
     return '';
-  }
-
-  private _formatHuaweiTracert(
-    target: string,
-    maxHops: number,
-    hops: Array<{ hop: number; ip?: string; rttMs?: number; timeout: boolean; unreachable?: boolean; probes?: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean }> }>,
-  ): string {
-    const lines: string[] = [
-      `tracert to ${target}(${target}), max hops: ${maxHops}, packet length: 40, press CTRL_C to break`,
-    ];
-
-    if (hops.length === 0) {
-      lines.push(' Network is unreachable');
-      return lines.join('\n');
-    }
-
-    for (const hop of hops) {
-      if (hop.timeout && (!hop.probes || hop.probes.every(p => !p.responded))) {
-        lines.push(` ${hop.hop}  *  *  *`);
-        continue;
-      }
-
-      let annotation = '';
-      if (hop.unreachable) annotation = ' !N';
-
-      if (hop.probes && hop.probes.length > 0) {
-        const parts: string[] = [];
-        for (const probe of hop.probes) {
-          if (!probe.responded) {
-            parts.push('*');
-          } else {
-            parts.push(`${Math.round(probe.rttMs ?? 0)} ms`);
-          }
-        }
-        lines.push(` ${hop.hop} ${hop.ip}  ${parts.join(' ')}${annotation}`);
-      } else {
-        const ms = Math.round(hop.rttMs ?? 0);
-        lines.push(` ${hop.hop} ${hop.ip}  ${ms} ms${annotation}`);
-      }
-    }
-
-    return lines.join('\n');
   }
 
   // ─── Ping command ─────────────────────────────────────────────────
 
   private _handlePing(args: string[]): string {
-    if (args.length === 0) return 'Error: Please specify a destination IP address.';
-
-    let target = '';
-    let count = 5;
-    let timeoutMs = 2000;
-    let sourceIP: string | null = null;
-    let ipv6 = false;
-
-    if (args[0].toLowerCase() === 'ipv6') {
-      ipv6 = true;
-      args = args.slice(1);
-      if (args.length === 0) return 'Error: Please specify a destination IP address.';
-    }
-
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i].toLowerCase();
-      if (a === '-c' && args[i + 1]) { count = parseInt(args[i + 1], 10) || 5; i++; }
-      else if (a === '-t' && args[i + 1]) { timeoutMs = (parseInt(args[i + 1], 10) || 2) * 1000; i++; }
-      else if (a === '-a' && args[i + 1]) { sourceIP = args[i + 1]; i++; }
-      else if (!a.startsWith('-')) { target = args[i]; }
-    }
-
-    if (!target) return 'Error: Please specify a destination IP address.';
-
-    if (ipv6 || looksLikeIPv6(target)) {
-      if (!looksLikeIPv6(target)) return `Error: Unknown host ${target}.`;
-      return this._handlePing6(target, count, timeoutMs, sourceIP);
-    }
-
-    const ipMatch = target.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (!ipMatch) return `Error: Unknown host ${target}.`;
-    const octets = [+ipMatch[1], +ipMatch[2], +ipMatch[3], +ipMatch[4]];
-    if (octets.some(o => o > 255)) return `Error: Invalid IP address ${target}.`;
-
-    const targetIP = new IPAddress(target);
+    const request = parseHuaweiPing(args);
+    if (typeof request === 'string') return request;
+    const { target, count, timeoutMs, sourceIP } = request;
     const router = this.r();
-
-    this._pendingAsync = router.executePingSequence(targetIP, count, timeoutMs, sourceIP ?? undefined).then(results => {
-      const successes = results.filter(r => r.success).length;
-      const lines = [
-        `PING ${target}: 56  data bytes, press CTRL_C to break`,
-        ...results.map(r =>
-          r.success
-            ? `Reply from ${r.fromIP}: bytes=56 Sequence=${r.seq} ttl=${r.ttl} time=${r.rttMs.toFixed(0)} ms`
-            : `Request timeout`,
-        ),
-        '',
-        `--- ${target} ping statistics ---`,
-        `${count} packet(s) transmitted, ${successes} packet(s) received, ${Math.round(((count - successes) / count) * 100)}% packet loss`,
-      ];
-      return lines.join('\n');
-    });
-
-    return '';
-  }
-
-  /**
-   * VRP renders an IPv6 probe differently from an IPv4 one, and the
-   * difference carries information: a reply reports its `hop limit`,
-   * which is the field IPv6 actually has, and the statistics block
-   * counts transmitted and received on separate lines.
-   */
-  private _handlePing6(
-    target: string, count: number, timeoutMs: number, sourceIP: string | null,
-  ): string {
-    const router = this.r();
-    this._pendingAsync = router
-      .executePing6Sequence(new IPv6Address(target), count, timeoutMs, sourceIP ?? undefined)
-      .then((results) => {
-        const ok = results.filter(r => r.success);
-        const rtts = ok.map(r => Math.round(r.rttMs));
-        const loss = count === 0 ? 0 : ((count - ok.length) / count) * 100;
-        const lines = [
-          `  PING ${target} : 56  data bytes, press CTRL_C to break`,
-        ];
-        for (const r of results) {
-          if (!r.success) { lines.push('    Request time out'); continue; }
-          lines.push(`    Reply from ${r.fromIP}`);
-          lines.push(`    bytes=56 Sequence=${r.seq} hop limit=${r.ttl}  time = ${Math.round(r.rttMs)} ms`);
-        }
-        lines.push('');
-        lines.push(`  --- ${target} ping statistics ---`);
-        lines.push(`    ${count} packet(s) transmitted`);
-        lines.push(`    ${ok.length} packet(s) received`);
-        lines.push(`    ${loss.toFixed(2)}% packet loss`);
-        if (rtts.length > 0) {
-          const avg = Math.round(rtts.reduce((a, b) => a + b, 0) / rtts.length);
-          lines.push(`    round-trip min/avg/max = ${Math.min(...rtts)}/${avg}/${Math.max(...rtts)} ms`);
-        }
-        return lines.join('\n');
-      });
+    this._pendingAsync = request.ipv6
+      ? router.executePing6Sequence(new IPv6Address(target), count, timeoutMs, sourceIP ?? undefined)
+        .then((results) => formatHuaweiPing6(target, count, results))
+      : router.executePingSequence(new IPAddress(target), count, timeoutMs, sourceIP ?? undefined)
+        .then((results) => formatHuaweiPing(target, count, results));
     return '';
   }
 }

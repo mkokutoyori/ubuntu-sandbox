@@ -46,6 +46,7 @@ import { SocketTable } from '../core/SocketTable';
 import {
   TcpStack, TCP_SOMAXCONN, DUAL_STACK, IPV4_ONLY, ipFamilyOf, wildcardAddressOf,
   type IpFamily, type TcpOptionPolicy, type TcpMibSink, type OwnerExit, type TcpEgress, type TcpOrigination,
+  type TcpExchangeOptions, type TcpSocket,
 } from '../tcp/TcpStack';
 import { RFC_RETRY_POLICY, type TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
@@ -439,6 +440,7 @@ export interface TcpExchangeSocketOptions {
   diffServ?: DiffServField;
   ttlFloor?: TtlFloor;
   shutdownWrite?: boolean;
+  owner?: { pid: number; service?: string };
 }
 
 export interface ConnectedUdpSocket {
@@ -1092,7 +1094,7 @@ export abstract class EndHost extends Equipment {
       ndpCacheSize: this.neighborCache.size,
       routeCount: this.routingTable.length,
       tcpListeners: this.tcpv2.listListeners().length,
-      tcpConnections: this.tcpv2.listSockets().length,
+      tcpConnections: this.tcpv2.socketCount(),
       icmpEchosSent: this.icmpEchosSent,
       icmpEchosReceived: this.icmpEchosReceived,
       icmpTimeouts: this.icmpTimeouts,
@@ -1109,9 +1111,6 @@ export abstract class EndHost extends Equipment {
       topic: 'host.icmp.echo-sent',
       payload: { ...this.hostRef(), ...payload },
     });
-    // Mirror onto the Logger so the Network Logs panel surfaces every
-    // ping packet — the bus payload is intentionally machine-friendly,
-    // Logger carries the human-readable line.
     Logger.info(
       this.id, 'icmp:echo-sent',
       `${this.name}: ICMP echo #${payload.seq} → ${payload.toIp} (id=${payload.id}, ttl=${payload.ttl}, ${payload.size}B)`,
@@ -2124,7 +2123,7 @@ export abstract class EndHost extends Equipment {
         try {
           const entry = this.socketTable.bind(
             'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
-            { boundDevice, serviceName: identity.service },
+            { boundDevice, serviceName: identity.service, ownerUid: identity.uid },
           );
           if (bound) entry.state = 'BOUND';
           this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
@@ -3973,6 +3972,12 @@ export abstract class EndHost extends Equipment {
     if (localPort === false) return 'EADDRINUSE';
     const peer: ConnectedUdpPeer = { remote: addressTextWithoutScope(remote), remotePort, pendingError: null };
     this.connectedUdpPeers.set(localPort, peer);
+    const sourceText = options.source !== undefined ? addressTextWithoutScope(options.source)
+      : remote instanceof IPAddress ? (remote.isLoopback() ? peer.remote : this.sourceAddressFor(remote)?.toString() ?? null) : null;
+    const wildcard = wildcardAddressOf(remote instanceof IPv6Address ? 'ipv6' : 'ipv4');
+    const bound = this.socketTable.findByLocalPort(localPort, 'udp');
+    const connectedFrom = sourceText !== null && bound !== undefined
+      && this.socketTable.connectDatagram(bound.id, sourceText, peer.remote, remotePort) ? sourceText : wildcard;
     return {
       localPort,
       peekError: () => peer.pendingError,
@@ -4001,6 +4006,7 @@ export abstract class EndHost extends Equipment {
       },
       close: () => {
         this.connectedUdpPeers.delete(localPort);
+        this.socketTable.unbind('udp', connectedFrom, localPort);
         this.udpClose(localPort);
       },
     };
@@ -5490,19 +5496,31 @@ export abstract class EndHost extends Equipment {
     targetIP: IPAddress | IPv6Address, port: number, payload: string,
     options: TcpExchangeSocketOptions = {},
   ): { outcome: TcpWireOutcome; received: string } {
+    return this.tcpv2.exchange(targetIP.toString(), port, payload, this.tcpEgressOptions(targetIP, options));
+  }
+
+  tcpOpen(
+    targetIP: IPAddress | IPv6Address, port: number,
+    options: TcpExchangeSocketOptions = {},
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null } {
+    return this.tcpv2.open(targetIP.toString(), port, this.tcpEgressOptions(targetIP, options));
+  }
+
+  private tcpEgressOptions(targetIP: IPAddress | IPv6Address, options: TcpExchangeSocketOptions): TcpExchangeOptions {
     if (options.sourceIP !== undefined && (options.sourceIP instanceof IPv6Address) !== (targetIP instanceof IPv6Address)) {
       throw new Error('TCP exchange: the source address is of another family than the destination (EAFNOSUPPORT)');
     }
     if (targetIP instanceof IPv6Address) this.resolveNdpSync(targetIP);
     else this.resolveArpSync(targetIP);
-    return this.tcpv2.exchange(targetIP.toString(), port, payload, {
+    return {
       localPort: options.sourcePort,
       localIp: options.sourceIP === undefined ? undefined : addressTextWithoutScope(options.sourceIP),
       ...(options.ttl === undefined ? {} : { ttl: options.ttl }),
       ...(options.diffServ === undefined ? {} : { diffServ: options.diffServ }),
       ...(options.ttlFloor === undefined ? {} : { ttlFloor: options.ttlFloor }),
       ...(options.shutdownWrite === undefined ? {} : { shutdownWrite: options.shutdownWrite }),
-    });
+      ...(options.owner === undefined ? {} : { owner: options.owner }),
+    };
   }
 
   tcpProbeSyncIPv6(targetAddr: string, port: number): boolean {

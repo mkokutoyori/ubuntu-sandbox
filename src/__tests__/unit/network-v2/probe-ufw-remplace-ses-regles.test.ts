@@ -149,8 +149,8 @@ describe('ufw remplace une regle au lieu d\'en empiler une seconde', () => {
     await srv.executeCommand('sudo ufw allow 22/tcp');
     await srv.executeCommand('sudo ufw deny 22/tcp');
     const save = String(await srv.executeCommand('sudo iptables -S'));
-    expect(save).toContain('-A ufw-user-input -p tcp --dport 22 -j DROP');
-    expect(save).not.toContain('-A ufw-user-input -p tcp --dport 22 -j ACCEPT');
+    expect(save).toContain('-A ufw-user-input -p tcp -m tcp --dport 22 -j DROP');
+    expect(save).not.toContain('-A ufw-user-input -p tcp -m tcp --dport 22 -j ACCEPT');
   }, 30000);
 
   it('non-regression : re-ajouter la MEME regle reste sans effet', async () => {
@@ -199,6 +199,6 @@ describe('ufw remplace une regle au lieu d\'en empiler une seconde', () => {
     const { srv } = await lab();
     expect(String(await srv.executeCommand('sudo systemctl is-enabled ufw')).trim())
       .toBe('enabled');
-    expect(String(await srv.executeCommand('ps aux'))).toContain('/lib/ufw/ufw-init');
+    expect(String(await srv.executeCommand('ps auxww'))).toContain('/lib/ufw/ufw-init');
   }, 30000);
 });

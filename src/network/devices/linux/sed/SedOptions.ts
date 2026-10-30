@@ -1,0 +1,124 @@
+import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
+
+export const SED_USAGE = `Usage: sed [OPTION]... {script-only-if-no-other-script} [input-file]...
+
+  -n, --quiet, --silent
+                 suppress automatic printing of pattern space
+      --debug
+                 annotate program execution
+  -e script, --expression=script
+                 add the script to the commands to be executed
+  -f script-file, --file=script-file
+                 add the contents of script-file to the commands to be executed
+  --follow-symlinks
+                 follow symlinks when processing in place
+  -i[SUFFIX], --in-place[=SUFFIX]
+                 edit files in place (makes backup if SUFFIX supplied)
+  -l N, --line-length=N
+                 specify the desired line-wrap length for the \`l' command
+  --posix
+                 disable all GNU extensions.
+  -E, -r, --regexp-extended
+                 use extended regular expressions in the script
+                 (for portability use POSIX -E).
+  -s, --separate
+                 consider files as separate rather than as a single
+                 continuous long stream.
+      --sandbox
+                 operate in sandbox mode (disable e/r/w commands).
+  -u, --unbuffered
+                 load minimal amounts of data from the input files and flush
+                 the output buffers more often
+  -z, --null-data
+                 separate lines by NUL characters
+      --help     display this help and exit
+      --version  output version information and exit
+
+If no -e, --expression, -f, or --file option is given, then the first
+non-option argument is taken as the sed script to interpret.  All
+remaining arguments are names of input files; if no input files are
+specified, then the standard input is read.
+
+GNU sed home page: <https://www.gnu.org/software/sed/>.
+General help using GNU software: <https://www.gnu.org/gethelp/>.`;
+
+export const SED_HELP = `${SED_USAGE}\nE-mail bug reports to: <bug-sed@gnu.org>.`;
+
+export const SED_VERSION = `sed (GNU sed) 4.8
+Copyright (C) 2020 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Jay Fenlason, Tom Lord, Ken Pizzini,
+Paolo Bonzini, Jim Meyering, and Assaf Gordon.
+
+This sed program was built without SELinux support.
+
+GNU sed home page: <https://www.gnu.org/software/sed/>.
+General help using GNU software: <https://www.gnu.org/gethelp/>.
+E-mail bug reports to: <bug-sed@gnu.org>.`;
+
+const long = (name: string, letter: string, takesArgument = false, optionalArgument = false): LongOption =>
+  ({ name, letter, takesArgument, optionalArgument });
+
+const SED_LONG: readonly LongOption[] = [
+  long('quiet', 'n'), long('silent', 'n'), long('debug', ''), long('expression', 'e', true), long('file', 'f', true),
+  long('follow-symlinks', ''), long('in-place', 'i', false, true), long('line-length', 'l', true), long('posix', ''),
+  long('regexp-extended', 'r'), long('separate', 's'), long('sandbox', ''), long('unbuffered', 'u'),
+  long('null-data', 'z'), long('binary', 'b'), long('help', ''), long('version', ''),
+];
+
+export interface SedCommandLine {
+  readonly quiet: boolean;
+  readonly extended: boolean;
+  readonly separate: boolean;
+  readonly nullData: boolean;
+  readonly sandbox: boolean;
+  readonly lineLength: number | null;
+  readonly inPlace: boolean;
+  readonly backupSuffix: string;
+  readonly scripts: readonly { readonly kind: 'text' | 'file'; readonly value: string }[];
+  readonly operands: readonly string[];
+}
+
+export type SedArgumentsResult =
+  | { readonly kind: 'ok'; readonly line: SedCommandLine }
+  | { readonly kind: 'text'; readonly text: string; readonly exitCode: number };
+
+export function parseSedArguments(argv: readonly string[]): SedArgumentsResult {
+  let quiet = false;
+  let extended = false;
+  let separate = false;
+  let nullData = false;
+  let sandbox = false;
+  let lineLength: number | null = null;
+  let inPlace = false;
+  let backupSuffix = '';
+  const scripts: { kind: 'text' | 'file'; value: string }[] = [];
+  const operands: string[] = [];
+  for (const item of shortOptions(argv, 'nrEsuzbe:f:i::l:', SED_LONG)) {
+    if (item.kind === 'operand') { operands.push(item.value); continue; }
+    if (item.kind === 'option') {
+      if (item.long === 'help') return { kind: 'text', text: SED_HELP, exitCode: 0 };
+      if (item.long === 'version') return { kind: 'text', text: SED_VERSION, exitCode: 0 };
+      if (item.long === 'sandbox') { sandbox = true; continue; }
+      switch (item.letter) {
+        case 'n': quiet = true; break;
+        case 'r': case 'E': extended = true; break;
+        case 's': separate = true; break;
+        case 'z': nullData = true; break;
+        case 'e': scripts.push({ kind: 'text', value: item.argument ?? '' }); break;
+        case 'f': scripts.push({ kind: 'file', value: item.argument ?? '' }); break;
+        case 'i': inPlace = true; backupSuffix = item.argument ?? ''; break;
+        case 'l':
+          lineLength = Math.max(0, Number.parseInt(item.argument ?? '', 10) || 0);
+          break;
+        default: break;
+      }
+      continue;
+    }
+    return { kind: 'text', text: `${getoptDiagnostic('sed', item)}\n${SED_USAGE}`, exitCode: 1 };
+  }
+  return { kind: 'ok', line: { quiet, extended, separate, nullData, sandbox, lineLength, inPlace, backupSuffix, scripts, operands } };
+}

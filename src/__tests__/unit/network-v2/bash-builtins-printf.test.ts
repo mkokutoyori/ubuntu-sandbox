@@ -117,8 +117,8 @@ describe('printf builtin', () => {
   describe('error handling', () => {
     it('should error with no arguments', () => {
       const result = printf([]);
-      expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('usage');
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('usage');
     });
 
     it('should handle missing format argument gracefully', () => {

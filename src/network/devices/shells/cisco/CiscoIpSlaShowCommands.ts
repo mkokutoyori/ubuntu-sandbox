@@ -1,3 +1,4 @@
+import { refuseUnknownSelector } from './showSelectors';
 import type { DebugPair } from '@/cli/commands/debug/debugFamily';
 import type { CommandTrie } from '../CommandTrie';
 import type { Router } from '../../Router';
@@ -324,6 +325,7 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
   });
 
   trie.registerGreedy('show ip sla statistics', 'IP SLAs statistics', (args) => {
+    refuseUnknownSelector(args, { keywords: ['details', 'aggregated'], integer: [1, 2147483647], max: 2 });
     const wantsDetails = args.includes('details');
     const aggregated = args.includes('aggregated');
     const idToken = args.find((token) => /^\d+$/.test(token));
@@ -356,8 +358,10 @@ export function registerIpSlaShowCommands(trie: CommandTrie, ctx: IpSlaShowConte
     return lines.join('\n').trimEnd();
   });
 
-  trie.registerGreedy('show ip sla summary', 'IP SLAs summary', (args) =>
-    renderSummary(engine(), engine().nowMs(), args.find((t) => /^\d+$/.test(t))));
+  trie.registerGreedy('show ip sla summary', 'IP SLAs summary', (args) => {
+    refuseUnknownSelector(args, { integer: [1, 2147483647], max: 1 });
+    return renderSummary(engine(), engine().nowMs(), args.find((t) => /^\d+$/.test(t)));
+  });
 
   trie.registerGreedy('show ip sla application', 'IP SLAs application', () =>
     renderApplication(engine()));

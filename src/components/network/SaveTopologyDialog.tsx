@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from './ConfirmDialog';
 import { listSavedTopologies } from '@/store/localStorageTopology';
-import { TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
+import { useLocale } from '@/i18n/useLocale';
 
 interface SaveTopologyDialogProps {
   open: boolean;
@@ -16,6 +16,7 @@ interface SaveTopologyDialogProps {
 /** Replaces the `window.prompt('Save topology as:', ...)` flow (rapport
  *  09 audit, item #54) — silent overwrite is now a confirmed decision. */
 export function SaveTopologyDialog({ open, onOpenChange, defaultName, onSave }: SaveTopologyDialogProps) {
+  const { t } = useLocale();
   const [name, setName] = useState(defaultName);
   const [pendingOverwrite, setPendingOverwrite] = useState<string | null>(null);
 
@@ -39,29 +40,29 @@ export function SaveTopologyDialog({ open, onOpenChange, defaultName, onSave }: 
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Save topology</DialogTitle>
-            <DialogDescription>Saved to your browser's local storage.</DialogDescription>
+            <DialogTitle>{t('save.title')}</DialogTitle>
+            <DialogDescription>{t('save.description')}</DialogDescription>
           </DialogHeader>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-            placeholder="Topology name"
+            placeholder={t('save.placeholder')}
             autoFocus
           />
-          <p className="text-xs text-muted-foreground">{TOPOLOGY_SAVE_CAVEATS}</p>
+          <p className="text-xs text-muted-foreground">{t('topology.saveCaveats')}</p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={!name.trim()}>Save</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>{t('dialog.cancel')}</Button>
+            <Button onClick={submit} disabled={!name.trim()}>{t('save.confirm')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
       <ConfirmDialog
         open={pendingOverwrite !== null}
         onOpenChange={(o) => { if (!o) setPendingOverwrite(null); }}
-        title="Overwrite existing topology?"
-        description={`A saved topology named "${pendingOverwrite}" already exists. Overwriting it cannot be undone.`}
-        confirmLabel="Overwrite"
+        title={t('save.overwriteTitle')}
+        description={t('save.overwriteDescription', { name: pendingOverwrite ?? '' })}
+        confirmLabel={t('save.overwrite')}
         destructive
         onConfirm={() => {
           if (pendingOverwrite) onSave(pendingOverwrite);

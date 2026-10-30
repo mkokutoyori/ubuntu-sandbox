@@ -364,6 +364,7 @@ export interface TcpExchangeOptions {
   diffServ?: DiffServField;
   ttlFloor?: TtlFloor;
   shutdownWrite?: boolean;
+  owner?: { pid: number; service?: string };
 }
 
 export interface TcpConnectOptions {
@@ -396,6 +397,7 @@ export interface TcpBindOptions {
   allowHalfOpen?: boolean;
   backlog?: number;
   boundDevice?: string;
+  serialAccept?: boolean;
 }
 
 export interface TcpListenOptions extends TcpBindOptions {
@@ -719,6 +721,7 @@ export class TcpSocket {
    * stops accepting, it does not grow without limit.
    */
   private receiveQueue: unknown[] = [];
+  get hasUnreadData(): boolean { return this.receiveQueue.length > 0; }
   private receiveQueueBytes = 0;
   private receivePaused = false;
 
@@ -802,6 +805,10 @@ export class TcpListener {
 
   get accepting(): boolean { return this.onAccept !== null; }
 
+  serialAccept = false;
+  serving = false;
+  readonly awaiting: TcpSocket[] = [];
+
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
 }
 
@@ -820,9 +827,14 @@ const ABORT_SENDS_RESET: ReadonlySet<TcpState> = new Set<TcpState>([
   'syn-received', 'established', 'fin-wait-1', 'fin-wait-2', 'close-wait',
 ]);
 
+const SOCKET_KEY_COLLATOR = new Intl.Collator();
+
 export class TcpStack {
   private listeners = new Map<string, TcpListener>();
   private sockets = new Map<string, TcpSocket>();
+  private readonly socketsByLocalPort = new Map<number, Set<TcpSocket>>();
+  private readonly sortedSockets: TcpSocket[] = [];
+  private readonly sortedKeys: string[] = [];
   private enabled = true;
   private running = false;
   private nextEphemeralPort = 49152;
@@ -868,6 +880,9 @@ export class TcpStack {
       this._teardown(s, 'shutdown');
     }
     this.sockets.clear();
+    this.socketsByLocalPort.clear();
+    this.sortedSockets.length = 0;
+    this.sortedKeys.length = 0;
     for (const l of this.listeners.values()) this.socketSink?.withdraw(l.localIp, l.localPort);
     this.listeners.clear();
   }
@@ -953,6 +968,7 @@ export class TcpStack {
     if (this.listeners.has(listener.key())) {
       throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
+    listener.serialAccept = opts.serialAccept ?? false;
     this.listeners.set(listener.key(), listener);
     this.socketSink?.announce(localIp, boundPort, listener.identity, listener.boundDevice ?? undefined, !listener.accepting);
     if (listener.accepting) this.announceListener(listener, true);
@@ -976,7 +992,12 @@ export class TcpStack {
   }
 
   listSockets(): TcpSocket[] {
-    return Array.from(this.sockets.values()).sort((a, b) => a.key().localeCompare(b.key()));
+    this.ensureIndexes();
+    return this.sortedSockets.slice();
+  }
+
+  socketCount(): number {
+    return this.sockets.size;
   }
 
   infoOf(socket: TcpSocket): TcpInfo {
@@ -1044,12 +1065,13 @@ export class TcpStack {
   }
 
   queuesOf(socket: TcpSocket): TcpQueues {
-    if (socket.isRequestSock || socket.state === 'time-wait') return { receive: 0, send: 0 };
+    if (socket.isRequestSock || socket.state === 'time-wait') return { receive: 0, send: 0, unread: 0 };
     const unsent = socket.sendBacklog.reduce((total, entry) => total + entry.payload.length, 0);
     const finQueued = socket.closeAfterFlush ? 1 : 0;
     return {
       receive: socket.unreadBytes + (socket.finUnread ? 1 : 0),
       send: ((socket.sendNext - socket.sendUnacked) + unsent + finQueued) >>> 0,
+      unread: socket.unreadBytes,
     };
   }
 
@@ -1143,11 +1165,84 @@ export class TcpStack {
     return this.getScheduler();
   }
 
+  private trackSocket(socket: TcpSocket): void {
+    const replaced = this.sockets.get(socket.key());
+    if (replaced !== undefined && replaced !== socket) this.untrackSocket(replaced);
+    this.sockets.set(socket.key(), socket);
+    this.insertSorted(socket);
+    let bucket = this.socketsByLocalPort.get(socket.localPort);
+    if (bucket === undefined) {
+      bucket = new Set();
+      this.socketsByLocalPort.set(socket.localPort, bucket);
+    }
+    bucket.add(socket);
+  }
+
+  private untrackSocket(socket: TcpSocket): void {
+    if (this.sockets.get(socket.key()) === socket) this.sockets.delete(socket.key());
+    this.removeSorted(socket);
+    const bucket = this.socketsByLocalPort.get(socket.localPort);
+    if (bucket === undefined) return;
+    bucket.delete(socket);
+    if (bucket.size === 0) this.socketsByLocalPort.delete(socket.localPort);
+  }
+
+  private ensureIndexes(): void {
+    if (this.sortedSockets.length === this.sockets.size) return;
+    const keyed = Array.from(this.sockets.values(), (socket) => [socket.key(), socket] as const);
+    keyed.sort((a, b) => SOCKET_KEY_COLLATOR.compare(a[0], b[0]));
+    this.sortedKeys.length = 0;
+    this.sortedSockets.length = 0;
+    this.socketsByLocalPort.clear();
+    for (const [key, socket] of keyed) {
+      this.sortedKeys.push(key);
+      this.sortedSockets.push(socket);
+      const bucket = this.socketsByLocalPort.get(socket.localPort);
+      if (bucket === undefined) this.socketsByLocalPort.set(socket.localPort, new Set([socket]));
+      else bucket.add(socket);
+    }
+  }
+
+  private sortedIndexOf(key: string): number {
+    let low = 0;
+    let high = this.sortedKeys.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (SOCKET_KEY_COLLATOR.compare(this.sortedKeys[middle], key) < 0) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  private insertSorted(socket: TcpSocket): void {
+    const key = socket.key();
+    const at = this.sortedIndexOf(key);
+    this.sortedKeys.splice(at, 0, key);
+    this.sortedSockets.splice(at, 0, socket);
+  }
+
+  private removeSorted(socket: TcpSocket): void {
+    let at = this.sortedIndexOf(socket.key());
+    while (at < this.sortedSockets.length && this.sortedSockets[at] !== socket
+      && this.sortedKeys[at] === socket.key()) at++;
+    if (this.sortedSockets[at] !== socket) at = this.sortedSockets.indexOf(socket);
+    if (at < 0) return;
+    this.sortedKeys.splice(at, 1);
+    this.sortedSockets.splice(at, 1);
+  }
+
+  private portHeldBySocket(port: number, localIp: string | undefined): boolean {
+    this.ensureIndexes();
+    const bucket = this.socketsByLocalPort.get(port);
+    if (bucket === undefined) return false;
+    if (!localIp) return true;
+    for (const socket of bucket) if (socket.localIp === localIp) return true;
+    return false;
+  }
+
   localPortInUse(port: PortNumber, rawRemoteIp: string): boolean {
     const localIp = this.resolveEgress(canonicalIpText(rawRemoteIp))?.srcIp;
-    for (const socket of this.sockets.values()) {
-      if (socket.localPort === port.value && socket.localIp === localIp) return true;
-    }
+    if (this.portHeldBySocket(port.value, localIp)) return true;
     for (const listener of this.listeners.values()) {
       if (listener.localPort === port.value && (listener.localIp === localIp || listener.localIp === '0.0.0.0')) return true;
     }
@@ -1158,8 +1253,9 @@ export class TcpStack {
     if (!reuseAddress) return this.localPortInUse(port, rawRemoteIp);
     const remoteIp = canonicalIpText(rawRemoteIp);
     const localIp = this.resolveEgress(remoteIp)?.srcIp;
-    for (const socket of this.sockets.values()) {
-      if (socket.localPort === port.value && socket.localIp === localIp && socket.remoteIp === remoteIp
+    this.ensureIndexes();
+    for (const socket of this.socketsByLocalPort.get(port.value) ?? []) {
+      if (socket.localIp === localIp && socket.remoteIp === remoteIp
         && socket.remotePort === remotePort && socket.state !== 'time-wait') return true;
     }
     for (const listener of this.listeners.values()) {
@@ -1195,7 +1291,7 @@ export class TcpStack {
     socket.mss = mssForMtu(socket.family, this.pathMtuTo(remoteIp, egress));
     socket.sendNext = this.initialSequence(socket);
     socket.sendUnacked = socket.sendNext;
-    this.sockets.set(socket.key(), socket);
+    this.trackSocket(socket);
     this._transition(socket, 'syn-sent');
     const flags = noFlags(); flags.syn = true;
     if (this.ecnPolicy() === 'request') socket.ecn.requestOnSyn(flags);
@@ -1244,10 +1340,9 @@ export class TcpStack {
     return received === '' ? null : received;
   }
 
-  exchange(
-    remoteIp: string, remotePort: number, payload: string,
-    opts: TcpExchangeOptions = {},
-  ): { outcome: TcpWireOutcome; received: string } {
+  open(
+    remoteIp: string, remotePort: number, opts: TcpExchangeOptions = {},
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null } {
     const socket = this.connect(remoteIp, remotePort, {
       ...(opts.localPort === undefined ? {} : { localPort: opts.localPort }),
       ...(opts.localIp === undefined ? {} : { localIp: opts.localIp }),
@@ -1255,12 +1350,23 @@ export class TcpStack {
       ...(opts.diffServ === undefined ? {} : { diffServ: opts.diffServ }),
       ...(opts.ttlFloor === undefined ? {} : { ttlFloor: opts.ttlFloor }),
     });
-    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', received: '' };
+    if (!socket) return { outcome: this.hasEgressTo(remoteIp) ? 'timeout' : 'unreachable', socket: null };
     if (!socket.everEstablished) {
       const outcome = socket.connectProhibited ? 'prohibited' : socket.connectRefused ? 'refused' : 'timeout';
       socket.close();
-      return { outcome, received: '' };
+      return { outcome, socket: null };
     }
+    if (opts.owner !== undefined) this.setSocketOwner(socket, opts.owner.pid, opts.owner.service);
+    return { outcome: 'open', socket };
+  }
+
+  exchange(
+    remoteIp: string, remotePort: number, payload: string,
+    opts: TcpExchangeOptions = {},
+  ): { outcome: TcpWireOutcome; received: string } {
+    const opened = this.open(remoteIp, remotePort, opts);
+    const socket = opened.socket;
+    if (socket === null) return { outcome: opened.outcome, received: '' };
     let received = '';
     const stop = socket.onData((chunk) => {
       if (typeof chunk === 'string') received += chunk;
@@ -1657,7 +1763,7 @@ export class TcpStack {
         socket.peerTsRecentAtMs = this.getScheduler().now();
       }
       socket.ecn.acceptSyn(this.ecnPolicy(), seg.flags, arrival.ecn);
-      this.sockets.set(socket.key(), socket);
+      this.trackSocket(socket);
       this._transition(socket, 'syn-received');
       const flags = noFlags(); flags.syn = true; flags.ack = true;
       socket.ecn.answerSyn(flags);
@@ -2549,11 +2655,35 @@ export class TcpStack {
     return true;
   }
 
+  acceptNext(listener: TcpListener): void {
+    listener.serving = false;
+    for (let next = listener.awaiting.shift(); next !== undefined; next = listener.awaiting.shift()) {
+      if (next.pendingListener !== listener || next.state !== 'established') continue;
+      this.admit(listener, next);
+      return;
+    }
+  }
+
   private completePassiveOpen(socket: TcpSocket): void {
     const listener = socket.pendingListener;
     if (!listener) return;
+    if (listener.serialAccept && listener.serving) {
+      listener.awaiting.push(socket);
+      return;
+    }
+    this.admit(listener, socket);
+  }
+
+  private inheritOwner(listener: TcpListener, socket: TcpSocket): void {
+    if (listener.identity.pid !== undefined && socket.ownerPid === null) {
+      this.setSocketOwner(socket, listener.identity.pid, listener.identity.service);
+    }
+  }
+
+  private admit(listener: TcpListener, socket: TcpSocket): void {
     socket.pendingListener = null;
-    if (listener.identity.pid !== undefined) this.setSocketOwner(socket, listener.identity.pid, listener.identity.service);
+    if (listener.serialAccept) listener.serving = true;
+    this.inheritOwner(listener, socket);
     if (listener.identity.banner) socket.write(listener.identity.banner);
     try { listener.onAccept?.(socket); } catch (e) { Logger.warn(this.host.id, 'tcp:accept', String(e)); }
   }
@@ -2792,7 +2922,7 @@ export class TcpStack {
     const unannounced = socket.pendingListener !== null;
     socket.pendingListener = null;
     this._transition(socket, 'closed');
-    this.sockets.delete(socket.key());
+    this.untrackSocket(socket);
     if (!unannounced) {
       this.getBus().publish({
         topic: 'tcp.connection.closed',
@@ -3343,17 +3473,13 @@ export class TcpStack {
 
   private nextEphemeral(localIp?: string): number {
     const size = this.ephemeralMax - this.ephemeralMin + 1;
-    const inUse = new Set<number>();
-    for (const s of this.sockets.values()) {
-      if (localIp && s.localIp !== localIp) continue;
-      inUse.add(s.localPort);
-    }
-    for (const l of this.listeners.values()) inUse.add(l.localPort);
+    const listening = new Set<number>();
+    for (const l of this.listeners.values()) listening.add(l.localPort);
     let start = this.nextEphemeralPort;
     if (start < this.ephemeralMin || start > this.ephemeralMax) start = this.ephemeralMin;
     for (let i = 0; i < size; i++) {
       const port = this.ephemeralMin + ((start - this.ephemeralMin + i) % size);
-      if (!inUse.has(port)) {
+      if (!listening.has(port) && !this.portHeldBySocket(port, localIp)) {
         this.nextEphemeralPort = port + 1;
         if (this.nextEphemeralPort > this.ephemeralMax) this.nextEphemeralPort = this.ephemeralMin;
         return port;
@@ -3363,10 +3489,12 @@ export class TcpStack {
   }
 
   hasFreeEphemeralPort(localIp?: string): boolean {
+    this.ensureIndexes();
     const inUse = new Set<number>();
-    for (const s of this.sockets.values()) {
-      if (localIp && s.localIp !== localIp) continue;
-      if (s.localPort >= this.ephemeralMin && s.localPort <= this.ephemeralMax) inUse.add(s.localPort);
+    for (const [port, bucket] of this.socketsByLocalPort) {
+      if (port < this.ephemeralMin || port > this.ephemeralMax) continue;
+      if (!localIp) { inUse.add(port); continue; }
+      for (const socket of bucket) if (socket.localIp === localIp) { inUse.add(port); break; }
     }
     for (const l of this.listeners.values()) {
       if (l.localPort >= this.ephemeralMin && l.localPort <= this.ephemeralMax) inUse.add(l.localPort);

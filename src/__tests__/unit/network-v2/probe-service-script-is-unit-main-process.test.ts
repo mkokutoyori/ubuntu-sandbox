@@ -52,7 +52,7 @@ describe('le script ExecStart est le processus principal de l unite', () => {
     await startUnit(pc, ['ps -eo pid,ppid,cmd > /tmp/unit.ps']);
 
     const mainPid = (await pc.executeCommand('systemctl show -p MainPID probe')).trim().split('=')[1];
-    const psLine = (vfsOf(pc).readFile('/tmp/unit.ps') ?? '').split('\n').find((l) => /\sps$/.test(l.trim()));
+    const psLine = (vfsOf(pc).readFile('/tmp/unit.ps') ?? '').split('\n').find((l) => /\sps -eo pid,ppid,cmd$/.test(l.trim()));
     expect(psLine?.trim().split(/\s+/)[1]).toBe(mainPid);
   });
 

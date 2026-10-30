@@ -1,7 +1,6 @@
-import type { CommandTrie } from '../CommandTrie';
+import { refuseUnknownSelector } from './showSelectors';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { ArgumentSpec } from '@/cli/ArgumentTypes';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
 import type { Router } from '../../Router';
 import type { IgmpAgent } from '../../../igmp/IgmpAgent';
 import type { IgmpGroupRecord, IgmpInterfaceRuntime } from '../../../igmp/types';
@@ -58,101 +57,80 @@ const GROUPE_MULTICAST: ArgumentSpec = {
   alternatives: [{ keyword: 'A.B.C.D', description: 'Multicast group address' }],
 };
 
-const IGMP_ARGUMENTS:
-Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
-  /*
-   * Pas d'enumeration {1, 2} : IGMPv3 a son propre message, qui NOMME
-   * ce qui n'est pas modelise (le filtrage par source de la RFC 3376).
-   * Une place enumeree le remplacerait par un caret nu, c'est-a-dire
-   * une information par une absence d'information.
-   */
-  'ip igmp version': {
-    name: 'version', type: 'REST', description: 'IGMP version to run',
-    alternatives: [{ keyword: '<1-3>', description: 'IGMP version number' }],
-  },
-  'ip igmp join-group': GROUPE_MULTICAST,
-  'ip igmp static-group': GROUPE_MULTICAST,
-  'ip igmp': { name: 'reste', type: 'REST', optional: true,
-    description: 'IGMP interface parameters' },
-};
 
 export function igmpInterfaceSpecs(ctx: IfCtx): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => buildIgmpInterfaceCommands(collector as unknown as CommandTrie, ctx),
-    {
-      modes: MODES_INTERFACE, minPrivilege: 15,
-      undoFromNegatedPaths: true,
-      argumentFor: (path) => IGMP_ARGUMENTS[path],
-    },
-  );
-}
-
-export function buildIgmpInterfaceCommands(trie: CommandTrie, ctx: IfCtx): void {
-  trie.registerGreedy('ip igmp version', 'Set IGMP version', (args) => {
+  const base = { modes: MODES_INTERFACE, minPrivilege: 15 };
+  const withAgent = (run: (a: IgmpAgent, ports: string[]) => string): string => {
     const a = agent(ctx.r());
-    if (!a) return '';
-    const v = parseInt(args[0], 10);
+    return a ? run(a, ctx.selectedPorts()) : '';
+  };
+  const version = (args: Record<string, string>): string => withAgent((a, ports) => {
+    const v = parseInt(args.version, 10);
     if (v === 3) return '% IGMPv3 is not supported in this simulator (RFC 3376 INCLUDE/EXCLUDE source filtering — out of scope, v1/v2 only)';
     if (v !== 1 && v !== 2) return '% Invalid IGMP version';
-    for (const port of ctx.selectedPorts()) a.enableInterface(port, v);
+    for (const port of ports) a.enableInterface(port, v);
     return '';
   });
-
-  trie.registerGreedy('no ip igmp version', 'Reset IGMP version to default', (args) => {
-    void args;
-    const a = agent(ctx.r());
-    if (!a) return '';
-    for (const port of ctx.selectedPorts()) {
+  const resetVersion = (): string => withAgent((a, ports) => {
+    for (const port of ports) {
       const rt = a.getInterfaceRuntime(port);
       if (rt && rt.enabled) a.enableInterface(port, 2);
     }
     return '';
   });
-
-  for (const origin of ['join-group', 'static-group'] as const) {
-    trie.registerGreedy(`ip igmp ${origin}`,
-      origin === 'join-group' ? 'Join a multicast group' : 'Statically forward a multicast group',
-      (args) => {
-        const a = agent(ctx.r());
-        if (!a) return '';
-        const group = args[0];
-        if (!group) return '% Incomplete command.';
-        if (!isMulticastIpv4(group) || isReservedMulticast(group)) return '% Invalid group address';
-        for (const port of ctx.selectedPorts()) a.configuredJoin(port, group, origin);
-        return '';
-      });
-
-    trie.registerGreedy(`no ip igmp ${origin}`, 'Remove a configured multicast group', (args) => {
-      const a = agent(ctx.r());
-      if (!a) return '';
-      const group = args[0];
+  const membership = (origin: 'join-group' | 'static-group'): CommandSpec => ({
+    ...base, id: `ip-igmp-${origin}`, path: ['ip', 'igmp', origin, GROUPE_MULTICAST],
+    description: origin === 'join-group' ? 'Join a multicast group' : 'Statically forward a multicast group',
+    undoDescription: 'Remove a configured multicast group',
+    run: (_session, args) => withAgent((a, ports) => {
+      const group = args.groupe?.trim();
       if (!group) return '% Incomplete command.';
-      for (const port of ctx.selectedPorts()) a.configuredLeave(port, group, origin);
+      if (!isMulticastIpv4(group) || isReservedMulticast(group)) return '% Invalid group address';
+      for (const port of ports) a.configuredJoin(port, group, origin);
       return '';
-    });
-  }
-
-  const subCommands = new Set(['version', 'join-group', 'static-group']);
-
-  trie.registerGreedy('ip igmp', 'Enable IGMP', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    if (subCommands.has(args[0])) return '';
-    for (const port of ctx.selectedPorts()) a.enableInterface(port, 2);
-    return '';
+    }),
+    undo: (_session, args) => withAgent((a, ports) => {
+      const group = args.groupe?.trim();
+      if (!group) return '% Incomplete command.';
+      for (const port of ports) a.configuredLeave(port, group, origin);
+      return '';
+    }),
   });
-
-  trie.registerGreedy('no ip igmp', 'Disable IGMP', (args) => {
-    const a = agent(ctx.r());
-    if (!a) return '';
-    if (subCommands.has(args[0])) return '';
-    for (const port of ctx.selectedPorts()) a.disableInterface(port);
-    return '';
-  });
+  return [
+    {
+      ...base, id: 'ip-igmp', path: ['ip', 'igmp'], description: 'Enable IGMP',
+      undoDescription: 'Disable IGMP',
+      run: () => withAgent((a, ports) => {
+        for (const port of ports) a.enableInterface(port, 2);
+        return '';
+      }),
+      undo: () => withAgent((a, ports) => {
+        for (const port of ports) a.disableInterface(port);
+        return '';
+      }),
+    },
+    {
+      ...base, id: 'ip-igmp-version',
+      path: ['ip', 'igmp', 'version', {
+        name: 'version', type: 'REST', description: 'IGMP version to run',
+        alternatives: [{ keyword: '<1-3>', description: 'IGMP version number' }],
+      }],
+      description: 'Set IGMP version', undoDescription: 'Reset IGMP version to default',
+      run: (_session, args) => version(args),
+      undo: () => resetVersion(),
+    },
+    {
+      ...base, id: 'ip-igmp-version-undo', path: ['ip', 'igmp', 'version'],
+      description: 'Set IGMP version', undoDescription: 'Reset IGMP version to default',
+      existsOnlyNegated: true,
+      run: () => '% Incomplete command.', undo: () => resetVersion(),
+    },
+    membership('join-group'),
+    membership('static-group'),
+  ];
 }
 
-export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void {
-  trie.registerGreedy('show ip igmp groups', 'Display IGMP group membership', (args) => {
+function showIgmpGroups(ctx: ShowCtx, args: readonly string[]): string {
     const a = agent(ctx.r());
     if (!a) return '';
     const detail = args.includes('detail');
@@ -189,9 +167,9 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
         `${padToWidth(g.groupAddress, 17)}${padToWidth(g.iface, 25)}${padToWidth(hms(now - g.lastReportMs), 10)}${padToWidth(expiresIn(rt, g, now), 10)}${g.lastReporterIp ?? ''}`);
     }
     return rows.join('\n');
-  });
+}
 
-  trie.registerGreedy('show ip igmp interface', 'Display IGMP interface state', (args) => {
+function showIgmpInterface(ctx: ShowCtx, args: readonly string[]): string {
     const a = agent(ctx.r());
     const r = ctx.r();
     if (!a) return '';
@@ -236,7 +214,6 @@ export function registerIgmpShowCommands(trie: CommandTrie, ctx: ShowCtx): void 
 
     }
     return lines.join('\n');
-  });
 }
 
 const IGMP_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
@@ -250,14 +227,33 @@ Readonly<Record<string, ReadonlyArray<{ keyword: string; description: string }>>
 };
 
 export function igmpShowSpecs(ctx: ShowCtx): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => registerIgmpShowCommands(collector as unknown as CommandTrie, ctx),
+  const base = { modes: ['user', 'privileged'], minPrivilege: 1 };
+  const words = (value: string | undefined): string[] =>
+    (value ?? '').trim().split(/\s+/).filter(Boolean);
+  return [
     {
-      modes: ['user', 'privileged'],
-      minPrivilege: 1,
-      restDescriptionFor: (path) => IGMP_SHOW_ARGUMENTS[path]?.[1],
-      restLiteralFor: (path) => IGMP_SHOW_ARGUMENTS[path]?.[0],
-      keywordsFor: (path) => IGMP_SHOW_KEYWORDS[path],
+      ...base, id: 'show-ip-igmp-groups',
+      path: ['show', 'ip', 'igmp', 'groups', {
+        name: 'selection', type: 'REST', optional: true, literal: 'A.B.C.D',
+        description: 'Multicast group address',
+        alternatives: [{ keyword: 'detail', description: 'Detailed output' }],
+      }],
+      description: 'Display IGMP group membership',
+      run: (_session, args) => {
+        refuseUnknownSelector(words(args.selection), { keywords: ['detail'], addresses: true, interfaces: true, max: 2 });
+        return showIgmpGroups(ctx, words(args.selection));
+      },
     },
-  );
+    {
+      ...base, id: 'show-ip-igmp-interface',
+      path: ['show', 'ip', 'igmp', 'interface', {
+        name: 'interface', type: 'REST', optional: true, literal: 'WORD', description: 'Interface name',
+      }],
+      description: 'Display IGMP interface state',
+      run: (_session, args) => {
+        refuseUnknownSelector(words(args.interface), { interfaces: true, max: 1 });
+        return showIgmpInterface(ctx, words(args.interface));
+      },
+    },
+  ];
 }

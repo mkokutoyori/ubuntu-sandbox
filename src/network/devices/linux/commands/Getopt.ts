@@ -14,6 +14,7 @@ export interface LongOption {
   readonly name: string;
   readonly letter: string;
   readonly takesArgument: boolean;
+  readonly optionalArgument?: boolean;
 }
 
 function matchLongOption(longOptions: readonly LongOption[], name: string): LongOption | undefined {
@@ -32,6 +33,10 @@ function* longOption(
   const option = matchLongOption(longOptions, name);
   if (!option) {
     yield { kind: 'unrecognized', token };
+    return at;
+  }
+  if (!option.takesArgument && option.optionalArgument === true && inline !== undefined) {
+    yield { kind: 'option', letter: option.letter, argument: inline, long: option.name };
     return at;
   }
   if (!option.takesArgument) {

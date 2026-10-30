@@ -6,39 +6,42 @@
  * (`routeMapSpecs.ts`), engendres depuis la table des clauses que le
  * moteur evalue. Router-only.
  */
-import type { CommandTrie } from '../CommandTrie';
 import type { CommandSpec } from '@/cli/CommandTable';
-import { specsFromTrieRegistrations } from '@/cli/commands/trieAdapter';
-import { formatInvalidInput } from '../CommandTrie';
+import type { ArgumentSpec } from '@/cli/ArgumentTypes';
 import type { PolicyRepository } from '../../inspection/config/PolicyRepository';
 
-export function registerPolicyShow(
-  trie: CommandTrie, repo: PolicyRepository,
-): void {
-  trie.registerGreedy('show ip prefix-list', 'Display IP prefix-lists', (a) =>
-    repo.renderPrefixLists(a.find((x) => !/^detail|summary$/.test(x)), false));
-  trie.registerGreedy('show ipv6 prefix-list', 'Display IPv6 prefix-lists', (a) =>
-    repo.renderPrefixLists(a.find((x) => !/^detail|summary$/.test(x)), true));
-  trie.registerGreedy('show route-map', 'Display route-maps', (a) => {
-    if (a.length > 1) return formatInvalidInput('show route-map '.length + a[0].length + 1);
-    return repo.renderRouteMaps(a[0]);
-  });
-}
+const PREFIX_LIST_VIEW: ArgumentSpec = {
+  name: 'view', type: 'REST', optional: true, literal: 'WORD',
+  description: 'Name of a prefix list',
+  alternatives: [
+    { keyword: 'WORD', description: 'Name of a prefix list' },
+    { keyword: 'detail', description: 'Detailed information' },
+    { keyword: 'summary', description: 'Summary of the prefix lists' },
+  ],
+};
 
-const POLICY_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
-  'show ip prefix-list': ['WORD', 'Name of a prefix list'],
-  'show ipv6 prefix-list': ['WORD', 'Name of a prefix list'],
-  'show route-map': ['WORD', 'Route map name'],
+const ROUTE_MAP_NAME: ArgumentSpec = {
+  name: 'name', type: 'WORD', optional: true, description: 'Route map name',
 };
 
 export function policyShowSpecs(repo: PolicyRepository): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => registerPolicyShow(collector as unknown as CommandTrie, repo),
+  const base = { modes: ['user', 'privileged'], minPrivilege: 1 };
+  const prefixLists = (v6: boolean): CommandSpec => ({
+    ...base,
+    id: v6 ? 'show-ipv6-prefix-list' : 'show-ip-prefix-list',
+    path: ['show', v6 ? 'ipv6' : 'ip', 'prefix-list', PREFIX_LIST_VIEW],
+    description: v6 ? 'Display IPv6 prefix-lists' : 'Display IP prefix-lists',
+    run: (_session, args) => repo.renderPrefixLists(
+      (args.view ?? '').trim().split(/\s+/).find((x) => x !== '' && !/^(detail|summary)$/.test(x)),
+      v6),
+  });
+  return [
+    prefixLists(false),
+    prefixLists(true),
     {
-      modes: ['user', 'privileged'],
-      minPrivilege: 1,
-      restDescriptionFor: (path) => POLICY_SHOW_ARGUMENTS[path]?.[1],
-      restLiteralFor: (path) => POLICY_SHOW_ARGUMENTS[path]?.[0],
+      ...base, id: 'show-route-map', path: ['show', 'route-map', ROUTE_MAP_NAME],
+      description: 'Display route-maps',
+      run: (_session, args) => repo.renderRouteMaps(args.name),
     },
-  );
+  ];
 }

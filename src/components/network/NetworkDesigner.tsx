@@ -15,11 +15,11 @@ import { useState, useCallback, useMemo, useEffect, useSyncExternalStore } from 
 import { DevicePalette } from './DevicePalette';
 import { NetworkCanvas } from './NetworkCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
-import { NetworkLogsPanel } from './NetworkLogsPanel';
 import { Toolbar } from './Toolbar';
 import { HelpDialog } from './HelpDialog';
 import { SettingsDialog } from '@/components/settings';
 import { SaveTopologyDialog } from './SaveTopologyDialog';
+import { ExportImageDialog } from './ExportImageDialog';
 import { OpenTopologyDialog } from './OpenTopologyDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { MessageDialog } from './MessageDialog';
@@ -28,7 +28,9 @@ import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Equipment } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
-import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile, TOPOLOGY_SAVE_CAVEATS } from '@/store/topologySerializer';
+import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
+import { getLocale, translate } from '@/i18n';
+import { useLocale } from '@/i18n/useLocale';
 import { saveTopologyToBrowser, loadTopologyFromBrowser } from '@/store/localStorageTopology';
 import { cn } from '@/lib/utils';
 import { getTerminalManager } from '@/terminal/sessions';
@@ -37,10 +39,10 @@ import { getTerminalManager } from '@/terminal/sessions';
 export type TileLayout = 'stack' | 'split-h' | 'split-v' | 'grid' | 'master-stack';
 
 export function NetworkDesigner() {
+  const { t } = useLocale();
   const [projectName, setProjectName] = useState('My Network');
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
 
   // Tiling state
   const [tileLayout, setTileLayout] = useState<TileLayout>('grid');
@@ -65,6 +67,7 @@ export function NetworkDesigner() {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [exportImageOpen, setExportImageOpen] = useState(false);
   const [message, setMessage] = useState<{ title: string; description: string } | null>(null);
 
   const { getDevices, clearAll, replaceTopology, deviceInstances, connections } = useNetworkStore();
@@ -93,6 +96,7 @@ export function NetworkDesigner() {
   }, [projectName, deviceInstances, connections]);
 
   const handleExport = useCallback(() => setExportConfirmOpen(true), []);
+  const handleExportImage = useCallback(() => setExportImageOpen(true), []);
 
   const runImport = useCallback(async () => {
     try {
@@ -103,7 +107,7 @@ export function NetworkDesigner() {
       setMinimizedSessions(new Set());
     } catch (err) {
       if (err instanceof Error && err.message !== 'No file selected') {
-        setMessage({ title: 'Import failed', description: err.message });
+        setMessage({ title: translate(getLocale(), 'designer.importFailed'), description: err.message });
       }
     }
   }, [replaceTopology]);
@@ -125,7 +129,7 @@ export function NetworkDesigner() {
       saveTopologyToBrowser(name, topology);
       setProjectName(name);
     } catch (err) {
-      setMessage({ title: 'Save failed', description: err instanceof Error ? err.message : String(err) });
+      setMessage({ title: translate(getLocale(), 'designer.saveFailed'), description: err instanceof Error ? err.message : String(err) });
     }
   }, [deviceInstances, connections]);
 
@@ -134,7 +138,7 @@ export function NetworkDesigner() {
   const handleOpenTopology = useCallback(async (name: string) => {
     const topology = loadTopologyFromBrowser(name);
     if (!topology) {
-      setMessage({ title: 'Open failed', description: 'Could not read this topology from storage (corrupted entry).' });
+      setMessage({ title: translate(getLocale(), 'designer.openFailed'), description: translate(getLocale(), 'designer.openCorrupted') });
       return;
     }
     try {
@@ -143,7 +147,7 @@ export function NetworkDesigner() {
       setProjectName(result.projectName);
       setMinimizedSessions(new Set());
     } catch (err) {
-      setMessage({ title: 'Open failed', description: err instanceof Error ? err.message : String(err) });
+      setMessage({ title: translate(getLocale(), 'designer.openFailed'), description: err instanceof Error ? err.message : String(err) });
     }
   }, [replaceTopology]);
 
@@ -421,14 +425,13 @@ export function NetworkDesigner() {
         onClearAll={handleClearAll}
         hasDevices={devices.length > 0}
         onExport={handleExport}
+        onExportImage={handleExportImage}
         onImport={handleImport}
         onSave={handleSave}
         onOpen={handleOpen}
         onReset={handleReset}
         onHelp={() => setHelpOpen(true)}
         onSettings={() => setSettingsOpen(true)}
-        logsOpen={logsOpen}
-        onToggleLogs={() => setLogsOpen(o => !o)}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
@@ -436,6 +439,14 @@ export function NetworkDesigner() {
       />
       <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ExportImageDialog
+        open={exportImageOpen}
+        onOpenChange={setExportImageOpen}
+        projectName={projectName}
+        devices={devices}
+        connections={connections}
+        onError={(title, description) => setMessage({ title, description })}
+      />
       <SaveTopologyDialog
         open={saveDialogOpen}
         onOpenChange={setSaveDialogOpen}
@@ -451,35 +462,35 @@ export function NetworkDesigner() {
       <ConfirmDialog
         open={exportConfirmOpen}
         onOpenChange={setExportConfirmOpen}
-        title="Export topology?"
-        description={TOPOLOGY_SAVE_CAVEATS}
-        confirmLabel="Export"
+        title={t('designer.exportTitle')}
+        description={t('topology.saveCaveats')}
+        confirmLabel={t('designer.export')}
         onConfirm={runExport}
       />
       <ConfirmDialog
         open={importConfirmOpen}
         onOpenChange={setImportConfirmOpen}
-        title="Replace current topology?"
-        description="Importing a file will replace everything on the canvas now. Any unsaved changes will be lost."
-        confirmLabel="Replace"
+        title={t('designer.importReplaceTitle')}
+        description={t('designer.importReplaceDescription')}
+        confirmLabel={t('designer.importReplace')}
         destructive
         onConfirm={runImport}
       />
       <ConfirmDialog
         open={clearAllConfirmOpen}
         onOpenChange={setClearAllConfirmOpen}
-        title="Remove all devices?"
-        description={`Remove all ${deviceInstances.size} device(s) and their connections? This cannot be undone.`}
-        confirmLabel="Remove all"
+        title={t('designer.clearAllTitle')}
+        description={t('designer.clearAllDescription', { count: deviceInstances.size })}
+        confirmLabel={t('designer.clearAll')}
         destructive
         onConfirm={clearAll}
       />
       <ConfirmDialog
         open={resetConfirmOpen}
         onOpenChange={setResetConfirmOpen}
-        title="Power-cycle all devices?"
-        description={`Power-cycle ${deviceInstances.size} device(s)? Running protocol state will be reset.`}
-        confirmLabel="Power-cycle"
+        title={t('designer.resetTitle')}
+        description={t('designer.resetDescription', { count: deviceInstances.size })}
+        confirmLabel={t('designer.reset')}
         onConfirm={handleResetConfirmed}
       />
       <MessageDialog
@@ -501,8 +512,8 @@ export function NetworkDesigner() {
           <button
             onClick={() => setLeftCollapsed(prev => !prev)}
             className="absolute -right-3 top-3 z-10 p-1 rounded-md bg-card/80 border border-white/10 hover:bg-white/10 transition-colors backdrop-blur-sm"
-            title={leftCollapsed ? 'Show equipment panel' : 'Hide equipment panel'}
-            aria-label={leftCollapsed ? 'Show equipment panel' : 'Hide equipment panel'}
+            title={leftCollapsed ? t('designer.showEquipment') : t('designer.hideEquipment')}
+            aria-label={leftCollapsed ? t('designer.showEquipment') : t('designer.hideEquipment')}
             aria-expanded={!leftCollapsed}
           >
             {leftCollapsed ? <PanelLeftOpen className="w-3.5 h-3.5 text-muted-foreground" /> : <PanelLeftClose className="w-3.5 h-3.5 text-muted-foreground" />}
@@ -516,8 +527,8 @@ export function NetworkDesigner() {
           <button
             onClick={() => setRightCollapsed(prev => !prev)}
             className="absolute -left-3 top-3 z-10 p-1 rounded-md bg-card/80 border border-white/10 hover:bg-white/10 transition-colors backdrop-blur-sm"
-            title={rightCollapsed ? 'Show properties panel' : 'Hide properties panel'}
-            aria-label={rightCollapsed ? 'Show properties panel' : 'Hide properties panel'}
+            title={rightCollapsed ? t('designer.showProperties') : t('designer.hideProperties')}
+            aria-label={rightCollapsed ? t('designer.showProperties') : t('designer.hideProperties')}
             aria-expanded={!rightCollapsed}
           >
             {rightCollapsed ? <PanelRightOpen className="w-3.5 h-3.5 text-muted-foreground" /> : <PanelRightClose className="w-3.5 h-3.5 text-muted-foreground" />}
@@ -526,12 +537,6 @@ export function NetworkDesigner() {
             <PropertiesPanel />
           </div>
         </div>
-
-        {/* Network logs panel (slide-in from the right edge). Lives in the
-            same column as Properties so opening it doesn't reflow the
-            canvas. The Logger backend already buffers every event; we
-            just surface it. */}
-        {logsOpen && <NetworkLogsPanel />}
       </div>
 
       {/* ── Terminal tile overlay (hidden while peeking at the desktop) ── */}
@@ -546,7 +551,7 @@ export function NetworkDesigner() {
             tromperait un lecteur d'écran.
           */
           role="region"
-          aria-label="Tiled terminals"
+          aria-label={t('designer.tiledTerminals')}
           className={cn(
             "fixed inset-0 z-50",
             "bg-black/60 backdrop-blur-sm",

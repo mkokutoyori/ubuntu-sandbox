@@ -330,6 +330,15 @@ export class ConnectionTracker {
     return this.liveFlows(now).map((flow) => viewOf(flow, now));
   }
 
+  count(matches: (original: ConnectionTuple, tcpState: TcpConntrackState | null) => boolean): number {
+    const now = simulationNowMs();
+    let total = 0;
+    for (const { flow, direction } of this.index.values()) {
+      if (direction === 'original' && flow.expiresAt > now && matches(flow.original, flow.tcpState)) total++;
+    }
+    return total;
+  }
+
   delete(matches: (view: FlowView) => boolean): readonly FlowView[] {
     const now = simulationNowMs();
     const doomed = this.liveFlows(now).filter((flow) => matches(viewOf(flow, now)));

@@ -64,6 +64,7 @@ import {
 import { tripleDesCbcEncrypt, tripleDesCbcDecrypt } from '../../crypto/cipher/des';
 import { generateIkeKeyShare, ikeSharedSecret } from './IkeKeyExchange';
 import type { IkeKeyPair } from './IkeKeyExchange';
+import { DEFAULT_SA_LIFETIME_KILOBYTES, DEFAULT_SA_LIFETIME_SECONDS, formatSaLifetime } from './SaLifetime';
 import type { CryptoIdentityList, IkeConfigRequest, IkeConfigReply, DfBitPolicy, FragmentationPoint, IkeRsaProvider } from './IPSecTypes';
 import { rsaEncryptPkcs1, rsaDecryptPkcs1 } from '@/crypto/rsa';
 import { systemRandom } from '../../crypto/random';
@@ -718,8 +719,8 @@ export class IPSecEngine implements IProtocolEngine {
   private readonly natKeepaliveTimers: Map<string, symbol> = new Map();
   private dpdConfig: DPDConfig | null = null;
   private natTraversalPolicy: NatTraversalPolicy = 'enable';
-  private globalSALifetimeSeconds: number = 3600;
-  private globalSALifetimeKB: number = 4608000; // 4608000 KB default
+  private globalSALifetimeSeconds: number = DEFAULT_SA_LIFETIME_SECONDS;
+  private globalSALifetimeKB: number = DEFAULT_SA_LIFETIME_KILOBYTES;
   private replayWindowSize: number = 64;       // RFC 4303 default
   private debugIsakmp: boolean = false;
   private debugIpsec: boolean = false;
@@ -4960,7 +4961,7 @@ export class IPSecEngine implements IProtocolEngine {
   }
 
   showCryptoIPSecSALifetime(): string {
-    return `Security-association lifetime: ${this.globalSALifetimeKB} kilobytes/${this.globalSALifetimeSeconds} seconds`;
+    return formatSaLifetime(this.globalSALifetimeKB, this.globalSALifetimeSeconds);
   }
 
   showCryptoSession(mode: CryptoSessionMode = 'plain'): string {

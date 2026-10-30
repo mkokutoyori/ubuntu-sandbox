@@ -42,6 +42,11 @@ export interface SubShellResult {
   childShell?: IShell;
 }
 
+export interface SubShellKeyResult extends SubShellResult {
+  /** The key consumed what was typed so far on the line, so the host empties its input buffer. */
+  clearInput: boolean;
+}
+
 /**
  * The legacy per-terminal sub-shell contract. It extends `IShellBase` so
  * every sub-shell in the project — old or new — shares the same root
@@ -62,6 +67,13 @@ export interface ISubShell extends IShellBase {
    * the view handle it (e.g. typing into the input field).
    */
   handleKey(e: KeyEvent): boolean;
+
+  /**
+   * Offered every key before the host's own line editing, together with what is typed on the line so far. A sub-shell that works
+   * like a terminal (a telnet client reading the escape character, a signal key) answers with the screen result; `null` leaves the
+   * key to the host.
+   */
+  interceptKey?(e: KeyEvent, pending: string): Promise<SubShellKeyResult> | SubShellKeyResult | null;
 
   collectLine?(line: string): string | null;
 

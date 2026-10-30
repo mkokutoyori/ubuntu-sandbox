@@ -237,7 +237,6 @@ pour un apprenant qui teste « et si je casse tout ? ».
 | Capacité | Emplacement | État |
 |---|---|---|
 | `Logger` pub/sub avec niveaux | `core/Logger.ts:25-120` | ✅ Réel |
-| Panneau de journal filtrable + export CSV/JSON | `components/network/NetworkLogsPanel.tsx` | ✅ Réel |
 | EventBus typé avec ~42 topics réseau | `events/types.ts` | ✅ Réel |
 | ~26 topics Linux | `linux/events.ts` | ✅ Réel |
 | Vues d'inspection d'état | `devices/inspection/DeviceStateView.ts` | ✅ Réel |
@@ -2404,15 +2403,11 @@ d'incidents, à un clic de distance.
 
 ## 22. UI/UX — Journal réseau et centre d'incidents
 
-### 22.1 Le journal existant
+### 22.1 Le journal
 
-`NetworkLogsPanel.tsx` fournit déjà : filtres par niveau, recherche
-textuelle, export CSV/JSON, suivi en continu correct (défilement collant
-uniquement si l'utilisateur est en bas). **Rien à refaire.**
-
-Deux ajouts :
-1. Un filtre supplémentaire « Incidents seulement ».
-2. Une colonne de catégorie de panne quand l'entrée provient du registre.
+Le panneau de journal a été retiré de l'interface : le `Logger` reste une
+source côté simulation (le `logging` des appareils le lit), mais aucune
+vue ne le montre. Le centre d'incidents ci-dessous est la seule surface.
 
 ### 22.2 Le centre d'incidents (nouveau)
 

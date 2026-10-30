@@ -55,7 +55,7 @@ function box(): LinuxServer {
 
 /** Le pid du processus principal d'un service, lu dans `ps`. */
 async function pidOf(srv: LinuxServer, exe: string): Promise<string> {
-  const ps = await srv.executeCommand('ps aux');
+  const ps = await srv.executeCommand('ps auxww');
   const line = ps.split('\n').find((l) => l.trimEnd().endsWith(exe));
   expect(line, `aucun processus ${exe} dans ps`).toBeDefined();
   return line!.trim().split(/\s+/)[1];
@@ -63,7 +63,7 @@ async function pidOf(srv: LinuxServer, exe: string): Promise<string> {
 
 /** Le pid vit-il encore ? */
 async function alive(srv: LinuxServer, pid: string): Promise<boolean> {
-  const ps = await srv.executeCommand('ps aux');
+  const ps = await srv.executeCommand('ps auxww');
   return ps.split('\n').some((l) => l.trim().split(/\s+/)[1] === pid);
 }
 
@@ -93,7 +93,8 @@ describe('un démon qui tourne a ses fichiers d\'exécution', () => {
     const ssh = await srv.executeCommand('cat /usr/lib/systemd/system/ssh.service');
     expect(ssh).toContain(`PIDFile=${SSHD_PID}`);
     // sshd écrit à même /run : rien ne nettoiera derrière lui.
-    expect(ssh).not.toContain('RuntimeDirectory=');
+    expect(ssh).toContain('RuntimeDirectory=sshd\n');
+    expect(ssh).not.toContain('RuntimeDirectory=sshd.pid');
 
     const f2b = await srv.executeCommand('cat /usr/lib/systemd/system/fail2ban.service');
     expect(f2b).toContain('RuntimeDirectory=fail2ban');

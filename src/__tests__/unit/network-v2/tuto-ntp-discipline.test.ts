@@ -66,7 +66,7 @@ let serie = 0;
 
 /** Un etat deja synchronise, pour les cas qui ne testent pas le demarrage. */
 function synchronise(offsetApplique = 0): EtatHorloge {
-  return { etat: 'SYNC', offsetApplique, aberrationDepuisMs: 0, sautsFaits: 1 };
+  return { etat: 'SYNC', offsetApplique, aberrationDepuisMs: 0, sautsFaits: 1, updatesApplied: 1 };
 }
 
 describe('§2 — les seuils sont ceux de la documentation', () => {
@@ -217,10 +217,7 @@ describe('l\'etat est LU par les vues', () => {
     for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
       'ip address 10.0.0.1 255.255.255.0', 'no shutdown', 'exit',
       'ntp master 2', 'end']) await srv.executeCommand(c);
-    // Le serveur horodate ses reponses avec `Date.now() + offsetMs` :
-    // decaler son offset revient a decaler son horloge, ce que le client
-    // mesurera pour de bon.
-    (srv.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = decalageMs;
+    srv._stepSystemClock(decalageMs);
     for (const c of ['enable', 'configure terminal', 'interface GigabitEthernet0/0',
       'ip address 10.0.0.2 255.255.255.0', 'no shutdown', 'exit',
       'ntp server 10.0.0.1', 'end']) await cli.executeCommand(c);
@@ -249,8 +246,8 @@ describe('l\'etat est LU par les vues', () => {
     const { srv, cli } = await laboDecale(0);
     // Synchronise d'abord, puis le serveur saute d'une demi-seconde.
     expect(await cli.executeCommand('show ntp status')).toMatch(/stratum 3/);
-    (srv.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = 500;
-    converge(clock, 400_000);
+    srv._stepSystemClock(500);
+    converge(clock, 200_000);
     expect(cli.getNtpAgent().getDerniereDecision()).toBe('spike');
     expect(await cli.executeCommand('show ntp status'))
       .toContain("loopfilter state is 'SPIK'");
@@ -260,14 +257,14 @@ describe('l\'etat est LU par les vues', () => {
     // La propriete qui compte : l'ecart applique reste celui d'avant.
     const { srv, cli } = await laboDecale(0);
     const avant = cli.getNtpAgent().getEtatHorloge().offsetApplique;
-    (srv.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = 900;
-    converge(clock, 400_000);
+    srv._stepSystemClock(900);
+    converge(clock, 200_000);
     expect(cli.getNtpAgent().getEtatHorloge().offsetApplique).toBe(avant);
   });
 });
 
 describe('§5.4 — `chronyc makestep` force le saut', () => {
-  it('elle corrige un ecart que la discipline avait ecarte', async () => {
+  it('elle corrige tout de suite un ecart que chronyd ne ferait que faire glisser', async () => {
     const srv = new CiscoRouter(`S${++serie}`);
     const pc = new LinuxPC(`L${++serie}`);
     new Cable(`m${serie}`).connect(
@@ -281,23 +278,13 @@ describe('§5.4 — `chronyc makestep` force le saut', () => {
     await pc.executeCommand('sudo systemctl restart chrony');
     converge(clock);
 
-    // Le serveur decale de deux secondes APRES la synchronisation :
-    // au-dela du seuil de `makestep`, et la machine est deja SYNC.
-    (srv.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = 2_000;
-    const agent = (pc as unknown as { getNtpAgent(): import('@/network/ntp/NtpAgent').NtpAgent })
-      .getNtpAgent();
+    srv._stepSystemClock(600_000);
     converge(clock, 130_000);
-    const ecarte = agent.getEtatHorloge().offsetApplique;
+    const gap = () => Math.abs(pc.getSystemClockMs() - srv.getSystemClockMs());
+    expect(gap()).toBeGreaterThan(500_000);
 
     expect(await pc.executeCommand('sudo chronyc makestep')).toBe('200 OK');
-    // Ce qui compte est que l'ecart soit RATTRAPE, pas le libelle de la
-    // derniere decision : la commande reinterroge apres avoir saute, et
-    // cette mesure-la ne trouve plus rien a corriger — elle glisse de
-    // zero. Assertionner `step` ici testerait l'ordre des appels plutot
-    // que l'effet.
-    const apres = agent.getEtatHorloge().offsetApplique;
-    expect(apres).not.toBe(ecarte);
-    expect(Math.abs(apres - 2_000)).toBeLessThan(50);
+    expect(gap()).toBeLessThan(50);
   });
 
   it('`makestep 1.0 3` est LU par le moteur, pas seulement range', async () => {

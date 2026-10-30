@@ -28,6 +28,7 @@
  *                    across the round-trip, not just the narrow fields above.
  */
 
+import { MESSAGES } from '@/i18n/messages';
 import {
   Equipment, Cable, Port,
   IPAddress, SubnetMask, MACAddress,
@@ -58,6 +59,7 @@ import {
 } from '@/network/devices/windows/netFirewallRule';
 import { buildConnection, type Connection } from './networkStore';
 import { withFactoryTwin } from './factoryTwin';
+import { downloadBlob } from '@/lib/download';
 import { diffDirectory, promotionKind, type DirectoryPromotion } from '@/network/devices/windows/server/ad/DirectoryDelta';
 import type { DirectoryDelta, DirectorySnapshot } from '@/network/devices/windows/server/ad/DirectoryStore';
 import { resetForestRegistry, withIsolatedForestRegistry, type ForestFsmoRoles } from '@/network/devices/windows/server/ad/forest/Forest';
@@ -77,9 +79,7 @@ import { WindowsServer } from '@/network/devices/WindowsServer';
  *  list in the header comment above: anything not listed there. */
 const UNSET_IPV4 = '0.0.0.0';
 
-export const TOPOLOGY_SAVE_CAVEATS =
-  "Terminal sessions, in-progress editors, and live TCP/SSH connections are not included — they close when this topology is loaded. " +
-  "Dynamic state (DHCP leases, OSPF/BGP-learned routes) reconverges from config after loading rather than being restored directly.";
+export const TOPOLOGY_SAVE_CAVEATS = MESSAGES.en['topology.saveCaveats'];
 
 // ── Export schema ──
 
@@ -304,6 +304,7 @@ interface TopologyDeviceExport {
   windowsFeatures?: { installed: string[]; removed?: string[] };
   windowsCertificates?: WindowsCertificateState;
   windowsDomain?: WindowsDomainState;
+  windowsDnsServers?: { interface: string; servers: string[] }[];
   windowsSecurity?: WindowsSecurityPolicyState;
   activeDirectory?: {
     promotion: DirectoryPromotion; delta?: DirectoryDelta; baselineDeviceId?: string; forestFsmo?: ForestFsmoRoles;
@@ -1202,6 +1203,8 @@ function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Eq
     if (security) entry.windowsSecurity = security;
     const domain = device.captureDomainState();
     if (domain) entry.windowsDomain = domain;
+    const dnsServers = device.staticDnsServers();
+    if (dnsServers.length > 0) entry.windowsDnsServers = dnsServers;
     const registry = captureRegistry(device, twin);
     if (registry) entry.registry = registry;
     const teams = captureWindowsTeams(device);
@@ -1363,24 +1366,42 @@ export async function replayVendorConfig(device: Router | Switch, text: string):
   for (const line of enterBase) await device.executeCommand(line);
   let isBase = true;
 
+  const enableInterface = huawei ? 'undo shutdown' : 'no shutdown';
+  let interfaceOpen = false;
+  let interfaceShut = false;
+  const closeInterface = async (): Promise<void> => {
+    if (interfaceOpen && !interfaceShut) await device.executeCommand(enableInterface);
+    interfaceOpen = false;
+    interfaceShut = false;
+  };
+
   let wasIndented = false;
   for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('Building configuration') || line.startsWith('Current configuration')) continue;
     if (line === '!' || line === '#') {
+      await closeInterface();
       if (!isBase) { for (const l of toBase) await device.executeCommand(l); isBase = true; }
       wasIndented = false;
       continue;
     }
     const indented = /^\s/.test(raw);
     if (!indented && wasIndented && !isBase) {
+      await closeInterface();
       for (const l of toBase) await device.executeCommand(l);
       isBase = true;
     }
+    if (!indented) await closeInterface();
     await device.executeCommand(line);
-    if (!indented) isBase = false;
+    if (!indented) {
+      isBase = false;
+      interfaceOpen = /^interface\s/.test(line);
+    } else if (line === 'shutdown') {
+      interfaceShut = true;
+    }
     wasIndented = indented;
   }
+  await closeInterface();
   for (const line of huawei ? ['return'] : ['end']) {
     await device.executeCommand(line);
   }
@@ -1562,6 +1583,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       // before the manager can be asked to enable or start it.
       if (devData.linuxServices) restoreLinuxServices(device, devData.linuxServices);
       if (devData.linuxBonds) restoreLinuxBonds(device, devData.linuxBonds);
+      device.restartTimeDaemonFromFiles();
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {
@@ -1573,6 +1595,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.windowsAccounts) restoreWindowsAccounts(device, devData.windowsAccounts);
       if (devData.windowsSecurity) restoreWindowsSecurityPolicy(device, devData.windowsSecurity);
       if (devData.windowsDomain) device.restoreDomainState(devData.windowsDomain);
+      for (const { interface: ifName, servers } of devData.windowsDnsServers ?? []) device.setDnsServers(ifName, servers);
       if (devData.windowsCertificates) restoreWindowsCertificates(device, devData.windowsCertificates);
       if (devData.windowsRoles && device instanceof WindowsServer) restoreWindowsServerRoles(device, devData.windowsRoles);
       // Services first, registry second: `HKLM:\SYSTEM\CurrentControlSet\
@@ -1584,7 +1607,10 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.windowsFirewallRules) {
         restoreWindowsFirewallRules(device, devData.windowsFirewallRules);
       }
-      if (devData.registry) restoreRegistry(device, devData.registry);
+      if (devData.registry) {
+        restoreRegistry(device, devData.registry);
+        device.reapplyTimeConfiguration();
+      }
       if (devData.windowsTeams) restoreWindowsTeams(device, devData.windowsTeams);
     }
     if (device instanceof Firewall && devData.runningConfigText) {
@@ -1611,16 +1637,10 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
 
 export function downloadTopologyJSON(topology: TopologyExport): void {
   const json = JSON.stringify(topology, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${topology.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}.topology.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadBlob(
+    new Blob([json], { type: 'application/json' }),
+    `${topology.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}.topology.json`,
+  );
 }
 
 export function openTopologyFile(): Promise<TopologyExport> {

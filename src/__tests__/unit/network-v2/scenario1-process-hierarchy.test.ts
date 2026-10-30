@@ -118,7 +118,8 @@ describe('Scénario 1 — hiérarchie des processus système et arbre PID 1', ()
         .toBeGreaterThan(0);
 
       const vmrss = await run(`grep VmRSS /proc/${pid}/status`);
-      expect(vmrss).toMatch(/VmRSS:\t\d+ kB/);
+      if (name === 'kthreadd') expect(vmrss).toBe('');
+      else expect(vmrss).toMatch(/VmRSS:\t\s*\d+ kB/);
     });
   });
 

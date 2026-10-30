@@ -10,7 +10,8 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { isValidIPv4 } from '../../../core/ip';
 import { CliInvalidInput, CliIncomplete } from '../cli/CliDiagnostic';
-import { boundedInteger } from '@/cli/ArgumentTypes';
+import { boundedInteger, INTERFACE_NAME } from '@/cli/ArgumentTypes';
+import { refuseUnknownSelector } from './showSelectors';
 import { CISCO_ERRORS } from '../cli-utils';
 import type { CommandTrie } from '../CommandTrie';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -203,7 +204,268 @@ export function buildRoutingProtoConfig(
 }
 
 
-export function buildRouterSubmodeOn(
+export const BGP_DIRECTION = /^(?:in|out)$/i;
+const unsignedWithin = (word: string | undefined, min: number, max: number): boolean =>
+  word !== undefined && /^\d{1,10}$/.test(word) && Number(word) >= min && Number(word) <= max;
+
+type NeighborJudge = (words: readonly string[]) => number | 'incomplete' | null;
+
+const bad = (position: number): number => position;
+const needsWord = (words: readonly string[], at: number): number | 'incomplete' | null =>
+  words[at] === undefined ? 'incomplete' : null;
+const optionalFlag = (words: readonly string[], at: number, allowed: readonly string[]):
+number | null => {
+  if (words[at] === undefined) return null;
+  return allowed.includes(words[at].toLowerCase()) && words.length === at + 1 ? null : bad(at);
+};
+const nameThenDirection: NeighborJudge = (words) => {
+  if (words[0] === undefined || words[1] === undefined) return 'incomplete';
+  if (!BGP_DIRECTION.test(words[1])) return bad(1);
+  return words.length > 2 ? bad(2) : null;
+};
+const noWord: NeighborJudge = (words) => (words.length > 0 ? bad(0) : null);
+
+const BGP_NEIGHBOR_TAILS: Readonly<Record<string, NeighborJudge>> = {
+  'remote-as': () => null,
+  description: (words) => needsWord(words, 0),
+  'update-source': (words) => {
+    if (words[0] === undefined) return 'incomplete';
+    if (!INTERFACE_NAME.test(words[0])) return bad(0);
+    return words.length > 1 ? bad(1) : null;
+  },
+  'ebgp-multihop': (words) => {
+    if (words[0] === undefined) return null;
+    if (!unsignedWithin(words[0], 1, 255)) return bad(0);
+    return words.length > 1 ? bad(1) : null;
+  },
+  timers: (words) => {
+    if (words.length < 2) return 'incomplete';
+    for (let at = 0; at < Math.min(words.length, 3); at++) {
+      if (!unsignedWithin(words[at], 0, 65535)) return bad(at);
+    }
+    return words.length > 3 ? bad(3) : null;
+  },
+  password: (words) => needsWord(words, 0),
+  'route-map': nameThenDirection,
+  'prefix-list': nameThenDirection,
+  'filter-list': (words) => {
+    if (words[0] === undefined || words[1] === undefined) return 'incomplete';
+    if (!unsignedWithin(words[0], 1, 500)) return bad(0);
+    if (!BGP_DIRECTION.test(words[1])) return bad(1);
+    return words.length > 2 ? bad(2) : null;
+  },
+  'distribute-list': nameThenDirection,
+  'maximum-prefix': (words) => {
+    if (words[0] === undefined) return 'incomplete';
+    if (!unsignedWithin(words[0], 1, 4294967295)) return bad(0);
+    let at = 1;
+    if (words[at] !== undefined && /^\d+$/.test(words[at])) {
+      if (!unsignedWithin(words[at], 1, 100)) return bad(at);
+      at++;
+    }
+    if (words[at] === undefined) return null;
+    const flag = words[at].toLowerCase();
+    if (flag === 'warning-only') return words.length > at + 1 ? bad(at + 1) : null;
+    if (flag === 'restart') {
+      if (words[at + 1] === undefined) return 'incomplete';
+      if (!unsignedWithin(words[at + 1], 1, 65535)) return bad(at + 1);
+      return words.length > at + 2 ? bad(at + 2) : null;
+    }
+    return bad(at);
+  },
+  weight: () => null,
+  'next-hop-self': (words) => optionalFlag(words, 0, ['all']),
+  'send-community': (words) => optionalFlag(words, 0, ['both', 'extended', 'standard']),
+  'soft-reconfiguration': (words) => {
+    if (words[0] === undefined) return 'incomplete';
+    return words[0].toLowerCase() === 'inbound' && words.length === 1 ? null : bad(0);
+  },
+  'route-reflector-client': noWord,
+  shutdown: noWord,
+  activate: noWord,
+  'remove-private-as': (words) => optionalFlag(words, 0, ['all']),
+  'default-originate': (words) => {
+    if (words[0] === undefined) return null;
+    if (words[0].toLowerCase() !== 'route-map') return bad(0);
+    if (words[1] === undefined) return 'incomplete';
+    return words.length > 2 ? bad(2) : null;
+  },
+  'peer-group': (words) => (words.length > 1 ? bad(1) : null),
+  'local-as': (words) => {
+    if (words[0] === undefined) return 'incomplete';
+    return unsignedWithin(words[0], 1, 4294967295) ? null : bad(0);
+  },
+  version: (words) => (words[0] === undefined ? 'incomplete' : words[0] === '4' ? null : bad(0)),
+  'disable-connected-check': noWord,
+  'advertisement-interval': (words) => {
+    if (words[0] === undefined) return 'incomplete';
+    return unsignedWithin(words[0], 0, 600) && words.length === 1 ? null : bad(0);
+  },
+  'allowas-in': (words) => {
+    if (words[0] === undefined) return null;
+    return unsignedWithin(words[0], 1, 10) && words.length === 1 ? null : bad(0);
+  },
+  'ttl-security': (words) => {
+    if (words[0] === undefined || words[1] === undefined) return 'incomplete';
+    if (words[0].toLowerCase() !== 'hops') return bad(0);
+    return unsignedWithin(words[1], 1, 254) && words.length === 2 ? null : bad(1);
+  },
+  'fall-over': (words) => (words[0] === undefined ? 'incomplete'
+    : words[0].toLowerCase() === 'bfd' && words.length === 1 ? null : bad(0)),
+  'as-override': noWord,
+  'unsuppress-map': (words) => needsWord(words, 0),
+};
+
+const BGP_FLAG_OPTIONS = new Set([
+  'log-neighbor-changes', 'deterministic-med', 'always-compare-med', 'fast-external-fallover',
+  'redistribute-internal', 'suppress-inactive', 'graceful-restart',
+]);
+const BGP_VALUE_OPTIONS = new Set([
+  'bestpath', 'cluster-id', 'confederation', 'maxas-limit', 'asnotation', 'update-delay',
+  'listen', 'dampening', 'default', 'nexthop', 'additional-paths', 'always-compare-med',
+]);
+
+function judgeRedistributeTail(tail: readonly string[]): void {
+  for (let at = 0; at < tail.length; at++) {
+    const word = tail[at].toLowerCase();
+    if (word === 'tag' || word === 'vrf') {
+      if (tail[at + 1] === undefined) throw new CliIncomplete();
+      if (word === 'tag' && !unsignedWithin(tail[at + 1], 0, 4294967295)) {
+        throw new CliInvalidInput({ token: tail[at + 1] });
+      }
+      at += 1;
+    } else if (word === 'match') {
+      let cursor = at + 1;
+      if (tail[cursor] === undefined) throw new CliIncomplete();
+      while (tail[cursor] !== undefined
+        && /^(?:internal|external|nssa-external|1|2)$/i.test(tail[cursor])) cursor++;
+      if (cursor === at + 1) throw new CliInvalidInput({ token: tail[cursor] });
+      at = cursor - 1;
+    } else if (!/^level-(?:1|2|1-2)$/.test(word)) {
+      throw new CliInvalidInput({ token: tail[at] });
+    }
+  }
+}
+
+function judgeBgpProcessOption(words: readonly string[]): void {
+  const option = words[0]?.toLowerCase();
+  if (option === undefined) throw new CliIncomplete();
+  if (BGP_FLAG_OPTIONS.has(option)) {
+    if (words.length > 1 && !(option === 'graceful-restart')) {
+      throw new CliInvalidInput({ token: words[1] });
+    }
+    return;
+  }
+  if (!BGP_VALUE_OPTIONS.has(option)) throw new CliInvalidInput({ token: words[0] });
+  if (words.length < 2) throw new CliIncomplete();
+  const refused = BGP_OPTION_VALUE_JUDGES[option]?.(words.slice(1));
+  if (refused !== undefined) throw new CliInvalidInput({ token: words[1 + refused] });
+}
+
+const BGP_OPTION_VALUE_JUDGES: Readonly<Record<string, (tail: readonly string[]) => number | undefined>> = {
+  'cluster-id': (tail) => {
+    if (tail.length > 1) return 1;
+    return isValidIPv4(tail[0]) || unsignedWithin(tail[0], 1, 4294967295) ? undefined : 0;
+  },
+  'maxas-limit': (tail) => {
+    if (tail.length > 1) return 1;
+    return unsignedWithin(tail[0], 1, 2000) ? undefined : 0;
+  },
+  'update-delay': (tail) => {
+    if (tail.length > 1) return 1;
+    return unsignedWithin(tail[0], 0, 3600) ? undefined : 0;
+  },
+  asnotation: (tail) => {
+    if (tail.length > 1) return 1;
+    return tail[0].toLowerCase() === 'dot' ? undefined : 0;
+  },
+  confederation: (tail) => {
+    const keyword = tail[0].toLowerCase();
+    if (keyword !== 'identifier' && keyword !== 'peers') return 0;
+    if (tail.length < 2) return tail.length;
+    const numbers = tail.slice(1);
+    const bad = numbers.findIndex((word) => !unsignedWithin(word, 1, 4294967295));
+    if (bad >= 0) return bad + 1;
+    return keyword === 'identifier' && numbers.length > 1 ? 2 : undefined;
+  },
+  default: (tail) => {
+    const keyword = tail[0].toLowerCase();
+    if (keyword === 'ipv4-unicast') return tail.length > 1 ? 1 : undefined;
+    if (keyword === 'route-target') {
+      return tail.length === 2 && tail[1].toLowerCase() === 'filter' ? undefined : Math.min(1, tail.length);
+    }
+    return 0;
+  },
+  bestpath: (tail) => {
+    const known = new Set(['as-path', 'compare-routerid', 'med', 'cost-community', 'igp-metric', 'aigp', 'bandwidth', 'prefix-validate']);
+    return known.has(tail[0].toLowerCase()) ? undefined : 0;
+  },
+  listen: (tail) => {
+    const keyword = tail[0].toLowerCase();
+    if (keyword === 'limit') {
+      return tail.length === 2 && unsignedWithin(tail[1], 1, 4294967295) ? undefined : Math.min(1, tail.length);
+    }
+    return keyword === 'range' ? undefined : 0;
+  },
+  dampening: (tail) => {
+    if (tail[0].toLowerCase() === 'route-map') return tail.length === 2 ? undefined : Math.min(1, tail.length);
+    const bad = tail.findIndex((word) => !unsignedWithin(word, 1, 45000));
+    return bad >= 0 ? bad : tail.length === 1 || tail.length === 4 ? undefined : tail.length;
+  },
+};
+
+function judgeProtoExtraTail(keyword: string, args: readonly string[]): number | undefined {
+  if (keyword === 'validate-update-source' || keyword === 'no validate-update-source') {
+    return args.length > 0 ? 0 : undefined;
+  }
+  if (keyword === 'output-delay' || keyword === 'flash-update-threshold') {
+    const [min, max] = keyword === 'output-delay' ? [8, 50] : [0, 30];
+    if (args.length === 0) return undefined;
+    if (args.length > 1) return 1;
+    return unsignedWithin(args[0], min, max) ? undefined : 0;
+  }
+  if (keyword === 'traffic-share') {
+    const first = args[0]?.toLowerCase();
+    if (first === 'balanced') return args.length > 1 ? 1 : undefined;
+    if (first === 'min') return args.length === 2 && args[1].toLowerCase() === 'across-interfaces' ? undefined : Math.min(1, args.length);
+    return args.length === 0 ? undefined : 0;
+  }
+  return undefined;
+}
+
+function judgeBgpNetworkTail(args: readonly string[]): void {
+  let at = 1;
+  const seen = new Set<string>();
+  while (at < args.length) {
+    const keyword = args[at].toLowerCase();
+    if (seen.has(keyword)) throw new CliInvalidInput({ token: args[at] });
+    seen.add(keyword);
+    if (keyword === 'mask') {
+      if (args[at + 1] === undefined) throw new CliIncomplete();
+      if (!isValidIPv4(args[at + 1])) throw new CliInvalidInput({ token: args[at + 1] });
+      at += 2;
+    } else if (keyword === 'route-map') {
+      if (args[at + 1] === undefined) throw new CliIncomplete();
+      at += 2;
+    } else if (keyword === 'backdoor') {
+      at += 1;
+    } else {
+      throw new CliInvalidInput({ token: args[at] });
+    }
+  }
+}
+
+function judgeBgpNeighborTail(words: readonly string[]): void {
+  const subCommand = words[1]?.toLowerCase();
+  if (subCommand === undefined) return;
+  const judge = BGP_NEIGHBOR_TAILS[subCommand];
+  if (judge === undefined) throw new CliInvalidInput({ token: words[1] });
+  const verdict = judge(words.slice(2));
+  if (verdict === 'incomplete') throw new CliIncomplete();
+  if (verdict !== null) throw new CliInvalidInput({ token: words[2 + verdict] });
+}
+
+function buildRouterSubmodeOn(
   routerTrie: CommandTrie,
   ctx: CiscoShellContext, repo: RoutingConfigRepository,
 ): void {
@@ -223,6 +485,7 @@ export function buildRouterSubmodeOn(
       if (!isValidIPv4(args[0]) || !ripRoutableNetwork(args[0])) {
         return CISCO_ERRORS.INVALID_INPUT;
       }
+      if (args.length > 1) throw new CliInvalidInput({ token: args[1] });
       const net = new IPAddress(args[0]);
       const mask = classfulMask(net);
       const classful = net.networkAddress(mask);
@@ -232,8 +495,11 @@ export function buildRouterSubmodeOn(
     }
     if (args.length < 1) return CISCO_ERRORS.INCOMPLETE;
     if (!isValidIPv4(args[0])) return CISCO_ERRORS.INVALID_INPUT;
-    if (args[1] === 'mask' && !isValidIPv4(args[2] ?? '')) {
-      throw new CliInvalidInput({ token: args[2] });
+    if (proto === 'eigrp') {
+      if (args[1] !== undefined && !isValidIPv4(args[1])) throw new CliInvalidInput({ token: args[1] });
+      if (args.length > 2) throw new CliInvalidInput({ token: args[2] });
+    } else {
+      judgeBgpNetworkTail(args);
     }
     if (proto === 'eigrp') {
       const wildcard = toWildcard(args[1]);
@@ -329,6 +595,7 @@ export function buildRouterSubmodeOn(
     if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
+      if (a.length > 1) throw new CliInvalidInput({ token: a[1] });
       if (p === 'rip') repo.rip.passiveDefault = true;
       else if (p === 'eigrp') eigrp().passiveDefault = true;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, true);
@@ -343,6 +610,7 @@ export function buildRouterSubmodeOn(
     if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
     const p = curProto(ctx).proto;
     if (a[0].toLowerCase() === 'default') {
+      if (a.length > 1) throw new CliInvalidInput({ token: a[1] });
       if (p === 'rip') repo.rip.passiveDefault = false;
       else if (p === 'eigrp') eigrp().passiveDefault = false;
       for (const name of ctx.r()._getPortsInternal().keys()) setPassive(p, name, false);
@@ -367,6 +635,15 @@ export function buildRouterSubmodeOn(
     }
     const parsed = parseRedistribute(a);
     if (!parsed) throw new CliInvalidInput();
+    judgeRedistributeTail(parsed.tail ?? []);
+    const protocolInUse = curProto(ctx).proto;
+    if (parsed.metric !== undefined) {
+      const ceiling = protocolInUse === 'rip' ? 1 : protocolInUse === 'eigrp' ? 5 : 1;
+      if (parsed.metric.length > ceiling) throw new CliInvalidInput({ token: a[a.indexOf(String(parsed.metric[ceiling])) ] });
+    }
+    if (parsed.metricType !== undefined && parsed.metricType !== 1 && parsed.metricType !== 2) {
+      throw new CliInvalidInput({ token: String(parsed.metricType) });
+    }
     const p = curProto(ctx).proto;
     const family = inFamily();
     if (p === 'bgp' && family?.kind === 'vrf') {
@@ -420,7 +697,16 @@ export function buildRouterSubmodeOn(
     }
     return '';
   });
-  routerTrie.registerGreedy('default-information', 'Default route control', () => {
+  routerTrie.registerGreedy('default-information', 'Default route control', (a) => {
+    if (a.length < 1) return CISCO_ERRORS.INCOMPLETE;
+    if (a[0].toLowerCase() !== 'originate') throw new CliInvalidInput({ token: a[0] });
+    const allowRouteMap = curProto(ctx).proto === 'rip';
+    if (a.length > 1 && !(allowRouteMap && a[1].toLowerCase() === 'route-map' && a.length === 3)) {
+      if (allowRouteMap && a[1].toLowerCase() === 'route-map' && a.length === 2) {
+        return CISCO_ERRORS.INCOMPLETE;
+      }
+      throw new CliInvalidInput({ token: a[1] });
+    }
     if (curProto(ctx).proto === 'rip') {
       repo.rip.defaultInfoOriginate = true;
       ctx.r().ripSetDefaultInformationOriginate(true);
@@ -476,9 +762,23 @@ export function buildRouterSubmodeOn(
       });
       return '';
     }
-    // `timers bgp <keepalive> <hold>` was accepted and rendered nowhere.
-    if (p === 'bgp') { const b = bgp(); if (b) pushOnce(b.extras, line); }
-    else if (p === 'eigrp') pushOnce(eigrp().extras, line);
+    if (p === 'bgp') {
+      if (a[0]?.toLowerCase() !== 'bgp') throw new CliInvalidInput({ token: a[0] });
+      if (a.length < 3) return CISCO_ERRORS.INCOMPLETE;
+      for (const at of [1, 2]) {
+        if (boundedInteger(a[at], 0, BGP_TIMER_MAX) === null) throw new CliInvalidInput({ token: a[at] });
+      }
+      if (a.length > 3) throw new CliInvalidInput({ token: a[3] });
+      const b = bgp(); if (b) pushOnce(b.extras, line);
+    }
+    else if (p === 'eigrp') {
+      if (a[0]?.toLowerCase() !== 'active-time') throw new CliInvalidInput({ token: a[0] });
+      if (a.length < 2) return CISCO_ERRORS.INCOMPLETE;
+      const disabled = a[1].toLowerCase() === 'disabled';
+      if (!disabled && !unsignedWithin(a[1], 1, 65535)) throw new CliInvalidInput({ token: a[1] });
+      if (a.length > 2) throw new CliInvalidInput({ token: a[2] });
+      pushOnce(eigrp().extras, line);
+    }
     return '';
   });
   routerTrie.registerGreedy('no timers', 'Restore default timers', (a) => {
@@ -545,6 +845,7 @@ export function buildRouterSubmodeOn(
         const as = parseInt(a[2], 10);
         if (Number.isNaN(as) || as < 1 || as > 4294967295) return CISCO_ERRORS.INVALID_INPUT;
       }
+      judgeBgpNeighborTail(a);
 
       // `neighbor <nom> peer-group` (sans argument) DÉCLARE un gabarit.
       // Il ne crée aucun voisin : un groupe n'a pas de session et n'a
@@ -752,13 +1053,13 @@ export function buildRouterSubmodeOn(
       const b = bgp();
       if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     } else if (a[0] === 'default' && a[1] === 'local-preference') {
+      if (a[2] === undefined) return CISCO_ERRORS.INCOMPLETE;
       const lp = parseInt(a[2], 10);
       if (Number.isNaN(lp) || lp < 0) return '% Invalid local-preference';
       bgpEng().getConfig().defaultLocalPref = lp;
       converge();
     } else {
-      // Every other `bgp <option>` — `log-neighbor-changes` and friends —
-      // was accepted and rendered nowhere. Keep the line as typed.
+      judgeBgpProcessOption(a);
       const b = bgp();
       if (b) pushOnce(b.extras, `bgp ${a.join(' ')}`.trim());
     }
@@ -816,6 +1117,8 @@ export function buildRouterSubmodeOn(
         const refus = jugerOffsetList(args);
         if (refus !== '') return refus;
       }
+      const tailRefused = judgeProtoExtraTail(kw, args);
+      if (tailRefused !== undefined) throw new CliInvalidInput({ token: args[tailRefused] });
       const p = curProto(ctx).proto;
       const line = `${kw}${args.length ? ' ' + args.join(' ') : ''}`;
       if (p === 'rip') pushOnce(repo.rip.extras, line);
@@ -1040,6 +1343,7 @@ export function registerRoutingProtoShow(
   });
 
   trie.registerGreedy('show ip eigrp neighbors', 'Display EIGRP neighbors', (a) => {
+    refuseUnknownSelector(a, { keywords: ['detail', 'static'], interfaces: true, max: 2 });
     const e = eigrpE();
     if (!e.isEnabled()) return '';
     live();
@@ -1048,12 +1352,17 @@ export function registerRoutingProtoShow(
       : showIpEigrpNeighbors(e);
   });
   trie.registerGreedy('show ip eigrp topology', 'Display EIGRP topology', (a) => {
+    refuseUnknownSelector(a, {
+      keywords: ['all-links', 'summary', 'zero-successors', 'active', 'pending', 'detail-links'],
+      addresses: true, integer: [1, 4294967295], max: 2,
+    });
     const e = eigrpE();
     if (!e.isEnabled()) return '';
     live();
     return showIpEigrpTopology(e, a[0]?.toLowerCase() === 'all-links');
   });
   trie.registerGreedy('show ip eigrp interfaces', 'Display EIGRP interfaces', (a) => {
+    refuseUnknownSelector(a, { keywords: ['detail'], interfaces: true, integer: [1, 65535], max: 3 });
     const e = eigrpE();
     if (!e.isEnabled()) return '';
     live();
@@ -1310,7 +1619,6 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
   bgp: {
     name: 'option', type: 'REST', description: 'BGP process option',
     alternatives: [
-      { keyword: 'default', description: 'Configure a BGP default' },
       { keyword: 'log-neighbor-changes', description: 'Log neighbour up/down events' },
     ],
   },
@@ -1337,7 +1645,7 @@ Readonly<Record<string, ArgumentSpec | readonly ArgumentSpec[] | null>> = {
       { keyword: 'default', description: 'Every interface, unless listed otherwise' },
     ],
   },
-  'default-information': { name: 'reste', type: 'REST', optional: true,
+  'default-information': { name: 'reste', type: 'REST',
     description: '`originate`' },
 };
 
@@ -1353,6 +1661,18 @@ const BGP_KEYWORDS: ReadonlyArray<AdapterKeyword> = [
     keyword: 'router-id', description: 'Router identifier of this BGP process',
     argument: { name: 'identifiant-bgp', type: 'IP_ADDR',
       description: 'Router identifier, in the shape of an IPv4 address' },
+  },
+  {
+    keyword: 'default', description: 'Configure a BGP default',
+    argument: [
+      { name: 'reglage-par-defaut', type: 'ENUM', description: 'Default to configure',
+        values: [
+          { keyword: 'ipv4-unicast', description: 'Activate ipv4-unicast for a peer by default' },
+          { keyword: 'local-preference', description: 'local preference (higher=more preferred)' },
+        ] },
+      { name: 'valeur', type: 'INT', optional: true, range: [0, 4294967295], rangeIsAdvisory: true,
+        description: 'Local preference value' },
+    ],
   },
 ];
 

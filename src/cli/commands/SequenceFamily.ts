@@ -1,5 +1,6 @@
 import type { CommandSpec } from '../CommandTable';
 import type { ArgumentSpec } from '../ArgumentTypes';
+import { optionArgName, type OptionSpec } from '../OptionBag';
 
 /**
  * Une commande = des mots-cles, une SUITE d'arguments, et sa negation.
@@ -26,6 +27,7 @@ export interface SequenceEntry {
    * DECRITE qu'elle n'est contrainte, ce qui vaut mieux que l'inverse.
    */
   readonly tail?: ArgumentSpec;
+  readonly options?: readonly OptionSpec[];
   /**
    * La suite d'arguments de la forme en `no`, quand elle differe.
    *
@@ -83,17 +85,37 @@ function valuesOf(
   return out;
 }
 
+function optionWords(
+  options: readonly OptionSpec[] | undefined, args: Record<string, string>,
+): string[] {
+  const out: string[] = [];
+  for (const option of options ?? []) {
+    const places = [...(option.argument ? [option.argument] : []), ...(option.moreArguments ?? [])];
+    if (places.length === 0) {
+      if (args[optionArgName(option)] !== undefined) out.push(option.keyword);
+      continue;
+    }
+    if (args[places[0].name] === undefined) continue;
+    out.push(option.keyword);
+    for (const place of places) {
+      if (args[place.name] !== undefined) out.push(args[place.name]);
+    }
+  }
+  return out;
+}
+
 function specFor(
   entry: SequenceEntry, specs: readonly ArgumentSpec[], suffixe: string,
   host: () => SequenceHost,
 ): CommandSpec {
   const words = (args: Record<string, string>): string[] =>
-    [...entry.path.slice(1), ...valuesOf(args, specs)];
+    [...entry.path.slice(1), ...valuesOf(args, specs), ...optionWords(entry.options, args)];
 
   const spec: CommandSpec = {
     id: entry.path.join('-') + suffixe,
     path: [...entry.path, ...specs],
     description: entry.description,
+    ...(entry.options ? { options: entry.options } : {}),
     modes: entry.modes ?? ['config'],
     minPrivilege: entry.minPrivilege ?? 15,
     run: (_session, args) => host().apply(words(args), false),

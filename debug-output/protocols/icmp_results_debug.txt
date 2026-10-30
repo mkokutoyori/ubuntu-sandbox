@@ -1863,6 +1863,7 @@ Total steps: 301
   Icmp: 91 0 0 9 14 0 0 0 25 43 0 0 0 0 83 0 3 0 0 0 0 55 25 0 0 0 0
   IcmpMsg: InType0 InType3 InType8 InType11 OutType0 OutType3 OutType8
   IcmpMsg: 43 9 25 14 25 3 55
+  Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
 
 [259/301] lhq lhq$ netstat -s | head -30
   Ip:
@@ -1901,6 +1902,7 @@ Total steps: 301
   Icmp: 35 0 0 4 6 0 0 0 7 18 0 0 0 0 29 0 3 0 0 0 0 19 7 0 0 0 0
   IcmpMsg: InType0 InType3 InType8 InType11 OutType0 OutType3 OutType8
   IcmpMsg: 18 4 7 6 7 3 19
+  Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
 
 [261/301] lbr lbr$ netstat -s | head -30
   Ip:
@@ -1939,6 +1941,7 @@ Total steps: 301
   Icmp: 44 0 0 4 6 0 0 0 10 24 0 0 0 0 41 0 3 0 0 0 0 28 10 0 0 0 0
   IcmpMsg: InType0 InType3 InType8 InType11 OutType0 OutType3 OutType8
   IcmpMsg: 24 4 10 6 10 3 28
+  Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
 
 [263/301] ldc ldc$ netstat -s | head -30
   Ip:
@@ -1977,6 +1980,7 @@ Total steps: 301
   Icmp: 61 0 0 0 0 0 0 0 42 19 0 0 0 0 65 0 3 0 0 0 0 20 42 0 0 0 0
   IcmpMsg: InType0 InType8 OutType0 OutType3 OutType8
   IcmpMsg: 19 42 42 3 20
+  Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
 
 [265/301] srvdc srvdc$ netstat -s | head -30
   Ip:
@@ -2295,8 +2299,8 @@ Total steps: 301
   *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.3.3.10
   *Jun  6 08:00:00.000: ICMP: echo received, src 10.1.1.11, dst 10.1.1.1
   *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.1.1.11
-  *Jun  6 08:00:00.000: ICMP: echo received, src 10.2.2.10, dst 10.1.1.1
-  *Jun  6 08:00:00.000: ICMP: echo reply sent, src 10.1.1.1, dst 10.2.2.10
+  *Jun  6 08:00:00.001: ICMP: echo received, src 10.2.2.10, dst 10.1.1.1
+  *Jun  6 08:00:00.001: ICMP: echo reply sent, src 10.1.1.1, dst 10.2.2.10
   *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1
   *Jun  6 08:00:00.001: ICMP: echo reply sent, src 172.16.12.1, dst 10.1.1.10
   *Jun  6 08:00:00.001: ICMP: echo received, src 10.1.1.10, dst 172.16.12.1

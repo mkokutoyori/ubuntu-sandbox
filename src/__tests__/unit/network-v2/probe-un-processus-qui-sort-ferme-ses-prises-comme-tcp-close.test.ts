@@ -224,10 +224,10 @@ describe('end to end: the process that holds an ssh session is killed on the ser
     terminal.setPasswordBuf('secret');
     terminal.handleKey(key('Enter'));
     await flush();
-    const clientPs = async (): Promise<string> => client.executeCommand('ps -eo pid,comm,args');
+    const clientPs = async (): Promise<string> => client.executeCommand('ps -ww -eo pid,comm,args');
     expect(await clientPs()).toMatch(/\bssh\b.*alice@10\.0\.9\.2/);
-    const monitor = /^\s*(\d+)\s+\d+\s+root\s+\?\s+sshd sshd: alice \[priv\]/m
-      .exec(await server.executeCommand('ps -eo pid,ppid,user,tty,comm,args'))?.[1];
+    const monitor = /^\s*(\d+)\s+\d+\s+root\s+\?\s+sshd\s+sshd: alice \[priv\]/m
+      .exec(await server.executeCommand('ps -ww -eo pid,ppid,user,tty,comm,args'))?.[1];
     expect(monitor).toBeDefined();
     await server.executeCommand(`sudo kill ${monitor}`);
     await flush();

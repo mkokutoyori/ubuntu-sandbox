@@ -69,7 +69,7 @@ describe('Scénario 2 — cycle de vie des processus', () => {
     });
 
     it('un job terminé sans wait() reste zombie jusqu\'à la commande suivante', async () => {
-      const pid = (await run('sleep 0 & echo $!')).trim();
+      const pid = (await run('sleep 0 & echo $!')).replace(/^\[\d+\] \d+\n/, '').trim();
 
       const psAfterOne = await run('ps -eo pid,stat,comm');
       const zombieLine = psAfterOne.split('\n').find((l) => l.trim().split(/\s+/)[0] === pid);
@@ -153,7 +153,7 @@ describe('Scénario 2 — cycle de vie des processus', () => {
       const psOut = await run(`ps -p ${pid} -o ni,pri`);
       const [ni, pri] = psOut.split('\n')[1].trim().split(/\s+/);
       expect(ni).toBe('5');
-      expect(pri).toBe('25');
+      expect(pri).toBe('14');
 
       const sched = await run(`cat /proc/${pid}/sched`);
       expect(sched).toMatch(/prio\s*:\s*125/);

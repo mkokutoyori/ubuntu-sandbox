@@ -2,6 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -59,22 +60,44 @@ import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
-import { type ShellContext, cmdTouch, cmdLs, cmdCat, renderCat, parseCatFlags, cmdEcho, cmdCp, cmdMv, cmdRm, cmdMkdir, cmdRmdir, cmdLn, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
-import { cmdGrep, cmdHead, cmdWc, cmdSort, cmdCut, cmdUniq, cmdTr, cmdAwk, cmdSed } from './LinuxTextCommands';
+import { type ShellContext, cmdTouch, cmdLs, cmdEcho, cmdInstall, installOperands, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
+import { cmdGrep, cmdAwk, awkOptionError, cmdSed } from './LinuxTextCommands';
+import { runHead } from './coreutils/HeadCommand';
+import { runWc } from './coreutils/WcCommand';
+import { runCut } from './coreutils/CutCommand';
+import { runTr } from './coreutils/TrCommand';
+import { runUniq } from './coreutils/UniqCommand';
+import { runChmod } from './coreutils/ChmodCommand';
+import { runRm } from './coreutils/RmCommand';
+import { runBasename, runDirname } from './coreutils/PathNameCommands';
+import { runSeq } from './coreutils/SeqCommand';
+import { runCat } from './coreutils/CatCommand';
+import { runOd } from './coreutils/OdCommand';
+import { useLocaleQuotes } from './coreutils/CoreutilsKit';
+import { runCp, cpOperands } from './coreutils/CpCommand';
+import { runMv, mvOperands } from './coreutils/MvCommand';
+import { runLn } from './coreutils/LnCommand';
+import { runMkdir, mkdirOperands } from './coreutils/MkdirCommand';
+import { runRmdir } from './coreutils/RmdirCommand';
+import { runSort } from './coreutils/SortCommand';
+import { asDispatch } from './coreutils/CoreutilsKit';
+import { coreutilsIO } from './coreutils/CoreutilsFiles';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChmod, cmdChown, cmdChgrp, cmdStat, cmdUmask, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChown, cmdChgrp, cmdStat, cmdMkfifo } from './LinuxPermCommands';
+import { runUmask } from './umask/Umask';
 import {
-  runTest, runExpr, runSeq, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
+  runTest, runExpr, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
   runTail,
   cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
+import { formatStatTime } from './time/FileTimes';
 import { runXargs } from './coreutils/Xargs';
 import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
@@ -96,6 +119,7 @@ import { defaultHostClockPort, type HostClockPort } from '../../core/time/HostCl
 import { KernelModuleTable } from './kernel/KernelModuleTable';
 import { SystemIdentity } from '../host/identity';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
+import { seedWithShellOnly } from '@/bash/runtime/Environment';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
 import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
@@ -164,9 +188,9 @@ import { LinuxServiceJournalProjection } from './LinuxServiceJournalProjection';
 import { LinuxAtQueue, cmdAt, cmdAtq, cmdAtrm } from './jobs/LinuxAtQueue';
 import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
-import { LinuxProcessManager, kernelComm, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
+import { LinuxProcessManager, kernelComm, type ProcessInfo, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdPs, cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
+import { cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
@@ -179,6 +203,10 @@ import { resolveSshTarget } from '@/terminal/ssh/wireSshLogin';
 import { OPENSSH_SSH } from '@/terminal/ssh/sshDialect';
 import { SshFingerprint } from '@/network/protocols/ssh/SshFingerprint';
 import { BSD_TELNET, telnetWireFailure } from '@/terminal/subshells/telnetDialect';
+import { NetkitTelnetClient } from '@/network/protocols/telnet/client/NetkitTelnetClient';
+import { DeviceNetkitHost } from '@/network/protocols/telnet/client/DeviceNetkitHost';
+import { TranscriptTerminal } from '@/network/protocols/telnet/client/TranscriptTerminal';
+import { deviceWireDeps } from '@/terminal/subshells/NetkitTelnetSubShell';
 import { parseDialAddress } from '@/network/tcp/dial';
 import {
   runSshKeygenCommand, runSshKeygenInteractive as runSshKeygenInteractiveOn, vfsKeygenHost, type SshKeygenOutcome,
@@ -192,9 +220,14 @@ import { findHostByAddress, isPathReachable, findReachableHost } from './network
 import type { HostKeyProbeResult } from '@/network/protocols/ssh/SshHostKeyProbe';
 import { runTruncate } from './commands/fs/Truncate';
 import { runDd } from './commands/fs/Dd';
+import { runMktemp } from './commands/fs/Mktemp';
 import { runFallocate } from './commands/fs/Fallocate';
 import { renderProcSwaps } from './commands/system/Swapon';
 import { loadSnapshot, renderProcLoadavg, renderProcStat } from './system/LoadAverage';
+import { runPsCommand } from './commands/system/Ps';
+import { environText, renderProcPidCmdline, renderProcPidStat, renderProcPidStatm, renderProcPidStatus } from './process/ProcPidFiles';
+import type { ProcessTask } from './process/ProcessTask';
+import { buildTask, type TaskFacts } from './process/ProcessTaskBuilder';
 import { VfsSftpFileSystem } from '../../protocols/ssh/sftp/VfsSftpFileSystem';
 import { PermissionCheckingFSDecorator } from '../../protocols/ssh/sftp/PermissionCheckingFSDecorator';
 import { SshUserContext } from '../../protocols/ssh/SshUserContext';
@@ -228,9 +261,6 @@ import { OPENSSH_UBUNTU_22_04 } from '../../protocols/ssh/OpenSshRelease';
 import { KERNEL_HOSTNAME_PATH, kernelHostname, staticHostname } from './KernelHostname';
 import { isOk } from '../../protocols/ssh/Result';
 import type { TcpConnector } from '@/network/tcp/types';
-import {
-  TelnetClientSession, type TelnetClientTransport,
-} from '@/network/protocols/telnet/TelnetClientSession';
 import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { SshClientHandle, SshClientPlacement } from './network/SshClientProcess';
@@ -246,7 +276,10 @@ import { lastlogHost } from './login/LinuxLastlogHost';
 import type { ToolResult } from './audit/tools/AuditToolHost';
 import { lastHost } from './login/LinuxLastHost';
 import { loggerHost } from './syslog/LinuxLoggerHost';
-import { LocalDatagramSockets, type UnixStreamConnectOutcome, type UnixStreamHandlers } from './syslog/LocalDatagramSockets';
+import type { UnixSocketRow } from './unix/UnixSocketTable';
+import {
+  LocalDatagramSockets, type UnixOwner, type UnixStreamAccess, type UnixStreamConnectOutcome, type UnixStreamHandlers,
+} from './syslog/LocalDatagramSockets';
 import { runLogger } from './syslog/LoggerTool';
 import { rscryutilHost } from './syslog/LinuxRscryutilHost';
 import { runRscryutil } from './syslog/RscryutilTool';
@@ -274,10 +307,11 @@ import type { GetentResult } from './nss/GetentCommand';
 import type { NssHostEntry, NssServiceEntry } from './nss/types';
 import { IPAddress } from '../../core/types';
 import { openDescriptors, descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
+import { cwdLinkOf, exeLinkOf, rootLinkOf, type ProcessLinkSources } from './process/ProcessLinks';
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
 import { applyRcfiles, type RcHost } from './editors/nano/NanoRc';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './editors/nano/NanoOperatingDirectory';
-import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { padToWidth, renderTableText, LSOF_TABLE, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 /** Commands that commonly read from stdin when piped. */
 const PROXY_COMMAND_CLOSED = 'Connection closed by UNKNOWN port 65535';
@@ -298,8 +332,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
   'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
-  'dd', 'fallocate', 'sync',
-  'expr', 'seq', '[',
+  'dd', 'fallocate', 'sync', 'install',
+  'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
   'tac', 'nl', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
@@ -350,7 +384,7 @@ const SU_TTY = `/dev/${SU_TTY_NAME}`;
 const SUDO_FLAG_LETTERS = /^-[nSEkbiHvPs]+$/;
 
 function parseSudoLead(args: readonly string[]): {
-  flags: Set<string>; user: string | null; rest: string[];
+  flags: Set<string>; user: string | null; environment: Record<string, string>; rest: string[];
 } {
   const flags = new Set<string>();
   let user: string | null = null;
@@ -365,26 +399,87 @@ function parseSudoLead(args: readonly string[]): {
       i += 2;
     } else break;
   }
-  return { flags, user, rest: args.slice(i) };
+  const { assigned, rest } = leadingAssignments(args.slice(i));
+  return { flags, user, environment: assigned, rest };
 }
 
-const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'sh', 'bash', 'dash', 'xargs']);
+const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'rm', 'cp', 'mv', 'sh', 'bash', 'dash', 'xargs']);
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
-  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac',
+  'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac', 'od',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
 
+const NEVER_READ_STDIN: ReadonlySet<string> = new Set([
+  'mkdir', 'rmdir', 'ln', 'touch', 'chmod', 'chown', 'chgrp', 'ls', 'stat', 'umask', 'cd', 'pwd', 'sleep', 'id', 'whoami',
+  'date', 'hostname', 'uname', 'df', 'du', 'free', 'ps', 'kill', 'which', 'whereis', 'find', 'basename', 'dirname', 'realpath', 'readlink',
+  'mktemp', 'ip', 'ss', 'netstat', 'ping', 'echo', 'true', 'false', 'test', '[', 'type', 'command', 'uptime', 'who', 'last', 'getent',
+  'systemctl', 'journalctl', 'restorecon',
+]);
+
+function ignoresStandardInput(argv: readonly string[]): boolean {
+  const command = (argv[0] ?? '').split('/').pop() ?? '';
+  if (NEVER_READ_STDIN.has(command)) return true;
+  const known = ALWAYS_READ_STDIN.has(command) || READ_STDIN_WITHOUT_OPERAND.has(command) || READ_STDIN_WITH_ONE_OPERAND.has(command);
+  return known && !readsStandardInput(command, argv.slice(1));
+}
+
+const OPTIONS_TAKING_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
+  head: new Set(['-n', '-c', '--lines', '--bytes']),
+  tail: new Set(['-n', '-c', '-s', '--lines', '--bytes', '--pid', '--sleep-interval']),
+  cut: new Set(['-d', '-f', '-c', '-b', '--delimiter', '--fields', '--characters', '--bytes', '--output-delimiter']),
+  sort: new Set(['-k', '-t', '-o', '-T', '-S', '--key', '--field-separator', '--output', '--temporary-directory', '--buffer-size']),
+  uniq: new Set(['-f', '-s', '-w', '--skip-fields', '--skip-chars', '--check-chars']),
+  nl: new Set(['-b', '-d', '-f', '-h', '-i', '-l', '-n', '-s', '-v', '-w']),
+  xxd: new Set(['-l', '-s', '-c', '-g', '-o']),
+  base64: new Set(['-w', '--wrap']),
+  grep: new Set(['-e', '-f', '-m', '-A', '-B', '-C', '-d', '-D', '--regexp', '--file', '--max-count', '--after-context', '--before-context', '--context']),
+  egrep: new Set(['-e', '-f', '-m', '-A', '-B', '-C', '-d', '-D', '--regexp', '--file', '--max-count', '--after-context', '--before-context', '--context']),
+  fgrep: new Set(['-e', '-f', '-m', '-A', '-B', '-C', '-d', '-D', '--regexp', '--file', '--max-count', '--after-context', '--before-context', '--context']),
+  sed: new Set(['-e', '-f', '-l', '--expression', '--file', '--line-length']),
+  awk: new Set(['-F', '-v', '-f', '--field-separator', '--assign', '--file']),
+  od: new Set(['-A', '-j', '-N', '-S', '-t']),
+};
+
+const OPTIONS_GIVING_THE_PROGRAM: Readonly<Record<string, ReadonlySet<string>>> = {
+  grep: new Set(['-e', '-f', '--regexp', '--file']),
+  egrep: new Set(['-e', '-f', '--regexp', '--file']),
+  fgrep: new Set(['-e', '-f', '--regexp', '--file']),
+  sed: new Set(['-e', '-f', '--expression', '--file']),
+  awk: new Set(['-f', '--file']),
+};
+
 function readsStandardInput(command: string, args: readonly string[]): boolean {
   if (ALWAYS_READ_STDIN.has(command)) return true;
-  const operands = args.filter((argument) => !argument.startsWith('-') || argument === '-').length;
+  const valued = OPTIONS_TAKING_VALUE[command] ?? new Set<string>();
+  const program = OPTIONS_GIVING_THE_PROGRAM[command] ?? new Set<string>();
+  let operands = 0;
+  let programGiven = false;
+  for (let index = 0; index < args.length; index++) {
+    const word = args[index];
+    if (word === '--') {
+      operands += args.length - index - 1;
+      break;
+    }
+    if (word === '-') return true;
+    if (word.startsWith('-')) {
+      const attached = !valued.has(word) && !word.startsWith('--') && word.length > 2 && valued.has(word.slice(0, 2));
+      const option = attached ? word.slice(0, 2) : word;
+      if (program.has(option)) programGiven = true;
+      if (!attached && valued.has(word)) index++;
+      continue;
+    }
+    if (command === 'od' && word.startsWith('+') && operands === 0 && args.includes('--traditional')) continue;
+    operands++;
+  }
   if (READ_STDIN_WITHOUT_OPERAND.has(command)) return operands === 0;
-  return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= (command === 'tr' ? 2 : 1);
+  const allowed = programGiven ? 0 : command === 'tr' ? 2 : 1;
+  return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= allowed;
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -571,6 +666,54 @@ export interface ForegroundResult {
   exitCode: number;
   stderr?: string;
   interleaved?: string;
+}
+
+const UNIX_FILE_DEVICE_MAJOR = 254;
+const CLOCK_TICKS_PER_SECOND = 100;
+const SHELL_INTERPRETERS: ReadonlySet<string> = new Set(['bash', 'sh', 'dash']);
+const PAGE_SIZE_BYTES = 4096;
+
+const SESSION_UMASK = 0o022;
+
+const RUNS_IN_CURRENT_SHELL: ReadonlySet<string> = new Set(['umask', 'eval', 'source', '.', 'builtin', 'command', 'exec', 'time']);
+
+const SYSTEMCTL_STATE_QUERIES: ReadonlySet<string> = new Set(['is-active', 'is-enabled', 'is-failed', 'is-system-running']);
+
+function printsResultOnFailure(cmd: string, args: readonly string[], exitCode: number): boolean {
+  if (exitCode === 0) return false;
+  if (cmd === 'cmp' || cmd === 'grep' || cmd === 'egrep' || cmd === 'fgrep') return exitCode === 1;
+  return cmd === 'systemctl' && args.some((arg) => SYSTEMCTL_STATE_QUERIES.has(arg));
+}
+
+interface LsofRow {
+  readonly command: string;
+  readonly pid: string;
+  readonly user: string;
+  readonly fd: string;
+  readonly access: string;
+  readonly type: string;
+  readonly device: string;
+  readonly sizeOff: string;
+  readonly node: string;
+  readonly name: string;
+}
+
+const LSOF_COMMAND_WIDTH = 9;
+
+function renderLsof(rows: readonly LsofRow[]): string {
+  const fdWidth = Math.max(2, ...rows.map((r) => r.fd.length + 2));
+  const columns: TableColumn<LsofRow>[] = [
+    { header: 'COMMAND', value: (r) => r.command.slice(0, LSOF_COMMAND_WIDTH) },
+    { header: 'PID', align: 'right', value: (r) => r.pid },
+    { header: 'USER', align: 'right', value: (r) => r.user },
+    { header: `${'FD'.padStart(fdWidth - 2)}  `, value: (r) => `${r.fd.padStart(fdWidth - 2)}${r.access} ` },
+    { header: 'TYPE', align: 'right', value: (r) => r.type },
+    { header: 'DEVICE', align: 'right', value: (r) => r.device },
+    { header: 'SIZE/OFF', align: 'right', value: (r) => r.sizeOff },
+    { header: 'NODE', align: 'right', value: (r) => r.node },
+    { header: 'NAME', value: (r) => r.name },
+  ];
+  return renderTableText(rows, columns, LSOF_TABLE);
 }
 
 export class LinuxCommandExecutor {
@@ -845,7 +988,7 @@ export class LinuxCommandExecutor {
    * bash script, not just from the top-level per-command dispatch. Returns
    * null when the command isn't a registered (synchronous) registry entry.
    */
-  _registryCommandHook: ((cmd: string, args: string[], stdin?: string) => { output: string; exitCode: number } | null) | null = null;
+  _registryCommandHook: ((cmd: string, args: string[], stdin?: string, outputPiped?: boolean) => { output: string; exitCode: number } | null) | null = null;
   /**
    * Optional bridge to a registered `LinuxCommand`'s own declarative
    * `privilege` field, set by `LinuxMachine` alongside `_registryCommandHook`.
@@ -883,8 +1026,12 @@ export class LinuxCommandExecutor {
     this.lastlog.bindUidResolver((user) => this.userMgr.getUser(user)?.uid);
     this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
-    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
-    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
+    const ownerNames = {
+      user: (uid: number) => this.userMgr.getUserByUid(uid)?.username ?? null,
+      group: (gid: number) => this.userMgr.getGroupByGid(gid)?.name ?? null,
+    };
+    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { ownerNames });
+    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6, ownerNames });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId);
     this.logMgr.setClock(this.wallNow);
@@ -1043,14 +1190,17 @@ export class LinuxCommandExecutor {
     const shellPpid = sshd?.pid ?? 1;
     const shell = this.processMgr.spawn({
       command: '-bash',
-      comm: '-bash',
+      comm: 'bash',
       user: shellUser,
       uid: shellUid,
       gid: shellUid,
       ppid: shellPpid,
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.buildEnvVars(false),
     });
+    shell.sid = shell.pid;
+    shell.pgid = shell.pid;
     this.shellPid = shell.pid;
     this.shellPpid = shell.ppid;
 
@@ -1259,6 +1409,52 @@ export class LinuxCommandExecutor {
 
 
 
+  private readonly socketDescriptorSignatures = new Map<number, string>();
+
+  private refreshSocketDescriptors(): void {
+    const holders = new Set<number>(this.socketDescriptorSignatures.keys());
+    for (const entry of this.socketTable?.getAll() ?? []) if (entry.pid !== undefined) holders.add(entry.pid);
+    for (const socket of this.localDatagramSockets.rows()) for (const holder of socket.holders) holders.add(holder);
+    for (const pid of holders) {
+      if (this.processMgr.get(pid) === undefined) {
+        this.socketDescriptorSignatures.delete(pid);
+        continue;
+      }
+      const signature = openDescriptors(this.descriptorSourcesFor(pid)).map((descriptor) => `${descriptor.fd}:${descriptor.target}`).join('|');
+      if (this.socketDescriptorSignatures.get(pid) === signature) continue;
+      this.socketDescriptorSignatures.set(pid, signature);
+      if (this.materializedProcPids.has(pid)) this.materializeProcFd(pid);
+    }
+  }
+
+  taskFacts(): TaskFacts {
+    return {
+      hertz: CLOCK_TICKS_PER_SECOND,
+      bootEpochMs: (this.lifecycle.bootedAt() ?? simulationDate()).getTime(),
+      pageSizeBytes: PAGE_SIZE_BYTES,
+      cpuCount: this.hardware.cpu.logicalCpus,
+      userName: (uid) => this.userMgr.getUserByUid(uid)?.username ?? null,
+      groupName: (gid) => this.userMgr.getGroupByGid(gid)?.name ?? null,
+      supplementaryGroups: (info) => this.userMgr.getUserGroups(info.user).map((group) => group.gid),
+      loginUid: (pid) => this.auditAttrs(pid).loginuid,
+      cgroupOf: (pid) => this.cgroupPathFor(pid),
+      exeOf: (pid) => exeLinkOf(this.processLinkSources(), pid),
+      environOf: (info) => this.environReadableBy(info) ? environText(info.environ, ' ') : null,
+      labelOf: () => 'unconfined',
+      foregroundGroupOf: (info) => info.sid,
+    };
+  }
+
+  private environReadableBy(info: ProcessInfo): boolean {
+    const viewer = this.userMgr.currentUid;
+    return viewer === 0 || viewer === info.uid;
+  }
+
+  taskOf(pid: number): ProcessTask | null {
+    const info = this.processMgr.get(pid);
+    return info === undefined ? null : buildTask(info, this.taskFacts());
+  }
+
   /** Materialize /proc/<pid>/ for every live process, drop entries for dead
    *  PIDs. Each entry exposes generated `status`, `cmdline`, `comm`, `stat`
    *  files driven live from the process manager. */
@@ -1281,34 +1477,30 @@ export class LinuxCommandExecutor {
         return p ? `${kernelComm(p.comm)}\n` : '';
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/cmdline`, () => {
-        const p = this.processMgr.get(pid);
-        if (!p || p.command.startsWith('[')) return '';
-        return [p.command.split(/\s+/)[0], ...p.args].join('\0') + '\0';
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidCmdline(task, this.processMgr.get(pid)?.command ?? '');
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/status`, () => {
-        const p = this.processMgr.get(pid);
-        if (!p) return '';
-        return [
-          `Name:\t${kernelComm(p.comm)}`,
-          `State:\t${p.state} (${stateLabel(p.state)})`,
-          `Tgid:\t${p.pid}`,
-          `Pid:\t${p.pid}`,
-          `PPid:\t${p.ppid}`,
-          `Uid:\t${p.uid}\t${p.uid}\t${p.uid}\t${p.uid}`,
-          `Gid:\t${p.gid}\t${p.gid}\t${p.gid}\t${p.gid}`,
-          `VmSize:\t${p.vsize} kB`,
-          `VmRSS:\t${p.rss} kB`,
-          `Threads:\t${p.numThreads ?? 1}`,
-          '',
-        ].join('\n');
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidStatus(task, this.umask);
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/stat`, () => {
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidStat(task, task.rssPages);
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/statm`, () => {
+        const task = this.taskOf(pid);
+        return task === null ? '' : renderProcPidStatm(task, PAGE_SIZE_BYTES / 1024);
+      });
+      this.vfs.registerGeneratedFile(`/proc/${pid}/environ`, () => {
         const p = this.processMgr.get(pid);
-        if (!p) return '';
-        return [
-          p.pid, `(${kernelComm(p.comm)})`, p.state, p.ppid, p.pgid, p.sid, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0,
-          p.priority, p.nice, 0, 0, 0, p.vsize * 1024, p.rss,
-        ].join(' ') + '\n';
+        return p === undefined || !this.environReadableBy(p) ? '' : environText(p.environ, '\0', '\0');
+      }, 0o400);
+      const owner = this.processMgr.get(pid);
+      if (owner !== undefined) this.vfs.chown(`/proc/${pid}/environ`, owner.uid, owner.gid);
+      this.vfs.registerGeneratedFile(`/proc/${pid}/wchan`, () => {
+        const task = this.taskOf(pid);
+        return task === null || task.wchanName === '-' ? '0' : task.wchanName;
       });
       this.vfs.registerGeneratedFile(`/proc/${pid}/loginuid`, () => {
         const a = this.auditAttrs(pid);
@@ -1337,9 +1529,11 @@ export class LinuxCommandExecutor {
       this.vfs.registerGeneratedFile(`/proc/${pid}/mounts`, () => this.mountTable.toProcMounts());
       this.vfs.registerGeneratedFile(`/proc/${pid}/mountinfo`, () => this.mountTable.toMountInfo());
       this.materializeProcExe(pid);
+      this.materializeProcLinks(pid);
       this.materializeProcFd(pid);
       this.materializedProcPids.add(pid);
     }
+    this.refreshSocketDescriptors();
     // `/proc/self` designe le processus COURANT, pas le shell de la
     // session : un sous-shell ou l'enfant de `nice` doit s'y retrouver.
     // Le lien etait pose une fois avec le PID du shell, et les fichiers
@@ -1360,14 +1554,78 @@ export class LinuxCommandExecutor {
    */
   private materializeProcExe(pid: number): void {
     const p = this.processMgr.get(pid);
-    // Kernel threads have no executable — `/proc/<pid>/exe` is empty for
-    // them on a real system, so there is nothing to link.
-    if (!p || !p.exe.startsWith('/')) return;
+    const sources = this.processLinkSources();
+    const initial = exeLinkOf(sources, pid);
+    if (!p || initial === null) return;
     this.vfs.registerGeneratedSymlink(`/proc/${pid}/exe`, () => {
-      const live = this.processMgr.get(pid);
-      const exe = live?.exe ?? p.exe;
+      const exe = exeLinkOf(sources, pid) ?? initial;
       return this.vfs.exists(exe) ? exe : `${exe} (deleted)`;
     }, p.uid, p.gid);
+  }
+
+  private materializeProcLinks(pid: number): void {
+    const p = this.processMgr.get(pid);
+    if (!p) return;
+    const sources = this.processLinkSources();
+    this.vfs.registerGeneratedSymlink(`/proc/${pid}/cwd`, () => cwdLinkOf(sources, pid) ?? '/', p.uid, p.gid);
+    this.vfs.registerGeneratedSymlink(`/proc/${pid}/root`, () => rootLinkOf(sources, pid) ?? '/', p.uid, p.gid);
+  }
+
+  private beginBackgroundSubshell(label: string): number {
+    const c = this.ctx();
+    const proc = this.processMgr.spawn({
+      command: label, comm: 'bash', user: this.userMgr.currentUser, uid: c.uid, gid: c.gid,
+      ppid: this.currentBashPid(), tty: 'pts/0', cwd: this.cwd,
+    });
+    this.jobTable.add(proc.pid, `${label} &`);
+    this.waitScopes.push(0);
+    this.bashPids.push(proc.pid);
+    return proc.pid;
+  }
+
+  private endBackgroundSubshell(
+    pid: number, outcome: { cwd: string; image: readonly string[] | null; output: string; exitCode: number; parked: boolean },
+  ): void {
+    const seconds = this.waitScopes.pop() ?? 0;
+    this.bashPids.pop();
+    this.processMgr.replaceImage(pid, this.vfs.normalizePath(outcome.cwd, this.cwd), outcome.image);
+    const job = this.jobTable.findByPid(pid);
+    if (job === undefined) return;
+    job.capturedOutput = outcome.output;
+    job.exitCode = outcome.exitCode;
+    job.durationMs = outcome.parked ? PERSISTENT_LISTENER_DURATION_MS : Math.round(seconds * 1000);
+    job.completesAt = this.logicalNow() + job.durationMs;
+  }
+
+  private holdDescriptorsOfBackgroundJob(pid: number, commandLine: string): void {
+    const { argv, stdinPath, stdoutPath, stderrPath, stderrAppend } = splitRedirections(simpleTokenize(commandLine.replace(/^(sudo|nohup)\s+/, '')));
+    const absolute = (path: string): string => this.vfs.normalizePath(path, this.cwd);
+    if (stdinPath !== undefined) this.processMgr.redirectStandardStream(pid, 0, absolute(stdinPath), 'r');
+    if (stdoutPath !== undefined) this.processMgr.redirectStandardStream(pid, 1, absolute(stdoutPath), 'w');
+    if (stderrPath !== undefined) this.processMgr.redirectStandardStream(pid, 2, absolute(stderrPath), stderrAppend ? 'a' : 'w');
+    if (basenameOf(argv[0] ?? '') !== 'tail' || !argv.some((word) => /^-[A-Za-z]*[fF]|^--follow/.test(word))) return;
+    for (const word of argv.slice(1)) {
+      if (word.startsWith('-')) continue;
+      const path = absolute(word);
+      if (this.vfs.getType(path) === 'file') this.processMgr.openFile(pid, path, 'r');
+    }
+  }
+
+  resolveExecutablePath(name: string): string | null {
+    const resolver = new CommandResolver(this.shellIntrospection());
+    return resolver.resolveAll(name, { forcePath: true }).find((candidate) => candidate.kind === 'file')?.path ?? null;
+  }
+
+  processLinkSources(): ProcessLinkSources {
+    return {
+      subject: (pid) => {
+        const process = this.processMgr.get(pid);
+        if (process === undefined) return undefined;
+        return { pid, uid: process.uid, exe: process.exe, cwd: pid === this.currentBashPid() ? this.cwd : process.cwd };
+      },
+      descriptorSources: (pid) => this.descriptorSourcesFor(pid),
+      resolveExecutable: (name) => this.resolveExecutablePath(name),
+    };
   }
 
   /** `/proc/<pid>/fd/` — stdin/stdout/stderr, any `OSProcess.openFiles`,
@@ -1380,12 +1638,13 @@ export class LinuxCommandExecutor {
     const p = this.processMgr.get(pid);
     if (!p) return;
     const fdDir = `/proc/${pid}/fd`;
+    if (this.vfs.exists(fdDir)) this.vfs.rmrf(fdDir);
     this.vfs.mkdirp(fdDir, 0o500, p.uid, p.gid);
     // La numérotation vient de `openDescriptors`, pas d'ici : c'est la même
     // que celle que compte `RLIMIT_NOFILE`, donc les deux ne peuvent pas
     // diverger (§F9.3).
     for (const d of openDescriptors(this.descriptorSourcesFor(pid))) {
-      this.vfs.createSymlink(`${fdDir}/${d.fd}`, d.target, p.uid, p.gid);
+      this.vfs.createSymlink(`${fdDir}/${d.fd}`, d.target, p.uid, p.gid, d.writable ? 0o700 : 0o500);
     }
   }
 
@@ -1396,7 +1655,10 @@ export class LinuxCommandExecutor {
       pid,
       tty: p?.tty,
       openFiles: p?.openFiles,
-      socketIds: this.socketTable === null ? [] : socketIdsOwnedBy(this.socketTable, this.socketProcesses(), pid),
+      socketIds: [
+        ...(this.socketTable === null ? [] : socketIdsOwnedBy(this.socketTable, this.socketProcesses(), pid)),
+        ...this.localDatagramSockets.inodesHeldBy(pid),
+      ],
     };
   }
 
@@ -2440,6 +2702,10 @@ export class LinuxCommandExecutor {
     return r.status === 'SUCCESS' && r.entry ? r.entry.port : null;
   }
 
+  exportedEnvironment(): Array<[string, string]> {
+    return [...this.env];
+  }
+
   private buildSshClientOpts(args: string[], callerEnv?: Record<string, string>, offeredPassword?: string) {
     const password = offeredPassword ?? this.sshpassPassword;
     const hostname = kernelHostname(this.vfs);
@@ -2503,6 +2769,19 @@ export class LinuxCommandExecutor {
    * same format as a known_hosts line. Used to seed known_hosts non-
    * interactively.
    */
+  private telnetRouteFailure(address: string): string | null {
+    const sourceIp = this.firstConfiguredIp();
+    if (!sourceIp || sourceIp === '127.0.0.1') return 'Network is unreachable';
+    const found = findHostByAddress(address, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
+    if (!found) return parseDialAddress(address) ? sshUnreachableReason(this.localDevice, address) : null;
+    const reachable = findReachableHost(sourceIp, found.ip, this.localDevice as never);
+    if (found.poweredOff || found.interfaceDown
+      || (!reachable && !isPathReachable(sourceIp, found.ip, this.localDevice as never))) {
+      return 'No route to host';
+    }
+    return null;
+  }
+
   /**
    * `telnet host [port]` — open a Telnet (TCP/23) session to a remote device.
    * Resolution and reachability reuse the shared topology helpers; a network
@@ -2527,23 +2806,15 @@ export class LinuxCommandExecutor {
       return { output: `telnet: connect to address ${host}: Network is unreachable`, exitCode: 1 };
     }
     const found = findHostByAddress(host, { readFile: (p) => this.vfs.readFile(p) }, this.localDevice as never);
-    if (!found) {
-      if (parseDialAddress(host)) {
-        const reason = sshUnreachableReason(this.localDevice, host);
-        return {
-          output: `Trying ${host}...\ntelnet: connect to address ${host}: ${reason}`,
-          exitCode: 1,
-        };
-      }
+    const failure = this.telnetRouteFailure(host);
+    if (!found && failure === null) {
       return { output: `telnet: could not resolve ${host}/${port}: Name or service not known`, exitCode: 1 };
     }
-    // Resolve the device that actually owns the address over the cable plant.
-    // The static registry can hold several fixtures sharing an IP; only the
-    // cable-reachable one answers, and its VTY config governs the verdict.
-    const reachable = findReachableHost(sourceIp, found.ip, this.localDevice as never);
-    if (found.poweredOff || found.interfaceDown || (!reachable && !isPathReachable(sourceIp, found.ip, this.localDevice as never))) {
-      return { output: `Trying ${found.ip}...\ntelnet: connect to address ${found.ip}: No route to host`, exitCode: 1 };
+    if (failure !== null || !found) {
+      const shown = found?.ip ?? host;
+      return { output: `Trying ${shown}...\ntelnet: connect to address ${shown}: ${failure}`, exitCode: 1 };
     }
+    const reachable = findReachableHost(sourceIp, found.ip, this.localDevice as never);
 
     const wireCapable = typeof ((reachable ?? found.device) as unknown as {
       getTcpStack?: () => unknown;
@@ -2601,15 +2872,6 @@ export class LinuxCommandExecutor {
     if (remoteCap && remoteCap !== this.captureLog) remoteCap.captureTcpHandshake(src, dst);
   }
 
-  private async openWireTelnetSession(
-    ip: string, port: number,
-  ): Promise<TelnetClientSession | null> {
-    if (!this.tcpConnector) return null;
-    const dialed = await this.tcpConnector(ip, port);
-    if (!dialed || (dialed as { dialFailed?: string }).dialFailed !== undefined) return null;
-    return new TelnetClientSession(dialed as TelnetClientTransport);
-  }
-
   private static async settleWire(times = 12): Promise<void> {
     for (let i = 0; i < times; i++) {
       await Promise.resolve();
@@ -2617,25 +2879,43 @@ export class LinuxCommandExecutor {
     }
   }
 
-  async runTelnetExecAsync(args: string[]): Promise<{ output: string; exitCode: number }> {
-    const probe = this.runTelnetClient(args);
-    if (probe.exitCode !== 0 || !probe.wireTarget) return { output: probe.output, exitCode: probe.exitCode };
-    const session = await this.openWireTelnetSession(probe.wireTarget.ip, probe.wireTarget.port);
-    if (!session) return { output: probe.output, exitCode: probe.exitCode };
-    const stdin = this._scenarioStdin ?? '';
-    await LinuxCommandExecutor.settleWire();
-    let transcript = session.drain();
-    for (const line of stdin.split('\n')) {
-      if (line.length === 0 && transcript.length > 0) continue;
-      session.send(line);
+  async runTelnetExecAsync(args: string[], piped?: string): Promise<ForegroundResult> {
+    const vfsReader = { readFile: (path: string) => this.vfs.readFile(path) };
+    const terminal = new TranscriptTerminal();
+    const host = new DeviceNetkitHost({
+      ...deviceWireDeps(this.localDevice as never, vfsReader),
+      routeFailure: (ip) => this.telnetRouteFailure(ip),
+      environment: () => this.exportedEnvironment(),
+      user: () => ({ name: this.userMgr.currentUser, uid: this.userMgr.currentUid }),
+      lookupUser: (name) => this.userMgr.getUser(name) ?? null,
+      hostname: () => kernelHostname(this.vfs),
+      size: () => null,
+      readFile: (path) => this.vfs.readFile(path),
+      tty: false,
+    });
+    const client = new NetkitTelnetClient(host, terminal);
+    let exitCode = 0;
+    client.onExit((code) => { exitCode = code; });
+    await client.start(args);
+    await client.idle();
+    if (!client.exited) {
       await LinuxCommandExecutor.settleWire();
-      transcript += session.drain();
+      const input = piped ?? this._scenarioStdin ?? '';
+      const lines = input.split('\n');
+      if (lines[lines.length - 1] === '') lines.pop();
+      for (const line of lines) {
+        if (client.exited) break;
+        client.input(`${line}\n`);
+        await client.idle();
+        await LinuxCommandExecutor.settleWire();
+      }
+      if (!client.exited) {
+        client.endOfInput();
+        await LinuxCommandExecutor.settleWire();
+      }
     }
-    const closedByPeer = session.closed;
-    session.close();
-    await LinuxCommandExecutor.settleWire();
-    const farewell = closedByPeer ? 'Connection closed by foreign host.\n' : '';
-    return { output: `${probe.output}${transcript}${farewell}`, exitCode: 0 };
+    client.dispose();
+    return terminal.result(exitCode);
   }
 
   private runSshKeyscan(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
@@ -2880,6 +3160,7 @@ export class LinuxCommandExecutor {
   /** Wire the device's socket table so netstat/ss output is dynamic */
   setSocketTable(table: SocketTable): void {
     this.socketTable = table;
+    this.localDatagramSockets.shareInodes(table.inodes);
     // SSH port-forwards bind their listeners on the very same table, so
     // `-L`/`-R`/`-D` tunnels surface through `ss` / `netstat`.
     const ownStack = (this.localDevice as { getTcpStack?: () => TcpStack } | null)?.getTcpStack?.();
@@ -2891,7 +3172,9 @@ export class LinuxCommandExecutor {
     // generated files that always reflect the live table. `/etc/services`
     // is seeded once at construction from the canonical SystemFiles list.
     const portsFs = new PortsFilesystem(this.vfs);
-    portsFs.registerProcNet(() => this.kernelSocketRows(), () => this.protocolCounters(), () => this.kernelIpFacts());
+    portsFs.registerProcNet(
+      () => this.kernelSocketRows(), () => this.protocolCounters(), () => this.kernelIpFacts(), () => this.localDatagramSockets.rows(),
+    );
   }
 
   /** The SSH port-forwarding table — `-R` listeners are bound here too. */
@@ -2991,6 +3274,21 @@ export class LinuxCommandExecutor {
     };
   }
 
+  unixSocketOwners(row: UnixSocketRow): Array<{ pid: number; uid: number; name: string; fd: number }> {
+    const target = `socket:[${row.inode}]`;
+    const owners: Array<{ pid: number; uid: number; name: string; fd: number }> = [];
+    for (const pid of row.holders) {
+      const process = this.processMgr.get(pid);
+      const fd = openDescriptors(this.descriptorSourcesFor(pid)).find((descriptor) => descriptor.target === target)?.fd;
+      if (process !== undefined && fd !== undefined) owners.push({ pid, uid: process.uid, name: kernelComm(process.comm), fd });
+    }
+    return owners;
+  }
+
+  unixFileDevice(path: string): number {
+    return (UNIX_FILE_DEVICE_MAJOR << 8) | Math.max(0, this.mountTable.deviceOf(path) - 1);
+  }
+
   kernelSocketRows(): KernelSocketRow[] {
     if (this.socketTable === null) return [];
     return kernelSocketRows({
@@ -3054,6 +3352,10 @@ export class LinuxCommandExecutor {
     if (inode === null && live === undefined) return { errno: 'ENOENT' };
     if (inode !== null && !this.checkPermission(inode, 'r')) return { errno: 'EACCES' };
     return live ?? { errno: 'ENOTTY' };
+  }
+
+  ptyExists(name: string): boolean {
+    return name === 'pts/0' || this.ttyLookup(name) !== undefined;
   }
 
   terminalColumns(): number {
@@ -3231,7 +3533,7 @@ export class LinuxCommandExecutor {
   private startBackgroundJob(input: string): { announcement: string; settled: Promise<unknown> } | null {
     if (!endsWithUnquotedAmp(input)) return null;
     let cmdLine = input.replace(/\s*&\s*$/, '').trim();
-    if (!cmdLine) return null;
+    if (!cmdLine || !isSingleSimpleCommand(cmdLine)) return null;
 
     // `nohup CMD &` — strip the nohup wrapper and detach from the shell.
     let nohup = false;
@@ -3295,15 +3597,17 @@ export class LinuxCommandExecutor {
   }
 
   private spawnBackgroundJob(
-    cmdLine: string, nohup: boolean,
+    cmdLine: string, nohup: boolean, pipedInput?: string,
+    inheritedEnvironment: Readonly<Record<string, string>> = this.buildEnvVars(false),
   ): { pid: number; jobId: number; settled: Promise<unknown> } | null {
-    const argv = simpleTokenize(cmdLine);
+    const typed = simpleTokenize(cmdLine);
+    const { assigned, rest: argv } = leadingAssignments(typed);
     if (argv.length === 0) return null;
     const c = this.ctx();
     // real nice(1) execve()s over itself, so comm/cmdline should reflect
     // the wrapped command, not "nice" — see niceWrappedCommand().
     const niceInner = niceWrappedCommand(argv);
-    const spawnCommand = niceInner ? niceInner.argv.join(' ') : cmdLine;
+    const spawnCommand = (niceInner?.argv ?? argv).join(' ');
     const spawnComm = basenameOf((niceInner?.argv ?? argv)[0]);
     const proc = this.processMgr.spawn({
       command: spawnCommand,
@@ -3315,7 +3619,10 @@ export class LinuxCommandExecutor {
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
       nice: niceInner?.adjustment,
+      environ: { ...inheritedEnvironment, ...assigned },
     });
+    if (!nohup && this.monitorMode(inheritedEnvironment) && this.currentBashPid() === this.shellPid) proc.pgid = proc.pid;
+    this.holdDescriptorsOfBackgroundJob(proc.pid, cmdLine);
     // §F5.7 — un accès à un montage réseau mort part en attente
     // ininterruptible et n'en revient pas. Le job est enregistré mais son
     // travail n'est jamais exécuté : c'est ce que « bloqué » veut dire, et
@@ -3345,6 +3652,8 @@ export class LinuxCommandExecutor {
     let exitCode = 0;
     let parked = false;
     this.waitScopes.push(0);
+    const parentUmask = this.umask;
+    this.jobScriptPid = SHELL_INTERPRETERS.has(basenameOf(argv[0])) ? proc.pid : null;
     try {
       this.withProcessIdentity(proc.pid, () => {
         const r = this.executeCoreWithResult(cmdLine, true);
@@ -3356,7 +3665,7 @@ export class LinuxCommandExecutor {
           this.processMgr.setState(proc.pid, 'S');
         }
       });
-    } catch { /* background failures are silent */ } finally { this.waitScopes.pop(); }
+    } catch { /* background failures are silent */ } finally { this.waitScopes.pop(); this.umask = parentUmask; this.jobScriptPid = null; }
     // The job's own command (e.g. `nc -l` binding a socket) runs *after*
     // syncProcPids() already materialized its fresh /proc/<pid>/fd/ — so
     // anything it opens during that run is invisible until refreshed here.
@@ -3368,7 +3677,7 @@ export class LinuxCommandExecutor {
         simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
       if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
       if (stderrPath !== undefined) this.bindBackgroundStderr(proc.pid, this.vfs.normalizePath(stderrPath, this.cwd), stderrAppend);
-      const netStdin = stdinPath === undefined ? undefined
+      const netStdin = stdinPath === undefined ? pipedInput
         : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
@@ -3380,7 +3689,7 @@ export class LinuxCommandExecutor {
       if (pending) {
         captured = '';
         exitCode = 0;
-        settled = pending
+        const finished = pending
           .then((r) => {
             job.capturedOutput = r.output;
             job.exitCode = r.exitCode;
@@ -3393,6 +3702,8 @@ export class LinuxCommandExecutor {
               job.completesAt = this.logicalNow() + job.durationMs;
             }
           });
+        const running = new Promise<void>((resolve) => { this.backgroundRunning.set(proc.pid, resolve); });
+        settled = Promise.race([finished, running]);
       }
     }
     // The sync simulator executes the work eagerly. We still want
@@ -3436,6 +3747,17 @@ export class LinuxCommandExecutor {
     if (deltaMs <= 0) return;
     this.clockPort.step(deltaMs);
     this.notifyClockAdvanced();
+  }
+
+  private processTimers: { schedule(callback: () => void, delayMs: number): () => void } | null = null;
+
+  attachProcessTimers(timers: { schedule(callback: () => void, delayMs: number): () => void }): void {
+    this.processTimers = timers;
+  }
+
+  scheduleAfter(delayMs: number, callback: () => void): () => void {
+    if (this.processTimers === null) throw new Error('process timers are not attached to this machine');
+    return this.processTimers.schedule(callback, delayMs);
   }
 
   private readonly clockListeners: Array<() => void> = [];
@@ -3630,7 +3952,9 @@ export class LinuxCommandExecutor {
 
   private handleWait(args: string[]): string {
     const specs = args.filter((a) => !a.startsWith('-'));
-    const running = this.jobTable.list().filter((j) => j.isRunning());
+    const scoped = this.waitScopes.length > 0;
+    const ownChild = (job: { readonly pid: number }): boolean => this.processMgr.get(job.pid)?.ppid === this.currentBashPid();
+    const running = this.jobTable.list().filter((j) => j.isRunning() && (!scoped || ownChild(j)));
     let targets = running;
     if (specs.length > 0) {
       targets = [];
@@ -3643,7 +3967,9 @@ export class LinuxCommandExecutor {
     }
     let last = 0;
     for (const job of targets) {
-      if (job.completesAt !== undefined) {
+      if (job.completesAt !== undefined && scoped) {
+        this.spendSeconds(Math.max(0, job.completesAt - this.logicalNow()) / 1000);
+      } else if (job.completesAt !== undefined) {
         this.stepClock(job.completesAt - this.logicalNow());
         this.completeBackgroundJob(job);
         last = job.exitCode ?? 0;
@@ -3754,7 +4080,7 @@ export class LinuxCommandExecutor {
     }
     const r = cmdKill(resolved, this.processCmdContext());
     if (r.exitCode === 0) droppedJobIds.forEach(id => this.jobTable.remove(id));
-    return r.output;
+    return r.output + (r.stderr ?? '').replace(/\n$/, '');
   }
 
   /**
@@ -3792,6 +4118,7 @@ export class LinuxCommandExecutor {
       openRefusal: (absPath: string) => this.openRefusal(absPath),
       zone: this.localZone(),
       nowMs: this.wallNow,
+      deviceOf: (absPath: string) => this.mountTable.deviceOf(absPath),
     };
   }
 
@@ -3992,7 +4319,7 @@ export class LinuxCommandExecutor {
         (argv, env, background, outputPiped, stdin) => this.dispatchFromInterpreter(argv, env, background, outputPiped, stdin),
         initialVars,
         io,
-        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode },
+        { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, daemonMode, interactive: !this.childShellRunning },
         this.aliases,
         this.functions,
       );
@@ -4009,8 +4336,12 @@ export class LinuxCommandExecutor {
    * executor and normalize the terminal output — shared by the sync and
    * async execution paths.
    */
+  private cwdSetByDispatch: string | null = null;
+
+  private readonly shellOnlyVariables = new Set<string>();
+
   private applyInterpreterResult(
-    result: { output: string; exitCode?: number; env?: Record<string, string> },
+    result: { output: string; exitCode?: number; env?: Record<string, string>; exported?: string[] },
     initialPwd: string,
     initialVars: Record<string, string>,
   ): string {
@@ -4023,11 +4354,24 @@ export class LinuxCommandExecutor {
         if (inode && inode.type === 'directory') {
           this.cwd = interpPwd;
         }
+      } else if (interpPwd === initialPwd && this.cwd !== initialPwd && this.cwd === this.cwdSetByDispatch) {
+        this.cwd = initialPwd;
       }
+      this.cwdSetByDispatch = null;
+      for (const key of [...this.env.keys()]) {
+        if (key in initialVars && !(key in result.env)) {
+          this.env.delete(key);
+          this.shellOnlyVariables.delete(key);
+        }
+      }
+      const exported = result.exported === undefined ? null : new Set(result.exported);
       for (const [key, value] of Object.entries(result.env)) {
         if (/^\d+$/.test(key) || ['?', '$', '!', '@', '#', '*', '0', 'PWD', 'OLDPWD'].includes(key)) continue;
-        if (value !== initialVars[key]) {
-          this.env.set(key, value);
+        const changed = value !== initialVars[key];
+        if (changed) this.env.set(key, value);
+        if (exported !== null && (changed || this.env.has(key))) {
+          if (exported.has(key)) this.shellOnlyVariables.delete(key);
+          else this.shellOnlyVariables.add(key);
         }
       }
     }
@@ -4131,7 +4475,7 @@ export class LinuxCommandExecutor {
       (argv, env, background, outputPiped, stdin) => this.dispatchMaybeNetwork(argv, env, background, stdin, outputPiped),
       initialVars,
       io,
-      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, interactive: !this.childShellRunning },
       this.aliases,
       this.functions,
     );
@@ -4362,6 +4706,7 @@ export class LinuxCommandExecutor {
       ppid: this.currentBashPid(),
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.environmentOfCommand(),
     });
     this.foregroundNetworkPid = proc.pid;
     return proc;
@@ -4371,6 +4716,7 @@ export class LinuxCommandExecutor {
     if (this.foregroundNetworkPid === pid) this.foregroundNetworkPid = null;
     if (!this.processMgr.get(pid)) return;
     if ((this.socketTable?.listByPid(pid).length ?? 0) > 0) return;
+    if (this.localDatagramSockets.inodesHeldBy(pid).length > 0) return;
     this.processMgr.exit(pid, exitCode);
   }
 
@@ -4407,6 +4753,15 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private jobScriptPid: number | null = null;
+
+  private adoptedJobScript() {
+    const pid = this.jobScriptPid;
+    if (pid === null || pid !== this.currentBashPid()) return null;
+    this.jobScriptPid = null;
+    return this.processMgr.get(pid) ?? null;
+  }
+
   private runScriptProcess(
     command: string,
     run: (
@@ -4414,8 +4769,9 @@ export class LinuxCommandExecutor {
       bridge: (argv: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number },
     ) => ScriptResult,
   ): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
-    const ppid = this.currentBashPid();
-    const proc = this.processMgr.spawn({
+    const adopted = this.adoptedJobScript();
+    const ppid = adopted?.ppid ?? this.currentBashPid();
+    const proc = adopted ?? this.processMgr.spawn({
       command,
       comm: 'bash',
       user: this.userMgr.currentUser,
@@ -4424,6 +4780,7 @@ export class LinuxCommandExecutor {
       ppid,
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.environmentOfCommand(),
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
@@ -4433,7 +4790,7 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    this.bashPids.push(proc.pid);
+    if (adopted === null) this.bashPids.push(proc.pid);
     try {
       const result = run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
@@ -4443,13 +4800,13 @@ export class LinuxCommandExecutor {
         // drop it silently and let the DaemonParkSignal re-propagate so
         // the *outer* backgrounded job (spawnBackgroundJob's own PID)
         // ends up parked instead.
-        if (this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
+        if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
         throw new DaemonParkSignal(result.output, result.interp);
       }
-      if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
+      if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      this.bashPids.pop();
+      if (adopted === null) this.bashPids.pop();
     }
   }
 
@@ -4479,8 +4836,9 @@ export class LinuxCommandExecutor {
         { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }>,
     ) => Promise<ScriptResult>,
   ): Promise<{ output: string; exitCode: number; stderr?: string; interleaved?: string }> {
-    const ppid = this.currentBashPid();
-    const proc = this.processMgr.spawn({
+    const adopted = this.adoptedJobScript();
+    const ppid = adopted?.ppid ?? this.currentBashPid();
+    const proc = adopted ?? this.processMgr.spawn({
       command,
       comm: 'bash',
       user: this.userMgr.currentUser,
@@ -4489,6 +4847,7 @@ export class LinuxCommandExecutor {
       ppid,
       tty: 'pts/0',
       cwd: this.cwd,
+      environ: this.environmentOfCommand(),
     });
     const killedCode = () =>
       128 + (SIGNAL_NUMBERS[this.processMgr.lastKillSignal(proc.pid) ?? 'SIGTERM'] ?? 15);
@@ -4498,18 +4857,18 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    this.bashPids.push(proc.pid);
+    if (adopted === null) this.bashPids.push(proc.pid);
     try {
       const result = await run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
         // Same reasoning as the sync version — see runScriptProcess.
-        if (this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
+        if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.kill(proc.pid, 'SIGKILL', { silent: true });
         throw new DaemonParkSignal(result.output, result.interp);
       }
-      if (this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
+      if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      this.bashPids.pop();
+      if (adopted === null) this.bashPids.pop();
     }
   }
 
@@ -4577,7 +4936,7 @@ export class LinuxCommandExecutor {
     }
     if (parsed.scriptArgv.length > 0) {
       return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity));
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), { ...this.commandEnvironment() }));
     }
     return { output: '', exitCode: 0 };
   }
@@ -4623,7 +4982,7 @@ export class LinuxCommandExecutor {
     if (!canExec) return { output: `${cmd}: Permission denied`, exitCode: 126 };
     const commandLine = ['/bin/bash', absPath, ...args].join(' ');
     return this.runScriptProcessAsync(commandLine, (identity, bridge) =>
-      runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity));
+      runScriptAsync(this.ctx(), cmd, args, bridge, this.aliases, this.functions, 'direct', identity, this.buildIOContext(), { ...this.commandEnvironment() }));
   }
 
   private shippedBinaryInvocation(argv: string[]): string[] {
@@ -4654,11 +5013,13 @@ export class LinuxCommandExecutor {
     this._cmdEnv = env;
     if (env && env['PWD'] && env['PWD'] !== this.cwd && this.vfs.resolveInode(env['PWD'])) {
       this.cwd = env['PWD'];
+      this.cwdSetByDispatch = env['PWD'];
     }
     if (argv.length === 0) return { output: '', exitCode: 0 };
     argv = this.shippedBinaryInvocation(argv);
     if (background) {
-      const spawned = this.spawnBackgroundJob(argv.join(' '), false);
+      const fed = interpreterStdin !== undefined && interpreterStdin !== '' && argv[argv.length - 1] === interpreterStdin;
+      const spawned = this.spawnBackgroundJob((fed ? argv.slice(0, -1) : argv).map(quoteShellWord).join(' '), false, fed ? interpreterStdin : undefined, env ?? this.environmentOfCommand());
       if (!spawned) return { output: '', exitCode: 0 };
       return { output: '', exitCode: 0, backgroundPid: spawned.pid };
     }
@@ -4683,6 +5044,7 @@ export class LinuxCommandExecutor {
     let cmdArgs = [...argv];
     let isSudo = false;
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
+    let sudoParentUmask: number | null = null;
     let closeSudo: () => void = () => undefined;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
@@ -4691,6 +5053,7 @@ export class LinuxCommandExecutor {
       const readsStdinPassword = lead.flags.has('S');
       const sudoTargetUser = lead.user;
       cmdArgs = lead.rest;
+      if (Object.keys(lead.environment).length > 0) this._cmdEnv = { ...this.environmentOfCommand(), ...lead.environment };
       const shellRequested = lead.flags.has('i') || lead.flags.has('s');
       if (cmdArgs.length === 0 && !shellRequested) {
         return { output: 'usage: sudo [-u user] command\n       sudo -l', exitCode: 1 };
@@ -4722,10 +5085,13 @@ export class LinuxCommandExecutor {
       this.userMgr.currentUser = targetUserEntry.username;
       this.userMgr.currentUid = targetUserEntry.uid;
       this.userMgr.currentGid = targetUserEntry.gid;
+      sudoParentUmask = this.umask;
+      this.umask = SESSION_UMASK;
     }
 
     if (cmdArgs.length === 0) {
       if (savedUser) { this.userMgr.currentUser = savedUser.user; this.userMgr.currentUid = savedUser.uid; this.userMgr.currentGid = savedUser.gid; }
+      if (sudoParentUmask !== null) this.umask = sudoParentUmask;
       closeSudo();
       return { output: '', exitCode: 0 };
     }
@@ -4751,19 +5117,6 @@ export class LinuxCommandExecutor {
       actualArgs.pop();
     } else if (interpreterStdin === '') {
       stdin = '';
-    } else if (actualArgs.length > 0) {
-      const lastArg = actualArgs[actualArgs.length - 1];
-      // Heuristic: if last arg contains newlines, it's likely pipe input
-      if (lastArg?.includes('\n')) {
-        stdin = lastArg;
-        actualArgs.pop();
-      } else if (lastArg && STDIN_COMMANDS.has(actualCmd) && lastArg.includes(' ') && actualArgs.length > 1) {
-        // For text processing commands, multi-word content without newlines is also stdin —
-        // but only when a separate program/option arg precedes it, so a single-arg program
-        // (e.g. awk 'BEGIN{...}') is not mistaken for piped input.
-        stdin = lastArg;
-        actualArgs.pop();
-      }
     }
 
     let result: { output: string; exitCode: number };
@@ -4780,6 +5133,7 @@ export class LinuxCommandExecutor {
       this.userMgr.currentUser = savedUser.user;
       this.userMgr.currentUid = savedUser.uid;
       this.userMgr.currentGid = savedUser.gid;
+      if (sudoParentUmask !== null) this.umask = sudoParentUmask;
     }
     // For sudo su: fix the suStack to return to the original (pre-sudo) user, not root
     if (savedUser && suLeftSessionOpen) {
@@ -5129,10 +5483,18 @@ export class LinuxCommandExecutor {
   private bindBackgroundStderr(pid: number, path: string, append: boolean): void {
     const file = { path, uid: this.ctx().uid, gid: this.ctx().gid, umask: this.umask };
     if (!append) this.vfs.writeFile(file.path, '', file.uid, file.gid, file.umask, false, undefined, false);
+    this.processMgr.redirectStandardStream(pid, 2, path, append ? 'a' : 'w');
     const sink = this.lateStderr.get(pid) ?? { pending: [] };
     sink.file = file;
     this.lateStderr.set(pid, sink);
     for (const text of sink.pending.splice(0)) this.appendLateStdout(file, text);
+  }
+
+  private readonly backgroundRunning = new Map<number, () => void>();
+
+  announceBackgroundRunning(pid: number): void {
+    this.backgroundRunning.get(pid)?.();
+    this.backgroundRunning.delete(pid);
   }
 
   isBackgroundJob(pid: number): boolean {
@@ -5185,13 +5547,26 @@ export class LinuxCommandExecutor {
         const absPath = this.vfs.normalizePath(path, this.cwd);
         return this.vfs.readFile(absPath);
       },
-      resolvePath: (path: string) => {
-        return this.vfs.normalizePath(path, this.cwd);
+      resolvePath: (path: string, cwd?: string) => {
+        return this.vfs.normalizePath(path, cwd ?? this.cwd);
       },
+      getUmask: () => this.umask,
+      setUmask: (mask: number) => { this.umask = mask; },
       bindBackgroundStderr: (pid: number, path: string, append: boolean) => {
         this.bindBackgroundStderr(pid, this.vfs.normalizePath(path, this.cwd), append);
       },
+      backgroundAnnouncement: (pid: number) => {
+        const job = this.jobTable.findByPid(pid);
+        return job === undefined ? null : `[${job.id}] ${pid}`;
+      },
+      ignoresStdin: (argv: readonly string[]) => ignoresStandardInput(argv),
+      beginBackgroundSubshell: (label: string) => this.beginBackgroundSubshell(label),
+      endBackgroundSubshell: (pid, outcome) => this.endBackgroundSubshell(pid, outcome),
+      holdBackgroundStdin: (pid: number, path: string) => {
+        this.processMgr.redirectStandardStream(pid, 0, this.vfs.normalizePath(path, this.cwd), 'r');
+      },
       bindBackgroundStdout: (pid: number, path: string) => {
+        this.processMgr.redirectStandardStream(pid, 1, path, 'w');
         const sink = this.lateStdout.get(pid) ?? { pending: [] };
         sink.file = { path, uid: this.ctx().uid, gid: this.ctx().gid, umask: this.umask };
         this.lateStdout.set(pid, sink);
@@ -5204,20 +5579,15 @@ export class LinuxCommandExecutor {
         if (!inode) return null;
         return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
       },
-      globExpand: (pattern: string, cwd: string) => {
-        const hits = this.vfs.globExpand(pattern, cwd);
-        if (hits.length === 0) return null;
-        // Mirror bash conventions: relative patterns yield relative results.
-        if (!pattern.startsWith('/')) {
-          const prefix = cwd === '/' ? '/' : cwd + '/';
-          return hits.map(h => h.startsWith(prefix) ? h.slice(prefix.length) : h);
-        }
-        return hits;
-      },
+      globExpand: (pattern: string, cwd: string, options) => this.vfs.globExpand(pattern, cwd, options),
       homeFor: (user: string) => {
         const u = this.userMgr.getUser(user);
         return u ? u.home : null;
       },
+      wallClock: () => ({
+        nowMs: () => this.simulatedDate().getTime(),
+        format: (pattern: string, epochMs: number) => formatLocalTime(pattern, epochMs, this.identity.timezone),
+      }),
     };
   }
 
@@ -5275,11 +5645,21 @@ export class LinuxCommandExecutor {
   }
 
   commandEnvironment(): Readonly<Record<string, string>> {
-    return { ...this.buildEnvVars(), ...(this._cmdEnv ?? {}) };
+    const inherited = this.buildEnvVars();
+    for (const name of this.shellOnlyVariables) delete inherited[name];
+    return { ...inherited, ...(this._cmdEnv ?? {}) };
+  }
+
+  private monitorMode(live: Readonly<Record<string, string>> = {}): boolean {
+    return (live.SHELLOPTS ?? this.env.get('SHELLOPTS') ?? INTERACTIVE_SHELLOPTS).split(':').includes('monitor');
+  }
+
+  environmentOfCommand(): Readonly<Record<string, string>> {
+    return this._cmdEnv ?? this.buildEnvVars(false);
   }
 
   /** Build initial environment variables for the bash interpreter. */
-  private buildEnvVars(): Record<string, string> {
+  private buildEnvVars(forShell = true): Record<string, string> {
     if (this.envOverride) return { ...this.envOverride };
     const user = this.userMgr.currentUser;
     const home = this.userMgr.currentUid === 0 ? '/root' : `/home/${user}`;
@@ -5302,9 +5682,14 @@ export class LinuxCommandExecutor {
     for (const [k, v] of this.env) {
       vars[k] = v;
     }
+    if (!forShell) {
+      for (const name of this.shellOnlyVariables) delete vars[name];
+      return vars;
+    }
+    vars.SHELLOPTS ??= INTERACTIVE_SHELLOPTS;
     vars.COLUMNS ??= String(this.terminalColumns());
     vars.LINES ??= String(this.windowSize.rows > 0 ? this.windowSize.rows : DEFAULT_WINDOW_SIZE.rows);
-    return vars;
+    return seedWithShellOnly(vars, this.shellOnlyVariables);
   }
 
   private seedSetuidBinaries(): void {
@@ -5411,13 +5796,13 @@ export class LinuxCommandExecutor {
     return this.auditDaemon.followForeground(line, stopped);
   }
 
-  connectUnixStream(path: string, handlers: UnixStreamHandlers): UnixStreamConnectOutcome {
+  unixAccess(): UnixStreamAccess {
     const gids = this.userMgr.getUserGroups(this.userMgr.currentUser).map((group) => group.gid);
-    return this.localDatagramSockets.connectStream(
-      this.vfs.normalizePath(path, this.cwd),
-      { uid: this.userMgr.currentUid, gids: [this.userMgr.currentGid, ...gids] },
-      handlers,
-    );
+    return { uid: this.userMgr.currentUid, gids: [this.userMgr.currentGid, ...gids] };
+  }
+
+  connectUnixStream(path: string, handlers: UnixStreamHandlers, owner?: UnixOwner): UnixStreamConnectOutcome {
+    return this.localDatagramSockets.connectStream(this.vfs.normalizePath(path, this.cwd), this.unixAccess(), handlers, owner);
   }
 
   private changeAuditRunlevel(level: 'single' | 'halt'): void {
@@ -5590,10 +5975,16 @@ export class LinuxCommandExecutor {
     return `augenrules: failed to load some rules (invalid syntax): ${invalid.join(', ')}`;
   }
 
-  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
-    const result = this.dispatchCommand(cmd, args, stdin, isSudo, outputPiped);
+  private dispatch(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
+    const parentUmask = this.umask;
+    let result: { output: string; exitCode: number; stderr?: string };
+    try {
+      result = this.dispatchCommand(cmd, args, stdin, isSudo, outputPiped);
+    } finally {
+      if (!RUNS_IN_CURRENT_SHELL.has(cmd)) this.umask = parentUmask;
+    }
     this.replayProgramTrace(cmd, args, result);
-    return result;
+    return result.stderr === undefined && printsResultOnFailure(cmd, args, result.exitCode) ? { ...result, stderr: '' } : result;
   }
 
   private tracedOperands(cmd: string, args: readonly string[]): string[] | null {
@@ -5627,9 +6018,10 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number } {
+  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
     stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
+    useLocaleQuotes(this.env.get('LC_ALL') || this.env.get('LC_CTYPE') || this.env.get('LANG') || '');
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
 
     // A registered LinuxCommand's own `privilege` field is authoritative
@@ -5656,6 +6048,9 @@ export class LinuxCommandExecutor {
       this.publishSyscall('execve', resolveExePath(cmd));
     }
 
+    const optionRefusal = refuseUnknownGnuOption(cmd, args);
+    if (optionRefusal) return asStderrResult(optionRefusal);
+
     switch (cmd) {
       // File commands
       case 'touch': {
@@ -5678,34 +6073,18 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
         }
         const out = cmdLs(c, args);
-        const isErr = out.includes('cannot access');
-        return { output: out, exitCode: isErr ? 2 : 0 };
+        const exitCode = /^ls: invalid argument/.test(out) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(out) ? 2 : 0;
+        return { output: out, exitCode };
       }
       case 'cat': {
-        // If no file args and stdin is provided, output stdin (cat from stdin).
-        // `cat` is a byte-exact passthrough — it must not drop stdin's own
-        // trailing newline, or `cat <<EOF > file` silently truncates the
-        // last line when written to a file (terminal display already
-        // tolerates the newline via `ensureTrailingNewline`, which is a
-        // no-op when one is already present).
-        const fileArgs = args.filter(a => !a.startsWith('-'));
-        if (fileArgs.length === 0 && stdin) {
-          return { output: renderCat([stdin], parseCatFlags(args)), exitCode: 0 };
-        }
-        for (const arg of fileArgs) {
-          const p = this.path(arg);
-          if (p.exists() && !p.canRead()) {
-            return { output: `cat: ${arg}: Permission denied`, exitCode: 1 };
-          }
-        }
+        const fileArgs = args.filter((a) => !a.startsWith('-') || a === '-');
         const traced = this.auditRules.hasExitRules && this.tracedOperands('cat', args) !== null;
         for (const arg of fileArgs) {
+          if (arg === '-') continue;
           this.publishFsAccess(this.vfs.normalizePath(arg, this.cwd), 'r', 'openat');
           if (!traced) this.publishSyscall('openat', this.vfs.normalizePath(arg, this.cwd), 'r');
         }
-        const out = cmdCat(c, args);
-        const isError = out.includes('No such file');
-        return { output: out, exitCode: isError ? 1 : 0 };
+        return asDispatch(runCat(args, coreutilsIO(c, stdin)));
       }
       case 'echo': {
         // Expand env vars in args before echo
@@ -5713,19 +6092,21 @@ export class LinuxCommandExecutor {
         return { output: cmdEcho(c, expanded), exitCode: 0 };
       }
       case 'cp': {
-        const paths = args.filter(a => !a.startsWith('-'));
-        for (const p of paths) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
-        const outCp = cmdCp(c, args);
-        return { output: outCp, exitCode: outCp.startsWith('cp:') ? 1 : 0 };
+        for (const p of cpOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
+        return asDispatch(runCp(c, args, stdin));
+      }
+      case 'install': {
+        for (const p of installOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
+        const outInstall = cmdInstall(c, args);
+        return { output: outInstall, exitCode: /^install:/m.test(outInstall) ? 1 : 0 };
       }
       case 'mv': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
+        for (const p of mvOperands(args)) {
           const abs = this.vfs.normalizePath(p, this.cwd);
           this.publishFsAccess(abs, 'w', 'rename');
           this.publishSyscall('rename', abs);
         }
-        const outMv = cmdMv(c, args);
-        return { output: outMv, exitCode: outMv.startsWith('mv:') ? 1 : 0 };
+        return asDispatch(runMv(c, args, stdin));
       }
       case 'rm': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -5734,17 +6115,15 @@ export class LinuxCommandExecutor {
           if (exists) this.publishFsAccess(abs, 'w', 'unlink');
           this.publishSyscallOutcome('unlink', abs, exists, exists ? 0 : -2);
         }
-        const out = cmdRm(c, args);
-        return { output: out, exitCode: out.startsWith('rm:') ? 1 : 0 };
+        return asDispatch(runRm(c, args, stdin));
       }
       case 'mkdir': {
-        for (const p of args.filter(a => !a.startsWith('-'))) {
+        for (const p of mkdirOperands(args)) {
           const abs = this.vfs.normalizePath(p, this.cwd);
           this.publishFsAccess(abs, 'w', 'mkdir');
           this.publishSyscall('mkdir', abs);
         }
-        const outMk = cmdMkdir(c, args);
-        return { output: outMk, exitCode: outMk.startsWith('mkdir:') ? 1 : 0 };
+        return asDispatch(runMkdir(c, args));
       }
       case 'rmdir': {
         for (const p of args.filter(a => !a.startsWith('-'))) {
@@ -5752,8 +6131,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', 'rmdir');
           this.publishSyscall('rmdir', abs);
         }
-        const outRd = cmdRmdir(c, args);
-        return { output: outRd, exitCode: outRd.startsWith('rmdir:') ? 1 : 0 };
+        return asDispatch(runRmdir(c, args));
       }
       case 'ln': {
         const isSymlink = args.includes('-s');
@@ -5764,8 +6142,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'w', sc);
           this.publishSyscall(sc, abs);
         }
-        const outLn = cmdLn(c, args);
-        return { output: outLn, exitCode: outLn.startsWith('ln:') ? 1 : 0 };
+        return asDispatch(runLn(c, args, stdin));
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': {
@@ -5808,25 +6185,50 @@ export class LinuxCommandExecutor {
       case 'egrep': return cmdGrep(c, args, stdin, 'egrep');
       case 'fgrep': return cmdGrep(c, args, stdin, 'fgrep');
       case 'rgrep': return cmdGrep(c, ['-r', ...args], stdin);
-      case 'head': return { output: cmdHead(c, args, stdin), exitCode: 0 };
+      case 'head': return asDispatch(runHead(args, coreutilsIO(c, stdin)));
       case 'tail': {
         const r = runTail(this.tailFs(), this.cwd, args, stdin);
-        if (r.kind === 'snapshot') return { output: r.output, exitCode: r.exitCode };
+        if (r.kind === 'snapshot') return asDispatch({ stdout: r.output, stderr: r.stderr ?? '', interleaved: r.interleaved ?? '', exitCode: r.exitCode });
         // Follow mode reached the dispatcher (no interactive sink available):
         // emit the snapshot and exit 0 so non-streaming callers degrade
         // gracefully. Interactive callers should use `startTailFollow()`.
-        return { output: r.preflight().output, exitCode: 0 };
+        const preflight = r.preflight();
+        const missing = r.options.files.length > 0 && preflight.exitCode !== 0 && r.options.follow !== 'name'
+          && r.options.files.every((name) => this.vfs.readFile(this.vfs.normalizePath(name, this.cwd)) === null);
+        if (missing) {
+          const note = 'tail: no files remaining\n';
+          const diagnostics = (preflight.stderr ?? '') + note;
+          return asDispatch({ stdout: preflight.output, stderr: diagnostics, interleaved: diagnostics, exitCode: 1 });
+        }
+        return asDispatch({ stdout: preflight.output, stderr: preflight.stderr ?? '', interleaved: preflight.interleaved ?? '', exitCode: preflight.exitCode });
       }
-      case 'wc': return { output: cmdWc(c, args, stdin), exitCode: 0 };
-      case 'sort': return { output: cmdSort(c, args, stdin), exitCode: 0 };
-      case 'cut': return { output: cmdCut(c, args, stdin), exitCode: 0 };
-      case 'uniq': return { output: cmdUniq(c, args, stdin), exitCode: 0 };
-      case 'tr': return { output: cmdTr(c, args, stdin), exitCode: 0 };
-      case 'awk': return { output: cmdAwk(c, args, stdin), exitCode: 0 };
-      case 'sed': return { output: cmdSed(c, args, stdin), exitCode: 0 };
+      case 'wc': return asDispatch(runWc(args, coreutilsIO(c, stdin)));
+      case 'sort': return asDispatch(runSort(args, coreutilsIO(c, stdin)));
+      case 'cut': return asDispatch(runCut(args, coreutilsIO(c, stdin)));
+      case 'uniq': return asDispatch(runUniq(args, coreutilsIO(c, stdin)));
+      case 'tr': return asDispatch(runTr(args, coreutilsIO(c, stdin)));
+      case 'awk': {
+        const awkError = awkOptionError(args);
+        if (awkError !== null) return { output: '', stderr: `${awkError}\n`, exitCode: 2 };
+        return { output: cmdAwk(c, args, stdin), exitCode: 0 };
+      }
+      case 'sed': return cmdSed(c, args, stdin);
 
       // Search commands
-      case 'find': return { output: cmdFind(c, args), exitCode: 0 };
+      case 'find': return cmdFind(c, args, {
+        interactive: stdin === undefined && this.hasControllingTty(),
+        run: (argv, cwd) => {
+          const saved = this.cwd;
+          this.cwd = cwd;
+          try {
+            const r = this.dispatch(argv[0], argv.slice(1), undefined, isSudo);
+            const closed = (text: string): string => (text === '' || text.endsWith('\n') ? text : `${text}\n`);
+            return { stdout: writesLines(argv) ? closed(r.output) : r.output, stderr: closed(r.stderr ?? ''), exitCode: r.exitCode };
+          } finally {
+            this.cwd = saved;
+          }
+        },
+      }, stdin);
       case 'locate': return { output: cmdLocate(c, args), exitCode: 0 };
       case 'which': return this.handleWhich(args);
       case 'whereis': return this.handleWhereis(args);
@@ -5841,8 +6243,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(abs, 'a', 'chmod');
           this.publishSyscall('chmod', abs);
         }
-        const out = cmdChmod(c, args);
-        return { output: out, exitCode: out.startsWith('chmod:') ? 1 : 0 };
+        return asDispatch(runChmod(c, args));
       }
       case 'chown': {
         for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
@@ -5859,9 +6260,9 @@ export class LinuxCommandExecutor {
       }
       case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
       case 'umask': {
-        const result = cmdUmask(c, args);
-        if (result.newUmask !== undefined) this.umask = result.newUmask;
-        return { output: result.output, exitCode: 0 };
+        const result = runUmask(args, this.umask);
+        if (result.mask !== undefined) this.umask = result.mask;
+        return { output: result.stdout, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr, interleaved: result.stderr }) };
       }
       case 'ulimit': {
         const flag = args[0] ?? '-f';
@@ -6108,7 +6509,7 @@ export class LinuxCommandExecutor {
       //   env -u NAME … cmd         → run cmd with NAME removed
       //   env VAR=v … cmd args      → run cmd with VAR overlaid
       case 'env': {
-        const { env: resultEnv, command: cmdline } = parseEnvInvocation(args, this._cmdEnv ?? Object.fromEntries(this.env));
+        const { env: resultEnv, command: cmdline } = parseEnvInvocation(args, this.environmentOfCommand());
         if (cmdline.length === 0) {
           return {
             output: Object.entries(resultEnv).map(([k, v]) => `${k}=${v}`).join('\n'),
@@ -6122,7 +6523,7 @@ export class LinuxCommandExecutor {
       // printenv — print the whole environment, or specific variables.
       // With names, one value per line; exit 1 if any name is unset.
       case 'printenv': {
-        const envView = this._cmdEnv ?? Object.fromEntries(this.env);
+        const envView = this.environmentOfCommand();
         const names = args.filter((a) => !a.startsWith('-'));
         if (names.length === 0) {
           return {
@@ -6147,7 +6548,7 @@ export class LinuxCommandExecutor {
       // locale — report the active locale, sourced from the live shell
       // environment so SSH-forwarded LANG / LC_* are reflected.
       case 'locale': {
-        const e = this._cmdEnv ?? Object.fromEntries(this.env);
+        const e = this.environmentOfCommand();
         const lang = e['LANG'] ?? '';
         const lcAll = e['LC_ALL'] ?? '';
         const effective = lcAll || lang || 'C';
@@ -6200,7 +6601,14 @@ export class LinuxCommandExecutor {
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), { ...this.commandEnvironment() }));
+        }
+        if (stdin !== undefined && stdin !== '') {
+          return this.runScriptProcess(cmd, (identity, bridge) =>
+            runScriptContent(
+              stdin, parsed.arg0, [], bridge, startupVars, this.buildIOContext(),
+              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+            ));
         }
         return { output: '', exitCode: 0 };
       }
@@ -6366,7 +6774,6 @@ export class LinuxCommandExecutor {
       case 'taskset': return cmdTaskset(args, this.processCmdContext());
 
       // ps — process listing backed by ProcessManager
-      case 'ps': return { output: cmdPs(args, this.processCmdContext()), exitCode: 0 };
 
       // date, uptime, uname, tty, runlevel, hostnamectl — system info
       case 'tty': {
@@ -6415,7 +6822,10 @@ export class LinuxCommandExecutor {
         ),
         exitCode: 0,
       };
-      case 'du': return { output: cmdDu(c, args), exitCode: 0 };
+      case 'du': {
+        const out = cmdDu(c, args);
+        return { output: out, exitCode: /(^|\n)du: (cannot|invalid|warning|\S+: No such)/.test(out) ? 1 : 0 };
+      }
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });
       case 'mpstat': return cmdMpstat(args, {
@@ -6474,9 +6884,25 @@ export class LinuxCommandExecutor {
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
       case 'file': {
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (!targets.length) return { output: 'Usage: file [-options] file...', exitCode: 1 };
-        return { output: targets.map(t => this.describeFile(t)).join('\n'), exitCode: 0 };
+        const targets: string[] = [];
+        let brief = false;
+        let mime: 'none' | 'type' | 'full' = 'none';
+        for (const item of shortOptions(args, gnuOptionSet('file').optstring, gnuOptionSet('file').long)) {
+          if (item.kind === 'operand') targets.push(item.value);
+          else if (item.kind === 'option') {
+            if (item.letter === 'b') brief = true;
+            else if (item.letter === 'i') mime = 'full';
+            else if (item.long === 'mime-type') mime = 'type';
+          }
+        }
+        if (!targets.length) return { output: 'Usage: file [-bcCdEhikLlNnprsSvzZ0] [--apple] [--extension] [--mime-encoding]\n            [--mime-type] [-e <testname>] [-F <separator>]  [-f <namefile>]\n            [-m <magicfiles>] [-P <parameter=value>] [--exclude-quiet]\n            <file> ...\n       file -C [-m <magicfiles>]\n       file [--help]', exitCode: 1 };
+        const render = (target: string): string => {
+          const described = this.describeFile(target);
+          const description = described.slice(target.length + 2);
+          const shown = mime === 'none' ? description : mimeOfDescription(description, mime === 'full');
+          return brief ? shown : `${target}: ${shown}`;
+        };
+        return { output: targets.map(render).join('\n'), exitCode: 0 };
       }
       case 'md5sum':
       case 'sha256sum':
@@ -6511,10 +6937,20 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: 0 };
       }
-      case 'diff': return cmdDiff({
+      case 'diff': {
+        const compared = cmdDiff({
         readFile: (p) => this.vfs.readFile(p),
         normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+        stat: (p) => {
+          const node = this.vfs.resolveInode(p);
+          if (!node) return null;
+          return { type: node.type === 'directory' ? 'directory' : node.type === 'file' ? 'file' : 'other', mtimeMs: node.mtime };
+        },
+        list: (p) => this.vfs.listDirectory(p)?.map((entry) => entry.name) ?? null,
+        formatTime: (ms) => formatStatTime(ms, this.identity.timezone),
       }, this.cwd, args);
+        return compared.exitCode === 2 ? { output: '', stderr: compared.output, exitCode: 2 } : { ...compared, stderr: '' };
+      }
       case 'tar': return cmdTar(this.archiveCtx(), args);
       case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
       case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');
@@ -6562,8 +6998,10 @@ export class LinuxCommandExecutor {
         return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
       }
       case 'seq': {
-        const r = runSeq(args);
-        return { output: r.output, exitCode: r.exitCode };
+        return asDispatch(runSeq(args));
+      }
+      case 'od': {
+        return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
       case 'rev': {
         const input = stdin || '';
@@ -6571,7 +7009,8 @@ export class LinuxCommandExecutor {
         const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
         return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
       }
-      case 'basename': return { output: (args[0] || '').split('/').pop() || '', exitCode: 0 };
+      case 'basename': return asDispatch(runBasename(args));
+      case 'dirname': return asDispatch(runDirname(args));
 
       // Non-interactive fallbacks for commands the GUI normally routes to
       // overlays (editors) or sub-shells (Oracle CLIs). When invoked via
@@ -6675,7 +7114,6 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
 
-      case 'dirname': { const p = args[0] || ''; const idx = p.lastIndexOf('/'); return { output: idx > 0 ? p.slice(0, idx) : (idx === 0 ? '/' : '.'), exitCode: 0 }; }
       case 'readlink': {
         const canon = args.includes('-f') || args.includes('-e') || args.includes('-m');
         const targets = args.filter(a => !a.startsWith('-'));
@@ -6706,7 +7144,14 @@ export class LinuxCommandExecutor {
         const lines: string[] = [];
         let exit = 0;
         for (const t of targets) {
-          const r = this.path(t).realpath(!noExist);
+          const parentOnly = !noExist && !args.includes('-e');
+          let r = this.path(t).realpath(!noExist && !parentOnly);
+          if (!r && parentOnly) {
+            const absolute = this.vfs.normalizePath(t, this.cwd);
+            const slash = absolute.lastIndexOf('/');
+            const parent = this.vfs.exists(absolute.slice(0, slash) || '/') ? this.path(absolute.slice(0, slash) || '/').realpath(true) : null;
+            if (parent) r = { value: `${parent.value === '/' ? '' : parent.value}/${absolute.slice(slash + 1)}` } as typeof r;
+          }
           if (!r) {
             exit = 1;
             if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);
@@ -6716,22 +7161,10 @@ export class LinuxCommandExecutor {
         }
         return { output: lines.join('\n'), exitCode: exit };
       }
+      case 'ps': return runPsCommand({ executor: this, outputPiped: c.isPiped }, args);
       case 'mktemp': {
-        // Real mktemp honours a template argument: the trailing run of
-        // X's is replaced by random characters, and the file is created.
-        const rand = (n: number) => Math.random().toString(36).slice(2, 2 + n).padEnd(n, '0');
-        const template = args.find((a) => !a.startsWith('-'));
-        let path: string;
-        if (template && /XXX/.test(template)) {
-          path = template.replace(/X{3,}(?!.*X{3})/, (m) => rand(m.length));
-          if (!path.startsWith('/')) path = this.vfs.normalizePath(path, this.cwd);
-        } else if (template) {
-          return { output: `mktemp: too few X's in template '${template}'`, exitCode: 1 };
-        } else {
-          path = '/tmp/tmp.' + rand(10);
-        }
-        this.vfs.writeFile(path, '', this.userMgr.currentUid, this.userMgr.currentGid, 0o077);
-        return { output: path, exitCode: 0 };
+        const result = runMktemp(this, args, (name) => (this._cmdEnv ?? Object.fromEntries(this.env))[name]);
+        return { output: result.output, exitCode: result.exitCode, ...(result.stderr === undefined ? {} : { stderr: result.stderr, interleaved: result.interleaved }) };
       }
 
       default: {
@@ -6743,7 +7176,7 @@ export class LinuxCommandExecutor {
           if (this.vfs.getType(absPath) === 'directory') return { output: `${shellName}${cmd}: Is a directory`, exitCode: 126 };
           const commandLine = ['/bin/bash', absPath, ...args].join(' ');
           return this.runScriptProcess(commandLine, (identity, bridge) =>
-            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }));
+            runScript(c, cmd, args, bridge, this.aliases, this.functions, 'direct', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), { ...this.commandEnvironment() }));
         }
 
         // `stdin` was popped off `args` above for the switch cases here that
@@ -6752,7 +7185,7 @@ export class LinuxCommandExecutor {
         // what to do with it: a command that says `readsStdin` gets it as a
         // parameter, one that doesn't gets it re-appended as the trailing
         // word it used to arrive as.
-        const registryResult = this._registryCommandHook?.(cmd, args, stdin);
+        const registryResult = this._registryCommandHook?.(cmd, args, stdin, c.isPiped);
         if (registryResult) return registryResult;
 
         return { output: `${this.childShellRunning ? 'bash: line 1: ' : ''}${cmd}: command not found`, exitCode: 127 };
@@ -7526,6 +7959,7 @@ export class LinuxCommandExecutor {
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
+    this.umask = SESSION_UMASK;
     if (loginShell) this.cwd = user.home;
 
     return {
@@ -7992,6 +8426,7 @@ export class LinuxCommandExecutor {
       readFile: (p) => this.vfs.readFile(p),
       exists: (p) => this.vfs.exists(p),
       normalizePath: (p, cwd) => this.vfs.normalizePath(p, cwd),
+      isDirectory: (p) => this.vfs.getType(p) === 'directory',
       onWrite: (p, listener) => this.vfs.onWrite(p, listener),
     };
   }
@@ -8132,7 +8567,7 @@ export class LinuxCommandExecutor {
     return { output: lines.join('\n'), exitCode: 0 };
   }
 
-  private handleType(args: string[]): { output: string; exitCode: number } {
+  private handleType(args: string[]): { output: string; exitCode: number; stderr?: string } {
     let typeOnly = false, pathOnly = false, all = false, forcePath = false;
     const names: string[] = [];
     for (let i = 0; i < args.length; i++) {
@@ -8153,13 +8588,14 @@ export class LinuxCommandExecutor {
 
     const resolver = new CommandResolver(this.shellIntrospection());
     const out: string[] = [];
+    const errors: string[] = [];
     let exitCode = 0;
     for (const name of names) {
       const resolutions = resolver.resolveAll(name, { forcePath });
       const found = resolutions[0].kind !== 'not-found';
       if (!found) {
         exitCode = 1;
-        if (!typeOnly && !pathOnly) out.push(`bash: type: ${name}: not found`);
+        if (!typeOnly && !pathOnly) errors.push(`bash: type: ${name}: not found`);
         continue;
       }
       if (typeOnly) {
@@ -8174,10 +8610,10 @@ export class LinuxCommandExecutor {
         out.push(...shown.map(r => r.describe()));
       }
     }
-    return { output: out.join('\n'), exitCode };
+    return { output: out.join('\n'), exitCode, ...(errors.length === 0 ? {} : { stderr: `${errors.join('\n')}\n` }) };
   }
 
-  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number } {
+  private handleTest(cmd: string, args: string[]): { output: string; exitCode: number; stderr?: string } {
     const fs: TestFs = {
       exists: (p) => this.vfs.exists(p),
       resolveInode: (p) => this.vfs.resolveInode(p),
@@ -8193,7 +8629,7 @@ export class LinuxCommandExecutor {
         : false,
     };
     const r = runTest(fs, env, args, cmd === '[');
-    return { output: r.stderr, exitCode: r.exitCode };
+    return r.stderr === '' ? { output: '', exitCode: r.exitCode } : { output: '', stderr: `${r.stderr}\n`, exitCode: r.exitCode };
   }
 
   private handleExpr(args: string[]): { output: string; exitCode: number } {
@@ -8346,6 +8782,7 @@ export class LinuxCommandExecutor {
 
   /** Get current working directory */
   getCwd(): string { return this.cwd; }
+  wallClockMs(): number { return this.wallNow(); }
 
   userHomeDirectory(uid: number): string | null {
     return this.userMgr.getUserByUid(uid)?.home ?? null;
@@ -8519,7 +8956,7 @@ export class LinuxCommandExecutor {
       };
     })();
 
-    const lines = ['COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME'];
+    const rows: LsofRow[] = [];
     const procs = this.processMgr.list();
     let nodeSeq = 10_000;
 
@@ -8527,8 +8964,10 @@ export class LinuxCommandExecutor {
       if (filterPid !== null && p.pid !== filterPid) continue;
       if (filterUser !== null && p.user !== filterUser) continue;
       if (filterInet === null) {
-        // cwd entry — the canonical first row real lsof prints.
-        lines.push(`${padToWidth(p.comm, 10)} ${padToWidth(String(p.pid), 5, 'right')}  ${padToWidth(p.user, 6)} cwd    DIR    8,1     4096    2 ${p.cwd ?? '/'}`);
+        rows.push({
+          command: p.comm, pid: String(p.pid), user: p.user, fd: 'cwd', access: ' ',
+          type: 'DIR', device: '8,1', sizeOff: '4096', node: '2', name: p.cwd ?? '/',
+        });
       }
     }
 
@@ -8543,44 +8982,38 @@ export class LinuxCommandExecutor {
         if (filterInet.proto && entry.protocol !== filterInet.proto) continue;
         if (filterInet.port !== undefined && entry.localPort !== filterInet.port) continue;
       }
-      const ipv = entry.localAddress.includes(':') ? 'IPv6' : 'IPv4';
       const local = entry.localAddress === '0.0.0.0' || entry.localAddress === '::' ? '*' : entry.localAddress;
-      const target = entry.remoteAddress === '*'
-        ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
-        : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`;
-      lines.push(`${padToWidth(owner.name.slice(0, 9), 10)} ${padToWidth(String(owner.pid), 5, 'right')}  ${padToWidth(user, 6)} ${padToWidth(String(owner.fd), 3, 'right')}u  ${ipv} ${padToWidth(String(entry.id), 5, 'right')}      0t0  ${entry.protocol.toUpperCase()} ${target}`);
+      rows.push({
+        command: owner.name, pid: String(owner.pid), user, fd: String(owner.fd), access: 'u',
+        type: entry.localAddress.includes(':') ? 'IPv6' : 'IPv4', device: String(entry.id), sizeOff: '0t0',
+        node: entry.protocol.toUpperCase(),
+        name: entry.remoteAddress === '*'
+          ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
+          : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`,
+      });
     }
 
-    // Log files whose name was removed while rsyslog still holds them open
-    // (docs/PRD-Pannes.md §F7.11). Real lsof marks exactly these `(deleted)`,
-    // and it is the ONLY way to find out where the disk space went: the
-    // inode is still allocated, still growing, and no path leads to it.
     if (filterInet === null) {
       const rsyslog = procs.find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
       for (const held of this.logMgr.deletedLogHandles()) {
         if (filterPid !== null && rsyslog?.pid !== filterPid) continue;
         if (filterUser !== null && (rsyslog?.user ?? 'root') !== filterUser) continue;
-        const pid = padToWidth(String(rsyslog?.pid ?? 0), 5, 'right');
-        const user = padToWidth(rsyslog?.user ?? 'root', 6);
-        // Le numéro vient de la table du processus, plus d'un `7w` inventé
-        // ici : `lsof` et `/proc/<pid>/fd` doivent nommer le même
-        // descripteur (§F9.3). Absent — un journal tenu par aucun processus
-        // vivant — on retombe sur l'ancien affichage plutôt que d'inventer.
         const heldFd = (rsyslog === undefined ? undefined
           : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
             .find((d) => d.target === held.path)?.fd) ?? 7;
-        lines.push(
-          `rsyslogd   ${pid}  ${user} ${heldFd}w     REG    8,1 ${padToWidth(String(held.lostBytes), 8, 'right')} `
-          + `${padToWidth(String(nodeSeq++), 4, 'right')} ${held.path} (deleted)`,
-        );
+        rows.push({
+          command: 'rsyslogd', pid: String(rsyslog?.pid ?? 0), user: rsyslog?.user ?? 'root',
+          fd: String(heldFd), access: 'w', type: 'REG', device: '8,1', sizeOff: String(held.lostBytes),
+          node: String(nodeSeq++), name: `${held.path} (deleted)`,
+        });
       }
     }
 
-    if (lines.length === 1) {
+    if (rows.length === 0) {
       if (filterPid !== null) return `lsof: PID ${filterPid}: No such process`;
       return '';
     }
-    return lines.join('\n');
+    return renderLsof(rows);
   }
 
   private getEnvVarNames(prefix: string): string[] {
@@ -8876,6 +9309,19 @@ export class LinuxCommandExecutor {
   }
 }
 
+function mimeOfDescription(description: string, withCharset: boolean): string {
+  let type = 'application/octet-stream';
+  let text = false;
+  if (description === 'ASCII text') { type = 'text/plain'; text = true; }
+  else if (description === 'empty') type = 'inode/x-empty';
+  else if (description === 'directory') type = 'inode/directory';
+  else if (description.startsWith('symbolic link')) type = 'inode/symlink';
+  else if (description === 'character special') type = 'inode/chardevice';
+  else if (description === 'socket') type = 'inode/socket';
+  else if (description.endsWith('script, ASCII text executable')) { type = 'text/x-shellscript'; text = true; }
+  return withCharset ? `${type}; charset=${text ? 'us-ascii' : 'binary'}` : type;
+}
+
 // ─── small parsing helpers (kept private to this file) ────────────────
 
 /**
@@ -8894,8 +9340,14 @@ function isBackgroundListener(cmdLine: string): boolean {
   const argv = simpleTokenize(cmdLine);
   if (argv.length === 0) return false;
   const head = basenameOf(argv[0]);
+  if (head === 'tail') return argv.slice(1).some((a) => /^-[A-Za-z]*[fF]/.test(a) || a.startsWith('--follow'));
   if (head !== 'nc' && head !== 'ncat') return false;
   return argv.slice(1).some((a) => a === '-l' || (/^-[a-zA-Z]+$/.test(a) && a.includes('l')));
+}
+
+function quoteShellWord(word: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./~-]+$/.test(word)) return word;
+  return `'${word.replace(/'/g, "'\\''")}'`;
 }
 
 function parseBackgroundDurationMs(cmdLine: string): number {
@@ -8907,6 +9359,22 @@ function parseBackgroundDurationMs(cmdLine: string): number {
   const factor = unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000
     : unit === 'd' ? 86_400_000 : 1_000;
   return Math.round(value * factor);
+}
+
+function isSingleSimpleCommand(input: string): boolean {
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+  for (const c of input) {
+    if (escaped) { escaped = false; continue; }
+    if (c === '\\' && quote !== "'") { escaped = true; continue; }
+    if (quote) {
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (';|&\n()`'.includes(c)) return false;
+  }
+  return true;
 }
 
 function endsWithUnquotedAmp(input: string): boolean {
@@ -8963,6 +9431,17 @@ function checksumVfs(content: string, cmd: string): string {
   return bytesToHex(md5(bytes));
 }
 
+function leadingAssignments(argv: string[]): { assigned: Record<string, string>; rest: string[] } {
+  const assigned: Record<string, string> = {};
+  let index = 0;
+  for (; index < argv.length; index++) {
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s.exec(argv[index]);
+    if (match === null) break;
+    assigned[match[1]] = match[2];
+  }
+  return { assigned, rest: argv.slice(index) };
+}
+
 function basenameOf(path: string): string {
   const i = path.lastIndexOf('/');
   return i >= 0 ? path.slice(i + 1) : path;
@@ -8988,6 +9467,7 @@ function niceWrappedCommand(argv: string[]): { argv: string[]; adjustment: numbe
 }
 
 const NOHUP_OUT_UMASK = 0o177;
+const INTERACTIVE_SHELLOPTS = 'braceexpand:emacs:hashall:histexpand:history:interactive-comments:monitor';
 
 const TIMEOUT_EXIT_TIMEDOUT = 124;
 const TIMEOUT_EXIT_CANCELED = 125;

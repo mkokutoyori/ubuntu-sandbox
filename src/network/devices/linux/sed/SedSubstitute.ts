@@ -4,6 +4,8 @@
  * and occurrence control (the `g` flag and an Nth-occurrence count).
  */
 
+import { decodeSedCharacterEscape } from './SedEscapes';
+
 interface ReplaceState {
   sticky: '' | 'U' | 'L';
   once: '' | 'u' | 'l';
@@ -34,7 +36,6 @@ export function expandReplacement(template: string, match: string, groups: (stri
         const idx = Number(n);
         out = emit(out, idx === 0 ? match : (groups[idx - 1] ?? ''), st);
       } else if (n === 'n') out = emit(out, '\n', st);
-      else if (n === 't') out = emit(out, '\t', st);
       else if (n === 'r') out = emit(out, '\r', st);
       else if (n === '&') out = emit(out, '&', st);
       else if (n === '\\') out = emit(out, '\\', st);
@@ -43,7 +44,11 @@ export function expandReplacement(template: string, match: string, groups: (stri
       else if (n === 'E') st.sticky = '';
       else if (n === 'u') st.once = 'u';
       else if (n === 'l') st.once = 'l';
-      else out = emit(out, n ?? '', st);
+      else {
+        const decoded = n === undefined ? null : decodeSedCharacterEscape(template, i);
+        if (decoded) { out = emit(out, decoded.character, st); i += decoded.length - 1; }
+        else out = emit(out, n ?? '', st);
+      }
       continue;
     }
     if (c === '&') { out = emit(out, match, st); continue; }
@@ -69,8 +74,11 @@ export function substitute(text: string, re: RegExp, template: string, global: b
   let last = 0;
   let count = 0;
   let changed = false;
+  let previousEnd = -1;
   let m: RegExpExecArray | null;
   while ((m = g.exec(text)) !== null) {
+    if (m[0] === '' && m.index === previousEnd) { g.lastIndex++; continue; }
+    previousEnd = m.index + m[0].length;
     count++;
     const replaceThis = global ? count >= nth : count === nth;
     if (replaceThis) {

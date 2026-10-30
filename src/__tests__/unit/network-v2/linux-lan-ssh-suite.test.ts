@@ -935,7 +935,7 @@ describe('§13 — ps output table presentation (headers, padding)', () => {
     {
       name: 'ps -o custom format respects requested columns only',
       on: l => l.pc1,
-      cmd: 'ps -ef -o pid,comm',
+      cmd: 'ps -e -o pid,comm',
       contains: [/^\s*PID\s+COMMAND/m],
       excludes: ['UID', 'STIME', 'TTY'],
     },
@@ -1611,7 +1611,7 @@ describe('§24 — Oracle DB processes visible across the LAN via ssh', () => {
       name: 'ora_smon and ora_lgwr also appear via remote ps',
       setup: (l) => { void l.srv1.executeCommand('sqlplus / as sysdba'); },
       on: l => l.pc1,
-      cmd: 'ssh alice@10.0.0.10 ps -ef -o user,comm',
+      cmd: 'ssh alice@10.0.0.10 ps -e -o user,comm',
       contains: [/oracle\s+ora_smon/, /oracle\s+ora_lgwr/],
     },
     {

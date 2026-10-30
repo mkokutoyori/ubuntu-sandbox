@@ -8,7 +8,7 @@
  * VM's own kernel audit was locked (-e 2) and could not be used as a second oracle.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { runAuditctl, type AuditctlHost } from '@/network/devices/linux/audit/tools/AuditctlTool';
 import { AuditKernelState } from '@/network/devices/linux/audit/tools/AuditKernelState';
 import { MACH } from '@/network/devices/linux/audit/tools/AuditctlLib';
@@ -67,7 +67,6 @@ function replay(scenario: Scenario): string | null {
 describe('auditctl against the real 3.1.2 binary', () => {
   it('replays', () => {
     const failures = fixture.scenarios.map(replay).filter((f): f is string => f !== null);
-    writeFileSync('/tmp/claude-0/scratch/auditctl-failures.txt', `${failures.length}/${fixture.scenarios.length}\n${failures.join('\n=====\n')}`);
-    expect(failures.length).toBe(0);
+    expect(failures).toEqual([]);
   });
 });

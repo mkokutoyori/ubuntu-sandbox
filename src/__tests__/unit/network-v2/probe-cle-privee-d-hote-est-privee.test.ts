@@ -103,7 +103,7 @@ describe('la privee d un hote est privee, et `ssh-keygen -y` la relit', () => {
   it('TEMOIN : la publique offerte sur le fil reste celle du disque', async () => {
     const { win, srv } = await labo();
     const surDisque = blobDe(await srv.executeCommand(`sudo cat ${CLE_LINUX}.pub`));
-    const surLeFil = (await win.executeCommand('ssh-keyscan 10.0.0.2')).split('\n').filter((ligne) => !ligne.startsWith('#')).join('\n');
-    expect(blobDe(surLeFil.trim().split(/\s+/).slice(1).join(' '))).toBe(surDisque);
+    const surLeFil = (await win.executeCommand('ssh-keyscan 10.0.0.2')).split('\n').filter((ligne) => ligne !== '' && !ligne.startsWith('#'));
+    expect(surLeFil.map((ligne) => blobDe(ligne.trim().split(/\s+/).slice(1).join(' ')))).toContain(surDisque);
   });
 });

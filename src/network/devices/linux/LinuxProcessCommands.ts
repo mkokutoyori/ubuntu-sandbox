@@ -9,11 +9,10 @@
 import { formatLocalTime } from './system/SystemInfo';
 import { simulationDate } from '@/network/core/SystemClock';
 
-import type { LinuxProcessManager, Signal } from './LinuxProcessManager';
+import type { LinuxProcessManager, ProcessInfo, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
-import { runPs, transientSelfProcess } from './ps/PsCommand';
 import { memPercent, sharedKib, topCommand, taskBucketOf, type TaskBucket } from './system/ProcFormat';
 import { renderTable, type TableColumn, type TableStyle, padToWidth } from '../shells/cli/TextTable';
 
@@ -60,15 +59,31 @@ export interface ProcessCmdContext {
   runAsChild?: (nice: number, cmd: string) => { output: string; exitCode: number };
 }
 
-// ─── ps ───────────────────────────────────────────────────────────────
-
-/**
- * `ps` delegates to the modular selection/format engine in
- * {@link runPs}. The engine handles selection (-e/-p/-C/-u/--ppid),
- * formats (default/-f/-l/aux/-o), --sort and error reporting.
- */
-export function cmdPs(args: string[], ctx: ProcessCmdContext): string {
-  return runPs(args, ctx);
+function transientSelfProcess(ctx: ProcessCmdContext, comm: string): ProcessInfo {
+  const peers = ctx.pm.list();
+  const maxPid = peers.reduce((m, p) => Math.max(m, p.pid), 1);
+  return {
+    pid: maxPid + 1,
+    ppid: ctx.currentPid ?? ctx.shellPid ?? 1,
+    pgid: ctx.shellPid ?? 1,
+    sid: ctx.shellPid ?? 1,
+    uid: ctx.currentUid,
+    gid: ctx.currentUid,
+    user: ctx.currentUser,
+    command: comm,
+    comm,
+    args: [comm],
+    state: 'R',
+    startTime: simulationDate(),
+    cpuTime: 0,
+    vsize: 12 * 1024,
+    rss: 3 * 1024,
+    tty: ctx.tty,
+    nice: 0,
+    priority: 20,
+    cwd: '/',
+    exe: `/usr/bin/${comm}`,
+  };
 }
 
 // ─── top ──────────────────────────────────────────────────────────────
@@ -160,6 +175,7 @@ export function parseSignalArg(token: string): Signal | null {
 export interface KillResult {
   output: string;
   exitCode: number;
+  stderr?: string;
 }
 
 export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
@@ -181,17 +197,21 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
   }
 
   let signal: Signal = 'SIGTERM';
+  let probe = false;
   const pidArgs: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === '-s' || a === '-n') {
+    if (a === '-0' || ((a === '-s' || a === '-n') && args[i + 1] === '0')) {
+      probe = true;
+      if (a !== '-0') i++;
+    } else if (a === '-s' || a === '-n') {
       const sig = parseSignalArg(args[++i] || '');
-      if (!sig) return { output: `kill: ${args[i]}: invalid signal specification`, exitCode: 1 };
+      if (!sig) return { output: '', stderr: `kill: ${args[i]}: invalid signal specification\n`, exitCode: 1 };
       signal = sig;
     } else if (a.startsWith('-') && a.length > 1) {
       const sig = parseSignalArg(a);
-      if (!sig) return { output: `kill: ${a.slice(1)}: invalid signal specification`, exitCode: 1 };
+      if (!sig) return { output: '', stderr: `kill: ${a.slice(1)}: invalid signal specification\n`, exitCode: 1 };
       signal = sig;
     } else {
       pidArgs.push(a);
@@ -237,6 +257,7 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
         exitCode = 1;
         continue;
       }
+      if (probe) continue;
       ctx.pm.kill(job.pid, signal);
       const TERMINATES = new Set<Signal>(['SIGTERM','SIGINT','SIGQUIT','SIGKILL','SIGHUP']);
       if (TERMINATES.has(signal)) ctx.jobs?.remove(job.id);
@@ -253,13 +274,14 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
       exitCode = 1;
       continue;
     }
+    if (probe) continue;
     const ok = ctx.pm.kill(pid, signal);
     if (!ok) {
       errors.push(`kill: (${pid}) - Operation not permitted`);
       exitCode = 1;
     }
   }
-  return { output: errors.join('\n'), exitCode };
+  return { output: '', exitCode, ...(errors.length === 0 ? {} : { stderr: `${errors.join('\n')}\n` }) };
 }
 
 // ─── pidof / pgrep / pkill ────────────────────────────────────────────

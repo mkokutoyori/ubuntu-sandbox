@@ -149,6 +149,17 @@ export class MountTable {
     return best;
   }
 
+  deviceOf(path: string): number {
+    let entry = this.resolve(path);
+    if (entry?.bindOrigin !== undefined) entry = this.resolve(entry.bindOrigin) ?? entry;
+    return entry === undefined ? 0 : this.entries.indexOf(entry) + 1;
+  }
+
+  deviceOfSource(source: string): number | null {
+    const index = this.entries.findIndex((entry) => entry.source === source && !entry.isBind);
+    return index < 0 ? null : index + 1;
+  }
+
   isReadOnly(path: string): boolean {
     return this.resolve(path)?.readOnly ?? false;
   }

@@ -2,19 +2,11 @@
  * DeviceIcon - Icons for different device types
  */
 
-import {
-  Monitor,
-  Server,
-  Database,
-  Router,
-  Shield,
-  Wifi,
-  Cloud,
-  HardDrive,
-  Laptop
-} from 'lucide-react';
+import { Monitor, Database } from 'lucide-react';
 import type { DeviceType } from '@/network';
 import { cn } from '@/lib/utils';
+import { DEVICE_VISUALS, type DeviceVisual } from './device-visuals';
+import { DEVICE_GLYPHS } from './device-glyphs';
 
 interface DeviceIconProps {
   type: DeviceType;
@@ -25,52 +17,25 @@ interface DeviceIconProps {
 export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
   const iconProps = { size, className: cn('transition-all', className) };
 
+  const visual = (DEVICE_VISUALS as Partial<Record<string, DeviceVisual>>)[type];
+  if (visual) {
+    const Glyph = DEVICE_GLYPHS[visual.glyph];
+    return (
+      <div className="relative">
+        <Glyph {...iconProps} style={visual.glyphColor ? { color: visual.glyphColor } : undefined} />
+        {visual.badge && (
+          <span
+            className="absolute -bottom-1 -right-1 font-bold text-white rounded px-0.5"
+            style={{ fontSize: visual.badge.fontSize, backgroundColor: visual.badge.color }}
+          >
+            {visual.badge.text}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   switch (type as DeviceType | 'db-mysql' | 'db-postgres' | 'db-oracle' | 'db-sqlserver') {
-    case 'linux-pc':
-      return (
-        <div className="relative">
-          <Monitor {...iconProps} />
-          <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-orange-500 text-white rounded px-0.5">
-            L
-          </span>
-        </div>
-      );
-    case 'windows-pc':
-      return (
-        <div className="relative">
-          <Monitor {...iconProps} />
-          <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-blue-500 text-white rounded px-0.5">
-            W
-          </span>
-        </div>
-      );
-    case 'mac-pc':
-      return (
-        <div className="relative">
-          <Laptop {...iconProps} />
-          <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-gray-800 text-white rounded px-0.5">
-            M
-          </span>
-        </div>
-      );
-    case 'linux-server':
-      return (
-        <div className="relative">
-          <Server {...iconProps} />
-          <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-orange-500 text-white rounded px-0.5">
-            L
-          </span>
-        </div>
-      );
-    case 'windows-server':
-      return (
-        <div className="relative">
-          <Server {...iconProps} />
-          <span className="absolute -bottom-1 -right-1 text-[8px] font-bold bg-blue-500 text-white rounded px-0.5">
-            W
-          </span>
-        </div>
-      );
     case 'db-mysql':
       return (
         <div className="relative">
@@ -107,73 +72,6 @@ export function DeviceIcon({ type, size = 32, className }: DeviceIconProps) {
           </span>
         </div>
       );
-    case 'router-cisco':
-      return (
-        <div className="relative">
-          <Router {...iconProps} className={cn(iconProps.className, 'text-cyan-400')} />
-          <span className="absolute -bottom-1 -right-1 text-[5px] font-bold bg-cyan-600 text-white rounded px-0.5">
-            C
-          </span>
-        </div>
-      );
-    case 'router-huawei':
-      return (
-        <div className="relative">
-          <Router {...iconProps} className={cn(iconProps.className, 'text-red-400')} />
-          <span className="absolute -bottom-1 -right-1 text-[5px] font-bold bg-red-600 text-white rounded px-0.5">
-            H
-          </span>
-        </div>
-      );
-    case 'switch-cisco':
-      return (
-        <div className="relative">
-          <HardDrive {...iconProps} className={cn(iconProps.className, 'text-cyan-400')} />
-          <span className="absolute -bottom-1 -right-1 text-[5px] font-bold bg-cyan-600 text-white rounded px-0.5">
-            C
-          </span>
-        </div>
-      );
-    case 'switch-huawei':
-      return (
-        <div className="relative">
-          <HardDrive {...iconProps} className={cn(iconProps.className, 'text-red-400')} />
-          <span className="absolute -bottom-1 -right-1 text-[5px] font-bold bg-red-600 text-white rounded px-0.5">
-            H
-          </span>
-        </div>
-      );
-    case 'firewall-fortinet':
-      return (
-        <div className="relative">
-          <Shield {...iconProps} className={cn(iconProps.className, 'text-red-500')} />
-          <span className="absolute -bottom-1 -right-1 text-[5px] font-bold bg-red-700 text-white rounded px-0.5">
-            FG
-          </span>
-        </div>
-      );
-    case 'firewall-cisco':
-      return (
-        <div className="relative">
-          <Shield {...iconProps} className={cn(iconProps.className, 'text-cyan-400')} />
-          <span className="absolute -bottom-1 -right-1 text-[5px] font-bold bg-cyan-600 text-white rounded px-0.5">
-            ASA
-          </span>
-        </div>
-      );
-    case 'firewall-paloalto':
-      return (
-        <div className="relative">
-          <Shield {...iconProps} className={cn(iconProps.className, 'text-orange-400')} />
-          <span className="absolute -bottom-1 -right-1 text-[5px] font-bold bg-orange-600 text-white rounded px-0.5">
-            PA
-          </span>
-        </div>
-      );
-    case 'access-point':
-      return <Wifi {...iconProps} className={cn(iconProps.className, 'text-green-400')} />;
-    case 'cloud':
-      return <Cloud {...iconProps} className={cn(iconProps.className, 'text-sky-400')} />;
     default:
       return <Monitor {...iconProps} />;
   }

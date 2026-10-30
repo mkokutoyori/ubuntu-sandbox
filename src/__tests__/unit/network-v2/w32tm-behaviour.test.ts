@@ -145,7 +145,7 @@ describe('service and privilege', () => {
     const { pc, router } = await lab();
     await pc.executeCommand('w32tm /config /manualpeerlist:"10.0.0.1,0x8" /syncfromflags:manual /update');
     converge(clock, 300_000);
-    (router.getNtpAgent().getConfig() as { offsetMs: number }).offsetMs = 2 * 86_400_000;
+    router._stepSystemClock(2 * 86_400_000);
     converge(clock, 300_000);
     expect(await pc.executeCommand('w32tm /resync'))
       .toBe('Sending resync command to local computer\nThe computer did not resync because the required time change was too big.');

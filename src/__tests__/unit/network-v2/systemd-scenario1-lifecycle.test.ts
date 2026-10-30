@@ -59,7 +59,7 @@ describe('Scénario 1 — cycle de vie complet d\'un service systemd', () => {
     const pid = Number(/Main PID: (\d+)/.exec(status)?.[1]);
     expect(pid).toBeGreaterThan(1);
 
-    const ps = exec.execute('ps aux');
+    const ps = exec.execute('ps auxww');
     const line = ps.split('\n').find((l) => l.includes('/usr/bin/myapp --daemon'));
     expect(line).toBeDefined();
     expect(line).toContain(String(pid));
@@ -102,7 +102,7 @@ describe('Scénario 1 — cycle de vie complet d\'un service systemd', () => {
     exec.execute('systemctl stop myapp');
 
     expect(stripAnsi(exec.execute('systemctl status myapp'))).toContain('Active: inactive (dead)');
-    expect(exec.execute('ps aux')).not.toContain('/usr/bin/myapp --daemon');
+    expect(exec.execute('ps auxww')).not.toContain('/usr/bin/myapp --daemon');
     expect(exec.processMgr.get(pid)).toBeUndefined();
     expect(exec.execute('systemctl is-active myapp').trim()).toBe('inactive');
     expect(exec.execute('systemctl is-enabled myapp').trim()).toBe('enabled');

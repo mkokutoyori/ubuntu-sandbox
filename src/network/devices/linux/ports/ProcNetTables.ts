@@ -3,6 +3,7 @@ import { IPv6Address } from '@/network/core/types';
 import { TCP_INITIAL_CWND_SEGMENTS } from '@/network/tcp/TcpStack';
 import type { KernelSocketRow } from '../network/KernelSocketRows';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import type { UnixSocketRow } from '../unix/UnixSocketTable';
 
 export type ProcNetFamily = 4 | 6;
 
@@ -137,8 +138,20 @@ export function renderProcNetRaw(family: ProcNetFamily): string {
   return family === 6 ? [UDP6_HEADER, ''].join('\n') : [pad(UDP4_HEADER, UDP4_ROW_WIDTH), ''].join('\n');
 }
 
-export function renderProcNetUnix(): string {
-  return 'Num       RefCount Protocol Flags    Type St Inode Path\n';
+const UNIX_TYPE_CODE = { stream: 1, dgram: 2, seqpacket: 5 } as const;
+const UNIX_STATE_CODE = { unconnected: 1, connecting: 2, connected: 3, listening: 1 } as const;
+const UNIX_ACCEPT_CONNECTIONS_FLAG = 0x10000;
+
+export function renderProcNetUnix(sockets: readonly UnixSocketRow[] = []): string {
+  const lines = sockets.map((socket) => {
+    const flags = socket.state === 'listening' ? UNIX_ACCEPT_CONNECTIONS_FLAG : 0;
+    const fields = [
+      `${socket.address.toString(16).padStart(16, '0')}:`, hex(socket.refCount, 8), hex(0, 8), hex(flags, 8),
+      hex(UNIX_TYPE_CODE[socket.type], 4), hex(UNIX_STATE_CODE[socket.state], 2), String(socket.inode).padStart(5, ' '),
+    ];
+    return `${fields.join(' ')}${socket.path === null ? '' : ` ${socket.path}`}`;
+  });
+  return ['Num       RefCount Protocol Flags    Type St Inode Path', ...lines, ''].join('\n');
 }
 
 const PAGE_BYTES = 4096;
@@ -155,14 +168,14 @@ function tcpPages(rows: readonly KernelSocketRow[]): number {
     .reduce((pages, row) => pages + Math.ceil((row.queues.receive + row.queues.send) / PAGE_BYTES), 0);
 }
 
-export function renderProcNetSockstat(rows: readonly KernelSocketRow[]): string {
+export function renderProcNetSockstat(rows: readonly KernelSocketRow[], unixSockets = 0): string {
   const tcp = countRows(rows, 'tcp', 4) + countRows(rows, 'tcp', 6);
   const udp = countRows(rows, 'udp', 4) + countRows(rows, 'udp', 6);
   const udpLite = countRows(rows, 'udplite', 4) + countRows(rows, 'udplite', 6);
   const orphans = rows.filter((row) => row.facts?.orphaned === true).length;
   const timeWait = rows.filter((row) => row.state === 'TIME_WAIT').length;
   return [
-    `sockets: used ${tcp + udp + udpLite}`,
+    `sockets: used ${tcp + udp + udpLite + unixSockets}`,
     `TCP: inuse ${countRows(rows, 'tcp', 4)} orphan ${orphans} tw ${timeWait} alloc ${tcp} mem ${tcpPages(rows)}`,
     `UDP: inuse ${countRows(rows, 'udp', 4)} mem 0`,
     `UDPLITE: inuse ${countRows(rows, 'udplite', 4)}`,

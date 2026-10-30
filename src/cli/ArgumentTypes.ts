@@ -111,6 +111,7 @@ export interface ArgumentSpec {
    * Le rendu impose, quand le type ne suffit pas a le decrire (`hh:mm`).
    */
   readonly literal?: string;
+  readonly tabSuggestions?: readonly string[];
   /**
    * La FORME que la valeur doit avoir, quand le type ne suffit pas.
    *
@@ -137,7 +138,7 @@ export interface ArgumentTypeDefinition {
 }
 
 const MAC = /^([0-9a-f]{4}\.){2}[0-9a-f]{4}$|^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
-const INTERFACE_NAME = /^[A-Za-z][A-Za-z-]*[0-9]+(\/[0-9]+)*(\.[0-9]+)?$/;
+export const INTERFACE_NAME = /^[A-Za-z][A-Za-z-]*[0-9]+(\/[0-9]+)*(\.[0-9]+)?$/;
 /**
  * Une heure du jour, `hh:mm` ou `hh:mm:ss`.
  *
@@ -154,7 +155,7 @@ export const ARGUMENT_TYPES: Readonly<Record<ArgumentType, ArgumentTypeDefinitio
   Object.freeze({
     INT: {
       placeholder: `<0-${INT_ANNOUNCED_MAX}>`,
-      accepts: (t) => /^\d+$/.test(t) && Number(t) <= INT_ANNOUNCED_MAX,
+      accepts: (t) => /^-?\d+$/.test(t) && Math.abs(Number(t)) <= INT_ANNOUNCED_MAX,
     },
     WORD: { placeholder: 'WORD', accepts: (t) => t.length > 0 && !/\s/.test(t) },
     LINE: { placeholder: 'LINE', accepts: (t) => t.length > 0 },
@@ -295,7 +296,10 @@ export function argumentAccepts(spec: ArgumentSpec, raw: string): boolean {
 
 export function argumentPlaceholder(spec: ArgumentSpec): string {
   if (spec.literal) return spec.literal;
-  if (spec.range) return `<${spec.range[0]}-${spec.range[1]}>`;
+  if (spec.range) {
+    const [low, high] = spec.range;
+    return low < 0 ? `<${low} - ${high}>` : `<${low}-${high}>`;
+  }
   return ARGUMENT_TYPES[spec.type].placeholder;
 }
 
@@ -307,17 +311,30 @@ export function argumentPlaceholder(spec: ArgumentSpec): string {
  * signifie « l'un ou l'autre ». Une seule fonction les rend toutes,
  * sinon chaque appelant en oublierait une autre.
  */
+function declaredTabValues(spec: ArgumentSpec): readonly EnumValue[] {
+  return (spec.tabSuggestions ?? []).map(keyword => ({
+    keyword, description: spec.description ?? '',
+  }));
+}
+
 export function argumentCompletableValues(spec: ArgumentSpec): readonly EnumValue[] {
   const placeholder = argumentPlaceholder(spec);
-  return [...(spec.alternatives ?? []), ...(spec.values ?? [])]
-    .filter(value => value.keyword !== placeholder)
-    .filter(value => !PLACEHOLDER_SHAPE.test(value.keyword))
-    .filter(value => /^[A-Za-z0-9][A-Za-z0-9:._+-]*$/.test(value.keyword));
+  return [
+    ...[...(spec.alternatives ?? []), ...(spec.values ?? [])]
+      .filter(value => value.keyword !== placeholder)
+      .filter(value => !PLACEHOLDER_SHAPE.test(value.keyword))
+      .filter(value => /^[A-Za-z0-9][A-Za-z0-9:._+-]*$/.test(value.keyword)),
+    ...declaredTabValues(spec),
+  ];
 }
 
 const PLACEHOLDER_SHAPE = /^(<.*>|[A-Z]\.[A-Z]\.[A-Z]\.[A-Z].*|WORD|LINE|STRING|NAME)$/;
 
 export function argumentSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
+  return [...baseSuggestions(spec), ...declaredTabValues(spec)];
+}
+
+function baseSuggestions(spec: ArgumentSpec): readonly EnumValue[] {
   const out: EnumValue[] = [];
   for (const form of spec.alternatives ?? []) out.push(form);
   if (spec.values) {

@@ -5,13 +5,16 @@ import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
 import {
   parseInterfacesFile,
   serializeInterfacesFile,
-  parseNetplanYaml,
   serializeNetplanYaml,
   type DeclaredInterfaceConfig,
   type NetplanConfig,
+  type NetplanReading,
+  type NetplanSource,
 } from './net/NetworkConfigFiles';
+import { readNetplanSources } from './net/NetplanReader';
 import {
   discoverNetworkdFiles,
+  globMatches,
   networkdDiagnostics,
   matchLinkFile,
   matchNetworkFile,
@@ -27,6 +30,7 @@ import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const INTERFACES_PATH = '/etc/network/interfaces';
 export const NETPLAN_PATH = '/etc/netplan/01-netcfg.yaml';
+const NETPLAN_DIRECTORIES: readonly string[] = ['/lib/netplan', '/etc/netplan', '/run/netplan'];
 export const NM_CONF_PATH = '/etc/NetworkManager/NetworkManager.conf';
 
 export interface DriftEntry {
@@ -77,10 +81,64 @@ export class LinuxNetworkConfigManager {
     }
   }
 
+  netplanSources(): NetplanSource[] {
+    const byName = new Map<string, NetplanSource>();
+    for (const directory of NETPLAN_DIRECTORIES) {
+      for (const entry of this.vfs.listDirectory(directory) ?? []) {
+        if (!entry.name.endsWith('.yaml')) continue;
+        const path = `${directory}/${entry.name}`;
+        const text = this.vfs.readFile(path);
+        if (text !== null) byName.set(entry.name, { path, text });
+      }
+    }
+    return [...byName.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, source]) => source);
+  }
+
+  readNetplanFiles(): NetplanReading | null {
+    const sources = this.netplanSources();
+    return sources.length === 0 ? null : readNetplanSources(sources);
+  }
+
   readNetplan(): NetplanConfig | null {
-    const text = this.vfs.readFile(NETPLAN_PATH);
-    if (text === null) return null;
-    return parseNetplanYaml(text);
+    return this.readNetplanFiles()?.config ?? null;
+  }
+
+  netplanFileFor(iface: string): string | null {
+    const owner = this.readNetplan()?.sources?.get(iface);
+    if (owner !== undefined) return owner;
+    return this.vfs.exists(NETPLAN_PATH) ? NETPLAN_PATH : null;
+  }
+
+  private netplanPorts(net: LinuxNetKernel, id: string, cfg: DeclaredInterfaceConfig): string[] {
+    if (cfg.setName !== undefined) return [];
+    if (cfg.match === undefined) return net.getPorts().has(id) ? [id] : [];
+    const { name, macAddress, driver } = cfg.match;
+    if (driver !== undefined) return [];
+    return [...net.getPorts()]
+      .filter(([portName, port]) => (name === undefined || globMatches(name, portName))
+        && (macAddress === undefined || port.getMAC().toString().toLowerCase() === macAddress.toLowerCase()))
+      .map(([portName]) => portName);
+  }
+
+  private netplanPlan(iface: string, cfg: DeclaredInterfaceConfig, path: string): NetworkdLinkPlan {
+    const addresses = cfg.address === undefined ? [] : [`${cfg.address}/${cfg.cidr ?? 24}`];
+    return {
+      iface,
+      addresses: [...addresses, ...(cfg.secondaryAddresses ?? [])],
+      gateway: cfg.gateway ?? null,
+      routes: (cfg.routes ?? []).map((route) => ({ destination: route.to, gateway: route.via, metric: route.metric ?? null })),
+      dns: cfg.nameservers ?? [],
+      domains: cfg.searchDomains ?? [],
+      dhcp: cfg.method === 'dhcp' ? 'ipv4' : 'no',
+      mtu: cfg.mtu ?? null,
+      macAddress: cfg.macAddress ?? null,
+      activationPolicy: 'up',
+      useDns: true,
+      useRoutes: true,
+      useMtu: true,
+      networkFile: path,
+      linkFile: null,
+    };
   }
 
   readInterfacesFile(): Map<string, DeclaredInterfaceConfig> | null {
@@ -236,19 +294,30 @@ export class LinuxNetworkConfigManager {
     return applied;
   }
 
-  applyNetplan(net: LinuxNetKernel, skip: ReadonlySet<string> = new Set()): { applied: string[]; warnings: string[] } {
-    const cfg = this.readNetplan();
+  applyNetplan(net: LinuxNetKernel, skip: ReadonlySet<string> = new Set()): { applied: string[]; warnings: string[]; failed: boolean } {
+    const reading = this.readNetplanFiles();
+    if (reading !== null && reading.errors.length > 0) return { applied: [], warnings: [...reading.errors], failed: true };
+    const cfg = reading?.config ?? null;
+    const plans: NetworkdLinkPlan[] = [];
     const applied: string[] = [];
     if (cfg) {
-      for (const [name, iface] of cfg.interfaces) {
-        if (skip.has(name)) continue;
-        applied.push(...this.applyDeclaredConfig(net, name, iface));
+      const planned = new Set<string>();
+      const ids = [...cfg.interfaces.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      for (const id of ids) {
+        const iface = cfg.interfaces.get(id)!;
+        for (const name of this.netplanPorts(net, id, iface)) {
+          if (skip.has(name) || planned.has(name)) continue;
+          planned.add(name);
+          plans.push(this.netplanPlan(name, iface, cfg.sources?.get(id) ?? NETPLAN_PATH));
+        }
       }
     }
+    for (const plan of plans) applied.push(...this.applyLinkPlan(net, plan));
+    if (plans.length > 0) this.writeResolvConf(net, plans);
     for (const line of applied) this.logMgr.logSystemd('systemd-networkd', line);
     const warnings = this.detectManagementConflicts(cfg);
     for (const w of warnings) this.logMgr.logDaemon('netplan', w);
-    return { applied, warnings };
+    return { applied, warnings, failed: false };
   }
 
   tryNetplan(net: LinuxNetKernel): string {
@@ -365,7 +434,7 @@ export class LinuxNetworkConfigManager {
     return {
       // Netplan reste prioritaire quand il existe : c'est ce que fait
       // Ubuntu, et netplan génère justement ces fichiers-là.
-      networkFile: network?.path ?? (this.vfs.exists(NETPLAN_PATH) ? NETPLAN_PATH : null),
+      networkFile: network?.path ?? this.netplanFileFor(iface),
       linkFile: link?.path ?? null,
     };
   }
@@ -380,7 +449,7 @@ export class LinuxNetworkConfigManager {
     const paths: string[] = [];
     if (targets.length === 0) {
       paths.push(...files.map((f) => f.path));
-      if (this.vfs.exists(NETPLAN_PATH)) paths.push(NETPLAN_PATH);
+      paths.push(...this.netplanSources().map((source) => source.path));
     }
     for (const target of targets) {
       if (net.getPorts().has(target)) {
@@ -417,9 +486,10 @@ export class LinuxNetworkConfigManager {
       for (const line of applied) this.logMgr.logSystemd('systemd-networkd', line);
       return applied;
     }
-    const declared = this.readNetplan()?.interfaces.get(iface);
+    const config = this.readNetplan();
+    const declared = [...(config?.interfaces ?? [])].find(([id, cfg]) => cfg.method === 'static' && this.netplanPorts(net, id, cfg).includes(iface));
     if (!declared) return [];
-    const applied = this.applyDeclaredConfig(net, iface, declared);
+    const applied = this.applyLinkPlan(net, this.netplanPlan(iface, declared[1], config?.sources?.get(declared[0]) ?? NETPLAN_PATH));
     for (const line of applied) this.logMgr.logSystemd('systemd-networkd', line);
     return applied;
   }
@@ -459,7 +529,7 @@ export class LinuxNetworkConfigManager {
       const lines = [
         `● ${name}`,
         `       Link File: /usr/lib/systemd/network/99-default.link`,
-        `    Network File: ${this.vfs.exists(NETPLAN_PATH) ? NETPLAN_PATH : 'n/a'} (${cfg?.renderer ?? 'networkd'})`,
+        `    Network File: ${this.netplanFileFor(name) ?? 'n/a'} (${cfg?.renderer ?? 'networkd'})`,
         `            Type: ether`,
         `           State: ${state}`,
         `  Address Source: ${source}`,

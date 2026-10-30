@@ -163,6 +163,23 @@ export function displayDhcpSnooping(): string {
  * both the switch and the router. Wired into the system-view trie of
  * each shell — single source so the list isn't duplicated (DRY).
  */
+export function registerHuaweiUserClock(
+  trie: CommandTrie,
+  getRouter: () => { getManagementService: () => import('../../router/management/RouterManagementService').RouterManagementService } | undefined,
+  setSystemClock: (epochMs: number) => void,
+): void {
+  trie.registerGreedy('clock datetime', 'Set the system date and time', (args) => {
+    const router = getRouter();
+    if (!router) return '';
+    const words = ['datetime', ...args];
+    const verdict = router.getManagementService().configureClock(words);
+    if (typeof verdict === 'string' || verdict === null) return HUAWEI_ERRORS.WRONG(words.join(' '), 0);
+    setSystemClock(verdict);
+    return '';
+  });
+  trie.requireArgs('clock datetime', 2);
+}
+
 export function registerHuaweiCommonSecurity(
   trie: CommandTrie,
   getRouter?: () => { getManagementService: () => import('../../router/management/RouterManagementService').RouterManagementService },
@@ -217,7 +234,11 @@ export function registerHuaweiCommonSecurity(
         resyncListeners();
         break;
       }
-      case 'ntp-service': mgmt.configureNtp(args); break;
+      case 'ntp-service': {
+        const refuse = mgmt.configureNtp(args);
+        if (refuse !== null) return HUAWEI_ERRORS.WRONG(refuse, 0);
+        break;
+      }
       case 'clock': {
         const verdict = mgmt.configureClock(args);
         if (typeof verdict === 'string') return HUAWEI_ERRORS.WRONG(args.join(' '), 0);
@@ -369,8 +390,12 @@ export function registerHuaweiCommonSecurityDisplay(
     displaySshServerStatusVrp(getDevice?.()));
   trie.register('display ssh server session', 'Display SSH server sessions', () =>
     displaySshServerSessionVrp(getDevice?.()));
-  trie.registerGreedy('display snmp-agent', 'Display SNMP agent info', () =>
-    displaySnmpSysInfoVrp(getSnmpServiceDirect?.()));
+  trie.registerGreedy('display snmp-agent', 'Display SNMP agent info', (args) => {
+    if (args.length > 0) {
+      return HUAWEI_ERRORS.WRONG(`display snmp-agent ${args.join(' ')}`, 'display snmp-agent '.length);
+    }
+    return displaySnmpSysInfoVrp(getSnmpServiceDirect?.());
+  });
   trie.registerGreedy('display ntp-service', 'Display NTP status', (args) => {
     const agent = getNtpAgentDirect?.();
     if (!agent) return displayNtpStatus();

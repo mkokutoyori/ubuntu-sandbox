@@ -71,7 +71,7 @@ describe('export builtin', () => {
     it('should error on invalid identifier', () => {
       const result = run('export', ['123=bad']);
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('not a valid identifier');
+      expect(result.stderr).toContain('not a valid identifier');
     });
 
     it('should error on readonly variable assignment', () => {
@@ -79,7 +79,7 @@ describe('export builtin', () => {
       env.setReadonly('RO');
       const result = executeBuiltin('export', ['RO=new'], env, new Map());
       expect(result.exitCode).toBe(1);
-      expect(result.output).toContain('readonly variable');
+      expect(result.stderr).toContain('readonly variable');
     });
   });
 });
@@ -100,7 +100,7 @@ describe('unset builtin', () => {
     env.setReadonly('RO');
     const result = executeBuiltin('unset', ['RO'], env, new Map());
     expect(result.exitCode).toBe(1);
-    expect(result.output).toContain('readonly variable');
+    expect(result.stderr).toContain('readonly variable');
   });
 
   it('should support -v flag for variables', () => {

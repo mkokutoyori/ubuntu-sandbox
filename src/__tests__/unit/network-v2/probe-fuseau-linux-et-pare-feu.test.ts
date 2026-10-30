@@ -72,7 +72,7 @@
  *     construction. Son jumeau, `SupportsDaylightSavingTime`, est celui
  *     qui mord.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -82,10 +82,16 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(Date.UTC(2026, 8, 6, 12, 0, 0)));
   resetCounters();
   resetDeviceCounters();
   MACAddress.resetCounter();
   Logger.reset();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const JANVIER = Date.UTC(2026, 0, 15, 12, 0, 0);

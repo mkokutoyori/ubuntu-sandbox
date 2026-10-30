@@ -150,6 +150,7 @@ export class OSProcess {
   /** kernel-mode jiffies (stime). */
   stime = 0;
   wchan = '0';
+  forkedNoExec = false;
   numThreads: number;
   exitCode?: number;
   exitSignal?: string;
@@ -270,6 +271,11 @@ export class OSProcess {
     const fd = this.nextFd++;
     this.openFiles.push({ fd, path, mode, offset: 0 });
     return fd;
+  }
+
+  redirectStandardStream(fd: 0 | 1 | 2, path: string, mode: FileMode): void {
+    this.openFiles = this.openFiles.filter((f) => f.fd !== fd);
+    this.openFiles.push({ fd, path, mode, offset: 0 });
   }
 
   closeOpenFile(fd: number): boolean {

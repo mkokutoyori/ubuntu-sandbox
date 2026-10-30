@@ -235,6 +235,7 @@ export interface ControlPlane {
 
 export interface Zone {
   name: string;
+  description?: string;
 }
 
 export interface ZonePair {
@@ -963,7 +964,10 @@ export class CiscoSecurityConfig {
       if (this.controlPlane.servicePolicyOutput) lines.push(` service-policy output ${this.controlPlane.servicePolicyOutput}`);
     }
     lines.push(...this.inspectRunningConfigLines(), ...this.tcpInterceptRunningConfigLines());
-    for (const z of this.zones.values()) lines.push(`zone security ${z.name}`);
+    for (const z of this.zones.values()) {
+      lines.push(`zone security ${z.name}`);
+      if (z.description) lines.push(` description ${z.description}`);
+    }
     for (const zp of this.zonePairs.values()) {
       lines.push(`zone-pair security ${zp.name} source ${zp.source} destination ${zp.destination}`);
       if (zp.servicePolicy) lines.push(` service-policy type inspect ${zp.servicePolicy}`);

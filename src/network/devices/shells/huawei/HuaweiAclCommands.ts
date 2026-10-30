@@ -216,6 +216,8 @@ export function registerHuaweiACLInterfaceCommands(
   });
 }
 
+const TOO_MANY_PARAMETERS = "Error: Too many parameters found at '^' position.";
+
 export function registerHuaweiACLDisplayCommands(
   trie: CommandTrie,
   getRouter: () => Router,
@@ -223,6 +225,9 @@ export function registerHuaweiACLDisplayCommands(
   trie.registerGreedy('display acl', 'Display ACL configuration', (args) => {
     if (args.length < 1) return 'Error: Incomplete command.';
     const router = getRouter();
+
+    const named = args[0].toLowerCase() === 'name' && args[1] !== undefined;
+    if (args.length > (named ? 2 : 1)) return TOO_MANY_PARAMETERS;
 
     if (args[0].toLowerCase() === 'all') return formatAllACLs(router);
 

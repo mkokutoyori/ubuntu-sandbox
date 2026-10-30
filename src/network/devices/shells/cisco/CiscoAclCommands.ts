@@ -870,14 +870,6 @@ export function runningConfigInterfaceACLFrom(
   return lines;
 }
 
-// ─── Register show commands ───────────────────────────────────────────
-
-export function registerACLShowCommands(trie: CommandTrie, getRouter: () => Router): void {
-  trie.registerGreedy('show access-lists', 'Display all access lists', (args) => showAccessLists(getRouter(), args[0]));
-  trie.registerGreedy('show ip access-lists', 'Display IP access lists', (args) => showAccessLists(getRouter(), args[0]));
-  trie.registerGreedy('show ipv6 access-lists', 'Display IPv6 access lists', (args) => showIPv6AccessLists(getRouter(), args[0]));
-}
-
 /**
  * `clear access-list counters [nom|numero]`.
  *
@@ -893,24 +885,24 @@ export function clearAccessListCounters(router: Router, ref?: string): string {
   return '';
 }
 
-const ACL_SHOW_ARGUMENTS: Readonly<Record<string, [string, string]>> = {
-  'show access-lists': ['WORD', 'Access list name or number'],
-  'show ip access-lists': ['WORD', 'Access list name or number'],
-  'show ipv6 access-lists': ['WORD', 'Access list name'],
-  'clear access-list counters': ['WORD', 'Access list name or number'],
-  'clear ip access-list counters': ['WORD', 'Access list name or number'],
-};
-
 export function aclShowSpecs(getRouter: () => Router): CommandSpec[] {
-  return specsFromTrieRegistrations(
-    (collector) => registerACLShowCommands(collector as unknown as CommandTrie, getRouter),
-    {
-      modes: ['user', 'privileged'],
-      minPrivilege: 1,
-      restDescriptionFor: (path) => ACL_SHOW_ARGUMENTS[path]?.[1],
-      restLiteralFor: (path) => ACL_SHOW_ARGUMENTS[path]?.[0],
-    },
-  );
+  const show = (
+    path: string[], description: string, place: string,
+    render: (router: Router, ref: string | undefined) => string,
+  ): CommandSpec => ({
+    id: path.join('-'),
+    path: [...path, { name: 'list', type: 'WORD', optional: true, description: place }],
+    description, modes: ['user', 'privileged'], minPrivilege: 1,
+    run: (_session, args) => render(getRouter(), args.list),
+  });
+  return [
+    show(['show', 'access-lists'], 'Display all access lists',
+      'Access list name or number', showAccessLists),
+    show(['show', 'ip', 'access-lists'], 'Display IP access lists',
+      'Access list name or number', showAccessLists),
+    show(['show', 'ipv6', 'access-lists'], 'Display IPv6 access lists',
+      'Access list name', showIPv6AccessLists),
+  ];
 }
 
 export function formatIPv6AclEntry(entry: import('../../Router').IPv6ACLEntry): string {

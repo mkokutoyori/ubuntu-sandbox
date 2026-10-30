@@ -81,9 +81,9 @@ describe('Unified NSS name resolution (R1)', () => {
     expect(s).not.toMatch(/Could not resolve hostname/);
   });
 
-  it('ssh still resolves a topology host through NSS (no regression)', async () => {
+  it('ssh agrees with getent and ping: a cabled peer is not resolvable by name alone', async () => {
     const s = await pc1.executeCommand('ssh pc2');
-    expect(s).not.toMatch(/Could not resolve hostname/);
+    expect(s).toBe('ssh: Could not resolve hostname pc2: Name or service not known');
   });
 
   it('ssh tells a valid unowned IP (No route) apart from an invalid one (cannot resolve)', async () => {

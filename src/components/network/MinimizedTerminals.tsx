@@ -15,6 +15,8 @@
  * TerminalManager instead of Map<string, BaseDevice>.
  */
 
+import { useLocale } from '@/i18n/useLocale';
+import type { MessageKey } from '@/i18n';
 import {
   X, Terminal, Columns2, Rows2, LayoutGrid,
   Layers, PanelLeft, ChevronLeft, ChevronRight, Monitor,
@@ -37,12 +39,12 @@ interface TerminalTaskbarProps {
   onToggleDesktop: () => void;
 }
 
-const LAYOUT_OPTIONS: { id: TileLayout; icon: typeof LayoutGrid; label: string; shortcut: string }[] = [
-  { id: 'stack',        icon: Layers,     label: 'Stack',          shortcut: 'Alt+S' },
-  { id: 'split-h',      icon: Columns2,   label: 'Split Horizontal', shortcut: 'Alt+H' },
-  { id: 'split-v',      icon: Rows2,      label: 'Split Vertical',   shortcut: 'Alt+V' },
-  { id: 'grid',         icon: LayoutGrid, label: 'Grid',           shortcut: 'Alt+G' },
-  { id: 'master-stack', icon: PanelLeft,  label: 'Master + Stack', shortcut: 'Alt+M' },
+const LAYOUT_OPTIONS: { id: TileLayout; icon: typeof LayoutGrid; labelKey: MessageKey; shortcut: string }[] = [
+  { id: 'stack',        icon: Layers,     labelKey: 'taskbar.layoutStack',  shortcut: 'Alt+S' },
+  { id: 'split-h',      icon: Columns2,   labelKey: 'taskbar.layoutSplitH', shortcut: 'Alt+H' },
+  { id: 'split-v',      icon: Rows2,      labelKey: 'taskbar.layoutSplitV', shortcut: 'Alt+V' },
+  { id: 'grid',         icon: LayoutGrid, labelKey: 'taskbar.layoutGrid',   shortcut: 'Alt+G' },
+  { id: 'master-stack', icon: PanelLeft,  labelKey: 'taskbar.layoutMaster', shortcut: 'Alt+M' },
 ];
 
 export function TerminalTaskbar({
@@ -58,6 +60,7 @@ export function TerminalTaskbar({
   desktopPeek,
   onToggleDesktop,
 }: TerminalTaskbarProps) {
+  const { t } = useLocale();
   if (sessions.length === 0) return null;
 
   const visibleCountTotal = sessions.length - minimizedIds.size;
@@ -79,10 +82,10 @@ export function TerminalTaskbar({
             ? "bg-blue-500/30 text-blue-300 border-blue-500/40"
             : "text-white/50 border-white/10 hover:text-white/80 hover:bg-white/5"
         )}
-        title={desktopPeek ? 'Back to terminals' : 'Show topology (terminals stay open)'}
+        title={desktopPeek ? t('taskbar.backToTerminals') : t('taskbar.showTopology')}
       >
         <Monitor className="w-3.5 h-3.5" />
-        <span className="text-[11px]">{desktopPeek ? 'Terminals' : 'Desktop'}</span>
+        <span className="text-[11px]">{desktopPeek ? t('taskbar.terminals') : t('taskbar.desktop')}</span>
       </button>
 
       {/* ── Layout selector ── */}
@@ -100,8 +103,8 @@ export function TerminalTaskbar({
                   ? "bg-blue-500/30 text-blue-400"
                   : "text-white/30 hover:text-white/60 hover:bg-white/5"
               )}
-              title={`${opt.label} (${opt.shortcut})`}
-              aria-label={`Arrange terminals: ${opt.label} (${opt.shortcut})`}
+              title={`${t(opt.labelKey)} (${opt.shortcut})`}
+              aria-label={t('taskbar.arrange', { layout: t(opt.labelKey), shortcut: opt.shortcut })}
               aria-pressed={isActive}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -116,7 +119,7 @@ export function TerminalTaskbar({
           <button
             onClick={() => onFocusChange((focusedIndex - 1 + visibleCount) % visibleCount)}
             className="p-1 rounded text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
-            title="Focus previous (Alt+K)"
+            title={t('taskbar.focusPrevious')}
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
@@ -126,7 +129,7 @@ export function TerminalTaskbar({
           <button
             onClick={() => onFocusChange((focusedIndex + 1) % visibleCount)}
             className="p-1 rounded text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
-            title="Focus next (Alt+J)"
+            title={t('taskbar.focusNext')}
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
@@ -169,8 +172,8 @@ export function TerminalTaskbar({
               <button
                 onClick={(e) => { e.stopPropagation(); onClose(sessionId); }}
                 className="p-0.5 rounded hover:bg-red-500/20 transition-colors"
-                title="Close terminal"
-                aria-label={`Close the ${deviceName} terminal`}
+                title={t('taskbar.closeTerminal')}
+                aria-label={t('taskbar.closeLabel', { name: deviceName })}
               >
                 <X className="w-2.5 h-2.5 text-white/30 hover:text-red-400" />
               </button>

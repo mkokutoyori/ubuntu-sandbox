@@ -21,6 +21,7 @@ import type { LinuxProcessServiceDomainEvent } from './events';
 import type { OSProcess } from '../os/OSProcess';
 import { LinuxProcess } from './process/LinuxProcess';
 import { UninterruptibleSleepTable } from './process/UninterruptibleSleep';
+import { footprintOf } from './process/ProcessFootprint';
 import { descriptorCount, type DescriptorSources } from './process/FileDescriptorTable';
 
 /** Linux process states as reported by ps. */
@@ -97,6 +98,8 @@ export interface SpawnOptions {
   vsize?: number;
   /** Initial resident memory in KB. */
   rss?: number;
+  /** Environment of the new process; a child inherits its parent's when omitted. */
+  environ?: Readonly<Record<string, string>>;
 }
 
 /** Filter criteria for `list()`. */
@@ -112,7 +115,7 @@ export interface ProcessFilter {
 export const TASK_COMM_LEN = 16;
 
 export function kernelComm(comm: string): string {
-  return comm.slice(0, TASK_COMM_LEN - 1);
+  return comm.replace(/^\[(.*)\]$/, '$1').slice(0, TASK_COMM_LEN - 1);
 }
 
 /** PID 1 — init/systemd is special and cannot be killed. */
@@ -121,8 +124,10 @@ const INIT_PID = 1;
 /** PID 2 — kthreadd. Special-cased like init: cannot be killed. */
 const KTHREADD_PID = 2;
 
-/** Linux PID_MAX_DEFAULT (32768) — wraparound boundary for PID allocation. */
-const PID_MAX = 32768;
+const INIT_ENVIRON: Readonly<Record<string, string>> = { HOME: '/', init: '/sbin/init', TERM: 'linux' };
+
+/** Ubuntu's kernel.pid_max — wraparound boundary for PID allocation. */
+export const PID_MAX = 4194304;
 
 const KERNEL_THREADS: ReadonlyArray<{ comm: string; state: ProcessState }> = [
   { comm: '[rcu_gp]', state: 'S' },
@@ -151,7 +156,7 @@ export class LinuxProcessManager {
 
   setClock(now: () => number): void { this.nowMs = now; }
 
-  private processes = new Map<number, ProcessInfo>();
+  private processes = new Map<number, LinuxProcess>();
   private nextPid = 2;
   /** Reactive sink — null until a device attaches its bus. */
   private bus: IEventBus | null = null;
@@ -190,12 +195,13 @@ export class LinuxProcessManager {
     const args = tokens.slice(1);
     const ppid = opts.ppid ?? INIT_PID;
     const parent = this.processes.get(ppid);
+    const sessionLeader = opts.serviceName !== undefined;
 
     const proc = new LinuxProcess({
       pid,
       ppid,
-      pgid: parent?.pgid ?? pid,
-      sid: parent?.sid ?? pid,
+      pgid: sessionLeader ? pid : parent?.pgid ?? pid,
+      sid: sessionLeader ? pid : parent?.sid ?? pid,
       uid: opts.uid,
       gid: opts.gid,
       user: opts.user,
@@ -205,8 +211,8 @@ export class LinuxProcessManager {
       state: 'S',
       startTime: new Date(this.nowMs()),
       cpuTime: 0,
-      vsize: opts.vsize ?? 10240,
-      rss: opts.rss ?? 4096,
+      vsize: opts.vsize ?? footprintOf(comm).vsize,
+      rss: opts.rss ?? footprintOf(comm).rss,
       tty: opts.tty ?? '?',
       // Un enfant HERITE la priorite de son parent — c'est ce qui fait
       // que `nice -n 19 sleep 300 &` laisse le `sleep` a 19, et que
@@ -217,6 +223,7 @@ export class LinuxProcessManager {
       exe: argv0,
       serviceName: opts.serviceName,
     });
+    proc.environ = { ...(opts.environ ?? parent?.environ ?? {}) };
     this.processes.set(pid, proc);
     this.publish({
       topic: 'linux.process.spawned',
@@ -229,14 +236,35 @@ export class LinuxProcessManager {
     return proc;
   }
 
+  redirectStandardStream(pid: number, fd: 0 | 1 | 2, path: string, mode: 'r' | 'w' | 'rw' | 'a'): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.redirectStandardStream(fd, path, mode);
+  }
+
+  replaceImage(pid: number, cwd: string, image: readonly string[] | null): void {
+    const process = this.processes.get(pid);
+    if (!(process instanceof LinuxProcess)) return;
+    process.cwd = cwd;
+    if (image === null || image.length === 0) return;
+    process.comm = basename(image[0]);
+    process.exe = image[0];
+    process.command = image.join(' ');
+    process.args = image.slice(1);
+  }
+
+  openFile(pid: number, path: string, mode: 'r' | 'w' | 'rw' | 'a'): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.addOpenFile(path, mode);
+  }
+
   /** Look up a process by PID. */
-  get(pid: number): ProcessInfo | undefined {
+  get(pid: number): LinuxProcess | undefined {
     return this.processes.get(pid);
   }
 
   /** List processes matching the filter (default: all). */
-  list(filter: ProcessFilter = {}): ProcessInfo[] {
-    const out: ProcessInfo[] = [];
+  list(filter: ProcessFilter = {}): LinuxProcess[] {
+    const out: LinuxProcess[] = [];
     for (const p of this.processes.values()) {
       if (filter.user !== undefined && p.user !== filter.user) continue;
       if (filter.uid !== undefined && p.uid !== filter.uid) continue;
@@ -704,6 +732,7 @@ export class LinuxProcessManager {
       exe: '/lib/systemd/systemd',
       numThreads: 1,
     });
+    init.environ = { ...INIT_ENVIRON };
     this.processes.set(INIT_PID, init);
 
     const kthreadd = new LinuxProcess({

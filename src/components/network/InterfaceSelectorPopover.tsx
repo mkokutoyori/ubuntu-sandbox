@@ -6,6 +6,7 @@
  * Shows available interfaces grouped by type, with connection status.
  */
 
+import { useLocale } from '@/i18n/useLocale';
 import { useState, useEffect, useRef } from 'react';
 import { Network, Radio, Terminal, X, Check, Cable } from 'lucide-react';
 import type { ConnectionType } from '@/network';
@@ -58,6 +59,7 @@ export function InterfaceSelectorPopover({
   onSelect,
   onCancel
 }: InterfaceSelectorPopoverProps) {
+  const { t } = useLocale();
   const [selectedType, setSelectedType] = useState<ConnectionType>(preselectedType || 'ethernet');
   const popoverRef = useRef<HTMLDivElement>(null);
   const firstFocusableRef = useRef<HTMLButtonElement>(null);
@@ -113,7 +115,7 @@ export function InterfaceSelectorPopover({
       ref={popoverRef}
       role="dialog"
       aria-modal="true"
-      aria-label={`Select ${isSource ? 'source' : 'target'} interface on ${deviceName}`}
+      aria-label={t(isSource ? 'iface.selectSource' : 'iface.selectTarget', { name: deviceName })}
       className="fixed z-50 animate-in fade-in slide-in-from-top-2 duration-150"
       style={{ left: position.x, top: position.y }}
       onClick={(e) => e.stopPropagation()}
@@ -129,14 +131,14 @@ export function InterfaceSelectorPopover({
           <div className="flex items-center gap-2">
             <Cable className="w-4 h-4 text-primary" aria-hidden="true" />
             <span className="text-sm font-medium text-white/90">
-              {isSource ? 'Source' : 'Target'}: {deviceName}
+              {t(isSource ? 'iface.headerSource' : 'iface.headerTarget', { name: deviceName })}
             </span>
           </div>
           <button
             ref={firstFocusableRef}
             onClick={onCancel}
             className="p-1 hover:bg-white/10 rounded transition-colors"
-            aria-label="Cancel interface selection"
+            aria-label={t('iface.cancel')}
           >
             <X className="w-3.5 h-3.5 text-white/50" />
           </button>
@@ -146,7 +148,7 @@ export function InterfaceSelectorPopover({
         {isSource && availableTypes.length > 1 && (
           <div className="px-4 py-2 border-b border-white/10">
             <label className="text-[10px] text-white/40 uppercase tracking-wider font-medium">
-              Cable type
+              {t('iface.cableType')}
             </label>
             <div className="flex gap-1.5 mt-1.5">
               {availableTypes.map(type => {
@@ -220,10 +222,10 @@ export function InterfaceSelectorPopover({
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-white/90 truncate">{item.name}</span>
                         {item.unavailableBecause === 'cabled' && (
-                          <span className="text-[10px] text-blue-400 ml-2 flex-shrink-0">Connected</span>
+                          <span className="text-[10px] text-blue-400 ml-2 flex-shrink-0">{t('iface.connected')}</span>
                         )}
                         {item.unavailableBecause === 'virtual' && (
-                          <span className="text-[10px] text-amber-400 ml-2 flex-shrink-0">Virtual — no socket</span>
+                          <span className="text-[10px] text-amber-400 ml-2 flex-shrink-0">{t('iface.virtual')}</span>
                         )}
                       </div>
                       {item.ipAddress && (

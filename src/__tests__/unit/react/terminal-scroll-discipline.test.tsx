@@ -7,8 +7,7 @@
  * on every render (no deps array, no "am I at the bottom" check), so a
  * stream (`tail -f`, continuous ping, `debug ip ospf`) yanked the view
  * back down on every new line — the user could never scroll up to read
- * earlier output. Real terminals (and this codebase's own
- * NetworkLogsPanel live-tail) only stick to the edge while the viewer
+ * earlier output. Real terminals only stick to the edge while the viewer
  * was already there.
  */
 import { describe, expect, test } from 'vitest';

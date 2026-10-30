@@ -43,7 +43,7 @@ describe('usedBytes tenu au fil des changements', () => {
         case 3: vfs.deleteFile(path); break;
         case 4: vfs.createSymlink(`${path}.lnk`, other, 0, 0); break;
         case 5: vfs.registerGeneratedFile(path, () => 'generated'); break;
-        case 6: vfs.copy(path, other, 0, 0, 0o022); break;
+        case 6: { const source = vfs.resolveInode(path); if (source?.type === 'file') vfs.createFileAt(other, source.content, 0o644, 0, 0); break; }
         case 7: vfs.rename(path, other); break;
         default: if (random() < 0.1) vfs.rmrf(`/tmp/d${Math.floor(random() * 5)}`); break;
       }

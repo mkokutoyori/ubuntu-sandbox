@@ -302,7 +302,7 @@ describe('nc -s names the source of the connection, whatever the family (netcat.
     const { a, b } = labWithAlias();
     const seen: string[] = [];
     b.udpBind(40123, (delivery) => { seen.push(delivery.sourceIP.toString()); });
-    await a.executeCommand(`echo hello | nc -u -s ${source} 2001:db8::2 40123`);
+    await a.executeCommand(`echo hello | nc -u -w 1 -s ${source} 2001:db8::2 40123`);
     expect(seen).toEqual([source]);
   });
 

@@ -1,0 +1,7642 @@
+{
+ "telnet": "telnet.netkit",
+ "commands": {
+  "help": {
+   "lines": [
+    "?",
+    "help",
+    "h",
+    "? send",
+    "help set",
+    "? bogus",
+    "? ? ?",
+    "?  close open"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "?",
+     "screen": "?\nCommands may be abbreviated.  Commands are:\n\nclose   \tclose current connection\nlogout  \tforcibly logout remote user and close the connection\ndisplay \tdisplay operating parameters\nmode    \ttry to enter line or character mode ('mode ?' for more)\nopen    \tconnect to a site\nquit    \texit telnet\nsend    \ttransmit special characters ('send ?' for more)\nset     \tset operating parameters ('set ?' for more)\nunset   \tunset operating parameters ('unset ?' for more)\nstatus  \tprint status information\ntoggle  \ttoggle operating parameters ('toggle ?' for more)\nslc     \tset treatment of special characters\n\nz       \tsuspend telnet\nenviron \tchange environment variables ('environ ?' for more)\ntelnet> "
+    },
+    {
+     "type": "help",
+     "screen": "help\nCommands may be abbreviated.  Commands are:\n\nclose   \tclose current connection\nlogout  \tforcibly logout remote user and close the connection\ndisplay \tdisplay operating parameters\nmode    \ttry to enter line or character mode ('mode ?' for more)\nopen    \tconnect to a site\nquit    \texit telnet\nsend    \ttransmit special characters ('send ?' for more)\nset     \tset operating parameters ('set ?' for more)\nunset   \tunset operating parameters ('unset ?' for more)\nstatus  \tprint status information\ntoggle  \ttoggle operating parameters ('toggle ?' for more)\nslc     \tset treatment of special characters\n\nz       \tsuspend telnet\nenviron \tchange environment variables ('environ ?' for more)\ntelnet> "
+    },
+    {
+     "type": "h",
+     "screen": "h\nCommands may be abbreviated.  Commands are:\n\nclose   \tclose current connection\nlogout  \tforcibly logout remote user and close the connection\ndisplay \tdisplay operating parameters\nmode    \ttry to enter line or character mode ('mode ?' for more)\nopen    \tconnect to a site\nquit    \texit telnet\nsend    \ttransmit special characters ('send ?' for more)\nset     \tset operating parameters ('set ?' for more)\nunset   \tunset operating parameters ('unset ?' for more)\nstatus  \tprint status information\ntoggle  \ttoggle operating parameters ('toggle ?' for more)\nslc     \tset treatment of special characters\n\nz       \tsuspend telnet\nenviron \tchange environment variables ('environ ?' for more)\ntelnet> "
+    },
+    {
+     "type": "? send",
+     "screen": "? send\ntransmit special characters ('send ?' for more)\ntelnet> "
+    },
+    {
+     "type": "help set",
+     "screen": "help set\nset operating parameters ('set ?' for more)\ntelnet> "
+    },
+    {
+     "type": "? bogus",
+     "screen": "? bogus\n?Invalid help command bogus\ntelnet> "
+    },
+    {
+     "type": "? ? ?",
+     "screen": "? ? ?\nPrint help information\nPrint help information\ntelnet> "
+    },
+    {
+     "type": "?  close open",
+     "screen": "?  close open\nclose current connection\nconnect to a site\ntelnet> "
+    }
+   ]
+  },
+  "status": {
+   "lines": [
+    "status",
+    "st",
+    "display",
+    "display echo",
+    "display escape autoflush",
+    "display bogus",
+    "display ?"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "status",
+     "screen": "status\nNo connection.\nEscape character is '^]'.\ntelnet> "
+    },
+    {
+     "type": "st",
+     "screen": "st\nNo connection.\nEscape character is '^]'.\ntelnet> "
+    },
+    {
+     "type": "display",
+     "screen": "display\nwill flush output when sending interrupt characters.\nwon't send interrupt characters in urgent mode.\nwon't read the telnetrc files.\nwon't map carriage return on output.\nwill recognize certain control characters.\nwon't turn on socket level debugging.\nwon't print hexadecimal representation of network traffic.\nwon't print user readable output for \"netdata\".\nwon't show option processing.\nwon't print hexadecimal representation of terminal traffic.\n\necho            [^E]\nescape          [^]]\nrlogin          [off]\ntracefile       \"(standard output)\"\nflushoutput     [^O]\ninterrupt       [^C]\nquit            [^\\]\neof             [^D]\nerase           [^?]\nkill            [^U]\nlnext           [^V]\nsusp            [^Z]\nreprint         [^R]\nworderase       [^W]\nstart           [^Q]\nstop            [^S]\nforw1           [off]\nforw2           [off]\nayt             [^T]\ntelnet> "
+    },
+    {
+     "type": "display echo",
+     "screen": "display echo\necho            [^E]\ntelnet> "
+    },
+    {
+     "type": "display escape autoflush",
+     "screen": "display escape autoflush\nescape          [^]]\nwill flush output when sending interrupt characters.\ntelnet> "
+    },
+    {
+     "type": "display bogus",
+     "screen": "display bogus\n?Unknown argument 'bogus'.\ntelnet> "
+    },
+    {
+     "type": "display ?",
+     "screen": "display ?\ntelnet> "
+    }
+   ]
+  },
+  "send": {
+   "lines": [
+    "send",
+    "send ?",
+    "send bogus",
+    "send ayt",
+    "send do ?",
+    "send do echo",
+    "send will 300",
+    "send do 5 6",
+    "send escape",
+    "send a",
+    "send do",
+    "send synch",
+    "send getstatus",
+    "send help",
+    "send ip ayt"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "send",
+     "screen": "send\nneed at least one argument for 'send' command\n'send ?' for help\ntelnet> "
+    },
+    {
+     "type": "send ?",
+     "screen": "send ?\nao              Send Telnet Abort output\nayt             Send Telnet 'Are You There'\nbrk             Send Telnet Break\nec              Send Telnet Erase Character\nel              Send Telnet Erase Line\nescape          Send current escape character\nga              Send Telnet 'Go Ahead' sequence\nip              Send Telnet Interrupt Process\nnop             Send Telnet 'No operation'\neor             Send Telnet 'End of Record'\nabort           Send Telnet 'Abort Process'\nsusp            Send Telnet 'Suspend Process'\neof             Send Telnet End of File Character\nsynch           Perform Telnet 'Synch operation'\ngetstatus       Send request for STATUS\n?               Display send options\ntelnet> "
+    },
+    {
+     "type": "send bogus",
+     "screen": "send bogus\nUnknown send argument 'bogus'\n'send ?' for help.\ntelnet> "
+    },
+    {
+     "type": "send ayt",
+     "screen": "send ayt\n?Need to be connected first.\n'send ?' for help\ntelnet> "
+    },
+    {
+     "type": "send do ?",
+     "screen": "send do ?\nUsage: send do <option>\nValid options are:\n\t BINARY ECHO RCP SUPPRESS GO AHEAD NAME STATUS\n\t TIMING MARK RCTE NAOL NAOP NAOCRD NAOHTS NAOHTD NAOFFD\n\t NAOVTS NAOVTD NAOLFD EXTEND ASCII LOGOUT BYTE MACRO\n\t DATA ENTRY TERMINAL SUPDUP SUPDUP OUTPUT SEND LOCATION\n\t TERMINAL TYPE END OF RECORD TACACS UID OUTPUT MARKING\n\t TTYLOC 3270 REGIME X.3 PAD NAWS TSPEED LFLOW LINEMODE\n\t XDISPLOC OLD-ENVIRON AUTHENTICATION ENCRYPT NEW-ENVIRON\ntelnet> "
+    },
+    {
+     "type": "send do echo",
+     "screen": "send do echo\n?Need to be connected first.\ntelnet> "
+    },
+    {
+     "type": "send will 300",
+     "screen": "send will 300\n'300': unknown argument ('send will ?' for help).\ntelnet> "
+    },
+    {
+     "type": "send do 5 6",
+     "screen": "send do 5 6\nUnknown send argument '6'\n'send ?' for help.\ntelnet> "
+    },
+    {
+     "type": "send escape",
+     "screen": "send escape\n?Need to be connected first.\n'send ?' for help\ntelnet> "
+    },
+    {
+     "type": "send a",
+     "screen": "send a\nAmbiguous send argument 'a'\n'send ?' for help.\ntelnet> "
+    },
+    {
+     "type": "send do",
+     "screen": "send do\nNeed 1 argument to 'send do' command.  'send do ?' for help.\ntelnet> "
+    },
+    {
+     "type": "send synch",
+     "screen": "send synch\n?Need to be connected first.\n'send ?' for help\ntelnet> "
+    },
+    {
+     "type": "send getstatus",
+     "screen": "send getstatus\n?Need to be connected first.\n'send ?' for help\ntelnet> "
+    },
+    {
+     "type": "send help",
+     "screen": "send help\nao              Send Telnet Abort output\nayt             Send Telnet 'Are You There'\nbrk             Send Telnet Break\nec              Send Telnet Erase Character\nel              Send Telnet Erase Line\nescape          Send current escape character\nga              Send Telnet 'Go Ahead' sequence\nip              Send Telnet Interrupt Process\nnop             Send Telnet 'No operation'\neor             Send Telnet 'End of Record'\nabort           Send Telnet 'Abort Process'\nsusp            Send Telnet 'Suspend Process'\neof             Send Telnet End of File Character\nsynch           Perform Telnet 'Synch operation'\ngetstatus       Send request for STATUS\n?               Display send options\ntelnet> "
+    },
+    {
+     "type": "send ip ayt",
+     "screen": "send ip ayt\n?Need to be connected first.\n'send ?' for help\ntelnet> "
+    }
+   ]
+  },
+  "toggle": {
+   "lines": [
+    "toggle",
+    "toggle ?",
+    "toggle bogus",
+    "toggle autoflush",
+    "toggle autoflush skiprc",
+    "toggle crlf",
+    "toggle crlf",
+    "toggle binary",
+    "toggle inbinary",
+    "toggle outbinary",
+    "toggle localchars",
+    "toggle debug",
+    "toggle netdata",
+    "toggle options",
+    "toggle a",
+    "toggle crm",
+    "toggle termdata",
+    "toggle prettydump"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "toggle",
+     "screen": "toggle\nNeed an argument to 'toggle' command.  'toggle ?' for help.\ntelnet> "
+    },
+    {
+     "type": "toggle ?",
+     "screen": "toggle ?\nautoflush       toggle flushing of output when sending interrupt characters\nautosynch       toggle automatic sending of interrupt characters in urgent mode\nskiprc          toggle don't read the telnetrc files\nbinary          toggle sending and receiving of binary data\ninbinary        toggle receiving of binary data\noutbinary       toggle sending of binary data\ncrlf            toggle sending carriage returns as telnet <CR><LF>\ncrmod           toggle mapping of received carriage returns\nlocalchars      toggle local recognition of certain control characters\n\ndebug           toggle debugging\nnetdata         toggle printing of hexadecimal network data (debugging)\nprettydump      toggle output of \"netdata\" to user readable format (debugging)\noptions         toggle viewing of options processing (debugging)\ntermdata        toggle (debugging) toggle printing of hexadecimal terminal data\n\n?               display help information\ntelnet> "
+    },
+    {
+     "type": "toggle bogus",
+     "screen": "toggle bogus\n'bogus': unknown argument ('toggle ?' for help).\ntelnet> "
+    },
+    {
+     "type": "toggle autoflush",
+     "screen": "toggle autoflush\nWon't flush output when sending interrupt characters.\ntelnet> "
+    },
+    {
+     "type": "toggle autoflush skiprc",
+     "screen": "toggle autoflush skiprc\nWill flush output when sending interrupt characters.\nWill read the telnetrc files.\ntelnet> "
+    },
+    {
+     "type": "toggle crlf",
+     "screen": "toggle crlf\nWill send carriage returns as telnet <CR><LF>.\ntelnet> "
+    },
+    {
+     "type": "toggle crlf",
+     "screen": "toggle crlf\nWill send carriage returns as telnet <CR><NUL>.\ntelnet> "
+    },
+    {
+     "type": "toggle binary",
+     "screen": "toggle binary\nNegotiating binary mode with remote host.\ntelnet> "
+    },
+    {
+     "type": "toggle inbinary",
+     "screen": "toggle inbinary\nNegotiating network ascii mode on input.\ntelnet> "
+    },
+    {
+     "type": "toggle outbinary",
+     "screen": "toggle outbinary\nNegotiating network ascii mode on output.\ntelnet> "
+    },
+    {
+     "type": "toggle localchars",
+     "screen": "toggle localchars\nWon't recognize certain control characters.\ntelnet> "
+    },
+    {
+     "type": "toggle debug",
+     "screen": "toggle debug\nWill turn on socket level debugging.\ntelnet> "
+    },
+    {
+     "type": "toggle netdata",
+     "screen": "toggle netdata\nWill print hexadecimal representation of network traffic.\ntelnet> "
+    },
+    {
+     "type": "toggle options",
+     "screen": "toggle options\nWill show option processing.\ntelnet> "
+    },
+    {
+     "type": "toggle a",
+     "screen": "toggle a\n'a': ambiguous argument ('toggle ?' for help).\ntelnet> "
+    },
+    {
+     "type": "toggle crm",
+     "screen": "toggle crm\nWill map carriage return on output.\ntelnet> "
+    },
+    {
+     "type": "toggle termdata",
+     "screen": "toggle termdata\nWill print hexadecimal representation of terminal traffic.\ntelnet> "
+    },
+    {
+     "type": "toggle prettydump",
+     "screen": "toggle prettydump\nWill print user readable output for \"netdata\".\ntelnet> "
+    }
+   ]
+  },
+  "set": {
+   "lines": [
+    "set",
+    "set ?",
+    "set escape ^X",
+    "display escape",
+    "set escape off",
+    "set escape",
+    "set escape ^]",
+    "set echo ^Z",
+    "set interrupt ^A",
+    "set interrupt",
+    "set erase x",
+    "set tracefile out.log",
+    "set bogus 1",
+    "set debug",
+    "set debug off",
+    "set debug on",
+    "set crlf on",
+    "set crlf maybe",
+    "set eof ^?",
+    "set kill off",
+    "display",
+    "set a",
+    "set e x"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "set",
+     "screen": "set\nFormat is 'set Name Value'\n'set ?' for help.\ntelnet> "
+    },
+    {
+     "type": "set ?",
+     "screen": "set ?\necho            character to toggle local echoing on/off\nescape          character to escape back to telnet command mode\nrlogin          rlogin escape character\ntracefile       file to write trace information to\n                \n                The following need 'localchars' to be toggled true\nflushoutput     character to cause an Abort Output\ninterrupt       character to cause an Interrupt Process\nquit            character to cause an Abort process\neof             character to cause an EOF \n                \n                The following are for local editing in linemode\nerase           character to use to erase a character\nkill            character to use to erase a line\nlnext           character to use for literal next\nsusp            character to cause a Suspend Process\nreprint         character to use for line reprint\nworderase       character to use to erase a word\nstart           character to use for XON\nstop            character to use for XOFF\nforw1           alternate end of line character\nforw2           alternate end of line character\nayt             alternate AYT character\n\nautoflush       enable flushing of output when sending interrupt characters\nautosynch       enable automatic sending of interrupt characters in urgent mode\nskiprc          enable don't read the telnetrc files\nbinary          enable sending and receiving of binary data\ninbinary        enable receiving of binary data\noutbinary       enable sending of binary data\ncrlf            enable sending carriage returns as telnet <CR><LF>\ncrmod           enable mapping of received carriage returns\nlocalchars      enable local recognition of certain control characters\n\ndebug           enable debugging\nnetdata         enable printing of hexadecimal network data (debugging)\nprettydump      enable output of \"netdata\" to user readable format (debugging)\noptions         enable viewing of options processing (debugging)\ntermdata        enable (debugging) toggle printing of hexadecimal terminal data\n?               display help information\ntelnet> "
+    },
+    {
+     "type": "set escape ^X",
+     "screen": "set escape ^X\nescape character is '^X'.\ntelnet> "
+    },
+    {
+     "type": "display escape",
+     "screen": "display escape\nescape          [^X]\ntelnet> "
+    },
+    {
+     "type": "set escape off",
+     "screen": "set escape off\nescape character is 'off'.\ntelnet> "
+    },
+    {
+     "type": "set escape",
+     "screen": "set escape\nFormat is 'set Name Value'\n'set ?' for help.\ntelnet> "
+    },
+    {
+     "type": "set escape ^]",
+     "screen": "set escape ^]\nescape character is '^]'.\ntelnet> "
+    },
+    {
+     "type": "set echo ^Z",
+     "screen": "set echo ^Z\necho character is '^Z'.\ntelnet> "
+    },
+    {
+     "type": "set interrupt ^A",
+     "screen": "set interrupt ^A\ninterrupt character is '^A'.\ntelnet> "
+    },
+    {
+     "type": "set interrupt",
+     "screen": "set interrupt\nFormat is 'set Name Value'\n'set ?' for help.\ntelnet> "
+    },
+    {
+     "type": "set erase x",
+     "screen": "set erase x\nerase character is 'x'.\ntelnet> "
+    },
+    {
+     "type": "set tracefile out.log",
+     "screen": "set tracefile out.log\ntracefile set to \"out.log\".\ntelnet> "
+    },
+    {
+     "type": "set bogus 1",
+     "screen": "set bogus 1\n'bogus': unknown argument ('set ?' for help).\ntelnet> "
+    },
+    {
+     "type": "set debug",
+     "screen": "set debug\nWill turn on socket level debugging.\ntelnet> "
+    },
+    {
+     "type": "set debug off",
+     "screen": "set debug off\nWon't turn on socket level debugging.\ntelnet> "
+    },
+    {
+     "type": "set debug on",
+     "screen": "set debug on\nWill turn on socket level debugging.\ntelnet> "
+    },
+    {
+     "type": "set crlf on",
+     "screen": "set crlf on\nWill send carriage returns as telnet <CR><LF>.\ntelnet> "
+    },
+    {
+     "type": "set crlf maybe",
+     "screen": "set crlf maybe\nFormat is 'set togglename [on|off]'\n'set ?' for help.\ntelnet> "
+    },
+    {
+     "type": "set eof ^?",
+     "screen": "set eof ^?\neof character is '^?'.\ntelnet> "
+    },
+    {
+     "type": "set kill off",
+     "screen": "set kill off\nkill character is 'off'.\ntelnet> "
+    },
+    {
+     "type": "display",
+     "screen": "display\nwill flush output when sending interrupt characters.\nwon't send interrupt characters in urgent mode.\nwon't read the telnetrc files.\nwon't map carriage return on output.\nwill recognize certain control characters.\nwill turn on socket level debugging.\nwon't print hexadecimal representation of network traffic.\nwon't print user readable output for \"netdata\".\nwon't show option processing.\nwon't print hexadecimal representation of terminal traffic.\n\necho            [^Z]\nescape          [^]]\nrlogin          [off]\ntracefile       \"out.log\"\nflushoutput     [^O]\ninterrupt       [^A]\nquit            [^\\]\neof             [^?]\nerase           [x]\nkill            [off]\nlnext           [^V]\nsusp            [^Z]\nreprint         [^R]\nworderase       [^W]\nstart           [^Q]\nstop            [^S]\nforw1           [off]\nforw2           [off]\nayt             [^T]\ntelnet> "
+    },
+    {
+     "type": "set a",
+     "screen": "set a\nFormat is 'set Name Value'\n'set ?' for help.\ntelnet> "
+    },
+    {
+     "type": "set e x",
+     "screen": "set e x\n'e': ambiguous argument ('set ?' for help).\ntelnet> "
+    }
+   ]
+  },
+  "unset": {
+   "lines": [
+    "unset",
+    "unset ?",
+    "unset escape",
+    "display escape",
+    "unset autoflush",
+    "unset autoflush crlf",
+    "unset bogus",
+    "unset interrupt",
+    "unset debug",
+    "unset a"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "unset",
+     "screen": "unset\nNeed an argument to 'unset' command.  'unset ?' for help.\ntelnet> "
+    },
+    {
+     "type": "unset ?",
+     "screen": "unset ?\necho            character to toggle local echoing on/off\nescape          character to escape back to telnet command mode\nrlogin          rlogin escape character\ntracefile       file to write trace information to\n                \n                The following need 'localchars' to be toggled true\nflushoutput     character to cause an Abort Output\ninterrupt       character to cause an Interrupt Process\nquit            character to cause an Abort process\neof             character to cause an EOF \n                \n                The following are for local editing in linemode\nerase           character to use to erase a character\nkill            character to use to erase a line\nlnext           character to use for literal next\nsusp            character to cause a Suspend Process\nreprint         character to use for line reprint\nworderase       character to use to erase a word\nstart           character to use for XON\nstop            character to use for XOFF\nforw1           alternate end of line character\nforw2           alternate end of line character\nayt             alternate AYT character\n\nautoflush       disable flushing of output when sending interrupt characters\nautosynch       disable automatic sending of interrupt characters in urgent mode\nskiprc          disable don't read the telnetrc files\nbinary          disable sending and receiving of binary data\ninbinary        disable receiving of binary data\noutbinary       disable sending of binary data\ncrlf            disable sending carriage returns as telnet <CR><LF>\ncrmod           disable mapping of received carriage returns\nlocalchars      disable local recognition of certain control characters\n\ndebug           disable debugging\nnetdata         disable printing of hexadecimal network data (debugging)\nprettydump      disable output of \"netdata\" to user readable format (debugging)\noptions         disable viewing of options processing (debugging)\ntermdata        disable (debugging) toggle printing of hexadecimal terminal data\n?               display help information\ntelnet> "
+    },
+    {
+     "type": "unset escape",
+     "screen": "unset escape\nescape character is 'off'.\ntelnet> "
+    },
+    {
+     "type": "display escape",
+     "screen": "display escape\nescape          [off]\ntelnet> "
+    },
+    {
+     "type": "unset autoflush",
+     "screen": "unset autoflush\nWon't flush output when sending interrupt characters.\ntelnet> "
+    },
+    {
+     "type": "unset autoflush crlf",
+     "screen": "unset autoflush crlf\nWon't flush output when sending interrupt characters.\nWill send carriage returns as telnet <CR><NUL>.\ntelnet> "
+    },
+    {
+     "type": "unset bogus",
+     "screen": "unset bogus\n'bogus': unknown argument ('unset ?' for help).\ntelnet> "
+    },
+    {
+     "type": "unset interrupt",
+     "screen": "unset interrupt\ninterrupt character is 'off'.\ntelnet> "
+    },
+    {
+     "type": "unset debug",
+     "screen": "unset debug\nWon't turn on socket level debugging.\ntelnet> "
+    },
+    {
+     "type": "unset a",
+     "screen": "unset a\nayt character is 'off'.\ntelnet> "
+    }
+   ]
+  },
+  "mode": {
+   "lines": [
+    "mode",
+    "mode ?",
+    "mode line",
+    "mode character",
+    "mode bogus",
+    "mode isig",
+    "mode -edit",
+    "mode help",
+    "mode c"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "mode",
+     "screen": "mode\nWrong number of arguments for command.\nTry ? mode for help\ntelnet> "
+    },
+    {
+     "type": "mode ?",
+     "screen": "mode ?\nformat is:  'mode Mode', where 'Mode' is one of:\n\ncharacter       Disable LINEMODE option\n                (or disable obsolete line-by-line mode)\nline            Enable LINEMODE option\n                (or enable obsolete line-by-line mode)\n\n                These require the LINEMODE option to be enabled\nisig            Enable signal trapping\n-isig           Disable signal trapping\nedit            Enable character editing\n-edit           Disable character editing\nsofttabs        Enable tab expansion\n-softtabs       Disable character editing\nlitecho         Enable literal character echo\n-litecho        Disable literal character echo\n\n?               Print help information\ntelnet> "
+    },
+    {
+     "type": "mode line",
+     "screen": "mode line\n?Need to be connected first.\n'mode ?' for help.\ntelnet> "
+    },
+    {
+     "type": "mode character",
+     "screen": "mode character\n?Need to be connected first.\n'mode ?' for help.\ntelnet> "
+    },
+    {
+     "type": "mode bogus",
+     "screen": "mode bogus\nUnknown mode 'bogus' ('mode ?' for help).\ntelnet> "
+    },
+    {
+     "type": "mode isig",
+     "screen": "mode isig\n?Need to be connected first.\n'mode ?' for help.\ntelnet> "
+    },
+    {
+     "type": "mode -edit",
+     "screen": "mode -edit\n?Need to be connected first.\n'mode ?' for help.\ntelnet> "
+    },
+    {
+     "type": "mode help",
+     "screen": "mode help\nformat is:  'mode Mode', where 'Mode' is one of:\n\ncharacter       Disable LINEMODE option\n                (or disable obsolete line-by-line mode)\nline            Enable LINEMODE option\n                (or enable obsolete line-by-line mode)\n\n                These require the LINEMODE option to be enabled\nisig            Enable signal trapping\n-isig           Disable signal trapping\nedit            Enable character editing\n-edit           Disable character editing\nsofttabs        Enable tab expansion\n-softtabs       Disable character editing\nlitecho         Enable literal character echo\n-litecho        Disable literal character echo\n\n?               Print help information\ntelnet> "
+    },
+    {
+     "type": "mode c",
+     "screen": "mode c\n?Need to be connected first.\n'mode ?' for help.\ntelnet> "
+    }
+   ]
+  },
+  "environ": {
+   "lines": [
+    "environ",
+    "environ ?",
+    "environ list",
+    "environ define FOO bar",
+    "environ list",
+    "environ undefine FOO",
+    "environ send FOO",
+    "environ export USER",
+    "environ unexport USER",
+    "environ bogus",
+    "environ define",
+    "environ define A",
+    "environ list x",
+    "environ help"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "environ",
+     "screen": "environ\nNeed an argument to 'environ' command.  'environ ?' for help.\ntelnet> "
+    },
+    {
+     "type": "environ ?",
+     "screen": "environ ?\ndefine          Define an environment variable\nundefine        Undefine an environment variable\nexport          Mark an environment variable for automatic export\nunexport        Don't mark an environment variable for automatic export\nsend            Send an environment variable\nlist            List the current environment variables\n?               Print help information\ntelnet> "
+    },
+    {
+     "type": "environ list",
+     "screen": "environ list\n  TERM                 xterm\n  PATH                 /nix/var/nix/profiles/default/bin:/root/.local/bin:/root/.cargo/bin:/usr/local/go/bin:/opt/node22/bin:/opt/maven/bin:/opt/gradle/bin:/opt/rbenv/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n  HOME                 /root\n  USER                 root\n  LOGNAME              root\ntelnet> "
+    },
+    {
+     "type": "environ define FOO bar",
+     "screen": "environ define FOO bar\ntelnet> "
+    },
+    {
+     "type": "environ list",
+     "screen": "environ list\n  TERM                 xterm\n  PATH                 /nix/var/nix/profiles/default/bin:/root/.local/bin:/root/.cargo/bin:/usr/local/go/bin:/opt/node22/bin:/opt/maven/bin:/opt/gradle/bin:/opt/rbenv/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n  HOME                 /root\n  USER                 root\n  LOGNAME              root\n* FOO                  bar\ntelnet> "
+    },
+    {
+     "type": "environ undefine FOO",
+     "screen": "environ undefine FOO\ntelnet> "
+    },
+    {
+     "type": "environ send FOO",
+     "screen": "environ send FOO\nCannot send 'FOO': Telnet ENVIRON option disabled\ntelnet> "
+    },
+    {
+     "type": "environ export USER",
+     "screen": "environ export USER\ntelnet> "
+    },
+    {
+     "type": "environ unexport USER",
+     "screen": "environ unexport USER\ntelnet> "
+    },
+    {
+     "type": "environ bogus",
+     "screen": "environ bogus\n'bogus': unknown argument ('environ ?' for help).\ntelnet> "
+    },
+    {
+     "type": "environ define",
+     "screen": "environ define\nNeed only 2 arguments to 'environ define' command.  'environ ?' for help.\ntelnet> "
+    },
+    {
+     "type": "environ define A",
+     "screen": "environ define A\nNeed only 2 arguments to 'environ define' command.  'environ ?' for help.\ntelnet> "
+    },
+    {
+     "type": "environ list x",
+     "screen": "environ list x\nNeed only 0 arguments to 'environ list' command.  'environ ?' for help.\ntelnet> "
+    },
+    {
+     "type": "environ help",
+     "screen": "environ help\ndefine          Define an environment variable\nundefine        Undefine an environment variable\nexport          Mark an environment variable for automatic export\nunexport        Don't mark an environment variable for automatic export\nsend            Send an environment variable\nlist            List the current environment variables\n?               Print help information\ntelnet> "
+    }
+   ]
+  },
+  "slc": {
+   "lines": [
+    "slc",
+    "slc ?",
+    "slc export",
+    "slc import",
+    "slc check",
+    "slc bogus"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "slc",
+     "screen": "slc\n`slc' requires a subcommand.\nTry slc ? for help\ntelnet> "
+    },
+    {
+     "type": "slc ?",
+     "screen": "slc ?\nCommands may be abbreviated.  Commands are:\n\nexport  \tUse local special character definitions\nimport  \tUse remote special character definitions\ncheck   \tVerify remote special character definitions\ntelnet> "
+    },
+    {
+     "type": "slc export",
+     "screen": "slc export\ntelnet> "
+    },
+    {
+     "type": "slc import",
+     "screen": "slc import\ntelnet> "
+    },
+    {
+     "type": "slc check",
+     "screen": "slc check\ntelnet> "
+    },
+    {
+     "type": "slc bogus",
+     "screen": "slc bogus\n?Invalid command\ntelnet> "
+    }
+   ]
+  },
+  "misc": {
+   "lines": [
+    "close",
+    "logout",
+    "bye",
+    "bogus",
+    "s",
+    "se",
+    "t",
+    "e",
+    "escape x",
+    "escape",
+    "crmod",
+    "z",
+    "!",
+    "open",
+    "quit"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "close",
+     "screen": "close\nNeed to be connected first for `bye'.\ntelnet> "
+    },
+    {
+     "type": "logout",
+     "screen": "logout\nNeed to be connected first for `logout'.\ntelnet> "
+    },
+    {
+     "type": "bye",
+     "screen": "bye\n?Invalid command\ntelnet> "
+    },
+    {
+     "type": "bogus",
+     "screen": "bogus\n?Invalid command\ntelnet> "
+    },
+    {
+     "type": "s",
+     "screen": "s\n?Ambiguous command\ntelnet> "
+    },
+    {
+     "type": "se",
+     "screen": "se\n?Ambiguous command\ntelnet> "
+    },
+    {
+     "type": "t",
+     "screen": "t\nNeed an argument to 'toggle' command.  'toggle ?' for help.\ntelnet> "
+    },
+    {
+     "type": "e",
+     "screen": "e\nNeed an argument to 'environ' command.  'environ ?' for help.\ntelnet> "
+    },
+    {
+     "type": "escape x",
+     "screen": "escape x\nDeprecated usage - please use 'set escape' in the future.\nnew escape character: "
+    },
+    {
+     "type": "escape",
+     "screen": "escape\nEscape character is 'e'.\ntelnet> "
+    },
+    {
+     "type": "crmod",
+     "screen": "crmod\nDeprecated usage - please use 'toggle crmod' in the future.\nWill map carriage return on output.\ntelnet> "
+    },
+    {
+     "type": "z",
+     "screen": "z\ntelnet> "
+    },
+    {
+     "type": "!",
+     "screen": "!\n?Invalid command\ntelnet> "
+    },
+    {
+     "type": "open",
+     "screen": "open\n(to) "
+    },
+    {
+     "type": "quit",
+     "screen": "quit\ntelnet: could not resolve quit/telnet: Name or service not known\ntelnet> "
+    }
+   ]
+  },
+  "open": {
+   "lines": [
+    "open",
+    "open -l",
+    "open host nonexistent.invalid",
+    "open nonexistent.invalid",
+    "open 127.0.0.1 1",
+    "open 127.0.0.1 99999",
+    "open 127.0.0.1 0",
+    "open 127.0.0.1 bogus-service",
+    "open -6 ::1 1",
+    "open 127.0.0.1 1 2",
+    "open ?",
+    "open -4 127.0.0.1 1",
+    "open -l alice 127.0.0.1 1",
+    "open -a 127.0.0.1 1",
+    "open -b",
+    "open 127.0.0.1 -1",
+    "open 127.0.0.1 telnet"
+   ],
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "open",
+     "screen": "open\n(to) "
+    },
+    {
+     "type": "open -l",
+     "screen": "open -l\nusage: open [-l user] [-a] host-name [port]\ntelnet> "
+    },
+    {
+     "type": "open host nonexistent.invalid",
+     "screen": "open host nonexistent.invalid\ntelnet: could not resolve host/nonexistent.invalid: Servname not supported for ai_socktype\ntelnet> "
+    },
+    {
+     "type": "open nonexistent.invalid",
+     "screen": "open nonexistent.invalid\ntelnet: could not resolve nonexistent.invalid/telnet: Name or service not known\ntelnet> "
+    },
+    {
+     "type": "open 127.0.0.1 1",
+     "screen": "open 127.0.0.1 1\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\ntelnet> "
+    },
+    {
+     "type": "open 127.0.0.1 99999",
+     "screen": "open 127.0.0.1 99999\ntelnet: port 99999 out of range\ntelnet> "
+    },
+    {
+     "type": "open 127.0.0.1 0",
+     "screen": "open 127.0.0.1 0\ntelnet: port 0 out of range\ntelnet> "
+    },
+    {
+     "type": "open 127.0.0.1 bogus-service",
+     "screen": "open 127.0.0.1 bogus-service\ntelnet: could not resolve 127.0.0.1/bogus-service: Servname not supported for ai_socktype\ntelnet> "
+    },
+    {
+     "type": "open -6 ::1 1",
+     "screen": "open -6 ::1 1\nTrying ::1...\ntelnet: Unable to connect to remote host: Address family not supported by protocol\ntelnet> "
+    },
+    {
+     "type": "open 127.0.0.1 1 2",
+     "screen": "open 127.0.0.1 1 2\nusage: open [-l user] [-a] host-name [port]\ntelnet> "
+    },
+    {
+     "type": "open ?",
+     "screen": "open ?\nusage: open [-l user] [-a] host-name [port]\ntelnet> "
+    },
+    {
+     "type": "open -4 127.0.0.1 1",
+     "screen": "open -4 127.0.0.1 1\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\ntelnet> "
+    },
+    {
+     "type": "open -l alice 127.0.0.1 1",
+     "screen": "open -l alice 127.0.0.1 1\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\ntelnet> "
+    },
+    {
+     "type": "open -a 127.0.0.1 1",
+     "screen": "open -a 127.0.0.1 1\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\ntelnet> "
+    },
+    {
+     "type": "open -b",
+     "screen": "open -b\nusage: open [-l user] [-a] host-name [port]\ntelnet> "
+    },
+    {
+     "type": "open 127.0.0.1 -1",
+     "screen": "open 127.0.0.1 -1\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\ntelnet> "
+    },
+    {
+     "type": "open 127.0.0.1 telnet",
+     "screen": "open 127.0.0.1 telnet\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\ntelnet> "
+    }
+   ]
+  },
+  "env-display": {
+   "lines": [
+    "display",
+    "environ list"
+   ],
+   "env": {
+    "DISPLAY": ":0"
+   },
+   "steps": [
+    {
+     "type": null,
+     "screen": "telnet> "
+    },
+    {
+     "type": "display",
+     "screen": "display\nwill flush output when sending interrupt characters.\nwon't send interrupt characters in urgent mode.\nwon't read the telnetrc files.\nwon't map carriage return on output.\nwill recognize certain control characters.\nwon't turn on socket level debugging.\nwon't print hexadecimal representation of network traffic.\nwon't print user readable output for \"netdata\".\nwon't show option processing.\nwon't print hexadecimal representation of terminal traffic.\n\necho            [^E]\nescape          [^]]\nrlogin          [off]\ntracefile       \"(standard output)\"\nflushoutput     [^O]\ninterrupt       [^C]\nquit            [^\\]\neof             [^D]\nerase           [^?]\nkill            [^U]\nlnext           [^V]\nsusp            [^Z]\nreprint         [^R]\nworderase       [^W]\nstart           [^Q]\nstop            [^S]\nforw1           [off]\nforw2           [off]\nayt             [^T]\ntelnet> "
+    },
+    {
+     "type": "environ list",
+     "screen": "environ list\n  TERM                 xterm\n  PATH                 /nix/var/nix/profiles/default/bin:/root/.local/bin:/root/.cargo/bin:/usr/local/go/bin:/opt/node22/bin:/opt/maven/bin:/opt/gradle/bin:/opt/rbenv/bin:/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n  HOME                 /root\n  USER                 root\n  LOGNAME              root\n* DISPLAY              vm:0\ntelnet> "
+    }
+   ]
+  }
+ },
+ "sessions": {
+  "plain-linemode": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "68656c6c6f2062616e6e65720d0a"
+    ],
+    [
+     "type",
+     "6162630d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "646973706c6179206573636170650d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "78797a0d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "636c6f73650d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68656c6c6f2062616e6e65720d0a"
+     ],
+     "screen": "hello banner\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6162630d"
+     ],
+     "screen": "abc\n",
+     "server_got": "6162630d0a"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c6179206573636170650d"
+     ],
+     "screen": "display escape\n",
+     "server_got": "646973706c6179206573636170650d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "78797a0d"
+     ],
+     "screen": "xyz\n",
+     "server_got": "78797a0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "636c6f73650d"
+     ],
+     "screen": "close\nConnection closed.\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "server-closes": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "6279650d0a"
+    ],
+    [
+     "close",
+     ""
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "6279650d0a"
+     ],
+     "screen": "bye\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "screen": "Connection closed by foreign host.\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "quit-from-escape": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "717569740d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "717569740d"
+     ],
+     "screen": "quit\nConnection closed.\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "char-mode": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "6162"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c65206c6f63616c63686172730d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "03"
+    ],
+    [
+     "type",
+     "1c"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "6162"
+     ],
+     "screen": "",
+     "server_got": "6162"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in single character mode\nCatching signals locally\nRemote character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "",
+     "server_got": "03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206c6f63616c63686172730d"
+     ],
+     "screen": "toggle localchars\nWon't recognize certain control characters.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "",
+     "server_got": "03"
+    },
+    {
+     "step": [
+      "type",
+      "1c"
+     ],
+     "screen": "",
+     "server_got": "1c"
+    }
+   ]
+  },
+  "echo-only": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb01"
+    ],
+    [
+     "type",
+     "61620d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01"
+     ],
+     "screen": "",
+     "server_got": "fffd01"
+    },
+    {
+     "step": [
+      "type",
+      "61620d"
+     ],
+     "screen": "",
+     "server_got": "61620d0a"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nRemote character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "sga-only": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb03"
+    ],
+    [
+     "type",
+     "61620d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "61620d"
+     ],
+     "screen": "ab^M",
+     "server_got": "61620d00"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in single character mode\nCatching signals locally\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "^M",
+     "server_got": "0d00"
+    }
+   ]
+  },
+  "offers": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffd18"
+    ],
+    [
+     "send",
+     "fffa1801fff0"
+    ],
+    [
+     "send",
+     "fffd1f"
+    ],
+    [
+     "send",
+     "fffd20"
+    ],
+    [
+     "send",
+     "fffa2001fff0"
+    ],
+    [
+     "send",
+     "fffd23"
+    ],
+    [
+     "send",
+     "fffd27"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ],
+    [
+     "send",
+     "fffd22"
+    ],
+    [
+     "send",
+     "fffd05"
+    ],
+    [
+     "send",
+     "fffd21"
+    ],
+    [
+     "send",
+     "fffdc8"
+    ],
+    [
+     "send",
+     "fffd00"
+    ],
+    [
+     "send",
+     "fffb00"
+    ],
+    [
+     "send",
+     "fffb05"
+    ],
+    [
+     "send",
+     "fffb06"
+    ],
+    [
+     "send",
+     "fffd06"
+    ],
+    [
+     "send",
+     "fffb18"
+    ],
+    [
+     "send",
+     "fffb64"
+    ],
+    [
+     "send",
+     "fffe18"
+    ],
+    [
+     "send",
+     "fffd03"
+    ],
+    [
+     "send",
+     "fffe03"
+    ],
+    [
+     "send",
+     "fffc01"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd18"
+     ],
+     "screen": "",
+     "server_got": "fffb18"
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa1800787465726dfff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd1f"
+     ],
+     "screen": "",
+     "server_got": "fffb1ffffa1f00500018fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd20"
+     ],
+     "screen": "",
+     "server_got": "fffb20"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2001fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa200033383430302c3338343030fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd23"
+     ],
+     "screen": "",
+     "server_got": "fffc23"
+    },
+    {
+     "step": [
+      "send",
+      "fffd27"
+     ],
+     "screen": "",
+     "server_got": "fffb27"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd22"
+     ],
+     "screen": "",
+     "server_got": "fffd03fffb22fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd05"
+     ],
+     "screen": "",
+     "server_got": "fffc05"
+    },
+    {
+     "step": [
+      "send",
+      "fffd21"
+     ],
+     "screen": "",
+     "server_got": "fffb21"
+    },
+    {
+     "step": [
+      "send",
+      "fffdc8"
+     ],
+     "screen": "",
+     "server_got": "fffcc8"
+    },
+    {
+     "step": [
+      "send",
+      "fffd00"
+     ],
+     "screen": "",
+     "server_got": "fffb00"
+    },
+    {
+     "step": [
+      "send",
+      "fffb00"
+     ],
+     "screen": "",
+     "server_got": "fffd00"
+    },
+    {
+     "step": [
+      "send",
+      "fffb05"
+     ],
+     "screen": "",
+     "server_got": "fffd05"
+    },
+    {
+     "step": [
+      "send",
+      "fffb06"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd06"
+     ],
+     "screen": "",
+     "server_got": "fffb06"
+    },
+    {
+     "step": [
+      "send",
+      "fffb18"
+     ],
+     "screen": "",
+     "server_got": "fffe18"
+    },
+    {
+     "step": [
+      "send",
+      "fffb64"
+     ],
+     "screen": "",
+     "server_got": "fffe64"
+    },
+    {
+     "step": [
+      "send",
+      "fffe18"
+     ],
+     "screen": "",
+     "server_got": "fffc18"
+    },
+    {
+     "step": [
+      "send",
+      "fffd03"
+     ],
+     "screen": "",
+     "server_got": "fffb03"
+    },
+    {
+     "step": [
+      "send",
+      "fffe03"
+     ],
+     "screen": "",
+     "server_got": "fffc03"
+    },
+    {
+     "step": [
+      "send",
+      "fffc01"
+     ],
+     "screen": "",
+     "server_got": ""
+    }
+   ]
+  },
+  "offers-then-display": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffd18fffd1ffffb01fffb03fffd22"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "646973706c61790d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd18fffd1ffffb01fffb03fffd22"
+     ],
+     "screen": "",
+     "server_got": "fffb18fffb1ffffa1f00500018fff0fffd01fffd03fffb22fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c61790d"
+     ],
+     "screen": "display\nwill flush output when sending interrupt characters.\nwon't send interrupt characters in urgent mode.\nwon't read the telnetrc files.\nwon't map carriage return on output.\nwill recognize certain control characters.\nwon't turn on socket level debugging.\nwon't print hexadecimal representation of network traffic.\nwon't print user readable output for \"netdata\".\nwon't show option processing.\nwon't print hexadecimal representation of terminal traffic.\n\necho            [^E]\nescape          [^]]\nrlogin          [off]\ntracefile       \"(standard output)\"\nflushoutput     [^O]\ninterrupt       [^C]\nquit            [^\\]\neof             [^D]\nerase           [^?]\nkill            [^U]\nlnext           [^V]\nsusp            [^Z]\nreprint         [^R]\nworderase       [^W]\nstart           [^Q]\nstop            [^S]\nforw1           [off]\nforw2           [off]\nayt             [^T]\n     DO   ECHO\n     DO   SUPPRESS GO AHEAD\n     WILL TERMINAL TYPE\n     WILL NAWS\n     WILL LINEMODE\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    }
+   ]
+  },
+  "data-translation": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "610d0a620d00630d640a"
+    ],
+    [
+     "send",
+     "ffff41"
+    ],
+    [
+     "send",
+     "780d79"
+    ],
+    [
+     "type",
+     "710d"
+    ],
+    [
+     "type",
+     "ff0d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c652063726c660d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "7a0d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c652063726d6f640d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "700d710a"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "610d0a620d00630d640a"
+     ],
+     "screen": "a\nb\rc\rd\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "ffff41"
+     ],
+     "screen": "\u00ffA",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "780d79"
+     ],
+     "screen": "x\ry",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "710d"
+     ],
+     "screen": "q\n",
+     "server_got": "710d0a"
+    },
+    {
+     "step": [
+      "type",
+      "ff0d"
+     ],
+     "screen": "\u00ff\n",
+     "server_got": "ffff0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c652063726c660d"
+     ],
+     "screen": "toggle crlf\nWill send carriage returns as telnet <CR><LF>.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "7a0d"
+     ],
+     "screen": "z\n",
+     "server_got": "7a0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c652063726d6f640d"
+     ],
+     "screen": "toggle crmod\nWill map carriage return on output.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "send",
+      "700d710a"
+     ],
+     "screen": "p\r\nq\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "controls": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fff1fff9fff6"
+    ],
+    [
+     "send",
+     "74657874"
+    ],
+    [
+     "send",
+     "fff2"
+    ],
+    [
+     "send",
+     "6d6f72650d0a"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fff1fff9fff6"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "74657874"
+     ],
+     "screen": "text",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fff2"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "6d6f72650d0a"
+     ],
+     "screen": "more\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "send-commands": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "73656e64206179740d"
+    ],
+    [
+     "type",
+     "73656e642069700d"
+    ],
+    [
+     "type",
+     "73656e642062726b0d"
+    ],
+    [
+     "type",
+     "73656e642065630d"
+    ],
+    [
+     "type",
+     "73656e6420656c0d"
+    ],
+    [
+     "type",
+     "73656e6420616f0d"
+    ],
+    [
+     "type",
+     "73656e642067610d"
+    ],
+    [
+     "type",
+     "73656e64206e6f700d"
+    ],
+    [
+     "type",
+     "73656e6420656f720d"
+    ],
+    [
+     "type",
+     "73656e642061626f72740d"
+    ],
+    [
+     "type",
+     "73656e6420737573700d"
+    ],
+    [
+     "type",
+     "73656e6420656f660d"
+    ],
+    [
+     "type",
+     "73656e64206573636170650d"
+    ],
+    [
+     "type",
+     "73656e642073796e63680d"
+    ],
+    [
+     "type",
+     "73656e64206765747374617475730d"
+    ],
+    [
+     "type",
+     "73656e6420646f206563686f0d"
+    ],
+    [
+     "type",
+     "73656e642077696c6c2039390d"
+    ],
+    [
+     "type",
+     "73656e64206179742069700d"
+    ],
+    [
+     "type",
+     "73656e642078797a0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "73656e64206179740d"
+     ],
+     "screen": "send ayt\n",
+     "server_got": "fff6"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642069700d"
+     ],
+     "screen": "",
+     "server_got": "73656e642069700d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642062726b0d"
+     ],
+     "screen": "",
+     "server_got": "73656e642062726b0d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642065630d"
+     ],
+     "screen": "",
+     "server_got": "73656e642065630d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420656c0d"
+     ],
+     "screen": "",
+     "server_got": "73656e6420656c0d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420616f0d"
+     ],
+     "screen": "",
+     "server_got": "73656e6420616f0d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642067610d"
+     ],
+     "screen": "",
+     "server_got": "73656e642067610d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e64206e6f700d"
+     ],
+     "screen": "",
+     "server_got": "73656e64206e6f700d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420656f720d"
+     ],
+     "screen": "",
+     "server_got": "73656e6420656f720d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642061626f72740d"
+     ],
+     "screen": "",
+     "server_got": "73656e642061626f72740d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420737573700d"
+     ],
+     "screen": "",
+     "server_got": "73656e6420737573700d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420656f660d"
+     ],
+     "screen": "",
+     "server_got": "73656e6420656f660d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e64206573636170650d"
+     ],
+     "screen": "",
+     "server_got": "73656e64206573636170650d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642073796e63680d"
+     ],
+     "screen": "",
+     "server_got": "73656e642073796e63680d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e64206765747374617475730d"
+     ],
+     "screen": "",
+     "server_got": "73656e64206765747374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f206563686f0d"
+     ],
+     "screen": "",
+     "server_got": "73656e6420646f206563686f0d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642077696c6c2039390d"
+     ],
+     "screen": "",
+     "server_got": "73656e642077696c6c2039390d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e64206179742069700d"
+     ],
+     "screen": "",
+     "server_got": "73656e64206179742069700d00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642078797a0d"
+     ],
+     "screen": "",
+     "server_got": "73656e642078797a0d00"
+    }
+   ]
+  },
+  "escape-char": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "73657420657363617065205e580d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "18"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "1818"
+    ],
+    [
+     "type",
+     "650d"
+    ],
+    [
+     "type",
+     "18"
+    ],
+    [
+     "type",
+     "717569740d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "73657420657363617065205e580d"
+     ],
+     "screen": "set escape ^X\nescape character is '^X'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "18"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in single character mode\nCatching signals locally\nRemote character echo\nEscape character is '^X'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "1818"
+     ],
+     "screen": "",
+     "server_got": "18"
+    },
+    {
+     "step": [
+      "type",
+      "650d"
+     ],
+     "screen": "",
+     "server_got": "650d00"
+    },
+    {
+     "step": [
+      "type",
+      "18"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "717569740d"
+     ],
+     "screen": "quit\nConnection closed.\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "dash-e": {
+   "argv": [
+    "-e",
+    "^X",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "18"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Telnet escape character is '^X'.\nTrying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^X'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "18"
+     ],
+     "screen": "^X\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nEscape character is '^X'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "dash-E": {
+   "argv": [
+    "-E",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6162630d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is 'off'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6162630d"
+     ],
+     "screen": "abc\n",
+     "server_got": "1d6162630d0a"
+    }
+   ]
+  },
+  "dash-8": {
+   "argv": [
+    "-8",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "646973706c61790d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c61790d"
+     ],
+     "screen": "display\n",
+     "server_got": "646973706c61790d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "dash-L": {
+   "argv": [
+    "-L",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "646973706c61790d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c61790d"
+     ],
+     "screen": "display\nwill flush output when sending interrupt characters.\nwon't send interrupt characters in urgent mode.\nwon't read the telnetrc files.\nwon't map carriage return on output.\nwill recognize certain control characters.\nwon't turn on socket level debugging.\nwon't print hexadecimal representation of network traffic.\nwon't print user readable output for \"netdata\".\nwon't show option processing.\nwon't print hexadecimal representation of terminal traffic.\n\necho            [^E]\nescape          [^]]\nrlogin          [off]\ntracefile       \"(standard output)\"\nflushoutput     [^O]\ninterrupt       [^C]\nquit            [^\\]\neof             [^D]\nerase           [^?]\nkill            [^U]\nlnext           [^V]\nsusp            [^Z]\nreprint         [^R]\nworderase       [^W]\nstart           [^Q]\nstop            [^S]\nforw1           [off]\nforw2           [off]\nayt             [^T]\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "dash-l-port23": {
+   "argv": [
+    "-l",
+    "alice",
+    "127.0.0.1",
+    "23"
+   ],
+   "port": 23,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd27"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ],
+    [
+     "send",
+     "fffd18"
+    ],
+    [
+     "send",
+     "fffa1801fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd27"
+     ],
+     "screen": "",
+     "server_got": "fffb27"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700005553455201616c696365fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd18"
+     ],
+     "screen": "",
+     "server_got": "fffb18"
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa1800787465726dfff0"
+    }
+   ]
+  },
+  "default-port": {
+   "argv": [
+    "127.0.0.1"
+   ],
+   "port": 23,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03fffd18fffd1ffffd20fffd27fffd22fffd21fffb05"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "646973706c61790d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "fffd03fffb18fffb1ffffb20fffb21fffb22fffb27fffd05"
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03fffd18fffd1ffffd20fffd27fffd22fffd21fffb05"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffa1f00500018fff0fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating with LINEMODE option\nNo line editing\nNo catching of signals\nSpecial characters are local values\nRemote character echo\nLocal flow control\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c61790d"
+     ],
+     "screen": "",
+     "server_got": "646973706c61790d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    }
+   ]
+  },
+  "default-port-wait": {
+   "argv": [
+    "127.0.0.1"
+   ],
+   "port": 23,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "wait",
+     0.2
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "fffd03fffb18fffb1ffffb20fffb21fffb22fffb27fffd05"
+    },
+    {
+     "step": [
+      "wait",
+      0.2
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating with LINEMODE option\nNo line editing\nNo catching of signals\nSpecial characters are local values\nLocal character echo\nNo flow control\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "^M",
+     "server_got": "0d00"
+    }
+   ]
+  },
+  "dash-a-port23": {
+   "argv": [
+    "-a",
+    "127.0.0.1"
+   ],
+   "port": 23,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd27"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "fffd03fffb18fffb1ffffb20fffb21fffb22fffb27fffd05"
+    },
+    {
+     "step": [
+      "send",
+      "fffd27"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700005553455201726f6f74fff0"
+    }
+   ]
+  },
+  "binary": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c652062696e6172790d"
+    ],
+    [
+     "type",
+     "746f67676c652062696e6172790d"
+    ],
+    [
+     "type",
+     "746f67676c6520696e62696e6172790d"
+    ],
+    [
+     "type",
+     "746f67676c65206f757462696e6172790d"
+    ],
+    [
+     "type",
+     "746f67676c65206f757462696e6172790d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffd00fffb00"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c652062696e6172790d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c652062696e6172790d"
+     ],
+     "screen": "toggle binary\nNegotiating binary mode with remote host.\n",
+     "server_got": "fffd00fffb00"
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c652062696e6172790d"
+     ],
+     "screen": "",
+     "server_got": "746f67676c652062696e6172790d"
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c6520696e62696e6172790d"
+     ],
+     "screen": "",
+     "server_got": "746f67676c6520696e62696e6172790d"
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206f757462696e6172790d"
+     ],
+     "screen": "",
+     "server_got": "746f67676c65206f757462696e6172790d"
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206f757462696e6172790d"
+     ],
+     "screen": "",
+     "server_got": "746f67676c65206f757462696e6172790d"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d"
+    },
+    {
+     "step": [
+      "send",
+      "fffd00fffb00"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c652062696e6172790d"
+     ],
+     "screen": "toggle binary\nNegotiating network ascii mode with remote host.\n",
+     "server_got": "fffe00fffc00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    }
+   ]
+  },
+  "mode-line-char": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6d6f6465206c696e650d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "6d6f6465206368617261637465720d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "6d6f646520697369670d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206c696e650d"
+     ],
+     "screen": "mode line\n",
+     "server_got": "fffe03fffb22fffe01"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\n",
+     "server_got": "7374617475730d0a"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206368617261637465720d"
+     ],
+     "screen": "mode character\n",
+     "server_got": "6d6f6465206368617261637465720d0a"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\n",
+     "server_got": "7374617475730d0a"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f646520697369670d"
+     ],
+     "screen": "mode isig\n",
+     "server_got": "6d6f646520697369670d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "linemode-option": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffd22"
+    ],
+    [
+     "send",
+     "fffa220107fff0"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "6d6f6465202d656469740d"
+    ],
+    [
+     "type",
+     "6d6f646520697369670d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "736c63206578706f72740d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffe22"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd22"
+     ],
+     "screen": "",
+     "server_got": "fffd03fffb22fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa220107fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating with LINEMODE option\nNo line editing\nNo catching of signals\nSpecial characters are local values\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465202d656469740d"
+     ],
+     "screen": "mode -edit^M",
+     "server_got": "6d6f6465202d656469740d00"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f646520697369670d"
+     ],
+     "screen": "mode isig^M",
+     "server_got": "6d6f646520697369670d00"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status^M",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "736c63206578706f72740d"
+     ],
+     "screen": "slc export^M",
+     "server_got": "736c63206578706f72740d00"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status^M",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "^M",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "send",
+      "fffe22"
+     ],
+     "screen": "",
+     "server_got": "fffc22"
+    }
+   ]
+  },
+  "status-option": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffd05"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "73656e64206765747374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffa0500fb01fd03fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd05"
+     ],
+     "screen": "",
+     "server_got": "fffc05"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "73656e64206765747374617475730d"
+     ],
+     "screen": "send getstatus\nRemote side does not support STATUS option\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa0500fb01fd03fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    }
+   ]
+  },
+  "tm": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffd06"
+    ],
+    [
+     "send",
+     "fffb06"
+    ],
+    [
+     "send",
+     "fffe06"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd06"
+     ],
+     "screen": "",
+     "server_got": "fffb06"
+    },
+    {
+     "step": [
+      "send",
+      "fffb06"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffe06"
+     ],
+     "screen": "",
+     "server_got": ""
+    }
+   ]
+  },
+  "refused-then-close": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6f70656e203132372e302e302e3120310d"
+    ],
+    [
+     "type",
+     "636c6f73650d"
+    ],
+    [
+     "type",
+     "636c6f73650d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6f70656e203132372e302e302e3120310d"
+     ],
+     "screen": "open 127.0.0.1 1\n?Already connected to 127.0.0.1\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "636c6f73650d"
+     ],
+     "screen": "close\nConnection closed.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "636c6f73650d"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "",
+     "server_got": ""
+    }
+   ]
+  },
+  "open-twice": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6f70656e203132372e302e302e3120320d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6f70656e203132372e302e302e3120320d"
+     ],
+     "screen": "open 127.0.0.1 2\n?Already connected to 127.0.0.1\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "ctrl-c": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "03"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "^C",
+     "server_got": "fff4fffd06"
+    }
+   ]
+  },
+  "suspend-key": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "1a"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1a"
+     ],
+     "screen": "",
+     "server_got": "1a"
+    }
+   ]
+  },
+  "timestamped": {
+   "argv": [
+    "-d",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "646973706c61790d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c61790d"
+     ],
+     "screen": "display\n",
+     "server_got": "646973706c61790d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "long-line": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161610d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161610d"
+     ],
+     "screen": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+     "server_got": "6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161610d0a"
+    }
+   ]
+  },
+  "trace-options": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c65206f7074696f6e730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffd18"
+    ],
+    [
+     "send",
+     "fffa1801fff0"
+    ],
+    [
+     "send",
+     "fffd1f"
+    ],
+    [
+     "send",
+     "fffd20"
+    ],
+    [
+     "send",
+     "fffa2001fff0"
+    ],
+    [
+     "send",
+     "fffd21"
+    ],
+    [
+     "send",
+     "fffa2101fff0"
+    ],
+    [
+     "send",
+     "fffa2100fff0"
+    ],
+    [
+     "send",
+     "fffa2105fff0"
+    ],
+    [
+     "send",
+     "fffd22"
+    ],
+    [
+     "send",
+     "fffa220107fff0"
+    ],
+    [
+     "send",
+     "fffa220107fff0"
+    ],
+    [
+     "send",
+     "fffa22fb02fff0"
+    ],
+    [
+     "send",
+     "fffa22fd02fffffff0"
+    ],
+    [
+     "send",
+     "fffa22090102fff0"
+    ],
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "send",
+     "fffd05"
+    ],
+    [
+     "send",
+     "fffa0501fff0"
+    ],
+    [
+     "send",
+     "fffa0500fb01fd03fa18004142f0fff0"
+    ],
+    [
+     "send",
+     "fffd27"
+    ],
+    [
+     "send",
+     "fffa2701005553455203464f4ffff0"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ],
+    [
+     "send",
+     "fffa270000410142fff0"
+    ],
+    [
+     "send",
+     "fffa2702037801790201fff0"
+    ],
+    [
+     "send",
+     "fffa2709fff0"
+    ],
+    [
+     "send",
+     "fffd23"
+    ],
+    [
+     "send",
+     "fffa2301fff0"
+    ],
+    [
+     "send",
+     "fffa230031fff0"
+    ],
+    [
+     "send",
+     "fffb06"
+    ],
+    [
+     "send",
+     "fffd06"
+    ],
+    [
+     "send",
+     "fffac8010203fff0"
+    ],
+    [
+     "send",
+     "fffa1801ff01"
+    ],
+    [
+     "send",
+     "fffa1801fff1"
+    ],
+    [
+     "send",
+     "fff9fff1fff2"
+    ],
+    [
+     "send",
+     "fffbc8"
+    ],
+    [
+     "send",
+     "fffdff"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "646973706c61790d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206f7074696f6e730d"
+     ],
+     "screen": "toggle options\nWill show option processing.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "send",
+      "fffd18"
+     ],
+     "screen": "RCVD DO TERMINAL TYPE\r\nSENT WILL TERMINAL TYPE\r\n",
+     "server_got": "fffb18"
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff0"
+     ],
+     "screen": "RCVD IAC SB TERMINAL-TYPE SEND\r\nSENT IAC SB TERMINAL-TYPE IS \"xterm\"\r\n",
+     "server_got": "fffa1800787465726dfff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd1f"
+     ],
+     "screen": "RCVD DO NAWS\r\nSENT WILL NAWS\r\nSENT IAC SB NAWS 0 80 (80) 0 24 (24)\r\n",
+     "server_got": "fffb1ffffa1f00500018fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd20"
+     ],
+     "screen": "RCVD DO TSPEED\r\nSENT WILL TSPEED\r\n",
+     "server_got": "fffb20"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2001fff0"
+     ],
+     "screen": "RCVD IAC SB TERMINAL-SPEED SEND\r\nSENT IAC SB TERMINAL-SPEED IS 38400,38400\r\n",
+     "server_got": "fffa200033383430302c3338343030fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffd21"
+     ],
+     "screen": "RCVD DO LFLOW\r\nSENT WILL LFLOW\r\n",
+     "server_got": "fffb21"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2101fff0"
+     ],
+     "screen": "RCVD IAC SB TOGGLE-FLOW-CONTROL ON\r\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa2100fff0"
+     ],
+     "screen": "RCVD IAC SB TOGGLE-FLOW-CONTROL OFF\r\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa2105fff0"
+     ],
+     "screen": "RCVD IAC SB TOGGLE-FLOW-CONTROL 5 (unknown)\r\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd22"
+     ],
+     "screen": "RCVD DO LINEMODE\r\nSENT DO SUPPRESS GO AHEAD\r\nSENT WILL LINEMODE\r\nSENT IAC SB LINEMODE SLC SYNCH NOSUPPORT 0; IP VARIABLE|FLUSHIN|FLUSHOUT 3; AO VARIABLE 15; AYT NOSUPPORT 0; ABORT VARIABLE|FLUSHIN|FLUSHOUT 28; EOF VARIABLE 4; SUSP VARIABLE|FLUSHIN 26; EC VARIABLE 127; EL VARIABLE 21; XON VARIABLE 17; XOFF VARIABLE 19; FORW1 NOSUPPORT 0; FORW2 NOSUPPORT 0;\r\n",
+     "server_got": "fffd03fffb22fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa220107fff0"
+     ],
+     "screen": "RCVD IAC SB LINEMODE MODE EDIT|TRAPSIG|ACK\r\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa220107fff0"
+     ],
+     "screen": "RCVD IAC SB LINEMODE MODE EDIT|TRAPSIG|ACK\r\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa22fb02fff0"
+     ],
+     "screen": "RCVD IAC SB LINEMODE WILL Forward Mask\r\nSENT IAC SB LINEMODE DONT Forward Mask\r\n",
+     "server_got": "fffa22fe02fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa22fd02fffffff0"
+     ],
+     "screen": "RCVD IAC SB LINEMODE DO Forward Mask ff\r\nSENT IAC SB LINEMODE WONT Forward Mask\r\n",
+     "server_got": "fffa22fc02fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa22090102fff0"
+     ],
+     "screen": "RCVD IAC SB LINEMODE 9 (unknown) 1 2\r\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "RCVD WILL ECHO\r\nSENT DO ECHO\r\nRCVD WILL SUPPRESS GO AHEAD\n",
+     "server_got": "fffd01"
+    },
+    {
+     "step": [
+      "send",
+      "fffd05"
+     ],
+     "screen": "RCVD DO STATUS\nSENT WONT STATUS\n",
+     "server_got": "fffc05"
+    },
+    {
+     "step": [
+      "send",
+      "fffa0501fff0"
+     ],
+     "screen": "RCVD IAC SB STATUS SEND\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa0500fb01fd03fa18004142f0fff0"
+     ],
+     "screen": "RCVD IAC SB STATUS IS\n WILL ECHO\n DO SUPPRESS GO AHEAD\n SB TERMINAL-TYPE IS \"AB\" SE\n\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd27"
+     ],
+     "screen": "RCVD DO NEW-ENVIRON\nSENT WILL NEW-ENVIRON\n",
+     "server_got": "fffb27"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701005553455203464f4ffff0"
+     ],
+     "screen": "RCVD IAC SB ENVIRON SEND 000 \"USER\" 003 \"FOO\"\nSENT IAC SB ENVIRON IS \n",
+     "server_got": "fffa2700fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "RCVD IAC SB ENVIRON SEND \nSENT IAC SB ENVIRON IS \n",
+     "server_got": "fffa2700fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa270000410142fff0"
+     ],
+     "screen": "RCVD IAC SB ENVIRON IS VAR \"A\" VALUE \"B\"\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa2702037801790201fff0"
+     ],
+     "screen": "RCVD IAC SB ENVIRON INFO USERVAR \"x\" VALUE \"y\" ESC VALUE \n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa2709fff0"
+     ],
+     "screen": "RCVD IAC SB ENVIRON \n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd23"
+     ],
+     "screen": "RCVD DO XDISPLOC\nSENT WONT XDISPLOC\n",
+     "server_got": "fffc23"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2301fff0"
+     ],
+     "screen": "RCVD IAC SB X-DISPLAY-LOCATION SEND\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa230031fff0"
+     ],
+     "screen": "RCVD IAC SB X-DISPLAY-LOCATION IS \"1\"\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb06"
+     ],
+     "screen": "RCVD WILL TIMING MARK\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd06"
+     ],
+     "screen": "RCVD DO TIMING MARK\nSENT WILL TIMING MARK\n",
+     "server_got": "fffb06"
+    },
+    {
+     "step": [
+      "send",
+      "fffac8010203fff0"
+     ],
+     "screen": "RCVD IAC SB 200 (unknown) 1 2 3\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801ff01"
+     ],
+     "screen": "In SUBOPTION processing, RCVD IAC 1\nRCVD IAC SB (terminated by IAC ECHO, not IAC SE!) TERMINAL-TYPE SEND\nSENT IAC SB TERMINAL-TYPE IS \"xterm\"\nRCVD IAC 1\n",
+     "server_got": "fffa1800787465726dfff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff1"
+     ],
+     "screen": "In SUBOPTION processing, RCVD IAC NOP\nRCVD IAC SB (terminated by IAC NOP, not IAC SE!) TERMINAL-TYPE SEND\nSENT IAC SB TERMINAL-TYPE IS \"xterm\"\nRCVD IAC NOP\n",
+     "server_got": "fffa1800787465726dfff0"
+    },
+    {
+     "step": [
+      "send",
+      "fff9fff1fff2"
+     ],
+     "screen": "RCVD IAC GA\nRCVD IAC NOP\nRCVD IAC DMARK\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffbc8"
+     ],
+     "screen": "RCVD WILL 200\nSENT DONT 200\n",
+     "server_got": "fffec8"
+    },
+    {
+     "step": [
+      "send",
+      "fffdff"
+     ],
+     "screen": "RCVD DO EXOPL\nSENT WONT EXOPL\n",
+     "server_got": "fffcff"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c61790d"
+     ],
+     "screen": "display\nwill flush output when sending interrupt characters.\nwon't send interrupt characters in urgent mode.\nwon't read the telnetrc files.\nwon't map carriage return on output.\nwill recognize certain control characters.\nwon't turn on socket level debugging.\nwon't print hexadecimal representation of network traffic.\nwon't print user readable output for \"netdata\".\nwill show option processing.\nwon't print hexadecimal representation of terminal traffic.\n\necho            [^E]\nescape          [^]]\nrlogin          [off]\ntracefile       \"(standard output)\"\nflushoutput     [^O]\ninterrupt       [^C]\nquit            [^\\]\neof             [^D]\nerase           [^?]\nkill            [^U]\nlnext           [^V]\nsusp            [^Z]\nreprint         [^R]\nworderase       [^W]\nstart           [^Q]\nstop            [^S]\nforw1           [off]\nforw2           [off]\nayt             [^T]\n     DO   ECHO\n     DO   SUPPRESS GO AHEAD\nresp WILL_WONT STATUS: 1\nwant WONT STATUS\n     WILL TERMINAL TYPE\n     WILL NAWS\n     WILL TSPEED\n     WILL LFLOW\n     WILL LINEMODE\nresp WILL_WONT XDISPLOC: 1\nwant WONT XDISPLOC\n     WILL NEW-ENVIRON\nresp DO_DONT 200: 1\nwant DONT 200\nresp WILL_WONT IAC: 1\nwant WONT IAC\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    }
+   ]
+  },
+  "environ-session": {
+   "argv": [
+    "-l",
+    "alice",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": {
+    "DISPLAY": ":0.0",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "PRINTER": "lp",
+    "MYVAR": "v"
+   },
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd27"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ],
+    [
+     "send",
+     "fffa2701005553455203464f4ffff0"
+    ],
+    [
+     "send",
+     "fffa270100444953504c4159035859fff0"
+    ],
+    [
+     "send",
+     "fffa270103fff0"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "656e7669726f6e20646566696e6520464f4f206261720d"
+    ],
+    [
+     "type",
+     "656e7669726f6e206578706f727420464f4f0d"
+    ],
+    [
+     "type",
+     "656e7669726f6e2073656e6420464f4f0d"
+    ],
+    [
+     "type",
+     "656e7669726f6e2073656e64204e4f50450d"
+    ],
+    [
+     "type",
+     "656e7669726f6e206c6973740d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "656e7669726f6e20756e646566696e6520464f4f0d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd27"
+     ],
+     "screen": "",
+     "server_got": "fffb27"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700005553455201616c69636500444953504c415901766d3a302e30005052494e544552016c70fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701005553455203464f4ffff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa270100444953504c4159035859fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa270103fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700fff0"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "656e7669726f6e20646566696e6520464f4f206261720d"
+     ],
+     "screen": "environ define FOO bar\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "656e7669726f6e206578706f727420464f4f0d"
+     ],
+     "screen": "environ export FOO\n",
+     "server_got": "656e7669726f6e206578706f727420464f4f0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "656e7669726f6e2073656e6420464f4f0d"
+     ],
+     "screen": "environ send FOO\n",
+     "server_got": "656e7669726f6e2073656e6420464f4f0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "656e7669726f6e2073656e64204e4f50450d"
+     ],
+     "screen": "environ send NOPE\n",
+     "server_got": "656e7669726f6e2073656e64204e4f50450d0a"
+    },
+    {
+     "step": [
+      "type",
+      "656e7669726f6e206c6973740d"
+     ],
+     "screen": "environ list\n",
+     "server_got": "656e7669726f6e206c6973740d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700005553455201616c69636500444953504c415901766d3a302e30005052494e544552016c7003464f4f01626172fff0"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "656e7669726f6e20756e646566696e6520464f4f0d"
+     ],
+     "screen": "environ undefine FOO\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700005553455201616c69636500444953504c415901766d3a302e30005052494e544552016c70fff0"
+    }
+   ]
+  },
+  "xdisploc": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": {
+    "DISPLAY": "host.example:1.2"
+   },
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd23"
+    ],
+    [
+     "send",
+     "fffa2301fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd23"
+     ],
+     "screen": "",
+     "server_got": "fffb23"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2301fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2300686f73742e6578616d706c653a312e32fff0"
+    }
+   ]
+  },
+  "xdisploc-unix": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": {
+    "DISPLAY": "unix:0"
+   },
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd23"
+    ],
+    [
+     "send",
+     "fffa2301fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd23"
+     ],
+     "screen": "",
+     "server_got": "fffb23"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2301fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2300766d3a30fff0"
+    }
+   ]
+  },
+  "term-variants": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": {
+    "TERM": "vt100"
+   },
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd18"
+    ],
+    [
+     "send",
+     "fffa1801fff0"
+    ],
+    [
+     "send",
+     "fffa1801fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd18"
+     ],
+     "screen": "",
+     "server_got": "fffb18"
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa18007674313030fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa18007674313030fff0"
+    }
+   ]
+  },
+  "term-absent": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": {
+    "TERM": ""
+   },
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd18"
+    ],
+    [
+     "send",
+     "fffa1801fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd18"
+     ],
+     "screen": "",
+     "server_got": "fffb18"
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa1800fff0"
+    }
+   ]
+  },
+  "linemode-slc": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd22"
+    ],
+    [
+     "send",
+     "fffa220107fff0"
+    ],
+    [
+     "send",
+     "fffa220303020304020ffffffff0"
+    ],
+    [
+     "send",
+     "fffa220303030008030009011a130202000000fff0"
+    ],
+    [
+     "send",
+     "fffa2203038203fff0"
+    ],
+    [
+     "send",
+     "fffa2203c80201fff0"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "736c6320696d706f72740d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "736c6320636865636b0d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "736c63206578706f72740d"
+    ],
+    [
+     "type",
+     "73657420696e74657272757074205e410d"
+    ],
+    [
+     "type",
+     "73657420656f66206f66660d"
+    ],
+    [
+     "type",
+     "73657420666c7573686f7574707574205e500d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffa220100fff0"
+    ],
+    [
+     "send",
+     "fffa220101fff0"
+    ],
+    [
+     "send",
+     "fffa22fb02fff0"
+    ],
+    [
+     "send",
+     "fffa22fd02fff0"
+    ],
+    [
+     "send",
+     "fffa22fc02fff0"
+    ],
+    [
+     "send",
+     "fffa22fe02fff0"
+    ],
+    [
+     "send",
+     "fffe22"
+    ],
+    [
+     "send",
+     "fffd22"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd22"
+     ],
+     "screen": "",
+     "server_got": "fffd03fffb22fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa220107fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa220303020304020ffffffff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa220303030008030009011a130202000000fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa220303620308020409811a130000fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2203038203fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa2203c80201fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2203c80000fff0"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating with LINEMODE option\nNo line editing\nNo catching of signals\nSpecial characters are local values\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "736c6320696d706f72740d"
+     ],
+     "screen": "slc import^M",
+     "server_got": "736c6320696d706f72740d00"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status^M",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "736c6320636865636b0d"
+     ],
+     "screen": "slc check^M",
+     "server_got": "736c6320636865636b0d00"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status^M",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "736c63206578706f72740d"
+     ],
+     "screen": "slc export^M",
+     "server_got": "736c63206578706f72740d00"
+    },
+    {
+     "step": [
+      "type",
+      "73657420696e74657272757074205e410d"
+     ],
+     "screen": "set interrupt ^A^M",
+     "server_got": "73657420696e74657272757074205e410d00"
+    },
+    {
+     "step": [
+      "type",
+      "73657420656f66206f66660d"
+     ],
+     "screen": "set eof off^M",
+     "server_got": "73657420656f66206f66660d00"
+    },
+    {
+     "step": [
+      "type",
+      "73657420666c7573686f7574707574205e500d"
+     ],
+     "screen": "set flushoutput ^P^M",
+     "server_got": "73657420666c7573686f7574707574205e500d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "^M",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "send",
+      "fffa220100fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa220101fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa220105fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa22fb02fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa22fe02fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa22fd02fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa22fc02fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa22fc02fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffa22fe02fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffe22"
+     ],
+     "screen": "",
+     "server_got": "fffc22"
+    },
+    {
+     "step": [
+      "send",
+      "fffd22"
+     ],
+     "screen": "",
+     "server_got": "fffb22fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0"
+    }
+   ]
+  },
+  "linemode-edit": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd22"
+    ],
+    [
+     "send",
+     "fffa220105fff0"
+    ],
+    [
+     "type",
+     "6162630d"
+    ],
+    [
+     "type",
+     "03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "6d6f646520736f6674746162730d"
+    ],
+    [
+     "type",
+     "6d6f6465206c69746563686f0d"
+    ],
+    [
+     "type",
+     "6d6f6465202d697369670d"
+    ],
+    [
+     "type",
+     "6d6f6465202b656469740d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "6d6f6465206368617261637465720d"
+    ],
+    [
+     "type",
+     "6d6f6465206c696e650d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "04"
+    ],
+    [
+     "type",
+     "780d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd22"
+     ],
+     "screen": "",
+     "server_got": "fffd03fffb22fffa220301000003620304020f05000007621c08020409421a0a027f0b02150f0211100213110000120000fff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffa220105fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6162630d"
+     ],
+     "screen": "abc^M",
+     "server_got": "6162630d00"
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "^C",
+     "server_got": "03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating with LINEMODE option\nNo line editing\nNo catching of signals\nSpecial characters are local values\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6d6f646520736f6674746162730d"
+     ],
+     "screen": "mode softtabs^M",
+     "server_got": "6d6f646520736f6674746162730d00"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206c69746563686f0d"
+     ],
+     "screen": "mode litecho^M",
+     "server_got": "6d6f6465206c69746563686f0d00"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465202d697369670d"
+     ],
+     "screen": "mode -isig^M",
+     "server_got": "6d6f6465202d697369670d00"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465202b656469740d"
+     ],
+     "screen": "mode +edit^M",
+     "server_got": "6d6f6465202b656469740d00"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status^M",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206368617261637465720d"
+     ],
+     "screen": "mode character^M",
+     "server_got": "6d6f6465206368617261637465720d00"
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206c696e650d"
+     ],
+     "screen": "mode line^M",
+     "server_got": "6d6f6465206c696e650d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "^M",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "04"
+     ],
+     "screen": "^D",
+     "server_got": "04"
+    },
+    {
+     "step": [
+      "type",
+      "780d"
+     ],
+     "screen": "x^M",
+     "server_got": "780d00"
+    }
+   ]
+  },
+  "kludge-line": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6d6f6465206c696e650d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "61620d"
+    ],
+    [
+     "type",
+     "05"
+    ],
+    [
+     "type",
+     "05"
+    ],
+    [
+     "type",
+     "63640d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6d6f6465206b6c756467656c696e650d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffe03"
+    ],
+    [
+     "send",
+     "fffc01"
+    ],
+    [
+     "type",
+     "65660d"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6d6f6465206368617261637465720d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206c696e650d"
+     ],
+     "screen": "mode line\n",
+     "server_got": "fffe03fffb22fffe01"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\n",
+     "server_got": "7374617475730d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "61620d"
+     ],
+     "screen": "ab\n",
+     "server_got": "61620d0a"
+    },
+    {
+     "step": [
+      "type",
+      "05"
+     ],
+     "screen": "^E",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "05"
+     ],
+     "screen": "^E",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "63640d"
+     ],
+     "screen": "cd\n",
+     "server_got": "0563640d0a"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206b6c756467656c696e650d"
+     ],
+     "screen": "mode kludgeline\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": "fffc22"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "send",
+      "fffe03"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffc01"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "65660d"
+     ],
+     "screen": "ef\n",
+     "server_got": "65660d0a"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6d6f6465206368617261637465720d"
+     ],
+     "screen": "mode character\n",
+     "server_got": "fffd03fffd01"
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "",
+     "server_got": "7374617475730d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    }
+   ]
+  },
+  "rlogin-flag": {
+   "argv": [
+    "-r",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "7e"
+    ],
+    [
+     "type",
+     "2e"
+    ],
+    [
+     "type",
+     "78"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7e"
+     ],
+     "screen": "~",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "2e"
+     ],
+     "screen": ".",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    }
+   ]
+  },
+  "rlogin-escape": {
+   "argv": [
+    "-r",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "6162630d"
+    ],
+    [
+     "type",
+     "7e"
+    ],
+    [
+     "type",
+     "7e"
+    ],
+    [
+     "type",
+     "7e"
+    ],
+    [
+     "type",
+     "3f"
+    ],
+    [
+     "type",
+     "7e"
+    ],
+    [
+     "type",
+     "04"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6162630d"
+     ],
+     "screen": "abc\n",
+     "server_got": "6162630d0a"
+    },
+    {
+     "step": [
+      "type",
+      "7e"
+     ],
+     "screen": "~",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7e"
+     ],
+     "screen": "~",
+     "server_got": "7e"
+    },
+    {
+     "step": [
+      "type",
+      "7e"
+     ],
+     "screen": "~",
+     "server_got": "7e"
+    },
+    {
+     "step": [
+      "type",
+      "3f"
+     ],
+     "screen": "?",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7e"
+     ],
+     "screen": "~",
+     "server_got": "3f7e"
+    },
+    {
+     "step": [
+      "type",
+      "04"
+     ],
+     "screen": "",
+     "server_got": "04"
+    }
+   ]
+  },
+  "rlogin-command": {
+   "argv": [
+    "-r",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "type",
+     "7e"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "screen": "hi\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7e"
+     ],
+     "screen": "~",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\n\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": ""
+    }
+   ]
+  },
+  "autologin-env": {
+   "argv": [
+    "-a",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd27"
+    ],
+    [
+     "send",
+     "fffa2701fff0"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd27"
+     ],
+     "screen": "",
+     "server_got": "fffb27"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2701fff0"
+     ],
+     "screen": "",
+     "server_got": "fffa2700005553455201726f6f74fff0"
+    }
+   ]
+  },
+  "lflow": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd21"
+    ],
+    [
+     "send",
+     "fffa2101fff0"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "send",
+     "fffa2100fff0"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "7374617475730d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd21"
+     ],
+     "screen": "",
+     "server_got": "fffb21"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2101fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nLocal flow control\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    },
+    {
+     "step": [
+      "send",
+      "fffa2100fff0"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "7374617475730d"
+     ],
+     "screen": "status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nNo flow control\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "naws-resize": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffd1f"
+    ],
+    [
+     "resize",
+     [
+      30,
+      100
+     ]
+    ],
+    [
+     "resize",
+     [
+      255,
+      255
+     ]
+    ],
+    [
+     "send",
+     "fffe1f"
+    ],
+    [
+     "resize",
+     [
+      10,
+      10
+     ]
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffd1f"
+     ],
+     "screen": "",
+     "server_got": "fffb1ffffa1f00500018fff0"
+    },
+    {
+     "step": [
+      "resize",
+      [
+       30,
+       100
+      ]
+     ],
+     "screen": "",
+     "server_got": "fffa1f0064001efff0"
+    },
+    {
+     "step": [
+      "resize",
+      [
+       255,
+       255
+      ]
+     ],
+     "screen": "",
+     "server_got": "fffa1f00ffff00fffffff0"
+    },
+    {
+     "step": [
+      "send",
+      "fffe1f"
+     ],
+     "screen": "",
+     "server_got": "fffc1f"
+    },
+    {
+     "step": [
+      "resize",
+      [
+       10,
+       10
+      ]
+     ],
+     "screen": "",
+     "server_got": ""
+    }
+   ]
+  },
+  "tm-flush": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "64617461"
+    ],
+    [
+     "type",
+     "0f"
+    ],
+    [
+     "send",
+     "fffb06"
+    ],
+    [
+     "send",
+     "6d6f7265"
+    ],
+    [
+     "type",
+     "03"
+    ],
+    [
+     "send",
+     "fffb06"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "64617461"
+     ],
+     "screen": "data",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0f"
+     ],
+     "screen": "^O",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb06"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "6d6f7265"
+     ],
+     "screen": "more",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "^C",
+     "server_got": "fff4fffd06"
+    },
+    {
+     "step": [
+      "send",
+      "fffb06"
+     ],
+     "screen": "",
+     "server_got": ""
+    }
+   ]
+  },
+  "send-do-names": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "73656e6420646f2062696e6172790d"
+    ],
+    [
+     "type",
+     "73656e642077696c6c206563686f0d"
+    ],
+    [
+     "type",
+     "73656e6420646f6e74207465726d0d"
+    ],
+    [
+     "type",
+     "73656e6420776f6e74207465726d696e616c2d747970650d"
+    ],
+    [
+     "type",
+     "73656e6420646f203330300d"
+    ],
+    [
+     "type",
+     "73656e6420646f2065780d"
+    ],
+    [
+     "type",
+     "73656e6420646f20730d"
+    ],
+    [
+     "type",
+     "73656e6420646f20227465726d696e616c2074797065220d"
+    ],
+    [
+     "type",
+     "73656e6420646f203235350d"
+    ],
+    [
+     "type",
+     "73656e6420646f203235360d"
+    ],
+    [
+     "type",
+     "73656e6420646f202d310d"
+    ],
+    [
+     "type",
+     "73656e642077696c6c20780d"
+    ],
+    [
+     "type",
+     "73656e6420776f6e74203f0d"
+    ],
+    [
+     "type",
+     "73656e6420646f2062696e6172792077696c6c2062696e6172790d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f2062696e6172790d"
+     ],
+     "screen": "send do binary\n",
+     "server_got": "fffd00"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642077696c6c206563686f0d"
+     ],
+     "screen": "send will echo\n",
+     "server_got": "73656e642077696c6c206563686f0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f6e74207465726d0d"
+     ],
+     "screen": "send dont term\n",
+     "server_got": "73656e6420646f6e74207465726d0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420776f6e74207465726d696e616c2d747970650d"
+     ],
+     "screen": "send wont terminal-type\n",
+     "server_got": "73656e6420776f6e74207465726d696e616c2d747970650d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f203330300d"
+     ],
+     "screen": "send do 300\n",
+     "server_got": "73656e6420646f203330300d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f2065780d"
+     ],
+     "screen": "send do ex\n",
+     "server_got": "73656e6420646f2065780d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f20730d"
+     ],
+     "screen": "send do s\n",
+     "server_got": "73656e6420646f20730d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f20227465726d696e616c2074797065220d"
+     ],
+     "screen": "send do \"terminal type\"\n",
+     "server_got": "73656e6420646f20227465726d696e616c2074797065220d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f203235350d"
+     ],
+     "screen": "send do 255\n",
+     "server_got": "73656e6420646f203235350d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f203235360d"
+     ],
+     "screen": "send do 256\n",
+     "server_got": "73656e6420646f203235360d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f202d310d"
+     ],
+     "screen": "send do -1\n",
+     "server_got": "73656e6420646f202d310d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e642077696c6c20780d"
+     ],
+     "screen": "send will x\n",
+     "server_got": "73656e642077696c6c20780d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420776f6e74203f0d"
+     ],
+     "screen": "send wont ?\n",
+     "server_got": "73656e6420776f6e74203f0d0a"
+    },
+    {
+     "step": [
+      "type",
+      "73656e6420646f2062696e6172792077696c6c2062696e6172790d"
+     ],
+     "screen": "send do binary will binary\n",
+     "server_got": "73656e6420646f2062696e6172792077696c6c2062696e6172790d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  },
+  "toggle-session": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c65206175746f73796e63680d"
+    ],
+    [
+     "type",
+     "746f67676c65206175746f666c7573680d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "03"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c65206175746f666c7573680d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "03"
+    ],
+    [
+     "send",
+     "fffb06"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "746f67676c65206c6f63616c63686172730d"
+    ],
+    [
+     "type",
+     "0d"
+    ],
+    [
+     "type",
+     "03"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "screen": "",
+     "server_got": "fffd01fffd03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206175746f73796e63680d"
+     ],
+     "screen": "toggle autosynch\nWill send interrupt characters in urgent mode.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206175746f666c7573680d"
+     ],
+     "screen": "",
+     "server_got": "746f67676c65206175746f666c7573680d00"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "",
+     "server_got": "03"
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206175746f666c7573680d"
+     ],
+     "screen": "toggle autoflush\nWon't flush output when sending interrupt characters.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "",
+     "server_got": "03"
+    },
+    {
+     "step": [
+      "send",
+      "fffb06"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "746f67676c65206c6f63616c63686172730d"
+     ],
+     "screen": "toggle localchars\nWon't recognize certain control characters.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "",
+     "server_got": "0d00"
+    },
+    {
+     "step": [
+      "type",
+      "03"
+     ],
+     "screen": "",
+     "server_got": "03"
+    }
+   ]
+  },
+  "logout": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": null,
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "6c6f676f75740d"
+    ],
+    [
+     "send",
+     "fffb12"
+    ],
+    [
+     "send",
+     "fffc12"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]\ntelnet> ",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "6c6f676f75740d"
+     ],
+     "screen": "logout\n",
+     "server_got": "fffd12"
+    },
+    {
+     "step": [
+      "send",
+      "fffb12"
+     ],
+     "screen": "",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "fffc12"
+     ],
+     "screen": "",
+     "server_got": "fffe12"
+    }
+   ]
+  },
+  "telnetrc": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "port": null,
+   "env": null,
+   "rc": "127.0.0.1\n  set escape ^X\n  toggle crmod\n",
+   "steps": [
+    [
+     "send",
+     "78"
+    ],
+    [
+     "type",
+     "1d"
+    ],
+    [
+     "type",
+     "646973706c6179206573636170650d"
+    ],
+    [
+     "type",
+     "0d"
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "screen": "Trying 127.0.0.1...\nescape character is '^X'.\nWill map carriage return on output.\nConnected to 127.0.0.1.\nEscape character is '^X'.\n",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "send",
+      "78"
+     ],
+     "screen": "x",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "1d"
+     ],
+     "screen": "^]",
+     "server_got": ""
+    },
+    {
+     "step": [
+      "type",
+      "646973706c6179206573636170650d"
+     ],
+     "screen": "display escape\n",
+     "server_got": "1d646973706c6179206573636170650d0a"
+    },
+    {
+     "step": [
+      "type",
+      "0d"
+     ],
+     "screen": "\n",
+     "server_got": "0d0a"
+    }
+   ]
+  }
+ },
+ "args": {
+  "no-host-flags": [
+   {
+    "argv": [
+     "-l"
+    ],
+    "screen": "/tmp/tl/telnet: option requires an argument -- 'l'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "-e"
+    ],
+    "screen": "/tmp/tl/telnet: option requires an argument -- 'e'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "-x"
+    ],
+    "screen": "telnet: -x ignored, no encryption support.\ntelnet> "
+   },
+   {
+    "argv": [
+     "-z"
+    ],
+    "screen": "/tmp/tl/telnet: invalid option -- 'z'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "-4"
+    ],
+    "screen": "telnet> "
+   },
+   {
+    "argv": [
+     "-6",
+     "::1"
+    ],
+    "screen": "Trying ::1...\ntelnet: Unable to connect to remote host: Address family not supported by protocol\n"
+   },
+   {
+    "argv": [
+     "127.0.0.1",
+     "1",
+     "2"
+    ],
+    "screen": "Usage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "-8",
+     "-4",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-n"
+    ],
+    "screen": "/tmp/tl/telnet: option requires an argument -- 'n'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "-b",
+     "127.0.0.1",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-r",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-E",
+     "-e",
+     "x",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Telnet escape character is 'x'.\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-7",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-K",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-X",
+     "x",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-S",
+     "x",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-k",
+     "r",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "telnet: -k ignored, no Kerberos V4 support.\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "-c",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "/tmp/tl/telnet: invalid option -- 'c'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "-t",
+     "x",
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "telnet: Warning: -t ignored, no TN3270 support.\nTrying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "nonexistent.invalid"
+    ],
+    "screen": "telnet: could not resolve nonexistent.invalid/telnet: Name or service not known\n"
+   },
+   {
+    "argv": [
+     "nonexistent.invalid",
+     "23"
+    ],
+    "screen": "telnet: could not resolve nonexistent.invalid/23: Name or service not known\n"
+   },
+   {
+    "argv": [
+     "127.0.0.1",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     "127.0.0.1",
+     "bogus"
+    ],
+    "screen": "telnet: could not resolve 127.0.0.1/bogus: Servname not supported for ai_socktype\n"
+   },
+   {
+    "argv": [
+     "127.0.0.1",
+     "0"
+    ],
+    "screen": "telnet: port 0 out of range\n"
+   },
+   {
+    "argv": [
+     "127.0.0.1",
+     "99999"
+    ],
+    "screen": "telnet: port 99999 out of range\n"
+   },
+   {
+    "argv": [
+     "127.0.0.1",
+     "-1"
+    ],
+    "screen": "/tmp/tl/telnet: invalid option -- '1'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "127.0.0.1",
+     "65536"
+    ],
+    "screen": "telnet: port 65536 out of range\n"
+   },
+   {
+    "argv": [
+     "::1",
+     "1"
+    ],
+    "screen": "Trying ::1...\ntelnet: Unable to connect to remote host: Address family not supported by protocol\n"
+   },
+   {
+    "argv": [
+     "999.999.999.999",
+     "1"
+    ],
+    "screen": "telnet: could not resolve 999.999.999.999/1: Name or service not known\n"
+   },
+   {
+    "argv": [
+     "localhost",
+     "1"
+    ],
+    "screen": "Trying 127.0.0.1...\ntelnet: Unable to connect to remote host: Connection refused\n"
+   },
+   {
+    "argv": [
+     ""
+    ],
+    "screen": "usage: telnet [-l user] [-a] host-name [port]\n"
+   },
+   {
+    "argv": [
+     "-h"
+    ],
+    "screen": "/tmp/tl/telnet: invalid option -- 'h'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "--help"
+    ],
+    "screen": "/tmp/tl/telnet: invalid option -- '-'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   },
+   {
+    "argv": [
+     "-?"
+    ],
+    "screen": "/tmp/tl/telnet: invalid option -- '?'\nUsage: telnet [-4] [-6] [-8] [-E] [-L] [-a] [-d] [-e char] [-l user]\n\t[-n tracefile] [ -b addr ] [-r] [host-name [port]]\n"
+   }
+  ]
+ },
+ "pipes": {
+  "banner-then-eof": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "steps": [
+    [
+     "send",
+     "6c6f67696e3a20"
+    ],
+    [
+     "stdin",
+     "616c6963650a"
+    ],
+    [
+     "eof",
+     ""
+    ],
+    [
+     "wait",
+     0.3
+    ],
+    [
+     "close",
+     ""
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "6c6f67696e3a20"
+     ],
+     "stdout": "login: ",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "stdin",
+      "616c6963650a"
+     ],
+     "stdout": "",
+     "server_got": "616c6963650d0a",
+     "exit": null
+    },
+    {
+     "step": [
+      "eof",
+      ""
+     ],
+     "stdout": "Connection closed by foreign host.\n",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  },
+  "char-mode-lines": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "steps": [
+    [
+     "send",
+     "fffb01fffb03"
+    ],
+    [
+     "stdin",
+     "61620a63640a"
+    ],
+    [
+     "eof",
+     ""
+    ],
+    [
+     "wait",
+     0.3
+    ],
+    [
+     "close",
+     ""
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "fffb01fffb03"
+     ],
+     "stdout": "",
+     "server_got": "fffd01fffd03",
+     "exit": null
+    },
+    {
+     "step": [
+      "stdin",
+      "61620a63640a"
+     ],
+     "stdout": "",
+     "server_got": "61620a63640a",
+     "exit": null
+    },
+    {
+     "step": [
+      "eof",
+      ""
+     ],
+     "stdout": "Connection closed by foreign host.\n",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  },
+  "line-mode-lines": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "steps": [
+    [
+     "send",
+     "68656c6c6f0d0a"
+    ],
+    [
+     "stdin",
+     "61620a63640d0a"
+    ],
+    [
+     "wait",
+     0.2
+    ],
+    [
+     "eof",
+     ""
+    ],
+    [
+     "wait",
+     0.3
+    ],
+    [
+     "close",
+     ""
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "68656c6c6f0d0a"
+     ],
+     "stdout": "hello\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "stdin",
+      "61620a63640d0a"
+     ],
+     "stdout": "",
+     "server_got": "61620d0a63640d000d0a",
+     "exit": null
+    },
+    {
+     "step": [
+      "wait",
+      0.2
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "eof",
+      ""
+     ],
+     "stdout": "Connection closed by foreign host.\n",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  },
+  "server-closes-first": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "steps": [
+    [
+     "send",
+     "6279650d0a"
+    ],
+    [
+     "close",
+     ""
+    ],
+    [
+     "wait",
+     0.3
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "6279650d0a"
+     ],
+     "stdout": "bye\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "stdout": "Connection closed by foreign host.\n",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  },
+  "escape-in-pipe": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "steps": [
+    [
+     "send",
+     "68690d0a"
+    ],
+    [
+     "stdin",
+     "611d7374617475730a717569740a"
+    ],
+    [
+     "wait",
+     0.3
+    ],
+    [
+     "close",
+     ""
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "68690d0a"
+     ],
+     "stdout": "hi\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "stdin",
+      "611d7374617475730a717569740a"
+     ],
+     "stdout": "\ntelnet> status\nConnected to 127.0.0.1.\nOperating in obsolete linemode\nLocal character echo\nEscape character is '^]'.\n",
+     "server_got": "61",
+     "exit": null
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "stdout": "Connection closed by foreign host.\n",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  },
+  "refused": {
+   "argv": [
+    "127.0.0.1",
+    "1"
+   ],
+   "steps": [
+    [
+     "wait",
+     0.2
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "telnet: Unable to connect to remote host: Connection refused\nTrying 127.0.0.1...\n",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "wait",
+      0.2
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  },
+  "no-args-eof": {
+   "argv": [],
+   "steps": [
+    [
+     "eof",
+     ""
+    ],
+    [
+     "wait",
+     0.3
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "eof",
+      ""
+     ],
+     "stdout": "telnet> ",
+     "server_got": "",
+     "exit": 0
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 0
+    }
+   ]
+  },
+  "no-args-commands": {
+   "argv": [],
+   "steps": [
+    [
+     "stdin",
+     "7374617475730a717569740a"
+    ],
+    [
+     "wait",
+     0.3
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "stdin",
+      "7374617475730a717569740a"
+     ],
+     "stdout": "telnet> No connection.\nEscape character is '^]'.\ntelnet> ",
+     "server_got": "",
+     "exit": 0
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 0
+    }
+   ]
+  },
+  "binary-bytes": {
+   "argv": [
+    "-8",
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "steps": [
+    [
+     "send",
+     "fffb00fffd00"
+    ],
+    [
+     "stdin",
+     "80ff0a"
+    ],
+    [
+     "wait",
+     0.3
+    ],
+    [
+     "eof",
+     ""
+    ],
+    [
+     "close",
+     ""
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "fffb00fffd00"
+     ],
+     "stdout": "",
+     "server_got": "fffd00fffb00",
+     "exit": null
+    },
+    {
+     "step": [
+      "stdin",
+      "80ff0a"
+     ],
+     "stdout": "",
+     "server_got": "fff4fffd06ffff0a",
+     "exit": null
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "eof",
+      ""
+     ],
+     "stdout": "Connection closed by foreign host.\n",
+     "server_got": "",
+     "exit": 1
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  },
+  "options-negotiated": {
+   "argv": [
+    "127.0.0.1",
+    "<PORT>"
+   ],
+   "steps": [
+    [
+     "send",
+     "fffd18"
+    ],
+    [
+     "send",
+     "fffa1801fff0"
+    ],
+    [
+     "send",
+     "fffd1f"
+    ],
+    [
+     "send",
+     "fffd20"
+    ],
+    [
+     "send",
+     "fffa2001fff0"
+    ],
+    [
+     "wait",
+     0.3
+    ],
+    [
+     "close",
+     ""
+    ]
+   ],
+   "result": [
+    {
+     "step": "start",
+     "stdout": "Trying 127.0.0.1...\nConnected to 127.0.0.1.\nEscape character is '^]'.\n",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "fffd18"
+     ],
+     "stdout": "",
+     "server_got": "fffb18",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "fffa1801fff0"
+     ],
+     "stdout": "",
+     "server_got": "fffa1800787465726dfff0",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "fffd1f"
+     ],
+     "stdout": "",
+     "server_got": "fffb1f",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "fffd20"
+     ],
+     "stdout": "",
+     "server_got": "fffb20",
+     "exit": null
+    },
+    {
+     "step": [
+      "send",
+      "fffa2001fff0"
+     ],
+     "stdout": "",
+     "server_got": "fffa2000302c30fff0",
+     "exit": null
+    },
+    {
+     "step": [
+      "wait",
+      0.3
+     ],
+     "stdout": "",
+     "server_got": "",
+     "exit": null
+    },
+    {
+     "step": [
+      "close",
+      ""
+     ],
+     "stdout": "Connection closed by foreign host.\n",
+     "server_got": "",
+     "exit": 1
+    }
+   ]
+  }
+ }
+}

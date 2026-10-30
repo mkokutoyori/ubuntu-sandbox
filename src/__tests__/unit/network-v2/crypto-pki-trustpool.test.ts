@@ -138,7 +138,7 @@ describe('crypto pki trustpool', () => {
   it('cabundle url downloads the bundle from a web server through real frames', async () => {
     const l = await lab();
     await l.server.executeCommand('mkdir -p /var/www/html');
-    await l.server.executeCommand(`sh -c 'printf "${certToPem(l.subY.rootCertificate).replace(/\n/g, '\\n')}" > /var/www/html/bundle.pem'`);
+    await l.server.executeCommand(`sh -c 'printf -- "${certToPem(l.subY.rootCertificate).replace(/\n/g, '\\n')}" > /var/www/html/bundle.pem'`);
     await l.server.executeCommand('systemctl start nginx');
     const before = l.cable.getStats().framesTransmitted;
     expect(await last(l.r1, ['crypto pki trustpool policy', 'cabundle url http://10.7.1.2/bundle.pem'])).toContain('import succeeded');

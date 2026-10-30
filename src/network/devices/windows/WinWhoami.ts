@@ -5,6 +5,7 @@
  * Outputs match the real Windows whoami format.
  */
 
+import { invalidArgumentError } from './WinSwitchGuard';
 import type { WindowsUserManager } from './WindowsUserManager';
 import type { DomainSession } from './domain/DomainTypes';
 import { renderTable, type TableColumn, type TableStyle } from '../shells/cli/TextTable';
@@ -68,7 +69,7 @@ export function cmdWhoami(ctx: WhoamiContext, args: string[]): string {
         formatPrivilegeInfo(ctx, username),
       ].join('\n');
     default:
-      return 'ERROR: Invalid argument/option - \'' + args[0] + '\'.\nType "WHOAMI /?" for usage.';
+      return invalidArgumentError('whoami', args[0]);
   }
 }
 

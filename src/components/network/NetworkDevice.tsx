@@ -7,6 +7,7 @@
  * appears for the target interface selection.
  */
 
+import { useLocale } from '@/i18n/useLocale';
 import { memo, useRef, useState, useCallback, useEffect } from 'react';
 import { Power, Terminal, Trash2, Link } from 'lucide-react';
 import { DeviceIcon } from './DeviceIcon';
@@ -31,6 +32,7 @@ interface NetworkDeviceProps {
 }
 
 function NetworkDeviceImpl({ device, onOpenTerminal }: NetworkDeviceProps) {
+  const { t } = useLocale();
   // Per-field selectors: zustand bails out when the selected slice is
   // unchanged, so dragging ANOTHER node (a store revision tick) no
   // longer re-renders this one. Actions are stable references.
@@ -204,8 +206,8 @@ function NetworkDeviceImpl({ device, onOpenTerminal }: NetworkDeviceProps) {
     hasTerminal, onOpenTerminal, getPopoverPosition,
   ]);
 
-  const stateLabel = device.isPoweredOn ? 'powered on' : 'powered off';
-  const deviceAriaLabel = `${device.name} (${device.type}), ${stateLabel}${isSelected ? ', selected' : ''}`;
+  const stateLabel = device.isPoweredOn ? t('device.poweredOn') : t('device.poweredOff');
+  const deviceAriaLabel = `${device.name} (${device.type}), ${stateLabel}${isSelected ? `, ${t('device.selected')}` : ''}`;
 
   return (
     <>
@@ -284,16 +286,16 @@ function NetworkDeviceImpl({ device, onOpenTerminal }: NetworkDeviceProps) {
                 "p-1.5 rounded-md hover:bg-white/10 transition-colors",
                 device.isPoweredOn ? "text-green-400" : "text-gray-400"
               )}
-              title="Toggle Power"
-              aria-label={device.isPoweredOn ? `Power off ${device.name}` : `Power on ${device.name}`}
+              title={t('device.togglePower')}
+              aria-label={device.isPoweredOn ? t('device.powerOff', { name: device.name }) : t('device.powerOn', { name: device.name })}
             >
               <Power className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={handleStartConnection}
               className="p-1.5 rounded-md hover:bg-white/10 text-blue-400 transition-colors"
-              title="Connect"
-              aria-label={`Connect ${device.name} to another device`}
+              title={t('device.connect')}
+              aria-label={t('device.connectLabel', { name: device.name })}
             >
               <Link className="w-3.5 h-3.5" />
             </button>
@@ -301,8 +303,8 @@ function NetworkDeviceImpl({ device, onOpenTerminal }: NetworkDeviceProps) {
               <button
                 onClick={(e) => { e.stopPropagation(); onOpenTerminal(device.instance); }}
                 className="p-1.5 rounded-md hover:bg-white/10 text-green-400 transition-colors"
-                title="Open Terminal"
-                aria-label={`Open terminal on ${device.name}`}
+                title={t('device.openTerminal')}
+                aria-label={t('device.openTerminalLabel', { name: device.name })}
               >
                 <Terminal className="w-3.5 h-3.5" />
               </button>
@@ -310,8 +312,8 @@ function NetworkDeviceImpl({ device, onOpenTerminal }: NetworkDeviceProps) {
             <button
               onClick={(e) => { e.stopPropagation(); removeDevice(device.id); }}
               className="p-1.5 rounded-md hover:bg-white/10 text-red-400 transition-colors"
-              title="Delete"
-              aria-label={`Delete ${device.name}`}
+              title={t('device.delete')}
+              aria-label={t('device.deleteLabel', { name: device.name })}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

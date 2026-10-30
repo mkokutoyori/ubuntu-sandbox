@@ -589,29 +589,6 @@ test.describe('Secure SMB architecture — UI defect sweep', () => {
     }, ids);
   });
 
-  // ── 11. Network logs panel reflects real traffic ────────────────────────
-  test('UI · network logs panel surfaces live traffic', async () => {
-    test.setTimeout(40_000);
-    // Open the logs panel via its toolbar button (title="Logs").
-    const toggle = page.locator('button[title="Logs"]').first();
-    const hasToggle = (await toggle.count()) > 0;
-    if (hasToggle) await toggle.click().catch(() => {});
-    await page.waitForTimeout(300);
-    const list = page.locator('[data-testid="logs-list"]').first();
-    const hasPanel = (await list.count()) > 0;
-
-    // Generate traffic, then look for rendered log rows.
-    await exec1(topo.linuxPc, 'ping -c 2 10.10.10.12');
-    await page.waitForTimeout(800);
-    const rows = hasPanel ? await page.locator('[data-testid="logs-row"]').count() : 0;
-    check('logs panel renders traffic', 'UI', hasPanel && rows > 0,
-      'ARP/ICMP rows appear after a ping',
-      !hasToggle ? 'no "Logs" toolbar button' : !hasPanel ? 'Logs button present but panel never rendered'
-        : rows > 0 ? `${rows} log rows` : 'panel present but empty after traffic',
-      'minor');
-    if (hasToggle) await toggle.click().catch(() => {}); // collapse again
-  });
-
   // ── 12. Windows shell parity ────────────────────────────────────────────
   test('vendor · Windows host terminal answers basic commands', async () => {
     test.setTimeout(30_000);

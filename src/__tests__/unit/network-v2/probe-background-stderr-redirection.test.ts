@@ -23,7 +23,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 let pc: LinuxPC;
 
 async function run(line: string): Promise<string> {
-  return pc.executeCommand(`cd /tmp; ${line}`);
+  return (await pc.executeCommand(`cd /tmp; ${line}`)).replace(/^\[\d+\] \d+\n?/gm, '');
 }
 
 beforeEach(async () => {

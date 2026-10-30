@@ -24,7 +24,9 @@
  *   multi-file: header `==> path <==` switches when the source changes
  */
 
-import type { VirtualFileSystem, VfsWriteEvent } from '../VirtualFileSystem';
+import type { VfsWriteEvent } from '../VirtualFileSystem';
+import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
+import { Streams, docsResult, parseSizeWithSuffix, quoteLocale, quoteShell, takeBytes, utf8Bytes } from './CoreutilsKit';
 
 export interface TailOptions {
   /** Positive: take last N. Negative-flagged via `fromStart`. */
@@ -47,6 +49,8 @@ export interface TailOptions {
 export interface TailSnapshot {
   output: string;
   exitCode: number;
+  stderr?: string;
+  interleaved?: string;
 }
 
 /** Streaming sink, supplied by the terminal layer for follow mode. */
@@ -72,6 +76,7 @@ export interface TailFs {
   exists(path: string): boolean;
   onWrite(path: string, listener: (e: VfsWriteEvent) => void): () => void;
   normalizePath(path: string, cwd: string): string;
+  isDirectory?(path: string): boolean;
 }
 
 const DEFAULT_OPTIONS: Omit<TailOptions, 'files'> = {
@@ -88,81 +93,97 @@ const DEFAULT_OPTIONS: Omit<TailOptions, 'files'> = {
   zeroTerminated: false,
 };
 
-class TailArgsError extends Error {}
+class TailArgsError extends Error {
+  constructor(message: string, readonly usage = false) { super(message); }
+}
+
+class TailDocsSignal extends Error {
+  constructor(readonly which: 'help' | 'version') { super(which); }
+}
+
+const TAIL_LONG_OPTIONS: readonly LongOption[] = [
+  { name: 'bytes', letter: 'c', takesArgument: true },
+  { name: 'follow', letter: 'f', takesArgument: false, optionalArgument: true },
+  { name: 'lines', letter: 'n', takesArgument: true },
+  { name: 'max-unchanged-stats', letter: 'M', takesArgument: true },
+  { name: 'pid', letter: 'P', takesArgument: true },
+  { name: 'quiet', letter: 'q', takesArgument: false },
+  { name: 'retry', letter: 'R', takesArgument: false },
+  { name: 'silent', letter: 'q', takesArgument: false },
+  { name: 'sleep-interval', letter: 's', takesArgument: true },
+  { name: 'verbose', letter: 'v', takesArgument: false },
+  { name: 'zero-terminated', letter: 'z', takesArgument: false },
+  { name: 'help', letter: 'H', takesArgument: false },
+  { name: 'version', letter: 'V', takesArgument: false },
+];
 
 /**
  * Parse the argv that follows `tail` into a structured `TailOptions`.
  * Supports clustered short flags (`-fn5`), `-n+5`, `--lines=+5`, and the
- * historical `-N` (e.g. `-50`).
+ * historical `-N` / `+N` (first argument only, as in coreutils).
  */
 export function parseTailArgs(argv: readonly string[]): TailOptions {
   const opts: TailOptions = { ...DEFAULT_OPTIONS, files: [] };
-  let i = 0;
   const setCount = (raw: string, unit: 'lines' | 'bytes') => {
-    const m = /^([+-]?)(\d+)([bkKMG]?)$/.exec(raw);
-    if (!m) throw new TailArgsError(`invalid number of ${unit}: '${raw}'`);
-    const sign = m[1];
-    let n = Number.parseInt(m[2], 10);
-    const mult: Record<string, number> = { '': 1, b: 512, k: 1024, K: 1024, M: 1024 * 1024, G: 1024 * 1024 * 1024 };
-    n *= mult[m[3]] ?? 1;
-    opts.count = n;
+    const parsed = parseSizeWithSuffix(raw.replace(/^[-+]/, ''));
+    if (parsed === null) throw new TailArgsError(`invalid number of ${unit}: ${quoteLocale(raw)}`);
+    opts.count = parsed;
     opts.unit = unit;
-    opts.fromStart = sign === '+';
+    opts.fromStart = raw.startsWith('+');
   };
-  const take = (flag: string): string => {
-    const v = argv[++i];
-    if (v === undefined) throw new TailArgsError(`option requires an argument -- '${flag}'`);
-    return v;
-  };
-  while (i < argv.length) {
-    const a = argv[i];
-    if (a === '--') { for (let j = i + 1; j < argv.length; j++) opts.files.push(argv[j]); break; }
-    if (a === '-f') { opts.follow = 'descriptor'; i++; continue; }
-    if (a === '-F') { opts.follow = 'name'; opts.retry = true; i++; continue; }
-    if (a === '--follow') { opts.follow = 'descriptor'; i++; continue; }
-    if (a.startsWith('--follow=')) {
-      opts.follow = a.slice('--follow='.length) === 'name' ? 'name' : 'descriptor';
-      i++; continue;
-    }
-    if (a === '-n') { setCount(take('n'), 'lines');  i++; continue; }
-    if (a === '-c') { setCount(take('c'), 'bytes');  i++; continue; }
-    if (a.startsWith('--lines='))  { setCount(a.slice('--lines='.length), 'lines'); i++; continue; }
-    if (a.startsWith('--bytes='))  { setCount(a.slice('--bytes='.length), 'bytes'); i++; continue; }
-    if (a === '-q' || a === '--quiet' || a === '--silent')  { opts.quiet = true; i++; continue; }
-    if (a === '-v' || a === '--verbose')                    { opts.verbose = true; i++; continue; }
-    if (a === '-z' || a === '--zero-terminated')            { opts.zeroTerminated = true; i++; continue; }
-    if (a === '--retry')                                    { opts.retry = true; i++; continue; }
-    if (a === '-s' || a === '--sleep-interval')             { opts.sleepIntervalSeconds = Number.parseFloat(take('s')) || 1; i++; continue; }
-    if (a.startsWith('--sleep-interval='))                  { opts.sleepIntervalSeconds = Number.parseFloat(a.slice('--sleep-interval='.length)) || 1; i++; continue; }
-    if (a.startsWith('--pid='))                             { opts.pid = Number.parseInt(a.slice('--pid='.length), 10); i++; continue; }
-    if (a.startsWith('--max-unchanged-stats='))             { opts.maxUnchangedStats = Number.parseInt(a.slice('--max-unchanged-stats='.length), 10); i++; continue; }
-    // Historical `-50` and `+50` line counts.
-    if (/^-\d+$/.test(a)) { setCount(a.slice(1), 'lines'); i++; continue; }
-    if (/^\+\d+$/.test(a)) { setCount(a, 'lines'); i++; continue; }
-    // Clustered flags like `-fn5`.
-    if (/^-[a-zA-Z]+/.test(a) && a.length > 2) {
-      const cluster = a.slice(1);
-      let consumed = false;
-      for (let k = 0; k < cluster.length; k++) {
-        const ch = cluster[k];
-        if (ch === 'f') opts.follow = opts.follow === 'none' ? 'descriptor' : opts.follow;
-        else if (ch === 'F') { opts.follow = 'name'; opts.retry = true; }
-        else if (ch === 'q') opts.quiet = true;
-        else if (ch === 'v') opts.verbose = true;
-        else if (ch === 'n' || ch === 'c') {
-          const rest = cluster.slice(k + 1);
-          const value = rest.length > 0 ? rest : take(ch);
-          setCount(value, ch === 'n' ? 'lines' : 'bytes');
-          consumed = true;
-          break;
+  let rest = argv;
+  const obsolete = /^([-+])(\d+)([bkm]?)([cfqv]*)$/.exec(argv[0] ?? '');
+  if (obsolete !== null) {
+    const factor = obsolete[3] === 'b' ? 512 : obsolete[3] === 'k' ? 1024 : obsolete[3] === 'm' ? 1024 ** 2 : 1;
+    opts.count = Number(obsolete[2]) * factor;
+    opts.unit = obsolete[4].includes('c') ? 'bytes' : 'lines';
+    opts.fromStart = obsolete[1] === '+';
+    if (obsolete[4].includes('f')) opts.follow = 'descriptor';
+    if (obsolete[4].includes('q')) { opts.quiet = true; opts.verbose = false; }
+    if (obsolete[4].includes('v')) { opts.verbose = true; opts.quiet = false; }
+    rest = argv.slice(1);
+  }
+  for (const item of shortOptions(rest, 'c:n:fFqs:vz', TAIL_LONG_OPTIONS)) {
+    if (item.kind === 'operand') { opts.files.push(item.value); continue; }
+    if (item.kind !== 'option') throw new TailArgsError(getoptDiagnostic('tail', item).replace(/^tail: /, ''), true);
+    switch (item.letter) {
+      case 'H': throw new TailDocsSignal('help');
+      case 'V': throw new TailDocsSignal('version');
+      case 'c': setCount(item.argument ?? '', 'bytes'); break;
+      case 'n': setCount(item.argument ?? '', 'lines'); break;
+      case 'f': {
+        const mode = item.argument;
+        if (mode === undefined) { opts.follow = 'descriptor'; break; }
+        const matches = ['descriptor', 'name'].filter((name) => name.startsWith(mode));
+        if (mode === '' || matches.length !== 1) {
+          throw new TailArgsError(`invalid argument ${quoteLocale(mode)} for ${quoteLocale('--follow')}\nValid arguments are:\n  - ${quoteLocale('descriptor')}\n  - ${quoteLocale('name')}`, true);
         }
-        else throw new TailArgsError(`invalid option -- '${ch}'`);
+        opts.follow = matches[0] === 'name' ? 'name' : 'descriptor';
+        break;
       }
-      i++; if (consumed) continue; continue;
+      case 'F': opts.follow = 'name'; opts.retry = true; break;
+      case 'R': opts.retry = true; break;
+      case 'q': opts.quiet = true; opts.verbose = false; break;
+      case 'v': opts.verbose = true; opts.quiet = false; break;
+      case 'z': opts.zeroTerminated = true; break;
+      case 's': {
+        const seconds = Number(item.argument);
+        if (item.argument === '' || !Number.isFinite(seconds) || seconds < 0) throw new TailArgsError(`invalid number of seconds: ${quoteLocale(item.argument ?? '')}`);
+        opts.sleepIntervalSeconds = seconds;
+        break;
+      }
+      case 'P': {
+        if (!/^\d+$/.test(item.argument ?? '')) throw new TailArgsError(`invalid PID: ${quoteLocale(item.argument ?? '')}`);
+        opts.pid = Number(item.argument);
+        break;
+      }
+      case 'M': {
+        if (!/^\d+$/.test(item.argument ?? '')) throw new TailArgsError(`invalid maximum number of unchanged stats between opens: ${quoteLocale(item.argument ?? '')}`);
+        opts.maxUnchangedStats = Number(item.argument);
+        break;
+      }
+      default: break;
     }
-    if (a.startsWith('-') && a.length > 1) throw new TailArgsError(`unrecognized option '${a}'`);
-    opts.files.push(a);
-    i++;
   }
   return opts;
 }
@@ -175,8 +196,8 @@ export function parseTailArgs(argv: readonly string[]): TailOptions {
 export function sliceTail(content: string, opts: TailOptions): string {
   const sep = opts.zeroTerminated ? '\0' : '\n';
   if (opts.unit === 'bytes') {
-    if (opts.fromStart) return content.slice(Math.max(0, opts.count - 1));
-    return opts.count <= 0 ? '' : content.slice(-opts.count);
+    if (opts.fromStart) return takeBytes(content, Math.max(0, utf8Bytes(content) - Math.max(0, opts.count - 1)), true);
+    return opts.count <= 0 ? '' : takeBytes(content, opts.count, true);
   }
   const parts = content.split(sep);
   const trailingNewline = parts.length > 0 && parts[parts.length - 1] === '';
@@ -210,27 +231,38 @@ export class TailCommand {
    * code (0 on full success, 1 when at least one file could not be read).
    */
   runOnce(opts: TailOptions, cwd: string, stdin?: string): TailSnapshot {
-    if (opts.files.length === 0) {
-      const body = stdin === undefined ? '' : sliceTail(stdin, opts);
-      return { output: body, exitCode: 0 };
-    }
-    let output = '';
-    let exit = 0;
-    const showHeaders = opts.verbose || (!opts.quiet && opts.files.length > 1);
+    const streams = new Streams();
+    const names = opts.files.length === 0 ? ['-'] : opts.files;
+    const showHeaders = opts.verbose || (!opts.quiet && names.length > 1);
     let first = true;
-    for (const f of opts.files) {
-      const abs = this.fs.normalizePath(f, cwd);
-      const content = this.fs.readFile(abs);
-      if (content === null) {
-        output += `tail: cannot open '${f}' for reading: No such file or directory\n`;
-        exit = 1;
-        continue;
+    for (const f of names) {
+      const label = f === '-' ? 'standard input' : f;
+      let content: string | null;
+      if (f === '-') content = stdin ?? '';
+      else {
+        const abs = this.fs.normalizePath(f, cwd);
+        content = this.fs.readFile(abs);
+        if (content === null && this.fs.isDirectory?.(abs) === true) {
+          if (showHeaders) streams.stdout(`${first ? '' : '\n'}${tailHeader(label)}\n`);
+          first = false;
+          streams.diagnostic(`tail: error reading ${quoteShell(f)}: Is a directory`);
+          streams.exitCode = 1;
+          continue;
+        }
+        if (content === null) {
+          streams.diagnostic(`tail: cannot open ${quoteShell(f)} for reading: No such file or directory`);
+          streams.exitCode = 1;
+          continue;
+        }
       }
-      if (showHeaders) output += `${first ? '' : '\n'}${tailHeader(f)}\n`;
-      output += sliceTail(content, opts);
+      if (showHeaders) streams.stdout(`${first ? '' : '\n'}${tailHeader(label)}\n`);
       first = false;
+      streams.stdout(sliceTail(content, opts));
     }
-    return { output, exitCode: exit };
+    const run = streams.result();
+    return run.stderr === ''
+      ? { output: run.stdout, exitCode: run.exitCode }
+      : { output: run.stdout, exitCode: run.exitCode, stderr: run.stderr, interleaved: run.interleaved };
   }
 
   /**
@@ -345,7 +377,7 @@ function inertHandle(files: ReadonlyArray<string>): TailFollowHandle {
  * must complete by supplying a sink — done via `attach()`.
  */
 export type TailRunResult =
-  | { kind: 'snapshot'; output: string; exitCode: number }
+  | { kind: 'snapshot'; output: string; exitCode: number; stderr?: string; interleaved?: string }
   | {
       kind: 'follow';
       options: TailOptions;
@@ -363,8 +395,13 @@ export function runTail(
   let opts: TailOptions;
   try { opts = parseTailArgs(argv); }
   catch (e) {
-    const msg = e instanceof TailArgsError ? `tail: ${e.message}` : 'tail: invalid argument';
-    return { kind: 'snapshot', output: msg, exitCode: 1 };
+    if (e instanceof TailDocsSignal) {
+      const docs = docsResult('tail', e.which);
+      return { kind: 'snapshot', output: docs.stdout, exitCode: 0 };
+    }
+    if (!(e instanceof TailArgsError)) throw e;
+    const diagnostic = `tail: ${e.message}\n${e.usage ? "Try 'tail --help' for more information.\n" : ''}`;
+    return { kind: 'snapshot', output: '', exitCode: 1, stderr: diagnostic, interleaved: diagnostic };
   }
   const cmd = new TailCommand(fs);
   if (opts.follow === 'none') {

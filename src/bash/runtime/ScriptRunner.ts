@@ -12,8 +12,7 @@
 
 import type { ShellContext } from '@/network/devices/linux/LinuxFileCommands';
 import type { INode } from '@/network/devices/linux/VirtualFileSystem';
-import { BashLexer } from '@/bash/lexer/BashLexer';
-import { BashParser } from '@/bash/parser/BashParser';
+import { parseScript } from '@/bash/parser/ParseScript';
 import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
 import { DaemonParkSignal } from '@/bash/errors/BashError';
 import type { AliasTable } from '@/bash/runtime/AliasTable';
@@ -23,6 +22,7 @@ export interface ScriptResult {
   exitCode: number;
   /** Final environment variables after execution (for state sync). */
   env?: Record<string, string>;
+  exported?: string[];
   /**
    * Pure stderr stream (content routed to fd 2). `output` remains the
    * merged terminal view; this lets callers route stderr independently.
@@ -46,7 +46,9 @@ export function runScript(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean },
+  io?: IOContext,
+  inherited?: Record<string, string>,
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -76,10 +78,10 @@ export function runScript(
   }
 
   // 4. Execute
-  const io = buildIOContext(ctx);
+  const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContent(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), io, identity, aliases, functions,
+    inherited ?? buildEnvVars(ctx), scriptIo, identity, aliases, functions,
   );
 }
 
@@ -94,7 +96,7 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string; interactive?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
@@ -103,11 +105,7 @@ export function runScriptContent(
 
   let interp: BashInterpreter | undefined;
   try {
-    const lexer = new BashLexer();
-    const parser = new BashParser();
-
-    const tokens = lexer.tokenize(source);
-    const ast = parser.parse(tokens);
+    const ast = parseScript(source, 1, identity?.interactive === true ? 'always' : 'declared');
 
     interp = new BashInterpreter({
       executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),
@@ -121,6 +119,7 @@ export function runScriptContent(
       aliases,
       functions,
       daemonMode: identity?.daemonMode,
+      interactive: identity?.interactive,
       stdin: identity?.stdin,
     });
 
@@ -130,13 +129,13 @@ export function runScriptContent(
     for (const [k, v] of interp.env.getAll()) {
       finalEnv[k] = v;
     }
-    return { ...result, env: finalEnv };
+    return { ...result, env: finalEnv, exported: Object.keys(interp.env.getExported()) };
   } catch (e: unknown) {
     if (e instanceof DaemonParkSignal) {
       const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
       const finalEnv: Record<string, string> = {};
       if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
-      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+      return { output: e.output, exitCode: 0, env: finalEnv, exported: parkedInterp ? Object.keys(parkedInterp.env.getExported()) : [], parked: true, interp: parkedInterp };
     }
     const msg = e instanceof Error ? e.message : String(e);
     // Normalize lexer/parser errors to "syntax error" format for compatibility
@@ -161,7 +160,9 @@ export async function runScriptAsync(
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean },
+  io?: IOContext,
+  inherited?: Record<string, string>,
 ): Promise<ScriptResult> {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
 
@@ -186,10 +187,10 @@ export async function runScriptAsync(
     return { output: `bash: ${scriptPath}: No such file or directory\n`, exitCode: 127 };
   }
 
-  const io = buildIOContext(ctx);
+  const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContentAsync(
     content, scriptPath, scriptArgs, executeCommand,
-    buildEnvVars(ctx), io, identity, aliases, functions,
+    inherited ?? buildEnvVars(ctx), scriptIo, identity, aliases, functions,
   );
 }
 
@@ -207,7 +208,7 @@ export async function runScriptContentAsync(
     | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; interactive?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): Promise<ScriptResult> {
@@ -215,11 +216,7 @@ export async function runScriptContentAsync(
 
   let interp: BashInterpreter | undefined;
   try {
-    const lexer = new BashLexer();
-    const parser = new BashParser();
-
-    const tokens = lexer.tokenize(source);
-    const ast = parser.parse(tokens);
+    const ast = parseScript(source, 1, identity?.interactive === true ? 'always' : 'declared');
 
     interp = new BashInterpreter({
       executeCommand: (args, env, background, outputPiped, stdin) => executeCommand(args, env, background, outputPiped, stdin),
@@ -233,6 +230,7 @@ export async function runScriptContentAsync(
       aliases,
       functions,
       daemonMode: identity?.daemonMode,
+      interactive: identity?.interactive,
     });
 
     const result = await interp.executeAsync(ast);
@@ -240,13 +238,13 @@ export async function runScriptContentAsync(
     for (const [k, v] of interp.env.getAll()) {
       finalEnv[k] = v;
     }
-    return { ...result, env: finalEnv };
+    return { ...result, env: finalEnv, exported: Object.keys(interp.env.getExported()) };
   } catch (e: unknown) {
     if (e instanceof DaemonParkSignal) {
       const parkedInterp = (e.interp as BashInterpreter | undefined) ?? interp;
       const finalEnv: Record<string, string> = {};
       if (parkedInterp) for (const [k, v] of parkedInterp.env.getAll()) finalEnv[k] = v;
-      return { output: e.output, exitCode: 0, env: finalEnv, parked: true, interp: parkedInterp };
+      return { output: e.output, exitCode: 0, env: finalEnv, exported: parkedInterp ? Object.keys(parkedInterp.env.getExported()) : [], parked: true, interp: parkedInterp };
     }
     const msg = e instanceof Error ? e.message : String(e);
     const normalized = msg.replace(/Lexer error|Parse error/, 'syntax error');
@@ -338,8 +336,8 @@ function buildIOContext(ctx: ShellContext): IOContext {
     readFile(path: string) {
       return ctx.vfs.readFile(path);
     },
-    resolvePath(path: string) {
-      return ctx.vfs.normalizePath(path, ctx.cwd);
+    resolvePath(path: string, cwd?: string) {
+      return ctx.vfs.normalizePath(path, cwd ?? ctx.cwd);
     },
     stat(path: string) {
       const absPath = ctx.vfs.normalizePath(path, ctx.cwd);
@@ -347,14 +345,8 @@ function buildIOContext(ctx: ShellContext): IOContext {
       if (!inode) return null;
       return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
     },
-    globExpand(pattern: string, cwd: string) {
-      const hits = ctx.vfs.globExpand(pattern, cwd);
-      if (hits.length === 0) return null;
-      if (!pattern.startsWith('/')) {
-        const prefix = cwd === '/' ? '/' : cwd + '/';
-        return hits.map(h => h.startsWith(prefix) ? h.slice(prefix.length) : h);
-      }
-      return hits;
+    globExpand(pattern: string, cwd: string, options) {
+      return ctx.vfs.globExpand(pattern, cwd, options);
     },
     homeFor(user: string) {
       const u = ctx.userMgr.getUser(user);

@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { asStderrResult, refuseUnknownGnuOption } from './linux/GnuOptionGuard';
 import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
@@ -80,13 +81,14 @@ import {
   NGINX_CONF, NGINX_CONF_PATH, NGINX_DEFAULT_SITE, NGINX_WELCOME_PAGE,
   NGINX_SITES_AVAILABLE, NGINX_SITES_ENABLED, NGINX_DEFAULT_ROOT, NGINX_DEFAULT_INDEX,
 } from './linux/http/nginx/NginxFiles';
+import { NGINX_MIME_TYPES, NGINX_MIME_TYPES_PATH } from './linux/http/nginx/NginxMimeTypes';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
-  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, type KernelIpFacts,
+  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
@@ -318,6 +320,7 @@ const sideOf = (translation: NatTranslation): 'src' | 'dst' => translation.side 
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
   private readonly ipv4Settings = new LinuxIpv4Settings();
+  private readonly ipv4Vectors = new KernelVectorStore(LINUX_IPV4_VECTOR_KNOBS);
   private readonly coreSettings = new LinuxCoreSettings();
   private readonly ipv6Settings = new LinuxIpv6Settings();
   private deviceConfStore: Ipv4DeviceConf | null = null;
@@ -488,6 +491,11 @@ export abstract class LinuxMachine extends EndHost
         () => `${this.ipv4Settings.get(knob.name)}\n`,
         (text) => this.ipv4Settings.write(knob.name, text));
     }
+    for (const knob of LINUX_IPV4_VECTOR_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv4/${knob.name}`,
+        () => `${this.ipv4Vectors.text(knob.name)}\n`,
+        (text) => this.ipv4Vectors.write(knob.name, text));
+    }
     this.executor.vfs.mkdirp('/proc/sys/net/ipv6', 0o755, 0, 0);
     for (const knob of LINUX_IPV6_KNOBS) {
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv6/${knob.name}`,
@@ -632,17 +640,19 @@ export abstract class LinuxMachine extends EndHost
     // no visibility into this registry, so without this a script running
     // `named-checkconf` sees "command not found" even though the same
     // command works fine typed directly at the prompt.
-    this.executor._registryCommandHook = (cmd, args, stdin) => {
+    this.executor._registryCommandHook = (cmd, args, stdin, outputPiped = false) => {
       const registered = this.commands.get(cmd);
       if (!registered || !registered.needsNetworkContext) return null;
       const unavailable = this.registryDependencyFailure(registered, cmd);
       if (unavailable) return unavailable;
       const { argv, input } = splitRegistryStdin(registered, args, stdin);
+      const optionRefusal = refuseUnknownGnuOption(cmd, argv);
+      if (optionRefusal) return asStderrResult(optionRefusal);
       if (registered.runWithStatusSync) {
-        return registered.runWithStatusSync(this.buildCommandContext(false, cmd), argv, input);
+        return registered.runWithStatusSync(this.buildCommandContext(outputPiped, cmd), argv, input);
       }
       if (registered.opensWireSession === true) return null;
-      const result = registered.run(this.buildCommandContext(false, cmd), argv, input);
+      const result = registered.run(this.buildCommandContext(outputPiped, cmd), argv, input);
       if (result instanceof Promise) return null;
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
@@ -659,9 +669,10 @@ export abstract class LinuxMachine extends EndHost
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
-    const journalTimers = new ClockTimers(() => this.getSystemClockMs(), () => this.getScheduler());
-    this.executor.onClockAdvanced(() => journalTimers.pump());
-    this.executor.logMgr.attachJournalTimers(journalTimers);
+    const machineTimers = new ClockTimers(() => this.getSystemClockMs(), () => this.getScheduler());
+    this.executor.onClockAdvanced(() => machineTimers.pump());
+    this.executor.logMgr.attachJournalTimers(machineTimers);
+    this.executor.attachProcessTimers(machineTimers);
     this.executor.logMgr.attachTerminals({ sessions: () => this.loggedInTerminals().map((terminal) => terminal.tty), write: (tty, text) => this.writeTerminal(tty, text) });
     this.executor.iptables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
     this.executor.ip6tables.setLogCallback((prefix, pkt) => this.logIptablesLog(prefix, pkt));
@@ -849,6 +860,8 @@ export abstract class LinuxMachine extends EndHost
         const denial = evaluatePrivilegeRequirement(cmd.privilege, argv[0], args, actor);
         if (denial) { restore(); return Promise.resolve(denial); }
       }
+      const optionRefusal = refuseUnknownGnuOption(argv[0], args);
+      if (optionRefusal) { restore(); return Promise.resolve(asStderrResult(optionRefusal)); }
       const ctx = this.buildCommandContext(outputPiped, argv[0]);
       if (cmd.runWithStatusSync) {
         try { return Promise.resolve(cmd.runWithStatusSync(ctx, args, input)); } finally { restore(); }
@@ -1014,6 +1027,14 @@ export abstract class LinuxMachine extends EndHost
   ): { outcome: TcpWireOutcome; received: string } {
     const exchange = super.tcpExchange(targetIP, port, payload, options);
     return { ...exchange, outcome: this.failedNeighbourIsHostUnreachable(targetIP, exchange.outcome) };
+  }
+
+  override tcpOpen(
+    targetIP: IPAddress | IPv6Address, port: number,
+    options: TcpExchangeSocketOptions = {},
+  ): { outcome: TcpWireOutcome; socket: TcpSocket | null } {
+    const opened = super.tcpOpen(targetIP, port, options);
+    return { ...opened, outcome: this.failedNeighbourIsHostUnreachable(targetIP, opened.outcome) };
   }
 
   private nssHostAddressesSync(name: string, family: 2 | 10): string[] {
@@ -1602,6 +1623,7 @@ export abstract class LinuxMachine extends EndHost
       if (!vfs.exists(dir)) vfs.mkdirp(dir, 0o755, 0, 0);
     }
     if (!vfs.exists(NGINX_CONF_PATH)) vfs.writeFile(NGINX_CONF_PATH, NGINX_CONF, 0, 0, 0o022, true);
+    if (!vfs.exists(NGINX_MIME_TYPES_PATH)) vfs.writeFile(NGINX_MIME_TYPES_PATH, NGINX_MIME_TYPES, 0, 0, 0o022, true);
     const site = `${NGINX_SITES_AVAILABLE}/default`;
     if (!vfs.exists(site)) vfs.writeFile(site, NGINX_DEFAULT_SITE, 0, 0, 0o022, true);
     if (!vfs.exists(`${NGINX_SITES_ENABLED}/default`)) {
@@ -1619,6 +1641,10 @@ export abstract class LinuxMachine extends EndHost
         readableBy: (path, uid, gid) => {
           const inode = vfs.resolveInode(path);
           return inode ? vfs.checkAccess(inode, 'r', uid, gid) : false;
+        },
+        stat: (path) => {
+          const inode = vfs.resolveInode(path);
+          return inode ? { mtimeMs: inode.mtime, size: inode.size } : null;
         },
       },
       tcpStack: () => this.getTcpStack(),
@@ -1770,8 +1796,8 @@ export abstract class LinuxMachine extends EndHost
         if (record === undefined) return;
         const limit = executor.processMgr.nofileLimit(record.uid);
         const hard = executor.processMgr.nofileHardLimit(record.uid);
-        record.uid = uid;
-        record.gid = gid;
+        record.uid = record.euid = record.suid = record.fsuid = uid;
+        record.gid = record.egid = record.sgid = record.fsgid = gid;
         record.user = executor.userMgr.uidToName(uid);
         rememberNofile(uid);
         executor.processMgr.setNofileHardLimit(uid, hard);
@@ -1938,6 +1964,13 @@ export abstract class LinuxMachine extends EndHost
 
   /** Le démon chrony — `null` avant l'amorçage. */
   chronyService: LinuxChronyService | null = null;
+
+  restartTimeDaemonFromFiles(): void {
+    const service = this.chronyService;
+    if (service === null || !service.isRunning()) return;
+    service.stop();
+    service.start();
+  }
   private ntpPortsBound = new Set<number>();
 
   /**
@@ -2101,6 +2134,10 @@ export abstract class LinuxMachine extends EndHost
         readableBy: (path, uid, gid) => {
           const inode = vfs.resolveInode(path);
           return inode ? vfs.checkAccess(inode, 'r', uid, gid) : false;
+        },
+        stat: (path) => {
+          const inode = vfs.resolveInode(path);
+          return inode ? { mtimeMs: inode.mtime, size: inode.size } : null;
         },
       },
       tcpStack: () => this.getTcpStack(),
@@ -2447,6 +2484,7 @@ export abstract class LinuxMachine extends EndHost
       const heldSession = this.sshSessionsByPid.get(pid);
       if (heldSession !== undefined) this.endSshSession(heldSession, 'killed');
       this.executor.releaseSshClient(pid);
+      this.executor.localDatagramSockets.releaseHolder(pid);
       for (const port of this.reapProcessSockets(pid, comm, 'tcp_close')) this._sshdActivePorts.delete(port);
     });
   }
@@ -3012,6 +3050,8 @@ export abstract class LinuxMachine extends EndHost
       return this.executor.handleLast(argv.slice(1), 'last').interleaved;
     }
     if (cmd === 'loginctl') {
+      const optionRefusal = refuseUnknownGnuOption(cmd, argv.slice(1));
+      if (optionRefusal) return optionRefusal.output;
       return renderLoginctl({
         table: this.sessionTable,
         utmp: this.utmpSync,
@@ -4229,6 +4269,11 @@ export abstract class LinuxMachine extends EndHost
       return this.withSudoAndPrivilegeGate(
         firstCmd, cmdArgs, isSudo, cmd.privilege,
         async () => {
+          const optionRefusal = refuseUnknownGnuOption(firstCmd, cmdArgs);
+          if (optionRefusal) {
+            this.executor.lastExitCode = optionRefusal.exitCode;
+            return optionRefusal.output;
+          }
           if (cmd.runWithStatusSync) {
             const result = cmd.runWithStatusSync(this.buildCommandContext(), cmdArgs);
             this.executor.lastExitCode = result.exitCode;
@@ -4594,6 +4639,7 @@ export abstract class LinuxMachine extends EndHost
       flushRouteExceptions: () => this.flushRouteExceptions(),
       udpListen: (port, processName, owner, onDatagram, address) => this.udpListen(port, processName, owner, onDatagram, address),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
+      tcpOpen: (target, port, options) => this.tcpOpen(target, port, options),
       ping6Sequence: (
         target: IPv6Address,
         count: number,
@@ -4758,9 +4804,29 @@ export abstract class LinuxMachine extends EndHost
       icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
       fragmentOffset: ipPkt.fragmentOffset,
       ipPacketBytes: ipPkt.totalLength,
+      ttl: ipPkt.ttl,
+      tos: ipPkt.tos,
+      addressTypeOf: (ip: string) => this.addressType(ip),
       related: this.quotedTuple(ipPkt),
       ...this.tcpFacts(ipPkt.payload),
     };
+  }
+
+  private addressType(ip: string): string {
+    const octets = ip.split('.').map(Number);
+    if (ip === '0.0.0.0') return 'UNSPEC';
+    if (octets[0] === 127 || this.getPorts().some((port) => port.getIPAddress()?.toString() === ip)) return 'LOCAL';
+    if (ip === '255.255.255.255') return 'BROADCAST';
+    if (octets[0] >= 224 && octets[0] <= 239) return 'MULTICAST';
+    const directed = this.getPorts().some((port) => {
+      const address = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (!address || !mask) return false;
+      const own = address.toString().split('.').map(Number);
+      const bits = mask.toString().split('.').map(Number);
+      return octets.every((octet, i) => octet === ((own[i] & bits[i]) | (~bits[i] & 255)));
+    });
+    return directed ? 'BROADCAST' : 'UNICAST';
   }
 
   private quotedTuple(ipPkt: IPv4Packet): ConnectionTuple | undefined {
@@ -4791,17 +4857,22 @@ export abstract class LinuxMachine extends EndHost
       icmpCode: transport?.type === 'icmpv6' ? transport.code : undefined,
       icmpId: transport?.type === 'icmpv6' ? transport.id : undefined,
       ipPacketBytes: ipv6PacketBytes(ipv6Pkt),
+      ttl: ipv6Pkt.hopLimit,
+      tos: ipv6Pkt.trafficClass,
       related: this.quotedTuple6(ipv6Pkt),
       ...this.tcpFacts(ipv6Pkt.payload),
     };
   }
 
-  private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[] } {
+  private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[]; tcpMss?: number } {
     const segment = payload as TCPPacket | TcpSegment | undefined;
     if (segment?.type !== 'tcp') return {};
+    const options = 'options' in segment ? segment.options : [];
+    const mss = options.find((option) => option.kind === 'mss');
     return {
       tcpFlags: tcpFlagBits(segment.flags),
-      tcpOptions: 'options' in segment ? segment.options.map(tcpOptionKindNumber) : [],
+      tcpOptions: options.map(tcpOptionKindNumber),
+      ...(mss !== undefined && 'value' in mss ? { tcpMss: mss.value } : {}),
     };
   }
 

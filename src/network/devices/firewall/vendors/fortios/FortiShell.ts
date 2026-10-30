@@ -869,6 +869,15 @@ export class FortiShell {
       const path = rest.slice(0, take);
       if (!this.tree.spec(path)) continue;
       const key = rest[take] === undefined ? undefined : unquote(rest[take]);
+      if (key !== undefined && this.tree.spec(path)?.kind === 'object') {
+        let at = take;
+        let prefix: readonly string[] = path;
+        while (rest[at] !== undefined && viewContinuations(FORTI_GET_VIEWS, prefix).includes(rest[at])) {
+          prefix = [...prefix, rest[at]];
+          at++;
+        }
+        if (rest[at] !== undefined) return FortiMessages.parseError(rest[at]);
+      }
       const lines = renderGet(this.tree, path, key);
       if (lines === null) return FortiMessages.unknownKey(key ?? '');
       return lines.join('\n');
@@ -1829,6 +1838,7 @@ export class FortiShell {
   private executeClear(rest: readonly string[]): string {
     if (rest.length === 0) return FortiMessages.incomplete('what to clear');
     if (rest[0] === 'system' && rest[1] === 'arp' && rest[2] === 'table') {
+      if (rest[3] !== undefined) return FortiMessages.parseError(rest[3]);
       this.fw.getArpService().clear();
       return '';
     }

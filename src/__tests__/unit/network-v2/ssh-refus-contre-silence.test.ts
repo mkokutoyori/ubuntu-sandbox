@@ -212,7 +212,7 @@ describe('le port de destination est un PORT, pas un entier', () => {
 
     await typeLine(host, `telnet ${BAVARD} 99999`);
 
-    expect(transcript(host)).toMatch(/usage: telnet/);
+    expect(transcript(host)).toMatch(/telnet: port 99999 out of range/);
     expect(transcript(host)).not.toMatch(/Trying/);
   });
 
@@ -223,7 +223,7 @@ describe('le port de destination est un PORT, pas un entier', () => {
 
     await typeLine(host, `telnet ${BAVARD} 0`);
 
-    expect(transcript(host)).toMatch(/usage: telnet/);
+    expect(transcript(host)).toMatch(/telnet: port 0 out of range/);
   });
 });
 

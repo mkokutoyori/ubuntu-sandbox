@@ -208,6 +208,10 @@ export class PimAgent {
     this.advertiseCandidateRp();
   }
 
+  setCandidateRpInterval(seconds: number): void {
+    this.config.candidateRpIntervalSec = seconds;
+  }
+
   clearRpCandidate(): void {
     this.config.rpCandidate = null;
   }
@@ -438,6 +442,14 @@ export class PimAgent {
     } else {
       this.maybeRefreshUpstream(m);
     }
+  }
+
+  setSptThreshold(threshold: 'infinity' | number | null): void {
+    this.config.sptThreshold = threshold;
+  }
+
+  getSptThreshold(): 'infinity' | number | null {
+    return this.config.sptThreshold;
   }
 
   setJoinPruneInterval(seconds: number): void {

@@ -287,7 +287,7 @@ describe('Group 1: Gestion des Fichiers et Répertoires', () => {
       await pc.executeCommand('ln original_hard.txt hardlink.txt');
       
       // Vérifier qu'ils partagent le même inode
-      const inodeCheck = await pc.executeCommand('ls -i original_hard.txt hardlink.txt');
+      const inodeCheck = await pc.executeCommand('ls -1i original_hard.txt hardlink.txt');
       const inodes = inodeCheck.split('\n').map(line => line.split(' ')[0]);
       expect(inodes[0]).toBe(inodes[1]);
       
@@ -648,15 +648,15 @@ describe('Group 3: Gestion des Permissions', () => {
       expect(perms).toContain('drwsr-sr-t');
       
       // Notation octale avec bits spéciaux
-      await pc.executeCommand('chmod 2755 special_dir');  // setgid
+      await pc.executeCommand('chmod 02755 special_dir');  // setgid
       perms = await pc.executeCommand('ls -ld special_dir');
       expect(perms).toContain('drwxr-sr-x');
       
-      await pc.executeCommand('chmod 4755 special_dir');  // setuid
+      await pc.executeCommand('chmod 04755 special_dir');  // setuid
       perms = await pc.executeCommand('ls -ld special_dir');
       expect(perms).toContain('drwsr-xr-x');
       
-      await pc.executeCommand('chmod 1777 special_dir');  // sticky
+      await pc.executeCommand('chmod 01777 special_dir');  // sticky
       perms = await pc.executeCommand('ls -ld special_dir');
       expect(perms).toContain('drwxrwxrwt');
       

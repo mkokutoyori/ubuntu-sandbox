@@ -57,7 +57,7 @@ function machine(): LinuxPC {
 describe('nobody invents a key under /proc/sys or /sys', () => {
   it('a redirect to a key that does not exist fails, as root and as a user', async () => {
     const pc = machine();
-    expect(await pc.executeCommand(`sudo sh -c 'echo 3 > /proc/sys/net/ipv4/zorglub'`))
+    expect(await pc.executeCommand(`sudo bash -c 'echo 3 > /proc/sys/net/ipv4/zorglub'`))
       .toBe('bash: /proc/sys/net/ipv4/zorglub: No such file or directory');
     expect(await pc.executeCommand('echo 3 > /proc/sys/net/ipv4/zorglub'))
       .toBe('bash: /proc/sys/net/ipv4/zorglub: No such file or directory');
@@ -74,7 +74,7 @@ describe('nobody invents a key under /proc/sys or /sys', () => {
 
   it('a mistyped real key is caught the same way', async () => {
     const pc = machine();
-    expect(await pc.executeCommand(`sudo sh -c 'echo 1 > /proc/sys/net/ipv4/tcp_synn_retries'`))
+    expect(await pc.executeCommand(`sudo bash -c 'echo 1 > /proc/sys/net/ipv4/tcp_synn_retries'`))
       .toBe('bash: /proc/sys/net/ipv4/tcp_synn_retries: No such file or directory');
   });
 
@@ -90,7 +90,7 @@ describe('nobody invents a key under /proc/sys or /sys', () => {
 
   it('/sys does not grow either', async () => {
     const pc = machine();
-    expect(await pc.executeCommand(`sudo sh -c 'echo 1 > /sys/class/net/eth0/zorglub'`))
+    expect(await pc.executeCommand(`sudo bash -c 'echo 1 > /sys/class/net/eth0/zorglub'`))
       .toBe('bash: /sys/class/net/eth0/zorglub: No such file or directory');
   });
 

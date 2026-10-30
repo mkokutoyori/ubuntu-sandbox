@@ -43,7 +43,7 @@ async function segment() {
   new Cable('a').connect(srv.getPorts()[0], sw.getPorts()[0]);
   new Cable('b').connect(client.getPorts()[0], sw.getPorts()[1]);
   srv.getPorts()[0].configureIP(new IPAddress('192.168.1.1'), new SubnetMask('255.255.255.0'));
-  await srv.executeCommand(`printf '%s' ${JSON.stringify('authoritative;\nsubnet 192.168.1.0 netmask 255.255.255.0 { range 192.168.1.100 192.168.1.110; }\n')} > /etc/dhcp/dhcpd.conf`);
+  await srv.executeCommand(`printf '%b' ${JSON.stringify('authoritative;\nsubnet 192.168.1.0 netmask 255.255.255.0 { range 192.168.1.100 192.168.1.110; }\n')} > /etc/dhcp/dhcpd.conf`);
   await srv.executeCommand('printf \'INTERFACESv4="eth0"\\n\' > /etc/default/isc-dhcp-server');
   await srv.executeCommand('systemctl start isc-dhcp-server');
   return { srv, client, sw };

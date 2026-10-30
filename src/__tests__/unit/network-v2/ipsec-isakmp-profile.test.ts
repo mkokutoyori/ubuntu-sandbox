@@ -164,7 +164,7 @@ describe('crypto isakmp profile / keyring — real PSK and identity resolution',
     // R2 has NO key for R1's real IP — only for the FQDN identity R1 will present.
     for (const cmd of [
       'enable', 'configure terminal',
-      'crypto isakmp key ProfileOnlySecret address r1.example.com',
+      'crypto isakmp key ProfileOnlySecret hostname r1.example.com',
       'crypto map CMAP 10 ipsec-isakmp', 'set peer 10.0.12.1', 'set transform-set TSET',
       'match address VPN_ACL', 'exit',
       'interface GigabitEthernet0/1', 'crypto map CMAP', 'exit', 'end',

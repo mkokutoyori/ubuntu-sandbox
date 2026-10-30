@@ -21,7 +21,7 @@ describe('Oracle background processes appear in the Linux process table', () => 
     const db = getOracleDatabase(server.id);
     expect(db.instance.state).toBe('OPEN');
 
-    const ps = await server.executeCommand('ps -ef -o pid,user,comm');
+    const ps = await server.executeCommand('ps -e -o pid,user,comm');
     expect(ps).toMatch(/oracle\s+ora_pmon/);
     expect(ps).toMatch(/oracle\s+ora_smon/);
     expect(ps).toMatch(/oracle\s+ora_lgwr/);
@@ -31,10 +31,10 @@ describe('Oracle background processes appear in the Linux process table', () => 
 
   it('SHUTDOWN ABORT removes the background processes', async () => {
     const db = getOracleDatabase(server.id);
-    expect(await server.executeCommand('ps -ef -o comm')).toContain('ora_pmon');
+    expect(await server.executeCommand('ps -e -o comm')).toContain('ora_pmon');
 
     db.instance.shutdown('ABORT');
-    const after = await server.executeCommand('ps -ef -o comm');
+    const after = await server.executeCommand('ps -e -o comm');
     expect(after).not.toContain('ora_pmon');
 
     removeOracleDatabase(server.id);

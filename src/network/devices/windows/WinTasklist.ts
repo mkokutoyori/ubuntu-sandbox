@@ -12,6 +12,7 @@
  *   - tasklist /NH          — no headers (TABLE/CSV only)
  */
 
+import { findInvalidWindowsArgument, invalidArgumentError, TASKLIST_SWITCHES } from './WinSwitchGuard';
 import type { WindowsProcessManager, WindowsProcess } from './WindowsProcessManager';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
@@ -29,6 +30,9 @@ export function cmdTasklist(ctx: TasklistContext, args: string[]): string {
   let format: OutputFormat = 'TABLE';
   let noHeader = false;
   const filters: Array<{ field: string; op: string; value: string }> = [];
+
+  const invalid = findInvalidWindowsArgument(args, TASKLIST_SWITCHES);
+  if (invalid !== null) return invalidArgumentError('tasklist', invalid);
 
   for (let i = 0; i < args.length; i++) {
     const flag = args[i].toLowerCase();

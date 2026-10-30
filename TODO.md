@@ -160,8 +160,8 @@ par `simulationNowMs()` / `simulationDate()` (une seule lecture : l'heure de
 l'ordonnanceur et le temps passe sur le fil), mais une machine dont on a pose
 l'horloge (`date -s`, `Set-Date`, `clock set`) n'est lue par sa propre pile
 que pour Kerberos (KDC, client, verification d'AP-REQ), TCP (`TcpStack.nowMs`),
-le systeme de fichiers, le journal, les processus, les services, les comptes
-et l'audit. Les autres — validite des certificats TLS et X.509, fenetres de
+le systeme de fichiers, le journal, les processus, les services, les comptes,
+l'audit et l'agent NTP (qui lit ET discipline l'horloge de sa machine). Les autres — validite des certificats TLS et X.509, fenetres de
 signature DNSSEC, horodatages SSH, caches DNS — lisent l'heure globale : une
 machine decalee de dix minutes ne voit toujours pas un certificat « pas encore
 valide ». Le `START` de `ps` des processus de demarrage et les dates de
@@ -171,6 +171,32 @@ sur un vrai noyau `ps` suit (btime recalcule), `last` non.
 un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
+
+### [ntp] seuils de panique des agents ntpd, glissement de chronyd par mise a jour, `clock datetime` Huawei
+**Mesure** (lab NTP, horloges decalees apres synchronisation) : l'agent lit
+desormais l'horloge de la machine et la discipline. Restent trois ecarts
+connus, tous mesures sur le laboratoire :
+1. Les agents Cisco et Huawei gardent le seuil de panique de ntpd (1000 s) et
+   W32Time celui de `MaxPosPhaseCorrection` (54000 s) : une machine decalee
+   de plusieurs annees reste non synchronisee, avec `loopfilter state is
+   'PANIC'`. Que IOS et VRP appliquent le seuil de ntpd n'est pas atteste
+   depuis ce reseau (`cisco.com` et `support.huawei.com` sont bloques).
+2. chronyd corrige un decalage par glissement a `maxslewrate` (83333 ppm par
+   defaut) CONTINUEMENT ; l'agent applique `debit x temps ecoule` a chaque
+   mise a jour. Sur 1 h le total est le meme, la courbe est en marches. Et
+   sur un saut d'horloge externe chronyd detecte le saut et REMET A ZERO ses
+   sources (`LCL_NotifyExternalTimeStep`, changement `LCL_ChangeUnknownStep`),
+   alors que l'agent re-exprime les mesures deja prises dans la nouvelle
+   horloge : meme resultat a terme, delai de reconvergence different.
+3. `clock datetime HH:MM:SS YYYY-MM-DD` est interprete comme de l'UTC
+   (`vrpDatetimeToEpochMs`), alors que VRP lit l'heure dans le fuseau
+   configure (le mot-cle `utc` existe pour l'UTC). Non corrige faute de
+   documentation joignable ; une sonde existante (`probe-horloge-suit-son-equipement`)
+   pose le comportement actuel en contrat.
+**Pourquoi ce n'est pas ferme** : (1) et (3) demandent une source que ce
+reseau ne joint pas ; (2) demande de passer le glissement du pas de mise a
+jour a un taux continu sur l'ordonnanceur, et de decider quoi faire des
+echantillons au saut externe.
 
 ### [huawei] `undo dhcp enable` est refuse en vue systeme
 **Mesure** : `huawei-config-parity` (« should disable DHCP with undo dhcp enable ») est rouge sur `main` et
@@ -244,6 +270,15 @@ pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonct
 **Pourquoi ce n'est pas ferme** : chacun est un point d'entree distinct de l'executeur (resolution des sequences,
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
+
+### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
+**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
+`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
+simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
+FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
+**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
+« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
+meme port d'horloge dans `IRmanOracleContext`.
 
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
@@ -545,12 +580,19 @@ attend `proxy_connect_timeout` (60 s par defaut) puis rend `504 Gateway
 Time-out`. Un RST (port ferme) donne bien 502 des deux cotes. Meme cause
 que l'entree [curl] -m : le client HTTP n'attend pas sur l'horloge.
 
-### [curl] deux versions de curl et `gzip on` non evalue
+### [curl] deux versions de curl
 Le catalogue de paquets dit `curl 7.81.0-1ubuntu1.15` (jammy), `curl
---version` dit `curl 8.5.0` ; un seul des deux doit rester. Et nginx
-accepte `gzip on;` (livre dans nginx.conf) sans jamais compresser : aucun
-codec DEFLATE n'existe ici, c'est pourquoi curl annonce `Features: IPv6
-SSL` et refuse `--compressed` comme un curl sans libz.
+--version` dit `curl 8.5.0` ; un seul des deux doit rester.
+
+### [gzip] la commande `gzip` ecrit un pseudo-format, pas du gzip
+`gzip -k /tmp/a` ecrit `!<simgz>\n{"name":"a",…}` (63 octets pour
+« hello »), lu par `unpackGzip` a cote du vrai gzip que decode
+`rsyslog/Zlib.ts` (`unpackRealGzip`). Deux formats pour une commande ;
+un `.gz` fabrique ici ne se lit pas avec un vrai `gzip -d`. Vu en
+branchant `gzip on` d'nginx sur `gzipCompress` ; `curl --compressed`
+(docs/PRD-Nginx.md §9.12) lit lui le vrai format. Le fermer : `cmdGzip`
+doit ecrire `gzipCompress` et `unpackGzip` ne garder que la lecture
+reelle ; non fait ici car `tar -z` et `gzipText` en dependent.
 
 ### [fortios] `diagnose log test` n'existe pas
 La commande repond « unknown command » (batterie 02, test 98). Sur un vrai
@@ -811,7 +853,7 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 ### [nano] le repeint incremental de nano 7.2 : des rangees que le tampon ne justifie pas
 Mesure avec `nano-attributes-oracle.test.ts` (UNPORTED_CASES : atr3-21,
 atr3-47, atr3-101, bar2-2, bar2-41), 5 cas sur 690 enregistres sur nano 7.2
-dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
+dans tmux :
 - **Ligne magique** : un caractere tape sur la derniere ligne (que `PageDown`
   atteint) cree une nouvelle ligne magique en dessous ; nano ne repeint que la
   rangee courante, la rangee de la nouvelle ligne magique reste vide, SANS le
@@ -821,17 +863,6 @@ dans tmux, puis 4 cas de plus avec `nano-colors-oracle.test.ts` :
 - **`-S -l` sur une ligne de cinq tranches** : apres `M-\ PageDown C-d BSpace`
   le binaire laisse la rangee de la derniere tranche vide et le curseur colonne 0
   de la rangee suivante.
-- **`-0` et l'invite qui couvre une rangee de texte** : quand l'invite `^_` est quittee
-  par `^W` / `^O` (saut de paragraphe qui ne fait pas defiler), `edit_redraw` ne repeint que
-  l'ancienne et la nouvelle ligne courante et la rangee que l'invite couvrait reste vide ;
-  porte pour ce pas (mou2-72, blo1-21, col1-52 passent) mais le moteur la repeint a la
-  touche suivante, alors que nano la laisse vide jusqu'au prochain `refresh_needed`
-  (`nano-blocks-oracle.test.ts` blo1-61, blo2-129, blo4-149, `nano-colors-oracle.test.ts`
-  col1-82).
-- **Rangee de la nouvelle ligne magique et guide `-J`** : meme mecanisme, mesure avec
-  `nano-colors-oracle.test.ts` (col2-18, col3-42, col3-65) et
-  `nano-syntax-oracle.test.ts` (syn2-8, syn2-115, syn3-0), `nano-package-oracle.test.ts` (pkg1-128, pkg2-2) ; la rangee a le
-  guide quand le moteur la repeint, et n'en a pas chez nano.
 **Report** : reproduire ces cas demande de porter le suivi des rangees
 sales de `edit_refresh` / `update_line` (nano 8.x `winio.c`) et de garder
 l'ecran precedent dans le moteur ; le rendu actuel est le repeint complet que
@@ -938,8 +969,174 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   /etc/hosts) est dans le corpus.
 - `ncat` est un alias de `nc` dans la declaration de la commande ; c'est l'outil de Nmap, pas
   `netcat-openbsd` (options, messages et `-e` differents).
-- `-q`, `-W`, `-d`, `-C`, `-i` (delai entre lignes) et `-t` (telnet) : la boucle `readwrite` n'est
-  pas portee, la commande echange sa sortie standard en un bloc.
+- `-W` (arret apres N paquets) et `-t` (negociation telnet) : la boucle `readwrite` est portee
+  (`converse` dans `Nc.ts` : `-N -q -w -C -i -d`, connexion persistante, ecoute en service unique),
+  pas ces deux-la.
+- Entree standard du TERMINAL : un `nc host port` tape seul lit le clavier dans un vrai terminal
+  (il envoie ce qu'on tape jusqu'a Ctrl-D ou Ctrl-C) ; le terminal simule n'a pas d'entree
+  interactive pour une commande, donc `nc` lit la salutation du serveur puis se comporte comme un
+  Ctrl-C immediat (indicateur `terminal` de `converse`). Un `nc` en avant-plan alimente par un tube
+  (`echo x | nc ...`) reste connecte jusqu'a la fermeture du pair, `-N`, `-q` ou `-w`, comme le vrai.
+- Le test d'un `nc -u` vers un port qui ECOUTE mais ne repond jamais ne se termine pas sans `-w`,
+  `-q` ou Ctrl-C : c'est la mesure (rc 124 sous `timeout`), pas un defaut.
+
+### [ss] ce que le portage d'iproute2 6.1 laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `ss-iproute2-6.1.json`, 10 labos, 520 des 531 sorties
+identiques apres normalisation) :
+- `ss -m` : `skmem` est exact au repos et pour les prises de `nc` ; la file d'emission (`w`, `o`) et
+  le `tb` auto-regle apres un vrai transfert ne sont pas modelises au-dela des valeurs au repos.
+- `net.ipv4.tcp_rmem` / `tcp_wmem` sont stockes, rendus par `sysctl` et lus par `ss -m` ; le
+  reglage automatique de la fenetre de reception n'est pas modele.
+- Identite de la machine simulee : `/etc/os-release` et `lsb_release` se declarent Ubuntu 22.04.4
+  alors que les outils portes suivent les enregistrements d'Ubuntu 24.04 (iproute2 6.1.0, net-tools
+  2.10, psmisc 23.7, netcat-openbsd 1.226, procps-ng 4.0.4). `PackageDatabase` et `SS_VERSION` /
+  `NET_TOOLS_VERSION` disent deja 24.04 pour ces paquets ; l'identite du systeme, elle, reste a
+  trancher (changer la version annoncee decale `uname -r`, apt et les captures existantes). Le
+  controle de congestion par defaut est Reno ici, bbr sur la machine d'enregistrement (masque dans
+  la comparaison).
+
+### [fuser] ce que le portage de psmisc 23.7 laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `fuser-psmisc-23.7.json`, 179 des 181 sorties identiques
+et le labo `fuser-parsing`, 68 pas sur 68) :
+- `fuser -k -SIGNAL` : les signaux que `LinuxProcessManager` sait delivrer sont les 12 de son union
+  `Signal` ; les autres numeros (1 a 64) sont acceptes comme sur le vrai et recoivent l'action par
+  defaut de leur classe (ignore : CHLD, URG, WINCH ; arret : TSTP, TTIN, TTOU ; sinon terminaison),
+  pas le comportement propre a chacun (dump de memoire de QUIT/SEGV, par exemple).
+- Les deux pas `fuser -vm / 2>&1 | head -3` (labos `fuser-files` et `fuser-files-none`) dependent de
+  l'environnement : sur la machine d'enregistrement `/` liste les processus de l'espace de noms
+  hote, ici ceux du simulateur. Ils sont declares non portes dans `UNPORTED_STEPS`.
+
+### [UNIX] ce que la table des prises UNIX laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `unix-sockets.json`, 8 labos : flux, ecoute seule, deux clients, datagramme,
+datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -x`, `/proc/net/unix`, `/proc/<pid>/fd`,
+`fuser`, `nc -lU` / `-U` / `-luU` / `-uU` sortent identiques apres normalisation des inodes, sauf :
+- `lsof -U`, `lsof <socket>`, `lsof -p` : `lsof` est un petit gabarit sans les colonnes ni les lignes du vrai (4.95) ;
+  les sept pas lsof de chaque labo sont declares non portes dans `UNPORTED_STEPS`.
+- `nc -l` AU PREMIER PLAN rend la main aussitot (TCP comme UNIX) au lieu de bloquer jusqu'a la fin de la connexion ;
+  `timeout 1 nc -lU p; echo $?` rend donc 0 au lieu de 124. Le corriger ferait attendre tout test qui lance `nc -l`
+  sans `&` puis se connecte depuis une autre machine.
+- `ss -xaE` : refus explicite (« needs a stream of socket events ») ; le vrai n'affiche rien et rend la main.
+- `ss -e` d'une prise UNIX dont le pair est parti : la fleche `<->` ne devient pas `<--` / `-->` (aucune mesure faite).
+  Mesure faite pour un proprietaire non root : `ss -xlpe` n'affiche pas `uid:` pour une prise UNIX, ce que fait le simulateur.
+- Le labo `unix-user` (un `nc -lU` lance par `nobody`) est declare non porte en entier : `sudo -u nobody nc -lU p &`
+  rend 127 (le chemin des travaux d'arriere-plan ne retire que le mot `sudo`, pas `-u utilisateur`, et lance la commande reseau
+  sous l'identite de l'appelant). Les vues d'un proprietaire non root (`netstat -p` d'un autre utilisateur, `fuser -u`,
+  `EACCES` sur une prise dont l'utilisateur n'a pas le droit d'ecriture) y sont enregistrees et attendent ce correctif.
+- Les prises UNIX que posent rsyslog (`/dev/log`, imptcp) et auditd n'ont pas de porteur : elles figurent dans
+  `/proc/net/unix` et `ss -x` sans `users:` ni descripteur, parce que leur donner un pid decalerait les numeros de
+  descripteur que les tests rsyslog lisent deja.
+- `nc -U` tape seul dans le terminal (plan de flux `planNcUnix`) ouvre une prise sans processus.
+- `connect()` sur une file d'acceptation pleine (plus de `backlog + 1` connexions en attente) rend EAGAIN ici ; le vrai
+  bloque jusqu'a ce que le serveur accepte.
+- `find -type b` et `-type c` : le VFS ne distingue pas un peripherique bloc d'un peripherique caractere, les deux
+  filtres retournent tous les peripheriques.
+
+### [pipelines] le stderr d'un etage de tube est avale par l'etage suivant
+Mesure : `ls /proc/99999/fd | tail -n +2` n'affiche rien, `ls /nonexistent | cat` affiche l'erreur (qui a transite par
+le tube) ; le vrai laisse l'erreur sur le terminal dans les deux cas. Les commandes heritees de la couche
+`ShellContext` rendent leur diagnostic dans `output` au lieu de `stderr`, si bien que l'interpreteur le pousse dans le
+tube. Vu en rejouant `ls -l /proc/$P1/fd | tail -n +2` d'un processus mort (labos unix-closed et unix-none, declares non
+portes).
+
+### [stat] `stat` est un gabarit
+Mesure : `stat /absent; echo $?` rend 0 (le vrai : 1), `stat --version` repond `stat: missing operand`, `-L`, `-f`, `-t`
+sont ignores, et le message dit « cannot stat » (coreutils 8.32 d'Ubuntu 22.04) quand les enregistrements d'Ubuntu 24.04
+disent « cannot statx ». Vu en rejouant `stat -c '%F %a %U'` (labo unix-none).
+
+### [umask] ce que le portage de `umask` laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `umask-bash-5.2.json`, 5 labos, 232 pas, bash 5.2.21 sur Ubuntu 24.04) : le
+builtin (`-S`, `-p`, octal jusqu'a 07777, mode symbolique, erreurs et codes de retour), sa portee (sous-shell, etage de
+tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, les redirections, `mkfifo`, `cp [-p]`,
+`install`, `mktemp` et la prise de `nc -lU` sortent identiques apres normalisation, sauf les onze pas du labo
+`umask-scopes` declares dans `UNPORTED_STEPS`, qui tiennent tous a la couche des builtins de bash et non a `umask` :
+- `builtin umask`, `command -V umask`, `type -a umask`, `help umask`, `enable -n umask`, `which umask`, un `alias umask=…`
+  et `/usr/bin/umask` : le simulateur n'a pas de table des builtins (nom, etat active / desactive, aide, resolution
+  alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
+- `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
+  interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
+- `su -s /bin/sh nobody -c umask` : `su` n'honore pas `-s`.
+Autres ecarts mesures, non fermes :
+- `pam_umask` : le vrai donne 0002 aux utilisateurs dont le groupe prive porte leur nom (`USERGROUPS_ENAB`) ; `sudo` et
+  `su` appliquent ici 0022 a tous. L'umask initial d'un utilisateur non root n'a pas ete enregistre.
+- `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
+  et `ls -l /proc/$$/fd` ne le montre pas.
+- `cp` : `-i`, `-x` et `-Z` sont acceptes sans effet, `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un
+  lien (le seul cas enregistre est un fichier regulier).
+- `ls` avec plusieurs operandes dossiers : le tri est celui des operandes (fichiers d'abord) mais la mise en colonnes de
+  la sortie non tty n'a pas ete comparee.
+- `install -D -t`, `install -s` et `install --strip` : seul le jeu d'options du corpus (`-m -d -D -o -g -v`) est enregistre.
+
+### [ps] ce que le portage de `ps` laisse
+Mesure avec `netcmds-oracle.test.ts` (corpus `ps-procps-4.0.4.json`, 5 labos, 629 pas, procps-ng 4.0.4 sur Ubuntu 24.04, pty
+de 80 colonnes, noyau d'enregistrement 6.18 Firecracker) : tous les pas sortent identiques apres normalisation sauf les 49
+declares dans `UNPORTED_STEPS`, qui se rangent en huit familles (le compte entre parentheses est celui des pas) :
+- Etages de tube non simultanes (9 pas, `ps -ef | cat` et variantes) : le vrai liste `cat` (et `grep` dans `ps aux | grep x`)
+  car bash cree tous les etages avant d'executer le premier ; l'interpreteur execute les etages l'un apres l'autre et ne
+  materialise un processus que pendant la commande qui tourne. Fermer cela demande que `visitPipeline` annonce les etages a
+  la table des processus avant le premier (mots deja developpes, un processus par etage, meme groupe), puis que chaque etage
+  adopte le sien ; le piege est le developpement d'un mot qui execute une substitution de commande deux fois.
+- Environnement (7 pas, `ps e`, `ps ae`, `ps ce`, `ps ef`, `ps -r -e`, `ps -ef -aux`) : `e` affiche maintenant l'environnement exporte
+  du processus (herite au `fork`, `VAR=x cmd` ajoute, lisible par le proprietaire et root, `/proc/<pid>/environ` en 0400),
+  mais l'ordre des variables d'un vrai bash est celui de sa table de hachage et le texte enregistre est celui du shell du
+  labo ; la longueur de `bash /tmp/<labo>.sh` decide aussi de la troncature a 80 colonnes. Le dispositif est mesure par la
+  sonde `probe-ps-porte-de-procps.test.ts`, pas par le corpus. L'environnement de pid 1 n'a que `HOME`, `init`, `TERM`
+  (le vrai ajoute `BOOT_IMAGE` et `NETWORK_SKIP_ENSLAVED`) et celui d'un service n'a que `LANG`, `PATH`, `INVOCATION_ID`
+  (le vrai ajoute `JOURNAL_STREAM`, numero d'inode du socket de journald non modelise).
+- Valeurs propres au noyau d'enregistrement (11 pas) : label de securite (`kernel` ici, `unconfined` sur un Ubuntu avec
+  AppArmor), chemin de cgroup (`4:memory:/process_api/...`), score OOM, groupes supplementaires (`-` ici, `0` pour root sur un
+  noyau habituel), temps CPU cumule des enfants moissonnes du shell du labo (`ps S`, `ps -S`), fautes de page mineures de ce
+  shell (5139).
+- Ligne de commande du shell du labo (`bash /tmp/<labo>.sh`) contre celle de la machine (`-bash`), qui decide du tri sur
+  `args`/`cmd` (`--sort=args`, `--sort=cmd`, `ps O c`) et des colonnes `comm=,args=` sans entete (5 pas).
+- Tri sur des grandeurs mesurees (`--sort=time|rss|pcpu|pmem|etime`, `ps O r`, `ps O v`, `ps O Pf`, 8 pas) : deux `sleep`
+  du meme labo ont des RSS differents (1668, 1672, 1676) ; les empreintes du simulateur sont constantes par programme, donc
+  l'ordre retombe sur le pid.
+- Pagination et largeur (4 pas : `--rows 5`, `--lines 5`, `LINES=5`, `COLUMNS=5`) : le nombre d'entetes repetes depend du nombre
+  de lignes, et la machine simulee en a 30 de plus que l'espace de noms du labo. Le mecanisme (un entete toutes les
+  `screen_rows - 1` lignes, `--headers`) est couvert par la sonde.
+- Selections que l'espace de noms rend vides (3 pas : `ps -u -1`, `ps -N -u root`, `ps 5`) : le groupe de processus 1 n'existe
+  pas dans l'espace de noms (pid 1 y dirige un groupe du dehors), tous les processus du labo sont a root, et le pid 5 est un
+  thread noyau de la machine simulee.
+Limites du normaliseur de colonnes (`netCmdsNormalizePs.ts`), pas du simulateur (2 pas) : un entete vide (`-o user=,pid`) decale les
+cellules, et un tableau sans entete (`--no-headers -f`, `-o comm=,args=`) ne dit pas quelle cellule est `C` ou `STIME`.
+Autres ecarts mesures, non fermes :
+- Chiffres memoire : seuls `bash`, `sleep`, `nc` et `ps` ont une empreinte mesuree (VSZ, RSS, TRS, PSS, USS, fautes mineures,
+  octets lus) ; les autres programmes ont des proportions (texte = VSZ/12, PSS = RSS/2, USS = RSS/3).
+- `pgrep`, `pkill`, `pidof`, `top`, `pstree` et `watch` restent sur `LinuxProcessCommands` (jouet) : ce sont d'autres
+  binaires de procps-ng (`pgrep`/`pkill` partagent `pgrep.c`, `top` a son propre ecran) et ils n'ont pas ete rejoues.
+- Pas de labo zombie ni de `setsid`/`setpriv` dans le corpus : les etats `Z`, `D`, `t` ne sont pas mesures sur le vrai.
+- Le tableau des jobs (`jobs`, `%1`) est global a la machine et non a un shell : un `bash -c` imbrique ne voit pas son
+  propre tableau.
+- `/dev/pts/N`, `/proc/tty/drivers` et `/proc/sys/kernel/pid_max` n'existent pas comme fichiers : `ps` lit le plafond des
+  pids (4194304, colonne de 7 chiffres) dans `PID_MAX` de `LinuxProcessManager`, et le numero de terminal dans
+  `ttyDeviceNumber`.
+
+### [lab NTP] ecarts residuels mesures en montant le lab du tutoriel NTP (etape 0)
+Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un
+export / reimport JSON. Fermes avec leurs sondes : `ping` / `tracert` du switch Huawei, `shutdown` de `Vlanif` rendu par
+`display current-configuration`, port routé Cisco (`no switchport`), netplan multi-fichiers (`routes:`, `nameservers:`,
+`match:`, erreurs de grammaire), `sudo NOM=valeur`, route par defaut de `New-NetIPAddress -DefaultGateway`, levee des
+interfaces VLAN au rejeu d'un export, serveurs DNS du poste Windows dans le fichier. Restent ouverts :
+- `CiscoSwitch` a 24 ports FastEthernet et deux GigabitEthernet0/1-2 la ou le modele du tutoriel (IOSvL2) porte Gi0/0 a
+  Gi3/3 : difference de modele materiel, pas un defaut de commande. Le lab nomme ses ports d'apres le simulateur.
+- Port routé Cisco : HSRP / VRRP / GLBP sur un port routé sont refuses avec la phrase des interfaces VLAN (`valid on SVI (Vlan)
+  interfaces only`) alors qu'IOS les accepte ; `ip nat inside|outside` sur un port routé n'est pas porte ; tous les ports
+  routés et toutes les interfaces VLAN parlent avec l'adresse MAC du pont (un vrai Catalyst en donne une par port) ; le refus
+  de `switchport ...` sur un port routé est `% Invalid input detected at '^' marker.` faute d'avoir pu lire la phrase exacte
+  d'IOS (le site de la communaute Cisco est injoignable d'ici ; un fil de discussion y parle de « not a switching port »).
+- Un port routé n'existe que sur `CiscoSwitch` : `undo portswitch` de VRP n'est pas porte (un `HuaweiSwitch` partage le meme
+  `Switch`, le plan SVI est donc pret).
+- `ping` et `tracert` de VRP : le routeur rend l'IPv4 et l'IPv6 dans deux mises en page differentes (IPv4 : statistiques sur
+  une ligne ; IPv6 : retrait de quatre espaces, statistiques sur quatre lignes), alors que la meme famille de commandes VRP
+  n'en a qu'une : l'une des deux n'est pas celle de VRP. Non tranche faute de capture ou de page de documentation lisible d'ici
+  (regle 8) ; le switch partage `shells/huawei/huaweiPing.ts` avec le routeur, donc suivra la correction. Le switch refuse
+  `ping ipv6` (pas de pile IPv6 de gestion).
+- netplan 0.104 : `set-name` n'est pas applique (la definition est ignoree, jamais renommee), `match.driver` ne
+  correspond jamais, le simulateur n'imprime pas l'avertissement de depreciation de `gateway4` / `gateway6`, les routes
+  portant `table:` ou un `type:` autre que `unicast` ne sont pas appliquees, et les types non-ethernet (bonds, bridges,
+  vlans, wifis, tunnels) ne sont valides qu'en surface.
+- Un `systemctl restart systemd-networkd` demarre maintenant un client DHCP sur toute interface netplan `dhcp4: true` (c'est
+  ce que fait le vrai) : un lab qui ne veut aucun bail doit le dire par `dhcp4: false` dans son fichier.
 
 ### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
 Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
@@ -1213,46 +1410,8 @@ que ces modes ; l'entree est ici pour que la table ne soit pas prise
 pour un oubli si un mode manquait vraiment. Rien a corriger tant qu'une
 transcription ne montre pas un sixieme mode.
 
-### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION
-`sequenceFamily` decrit la queue libre d'une commande par UNE place
-`REST` portant ses formes. Elles sont donc annoncees a chaque rang, sans
-savoir laquelle vient d'etre tapee, et une valeur qui SUIT une forme ne
-peut pas etre nommee du tout. Deux familles en souffrent aujourd'hui :
-
-    snmp-server host 10.0.0.1 version ?   attendu 1 / 2c / 3
-    snmp-server host 10.0.0.1 version 3 ? attendu auth / noauth / priv / WORD
-    ntp server 10.0.0.1 key ?             attendu <1-4294967295>
-    ntp server 10.0.0.1 version ?         attendu <1-4>
-
-**Mesure** : chacune rend les formes de la queue (`key`, `prefer`,
-`source`, `version` cote NTP) et jamais la valeur attendue. Depuis les
-lots SNMP et NTP, l'aide ne REFUSE plus a ces rangs et ne repropose plus
-une forme deja tapee ; ce qui manque est de NOMMER.
-**Report** : le mecanisme existe deja a cote — `loggingFamily` porte des
-`continuations` (« les mots-cles qui SUIVENT l'argument »,
-`logging host <ip> transport tcp`). Le donner a `sequenceFamily` est un
-enrichissement du declarateur PARTAGE, donc un lot a lui seul ; declarer
-a cote quelques chemins types ferait DEUX grammaires pour une commande,
-le defaut que ce depot passe son temps a refermer.
-### [aide] `aaa` est un noeud GLOUTON, donc son aide s'arrete a deux mots
-`aaa authentication login ?` et `aaa authentication login default ?`
-annoncent `<cr>` — la touche Entree — alors que la machine repond
-`% Incomplete command.` aux deux. Et les METHODES (`local`, `none`,
-`group`, `enable`, `line`…) ne sont annoncees nulle part, bien qu'elles
-soient desormais declarees et APPLIQUEES (`AAA_METHODS`).
-**Mesure** : `aaa ?` et `aaa authentication ?` rendent la bonne liste ;
-tout ce qui suit rend `<cr>` et rien d'autre, sur les deux plateformes.
-**Ce qui a ete tente et retire** : `requireArgs('aaa authentication
-login', 1)` est INERTE — `aaa` est enregistre en glouton, donc aucun
-noeud n'existe a cette profondeur pour porter la declaration, et une
-declaration que personne ne lit est exactement ce que ce depot retire
-ailleurs. Elle n'a donc pas ete laissee en place.
-**Report** : la reparation est la MIGRATION de la famille `aaa` vers le
-socle, ou chaque forme est un chemin declare avec ses places — c'est la
-seule facon de porter une aide a cette profondeur, et c'est un lot a
-part entiere : la grammaire d'`aaa` a quatre niveaux, une liste nommee
-libre au milieu, et une suite de methodes de longueur variable dont
-`group` consomme le mot suivant.
+### [socle] une queue `REST` ne sait pas nommer ses valeurs par POSITION (ferme)
+`ntp server|peer` passe par un `OptionBag` (`sequenceFamily` accepte `options`) et `snmp-server host` par `snmpHostFamily`, dont les mots-cles sont des noeuds du chemin : `version ?`, `version 3 ?` et `key ?` nomment la valeur attendue. Reste ouvert, et note a part : `snmp-server host ... vrf <nom>` et les types de notification (voir ci-dessus).
 
 ### [oracle] le FORMAT d'un `TIMESTAMP WITH TIME ZONE` n'est pas source
 Le lot T10 rend `SYSTIMESTAMP` et `CURRENT_TIMESTAMP` sous la forme
@@ -2246,6 +2405,32 @@ Join. Poser le condense « par symetrie » ou exempter le Join du controle
 sont deux inventions opposees, aussi peu attestees l'une que l'autre.
 
 ## Outillage
+
+### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai
+Mesuré : `npx playwright test <n'importe quel spec>` sur un serveur de
+développement non démarré fait échouer le PREMIER test sur
+`page.goto('/')` — 30 s dépassées —, et tous les suivants passent. Vérifié
+par `--repeat-each=2` sur un seul cas : la première exécution tombe, la
+seconde passe. Ce n'est donc pas le spec mais l'amorçage de Vite.
+**Report** : le délai est global (`playwright.config.ts` : `timeout` du
+test et `timeout` du serveur, 30 s chacun), donc le corriger touche un
+fichier partagé et toute la suite ; le relever dans un seul spec
+soignerait le symptôme à un endroit alors que tous y sont exposés. À
+trancher avec l'autre agent, qui exécute la même suite.
+
+### [tests] cinq fichiers lisent le niveau `debug` du Logger comme instrument de mesure
+Le niveau `debug` est éteint par défaut ; `another_rip`, `tuto_rip`,
+`ping-through-switch`, `Logger.adapter` et
+`probe-ip6tables-la-decouverte-de-voisins-traverse-les-chaines` l'allument
+explicitement (`Logger.setDebugEnabled(true)`). Trois d'entre eux
+(`rip:send`, `port:send`, `ndp:na-sent`/`ndp:rs-sent`) prouvent un
+comportement du réseau par une ligne de journal et non par les trames
+comptées sur le câble.
+**Mesure** : `grep -rln "Logger\.\(getLogs\|getLogsBySource\|subscribe\)" src/__tests__`
+puis `Logger.setDebugEnabled`.
+**Report** : les remplacer par un compte de trames (règle 4) demande, pour
+chacun, de choisir le bon câble et la bonne différence avec / sans la charge ;
+c'est un changement de preuve, pas un changement de niveau de journal.
 
 ### [typecheck] 229 erreurs de type au compteur
 `npm run typecheck` en compte 229, contre 341 avant la passe de cette
@@ -3595,18 +3780,66 @@ re-remis a ce plugin (garde contre la recursion) ; `nc -U` ne sait que se connec
 ### [rsyslog] impstats, dyn_stats et percentile_stats : limites mesurees
 `statsobj`, `impstats`, `dyn_stats`/`dyn_inc()` et `percentile_stats`/`percentile_observe()` sont portes de rsyslog 8.2112.0, puis `impstats`
 et `statsobj` realignes sur 8.2608.0 (formats `prometheus` et `zabbix`, `log.file.overwrite`) (`engine/Statistics.ts`, `DynStats.ts`, `PercentileStats.ts`, `modules/Impstats.ts`). Ce qui reste :
-`imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
+la persistance de `dyn_stats` : l'ecriture est synchrone et sans fichier temporaire (l'hote n'a pas `rename`) ; les parametres `push.*` d'`impstats` n'existent que sous l'option de
+compilation ENABLE_IMPSTATS_PUSH et ne sont pas portes ; `log.file.overwrite` remplace le contenu du fichier en une ecriture
+(l'hote n'offre pas `rename`, donc l'inode ne change pas) ;
+les statistiques par expediteur (`_sender_stat`) ne sont alimentees que par `imtcp` (le source alimente aussi `imptcp`, absent ici) ; `resource-usage` ne fournit que
+utime (temps CPU du processus), maxrss (taille residente courante, pas le maximum) et openfiles - stime, minflt, majflt, inblock,
+oublock, nvcsw et nivcsw valent 0 faute de comptabilite correspondante dans le simulateur (le chemin `getrusage` en echec du
+source les met aussi a 0) ; `imudp(w<n>)` attribue toute reception au worker 0, la livraison etant synchrone ; imklog, immark,
 omusrmsg n'ont pas d'objet de statistiques dans 8.2608.0. Ecarts assumes avec le source : un `percentile_stats` sans
 `windowsize` d'au moins 2 est refuse au chargement (le source construit un tampon circulaire de taille 0 ou 1 dont le premier ajout
 echoue sur un assert) ; le tri des percentiles compare les entiers 64 bits, la ou le source soustrait puis tronque a `int` (un ecart superieur a 2^31 entre
 deux observations y ordonne mal) ; un percentile 0 vaut l'indice 0, la ou le source convertit -1.0 en entier non signe.
 
-### [journald] `journalctl --file=` ne sert que `--verify`
-`--verify` relit les octets du fichier dans le VFS et porte `journal-verify.c` (`format/JournalVerifier.ts`, compare a 13000 alterations rejouees contre le vrai
-`journalctl` 255.4 : `journal-verify-oracle.test.ts`). `--file=PATH` n'est accepte que pour `--verify` ; les autres actions (`-o`, `--header`, `-n`…) continuent a
-refuser `--file` (« Failed to open files »), la lecture des entrees d'un fichier arbitraire demandant que `JournalctlHost.records()` soit calcule par fichier.
-Les fichiers journal sont lisibles par tous dans le VFS quel que soit l'utilisateur : le mode `0640 root:systemd-journal` est pose mais `journalctl --file=` ne le
-consulte pas.
+### [rsyslog] ratelimit() : limites du lecteur YAML, de policyWatch et de la creation des limiteurs
+`ratelimit()` est porte de rsyslog 8.2608.0 (`engine/SharedRateLimit.ts`, `PerSourceRateLimit.ts`, `RateLimitPolicy.ts`, `YamlEvents.ts`) :
+fichier de politique YAML, perSource, portee entree/sortie, drop/pace, rechargement par HUP et par policyWatch. Ce qui reste :
+`YamlEvents.ts` lit le sous-ensemble de YAML que ces fichiers emploient (collections en bloc et en flux, scalaires entre quotes) ; ancres,
+etiquettes, scalaires multi-lignes et scalaires en bloc (`|`, `>`) ne sont pas lus, et seuls les messages d'erreur libyaml des cas courants
+sont reproduits ; policyWatch repose sur les evenements d'ecriture, de renommage vers le chemin et de `chmod` du VFS (`onWrite`, `onEntryChange`) ;
+`chown`, `touch` sans ecriture et la creation d'un lien n'en emettent pas ; le suivi d'etat par source (`perSourceMaxStates`) repartit les cles sur 32 coquilles par le hachage du
+source (`engine/HashTable.ts`), la reconstitution exacte d'une eviction depend donc de ce hachage ; les statistiques d'expediteur
+(`global(senders.keepTrack)`) restent a porter.
+
+### [rsyslog] `action.errorfile` et `action.externalstate.file` : le moteur n'a pas la phase de commit de la source
+Les deux parametres sont evalues (`engine/ActionRuntime.ts`) : le fichier d'etat externe suspend l'action avant chaque message et la
+relance quand il ne dit plus `SUSPENDED` ; le fichier d'erreurs recoit une ligne JSON par message perdu et le compteur `failed`
+suit. Ce qui reste : le moteur execute `doAction()` message par message, la ou la source collecte les messages d'une transaction
+et les valide ensemble ; le fichier d'erreurs est donc alimente a la fin du lot et non par la phase de commit, qui rejoue chaque
+message d'un lot en echec isolement avant de l'ecrire (le module voit un essai de plus dans la source) ; le code de statut ecrit
+vient de `ActionWorker.failureCode()` (omfile seulement : `-2127` fichier desactive, `-2125` sans commande de limite de taille,
+`-2218` sinon) ; l'ordre « le fichier dit SUSPENDED, les essais sont epuises, le message est quand meme traite » reproduit la
+source, qui appelle `beginTransaction()` apres `actionDoRetry_extFile()` quel que soit l'etat.
+
+### [rsyslog] parametres `global()` et de file d'attente acceptes mais sans effet
+Releve par comparaison du descripteur de `global()` (`engine/Settings.ts`) avec ce que le chargeur applique, puis du source 8.2608.0.
+Acceptes et jamais lus : `abortOnFailedQueueStartup` (action.c : le demon s'arrete si une file d'action ne demarre pas),
+`reportChildProcessExits` (glbl.c : `none`, `errors`, `all` pour les sorties des programmes lances),
+`inputs.timeout.shutdown`, `shutdown.queue.doubleSize`, `compatibility.configFormat.legacy|syslogd|property`, `systemd.notifyReadyDelay`, `shutdown.enable.ctlc`,
+`allMessagesToStderr`, `errorMessagesToStderr.maxNumber`, `stdlog.channelSpec`, `defaultOpensslEngine`, `internal.developerOnly.options`,
+`libcapng.default` et `libcapng.enable` (options de compilation), et la famille `debug.*` (`onShutdown`, `logFile`, `gnutls`,
+`abortOnProgramError`, `unloadModules`, `files`, `whitelist`), dont les effets n'existent qu'en mode debug, que le simulateur n'a pas.
+Les reglages de file `queue.timeoutShutdown`, `timeoutActionCompletion`, `timeoutEnqueue`, `workerThreadShutdown`, `highWatermark`,
+`lowWatermark`, `workerThreads`, `workerThreadMinimumMessages`, `checkpointInterval`, `syncQueueFiles`, `maxFileSize`, `maxDiskSpace`,
+(et leurs `default.action.queue.*` / `default.ruleset.queue.*`) sont lus par le chargeur mais la file du
+moteur (`engine/Queue.ts`) est synchrone et sans disque : seuls `size`, `discardMark`, `discardSeverity`, `dequeueBatchSize`,
+`dequeueSlowdown`, la fenetre `dequeueTimeBegin/End` et, pour `fileName` + `saveOnShutdown`, la sauvegarde des messages en attente a l'arret (un seul document JSON `<WorkDirectory>/<fileName>.qi`, et non le flux d'objets de la source) decident. Une file « disk » ou « disk-assisted » se comporte donc comme
+« linkedlist » en memoire.
+
+### [journald] `journald.conf` n'est pas lu : tailles, rotation, retention, transfert sont figes
+Mesure : `LinuxJournald` ne lit ni `/etc/systemd/journald.conf` ni ses `.d` (`MAX_USE` et `KEEP_FREE` sont des constantes de
+`LinuxJournald.ts`, `JournaldSettings` ne porte que MaxLevelStore, LineMax et ForwardTo*), et `/usr/lib/systemd/journald.conf.d/syslog.conf`
+(drop-in Ubuntu) n'est pas pris en compte. Les cles que le binaire 255.4 connait (relevees dans `systemd-journald`) : Storage,
+Compress, Seal, SplitMode, RateLimitIntervalSec/Interval, RateLimitBurst, System/RuntimeMaxUse, System/RuntimeKeepFree,
+System/RuntimeMaxFileSize, System/RuntimeMaxFiles, MaxFileSec, MaxRetentionSec, SyncIntervalSec, ForwardToSyslog/KMsg/Console/Wall,
+TTYPath, MaxLevelStore/Syslog/KMsg/Console/Wall, LineMax, ReadKMsg, Audit. Mesure sur un vrai journal de ce conteneur
+(`journalctl --header`, disque de 252 Go) : fichier de 8,0 Mo (8388608), arene 8388336, table de hachage des donnees 233016, soit
+`SystemMaxFileSize` = 128 Mo (plafond) ; le modele actuel reproduit ce cas, et seulement ce cas : la taille du fichier croit par pas de
+8 Mo, et la taille maximale (1/8 de `SystemMaxUse`, lui-meme 10 % du systeme de fichiers plafonne a 4 Go) change la table de
+hachage et declenche la rotation puis le vacuum. Non ferme parce que ces comportements ne se mesurent qu'en lancant le vrai
+`systemd-journald` sous une configuration non par defaut, ce qui exige d'ecrire sous `/etc/systemd` et de lancer un demon en root dans
+le conteneur - l'action que ce depot refuse deja pour auditd - et que la source de systemd 255.4 n'est pas disponible ici.
 
 ### [mpls] la mise en forme de `traceroute -e` et des sauts MPLS Cisco n'est pas rendue
 Le plan de donnees MPLS (RFC 3032/3443) renvoie bien l'objet « MPLS Label Stack »
@@ -3877,20 +4110,321 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 ### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
-Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `sed '1!G;h;$p'` sur une entree sans retour final emet un `\n` de trop ; `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
 
-### [charge-grande-topologie] ce que la charge mesuree dans Chromium laisse ouvert (e2e/grande-topologie.spec.ts, e2e/nat-lab-stress.spec.ts)
 
-Un LinuxPC coute 1,9 Mo de tas ; 400 postes sur 20 switchs montent a 3,5 Go sans plantage et se montent en 63 s (200 postes : 18 s), et la creation d'un poste coute environ 33 ms (LinuxMachine, journald, systeme de fichiers virtuel). Le routage des cables est
-recalcule en entier des qu'un cable, une position ou le zoom change (102 ms pour 209 cables dans Node) : un routage INCREMENTAL reste non traite, mais il ne se declenche plus pour une adresse IP posee dans un
-terminal. Une rafale de 5000 curl en parallele prend 172 s (34 ms par curl contre 15 ms dans Node : le rendu de quatre terminaux ouverts s'ajoute), et le journal de journald garde deux representations (les
-enregistrements et les octets du fichier), environ 13 Ko par entree.
+### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
 
-Export d'une topologie : un pare-feu FortiGate coute 340 ms (quatre certificats d'usine generes pour l'exemplaire, quatre pour son jumeau ; les partager entre exemplaires a ete essaye puis
-retire parce que tuto-fortigate-tp21 pose que le certificat d'usine differe d'une unite a l'autre). Les autres types sont sous 100 ms.
+Les trois bancs passent en entier ; restent mesures et non fermes :
+- `type` existe deux fois : `Builtins.builtinType` (atteignable seulement par `executeBuiltin('type', ...)`, donc par les tests) et `LinuxCommandExecutor.handleType` (la voie reelle, qui s'appuie sur `CommandResolver`). A fermer en supprimant la premiere et en deplacant ses tests vers l'executeur.
+- `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
+- `extglob` est lu dans le texte du script (premier `shopt -s extglob` d'une ligne precedente) et non dans l'etat du shell a l'execution : un `shopt -s extglob` pose par un `source` ou une fonction n'est pas vu par le lexeur.
+- Les erreurs de syntaxe a l'interieur d'un `$(...)` ecrit entre guillemets doubles ne sont pas relevees au parsage (seuls les `$(...)`, backticks et `<(...)` nus le sont).
+- Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
+- `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
-### [oracle-charge] ce que les epreuves de volume Oracle laissent ouvert (e2e/nat-lab-stress.spec.ts, probe-oracle-*)
+### [find-grammaire] find n'a pas la grammaire d'expressions de findutils
 
-Les boucles de lignes d'un INSERT … SELECT (filtre WHERE, CONNECT BY, projection, insertion), d'un UPDATE, d'un DELETE et d'un ROLLBACK sont reprenables, ainsi que les boucles FOR / WHILE / LOOP d'un bloc PL/SQL anonyme : au profil Chromium, `ora-insert-300k` passe de 1 059 a 144 ms de tache longue, `ora-update-delete-300k` de 1 722 a 135 ms et `ora-plsql-inserts-20k` de 784 a 126 ms. Reste atomique, donc source de gel proportionnel au volume : le tri (ORDER BY), GROUP BY et les fonctions d'agregat, les jointures, les fonctions de fenetre, DISTINCT, le corps d'une procedure ou d'une fonction stockee appelee depuis un bloc (seules les boucles du bloc anonyme lui-meme rendent la main), COMMIT (74 ms pour 300 000 changements : `appendRedo` copie chaque enregistrement), une jointure de deux tables de 20 000 lignes (671 ms d'une tranche), GROUP BY et fonctions de fenetre sur 50 000 a 300 000 lignes (110 a 150 ms), une sous-requete correlee sans index (en O(n x m)) et toute instruction lancee par un appelant synchrone (script `@fichier`, `sqlplus` en tube depuis bash, serveur Oracle Net distant) ; seul le sous-shell interactif rend la main a la boucle d'evenements entre deux tranches. Les limites de profil (`CPU_PER_CALL` …) coupent toujours une instruction demesuree, et leur temps ne compte que le temps actif.
+`find` (LinuxSearchCommands.cmdFind) accepte `-perm` octal (`N`, `-N`, `/N`) et `-xdev` depuis le script d'audit lecture seule, mais ignore toujours en silence les predicats qu'il ne connait pas (`-o`, `-a`, parentheses, `-printf`, `-ls`, `-links`, `-regex`, `-perm` symbolique `u+x`, `-exec ... +`). Un critere ignore rend la recherche plus large que ce que l'operateur a ecrit ; a fermer en portant l'arbre d'expressions de findutils et en refusant l'inconnu avec `find: unknown predicate`.
 
-Pendant qu'une instruction est suspendue, une autre session peut valider ses propres lignes dans la meme table : un INSERT concurrent est conserve, un DELETE concurrent (la table est reecrite) fait echouer la tranche suivante avec ORA-08177. Une vue lue par une autre session au milieu d'un ROLLBACK en tranches voit un etat intermediaire de la table (les indices de lignes ne sont rafraichis qu'a la fin). Ces deux points n'ont pas de sonde au-dela de l'ORA-08177 et de la conservation de l'insertion concurrente.
+### [hosts-666] /etc/hosts est livre en 0666 (Ubuntu : 0644)
+
+Mesure par `find /etc -perm -0002` : `/etc/hosts` est le seul fichier de /etc ouvert en ecriture a tous (VirtualFileSystem, creation d'usine). Le passer en 0644 casse une trentaine de tests et de specs e2e qui y ajoutent une ligne en simple utilisateur (`echo ... >> /etc/hosts`, nano, sed -i) : ils doivent d'abord passer en root (`sudo sh -c`). Non ferme parce que le changement touche ces fichiers en masse ; le test `network-config-files-editing` verifie deja root:root 0644 dans un autre cas.
+
+---
+
+## Telnet (client netkit, serveur netkit, clients des équipements réseau)
+
+Le client Linux est le port de netkit-telnet 0.17 (`src/network/protocols/telnet/client/`), rejoué contre le binaire réel
+(`telnet-client-netkit-oracle.test.ts`) ; le telnetd Linux suit la machine d'options de `in.telnetd` (`NetkitTelnetdNegotiation`).
+
+### [telnet] `z` ne suspend rien
+`host.suspend` est absent : la commande `z` rend la main immédiatement, ce que fait le vrai client dans un groupe de processus
+orphelin (relevé sous pty). Dans un shell à contrôle de tâches il s'arrêterait réellement. Brique manquante : un contrôle de tâches
+dans le terminal.
+
+### [telnet] `send synch` envoie le DM dans le flux
+Le client réel envoie l'octet DM en données urgentes (`MSG_OOB`) et traite une marque urgente entrante (`netex` : abandon des données
+en file). `TcpSocket` porte déjà `onUrgent` ; le port client ne l'utilise pas. Les octets du flux sont identiques, la marque urgente
+manque.
+
+### [telnet] routage par la source (`telnet @hop1@hop2:hote`)
+Le nom est résolu comme un nom ordinaire et échoue en `could not resolve`. Brique manquante : les options IP LSRR/SSRR dans la pile.
+
+### [telnet] `-n fichier` et `set tracefile` retiennent le nom sans rien écrire
+La trace des options (`toggle options`) va toujours à l'écran. Brique manquante : l'écriture d'un fichier par le client depuis la
+sortie standard du processus.
+
+### [telnet] les lignes d'un tube sont consommées avec une pause entre chacune
+`printf 'a\nb\n' | telnet h` envoie `a`, attend le calme du fil, puis `b`, comme si l'émetteur dormait. Un vrai tube remet tout d'un
+bloc puis l'EOF ; le client ferme alors avant la réponse du serveur. Le comportement choisi sert les scripts ; il n'est pas celui du
+binaire.
+
+### [telnet-windows] `telnet.exe` : invite `Microsoft Telnet>`, `set`, `display`, `unset`
+Le texte d'aide de `WindowsPC.cmdTelnet` vient d'une mémoire non vérifiée et la touche d'échappement `CTRL+]` n'ouvre aucune invite.
+Pas d'autorité atteignable ici (le proxy refuse `learn.microsoft.com`, 403) et pas de binaire Windows : rien n'est porté plutôt que
+deviné (`CLAUDE.md` §8).
+
+### [telnet-ios] touches d'échappement du client IOS autres que `x`
+`Ctrl-Maj-6 x` suspend et `resume`/`disconnect`/`show sessions`/Entrée reprennent, avec les libellés déjà rendus par le shell Cisco.
+Les autres touches (`c`, `b`, `h`, `n`, `p`, `1-9`) et le texte exact de la confirmation de `disconnect` n'ont pas de source
+atteignable (`cisco.com`, 403). Les octets d'option que le client IOS envoie à la connexion ne sont pas enregistrés : pas d'équipement.
+
+### [telnet-vrp] client VRP
+`Press CTRL+K to abort` est rendu ; la touche `CTRL+]` du client VRP et son texte de fin de session ne sont pas sourcés.
+
+## Cisco: wording of the outbound transport refusals
+
+Measured: `transport output` is enforced for `telnet` and `ssh` launched from a console, aux or vty session (the vty block is found by the session's line index). The refusal wordings `% Telnet connections not permitted from this terminal` and `% SSH connections not permitted from this terminal` are written from memory of IOS: the Cisco documentation was not reachable to confirm them. Scripted and non-interactive `telnet`/`ssh` (`executeCommand`) do not consult the setting. `exec banner` is the simulator's spelling; the IOS keyword is `exec-banner`, also unconfirmed. `speed`, `databits`, `stopbits`, `parity` and `flowcontrol` are stored and rendered on console and aux lines but drive no serial-line model: the simulator has no UART.
+
+## Linux: known_hosts is written hashed, linux-hosts-hostname-hijack expects the plain name
+
+Measured: `src/__tests__/unit/network-v2/linux-hosts-hostname-hijack.test.ts` ("première connexion légitime enregistre la clé du vrai serveur sous le nom d'hôte") fails on the base commit too: `cat ~/.ssh/known_hosts` returns a `|1|salt|hash ssh-ed25519 …` line, the test expects `serveur-legitime.domaine.local` in clear. Either the client hashes by default (Ubuntu's `HashKnownHosts yes`, which would make the test's premise false) or the test predates the hashing. Not decided: it needs the OpenSSH `ssh_config` default of the distribution the simulator claims to be.
+
+## Cisco: `boot system` is not rendered in the running-config
+
+Measured: `boot system flash:image.bin` is stored (`CiscoFileSystem.addBootSystem`) and read back by `show boot` (`BOOT variable = flash:image.bin`), but `show running-config` on a router and on a switch never writes the line, so an exported topology loses it on import. The two renderers (`showRunningConfig` for the router, `buildRunningConfig` for the switch) do not reach the shell's file system. Not closed: they need a narrow port to the boot list.
+
+## Cisco: key-chain lifetimes are stored, never evaluated
+
+Measured: `accept-lifetime` and `send-lifetime` are parsed (typed since the key-chain migration), stored on the key, rendered by `show key chain` and by the running-config, and read by nothing else: no routing protocol asks the key chain which key is valid NOW, so a key outside its lifetime still authenticates. Not closed: the brick is a clock-aware `validAt(instant)` on `KeyChainRepository` read by the protocols that take `key-chain` (EIGRP, RIP, OSPF auth), each of which also has to learn to pick among several valid keys.
+
+## Cisco: the NVE / VXLAN CLI is unreachable on every platform
+
+Measured: `CiscoShellBase.hasVxlanHardware()` returns `false` and nothing overrides it, so `interface nve`'s `source-interface`, `member vni`, `peer-ip` and the four `show nve|vxlan|mac address-table vxlan` views are never declared on any router or switch, whatever the chassis profile. `VxlanAgent` works (its protocol tests drive it through the API); only the CLI door is shut. Not closed: which chassis profiles carry VXLAN hardware (the real Catalyst 9000 and Nexus lines do, the ISR lines do not) is a platform fact whose documentation was not reachable. Forcing the flag is not enough either: with `hasVxlanHardware()` patched to true, `interface nve1` cannot be created (no such port), so `source-interface` answers `% No interface selected` and `show nve vni` stays empty. The migration of these nine registrations to the socle was tried and reverted for that reason: it could not be probed.
+
+## Cisco: invalid inputs the fuzz scan still sees accepted
+
+Re-measured after the loopback/tunnel number bound: still accepted are `hostname 1bad`, a 100-character hostname and `hostname a_b` (IOS limits the characters and the length; the exact wording was not reachable), a 300-character `description`, `ip helper-address 0.0.0.0` / `224.0.0.1`, `ip address 127.0.0.1 255.0.0.0` on a physical interface. Closed: `logging buffered` floor, `clear ip route 999.1.1.1`, loopback/tunnel overflow.
+
+## Cisco: `show` verbs whose free tail is accepted without being judged
+
+Measured by appending the word `zorglub` to 75 `show` verbs on a fresh router (the others answer `% Invalid input`): `show ip ospf neighbor`, `show ip eigrp neighbors`, `show cdp neighbors`, `show lldp neighbors`, `show snmp`, `show flash:`, `show boot`, `show environment`, `show memory`, `show ip cef`, `show ip mroute`, `show ip pim neighbor`, `show ip igmp groups`, `show class-map`, `show policy-map` answer without `% Invalid input`. Not all ignore the word: `show ip ospf neighbor` filters its lines by substring (a word that matches nothing leaves only the header), which is a judgement of sorts but not the IOS grammar (interface, neighbor id, `detail`); the others (`show boot`, `show memory`, `show ssh`…) print their normal output whatever follows. Several are right to take a tail (an interface, a name, `detail`, `statistics`): what is missing is the judgement of the tail, which needs each verb's own grammar (interface name, neighbor id, `detail`). Not closed: one lot per family, each with the IOS forms it must keep.
+
+## PIM: rp-candidate / bsr-candidate group-list, interval and running-config
+
+`ip pim rp-candidate <iface> group-list <acl>` is refused at the caret: the
+agent advertises the whole 224.0.0.0/4 range and has no per-candidate group
+range from an ACL, and the old handler accepted the keyword and ignored it.
+`ip pim bsr-candidate` / `rp-candidate` store only the interface ADDRESS, so
+neither is rendered in the running-config (the interface identity is lost).
+`ip pim spt-threshold` is stored and rendered but the engine builds only
+(*,G) state, so it is never evaluated. Seen while migrating the PIM family.
+
+## IKEv2 global settings: three upper bounds not enforced (source unreachable)
+
+`crypto ikev2 nat keepalive`, `cookie-challenge` and `window` refuse
+non-numeric and zero values (cookie-challenge accepts zero), but their upper
+bounds are not enforced and the help announces no range: the Cisco command
+reference for the IKEv2 forms could not be reached. `crypto ikev2 dpd` shares
+the 10-3600 / 2-60 ranges the IKEv2 profile `dpd` of the same file already
+declared. Fetch the IKEv2 pages, then declare the three ranges on the places in
+CiscoIPSecIKEv2Commands.ts.
+
+## OSPF redistribute: route-map, tag, and sources the engine does not evaluate
+
+`redistribute static|connected|rip` under `router ospf` now judges its options,
+honours `metric` and `metric-type` in the LSAs the engine originates and is
+rendered in the running-config. Still open: `route-map` and `tag` are not
+declared (refused at the caret) because the engine neither evaluates a
+route-map on redistribution nor carries the external route tag; and
+`redistribute bgp|eigrp|ospf N` is stored and rendered but no route from those
+sources enters OSPF. IS-IS as a source is not declared. 
+
+## OSPF process settings stored and rendered, not evaluated
+
+`distance`, `compatible rfc1583`, `ispf`, `prefix-suppression`, `discard-route
+external`, `segment-routing mpls`, `timers lsa arrival`, `timers pacing flood`
+and `timers pacing retransmission` under `router ospf` are typed, stored and
+rendered in the running-config, and `show` nothing of them changes behaviour:
+the engine reads none of them. `shutdown` is stored and rendered but does not
+stop the process (adjacencies stay up). Each needs its brick in the OSPF engine
+(administrative distance of installed routes, RFC 1583 external path selection,
+incremental SPF, the discard route, process shutdown).
+
+
+## Interface translation: what stays English on purpose
+
+The interface has a global EN/FR switch (toolbar, `src/i18n/useLocale.ts`)
+and every visible string of the designer is translated: toolbar, palette,
+help, save/open/confirm/message dialogs, designer messages, properties panel
+and its live-state statistics, settings, simulation clock, canvas, device
+action buttons, interface selector, cable accessible names, terminal title
+bar and taskbar. Still English, on purpose: what the simulated equipment
+prints (the CLIs, the shells and the databases answer in the vendor's English,
+as the real products do) and the platform names in the terminal title (Ubuntu
+Linux, Cisco IOS...). Not covered by a test: the `title` of palette devices
+whose English name is the vendor's (Cisco ASA, FortiGate, Palo Alto keep their
+product name in French). The topology image draws the cables with the canvas's
+own router (`computeCableRoutes`, zoom 1); it does not reproduce the canvas's
+selection or pan/zoom, by design.
+
+## Reds measured at base outside the network-v2 sweep (new_firewall)
+
+`src/__tests__/unit/new_firewall/fortigate-battery-06-ipv6-ospf-bgp-ztna.test.ts`
+(32 cases), `fortigate-battery-02-advanced-transit.test.ts` and
+`fortigate-battery-03-security-pbr-ipsec-qos.test.ts` (together ~70 cases, seen
+in a Windows ping sweep), `fortigate-battery-05-ha-vrf-dpi-radius.test.ts` (34 cases),
+`fortigate-battery-09-tls-crypto-pki.test.ts` (44 cases),
+`fortigate-battery-10-sdwan-vxlan-pqc.test.ts` (28 cases) and
+`fortigate-battery-11-hybrid-cloud-evpn-k8s.test.ts` (28 cases)
+fail on a tree with no change from the CLI hardening series (checked by
+stashing `src`). Seen while running the tests that mention `router bgp` and
+`ipv6 address`. Not diagnosed: nothing was done beyond establishing that the
+failures predate the series.
+
+## Huawei management configurators record unknown forms as raw lines
+
+`RouterManagementService.configureNtp|configureSflow|configureClock|
+configureTelnet|configureStelnet` end in `recordRaw(feature, line)` when the
+form is not recognised, so `sflow zorglub`, `bfd zorglub`, `isis 1 zorglub`,
+`clock datetime zorglub` and others (seen by fuzzing a HuaweiRouter with a
+trailing `zorglub`) are accepted and stored verbatim. Only the
+`<feature> enable|disable <extra>` forms were closed. The VRP grammar for the
+rest was not reachable, so refusing them would be guessing (rule 8). Needs the
+Huawei command reference for sflow, bfd, isis, traffic classifier/behavior/
+policy, route-policy and `snmp-agent community`.
+
+## FortiGate batteries 04–11 encode an aspirational simulator
+
+`fortigate-battery-03` (13 cases) and `-04` to `-11` (about 300 cases) are red at the base commit 2351448f2. Measured on battery 09: its first step is `systemctl start nginx-tls13`, which answers `Failed to start nginx-tls13.service: Unit nginx-tls13.service not found.`; the same files start `nginx-pqc`, `api-gateway`, `otel-collector` and others no machine ships, then read `openssl s_client` output that only exists if the unit ran (`connect:errno=111` otherwise). The premise is false, not the engine: the units must either be created by the test through the real unit-file path, or the cases rewritten. Not closed because each battery needs its own lab audit.
+
+## clear ip bgp soft / in / out and peer-group targets
+
+`clear ip bgp <target> soft [in|out]` and `in`/`out` are accepted and do
+nothing: the engine models no route refresh. `clear ip bgp peer-group`,
+`vpnv4`, `ipv4 unicast` and `vrf` targets are refused as invalid input
+although IOS accepts them (BgpNeighborCfg carries no peer-group name, the
+engine no per-family reset). Hard reset by `*`, address, AS, external and
+internal is real (BGPEngine.resetPeers).
+
+## `sh -c` speaks bash, not dash
+
+Measured: `sudo sh -c 'echo 3 > /proc/sys/net/ipv4/zorglub'` answers `sh: line 1: /proc/sys/net/ipv4/zorglub: No such file or directory`; Ubuntu's `sh` is dash and says `sh: 1: cannot create /proc/sys/net/ipv4/zorglub: Directory nonexistent`. `probe-procfs-does-not-grow` now runs `bash -c`. A dash diagnostic table is not written.
+
+## Linux coreutils without an option table
+
+GnuOptionGuard (src/network/devices/linux/GnuOptionGuard.ts) covers whoami,
+groups, tty, nproc, free, env, printenv, uname, mkdir, rmdir, rm, cat, wc, tac,
+tee, basename, dirname, ls, head, sort, uniq, cut, tr and date. Measured with `<cmd> --zorglub` and still silent or
+treating the option as a file operand: du, find,
+date, base64, md5sum/sha256sum/cksum, rev, nl, fold, fmt, column, paste, comm,
+split, truncate, seq-less forms, which, passwd, sysctl, awk, lsof. Their option
+sets were not written down here: each needs its own table and a run of the
+tests that use it.
+
+## PowerShell: a built-in cmdlet ignores an unknown named parameter
+
+Measured: `Get-Process -Zorglub`, `Get-Service -Zorglub`, `Get-ChildItem -Zorglub`, `Get-Date -Zorglub`, `Get-NetIPAddress -Zorglub`, `Get-LocalUser -Zorglub` and `Get-Random -Zorglub` all run as if the parameter had not been typed; Windows PowerShell answers `A parameter cannot be found that matches parameter name 'Zorglub'.` (`NamedParameterNotFound`). Script functions with `param()` already refuse it (`PSParameterBinder.resolveName`).
+
+Closed so far, by opt-in (`ICmdlet.closedParameterSet`): Get-Date, Get-Location, Get-Service. Every other cmdlet still ignores the name.
+
+Why the rest is not closed: `ICmdlet.parameters` only feeds `-<Tab>` completion and is incomplete. Making `resolveParameterPrefixes` refuse a key absent from it broke 11 cases in `src/__tests__/unit/powershell` (Format-Table `-Width`, New-Item `-Target`, New-LocalUser `-NoPassword`, `-Force` on the Add-LocalGroupMember / Register-ScheduledTask family…), and a scan of the cmdlet classes finds ~40 more names read through `ctx.named[...]` and missing from their own list. The refusal can only be turned on once each cmdlet's list is audited against its handler, so the list becomes the single authority for both completion and binding.
+
+
+## Linux pwd: -L/-P and unknown options
+
+Measured: `pwd --zorglub` prints the directory (bash answers `bash: pwd: --: invalid option` and `pwd: usage: pwd [-LP]`), and `pwd -P` prints PWD unresolved. The builtin lives in `src/bash/runtime/Builtins.ts` with only the environment: resolving symbolic links for `-P` needs the VFS, which that layer does not hold, so the option can neither be refused cleanly nor honoured there yet.
+
+## Linux find: predicates that evaluate to false
+
+`FindExpression.ts` now parses the GNU grammar (-o, -a, !, parentheses, -prune, -quit, actions suppress the default -print) and evaluates -regex, -links, -uid, -gid, -inum, -used, -nouser, -nogroup, -readable/-writable/-executable, -samefile, -lname, -printf, -daystart. Still answered `false` (fail closed) because the brick behind them is missing: `-fstype` and `-context` (no mount/SELinux label lookup from the shell context), `-ls`, `-fprint`, `-fprint0`, `-fprintf`, `-fls` (no output-file channel, no `ls -dils` line), `-ok`/`-okdir` (no prompt channel). `-exec`/`-execdir` still only echo the command line with `{}` replaced and run nothing, `+` is read as `;`; the `-printf` date directives other than `%A@ %C@ %T@` go through `formatLocalTime` and are not checked against findutils.
+
+
+## Linux split: --filter and -n l/N, K/N
+
+Measured: `split --filter=CMD` is refused as an unrecognized option and `-n l/3`, `-n 2/3` as `invalid number of chunks`, where GNU accepts both. `--filter` needs the shell to run CMD with each piece on its stdin and `$FILE` set; `l/N` and `K/N` need line-aligned chunking and stdout output. `-a -d -x -e -t -C -u --additional-suffix --verbose` are evaluated.
+
+## Linux sed: options accepted without effect
+
+Measured: `-z`/`--null-data` (lines are still split on newline), `-l N`/`--line-length` (the `l` command keeps its own width), `--posix`, `--debug`, `--sandbox` (e/r/w stay enabled) and `--follow-symlinks` are read by `SedOptions.ts` and change nothing, because the engine has no NUL-separated record mode, no wrap parameter, no GNU-extension switch and no program annotation. A real sed honours all six. Unknown options, `--help`, `--version`, `-i[SUFFIX]` (backup), unreadable inputs and `-f` of a missing file are handled.
+
+## Linux grep: options accepted without effect
+
+Measured: `-T`/`--initial-tab`, `-z`/`--null-data`, `-a`/`--text`, `-I`, `-U`/`--binary`, `-u`, `--binary-files=TYPE`, `--devices=ACTION`, `--line-buffered` and `-R` (symlinks are not followed differently from `-r`) are read through `GREP_OPTIONS` and change nothing. The simulator has no binary-file detection (a NUL-bearing file is always printed as text), no NUL-separated record mode and no tab alignment of the prefix. Unknown options, `--help`, `-V`, `-Z`, `-b`, `--label`, `--exclude-dir`, `--exclude-from`, `--directories`, `--no-ignore-case` and the long spellings of every evaluated option are handled. The `--help` and `-V` texts are those of grep 3.7 from memory.
+
+## Linux diff: output styles accepted without effect
+
+Measured: `-y`/`--side-by-side` (and `-W`, `--left-column`, `--suppress-common-lines`), `-e`/`--ed`, `-f`, `-n`/`--rcs`, `-D`/`--ifdef`, `--line-format` and the group formats, `-p`/`--show-c-function`, `-F`, `-t`, `-T`, `--tabsize`, `-E`, `-I`, `-S`, `-x`'s sibling `-X`, `--from-file`/`--to-file`, `--color`, `--strip-trailing-cr`, `-a`, `-d`, `-l` are read through `DIFF_OPTIONS` and change nothing; a real diff prints a different layout for the first nine. `-u`/`-U N`, `-c`/`-C N`/`-NUM`, `-q`, `-s`, `-i`, `-w`, `-b`, `-Z`, `-B`, `-r`, `-N`, `-L`, `-x` and directory operands are evaluated. `diff -` (standard input) is not supported: the executor case receives no stdin. The hunk boundaries come from a plain LCS and can differ from GNU's heuristic on ambiguous input.
+
+## Cisco: `bgp default local-preference ?` announces <cr>
+
+Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `bgp default local-preference ?` names the range, but still announces `<cr>` after the keyword while the command answers `% Incomplete command.` without a value. The value place is optional because `ipv4-unicast` takes none and `AdapterKeyword` has no per-choice argument (OptionSpec has `choices`, the adapter does not). Closing it needs `choices` on `AdapterKeyword`, or a separate `bgp default local-preference` registration.
+
+## mv and stat: options accepted without effect
+
+`mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` evaluates `-c`/`--format`; `--printf`, `-t` (terse), `-f` (filesystem), `-L` (follow) are accepted and ignored. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.
+
+## column and awk: options accepted without effect
+
+`column` evaluates -t and -s only; -o, -c, -x, -J, -N, -n, -R, -H, -E, -l, -e, -d, -L and the tree options are accepted (table of util-linux 2.37 from memory; the dev container has no `column` to compare with) and ignored. `awk -W version` prints nothing where mawk prints its banner (version and compile-time limits); the banner of Ubuntu 22.04's mawk 1.3.4-20200120 was not available to copy.
+
+## lsof: an unknown option is ignored
+
+`lsof -q` and `lsof --zorglub` list files. The real lsof (4.95 in the dev container; Ubuntu 22.04 ships 4.93.2) has its own parser: it reports every bad character (`lsof: illegal option character: z`, then `illegal process group ID: lub` for the rest of `--zorglub`, which it reads as `-g lub`), prints a version banner whose text depends on the release, then a usage block, status 1. Faithful refusal needs that whole parser (`+`/`-` options with attached or separate arguments); a table in the style of the GNU guard would give a wrong second line. Not written.
+
+## Huawei VRP: `Too many parameters` has no echoed line and caret
+
+`display acl all zorglub` answers a bare `Error: Too many parameters found at '^' position.`: `normaliserErreurVrp` decorates Incomplete, Unrecognized and Wrong parameter with the typed line and a caret, not this family, because the position of the extra word is known only to the handler. The declared ceiling `allowArgs` + `tropDeParametres` does render it fully but only supports one fixed ceiling per node.
+
+## Huawei VRP: config commands that take any trailing word
+
+Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, `arp static 1.1.1.1 0000-0000-0001`, `nat static global 1.1.1.1 inside 2.2.2.2`, `bfd` and `user privilege level 3` run as if the word were not typed. Each has optional tails on a real VRP (`privilege level`, `vid`/interface, `netmask`/`vrrp`...) whose full grammar was not reachable, so a ceiling would refuse valid forms.
+
+## file and hostname: options accepted without effect
+
+`file` evaluates -b, -i, --mime and --mime-type (ASCII text, empty, directory, symlink, special files, shell scripts only); -L, -z, -f, -F, -0, --extension, --apple and the rest are accepted and ignored. `hostname` refuses unknown options like net-tools but still ignores -F (read from a file), -b, -a and -y/--yp/--nis.
+
+## ls: options accepted without effect
+
+Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `--block-size`, `-Z` shows `?` instead of a real SELinux context, `--quoting-style=shell*` and `locale` are approximated by literal and c, and `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
+
+## du: options accepted without full effect
+
+`du` evaluates every option of GNU du 9.4 except: `-x` (the file-system boundary is read from `ctx.deviceOf` only when the host supplies it), `--files0-from=-` (no stdin), the threshold suffix forms beyond K/M/G, and the readdir order of entries (the simulator lists in insertion order; the probe compares sorted lines). `--time` uses the file times of the simulator.
+
+## grep: what is still approximated
+
+Evaluated and compared with GNU grep 3.11: the selection, output, context, binary-file, directory, null-data, initial-tab and colour options (see probe-linux-grep-evalue-ses-options). Still approximate: a file counts as binary only when it holds a NUL byte (grep also treats invalid UTF-8 in a UTF-8 locale as binary); `-D` (devices) and `-U`/`--line-buffered` are accepted and ignored; `-P` is JavaScript's RegExp with `\K` translated; `GREP_COLORS` is not read (the defaults are used); entries of `-r` follow the simulator's insertion order, not readdir.
+
+## sed: what is still approximate
+
+Evaluated and compared with GNU sed 4.9 (see probe-linux-sed-evalue-ses-options): syntax errors with their `-e expression #N, char C` position and exit status, `s///w`, `w`/`W`/`r`/`R` (truncation at start, `/dev/stdout`, `/dev/stderr`, files without trailing newline), `-z`, `-l N` and `l N` wrapping, `-s`, `-i`, `--sandbox`, `#n`, the append queue flushed by `n`/`N`, `0,/re/`, `addr,~N`, bracket expressions holding the delimiter, `\t \xHH \oNNN \dNNN \cX` in patterns and replacements, empty matches after a match. Still not evaluated: the `e` command and the `s///e` flag (a sed script cannot run a command: the executor is not reachable from `cmdSed`, so both are refused as unknown), `--debug` and `--posix` (accepted, no annotation, GNU extensions stay on), `L` (4.9 answers `INTERNAL ERROR: Bad cmd L`, 4.8 formats; the simulator says `unknown command`), `--follow-symlinks`. The `--version` banner is the 4.8 of Ubuntu 22.04, the dev container's real sed is 4.9. Matching uses JavaScript's leftmost-FIRST alternation, not POSIX leftmost-LONGEST: `s/\|o/x/` on `one` gives `xone` where sed gives `xne` (`CompiledEre.exec` has the longest rule, grep -o and awk use it; sed would need the `M` flag and group indices on it). With `-i`, `w /dev/stdout` goes to the edited file instead of the terminal. The relative order of "can't read FILE" and the output differs from a real pipe (stderr is unbuffered there).
+
+## find: what is still approximate
+
+Evaluated and compared with GNU find 4.9 (see probe-linux-find-evalue-ses-options): every test, action (`-exec/-execdir/-ok/-okdir` through the shell executor, `-ls`, `-fls`, `-fprint*`, `-printf` with widths and flags), `-H/-L/-P/-follow`, `-xtype`, `-fstype` (from /proc/mounts), `-files0-from`, `-O`, `,`, and the diagnostics with their exit status. Still not modelled: the debug traces of `-D exec|opt|rates|search|stat|time|tree` (the flags are accepted and print nothing; `-D help` and unknown flags answer like find); `-exec ... +` runs one command per start directory, never splitting at ARG_MAX; `-context` and `%Z` always fail as on a machine without SELinux; `-warn` prints only the "global option after the argument" warning (find has more positional warnings); `-ok` reads its answer from the command's stdin only; the `--version` banner is 4.8.0 (the dev container's real find is 4.9.0); entries of a directory come in the simulator's insertion order, not readdir order; `-newerBm` and friends are refused like a system without birth time.
+
+## coreutils text tools: what is still approximate
+
+head, tail, wc, cut, sort, uniq and tr are compared with GNU coreutils 9.4 (see probe-linux-coreutils-texte-evalue-ses-options). Still approximate: `sort --debug` is accepted and prints nothing extra; `sort -R` hashes with FNV and a per-run salt (no `--random-source`); the collation is the C locale; `wc -m`/`-L` count code points and a fixed width table, not wcwidth; `wc` takes column width 7 for any standard input, where real wc reads the size of a regular file redirected to it; `tr` classes are the ASCII ones; `--help` texts are those of 9.4 under an 8.32 banner; `od` does not exist (`od -c`, `od -An -tx1` fail with command not found); `tail -f` on several files in the dispatcher path (no terminal sink) prints the snapshot and exits instead of following; the error of an unreadable file comes before the output in the interleaved stream, where a pipe would show stderr first only by buffering accident.
+
+## coreutils file tools: what is still approximate
+
+cp, mv, ln, rm, rmdir, mkdir, chmod, cat, basename, dirname, seq, echo and printf are compared with GNU coreutils 9.4 (see probe-linux-coreutils-fichiers-evalue-ses-options). Still approximate: the behaviours that changed between releases follow the 9.4 of the recorded transcripts (the `cp -n` warning, `mv -n` answering "not replacing" with status 1), under an 8.32 banner; `cp --reflink=always` fails with "Operation not supported" because the virtual disk has no copy-on-write extents, and `--sparse` is accepted without changing anything because file content is stored as text, not as extents; `cp --copy-contents` and `-x` are accepted and have nothing to act on (no fifo or device copies, one filesystem); `--preserve=context,xattr,links` is validated but the virtual disk keeps neither security context, extended attributes nor link groups; `rm -rv` walks in the directory's own order, which is not the order of a real ext4 readdir; `rm -I` prompts only for the count, not for the recursive form; the prompts of `-i`/`-I` end the stderr stream with a newline the shell adds, where a real prompt has none.
+
+## od: what is still approximate
+
+od is compared with GNU coreutils 9.4 (see probe-linux-od-evalue-ses-options). Still approximate: `-w0` aborts in the real command and prints the dump with the minimum width here; in `--traditional` mode an offset operand ending in `.` (decimal) is refused as an extra operand, as the real command does, but the label form is only checked against one file; `-S` does not quote non-printing bytes inside a string; reading a directory reports "Is a directory" and prints the final address like the real command, but a read error on a file that opened is not distinguishable here.
+
+### [smtp] le serveur SMTP ne journalise pas `connect from` / `disconnect from`
+Postfix `smtpd` ecrit `connect from host[ip]` et `disconnect from host[ip] ehlo=1
+...` via syslog (facility mail, etiquette `postfix/smtpd[pid]`) : verifie dans
+`src/smtpd/smtpd.c:6487` et `:6536` du depot vdukhovni/postfix. Le simulateur
+ecrivait a la place `smtp[...]: Accepted connection from ...` dans le syslog
+(ligne inventee, retiree avec le journal d'nginx) et n'ecrit plus rien. Pour
+fermer : emettre ces deux lignes sous la facility mail depuis le serveur SMTP,
+avec les compteurs de commandes du `disconnect`.
+
+### [ftp] ce que le serveur FTP journalise a l'acceptation d'une connexion n'est pas verifie
+L'etiquette `ftpd` que le journal employait ne correspond a aucun demon ; vsftpd
+et proftpd n'ont pas pu etre clones ici, donc leurs lignes de connexion (vsftpd :
+`xferlog`/`vsftpd.log`, `CONNECT: Client "ip"` avec `log_ftp_protocol`) restent a
+relever dans leurs sources avant d'en ecrire.
+
+
+### [nginx] `Range` : des intervalles qui se chevauchent
+nginx 1.24 (`ngx_http_range_test_overlapped`, ngx_http_range_filter_module.c) abandonne la connexion avec « range in overlapped buffers » quand les intervalles d'un `Range` multiple ne sont pas croissants ou se recouvrent. Le simulateur sert le corps entier en 200 (`NginxRange.ts`, `ascending`). Vu en comparant le C au rendu ; non fermé parce qu'abandonner une connexion en pleine réponse demande un chemin de coupure côté session HTTP/1 que le serveur nginx n'a pas.
+
+### [iptables] des correspondances que le vrai iptables accepte sont refusées ici, et les noms d'utilisateur ne sont pas résolus
+Mesuré avec `iptables -A INPUT -m <module> … -j ACCEPT` (iptables 1.8.7) : `set` et `physdev` ne se retrouvent pas dans `iptables -L` après la saisie (refusées ou sans ligne), alors que le vrai iptables les accepte. `hashlimit` s'écrit avec le texte brut de ses options au lieu de son `hashlimit_mt_print` (`recent` et `string` suivent désormais leur `*_print`). Chacune demande son évaluation au noyau simulé avant d'être acceptée (règle 6), donc elles ne sont pas stockées sans effet.

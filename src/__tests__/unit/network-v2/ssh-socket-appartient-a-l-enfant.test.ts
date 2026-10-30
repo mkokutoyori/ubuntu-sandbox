@@ -113,11 +113,11 @@ describe('une connexion acceptee a UN proprietaire et UNE ligne', () => {
 
   it('la ligne nomme le processus enfant, pas le demon d ecoute', async () => {
     const { srv } = await connectedLab();
-    const child = (await srv.executeCommand('ps aux'))
+    const child = (await srv.executeCommand('ps auxww'))
       .split('\n').find((l) => l.includes('sshd: alice'));
     expect(child).toBeTruthy();
     const childPid = child!.trim().split(/\s+/)[1];
-    const master = (await srv.executeCommand('ps aux'))
+    const master = (await srv.executeCommand('ps auxww'))
       .split('\n').find((l) => l.includes('/usr/sbin/sshd -D'));
     expect(master!.trim().split(/\s+/)[1]).not.toBe(childPid);
 

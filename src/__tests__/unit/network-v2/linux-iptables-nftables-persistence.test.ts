@@ -128,7 +128,7 @@ describe('Scénario 5 — Cohérence fichier vs état runtime', () => {
     await server.executeCommand('iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE');
 
     const saved = await server.executeCommand('iptables-save');
-    expect(saved).toContain('-A INPUT -p tcp --dport 4444 -j DROP');
+    expect(saved).toContain('-A INPUT -p tcp -m tcp --dport 4444 -j DROP');
     expect(saved).toContain('LOG');
     expect(saved).toContain('REJECT');
     expect(saved).toContain('MASQUERADE');

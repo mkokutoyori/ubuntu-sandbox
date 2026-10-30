@@ -12,6 +12,7 @@
  * `Media disconnected` (matches real getmac behavior).
  */
 
+import { findInvalidWindowsArgument, invalidArgumentError, GETMAC_SWITCHES } from './WinSwitchGuard';
 import type { WinCommandContext } from './WinCommandExecutor';
 import { adapterDisplayName } from './netAdapter';
 import { padToWidth, renderTableText, type TableColumn } from '@/network/devices/shells/cli/TextTable';
@@ -58,6 +59,8 @@ export function cmdGetmac(ctx: WinCommandContext, args: string[]): string {
   if (lower.includes('/?') || lower.includes('-?') || lower.includes('--help')) {
     return GETMAC_HELP;
   }
+  const invalid = findInvalidWindowsArgument(args, GETMAC_SWITCHES);
+  if (invalid !== null) return invalidArgumentError('getmac', invalid);
 
   const verbose = lower.includes('/v');
   const noHeader = lower.includes('/nh');

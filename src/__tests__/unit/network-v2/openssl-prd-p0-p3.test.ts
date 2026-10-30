@@ -636,7 +636,7 @@ describe('§P7 — s_client ouvre une vraie connexion', () => {
   it('un nom se résout par /etc/hosts, comme les autres clients', async () => {
     const { server, client } = reseau();
     server.getTcpStack().listen(8443, { onAccept: () => undefined });
-    await client.executeCommand(`sh -c 'echo "${SRV} tls.lab" >> /etc/hosts'`);
+    await client.executeCommand(`sudo sh -c 'echo "${SRV} tls.lab" >> /etc/hosts'`);
 
     expect(await client.executeCommand('openssl s_client -connect tls.lab:8443'))
       .toContain('CONNECTED');

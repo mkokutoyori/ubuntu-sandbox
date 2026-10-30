@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-ipsec-vpn
-Generated: 2026-10-14T19:59:18.430Z
+Generated: 2026-10-29T17:37:15.851Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IKEv1/IKEv2/IPsec/crypto-map/VTI/DMVPN/PKI
 Total steps: 370
@@ -240,12 +240,6 @@ Total steps: 370
   	authentication method:  Pre-Shared Key
   	Diffie-Hellman group:   #24 (2048 bit)
   	lifetime:               18000 seconds, no volume limit
-  Default protection suite
-  	encryption algorithm:   DES - Data Encryption Standard (56 bit keys).
-  	hash algorithm:         Secure Hash Standard
-  	authentication method:  Rivest-Shamir-Adleman Signature
-  	Diffie-Hellman group:   #1 (768 bit)
-  	lifetime:               86400 seconds, no volume limit
 
 [68/370] r1 R1# show crypto isakmp key
   Keychain  Hostname / Address   Preshared Key
@@ -487,7 +481,8 @@ Total steps: 370
 <empty>
 
 [138/370] r1 R1(config)# crypto map CMAP local-address GigabitEthernet0/1
-  % Invalid sequence number.
+                             ^
+  % Invalid input detected at '^' marker.
 
 [139/370] r1 R1(config)# interface GigabitEthernet0/1
 <empty>
@@ -905,8 +900,8 @@ Total steps: 370
   Interface: Tunnel100, IPv4 NHRP Details
   Type: Hub, NHRP Peers: 0, Phase: 3
   
-   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
-   ----- --------------- --------------- ----- -------- -----
+   # Ent Peer NBMA Addr Peer Tunnel Add State UpDn Tm Attrb
+   ----- -------------- --------------- ----- ------- -----
 
 [235/370] r1 R1# show dmvpn detail
   Legend: Attrb --> S - Static, D - Dynamic, I - Incomplete
@@ -915,8 +910,8 @@ Total steps: 370
   Interface: Tunnel100, IPv4 NHRP Details
   Type: Hub, NHRP Peers: 0, Phase: 3
   
-   # Ent  Peer NBMA Addr    Peer Tunnel Add State  UpDn Tm  Attrb
-   ----- --------------- --------------- ----- -------- -----
+   # Ent Peer NBMA Addr Peer Tunnel Add State UpDn Tm Attrb
+   ----- -------------- --------------- ----- ------- -----
 
 
 --- [236] § PKI / trustpoint ---
@@ -942,12 +937,10 @@ Total steps: 370
 <empty>
 
 [243/370] r1 R1(config)# crypto pki authenticate CA1
-  % Trustpoint CA1 CA certificate accepted
+  % Error in receiving Certificate Authority certificate: status = FAIL (Failed to connect to 10.0.0.5 port 80: Connection refused)
 
 [244/370] r1 R1(config)# crypto pki enroll CA1
-  % Start certificate enrollment for trustpoint CA1
-  % Certificate request sent to Certificate Authority
-  % Certificate successfully received and installed
+  % Trustpoint CA1 is not authenticated — run 'crypto pki authenticate CA1' first
 
 [245/370] r1 R1(config)# end
 <empty>
@@ -960,26 +953,10 @@ Total steps: 370
       RSA Keypair: SSH-KEY
 
 [247/370] r1 R1# show crypto pki certificates
-  Certificate (Trustpoint CA1):
-    Status: Available
-    Certificate Serial Number: 0000000000001002
-    Subject: CN=R1.lab.local
-    Issuer: CN=http://10.0.0.5:80
-    Validity: 2026-10-14T19:59:20.000Z to 2027-10-14T19:59:20.000Z
-  CA Certificate (Trustpoint CA1):
-    Status: Available
-    Certificate Serial Number: 0000000000001001
-    Subject: CN=http://10.0.0.5:80
+  No PKI certificates installed
 
 [248/370] r1 R1# show crypto pki certificates verbose
-  Trustpoint CA1 (verbose):
-    Subject Name: CN=R1.lab.local
-    Enrollment URL: http://10.0.0.5:80
-    Revocation Check: crl
-    RSA Keypair: SSH-KEY
-    Certificate: pending enrollment
-    Validity: 365 days
-    Certificate fingerprint (SHA1): AA:BB:CC:DD:EE:FF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB
+  % Trustpoint verbose not configured
 
 
 --- [249] § crypto clear / debug ---
@@ -1058,7 +1035,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX6030ACF2
+  Processor board ID FTX6386D5XE
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1070,7 +1047,7 @@ Total steps: 370
   
   Current configuration : 4428 bytes
   !
-  ! Last configuration change at 19:59:20 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 17:37:16 UTC Thu Oct 29 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1642,18 +1619,18 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:59:18.425: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:18.425: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:18.427: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:18.427: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:18.597: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:18.943: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.146: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.350: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.571: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.737: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.898: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:20.122: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:15.846: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:37:15.847: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:37:15.848: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:37:15.848: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:37:15.882: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:15.935: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:15.969: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.013: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.036: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.058: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.078: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.097: %SYS-5-CONFIG_I: Configured from console by console
 
 [297/370] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1664,8 +1641,8 @@ Total steps: 370
 [298/370] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 200 (1/100 of seconds), resolution is 4001
-  reference time is EE7A5D98.7AE147AE (19:59:20.480 UTC Wed Oct 14 2026)
+  ntp uptime is 0 (1/100 of seconds), resolution is 4001
+  reference time is EE8E02CC.2FDF3B64 (17:37:16.187 UTC Thu Oct 29 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1676,14 +1653,14 @@ Total steps: 370
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [300/370] r1 R1# show clock
-  *19:59:20.000 UTC Wed Oct 14 2026
+  *17:37:16.000 UTC Thu Oct 29 2026
 
 [301/370] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
                     S - Switch, H - Host, I - IGMP, r - Repeater
   
   Device ID        Local Intrfce     Holdtme    Capability  Platform  Port ID
-  R2               Gig 0/1           178        R           Cisco 291 Gig 0/1
+  R2               Gig 0/1           180        R           Cisco 291 Gig 0/1
   
   Total cdp entries displayed : 1
 
@@ -1862,7 +1839,7 @@ Total steps: 370
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX6030ACF2
+  Processor board ID FTX6386D5XE
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1874,7 +1851,7 @@ Total steps: 370
   
   Current configuration : 4428 bytes
   !
-  ! Last configuration change at 19:59:20 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 17:37:16 UTC Thu Oct 29 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2310,22 +2287,22 @@ Total steps: 370
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:59:18.425: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:18.425: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:18.427: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:18.427: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:18.597: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:18.943: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.146: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.350: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.571: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.737: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:19.898: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:20.122: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:15.846: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:37:15.847: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Oct 29 17:37:15.848: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:37:15.848: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Oct 29 17:37:15.882: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:15.935: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:15.969: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.013: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.036: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.058: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.078: %SYS-5-CONFIG_I: Configured from console by console
+  *Oct 29 17:37:16.097: %SYS-5-CONFIG_I: Configured from console by console
 
 [314/370] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX6030ACF2
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX6386D5XE
 
 [315/370] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2337,10 +2314,10 @@ Total steps: 370
   % Invalid input detected at '^' marker.
 
 [317/370] r1 R1# show ip vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [318/370] r1 R1# show vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [319/370] r1 R1# show hosts
   Default domain is not set
@@ -2763,7 +2740,7 @@ Total steps: 370
     domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
-    domain-name        Define the default domain name
+    domain-name        Remove the default domain name
     finger             Enable finger service
     flow-cache         How long an active flow stays in the cache
     flow-export        Address of the NetFlow collector
@@ -2771,9 +2748,10 @@ Total steps: 370
     host               Add a host to the host table
     http               Enable HTTP server
     icmp               ICMP options
-    local              Apply local PBR
+    inspect            Limit the established sessions of an inspection rule
+    local              IP local address pool
     multicast-routing  Enable IP multicast routing
-    name-server        Specify address of name server to use
+    name-server        Remove a name server
     nat                Wipe NAT configuration
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
@@ -2785,6 +2763,7 @@ Total steps: 370
     source-route       Accept source-routed packets
     ssh                SSH protocol version to accept
     subnet-zero        Enable use of subnet zero
+    tcp                Enable TCP intercept for the connections an access list matches
     vrf                Define a VRF instance
 
 [365/370] r1 R1(config)# router ?
@@ -2794,58 +2773,66 @@ Total steps: 370
     rip    Enter RIP routing protocol configuration
 
 [366/370] r1 R1(config)# crypto ?
+    ca           Get the CA certificate and authenticate it
     dynamic-map  Define a dynamic crypto map
     gdoi         Define a GDOI GET-VPN group
-    ikev2        Define IKEv2 proposal
+    identity     Identity of the peers allowed to use a crypto map
+    ikev2        Global IKEv2 DPD interval / retry
     ipsec        Configure IPSec policy
-    isakmp       Enable ISAKMP
+    isakmp       Enable the default IKE policies
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
-    map          Define a crypto map entry
-    pki          Declare a PKI trustpoint
+    map          Remove a crypto map or one of its entries
+    pki          Get the CA certificate and authenticate it
 
 [367/370] r1 R1(config)# no ?
-    aaa            Enable NEW access control commands and functions
-    access-list    Remove an access list
-    alias          Remove a command alias
-    arp            Add static ARP entry
-    banner         Remove a banner
-    boot           Specify system image to load
-    cdp            Enable CDP globally
-    class-map      Remove a class map
-    clock          Remove hardware calendar is a valid time source
-    crypto         Restore the default DF bit handling
-    enable         Set enable secret
-    event          Register an EEM applet
-    hostname       Set system hostname
-    interface      Remove a virtual interface
-    ip             Disable IP routing
-    ipv6           Remove the IPv6 prefix pool
-    key            Define a key chain
-    line           Enter line configuration
-    lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
-    ntp            Authenticate time sources
-    object-group   Remove a network object group
-    parser         Remove a CLI view
-    policy-map     Remove a policy map
-    priority-list  Remove build a priority list
-    privilege      Remove a command privilege rule
-    queue-list     Remove build a custom queue list
-    radius         Remove a named RADIUS server
-    radius-server  Specify a RADIUS server
-    route-map      Remove a route-map
-    router         Enter RIP routing protocol configuration
-    service        Disable a network based service
-    snmp-server    Set community string and access privs
-    sntp           SNTP server (alias for ntp server)
-    tacacs         Remove a named TACACS+ server
-    tacacs-server  Specify a TACACS+ server
-    time-range     Remove a time range
-    track          Remove a tracked object
-    username       Remove a local user
-    vrf            Remove configure a vrf
+    aaa               Disable accounting update records
+    access-list       Remove an access list
+    alias             Remove a command alias
+    arp               Remove ARP entry
+    banner            Remove a banner
+    boot              Remove a system image from the boot list
+    cdp               Enable CDP globally
+    class-map         Remove a class map
+    clock             Remove hardware calendar is a valid time source
+    crypto            Remove every configured peer public key
+    enable            Remove the privileged level secret
+    event             Register an EEM applet
+    hostname          Reset hostname
+    interface         Remove a virtual interface
+    ip                Disable IP routing
+    ipv6              Remove the IPv6 prefix pool
+    kerberos          Remove the Kerberos realm of this router
+    key               Remove a key chain
+    l2                Remove the Layer 2 virtual forwarding instance
+    line              Remove line configuration
+    lldp              Enable LLDP globally
+    logging           Count every log message and timestamp last occurrence
+    login             Remove the login blocking period
+    mpls              Disable dynamic MPLS forwarding on the whole router
+    ntp               Authenticate time sources
+    object-group      Remove a network object group
+    parser            Remove a CLI view
+    policy-map        Remove a policy map
+    priority-list     Remove build a priority list
+    privilege         Remove a command privilege rule
+    pseudowire-class  Remove the pseudowire class
+    queue-list        Remove build a custom queue list
+    radius            Remove a named RADIUS server
+    radius-server     Specify a RADIUS server
+    route-map         Remove a route-map
+    router            Enter RIP routing protocol configuration
+    service           Disable a network based service
+    snmp-server       Set community string and access privs
+    sntp              SNTP server (alias for ntp server)
+    tacacs            Remove a named TACACS+ server
+    tacacs-server     Specify a TACACS+ server
+    time-range        Remove a time range
+    track             Remove a tracked object
+    username          Remove a local user
+    vrf               Remove configure a vrf
+    zone              Define security zone
+    zone-pair         Define zone-pair
 
 [368/370] r1 R1(config)# end
 <empty>

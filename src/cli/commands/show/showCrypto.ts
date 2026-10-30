@@ -1,12 +1,15 @@
 import type { CommandSpec } from '../../CommandTable';
+import { DEFAULT_SA_LIFETIME_KILOBYTES, DEFAULT_SA_LIFETIME_SECONDS, formatSaLifetime } from '@/network/ipsec/SaLifetime';
 
 export interface IpsecShowHost {
   ipsecShow(method: string, ...args: string[]): string;
 }
 
+const IPSEC_NOT_CONFIGURED = 'IPSec not configured.';
+
 function ipsecText(device: unknown, method: string, ...args: string[]): string {
   const host = device as IpsecShowHost | null;
-  return typeof host?.ipsecShow === 'function' ? host.ipsecShow(method, ...args) : 'IPSec not configured.';
+  return typeof host?.ipsecShow === 'function' ? host.ipsecShow(method, ...args) : IPSEC_NOT_CONFIGURED;
 }
 
 export const SHOW_CRYPTO_FAMILY: readonly CommandSpec[] = Object.freeze([
@@ -152,7 +155,10 @@ export const SHOW_CRYPTO_FAMILY: readonly CommandSpec[] = Object.freeze([
     description: 'Display the security association lifetime',
     modes: ['user', 'privileged'],
     minPrivilege: 1,
-    run: (session) => ipsecText(session.device, 'showCryptoIPSecSALifetime'),
+    run: (session) => {
+      const text = ipsecText(session.device, 'showCryptoIPSecSALifetime');
+      return text === IPSEC_NOT_CONFIGURED ? formatSaLifetime(DEFAULT_SA_LIFETIME_KILOBYTES, DEFAULT_SA_LIFETIME_SECONDS) : text;
+    },
   },
   {
     id: 'show-crypto-ipsec-security-policy',

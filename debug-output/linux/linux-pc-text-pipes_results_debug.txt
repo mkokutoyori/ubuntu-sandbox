@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-text-pipes
-Generated: 2026-10-25T17:26:42.861Z
+Generated: 2026-10-29T11:02:54.486Z
 Engine: linux
 host=L-PC-TXT-DBG (linux-pc) — focus: traitement de texte, filtres & pipelines
 Total commands: 303
@@ -261,12 +261,16 @@ $ [50/303]> grep --color=auto root /etc/passwd
 
 $ [51/303]> grep -A1 bob gens.csv
   bob:25:lyon
+  carol:35:paris
 
 $ [52/303]> grep -B1 carol gens.csv
+  bob:25:lyon
   carol:35:paris
 
 $ [53/303]> grep -C1 bob gens.csv
+  alice:30:paris
   bob:25:lyon
+  carol:35:paris
 
 $ [54/303]> grep "" fruits.txt
   banane
@@ -508,7 +512,7 @@ $ [90/303]> cat fruits.txt | wc -l
   6
 
 $ [91/303]> ls /etc | wc -l
-  70
+  71
 
 
 --- [92] § sort — tri ---
@@ -543,20 +547,19 @@ $ [95/303]> sort -n nombres.txt
   20
 
 $ [96/303]> sort -rn nombres.txt
-  1
-  1
-  10
-  2
   20
+  10
   3
+  2
+  1
+  1
 
 $ [97/303]> sort -nu nombres.txt
   1
-  1
-  10
   2
-  20
   3
+  10
+  20
 
 $ [98/303]> sort -k1 gens.csv
   alice:30:paris
@@ -650,10 +653,10 @@ $ [112/303]> uniq fruits.txt
   banane
 
 $ [113/303]> sort fruits.txt | uniq -c | sort -rn
-        1 cerise
-        1 fraise
-        2 banane
         2 pomme
+        2 banane
+        1 fraise
+        1 cerise
 
 
 --- [114] § cut — extraction de colonnes ---
@@ -1044,9 +1047,9 @@ $ [178/303]> ls /etc | grep conf | sort | head
   rsyslog.conf
 
 $ [179/303]> sort fruits.txt | uniq -c | sort -rn | head -3
-        1 CERISE
-        1 fraise
+        2 pomme
         2 banane
+        1 fraise
 
 $ [180/303]> cat gens.csv | awk -F: '{print $3}' | sort | uniq -c
         1 lyon
@@ -1073,11 +1076,11 @@ $ [186/303]> seq 1 10 | paste -sd+ | bc
   55
 
 $ [187/303]> echo "1 2 3 4 5" | tr " " "\n" | sort -rn
-  1
-  2
-  3
-  4
   5
+  4
+  3
+  2
+  1
 
 $ [188/303]> cat fruits.txt | sort | uniq | wc -l
   4
@@ -1273,7 +1276,7 @@ $ [230/303]> pr -t fruits.txt
 $ [231/303]> pr -n fruits.txt
   
   
-  Sun Oct 25 2026  fruits.txt  Page 1
+  Thu Oct 29 2026  fruits.txt  Page 1
   
   
       1	banane
@@ -1610,16 +1613,16 @@ $ [294/303]> grep root /etc/passwd | awk -F: '{print "uid="$3" home="$6}'
 
 --- [295] § mal formées — fin de transcript ---
 $ [295/303]> grepp pomme fruits.txt
-  grepp: command not found
+  bash: grepp: command not found
 
 $ [296/303]> grep
   Usage: grep [OPTION]... PATTERN [FILE]...
 
 $ [297/303]> sed 's/incomplet
-  bash: bash: syntax error at line 1:5: Unterminated single-quoted string
+  bash: -c: line 1: unexpected EOF while looking for matching `''
 
 $ [298/303]> awk '{print
-  bash: bash: syntax error at line 1:5: Unterminated single-quoted string
+  bash: -c: line 1: unexpected EOF while looking for matching `''
 
 $ [299/303]> cut fruits.txt
   banane
@@ -1630,13 +1633,15 @@ $ [299/303]> cut fruits.txt
   banane
 
 $ [300/303]> sort -z -k
-<empty>
+  sort: option requires an argument -- 'k'
+  Try 'sort --help' for more information.
 
 $ [301/303]> tr a
 <empty>
 
 $ [302/303]> cat | | wc
-        0       0       0
+  bash: -c: line 1: syntax error near unexpected token `|'
+  bash: -c: line 1: `cat | | wc'
 
 $ [303/303]> echo "fin du transcript text & pipes"
   fin du transcript text & pipes

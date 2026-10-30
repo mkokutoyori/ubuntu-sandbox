@@ -249,14 +249,14 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string, urlNum:
  */
 function versionBanner(): string {
   return [
-    `${CURL_USER_AGENT.replace('/', ' ')} (x86_64-pc-linux-gnu) libcurl/8.5.0 OpenSSL/3.0.13`,
+    `${CURL_USER_AGENT.replace('/', ' ')} (x86_64-pc-linux-gnu) libcurl/8.5.0 OpenSSL/3.0.13 zlib/1.3`,
     'Release-Date: 2023-12-06',
     'Protocols: ftp http https',
     // Ce que ce curl SAIT faire, et rien d'autre. Recopier la ligne du
     // vrai (`HTTPS-proxy TLS-SRP UnixSockets…`) annoncerait des
     // capacités que la commande refuse deux lignes plus bas — le décor
     // que ces PRD passent leur temps à retirer.
-    'Features: IPv6 SSL',
+    'Features: IPv6 libz SSL',
   ].join('\n');
 }
 

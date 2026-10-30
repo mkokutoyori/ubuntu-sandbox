@@ -61,7 +61,7 @@ const PAGE_SIZE = 4096;
 const OCSP_VALUES = ['off', 'on', 'leaf'] as const;
 export type NginxOcspMode = (typeof OCSP_VALUES)[number];
 
-function isDecimal(text: string): boolean {
+export function isDecimal(text: string): boolean {
   return /^\d+$/.test(text);
 }
 

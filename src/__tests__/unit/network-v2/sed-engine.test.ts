@@ -146,7 +146,7 @@ describe('sed — options, branching, integration (§D)', () => {
     const r = sed(['y/ab/c/'], 'x\n');
     // unbalanced y sets — engine still parses; use a truly unknown command instead
     const bad = sed(['Z'], 'x\n');
-    expect(bad.exitCode).toBe(2);
+    expect(bad.exitCode).toBe(1);
     expect(bad.error).toMatch(/sed:/);
     void r;
   });
