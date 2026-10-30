@@ -1,6 +1,7 @@
 import { gzipCompress } from '@/network/rsyslog/Zlib';
 import type { HttpMessage } from '@/network/http/semantics/types';
 import { isDecimal, parseNginxSize } from './NginxSsl';
+import { compileNginxRegex } from './NginxRegex';
 
 export interface NginxGzipDirective {
   readonly name: string;
@@ -49,14 +50,6 @@ export const DEFAULT_GZIP_SETTINGS: NginxGzipSettings = Object.freeze({
 const ONE_ARGUMENT = new Set(['gzip', 'gzip_vary', 'gzip_comp_level', 'gzip_min_length', 'gzip_http_version']);
 const ACCUMULATING = new Set(['gzip_types', 'gzip_disable']);
 
-function compileDisable(pattern: string): RegExp | string {
-  try {
-    return new RegExp(pattern, 'i');
-  } catch {
-    return `pcre2_compile() failed: invalid regular expression in "${pattern}"`;
-  }
-}
-
 export function checkGzipDirective(
   name: string, args: readonly string[], alreadySet: boolean, parent: string | null,
 ): string | null {
@@ -90,7 +83,7 @@ export function checkGzipDirective(
     case 'gzip_disable': {
       for (const pattern of args) {
         if (pattern === 'msie6') continue;
-        const compiled = compileDisable(pattern);
+        const compiled = compileNginxRegex(pattern, true);
         if (typeof compiled === 'string') return compiled;
       }
       return null;
@@ -132,7 +125,7 @@ export function resolveGzipSettings(
       if (!disableDeclared) disableMsie6 = false;
       for (const pattern of args) {
         if (pattern === 'msie6') { disableMsie6 = true; continue; }
-        const compiled = compileDisable(pattern);
+        const compiled = compileNginxRegex(pattern, true);
         if (typeof compiled !== 'string') merged.push(compiled);
       }
       disable = merged;

@@ -4,6 +4,10 @@ import {
   type NginxSslDirective, type NginxSslSettings,
 } from './NginxSsl';
 import {
+  NGINX_REDIRECT_DIRECTIVES, DEFAULT_REDIRECT_SETTINGS, checkRedirectDirective, resolveRedirectSettings,
+  type NginxRedirectSettings,
+} from './NginxRedirect';
+import {
   NGINX_GZIP_DIRECTIVES, DEFAULT_GZIP_SETTINGS, checkGzipDirective, resolveGzipSettings,
   type NginxGzipSettings,
 } from './NginxGzip';
@@ -49,7 +53,7 @@ const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'lea
 
 
 const APPLIED_DIRECTIVES = new Set([
-  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES,
+  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES,
   'listen', 'server_name', 'root', 'index', 'try_files', 'return',
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
   'add_header', 'default_type',
@@ -81,7 +85,7 @@ const ACCEPTED_INERT = new Set([
   // §P6 — réglages du mandataire sans effet observable ici : le temps
   // n'existe pas (la livraison des trames est synchrone), donc aucun
   // délai ne peut expirer, et il n'y a pas de tampon à dimensionner.
-  'proxy_buffering', 'proxy_buffers', 'proxy_buffer_size', 'proxy_redirect',
+  'proxy_buffering', 'proxy_buffers', 'proxy_buffer_size',
   'proxy_read_timeout', 'proxy_connect_timeout', 'proxy_send_timeout',
   'proxy_http_version', 'proxy_next_upstream', 'keepalive',
 ]);
@@ -304,6 +308,11 @@ function parseBlock(
       if (problem) return { ok: false, error: emerg(problem, file, line) };
     }
 
+    if (NGINX_REDIRECT_DIRECTIVES.has(name)) {
+      const problem = checkRedirectDirective(name, args, out, parent);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+
     out.push({ name, args, line, file });
   }
 }
@@ -499,6 +508,7 @@ export interface NginxProxyPass {
    * veulent donc pas dire la même chose.
    */
   readonly path?: string;
+  readonly url: string;
 }
 
 export interface NginxLocation {
@@ -514,6 +524,7 @@ export interface NginxLocation {
   readonly proxyPass?: NginxProxyPass;
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
+  readonly redirect: NginxRedirectSettings;
 }
 
 export interface NginxServerBlock {
@@ -531,6 +542,7 @@ export interface NginxServerBlock {
   /** §P6 — hérités par les `location` qui n'en déclarent pas. */
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
+  readonly redirect: NginxRedirectSettings;
 }
 
 function parseListen(args: readonly string[]): { port: number; defaultServer: boolean; ssl: boolean } | null {
@@ -561,7 +573,7 @@ export function parseProxyPass(raw: string | undefined): NginxProxyPass | null {
   const scheme = m[1];
   const port = m[3] ? Number(m[3]) : (scheme === 'https' ? 443 : 80);
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
-  return { scheme, host: m[2], port, path: m[4] };
+  return { scheme, host: m[2], port, path: m[4], url: raw };
 }
 
 /**
@@ -629,7 +641,10 @@ export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream
   return out;
 }
 
-function collectLocation(node: NginxDirective, inheritedRoot: string, inheritedGzip: NginxGzipSettings): NginxLocation {
+function collectLocation(
+  node: NginxDirective, inheritedRoot: string, inheritedGzip: NginxGzipSettings,
+  inheritedRedirect: NginxRedirectSettings,
+): NginxLocation {
   const loc: {
     path: string; root?: string; index?: string[]; tryFiles?: string[];
     returnStatus?: number; returnTarget?: string; autoindex?: boolean;
@@ -637,7 +652,11 @@ function collectLocation(node: NginxDirective, inheritedRoot: string, inheritedG
     proxyPass?: NginxProxyPass;
     proxySetHeaders: (readonly [string, string])[];
     gzip: NginxGzipSettings;
-  } = { path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [], gzip: inheritedGzip };
+    redirect: NginxRedirectSettings;
+  } = {
+    path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [],
+    gzip: inheritedGzip, redirect: inheritedRedirect,
+  };
 
   for (const d of node.block ?? []) {
     if (d.name === 'root') loc.root = d.args[0];
@@ -658,10 +677,13 @@ function collectLocation(node: NginxDirective, inheritedRoot: string, inheritedG
   }
   if (!loc.root) loc.root = inheritedRoot;
   loc.gzip = resolveGzipSettings(inheritedGzip, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
+  loc.redirect = resolveRedirectSettings(
+    inheritedRedirect, (node.block ?? []).filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)),
+  );
   return loc as NginxLocation;
 }
 
-function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; gzip: NginxGzipSettings }): NginxServerBlock {
+function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; gzip: NginxGzipSettings; redirect: NginxRedirectSettings }): NginxServerBlock {
   const listen: { port: number; defaultServer: boolean; ssl: boolean }[] = [];
   let serverNames: string[] = [];
   let root = '/var/www/html';
@@ -689,14 +711,17 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
     }
   }
   const gzip = resolveGzipSettings(httpDefaults.gzip, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
+  const redirect = resolveRedirectSettings(
+    httpDefaults.redirect, (node.block ?? []).filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)),
+  );
   for (const d of node.block ?? []) {
-    if (d.name === 'location') locations.push(collectLocation(d, root, gzip));
+    if (d.name === 'location') locations.push(collectLocation(d, root, gzip, redirect));
   }
 
   return {
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
     ssl: resolveSslSettings(httpDefaults.sslDirectives, serverSslDirectives),
-    sslFile: node.file, sslLine: node.line, proxySetHeaders, gzip,
+    sslFile: node.file, sslLine: node.line, proxySetHeaders, gzip, redirect,
   };
 }
 
@@ -706,6 +731,7 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
     accessLog: null as string | null, errorLog: null as string | null,
     sslDirectives: [] as NginxSslDirective[],
     gzip: DEFAULT_GZIP_SETTINGS,
+    redirect: DEFAULT_REDIRECT_SETTINGS,
   };
 
   const walk = (nodes: readonly NginxDirective[], inHttp: boolean): void => {
@@ -715,6 +741,9 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
       if (node.name === 'http') {
         defaults.gzip = resolveGzipSettings(
           DEFAULT_GZIP_SETTINGS, (node.block ?? []).filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)),
+        );
+        defaults.redirect = resolveRedirectSettings(
+          DEFAULT_REDIRECT_SETTINGS, (node.block ?? []).filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)),
         );
         for (const d of node.block ?? []) {
           if (d.name === 'access_log') defaults.accessLog = d.args[0] === 'off' ? null : d.args[0];

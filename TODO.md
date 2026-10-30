@@ -4406,3 +4406,12 @@ cp, mv, ln, rm, rmdir, mkdir, chmod, cat, basename, dirname, seq, echo and print
 ## od: what is still approximate
 
 od is compared with GNU coreutils 9.4 (see probe-linux-od-evalue-ses-options). Still approximate: `-w0` aborts in the real command and prints the dump with the minimum width here; in `--traditional` mode an offset operand ending in `.` (decimal) is refused as an extra operand, as the real command does, but the label form is only checked against one file; `-S` does not quote non-printing bytes inside a string; reading a directory reports "Is a directory" and prints the final address like the real command, but a read error on a file that opened is not distinguishable here.
+
+### [nginx] `return <code> [texte]` traite tout code comme une redirection
+`location /ok { return 200 "hello"; }` repond `HTTP/1.1 200 Found` avec
+`Location: hello` et un corps vide ; `return 404;` repond `404 Found` sans la
+page d'erreur de nginx. Vu en reliant le `Location` de `return 301` au filtre
+d'en-tetes (docs/PRD-Nginx.md §9.13). `ngx_http_rewrite_module.c` : pour un
+code hors 301/302/303/307/308 l'argument est le CORPS, la phrase est celle du
+code, et sans texte nginx rend sa page d'erreur. Non ferme ici : c'est la
+directive `return`, pas le mandataire.

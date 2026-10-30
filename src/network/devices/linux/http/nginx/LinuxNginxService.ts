@@ -26,6 +26,10 @@ import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './
 import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
 import { applyGzipFilter } from './NginxGzip';
+import { expandNginxVariables, type NginxVariableContext } from './NginxVariables';
+import {
+  absoluteLocationValue, isRedirectStatus, rewriteRedirectValue, type NginxRedirectSettings,
+} from './NginxRedirect';
 import { findServerByName, serverNameMatches, type ServerNameEntry } from './NginxServerNames';
 import { NGINX_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
 import { binaryStringToBytes as bytes } from '@/crypto/encoding';
@@ -93,33 +97,6 @@ function rewriteTarget(target: string, locationPath: string, passPath?: string):
   const suite = reste.startsWith('/') ? reste : `/${reste}`;
   const out = `${base}${suite}`;
   return out === '' ? '/' : out;
-}
-
-/**
- * Les variables que `proxy_set_header` emploie en pratique. Une
- * variable inconnue est laissée telle quelle plutôt que vidée : nginx
- * REFUSE au démarrage une variable qu'il ne connaît pas, et rendre une
- * chaîne vide ferait passer une faute de frappe pour un en-tête absent.
- */
-function expandProxyVariables(
-  value: string, req: HttpMessage, upstream: { host: string; port: number },
-  peer?: Http1Peer,
-): string {
-  const client = peer?.ip ?? '0.0.0.0';
-  return value
-    .replace(/\$proxy_add_x_forwarded_for/g, (() => {
-      // La variable la plus utile de la liste, et la seule qui AJOUTE :
-      // elle empile le client derrière la chaîne déjà reçue, ce qui est
-      // exactement ce que `X-Forwarded-For` sert à porter.
-      const recu = req.headers.get('X-Forwarded-For');
-      return recu ? `${recu}, ${client}` : client;
-    })())
-    .replace(/\$proxy_host/g, `${upstream.host}:${upstream.port}`)
-    .replace(/\$http_host/g, req.headers.get('Host') ?? '')
-    .replace(/\$host/g, (req.headers.get('Host') ?? '').split(':')[0])
-    .replace(/\$remote_addr/g, client)
-    .replace(/\$scheme/g, 'http')
-    .replace(/\$request_uri/g, req.target ?? '/');
 }
 
 function matchLocation(server: NginxServerBlock, target: string): NginxLocation | null {
@@ -489,7 +466,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     const gated = server ? this.clientCertificateGate(server, hostHeader, peer) : null;
     const response = gated
       ?? (server
-        ? this.serve(server, target, req, peer)
+        ? this.serve(server, target, req, peer, port)
         : this.errorResponse(404, 'Not Found', notFoundPage()));
     if (server) applyGzipFilter(req, response, (matchLocation(server, target) ?? server).gzip);
     this.logRequest(server, req, response, target, peer);
@@ -541,18 +518,22 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private serve(
     server: NginxServerBlock, target: string,
-    req?: HttpMessage, peer?: Http1Peer,
+    req?: HttpMessage, peer?: Http1Peer, port = 0,
   ): HttpMessage {
     const location = matchLocation(server, target);
 
     if (location?.proxyPass && req) {
-      return this.proxy(server, location, location.proxyPass, target, req, peer);
+      return this.proxy(server, location, location.proxyPass, target, req, peer, port);
     }
 
     if (location?.returnStatus !== undefined) {
       const res = createResponse(location.returnStatus, location.returnStatus === 301 ? 'Moved Permanently' : 'Found');
       res.headers.set('Server', `nginx/${NGINX_VERSION}`);
-      if (location.returnTarget) res.headers.set('Location', location.returnTarget);
+      if (location.returnTarget) {
+        res.headers.set('Location', req && isRedirectStatus(location.returnStatus)
+          ? this.absolutize(location.returnTarget, location.redirect, server, req, port, peer)
+          : location.returnTarget);
+      }
       res.headers.set('Content-Length', '0');
       return res;
     }
@@ -608,7 +589,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    */
   private proxy(
     server: NginxServerBlock, location: NginxLocation,
-    pass: NginxProxyPass, target: string, req: HttpMessage, peer?: Http1Peer,
+    pass: NginxProxyPass, target: string, req: HttpMessage, peer?: Http1Peer, port = 0,
   ): HttpMessage {
     if (pass.scheme === 'https') {
       // Refusé plutôt qu'ouvert en clair : tout ce qui lit `https`
@@ -640,7 +621,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     // par celle du client.
     for (const hop of HOP_BY_HOP) request.headers.delete(hop);
     for (const [name, value] of [...server.proxySetHeaders, ...location.proxySetHeaders]) {
-      const resolved = expandProxyVariables(value, req, target502, peer);
+      const resolved = expandNginxVariables(value, this.variablesFor(server, req, port, peer, target502));
       if (resolved === '') request.headers.delete(name);
       else request.headers.set(name, resolved);
     }
@@ -668,9 +649,55 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     }
     const res = sent.response;
     for (const hop of HOP_BY_HOP) res.headers.delete(hop);
+    this.rewriteUpstreamRedirects(res, server, location, pass, req, port, peer, target502);
     res.headers.set('Server', `nginx/${NGINX_VERSION}`);
     this.applyHeaders(res, server, location);
     return res;
+  }
+
+  private variablesFor(
+    server: NginxServerBlock, req: HttpMessage, port: number, peer: Http1Peer | undefined,
+    upstream: { host: string; port: number } | null,
+  ): NginxVariableContext {
+    return {
+      request: req, clientIp: peer?.ip ?? '0.0.0.0', secure: peer?.tls !== undefined,
+      serverName: server.serverNames[0] ?? '', serverPort: port, upstream,
+    };
+  }
+
+  private absolutize(
+    value: string, settings: NginxRedirectSettings, server: NginxServerBlock,
+    req: HttpMessage, port: number, peer?: Http1Peer,
+  ): string {
+    return absoluteLocationValue(value, settings, {
+      hostHeader: req.headers.get('Host') ?? '', serverName: server.serverNames[0] ?? '',
+      port, secure: peer?.tls !== undefined,
+    });
+  }
+
+  private rewriteUpstreamRedirects(
+    res: HttpMessage, server: NginxServerBlock, location: NginxLocation, pass: NginxProxyPass,
+    req: HttpMessage, port: number, peer: Http1Peer | undefined, upstream: { host: string; port: number },
+  ): void {
+    const settings = location.redirect;
+    if (settings.policy === 'off') return;
+    const context = {
+      passUrl: pass.url, passHasUri: pass.path !== undefined && pass.path.length > 0,
+      locationPath: location.path, variables: this.variablesFor(server, req, port, peer, upstream),
+    };
+    const redirect = res.headers.get('Location');
+    if (redirect !== undefined) {
+      const rewritten = rewriteRedirectValue(redirect, 0, settings.policy, context);
+      if (rewritten !== null) {
+        res.headers.set('Location', this.absolutize(rewritten, settings, server, req, port, peer));
+      }
+    }
+    const refresh = res.headers.get('Refresh');
+    const urlAt = refresh === undefined ? -1 : refresh.toLowerCase().indexOf('url=');
+    if (refresh !== undefined && urlAt >= 0) {
+      const rewritten = rewriteRedirectValue(refresh, urlAt + 4, settings.policy, context);
+      if (rewritten !== null) res.headers.set('Refresh', rewritten);
+    }
   }
 
   /**

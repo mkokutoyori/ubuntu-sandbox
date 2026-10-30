@@ -664,8 +664,7 @@ ce chantier.
   (`host not found in upstream`) ; ici la résolution dépend de l'état du
   réseau au moment de la requête, et la panne visible à l'exécution est
   celle que le TP cherche à montrer.
-* **`proxy_redirect` n'est pas appliqué** : un `Location` renvoyé par
-  l'amont traverse tel quel.
+* ~~**`proxy_redirect` n'est pas appliqué**~~ — **levé au §9.13.**
 
 ### 9.6 Mesures
 
@@ -1006,3 +1005,63 @@ ce que la commande fait — est intact.
 cas tombent). Les 8 qui passent des deux cotes sont des refus
 (`--http2`…, pas d'`Accept-Encoding` sans `--compressed`, un corps `br`
 livre tel quel sans `--compressed`).
+
+### 9.13 `proxy_redirect`, et le `Location` que le client reçoit
+
+§9.5 laissait traverser le `Location` de l'amont tel quel. Le client
+suivait donc une redirection vers `http://10.0.0.2:9000/…`, l'adresse
+INTERNE de l'amont : la fuite meme que la directive existe pour fermer.
+Le defaut etait plus large que la directive : nginx reecrit **sans qu'on
+l'ecrive**, et cela non plus n'existait pas.
+
+Source : nginx 1.24.0 — `ngx_http_proxy_module.c`
+(`ngx_http_proxy_redirect`, `..._rewrite_redirect`, les handlers
+`complex` et `regex`, `ngx_http_proxy_merge_loc_conf`),
+`ngx_http_upstream.c` (`..._rewrite_location`, `..._rewrite_refresh`),
+`ngx_http_header_filter_module.c`.
+
+**La regle `default` est implicite.** Quand aucune regle n'est ecrite et
+que `proxy_pass` est une URL litterale, nginx ajoute lui-meme :
+motif = l'URL du `proxy_pass` (plus `/` s'il n'a pas d'URI), remplacement
+= `/` ; avec URI, le remplacement est le nom de la `location`. Des qu'une
+regle est ecrite, elle n'est plus ajoutee ; `proxy_redirect default;` la
+remet, a l'endroit ou on l'ecrit (et refuse d'etre place avant
+`proxy_pass`).
+
+**Ce qui est livre** :
+* `off`, `default`, `<motif> <remplacement>`, `~` et `~*` (captures `$1`,
+  captures nommees) ; la premiere regle qui correspond l'emporte ;
+* le motif textuel est un PREFIXE compare avec la casse ; une regle PCRE
+  cherche n'importe ou et remplace TOUT le reste de la valeur (c'est ce que
+  `ngx_http_proxy_rewrite` fait de `len`, pas le fragment apparie) ;
+* le meme traitement sur `Refresh`, seule la partie apres `url=` ;
+* **un `Location` reecrit qui commence par `/` devient absolu** dans le
+  filtre d'en-tetes : `Host` de la requete, `:port` si l'ecoute n'est pas
+  celle du schema (`port_in_redirect`), premier `server_name` si
+  `server_name_in_redirect on`, inchange si `absolute_redirect off` ; un
+  `Location` que rien n'a reecrit n'est jamais touche, relatif compris ;
+* le meme filtre sert `return 301 /nouveau;`, qui rendait le chemin brut ;
+* heritage http -> server -> location : une regle d'un bloc REMPLACE
+  celles du parent, elle ne s'y ajoute pas ;
+* `nginx -t` juge : `invalid parameter`, nombre d'arguments, doublon
+  `off`/regle, `default` avant `proxy_pass`, motif PCRE invalide,
+  `unknown "x" variable` (les captures nommees du motif sont declarees).
+
+**Une seule table de variables.** `expandProxyVariables` enchainait des
+`replace` dans le desordre : `$hostname` devenait `10.0.0.1name` et
+`$scheme` valait `http` meme en TLS. `NginxVariables.ts` la remplace, lue
+par `proxy_set_header` ET `proxy_redirect`, avec `$server_name`,
+`$server_port`, `$uri`, `$request_method`, `$proxy_port`, `$http_*`. La
+compilation PCRE->JS sert aussi `gzip_disable` (`NginxRegex.ts`), qui avait
+la sienne.
+
+**Limites assumees** : `server_name_in_redirect on` sans `server_name`
+retombe sur le `Host` (nginx y met le nom de la machine, que l'hote du
+service ne fournit pas) ; les regex sont celles de JavaScript, pas PCRE2 ;
+`proxy_cookie_domain`/`_path`/`_flags` ne sont pas implementees.
+
+`nginx-proxy-redirect.test.ts` (44 cas) : **32 tombent par `git stash`**.
+Les 12 qui passent des deux cotes sont des refus ou des temoins (un autre
+hote, un autre port, la casse, un `Location` relatif d'amont, `off`, un
+corps sans redirection). `nginx-variables.test.ts` (14 cas) : le module
+n'existe pas avant, tous tombent.
