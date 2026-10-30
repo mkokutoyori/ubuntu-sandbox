@@ -65,7 +65,7 @@ export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
   'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
-  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit',
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
@@ -98,6 +98,9 @@ const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOpti
   },
   pkttype: { '--pkt-type': 'IM' },
   length: { '--length': 'IM' },
+  connlimit: {
+    '--connlimit-above': 'I', '--connlimit-upto': '', '--connlimit-mask': '', '--connlimit-saddr': 'F', '--connlimit-daddr': 'F',
+  },
   time: {
     '--timestart': '', '--timestop': '', '--weekdays': 'I', '--monthdays': 'I', '--datestart': '', '--datestop': '',
     '--utc': 'F', '--kerneltz': 'F',
@@ -126,6 +129,7 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
   addrtype: ['--src-type', '--dst-type'],
+  connlimit: ['--connlimit-above', '--connlimit-upto', '--connlimit-mask', '--connlimit-saddr', '--connlimit-daddr'],
   length: ['--length'],
   ttl: ['--ttl-eq', '--ttl-gt', '--ttl-lt'],
   time: ['--timestart', '--timestop', '--weekdays', '--monthdays', '--datestart', '--datestop', '--utc', '--kerneltz'],
@@ -870,6 +874,9 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
+      if (m.module === 'connlimit') {
+        if (this.connlimitExceeded(m, pkt, state) === this.connlimitView(m).inverted) return false;
+      }
       if (m.module === 'addrtype') {
         for (const [option, actual] of [
           ['--src-type', pkt.srcAddrType ?? pkt.addressTypeOf?.(pkt.srcIP)], ['--dst-type', pkt.dstAddrType ?? pkt.addressTypeOf?.(pkt.dstIP)],
@@ -921,6 +928,25 @@ export class LinuxIptablesManager {
     }
 
     return true;
+  }
+
+  private connlimitView(m: MatchExtension): { limit: number; mask: number; daddr: boolean; inverted: boolean } {
+    const above = m.options.get('--connlimit-above');
+    const limit = Number(above ?? m.options.get('--connlimit-upto') ?? 0);
+    const mask = Number(m.options.get('--connlimit-mask') ?? (this.family === 6 ? 128 : 32));
+    const inverted = above === undefined || inverts(m, '--connlimit-above');
+    return { limit, mask, daddr: m.options.has('--connlimit-daddr'), inverted };
+  }
+
+  private connlimitExceeded(m: MatchExtension, pkt: PacketInfo, state: ConnectionState): boolean {
+    const { limit, mask, daddr } = this.connlimitView(m);
+    const subject = daddr ? pkt.dstIP : pkt.srcIP;
+    const group = `${subject}/${mask}`;
+    const counted = this.connections.flows().filter((view) => {
+      if (view.tcpState === 'TIME_WAIT' || view.tcpState === 'CLOSE') return false;
+      return this.ipMatchesSpec(daddr ? view.original.dstIP : view.original.srcIP, group);
+    }).length;
+    return counted + (state === 'NEW' ? 1 : 0) > limit;
   }
 
   private ipMatchesSpec(ip: string, spec: string): boolean {
@@ -1375,6 +1401,10 @@ export class LinuxIptablesManager {
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
       case 'owner': return this.ownerListing(m, numeric);
+      case 'connlimit': {
+        const view = this.connlimitView(m);
+        return `#conn ${view.daddr ? 'dst' : 'src'}/${view.mask} ${view.inverted ? '<=' : '>'} ${view.limit}`;
+      }
       case 'length': {
         const range = parseLengthRange(o.get('--length') ?? '');
         return typeof range === 'string' ? '' : lengthListing(range, inverts(m, '--length'));
@@ -1992,6 +2022,9 @@ export class LinuxIptablesManager {
   private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'connlimit' && !options.has('--connlimit-above') && !options.has('--connlimit-upto')) {
+      return 'You must specify "--connlimit-above" or "--connlimit-upto".';
     }
     if (module === 'time') {
       const window = parseTimeWindow(options, negated);

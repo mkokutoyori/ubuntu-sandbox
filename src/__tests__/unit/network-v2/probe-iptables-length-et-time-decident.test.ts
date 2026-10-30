@@ -129,6 +129,62 @@ describe('-m addrtype (xt_addrtype : le type de la route de l\'adresse, exclusif
   });
 });
 
+describe('-m connlimit (xt_connlimit : connexions suivies par adresse masquee, la connexion courante comptee si elle est nouvelle)', () => {
+  const syn = (port: number, src = '10.0.0.2'): PacketInfo => packet({ srcIP: src, srcPort: port, dstPort: 22, tcpFlags: 0x02, ipPacketBytes: 60 });
+
+  async function limited(rule: string, sources: Array<[string, number]>, probe: PacketInfo): Promise<string> {
+    const host = new LinuxPC('H', 0, 0);
+    expect(await host.executeCommand(`sudo iptables -A INPUT ${rule}`)).toBe('');
+    const manager = (host as unknown as Firewalled).executor.iptables;
+    for (const [src, port] of sources) manager.filterPacket(syn(port, src), {});
+    return manager.filterPacket(probe, {});
+  }
+
+  async function limitedWithDefaultDrop(rule: string, sources: Array<[string, number]>, probe: PacketInfo): Promise<string> {
+    const host = new LinuxPC('H', 0, 0);
+    expect(await host.executeCommand(`sudo iptables -A INPUT ${rule}`)).toBe('');
+    const manager = (host as unknown as Firewalled).executor.iptables;
+    for (const [src, port] of sources) manager.filterPacket(syn(port, src), {});
+    await host.executeCommand('sudo iptables -P INPUT DROP');
+    return manager.filterPacket(probe, {});
+  }
+
+  it('au-dela de la limite la regle correspond', async () => {
+    const rule = '-p tcp --dport 22 -m connlimit --connlimit-above 2 -j DROP';
+    const two: Array<[string, number]> = [['10.0.0.2', 40001], ['10.0.0.2', 40002]];
+    expect(await limited(rule, two, syn(40003))).toBe('drop');
+    expect(await limited(rule, two.slice(0, 1), syn(40003))).toBe('accept');
+  });
+
+  it('--connlimit-upto est « ! --connlimit-above »', async () => {
+    const two: Array<[string, number]> = [['10.0.0.2', 40001], ['10.0.0.2', 40002]];
+    expect(await limitedWithDefaultDrop('-p tcp -m connlimit --connlimit-upto 2 -j ACCEPT', two, syn(40003))).toBe('drop');
+    expect(await limitedWithDefaultDrop('-p tcp -m connlimit --connlimit-upto 2 -j ACCEPT', two.slice(0, 1), syn(40003))).toBe('accept');
+    expect(await limitedWithDefaultDrop('-p tcp -m connlimit ! --connlimit-above 5 -j ACCEPT', two, syn(40003))).toBe('accept');
+  });
+
+  it('chaque adresse a son compteur, sauf sous un masque qui les regroupe', async () => {
+    const others: Array<[string, number]> = [['10.0.0.3', 40001], ['10.0.0.4', 40002]];
+    expect(await limited('-p tcp -m connlimit --connlimit-above 2 -j DROP', others, syn(40003))).toBe('accept');
+    expect(await limited('-p tcp -m connlimit --connlimit-above 2 --connlimit-mask 24 -j DROP', others, syn(40003))).toBe('drop');
+  });
+
+  it('se liste comme connlimit_print4', async () => {
+    const host = new LinuxPC('H', 0, 0);
+    await host.executeCommand('sudo iptables -A INPUT -p tcp -m connlimit --connlimit-above 10 --connlimit-mask 24 -j DROP');
+    await host.executeCommand('sudo iptables -A INPUT -p tcp -m connlimit --connlimit-upto 3 --connlimit-daddr -j DROP');
+    const lines = (await host.executeCommand('sudo iptables -L INPUT -n')).split('\n');
+    expect(lines[2]).toContain('#conn src/24 > 10');
+    expect(lines[3]).toContain('#conn dst/32 <= 3');
+  });
+
+  it('une regle sans --connlimit-above ni --connlimit-upto est refusee', async () => {
+    const host = new LinuxPC('H', 0, 0);
+    expect(await host.executeCommand('sudo iptables -A INPUT -p tcp -m connlimit -j DROP'))
+      .toContain('You must specify "--connlimit-above" or "--connlimit-upto".');
+  });
+});
+
 describe('-m time', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2024-03-04T10:30:00Z')); });
   afterEach(() => { vi.useRealTimers(); });
