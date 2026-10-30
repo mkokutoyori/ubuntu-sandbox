@@ -115,4 +115,40 @@ test.describe('nginx : gzip, redirections et pages d\'erreur dans le terminal', 
     expect(verdict).toContain('invalid value "maybe" in "gzip" directive');
     expect(verdict).toContain('test failed');
   });
+
+  test('Last-Modified, ETag, 304 et Range d\'un fichier statique', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const serverId = await addDevice(page, 'linux-server', 300, 250);
+    const clientId = await addDevice(page, 'linux-server', 600, 250);
+    await cable(page, serverId, clientId);
+
+    await openTerminal(page, serverId);
+    await typeCmd(page, `ip addr add ${SRV}/24 dev eth0`);
+    await typeCmd(page, `sh -c 'printf "0123456789" > /var/www/html/digits.txt'`);
+    await typeCmd(page, 'systemctl start nginx');
+    await closeTerminal(page);
+
+    await openTerminal(page, clientId);
+    await typeCmd(page, `ip addr add ${CLI}/24 dev eth0`);
+
+    await typeCmd(page, `curl -s -D /tmp/h -o /dev/null http://${SRV}/digits.txt`);
+    await typeCmd(page, 'grep -i etag /tmp/h');
+    const etag = /ETag: (".*?")/i.exec(await lastLines(page, 3))?.[1];
+    expect(etag).toBeDefined();
+
+    await typeCmd(page, `curl -s -i -H 'If-None-Match: ${etag}' http://${SRV}/digits.txt`);
+    expect(await lastLines(page, 8)).toContain('HTTP/1.1 304 Not Modified');
+
+    await typeCmd(page, `curl -s -i -H 'Range: bytes=2-5' http://${SRV}/digits.txt`);
+    const partial = await lastLines(page, 10);
+    expect(partial).toContain('HTTP/1.1 206 Partial Content');
+    expect(partial).toContain('Content-Range: bytes 2-5/10');
+    expect(partial).toContain('2345');
+
+    await typeCmd(page, `curl -s -i -H 'Range: bytes=20-30' http://${SRV}/digits.txt`);
+    expect(await lastLines(page, 20)).toContain('HTTP/1.1 416 Requested Range Not Satisfiable');
+  });
 });
