@@ -664,8 +664,7 @@ ce chantier.
   (`host not found in upstream`) ; ici la résolution dépend de l'état du
   réseau au moment de la requête, et la panne visible à l'exécution est
   celle que le TP cherche à montrer.
-* **`proxy_redirect` n'est pas appliqué** : un `Location` renvoyé par
-  l'amont traverse tel quel.
+* ~~**`proxy_redirect` n'est pas appliqué**~~ — **levé au §9.13.**
 
 ### 9.6 Mesures
 
@@ -888,3 +887,296 @@ entre deux requêtes) ; il n'y a pas de contrôle de santé ACTIF
 libre que ce simulateur imite) ; et `ip_hash` répartit sur le cycle des
 membres vivants, si bien qu'une panne redistribue les clients — comme
 chez nginx sans `zone`.
+
+### 9.11 `gzip on;` compresse, et le codec n'etait pas a ecrire
+
+Le TODO affirmait qu'« aucun codec DEFLATE n'existe ici ». C'etait faux :
+`rsyslog/Zlib.ts` porte compression, `Inflater` et gzip complets
+(CRC-32, trailer). Le `nginx.conf` livre dit `gzip on;`, les huit
+directives `gzip*` etaient dans `ACCEPTED_INERT` : acceptees, rendues,
+sans effet. Un client envoyant `Accept-Encoding: gzip` recevait le corps
+en clair, sans `Content-Encoding`.
+
+Source : nginx 1.24.0, `ngx_http_gzip_filter_module.c`
+(`ngx_http_gzip_header_filter`) et `ngx_http_core_module.c`
+(`ngx_http_gzip_ok`, `ngx_http_gzip_accept_encoding`/`_quantity`).
+
+**Ce qui decide, dans l'ordre de nginx** : `gzip on`, statut 200/403/404,
+pas de `Content-Encoding` deja pose, longueur >= `gzip_min_length`
+(20 par defaut), type dans `gzip_types` (`text/html` toujours, `*` pour
+tout), pas HEAD ; alors seulement `Vary` (si `gzip_vary on`, y compris
+pour un client qui n'accepte pas gzip) ; puis `Accept-Encoding` lu comme
+nginx le lit (`xgzip` et `gzipx` refuses, `q=0`, `q=0.000` refuses,
+`q=1.5` refuse — le defaut de la source est porte tel quel), `Via` +
+`gzip_proxied` (off par defaut ; `off` l'emporte sur `any` ; `expired`,
+`no-cache`, `no-store`, `private`, `no_last_modified`, `no_etag`,
+`auth`), puis `gzip_disable` (`msie6` selon `ngx_http_process_user_agent`,
+expressions sans casse). La reponse perd `Content-Length` et
+`Accept-Ranges`, devient `Transfer-Encoding: chunked`, et un `ETag` fort
+devient faible (`ngx_http_weak_etag`). Le journal d'acces compte les
+octets COMPRIMES.
+
+**Heritage http -> server -> location** : un reglage hors d'un bloc le
+remplace sans le cumuler (`gzip_types` s'accumule seulement DANS un
+meme bloc). Les reglages sont resolus une fois au parse ; un bloc sans
+directive `gzip*` partage l'objet de son parent.
+
+**`nginx -t` juge** : `invalid value "maybe" in "gzip" directive, it must
+be "on" or "off"`, `value must be between 1 and 9`, `"gzip_comp_level"
+directive invalid number`, `"gzip" directive is duplicate`, nombre
+d'arguments, contexte.
+
+**Le codec n'a pas ete reecrit** : `gzipCompress` a ete ajoute a
+`Zlib.ts`, la ou le codec vit. Il nourrit `GzipStreamWriter` par tranches
+de 16 Kio, car ce writer fait `push(...segment)` et un seul gros `write`
+depasserait la pile. Mesure : 1 Mio en ~140 ms, 4 Mio en ~0,6 s, lineaire.
+
+**Defaut ferme au passage** : les fichiers inclus etaient relus avec
+`parent = null`. Une directive a la racine d'un fichier inclus dans
+`http {}` etait donc jugee « not allowed here » ; le parent reel est
+desormais transmis.
+
+**Limites assumees** : au-dela de 1 Mio le corps n'est pas compresse
+(plafond memoire du simulateur, `GZIP_MAX_BODY_BYTES`) ; `gzip_http_version`
+est valide mais toujours satisfait (le modele de requete ne connait pas
+HTTP/1.0) ; `gzip_buffers` reste accepte et inerte ; `gzip_disable` prend
+des regex JavaScript, le message d'erreur de PCRE2 n'est donc pas
+reproductible a l'identique.
+
+`nginx-gzip.test.ts` (62 cas), **41 tombent par `git stash`**. Les 21 qui
+passent des deux cotes sont des refus (sans `Accept-Encoding`, `gzip off`,
+`q=0`, HEAD, 301/502, trop court…) et le temoin « la configuration
+livree reste valide ».
+
+### 9.12 `curl --compressed` : le client qui boucle §9.11
+
+Apres §9.11 le serveur compressait, mais `curl --compressed` repondait
+« the installed libcurl version doesn't support this » : un curl sans
+libz, ce que la ligne `Features: IPv6 SSL` disait fidelement. Le TP
+« activer gzip puis le constater » restait donc impossible, le client ne
+sachant ni demander ni decoder. Le refus etait juste tant que le codec
+manquait ; il ne l'est plus, puisque `rsyslog/Zlib.ts` le porte.
+
+Source : curl 8.5.0 — `lib/content_encoding.c` (`encodings[]`,
+`Curl_build_unencoding_stack`, `Curl_all_content_encodings`,
+`error_do_write`, `process_zlib_error`), `lib/http.c` (`Accept-Encoding`
+pose sauf si l'appelant a le sien), `lib/sendf.c` (`Curl_cwriter_add`).
+
+**Ce qui est livre** :
+* `--compressed` pose `Accept-Encoding: deflate, gzip` (jamais `br` ni
+  `zstd` : ces bibliotheques ne sont pas annoncees ; `identity` est le
+  nom par defaut et sort de la liste, comme dans `Curl_all_content_encodings`) ;
+* un `-H 'Accept-Encoding: …'` de l'appelant remplace le sien, mais le
+  decodage reste actif ;
+* le corps est decode ; `-D` et `-i` montrent les en-tetes de la reponse,
+  `Content-Encoding` compris ; `%{size_download}` compte les octets decodes ;
+* `identity`/`none`, `deflate` (format zlib, repli sur flux brut comme
+  libcurl), `gzip`/`x-gzip`, sans casse ; plusieurs codages se retirent a
+  l'envers de leur ordre d'application (`Curl_cwriter_add` insere
+  « first in its phase ») ; le cinquieme est refuse ;
+* un codage inconnu donne `curl: (61) Unrecognized content encoding type.
+  libcurl understands deflate, gzip content encodings.` — et seulement
+  quand il y a un corps, la source differant l'erreur a l'ecriture ; un
+  flux corrompu donne `curl: (61) Error while processing content
+  unencoding: …` ;
+* `curl --version` annonce `zlib/1.3` et `Features: IPv6 libz SSL` (ordre
+  alphabetique sans casse, comme le vrai).
+
+**Pas de decodeur ecrit a cote** : `http/ContentCodings.ts` est neutre
+(ni curl ni nginx) pour que wget ou `Invoke-WebRequest` s'y branchent ;
+il ne contient que la table des codages et l'ordre, le codec restant
+`Zlib.ts`, ou `deflateRawDecompress` a ete ajoute.
+
+**Limites assumees** : la sortie decodee est plafonnee a 16 Mio
+(`MAX_DECODED_BYTES`, memoire du simulateur ; le vrai curl n'a pas de
+plafond) ; le texte exact des messages zlib (`incorrect header check`…)
+n'est pas reproduit, seule la phrase d'enveloppe l'est ; `--http2` et
+`--http3` restent refuses, leurs bibliotheques n'etant toujours pas la.
+
+**Trois tests existants portaient la premisse « pas de libz »** et ont
+change avec elle : `curl-feature-gated-options` (`--compressed` sort de la
+liste des refus, la ligne `Features` change), `curl-version-et-options`
+(`Features: IPv6 libz SSL`). Le principe qu'ils gardent — n'annoncer que
+ce que la commande fait — est intact.
+
+`http-content-codings.test.ts` (25 cas) et `curl-compressed.test.ts`
+(18 cas) : **40 cas tombent par `git stash`** sur 48 avec
+`curl-feature-gated-options` (le module ne se charge meme pas : ses 25
+cas tombent). Les 8 qui passent des deux cotes sont des refus
+(`--http2`…, pas d'`Accept-Encoding` sans `--compressed`, un corps `br`
+livre tel quel sans `--compressed`).
+
+### 9.13 `proxy_redirect`, et le `Location` que le client reçoit
+
+§9.5 laissait traverser le `Location` de l'amont tel quel. Le client
+suivait donc une redirection vers `http://10.0.0.2:9000/…`, l'adresse
+INTERNE de l'amont : la fuite meme que la directive existe pour fermer.
+Le defaut etait plus large que la directive : nginx reecrit **sans qu'on
+l'ecrive**, et cela non plus n'existait pas.
+
+Source : nginx 1.24.0 — `ngx_http_proxy_module.c`
+(`ngx_http_proxy_redirect`, `..._rewrite_redirect`, les handlers
+`complex` et `regex`, `ngx_http_proxy_merge_loc_conf`),
+`ngx_http_upstream.c` (`..._rewrite_location`, `..._rewrite_refresh`),
+`ngx_http_header_filter_module.c`.
+
+**La regle `default` est implicite.** Quand aucune regle n'est ecrite et
+que `proxy_pass` est une URL litterale, nginx ajoute lui-meme :
+motif = l'URL du `proxy_pass` (plus `/` s'il n'a pas d'URI), remplacement
+= `/` ; avec URI, le remplacement est le nom de la `location`. Des qu'une
+regle est ecrite, elle n'est plus ajoutee ; `proxy_redirect default;` la
+remet, a l'endroit ou on l'ecrit (et refuse d'etre place avant
+`proxy_pass`).
+
+**Ce qui est livre** :
+* `off`, `default`, `<motif> <remplacement>`, `~` et `~*` (captures `$1`,
+  captures nommees) ; la premiere regle qui correspond l'emporte ;
+* le motif textuel est un PREFIXE compare avec la casse ; une regle PCRE
+  cherche n'importe ou et remplace TOUT le reste de la valeur (c'est ce que
+  `ngx_http_proxy_rewrite` fait de `len`, pas le fragment apparie) ;
+* le meme traitement sur `Refresh`, seule la partie apres `url=` ;
+* **un `Location` reecrit qui commence par `/` devient absolu** dans le
+  filtre d'en-tetes : `Host` de la requete, `:port` si l'ecoute n'est pas
+  celle du schema (`port_in_redirect`), premier `server_name` si
+  `server_name_in_redirect on`, inchange si `absolute_redirect off` ; un
+  `Location` que rien n'a reecrit n'est jamais touche, relatif compris ;
+* le meme filtre sert `return 301 /nouveau;`, qui rendait le chemin brut ;
+* heritage http -> server -> location : une regle d'un bloc REMPLACE
+  celles du parent, elle ne s'y ajoute pas ;
+* `nginx -t` juge : `invalid parameter`, nombre d'arguments, doublon
+  `off`/regle, `default` avant `proxy_pass`, motif PCRE invalide,
+  `unknown "x" variable` (les captures nommees du motif sont declarees).
+
+**Une seule table de variables.** `expandProxyVariables` enchainait des
+`replace` dans le desordre : `$hostname` devenait `10.0.0.1name` et
+`$scheme` valait `http` meme en TLS. `NginxVariables.ts` la remplace, lue
+par `proxy_set_header` ET `proxy_redirect`, avec `$server_name`,
+`$server_port`, `$uri`, `$request_method`, `$proxy_port`, `$http_*`. La
+compilation PCRE->JS sert aussi `gzip_disable` (`NginxRegex.ts`), qui avait
+la sienne.
+
+**Limites assumees** : `server_name_in_redirect on` sans `server_name`
+retombe sur le `Host` (nginx y met le nom de la machine, que l'hote du
+service ne fournit pas) ; les regex sont celles de JavaScript, pas PCRE2 ;
+`proxy_cookie_domain`/`_path`/`_flags` ne sont pas implementees.
+
+`nginx-proxy-redirect.test.ts` (44 cas) : **32 tombent par `git stash`**.
+Les 12 qui passent des deux cotes sont des refus ou des temoins (un autre
+hote, un autre port, la casse, un `Location` relatif d'amont, `off`, un
+corps sans redirection). `nginx-variables.test.ts` (14 cas) : le module
+n'existe pas avant, tous tombent.
+
+### 9.14 `return`, les lignes de statut de nginx, `default_type` et `types`
+
+Un audit des directives classees « appliquees » (`NginxConfig.ts`,
+`APPLIED_DIRECTIVES`) a montre que `return` (hors `location`),
+`default_type`, `error_page` et `try_files` etaient stockees puis lues par
+personne : le defaut de §P2, rouvert. Ce lot ferme les deux premieres et
+leurs dependances ; `error_page` et `try_files` suivent (§9.15).
+
+Mesure avant : `return 200 "hello"` repondait `200 Found` avec
+`Location: hello` et un corps vide ; `return 404;` repondait `404 Found`
+sans page ; un `return` au niveau `server` — la redirection http -> https
+que tout le monde ecrit — etait ignore ; `302` s'appelait `Found` ;
+`/etc/nginx/mime.types`, inclus par le `nginx.conf` livre, n'existait pas,
+si bien que `include` l'ignorait en silence et que tout `.png` sortait en
+`application/octet-stream`.
+
+Source : `ngx_http_rewrite_module.c` (`ngx_http_rewrite_return`),
+`ngx_http_script.c` (`ngx_http_script_return_code`),
+`ngx_http_core_module.c` (`ngx_http_send_response`,
+`ngx_http_set_content_type`), `ngx_http_header_filter_module.c`
+(`ngx_http_status_lines`), `ngx_http_special_response.c`, `conf/mime.types`.
+
+**Les phrases ne sont pas celles de la RFC.** nginx a sa table : `302
+Moved Temporarily` (mais la page dit `302 Found`), `405 Not Allowed`,
+`408 Request Time-out`, `504 Gateway Time-out`, `401 Unauthorized` (page :
+`401 Authorization Required`). `NginxStatus.ts` porte les deux tables,
+generees depuis la source ; `notFoundPage()` & co. n'en sont plus que des
+alias, sans second texte.
+
+**`return`** : `return code`, `return code texte`, `return code url`,
+`return url` (302). A un code de redirection, nginx repond avec la page
+HTML du code, `Content-Type: text/html` et `Location` absolu (filtre
+d'en-tetes de §9.13) ; a un code >= 400 sans texte, avec sa page d'erreur ;
+sinon le texte EST le corps, type choisi par l'extension de l'URI puis
+`default_type`. Au niveau `server` il s'execute avant le choix de la
+`location`, qui n'est alors jamais atteinte. Le texte est une valeur
+complexe (`$host`, `$request_uri`, `$scheme`…).
+
+**`default_type` et `types`** : le `nginx.conf` livre dit
+`default_type application/octet-stream` — c'est pourquoi un `return 200
+"x"` y sort en octet-stream, piege que le simulateur reproduit. `types
+{ ... }` d'un bloc REMPLACE la table heritee ; l'extension est comparee
+sans casse. `/etc/nginx/mime.types` est seme depuis la source de nginx
+1.24.0.
+
+**Une seule couche d'heritage** : gzip, redirection et types circulaient
+par trois arguments separes ; `resolveInherited` les resout ensemble et un
+bloc sans directive concernee partage l'objet de son parent.
+
+**Limites** : un code sans page dans la table (418…) rend un corps vide ;
+`add_header` s'applique aux erreurs, ce que nginx ne fait pas sans
+`always` ; les blocs `if` sont toujours analyses sans etre evalues.
+
+`nginx-return-mime.test.ts` (36 cas) : **32 tombent par `git stash`**. Les
+4 qui passent des deux cotes sont des temoins (le site statique, la
+configuration livree, un 404 inchange, `mime.types` deja inclus).
+
+### 9.15 `try_files`, `error_page`, redirections internes et gestionnaire statique
+
+Suite de l'audit de §9.14 : `try_files` et `error_page` etaient « appliquees »
+et lues par personne. Le `nginx.conf` livre ecrit pourtant `try_files $uri
+$uri/ =404;` sans que cette ligne decide de rien : le site marchait par
+coincidence. Mesure avant : un repertoire sans `/` final etait servi au lieu
+d'etre redirige en 301 ; l'index etait servi sans repasser par le choix de la
+`location` ; `PUT`/`DELETE` sur un fichier recevaient 200 ; et le mandataire
+**oubliait la query string** (`/search?q=1` arrivait a l'amont comme
+`/search`).
+
+Source : `ngx_http_try_files_module.c` (1.24.0 l'a isole du coeur),
+`ngx_http_core_module.c` (`ngx_http_core_error_page`,
+`ngx_http_internal_redirect`), `ngx_http_special_response.c`,
+`ngx_http_static_module.c`, `ngx_http_index_module.c`.
+
+**Une seule boucle de traitement.** `handle` -> `runLocation` -> `content`,
+et tout ce qui change l'URI repasse par `handle` : un index trouve, un repli
+`try_files`, une page d'erreur. Au plus 10 redirections internes ; la
+onzieme donne `500` et la ligne de `error.log` de nginx (`rewrite or
+internal redirection cycle while internally redirecting to "/again"`).
+
+**`try_files`** : chaque entree est un fichier ORDINAIRE (`$uri`) ou un
+repertoire (`$uri/`) ; la derniere est un repli — `=code`, une URI
+(redirection interne, query comprise) ou une location nommee `@x`. Heritage
+server -> location. `nginx -t` : `invalid number of arguments`, `invalid code
+"=abc"`, doublon, variable inconnue.
+
+**Un fait que la lecture de la source a corrige** : `try_files $uri $uri/
+=404` sur `/sub` (repertoire, sans `/`) donne un **301** vers `/sub/`. La
+source pose l'URI SANS le `/` retire de l'entree, puis le gestionnaire
+statique redirige. J'avais ecrit le test inverse ; c'est la source qui avait
+raison.
+
+**Gestionnaire statique** : methodes GET/HEAD/POST seulement (sinon `405 Not
+Allowed`), POST sur un fichier aussi ; un repertoire sans `/` -> 301 absolu
+avec la query ; une URI en `/` cherche les `index` et fait une redirection
+interne vers le premier trouve (donc une autre `location` peut le prendre en
+charge) ; sinon `autoindex`, sinon 403.
+
+**`error_page`** : `error_page 404 /404.html;`, `=200`, `=` seul (statut de
+la page), plusieurs codes, URL externe (302), `@nommee`. Elle ne touche que
+les reponses que NGINX fabrique : un 404 de l'AMONT traverse (pas de
+`proxy_intercept_errors`), un 502 de nginx est intercepte. La page est
+servie en GET, sans recursion. Heritage : la liste d'un bloc REMPLACE celle du
+parent. 494-497 prennent le statut 400.
+
+**Le mandataire garde la query string.**
+
+**Limites** : `proxy_intercept_errors` n'existe pas ; `if` est toujours
+analyse sans etre evalue ; pas de `ETag`, `Last-Modified` ni `Accept-Ranges`
+sur les fichiers statiques (suite) ; l'index ne herite pas de `autoindex`
+du server.
+
+`nginx-try-files-error-page.test.ts` (44 cas) : **34 tombent par `git stash`**.
+Les 10 qui passent des deux cotes sont des temoins ou des refus (GET/HEAD
+d'un fichier, configuration valide, code non liste).

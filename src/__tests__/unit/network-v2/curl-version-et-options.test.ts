@@ -79,7 +79,7 @@ describe('`--version` — une option que curl connaît', () => {
 
   it('n\'annonce que les capacités réelles', async () => {
     const out = await cli.executeCommand('curl --version');
-    expect(out).toContain('Features: IPv6 SSL');
+    expect(out).toContain('Features: IPv6 libz SSL');
     for (const absent of ['HTTPS-proxy', 'TLS-SRP', 'UnixSockets', 'brotli']) {
       expect(out, absent).not.toContain(absent);
     }

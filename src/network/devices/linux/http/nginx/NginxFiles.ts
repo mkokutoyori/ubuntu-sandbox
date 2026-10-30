@@ -1,3 +1,5 @@
+import { errorPage } from './NginxStatus';
+
 export const NGINX_CONF_PATH = '/etc/nginx/nginx.conf';
 export const NGINX_SITES_AVAILABLE = '/etc/nginx/sites-available';
 export const NGINX_SITES_ENABLED = '/etc/nginx/sites-enabled';
@@ -76,31 +78,9 @@ Commercial support is available at
 </html>
 `;
 
-export function notFoundPage(): string {
-  return `<html>\r\n<head><title>404 Not Found</title></head>\r\n<body>\r\n<center><h1>404 Not Found</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
-}
-
-export function forbiddenPage(): string {
-  return `<html>\r\n<head><title>403 Forbidden</title></head>\r\n<body>\r\n<center><h1>403 Forbidden</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
-}
-
-/**
- * §P6 — la page qu'un vrai nginx sert quand l'amont ne répond pas.
- * Elle ne dit PAS pourquoi, exactement comme la vraie : la raison va
- * dans `error.log`, et c'est là que l'opérateur apprend à la chercher.
- */
-export function badGatewayPage(): string {
-  return `<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
-}
-
-export function sslCertificateErrorPage(): string {
-  return `<html>\r\n<head><title>400 The SSL certificate error</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>The SSL certificate error</center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
-}
-
-export function sslNoCertificatePage(): string {
-  return `<html>\r\n<head><title>400 No required SSL certificate was sent</title></head>\r\n<body>\r\n<center><h1>400 Bad Request</h1></center>\r\n<center>No required SSL certificate was sent</center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
-}
-
-export function misdirectedPage(): string {
-  return `<html>\r\n<head><title>421 Misdirected Request</title></head>\r\n<body>\r\n<center><h1>421 Misdirected Request</h1></center>\r\n<hr><center>nginx/${NGINX_VERSION}</center>\r\n</body>\r\n</html>\r\n`;
-}
+export const notFoundPage = (): string => errorPage(404, NGINX_VERSION) ?? '';
+export const forbiddenPage = (): string => errorPage(403, NGINX_VERSION) ?? '';
+export const badGatewayPage = (): string => errorPage(502, NGINX_VERSION) ?? '';
+export const sslCertificateErrorPage = (): string => errorPage(495, NGINX_VERSION) ?? '';
+export const sslNoCertificatePage = (): string => errorPage(496, NGINX_VERSION) ?? '';
+export const misdirectedPage = (): string => errorPage(421, NGINX_VERSION) ?? '';

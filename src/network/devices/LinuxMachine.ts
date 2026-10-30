@@ -81,6 +81,7 @@ import {
   NGINX_CONF, NGINX_CONF_PATH, NGINX_DEFAULT_SITE, NGINX_WELCOME_PAGE,
   NGINX_SITES_AVAILABLE, NGINX_SITES_ENABLED, NGINX_DEFAULT_ROOT, NGINX_DEFAULT_INDEX,
 } from './linux/http/nginx/NginxFiles';
+import { NGINX_MIME_TYPES, NGINX_MIME_TYPES_PATH } from './linux/http/nginx/NginxMimeTypes';
 import type { NssHostEntry } from './linux/nss/types';
 import type { TcpStack } from '../tcp/TcpStack';
 import type { TcpEcnPolicy } from '../tcp/TcpEcn';
@@ -1622,6 +1623,7 @@ export abstract class LinuxMachine extends EndHost
       if (!vfs.exists(dir)) vfs.mkdirp(dir, 0o755, 0, 0);
     }
     if (!vfs.exists(NGINX_CONF_PATH)) vfs.writeFile(NGINX_CONF_PATH, NGINX_CONF, 0, 0, 0o022, true);
+    if (!vfs.exists(NGINX_MIME_TYPES_PATH)) vfs.writeFile(NGINX_MIME_TYPES_PATH, NGINX_MIME_TYPES, 0, 0, 0o022, true);
     const site = `${NGINX_SITES_AVAILABLE}/default`;
     if (!vfs.exists(site)) vfs.writeFile(site, NGINX_DEFAULT_SITE, 0, 0, 0o022, true);
     if (!vfs.exists(`${NGINX_SITES_ENABLED}/default`)) {

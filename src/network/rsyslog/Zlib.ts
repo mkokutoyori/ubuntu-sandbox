@@ -266,6 +266,18 @@ export class GzipStreamWriter {
   }
 }
 
+export function gzipCompress(data: Uint8Array, level: number): Uint8Array {
+  const writer = new GzipStreamWriter(Math.max(1, Math.min(9, level)));
+  const parts: Uint8Array[] = [];
+  let offset = 0;
+  do {
+    parts.push(writer.write(data.subarray(offset, offset + GZIP_PENDING_FLUSH_BYTES), false));
+    offset += GZIP_PENDING_FLUSH_BYTES;
+  } while (offset < data.length);
+  parts.push(writer.finish());
+  return concatenate(parts);
+}
+
 function zlibHeader(level: number): [number, number] {
   let flevel = 3;
   if (level < 2) flevel = 0;
@@ -581,6 +593,13 @@ function inflateRaw(data: Uint8Array, start: number, maxOutput: number, decoded:
 function checkZlibHeader(method: number, flags: number): void {
   if ((method & 0x0f) !== 8 || (method >> 4) + 8 > 15 || ((method << 8) | flags) % 31 !== 0) throw new ZlibError('invalid zlib header');
   if ((flags & 0x20) !== 0) throw new ZlibError('preset dictionary not supported');
+}
+
+export function deflateRawDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): Uint8Array {
+  const decoded: number[] = [];
+  const inflated = inflateRaw(data, 0, maxOutput, decoded);
+  if (!inflated.complete) throw new InputExhausted();
+  return Uint8Array.from(decoded);
 }
 
 export function zlibDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): Uint8Array {

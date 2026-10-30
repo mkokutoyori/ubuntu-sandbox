@@ -58,6 +58,7 @@ export interface CurlOptions {
   ftpPort: string | null;
   listOnly: boolean;
   disableEprt: boolean;
+  compressed: boolean;
   disableEpsv: boolean;
   urls: string[];
 }
@@ -84,6 +85,7 @@ const SHORT_WITH_ARG = 'owXdHuAbceDTFmEP';
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
   insecure: 'k',
+  compressed: 'compressed',
   'cert-status': 'cert-status',
   silent: 's',
   'show-error': 'S',
@@ -153,7 +155,7 @@ const UNSUPPORTED_SHORT: Record<string, true> = {
 };
 
 const NEEDS_ABSENT_LIBCURL_FEATURE: ReadonlySet<string> = new Set([
-  'compressed', 'http2', 'http2-prior-knowledge', 'http3', 'http3-only',
+  'http2', 'http2-prior-knowledge', 'http3', 'http3-only',
 ]);
 
 const UNSUPPORTED_LONG: Record<string, true> = {
@@ -256,6 +258,7 @@ function defaults(): CurlOptions {
     ftpPort: null,
     listOnly: false,
     disableEprt: false,
+    compressed: false,
     disableEpsv: false,
     urls: [],
   };
@@ -405,6 +408,7 @@ function applyFlag(opts: CurlOptions, letter: string): void {
   switch (letter) {
     case 'I': opts.head = true; break;
     case 'l': opts.listOnly = true; break;
+    case 'compressed': opts.compressed = true; break;
     case 'disable-eprt': opts.disableEprt = true; break;
     case 'eprt': opts.disableEprt = false; break;
     case 'disable-epsv': opts.disableEpsv = true; break;

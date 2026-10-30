@@ -580,12 +580,19 @@ attend `proxy_connect_timeout` (60 s par defaut) puis rend `504 Gateway
 Time-out`. Un RST (port ferme) donne bien 502 des deux cotes. Meme cause
 que l'entree [curl] -m : le client HTTP n'attend pas sur l'horloge.
 
-### [curl] deux versions de curl et `gzip on` non evalue
+### [curl] deux versions de curl
 Le catalogue de paquets dit `curl 7.81.0-1ubuntu1.15` (jammy), `curl
---version` dit `curl 8.5.0` ; un seul des deux doit rester. Et nginx
-accepte `gzip on;` (livre dans nginx.conf) sans jamais compresser : aucun
-codec DEFLATE n'existe ici, c'est pourquoi curl annonce `Features: IPv6
-SSL` et refuse `--compressed` comme un curl sans libz.
+--version` dit `curl 8.5.0` ; un seul des deux doit rester.
+
+### [gzip] la commande `gzip` ecrit un pseudo-format, pas du gzip
+`gzip -k /tmp/a` ecrit `!<simgz>\n{"name":"a",…}` (63 octets pour
+« hello »), lu par `unpackGzip` a cote du vrai gzip que decode
+`rsyslog/Zlib.ts` (`unpackRealGzip`). Deux formats pour une commande ;
+un `.gz` fabrique ici ne se lit pas avec un vrai `gzip -d`. Vu en
+branchant `gzip on` d'nginx sur `gzipCompress` ; `curl --compressed`
+(docs/PRD-Nginx.md §9.12) lit lui le vrai format. Le fermer : `cmdGzip`
+doit ecrire `gzipCompress` et `unpackGzip` ne garder que la lecture
+reelle ; non fait ici car `tar -z` et `gzipText` en dependent.
 
 ### [fortios] `diagnose log test` n'existe pas
 La commande repond « unknown command » (batterie 02, test 98). Sur un vrai

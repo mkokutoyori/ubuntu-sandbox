@@ -14,10 +14,14 @@
  * HTTP2; `--http3` and `--http3-only` unless HTTP3. src/tool_helpers.c
  * words it "the installed libcurl version doesn't support this".
  *
+ * `--compressed` left this list when docs/PRD-Nginx.md §9.12 gave curl libz
+ * (curl-compressed.test.ts): the Features line and the options must agree,
+ * and now announce it.
+ *
  * Measured before the change (git stash of src/network/http/curl): 5 of the
  * 6 cases fail.
  * Passing either way:
- *   - "curl announces neither compression nor HTTP/2" is the WITNESS: the
+ *   - "curl announces libz but neither HTTP/2 nor HTTP/3" is the WITNESS: the
  *     Features line these refusals must agree with.
  */
 import { describe, it, expect } from 'vitest';
@@ -30,14 +34,14 @@ async function refusal(option: string): Promise<string> {
 }
 
 describe('curl options gated on libcurl features', () => {
-  it('curl announces neither compression nor HTTP/2', async () => {
+  it('curl announces libz but neither HTTP/2 nor HTTP/3', async () => {
     const pc = new LinuxPC('linux-pc', 'pc', 0, 0);
     pc.powerOn();
     const features = (await pc.executeCommand('curl --version')).split('\n').find((l) => l.startsWith('Features:'));
-    expect(features).toBe('Features: IPv6 SSL');
+    expect(features).toBe('Features: IPv6 libz SSL');
   });
 
-  for (const option of ['--compressed', '--http2', '--http2-prior-knowledge', '--http3', '--http3-only']) {
+  for (const option of ['--http2', '--http2-prior-knowledge', '--http3', '--http3-only']) {
     it(`${option} is refused in curl's words`, async () => {
       const out = await refusal(option);
       expect(out).toContain(`curl: option ${option}: the installed libcurl version doesn't support this`);
