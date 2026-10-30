@@ -145,6 +145,17 @@ describe('les correspondances qui se listent avec leur propre libelle (extension
     expect(await extras(rule)).toBe(text);
   });
 
+  it.each([
+    ['-m recent --set', 'recent: SET name: DEFAULT side: source mask: 255.255.255.255'],
+    ['-m recent --update --seconds 30 --hitcount 6 --name ssh --rsource', 'recent: UPDATE seconds: 30 hit_count: 6 name: ssh side: source mask: 255.255.255.255'],
+    ['-m recent ! --rcheck --rdest', '! recent: CHECK name: DEFAULT side: dest mask: 255.255.255.255'],
+    ['-m string --string abc --algo bm', 'STRING match  "abc" ALGO name bm TO 65535'],
+    ['-m string --string abc --algo kmp --from 10 --to 50 --icase', 'STRING match  "abc" ALGO name kmp FROM 10 TO 50 ICASE'],
+    ['-m string ! --string abc --algo bm', 'STRING match ! "abc" ALGO name bm TO 65535'],
+  ])('%s est ecrit « %s »', async (rule, text) => {
+    expect(await extras(rule)).toBe(text);
+  });
+
   it('TEMOIN : conntrack et state gardent leur libelle', async () => {
     expect(await extras('-m conntrack --ctstate NEW')).toBe('ctstate NEW');
   });

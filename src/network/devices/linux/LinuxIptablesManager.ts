@@ -1303,6 +1303,28 @@ export class LinuxIptablesManager {
         const [option, label] = listed;
         return `multiport ${label} ${inverts(m, option) ? ' !' : ''}${o.get(option)}`;
       }
+      case 'recent': {
+        const flags: Array<[string, string]> = [['--set', 'SET'], ['--rcheck', 'CHECK'], ['--update', 'UPDATE'], ['--remove', 'REMOVE']];
+        const named = flags.filter(([option]) => o.has(option));
+        const inverted = named.some(([option]) => inverts(m, option));
+        const parts = [`${inverted ? '! ' : ''}recent:`, ...named.map(([, label]) => label)];
+        if (o.has('--seconds')) parts.push(`seconds: ${o.get('--seconds')}`);
+        if (o.has('--reap')) parts.push('reap');
+        if (o.has('--hitcount')) parts.push(`hit_count: ${o.get('--hitcount')}`);
+        if (o.has('--rttl')) parts.push('TTL-Match');
+        parts.push(`name: ${o.get('--name') || 'DEFAULT'}`, `side: ${o.has('--rdest') ? 'dest' : 'source'}`);
+        parts.push(`mask: ${o.get('--mask') || (this.family === 6 ? 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff' : '255.255.255.255')}`);
+        return parts.join(' ');
+      }
+      case 'string': {
+        const quoted = (o.get('--string') ?? '').replace(/["\\]/g, (c) => `\\${c}`);
+        const tail = [`ALGO name ${o.get('--algo') ?? 'bm'}`];
+        if (o.has('--from') && o.get('--from') !== '0') tail.push(`FROM ${o.get('--from')}`);
+        const to = o.get('--to') ?? '65535';
+        if (to !== '0') tail.push(`TO ${to}`);
+        if (o.has('--icase')) tail.push('ICASE');
+        return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
+      }
       case 'owner': return this.ownerListing(m);
       case 'ttl': {
         const modes: Array<[string, string]> = [['--ttl-eq', '=='], ['--ttl-gt', '>'], ['--ttl-lt', '<']];
