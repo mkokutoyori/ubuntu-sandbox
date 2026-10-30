@@ -136,8 +136,9 @@ function isOwnAddress(device: Equipment, address: string): boolean {
  */
 export function peerLiveness(sourceDevice: Equipment, peerHost: string): () => boolean {
   if (isOwnAddress(sourceDevice, peerHost)) return () => true;
+  if (!hasEgressTo(sourceDevice, peerHost)) return () => false;
   const sourceIp = firstConfiguredIp(sourceDevice);
-  if (!sourceIp) return () => hasEgressTo(sourceDevice, peerHost);
+  if (!sourceIp) return () => true;
   if (!topologyHoldsAddress(peerHost, sourceDevice) && reachedThroughGateway(sourceDevice, peerHost)) return () => true;
   return pathLiveness(sourceIp, peerHost, sourceDevice);
 }
