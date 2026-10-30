@@ -277,6 +277,43 @@ describe('-m pkttype (xt_pkttype : unicast = a nous, broadcast, multicast ; alia
   });
 });
 
+describe('-m mark et -j MARK dans une meme traversee (xt_mark : (mark & masque) == valeur ; xt_MARK : set, xset, and, or, xor)', () => {
+  async function marked(...rules: string[]): Promise<string> {
+    const host = new LinuxPC('H', 0, 0);
+    for (const rule of rules) expect(await host.executeCommand(`sudo iptables -A INPUT ${rule}`), rule).toBe('');
+    return (host as unknown as Firewalled).executor.iptables.filterPacket(packet());
+  }
+
+  it('une marque posee plus haut est lue par la regle suivante', async () => {
+    expect(await marked('-j MARK --set-mark 5', '-m mark --mark 5 -j DROP')).toBe('drop');
+    expect(await marked('-j MARK --set-mark 5', '-m mark --mark 6 -j DROP')).toBe('accept');
+    expect(await marked('-j MARK --set-mark 5', '-m mark ! --mark 6 -j DROP')).toBe('drop');
+  });
+
+  it('sans MARK la marque vaut 0', async () => {
+    expect(await marked('-m mark --mark 0 -j DROP')).toBe('drop');
+    expect(await marked('-m mark --mark 1 -j DROP')).toBe('accept');
+  });
+
+  it('masques et operations', async () => {
+    expect(await marked('-j MARK --set-mark 0x10/0xff', '-m mark --mark 0x10/0xf0 -j DROP')).toBe('drop');
+    expect(await marked('-j MARK --set-mark 6', '-j MARK --or-mark 1', '-m mark --mark 7 -j DROP')).toBe('drop');
+    expect(await marked('-j MARK --set-mark 7', '-j MARK --and-mark 3', '-m mark --mark 3 -j DROP')).toBe('drop');
+    expect(await marked('-j MARK --set-mark 5', '-j MARK --xor-mark 1', '-m mark --mark 4 -j DROP')).toBe('drop');
+    expect(await marked('-j MARK --set-mark 0xff', '-j MARK --set-xmark 0x1/0xf', '-m mark --mark 0xf1 -j DROP')).toBe('drop');
+  });
+
+  it('la marque ne survit pas a la traversee suivante', async () => {
+    const host = new LinuxPC('H', 0, 0);
+    await host.executeCommand('sudo iptables -A INPUT -j MARK --set-mark 5');
+    const manager = (host as unknown as Firewalled).executor.iptables;
+    manager.filterPacket(packet());
+    await host.executeCommand('sudo iptables -F');
+    await host.executeCommand('sudo iptables -A INPUT -m mark --mark 5 -j DROP');
+    expect(manager.filterPacket(packet())).toBe('accept');
+  });
+});
+
 describe('-m time', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2024-03-04T10:30:00Z')); });
   afterEach(() => { vi.useRealTimers(); });

@@ -137,6 +137,7 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
   addrtype: ['--src-type', '--dst-type'],
+  mark: ['--mark'],
   pkttype: ['--pkt-type'],
   set: ['--match-set'],
   hashlimit: [
@@ -424,6 +425,25 @@ function pkttypeOf(name: string): 'unicast' | 'broadcast' | 'multicast' | null {
   return PKTTYPE_NAMES[name.toLowerCase()] ?? null;
 }
 
+function applyMarkTarget(mark: number, options: Readonly<Record<string, string>>): number {
+  const number = (text: string): number => Number(text) >>> 0;
+  for (const [option, value] of Object.entries(options)) {
+    const [first, second] = value.split('/');
+    if (option === '--set-mark') {
+      const mask = second === undefined ? 0xffffffff : number(second);
+      return (((mark & ~mask) | (number(first) & mask)) >>> 0);
+    }
+    if (option === '--set-xmark') {
+      const mask = second === undefined ? 0xffffffff : number(second);
+      return (((mark & ~mask) ^ number(first)) >>> 0);
+    }
+    if (option === '--and-mark') return (mark & number(first)) >>> 0;
+    if (option === '--or-mark') return (mark | number(first)) >>> 0;
+    if (option === '--xor-mark') return (mark ^ number(first)) >>> 0;
+  }
+  return mark;
+}
+
 function markListing(option: string, value: string): string {
   const [markText, maskText] = value.split('/');
   const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
@@ -528,6 +548,7 @@ export class LinuxIptablesManager {
   private ipsets: { lookup(): IpsetManager } | null = null;
   private readonly hashlimits = new HashlimitTables();
   private hotDropped = false;
+  private packetMark = 0;
   private tables: Map<TableName, IptablesTable> = new Map();
   private readonly limitBuckets = new WeakMap<IptablesRule, { tokens: number; at: number }>();
   private readonly recentLists = new Map<string, Map<string, number[]>>();
@@ -627,6 +648,7 @@ export class LinuxIptablesManager {
   filterPacket(pkt: PacketInfo, subject?: object): FirewallVerdict {
     this.lastRejectWith = null;
     this.lastMark = null;
+    this.packetMark = 0;
     const entry = subject === undefined ? this.connections.enter(pkt) : this.track(pkt, subject);
     const filterTable = this.tables.get('filter')!;
     const chainName = pkt.direction === 'in' ? 'INPUT'
@@ -801,6 +823,7 @@ export class LinuxIptablesManager {
             this.logCallback?.(rule.targetOptions['--log-prefix'] ?? '', pkt);
             continue; // LOG doesn't terminate; continue to next rule
           case 'MARK': // MARK doesn't terminate
+            this.packetMark = applyMarkTarget(this.packetMark, rule.targetOptions);
             this.lastMark = rule.targetOptions['--set-mark'] ?? rule.targetOptions['--set-xmark'] ?? this.lastMark;
             continue;
           case 'SET':
@@ -909,6 +932,11 @@ export class LinuxIptablesManager {
       if (m.module === 'recent') {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
+      }
+      if (m.module === 'mark') {
+        const [valueText, maskText] = (m.options.get('--mark') ?? '0').split('/');
+        const mask = maskText === undefined ? 0xffffffff : Number(maskText);
+        if (((this.packetMark & mask) >>> 0 === Number(valueText) >>> 0) === inverted('--mark')) return false;
       }
       if (m.module === 'set') {
         if (this.setHolds(m.options.get('--match-set') ?? '', pkt) === inverted('--match-set')) return false;
