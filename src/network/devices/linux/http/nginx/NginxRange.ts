@@ -16,7 +16,8 @@ export type RangeVerdict = 'untouched' | 'partial' | 'unsatisfiable';
 const BOUNDARY_DIGITS = 20;
 const NGINX_ETAG_QUOTE = '"';
 
-export function parseNginxRange(header: string, contentLength: number): RangeParse {
+export function parseNginxRange(header: string, contentLength: number, maxRanges: number): RangeParse {
+  let allowed = maxRanges;
   const text = header.slice(6);
   let at = 0;
   const spans: ByteSpan[] = [];
@@ -64,6 +65,7 @@ export function parseNginxRange(header: string, contentLength: number): RangePar
     if (start < end) {
       spans.push({ start, end });
       size += end - start;
+      if (allowed-- === 0) return { kind: 'declined' };
     } else if (start === 0) {
       return { kind: 'declined' };
     }
@@ -93,15 +95,17 @@ function ascending(spans: readonly ByteSpan[]): boolean {
   return true;
 }
 
-export function applyRangeFilter(req: HttpMessage, res: HttpMessage, nextBoundary: () => number): RangeVerdict {
-  if (res.statusCode !== 200 || res.body === null || res.headers.has('Transfer-Encoding')) return 'untouched';
+export function applyRangeFilter(
+  req: HttpMessage, res: HttpMessage, maxRanges: number, nextBoundary: () => number,
+): RangeVerdict {
+  if (res.statusCode !== 200 || res.body === null || res.headers.has('Transfer-Encoding') || maxRanges === 0) return 'untouched';
   const advertise = (): RangeVerdict => { res.headers.set('Accept-Ranges', 'bytes'); return 'untouched'; };
   const range = req.headers.get('Range');
   if (range === undefined || range.length < 7 || range.slice(0, 6).toLowerCase() !== 'bytes=') return advertise();
   if (!ifRangeAllows(req, res)) return advertise();
 
   const body = res.body;
-  const parsed = parseNginxRange(range, body.length);
+  const parsed = parseNginxRange(range, body.length, maxRanges);
   if (parsed.kind === 'unsatisfiable') return 'unsatisfiable';
   if (parsed.kind === 'declined') return advertise();
   const { spans } = parsed;

@@ -4424,4 +4424,4 @@ relever dans leurs sources avant d'en ecrire.
 
 
 ### [nginx] `Range` : des intervalles qui se chevauchent
-nginx 1.24 (`ngx_http_range_test_overlapped`, ngx_http_range_filter_module.c) abandonne la connexion avec « range in overlapped buffers » quand les intervalles d'un `Range` multiple ne sont pas croissants ou se recouvrent. Le simulateur sert le corps entier en 200 (`NginxRange.ts`, `ascending`). Vu en comparant le C au rendu ; non fermé parce qu'abandonner une connexion en pleine réponse demande un chemin de coupure côté session HTTP/1 que le serveur nginx n'a pas. `max_ranges` n'est pas déclarée non plus (illimité, le défaut de nginx).
+nginx 1.24 (`ngx_http_range_test_overlapped`, ngx_http_range_filter_module.c) abandonne la connexion avec « range in overlapped buffers » quand les intervalles d'un `Range` multiple ne sont pas croissants ou se recouvrent. Le simulateur sert le corps entier en 200 (`NginxRange.ts`, `ascending`). Vu en comparant le C au rendu ; non fermé parce qu'abandonner une connexion en pleine réponse demande un chemin de coupure côté session HTTP/1 que le serveur nginx n'a pas.

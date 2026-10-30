@@ -1,4 +1,5 @@
 import type { HttpMessage } from '@/network/http/semantics/types';
+import { isDecimal } from './NginxSsl';
 
 export type IfModifiedSinceMode = 'off' | 'exact' | 'before';
 
@@ -10,6 +11,7 @@ export interface NginxConditionalDirective {
 export interface NginxConditionalSettings {
   readonly etag: boolean;
   readonly ifModifiedSince: IfModifiedSinceMode;
+  readonly maxRanges: number;
 }
 
 export interface FileValidators {
@@ -17,11 +19,12 @@ export interface FileValidators {
   readonly etag: string | null;
 }
 
-export const NGINX_CONDITIONAL_DIRECTIVES: ReadonlySet<string> = new Set(['etag', 'if_modified_since']);
+export const NGINX_CONDITIONAL_DIRECTIVES: ReadonlySet<string> = new Set(['etag', 'if_modified_since', 'max_ranges']);
 
 export const DEFAULT_CONDITIONAL_SETTINGS: NginxConditionalSettings = Object.freeze({
   etag: true,
   ifModifiedSince: 'exact',
+  maxRanges: 2147483647,
 });
 
 const ALLOWED_PARENTS: readonly string[] = ['http', 'server', 'location'];
@@ -33,6 +36,7 @@ export function checkConditionalDirective(
   if (parent === null || !ALLOWED_PARENTS.includes(parent)) return `"${name}" directive is not allowed here`;
   if (args.length !== 1) return `invalid number of arguments in "${name}" directive`;
   if (alreadySet) return `"${name}" directive is duplicate`;
+  if (name === 'max_ranges') return isDecimal(args[0]) ? null : `"${name}" directive invalid number`;
   if (name === 'etag') {
     const value = args[0].toLowerCase();
     return value === 'on' || value === 'off'
@@ -48,11 +52,13 @@ export function resolveConditionalSettings(
   if (own.length === 0) return parent;
   let etag = parent.etag;
   let ifModifiedSince = parent.ifModifiedSince;
+  let maxRanges = parent.maxRanges;
   for (const { name, args } of own) {
     if (name === 'etag') etag = args[0].toLowerCase() === 'on';
+    else if (name === 'max_ranges') maxRanges = Number(args[0]);
     else ifModifiedSince = args[0] as IfModifiedSinceMode;
   }
-  return { etag, ifModifiedSince };
+  return { etag, ifModifiedSince, maxRanges };
 }
 
 export function fileValidators(mtimeMs: number, size: number, settings: NginxConditionalSettings): FileValidators {

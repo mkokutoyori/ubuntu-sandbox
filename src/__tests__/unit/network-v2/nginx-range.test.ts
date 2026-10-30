@@ -150,3 +150,32 @@ describe('HEAD', () => {
     expect(header(out, 'Content-Range')).toBe('bytes 2-5/10');
   });
 });
+
+describe('max_ranges (ngx_http_core_module.c, ngx_http_range_parse : `ranges-- == 0` rend NGX_DECLINED)', () => {
+  it('0 : le filtre est coupe, pas de 206 ni d\'Accept-Ranges', async () => {
+    for (const value of ['0']) {
+      EquipmentRegistry.getInstance().clear();
+      const out = await get(await lab(`  max_ranges ${value};\n`), '/digits.txt', ['Range: bytes=2-5']);
+      expect(status(out), value).toBe('HTTP/1.1 200 OK');
+      expect(header(out, 'Accept-Ranges'), value).toBeUndefined();
+    }
+  });
+
+  it('1 : un intervalle passe, deux donnent le corps entier', async () => {
+    const srv = await lab('  max_ranges 1;\n');
+    expect(status(await get(srv, '/digits.txt', ['Range: bytes=0-1']))).toBe('HTTP/1.1 206 Partial Content');
+    expect(status(await get(srv, '/digits.txt', ['Range: bytes=0-1,5-6']))).toBe('HTTP/1.1 200 OK');
+  });
+
+  it('2 : deux intervalles passent', async () => {
+    const srv = await lab('  max_ranges 2;\n');
+    expect(status(await get(srv, '/digits.txt', ['Range: bytes=0-1,5-6']))).toBe('HTTP/1.1 206 Partial Content');
+  });
+
+  it('une valeur qui n\'est pas un nombre est refusee par nginx -t', async () => {
+    const srv = await lab();
+    const { site, SERVER } = await import('./_nginxLab');
+    await site(srv, SERVER('  max_ranges many;\n'));
+    expect(await sh(srv, 'nginx -t')).toContain('"max_ranges" directive invalid number');
+  });
+});

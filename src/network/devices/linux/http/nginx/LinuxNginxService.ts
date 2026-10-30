@@ -685,7 +685,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     const original = outcome.response;
     if (!this.rangeable.has(original)) return outcome;
     const total = original.body?.length ?? 0;
-    const verdict = applyRangeFilter(req, original, () => ++this.rangeBoundary);
+    const verdict = applyRangeFilter(req, original, (outcome.location ?? server).conditional.maxRanges, () => ++this.rangeBoundary);
     if (verdict !== 'unsatisfiable') return outcome;
     const refused = this.errorResponse(416, errorPage(416, NGINX_VERSION) ?? '', server, outcome.location);
     refused.headers.set('Content-Range', `bytes */${total}`);
