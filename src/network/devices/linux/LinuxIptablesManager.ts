@@ -54,6 +54,9 @@ export interface PacketInfo {
   fragmentOffset?: number;
   ipPacketBytes?: number;
   ttl?: number;
+  srcAddrType?: string;
+  dstAddrType?: string;
+  addressTypeOf?: (ip: string) => string;
   related?: ConnectionTuple;
 }
 
@@ -122,6 +125,7 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   mac: ['--mac-source'],
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
+  addrtype: ['--src-type', '--dst-type'],
   length: ['--length'],
   ttl: ['--ttl-eq', '--ttl-gt', '--ttl-lt'],
   time: ['--timestart', '--timestop', '--weekdays', '--monthdays', '--datestart', '--datestop', '--utc', '--kerneltz'],
@@ -865,6 +869,16 @@ export class LinuxIptablesManager {
       if (m.module === 'recent') {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
+      }
+      if (m.module === 'addrtype') {
+        for (const [option, actual] of [
+          ['--src-type', pkt.srcAddrType ?? pkt.addressTypeOf?.(pkt.srcIP)], ['--dst-type', pkt.dstAddrType ?? pkt.addressTypeOf?.(pkt.dstIP)],
+        ] as const) {
+          const wanted = m.options.get(option);
+          if (wanted === undefined) continue;
+          if (actual === undefined) return false;
+          if (wanted.toUpperCase().split(',').includes(actual) === inverted(option)) return false;
+        }
       }
       if (m.module === 'ttl') {
         if (pkt.ttl === undefined) return false;

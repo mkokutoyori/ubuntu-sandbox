@@ -98,6 +98,37 @@ describe('le TTL d\'un vrai paquet recu arrive a la regle', () => {
   });
 });
 
+describe('-m addrtype (xt_addrtype : le type de la route de l\'adresse, exclusif)', () => {
+  it('--dst-type et --src-type lisent le type fourni avec le paquet', async () => {
+    expect(await verdict('-m addrtype --dst-type LOCAL -j DROP', packet({ dstAddrType: 'LOCAL' }))).toBe('drop');
+    expect(await verdict('-m addrtype --dst-type LOCAL -j DROP', packet({ dstAddrType: 'UNICAST' }))).toBe('accept');
+    expect(await verdict('-m addrtype --dst-type BROADCAST,MULTICAST -j DROP', packet({ dstAddrType: 'MULTICAST' }))).toBe('drop');
+    expect(await verdict('-m addrtype --src-type UNICAST -j DROP', packet({ srcAddrType: 'UNICAST' }))).toBe('drop');
+  });
+
+  it('« ! » inverse, et sans le fait la regle ne correspond pas', async () => {
+    expect(await verdict('-m addrtype ! --dst-type LOCAL -j DROP', packet({ dstAddrType: 'UNICAST' }))).toBe('drop');
+    expect(await verdict('-m addrtype --dst-type LOCAL -j DROP', packet())).toBe('accept');
+  });
+
+  it('un vrai paquet : l\'echo vers une adresse de la machine est LOCAL, vers une autre non', async () => {
+    const srv = new LinuxServer('linux-server', 'SRV');
+    const cli = new LinuxServer('linux-server', 'CLI');
+    const sw = new CiscoSwitch('switch-cisco', 'SW', 4);
+    srv.powerOn();
+    cli.powerOn();
+    new Cable('a').connect(srv.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+    new Cable('b').connect(cli.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
+    srv.getPort('eth0')!.configureIP(new IPAddress('10.0.0.2'), new SubnetMask('255.255.255.0'));
+    cli.getPort('eth0')!.configureIP(new IPAddress('10.0.0.1'), new SubnetMask('255.255.255.0'));
+    await srv.executeCommand('iptables -A INPUT -p icmp -m addrtype --dst-type LOCAL -j DROP');
+    expect(await cli.executeCommand('ping -c 1 -W 1 10.0.0.2')).toContain('100% packet loss');
+    await srv.executeCommand('iptables -F');
+    await srv.executeCommand('iptables -A INPUT -p icmp -m addrtype --dst-type UNICAST -j DROP');
+    expect(await cli.executeCommand('ping -c 1 -W 1 10.0.0.2')).toContain('0% packet loss');
+  });
+});
+
 describe('-m time', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2024-03-04T10:30:00Z')); });
   afterEach(() => { vi.useRealTimers(); });

@@ -4805,9 +4805,27 @@ export abstract class LinuxMachine extends EndHost
       fragmentOffset: ipPkt.fragmentOffset,
       ipPacketBytes: ipPkt.totalLength,
       ttl: ipPkt.ttl,
+      addressTypeOf: (ip: string) => this.addressType(ip),
       related: this.quotedTuple(ipPkt),
       ...this.tcpFacts(ipPkt.payload),
     };
+  }
+
+  private addressType(ip: string): string {
+    const octets = ip.split('.').map(Number);
+    if (ip === '0.0.0.0') return 'UNSPEC';
+    if (octets[0] === 127 || this.getPorts().some((port) => port.getIPAddress()?.toString() === ip)) return 'LOCAL';
+    if (ip === '255.255.255.255') return 'BROADCAST';
+    if (octets[0] >= 224 && octets[0] <= 239) return 'MULTICAST';
+    const directed = this.getPorts().some((port) => {
+      const address = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (!address || !mask) return false;
+      const own = address.toString().split('.').map(Number);
+      const bits = mask.toString().split('.').map(Number);
+      return octets.every((octet, i) => octet === ((own[i] & bits[i]) | (~bits[i] & 255)));
+    });
+    return directed ? 'BROADCAST' : 'UNICAST';
   }
 
   private quotedTuple(ipPkt: IPv4Packet): ConnectionTuple | undefined {
