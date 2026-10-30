@@ -141,3 +141,55 @@ export function parseLengthRange(text: string): LengthRange | string {
 export function lengthListing(range: LengthRange, inverted: boolean): string {
   return `length ${inverted ? '!' : ''}${range.min === range.max ? range.min : `${range.min}:${range.max}`}`;
 }
+
+const DSCP_CLASSES: Readonly<Record<string, number>> = {
+  CS0: 0x00, CS1: 0x08, CS2: 0x10, CS3: 0x18, CS4: 0x20, CS5: 0x28, CS6: 0x30, CS7: 0x38, BE: 0x00,
+  AF11: 0x0a, AF12: 0x0c, AF13: 0x0e, AF21: 0x12, AF22: 0x14, AF23: 0x16, AF31: 0x1a, AF32: 0x1c, AF33: 0x1e,
+  AF41: 0x22, AF42: 0x24, AF43: 0x26, EF: 0x2e,
+};
+
+const TOS_SYMBOLS: Readonly<Record<string, number>> = {
+  'minimize-delay': 0x10, 'maximize-throughput': 0x08, 'maximize-reliability': 0x04, 'minimize-cost': 0x02, 'normal-service': 0x00,
+};
+
+const TOS_SYMBOL_DEFAULT_MASK = 0x3f;
+
+export function parseDscp(options: ReadonlyMap<string, string>): number | string {
+  const klass = options.get('--dscp-class');
+  if (klass !== undefined) {
+    const found = Object.entries(DSCP_CLASSES).find(([name]) => klass.toLowerCase().startsWith(name.toLowerCase()));
+    return found === undefined ? `Invalid DSCP value \`${klass}'\n` : found[1];
+  }
+  const text = options.get('--dscp') ?? '';
+  const value = /^(0x[0-9a-f]+|\d+)$/i.test(text) ? Number(text) : NaN;
+  return Number.isNaN(value) || value > 63 ? 'dscp: bad value for option "--dscp", or out of range (0-63).\n' : value;
+}
+
+export interface TosMatch {
+  readonly value: number;
+  readonly mask: number;
+}
+
+export function parseTos(text: string): TosMatch | string {
+  const numeric = /^(0x[0-9a-f]+|\d+)(?:\/(0x[0-9a-f]+|\d+))?$/i.exec(text);
+  if (numeric !== null) {
+    const value = Number(numeric[1]);
+    const mask = numeric[2] === undefined ? TOS_SYMBOL_DEFAULT_MASK : Number(numeric[2]);
+    return value > 0x3f || mask > 0xff ? `tos: bad value for option "--tos", or out of range (0-63).\n` : { value, mask };
+  }
+  const symbol = TOS_SYMBOLS[text.toLowerCase()];
+  return symbol === undefined ? `Symbolic name "${text}" is unknown` : { value: symbol, mask: TOS_SYMBOL_DEFAULT_MASK };
+}
+
+export function tosMatches(match: TosMatch, tos: number): boolean {
+  return (tos & match.mask) === match.value;
+}
+
+export function dscpListing(value: number, inverted: boolean): string {
+  return `DSCP match ${inverted ? '!' : ''}0x${value.toString(16).padStart(2, '0')}`;
+}
+
+export function tosListing(match: TosMatch, inverted: boolean): string {
+  const hex = (n: number): string => `0x${n.toString(16).padStart(2, '0')}`;
+  return `tos match${inverted ? '!' : ''}${hex(match.value)}/${hex(match.mask)}`;
+}

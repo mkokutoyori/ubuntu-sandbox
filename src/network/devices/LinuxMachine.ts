@@ -4805,6 +4805,7 @@ export abstract class LinuxMachine extends EndHost
       fragmentOffset: ipPkt.fragmentOffset,
       ipPacketBytes: ipPkt.totalLength,
       ttl: ipPkt.ttl,
+      tos: ipPkt.tos,
       addressTypeOf: (ip: string) => this.addressType(ip),
       related: this.quotedTuple(ipPkt),
       ...this.tcpFacts(ipPkt.payload),
@@ -4857,6 +4858,7 @@ export abstract class LinuxMachine extends EndHost
       icmpId: transport?.type === 'icmpv6' ? transport.id : undefined,
       ipPacketBytes: ipv6PacketBytes(ipv6Pkt),
       ttl: ipv6Pkt.hopLimit,
+      tos: ipv6Pkt.trafficClass,
       related: this.quotedTuple6(ipv6Pkt),
       ...this.tcpFacts(ipv6Pkt.payload),
     };

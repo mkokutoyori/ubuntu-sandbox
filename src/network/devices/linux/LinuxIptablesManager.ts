@@ -17,7 +17,7 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 import {
-  lengthListing, parseLengthRange, parseTimeWindow, timeWindowHolds, timeWindowListing,
+  dscpListing, lengthListing, parseDscp, parseLengthRange, parseTos, tosListing, tosMatches, parseTimeWindow, timeWindowHolds, timeWindowListing,
 } from './IptablesTimeLength';
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
@@ -54,6 +54,7 @@ export interface PacketInfo {
   fragmentOffset?: number;
   ipPacketBytes?: number;
   ttl?: number;
+  tos?: number;
   srcAddrType?: string;
   dstAddrType?: string;
   addressTypeOf?: (ip: string) => string;
@@ -65,7 +66,7 @@ export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
   'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
-  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit', 'dscp', 'tos',
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
@@ -98,6 +99,8 @@ const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOpti
   },
   pkttype: { '--pkt-type': 'IM' },
   length: { '--length': 'IM' },
+  dscp: { '--dscp': 'I', '--dscp-class': 'I' },
+  tos: { '--tos': 'IM' },
   connlimit: {
     '--connlimit-above': 'I', '--connlimit-upto': '', '--connlimit-mask': '', '--connlimit-saddr': 'F', '--connlimit-daddr': 'F',
   },
@@ -129,6 +132,8 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
   addrtype: ['--src-type', '--dst-type'],
+  dscp: ['--dscp', '--dscp-class'],
+  tos: ['--tos'],
   connlimit: ['--connlimit-above', '--connlimit-upto', '--connlimit-mask', '--connlimit-saddr', '--connlimit-daddr'],
   length: ['--length'],
   ttl: ['--ttl-eq', '--ttl-gt', '--ttl-lt'],
@@ -874,6 +879,16 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
+      if (m.module === 'dscp') {
+        const wanted = parseDscp(m.options);
+        if (typeof wanted === 'string' || pkt.tos === undefined) return false;
+        if (((pkt.tos >> 2) === wanted) === (m.negated !== undefined && m.negated.size > 0)) return false;
+      }
+      if (m.module === 'tos') {
+        const wanted = parseTos(m.options.get('--tos') ?? '');
+        if (typeof wanted === 'string' || pkt.tos === undefined) return false;
+        if (tosMatches(wanted, pkt.tos) === inverted('--tos')) return false;
+      }
       if (m.module === 'connlimit') {
         if (this.connlimitExceeded(m, pkt, state) === this.connlimitView(m).inverted) return false;
       }
@@ -1401,6 +1416,14 @@ export class LinuxIptablesManager {
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
       case 'owner': return this.ownerListing(m, numeric);
+      case 'dscp': {
+        const value = parseDscp(o);
+        return typeof value === 'string' ? '' : dscpListing(value, (m.negated?.size ?? 0) > 0);
+      }
+      case 'tos': {
+        const value = parseTos(o.get('--tos') ?? '');
+        return typeof value === 'string' ? '' : tosListing(value, inverts(m, '--tos'));
+      }
       case 'connlimit': {
         const view = this.connlimitView(m);
         return `#conn ${view.daddr ? 'dst' : 'src'}/${view.mask} ${view.inverted ? '<=' : '>'} ${view.limit}`;
@@ -2022,6 +2045,14 @@ export class LinuxIptablesManager {
   private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'dscp') {
+      const value = parseDscp(options);
+      if (typeof value === 'string') return value;
+    }
+    if (module === 'tos') {
+      const value = parseTos(options.get('--tos') ?? '');
+      if (typeof value === 'string') return value;
     }
     if (module === 'connlimit' && !options.has('--connlimit-above') && !options.has('--connlimit-upto')) {
       return 'You must specify "--connlimit-above" or "--connlimit-upto".';

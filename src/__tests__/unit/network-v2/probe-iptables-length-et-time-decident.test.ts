@@ -185,6 +185,43 @@ describe('-m connlimit (xt_connlimit : connexions suivies par adresse masquee, l
   });
 });
 
+describe('-m dscp et -m tos (xt_dscp : (tos >> 2) == dscp ; xt_tos : (tos & masque) == valeur)', () => {
+  it('--dscp, --dscp-class et le « ! »', async () => {
+    expect(await verdict('-m dscp --dscp 46 -j DROP', packet({ tos: 46 << 2 }))).toBe('drop');
+    expect(await verdict('-m dscp --dscp 46 -j DROP', packet({ tos: 10 << 2 }))).toBe('accept');
+    expect(await verdict('-m dscp --dscp-class EF -j DROP', packet({ tos: 0xb8 }))).toBe('drop');
+    expect(await verdict('-m dscp ! --dscp 0 -j DROP', packet({ tos: 0xb8 }))).toBe('drop');
+  });
+
+  it('--tos valeur[/masque] et symboles', async () => {
+    expect(await verdict('-m tos --tos 0x10 -j DROP', packet({ tos: 0x10 }))).toBe('drop');
+    expect(await verdict('-m tos --tos 0x10 -j DROP', packet({ tos: 0x08 }))).toBe('accept');
+    expect(await verdict('-m tos --tos 0x10/0x30 -j DROP', packet({ tos: 0x1f }))).toBe('drop');
+    expect(await verdict('-m tos --tos Minimize-Delay -j DROP', packet({ tos: 0x10 }))).toBe('drop');
+    expect(await verdict('-m tos ! --tos 0x10 -j DROP', packet({ tos: 0x08 }))).toBe('drop');
+  });
+
+  it('sans le fait « tos » la regle ne correspond pas', async () => {
+    expect(await verdict('-m dscp --dscp 0 -j DROP', packet())).toBe('accept');
+  });
+
+  it('se listent comme dscp_print et tos_mt_print', async () => {
+    expect(await listed('-m dscp --dscp 46 -j DROP')).toBe('DSCP match 0x2e');
+    expect(await listed('-m dscp ! --dscp-class CS3 -j DROP')).toBe('DSCP match !0x18');
+    expect(await listed('-m tos --tos 0x10/0x30 -j DROP')).toBe('tos match0x10/0x30');
+  });
+
+  it('valeurs refusees dans les mots de la source', async () => {
+    const host = new LinuxPC('H', 0, 0);
+    expect(await host.executeCommand('sudo iptables -A INPUT -m dscp --dscp 64 -j DROP'))
+      .toContain('dscp: bad value for option "--dscp", or out of range (0-63).');
+    expect(await host.executeCommand('sudo iptables -A INPUT -m dscp --dscp-class ZZ -j DROP'))
+      .toContain("Invalid DSCP value `ZZ'");
+    expect(await host.executeCommand('sudo iptables -A INPUT -m tos --tos Nope -j DROP'))
+      .toContain('Symbolic name "Nope" is unknown');
+  });
+});
+
 describe('-m time', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2024-03-04T10:30:00Z')); });
   afterEach(() => { vi.useRealTimers(); });
