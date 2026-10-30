@@ -86,15 +86,6 @@ function ifRangeAllows(req: HttpMessage, res: HttpMessage): boolean {
   return !Number.isNaN(asked) && Math.floor(asked / 1000) === Math.floor(Date.parse(lastModified) / 1000);
 }
 
-function ascending(spans: readonly ByteSpan[]): boolean {
-  let last = 0;
-  for (const span of spans) {
-    if (span.start < last) return false;
-    last = span.end;
-  }
-  return true;
-}
-
 export function applyRangeFilter(
   req: HttpMessage, res: HttpMessage, maxRanges: number, nextBoundary: () => number,
 ): RangeVerdict {
@@ -119,12 +110,6 @@ export function applyRangeFilter(
     res.body = body.slice(start, end);
     return 'partial';
   }
-  if (!ascending(spans)) {
-    res.statusCode = 200;
-    res.reasonPhrase = nginxReason(200);
-    return advertise();
-  }
-
   const boundary = String(nextBoundary()).padStart(BOUNDARY_DIGITS, '0');
   const type = res.headers.get('Content-Type');
   const encoder = new TextEncoder();

@@ -143,6 +143,22 @@ describe('plusieurs intervalles', () => {
   });
 });
 
+describe('intervalles hors ordre ou qui se chevauchent (ngx_http_range_parse puis ngx_http_range_test_overlapped)', () => {
+  it('desordonnes : servis dans l\'ordre de la requete (un fichier tient dans un seul tampon)', async () => {
+    const out = await get(await lab(), '/digits.txt', ['Range: bytes=5-6,0-1']);
+    expect(status(out)).toBe('HTTP/1.1 206 Partial Content');
+    const parts = body(out);
+    expect(parts.indexOf('Content-Range: bytes 5-6/10')).toBeGreaterThan(-1);
+    expect(parts.indexOf('Content-Range: bytes 5-6/10')).toBeLessThan(parts.indexOf('Content-Range: bytes 0-1/10'));
+  });
+
+  it('dont la somme depasse le fichier : le Range est ignore (size > content_length)', async () => {
+    const out = await get(await lab(), '/digits.txt', ['Range: bytes=0-5,3-8']);
+    expect(status(out)).toBe('HTTP/1.1 200 OK');
+    expect(body(out)).toBe('0123456789');
+  });
+});
+
 describe('HEAD', () => {
   it('un Range sur HEAD annonce le 206 sans corps', async () => {
     const out = await sh(await lab(), `curl -s -I -H 'Range: bytes=2-5' http://localhost/digits.txt`);
