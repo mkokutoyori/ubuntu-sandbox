@@ -8,14 +8,16 @@ const DEFAULT_HASHSIZE = 1024;
 const DEFAULT_MAXELEM = 65536;
 const BUCKETSIZE = 12;
 const RANGE_LIMIT = 65536;
+const BITMAP_LIMIT = 65536;
 
-type SetType = 'hash:ip' | 'hash:net' | 'hash:ip,port';
+type SetType = 'hash:ip' | 'hash:net' | 'hash:ip,port' | 'bitmap:ip';
 type Family = 'inet' | 'inet6';
 
 const TYPES: Readonly<Record<SetType, { revision: number; aliases: readonly string[] }>> = {
   'hash:ip': { revision: 5, aliases: ['iphash'] },
   'hash:net': { revision: 7, aliases: ['nethash'] },
   'hash:ip,port': { revision: 6, aliases: ['ipporthash'] },
+  'bitmap:ip': { revision: 3, aliases: ['ipmap'] },
 };
 
 export class IpsetError extends Error {
@@ -45,6 +47,7 @@ interface IpSet {
   readonly comment: boolean;
   readonly forceadd: boolean;
   readonly initval: string;
+  readonly range: { readonly from: number; readonly to: number } | null;
   elements: Map<string, Entry>;
   nextExpiry: number;
 }
@@ -140,7 +143,7 @@ export class IpsetManager {
   }
 
   private run(args: readonly string[], stdin: string | undefined): IpsetResult {
-    const options = { exist: false, names: false, terse: false, quiet: false, save: false };
+    const options = { exist: false, names: false, terse: false, quiet: false, save: false, xml: false };
     const words: string[] = [];
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
@@ -149,7 +152,11 @@ export class IpsetManager {
       else if (arg === '-t' || arg === '-terse') options.terse = true;
       else if (arg === '-q' || arg === '-quiet') options.quiet = true;
       else if (arg === '-s' || arg === '-sorted') continue;
-      else if (arg === '-o' || arg === '-output') options.save = args[++i] === 'save';
+      else if (arg === '-o' || arg === '-output') {
+        const format = args[++i];
+        options.save = format === 'save';
+        options.xml = format === 'xml';
+      }
       else words.push(arg);
     }
     const command = words[0];
@@ -207,6 +214,7 @@ export class IpsetManager {
     let timeout: number | null = null;
     let comment = false;
     let forceadd = false;
+    let range: { from: number; to: number } | null = null;
     for (let i = 0; i < rest.length; i++) {
       const word = rest[i];
       const numeric = (): number => {
@@ -219,8 +227,9 @@ export class IpsetManager {
         if (given !== 'inet' && given !== 'inet6') this.parameterProblem(`Syntax error: unknown family '${given}'`);
         family = given as Family;
       } else if (word === 'inet' || word === 'inet6') family = word;
-      else if (word === 'hashsize') hashsize = numeric();
-      else if (word === 'maxelem') maxelem = numeric();
+      else if (word === 'range' && type === 'bitmap:ip') range = this.parseBitmapRange(rest[++i]);
+      else if (word === 'hashsize' && type !== 'bitmap:ip') hashsize = numeric();
+      else if (word === 'maxelem' && type !== 'bitmap:ip') maxelem = numeric();
       else if (word === 'netmask' && type === 'hash:ip') netmask = numeric();
       else if (word === 'timeout') timeout = numeric();
       else if (word === 'comment') comment = true;
@@ -230,13 +239,14 @@ export class IpsetManager {
       } else if (word === 'bucketsize' || word === 'initval' || word === 'probes' || word === 'resize' || word === 'gc') i++;
       else this.parameterProblem(`Unknown argument: \`${word}'`);
     }
+    if (type === 'bitmap:ip' && range === null) this.parameterProblem('Mandatory option `range\' is missing');
     if (this.sets.has(name as string)) {
       if (exist) return { output: '', exitCode: 0 };
       this.fail('Set cannot be created: set with the same name already exists');
     }
     this.sets.set(name as string, {
       name: name as string, type: type as SetType, family, hashsize, maxelem, netmask, timeout, comment, forceadd,
-      initval: initvalOf(name as string), elements: new Map(), nextExpiry: Infinity,
+      initval: initvalOf(name as string), range, elements: new Map(), nextExpiry: Infinity,
     });
     return { output: '', exitCode: 0 };
   }
@@ -258,6 +268,28 @@ export class IpsetManager {
       }
     }
     return { entries, tested: entries.length === 1 ? entries[0] : null };
+  }
+
+  private parseBitmapRange(text: string | undefined): { from: number; to: number } {
+    const bad = (): never => this.parameterProblem(`Syntax error: cannot parse ${text ?? ''}: resolving to IPv4 address failed`);
+    if (text === undefined) bad();
+    let from: number | null;
+    let to: number | null;
+    if (text!.includes('/')) {
+      const [address, cidrText] = text!.split('/');
+      const base = ipv4ToNumber(address);
+      const cidr = Number(cidrText);
+      if (base === null || !Number.isInteger(cidr) || cidr < 0 || cidr > 32) bad();
+      from = maskV4(base as number, cidr);
+      to = from + 2 ** (32 - cidr) - 1;
+    } else {
+      const [low, high] = text!.split('-');
+      from = ipv4ToNumber(low);
+      to = ipv4ToNumber(high ?? '');
+    }
+    if (from === null || to === null) bad();
+    if ((to as number) - (from as number) + 1 > BITMAP_LIMIT) this.fail('The range you specified exceeds the size limit of the set type');
+    return { from: from as number, to: to as number };
   }
 
   private parsePorts(text: string): Array<{ protocol: string; port: number }> {
@@ -412,8 +444,18 @@ export class IpsetManager {
     const set = this.find(operands[0]);
     this.purge(set);
     const { element, timeout, comment } = this.elementArguments(operands);
-    this.addElements(set, this.parseElement(set, element), exist, timeout, comment);
+    const parsed = this.parseElement(set, element);
+    this.requireInRange(set, parsed.entries);
+    this.addElements(set, parsed, exist, timeout, comment);
     return { output: '', exitCode: 0 };
+  }
+
+  private requireInRange(set: IpSet, entries: readonly Entry[]): void {
+    if (set.range === null) return;
+    for (const entry of entries) {
+      const value = ipv4ToNumber(entry.address);
+      if (value === null || value < set.range.from || value > set.range.to) this.fail('Element is out of the range of the set');
+    }
   }
 
   private del(operands: readonly string[], exist: boolean): IpsetResult {
@@ -485,12 +527,14 @@ export class IpsetManager {
   }
 
   private headerOf(set: IpSet): string {
-    const parts = [`family ${set.family}`, `hashsize ${set.hashsize}`, `maxelem ${set.maxelem}`];
+    const parts = set.range !== null
+      ? [`range ${numberToIpv4(set.range.from)}-${numberToIpv4(set.range.to)}`]
+      : [`family ${set.family}`, `hashsize ${set.hashsize}`, `maxelem ${set.maxelem}`];
     if (set.netmask !== null) parts.push(`netmask ${set.netmask}`);
     if (set.timeout !== null) parts.push(`timeout ${set.timeout}`);
     if (set.comment) parts.push('comment');
     if (set.forceadd) parts.push('forceadd');
-    parts.push(`bucketsize ${BUCKETSIZE}`, `initval ${set.initval}`);
+    if (set.range === null) parts.push(`bucketsize ${BUCKETSIZE}`, `initval ${set.initval}`);
     return parts.join(' ');
   }
 
@@ -504,11 +548,12 @@ export class IpsetManager {
     return text;
   }
 
-  private list(operands: readonly string[], options: { names: boolean; terse: boolean; save: boolean }): IpsetResult {
+  private list(operands: readonly string[], options: { names: boolean; terse: boolean; save: boolean; xml: boolean }): IpsetResult {
     const targets = operands[0] === undefined ? [...this.sets.values()] : [this.find(operands[0])];
     if (options.names) return { output: targets.map((set) => set.name).join('\n'), exitCode: 0 };
     if (options.save) return this.save(operands);
     const now = simulationNowMs();
+    if (options.xml) return this.xml(targets, options.terse, now);
     const blocks = targets.map((set) => {
       this.purge(set);
       const lines = [
@@ -521,6 +566,36 @@ export class IpsetManager {
       return lines.join('\n').replace(/\n$/, '');
     });
     return { output: blocks.join('\n\n'), exitCode: 0 };
+  }
+
+  private xml(targets: readonly IpSet[], terse: boolean, now: number): IpsetResult {
+    const lines = ['<ipsets>'];
+    for (const set of targets) {
+      this.purge(set);
+      const header = [
+        ...(set.range === null ? [['family', set.family], ['hashsize', set.hashsize], ['maxelem', set.maxelem]] : [['range', `${numberToIpv4(set.range.from)}-${numberToIpv4(set.range.to)}`]]),
+        ...(set.netmask === null ? [] : [['netmask', set.netmask]]),
+        ...(set.timeout === null ? [] : [['timeout', set.timeout]]),
+        ...(set.range === null ? [['bucketsize', BUCKETSIZE], ['initval', set.initval]] : []),
+      ].map(([name, value]) => `<${name}>${value}</${name}>`).join('');
+      lines.push(
+        `<ipset name="${set.name}">`, `<type>${set.type}</type>`, `<revision>${TYPES[set.type].revision}</revision>`,
+        `<header>${header}`, `<memsize>${200 + 64 * set.elements.size}</memsize>`,
+        `<references>${this.environment.references(set.name)}</references>`, `<numentries>${set.elements.size}</numentries>`,
+        '</header>',
+      );
+      if (!terse) {
+        lines.push('<members>');
+        for (const entry of set.elements.values()) {
+          const remaining = entry.expiresAt === null ? 0 : Math.max(0, Math.floor((entry.expiresAt - now) / 1000));
+          lines.push(`<member><elem>${entry.text}</elem>${set.timeout === null ? '' : `<timeout>${remaining}</timeout>`}</member>`);
+        }
+        lines.push('</members>');
+      }
+      lines.push('</ipset>');
+    }
+    lines.push('</ipsets>');
+    return { output: lines.join('\n'), exitCode: 0 };
   }
 
   private save(operands: readonly string[]): IpsetResult {

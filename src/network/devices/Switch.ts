@@ -78,6 +78,7 @@ import {
 import { getSecurityConfig } from './shells/cisco/CiscoSecurityCommands';
 import { AaaAuthenticator } from './router/aaa/AaaAuthenticator';
 import { isInteractionPlanner } from '@/shell/interaction/CommandInteraction';
+import { VtyInteraction } from '@/shell/interaction/VtyInteraction';
 import {
   hasHeadlessAnswers, opensOutboundSession, runInteractionPlanHeadless, type HeadlessAnswers,
 } from '@/shell/interaction/HeadlessInteraction';
@@ -3052,12 +3053,19 @@ export abstract class Switch extends Equipment {
     };
     sessionShell.beginExecSession?.(account?.privilege ?? 1, user, account?.view ?? null);
     let ended = false;
-    return {
-      execute: (rawInput: string): string | Promise<string> => {
-        const output = shell.execute(this, rawInput);
+    const interaction = new VtyInteraction({
+      shell,
+      device: this,
+      run: (line) => shell.execute(this, line),
+      settle: (out) => {
         ended = shell.execSessionClosed?.() === true;
-        return output;
+        return out;
       },
+    });
+    return {
+      execute: (rawInput: string) => interaction.execute(rawInput),
+      lastPendingInput: () => interaction.lastPendingInput(),
+      handleInput: (value: string) => interaction.handleInput(value),
       getPrompt: () => shell.getPrompt(this),
       getCompletions: (line: string) => shell.tabCandidates(line, this),
       lastEndedSession: () => ended,
