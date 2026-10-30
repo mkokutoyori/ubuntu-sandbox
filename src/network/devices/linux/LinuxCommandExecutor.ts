@@ -1026,8 +1026,12 @@ export class LinuxCommandExecutor {
     this.lastlog.bindUidResolver((user) => this.userMgr.getUser(user)?.uid);
     this.lastlog.attachVfs(this.vfs);
     this.cron = new LinuxCronManager();
-    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto));
-    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6 });
+    const ownerNames = {
+      user: (uid: number) => this.userMgr.getUserByUid(uid)?.username ?? null,
+      group: (gid: number) => this.userMgr.getGroupByGid(gid)?.name ?? null,
+    };
+    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { ownerNames });
+    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6, ownerNames });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId);
     this.logMgr.setClock(this.wallNow);

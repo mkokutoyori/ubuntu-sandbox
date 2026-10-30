@@ -367,6 +367,11 @@ interface ListedRule {
   readonly index: number;
 }
 
+export interface IptablesOwnerNames {
+  readonly user: (uid: number) => string | null;
+  readonly group: (gid: number) => string | null;
+}
+
 export interface ListFormat {
   verbose: boolean;
   numeric: boolean;
@@ -474,6 +479,7 @@ export type IptablesServiceResolver = (port: number, proto: string) => string | 
 export class LinuxIptablesManager {
   private vfs: VirtualFileSystem | null = null;
   private resolveService: IptablesServiceResolver | null = null;
+  private ownerNames: IptablesOwnerNames | null = null;
   private tables: Map<TableName, IptablesTable> = new Map();
   private readonly limitBuckets = new WeakMap<IptablesRule, { tokens: number; at: number }>();
   private readonly recentLists = new Map<string, Map<string, number[]>>();
@@ -495,11 +501,12 @@ export class LinuxIptablesManager {
   constructor(
     vfs?: VirtualFileSystem,
     resolveService?: IptablesServiceResolver,
-    opts?: { family?: 4 | 6 },
+    opts?: { family?: 4 | 6; ownerNames?: IptablesOwnerNames },
   ) {
     if (vfs) this.vfs = vfs;
     if (resolveService) this.resolveService = resolveService;
     this.family = opts?.family ?? 4;
+    this.ownerNames = opts?.ownerNames ?? null;
     this.connections = new ConnectionTracker(this.family);
     this.initializeTables();
   }
@@ -1263,7 +1270,7 @@ export class LinuxIptablesManager {
     if (transport.length > 0) parts.push(`${r.protocol} ${transport.join(' ')}`);
     if (r.icmpType !== null) parts.push(this.icmpListText(r.icmpType, numeric));
     for (const m of r.matches) {
-      const s = this.fmtMatch(m);
+      const s = this.fmtMatch(m, numeric);
       if (s) parts.push(s);
     }
     const t = r.natRange === null ? this.fmtTargetExtras(r.targetOptions) : natListing(r.target as NatTargetName, r.natRange);
@@ -1290,7 +1297,7 @@ export class LinuxIptablesManager {
     return this.resolveService(parseInt(spec, 10), proto || 'tcp') ?? spec;
   }
 
-  private fmtMatch(m: MatchExtension): string {
+  private fmtMatch(m: MatchExtension, numeric: boolean): string {
     const o = m.options;
     const bang = (option: string): string => (inverts(m, option) ? '! ' : '');
     switch (m.module) {
@@ -1325,7 +1332,7 @@ export class LinuxIptablesManager {
         if (o.has('--icase')) tail.push('ICASE');
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
-      case 'owner': return this.ownerListing(m);
+      case 'owner': return this.ownerListing(m, numeric);
       case 'ttl': {
         const modes: Array<[string, string]> = [['--ttl-eq', '=='], ['--ttl-gt', '>'], ['--ttl-lt', '<']];
         const [option, sign] = modes.find(([name]) => o.has(name)) ?? ['--ttl-eq', '=='];
@@ -1360,7 +1367,7 @@ export class LinuxIptablesManager {
     }
   }
 
-  private ownerListing(m: MatchExtension): string {
+  private ownerListing(m: MatchExtension, numeric: boolean): string {
     const items: Array<[string, string]> = [
       ['--socket-exists', 'owner socket exists'], ['--uid-owner', 'owner UID match'],
       ['--gid-owner', 'owner GID match'], ['--suppl-groups', 'incl. suppl. groups'],
@@ -1368,7 +1375,10 @@ export class LinuxIptablesManager {
     const out: string[] = [];
     for (const [option, label] of items) {
       if (!m.options.has(option)) continue;
-      const value = m.options.get(option) ?? '';
+      const raw = m.options.get(option) ?? '';
+      const names = numeric ? null : this.ownerNames;
+      const resolver = option === '--uid-owner' ? names?.user : option === '--gid-owner' ? names?.group : undefined;
+      const value = resolver !== undefined && /^\d+$/.test(raw) ? (resolver(Number(raw)) ?? raw) : raw;
       out.push(`${inverts(m, option) ? '! ' : ''}${label}${value === '' ? '' : ` ${value}`}`);
     }
     return out.join(' ');

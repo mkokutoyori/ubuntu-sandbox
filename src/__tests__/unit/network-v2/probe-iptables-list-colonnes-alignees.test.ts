@@ -156,6 +156,17 @@ describe('les correspondances qui se listent avec leur propre libelle (extension
     expect(await extras(rule)).toBe(text);
   });
 
+  it('owner : l\'UID et le GID se resolvent en nom hors -n, restent numeriques avec -n et en intervalle', async () => {
+    await srv.executeCommand('iptables -A INPUT -m owner --uid-owner 0 -j ACCEPT');
+    await srv.executeCommand('iptables -A INPUT -m owner --gid-owner 0 -j ACCEPT');
+    await srv.executeCommand('iptables -A INPUT -m owner --uid-owner 0-5 -j ACCEPT');
+    const named = (await srv.executeCommand('iptables -L INPUT')).split('\n');
+    expect(named[2]).toContain('owner UID match root');
+    expect(named[3]).toContain('owner GID match root');
+    expect(named[4]).toContain('owner UID match 0-5');
+    expect((await srv.executeCommand('iptables -L INPUT -n')).split('\n')[2]).toContain('owner UID match 0');
+  });
+
   it('TEMOIN : conntrack et state gardent leur libelle', async () => {
     expect(await extras('-m conntrack --ctstate NEW')).toBe('ctstate NEW');
   });
