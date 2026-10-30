@@ -150,7 +150,7 @@ export class SocketTable {
       boundDevice: options?.boundDevice,
     };
 
-    this.sockets.set(id, entry);
+    this.put(entry);
     this.bindings.add(key);
     return entry;
   }
@@ -203,7 +203,7 @@ export class SocketTable {
       processName,
     };
 
-    this.sockets.set(id, entry);
+    this.put(entry);
     this.bindings.add(this.bindKey(protocol, actualPort, localAddress));
     return entry;
   }
@@ -292,7 +292,7 @@ export class SocketTable {
     const timer = this.twTimers.get(entry.id);
     if (timer) { clearTimeout(timer); this.twTimers.delete(entry.id); }
     this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
-    this.sockets.delete(entry.id);
+    this.drop(entry);
   }
 
   /**
@@ -302,6 +302,44 @@ export class SocketTable {
    * / `netstat -tan` show the live state. Listening sockets keep their
    * `remoteAddress = '*'` and are never matched here (use {@link bind}).
    */
+  private readonly connections = new Map<string, SocketEntry[]>();
+
+  private connectionKey(entry: { protocol: SocketProtocol; localPort: number; remoteAddress: string; remotePort: number }): string {
+    return `${entry.protocol}|${entry.localPort}|${entry.remoteAddress}|${entry.remotePort}`;
+  }
+
+  private indexConnection(entry: SocketEntry): void {
+    if (entry.remoteAddress === '*') return;
+    const key = this.connectionKey(entry);
+    const bucket = this.connections.get(key);
+    if (bucket === undefined) this.connections.set(key, [entry]);
+    else bucket.push(entry);
+  }
+
+  private unindexConnection(entry: SocketEntry): void {
+    if (entry.remoteAddress === '*') return;
+    const key = this.connectionKey(entry);
+    const bucket = this.connections.get(key);
+    if (bucket === undefined) return;
+    const at = bucket.indexOf(entry);
+    if (at >= 0) bucket.splice(at, 1);
+    if (bucket.length === 0) this.connections.delete(key);
+  }
+
+  private put(entry: SocketEntry): void {
+    this.sockets.set(entry.id, entry);
+    this.indexConnection(entry);
+  }
+
+  private drop(entry: SocketEntry): void {
+    this.sockets.delete(entry.id);
+    this.unindexConnection(entry);
+  }
+
+  private findConnection(params: { protocol: SocketProtocol; localPort: number; remoteAddress: string; remotePort: number }): SocketEntry | undefined {
+    return this.connections.get(this.connectionKey(params))?.[0];
+  }
+
   upsertConnection(params: {
     protocol: SocketProtocol;
     localAddress: string;
@@ -312,16 +350,12 @@ export class SocketTable {
     pid?: number;
     processName?: string;
   }): SocketEntry {
-    for (const entry of this.sockets.values()) {
-      if (entry.remoteAddress === '*') continue;
-      if (entry.protocol !== params.protocol) continue;
-      if (entry.localPort !== params.localPort) continue;
-      if (entry.remoteAddress !== params.remoteAddress) continue;
-      if (entry.remotePort !== params.remotePort) continue;
-      entry.state = params.state;
-      if (params.pid !== undefined) entry.pid = params.pid;
-      if (params.processName !== undefined) entry.processName = params.processName;
-      return entry;
+    const existing = params.remoteAddress === '*' ? undefined : this.findConnection(params);
+    if (existing !== undefined) {
+      existing.state = params.state;
+      if (params.pid !== undefined) existing.pid = params.pid;
+      if (params.processName !== undefined) existing.processName = params.processName;
+      return existing;
     }
     const id = this.inodes.next();
     const entry: SocketEntry = {
@@ -335,7 +369,7 @@ export class SocketTable {
       pid: params.pid,
       processName: params.processName,
     };
-    this.sockets.set(id, entry);
+    this.put(entry);
     return entry;
   }
 
@@ -343,10 +377,12 @@ export class SocketTable {
     const entry = this.sockets.get(socketId) as { -readonly [K in keyof SocketEntry]: SocketEntry[K] } | undefined;
     if (entry === undefined) return false;
     this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
+    this.unindexConnection(entry);
     entry.localAddress = localAddress;
     entry.remoteAddress = remoteAddress;
     entry.remotePort = remotePort;
     entry.state = 'ESTABLISHED';
+    this.indexConnection(entry);
     this.bindings.add(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
     return true;
   }
@@ -362,16 +398,10 @@ export class SocketTable {
     remoteAddress: string;
     remotePort: number;
   }): boolean {
-    for (const [id, entry] of this.sockets) {
-      if (entry.remoteAddress === '*') continue;
-      if (entry.protocol !== params.protocol) continue;
-      if (entry.localPort !== params.localPort) continue;
-      if (entry.remoteAddress !== params.remoteAddress) continue;
-      if (entry.remotePort !== params.remotePort) continue;
-      this.sockets.delete(id);
-      return true;
-    }
-    return false;
+    const entry = params.remoteAddress === '*' ? undefined : this.findConnection(params);
+    if (entry === undefined) return false;
+    this.drop(entry);
+    return true;
   }
 
   setConnectionOwner(params: {
@@ -380,17 +410,11 @@ export class SocketTable {
     remoteAddress: string;
     remotePort: number;
   }, pid: number, serviceName?: string): boolean {
-    for (const entry of this.sockets.values()) {
-      if (entry.remoteAddress === '*') continue;
-      if (entry.protocol !== params.protocol) continue;
-      if (entry.localPort !== params.localPort) continue;
-      if (entry.remoteAddress !== params.remoteAddress) continue;
-      if (entry.remotePort !== params.remotePort) continue;
-      entry.pid = pid;
-      entry.serviceName = serviceName;
-      return true;
-    }
-    return false;
+    const entry = params.remoteAddress === '*' ? undefined : this.findConnection(params);
+    if (entry === undefined) return false;
+    entry.pid = pid;
+    entry.serviceName = serviceName;
+    return true;
   }
 
   /**
@@ -403,7 +427,7 @@ export class SocketTable {
     for (const [id, entry] of this.sockets) {
       if (entry.protocol === protocol && entry.localAddress === localAddress && entry.localPort === localPort) {
         this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
-        this.sockets.delete(id);
+        this.drop(entry);
         removed++;
       }
     }
@@ -419,7 +443,7 @@ export class SocketTable {
     if (!entry) return false;
 
     this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
-    this.sockets.delete(socketId);
+    this.drop(entry);
     return true;
   }
 
@@ -479,6 +503,7 @@ export class SocketTable {
 
   clear(): void {
     this.sockets.clear();
+    this.connections.clear();
     this.bindings.clear();
     this.inodes.reset();
   }
