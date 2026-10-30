@@ -26,6 +26,12 @@ import {
   NGINX_COOKIE_DIRECTIVES, DEFAULT_COOKIE_SETTINGS, checkCookieDirective, resolveCookieSettings,
   type NginxCookieSettings,
 } from './NginxCookie';
+import {
+  beginVariableCollection, currentUserVariables, declareUserVariables, endVariableCollection, noteUserVariable,
+} from './NginxVariables';
+import {
+  NGINX_REWRITE_DIRECTIVES, buildRewriteOps, checkRewriteDirective, declaredUserVariables, type NginxRewriteOp,
+} from './NginxRewrite';
 
 export interface NginxToken {
   readonly value: string;
@@ -55,6 +61,8 @@ export interface NginxFileSource {
   list(dir: string): string[] | null;
 }
 
+const IF_ALLOWED = new Set(['set', 'rewrite', 'break', 'return']);
+
 const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'upstream', 'types']);
 
 /**
@@ -69,7 +77,7 @@ const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'lea
 
 const APPLIED_DIRECTIVES = new Set([
   ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES, ...NGINX_MIME_DIRECTIVES, ...NGINX_CONDITIONAL_DIRECTIVES, ...NGINX_COOKIE_DIRECTIVES,
-  'listen', 'server_name', 'root', 'index', 'try_files', 'return',
+  'listen', 'server_name', 'root', 'index', 'try_files', 'return', ...NGINX_REWRITE_DIRECTIVES,
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
   'add_header',
   // §P5 — these two DECIDE which certificate a `listen … ssl` port
@@ -114,7 +122,7 @@ const KNOWN_UNSUPPORTED = new Set([
   // `proxy_pass`, `proxy_set_header` et le bloc `upstream` ont quitté
   // cette liste : docs/PRD-Nginx.md §P6 les IMPLÉMENTE.
   'fastcgi_pass', 'fastcgi_param', 'fastcgi_index', 'include_fastcgi',
-  'rewrite', 'limit_req', 'limit_req_zone', 'limit_conn', 'limit_conn_zone',
+  'limit_req', 'limit_req_zone', 'limit_conn', 'limit_conn_zone',
   'auth_basic', 'auth_basic_user_file',
   'stub_status', 'sub_filter',
   'geo', 'map', 'split_clients', 'perl', 'lua_package_path',
@@ -265,6 +273,13 @@ function parseBlock(
       if (!APPLIED_BLOCKS.has(name)) {
         return { ok: false, error: unknownOrUnsupported(name, file, line) };
       }
+      if (name === 'if') {
+        const problem = checkRewriteDirective('if', args, parent, currentUserVariables());
+        if (problem) return { ok: false, error: emerg(problem, file, line) };
+      }
+      if (parent === 'if') {
+        return { ok: false, error: emerg('"if" directive is not allowed here', file, line) };
+      }
       state.pos++;
       const inner = parseBlock(state, source, depth + 1, seen, name);
       if (inner.ok === false) return inner;
@@ -365,6 +380,14 @@ function parseBlock(
       const problem = checkErrorPageDirective(args, parent);
       if (problem) return { ok: false, error: emerg(problem, file, line) };
     }
+    if (name === 'set' && args[0]?.startsWith('$')) noteUserVariable(args[0].slice(1));
+    if (NGINX_REWRITE_DIRECTIVES.has(name) || (name === 'return' && parent !== null)) {
+      const problem = checkRewriteDirective(name, args, parent, currentUserVariables());
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+    if (parent === 'if' && !IF_ALLOWED.has(name)) {
+      return { ok: false, error: emerg(`directive "${name}" is not supported inside "if" by this simulator`, file, line) };
+    }
     if (name === 'return') {
       const rule = parseReturn(args);
       if (typeof rule === 'string') return { ok: false, error: emerg(rule, file, line) };
@@ -417,6 +440,9 @@ export function parseNginxConfig(source: NginxFileSource, path = NGINX_CONF_PATH
       error: { message: `nginx: [emerg] open() "${path}" failed (2: No such file or directory)` },
     };
   }
+  beginVariableCollection();
+  parseBlock({ tokens: tokenize(text, path), pos: 0 }, source, 0, new Set([path]));
+  declareUserVariables(endVariableCollection());
   return parseBlock({ tokens: tokenize(text, path), pos: 0 }, source, 0, new Set([path]));
 }
 
@@ -576,7 +602,7 @@ export interface NginxLocation {
   readonly path: string;
   readonly root?: string;
   readonly index?: readonly string[];
-  readonly returnRule?: NginxReturnRule;
+  readonly rewrites: readonly NginxRewriteOp[];
   readonly autoindex?: boolean;
   readonly addHeaders: readonly (readonly [string, string])[];
   /** §P6 */
@@ -612,7 +638,8 @@ export interface NginxServerBlock {
   readonly contentTypes: NginxContentTypes;
   readonly tryFiles?: NginxTryFiles;
   readonly errorPages: readonly NginxErrorPageRule[];
-  readonly returnRule?: NginxReturnRule;
+  readonly rewrites: readonly NginxRewriteOp[];
+  readonly declaredVariables: ReadonlySet<string>;
 }
 
 function parseListen(args: readonly string[]): { port: number; defaultServer: boolean; ssl: boolean } | null {
@@ -745,19 +772,12 @@ function resolveInherited(parent: InheritedSettings, block: readonly NginxDirect
     : { gzip, conditional, cookies, redirect, contentTypes, tryFiles, errorPages };
 }
 
-function firstReturn(block: readonly NginxDirective[]): NginxReturnRule | undefined {
-  const directive = block.find((d) => d.name === 'return');
-  if (directive === undefined) return undefined;
-  const rule = parseReturn(directive.args);
-  return typeof rule === 'string' ? undefined : rule;
-}
-
 function collectLocation(
   node: NginxDirective, inheritedRoot: string, inherited: InheritedSettings,
 ): NginxLocation {
   const loc: {
     path: string; root?: string; index?: string[];
-    returnRule?: NginxReturnRule; autoindex?: boolean;
+    rewrites: readonly NginxRewriteOp[]; autoindex?: boolean;
     addHeaders: (readonly [string, string])[];
     proxyPass?: NginxProxyPass;
     proxySetHeaders: (readonly [string, string])[];
@@ -769,7 +789,7 @@ function collectLocation(
     tryFiles: NginxTryFiles | undefined;
     errorPages: readonly NginxErrorPageRule[];
   } = {
-    path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [],
+    path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [], rewrites: [],
     ...inherited,
   };
 
@@ -784,12 +804,12 @@ function collectLocation(
     }
   }
   if (!loc.root) loc.root = inheritedRoot;
-  loc.returnRule = firstReturn(node.block ?? []);
+  loc.rewrites = buildRewriteOps(node.block ?? []);
   Object.assign(loc, resolveInherited(inherited, node.block ?? []));
   return loc as NginxLocation;
 }
 
-function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; inherited: InheritedSettings }): NginxServerBlock {
+function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; inherited: InheritedSettings; declaredVariables: ReadonlySet<string> }): NginxServerBlock {
   const listen: { port: number; defaultServer: boolean; ssl: boolean }[] = [];
   let serverNames: string[] = [];
   let root = '/var/www/html';
@@ -825,7 +845,8 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
     ssl: resolveSslSettings(httpDefaults.sslDirectives, serverSslDirectives),
     sslFile: node.file, sslLine: node.line, proxySetHeaders, ...inherited,
-    returnRule: firstReturn(node.block ?? []),
+    rewrites: buildRewriteOps(node.block ?? []),
+    declaredVariables: httpDefaults.declaredVariables,
   };
 }
 
@@ -835,6 +856,7 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
     accessLog: null as string | null, errorLog: null as string | null,
     sslDirectives: [] as NginxSslDirective[],
     inherited: DEFAULT_INHERITED,
+    declaredVariables: declaredUserVariables(tree),
   };
 
   const walk = (nodes: readonly NginxDirective[], inHttp: boolean): void => {

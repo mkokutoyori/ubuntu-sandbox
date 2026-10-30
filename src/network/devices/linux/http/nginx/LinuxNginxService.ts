@@ -28,6 +28,9 @@ import { applyGzipFilter } from './NginxGzip';
 import { evaluateConditional, fileValidators, httpDate } from './NginxConditional';
 import { applyRangeFilter } from './NginxRange';
 import { rewriteSetCookie } from './NginxCookie';
+import {
+  runRewriteOps, type NginxRewriteOp, type RewriteEnv, type RewriteState,
+} from './NginxRewrite';
 import { nginxReason, errorPage } from './NginxStatus';
 import { contentTypeFor } from './NginxMime';
 import type { NginxReturnRule } from './NginxReturn';
@@ -184,6 +187,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
   private readonly generated = new WeakSet<HttpMessage>();
   private readonly rangeable = new WeakSet<HttpMessage>();
+  private readonly rewriteBuckets = new WeakMap<HttpMessage, RewriteBucket>();
   private rangeBoundary = 0;
   private upstreams: NginxUpstream[] = [];
   /**
@@ -557,22 +561,84 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     peer: Http1Peer | undefined, port: number, hops: number,
   ): Handled {
     if (hops >= MAX_URI_CHANGES) return this.redirectCycle(server, path, req, peer);
-    if (server.returnRule) {
-      return { response: this.returnResponse(server.returnRule, server, null, req, port, peer), location: null };
+    const state = this.rewriteState(server, req, path, args);
+    const early = this.rewritePhase(server, null, server.rewrites, state, req, peer, port);
+    if (early !== null) return early;
+    return this.runLocation(server, matchLocation(server, state.uri), state.uri, state.args, req, peer, port, hops);
+  }
+
+  private rewriteBucket(server: NginxServerBlock, req: HttpMessage): RewriteBucket {
+    let bucket = this.rewriteBuckets.get(req);
+    if (bucket === undefined) {
+      const vars = new Map<string, string>();
+      for (const name of server.declaredVariables) vars.set(name, '');
+      bucket = { vars, captures: new Map(), uri: null, args: '' };
+      this.rewriteBuckets.set(req, bucket);
     }
-    return this.runLocation(server, matchLocation(server, path), path, args, req, peer, port, hops);
+    return bucket;
+  }
+
+  private rewriteState(server: NginxServerBlock, req: HttpMessage, path: string, args: string): RewriteState {
+    const bucket = this.rewriteBucket(server, req);
+    bucket.uri = path;
+    bucket.args = args;
+    return { uri: path, args, uriChanged: false, vars: bucket.vars, captures: bucket.captures };
+  }
+
+  private rewritePhase(
+    server: NginxServerBlock, location: NginxLocation | null, ops: readonly NginxRewriteOp[], state: RewriteState,
+    req: HttpMessage, peer: Http1Peer | undefined, port: number,
+  ): Handled | null {
+    if (ops.length === 0) return null;
+    const bucket = this.rewriteBucket(server, req);
+    const env: RewriteEnv = {
+      context: (current) => {
+        bucket.uri = current.uri;
+        bucket.args = current.args;
+        bucket.captures = current.captures;
+        return this.variablesFor(server, req, port, peer, null, location);
+      },
+      fileTest: (test, path) => {
+        const fs = this.host.fs;
+        if (!fs.exists(path)) return false;
+        if (test === 'd') return fs.isDirectory(path);
+        if (test === 'f') return !fs.isDirectory(path);
+        return true;
+      },
+    };
+    const result = runRewriteOps(ops, state, env);
+    bucket.uri = state.uri;
+    bucket.args = state.args;
+    bucket.captures = state.captures;
+    if (result.kind === 'return') {
+      return { response: this.returnResponse(result.rule, server, location, req, port, peer), location };
+    }
+    if (result.kind === 'redirect') {
+      const res = this.errorResponse(result.status, errorPage(result.status, NGINX_VERSION) ?? '', server, location);
+      res.headers.set('Location', this.absolutize(result.location, (location ?? server).redirect, server, req, port, peer));
+      return { response: res, location };
+    }
+    return null;
   }
 
   private runLocation(
     server: NginxServerBlock, location: NginxLocation | null, path: string, args: string,
     req: HttpMessage, peer: Http1Peer | undefined, port: number, hops: number,
   ): Handled {
+    if (location !== null && location.rewrites.length > 0) {
+      const state = this.rewriteState(server, req, path, args);
+      const early = this.rewritePhase(server, location, location.rewrites, state, req, peer, port);
+      if (early !== null) return early;
+      if (state.uriChanged) {
+        if (hops + 1 >= MAX_URI_CHANGES) return this.redirectCycle(server, state.uri, req, peer, 'processing');
+        return this.runLocation(server, matchLocation(server, state.uri), state.uri, state.args, req, peer, port, hops + 1);
+      }
+      path = state.uri;
+      args = state.args;
+    }
     if (location?.proxyPass) {
       const target = args === '' ? path : `${path}?${args}`;
       return { response: this.proxy(server, location, location.proxyPass, target, req, peer, port), location };
-    }
-    if (location?.returnRule) {
-      return { response: this.returnResponse(location.returnRule, server, location, req, port, peer), location };
     }
     const scope = location ?? server;
     let uri = path;
@@ -601,10 +667,11 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private redirectCycle(
     server: NginxServerBlock, path: string, req: HttpMessage, peer: Http1Peer | undefined,
+    how: 'redirecting' | 'processing' = 'redirecting',
   ): Handled {
     this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
       `${formatErrorTime(this.host.now())} [error] 0#0: *1 rewrite or internal redirection cycle `
-      + `while internally redirecting to "${path}", client: ${peer?.ip ?? '0.0.0.0'}, `
+      + `while ${how === 'processing' ? `processing "${path}"` : `internally redirecting to "${path}"`}, client: ${peer?.ip ?? '0.0.0.0'}, `
       + `server: ${server.serverNames[0] ?? '_'}, request: "${req.method ?? 'GET'} ${req.target ?? '/'} HTTP/${req.httpVersion}"`);
     return { response: this.errorResponse(500, errorPage(500, NGINX_VERSION) ?? '', server, null), location: null };
   }
@@ -865,11 +932,17 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private variablesFor(
     server: NginxServerBlock, req: HttpMessage, port: number, peer: Http1Peer | undefined,
-    upstream: { host: string; port: number } | null,
+    upstream: { host: string; port: number } | null, location: NginxLocation | null = null,
   ): NginxVariableContext {
+    const bucket = this.rewriteBuckets.get(req);
     return {
       request: req, clientIp: peer?.ip ?? '0.0.0.0', secure: peer?.tls !== undefined,
       serverName: server.serverNames[0] ?? '', serverPort: port, upstream,
+      root: location?.root ?? server.root,
+      ...(bucket === undefined ? {} : {
+        variables: bucket.vars, captures: bucket.captures,
+        ...(bucket.uri === null ? {} : { uri: bucket.uri, args: bucket.args }),
+      }),
     };
   }
 
@@ -1104,4 +1177,11 @@ function upstreamFailure(
     timeout: 'upstream timed out (110: Connection timed out)',
   }[sent.failure];
   return `${phrase} while connecting to upstream`;
+}
+
+interface RewriteBucket {
+  readonly vars: Map<string, string>;
+  captures: Map<string, string>;
+  uri: string | null;
+  args: string;
 }
