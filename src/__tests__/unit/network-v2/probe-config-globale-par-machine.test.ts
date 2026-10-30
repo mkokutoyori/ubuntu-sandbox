@@ -17,10 +17,19 @@ import { Logger } from '@/network/core/Logger';
 interface Cmd { executeCommand(cmd: string): Promise<string> }
 async function taper(d: Cmd, cmds: string[]) { for (const c of cmds) await d.executeCommand(c); }
 
-function vtyDe(r: CiscoRouter) {
-  const shell = (r as unknown as { createVtyShell(u?: string): { execute(c: string): Promise<string> | string } })
-    .createVtyShell();
-  return async (c: string) => (await shell.execute(c)) ?? '';
+async function vtyDe(r: CiscoRouter) {
+  await taper(r, ['enable', 'configure terminal', 'enable secret s3cret', 'end', 'disable']);
+  const shell = (r as unknown as {
+    createVtyShell(u?: string): {
+      execute(c: string): Promise<string> | string;
+      lastPendingInput(): unknown;
+      handleInput(v: string): Promise<string>;
+    };
+  }).createVtyShell();
+  return async (c: string) => {
+    const out = (await shell.execute(c)) ?? '';
+    return shell.lastPendingInput() ? await shell.handleInput('s3cret') : out;
+  };
 }
 
 describe('l\'etat global d\'une machine est le meme pour toutes ses sessions', () => {
@@ -37,7 +46,7 @@ describe('l\'etat global d\'une machine est le meme pour toutes ses sessions', (
   it('une session vty voit le `no cdp run` tape a la console', async () => {
     const r = new CiscoRouter('router-cisco', 'R1', 0, 0);
     await taper(r, ['enable', 'configure terminal', 'no cdp run', 'end']);
-    const vty = vtyDe(r);
+    const vty = await vtyDe(r);
     await vty('enable');
     expect(await vty('show cdp')).toContain('CDP is not enabled');
   });
@@ -45,7 +54,7 @@ describe('l\'etat global d\'une machine est le meme pour toutes ses sessions', (
   it('et la console voit le `cdp run` tape en vty', async () => {
     const r = new CiscoRouter('router-cisco', 'R1', 0, 0);
     await taper(r, ['enable', 'configure terminal', 'no cdp run', 'end']);
-    const vty = vtyDe(r);
+    const vty = await vtyDe(r);
     for (const c of ['enable', 'configure terminal', 'cdp run', 'end']) await vty(c);
     expect(await r.executeCommand('show cdp')).toContain('Global CDP information');
   });
@@ -53,7 +62,7 @@ describe('l\'etat global d\'une machine est le meme pour toutes ses sessions', (
   it('LLDP suit la meme regle', async () => {
     const r = new CiscoRouter('router-cisco', 'R1', 0, 0);
     await taper(r, ['enable', 'configure terminal', 'lldp run', 'end']);
-    const vty = vtyDe(r);
+    const vty = await vtyDe(r);
     await vty('enable');
     expect(await vty('show lldp')).toContain('Global LLDP Information');
   });

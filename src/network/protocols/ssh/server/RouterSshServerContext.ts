@@ -151,9 +151,22 @@ export class RouterSshServerContext implements ISshServerContext {
             stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
             stderr: '',
             exitCode: 0,
+            pendingInput: vty.lastPendingInput?.() ?? undefined,
             sessionEnded: vty.lastEndedSession?.() ?? false,
           };
         },
+        provideInput: vty.handleInput
+          ? async (value: string) => {
+              const stdout = await vty.handleInput!(value);
+              return {
+                stdout: stdout.endsWith('\n') || stdout === '' ? stdout : `${stdout}\n`,
+                stderr: '',
+                exitCode: 0,
+                pendingInput: vty.lastPendingInput?.() ?? undefined,
+                sessionEnded: vty.lastEndedSession?.() ?? false,
+              };
+            }
+          : undefined,
         getPrompt: () => vty.getPrompt(),
         getCompletions: vty.getCompletions ? (line: string) => vty.getCompletions!(line) : undefined,
         subscribeAsyncOutput: vty.subscribeAsyncOutput

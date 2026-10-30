@@ -494,8 +494,10 @@ describe('§57/§58 — chaque session a son propre état', () => {
 
   it('le mode de configuration d\'une session ne déborde pas', async () => {
     const r = new CiscoRouter('R1');
+    for (const c of ['enable', 'configure terminal', 'enable secret s3cret', 'end', 'disable']) await r.executeCommand(c);
     const vty = r.createVtyShell('admin');
     await vty.execute('enable');
+    await vty.handleInput('s3cret');
     await vty.execute('configure terminal');
     expect(vty.getPrompt()).toContain('(config)');
     // La console n'a pas bougé.
