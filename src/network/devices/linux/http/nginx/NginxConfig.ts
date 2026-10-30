@@ -8,6 +8,8 @@ import {
   type NginxContentTypes,
 } from './NginxMime';
 import { parseReturn, type NginxReturnRule } from './NginxReturn';
+import { checkTryFilesDirective, resolveTryFiles, type NginxTryFiles } from './NginxTryFiles';
+import { checkErrorPageDirective, resolveErrorPages, type NginxErrorPageRule } from './NginxErrorPage';
 import {
   NGINX_REDIRECT_DIRECTIVES, DEFAULT_REDIRECT_SETTINGS, checkRedirectDirective, resolveRedirectSettings,
   type NginxRedirectSettings,
@@ -329,6 +331,14 @@ function parseBlock(
       const problem = checkMimeDirective(name, args, out.some((d) => d.name === name), parent);
       if (problem) return { ok: false, error: emerg(problem, file, line) };
     }
+    if (name === 'try_files') {
+      const problem = checkTryFilesDirective(args, out.some((d) => d.name === name), parent);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+    if (name === 'error_page') {
+      const problem = checkErrorPageDirective(args, parent);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
     if (name === 'return') {
       const rule = parseReturn(args);
       if (typeof rule === 'string') return { ok: false, error: emerg(rule, file, line) };
@@ -540,7 +550,6 @@ export interface NginxLocation {
   readonly path: string;
   readonly root?: string;
   readonly index?: readonly string[];
-  readonly tryFiles?: readonly string[];
   readonly returnRule?: NginxReturnRule;
   readonly autoindex?: boolean;
   readonly addHeaders: readonly (readonly [string, string])[];
@@ -550,6 +559,8 @@ export interface NginxLocation {
   readonly gzip: NginxGzipSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
+  readonly tryFiles?: NginxTryFiles;
+  readonly errorPages: readonly NginxErrorPageRule[];
 }
 
 export interface NginxServerBlock {
@@ -569,6 +580,8 @@ export interface NginxServerBlock {
   readonly gzip: NginxGzipSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
+  readonly tryFiles?: NginxTryFiles;
+  readonly errorPages: readonly NginxErrorPageRule[];
   readonly returnRule?: NginxReturnRule;
 }
 
@@ -672,21 +685,28 @@ interface InheritedSettings {
   readonly gzip: NginxGzipSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
+  readonly tryFiles: NginxTryFiles | undefined;
+  readonly errorPages: readonly NginxErrorPageRule[];
 }
 
 const DEFAULT_INHERITED: InheritedSettings = Object.freeze({
   gzip: DEFAULT_GZIP_SETTINGS,
   redirect: DEFAULT_REDIRECT_SETTINGS,
   contentTypes: DEFAULT_CONTENT_TYPES,
+  tryFiles: undefined,
+  errorPages: Object.freeze([]) as readonly NginxErrorPageRule[],
 });
 
 function resolveInherited(parent: InheritedSettings, block: readonly NginxDirective[]): InheritedSettings {
   const gzip = resolveGzipSettings(parent.gzip, block.filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
   const redirect = resolveRedirectSettings(parent.redirect, block.filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)));
   const contentTypes = resolveContentTypes(parent.contentTypes, block.filter((d) => NGINX_MIME_DIRECTIVES.has(d.name)));
+  const tryFiles = resolveTryFiles(parent.tryFiles, block);
+  const errorPages = resolveErrorPages(parent.errorPages, block);
   return gzip === parent.gzip && redirect === parent.redirect && contentTypes === parent.contentTypes
+    && tryFiles === parent.tryFiles && errorPages === parent.errorPages
     ? parent
-    : { gzip, redirect, contentTypes };
+    : { gzip, redirect, contentTypes, tryFiles, errorPages };
 }
 
 function firstReturn(block: readonly NginxDirective[]): NginxReturnRule | undefined {
@@ -700,7 +720,7 @@ function collectLocation(
   node: NginxDirective, inheritedRoot: string, inherited: InheritedSettings,
 ): NginxLocation {
   const loc: {
-    path: string; root?: string; index?: string[]; tryFiles?: string[];
+    path: string; root?: string; index?: string[];
     returnRule?: NginxReturnRule; autoindex?: boolean;
     addHeaders: (readonly [string, string])[];
     proxyPass?: NginxProxyPass;
@@ -708,6 +728,8 @@ function collectLocation(
     gzip: NginxGzipSettings;
     redirect: NginxRedirectSettings;
     contentTypes: NginxContentTypes;
+    tryFiles: NginxTryFiles | undefined;
+    errorPages: readonly NginxErrorPageRule[];
   } = {
     path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [],
     ...inherited,
@@ -716,7 +738,6 @@ function collectLocation(
   for (const d of node.block ?? []) {
     if (d.name === 'root') loc.root = d.args[0];
     else if (d.name === 'index') loc.index = [...d.args];
-    else if (d.name === 'try_files') loc.tryFiles = [...d.args];
     else if (d.name === 'autoindex') loc.autoindex = d.args[0] === 'on';
     else if (d.name === 'add_header' && d.args.length >= 2) loc.addHeaders.push([d.args[0], d.args[1]]);
     else if (d.name === 'proxy_pass') loc.proxyPass = parseProxyPass(d.args[0]) ?? undefined;

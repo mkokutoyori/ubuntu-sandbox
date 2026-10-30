@@ -28,6 +28,8 @@ import { applyGzipFilter } from './NginxGzip';
 import { nginxReason, errorPage } from './NginxStatus';
 import { contentTypeFor } from './NginxMime';
 import type { NginxReturnRule } from './NginxReturn';
+import type { NginxTryFiles } from './NginxTryFiles';
+import { findErrorPage, KEEP_STATUS, REPLACEMENT_STATUS } from './NginxErrorPage';
 import { expandNginxVariables, type NginxVariableContext } from './NginxVariables';
 import {
   absoluteLocationValue, isRedirectStatus, rewriteRedirectValue, type NginxRedirectSettings,
@@ -101,6 +103,26 @@ function rewriteTarget(target: string, locationPath: string, passPath?: string):
   return out === '' ? '/' : out;
 }
 
+interface Handled {
+  readonly response: HttpMessage;
+  readonly location: NginxLocation | null;
+}
+
+const MAX_URI_CHANGES = 10;
+
+function splitTarget(target: string): [string, string] {
+  const at = target.indexOf('?');
+  return at < 0 ? [target, ''] : [target.slice(0, at), target.slice(at + 1)];
+}
+
+function safeDecode(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
 function matchLocation(server: NginxServerBlock, target: string): NginxLocation | null {
   let best: NginxLocation | null = null;
   for (const loc of server.locations) {
@@ -156,6 +178,7 @@ interface PortTls {
 
 export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
+  private readonly generated = new WeakSet<HttpMessage>();
   private upstreams: NginxUpstream[] = [];
   /**
    * §P6 — profondeur de mandat en cours.
@@ -462,17 +485,21 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   }
 
   private respond(port: number, req: HttpMessage, peer?: Http1Peer): HttpMessage {
-    const target = (req.target ?? '/').split('?')[0];
+    const [path, args] = splitTarget(req.target ?? '/');
     const hostHeader = req.headers.get('Host') ?? '';
     const server = this.selectServer(port, hostHeader);
     const gated = server ? this.clientCertificateGate(server, hostHeader, peer) : null;
-    const response = gated
-      ?? (server
-        ? this.serve(server, target, req, peer, port)
-        : this.errorResponse(404, notFoundPage()));
-    if (server) applyGzipFilter(req, response, (matchLocation(server, target) ?? server).gzip);
-    this.logRequest(server, req, response, target, peer);
-    return response;
+    let outcome: Handled = gated !== null
+      ? { response: gated, location: null }
+      : server
+        ? this.handle(server, path, args, req, peer, port, 0)
+        : { response: this.errorResponse(404, notFoundPage()), location: null };
+    if (server) {
+      outcome = this.withErrorPage(server, outcome, req, peer, port);
+      applyGzipFilter(req, outcome.response, (outcome.location ?? server).gzip);
+    }
+    this.logRequest(server, req, outcome.response, path, peer);
+    return outcome.response;
   }
 
   private clientCertificateGate(server: NginxServerBlock, hostHeader: string, peer?: Http1Peer): HttpMessage | null {
@@ -518,59 +545,173 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     return isTlsProblem(tls) ? null : tls.verifier;
   }
 
-  private serve(
-    server: NginxServerBlock, target: string,
-    req?: HttpMessage, peer?: Http1Peer, port = 0,
-  ): HttpMessage {
-    if (server.returnRule && req) return this.returnResponse(server.returnRule, server, null, req, port, peer);
-
-    const location = matchLocation(server, target);
-
-    if (location?.proxyPass && req) {
-      return this.proxy(server, location, location.proxyPass, target, req, peer, port);
+  private handle(
+    server: NginxServerBlock, path: string, args: string, req: HttpMessage,
+    peer: Http1Peer | undefined, port: number, hops: number,
+  ): Handled {
+    if (hops >= MAX_URI_CHANGES) return this.redirectCycle(server, path, req, peer);
+    if (server.returnRule) {
+      return { response: this.returnResponse(server.returnRule, server, null, req, port, peer), location: null };
     }
+    return this.runLocation(server, matchLocation(server, path), path, args, req, peer, port, hops);
+  }
 
-    if (location?.returnRule && req) {
-      return this.returnResponse(location.returnRule, server, location, req, port, peer);
+  private runLocation(
+    server: NginxServerBlock, location: NginxLocation | null, path: string, args: string,
+    req: HttpMessage, peer: Http1Peer | undefined, port: number, hops: number,
+  ): Handled {
+    if (location?.proxyPass) {
+      const target = args === '' ? path : `${path}?${args}`;
+      return { response: this.proxy(server, location, location.proxyPass, target, req, peer, port), location };
     }
-
-    const root = location?.root ?? server.root;
-    const indexes = location?.index ?? server.index;
-    const fsPath = joinPath(root, decodeURIComponent(target));
-
-    const candidates = this.host.fs.isDirectory(fsPath)
-      ? indexes.map((i) => joinPath(fsPath, i))
-      : [fsPath];
-
-    for (const candidate of candidates) {
-      if (!this.host.fs.exists(candidate) || this.host.fs.isDirectory(candidate)) continue;
-      if (!this.host.fs.readableBy(candidate, NGINX_UID, NGINX_GID)) {
-        return this.errorResponse(403, forbiddenPage(), server, location);
+    if (location?.returnRule) {
+      return { response: this.returnResponse(location.returnRule, server, location, req, port, peer), location };
+    }
+    const scope = location ?? server;
+    let uri = path;
+    if (scope.tryFiles) {
+      const tried = this.tryFiles(server, scope, location, path, args, req, peer, port);
+      if (tried.kind === 'handled') return tried.handled;
+      if (tried.kind === 'redirect') {
+        return this.internalRedirect(server, tried.uri, req, peer, port, hops);
       }
-      const body = this.host.fs.read(candidate) ?? '';
-      const res = createResponse(200, 'OK');
-      res.headers.set('Server', `nginx/${NGINX_VERSION}`);
-      res.headers.set('Content-Type', contentTypeFor((location ?? server).contentTypes, candidate));
-      this.applyHeaders(res, server, location);
-      res.body = bytes(body);
-      return res;
+      uri = tried.uri;
     }
+    return { response: this.content(server, location, uri, args, req, peer, port, hops), location };
+  }
 
-    if (this.host.fs.isDirectory(fsPath) && location?.autoindex) {
-      const entries = this.host.fs.list(fsPath) ?? [];
-      const listing = `<html><head><title>Index of ${target}</title></head><body>\r\n<h1>Index of ${target}</h1><hr><pre><a href="../">../</a>\r\n${entries.sort().map((e) => `<a href="${e}">${e}</a>`).join('\r\n')}\r\n</pre><hr></body>\r\n</html>\r\n`;
-      const res = createResponse(200, 'OK');
-      res.headers.set('Server', `nginx/${NGINX_VERSION}`);
-      res.headers.set('Content-Type', 'text/html');
-      this.applyHeaders(res, server, location);
-      res.body = bytes(listing);
-      return res;
+  private internalRedirect(
+    server: NginxServerBlock, target: string, req: HttpMessage,
+    peer: Http1Peer | undefined, port: number, hops: number,
+  ): Handled {
+    if (target.startsWith('@')) {
+      const named = server.locations.find((candidate) => candidate.path === target) ?? null;
+      return this.runLocation(server, named, (req.target ?? '/').split('?')[0], '', req, peer, port, hops + 1);
     }
+    const [path, args] = splitTarget(target);
+    return this.handle(server, path, args, req, peer, port, hops + 1);
+  }
 
-    if (this.host.fs.isDirectory(fsPath)) {
+  private redirectCycle(
+    server: NginxServerBlock, path: string, req: HttpMessage, peer: Http1Peer | undefined,
+  ): Handled {
+    this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
+      `${formatErrorTime(this.host.now())} [error] 0#0: *1 rewrite or internal redirection cycle `
+      + `while internally redirecting to "${path}", client: ${peer?.ip ?? '0.0.0.0'}, `
+      + `server: ${server.serverNames[0] ?? '_'}, request: "${req.method ?? 'GET'} ${req.target ?? '/'} HTTP/${req.httpVersion}"`);
+    return { response: this.errorResponse(500, errorPage(500, NGINX_VERSION) ?? '', server, null), location: null };
+  }
+
+  private tryFiles(
+    server: NginxServerBlock, scope: NginxServerBlock | NginxLocation, location: NginxLocation | null,
+    path: string, args: string, req: HttpMessage, peer: Http1Peer | undefined, port: number,
+  ): { kind: 'serve'; uri: string } | { kind: 'redirect'; uri: string } | { kind: 'handled'; handled: Handled } {
+    const plan = scope.tryFiles as NginxTryFiles;
+    const root = location?.root ?? server.root;
+    const context = { ...this.variablesFor(server, req, port, peer, null), uri: safeDecode(path), args };
+    for (const entry of plan.entries) {
+      const name = expandNginxVariables(entry.name, context);
+      const fsPath = joinPath(root, name);
+      const matches = entry.testDir
+        ? this.host.fs.isDirectory(fsPath)
+        : this.host.fs.exists(fsPath) && !this.host.fs.isDirectory(fsPath);
+      if (matches) return { kind: 'serve', uri: name };
+    }
+    if (plan.fallback.kind === 'code') {
+      const code = plan.fallback.code;
+      const response = code >= 300
+        ? this.errorResponse(code, errorPage(code, NGINX_VERSION) ?? '', server, location)
+        : createResponse(code, nginxReason(code));
+      return { kind: 'handled', handled: { response, location } };
+    }
+    return { kind: 'redirect', uri: expandNginxVariables(plan.fallback.uri, context) };
+  }
+
+  private content(
+    server: NginxServerBlock, location: NginxLocation | null, uri: string, args: string,
+    req: HttpMessage, peer: Http1Peer | undefined, port: number, hops: number,
+  ): HttpMessage {
+    const method = req.method ?? 'GET';
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
+      return this.errorResponse(405, errorPage(405, NGINX_VERSION) ?? '', server, location);
+    }
+    const root = location?.root ?? server.root;
+    const decoded = safeDecode(uri);
+
+    if (uri.endsWith('/')) {
+      const dir = joinPath(root, decoded);
+      for (const name of location?.index ?? server.index) {
+        const candidate = name.startsWith('/') ? name : `${uri}${name}`;
+        const candidatePath = joinPath(root, safeDecode(candidate));
+        if (!this.host.fs.exists(candidatePath) || this.host.fs.isDirectory(candidatePath)) continue;
+        if (!this.host.fs.readableBy(candidatePath, NGINX_UID, NGINX_GID)) {
+          return this.errorResponse(403, forbiddenPage(), server, location);
+        }
+        return this.internalRedirect(server, args === '' ? candidate : `${candidate}?${args}`, req, peer, port, hops).response;
+      }
+      if (this.host.fs.isDirectory(dir) && location?.autoindex) {
+        return this.autoindex(dir, uri, server, location);
+      }
       return this.errorResponse(403, forbiddenPage(), server, location);
     }
-    return this.errorResponse(404, notFoundPage(), server, location);
+
+    const fsPath = joinPath(root, decoded);
+    if (!this.host.fs.exists(fsPath)) return this.errorResponse(404, notFoundPage(), server, location);
+    if (this.host.fs.isDirectory(fsPath)) {
+      const res = this.errorResponse(301, errorPage(301, NGINX_VERSION) ?? '', server, location);
+      const settings = (location ?? server).redirect;
+      res.headers.set('Location', this.absolutize(args === '' ? `${uri}/` : `${uri}/?${args}`, settings, server, req, port, peer));
+      return res;
+    }
+    if (!this.host.fs.readableBy(fsPath, NGINX_UID, NGINX_GID)) {
+      return this.errorResponse(403, forbiddenPage(), server, location);
+    }
+    if (method === 'POST') return this.errorResponse(405, errorPage(405, NGINX_VERSION) ?? '', server, location);
+    const res = createResponse(200, 'OK');
+    res.headers.set('Server', `nginx/${NGINX_VERSION}`);
+    res.headers.set('Content-Type', contentTypeFor((location ?? server).contentTypes, fsPath));
+    this.applyHeaders(res, server, location);
+    res.body = bytes(this.host.fs.read(fsPath) ?? '');
+    return res;
+  }
+
+  private autoindex(dir: string, uri: string, server: NginxServerBlock, location: NginxLocation | null): HttpMessage {
+    const entries = this.host.fs.list(dir) ?? [];
+    const listing = `<html><head><title>Index of ${uri}</title></head><body>\r\n<h1>Index of ${uri}</h1><hr><pre><a href="../">../</a>\r\n${entries.sort().map((e) => `<a href="${e}">${e}</a>`).join('\r\n')}\r\n</pre><hr></body>\r\n</html>\r\n`;
+    const res = createResponse(200, 'OK');
+    res.headers.set('Server', `nginx/${NGINX_VERSION}`);
+    res.headers.set('Content-Type', 'text/html');
+    this.applyHeaders(res, server, location);
+    res.body = bytes(listing);
+    return res;
+  }
+
+  private withErrorPage(
+    server: NginxServerBlock, outcome: Handled, req: HttpMessage,
+    peer: Http1Peer | undefined, port: number,
+  ): Handled {
+    const original = outcome.response;
+    if (!this.generated.has(original)) return outcome;
+    const rule = findErrorPage((outcome.location ?? server).errorPages, original.statusCode ?? 0);
+    if (rule === undefined) return outcome;
+
+    const context = this.variablesFor(server, req, port, peer, null);
+    const target = expandNginxVariables(rule.target, context);
+    const redirected = { ...req, method: req.method === 'HEAD' ? 'HEAD' : 'GET' } as HttpMessage;
+    if (target.startsWith('/') || target.startsWith('@')) {
+      const inner = this.internalRedirect(server, target, redirected, peer, port, 0);
+      if (this.generated.has(inner.response)) return inner;
+      const final = rule.overwrite === KEEP_STATUS ? (original.statusCode ?? 200) : rule.overwrite;
+      if (final !== REPLACEMENT_STATUS) {
+        inner.response.statusCode = final;
+        inner.response.reasonPhrase = nginxReason(final);
+      }
+      return inner;
+    }
+    const status = rule.overwrite >= 300 && rule.overwrite < 400 ? rule.overwrite : 302;
+    const res = this.errorResponse(status, errorPage(status, NGINX_VERSION) ?? '', server, outcome.location);
+    res.headers.set('Location', target);
+    return { response: res, location: outcome.location };
   }
 
   private returnResponse(
@@ -856,6 +997,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     res.headers.set('Content-Type', 'text/html');
     this.applyHeaders(res, server, location);
     res.body = bytes(body);
+    this.generated.add(res);
     return res;
   }
 

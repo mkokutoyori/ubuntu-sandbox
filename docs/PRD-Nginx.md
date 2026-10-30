@@ -1122,3 +1122,61 @@ bloc sans directive concernee partage l'objet de son parent.
 `nginx-return-mime.test.ts` (36 cas) : **32 tombent par `git stash`**. Les
 4 qui passent des deux cotes sont des temoins (le site statique, la
 configuration livree, un 404 inchange, `mime.types` deja inclus).
+
+### 9.15 `try_files`, `error_page`, redirections internes et gestionnaire statique
+
+Suite de l'audit de §9.14 : `try_files` et `error_page` etaient « appliquees »
+et lues par personne. Le `nginx.conf` livre ecrit pourtant `try_files $uri
+$uri/ =404;` sans que cette ligne decide de rien : le site marchait par
+coincidence. Mesure avant : un repertoire sans `/` final etait servi au lieu
+d'etre redirige en 301 ; l'index etait servi sans repasser par le choix de la
+`location` ; `PUT`/`DELETE` sur un fichier recevaient 200 ; et le mandataire
+**oubliait la query string** (`/search?q=1` arrivait a l'amont comme
+`/search`).
+
+Source : `ngx_http_try_files_module.c` (1.24.0 l'a isole du coeur),
+`ngx_http_core_module.c` (`ngx_http_core_error_page`,
+`ngx_http_internal_redirect`), `ngx_http_special_response.c`,
+`ngx_http_static_module.c`, `ngx_http_index_module.c`.
+
+**Une seule boucle de traitement.** `handle` -> `runLocation` -> `content`,
+et tout ce qui change l'URI repasse par `handle` : un index trouve, un repli
+`try_files`, une page d'erreur. Au plus 10 redirections internes ; la
+onzieme donne `500` et la ligne de `error.log` de nginx (`rewrite or
+internal redirection cycle while internally redirecting to "/again"`).
+
+**`try_files`** : chaque entree est un fichier ORDINAIRE (`$uri`) ou un
+repertoire (`$uri/`) ; la derniere est un repli — `=code`, une URI
+(redirection interne, query comprise) ou une location nommee `@x`. Heritage
+server -> location. `nginx -t` : `invalid number of arguments`, `invalid code
+"=abc"`, doublon, variable inconnue.
+
+**Un fait que la lecture de la source a corrige** : `try_files $uri $uri/
+=404` sur `/sub` (repertoire, sans `/`) donne un **301** vers `/sub/`. La
+source pose l'URI SANS le `/` retire de l'entree, puis le gestionnaire
+statique redirige. J'avais ecrit le test inverse ; c'est la source qui avait
+raison.
+
+**Gestionnaire statique** : methodes GET/HEAD/POST seulement (sinon `405 Not
+Allowed`), POST sur un fichier aussi ; un repertoire sans `/` -> 301 absolu
+avec la query ; une URI en `/` cherche les `index` et fait une redirection
+interne vers le premier trouve (donc une autre `location` peut le prendre en
+charge) ; sinon `autoindex`, sinon 403.
+
+**`error_page`** : `error_page 404 /404.html;`, `=200`, `=` seul (statut de
+la page), plusieurs codes, URL externe (302), `@nommee`. Elle ne touche que
+les reponses que NGINX fabrique : un 404 de l'AMONT traverse (pas de
+`proxy_intercept_errors`), un 502 de nginx est intercepte. La page est
+servie en GET, sans recursion. Heritage : la liste d'un bloc REMPLACE celle du
+parent. 494-497 prennent le statut 400.
+
+**Le mandataire garde la query string.**
+
+**Limites** : `proxy_intercept_errors` n'existe pas ; `if` est toujours
+analyse sans etre evalue ; pas de `ETag`, `Last-Modified` ni `Accept-Ranges`
+sur les fichiers statiques (suite) ; l'index ne herite pas de `autoindex`
+du server.
+
+`nginx-try-files-error-page.test.ts` (44 cas) : **34 tombent par `git stash`**.
+Les 10 qui passent des deux cotes sont des temoins ou des refus (GET/HEAD
+d'un fichier, configuration valide, code non liste).
