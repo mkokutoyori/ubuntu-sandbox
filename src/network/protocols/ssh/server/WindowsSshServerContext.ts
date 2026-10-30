@@ -25,6 +25,7 @@ import { SshdCertificateService } from './SshdCertificateService';
 import { certificateOfMaterial, plainKeyOfMaterial } from './UserCertificateAdmission';
 import { SshUserContext } from '../SshUserContext';
 import type { SshVtyShell } from './SshExecTarget';
+import type { SshInteractiveShell } from './SshInteractiveShell';
 import {
   DEFAULT_SSH_SERVER_CONFIG,
   SSHD_MAX_AUTH_TRIES_REASON,
@@ -72,6 +73,7 @@ export interface WindowsShellExecutor {
    * (docs/PRD-SSH-Unification.md §4bis B2).
    */
   createVtyShell?(user: string): SshVtyShell | null;
+  createInteractiveShell?(): SshInteractiveShell | null;
   shellBanner?(): string;
   runExecAs?(user: string, line: string, stdin?: string): Promise<{ output: string; exitCode: number }>;
   bindForwardedAgent?(user: string, agent: AgentPort): { readonly path: string; release(): void };
@@ -412,6 +414,10 @@ export class WindowsSshServerContext implements ISshServerContext {
       getPrompt: exec.getCwd ? () => `${exec.getCwd!()}>` : undefined,
       ...(forwardedAgent === null ? {} : { dispose: () => forwardedAgent.release() }),
     };
+  }
+
+  createInteractiveShell(_userCtx: SshUserContext): SshInteractiveShell | null {
+    return this.shellExecutor?.createInteractiveShell?.() ?? null;
   }
 
   agentForwardingPermitted(user: SshUserContext, clientIp: string, keyOptions: AuthorizedKeyOptions | null): boolean {

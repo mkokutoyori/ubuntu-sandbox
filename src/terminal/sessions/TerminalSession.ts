@@ -24,7 +24,6 @@
  *   └── WindowsTerminalSession   — CMD/PS dual-mode, shell nesting
  */
 
-import type { LessOptions, LessSource } from '@/network/devices/linux/editors/LessEngine';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { Equipment, type HostCapableDevice } from '@/network';
@@ -35,14 +34,16 @@ import type { AsyncJobContext, AsyncJobHandle, AsyncJobSpec } from '@/terminal/a
 import { QueuedTerminalIO } from '@/network/protocols/ssh/session/QueuedTerminalIO';
 import { firstSviAddress } from '@/network/protocols/ssh/sessionLiveness';
 import { InteractiveFlowEngine } from '@/terminal/core/InteractiveFlow';
-import type { RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
+import type { RemoteLessController, RemoteNanoController, RemoteVimController } from '@/terminal/editors/RemoteEditorController';
 import { PromiseInputBroker as PromiseInputBrokerCtor, runFlowOnBroker as runFlowOnBrokerFn } from '@/shell/input';
 import type { IOutputFormatter } from '@/terminal/core/OutputFormatter';
 import type { FlowContext, InteractiveStep, TextSegment } from '@/terminal/core/types';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
 import { createRemoteEditorController } from '@/terminal/editors/RemoteEditorController';
-import { parseEditorLaunch, type NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import type { NanoLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { matchFullScreenProgram } from '@/network/devices/linux/editors/FullScreenPrograms';
+import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -116,7 +117,6 @@ export type InputMode =
   | { type: 'password'; promptText: string }
   | { type: 'interactive-text'; promptText: string }
   | { type: 'pager'; indicator: string }
-  | { type: 'less'; sources: readonly LessSource[]; options: LessOptions; quitIfOneScreen: boolean; initialKeys: string; help: 'only' | 'first' | null }
   | { type: 'booting' }
   | { type: 'reverse-search' }
   | {
@@ -139,9 +139,9 @@ export type InputMode =
    */
   | {
       type: 'remote-editor';
-      editorType: 'nano' | 'vi' | 'vim';
+      editorType: 'nano' | 'vi' | 'vim' | 'less';
       filePath: string;
-      controller: RemoteVimController | RemoteNanoController;
+      controller: RemoteVimController | RemoteNanoController | RemoteLessController;
     }
   /**
    * Terminal is read-only because the underlying device is unreachable
@@ -467,6 +467,21 @@ export abstract class TerminalSession {
 
   get hasForegroundAsyncJob(): boolean { return this.asyncRuntime.hasForegroundJob; }
 
+  private subShellForegroundCount = 0;
+
+  get hasSubShellForeground(): boolean { return this.subShellForegroundCount > 0; }
+
+  protected holdSubShellForeground<T>(result: T | Promise<T>): T | Promise<T> {
+    if (!(result instanceof Promise)) return result;
+    this.subShellForegroundCount += 1;
+    this.notify();
+    const release = (): void => {
+      this.subShellForegroundCount -= 1;
+      this.notify();
+    };
+    return result.finally(release);
+  }
+
   private commandInFlight = false;
   private typedAhead: string[] = [];
   private drainingTypedAhead = false;
@@ -576,17 +591,20 @@ export abstract class TerminalSession {
    * typed `vim` says nothing about where the buffer lives
    * (docs/PRD-SSH-Unification.md §4bis B3).
    */
-  protected tryOpenRemoteEditor(line: string): boolean {
+  protected tryOpenRemoteEditor(line: string, declined: () => void): boolean {
     const sub = this.activeShell as unknown as {
       openRemoteEditor?: (l: string) => Promise<EditorView | null>;
       editorTransport?: () => RemoteEditorTransport;
     } | null;
     if (!sub?.openRemoteEditor || !sub.editorTransport) return false;
-    if (!parseEditorLaunch(line)) return false;
+    installDefaultEditors();
+    if (matchFullScreenProgram(line) === null) return false;
 
     void sub.openRemoteEditor(line).then((view) => {
-      if (!view) return;
-      const launch = parseEditorLaunch(line)!;
+      if (!view) {
+        declined();
+        return;
+      }
       const controller = createRemoteEditorController(
         sub.editorTransport!(),
         view,
@@ -594,7 +612,7 @@ export abstract class TerminalSession {
       );
       this.inputMode = {
         type: 'remote-editor',
-        editorType: launch.editor,
+        editorType: view.kind === 'vim' ? view.variant : view.kind,
         filePath: view.filePath,
         controller,
       };
@@ -614,7 +632,6 @@ export abstract class TerminalSession {
       this.inputMode = { type: 'normal' };
       const notice = 'exitNotice' in mode.controller ? mode.controller.exitNotice : '';
       if (notice !== '') this.addLines(notice.replace(/\n$/, '').split('\n'));
-      this.addLine(this.getPrompt());
     }
     this.notify();
   }

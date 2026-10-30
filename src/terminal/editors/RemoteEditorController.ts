@@ -15,6 +15,7 @@ import type { EditorKeyInput } from '@/network/devices/linux/editors/EditorKeyIn
 import type { EditorScreen } from '@/network/devices/linux/editors/screen/EditorScreen';
 import type {
   EditorView,
+  LessEditorView,
   NanoEditorView,
   VimEditorView,
 } from '@/network/devices/linux/editors/EditorView';
@@ -143,11 +144,21 @@ export class RemoteNanoController extends BaseRemoteEditorController<NanoEditorV
   }
 }
 
+export class RemoteLessController extends BaseRemoteEditorController<LessEditorView> {
+  get screen(): EditorScreen { return this.current.screen; }
+  get exitNotice(): string { return ''; }
+
+  scrollView(up: boolean, count: number): void {
+    void this.transport.scrollEditor(up, count).then((view) => this.absorb(view));
+  }
+}
+
 export function createRemoteEditorController(
   transport: RemoteEditorTransport,
   view: EditorView,
   onUpdate: () => void,
-): RemoteVimController | RemoteNanoController {
+): RemoteVimController | RemoteNanoController | RemoteLessController {
+  if (view.kind === 'less') return new RemoteLessController(transport, view, onUpdate);
   return view.kind === 'vim'
     ? new RemoteVimController(transport, view, onUpdate)
     : new RemoteNanoController(transport, view, onUpdate);

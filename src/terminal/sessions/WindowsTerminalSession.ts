@@ -25,7 +25,7 @@ import {
   type InputMode,
 } from './TerminalSession';
 import { WindowsPC } from '@/network/devices/WindowsPC';
-import { parseWinPingArgs, formatWinPingHeader, formatWinPingReplyLine, formatWinPingStats } from '@/network/devices/windows/WinPing';
+import { createWinPingStream, parseWinPingCommand, type WinPingStream } from '@/network/devices/windows/WinPing';
 import { runTracert } from '@/network/devices/windows/WinTracert';
 import {
   parseGetCounterArgs, sampleCounterSet, formatCounterSnapshot, formatCounterSet,
@@ -388,44 +388,24 @@ export class WindowsTerminalSession extends TerminalSession {
     if (!this.isNativeCommandStreamContext()) return false;
     const dev = this.device;
     if (!(dev instanceof WindowsPC)) return false;
-    const toks = commandLine.trim().split(/\s+/);
-    if (toks[0].toLowerCase() !== 'ping') return false;
-    if (/[|<>&]/.test(commandLine)) return false;
-    const parsed = parseWinPingArgs(toks.slice(1));
-    if (!parsed.targetStr) return false;
+    const parsed = parseWinPingCommand(commandLine);
+    if (parsed === null) return false;
 
-    const count = parsed.continuous ? 0 : parsed.count;
-    const results: PingResult[] = [];
-    let label = parsed.targetStr;
-    const emitStats = (ctx: AsyncJobContext) => {
-      for (const line of formatWinPingStats(label, results.length, results)) ctx.sink.line(line);
-    };
-
+    let stream: WinPingStream | null = null;
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: commandLine,
       run: async (ctx) => {
-        const outcome = await dev.pingStreamInSession(parsed.targetStr, {
-          count,
-          ttl: parsed.ttl,
-          timeoutMs: 2000,
-          intervalMs: 1000,
-          onResolved: (ip, hostname) => { label = ip.toString(); ctx.sink.line(formatWinPingHeader(ip, parsed.size, hostname)); },
-          onResult: (r) => { results.push(r); ctx.sink.line(formatWinPingReplyLine(r, parsed.size)); },
-          shouldStop: () => ctx.cancelled(),
-          sleep: (ms) => ctx.delay(ms),
+        stream = createWinPingStream(dev, parsed, {
+          line: (text) => ctx.sink.line(text),
+          error: (text) => ctx.sink.error(text),
+          cancelled: () => ctx.cancelled(),
+          delay: (ms) => ctx.delay(ms),
         });
-        if (ctx.cancelled()) return;
-        if (!outcome.resolved && results.length === 0) {
-          ctx.sink.error(outcome.reason === 'name'
-            ? `Ping request could not find host ${parsed.targetStr}. Please check the name and try again.`
-            : 'Request timed out.');
-          return;
-        }
-        emitStats(ctx);
+        await stream.run();
       },
-      onInterrupt: (ctx) => emitStats(ctx),
+      onInterrupt: () => stream?.emitStats(),
     });
     return job !== null;
   }
@@ -1416,77 +1396,79 @@ export class WindowsTerminalSession extends TerminalSession {
         }
       }
 
-      if (this.tryOpenRemoteEditor(line)) return true;
-
-      const screenBase = this.lines.length;
-      const onProgress = (text: string) => {
-        if (text === SCREEN_REPAINT_MARK) this.lines = this.lines.slice(0, screenBase);
-        else this.addShellOutputLine(text);
-        this.notify();
-      };
-      const maybePromise = processSubShellLine(this.activeSubShell, line, onProgress);
-
-      const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _powerShellLanguage?: 'desktop' | 'core'; _enterCmd?: boolean; childShell?: IShell }) => {
-        if (result.clearScreen) {
-          this.clear();
-          this.bannerCleared = true;
-        }
-
-        // Prefer pre-styled output when the sub-shell provided it — that
-        // way the host's vendor renderer never touches lines whose styling
-        // was decided remotely (e.g. SSH'd bash's ANSI colors).
-        if (result.styledOutput && result.styledOutput.length > 0) {
-          for (const styled of result.styledOutput) {
-            this.addStyledLine(styled.segments, styled.lineType);
-          }
-        } else if (result.output.length > 0) {
-          this.emitWindowsOutput(result.output.join('\n'));
-        }
-
-        if (result.exit) {
-          this.exitSubShell();
-          return;
-        }
-
-        if (result.childShell) {
-          this.pushChildShell(result.childShell);
-          return;
-        }
-
-        if (result._enterPowerShell) {
-          this.enterPowerShell(result._powerShellLanguage ?? 'desktop');
-          return;
-        }
-        if (result._enterCmd) {
-          this.enterNestedCmd();
-          return;
-        }
-
-        // Sub-shell asked for a pending input value (typically a nested
-        // ssh password). Route the host into the matching input mode;
-        // when Enter fires, handleSubShellPendingInput consumes the
-        // collected value via shell.handleInput.
-        if (result.pendingInput) {
-          this.subShellPendingInput = result.pendingInput;
-          if (result.pendingInput.kind === 'password') {
-            this.inputMode = { type: 'password', promptText: result.pendingInput.promptText };
-            this._passwordBuf = '';
-          } else {
-            this.inputMode = { type: 'interactive-text', promptText: result.pendingInput.promptText };
-            this._inputBuf = '';
-          }
+      const runLine = (): void => {
+        const screenBase = this.lines.length;
+        const onProgress = (text: string) => {
+          if (text === SCREEN_REPAINT_MARK) this.lines = this.lines.slice(0, screenBase);
+          else this.addShellOutputLine(text);
           this.notify();
-          return;
+        };
+        const maybePromise = this.holdSubShellForeground(processSubShellLine(this.activeSubShell, line, onProgress));
+
+        const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _powerShellLanguage?: 'desktop' | 'core'; _enterCmd?: boolean; childShell?: IShell }) => {
+          if (result.clearScreen) {
+            this.clear();
+            this.bannerCleared = true;
+          }
+
+          // Prefer pre-styled output when the sub-shell provided it — that
+          // way the host's vendor renderer never touches lines whose styling
+          // was decided remotely (e.g. SSH'd bash's ANSI colors).
+          if (result.styledOutput && result.styledOutput.length > 0) {
+            for (const styled of result.styledOutput) {
+              this.addStyledLine(styled.segments, styled.lineType);
+            }
+          } else if (result.output.length > 0) {
+            this.emitWindowsOutput(result.output.join('\n'));
+          }
+
+          if (result.exit) {
+            this.exitSubShell();
+            return;
+          }
+
+          if (result.childShell) {
+            this.pushChildShell(result.childShell);
+            return;
+          }
+
+          if (result._enterPowerShell) {
+            this.enterPowerShell(result._powerShellLanguage ?? 'desktop');
+            return;
+          }
+          if (result._enterCmd) {
+            this.enterNestedCmd();
+            return;
+          }
+
+          // Sub-shell asked for a pending input value (typically a nested
+          // ssh password). Route the host into the matching input mode;
+          // when Enter fires, handleSubShellPendingInput consumes the
+          // collected value via shell.handleInput.
+          if (result.pendingInput) {
+            this.subShellPendingInput = result.pendingInput;
+            if (result.pendingInput.kind === 'password') {
+              this.inputMode = { type: 'password', promptText: result.pendingInput.promptText };
+              this._passwordBuf = '';
+            } else {
+              this.inputMode = { type: 'interactive-text', promptText: result.pendingInput.promptText };
+              this._inputBuf = '';
+            }
+            this.notify();
+            return;
+          }
+
+          this.notify();
+        };
+
+        if (maybePromise instanceof Promise) {
+          maybePromise.then(applyResult);
+        } else {
+          applyResult(maybePromise as SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean });
         }
-
-        this.notify();
       };
-
-      if (maybePromise instanceof Promise) {
-        maybePromise.then(applyResult);
-      } else {
-        applyResult(maybePromise as SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean });
-      }
+      if (this.tryOpenRemoteEditor(line, runLine)) return true;
+      runLine();
       return true;
     }
 

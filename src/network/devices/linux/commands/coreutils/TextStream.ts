@@ -25,6 +25,7 @@ import { simulationDate } from '@/network/core/SystemClock';
 import { base64ToBytes, bytesToBase64, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
 import { numberLines, parseNumbering } from './NumberLines';
+import { parseLessLaunch } from '../../editors/lessLaunch';
 import { shortOptions } from '../Getopt';
 import { GNU_OPTION_SETS } from '../../GnuOptionGuard';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -776,8 +777,12 @@ export const lessCommand = coreutil(
     { flag: '-R', description: 'Output raw control characters' },
   ],
   (ctx, args, stdin) => {
-    const files = args.filter(a => !a.startsWith('-') && !a.startsWith('+') || a === '-');
-    const got = inputs(ctx, files, stdin, 'less');
+    const parsed = parseLessLaunch(['less', ...args].join(' '));
+    if (parsed.kind === 'error') return parsed.message;
+    if (parsed.kind === 'print') return parsed.lines.join('\n');
+    const files = parsed.kind === 'open' ? parsed.launch.files : [];
+    if (files.length === 0 && stdin === undefined) return 'Missing filename ("less --help" for help)';
+    const got = inputs(ctx, [...files], stdin, 'less');
     if (!Array.isArray(got)) return got.replace(/^less: /, '');
     return got.join('');
   },

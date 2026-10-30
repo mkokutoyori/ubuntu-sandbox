@@ -127,7 +127,7 @@ export interface ILinuxShell {
    * filesystem this shell already acts on — permissions, swap files and
    * `:!cmd` are the remote's own (docs/PRD-SSH-Unification.md §4bis B3).
    */
-  openEditor?(commandLine: string): EditorSession | null;
+  openEditor?(commandLine: string): EditorSession | null | Promise<EditorSession | null>;
   /**
    * The editor a nested hop would open, reached through that hop's own
    * channel: this shell only relays keystrokes and screens, as the `ssh`

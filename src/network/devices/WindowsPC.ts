@@ -70,6 +70,7 @@ import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type T
 import { runSshd, type SshdDaemonRequest } from '../protocols/ssh/server/SshdCommand';
 import { WINDOWS_SSHD_PROFILE } from '../protocols/ssh/server/SshdDump';
 import { WindowsSshServerContext, windowsPathOf, SSHD_EXECUTABLE } from '../protocols/ssh/server/WindowsSshServerContext';
+import { SshInteractiveShell } from '../protocols/ssh/server/SshInteractiveShell';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
 import {
@@ -1405,6 +1406,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       getCwd: () => this.getCwd(),
       createVtyShell: (user: string) => this.createVtyShell(user),
       runExecAs: (user: string, line: string, stdin?: string) => this.runExecAs(user, line, stdin),
+      createInteractiveShell: () => new SshInteractiveShell(this),
       bindForwardedAgent: (user: string, agent: AgentPort) => this.bindForwardedAgent(user, agent),
       shellBanner: () => this.getSshMotd(),
       clientPort: (fromIp: string) => this.sshPeerPorts.get(fromIp),

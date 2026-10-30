@@ -93,8 +93,9 @@ import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ss
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment, withRcfiles } from '@/network/devices/linux/editors/editorLaunch';
 import { LinuxEditorFsContext } from './LinuxEditorFsContext';
-import { parseLessLaunch } from '@/network/devices/linux/editors/lessLaunch';
-import type { LessSource } from '@/network/devices/linux/editors/LessEngine';
+import { matchFullScreenProgram, openFullScreenProgram } from '@/network/devices/linux/editors/FullScreenPrograms';
+import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
+import { localEditorTransport } from '@/terminal/editors/LocalEditorTransport';
 import {
   createRemoteEditorController,
   type RemoteEditorTransport,
@@ -650,7 +651,7 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     // Editor mode is handled by the view component (NanoEditor / VimEditor)
-    if (this.inputMode.type === 'editor' || this.inputMode.type === 'remote-editor' || this.inputMode.type === 'less') return false;
+    if (this.inputMode.type === 'editor' || this.inputMode.type === 'remote-editor') return false;
 
     if (e.key === 'd' && e.ctrlKey && this.input === '') {
       // Ctrl+D inside an open here-document ends the document, it does not
@@ -919,7 +920,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryCrontabEdit(trimmed)) return;
     if (this.tryVisudoEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
-    if (await this.tryOpenPager(trimmed)) return;
+    if (await this.tryOpenFullScreen(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
     // (`mkdir foo && nano foo/x`). The chain is parsed up to the first
@@ -1166,56 +1167,22 @@ export class LinuxTerminalSession extends TerminalSession {
 
   // ── Editor integration ──────────────────────────────────────────
 
-  /**
-   * Parse a single editor segment (e.g. "nano /tmp/x" or "sudo vim foo")
-   * and open the editor with its args. Returns false when the segment
-   * is not actually an editor invocation (defensive — caller already
-   * checked).
-   */
-  private async tryOpenPager(commandLine: string): Promise<boolean> {
-    const parsed = parseLessLaunch(commandLine);
-    if (parsed.kind === 'none') return false;
-    if (parsed.kind === 'print') {
-      for (const text of parsed.lines) this.addLine(text);
-      return true;
-    }
-    if (parsed.kind === 'error') {
-      this.addLine(parsed.message, 'error');
-      return true;
-    }
-    const { launch } = parsed;
+  private async tryOpenFullScreen(commandLine: string): Promise<boolean> {
+    installDefaultEditors();
     const dev = this.device;
-    const sources: LessSource[] = [];
-    if (launch.piped) {
-      const output = await this.executeOnDevice(launch.prefix);
-      sources.push({ title: '', content: output === '' || output.endsWith('\n') ? output : `${output}\n` });
-    } else if (launch.files.length === 0 && launch.help) {
-      sources.push({ title: '', content: '' });
-    } else if (launch.files.length === 0) {
-      this.addLine('Missing filename ("less --help" for help)', 'error');
-      return true;
-    } else {
-      for (const file of launch.files) {
-        const content = this.shell && dev instanceof LinuxMachine
-          ? dev.readFileForEditorInSession(file, this.shell)
-          : this.device.readFileForEditor?.(this.device.resolveAbsolutePath?.(file) ?? file) ?? null;
-        if (content === null) {
-          const isDirectory = (await this.executeOnDevice(`[ -d '${file.replace(/'/g, "'\\''")}' ] && echo directory`)).trim() === 'directory';
-          this.addLine(isDirectory ? `${file} is a directory` : `${file}: No such file or directory`, 'error');
-          continue;
-        }
-        sources.push({ title: file, content });
-      }
-      if (sources.length === 0) return true;
-    }
-    this.inputMode = {
-      type: 'less',
-      sources,
-      options: launch.options,
-      quitIfOneScreen: launch.quitIfOneScreen,
-      initialKeys: launch.initialKeys,
-      help: !launch.help ? null : launch.files.length === 0 && !launch.piped ? 'only' : 'first',
-    };
+    const shell = this.shell;
+    if (!(dev instanceof LinuxMachine) || shell === null) return false;
+    if (matchFullScreenProgram(commandLine) !== 'less') return false;
+    const opened = await openFullScreenProgram(commandLine, {
+      fs: new LinuxEditorFsContext(dev, shell),
+      owner: shell.user,
+      windowSize: shell.windowSize,
+      runCommand: (line) => this.executeOnDevice(line),
+    });
+    if (opened === null) return false;
+    const view = opened.view;
+    const controller = createRemoteEditorController(localEditorTransport(opened), view, () => this.onRemoteEditorUpdate());
+    this.inputMode = { type: 'remote-editor', editorType: view.kind === 'vim' ? view.variant : view.kind, filePath: view.filePath, controller };
     this.notify();
     return true;
   }
@@ -2766,53 +2733,55 @@ export class LinuxTerminalSession extends TerminalSession {
       // An editor typed in a remote session opens on the remote, where
       // the file is. Only once the remote declines does the line run as
       // an ordinary command (docs/PRD-SSH-Unification.md §4bis B3).
-      if (this.tryOpenRemoteEditor(line)) return true;
+      const runLine = (): void => {
+        const screenBase = this.lines.length;
+        const onProgress = (text: string) => {
+          if (text === SCREEN_REPAINT_MARK) this.lines = this.lines.slice(0, screenBase);
+          else this.addShellOutputLine(text);
+          this.notify();
+        };
+        const maybePromise = this.holdSubShellForeground(processSubShellLine(this.activeSubShell, line, onProgress));
 
-      const screenBase = this.lines.length;
-      const onProgress = (text: string) => {
-        if (text === SCREEN_REPAINT_MARK) this.lines = this.lines.slice(0, screenBase);
-        else this.addShellOutputLine(text);
-        this.notify();
-      };
-      const maybePromise = processSubShellLine(this.activeSubShell, line, onProgress);
+        const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
+          if (result.clearScreen) this.clear();
 
-      const applyResult = (result: import('@/terminal/subshells/ISubShell').SubShellResult & { childShell?: import('@/shell').IShell }) => {
-        if (result.clearScreen) this.clear();
+          if (result.styledOutput && result.styledOutput.length > 0) {
+            for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+          } else {
+            for (const outputLine of result.output) this.addLine(outputLine);
+          }
 
-        if (result.styledOutput && result.styledOutput.length > 0) {
-          for (const styled of result.styledOutput) this.addStyledLine(styled.segments, styled.lineType);
+          if (result.exit) {
+            this.exitSubShell();
+            return;
+          }
+          // Sub-shell launched a deeper child (sqlplus → spooled, nested
+          // ssh, …). Push it through the same IShell stacking mechanic so
+          // the OuterRemoteShell / OuterCmd / OuterPS sees no difference.
+          if (result.childShell) {
+            this.pushIShellAsSubShell(result.childShell);
+            return;
+          }
+          // Sub-shell asked the host for a password / text value. Mirror
+          // the Windows contract: set inputMode, then route Enter back
+          // through shell.handleInput via feedSubShellInput.
+          if (result.pendingInput) {
+            this.subShellPendingInput = result.pendingInput;
+            this.inputMode = result.pendingInput.kind === 'password'
+              ? { type: 'password', promptText: result.pendingInput.promptText }
+              : { type: 'interactive-text', promptText: result.pendingInput.promptText };
+          }
+          this.notify();
+        };
+
+        if (maybePromise instanceof Promise) {
+          maybePromise.then(applyResult);
         } else {
-          for (const outputLine of result.output) this.addLine(outputLine);
+          applyResult(maybePromise);
         }
-
-        if (result.exit) {
-          this.exitSubShell();
-          return;
-        }
-        // Sub-shell launched a deeper child (sqlplus → spooled, nested
-        // ssh, …). Push it through the same IShell stacking mechanic so
-        // the OuterRemoteShell / OuterCmd / OuterPS sees no difference.
-        if (result.childShell) {
-          this.pushIShellAsSubShell(result.childShell);
-          return;
-        }
-        // Sub-shell asked the host for a password / text value. Mirror
-        // the Windows contract: set inputMode, then route Enter back
-        // through shell.handleInput via feedSubShellInput.
-        if (result.pendingInput) {
-          this.subShellPendingInput = result.pendingInput;
-          this.inputMode = result.pendingInput.kind === 'password'
-            ? { type: 'password', promptText: result.pendingInput.promptText }
-            : { type: 'interactive-text', promptText: result.pendingInput.promptText };
-        }
-        this.notify();
       };
-
-      if (maybePromise instanceof Promise) {
-        maybePromise.then(applyResult);
-      } else {
-        applyResult(maybePromise);
-      }
+      if (this.tryOpenRemoteEditor(line, runLine)) return true;
+      runLine();
       return true;
     }
 

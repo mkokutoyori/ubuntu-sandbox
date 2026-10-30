@@ -7,7 +7,7 @@ import type { EditorRelay } from '@/shell/SubShellStack';
 import type { ChannelRequest, ConnectionChannel } from '../connection/SshConnection';
 import {
   COMPLETE_REQUEST, COMPLETE_RESULT_REQUEST, EDITOR_REQUEST, EDITOR_VIEW_REQUEST, LINE_RESULT_REQUEST,
-  SHELL_INFO_REQUEST, STREAM_BEGIN_REQUEST, TTY_OP_ECHO, TTY_OP_ONLCR, parseTerminalModes,
+  SHELL_INFO_REQUEST, STREAM_BEGIN_REQUEST, STREAM_END_REQUEST, TTY_OP_ECHO, TTY_OP_ONLCR, parseTerminalModes,
   type EditorAction, type LineResultPayload, type ShellInfoPayload,
 } from '../connection/SandboxExtensions';
 import { decodeStringPayload, decodeWindowChange, encodeExitStatus, encodeStringPayload, type PtyRequestPayload } from '../connection/ChannelPayloads';
@@ -165,8 +165,13 @@ export class SshShellSession {
     }
     let view: unknown = null;
     if (action.action === 'open') {
-      this.editor = this.services.shell.openEditor?.(action.commandLine) ?? null;
-      view = this.editor ? (this.editor.resize?.(this.rows, this.cols) ?? this.editor.view) : null;
+      void Promise.resolve(this.services.shell.openEditor?.(action.commandLine) ?? null).then((opened) => {
+        if (this.disposed) return;
+        this.editor = opened;
+        const first = opened ? (opened.resize?.(this.rows, this.cols) ?? opened.view) : null;
+        void this.channel.request(EDITOR_VIEW_REQUEST, encodeStringPayload(JSON.stringify({ view: first })), false);
+      });
+      return;
     } else if (action.action === 'scroll') {
       view = this.editor?.scroll?.(action.up, action.count) ?? null;
     } else if (action.action === 'key') {
@@ -280,6 +285,7 @@ export class SshShellSession {
         onChunk: (text) => this.streamChunk(text),
         onDone: () => this.complete({ stdout: '', stderr: '', exitCode: 0 }),
         session: this.services.shell.isNested?.() === true ? undefined : this.services.shell.streamSession,
+        nested: this.services.shell.isNested?.() === true,
       }) ?? false;
       if (started) return;
     }
@@ -302,6 +308,7 @@ export class SshShellSession {
     pendingInput?: { kind: 'password' | 'text'; promptText: string }; sessionEnded?: boolean;
   }): void {
     if (this.disposed) return;
+    if (this.streamAnnounced) void this.channel.request(STREAM_END_REQUEST, undefined, false);
     this.streamAnnounced = false;
     const stdout = this.translate(endedLine(result.stdout));
     const stderr = this.translate(endedLine(result.stderr));

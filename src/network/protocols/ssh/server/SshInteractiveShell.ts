@@ -23,6 +23,8 @@ import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { TerminalAsyncRuntime } from '@/terminal/async/TerminalAsyncRuntime';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { planLinuxStream } from '@/terminal/streams/LinuxStreamPlans';
+import { WindowsPC } from '@/network/devices/WindowsPC';
+import { createWinPingStream, parseWinPingCommand } from '@/network/devices/windows/WinPing';
 import { SCREEN_REPAINT_MARK } from './SshScreenRepaint';
 
 export interface SshInteractiveShellHooks {
@@ -37,6 +39,7 @@ export interface SshInteractiveShellHooks {
    */
   onDone: () => void;
   session?: unknown;
+  nested?: boolean;
 }
 
 /**
@@ -77,8 +80,44 @@ export class SshInteractiveShell {
    * interrupted. Returns false for every other command, so the caller
    * should fall back to the plain `ILinuxShell.execute(line)` round trip.
    */
+  private tryStartWindowsPing(line: string, hooks: SshInteractiveShellHooks): boolean {
+    const device = this.device;
+    if (!(device instanceof WindowsPC) || hooks.nested === true) return false;
+    const parsed = parseWinPingCommand(line);
+    if (parsed === null) return false;
+    this.hooks = hooks;
+    let stream: ReturnType<typeof createWinPingStream> | null = null;
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      hooks.onDone();
+    };
+    const started = this.runtime.start({
+      mode: 'foreground',
+      kind: 'streaming',
+      command: line,
+      run: async (ctx) => {
+        try {
+          stream = createWinPingStream(device, parsed, {
+            line: (text) => ctx.sink.line(text),
+            error: (text) => ctx.sink.error(text),
+            cancelled: () => ctx.cancelled(),
+            delay: (ms) => ctx.delay(ms),
+          });
+          await stream.run();
+        } finally {
+          finish();
+        }
+      },
+      onInterrupt: () => stream?.emitStats(),
+    });
+    return started !== null;
+  }
+
   tryStartStreaming(line: string, hooks: SshInteractiveShellHooks): boolean {
     if (this.runtime.hasForegroundJob) return false;
+    if (this.device instanceof WindowsPC) return this.tryStartWindowsPing(line, hooks);
     if (!(this.device instanceof LinuxMachine)) return false;
     if (/[<>]|(?<!&)&(?!&)/.test(line)) return false;
     const session = hooks.session as LinuxShellSession | undefined;

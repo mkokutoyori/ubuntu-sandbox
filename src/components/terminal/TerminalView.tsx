@@ -22,6 +22,7 @@ import { LessViewer } from '@/components/editors/LessViewer';
 import { useGridGeometry } from '../gridGeometry';
 import { copySelectionToClipboard, pasteFromClipboard } from './clipboard';
 import type {
+  RemoteLessController,
   RemoteNanoController,
   RemoteVimController,
 } from '@/terminal/editors/RemoteEditorController';
@@ -90,10 +91,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
   // input below. Tracked as a dependency (not just read inline) so the
   // focus effect only re-runs when this actually flips, not on every
   // streamed line — see the ref on that input for why that distinction matters.
-  const hasAttachedStream = (session.listAttachedStreams?.().length ?? 0) > 0;
+  const hasAttachedStream = (session.listAttachedStreams?.().length ?? 0) > 0 || session.hasSubShellForeground;
 
   useEffect(() => {
-    if (effectiveMode.type === 'password') {
+    if (effectiveMode.type === 'interactive-text' && session.hasSubShellForeground) {
+      inputRef.current?.focus({ preventScroll: true });
+    } else if (effectiveMode.type === 'password') {
       setTimeout(() => hiddenInputRef.current?.focus({ preventScroll: true }), 10);
     } else if (effectiveMode.type === 'interactive-text') {
       setTimeout(() => interactiveInputRef.current?.focus(), 10);
@@ -106,7 +109,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     } else if (effectiveMode.type === 'normal') {
       setTimeout(() => inputRef.current?.focus(), 30);
     }
-  }, [effectiveMode.type, hasAttachedStream]);
+  }, [effectiveMode.type, hasAttachedStream, session]);
 
   useEffect(() => {
     const wanted = pendingCaret.current;
@@ -117,12 +120,13 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
 
   // Focus input on click — use effectiveMode for consistency with rendering
   const handleClick = useCallback(() => {
-    if (effectiveMode.type === 'password') hiddenInputRef.current?.focus({ preventScroll: true });
+    if (effectiveMode.type === 'interactive-text' && session.hasSubShellForeground) inputRef.current?.focus({ preventScroll: true });
+    else if (effectiveMode.type === 'password') hiddenInputRef.current?.focus({ preventScroll: true });
     else if (effectiveMode.type === 'interactive-text') interactiveInputRef.current?.focus();
     else if (effectiveMode.type === 'reverse-search') reverseSearchRef.current?.focus();
     else if (effectiveMode.type === 'booting') return;
     else inputRef.current?.focus();
-  }, [effectiveMode]);
+  }, [effectiveMode, session]);
 
   // Key handler bridge — converts React event to session KeyEvent
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -249,7 +253,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
     const done = (_saved?: boolean, notice?: string) => session.editorExit(remote.controller.savedOnExit, notice);
     return (
       <div className="h-full w-full flex flex-col">
-        {remote.editorType === 'nano' ? (
+        {remote.editorType === 'less' ? (
+          <LessViewer driver={remote.controller as RemoteLessController} onExit={() => done()} />
+        ) : remote.editorType === 'nano' ? (
           <NanoEditor
             filePath={remote.filePath}
             initialContent=""
@@ -267,22 +273,6 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             onExit={done}
           />
         )}
-      </div>
-    );
-  }
-
-  if (session.currentInputMode.type === 'less') {
-    const less = session.currentInputMode;
-    return (
-      <div className="h-full w-full flex flex-col">
-        <LessViewer
-          sources={less.sources}
-          options={less.options}
-          quitIfOneScreen={less.quitIfOneScreen}
-          initialKeys={less.initialKeys}
-          help={less.help}
-          onExit={(printed) => session.editorExit(true, printed)}
-        />
       </div>
     );
   }
@@ -449,7 +439,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
         )}
 
         {/* Interactive text input (GECOS, SQL*Plus, Cisco/Huawei confirmations) */}
-        {isInteractiveText && (
+        {isInteractiveText && !session.hasSubShellForeground && (
           <div className="flex items-center" style={{ minHeight: '1.35em' }}>
             {(inputMode as { promptText: string }).promptText && (
               <span style={{ color: theme.textColor, whiteSpace: 'pre' }}>
@@ -490,7 +480,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
             streamed line), which was stealing focus from other terminals
             on each new packet/line even when the user had since clicked
             elsewhere. */}
-        {!isDisconnected && !isPasswordMode && !isInteractiveText && !isBooting && !isPager && !isReverseSearch
+        {!isDisconnected && !isPasswordMode && (!isInteractiveText || session.hasSubShellForeground) && !isBooting && !isPager && !isReverseSearch
           && hasAttachedStream && (
           <input
             ref={inputRef}
