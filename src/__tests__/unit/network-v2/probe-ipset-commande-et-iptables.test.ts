@@ -168,6 +168,48 @@ describe('hash:net et hash:ip,port', () => {
   });
 });
 
+describe('bitmap:ip (lib/ipset_bitmap_ip.c, tests/bitmap:ip.t et sa liste)', () => {
+  it('une plage trop grande est refusee, une plage valide se cree et se liste', async () => {
+    expect(await run('ipset create test bitmap:ip range 2.0.0.1-2.1.0.1 timeout 5'))
+      .toBe('ipset v7.15: The range you specified exceeds the size limit of the set type');
+    expect(await run('ipset create test bitmap:ip range 2.0.0.1-2.1.0.0 timeout 5')).toBe('');
+    const lines = (await run('ipset list test')).split('\n');
+    expect(lines.slice(0, 4)).toEqual(['Name: test', 'Type: bitmap:ip', 'Revision: 3', 'Header: range 2.0.0.1-2.1.0.0 timeout 5']);
+  });
+
+  it('les bornes sont dans l\'ensemble, le reste hors plage est refuse a l\'ajout et absent au test', async () => {
+    await run('ipset create test bitmap:ip range 2.0.0.1-2.1.0.0 timeout 5');
+    expect(await run('ipset add test 2.0.0.1 timeout 4')).toBe('');
+    expect(await run('ipset add test 2.1.0.0 timeout 0')).toBe('');
+    expect(await run('ipset test test 2.1.0.0')).toContain('is in set');
+    expect(await run('ipset test test 2.0.0.2')).toContain('NOT in set');
+    expect(await run('ipset test test 2.0.0.0')).toContain('NOT in set');
+    expect(await run('ipset add test 2.0.0.0')).toBe('ipset v7.15: Element is out of the range of the set');
+  });
+
+  it('un CIDR donne la plage, save l\'ecrit sans famille', async () => {
+    await run('ipset create net bitmap:ip range 192.168.0.0/24');
+    expect((await run('ipset list net')).split('\n')[3]).toBe('Header: range 192.168.0.0-192.168.0.255');
+    expect(await run('ipset save net')).toBe('create net bitmap:ip range 192.168.0.0-192.168.0.255');
+  });
+});
+
+describe('list -o xml (lib/session.c, mode IPSET_LIST_XML)', () => {
+  it('ecrit l\'arbre de session.c : header, memsize, references, numentries, members', async () => {
+    await run('ipset create x hash:ip timeout 10');
+    await run('ipset add x 1.2.3.4');
+    vi.setSystemTime(new Date('2024-03-04T10:30:00.500Z'));
+    const lines = (await run('ipset list -o xml x')).split('\n');
+    expect(lines[0]).toBe('<ipsets>');
+    expect(lines[1]).toBe('<ipset name="x">');
+    expect(lines.slice(2, 4)).toEqual(['<type>hash:ip</type>', '<revision>5</revision>']);
+    expect(lines[4]).toMatch(/^<header><family>inet<\/family><hashsize>1024<\/hashsize><maxelem>65536<\/maxelem><timeout>10<\/timeout><bucketsize>12<\/bucketsize><initval>0x[0-9a-f]{8}<\/initval>$/);
+    expect(lines[5]).toMatch(/^<memsize>\d+<\/memsize>$/);
+    expect(lines.slice(6, 9)).toEqual(['<references>0</references>', '<numentries>1</numentries>', '</header>']);
+    expect(lines.slice(9)).toEqual(['<members>', '<member><elem>1.2.3.4</elem><timeout>9</timeout></member>', '</members>', '</ipset>', '</ipsets>']);
+  });
+});
+
 describe('save, restore, flush, destroy, rename, swap', () => {
   it('save ecrit des lignes create et add que restore relit', async () => {
     await run('ipset create s hash:ip timeout 0');
@@ -204,6 +246,21 @@ describe('save, restore, flush, destroy, rename, swap', () => {
 
   it('version', async () => {
     expect(await run('ipset version')).toBe('ipset v7.15, protocol version: 7');
+  });
+});
+
+describe('netfilter-persistent (plugin ipset : /etc/iptables/ipsets, relu avant les regles)', () => {
+  it('save ecrit les ensembles, reload les recree avant les regles qui les citent', async () => {
+    await run('ipset create bad hash:ip');
+    await run('ipset add bad 10.0.0.2');
+    await run('iptables -A INPUT -m set --match-set bad src -j DROP');
+    expect(await run('netfilter-persistent save')).toContain('Saving netfilter rules');
+    expect(await host.executeCommand('cat /etc/iptables/ipsets')).toContain('add bad 10.0.0.2');
+    await run('iptables -F');
+    await run('ipset destroy bad');
+    expect(await run('netfilter-persistent reload')).toContain('Reloading netfilter rules');
+    expect(await run('ipset test bad 10.0.0.2')).toContain('is in set bad.');
+    expect(verdict()).toBe('drop');
   });
 });
 
