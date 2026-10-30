@@ -212,6 +212,7 @@ import type { NatHook, NatHookContext, NatResult, PacketFacts, PacketInfo, Linux
 import { connectionTupleOf, type ConnectionState, type ConnectionTuple, type NatTranslation } from './linux/ConnectionTracker';
 import { Logger } from '../core/Logger';
 import { isIPv4Fragment } from '../core/Ipv4Fragmentation';
+import { isMulticastIpv4 } from '../core/ip';
 import { rewriteIcmpError, rewriteNatAddress } from '../nat/rewrite';
 
 // Façade + command registry
@@ -4817,7 +4818,7 @@ export abstract class LinuxMachine extends EndHost
     if (ip === '0.0.0.0') return 'UNSPEC';
     if (octets[0] === 127 || this.getPorts().some((port) => port.getIPAddress()?.toString() === ip)) return 'LOCAL';
     if (ip === '255.255.255.255') return 'BROADCAST';
-    if (octets[0] >= 224 && octets[0] <= 239) return 'MULTICAST';
+    if (isMulticastIpv4(ip)) return 'MULTICAST';
     const directed = this.getPorts().some((port) => {
       const address = port.getIPAddress();
       const mask = port.getSubnetMask();
