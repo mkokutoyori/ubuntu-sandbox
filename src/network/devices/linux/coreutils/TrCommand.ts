@@ -1,5 +1,5 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
-import { Streams, docsResult, quoteLocale, usageFailure, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
+import { Streams, docsResult, fromBytes, quoteLocale, toBytes, usageFailure, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
 
 const LONG_OPTIONS: readonly LongOption[] = [
   { name: 'complement', letter: 'c', takesArgument: false },
@@ -61,7 +61,7 @@ function unescape(source: Buffer): Array<{ value: number; escaped: boolean }> {
 }
 
 function parseElements(text: string): Element[] {
-  const chars = unescape(Buffer.from(text, 'utf8'));
+  const chars = unescape(toBytes(text));
   const elements: Element[] = [];
   let i = 0;
   const at = (index: number): number | undefined => chars[index]?.value;
@@ -228,7 +228,7 @@ export function runTr(args: readonly string[], io: CoreutilsIO): CoreutilsRun {
   if (operands.some((operand) => /(^|[^\\])(\\\\)*\\$/.test(operand))) {
     streams.diagnostic('tr: warning: an unescaped backslash at end of string is not portable');
   }
-  const input = Buffer.from(io.stdin ?? '', 'utf8');
+  const input = toBytes(io.stdin ?? '');
   const out: number[] = [];
   let previous = -1;
   for (const byte of input) {
@@ -238,6 +238,6 @@ export function runTr(args: readonly string[], io: CoreutilsIO): CoreutilsRun {
     out.push(mapped);
     previous = mapped;
   }
-  streams.stdout(Buffer.from(out).toString('utf8'));
+  streams.stdout(fromBytes(Buffer.from(out)));
   return streams.result();
 }

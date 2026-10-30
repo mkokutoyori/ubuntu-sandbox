@@ -17,7 +17,7 @@ const LONG_OPTIONS: readonly LongOption[] = [
 ];
 
 const DELIMIT_CHOICES = ['none', 'prepend', 'separate'] as const;
-const GROUP_CHOICES = ['separate', 'prepend', 'append', 'both'] as const;
+const GROUP_CHOICES = ['prepend', 'append', 'separate', 'both'] as const;
 
 function choice(value: string, choices: readonly string[]): string | null {
   if (choices.includes(value)) return value;

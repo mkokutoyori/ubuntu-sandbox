@@ -1,5 +1,5 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
-import { Streams, docsResult, parseSizeWithSuffix, quotef, quoteLocale, quoteShell, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
+import { Streams, docsResult, fromBytes, parseSizeWithSuffix, quotef, quoteLocale, quoteShell, toBytes, type CoreutilsIO, type CoreutilsRun } from './CoreutilsKit';
 
 const LONG_OPTIONS: readonly LongOption[] = [
   { name: 'ignore-leading-blanks', letter: 'b', takesArgument: false },
@@ -345,7 +345,7 @@ export function runSort(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
           const choices = ['diagnose-first', 'quiet', 'silent'];
           const matches = choices.filter((name) => name.startsWith(given));
           if (given === '' || matches.length !== 1) {
-            throw new SortUsage(`invalid argument ${quoteLocale(given)} for ${quoteLocale('--check')}\nValid arguments are:\n  - ${quoteLocale('diagnose-first')}\n  - ${quoteLocale('quiet')}, ${quoteLocale('silent')}\nTry 'sort --help' for more information.`, false, 1);
+            throw new SortUsage(`invalid argument ${quoteLocale(given)} for ${quoteLocale('--check')}\nValid arguments are:\n  - ${quoteLocale('quiet')}, ${quoteLocale('silent')}\n  - ${quoteLocale('diagnose-first')}\nTry 'sort --help' for more information.`, false, 1);
           }
           check = matches[0] === 'diagnose-first' ? 'diagnose' : 'quiet';
           break;
@@ -437,7 +437,7 @@ export function runSort(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
     }
     const records = read.text.split(terminator);
     if (records[records.length - 1] === '') records.pop();
-    perFile.push(records.map((record) => Buffer.from(record, 'utf8')));
+    perFile.push(records.map((record) => toBytes(record)));
     origin.push(name);
   }
   if (streams.exitCode === 2 && check === '') return streams.result();
@@ -465,7 +465,7 @@ export function runSort(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
     for (let index = 1; index < lines.length; index++) {
       const order = compareKeys(lines[index - 1], lines[index]);
       if (order > 0 || (unique && order === 0) || (!unique && !stable && order === 0 && compareFull(lines[index - 1], lines[index]) > 0)) {
-        if (check === 'diagnose') streams.diagnostic(`sort: ${origin[0] === '-' ? '-' : quotef(origin[0])}:${index + 1}: disorder: ${lines[index].toString('utf8')}`);
+        if (check === 'diagnose') streams.diagnostic(`sort: ${origin[0] === '-' ? '-' : quotef(origin[0])}:${index + 1}: disorder: ${fromBytes(lines[index])}`);
         streams.exitCode = 1;
         return streams.result();
       }
@@ -501,7 +501,7 @@ export function runSort(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
     }
     merged = kept;
   }
-  const text = merged.map((line) => line.toString('utf8') + terminator).join('');
+  const text = merged.map((line) => fromBytes(line) + terminator).join('');
   if (output !== null) {
     if (io.write?.(output, text) !== true) {
       streams.diagnostic(`sort: open failed: ${quotef(output)}: No such file or directory`);

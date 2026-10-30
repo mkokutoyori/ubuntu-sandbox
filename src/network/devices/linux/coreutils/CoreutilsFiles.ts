@@ -13,6 +13,10 @@ export function coreutilsIO(ctx: ShellContext, stdin: string | undefined): Coreu
       const text = ctx.vfs.readFile(path);
       return text === null ? { kind: 'missing' } : { kind: 'ok', text };
     },
+    readBytes: (name, count) => {
+      const path = ctx.vfs.normalizePath(name, ctx.cwd);
+      return ctx.vfs.exists(path) ? ctx.vfs.readFileBytes(path, count) : null;
+    },
     write: (name, text) => ctx.vfs.writeFile(ctx.vfs.normalizePath(name, ctx.cwd), text, ctx.uid, ctx.gid, ctx.umask, false, undefined, false),
   };
 }

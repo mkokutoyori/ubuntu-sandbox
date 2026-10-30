@@ -1,3 +1,4 @@
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import { COREUTILS_DOCS } from './CoreutilsDocs';
 
 export interface CoreutilsRun {
@@ -16,6 +17,7 @@ export type FileRead =
 export interface CoreutilsIO {
   readonly stdin: string | undefined;
   read(name: string): FileRead;
+  readBytes?(name: string, count: number): string | null;
   write?(name: string, text: string): boolean;
 }
 
@@ -82,11 +84,19 @@ export function parseSizeWithSuffix(text: string): number | null {
   return factor === undefined ? null : Number(match[1]) * factor;
 }
 
+export function toBytes(text: string): Buffer {
+  return Buffer.from(fileTextToBytes(text));
+}
+
+export function fromBytes(bytes: Uint8Array): string {
+  return bytesToFileText(bytes);
+}
+
 export function utf8Bytes(text: string): number {
-  return Buffer.byteLength(text, 'utf8');
+  return fileTextToBytes(text).length;
 }
 
 export function takeBytes(text: string, count: number, fromEnd = false): string {
-  const buffer = Buffer.from(text, 'utf8');
-  return (fromEnd ? buffer.subarray(Math.max(0, buffer.length - count)) : buffer.subarray(0, count)).toString('utf8');
+  const buffer = toBytes(text);
+  return fromBytes(fromEnd ? buffer.subarray(Math.max(0, buffer.length - count)) : buffer.subarray(0, count));
 }

@@ -1,6 +1,6 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
 import {
-  Streams, docsResult, parseSizeWithSuffix, quoteLocale, quoteShell, takeBytes, usageFailure,
+  Streams, docsResult, parseSizeWithSuffix, quoteLocale, quoteShell, takeBytes, usageFailure, utf8Bytes,
   type CoreutilsIO, type CoreutilsRun,
 } from './CoreutilsKit';
 
@@ -43,7 +43,7 @@ function obsoleteCount(args: readonly string[]): { rest: string[]; apply: (optio
 function headText(text: string, options: HeadOptions): string {
   if (options.unit === 'bytes') {
     if (!options.allButLast) return takeBytes(text, options.count);
-    const total = Buffer.byteLength(text, 'utf8');
+    const total = utf8Bytes(text);
     return takeBytes(text, Math.max(0, total - options.count));
   }
   const lines: string[] = [];
@@ -97,7 +97,8 @@ export function runHead(args: readonly string[], io: CoreutilsIO): CoreutilsRun 
   let first = true;
   for (const name of names) {
     const label = name === '-' ? 'standard input' : name;
-    const read = name === '-' ? { kind: 'ok' as const, text: io.stdin ?? '' } : io.read(name);
+    const quick = name !== '-' && options.unit === 'bytes' && !options.allButLast ? io.readBytes?.(name, options.count) ?? null : null;
+    const read = name === '-' ? { kind: 'ok' as const, text: io.stdin ?? '' } : quick !== null ? { kind: 'ok' as const, text: quick } : io.read(name);
     if (read.kind === 'missing' || read.kind === 'denied') {
       streams.diagnostic(`head: cannot open ${quoteShell(name)} for reading: ${read.kind === 'missing' ? 'No such file or directory' : 'Permission denied'}`);
       streams.exitCode = 1;

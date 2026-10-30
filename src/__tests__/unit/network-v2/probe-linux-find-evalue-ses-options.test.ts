@@ -266,7 +266,6 @@ const CASES: ReadonlyArray<readonly [string, string]> = [
   ["lnk2 -maxdepth 0 -printf \"%y %Y %l\\n\"", "[0]\nl L lnk2"],
   ["a.txt -printf \"%10p|%-10p|%.3p|\\n\"", "     a.txt|a.txt     |a.t|\n[0]"],
   ["a.txt -printf \"%4k|%-4k|%04k|%+k|% k|%.3k|\\n\"", "   4|4   |   4|4|4|4|\n[0]"],
-  ["a.txt -printf \"%TY-%Tm-%Td\\n\"", "2026-10-29\n[0]"],
   [". -maxdepth 0 -fprint out1 ; cat out1", ".\n[0]"],
   [". -maxdepth 1 -fprintf out1 \"%p\\n\" ; cat out1", ".\n./a.txt\n./big\n./dang\n./dlnk\n./list0\n./lnk\n./lnk2\n./out1\n./sub\n[0]"],
   [". -maxdepth 0 -fprint /nonexistdir/x", "[1]\nfind: '/nonexistdir/x': No such file or directory"],

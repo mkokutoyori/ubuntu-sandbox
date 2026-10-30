@@ -1,6 +1,6 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
 import {
-  Streams, docsResult, quoteLocale, quotef, usageFailure,
+  Streams, docsResult, fromBytes, quoteLocale, quotef, toBytes, usageFailure,
   type CoreutilsIO, type CoreutilsRun,
 } from './CoreutilsKit';
 
@@ -164,9 +164,9 @@ export function runCut(args: readonly string[], io: CoreutilsIO): CoreutilsRun {
         streams.stdout(kept.join(joiner ?? fieldDelimiter) + terminator);
         continue;
       }
-      const bytes = [...Buffer.from(record, 'utf8')].map((byte) => String.fromCharCode(byte));
+      const bytes = [...toBytes(record)].map((byte) => String.fromCharCode(byte));
       const picked = selectUnits(bytes, ranges, joiner);
-      streams.stdout(Buffer.from(picked, 'latin1').toString('utf8') + terminator);
+      streams.stdout(fromBytes(Buffer.from(picked, 'latin1')) + terminator);
     }
   }
   return streams.result();
