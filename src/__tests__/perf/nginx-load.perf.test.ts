@@ -86,6 +86,22 @@ ${locations}  location /ret { return 200 "ok"; }
 }
 
 describe.skipIf(!enabled)('nginx : charge, dérive et mémoire', () => {
+  it.skipIf(process.env.NGINX_PERF_SETTLE !== '1')('la mémoire redescend quand les minuteries TCP et conntrack expirent (70 s réelles)', async () => {
+    const lab = labo();
+    await front(lab);
+    timeBatch(lab, 200, '/index.nginx-debian.html');
+    const before = heapMb();
+    for (let round = 0; round < 6; round++) timeBatch(lab, 500, '/index.nginx-debian.html');
+    const held = heapMb();
+    const sockets = lab.back.getTcpStack().socketCount();
+    await new Promise((resolve) => setTimeout(resolve, 70_000));
+    const settled = heapMb();
+    report('settle.sockets_held_after_3000_requests', String(sockets));
+    report('settle.heap_mb_held', (held - before).toFixed(1));
+    report('settle.heap_mb_after_70s', (settled - before).toFixed(1));
+    report('settle.sockets_after_70s', String(lab.back.getTcpStack().socketCount()));
+  }, 400_000);
+
   it('coût d\'une requête selon son chemin', async () => {
     const lab = labo();
     await front(lab);
