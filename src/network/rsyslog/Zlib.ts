@@ -595,6 +595,13 @@ function checkZlibHeader(method: number, flags: number): void {
   if ((flags & 0x20) !== 0) throw new ZlibError('preset dictionary not supported');
 }
 
+export function deflateRawDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): Uint8Array {
+  const decoded: number[] = [];
+  const inflated = inflateRaw(data, 0, maxOutput, decoded);
+  if (!inflated.complete) throw new InputExhausted();
+  return Uint8Array.from(decoded);
+}
+
 export function zlibDecompress(data: Uint8Array, maxOutput = Number.MAX_SAFE_INTEGER): Uint8Array {
   if (data.length < 6) throw new ZlibError('zlib stream too short');
   checkZlibHeader(data[0], data[1]);

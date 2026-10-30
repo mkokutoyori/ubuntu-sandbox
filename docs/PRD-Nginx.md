@@ -948,3 +948,61 @@ reproductible a l'identique.
 passent des deux cotes sont des refus (sans `Accept-Encoding`, `gzip off`,
 `q=0`, HEAD, 301/502, trop court…) et le temoin « la configuration
 livree reste valide ».
+
+### 9.12 `curl --compressed` : le client qui boucle §9.11
+
+Apres §9.11 le serveur compressait, mais `curl --compressed` repondait
+« the installed libcurl version doesn't support this » : un curl sans
+libz, ce que la ligne `Features: IPv6 SSL` disait fidelement. Le TP
+« activer gzip puis le constater » restait donc impossible, le client ne
+sachant ni demander ni decoder. Le refus etait juste tant que le codec
+manquait ; il ne l'est plus, puisque `rsyslog/Zlib.ts` le porte.
+
+Source : curl 8.5.0 — `lib/content_encoding.c` (`encodings[]`,
+`Curl_build_unencoding_stack`, `Curl_all_content_encodings`,
+`error_do_write`, `process_zlib_error`), `lib/http.c` (`Accept-Encoding`
+pose sauf si l'appelant a le sien), `lib/sendf.c` (`Curl_cwriter_add`).
+
+**Ce qui est livre** :
+* `--compressed` pose `Accept-Encoding: deflate, gzip` (jamais `br` ni
+  `zstd` : ces bibliotheques ne sont pas annoncees ; `identity` est le
+  nom par defaut et sort de la liste, comme dans `Curl_all_content_encodings`) ;
+* un `-H 'Accept-Encoding: …'` de l'appelant remplace le sien, mais le
+  decodage reste actif ;
+* le corps est decode ; `-D` et `-i` montrent les en-tetes de la reponse,
+  `Content-Encoding` compris ; `%{size_download}` compte les octets decodes ;
+* `identity`/`none`, `deflate` (format zlib, repli sur flux brut comme
+  libcurl), `gzip`/`x-gzip`, sans casse ; plusieurs codages se retirent a
+  l'envers de leur ordre d'application (`Curl_cwriter_add` insere
+  « first in its phase ») ; le cinquieme est refuse ;
+* un codage inconnu donne `curl: (61) Unrecognized content encoding type.
+  libcurl understands deflate, gzip content encodings.` — et seulement
+  quand il y a un corps, la source differant l'erreur a l'ecriture ; un
+  flux corrompu donne `curl: (61) Error while processing content
+  unencoding: …` ;
+* `curl --version` annonce `zlib/1.3` et `Features: IPv6 libz SSL` (ordre
+  alphabetique sans casse, comme le vrai).
+
+**Pas de decodeur ecrit a cote** : `http/ContentCodings.ts` est neutre
+(ni curl ni nginx) pour que wget ou `Invoke-WebRequest` s'y branchent ;
+il ne contient que la table des codages et l'ordre, le codec restant
+`Zlib.ts`, ou `deflateRawDecompress` a ete ajoute.
+
+**Limites assumees** : la sortie decodee est plafonnee a 16 Mio
+(`MAX_DECODED_BYTES`, memoire du simulateur ; le vrai curl n'a pas de
+plafond) ; le texte exact des messages zlib (`incorrect header check`…)
+n'est pas reproduit, seule la phrase d'enveloppe l'est ; `--http2` et
+`--http3` restent refuses, leurs bibliotheques n'etant toujours pas la.
+
+**Trois tests existants portaient la premisse « pas de libz »** et ont
+change avec elle : `curl-feature-gated-options` (`--compressed` sort de la
+liste des refus, la ligne `Features` change), `curl-version-et-options`
+(`Features: IPv6 libz SSL`). Le principe qu'ils gardent — n'annoncer que
+ce que la commande fait — est intact.
+
+`http-content-codings.test.ts` (25 cas) et `curl-compressed.test.ts`
+(18 cas) : **40 cas tombent par `git stash`** sur 48 avec
+`curl-feature-gated-options` (le module ne se charge meme pas : ses 25
+cas tombent). Les 8 qui passent des deux cotes sont des refus
+(`--http2`…, pas d'`Accept-Encoding` sans `--compressed`, un corps `br`
+livre tel quel sans `--compressed`).

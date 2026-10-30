@@ -580,20 +580,17 @@ attend `proxy_connect_timeout` (60 s par defaut) puis rend `504 Gateway
 Time-out`. Un RST (port ferme) donne bien 502 des deux cotes. Meme cause
 que l'entree [curl] -m : le client HTTP n'attend pas sur l'horloge.
 
-### [curl] deux versions de curl et `--compressed` sans libz
+### [curl] deux versions de curl
 Le catalogue de paquets dit `curl 7.81.0-1ubuntu1.15` (jammy), `curl
---version` dit `curl 8.5.0` ; un seul des deux doit rester. Et `curl
---compressed` est refuse comme par un curl sans libz (`Features: IPv6
-SSL`) alors que nginx compresse desormais (`gzip on`, docs/PRD-Nginx.md
-§9.11) et que le codec existe (`rsyslog/Zlib.ts`) : le client ne sait
-ni annoncer `Accept-Encoding` ni decoder `Content-Encoding`.
+--version` dit `curl 8.5.0` ; un seul des deux doit rester.
 
 ### [gzip] la commande `gzip` ecrit un pseudo-format, pas du gzip
 `gzip -k /tmp/a` ecrit `!<simgz>\n{"name":"a",…}` (63 octets pour
 « hello »), lu par `unpackGzip` a cote du vrai gzip que decode
 `rsyslog/Zlib.ts` (`unpackRealGzip`). Deux formats pour une commande ;
 un `.gz` fabrique ici ne se lit pas avec un vrai `gzip -d`. Vu en
-branchant `gzip on` d'nginx sur `gzipCompress`. Le fermer : `cmdGzip`
+branchant `gzip on` d'nginx sur `gzipCompress` ; `curl --compressed`
+(docs/PRD-Nginx.md §9.12) lit lui le vrai format. Le fermer : `cmdGzip`
 doit ecrire `gzipCompress` et `unpackGzip` ne garder que la lecture
 reelle ; non fait ici car `tar -z` et `gzipText` en dependent.
 
