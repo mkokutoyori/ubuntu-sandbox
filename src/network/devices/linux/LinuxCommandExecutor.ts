@@ -6667,9 +6667,16 @@ export class LinuxCommandExecutor {
         if (sub === 'save') {
           this.vfs.writeFile('/etc/iptables/rules.v4', this.iptables.executeSave(), 0, 0, 0o022);
           this.vfs.writeFile('/etc/iptables/rules.v6', this.ip6tables.executeSave(), 0, 0, 0o022);
+          this.vfs.writeFile('/etc/iptables/ipsets', `${this.ipset.execute(['save']).output}\n`, 0, 0, 0o022);
           return { output: 'Saving netfilter rules...', exitCode: 0 };
         }
         if (sub === 'reload') {
+          const sets = this.vfs.readFile('/etc/iptables/ipsets');
+          if (sets !== null) {
+            this.ipset.execute(['flush']);
+            this.ipset.execute(['destroy']);
+            this.ipset.execute(['restore'], sets);
+          }
           const v4 = this.vfs.readFile('/etc/iptables/rules.v4');
           const v6 = this.vfs.readFile('/etc/iptables/rules.v6');
           if (v4 !== null) this.iptables.executeRestore(v4);

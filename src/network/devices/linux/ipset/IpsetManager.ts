@@ -140,7 +140,7 @@ export class IpsetManager {
   }
 
   private run(args: readonly string[], stdin: string | undefined): IpsetResult {
-    const options = { exist: false, names: false, terse: false, quiet: false, save: false };
+    const options = { exist: false, names: false, terse: false, quiet: false, save: false, xml: false };
     const words: string[] = [];
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
@@ -149,7 +149,11 @@ export class IpsetManager {
       else if (arg === '-t' || arg === '-terse') options.terse = true;
       else if (arg === '-q' || arg === '-quiet') options.quiet = true;
       else if (arg === '-s' || arg === '-sorted') continue;
-      else if (arg === '-o' || arg === '-output') options.save = args[++i] === 'save';
+      else if (arg === '-o' || arg === '-output') {
+        const format = args[++i];
+        options.save = format === 'save';
+        options.xml = format === 'xml';
+      }
       else words.push(arg);
     }
     const command = words[0];
@@ -504,11 +508,12 @@ export class IpsetManager {
     return text;
   }
 
-  private list(operands: readonly string[], options: { names: boolean; terse: boolean; save: boolean }): IpsetResult {
+  private list(operands: readonly string[], options: { names: boolean; terse: boolean; save: boolean; xml: boolean }): IpsetResult {
     const targets = operands[0] === undefined ? [...this.sets.values()] : [this.find(operands[0])];
     if (options.names) return { output: targets.map((set) => set.name).join('\n'), exitCode: 0 };
     if (options.save) return this.save(operands);
     const now = simulationNowMs();
+    if (options.xml) return this.xml(targets, options.terse, now);
     const blocks = targets.map((set) => {
       this.purge(set);
       const lines = [
@@ -521,6 +526,36 @@ export class IpsetManager {
       return lines.join('\n').replace(/\n$/, '');
     });
     return { output: blocks.join('\n\n'), exitCode: 0 };
+  }
+
+  private xml(targets: readonly IpSet[], terse: boolean, now: number): IpsetResult {
+    const lines = ['<ipsets>'];
+    for (const set of targets) {
+      this.purge(set);
+      const header = [
+        ['family', set.family], ['hashsize', set.hashsize], ['maxelem', set.maxelem],
+        ...(set.netmask === null ? [] : [['netmask', set.netmask]]),
+        ...(set.timeout === null ? [] : [['timeout', set.timeout]]),
+        ['bucketsize', BUCKETSIZE], ['initval', set.initval],
+      ].map(([name, value]) => `<${name}>${value}</${name}>`).join('');
+      lines.push(
+        `<ipset name="${set.name}">`, `<type>${set.type}</type>`, `<revision>${TYPES[set.type].revision}</revision>`,
+        `<header>${header}`, `<memsize>${200 + 64 * set.elements.size}</memsize>`,
+        `<references>${this.environment.references(set.name)}</references>`, `<numentries>${set.elements.size}</numentries>`,
+        '</header>',
+      );
+      if (!terse) {
+        lines.push('<members>');
+        for (const entry of set.elements.values()) {
+          const remaining = entry.expiresAt === null ? 0 : Math.max(0, Math.floor((entry.expiresAt - now) / 1000));
+          lines.push(`<member><elem>${entry.text}</elem>${set.timeout === null ? '' : `<timeout>${remaining}</timeout>`}</member>`);
+        }
+        lines.push('</members>');
+      }
+      lines.push('</ipset>');
+    }
+    lines.push('</ipsets>');
+    return { output: lines.join('\n'), exitCode: 0 };
   }
 
   private save(operands: readonly string[]): IpsetResult {
