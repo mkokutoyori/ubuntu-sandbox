@@ -444,7 +444,13 @@ export class SshInteractiveSubShell implements ISubShell {
     // A challenge raised by the remote's own shell: the answer belongs
     // on the wire, not in a local flow.
     if (this.serverPendingInput) {
-      const result = await this.channel.provideInput(value);
+      this.inFlight = true;
+      let result;
+      try {
+        result = await this.channel.provideInput(value);
+      } finally {
+        this.inFlight = false;
+      }
       if (result.prompt) this.serverPrompt = result.prompt;
       this.serverNested = result.nested === true;
       this.serverClearedScreen = result.clearScreen === true;
