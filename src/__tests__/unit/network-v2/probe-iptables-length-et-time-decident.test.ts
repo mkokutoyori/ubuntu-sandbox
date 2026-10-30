@@ -260,6 +260,23 @@ describe('-m tcpmss (xt_tcpmss : le MSS annonce dans le SYN ; sans option MSS le
   });
 });
 
+describe('-m pkttype (xt_pkttype : unicast = a nous, broadcast, multicast ; alias bcast, mcast, host)', () => {
+  it('la classe du paquet vient de l\'adresse de destination', async () => {
+    expect(await verdict('-m pkttype --pkt-type broadcast -j DROP', packet({ dstAddrType: 'BROADCAST' }))).toBe('drop');
+    expect(await verdict('-m pkttype --pkt-type bcast -j DROP', packet({ dstAddrType: 'BROADCAST' }))).toBe('drop');
+    expect(await verdict('-m pkttype --pkt-type multicast -j DROP', packet({ dstAddrType: 'LOCAL' }))).toBe('accept');
+    expect(await verdict('-m pkttype --pkt-type unicast -j DROP', packet({ dstAddrType: 'LOCAL' }))).toBe('drop');
+    expect(await verdict('-m pkttype ! --pkt-type unicast -j DROP', packet({ dstAddrType: 'MULTICAST' }))).toBe('drop');
+  });
+
+  it('un alias se liste sous son nom canonique, un nom inconnu est refuse', async () => {
+    expect(await listed('-m pkttype --pkt-type mcast -j DROP')).toBe('PKTTYPE = multicast');
+    expect(await listed('-m pkttype --pkt-type host -j DROP')).toBe('PKTTYPE = unicast');
+    const host = new LinuxPC('H', 0, 0);
+    expect(await host.executeCommand('sudo iptables -A INPUT -m pkttype --pkt-type zorglub -j DROP')).toContain("Bad packet type 'zorglub'");
+  });
+});
+
 describe('-m time', () => {
   beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2024-03-04T10:30:00Z')); });
   afterEach(() => { vi.useRealTimers(); });

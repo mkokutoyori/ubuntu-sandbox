@@ -134,6 +134,7 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
   addrtype: ['--src-type', '--dst-type'],
+  pkttype: ['--pkt-type'],
   tcpmss: ['--mss'],
   dscp: ['--dscp', '--dscp-class'],
   tos: ['--tos'],
@@ -404,6 +405,14 @@ export interface ListFormat {
   numeric: boolean;
   lineNumbers: boolean;
   exact: boolean;
+}
+
+const PKTTYPE_NAMES: Readonly<Record<string, 'unicast' | 'broadcast' | 'multicast'>> = {
+  unicast: 'unicast', host: 'unicast', broadcast: 'broadcast', bcast: 'broadcast', multicast: 'multicast', mcast: 'multicast',
+};
+
+function pkttypeOf(name: string): 'unicast' | 'broadcast' | 'multicast' | null {
+  return PKTTYPE_NAMES[name.toLowerCase()] ?? null;
 }
 
 function markListing(option: string, value: string): string {
@@ -881,6 +890,13 @@ export class LinuxIptablesManager {
       if (m.module === 'recent') {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
+      }
+      if (m.module === 'pkttype') {
+        const kind = pkttypeOf(m.options.get('--pkt-type') ?? '');
+        const actual = pkt.dstAddrType ?? pkt.addressTypeOf?.(pkt.dstIP);
+        if (kind === null || actual === undefined) return false;
+        const carried = actual === 'BROADCAST' ? 'broadcast' : actual === 'MULTICAST' ? 'multicast' : 'unicast';
+        if ((carried === kind) === inverted('--pkt-type')) return false;
       }
       if (m.module === 'tcpmss') {
         const range = parseMssRange(m.options.get('--mss') ?? '');
@@ -1474,7 +1490,7 @@ export class LinuxIptablesManager {
         const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
         return `mark match${inverts(m, '--mark') ? ' !' : ''} ${hex(mark)}${mask === undefined ? '' : `/${hex(mask)}`}`;
       }
-      case 'pkttype': return `PKTTYPE ${inverts(m, '--pkt-type') ? '!' : ''}= ${o.get('--pkt-type') ?? ''}`;
+      case 'pkttype': return `PKTTYPE ${inverts(m, '--pkt-type') ? '!' : ''}= ${pkttypeOf(o.get('--pkt-type') ?? '') ?? o.get('--pkt-type') ?? ''}`;
       case 'iprange': {
         const ranges: string[] = [];
         if (o.has('--src-range')) ranges.push(`source IP range${inverts(m, '--src-range') ? ' !' : ''} ${o.get('--src-range')}`);
@@ -2073,6 +2089,9 @@ export class LinuxIptablesManager {
   private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'pkttype' && pkttypeOf(options.get('--pkt-type') ?? '') === null) {
+      return `Bad packet type '${options.get('--pkt-type') ?? ''}'`;
     }
     if (module === 'tcpmss') {
       const range = parseMssRange(options.get('--mss') ?? '');
