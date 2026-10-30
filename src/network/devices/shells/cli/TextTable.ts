@@ -149,6 +149,8 @@ export const VRP_RULED_TABLE: TableStyle = { gap: 2, rule: true };
  */
 export const NMAP_TABLE: TableStyle = { gap: 1, rule: false };
 
+export const LSOF_TABLE: TableStyle = NMAP_TABLE;
+
 const ANSI_ESCAPE = /\u001b\[[0-9;]*[A-Za-z]/g;
 
 function isWide(code: number): boolean {

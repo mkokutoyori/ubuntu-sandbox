@@ -121,7 +121,8 @@ export function runTree(ctx: LinuxCommandContext, args: string[]): { output: str
     if (depth > flags.level) return;
     const raw = vfs.listDirectory(abs);
     if (raw === null) { counters.failed = true; return; }
-    const entries = sortEntries(raw).filter((e) => visible(e.name, flags.all))
+    const entries = sortEntries(raw).filter((e) => e.name !== '.' && e.name !== '..')
+      .filter((e) => visible(e.name, flags.all))
       .filter((e) => !flags.dirsOnly || e.inode.type === 'directory');
 
     entries.forEach((e, idx) => {
@@ -129,7 +130,8 @@ export function runTree(ctx: LinuxCommandContext, args: string[]): { output: str
       const childDisplay = flags.fullPath
         ? `${display.replace(/\/$/, '')}/${e.name}`
         : e.name;
-      lines.push(`${prefix}${last ? '`-- ' : '|-- '}${childDisplay}`);
+      const shown = e.inode.type === 'symlink' ? `${childDisplay} -> ${vfs.linkTarget(e.inode)}` : childDisplay;
+      lines.push(`${prefix}${last ? '`-- ' : '|-- '}${shown}`);
       if (e.inode.type === 'directory') counters.dirs++;
       else counters.files++;
       if (e.inode.type === 'directory') {

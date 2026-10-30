@@ -311,7 +311,7 @@ import { cwdLinkOf, exeLinkOf, rootLinkOf, type ProcessLinkSources } from './pro
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
 import { applyRcfiles, type RcHost } from './editors/nano/NanoRc';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './editors/nano/NanoOperatingDirectory';
-import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { padToWidth, renderTableText, LSOF_TABLE, type TableColumn } from '@/network/devices/shells/cli/TextTable';
 
 /** Commands that commonly read from stdin when piped. */
 const PROXY_COMMAND_CLOSED = 'Connection closed by UNKNOWN port 65535';
@@ -683,6 +683,37 @@ function printsResultOnFailure(cmd: string, args: readonly string[], exitCode: n
   if (exitCode === 0) return false;
   if (cmd === 'cmp' || cmd === 'grep' || cmd === 'egrep' || cmd === 'fgrep') return exitCode === 1;
   return cmd === 'systemctl' && args.some((arg) => SYSTEMCTL_STATE_QUERIES.has(arg));
+}
+
+interface LsofRow {
+  readonly command: string;
+  readonly pid: string;
+  readonly user: string;
+  readonly fd: string;
+  readonly access: string;
+  readonly type: string;
+  readonly device: string;
+  readonly sizeOff: string;
+  readonly node: string;
+  readonly name: string;
+}
+
+const LSOF_COMMAND_WIDTH = 9;
+
+function renderLsof(rows: readonly LsofRow[]): string {
+  const fdWidth = Math.max(2, ...rows.map((r) => r.fd.length + 2));
+  const columns: TableColumn<LsofRow>[] = [
+    { header: 'COMMAND', value: (r) => r.command.slice(0, LSOF_COMMAND_WIDTH) },
+    { header: 'PID', align: 'right', value: (r) => r.pid },
+    { header: 'USER', align: 'right', value: (r) => r.user },
+    { header: `${'FD'.padStart(fdWidth - 2)}  `, value: (r) => `${r.fd.padStart(fdWidth - 2)}${r.access} ` },
+    { header: 'TYPE', align: 'right', value: (r) => r.type },
+    { header: 'DEVICE', align: 'right', value: (r) => r.device },
+    { header: 'SIZE/OFF', align: 'right', value: (r) => r.sizeOff },
+    { header: 'NODE', align: 'right', value: (r) => r.node },
+    { header: 'NAME', value: (r) => r.name },
+  ];
+  return renderTableText(rows, columns, LSOF_TABLE);
 }
 
 export class LinuxCommandExecutor {
@@ -8921,7 +8952,7 @@ export class LinuxCommandExecutor {
       };
     })();
 
-    const lines = ['COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME'];
+    const rows: LsofRow[] = [];
     const procs = this.processMgr.list();
     let nodeSeq = 10_000;
 
@@ -8929,8 +8960,10 @@ export class LinuxCommandExecutor {
       if (filterPid !== null && p.pid !== filterPid) continue;
       if (filterUser !== null && p.user !== filterUser) continue;
       if (filterInet === null) {
-        // cwd entry — the canonical first row real lsof prints.
-        lines.push(`${padToWidth(p.comm, 10)} ${padToWidth(String(p.pid), 5, 'right')}  ${padToWidth(p.user, 6)} cwd    DIR    8,1     4096    2 ${p.cwd ?? '/'}`);
+        rows.push({
+          command: p.comm, pid: String(p.pid), user: p.user, fd: 'cwd', access: ' ',
+          type: 'DIR', device: '8,1', sizeOff: '4096', node: '2', name: p.cwd ?? '/',
+        });
       }
     }
 
@@ -8945,44 +8978,38 @@ export class LinuxCommandExecutor {
         if (filterInet.proto && entry.protocol !== filterInet.proto) continue;
         if (filterInet.port !== undefined && entry.localPort !== filterInet.port) continue;
       }
-      const ipv = entry.localAddress.includes(':') ? 'IPv6' : 'IPv4';
       const local = entry.localAddress === '0.0.0.0' || entry.localAddress === '::' ? '*' : entry.localAddress;
-      const target = entry.remoteAddress === '*'
-        ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
-        : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`;
-      lines.push(`${padToWidth(owner.name.slice(0, 9), 10)} ${padToWidth(String(owner.pid), 5, 'right')}  ${padToWidth(user, 6)} ${padToWidth(String(owner.fd), 3, 'right')}u  ${ipv} ${padToWidth(String(entry.id), 5, 'right')}      0t0  ${entry.protocol.toUpperCase()} ${target}`);
+      rows.push({
+        command: owner.name, pid: String(owner.pid), user, fd: String(owner.fd), access: 'u',
+        type: entry.localAddress.includes(':') ? 'IPv6' : 'IPv4', device: String(entry.id), sizeOff: '0t0',
+        node: entry.protocol.toUpperCase(),
+        name: entry.remoteAddress === '*'
+          ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
+          : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`,
+      });
     }
 
-    // Log files whose name was removed while rsyslog still holds them open
-    // (docs/PRD-Pannes.md §F7.11). Real lsof marks exactly these `(deleted)`,
-    // and it is the ONLY way to find out where the disk space went: the
-    // inode is still allocated, still growing, and no path leads to it.
     if (filterInet === null) {
       const rsyslog = procs.find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
       for (const held of this.logMgr.deletedLogHandles()) {
         if (filterPid !== null && rsyslog?.pid !== filterPid) continue;
         if (filterUser !== null && (rsyslog?.user ?? 'root') !== filterUser) continue;
-        const pid = padToWidth(String(rsyslog?.pid ?? 0), 5, 'right');
-        const user = padToWidth(rsyslog?.user ?? 'root', 6);
-        // Le numéro vient de la table du processus, plus d'un `7w` inventé
-        // ici : `lsof` et `/proc/<pid>/fd` doivent nommer le même
-        // descripteur (§F9.3). Absent — un journal tenu par aucun processus
-        // vivant — on retombe sur l'ancien affichage plutôt que d'inventer.
         const heldFd = (rsyslog === undefined ? undefined
           : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
             .find((d) => d.target === held.path)?.fd) ?? 7;
-        lines.push(
-          `rsyslogd   ${pid}  ${user} ${heldFd}w     REG    8,1 ${padToWidth(String(held.lostBytes), 8, 'right')} `
-          + `${padToWidth(String(nodeSeq++), 4, 'right')} ${held.path} (deleted)`,
-        );
+        rows.push({
+          command: 'rsyslogd', pid: String(rsyslog?.pid ?? 0), user: rsyslog?.user ?? 'root',
+          fd: String(heldFd), access: 'w', type: 'REG', device: '8,1', sizeOff: String(held.lostBytes),
+          node: String(nodeSeq++), name: `${held.path} (deleted)`,
+        });
       }
     }
 
-    if (lines.length === 1) {
+    if (rows.length === 0) {
       if (filterPid !== null) return `lsof: PID ${filterPid}: No such process`;
       return '';
     }
-    return lines.join('\n');
+    return renderLsof(rows);
   }
 
   private getEnvVarNames(prefix: string): string[] {
