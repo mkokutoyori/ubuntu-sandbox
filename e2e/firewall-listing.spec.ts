@@ -81,4 +81,29 @@ test.describe('pare-feu : listages alignés dans le terminal', () => {
     await typeCmd(page, 'iptables -t mangle -L PREROUTING -n');
     expect(await lastLines(page, 4)).toContain('MARK set 0x5');
   });
+
+  test('iptables : time, length, connlimit, dscp et tcpmss acceptes et listes', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'linux-server', 300, 250);
+    await openTerminal(page, id);
+
+    await typeCmd(page, 'iptables -A INPUT -m time --timestart 09:00 --timestop 17:00 --weekdays Mon,Tue -j DROP');
+    await typeCmd(page, 'iptables -A INPUT -p tcp -m connlimit --connlimit-above 10 --connlimit-mask 24 -j DROP');
+    await typeCmd(page, 'iptables -A INPUT -m length --length 100:200 -j DROP');
+    await typeCmd(page, 'iptables -A INPUT -m dscp --dscp-class EF -j DROP');
+    await typeCmd(page, 'iptables -A INPUT -p tcp -m tcpmss --mss 1400:1500 -j DROP');
+    await typeCmd(page, 'iptables -L INPUT -n');
+    const listing = await lastLines(page, 9);
+    expect(listing).toContain('TIME from 09:00:00 to 17:00:00 on Mon,Tue UTC');
+    expect(listing).toContain('#conn src/24 > 10');
+    expect(listing).toContain('length 100:200');
+    expect(listing).toContain('DSCP match 0x2e');
+    expect(listing).toContain('tcpmss match 1400:1500');
+    await typeCmd(page, 'iptables -m time --timestart 25:00 -A INPUT -j DROP');
+    await typeCmd(page, 'iptables -A INPUT -m time --timestart 25:00 -j DROP');
+    expect(await lastLines(page, 4)).toContain('invalid time "25:00" specified');
+  });
 });
