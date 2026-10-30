@@ -25,6 +25,8 @@ import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './
 import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
 import { applyGzipFilter } from './NginxGzip';
+import { evaluateConditional, fileValidators, httpDate } from './NginxConditional';
+import { applyRangeFilter } from './NginxRange';
 import { nginxReason, errorPage } from './NginxStatus';
 import { contentTypeFor } from './NginxMime';
 import type { NginxReturnRule } from './NginxReturn';
@@ -42,6 +44,7 @@ export interface NginxHostFs extends NginxFileSource {
   exists(path: string): boolean;
   isDirectory(path: string): boolean;
   readableBy(path: string, uid: number, gid: number): boolean;
+  stat(path: string): { readonly mtimeMs: number; readonly size: number } | null;
 }
 
 export interface NginxHost {
@@ -179,6 +182,8 @@ interface PortTls {
 export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
   private readonly generated = new WeakSet<HttpMessage>();
+  private readonly rangeable = new WeakSet<HttpMessage>();
+  private rangeBoundary = 0;
   private upstreams: NginxUpstream[] = [];
   /**
    * §P6 — profondeur de mandat en cours.
@@ -497,6 +502,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     if (server) {
       outcome = this.withErrorPage(server, outcome, req, peer, port);
       applyGzipFilter(req, outcome.response, (outcome.location ?? server).gzip);
+      outcome = this.withRanges(server, outcome, req);
     }
     this.logRequest(server, req, outcome.response, path, peer);
     return outcome.response;
@@ -672,6 +678,40 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     res.headers.set('Content-Type', contentTypeFor((location ?? server).contentTypes, fsPath));
     this.applyHeaders(res, server, location);
     res.body = bytes(this.host.fs.read(fsPath) ?? '');
+    return this.conditional(res, req, fsPath, server, location);
+  }
+
+  private withRanges(server: NginxServerBlock, outcome: Handled, req: HttpMessage): Handled {
+    const original = outcome.response;
+    if (!this.rangeable.has(original)) return outcome;
+    const total = original.body?.length ?? 0;
+    const verdict = applyRangeFilter(req, original, () => ++this.rangeBoundary);
+    if (verdict !== 'unsatisfiable') return outcome;
+    const refused = this.errorResponse(416, errorPage(416, NGINX_VERSION) ?? '', server, outcome.location);
+    refused.headers.set('Content-Range', `bytes */${total}`);
+    return { response: refused, location: outcome.location };
+  }
+
+  private conditional(
+    res: HttpMessage, req: HttpMessage, fsPath: string, server: NginxServerBlock, location: NginxLocation | null,
+  ): HttpMessage {
+    const stat = this.host.fs.stat(fsPath);
+    if (stat === null) return res;
+    const settings = (location ?? server).conditional;
+    const validators = fileValidators(stat.mtimeMs, res.body?.length ?? stat.size, settings);
+    res.headers.set('Last-Modified', httpDate(validators.lastModifiedSeconds));
+    if (validators.etag !== null) res.headers.set('ETag', validators.etag);
+    this.rangeable.add(res);
+
+    const verdict = evaluateConditional(req, validators, settings);
+    if (verdict === 412) return this.errorResponse(412, errorPage(412, NGINX_VERSION) ?? '', server, location);
+    if (verdict === 304) {
+      res.statusCode = 304;
+      res.reasonPhrase = nginxReason(304);
+      res.headers.delete('Content-Type');
+      res.headers.delete('Content-Length');
+      res.body = null;
+    }
     return res;
   }
 

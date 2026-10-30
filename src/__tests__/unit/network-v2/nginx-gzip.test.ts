@@ -24,7 +24,7 @@ import { site, SERVER, up } from './_nginxLab';
 
 beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
 
-const STRONG_ETAG_HEADER = `  add_header ETag '"abc"';\n`;
+const STRONG_ETAG_HEADER = `  etag off;\n  add_header ETag '"abc"';\n`;
 const WELCOME = 'Welcome to nginx!';
 
 interface Answer { readonly head: string; readonly body: string; readonly plain: string }
@@ -241,7 +241,7 @@ describe('gzip_vary, gzip_proxied, gzip_disable', () => {
     const tagged = await up(STRONG_ETAG_HEADER + '  gzip_proxied no_etag;\n');
     expect(compressed(await get(tagged, '/', via))).toBe(false);
     EquipmentRegistry.getInstance().clear();
-    const bare = await up('  gzip_proxied no_etag;\n');
+    const bare = await up('  etag off;\n  gzip_proxied no_etag;\n');
     expect(compressed(await get(bare, '/', via))).toBe(true);
   });
 

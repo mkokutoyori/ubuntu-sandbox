@@ -1642,6 +1642,10 @@ export abstract class LinuxMachine extends EndHost
           const inode = vfs.resolveInode(path);
           return inode ? vfs.checkAccess(inode, 'r', uid, gid) : false;
         },
+        stat: (path) => {
+          const inode = vfs.resolveInode(path);
+          return inode ? { mtimeMs: inode.mtime, size: inode.size } : null;
+        },
       },
       tcpStack: () => this.getTcpStack(),
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
@@ -2130,6 +2134,10 @@ export abstract class LinuxMachine extends EndHost
         readableBy: (path, uid, gid) => {
           const inode = vfs.resolveInode(path);
           return inode ? vfs.checkAccess(inode, 'r', uid, gid) : false;
+        },
+        stat: (path) => {
+          const inode = vfs.resolveInode(path);
+          return inode ? { mtimeMs: inode.mtime, size: inode.size } : null;
         },
       },
       tcpStack: () => this.getTcpStack(),

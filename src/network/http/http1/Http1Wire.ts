@@ -28,6 +28,7 @@ function bodyTextOf(msg: HttpMessage): string {
 }
 
 const bodyMethods: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH']);
+const bodyless = /^HTTP\/\S+ (?:1\d\d|204|304)(?: |$)/;
 
 function encodeHead(startLine: string, headers: OrderedMultimap<string>, bodyText: string, opts?: Http1EncodeOptions): string {
   const out = new OrderedMultimap<string>();
@@ -40,7 +41,9 @@ function encodeHead(startLine: string, headers: OrderedMultimap<string>, bodyTex
     payload = encodeChunkedBody([bodyText]);
   } else {
     out.delete('Transfer-Encoding');
-    if (bodyText.length > 0 || startLine.startsWith('HTTP/') || bodyMethods.has(startLine.split(' ')[0])) {
+    if (bodyless.test(startLine)) {
+      if (bodyText.length > 0) out.set('Content-Length', String(bodyText.length));
+    } else if (bodyText.length > 0 || startLine.startsWith('HTTP/') || bodyMethods.has(startLine.split(' ')[0])) {
       out.set('Content-Length', String(bodyText.length));
     }
   }
