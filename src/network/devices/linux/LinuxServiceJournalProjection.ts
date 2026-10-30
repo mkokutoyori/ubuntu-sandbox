@@ -31,7 +31,6 @@ export class LinuxServiceJournalProjection {
       bus.subscribe('linux.service.started', (e) => this.journal(e.payload, 'Started')),
       bus.subscribe('linux.service.stopped', (e) => this.journal(e.payload, 'Stopped')),
       bus.subscribe('linux.service.reloaded', (e) => this.journal(e.payload, 'Reloaded')),
-      bus.subscribe('linux.service.restarted', (e) => this.journal(e.payload, 'Started')),
       bus.subscribe('linux.service.main-exited', (e) => this.journalMainExit(e.payload)),
       bus.subscribe('linux.service.restart-scheduled', (e) => this.journalRestart(e.payload)),
       bus.subscribe('linux.service.start-limited', (e) => this.journalStartLimit(e.payload)),

@@ -1,6 +1,6 @@
 import { NGINX_CONF_PATH } from './NginxFiles';
 import {
-  NGINX_SSL_DIRECTIVES, checkSslDirective, resolveSslSettings, sslMergeProblem,
+  NGINX_SSL_DIRECTIVES, checkSslDirective, resolveSslSettings, sslMergeProblem, parseNginxSeconds,
   type NginxSslDirective, type NginxSslSettings,
 } from './NginxSsl';
 import {
@@ -18,6 +18,20 @@ import {
   NGINX_GZIP_DIRECTIVES, DEFAULT_GZIP_SETTINGS, checkGzipDirective, resolveGzipSettings,
   type NginxGzipSettings,
 } from './NginxGzip';
+import {
+  NGINX_CONDITIONAL_DIRECTIVES, DEFAULT_CONDITIONAL_SETTINGS, checkConditionalDirective, resolveConditionalSettings,
+  type NginxConditionalSettings,
+} from './NginxConditional';
+import {
+  NGINX_COOKIE_DIRECTIVES, DEFAULT_COOKIE_SETTINGS, checkCookieDirective, resolveCookieSettings,
+  type NginxCookieSettings,
+} from './NginxCookie';
+import {
+  beginVariableCollection, currentUserVariables, declareUserVariables, endVariableCollection, noteUserVariable,
+} from './NginxVariables';
+import {
+  NGINX_REWRITE_DIRECTIVES, buildRewriteOps, checkRewriteDirective, declaredUserVariables, type NginxRewriteOp,
+} from './NginxRewrite';
 
 export interface NginxToken {
   readonly value: string;
@@ -47,6 +61,8 @@ export interface NginxFileSource {
   list(dir: string): string[] | null;
 }
 
+const IF_ALLOWED = new Set(['set', 'rewrite', 'break', 'return']);
+
 const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'upstream', 'types']);
 
 /**
@@ -60,8 +76,8 @@ const UPSTREAM_METHODES_ABSENTES = new Set(['least_conn', 'hash', 'random', 'lea
 
 
 const APPLIED_DIRECTIVES = new Set([
-  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES, ...NGINX_MIME_DIRECTIVES,
-  'listen', 'server_name', 'root', 'index', 'try_files', 'return',
+  ...NGINX_SSL_DIRECTIVES, ...NGINX_GZIP_DIRECTIVES, ...NGINX_REDIRECT_DIRECTIVES, ...NGINX_MIME_DIRECTIVES, ...NGINX_CONDITIONAL_DIRECTIVES, ...NGINX_COOKIE_DIRECTIVES,
+  'listen', 'server_name', 'root', 'index', 'try_files', 'return', ...NGINX_REWRITE_DIRECTIVES,
   'error_page', 'autoindex', 'access_log', 'error_log', 'include',
   'add_header',
   // §P5 — these two DECIDE which certificate a `listen … ssl` port
@@ -69,7 +85,7 @@ const APPLIED_DIRECTIVES = new Set([
   // §P6 — `proxy_pass` DÉCIDE vers où la requête part, `proxy_set_header`
   // ce qu'elle emporte, et `server` (dans un bloc `upstream`) nomme la
   // cible. Les trois agissent ; elles ne peuvent pas être inertes.
-  'proxy_pass', 'proxy_set_header',
+  'proxy_pass', 'proxy_set_header', 'proxy_connect_timeout',
 ]);
 
 /**
@@ -93,7 +109,7 @@ const ACCEPTED_INERT = new Set([
   // n'existe pas (la livraison des trames est synchrone), donc aucun
   // délai ne peut expirer, et il n'y a pas de tampon à dimensionner.
   'proxy_buffering', 'proxy_buffers', 'proxy_buffer_size',
-  'proxy_read_timeout', 'proxy_connect_timeout', 'proxy_send_timeout',
+  'proxy_read_timeout', 'proxy_send_timeout',
   'proxy_http_version', 'proxy_next_upstream', 'keepalive',
 ]);
 
@@ -106,7 +122,7 @@ const KNOWN_UNSUPPORTED = new Set([
   // `proxy_pass`, `proxy_set_header` et le bloc `upstream` ont quitté
   // cette liste : docs/PRD-Nginx.md §P6 les IMPLÉMENTE.
   'fastcgi_pass', 'fastcgi_param', 'fastcgi_index', 'include_fastcgi',
-  'rewrite', 'limit_req', 'limit_req_zone', 'limit_conn', 'limit_conn_zone',
+  'limit_req', 'limit_req_zone', 'limit_conn', 'limit_conn_zone',
   'auth_basic', 'auth_basic_user_file',
   'stub_status', 'sub_filter',
   'geo', 'map', 'split_clients', 'perl', 'lua_package_path',
@@ -257,6 +273,13 @@ function parseBlock(
       if (!APPLIED_BLOCKS.has(name)) {
         return { ok: false, error: unknownOrUnsupported(name, file, line) };
       }
+      if (name === 'if') {
+        const problem = checkRewriteDirective('if', args, parent, currentUserVariables());
+        if (problem) return { ok: false, error: emerg(problem, file, line) };
+      }
+      if (parent === 'if') {
+        return { ok: false, error: emerg('"if" directive is not allowed here', file, line) };
+      }
       state.pos++;
       const inner = parseBlock(state, source, depth + 1, seen, name);
       if (inner.ok === false) return inner;
@@ -282,6 +305,14 @@ function parseBlock(
       continue;
     }
 
+    if (name === 'proxy_connect_timeout') {
+      if (args.length !== 1) {
+        return { ok: false, error: emerg('invalid number of arguments in "proxy_connect_timeout" directive', file, line) };
+      }
+      if (parseNginxSeconds(args[0]) === null) {
+        return { ok: false, error: emerg('"proxy_connect_timeout" directive invalid value', file, line) };
+      }
+    }
     // `proxy_pass` n'a de sens que dans une `location` : c'est elle qui
     // dit QUELLES requêtes partent vers l'amont. Écrite dans un `server`,
     // nginx la refuse — et le refus doit être celui-là, pas
@@ -327,6 +358,16 @@ function parseBlock(
       if (problem) return { ok: false, error: emerg(problem, file, line) };
     }
 
+    if (NGINX_COOKIE_DIRECTIVES.has(name)) {
+      const problem = checkCookieDirective(name, args, out, parent);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+
+    if (NGINX_CONDITIONAL_DIRECTIVES.has(name)) {
+      const problem = checkConditionalDirective(name, args, out.some((d) => d.name === name), parent);
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+
     if (name === 'default_type') {
       const problem = checkMimeDirective(name, args, out.some((d) => d.name === name), parent);
       if (problem) return { ok: false, error: emerg(problem, file, line) };
@@ -338,6 +379,14 @@ function parseBlock(
     if (name === 'error_page') {
       const problem = checkErrorPageDirective(args, parent);
       if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+    if (name === 'set' && args[0]?.startsWith('$')) noteUserVariable(args[0].slice(1));
+    if (NGINX_REWRITE_DIRECTIVES.has(name) || (name === 'return' && parent !== null)) {
+      const problem = checkRewriteDirective(name, args, parent, currentUserVariables());
+      if (problem) return { ok: false, error: emerg(problem, file, line) };
+    }
+    if (parent === 'if' && !IF_ALLOWED.has(name)) {
+      return { ok: false, error: emerg(`directive "${name}" is not supported inside "if" by this simulator`, file, line) };
     }
     if (name === 'return') {
       const rule = parseReturn(args);
@@ -391,6 +440,9 @@ export function parseNginxConfig(source: NginxFileSource, path = NGINX_CONF_PATH
       error: { message: `nginx: [emerg] open() "${path}" failed (2: No such file or directory)` },
     };
   }
+  beginVariableCollection();
+  parseBlock({ tokens: tokenize(text, path), pos: 0 }, source, 0, new Set([path]));
+  declareUserVariables(endVariableCollection());
   return parseBlock({ tokens: tokenize(text, path), pos: 0 }, source, 0, new Set([path]));
 }
 
@@ -550,13 +602,15 @@ export interface NginxLocation {
   readonly path: string;
   readonly root?: string;
   readonly index?: readonly string[];
-  readonly returnRule?: NginxReturnRule;
+  readonly rewrites: readonly NginxRewriteOp[];
   readonly autoindex?: boolean;
   readonly addHeaders: readonly (readonly [string, string])[];
   /** §P6 */
   readonly proxyPass?: NginxProxyPass;
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
+  readonly conditional: NginxConditionalSettings;
+  readonly cookies: NginxCookieSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
   readonly tryFiles?: NginxTryFiles;
@@ -578,11 +632,14 @@ export interface NginxServerBlock {
   /** §P6 — hérités par les `location` qui n'en déclarent pas. */
   readonly proxySetHeaders: readonly (readonly [string, string])[];
   readonly gzip: NginxGzipSettings;
+  readonly conditional: NginxConditionalSettings;
+  readonly cookies: NginxCookieSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
   readonly tryFiles?: NginxTryFiles;
   readonly errorPages: readonly NginxErrorPageRule[];
-  readonly returnRule?: NginxReturnRule;
+  readonly rewrites: readonly NginxRewriteOp[];
+  readonly declaredVariables: ReadonlySet<string>;
 }
 
 function parseListen(args: readonly string[]): { port: number; defaultServer: boolean; ssl: boolean } | null {
@@ -683,6 +740,8 @@ export function extractUpstreams(tree: readonly NginxDirective[]): NginxUpstream
 
 interface InheritedSettings {
   readonly gzip: NginxGzipSettings;
+  readonly conditional: NginxConditionalSettings;
+  readonly cookies: NginxCookieSettings;
   readonly redirect: NginxRedirectSettings;
   readonly contentTypes: NginxContentTypes;
   readonly tryFiles: NginxTryFiles | undefined;
@@ -691,6 +750,8 @@ interface InheritedSettings {
 
 const DEFAULT_INHERITED: InheritedSettings = Object.freeze({
   gzip: DEFAULT_GZIP_SETTINGS,
+  conditional: DEFAULT_CONDITIONAL_SETTINGS,
+  cookies: DEFAULT_COOKIE_SETTINGS,
   redirect: DEFAULT_REDIRECT_SETTINGS,
   contentTypes: DEFAULT_CONTENT_TYPES,
   tryFiles: undefined,
@@ -699,21 +760,16 @@ const DEFAULT_INHERITED: InheritedSettings = Object.freeze({
 
 function resolveInherited(parent: InheritedSettings, block: readonly NginxDirective[]): InheritedSettings {
   const gzip = resolveGzipSettings(parent.gzip, block.filter((d) => NGINX_GZIP_DIRECTIVES.has(d.name)));
+  const conditional = resolveConditionalSettings(parent.conditional, block.filter((d) => NGINX_CONDITIONAL_DIRECTIVES.has(d.name)));
+  const cookies = resolveCookieSettings(parent.cookies, block.filter((d) => NGINX_COOKIE_DIRECTIVES.has(d.name)));
   const redirect = resolveRedirectSettings(parent.redirect, block.filter((d) => NGINX_REDIRECT_DIRECTIVES.has(d.name)));
   const contentTypes = resolveContentTypes(parent.contentTypes, block.filter((d) => NGINX_MIME_DIRECTIVES.has(d.name)));
   const tryFiles = resolveTryFiles(parent.tryFiles, block);
   const errorPages = resolveErrorPages(parent.errorPages, block);
-  return gzip === parent.gzip && redirect === parent.redirect && contentTypes === parent.contentTypes
+  return gzip === parent.gzip && conditional === parent.conditional && cookies === parent.cookies && redirect === parent.redirect && contentTypes === parent.contentTypes
     && tryFiles === parent.tryFiles && errorPages === parent.errorPages
     ? parent
-    : { gzip, redirect, contentTypes, tryFiles, errorPages };
-}
-
-function firstReturn(block: readonly NginxDirective[]): NginxReturnRule | undefined {
-  const directive = block.find((d) => d.name === 'return');
-  if (directive === undefined) return undefined;
-  const rule = parseReturn(directive.args);
-  return typeof rule === 'string' ? undefined : rule;
+    : { gzip, conditional, cookies, redirect, contentTypes, tryFiles, errorPages };
 }
 
 function collectLocation(
@@ -721,17 +777,19 @@ function collectLocation(
 ): NginxLocation {
   const loc: {
     path: string; root?: string; index?: string[];
-    returnRule?: NginxReturnRule; autoindex?: boolean;
+    rewrites: readonly NginxRewriteOp[]; autoindex?: boolean;
     addHeaders: (readonly [string, string])[];
     proxyPass?: NginxProxyPass;
     proxySetHeaders: (readonly [string, string])[];
     gzip: NginxGzipSettings;
+    conditional: NginxConditionalSettings;
+    cookies: NginxCookieSettings;
     redirect: NginxRedirectSettings;
     contentTypes: NginxContentTypes;
     tryFiles: NginxTryFiles | undefined;
     errorPages: readonly NginxErrorPageRule[];
   } = {
-    path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [],
+    path: node.args[node.args.length - 1] ?? '/', addHeaders: [], proxySetHeaders: [], rewrites: [],
     ...inherited,
   };
 
@@ -746,12 +804,12 @@ function collectLocation(
     }
   }
   if (!loc.root) loc.root = inheritedRoot;
-  loc.returnRule = firstReturn(node.block ?? []);
+  loc.rewrites = buildRewriteOps(node.block ?? []);
   Object.assign(loc, resolveInherited(inherited, node.block ?? []));
   return loc as NginxLocation;
 }
 
-function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; inherited: InheritedSettings }): NginxServerBlock {
+function collectServer(node: NginxDirective, httpDefaults: { accessLog: string | null; errorLog: string | null; sslDirectives: readonly NginxSslDirective[]; inherited: InheritedSettings; declaredVariables: ReadonlySet<string> }): NginxServerBlock {
   const listen: { port: number; defaultServer: boolean; ssl: boolean }[] = [];
   let serverNames: string[] = [];
   let root = '/var/www/html';
@@ -787,7 +845,8 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
     ssl: resolveSslSettings(httpDefaults.sslDirectives, serverSslDirectives),
     sslFile: node.file, sslLine: node.line, proxySetHeaders, ...inherited,
-    returnRule: firstReturn(node.block ?? []),
+    rewrites: buildRewriteOps(node.block ?? []),
+    declaredVariables: httpDefaults.declaredVariables,
   };
 }
 
@@ -797,6 +856,7 @@ export function extractServers(tree: readonly NginxDirective[]): NginxServerBloc
     accessLog: null as string | null, errorLog: null as string | null,
     sslDirectives: [] as NginxSslDirective[],
     inherited: DEFAULT_INHERITED,
+    declaredVariables: declaredUserVariables(tree),
   };
 
   const walk = (nodes: readonly NginxDirective[], inHttp: boolean): void => {

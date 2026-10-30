@@ -77,6 +77,8 @@ async function front(lab: Labo, locations = ''): Promise<void> {
   index index.nginx-debian.html;
   error_page 404 /404.html;
 ${locations}  location /ret { return 200 "ok"; }
+  location /rw/ { rewrite ^/rw/(.*)$ /$1 last; }
+  location /iff { if ($arg_x = 1) { return 403; } set $v 1; return 200 "ok"; }
   location /up/ { proxy_pass http://10.0.0.2:9000/; }
   location / { try_files $uri $uri/ =404; }
 }
@@ -94,6 +96,10 @@ describe.skipIf(!enabled)('nginx : charge, dérive et mémoire', () => {
       ['static-plain-large', '/gros.html', {}],
       ['proxy', '/up/x', {}],
       ['return', '/ret', {}],
+      ['rewrite-last', '/rw/index.nginx-debian.html', {}],
+      ['if-set-return', '/iff?x=2', {}],
+      ['range-206', '/gros.html', { Range: 'bytes=10-99' }],
+      ['if-none-match-304', '/index.nginx-debian.html', { 'If-None-Match': '*' }],
       ['try_files-miss-404-error_page', '/absent', {}],
     ];
     for (const [name, path, headers] of rows) {

@@ -71,7 +71,7 @@ describe('ip6tables — NAT66 PREROUTING CLI on a real device', () => {
       'ip6tables -t nat -A PREROUTING -d fd00::1 -j DNAT --to-destination fd00::9',
     );
     const out = await server.executeCommand('ip6tables -t nat -S PREROUTING');
-    expect(out).toContain('-A PREROUTING -d fd00::1 -j DNAT --to-destination fd00::9');
+    expect(out).toContain('-A PREROUTING -d fd00::1/128 -j DNAT --to-destination fd00::9');
   });
 });
 

@@ -25,6 +25,12 @@ import { loadServerTls, isTlsProblem, type ServerTls, type TlsProblem } from './
 import { ephemeralIdentity, resumptionConfig, credentialFor } from '@/network/http/https/ServerTlsToolkit';
 import { clientCertificateVerdict } from './NginxSsl';
 import { applyGzipFilter } from './NginxGzip';
+import { evaluateConditional, fileValidators, httpDate } from './NginxConditional';
+import { applyRangeFilter } from './NginxRange';
+import { rewriteSetCookie } from './NginxCookie';
+import {
+  runRewriteOps, type NginxRewriteOp, type RewriteEnv, type RewriteState,
+} from './NginxRewrite';
 import { nginxReason, errorPage } from './NginxStatus';
 import { contentTypeFor } from './NginxMime';
 import type { NginxReturnRule } from './NginxReturn';
@@ -42,6 +48,7 @@ export interface NginxHostFs extends NginxFileSource {
   exists(path: string): boolean;
   isDirectory(path: string): boolean;
   readableBy(path: string, uid: number, gid: number): boolean;
+  stat(path: string): { readonly mtimeMs: number; readonly size: number } | null;
 }
 
 export interface NginxHost {
@@ -179,6 +186,9 @@ interface PortTls {
 export class LinuxNginxService implements ServiceSocketServer, NginxControl {
   private servers: NginxServerBlock[] = [];
   private readonly generated = new WeakSet<HttpMessage>();
+  private readonly rangeable = new WeakSet<HttpMessage>();
+  private readonly rewriteBuckets = new WeakMap<HttpMessage, RewriteBucket>();
+  private rangeBoundary = 0;
   private upstreams: NginxUpstream[] = [];
   /**
    * §P6 — profondeur de mandat en cours.
@@ -497,6 +507,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     if (server) {
       outcome = this.withErrorPage(server, outcome, req, peer, port);
       applyGzipFilter(req, outcome.response, (outcome.location ?? server).gzip);
+      outcome = this.withRanges(server, outcome, req);
     }
     this.logRequest(server, req, outcome.response, path, peer);
     return outcome.response;
@@ -550,22 +561,84 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     peer: Http1Peer | undefined, port: number, hops: number,
   ): Handled {
     if (hops >= MAX_URI_CHANGES) return this.redirectCycle(server, path, req, peer);
-    if (server.returnRule) {
-      return { response: this.returnResponse(server.returnRule, server, null, req, port, peer), location: null };
+    const state = this.rewriteState(server, req, path, args);
+    const early = this.rewritePhase(server, null, server.rewrites, state, req, peer, port);
+    if (early !== null) return early;
+    return this.runLocation(server, matchLocation(server, state.uri), state.uri, state.args, req, peer, port, hops);
+  }
+
+  private rewriteBucket(server: NginxServerBlock, req: HttpMessage): RewriteBucket {
+    let bucket = this.rewriteBuckets.get(req);
+    if (bucket === undefined) {
+      const vars = new Map<string, string>();
+      for (const name of server.declaredVariables) vars.set(name, '');
+      bucket = { vars, captures: new Map(), uri: null, args: '' };
+      this.rewriteBuckets.set(req, bucket);
     }
-    return this.runLocation(server, matchLocation(server, path), path, args, req, peer, port, hops);
+    return bucket;
+  }
+
+  private rewriteState(server: NginxServerBlock, req: HttpMessage, path: string, args: string): RewriteState {
+    const bucket = this.rewriteBucket(server, req);
+    bucket.uri = path;
+    bucket.args = args;
+    return { uri: path, args, uriChanged: false, vars: bucket.vars, captures: bucket.captures };
+  }
+
+  private rewritePhase(
+    server: NginxServerBlock, location: NginxLocation | null, ops: readonly NginxRewriteOp[], state: RewriteState,
+    req: HttpMessage, peer: Http1Peer | undefined, port: number,
+  ): Handled | null {
+    if (ops.length === 0) return null;
+    const bucket = this.rewriteBucket(server, req);
+    const env: RewriteEnv = {
+      context: (current) => {
+        bucket.uri = current.uri;
+        bucket.args = current.args;
+        bucket.captures = current.captures;
+        return this.variablesFor(server, req, port, peer, null, location);
+      },
+      fileTest: (test, path) => {
+        const fs = this.host.fs;
+        if (!fs.exists(path)) return false;
+        if (test === 'd') return fs.isDirectory(path);
+        if (test === 'f') return !fs.isDirectory(path);
+        return true;
+      },
+    };
+    const result = runRewriteOps(ops, state, env);
+    bucket.uri = state.uri;
+    bucket.args = state.args;
+    bucket.captures = state.captures;
+    if (result.kind === 'return') {
+      return { response: this.returnResponse(result.rule, server, location, req, port, peer), location };
+    }
+    if (result.kind === 'redirect') {
+      const res = this.errorResponse(result.status, errorPage(result.status, NGINX_VERSION) ?? '', server, location);
+      res.headers.set('Location', this.absolutize(result.location, (location ?? server).redirect, server, req, port, peer));
+      return { response: res, location };
+    }
+    return null;
   }
 
   private runLocation(
     server: NginxServerBlock, location: NginxLocation | null, path: string, args: string,
     req: HttpMessage, peer: Http1Peer | undefined, port: number, hops: number,
   ): Handled {
+    if (location !== null && location.rewrites.length > 0) {
+      const state = this.rewriteState(server, req, path, args);
+      const early = this.rewritePhase(server, location, location.rewrites, state, req, peer, port);
+      if (early !== null) return early;
+      if (state.uriChanged) {
+        if (hops + 1 >= MAX_URI_CHANGES) return this.redirectCycle(server, state.uri, req, peer, 'processing');
+        return this.runLocation(server, matchLocation(server, state.uri), state.uri, state.args, req, peer, port, hops + 1);
+      }
+      path = state.uri;
+      args = state.args;
+    }
     if (location?.proxyPass) {
       const target = args === '' ? path : `${path}?${args}`;
       return { response: this.proxy(server, location, location.proxyPass, target, req, peer, port), location };
-    }
-    if (location?.returnRule) {
-      return { response: this.returnResponse(location.returnRule, server, location, req, port, peer), location };
     }
     const scope = location ?? server;
     let uri = path;
@@ -594,10 +667,11 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private redirectCycle(
     server: NginxServerBlock, path: string, req: HttpMessage, peer: Http1Peer | undefined,
+    how: 'redirecting' | 'processing' = 'redirecting',
   ): Handled {
     this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
       `${formatErrorTime(this.host.now())} [error] 0#0: *1 rewrite or internal redirection cycle `
-      + `while internally redirecting to "${path}", client: ${peer?.ip ?? '0.0.0.0'}, `
+      + `while ${how === 'processing' ? `processing "${path}"` : `internally redirecting to "${path}"`}, client: ${peer?.ip ?? '0.0.0.0'}, `
       + `server: ${server.serverNames[0] ?? '_'}, request: "${req.method ?? 'GET'} ${req.target ?? '/'} HTTP/${req.httpVersion}"`);
     return { response: this.errorResponse(500, errorPage(500, NGINX_VERSION) ?? '', server, null), location: null };
   }
@@ -672,6 +746,47 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     res.headers.set('Content-Type', contentTypeFor((location ?? server).contentTypes, fsPath));
     this.applyHeaders(res, server, location);
     res.body = bytes(this.host.fs.read(fsPath) ?? '');
+    return this.conditional(res, req, fsPath, server, location);
+  }
+
+  private withRanges(server: NginxServerBlock, outcome: Handled, req: HttpMessage): Handled {
+    const original = outcome.response;
+    if (!this.rangeable.has(original)) return outcome;
+    const total = original.body?.length ?? 0;
+    const verdict = applyRangeFilter(req, original, (outcome.location ?? server).conditional.maxRanges, () => ++this.rangeBoundary);
+    if (verdict !== 'unsatisfiable') return outcome;
+    const refused = this.errorResponse(416, errorPage(416, NGINX_VERSION) ?? '', server, outcome.location);
+    refused.headers.set('Content-Range', `bytes */${total}`);
+    return { response: refused, location: outcome.location };
+  }
+
+  private rewriteUpstreamCookies(res: HttpMessage, location: NginxLocation, variables: NginxVariableContext): void {
+    const cookies = res.headers.getAll('Set-Cookie');
+    if (cookies.length === 0 || (location.cookies.domains === null && location.cookies.paths === null && location.cookies.flags === null)) return;
+    res.headers.delete('Set-Cookie');
+    for (const cookie of cookies) res.headers.append('Set-Cookie', rewriteSetCookie(cookie, location.cookies, variables));
+  }
+
+  private conditional(
+    res: HttpMessage, req: HttpMessage, fsPath: string, server: NginxServerBlock, location: NginxLocation | null,
+  ): HttpMessage {
+    const stat = this.host.fs.stat(fsPath);
+    if (stat === null) return res;
+    const settings = (location ?? server).conditional;
+    const validators = fileValidators(stat.mtimeMs, res.body?.length ?? stat.size, settings);
+    res.headers.set('Last-Modified', httpDate(validators.lastModifiedSeconds));
+    if (validators.etag !== null) res.headers.set('ETag', validators.etag);
+    this.rangeable.add(res);
+
+    const verdict = evaluateConditional(req, validators, settings);
+    if (verdict === 412) return this.errorResponse(412, errorPage(412, NGINX_VERSION) ?? '', server, location);
+    if (verdict === 304) {
+      res.statusCode = 304;
+      res.reasonPhrase = nginxReason(304);
+      res.headers.delete('Content-Type');
+      res.headers.delete('Content-Length');
+      res.body = null;
+    }
     return res;
   }
 
@@ -804,12 +919,12 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       if (target502.groupe) {
         this.noterEchec(target502.groupe, target502.host, target502.port);
       }
-      return this.badGateway(server, location,
-        sent.error ?? 'no response from upstream', peer);
+      return this.badGateway(server, location, upstreamFailure(sent), peer, sent.failure === 'timeout' ? 504 : 502);
     }
     const res = sent.response;
     for (const hop of HOP_BY_HOP) res.headers.delete(hop);
     this.rewriteUpstreamRedirects(res, server, location, pass, req, port, peer, target502);
+    this.rewriteUpstreamCookies(res, location, this.variablesFor(server, req, port, peer, target502));
     res.headers.set('Server', `nginx/${NGINX_VERSION}`);
     this.applyHeaders(res, server, location);
     return res;
@@ -817,11 +932,17 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
 
   private variablesFor(
     server: NginxServerBlock, req: HttpMessage, port: number, peer: Http1Peer | undefined,
-    upstream: { host: string; port: number } | null,
+    upstream: { host: string; port: number } | null, location: NginxLocation | null = null,
   ): NginxVariableContext {
+    const bucket = this.rewriteBuckets.get(req);
     return {
       request: req, clientIp: peer?.ip ?? '0.0.0.0', secure: peer?.tls !== undefined,
       serverName: server.serverNames[0] ?? '', serverPort: port, upstream,
+      root: location?.root ?? server.root,
+      ...(bucket === undefined ? {} : {
+        variables: bucket.vars, captures: bucket.captures,
+        ...(bucket.uri === null ? {} : { uri: bucket.uri, args: bucket.args }),
+      }),
     };
   }
 
@@ -975,12 +1096,12 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
    */
   private badGateway(
     server: NginxServerBlock, location: NginxLocation, reason: string,
-    peer?: Http1Peer,
+    peer?: Http1Peer, status: 502 | 504 = 502,
   ): HttpMessage {
     this.host.appendLog(server.errorLog ?? NGINX_ERROR_LOG,
       `${formatErrorTime(this.host.now())} [error] 0#0: *1 ${reason}, `
       + `client: ${peer?.ip ?? '0.0.0.0'}, server: ${server.serverNames[0] ?? '_'}`);
-    return this.errorResponse(502, badGatewayPage(), server, location);
+    return this.errorResponse(status, status === 504 ? (errorPage(504, NGINX_VERSION) ?? '') : badGatewayPage(), server, location);
   }
 
   private applyHeaders(res: HttpMessage, server?: NginxServerBlock, location?: NginxLocation | null): void {
@@ -1043,4 +1164,24 @@ function formatLogTime(d: Date): string {
 
 function formatErrorTime(d: Date): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function upstreamFailure(
+  sent: { readonly error?: string; readonly failure?: 'refused' | 'timeout' | 'unreachable' | 'prohibited' },
+): string {
+  if (sent.failure === undefined) return sent.error ?? 'no response from upstream';
+  const phrase = {
+    refused: 'connect() failed (111: Connection refused)',
+    prohibited: 'connect() failed (111: Connection refused)',
+    unreachable: 'connect() failed (113: No route to host)',
+    timeout: 'upstream timed out (110: Connection timed out)',
+  }[sent.failure];
+  return `${phrase} while connecting to upstream`;
+}
+
+interface RewriteBucket {
+  readonly vars: Map<string, string>;
+  captures: Map<string, string>;
+  uri: string | null;
+  args: string;
 }

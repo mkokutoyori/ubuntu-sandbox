@@ -101,6 +101,10 @@ export class ServicePortProjection {
     if (EXCLUDED_UNITS.has(unit)) return;
     const binding = this.source.getPortBinding(unit);
     if (!binding) return;
+    const key = (spec: PortSpec): string => `${spec.protocol}:${spec.address ?? ALL_INTERFACES}:${spec.port}`;
+    const wanted = new Set(binding.sockets.map(key));
+    const held = new Set((this.bound.get(unit) ?? []).map(key));
+    if (wanted.size === held.size && [...wanted].every((entry) => held.has(entry))) return;
     this.releaseBound(unit, binding);
     this.openSockets(binding);
   }
@@ -151,10 +155,7 @@ export class ServicePortProjection {
         const existing = this.socketTable.findByLocalPort(spec.port, spec.protocol);
         if (existing?.processName !== binding.processName) continue;
         if (!server.open(spec)) continue;
-        const own = this.bound.get(binding.name) ?? [];
-        own.push(spec);
-        this.bound.set(binding.name, own);
-        this.publishPortEvent('linux.port.bound', binding, spec, address);
+        this.hold(binding, spec, address);
         continue;
       }
       const identity = { pid: binding.mainPid, processName: binding.processName };
@@ -172,11 +173,17 @@ export class ServicePortProjection {
           continue;
         }
       }
-      const held = this.bound.get(binding.name) ?? [];
-      held.push(spec);
-      this.bound.set(binding.name, held);
-      this.publishPortEvent('linux.port.bound', binding, spec, address);
+      this.hold(binding, spec, address);
     }
+  }
+
+  private hold(binding: ServicePortBinding, spec: PortSpec, address: string): void {
+    const key = `${spec.protocol}:${address}:${spec.port}`;
+    const held = this.bound.get(binding.name) ?? [];
+    if (held.some((known) => `${known.protocol}:${known.address ?? ALL_INTERFACES}:${known.port}` === key)) return;
+    held.push(spec);
+    this.bound.set(binding.name, held);
+    this.publishPortEvent('linux.port.bound', binding, spec, address);
   }
 
   private closeSockets(binding: ServicePortBinding): void {

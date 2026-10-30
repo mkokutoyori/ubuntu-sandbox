@@ -1180,3 +1180,46 @@ du server.
 `nginx-try-files-error-page.test.ts` (44 cas) : **34 tombent par `git stash`**.
 Les 10 qui passent des deux cotes sont des temoins ou des refus (GET/HEAD
 d'un fichier, configuration valide, code non liste).
+
+### 9.16 Charge, mémoire et dérive : ce qui a été mesuré et ce qui a changé
+
+Bancs : `src/__tests__/perf/nginx-load.perf.test.ts` (`NGINX_PERF=1`) et `firewall-listing.perf.test.ts` (`FIREWALL_PERF=1`), lancés à la main parce qu'ils durent des dizaines de secondes.
+
+- **Table des sockets TCP** : le parcours linéaire par connexion est remplacé par des index (`socketsByLocalPort`, tableaux triés, index de connexions de `SocketTable`). `ensureIndexes()` resynchronise quand la table est modifiée par-derrière (`scenario-11` vide `sockets` directement). Dérive du coût par requête : 2,19 avant, 0,84 après (1 = plat).
+- **Mémoire** : l'état TCP retenu est borné par les minuteries TIME_WAIT, pas une fuite. La croissance qui restait venait du journal (trois sources de lignes en double) ; elle a disparu avec les correctifs `journalctl -f`. La mesure utilise `gc` exposé dans le worker (`v8.setFlagsFromString('--expose-gc')`), sans quoi les chiffres de « mémoire retenue » étaient faux.
+- **Journal** : horodatages arrondis à la microseconde entière dans `LinuxJournald.store`, sinon le curseur `--after-cursor` ne retrouve pas son propre enregistrement et `-f` rejoue des lignes.
+- **`tree -a` et `lsof`** : `tree` ne descend plus dans `.` et `..` (dépassement de pile) ; `lsof` passe par l'API de table.
+- **Listages du pare-feu** (2000 règles pour `iptables -L INPUT -vn`, 300 pour `ufw status numbered`) : 16 ms et 4 ms par appel, rapport de dérive 0,89 et 0,75, mémoire retenue après 200 appels 0,03 Mo. Aucune optimisation justifiée : le rendu est linéaire en nombre de règles et ne garde rien.
+
+### 9.17 Fichier statique : `Last-Modified`, `ETag` et GET conditionnel
+
+Source : nginx 1.24.0, `ngx_http_static_module.c`, `ngx_http_core_module.c` (`ngx_http_set_etag`, `etag`, `if_modified_since`), `ngx_http_not_modified_filter_module.c`, `ngx_http_range_filter_module.c`.
+
+- Un fichier servi porte `Last-Modified` (date HTTP de son mtime), `ETag: "<mtime hex>-<taille hex>"` et `Accept-Ranges: bytes`. `etag off;` retire l'ETag seul.
+- Le filtre « not modified » ne regarde que les réponses 200. Ordre : `If-Unmodified-Since` puis `If-Match` (412), puis `If-Modified-Since` et `If-None-Match`, qui doivent dire « inchangé » TOUS DEUX pour un 304. `if_modified_since exact` (défaut) ne donne 304 que si la date est EXACTEMENT celle du fichier ; `before` l'accepte aussi postérieure ; `off` l'ignore. `If-None-Match` ignore le préfixe `W/` ; `*` correspond.
+- Pourquoi un module à part et non `http/semantics/conditionalRequests.ts` : ce module suit la RFC 9110 (comparaison d'ETag analysée, `If-None-Match` qui supplante `If-Modified-Since`, `<=` sur la date) ; nginx compare le texte de l'ETag, exige l'accord des deux validateurs et teste l'égalité de date. Servir nginx avec la sémantique de la RFC serait répondre autrement que lui. La fabrique de date HTTP est celle du JS (`toUTCString`).
+- Un 304 n'a ni `Content-Type` ni `Content-Length` : l'encodeur HTTP/1 (`Http1Wire.ts`) n'ajoute plus de `Content-Length` aux statuts 1xx, 204 et 304.
+- Les tests `nginx-gzip` qui posaient un `add_header ETag` supposaient un fichier sans ETag, ce que nginx ne fait jamais : ils déclarent maintenant `etag off;`.
+- `Range` (`NginxRange.ts`, d'après `ngx_http_range_filter_module.c`) : le filtre n'agit que sur un 200 dont la longueur est connue, donc pas sur une réponse compressée (chunked) ; `Accept-Ranges: bytes` n'est écrit que si la réponse n'est pas découpée ; un intervalle donne 206 et `Content-Range`, plusieurs donnent `multipart/byteranges` (frontière sur 20 chiffres) ; une syntaxe fautive ou un début au-delà du fichier donne 416 et `Content-Range: bytes */<longueur>` ; `If-Range` compare le texte de l'ETag ou l'égalité de date. Le module a sa propre analyse parce que `parseRange` de `conditionalRequests.ts` refuse les intervalles multiples et traite autrement les syntaxes fautives.
+- Écart connu, dans `TODO.md` : des intervalles qui se chevauchent ou ne sont pas croissants font abandonner la connexion à nginx 1.24 (« range in overlapped buffers ») ; le simulateur sert alors le corps entier en 200. `max_ranges N` est honorée (0 coupe le filtre, au-delà de N intervalles le corps est servi entier).
+
+### 9.18 Un amont muet donne 504, un amont qui refuse donne 502
+
+`ngx_http_upstream.c` distingue `NGX_HTTP_UPSTREAM_FT_TIMEOUT` (504, « upstream timed out (110: Connection timed out) while connecting to upstream ») de `NGX_HTTP_UPSTREAM_FT_ERROR` (502, « connect() failed (111: Connection refused) » ou « (113: No route to host) »). Le client HTTP/1 rend désormais la cause (`failure`) lue sur le fil par `TcpStack.open` (RST, ICMP, silence), au lieu de tout appeler « refusé ». `proxy_connect_timeout` est validée (temps nginx) et n'est plus rangée parmi les directives inertes ; sa valeur ne fait pas attendre le simulateur, le temps de vol étant déjà porté par l'horloge de chemin. `proxy_read_timeout` et `proxy_send_timeout` restent inertes : une réponse partielle qui s'interrompt n'existe pas ici.
+
+### 9.19 `proxy_cookie_domain` et `proxy_cookie_path`
+
+Source : `ngx_http_proxy_module.c` (`ngx_http_proxy_rewrite_cookie`, `_domain_handler`, `_complex_handler`, `_regex_handler`, `ngx_http_proxy_rewrite`, `ngx_http_proxy_cookie_domain`, `ngx_http_proxy_cookie_path`). Seuls `Domain` et `Path` d'un `Set-Cookie` de l'amont sont lus ; la première règle qui correspond gagne ; le domaine se compare en entier, sans casse, point de tête ignoré et conservé ; le chemin par préfixe avec casse ; `~` et `~*` remplacent la valeur entière ; un cookie réécrit est recomposé avec `; ` ; `off` coupe, et `off` après une règle est un doublon. Les règles s'héritent par remplacement (`ngx_conf_merge_ptr_value`).
+
+### 9.20 Le module rewrite : `set`, `if`, `rewrite`, `break`, `return` dans l'ordre
+
+Source : `ngx_http_rewrite_module.c` (`ngx_http_rewrite`, `_if`, `_if_condition`, `_set`, `_return`, `_break`), `ngx_http_script.c` (`regex_start_code`, `regex_end_code`, `if_code`, `equal_code`), `ngx_http_core_module.c` (`ngx_http_core_post_rewrite_phase`).
+
+- Les directives s'exécutent **dans l'ordre d'écriture** : celles du `server` avant le choix de la location, celles de la location ensuite. `return` n'est donc plus une règle « première gagnante » à part (`returnRule` et `firstReturn` sont supprimés) mais une opération de la même liste (`NginxRewrite.ts`).
+- `if` : variable seule (vraie si ni vide ni `0`), `=`, `!=`, `~`, `~*`, `!~`, `!~*` (qui posent `$1..`), `-f -d -e -x` et leur négation. Pas d'`if` dans un `if`. Les directives autres que `set`, `rewrite`, `break`, `return` sont refusées dans un `if` en le disant : `proxy_pass`, `add_header` ou `root` dans un `if` demanderaient une configuration par `if`, que ce simulateur n'a pas.
+- `rewrite` : `last`, `break`, `redirect` (302), `permanent` (301), URL absolue (302) arrêtent le script **si le motif correspond** ; sans drapeau le script continue puis l'URI changée relance le choix de la location. `break` (drapeau ou directive) garde la location. Les arguments d'origine sont ajoutés, sauf si le remplacement finit par `?`. Au-delà de 10 relances : 500 et « rewrite or internal redirection cycle while processing ».
+- Variables : `$arg_*`, `$cookie_*`, `$document_root`, `$request_filename`, `$server_protocol`, `$content_type`, `$content_length`, et celles posées par `set`. Une variable posée par `set` est connue de toute la configuration, y compris avant son `set` : la configuration est donc lue deux fois (une première lecture relève les noms, la seconde valide). Une variable prédéfinie ne peut pas être posée (« the duplicate "host" variable »).
+
+Mesure des chemins ajoutés par §9.17 à §9.20 (200 requêtes par ligne, `NGINX_PERF=1`) : `rewrite … last` 2,0 ms, `if`/`set`/`return` 2,4 ms, `Range` 206 2,2 ms, 304 sur `If-None-Match` 1,8 ms, contre 1,7 ms pour un `return` simple et 3,7 ms pour un fichier statique complet ; dérive du dix-millième tour sur le premier : 0,87. Aucun de ces chemins ne retient d'état par requête au-delà du seau `WeakMap` des variables, libéré avec la requête.
+
+`proxy_cookie_flags` (même source) : `off`, ou un cookie (nom sans casse, ou `~` expression sans casse) suivi de `secure`, `nosecure`, `httponly`, `nohttponly`, `samesite=strict|lax|none`, `nosamesite` ; la première règle qui nomme le cookie gagne ; un drapeau déjà présent n'est pas dupliqué, les absents sont ajoutés dans l'ordre Secure, HttpOnly, SameSite.

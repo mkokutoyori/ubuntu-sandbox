@@ -167,8 +167,8 @@ describe('Scénario 6 — Corrélation croisée auth.log / syslog / journald pou
       expect(listing).toMatch(/^1\s+\d+\s+\d+\s+ACCEPT.*dpt:8080/m);
 
       const saved = await server.executeCommand('iptables-save');
-      expect(saved).toContain('-A INPUT -p tcp --dport 8080 -j ACCEPT');
-      expect(saved).toContain('-A INPUT -p tcp --dport 8080 -j DROP');
+      expect(saved).toContain('-A INPUT -p tcp -m tcp --dport 8080 -j ACCEPT');
+      expect(saved).toContain('-A INPUT -p tcp -m tcp --dport 8080 -j DROP');
     });
   });
 
@@ -213,8 +213,8 @@ describe('Scénario 6 — Corrélation croisée auth.log / syslog / journald pou
       expect(authLog).toMatch(/Accepted password for bob from 10\.0\.1\.30/);
       expect(fail2banJournal).toMatch(/Ban 10\.0\.0\.20/);
       expect(sshJournal).toMatch(/Accepted password for bob from 10\.0\.1\.30/);
-      expect(firewallState).toContain('-A INPUT -p tcp --dport 9090 -j ACCEPT');
-      expect(firewallState).toContain('-A INPUT -p tcp --dport 9090 -j DROP');
+      expect(firewallState).toContain('-A INPUT -p tcp -m tcp --dport 9090 -j ACCEPT');
+      expect(firewallState).toContain('-A INPUT -p tcp -m tcp --dport 9090 -j DROP');
 
       const fail2banTimestamps = extractIsoTimestamps(fail2banJournal);
       const sshTimestamps = extractIsoTimestamps(sshJournal);

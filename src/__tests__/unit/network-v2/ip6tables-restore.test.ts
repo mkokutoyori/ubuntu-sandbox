@@ -32,7 +32,7 @@ describe('ip6tables-save / ip6tables-restore', () => {
     await server.executeCommand('ip6tables -A INPUT -p tcp --dport 22 -j ACCEPT');
     const out = await server.executeCommand('ip6tables-save');
     expect(out).toContain('*filter');
-    expect(out).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+    expect(out).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
     expect(out).not.toContain('--dport 80');
   });
 
@@ -49,7 +49,7 @@ describe('ip6tables-save / ip6tables-restore', () => {
 
     const out = await server.executeCommand('ip6tables -S');
     expect(out).toContain('-P FORWARD DROP');
-    expect(out).toContain('-A INPUT -p tcp --dport 22 -j ACCEPT');
+    expect(out).toContain('-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT');
   });
 
   it('ip6tables-restore without stdin fails with a real error, not "command not found"', async () => {
