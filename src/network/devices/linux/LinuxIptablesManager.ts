@@ -374,6 +374,18 @@ export interface ListFormat {
   exact: boolean;
 }
 
+function markListing(option: string, value: string): string {
+  const [markText, maskText] = value.split('/');
+  const hex = (text: string): string => `0x${(Number(text) >>> 0).toString(16)}`;
+  switch (option) {
+    case '--or-mark': return `MARK or ${hex(markText)}`;
+    case '--and-mark': return `MARK and ${hex(markText)}`;
+    case '--xor-mark': return `MARK xor ${hex(markText)}`;
+    case '--set-xmark': return maskText === undefined ? `MARK set ${hex(markText)}` : `MARK xset ${hex(markText)}/${hex(maskText)}`;
+    default: return `MARK set ${hex(markText)}`;
+  }
+}
+
 function abbreviateCounter(n: number): string {
   if (n <= 99999) return String(n);
   let v = Math.floor((n + 500) / 1000);
@@ -1311,7 +1323,9 @@ export class LinuxIptablesManager {
         case '--reject-with':    parts.push(`reject-with ${v}`); break;
         case '--log-prefix':     parts.push(`LOG flags 0 level 4 prefix "${v}"`); break;
         case '--log-level':      break;
-        case '--set-mark': case '--set-xmark': parts.push(`MARK set ${v}`); break;
+        case '--set-mark': case '--or-mark': case '--and-mark': case '--xor-mark': case '--set-xmark':
+          parts.push(markListing(k, v));
+          break;
         default:                 parts.push(v ? `${k.replace(/^--/, '')} ${v}` : k.replace(/^--/, '')); break;
       }
     }

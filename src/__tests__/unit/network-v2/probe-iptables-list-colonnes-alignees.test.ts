@@ -101,3 +101,21 @@ describe('--line-numbers', () => {
     expect(out[2]).toBe('1    DROP       all  -- !10.0.0.1             anywhere            ');
   });
 });
+
+describe('la cible MARK (libxt_MARK.c, mark_tg_print : toujours en hexadecimal)', () => {
+  const listed = async (option: string): Promise<string> => {
+    await srv.executeCommand(`iptables -t mangle -A PREROUTING -j MARK ${option}`);
+    return (await srv.executeCommand('iptables -t mangle -L PREROUTING -n')).split('\n')[2];
+  };
+
+  it.each([
+    ['--set-mark 5', 'MARK set 0x5'],
+    ['--set-mark 0x10', 'MARK set 0x10'],
+    ['--or-mark 3', 'MARK or 0x3'],
+    ['--and-mark 0xff', 'MARK and 0xff'],
+    ['--xor-mark 6', 'MARK xor 0x6'],
+    ['--set-xmark 0x1/0xf', 'MARK xset 0x1/0xf'],
+  ])('%s est ecrit « %s »', async (option, text) => {
+    expect(await listed(option)).toMatch(new RegExp(`${text.replace(/[/]/g, '\\/')}$`));
+  });
+});
