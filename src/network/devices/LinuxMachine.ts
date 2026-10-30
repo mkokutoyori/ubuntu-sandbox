@@ -4804,9 +4804,29 @@ export abstract class LinuxMachine extends EndHost
       icmpId: icmp?.type === 'icmp' ? icmp.id : undefined,
       fragmentOffset: ipPkt.fragmentOffset,
       ipPacketBytes: ipPkt.totalLength,
+      ttl: ipPkt.ttl,
+      tos: ipPkt.tos,
+      addressTypeOf: (ip: string) => this.addressType(ip),
       related: this.quotedTuple(ipPkt),
       ...this.tcpFacts(ipPkt.payload),
     };
+  }
+
+  private addressType(ip: string): string {
+    const octets = ip.split('.').map(Number);
+    if (ip === '0.0.0.0') return 'UNSPEC';
+    if (octets[0] === 127 || this.getPorts().some((port) => port.getIPAddress()?.toString() === ip)) return 'LOCAL';
+    if (ip === '255.255.255.255') return 'BROADCAST';
+    if (octets[0] >= 224 && octets[0] <= 239) return 'MULTICAST';
+    const directed = this.getPorts().some((port) => {
+      const address = port.getIPAddress();
+      const mask = port.getSubnetMask();
+      if (!address || !mask) return false;
+      const own = address.toString().split('.').map(Number);
+      const bits = mask.toString().split('.').map(Number);
+      return octets.every((octet, i) => octet === ((own[i] & bits[i]) | (~bits[i] & 255)));
+    });
+    return directed ? 'BROADCAST' : 'UNICAST';
   }
 
   private quotedTuple(ipPkt: IPv4Packet): ConnectionTuple | undefined {
@@ -4837,17 +4857,22 @@ export abstract class LinuxMachine extends EndHost
       icmpCode: transport?.type === 'icmpv6' ? transport.code : undefined,
       icmpId: transport?.type === 'icmpv6' ? transport.id : undefined,
       ipPacketBytes: ipv6PacketBytes(ipv6Pkt),
+      ttl: ipv6Pkt.hopLimit,
+      tos: ipv6Pkt.trafficClass,
       related: this.quotedTuple6(ipv6Pkt),
       ...this.tcpFacts(ipv6Pkt.payload),
     };
   }
 
-  private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[] } {
+  private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[]; tcpMss?: number } {
     const segment = payload as TCPPacket | TcpSegment | undefined;
     if (segment?.type !== 'tcp') return {};
+    const options = 'options' in segment ? segment.options : [];
+    const mss = options.find((option) => option.kind === 'mss');
     return {
       tcpFlags: tcpFlagBits(segment.flags),
-      tcpOptions: 'options' in segment ? segment.options.map(tcpOptionKindNumber) : [],
+      tcpOptions: options.map(tcpOptionKindNumber),
+      ...(mss !== undefined && 'value' in mss ? { tcpMss: mss.value } : {}),
     };
   }
 

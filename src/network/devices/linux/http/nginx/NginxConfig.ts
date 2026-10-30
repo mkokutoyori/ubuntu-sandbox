@@ -61,7 +61,9 @@ export interface NginxFileSource {
   list(dir: string): string[] | null;
 }
 
-const IF_ALLOWED = new Set(['set', 'rewrite', 'break', 'return']);
+const SCRIPT_ONLY = new Set(['set', 'rewrite', 'break', 'return']);
+
+const IF_ALLOWED = new Set(['set', 'rewrite', 'break', 'return', 'add_header', 'root', 'proxy_pass']);
 
 const APPLIED_BLOCKS = new Set(['http', 'server', 'location', 'events', 'if', 'upstream', 'types']);
 
@@ -461,6 +463,8 @@ export function validateNginxConfig(
   }
   const syntax = validateProxyPass(tree);
   if (syntax) return syntax;
+  const scriptOnly = serverLevelIfProblem(tree, path);
+  if (scriptOnly) return scriptOnly;
   for (const server of extractServers(tree)) {
     const problem = sslMergeProblem(server.ssl, server.listen.some((l) => l.ssl));
     if (problem) return { message: `nginx: [emerg] ${problem}` };
@@ -519,6 +523,24 @@ function validateListenParams(node: NginxDirective): NginxConfigError | null {
         node.file, node.line);
     }
     return emerg(`invalid parameter "${arg}"`, node.file, node.line);
+  }
+  return null;
+}
+
+function serverLevelIfProblem(nodes: readonly NginxDirective[], path: string): NginxConfigError | null {
+  for (const node of nodes) {
+    if (node.name === 'server') {
+      for (const inner of node.block ?? []) {
+        if (inner.name !== 'if') continue;
+        const offender = (inner.block ?? []).find((d) => !SCRIPT_ONLY.has(d.name));
+        if (offender !== undefined) {
+          return emerg(`directive "${offender.name}" is not supported inside "if" at server level by this simulator`, offender.file || path, offender.line);
+        }
+      }
+    } else if (node.block !== undefined) {
+      const nested = serverLevelIfProblem(node.block, path);
+      if (nested) return nested;
+    }
   }
   return null;
 }
@@ -804,7 +826,7 @@ function collectLocation(
     }
   }
   if (!loc.root) loc.root = inheritedRoot;
-  loc.rewrites = buildRewriteOps(node.block ?? []);
+  loc.rewrites = buildRewriteOps(node.block ?? [], parseProxyPass);
   Object.assign(loc, resolveInherited(inherited, node.block ?? []));
   return loc as NginxLocation;
 }
@@ -845,7 +867,7 @@ function collectServer(node: NginxDirective, httpDefaults: { accessLog: string |
     listen, serverNames, root, index, locations, accessLog, errorLog, addHeaders,
     ssl: resolveSslSettings(httpDefaults.sslDirectives, serverSslDirectives),
     sslFile: node.file, sslLine: node.line, proxySetHeaders, ...inherited,
-    rewrites: buildRewriteOps(node.block ?? []),
+    rewrites: buildRewriteOps(node.block ?? [], parseProxyPass),
     declaredVariables: httpDefaults.declaredVariables,
   };
 }

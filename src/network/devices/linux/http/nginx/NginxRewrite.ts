@@ -16,11 +16,17 @@ export type NginxCondition =
   | { readonly kind: 'regex'; readonly variable: string; readonly regex: RegExp; readonly negate: boolean }
   | { readonly kind: 'file'; readonly test: 'f' | 'd' | 'e' | 'x'; readonly negate: boolean; readonly path: string };
 
+export interface IfOverrides<P = unknown> {
+  readonly root?: string;
+  readonly addHeaders: readonly (readonly [string, string])[];
+  readonly proxyPass?: P;
+}
+
 export type RewriteFlag = '' | 'last' | 'break' | 'redirect' | 'permanent';
 
 export type NginxRewriteOp =
   | { readonly kind: 'set'; readonly variable: string; readonly value: string }
-  | { readonly kind: 'if'; readonly condition: NginxCondition; readonly ops: readonly NginxRewriteOp[] }
+  | { readonly kind: 'if'; readonly condition: NginxCondition; readonly ops: readonly NginxRewriteOp[]; readonly overrides: IfOverrides | null }
   | {
     readonly kind: 'rewrite'; readonly regex: RegExp; readonly replacement: string; readonly addArgs: boolean;
     readonly stops: boolean; readonly flag: RewriteFlag; readonly status: 0 | 301 | 302;
@@ -34,6 +40,7 @@ export interface RewriteState {
   uriChanged: boolean;
   readonly vars: Map<string, string>;
   captures: Map<string, string>;
+  readonly overrides: IfOverrides[];
 }
 
 export interface RewriteEnv {
@@ -143,7 +150,7 @@ export function declaredUserVariables(tree: readonly NginxRewriteDirective[]): R
   return names;
 }
 
-function opOf(node: NginxRewriteDirective): NginxRewriteOp | null {
+function opOf(node: NginxRewriteDirective, parseProxy: ProxyParser): NginxRewriteOp | null {
   const { name, args } = node;
   if (name === 'break') return { kind: 'break' };
   if (name === 'return') {
@@ -153,7 +160,9 @@ function opOf(node: NginxRewriteDirective): NginxRewriteOp | null {
   if (name === 'set') return { kind: 'set', variable: args[0].slice(1), value: args[1] };
   if (name === 'if') {
     const condition = parseCondition(args);
-    return typeof condition === 'string' ? null : { kind: 'if', condition, ops: buildRewriteOps(node.block ?? []) };
+    return typeof condition === 'string' ? null : {
+      kind: 'if', condition, ops: buildRewriteOps(node.block ?? [], parseProxy), overrides: overridesOf(node.block ?? [], parseProxy),
+    };
   }
   if (name === 'rewrite') {
     const compiled = compileNginxRegex(args[0], false);
@@ -171,10 +180,26 @@ function opOf(node: NginxRewriteDirective): NginxRewriteOp | null {
   return null;
 }
 
-export function buildRewriteOps(block: readonly NginxRewriteDirective[]): NginxRewriteOp[] {
+export type ProxyParser = (raw: string | undefined) => unknown;
+
+function overridesOf(block: readonly NginxRewriteDirective[], parseProxy: ProxyParser): IfOverrides | null {
+  const addHeaders: Array<readonly [string, string]> = [];
+  let root: string | undefined;
+  let proxyPass: unknown;
+  for (const node of block) {
+    if (node.name === 'root') root = node.args[0];
+    else if (node.name === 'add_header' && node.args.length >= 2) addHeaders.push([node.args[0], node.args[1]]);
+    else if (node.name === 'proxy_pass') proxyPass = parseProxy(node.args[0]) ?? undefined;
+  }
+  return root === undefined && addHeaders.length === 0 && proxyPass === undefined
+    ? null
+    : { ...(root === undefined ? {} : { root }), addHeaders, ...(proxyPass === undefined ? {} : { proxyPass }) };
+}
+
+export function buildRewriteOps(block: readonly NginxRewriteDirective[], parseProxy: ProxyParser = () => null): NginxRewriteOp[] {
   const ops: NginxRewriteOp[] = [];
   for (const node of block) {
-    const op = opOf(node);
+    const op = opOf(node, parseProxy);
     if (op !== null) ops.push(op);
   }
   return ops;
@@ -240,6 +265,7 @@ export function runRewriteOps(ops: readonly NginxRewriteOp[], state: RewriteStat
       return { kind: 'stop' };
     } else if (op.kind === 'if') {
       if (!conditionHolds(op.condition, state, env)) continue;
+      if (op.overrides !== null) state.overrides.push(op.overrides);
       const inner = runRewriteOps(op.ops, state, env);
       if (inner.kind !== 'end') return inner;
     } else {

@@ -182,4 +182,35 @@ test.describe('nginx : gzip, redirections et pages d\'erreur dans le terminal', 
     await typeCmd(page, `curl -s -o /dev/null -w "code=%{http_code}\\n" "http://${SRV}/g?x=2"`);
     expect(await lastLines(page, 4)).toContain('code=200');
   });
+
+  test('add_header dans un if', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const serverId = await addDevice(page, 'linux-server', 300, 250);
+    const clientId = await addDevice(page, 'linux-server', 600, 250);
+    await cable(page, serverId, clientId);
+
+    await openTerminal(page, serverId);
+    await typeCmd(page, `ip addr add ${SRV}/24 dev eth0`);
+    await typeCmd(page, `sh -c 'printf "hi" > /var/www/html/tiny.html'`);
+    await writeSite(page,
+      'server {\n  listen 80 default_server;\n  root /var/www/html;\n'
+      + '  location / { if ($arg_cors) { add_header X-Cors yes; } }\n}\n'
+      );
+    await typeCmd(page, 'nginx -t');
+    expect(await lastLines(page, 4)).toContain('test is successful');
+    await typeCmd(page, 'systemctl start nginx');
+    await closeTerminal(page);
+
+    await openTerminal(page, clientId);
+    await typeCmd(page, `ip addr add ${CLI}/24 dev eth0`);
+    await typeCmd(page, `curl -s -D /tmp/h -o /dev/null "http://${SRV}/tiny.html?cors=1"`);
+    await typeCmd(page, 'grep -i x-cors /tmp/h');
+    expect(await lastLines(page, 3)).toContain('X-Cors: yes');
+    await typeCmd(page, `curl -s -D /tmp/h2 -o /dev/null "http://${SRV}/tiny.html"`);
+    await typeCmd(page, 'grep -ci x-cors /tmp/h2');
+    expect(await lastLines(page, 3)).toMatch(/\b0\b/);
+  });
 });

@@ -62,4 +62,23 @@ test.describe('pare-feu : listages alignés dans le terminal', () => {
     await typeCmd(page, 'iptables -S ufw-user-logging-input');
     expect(await lastLines(page, 6)).toContain('-j LOG --log-prefix "[UFW ALLOW] "');
   });
+
+  test('iptables -L : owner, recent et MARK avec leurs libelles', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'linux-server', 300, 250);
+    await openTerminal(page, id);
+
+    await typeCmd(page, 'iptables -A INPUT -m owner --uid-owner 0 -j ACCEPT');
+    await typeCmd(page, 'iptables -A INPUT -m recent --update --seconds 30 --hitcount 6 --name ssh -j DROP');
+    await typeCmd(page, 'iptables -t mangle -A PREROUTING -j MARK --set-mark 5');
+    await typeCmd(page, 'iptables -L INPUT');
+    const listing = await lastLines(page, 6);
+    expect(listing).toContain('owner UID match root');
+    expect(listing).toContain('recent: UPDATE seconds: 30 hit_count: 6 name: ssh side: source mask: 255.255.255.255');
+    await typeCmd(page, 'iptables -t mangle -L PREROUTING -n');
+    expect(await lastLines(page, 4)).toContain('MARK set 0x5');
+  });
 });

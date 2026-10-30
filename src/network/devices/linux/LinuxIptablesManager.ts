@@ -16,6 +16,9 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import {
+  dscpListing, lengthListing, mssListing, parseDscp, parseLengthRange, parseMssRange, parseTos, tosListing, tosMatches, parseTimeWindow, timeWindowHolds, timeWindowListing,
+} from './IptablesTimeLength';
 
 import type { VirtualFileSystem } from './VirtualFileSystem';
 import {
@@ -50,6 +53,12 @@ export interface PacketInfo {
   tcpOptions?: readonly number[];
   fragmentOffset?: number;
   ipPacketBytes?: number;
+  ttl?: number;
+  tos?: number;
+  tcpMss?: number;
+  srcAddrType?: string;
+  dstAddrType?: string;
+  addressTypeOf?: (ip: string) => string;
   related?: ConnectionTuple;
 }
 
@@ -58,7 +67,7 @@ export type PacketFacts = Omit<PacketInfo, 'direction' | 'iface' | 'outIface'>;
 const IPTABLES_MATCH_MODULES = new Set([
   'state', 'conntrack', 'multiport', 'limit', 'mac', 'iprange', 'comment',
   'tcp', 'udp', 'icmp', 'icmp6', 'addrtype', 'mark', 'recent',
-  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string',
+  'connmark', 'owner', 'pkttype', 'length', 'ttl', 'hashlimit', 'string', 'time', 'connlimit', 'dscp', 'tos', 'tcpmss',
 ]);
 
 const PROTOCOL_MATCH_MODULES = new Set(['tcp', 'udp', 'icmp', 'icmp6']);
@@ -91,6 +100,16 @@ const MODULE_OPTIONS: Readonly<Record<string, Readonly<Record<string, ModuleOpti
   },
   pkttype: { '--pkt-type': 'IM' },
   length: { '--length': 'IM' },
+  tcpmss: { '--mss': 'IM' },
+  dscp: { '--dscp': 'I', '--dscp-class': 'I' },
+  tos: { '--tos': 'IM' },
+  connlimit: {
+    '--connlimit-above': 'I', '--connlimit-upto': '', '--connlimit-mask': '', '--connlimit-saddr': 'F', '--connlimit-daddr': 'F',
+  },
+  time: {
+    '--timestart': '', '--timestop': '', '--weekdays': 'I', '--monthdays': 'I', '--datestart': '', '--datestop': '',
+    '--utc': 'F', '--kerneltz': 'F',
+  },
   ttl: { '--ttl-eq': 'I', '--ttl-gt': '', '--ttl-lt': '' },
   hashlimit: {
     '--hashlimit-upto': 'I', '--hashlimit-above': 'I', '--hashlimit-burst': '', '--hashlimit-mode': '', '--hashlimit-srcmask': '',
@@ -114,6 +133,14 @@ const DECIDED_MODULE_OPTIONS: Readonly<Record<string, readonly string[]>> = {
   mac: ['--mac-source'],
   iprange: ['--src-range', '--dst-range'],
   comment: ['--comment'],
+  addrtype: ['--src-type', '--dst-type'],
+  tcpmss: ['--mss'],
+  dscp: ['--dscp', '--dscp-class'],
+  tos: ['--tos'],
+  connlimit: ['--connlimit-above', '--connlimit-upto', '--connlimit-mask', '--connlimit-saddr', '--connlimit-daddr'],
+  length: ['--length'],
+  ttl: ['--ttl-eq', '--ttl-gt', '--ttl-lt'],
+  time: ['--timestart', '--timestop', '--weekdays', '--monthdays', '--datestart', '--datestop', '--utc', '--kerneltz'],
   recent: ['--name', '--set', '--rcheck', '--update', '--remove', '--seconds', '--hitcount', '--rsource', '--rdest', '--mask', '--reap'],
 };
 
@@ -855,6 +882,52 @@ export class LinuxIptablesManager {
         const action = RECENT_ACTIONS.find((name) => m.options.has(name)) ?? '--rcheck';
         if (this.matchRecent(pkt, m) === inverted(action)) return false;
       }
+      if (m.module === 'tcpmss') {
+        const range = parseMssRange(m.options.get('--mss') ?? '');
+        if (typeof range === 'string') return false;
+        const holds = pkt.tcpMss !== undefined && pkt.tcpMss >= range.min && pkt.tcpMss <= range.max;
+        if (pkt.tcpMss === undefined ? !inverted('--mss') : holds === inverted('--mss')) return false;
+      }
+      if (m.module === 'dscp') {
+        const wanted = parseDscp(m.options);
+        if (typeof wanted === 'string' || pkt.tos === undefined) return false;
+        if (((pkt.tos >> 2) === wanted) === (m.negated !== undefined && m.negated.size > 0)) return false;
+      }
+      if (m.module === 'tos') {
+        const wanted = parseTos(m.options.get('--tos') ?? '');
+        if (typeof wanted === 'string' || pkt.tos === undefined) return false;
+        if (tosMatches(wanted, pkt.tos) === inverted('--tos')) return false;
+      }
+      if (m.module === 'connlimit') {
+        if (this.connlimitExceeded(m, pkt, state) === this.connlimitView(m).inverted) return false;
+      }
+      if (m.module === 'addrtype') {
+        for (const [option, actual] of [
+          ['--src-type', pkt.srcAddrType ?? pkt.addressTypeOf?.(pkt.srcIP)], ['--dst-type', pkt.dstAddrType ?? pkt.addressTypeOf?.(pkt.dstIP)],
+        ] as const) {
+          const wanted = m.options.get(option);
+          if (wanted === undefined) continue;
+          if (actual === undefined) return false;
+          if (wanted.toUpperCase().split(',').includes(actual) === inverted(option)) return false;
+        }
+      }
+      if (m.module === 'ttl') {
+        if (pkt.ttl === undefined) return false;
+        const wanted = Number(m.options.get('--ttl-eq') ?? m.options.get('--ttl-gt') ?? m.options.get('--ttl-lt'));
+        const holds = m.options.has('--ttl-eq') ? pkt.ttl === wanted
+          : m.options.has('--ttl-gt') ? pkt.ttl > wanted : pkt.ttl < wanted;
+        if (holds === inverted('--ttl-eq')) return false;
+      }
+      if (m.module === 'length') {
+        const range = parseLengthRange(m.options.get('--length') ?? '');
+        if (typeof range === 'string' || pkt.ipPacketBytes === undefined) return false;
+        const inside = pkt.ipPacketBytes >= range.min && pkt.ipPacketBytes <= range.max;
+        if (inside === inverted('--length')) return false;
+      }
+      if (m.module === 'time') {
+        const window = parseTimeWindow(m.options, m.negated ?? new Set());
+        if (typeof window === 'string' || !timeWindowHolds(window, simulationNowMs())) return false;
+      }
       if (m.module === 'state' || m.module === 'conntrack') {
         const option = m.module === 'state' ? '--state' : '--ctstate';
         const wanted = (m.options.get(option) ?? '').toUpperCase();
@@ -879,6 +952,25 @@ export class LinuxIptablesManager {
     }
 
     return true;
+  }
+
+  private connlimitView(m: MatchExtension): { limit: number; mask: number; daddr: boolean; inverted: boolean } {
+    const above = m.options.get('--connlimit-above');
+    const limit = Number(above ?? m.options.get('--connlimit-upto') ?? 0);
+    const mask = Number(m.options.get('--connlimit-mask') ?? (this.family === 6 ? 128 : 32));
+    const inverted = above === undefined || inverts(m, '--connlimit-above');
+    return { limit, mask, daddr: m.options.has('--connlimit-daddr'), inverted };
+  }
+
+  private connlimitExceeded(m: MatchExtension, pkt: PacketInfo, state: ConnectionState): boolean {
+    const { limit, mask, daddr } = this.connlimitView(m);
+    const subject = daddr ? pkt.dstIP : pkt.srcIP;
+    const group = `${subject}/${mask}`;
+    const counted = this.connections.flows().filter((view) => {
+      if (view.tcpState === 'TIME_WAIT' || view.tcpState === 'CLOSE') return false;
+      return this.ipMatchesSpec(daddr ? view.original.dstIP : view.original.srcIP, group);
+    }).length;
+    return counted + (state === 'NEW' ? 1 : 0) > limit;
   }
 
   private ipMatchesSpec(ip: string, spec: string): boolean {
@@ -1333,6 +1425,30 @@ export class LinuxIptablesManager {
         return `STRING match ${inverts(m, '--string') ? '!' : ''} "${quoted}" ${tail.join(' ')}`;
       }
       case 'owner': return this.ownerListing(m, numeric);
+      case 'tcpmss': {
+        const range = parseMssRange(o.get('--mss') ?? '');
+        return typeof range === 'string' ? '' : mssListing(range, inverts(m, '--mss'));
+      }
+      case 'dscp': {
+        const value = parseDscp(o);
+        return typeof value === 'string' ? '' : dscpListing(value, (m.negated?.size ?? 0) > 0);
+      }
+      case 'tos': {
+        const value = parseTos(o.get('--tos') ?? '');
+        return typeof value === 'string' ? '' : tosListing(value, inverts(m, '--tos'));
+      }
+      case 'connlimit': {
+        const view = this.connlimitView(m);
+        return `#conn ${view.daddr ? 'dst' : 'src'}/${view.mask} ${view.inverted ? '<=' : '>'} ${view.limit}`;
+      }
+      case 'length': {
+        const range = parseLengthRange(o.get('--length') ?? '');
+        return typeof range === 'string' ? '' : lengthListing(range, inverts(m, '--length'));
+      }
+      case 'time': {
+        const window = parseTimeWindow(o, m.negated ?? new Set());
+        return typeof window === 'string' ? '' : timeWindowListing(window);
+      }
       case 'ttl': {
         const modes: Array<[string, string]> = [['--ttl-eq', '=='], ['--ttl-gt', '>'], ['--ttl-lt', '<']];
         const [option, sign] = modes.find(([name]) => o.has(name)) ?? ['--ttl-eq', '=='];
@@ -1939,9 +2055,32 @@ export class LinuxIptablesManager {
       : 'multiport only works with TCP, UDP, UDPLITE, SCTP and DCCP');
   }
 
-  private static moduleProblem(module: string, options: ReadonlyMap<string, string>): string | null {
+  private static moduleProblem(module: string, options: ReadonlyMap<string, string>, negated: ReadonlySet<string>): string | null {
     if (module === 'recent' && !RECENT_ACTIONS.some((name) => options.has(name))) {
       return "recent: you must specify one of `--set', `--rcheck' `--update' or `--remove'";
+    }
+    if (module === 'tcpmss') {
+      const range = parseMssRange(options.get('--mss') ?? '');
+      if (typeof range === 'string') return range;
+    }
+    if (module === 'dscp') {
+      const value = parseDscp(options);
+      if (typeof value === 'string') return value;
+    }
+    if (module === 'tos') {
+      const value = parseTos(options.get('--tos') ?? '');
+      if (typeof value === 'string') return value;
+    }
+    if (module === 'connlimit' && !options.has('--connlimit-above') && !options.has('--connlimit-upto')) {
+      return 'You must specify "--connlimit-above" or "--connlimit-upto".';
+    }
+    if (module === 'time') {
+      const window = parseTimeWindow(options, negated);
+      if (typeof window === 'string') return window;
+    }
+    if (module === 'length') {
+      const range = parseLengthRange(options.get('--length') ?? '');
+      if (typeof range === 'string') return range;
     }
     if (module === 'string' && !options.has('--string') && !options.has('--hex-string')) {
       return "STRING match: You must specify `--string' or `--hex-string'";
@@ -2168,7 +2307,7 @@ export class LinuxIptablesManager {
           }
           const missing = Object.entries(accepted).find(([name, flags]) => flags.includes('M') && !options.has(name));
           if (missing !== undefined) return this.parameterProblem(`${module}: option "${missing[0]}" must be specified\n`);
-          const incomplete = LinuxIptablesManager.moduleProblem(module, options);
+          const incomplete = LinuxIptablesManager.moduleProblem(module, options, negated);
           if (incomplete !== null) return this.parameterProblem(incomplete);
           rule.matches.push({ module, options, negated });
           continue;

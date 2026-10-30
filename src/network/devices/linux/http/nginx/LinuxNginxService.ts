@@ -29,7 +29,7 @@ import { evaluateConditional, fileValidators, httpDate } from './NginxConditiona
 import { applyRangeFilter } from './NginxRange';
 import { rewriteSetCookie } from './NginxCookie';
 import {
-  runRewriteOps, type NginxRewriteOp, type RewriteEnv, type RewriteState,
+  runRewriteOps, type IfOverrides, type NginxRewriteOp, type RewriteEnv, type RewriteState,
 } from './NginxRewrite';
 import { nginxReason, errorPage } from './NginxStatus';
 import { contentTypeFor } from './NginxMime';
@@ -582,7 +582,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     const bucket = this.rewriteBucket(server, req);
     bucket.uri = path;
     bucket.args = args;
-    return { uri: path, args, uriChanged: false, vars: bucket.vars, captures: bucket.captures };
+    return { uri: path, args, uriChanged: false, vars: bucket.vars, captures: bucket.captures, overrides: [] };
   }
 
   private rewritePhase(
@@ -635,6 +635,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
       }
       path = state.uri;
       args = state.args;
+      if (state.overrides.length > 0) location = withIfOverrides(location, state.overrides);
     }
     if (location?.proxyPass) {
       const target = args === '' ? path : `${path}?${args}`;
@@ -1184,4 +1185,17 @@ interface RewriteBucket {
   captures: Map<string, string>;
   uri: string | null;
   args: string;
+}
+
+function withIfOverrides(location: NginxLocation, overrides: readonly IfOverrides[]): NginxLocation {
+  let effective = location;
+  for (const block of overrides) {
+    effective = {
+      ...effective,
+      ...(block.root === undefined ? {} : { root: block.root }),
+      ...(block.addHeaders.length === 0 ? {} : { addHeaders: block.addHeaders }),
+      ...(block.proxyPass === undefined ? {} : { proxyPass: block.proxyPass as NginxProxyPass }),
+    };
+  }
+  return effective;
 }
