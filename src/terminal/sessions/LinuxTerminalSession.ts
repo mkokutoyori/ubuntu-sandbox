@@ -93,6 +93,8 @@ import { establishedSessionLiveness, peerLiveness } from '@/network/protocols/ss
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import { editorLaunchFailure, launchedFilePath, parseEditorArgs, parseEditorLaunch, isEditorSegment, withRcfiles } from '@/network/devices/linux/editors/editorLaunch';
 import { LinuxEditorFsContext } from './LinuxEditorFsContext';
+import { parseLessLaunch } from '@/network/devices/linux/editors/lessLaunch';
+import type { LessSource } from '@/network/devices/linux/editors/LessEngine';
 import {
   createRemoteEditorController,
   type RemoteEditorTransport,
@@ -648,7 +650,7 @@ export class LinuxTerminalSession extends TerminalSession {
     }
 
     // Editor mode is handled by the view component (NanoEditor / VimEditor)
-    if (this.inputMode.type === 'editor' || this.inputMode.type === 'remote-editor') return false;
+    if (this.inputMode.type === 'editor' || this.inputMode.type === 'remote-editor' || this.inputMode.type === 'less') return false;
 
     if (e.key === 'd' && e.ctrlKey && this.input === '') {
       // Ctrl+D inside an open here-document ends the document, it does not
@@ -917,6 +919,7 @@ export class LinuxTerminalSession extends TerminalSession {
     if (this.tryCrontabEdit(trimmed)) return;
     if (this.tryVisudoEdit(trimmed)) return;
     if (await this.tryInteractiveRead(trimmed)) return;
+    if (await this.tryOpenPager(trimmed)) return;
 
     // Intercept editor commands — at top level OR embedded in a chain
     // (`mkdir foo && nano foo/x`). The chain is parsed up to the first
@@ -1169,6 +1172,47 @@ export class LinuxTerminalSession extends TerminalSession {
    * is not actually an editor invocation (defensive — caller already
    * checked).
    */
+  private async tryOpenPager(commandLine: string): Promise<boolean> {
+    const parsed = parseLessLaunch(commandLine);
+    if (parsed.kind === 'none') return false;
+    if (parsed.kind === 'error') {
+      this.addLine(parsed.message, 'error');
+      return true;
+    }
+    const { launch } = parsed;
+    const dev = this.device;
+    const sources: LessSource[] = [];
+    if (launch.piped) {
+      const output = await this.executeOnDevice(launch.prefix);
+      sources.push({ title: '', content: output === '' || output.endsWith('\n') ? output : `${output}\n` });
+    } else if (launch.files.length === 0) {
+      this.addLine('Missing filename ("less --help" for help)', 'error');
+      return true;
+    } else {
+      for (const file of launch.files) {
+        const content = this.shell && dev instanceof LinuxMachine
+          ? dev.readFileForEditorInSession(file, this.shell)
+          : this.device.readFileForEditor?.(this.device.resolveAbsolutePath?.(file) ?? file) ?? null;
+        if (content === null) {
+          const isDirectory = (await this.executeOnDevice(`[ -d '${file.replace(/'/g, "'\\''")}' ] && echo directory`)).trim() === 'directory';
+          this.addLine(isDirectory ? `${file} is a directory` : `${file}: No such file or directory`, 'error');
+          continue;
+        }
+        sources.push({ title: file, content });
+      }
+      if (sources.length === 0) return true;
+    }
+    this.inputMode = {
+      type: 'less',
+      sources,
+      options: launch.options,
+      quitIfOneScreen: launch.quitIfOneScreen,
+      initialKeys: launch.initialKeys,
+    };
+    this.notify();
+    return true;
+  }
+
   private openEditorFromCmd(cmd: string): boolean {
     const elevated = cmd.startsWith('sudo ');
     const noSudo = elevated ? cmd.slice(5).trim() : cmd;

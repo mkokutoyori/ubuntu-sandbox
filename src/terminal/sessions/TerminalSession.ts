@@ -24,6 +24,7 @@
  *   └── WindowsTerminalSession   — CMD/PS dual-mode, shell nesting
  */
 
+import type { LessOptions, LessSource } from '@/network/devices/linux/editors/LessEngine';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { Equipment, type HostCapableDevice } from '@/network';
@@ -115,6 +116,7 @@ export type InputMode =
   | { type: 'password'; promptText: string }
   | { type: 'interactive-text'; promptText: string }
   | { type: 'pager'; indicator: string }
+  | { type: 'less'; sources: readonly LessSource[]; options: LessOptions; quitIfOneScreen: boolean; initialKeys: string }
   | { type: 'booting' }
   | { type: 'reverse-search' }
   | {
