@@ -55,6 +55,13 @@ test.describe('less dans le terminal', () => {
     await expect(page.locator('[data-testid="less-line"]').first()).toHaveText('1');
     await page.keyboard.press('q');
 
+    await typeCmd(page, 'less --help');
+    await expect(page.locator('[data-testid="less-body"]')).toContainText('SUMMARY OF LESS COMMANDS');
+    await page.keyboard.press('q');
+    await expect(page.locator('[data-testid="less-body"]')).toHaveCount(0);
+    await typeCmd(page, 'less -V');
+    expect(await lastLines(page, 9)).toContain('less 590');
+
     await typeCmd(page, 'printf "a\\nb\\n" > /tmp/s.txt');
     await typeCmd(page, 'less /tmp/s.txt > /tmp/o.txt; cat /tmp/o.txt');
     expect(await lastLines(page, 5)).toContain('a\nb');

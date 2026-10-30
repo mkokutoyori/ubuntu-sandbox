@@ -280,6 +280,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({ session }) => {
           options={less.options}
           quitIfOneScreen={less.quitIfOneScreen}
           initialKeys={less.initialKeys}
+          help={less.help}
           onExit={(printed) => session.editorExit(true, printed)}
         />
       </div>

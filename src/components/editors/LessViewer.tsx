@@ -10,15 +10,17 @@ interface LessViewerProps {
   options: LessOptions;
   quitIfOneScreen: boolean;
   initialKeys: string;
+  help: 'only' | 'first' | null;
   onExit: (printed: string) => void;
 }
 
 const WHEEL_LINES = 3;
 
-export const LessViewer: React.FC<LessViewerProps> = ({ sources, options, quitIfOneScreen, initialKeys, onExit }) => {
+export const LessViewer: React.FC<LessViewerProps> = ({ sources, options, quitIfOneScreen, initialKeys, help, onExit }) => {
   const engineRef = useRef<LessEngine>();
   if (!engineRef.current) {
     engineRef.current = new LessEngine(sources, options);
+    if (help !== null) engineRef.current.showHelpFirst(help === 'only');
     if (initialKeys !== '') engineRef.current.feed(initialKeys);
   }
   const engine = engineRef.current;

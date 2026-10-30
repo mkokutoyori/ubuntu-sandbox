@@ -116,7 +116,7 @@ export type InputMode =
   | { type: 'password'; promptText: string }
   | { type: 'interactive-text'; promptText: string }
   | { type: 'pager'; indicator: string }
-  | { type: 'less'; sources: readonly LessSource[]; options: LessOptions; quitIfOneScreen: boolean; initialKeys: string }
+  | { type: 'less'; sources: readonly LessSource[]; options: LessOptions; quitIfOneScreen: boolean; initialKeys: string; help: 'only' | 'first' | null }
   | { type: 'booting' }
   | { type: 'reverse-search' }
   | {

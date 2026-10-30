@@ -108,6 +108,14 @@ describe('less engine', () => {
     expect(text(e)[0]).toBe('a');
   });
 
+  it('starts on the help screen and leaves entirely with q when asked to', () => {
+    const e = new LessEngine([{ title: '', content: '' }], DEFAULT_LESS_OPTIONS, 6, 60);
+    e.showHelpFirst(true);
+    expect(text(e).join('\n')).toContain('SUMMARY OF LESS COMMANDS');
+    press(e, 'q');
+    expect(e.exited).toBe(true);
+  });
+
   it('expands tabs and shows control characters', () => {
     const e = new LessEngine([{ title: 'f', content: 'a\tb\u0001\n' }], DEFAULT_LESS_OPTIONS, 4, 40);
     expect(text(e)[0]).toBe('a       b^A');

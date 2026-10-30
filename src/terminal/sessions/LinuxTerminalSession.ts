@@ -1175,6 +1175,10 @@ export class LinuxTerminalSession extends TerminalSession {
   private async tryOpenPager(commandLine: string): Promise<boolean> {
     const parsed = parseLessLaunch(commandLine);
     if (parsed.kind === 'none') return false;
+    if (parsed.kind === 'print') {
+      for (const text of parsed.lines) this.addLine(text);
+      return true;
+    }
     if (parsed.kind === 'error') {
       this.addLine(parsed.message, 'error');
       return true;
@@ -1185,6 +1189,8 @@ export class LinuxTerminalSession extends TerminalSession {
     if (launch.piped) {
       const output = await this.executeOnDevice(launch.prefix);
       sources.push({ title: '', content: output === '' || output.endsWith('\n') ? output : `${output}\n` });
+    } else if (launch.files.length === 0 && launch.help) {
+      sources.push({ title: '', content: '' });
     } else if (launch.files.length === 0) {
       this.addLine('Missing filename ("less --help" for help)', 'error');
       return true;
@@ -1208,6 +1214,7 @@ export class LinuxTerminalSession extends TerminalSession {
       options: launch.options,
       quitIfOneScreen: launch.quitIfOneScreen,
       initialKeys: launch.initialKeys,
+      help: !launch.help ? null : launch.files.length === 0 && !launch.piped ? 'only' : 'first',
     };
     this.notify();
     return true;
