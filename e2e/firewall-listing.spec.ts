@@ -38,4 +38,28 @@ test.describe('pare-feu : listages alignés dans le terminal', () => {
     await typeCmd(page, 'ufw status numbered');
     expect(await lastLines(page, 8)).toMatch(/\[ 1\] 22\/tcp on eth0 +ALLOW IN +Anywhere/);
   });
+
+  test('iptables -S, port source et journalisation ufw', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'linux-server', 300, 250);
+    await openTerminal(page, id);
+
+    await typeCmd(page, 'iptables -N WEB');
+    await typeCmd(page, 'iptables -A INPUT ! -s 10.0.0.1 -p tcp --dport 80 -j WEB');
+    await typeCmd(page, 'iptables -S');
+    const saved = await lastLines(page, 8);
+    expect(saved).toContain('-N WEB');
+    expect(saved).toContain('-A INPUT ! -s 10.0.0.1/32 -p tcp -m tcp --dport 80 -j WEB');
+
+    await typeCmd(page, 'ufw enable');
+    await typeCmd(page, 'ufw allow log from 10.0.0.1 port 1024 to any port 22 proto tcp');
+    await typeCmd(page, 'ufw status');
+    expect(await lastLines(page, 8)).toMatch(/22\/tcp +ALLOW +10\.0\.0\.1 1024\/tcp +\(log\)/);
+
+    await typeCmd(page, 'iptables -S ufw-user-logging-input');
+    expect(await lastLines(page, 6)).toContain('-j LOG --log-prefix "[UFW ALLOW] "');
+  });
 });
