@@ -697,3 +697,7 @@ indépendante de toutes les autres.
   explicitement réviser ce test pour refléter le nouveau comportement plutôt
   que de le laisser affirmer un gap désormais comblé, ce qui le rendrait
   trompeur sans le faire échouer.
+
+## Correspondances décidées ajoutées après coup (length, time, ttl, addrtype, connlimit, dscp, tos, tcpmss)
+
+Ces modules étaient refusés ou rangés sans effet (règle 6). Ils décident maintenant avec des faits déjà portés par le paquet (taille IP, TTL ou hop limit, TOS ou classe de trafic, MSS du SYN), l'horloge de simulation (`time`, en UTC), la table de suivi (`connlimit`) ou une fonction de résolution du type d'adresse (`addrtype`, appelée seulement si une règle l'emploie : aucun coût sur le chemin d'un paquet sans cette règle). Un fait absent fait échouer la règle FERMÉE. Mesure de `connlimit` : 0,08 ms par paquet avec 100 flux suivis, 0,7 ms avec 1 000, 2,2 ms avec 4 000 (linéaire : le comptage parcourt les flux ; le noyau indexe par adresse). Restent refusés, faute de sous-système : `set` (pas d'ipset) et `physdev` (pas de pont filtrant).

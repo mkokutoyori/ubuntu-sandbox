@@ -966,11 +966,26 @@ export class LinuxIptablesManager {
     const { limit, mask, daddr } = this.connlimitView(m);
     const subject = daddr ? pkt.dstIP : pkt.srcIP;
     const group = `${subject}/${mask}`;
-    const counted = this.connections.flows().filter((view) => {
-      if (view.tcpState === 'TIME_WAIT' || view.tcpState === 'CLOSE') return false;
-      return this.ipMatchesSpec(daddr ? view.original.dstIP : view.original.srcIP, group);
-    }).length;
+    const sameGroup = this.addressMatcher(group);
+    const counted = this.connections.count((original, tcpState) => {
+      if (tcpState === 'TIME_WAIT' || tcpState === 'CLOSE') return false;
+      return sameGroup(daddr ? original.dstIP : original.srcIP);
+    });
     return counted + (state === 'NEW' ? 1 : 0) > limit;
+  }
+
+  private addressMatcher(spec: string): (ip: string) => boolean {
+    if (this.family === 6) return (ip) => this.ipMatchesSpec(ip, spec);
+    const [network, prefixText] = spec.split('/');
+    const prefix = Number(prefixText);
+    const networkNumber = this.ipToNumber(network);
+    if (networkNumber === null || Number.isNaN(prefix)) return () => false;
+    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    const wanted = networkNumber & mask;
+    return (ip) => {
+      const value = this.ipToNumber(ip);
+      return value !== null && (value & mask) === wanted;
+    };
   }
 
   private ipMatchesSpec(ip: string, spec: string): boolean {

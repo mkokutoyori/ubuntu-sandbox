@@ -66,4 +66,18 @@ describe.skipIf(!enabled)('listages du pare-feu', () => {
     report('ufw-status-drift-ratio', (last / first).toFixed(2));
     expect(last / first).toBeLessThan(2);
   }, 600000);
+
+  it('filterPacket : coût d\'une règle connlimit selon le nombre de flux suivis', async () => {
+    const srv = new LinuxServer('linux-server', 'srv', 0, 0);
+    srv.powerOn();
+    await srv.executeCommand('iptables -A INPUT -p tcp -m connlimit --connlimit-above 100000 -j DROP');
+    const manager = (srv as unknown as { executor: { iptables: { filterPacket(p: object, s?: object): string } } }).executor.iptables;
+    const syn = (port: number) => ({ direction: 'in', protocol: 6, srcIP: '10.0.0.2', dstIP: '10.0.0.1', srcPort: port, dstPort: 22, iface: 'eth0', tcpFlags: 2, ipPacketBytes: 60 });
+    for (const flows of [100, 1000, 4000]) {
+      for (let i = 0; i < flows; i++) manager.filterPacket(syn(10000 + i), {});
+      const t0 = performance.now();
+      for (let i = 0; i < 100; i++) manager.filterPacket(syn(60000 + i), {});
+      report(`connlimit-ms-per-packet-with-${flows}-flows`, ((performance.now() - t0) / 100).toFixed(3));
+    }
+  }, 600000);
 });
