@@ -19,6 +19,8 @@ import type { LinuxLogManager } from '../LinuxLogManager';
 import type { PortBoundPayload, PortReleasedPayload } from '../events';
 import type { MACAddress, IPAddress, SubnetMask } from '../../../core/types';
 
+const SSH_PORT = 22;
+
 export class PortActivityLogProjection {
   private readonly subscriptions: Unsubscribe[] = [];
 
@@ -39,8 +41,6 @@ export class PortActivityLogProjection {
       bus.subscribe('linux.port.bound', (e) => this.onBound(e.payload)),
       bus.subscribe('linux.port.released', (e) => this.onReleased(e.payload)),
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListenerChanged(e.payload)),
-      bus.subscribe('tcp.connection.opened', (e) => this.onTcpConnectionOpened(e.payload)),
-      bus.subscribe('tcp.connection.closed', (e) => this.onTcpConnectionClosed(e.payload)),
       bus.subscribe('tcp.segment.dropped', (e) => this.onTcpSegmentDropped(e.payload)),
       bus.subscribe('port.link.up', (e) => this.onLinkUp(e.payload)),
       bus.subscribe('port.link.down', (e) => this.onLinkDown(e.payload)),
@@ -382,72 +382,15 @@ export class PortActivityLogProjection {
     deviceId: string; localIp: string; localPort: number; added: boolean;
   }): void {
     if (p.deviceId !== this.deviceId) return;
-    this.logConnection(
-      p.localPort,
+    if (p.localPort !== SSH_PORT) return;
+    this.logManager.logAuth(
+      'sshd',
       p.added
         ? `Server listening on ${p.localIp} port ${p.localPort}.`
         : `Closed TCP listening socket ${p.localIp}:${p.localPort}`,
+      this.sshdPid(),
+      'ssh',
     );
-  }
-
-  private onTcpConnectionOpened(p: {
-    deviceId: string; remoteIp: string; remotePort: number;
-    localIp: string; localPort: number; passive: boolean;
-  }): void {
-    if (p.deviceId !== this.deviceId) return;
-    if (!p.passive) return;
-    if (this.tagForPort(p.localPort) === 'sshd') return;
-    this.logConnection(
-      p.localPort,
-      `Accepted connection from ${p.remoteIp}:${p.remotePort} on ${p.localIp}:${p.localPort}`,
-    );
-  }
-
-  private onTcpConnectionClosed(p: {
-    deviceId: string; remoteIp: string; remotePort: number;
-    localIp: string; localPort: number; reason: string; passive: boolean;
-  }): void {
-    if (p.deviceId !== this.deviceId) return;
-    // Same filter as `onTcpConnectionOpened`: a socket we dialled out is
-    // not a "Connection from" anybody, and `sshd` has no business logging
-    // the close of a connection it never accepted.
-    if (!p.passive) return;
-    if (this.tagForPort(p.localPort) === 'sshd') return;
-    this.logConnection(
-      p.localPort,
-      `Connection from ${p.remoteIp}:${p.remotePort} closed (${p.reason})`,
-    );
-  }
-
-  /**
-   * Record one connection event under the facility its daemon really uses.
-   *
-   * sshd logs to authpriv, which is why an operator looks for SSH activity
-   * in `/var/log/auth.log`. Sending these lines through the daemon facility
-   * put them in `/var/log/syslog` while the authentications for the very
-   * same connection — written by `SshSyslogger`, which already calls
-   * `logAuth` — landed in auth.log: one daemon, one connection, two files,
-   * and the file everybody checks was the one missing half the story.
-   *
-   * The unit is `ssh` (Debian's unit name) while the tag stays `sshd` (what
-   * the binary calls itself), the same split `SshSyslogger` uses, so
-   * `journalctl -u ssh` shows both halves too.
-   */
-  private logConnection(localPort: number, message: string): void {
-    const tag = this.tagForPort(localPort);
-    if (tag === 'sshd') {
-      this.logManager.logAuth(tag, message, this.sshdPid(), 'ssh');
-      return;
-    }
-    this.logManager.logDaemon(tag, message);
-  }
-
-  private tagForPort(port: number): string {
-    if (port === 22) return 'sshd';
-    if (port === 80 || port === 443) return 'httpd';
-    if (port === 25) return 'smtp';
-    if (port === 21) return 'ftpd';
-    return `tcp-${port}`;
   }
 
   /** Detach every subscription — call before discarding the projection. */
