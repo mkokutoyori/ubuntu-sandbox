@@ -827,9 +827,14 @@ const ABORT_SENDS_RESET: ReadonlySet<TcpState> = new Set<TcpState>([
   'syn-received', 'established', 'fin-wait-1', 'fin-wait-2', 'close-wait',
 ]);
 
+const SOCKET_KEY_COLLATOR = new Intl.Collator();
+
 export class TcpStack {
   private listeners = new Map<string, TcpListener>();
   private sockets = new Map<string, TcpSocket>();
+  private readonly socketsByLocalPort = new Map<number, Set<TcpSocket>>();
+  private readonly sortedSockets: TcpSocket[] = [];
+  private readonly sortedKeys: string[] = [];
   private enabled = true;
   private running = false;
   private nextEphemeralPort = 49152;
@@ -875,6 +880,9 @@ export class TcpStack {
       this._teardown(s, 'shutdown');
     }
     this.sockets.clear();
+    this.socketsByLocalPort.clear();
+    this.sortedSockets.length = 0;
+    this.sortedKeys.length = 0;
     for (const l of this.listeners.values()) this.socketSink?.withdraw(l.localIp, l.localPort);
     this.listeners.clear();
   }
@@ -984,7 +992,11 @@ export class TcpStack {
   }
 
   listSockets(): TcpSocket[] {
-    return Array.from(this.sockets.values()).sort((a, b) => a.key().localeCompare(b.key()));
+    return this.sortedSockets.slice();
+  }
+
+  socketCount(): number {
+    return this.sockets.size;
   }
 
   infoOf(socket: TcpSocket): TcpInfo {
@@ -1152,11 +1164,67 @@ export class TcpStack {
     return this.getScheduler();
   }
 
+  private trackSocket(socket: TcpSocket): void {
+    const replaced = this.sockets.get(socket.key());
+    if (replaced !== undefined && replaced !== socket) this.untrackSocket(replaced);
+    this.sockets.set(socket.key(), socket);
+    this.insertSorted(socket);
+    let bucket = this.socketsByLocalPort.get(socket.localPort);
+    if (bucket === undefined) {
+      bucket = new Set();
+      this.socketsByLocalPort.set(socket.localPort, bucket);
+    }
+    bucket.add(socket);
+  }
+
+  private untrackSocket(socket: TcpSocket): void {
+    if (this.sockets.get(socket.key()) === socket) this.sockets.delete(socket.key());
+    this.removeSorted(socket);
+    const bucket = this.socketsByLocalPort.get(socket.localPort);
+    if (bucket === undefined) return;
+    bucket.delete(socket);
+    if (bucket.size === 0) this.socketsByLocalPort.delete(socket.localPort);
+  }
+
+  private sortedIndexOf(key: string): number {
+    let low = 0;
+    let high = this.sortedKeys.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (SOCKET_KEY_COLLATOR.compare(this.sortedKeys[middle], key) < 0) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  private insertSorted(socket: TcpSocket): void {
+    const key = socket.key();
+    const at = this.sortedIndexOf(key);
+    this.sortedKeys.splice(at, 0, key);
+    this.sortedSockets.splice(at, 0, socket);
+  }
+
+  private removeSorted(socket: TcpSocket): void {
+    let at = this.sortedIndexOf(socket.key());
+    while (at < this.sortedSockets.length && this.sortedSockets[at] !== socket
+      && this.sortedKeys[at] === socket.key()) at++;
+    if (this.sortedSockets[at] !== socket) at = this.sortedSockets.indexOf(socket);
+    if (at < 0) return;
+    this.sortedKeys.splice(at, 1);
+    this.sortedSockets.splice(at, 1);
+  }
+
+  private portHeldBySocket(port: number, localIp: string | undefined): boolean {
+    const bucket = this.socketsByLocalPort.get(port);
+    if (bucket === undefined) return false;
+    if (!localIp) return true;
+    for (const socket of bucket) if (socket.localIp === localIp) return true;
+    return false;
+  }
+
   localPortInUse(port: PortNumber, rawRemoteIp: string): boolean {
     const localIp = this.resolveEgress(canonicalIpText(rawRemoteIp))?.srcIp;
-    for (const socket of this.sockets.values()) {
-      if (socket.localPort === port.value && socket.localIp === localIp) return true;
-    }
+    if (this.portHeldBySocket(port.value, localIp)) return true;
     for (const listener of this.listeners.values()) {
       if (listener.localPort === port.value && (listener.localIp === localIp || listener.localIp === '0.0.0.0')) return true;
     }
@@ -1167,8 +1235,8 @@ export class TcpStack {
     if (!reuseAddress) return this.localPortInUse(port, rawRemoteIp);
     const remoteIp = canonicalIpText(rawRemoteIp);
     const localIp = this.resolveEgress(remoteIp)?.srcIp;
-    for (const socket of this.sockets.values()) {
-      if (socket.localPort === port.value && socket.localIp === localIp && socket.remoteIp === remoteIp
+    for (const socket of this.socketsByLocalPort.get(port.value) ?? []) {
+      if (socket.localIp === localIp && socket.remoteIp === remoteIp
         && socket.remotePort === remotePort && socket.state !== 'time-wait') return true;
     }
     for (const listener of this.listeners.values()) {
@@ -1204,7 +1272,7 @@ export class TcpStack {
     socket.mss = mssForMtu(socket.family, this.pathMtuTo(remoteIp, egress));
     socket.sendNext = this.initialSequence(socket);
     socket.sendUnacked = socket.sendNext;
-    this.sockets.set(socket.key(), socket);
+    this.trackSocket(socket);
     this._transition(socket, 'syn-sent');
     const flags = noFlags(); flags.syn = true;
     if (this.ecnPolicy() === 'request') socket.ecn.requestOnSyn(flags);
@@ -1676,7 +1744,7 @@ export class TcpStack {
         socket.peerTsRecentAtMs = this.getScheduler().now();
       }
       socket.ecn.acceptSyn(this.ecnPolicy(), seg.flags, arrival.ecn);
-      this.sockets.set(socket.key(), socket);
+      this.trackSocket(socket);
       this._transition(socket, 'syn-received');
       const flags = noFlags(); flags.syn = true; flags.ack = true;
       socket.ecn.answerSyn(flags);
@@ -2835,7 +2903,7 @@ export class TcpStack {
     const unannounced = socket.pendingListener !== null;
     socket.pendingListener = null;
     this._transition(socket, 'closed');
-    this.sockets.delete(socket.key());
+    this.untrackSocket(socket);
     if (!unannounced) {
       this.getBus().publish({
         topic: 'tcp.connection.closed',
@@ -3386,17 +3454,13 @@ export class TcpStack {
 
   private nextEphemeral(localIp?: string): number {
     const size = this.ephemeralMax - this.ephemeralMin + 1;
-    const inUse = new Set<number>();
-    for (const s of this.sockets.values()) {
-      if (localIp && s.localIp !== localIp) continue;
-      inUse.add(s.localPort);
-    }
-    for (const l of this.listeners.values()) inUse.add(l.localPort);
+    const listening = new Set<number>();
+    for (const l of this.listeners.values()) listening.add(l.localPort);
     let start = this.nextEphemeralPort;
     if (start < this.ephemeralMin || start > this.ephemeralMax) start = this.ephemeralMin;
     for (let i = 0; i < size; i++) {
       const port = this.ephemeralMin + ((start - this.ephemeralMin + i) % size);
-      if (!inUse.has(port)) {
+      if (!listening.has(port) && !this.portHeldBySocket(port, localIp)) {
         this.nextEphemeralPort = port + 1;
         if (this.nextEphemeralPort > this.ephemeralMax) this.nextEphemeralPort = this.ephemeralMin;
         return port;
@@ -3407,9 +3471,10 @@ export class TcpStack {
 
   hasFreeEphemeralPort(localIp?: string): boolean {
     const inUse = new Set<number>();
-    for (const s of this.sockets.values()) {
-      if (localIp && s.localIp !== localIp) continue;
-      if (s.localPort >= this.ephemeralMin && s.localPort <= this.ephemeralMax) inUse.add(s.localPort);
+    for (const [port, bucket] of this.socketsByLocalPort) {
+      if (port < this.ephemeralMin || port > this.ephemeralMax) continue;
+      if (!localIp) { inUse.add(port); continue; }
+      for (const socket of bucket) if (socket.localIp === localIp) { inUse.add(port); break; }
     }
     for (const l of this.listeners.values()) {
       if (l.localPort >= this.ephemeralMin && l.localPort <= this.ephemeralMax) inUse.add(l.localPort);

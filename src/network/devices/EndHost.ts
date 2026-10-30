@@ -1094,7 +1094,7 @@ export abstract class EndHost extends Equipment {
       ndpCacheSize: this.neighborCache.size,
       routeCount: this.routingTable.length,
       tcpListeners: this.tcpv2.listListeners().length,
-      tcpConnections: this.tcpv2.listSockets().length,
+      tcpConnections: this.tcpv2.socketCount(),
       icmpEchosSent: this.icmpEchosSent,
       icmpEchosReceived: this.icmpEchosReceived,
       icmpTimeouts: this.icmpTimeouts,
