@@ -181,7 +181,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   'ssh-agent': '/usr/bin/ssh-agent', 'ssh-copy-id': '/usr/bin/ssh-copy-id',
   'ssh-keyscan': '/usr/bin/ssh-keyscan',
   sftp: '/usr/bin/sftp', 'sftp-server': '/usr/lib/openssh/sftp-server', ip: '/sbin/ip', ifconfig: '/sbin/ifconfig',
-  netstat: '/bin/netstat', ss: '/usr/sbin/ss', nc: '/usr/bin/nc', fuser: '/usr/bin/fuser', lsof: '/usr/bin/lsof', iptables: '/usr/sbin/iptables',
+  netstat: '/bin/netstat', ss: '/usr/sbin/ss', nc: '/usr/bin/nc', fuser: '/usr/bin/fuser', lsof: '/usr/bin/lsof', iptables: '/usr/sbin/iptables', ipset: '/usr/sbin/ipset',
   passwd: '/usr/bin/passwd', useradd: '/usr/sbin/useradd', userdel: '/usr/sbin/userdel',
   usermod: '/usr/sbin/usermod', groupadd: '/usr/sbin/groupadd',
   systemctl: '/bin/systemctl', service: '/usr/sbin/service',

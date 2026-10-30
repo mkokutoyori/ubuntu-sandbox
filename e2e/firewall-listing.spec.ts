@@ -106,4 +106,28 @@ test.describe('pare-feu : listages alignés dans le terminal', () => {
     await typeCmd(page, 'iptables -A INPUT -m time --timestart 25:00 -j DROP');
     expect(await lastLines(page, 4)).toContain('invalid time "25:00" specified');
   });
+
+  test('ipset et iptables -m set dans le terminal', async ({ page }) => {
+    test.setTimeout(240_000);
+    await page.goto('/', { timeout: 45_000 });
+    await waitForStore(page);
+
+    const id = await addDevice(page, 'linux-server', 300, 250);
+    await openTerminal(page, id);
+
+    await typeCmd(page, 'ipset create blocklist hash:ip timeout 300');
+    await typeCmd(page, 'ipset add blocklist 203.0.113.7');
+    await typeCmd(page, 'ipset test blocklist 203.0.113.7');
+    expect(await lastLines(page, 3)).toContain('203.0.113.7 is in set blocklist.');
+    await typeCmd(page, 'iptables -A INPUT -m set --match-set blocklist src -j DROP');
+    await typeCmd(page, 'iptables -L INPUT -n');
+    expect(await lastLines(page, 4)).toContain('match-set blocklist src');
+    await typeCmd(page, 'ipset list blocklist');
+    const listing = await lastLines(page, 12);
+    expect(listing).toContain('Type: hash:ip');
+    expect(listing).toContain('References: 1');
+    expect(listing).toMatch(/203\.0\.113\.7 timeout (29\d|300)/);
+    await typeCmd(page, 'ipset destroy blocklist');
+    expect(await lastLines(page, 3)).toContain('Set cannot be destroyed: it is in use by a kernel component');
+  });
 });

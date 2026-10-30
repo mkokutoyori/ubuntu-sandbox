@@ -49,6 +49,7 @@ import { SystemCron } from './cron/SystemCron';
 import { deliverLocalMessage } from '@/network/smtp/localDelivery';
 import { parseMailArgs, sendMail, parseMailbox, formatMailboxSummary, type MailCommandDeps } from './commands/net/mail/MailCommand';
 import { LinuxIptablesManager } from './LinuxIptablesManager';
+import { IpsetManager } from './ipset/IpsetManager';
 import { LinuxFirewallManager } from './LinuxFirewallManager';
 import { LinuxLogManager, fmtSyslogTimestamp } from './LinuxLogManager';
 import { LinuxPam } from './pam/LinuxPam';
@@ -367,7 +368,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump', 'tc',
   'ssh-keygen', 'ssh-add', 'ssh-agent', 'ssh-copy-id', 'ssh-keyscan',
-  'iptables', 'iptables-save', 'iptables-restore',
+  'iptables', 'iptables-save', 'iptables-restore', 'ipset',
   'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd', 'netfilter-persistent',
   // Editors
   'nano', 'vi', 'vim', 'emacs', 'ed',
@@ -779,6 +780,7 @@ export class LinuxCommandExecutor {
   readonly systemdNss = new SystemdNssSource(this.dynamicUsers);
   readonly cron: LinuxCronManager;
   readonly iptables: LinuxIptablesManager;
+  readonly ipset: IpsetManager;
   readonly ip6tables: LinuxIptablesManager;
   readonly firewall: LinuxFirewallManager;
   readonly logMgr: LinuxLogManager;
@@ -1030,8 +1032,13 @@ export class LinuxCommandExecutor {
       user: (uid: number) => this.userMgr.getUserByUid(uid)?.username ?? null,
       group: (gid: number) => this.userMgr.getGroupByGid(gid)?.name ?? null,
     };
-    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { ownerNames });
-    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6, ownerNames });
+    const ipsets = { lookup: () => this.ipset };
+    this.iptables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { ownerNames, ipsets });
+    this.ip6tables = new LinuxIptablesManager(this.vfs, (port, proto) => this.resolveServiceName(port, proto), { family: 6, ownerNames, ipsets });
+    this.ipset = new IpsetManager({
+      servicePort: (name, proto) => this.resolveServicePort(name, proto),
+      references: (name) => this.iptables.setReferences(name) + this.ip6tables.setReferences(name),
+    });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
     this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId);
     this.logMgr.setClock(this.wallNow);
