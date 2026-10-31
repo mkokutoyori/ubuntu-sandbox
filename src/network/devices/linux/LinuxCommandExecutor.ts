@@ -123,6 +123,7 @@ import { SystemIdentity } from '../host/identity';
 import type { InterruptToken } from '@/bash/interpreter/BashInterpreter';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import { seedWithShellOnly } from '@/bash/runtime/Environment';
+import { invocationShellOptions, withInvocationOptions } from '@/bash/runtime/ShellOptions';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
 import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
@@ -4910,8 +4911,9 @@ export class LinuxCommandExecutor {
   private static parseBashOrShArgs(
     cmd: string,
     args: string[],
-  ): { arg0: string; cmdString: string | null; scriptArgv: string[]; login: boolean; interactive: boolean } {
+  ): { arg0: string; cmdString: string | null; scriptArgv: string[]; login: boolean; interactive: boolean; options: readonly string[] } {
     let i = 0;
+    const options = invocationShellOptions(args).enabled;
     let login = false;
     let interactive = false;
     let cmdString: string | null = null;
@@ -4928,9 +4930,9 @@ export class LinuxCommandExecutor {
     }
     const defaultArg0 = login ? '-bash' : cmd;
     if (cmdString !== null) {
-      return { arg0: args[i] ?? defaultArg0, cmdString, scriptArgv: args.slice(i + 1), login, interactive };
+      return { arg0: args[i] ?? defaultArg0, cmdString, scriptArgv: args.slice(i + 1), login, interactive, options };
     }
-    return { arg0: defaultArg0, cmdString, scriptArgv: args.slice(i), login, interactive };
+    return { arg0: defaultArg0, cmdString, scriptArgv: args.slice(i), login, interactive, options };
   }
 
   /**
@@ -4952,9 +4954,9 @@ export class LinuxCommandExecutor {
     // le détour par le jumeau async le sautait.
     this.noteInterpreterExec(cmd);
     const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
-    const startupVars = cmd === 'bash'
+    const startupVars = withInvocationOptions(cmd === 'bash'
       ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-      : { ...this.commandEnvironment() };
+      : { ...this.commandEnvironment() }, parsed.options);
     if (parsed.cmdString !== null) {
       return this.runScriptProcessAsync(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
         runScriptContentAsync(
@@ -4965,7 +4967,7 @@ export class LinuxCommandExecutor {
     }
     if (parsed.scriptArgv.length > 0) {
       return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), { ...this.commandEnvironment() }));
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
     }
     return { output: '', exitCode: 0 };
   }
@@ -6617,9 +6619,9 @@ export class LinuxCommandExecutor {
       case 'bash':
       case 'sh': {
         const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
-        const startupVars = cmd === 'bash'
+        const startupVars = withInvocationOptions(cmd === 'bash'
           ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-          : { ...this.commandEnvironment() };
+          : { ...this.commandEnvironment() }, parsed.options);
         if (parsed.cmdString !== null) {
           this.execInput = stdin ?? this.execInput;
           return this.runScriptProcess(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
@@ -6631,7 +6633,7 @@ export class LinuxCommandExecutor {
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), { ...this.commandEnvironment() }));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
         }
         if (stdin !== undefined && stdin !== '') {
           return this.runScriptProcess(cmd, (identity, bridge) =>

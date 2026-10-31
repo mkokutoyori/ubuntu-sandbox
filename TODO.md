@@ -811,15 +811,15 @@ portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que 
 pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
 `^R` en mode vue (entree suivante).
 
-### [machine Linux] `dash` absent, `sh -n` et `bash -n` sans effet
+### [machine Linux] `dash` absent
 Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
 n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
-`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' » ; et `sh -n script` /
-`bash -n script` n'ont pas la semantique « analyser sans executer » (le script est lance, `sh -n`
-sur un fichier correct execute ses commandes). Les messages d'erreur d'analyse de dash
-(« t.sh: 3: Syntax error: Unterminated quoted string ») different aussi de ceux de l'analyseur de
-bash du simulateur. Sans ce chaînon le linter par defaut des fichiers shell ne peut pas
-fonctionner comme sur Ubuntu.
+`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' ». `sh -n` et `bash -n`
+analysent maintenant sans executer (les lettres d'invocation arrivent a `SHELLOPTS`), mais les
+messages d'erreur d'analyse de dash (« t.sh: 3: Syntax error: Unterminated quoted string »)
+different de ceux de l'analyseur de bash du simulateur, que `sh` reutilise. Sans une
+grammaire d'erreurs propre a dash le linter par defaut des fichiers shell ne parle pas comme
+sur Ubuntu.
 
 ### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
 Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut
