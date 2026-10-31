@@ -11,6 +11,7 @@
  * imports the factory but not its siblings.
  */
 
+import { isBatchRmanLine } from '@/terminal/subshells/rman/RmanInvocation';
 import { ShellFactory } from './ShellFactory';
 import { LinuxBashShell } from './adapters/LinuxBashShell';
 import { WindowsCmdShell } from './adapters/WindowsCmdShell';
@@ -75,7 +76,7 @@ export function installDefaultShells(): void {
     launcher: /^sqlplus\b/i, launchableFrom: ['bash'],
   });
   ShellFactory.register('rman', (a) => new RmanShell(a), {
-    launcher: /^rman\b/i, launchableFrom: ['bash'],
+    launcher: /^rman\b/i, launchableFrom: ['bash'], launchesWhen: (line) => !isBatchRmanLine(line),
   });
   ShellFactory.register('cisco-ios', (a) => {
     const vty = (a as { extras?: { vty?: CliShellSession | null } }).extras?.vty ?? null;

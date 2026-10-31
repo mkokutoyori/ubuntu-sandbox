@@ -4236,7 +4236,9 @@ simple) ; (2) la mise en page exacte de `LIST SCRIPT NAMES` ; (3) le refus que R
 oppose a un script stocke sans catalogue de recuperation connecte (le sandbox
 l'accepte, comme le dit le tutoriel). Les commentaires `--` du tutoriel ne sont pas
 reconnus : seul `#` l'est.
-`SHOW SNAPSHOT CONTROLFILE NAME` et `CONFIGURE SNAPSHOT CONTROLFILE NAME` ne sont pas modelises (le parametre n'a pas
+`rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
+une erreur RMAN-/ORA-) ; le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or directory`
+ici) n'est pas source, ni `msglog=`, `debug`, `trace=` et `using`. `SHOW SNAPSHOT CONTROLFILE NAME` et `CONFIGURE SNAPSHOT CONTROLFILE NAME` ne sont pas modelises (le parametre n'a pas
 d'etat, et son chemin par defaut sous `$ORACLE_HOME/dbs/snapcf_<SID>.f` n'est pas attestable depuis ce reseau). Meme
 manque pour `LIST BACKUP BY FILE`, `LIST BACKUP OF TABLESPACE`, `LIST FAILURE`, `SPOOL LOG`, `SWITCH`, `SET DBID`,
 `HOST`, `@fichier`, `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`, refuses en RMAN-01009 (mesure : tutoriel rejoue commande

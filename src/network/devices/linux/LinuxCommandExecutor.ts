@@ -535,8 +535,9 @@ function reportsOwnFailure(argv: readonly string[], exitCode: number): boolean {
   return exitCode === WRAPPER_FAILURE_STATUS && COMMAND_WRAPPERS.has(name);
 }
 
-function rmanExitCode(output: string): number {
-  return /RMAN-\d|ORA-\d/.test(output) ? 1 : 0;
+export interface RmanRun {
+  readonly output: string;
+  readonly exitCode: number;
 }
 
 function writesLines(argv: readonly string[]): boolean {
@@ -989,8 +990,8 @@ export class LinuxCommandExecutor {
   /** Optional Oracle utility hook — backs `expdp` / `impdp` / `adrci`. */
   _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
   /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
-  _oracleRman: ((args: string[], stdin?: string) => string | null) | null = null;
-  _oracleRmanAsync: ((args: string[], stdin?: string) => Promise<string>) | null = null;
+  _oracleRman: ((args: string[], stdin?: string) => RmanRun | null) | null = null;
+  _oracleRmanAsync: ((args: string[], stdin?: string) => Promise<RmanRun>) | null = null;
   /**
    * Optional bridge into `LinuxMachine`'s `LinuxCommandRegistry` — set by
    * `LinuxMachine` so `LinuxCommand` objects that need full network context
@@ -4596,7 +4597,7 @@ export class LinuxCommandExecutor {
     // takes the pre-existing synchronous path (a known, narrower residual
     // gap) rather than risk bypassing sudoers enforcement.
     if (!background && argv[0] === 'rman' && stdin && this.isServer && this._oracleRmanAsync) {
-      return this._oracleRmanAsync(argv.slice(1), stdin).then((output) => ({ output, exitCode: rmanExitCode(output) }));
+      return this._oracleRmanAsync(argv.slice(1), stdin);
     }
     if (!background && argv.length > 0) {
       const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
@@ -7166,8 +7167,8 @@ export class LinuxCommandExecutor {
       }
       case 'rman': {
         if (this.isServer && this._oracleRman) {
-          const output = this._oracleRman(args, stdin);
-          if (output !== null) return { output, exitCode: rmanExitCode(output) };
+          const run = this._oracleRman(args, stdin);
+          if (run !== null) return run;
         }
         return {
           output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
