@@ -34,6 +34,7 @@ import { renderDependencyTree } from './systemd/DependencyTree';
 export interface ProcessCmdContext {
   pm: LinuxProcessManager;
   userUid?: (name: string) => number;
+  utf8Locale?: boolean;
   groupGid?: (name: string) => number;
   currentUser: string;
   currentUid: number;

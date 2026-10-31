@@ -195,11 +195,12 @@ import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, kernelComm, type ProcessInfo, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
+import { runPstree } from './PstreeCommand';
 import { cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
-import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
+import { cmdJobs, cmdFg, cmdBg, cmdDisown } from './jobs/JobCommands';
 import {
   execChannelOptionsFor, joinRemoteCommand, verboseTranscript as sshVerboseTranscript, remoteQuotingOf, splitSshFlags, sshClientRefusal, sshWireFailureResult, sshWireSuccessResult,
   wireExecTarget, proxyJumpRequest, type SshClientOpts, type SshClientResult, type WireExecTarget,
@@ -360,7 +361,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
-  'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
+  'pkill', 'pgrep', 'pstree', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'rscryutil', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'nohup', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
@@ -3486,6 +3487,7 @@ export class LinuxCommandExecutor {
     return {
       pm: this.processMgr,
       userUid: (name: string) => this.userMgr.resolveUid(name),
+      utf8Locale: /utf-?8/i.test(this.commandEnvironment().LC_ALL || this.commandEnvironment().LANG || ''),
       groupGid: (name: string) => this.userMgr.resolveGid(name),
       currentUser: this.userMgr.currentUser,
       currentUid: this.userMgr.currentUid,
@@ -4057,7 +4059,6 @@ export class LinuxCommandExecutor {
       case 'bg':     return cmdBg(args, ctx).output;
       case 'wait':   return this.handleWait(args);
       case 'disown': return cmdDisown(args, ctx).output;
-      case 'pstree': return cmdPstree(args, ctx).output;
       case 'kill': {
         // Only intercept when a %jobspec is present; otherwise let the bash
         // interpreter expand the arguments (command substitution, globs) and
@@ -6821,6 +6822,7 @@ export class LinuxCommandExecutor {
         const r = cmdPgrep(args, this.processCmdContext());
         return r;
       }
+      case 'pstree': return runPstree(args, this.processCmdContext());
       case 'pgid': {
         const name = args.find(a => !a.startsWith('-'));
         if (!name) return { output: 'usage: pgid <name>', exitCode: 1 };
