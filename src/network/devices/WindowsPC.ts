@@ -398,7 +398,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private dhcpClassIds: Map<string, string> = new Map();
   /** Per-interface DHCPv6 class id, set via `ipconfig /setclassid6`. */
   private dhcpClassIds6: Map<string, string> = new Map();
-  readonly dnsCache = new DnsCache();
+  readonly dnsCache = new DnsCache(() => this.getSystemClockMs());
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */

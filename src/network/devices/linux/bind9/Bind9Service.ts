@@ -74,7 +74,7 @@ export class Bind9Service {
   private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
   private resolvers: RecursiveResolver[] = [];
-  private readonly cache = new DnsCache();
+  private readonly cache = new DnsCache(() => this.host.getSystemClockMs());
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
   private readonly secondaries: SecondaryZoneRefresher;

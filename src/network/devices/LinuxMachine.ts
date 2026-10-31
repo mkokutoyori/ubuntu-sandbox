@@ -1192,6 +1192,7 @@ export abstract class LinuxMachine extends EndHost
   getResolvedService(): ResolvedService {
     if (!this._resolvedService) {
       this._resolvedService = new ResolvedService({
+        now: () => this.executor.simulatedDate().getTime(),
         // Le bit DO n'est posé que si l'on compte valider : sans lui le
         // serveur n'a aucune raison de renvoyer les RRSIG. `tls` bascule
         // le transport sur le 853 chiffré (RFC 7858) ; le service décide,
