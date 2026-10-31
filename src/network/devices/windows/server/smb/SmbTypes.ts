@@ -53,6 +53,14 @@ export interface SmbTreeDisconnectRequest { op: 'tree_disconnect'; treeId: numbe
 export interface SmbReadRequest { op: 'read'; treeId: number; path: string }
 export interface SmbWriteRequest { op: 'write'; treeId: number; path: string; content: string }
 export interface SmbListRequest { op: 'list'; treeId: number; path: string }
+export interface SmbStatRequest { op: 'stat'; treeId: number; path: string }
+export interface SmbMkdirRequest { op: 'mkdir'; treeId: number; path: string }
+export interface SmbDeleteRequest { op: 'delete'; treeId: number; path: string }
+export interface SmbRmdirRequest { op: 'rmdir'; treeId: number; path: string }
+export interface SmbRenameRequest { op: 'rename'; treeId: number; path: string; target: string; replace?: boolean }
+export interface SmbSetAttributesRequest { op: 'set_attributes'; treeId: number; path: string; attributes: string[] }
+export interface SmbSetTimesRequest { op: 'set_times'; treeId: number; path: string; modified: number }
+export interface SmbVolumeInfoRequest { op: 'volume_info'; treeId: number }
 export interface SmbLogoffRequest { op: 'logoff' }
 /** What a real client sends as FSCTL_DFS_GET_REFERRALS: asks this server which share a namespace path actually lives on. */
 export interface SmbDfsReferralRequest { op: 'dfs_referral'; path: string }
@@ -62,11 +70,22 @@ export interface SmbShareEnumRequest { op: 'share_enum' }
 export type SmbRequest =
   | SmbNegotiateRequest | SmbSessionSetupRequest | SmbTreeConnectRequest
   | SmbTreeDisconnectRequest | SmbReadRequest | SmbWriteRequest | SmbListRequest
+  | SmbStatRequest | SmbMkdirRequest | SmbDeleteRequest | SmbRmdirRequest | SmbRenameRequest
+  | SmbSetAttributesRequest | SmbSetTimesRequest | SmbVolumeInfoRequest
   | SmbLogoffRequest | SmbDfsReferralRequest | SmbShareEnumRequest;
 
 // ── Wire PDUs (server → client) ──────────────────────────────────────────────
 
-export interface SmbListEntry { name: string; isDirectory: boolean; size: number }
+export interface SmbListEntry {
+  name: string;
+  isDirectory: boolean;
+  size: number;
+  modified: number;
+  created: number;
+  attributes: string[];
+}
+
+export interface SmbVolumeInfo { label: string; serial: string; capacity: number; free: number }
 
 /** One row of a share enumeration: what `net view` prints per share. */
 export interface SmbEnumeratedShare { name: string; type: 'Disk' | 'IPC'; comment: string; special: boolean }
@@ -75,7 +94,9 @@ export interface SmbErrorResponse {
   ok: false;
   status: 'STATUS_LOGON_FAILURE' | 'STATUS_ACCESS_DENIED' | 'STATUS_BAD_NETWORK_NAME'
     | 'STATUS_OBJECT_NAME_NOT_FOUND' | 'STATUS_NETWORK_NAME_DELETED' | 'STATUS_OBJECT_PATH_NOT_FOUND'
-    | 'STATUS_NOT_FOUND';
+    | 'STATUS_NOT_FOUND' | 'STATUS_OBJECT_NAME_COLLISION' | 'STATUS_DIRECTORY_NOT_EMPTY'
+    | 'STATUS_NOT_A_DIRECTORY' | 'STATUS_FILE_IS_A_DIRECTORY' | 'STATUS_OBJECT_NAME_INVALID'
+    | 'STATUS_INVALID_PARAMETER' | 'STATUS_SHARING_VIOLATION' | 'STATUS_CANNOT_DELETE';
   message: string;
 }
 
@@ -86,6 +107,8 @@ export type SmbResponse =
   | { ok: true }
   | { ok: true; content: string }
   | { ok: true; entries: SmbListEntry[] }
+  | { ok: true; node: SmbListEntry; canonical: string }
+  | { ok: true; volume: SmbVolumeInfo }
   | { ok: true; targets: string[] }
   | { ok: true; shares: SmbEnumeratedShare[] }
   | SmbErrorResponse;
