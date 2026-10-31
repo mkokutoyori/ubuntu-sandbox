@@ -698,6 +698,7 @@ export class AaaAuthenticator {
       serviceTypeMandatory: settings.serviceTypeMandatory,
       serviceTypeSupportMultiple: settings.serviceTypeSupportMultiple,
       eventTimestampInAccounting: settings.eventTimestampInAccounting,
+      nowMs: () => this.router.getSystemClockMs(),
       nasIdentifier: identifier === null ? null : (nasIp: string) => {
         const hostname = device.getHostname();
         const domain = device._getDnsConfig?.().domainName ?? '';

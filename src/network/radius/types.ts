@@ -190,6 +190,7 @@ export interface RadiusAttributePolicy {
   serviceTypeSupportMultiple: boolean;
   nasIdentifier: ((nasIp: string) => string) | null;
   eventTimestampInAccounting: boolean;
+  nowMs?: () => number;
 }
 
 export function defaultAttributePolicy(): RadiusAttributePolicy {
