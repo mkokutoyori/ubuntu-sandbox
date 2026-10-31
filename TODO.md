@@ -903,8 +903,8 @@ Autres ecarts mesures, non fermes :
   `su` appliquent ici 0022 a tous. L'umask initial d'un utilisateur non root n'a pas ete enregistre.
 - `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
   et `ls -l /proc/$$/fd` ne le montre pas.
-- `cp` : `-i`, `-x` et `-Z` sont acceptes sans effet, `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un
-  lien (le seul cas enregistre est un fichier regulier).
+- `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
+  regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
 - `ls` avec plusieurs operandes dossiers : le tri est celui des operandes (fichiers d'abord) mais la mise en colonnes de
   la sortie non tty n'a pas ete comparee.
 - `install -D -t`, `install -s` et `install --strip` : seul le jeu d'options du corpus (`-m -d -D -o -g -v`) est enregistre.
