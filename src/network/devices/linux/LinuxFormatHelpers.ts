@@ -69,8 +69,9 @@ const numericAddress: PingAddressRenderer = (ip) => ip;
 
 export function formatPingHeader(
   target: IPAddress, size: number = 56, hostname?: string, bound?: { source: string; device?: string },
+  optionBytes: number = 0,
 ): string {
-  const totalSize = size + 28;
+  const totalSize = size + 28 + optionBytes;
   const displayName = hostname ?? target.toString();
   const from = bound === undefined ? '' : `from ${bound.source} ${bound.device ?? ''}: `;
   return `PING ${displayName} (${target}) ${from}${size}(${totalSize}) bytes of data.`;

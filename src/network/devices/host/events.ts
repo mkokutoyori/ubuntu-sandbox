@@ -13,6 +13,7 @@
 
 import type { Icmp6ErrorReport } from '../../core/IcmpErrors';
 import type { IcmpExtensionObject } from '../../icmp/IcmpExtensions';
+import type { IPv4Option } from '../../core/types';
 
 // Note: payload fields use plain strings for IPs/MACs to keep the
 // event taxonomy serialisable without coupling consumers to the
@@ -111,6 +112,7 @@ export interface HostIcmpEchoReplyPayload extends HostDeviceRef {
   ipId?: number;
   tos?: number;
   ipLen?: number;
+  options?: readonly IPv4Option[];
 }
 
 export interface HostIcmpEchoTimeoutPayload extends HostDeviceRef {

@@ -876,6 +876,7 @@ export interface IPv4Option {
 export const IP_OPTION_END = 0;
 export const IP_OPTION_NOP = 1;
 export const IP_OPTION_RECORD_ROUTE = 7;
+export const IP_OPTION_TIMESTAMP = 68;
 export const IP_OPTION_LOOSE_SOURCE_ROUTE = 131;
 export const IP_OPTION_STRICT_SOURCE_ROUTE = 137;
 export const IP_OPTION_ROUTER_ALERT = 148;

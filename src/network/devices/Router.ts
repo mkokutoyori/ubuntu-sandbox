@@ -44,7 +44,7 @@ import { tcpFlagBits, type TcpSegment } from '../tcp/types';
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { makeVlanTag } from '../layers/link/vlan/VlanTag';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
-import { simulationNowMs } from '@/network/core/SystemClock';
+import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
 import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
@@ -176,7 +176,7 @@ import {
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
 import {
-  advanceSourceRoute, recordRoute, sourceRouteState,
+  advanceSourceRoute, recordRoute, recordTimestamp, sourceRouteState,
 } from '../layers/internet/Ipv4Options';
 import { buildEchoReply } from '../icmp/IcmpEcho';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
@@ -3217,7 +3217,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         // (correct for loopback/virtual interfaces and transport mode IPSec)
         const replySourceIP = ipPkt.destinationIP;
 
-        const replyIP = buildEchoReply(ipPkt, icmp, replySourceIP, this.defaultTTL);
+        const replyIP = buildEchoReply(ipPkt, icmp, replySourceIP, this.defaultTTL, ipPkt.flags, 0, millisecondsSinceUtcMidnight(this.getSystemClockMs()));
 
         this.counters.icmpOutEchoReps++;
         this.counters.icmpOutMsgs++;
@@ -3568,6 +3568,18 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         return;
       }
       fwdPkt = recorded.packet;
+      const stamped = recordTimestamp(fwdPkt, {
+        address: egressAddress,
+        msOfDay: millisecondsSinceUtcMidnight(this.getSystemClockMs()),
+        owns: named => this.ownsIPv4Address(named),
+      });
+      if (stamped.kind === 'error') {
+        this.counters.ipInHdrErrors++;
+        Logger.warn(this.id, 'router:timestamp-malformed',
+          `${this.name}: timestamp option from ${ipPkt.sourceIP} is malformed, dropping`);
+        return;
+      }
+      fwdPkt = stamped.packet;
     }
 
     this._debugService?.emitLine('ip.packet',

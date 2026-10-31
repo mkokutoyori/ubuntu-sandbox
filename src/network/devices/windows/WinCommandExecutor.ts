@@ -6,7 +6,7 @@
  */
 
 import { Port } from '../../hardware/Port';
-import { IPAddress, MACAddress, SubnetMask, IPv6Address } from '../../core/types';
+import { IPAddress, MACAddress, SubnetMask, IPv6Address, type IPv4Option } from '../../core/types';
 import type { ARPEntry, PingResult } from '../EndHost';
 import type { NetFirewallRuleEntry } from './netFirewallRule';
 import type { WindowsAdapterIdentity } from './netAdapter';
@@ -96,7 +96,6 @@ export interface WinCommandContext {
   };
   /** Device hostname */
   hostname: string;
-  hostNowMs?: () => number;
   /** All ports (Map of name → Port) */
   ports: Map<string, Port>;
   /** L'identite de la carte — description, index, GUID — lue a sa source. */
@@ -158,7 +157,7 @@ export interface WinCommandContext {
    */
   resolvePingEgress?(target: IPAddress): { port: Port; onLink: boolean } | null;
   executePingSequence(target: IPAddress, count: number, timeout?: number, ttl?: number,
-    opts?: { dataSize?: number; df?: boolean; pauseAfterErrorReplyMs?: number }): Promise<PingResult[]>;
+    opts?: { dataSize?: number; df?: boolean; pauseAfterErrorReplyMs?: number; ipOptions?: readonly IPv4Option[] }): Promise<PingResult[]>;
   executeTraceroute(
     target: IPAddress, maxHops?: number, timeoutMs?: number,
     hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },

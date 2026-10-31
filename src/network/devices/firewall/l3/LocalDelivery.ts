@@ -14,6 +14,7 @@ export interface LocalDeliveryDeps {
   admitsTcp(iface: string, packet: IPv4Packet): boolean;
   allowsPing(iface: string, packet: IPv4Packet): boolean;
   reply(iface: string, packet: IPv4Packet): void;
+  msOfDay(): number;
   localInVerdict?(iface: string, packet: IPv4Packet): LocalInVerdict;
   logLocalIn?(iface: string, packet: IPv4Packet, accepted: boolean): void;
   answeredByNtp?(iface: string, packet: IPv4Packet): boolean;
@@ -64,6 +65,6 @@ export function deliverLocally(
   }
 
   deps.logLocalIn?.(iface, packet, true);
-  const echo = icmpEchoReply(packet);
+  const echo = icmpEchoReply(packet, deps.msOfDay());
   if (echo) deps.reply(iface, echo);
 }

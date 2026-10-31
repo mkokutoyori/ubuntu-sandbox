@@ -4319,7 +4319,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const host = this;
     return {
       hostname: this.hostname,
-      hostNowMs: () => this.getSystemClockMs(),
       ports: this.ports,
       adapterIdentityOf: (portName: string) => this.adapterIdentityOf(portName),
       protocolCounters: () => this.getProtocolCounters(),

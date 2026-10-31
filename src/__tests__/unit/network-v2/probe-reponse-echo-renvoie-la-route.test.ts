@@ -185,7 +185,7 @@ describe('the recorded route comes back, for the entire round trip', () => {
     expect(verifyIPv4Checksum(replies[0])).toBe(true);
   });
 
-  it('the reply carries the outbound hops, the responder and the return hops', async () => {
+  it('the reply carries the outbound hops, the responder (twice: a Linux host stamps on arrival and again on the reply, net/ipv4/ip_options.c) and the return hops', async () => {
     const { r1, a } = await lab();
     const atA = watchIpv4(a.getPort('eth0')!);
     inject(r1, a, '10.0.1.10', [buildRecordRouteOption(4)]);
@@ -194,7 +194,7 @@ describe('the recorded route comes back, for the entire round trip', () => {
     expect(replies).toHaveLength(1);
     const option = optionOf(replies[0], IP_OPTION_RECORD_ROUTE)!;
     expect(routeAddressesOf(option).map(ip => ip.toString()))
-      .toEqual(['10.0.1.1', '10.0.1.10', '10.0.0.1']);
+      .toEqual(['10.0.1.1', '10.0.1.10', '10.0.1.10', '10.0.0.1']);
     expect(verifyIPv4Checksum(replies[0])).toBe(true);
   });
 });
@@ -222,7 +222,7 @@ describe('one builder, and it keeps the best of the four readings', () => {
       IP_PROTO_ICMP, 64, ECHO, 16,
       { ipOptions: [{ type: IP_OPTION_RECORD_ROUTE, data: [8, 10, 0, 1, 1, 0, 0, 0, 0] }] });
 
-    const reply = icmpEchoReply(request)!;
+    const reply = icmpEchoReply(request, 0)!;
     const option = optionOf(reply, IP_OPTION_RECORD_ROUTE)!;
     expect(routeAddressesOf(option).map(ip => ip.toString()))
       .toEqual(['10.0.1.1', '10.0.1.10']);
@@ -244,7 +244,7 @@ describe('one builder, and it keeps the best of the four readings', () => {
       new IPAddress('10.0.0.10'), new IPAddress('10.0.1.10'),
       IP_PROTO_ICMP, 64, ECHO, 16, { flags: IPV4_FLAG_DF });
 
-    expect(icmpEchoReply(request)!.flags).toBe(IPV4_FLAG_DF);
+    expect(icmpEchoReply(request, 0)!.flags).toBe(IPV4_FLAG_DF);
   });
 
   it('a reply to an option-less request stays a 20-byte header — WITNESS', async () => {

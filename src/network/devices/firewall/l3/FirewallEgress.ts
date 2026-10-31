@@ -90,11 +90,11 @@ export function arpFrame(source: MACAddress, packet: ARPPacket): EthernetFrame {
   };
 }
 
-export function icmpEchoReply(packet: IPv4Packet): IPv4Packet | null {
+export function icmpEchoReply(packet: IPv4Packet, msOfDay: number): IPv4Packet | null {
   if (packet.protocol !== IP_PROTO_ICMP) return null;
 
   const icmp = packet.payload as ICMPPacket | undefined;
   if (icmp?.type !== 'icmp' || icmp.icmpType !== 'echo-request') return null;
 
-  return buildEchoReply(packet, icmp, packet.destinationIP, 64);
+  return buildEchoReply(packet, icmp, packet.destinationIP, 64, packet.flags, 0, msOfDay);
 }

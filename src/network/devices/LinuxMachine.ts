@@ -1058,6 +1058,10 @@ export abstract class LinuxMachine extends EndHost
     return 0;
   }
 
+  protected override stampsRecordedOptionsAtEndpoints(): boolean {
+    return true;
+  }
+
   protected override echoReplyTos(request: IPv4Packet): number {
     return request.tos;
   }
