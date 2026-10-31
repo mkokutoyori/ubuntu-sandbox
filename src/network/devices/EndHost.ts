@@ -1345,6 +1345,7 @@ export abstract class EndHost extends Equipment {
         this.onDhcpLeaseReleased(iface);
       },
     );
+    this.dhcpClient.setClock(() => this.getSystemClockMs());
     this.dhcpClient.setBroadcastFlag(false);
     this.dhcpClient.setPersonality(ISC_DHCLIENT_PERSONALITY);
     this.dhcpClient.setLinkLocalAutoconfiguration(() => this.linkLocalAutoconfigurationEnabled());
