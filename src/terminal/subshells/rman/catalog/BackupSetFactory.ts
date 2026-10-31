@@ -26,6 +26,7 @@ export interface BackupSetSpec {
   readonly deviceType?: DeviceType;
   readonly keepNote?:   string;
   readonly nowMs?:      number;
+  readonly elapsedMs?:  number;
 }
 
 export const BackupSetFactory = {
@@ -58,7 +59,7 @@ export const BackupSetFactory = {
       dbId,
       tag,
       pieces:         Object.freeze([piece]),
-      startTime:      now - 15_000,
+      startTime:      now - (spec.elapsedMs ?? 15_000),
       completionTime: now,
       sizeBytes:      spec.sizeBytes,
       datafiles:      Object.freeze([...spec.datafiles]),

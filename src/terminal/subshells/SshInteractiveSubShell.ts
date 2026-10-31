@@ -43,7 +43,8 @@ import type { ISubShell, SubShellResult } from './ISubShell';
 import type { ISshSession } from '@/network/protocols/ssh/session/ISshSession';
 import type { ISshShellChannel } from '@/network/protocols/ssh/channels/ISshChannel';
 import type { EditorView } from '@/network/devices/linux/editors/EditorView';
-import { parseEditorLaunch } from '@/network/devices/linux/editors/editorLaunch';
+import { matchFullScreenProgram } from '@/network/devices/linux/editors/FullScreenPrograms';
+import { installDefaultEditors } from '@/network/devices/linux/editors/registerEditors';
 import type { RemoteEditorTransport } from '@/terminal/editors/RemoteEditorController';
 
 /** Mirrors LinuxInteractionPlanner.ts's MAX_SU_ATTEMPTS (real su retries 3x). */
@@ -250,7 +251,8 @@ export class SshInteractiveSubShell implements ISubShell {
    */
   async openRemoteEditor(line: string): Promise<EditorView | null> {
     if (this.inFlight) return null;
-    if (!parseEditorLaunch(line)) return null;
+    installDefaultEditors();
+    if (!matchFullScreenProgram(line)) return null;
     return this.channel.openEditor(line);
   }
 
@@ -442,7 +444,13 @@ export class SshInteractiveSubShell implements ISubShell {
     // A challenge raised by the remote's own shell: the answer belongs
     // on the wire, not in a local flow.
     if (this.serverPendingInput) {
-      const result = await this.channel.provideInput(value);
+      this.inFlight = true;
+      let result;
+      try {
+        result = await this.channel.provideInput(value);
+      } finally {
+        this.inFlight = false;
+      }
       if (result.prompt) this.serverPrompt = result.prompt;
       this.serverNested = result.nested === true;
       this.serverClearedScreen = result.clearScreen === true;

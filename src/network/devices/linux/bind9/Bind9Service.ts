@@ -74,7 +74,7 @@ export class Bind9Service {
   private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
   private resolvers: RecursiveResolver[] = [];
-  private readonly cache = new DnsCache();
+  private readonly cache = new DnsCache(() => this.host.getSystemClockMs());
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
   private readonly secondaries: SecondaryZoneRefresher;
@@ -359,7 +359,7 @@ export class Bind9Service {
       if (parsed) forwarders.push(parsed);
     }
     const dnssec = config.options.dnssecValidation !== 'no' && config.trustAnchors.length > 0
-      ? { dnssec: { anchors: config.trustAnchors } }
+      ? { dnssec: { anchors: config.trustAnchors, now: () => Math.floor(this.host.getSystemClockMs() / 1000) } }
       : {};
     if (forwarders.length > 0) {
       resolvers.push(new RecursiveResolver(

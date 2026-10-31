@@ -160,8 +160,12 @@ export const TARGETS: Record<'linux2' | 'win1' | 'ciscoR1' | 'hwR1', SshTarget> 
 
 const LEGACY_IOS_OPTIONS = '-o KexAlgorithms=+diffie-hellman-group14-sha1 -o HostKeyAlgorithms=+ssh-rsa';
 
+function needsLegacySsh(ip: string): boolean {
+  return ip === TARGETS.ciscoR1.ip || ip === TARGETS.hwR1.ip;
+}
+
 export function sshCommand(user: string, ip: string): string {
-  const options = ip === TARGETS.ciscoR1.ip ? `${LEGACY_IOS_OPTIONS} ` : '';
+  const options = needsLegacySsh(ip) ? `${LEGACY_IOS_OPTIONS} ` : '';
   return `ssh ${options}${user}@${ip}`;
 }
 
@@ -193,7 +197,7 @@ export async function sshLogin(page: Page, target: string, user: string, pass: s
 
 export async function sshHop(page: Page, sshCmd: string, pass: string, settleMs = 1000): Promise<string> {
   const before = (await termText(page)).length;
-  const legacy = sshCmd.startsWith('ssh ') && sshCmd.includes(TARGETS.ciscoR1.ip) && !sshCmd.includes('KexAlgorithms');
+  const legacy = sshCmd.startsWith('ssh ') && [TARGETS.ciscoR1.ip, TARGETS.hwR1.ip].some((ip) => sshCmd.includes(ip)) && !sshCmd.includes('KexAlgorithms');
   await typeCommand(page, legacy ? `ssh ${LEGACY_IOS_OPTIONS} ${sshCmd.slice(4)}` : sshCmd);
   try {
     await answerHostKeyThenWaitForPassword(page, 9_000);

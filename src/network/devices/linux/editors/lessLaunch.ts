@@ -6,14 +6,26 @@ export interface LessLaunch {
   readonly options: LessOptions;
   readonly quitIfOneScreen: boolean;
   readonly initialKeys: string;
+  readonly help: boolean;
   readonly piped: boolean;
   readonly prefix: string;
 }
 
 export type LessParse =
   | { readonly kind: 'open'; readonly launch: LessLaunch }
+  | { readonly kind: 'print'; readonly lines: readonly string[] }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'none' };
+
+export const LESS_VERSION_LINES: readonly string[] = [
+  'less 590 (GNU regular expressions)',
+  'Copyright (C) 1984-2021  Mark Nudelman',
+  '',
+  'less comes with NO WARRANTY, to the extent permitted by law.',
+  'For information about the terms of redistribution,',
+  'see the file named README in the less distribution.',
+  'Home page: https://greenwoodsoftware.com/less',
+];
 
 const IGNORED_FLAGS = new Set(['X', 'R', 'r', 'E', 'e', 'M', 'm', 'q', 's', 'n', 'c', 'C', 'K', 'w', 'g', 'a', 'f', 'L', 'u', 'U', 'V', 'Q']);
 
@@ -47,6 +59,7 @@ export function parseLessLaunch(commandLine: string): LessParse {
 
   let options = DEFAULT_LESS_OPTIONS;
   let quitIfOneScreen = false;
+  let help = false;
   let initialKeys = '';
   const files: string[] = [];
   let endOfOptions = false;
@@ -68,9 +81,10 @@ export function parseLessLaunch(commandLine: string): LessParse {
       else if (name === 'ignore-case') options = { ...options, ignoreCase: true };
       else if (name === 'IGNORE-CASE') options = { ...options, ignoreCaseAlways: true };
       else if (name === 'quit-if-one-screen') quitIfOneScreen = true;
-      else if (name === 'version') return { kind: 'none' };
+      else if (name === 'version') return { kind: 'print', lines: LESS_VERSION_LINES };
+      else if (name === 'help') help = true;
       else if (!['RAW-CONTROL-CHARS', 'no-init', 'quiet', 'silent', 'squeeze-blank-lines', 'LONG-PROMPT', 'long-prompt'].includes(name)) {
-        return { kind: 'error', message: `There is no ${name} option ("less --help" for help)` };
+        return { kind: 'error', message: `There is no --${name} option ("less --help" for help)` };
       }
     } else {
       for (const letter of word.slice(1)) {
@@ -79,12 +93,13 @@ export function parseLessLaunch(commandLine: string): LessParse {
         else if (letter === 'i') options = { ...options, ignoreCase: true };
         else if (letter === 'I') options = { ...options, ignoreCaseAlways: true };
         else if (letter === 'F') quitIfOneScreen = true;
-        else if (letter === 'V') return { kind: 'none' };
+        else if (letter === 'V') return { kind: 'print', lines: LESS_VERSION_LINES };
+        else if (letter === '?') help = true;
         else if (!IGNORED_FLAGS.has(letter)) {
           return { kind: 'error', message: `There is no ${letter} option ("less --help" for help)` };
         }
       }
     }
   }
-  return { kind: 'open', launch: { files, options, quitIfOneScreen, initialKeys, piped, prefix } };
+  return { kind: 'open', launch: { files, options, quitIfOneScreen, initialKeys, help, piped, prefix } };
 }

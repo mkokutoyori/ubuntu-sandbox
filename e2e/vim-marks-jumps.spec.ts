@@ -60,7 +60,7 @@ test.describe('Scénario 11 (e2e) — marques et sauts vim', () => {
   test("m{lettre} pose une marque, `{lettre} y saute, et d'{lettre} supprime les bonnes lignes une fois sauvegardé", async ({ page }) => {
     await typeCmd(page, "printf 'alpha\\nbeta\\ngamma\\ndelta\\nepsilon\\n' > /tmp/marks-e2e.txt");
     await typeCmd(page, 'vim /tmp/marks-e2e.txt');
-    await expect(page.getByText('marks-e2e.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*marks\-e2e\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     // Mark line "beta" (line 2) as 'a'.
     await page.keyboard.press('j');
@@ -88,7 +88,7 @@ test.describe('Scénario 11 (e2e) — marques et sauts vim', () => {
   test('`` revient exactement à la position précédant le dernier saut par marque', async ({ page }) => {
     await typeCmd(page, "printf 'one\\ntwo\\nthree\\nfour\\n' > /tmp/backjump-e2e.txt");
     await typeCmd(page, 'vim /tmp/backjump-e2e.txt');
-    await expect(page.getByText('backjump-e2e.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*backjump\-e2e\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     // Mark "one" (line 1) as 'z', jump to the end, jump to the mark, then
     // jump straight back -- landing on "four" again, where dd removes it.
@@ -116,7 +116,7 @@ test.describe('Scénario 11 (e2e) — marques et sauts vim', () => {
   test('sauter sur une marque non posée affiche E20: Mark not set', async ({ page }) => {
     await typeCmd(page, "printf 'only line\\n' > /tmp/e20-e2e.txt");
     await typeCmd(page, 'vim /tmp/e20-e2e.txt');
-    await expect(page.getByText('e20-e2e.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*e20\-e2e\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('`');
     await page.keyboard.press('q');

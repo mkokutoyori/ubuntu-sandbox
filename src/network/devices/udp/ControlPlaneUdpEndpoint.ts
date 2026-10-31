@@ -44,6 +44,19 @@ export class ControlPlaneUdpEndpoint implements TftpEndpoint {
     return this.transport.sendUdpBytes(destinationIP, destinationPort, sourcePort, payload);
   }
 
+  udpConnect(
+    remote: IPAddress | IPv6Address, remotePort: number,
+    options: { readonly onDatagram: (delivery: TftpUdpDelivery) => void; readonly processName: string },
+  ): { send(payload: Uint8Array): string | null; peekError(): string | null; close(): void } | string {
+    const localPort = this.ports.bind(this.ports.allocateEphemeralPort(), options.onDatagram, options.processName);
+    if (localPort === false) return 'EADDRINUSE';
+    return {
+      send: (payload) => (this.sendUdpDatagramTo(remote as IPAddress, remotePort, localPort, payload) ? null : 'ENETUNREACH'),
+      peekError: () => null,
+      close: () => this.ports.close(localPort),
+    };
+  }
+
   deliver(sourceIP: IPAddress, destinationPort: number, sourcePort: number, payload: unknown): boolean {
     return this.ports.deliver(destinationPort, { udp: { sourcePort, payload }, sourceIP });
   }

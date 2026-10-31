@@ -161,10 +161,16 @@ l'ordonnanceur et le temps passe sur le fil), mais une machine dont on a pose
 l'horloge (`date -s`, `Set-Date`, `clock set`) n'est lue par sa propre pile
 que pour Kerberos (KDC, client, verification d'AP-REQ), TCP (`TcpStack.nowMs`),
 le systeme de fichiers, le journal, les processus, les services, les comptes,
-l'audit et l'agent NTP (qui lit ET discipline l'horloge de sa machine). Les autres — validite des certificats TLS et X.509, fenetres de
-signature DNSSEC, horodatages SSH, caches DNS — lisent l'heure globale : une
-machine decalee de dix minutes ne voit toujours pas un certificat « pas encore
-valide ». Le `START` de `ps` des processus de demarrage et les dates de
+l'audit et l'agent NTP (qui lit ET discipline l'horloge de sa machine). La verification de certificat de `curl`, d'`openssl s_client`, du
+moteur `openssl` (delivrance, `verify`, `-checkend`, `s_server -Verify`), de
+rsyslog (gtls/ossl), de `ldapsearch`, du DNS sur TLS et de NTS pour chronyd
+suit maintenant l'horloge de sa machine, comme l'authentification IKE par
+certificat de Cisco et l'inspection SSL du pare-feu. Le verificateur de certificats clients de nginx/Apache et leur journal d'acces aussi. Les caches DNS du poste Windows, de BIND et de `systemd-resolved` vieillissent sur
+l'horloge de leur machine. Les fenetres de signature DNSSEC de BIND, de `systemd-resolved` et de Windows
+Server, la validite des certificats utilisateur de sshd et `ssh-keygen` aussi.
+Restent sur l'heure globale les horodatages de session de sshd
+(`SshServerHandler`, `SshShellSession`) et `CrossVendorSshHost` : les horodatages
+et la duree d'une session ne suivent pas `date -s`. Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
 sur un vrai noyau `ps` suit (btime recalcule), `last` non.
 **Pourquoi ce n'est pas ferme** : chaque pile prend l'horloge de sa machine par
@@ -270,15 +276,6 @@ pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonct
 **Pourquoi ce n'est pas ferme** : chacun est un point d'entree distinct de l'executeur (resolution des sequences,
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
-
-### [oracle] RMAN date en millisecondes de l'horloge globale, pas de celle de la machine
-**Mesure** : apres `date -s` sur la machine de la base, `SELECT SYSDATE` suit la machine mais les
-`Completion Time` de `LIST BACKUP`, les TAG et les `Ckp Time` de RMAN restent sur l'horloge globale de la
-simulation (`BackupSetFactory`, `RmanJobEngine`, `RecoveryWindowPolicy` lisent `simulationNowMs()`). Le
-FUSEAU est celui de la machine ; c'est le decalage de l'horloge qui ne l'est pas.
-**Pourquoi ce n'est pas ferme** : la retention (`RecoveryWindowPolicy`) compare des `completionTime` a
-« maintenant » ; changer l'une des sources sans l'autre la fausserait, il faut donc passer les deux par le
-meme port d'horloge dans `IRmanOracleContext`.
 
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
@@ -520,21 +517,6 @@ n'evalue. C'est un chantier par knob, pas un correctif de commande.
 
 ---
 
-### [curl] `-m` ne borne que la connexion : un serveur muet repond (52) au lieu de (28)
-`Http1ClientSession.sendAsync` attend la reponse pendant un nombre fixe
-de tours de micro-taches, sans horloge. Une fois la connexion ouverte, le
-transfert ne consomme donc aucun temps virtuel : `curl -m 5` vers un
-serveur qui accepte la connexion puis se tait repond aussitot
-`curl: (52) Empty reply from server`, la ou curl 8.5.0 (`lib/multi.c`,
-`multi_handle_timeout`) attendrait 5 s puis dirait `curl: (28) Operation
-timed out after 5000 milliseconds with 0 bytes received`.
-**Mesure** : `nc -l -p 8080` sur le serveur, `curl -m 5
-http://10.0.0.2:8080/` depuis le client.
-**Pourquoi ce n'est pas ferme** : borner le transfert demande que le
-client HTTP attende sur l'horloge de la pile au lieu de compter des tours
-de micro-taches, ce qui touche tous les lecteurs de `sendAsync` (IOS avec
-AAA, nginx, Apache, IIS). `-m` borne deja la connexion, HTTP, HTTPS et FTP.
-
 ### [tcp] deux types pour un segment TCP : `TCPPacket` (core) et `TcpSegment` (pile)
 La pile (`tcp/TcpStack`) emet des `TcpSegment` (`sequence`,
 `acknowledgement`, `window`, `options`) ; `core/types.ts` declare encore
@@ -552,47 +534,11 @@ y lirait `undefined`.
 hors du sous-systeme corrige ; la migration consiste a supprimer
 `TCPPacket` et a faire importer `TcpSegment` partout.
 
-### [udp] un port UDP ferme ne renvoie pas « port unreachable » visible des outils
-Sur le lab de l'utilisateur, `dig -p 9999 @192.168.30.4 example.com` depuis
-PC3 (meme LAN que Server1, rien n'ecoute sur 9999) repond `;; connection
-timed out; no servers could be reached`, et `nc -u -z -v -w 1
-192.168.30.4 9999` repond `succeeded!`. Un Linux reel renvoie un ICMP
-port unreachable (RFC 1122 §4.1.3.1) ; dig dit alors `communications
-error ... connection refused` et `nc -u -z` echoue. `dig @192.168.30.4`
-vers le port 53, lie seulement sur 127.0.0.53, se comporte de meme.
-Accessoirement, la banniere de dig ne reprend pas `-p 9999` parmi les
-arguments.
-**Pourquoi ce n'est pas ferme ici** : c'est la pile UDP de l'hote (emission
-de l'erreur) et les clients dig/nc (lecture de l'erreur), hors du
-pare-feu ; le pare-feu, lui, fait desormais suivre une erreur ICMP liee a
-une session (sonde fortigate-icmp-error-follows-its-session).
-
 ### [fortios] une entree refusee par `next` reste affichee
 `config firewall policy` / `edit 62` sans `set service` : `next` repond
 « Command fail. Return code -61 / entry not set for "service" », mais
 `show firewall policy 62` affiche encore l'entree (sans effet sur le
 trafic). Mesure en travaillant la batterie 02, test 94.
-
-### [nginx] un amont injoignable donne 502 tout de suite, pas 504 au bout de proxy_connect_timeout
-Le mandataire de `LinuxNginxService` envoie sa requete amont de facon
-synchrone : un SYN jete repond aussitot `502 Bad Gateway`, la ou nginx
-attend `proxy_connect_timeout` (60 s par defaut) puis rend `504 Gateway
-Time-out`. Un RST (port ferme) donne bien 502 des deux cotes. Meme cause
-que l'entree [curl] -m : le client HTTP n'attend pas sur l'horloge.
-
-### [curl] deux versions de curl
-Le catalogue de paquets dit `curl 7.81.0-1ubuntu1.15` (jammy), `curl
---version` dit `curl 8.5.0` ; un seul des deux doit rester.
-
-### [gzip] la commande `gzip` ecrit un pseudo-format, pas du gzip
-`gzip -k /tmp/a` ecrit `!<simgz>\n{"name":"a",…}` (63 octets pour
-« hello »), lu par `unpackGzip` a cote du vrai gzip que decode
-`rsyslog/Zlib.ts` (`unpackRealGzip`). Deux formats pour une commande ;
-un `.gz` fabrique ici ne se lit pas avec un vrai `gzip -d`. Vu en
-branchant `gzip on` d'nginx sur `gzipCompress` ; `curl --compressed`
-(docs/PRD-Nginx.md §9.12) lit lui le vrai format. Le fermer : `cmdGzip`
-doit ecrire `gzipCompress` et `unpackGzip` ne garder que la lecture
-reelle ; non fait ici car `tar -z` et `gzipText` en dependent.
 
 ### [fortios] `diagnose log test` n'existe pas
 La commande repond « unknown command » (batterie 02, test 98). Sur un vrai
@@ -1137,12 +1083,6 @@ interfaces VLAN au rejeu d'un export, serveurs DNS du poste Windows dans le fich
   vlans, wifis, tunnels) ne sont valides qu'en surface.
 - Un `systemctl restart systemd-networkd` demarre maintenant un client DHCP sur toute interface netplan `dhcp4: true` (c'est
   ce que fait le vrai) : un lab qui ne veut aucun bail doit le dire par `dhcp4: false` dans son fichier.
-
-### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
-Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
-alors que `ping 10.0.0.1` aboutit et que Linux repond « Connection refused ». Le rejeu des labos
-pose donc l'adresse sur `eth0`. Meme famille : `nc -s 10.0.0.2 127.0.0.1 9000` (source locale non
-loopback vers 127.0.0.1) expire chez nous, aboutit sur Linux (2 pas declares non portes).
 
 ### [nano] navigateur de fichiers (`^T` dans `^R`, `^O`, `M-F`)
 La barre d'invite annonce `^T Browse` comme nano mais le navigateur n'existe pas : la touche est

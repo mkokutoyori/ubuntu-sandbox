@@ -23,6 +23,12 @@ async function typeCmd(page: Page, command: string): Promise<void> {
   await input.fill(command);
   await input.press('Enter');
   await page.waitForTimeout(400);
+  const secret = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+  if (await secret.count() > 0) {
+    await secret.last().fill('admin');
+    await secret.last().press('Enter');
+    await page.waitForTimeout(400);
+  }
 }
 
 async function modalText(page: Page): Promise<string> {
@@ -89,26 +95,31 @@ test('lists capture interfaces with -D', async ({ page }) => {
   expect(text).toContain('lo');
 });
 
-test('-c 0 prints the banner and an empty capture summary', async ({ page }) => {
+test('-c 0 is refused like the real tcpdump', async ({ page }) => {
   const id = await addDevice(page, 'linux-pc');
   await openTerminal(page, id);
   await typeCmd(page, 'tcpdump -c 0');
-  const text = await modalText(page);
-  expect(text).toContain('listening on eth0');
-  expect(text).toContain('0 packets captured');
+  expect(await modalText(page)).toContain('tcpdump: invalid packet count 0');
+});
+
+test('capturing without root is refused', async ({ page }) => {
+  const id = await addDevice(page, 'linux-pc');
+  await openTerminal(page, id);
+  await typeCmd(page, 'tcpdump -c 1');
+  expect(await modalText(page)).toContain("You don't have permission to capture on that device");
 });
 
 test('rejects an out-of-range port filter', async ({ page }) => {
   const id = await addDevice(page, 'linux-pc');
   await openTerminal(page, id);
-  await typeCmd(page, 'tcpdump port 70000');
-  expect((await modalText(page)).toLowerCase()).toMatch(/error|invalid|range/);
+  await typeCmd(page, 'sudo tcpdump port 70000');
+  expect((await modalText(page)).toLowerCase()).toMatch(/illegal port number 70000/);
 });
 
 test('captures a live ICMP echo from a peer and stops on -c 1', async ({ page }) => {
   const { pc1, pc2 } = await lan(page);
   await openTerminal(page, pc1);
-  await typeCmd(page, 'tcpdump -c 1 icmp');
+  await typeCmd(page, 'sudo tcpdump -c 1 icmp');
   await waitForText(page, 'listening on eth0');
   await runOn(page, pc2, 'ping -c 1 10.0.0.1');
   await waitForText(page, 'ICMP');
@@ -118,13 +129,13 @@ test('captures a live ICMP echo from a peer and stops on -c 1', async ({ page })
 test('streams an injected TCP segment and prints the summary on -c 1', async ({ page }) => {
   const id = await addDevice(page, 'linux-pc');
   await openTerminal(page, id);
-  await typeCmd(page, 'tcpdump -c 1');
+  await typeCmd(page, 'sudo tcpdump -c 1');
   await waitForText(page, 'listening on eth0');
   await page.evaluate((devId) => {
     const store = (window as Record<string, unknown>).__networkStore as { getState(): { deviceInstances: Map<string, Record<string, unknown>> } };
     const dev = store.getState().deviceInstances.get(devId) as { executor: { captureLog: { capture(p: object): void } } };
     dev.executor.captureLog.capture({ at: new Date(), srcIp: '10.0.0.1', srcPort: 4444, dstIp: '10.0.0.2', dstPort: 80, flags: 'S', seq: 0, ack: 0, length: 0 });
   }, id);
-  await waitForText(page, '10.0.0.1.4444 > 10.0.0.2.80');
+  await waitForText(page, '10.0.0.1.4444 > 10.0.0.2.http');
   await waitForText(page, '1 packet captured');
 });

@@ -1192,6 +1192,7 @@ export abstract class LinuxMachine extends EndHost
   getResolvedService(): ResolvedService {
     if (!this._resolvedService) {
       this._resolvedService = new ResolvedService({
+        now: () => this.executor.simulatedDate().getTime(),
         // Le bit DO n'est posé que si l'on compte valider : sans lui le
         // serveur n'a aucune raison de renvoyer les RRSIG. `tls` bascule
         // le transport sur le 853 chiffré (RFC 7858) ; le service décide,
@@ -1269,6 +1270,7 @@ export abstract class LinuxMachine extends EndHost
           return { status: 'NOERROR', records: reply.answers, authorities: reply.authorities };
         },
         this.dnssecAnchors,
+        { now: () => Math.floor(this.executor.simulatedDate().getTime() / 1000) },
       );
     }
     return this._dnsValidator.validateAnswer(records);
@@ -1651,7 +1653,7 @@ export abstract class LinuxMachine extends EndHost
       tcpStack: () => this.getTcpStack(),
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
-      now: () => simulationDate(),
+      now: () => this.executor.simulatedDate(),
       // §P6 — le mandataire résout par la MACHINE qui l'exécute :
       // `/etc/hosts` et `/etc/resolv.conf` du serveur décident, comme
       // pour le vrai nginx. La variante synchrone est la bonne ici,
@@ -2144,7 +2146,7 @@ export abstract class LinuxMachine extends EndHost
       tcpStack: () => this.getTcpStack(),
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
-      now: () => simulationDate(),
+      now: () => this.executor.simulatedDate(),
     });
 
     this.executor.registerServiceSocketServer('apache2', this.apacheService);
@@ -5675,9 +5677,10 @@ export abstract class LinuxMachine extends EndHost
   private foregroundSession: LinuxShellSession | null = null;
 
   interruptForeground(session: LinuxShellSession): boolean {
+    if (this.foregroundSession !== session) return false;
     const pid = this.executor.foregroundProcessId();
-    if (this.foregroundSession !== session || pid === null) return false;
-    return this.executor.processMgr.kill(pid, 'SIGINT');
+    const loopInterrupted = this.executor.interruptInterpreter();
+    return pid === null ? loopInterrupted : this.executor.processMgr.kill(pid, 'SIGINT');
   }
 
   /**

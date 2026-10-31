@@ -70,6 +70,7 @@ import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type T
 import { runSshd, type SshdDaemonRequest } from '../protocols/ssh/server/SshdCommand';
 import { WINDOWS_SSHD_PROFILE } from '../protocols/ssh/server/SshdDump';
 import { WindowsSshServerContext, windowsPathOf, SSHD_EXECUTABLE } from '../protocols/ssh/server/WindowsSshServerContext';
+import { SshInteractiveShell } from '../protocols/ssh/server/SshInteractiveShell';
 import { SshServerHandler } from '../protocols/ssh/server/SshServerHandler';
 import type { TcpStream } from '../tcp/types';
 import {
@@ -397,7 +398,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private dhcpClassIds: Map<string, string> = new Map();
   /** Per-interface DHCPv6 class id, set via `ipconfig /setclassid6`. */
   private dhcpClassIds6: Map<string, string> = new Map();
-  readonly dnsCache = new DnsCache();
+  readonly dnsCache = new DnsCache(() => this.getSystemClockMs());
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
@@ -1402,9 +1403,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private buildSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
+      nowMs: () => this.simulatedDate().getTime(),
       getCwd: () => this.getCwd(),
       createVtyShell: (user: string) => this.createVtyShell(user),
       runExecAs: (user: string, line: string, stdin?: string) => this.runExecAs(user, line, stdin),
+      createInteractiveShell: () => new SshInteractiveShell(this),
       bindForwardedAgent: (user: string, agent: AgentPort) => this.bindForwardedAgent(user, agent),
       shellBanner: () => this.getSshMotd(),
       clientPort: (fromIp: string) => this.sshPeerPorts.get(fromIp),
@@ -2809,6 +2812,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       user: this.userMgr.currentUser,
       hostname: this.hostname,
       release: OPENSSH_WINDOWS_8_6,
+      nowSeconds: () => Math.floor(this.simulatedDate().getTime() / 1000),
       agent: keygenAgentOf(this.sshAgentIfRunning()),
     };
   }

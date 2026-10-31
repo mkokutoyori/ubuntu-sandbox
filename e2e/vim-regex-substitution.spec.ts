@@ -83,11 +83,11 @@ test.describe('Scénario 2 (e2e) — vim :%s et :g regex', () => {
   test('progressive substitution sequence produces the expected final file', async ({ page }) => {
     await seedFile(page, '/tmp/interfaces-vim.txt');
     await typeCmd(page, 'vim /tmp/interfaces-vim.txt');
-    await expect(page.getByText('interfaces-vim.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*interfaces\-vim\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, '%s/192.168.1/10.10.10/g');
     await exCmd(page, '%s/eth/ens/gc');
-    await expect(page.getByText(/replace with ens \(y\/n\/a\/q\/l\)\?/)).toBeVisible();
+    await expect(page.getByText(/replace with ens \(y\/n\/a\/q\/l\/\^E\/\^Y\)\?/)).toBeVisible();
     await page.keyboard.press('a');
 
     await exCmd(page, String.raw`%s/address \(10\.10\.10\.\)\([0-9]*\)/address \1\2 # ajoute/g`);
@@ -115,12 +115,12 @@ test.describe('Scénario 2 (e2e) — vim :%s et :g regex', () => {
     await typeCmd(page, 'echo "eth0 up" > /tmp/confirm.txt');
     await typeCmd(page, 'echo "eth1 up" >> /tmp/confirm.txt');
     await typeCmd(page, 'vim /tmp/confirm.txt');
-    await expect(page.getByText('confirm.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*confirm\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, '%s/eth/ens/gc');
-    await expect(page.getByText(/replace with ens \(y\/n\/a\/q\/l\)\?/)).toBeVisible();
+    await expect(page.getByText(/replace with ens \(y\/n\/a\/q\/l\/\^E\/\^Y\)\?/)).toBeVisible();
     await page.keyboard.press('n');
-    await expect(page.getByText(/replace with ens \(y\/n\/a\/q\/l\)\?/)).toBeVisible();
+    await expect(page.getByText(/replace with ens \(y\/n\/a\/q\/l\/\^E\/\^Y\)\?/)).toBeVisible();
     await page.keyboard.press('y');
     await expect(page.getByText(/replace with ens/)).not.toBeVisible();
 

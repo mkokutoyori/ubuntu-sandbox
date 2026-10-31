@@ -16,6 +16,7 @@ export interface CertificateServiceHost {
   readonly groupsOf: (user: string) => readonly string[];
   readonly readFile: (path: string) => string | null;
   readonly emit: (event: SshServerEvent) => void;
+  readonly nowMs?: () => number;
 }
 
 export interface CertificateAccount {
@@ -51,7 +52,7 @@ export class SshdCertificateService {
       : expandPrincipalsPath(view.authorizedPrincipalsFile, { user, uid: account.uid, home: account.home });
     const result = admitUserCertificate({
       certificate, user, source,
-      nowSeconds: BigInt(Math.floor(simulationNowMs() / 1000)),
+      nowSeconds: BigInt(Math.floor((this.host.nowMs ?? simulationNowMs)() / 1000)),
       caSignatureAlgorithms: view.caSignatureAlgorithms,
       trustedCaKeys: textFile(view.trustedUserCaKeys),
       principalsFile: textFile(principalsPath),

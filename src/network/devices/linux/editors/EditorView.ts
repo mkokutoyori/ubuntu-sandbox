@@ -72,7 +72,12 @@ export interface NanoEditorView extends EditorViewBase {
   readonly screen: EditorScreen;
 }
 
-export type EditorView = VimEditorView | NanoEditorView;
+export interface LessEditorView extends EditorViewBase {
+  readonly kind: 'less';
+  readonly screen: EditorScreen;
+}
+
+export type EditorView = VimEditorView | NanoEditorView | LessEditorView;
 
 /**
  * One editor running somewhere else — on the server side of an SSH

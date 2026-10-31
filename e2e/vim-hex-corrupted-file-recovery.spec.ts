@@ -58,7 +58,7 @@ test.describe('Scénario 10 (e2e) — récupération de fichiers corrompus', () 
   test('vim finds and strips a stray embedded CR (\\r), fixed file has consistent CRLF', async ({ page }) => {
     await typeCmd(page, "printf 'line1\\r\\nline2\\rline2b\\r\\nline3\\n' > /tmp/crlf-e2e.txt");
     await typeCmd(page, 'vim /tmp/crlf-e2e.txt');
-    await expect(page.getByText('crlf-e2e.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*crlf\-e2e\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, 'set fileformat?');
     await expect(page.getByText('fileformat=dos')).toBeVisible({ timeout: 5_000 });
@@ -82,7 +82,7 @@ test.describe('Scénario 10 (e2e) — récupération de fichiers corrompus', () 
     // before ever rendering it as text.
     await expect(page.getByText('may be a binary file')).toBeVisible({ timeout: 5_000 });
     await page.keyboard.press('y');
-    await expect(page.getByText('nul-e2e.bin', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*nul\-e2e\.bin"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, '%!xxd');
     await expect(page.getByText('0049', { exact: false })).toBeVisible({ timeout: 5_000 });

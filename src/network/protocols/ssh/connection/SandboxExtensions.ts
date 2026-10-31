@@ -1,6 +1,7 @@
 export const SHELL_INFO_REQUEST = 'shell-info@ubuntu-sandbox.local';
 export const LINE_RESULT_REQUEST = 'line-result@ubuntu-sandbox.local';
 export const STREAM_BEGIN_REQUEST = 'stream-begin@ubuntu-sandbox.local';
+export const STREAM_END_REQUEST = 'stream-end@ubuntu-sandbox.local';
 export const COMPLETE_REQUEST = 'complete@ubuntu-sandbox.local';
 export const COMPLETE_RESULT_REQUEST = 'complete-result@ubuntu-sandbox.local';
 export const EDITOR_REQUEST = 'editor@ubuntu-sandbox.local';

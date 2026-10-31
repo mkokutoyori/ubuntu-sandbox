@@ -49,6 +49,7 @@ export interface DnsQueryOptions {
   readonly serverName?: string;
   /** Query class override (`dig -c CH`/bare `chaos` keyword), e.g. `DnsClass.CH`. Defaults to IN. */
   readonly qclass?: number;
+  readonly onTransportFailure?: (failure: 'refused') => void;
 }
 
 export type DnsQueryFn = (

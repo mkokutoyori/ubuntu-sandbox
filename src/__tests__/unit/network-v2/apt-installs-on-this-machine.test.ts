@@ -78,7 +78,7 @@ describe('apt installs on this machine', () => {
   it('a package already there is not installed again', async () => {
     const machine = pc();
     await machine.executeCommand('apt install -y curl');
-    expect(await machine.executeCommand('apt install -y curl')).toContain('curl is already the newest version (7.81.0-1ubuntu1.15).');
+    expect(await machine.executeCommand('apt install -y curl')).toContain('curl is already the newest version (8.5.0-2ubuntu10.6).');
   });
 
   it('dpkg, apt list and the status file agree', async () => {

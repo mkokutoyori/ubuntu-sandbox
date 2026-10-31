@@ -93,6 +93,7 @@ function tlsFilesOf(ctx: LinuxCommandContext): TlsFiles {
 function tlsConnectHostOf(ctx: LinuxCommandContext, client: LdapClient): TlsConnectHost {
   return {
     files: tlsFilesOf(ctx),
+    nowMs: () => ctx.executor.simulatedDate().getTime(),
     async localFqdn() {
       const hostname = kernelHostname(ctx.executor.vfs);
       return (await forwardHostOfAsync(ctx.executor.nss, hostname))?.canonicalName ?? hostname;

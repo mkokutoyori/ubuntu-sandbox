@@ -129,6 +129,7 @@ export interface KeygenIdentity {
   readonly hostKeyDir?: string;
   readonly release: OpenSshRelease;
   readonly zoneOffsetMinutes?: (atMs: number) => number;
+  readonly nowSeconds?: () => number;
   readonly agent?: KeygenAgent;
 }
 
@@ -168,6 +169,7 @@ export function vfsKeygenHost(vfs: KeygenVfs, identity: KeygenIdentity): SshKeyg
     hostname: identity.hostname,
     release: identity.release,
     zoneOffsetMinutes: identity.zoneOffsetMinutes,
+    ...(identity.nowSeconds === undefined ? {} : { nowSeconds: identity.nowSeconds }),
     ...(identity.agent === undefined ? {} : { agent: identity.agent }),
   };
 }

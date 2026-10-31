@@ -58,7 +58,7 @@ test.describe('Scénario 4 (e2e) — modes vim avancés', () => {
   test('NORMAL: dd, u, Ctrl+r round-trip through the real UI', async ({ page }) => {
     await seedFile(page, '/tmp/normal.txt', ['one', 'two', 'three']);
     await typeCmd(page, 'vim /tmp/normal.txt');
-    await expect(page.getByText('normal.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*normal\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('d'); await page.keyboard.press('d');
     await page.keyboard.press('u');
@@ -76,7 +76,7 @@ test.describe('Scénario 4 (e2e) — modes vim avancés', () => {
   test('VISUAL: v-select-delete removes exactly the selection', async ({ page }) => {
     await seedFile(page, '/tmp/visual.txt', ['hello world']);
     await typeCmd(page, 'vim /tmp/visual.txt');
-    await expect(page.getByText('visual.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*visual\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('v');
     await expect(page.getByText('-- VISUAL --')).toBeVisible();
@@ -93,7 +93,7 @@ test.describe('Scénario 4 (e2e) — modes vim avancés', () => {
   test('VISUAL LINE: V-select-indent prefixes selected lines with spaces', async ({ page }) => {
     await seedFile(page, '/tmp/vline.txt', ['a', 'b', 'c']);
     await typeCmd(page, 'vim /tmp/vline.txt');
-    await expect(page.getByText('vline.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*vline\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('V');
     await expect(page.getByText('-- VISUAL LINE --')).toBeVisible();
@@ -104,14 +104,14 @@ test.describe('Scénario 4 (e2e) — modes vim avancés', () => {
     await typeCmd(page, 'cat /tmp/vline.txt');
     const transcript = await modalText(page);
     const catOutput = transcript.slice(transcript.lastIndexOf('cat /tmp/vline.txt'));
-    expect(catOutput).toContain('    a');
-    expect(catOutput).toContain('    b');
+    expect(catOutput).toContain('\ta');
+    expect(catOutput).toContain('\tb');
   });
 
   test('VISUAL BLOCK: Ctrl+v, select rows, I, type, Esc prefixes every row at the same column', async ({ page }) => {
     await seedFile(page, '/tmp/vblock.txt', ['host1', 'host2', 'host3']);
     await typeCmd(page, 'vim /tmp/vblock.txt');
-    await expect(page.getByText('vblock.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*vblock\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Control+v');
     await expect(page.getByText('-- VISUAL BLOCK --')).toBeVisible();
@@ -133,7 +133,7 @@ test.describe('Scénario 4 (e2e) — modes vim avancés', () => {
   test('COMMAND-LINE: :%!sort filters the whole buffer through an external command', async ({ page }) => {
     await seedFile(page, '/tmp/cmdline.txt', ['banana', 'apple', 'cherry']);
     await typeCmd(page, 'vim /tmp/cmdline.txt');
-    await expect(page.getByText('cmdline.txt', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*cmdline\.txt"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, '%!sort');
     await exCmd(page, 'wq');

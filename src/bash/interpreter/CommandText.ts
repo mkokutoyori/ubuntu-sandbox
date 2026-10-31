@@ -1,5 +1,5 @@
 import type {
-  AndOrList, BraceGroup, CommandList, Pipeline, Redirection, SimpleCommand, Subshell, Word, WordPart,
+  AndOrList, BraceGroup, CommandList, CStyleForClause, ForClause, UntilClause, WhileClause, Pipeline, Redirection, SimpleCommand, Subshell, Word, WordPart,
 } from '../parser/ASTNode';
 
 type Command = Pipeline['commands'][number];
@@ -42,8 +42,21 @@ function commandText(command: Command): string {
     case 'SimpleCommand': return simpleText(command);
     case 'Subshell': return groupText(command, '( ', ' )');
     case 'BraceGroup': return groupText(command, '{ ', '; }');
+    case 'WhileClause': return loopText('while', command);
+    case 'UntilClause': return loopText('until', command);
+    case 'ForClause': return forText(command);
+    case 'CStyleForClause': return `for ((${command.init}; ${command.cond}; ${command.update})); do ${listText(command.body)}; done`;
     default: return '';
   }
+}
+
+function loopText(keyword: 'while' | 'until', loop: WhileClause | UntilClause): string {
+  return `${keyword} ${listText(loop.condition)}; do ${listText(loop.body)}; done`;
+}
+
+function forText(loop: ForClause): string {
+  const words = loop.words === null ? '' : ` in ${loop.words.map(wordText).join(' ')}`;
+  return `${loop.select === true ? 'select' : 'for'} ${loop.variable}${words}; do ${listText(loop.body)}; done`;
 }
 
 function groupText(group: Subshell | BraceGroup, open: string, close: string): string {

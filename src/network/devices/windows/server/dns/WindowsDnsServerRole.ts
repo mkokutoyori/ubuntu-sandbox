@@ -678,11 +678,11 @@ export class WindowsDnsServerRole {
   }
 
   private forwardingResolver(addresses: readonly IPAddress[], timeoutSeconds = this.forwarderTimeoutSeconds): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors } });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
   }
 
   private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.forwarderTimeoutSeconds): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors } });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
   }
 
   getForwarders(): string[] { return this.forwarders.map(f => f.address); }

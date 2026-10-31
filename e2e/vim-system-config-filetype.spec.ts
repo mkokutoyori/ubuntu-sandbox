@@ -70,7 +70,7 @@ test.describe('Scénario 9 (e2e) — fichiers de configuration système', () => 
 
   test('vim /etc/crontab: filetype detection, add a job, saved content survives', async ({ page }) => {
     await typeCmd(page, 'vim /etc/crontab');
-    await expect(page.getByText('crontab', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*crontab"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, 'set filetype?');
     await expect(page.getByText('filetype=crontab')).toBeVisible({ timeout: 5_000 });
@@ -89,7 +89,7 @@ test.describe('Scénario 9 (e2e) — fichiers de configuration système', () => 
 
   test('vim /etc/ssh/sshd_config: filetype detection, edit Port, validated by sshd -t -f %', async ({ page }) => {
     await typeCmd(page, 'vim /etc/ssh/sshd_config');
-    await expect(page.getByText('sshd_config', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText(/"[^"]*sshd_config"/)).toBeVisible({ timeout: 5_000 });
 
     await exCmd(page, 'set filetype?');
     await expect(page.getByText('filetype=sshconfig')).toBeVisible({ timeout: 5_000 });

@@ -13,7 +13,7 @@
 import type { ShellContext } from '@/network/devices/linux/LinuxFileCommands';
 import type { INode } from '@/network/devices/linux/VirtualFileSystem';
 import { parseScript } from '@/bash/parser/ParseScript';
-import { BashInterpreter, type IOContext } from '@/bash/interpreter/BashInterpreter';
+import { BashInterpreter, type InterruptToken, type IOContext } from '@/bash/interpreter/BashInterpreter';
 import { DaemonParkSignal } from '@/bash/errors/BashError';
 import type { AliasTable } from '@/bash/runtime/AliasTable';
 
@@ -208,7 +208,7 @@ export async function runScriptContentAsync(
     | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; interactive?: boolean },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; interactive?: boolean; interrupt?: InterruptToken },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): Promise<ScriptResult> {
@@ -231,6 +231,7 @@ export async function runScriptContentAsync(
       functions,
       daemonMode: identity?.daemonMode,
       interactive: identity?.interactive,
+      interrupt: identity?.interrupt,
     });
 
     const result = await interp.executeAsync(ast);

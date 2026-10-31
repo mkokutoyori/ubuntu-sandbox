@@ -83,7 +83,7 @@ test.describe('les deux tables de ports disent la même chose', () => {
     // `ss` a toujours montré 127.0.0.53:53 en TCP ; jusqu'à §P2 rien
     // n'écoutait derrière, et une connexion dessus était refusée.
     await typeCmd(page, 'ss -ltn');
-    expect(await lastLines(page, 12)).toContain('127.0.0.53:53');
+    expect(await lastLines(page, 12)).toContain('127.0.0.53%lo:53');
 
     await typeCmd(page, 'nc -zv 127.0.0.53 53');
     const verdict = await lastLines(page, 4);

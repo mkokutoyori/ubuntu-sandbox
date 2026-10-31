@@ -150,7 +150,7 @@ export class CiscoRouter extends Router {
       trustAnchors: config.trustAnchors,
       crls: config.crls,
       revocationCheck: config.revocationCheck ?? 'none',
-      clock: config.clock,
+      clock: config.clock ?? (() => this.getSystemClockMs()),
       ocspResponder: config.ocspResponder,
     });
     this._getOrCreateIPSecEngine().setIkeCertAuth({
@@ -159,7 +159,7 @@ export class CiscoRouter extends Router {
       trustAnchors: config.trustAnchors,
       crls: config.crls,
       revocationCheck: config.revocationCheck,
-      clock: config.clock,
+      clock: config.clock ?? (() => this.getSystemClockMs()),
       verifier,
     });
   }

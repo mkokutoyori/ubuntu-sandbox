@@ -79,6 +79,11 @@ export class LinuxRmanContext implements IRmanOracleContext {
     return this._oracle?.instance.hostClock().nowMs() ?? device.hostWallClock?.().nowMs() ?? simulationNowMs();
   }
 
+  spendHostTime(ms: number): void {
+    const device = this._device as unknown as { _stepSystemClock?: (deltaMs: number) => void };
+    device._stepSystemClock?.(ms);
+  }
+
   connectTarget(identifier: string, credentials?: RmanCredentials): ConnectTargetOutcome {
     const local = this._device as unknown as HostCapableDevice;
     const resolved = resolveOracleConnectTarget(

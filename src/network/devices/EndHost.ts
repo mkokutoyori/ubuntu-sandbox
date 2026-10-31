@@ -1250,6 +1250,8 @@ export abstract class EndHost extends Equipment {
       getHostname: () => this.getHostname(),
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
+      isLocalAddress: (ip: IPAddress) => this.isLocalAddress(ip),
+      isLocalAddress6: (ip: IPv6Address) => this.isLocalAddress6(ip),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveRoute: (targetIp: string) => {
         const addr = IPAddress.tryParse(targetIp);
@@ -4643,38 +4645,38 @@ export abstract class EndHost extends Equipment {
     }
     const wire = this.encodeDnsQuery(name, qtype, options);
     if (!wire) return null;
-    let sourcePort: number;
-    try {
-      sourcePort = this.socketTable.allocateEphemeralPort();
-    } catch {
-      return null;
-    }
 
     return new Promise<DnsMessage | null>((resolve) => {
       let timer: symbol | null = null;
       let settled = false;
+      let connected: ConnectedUdpSocket | null = null;
       const finish = (result: DnsMessage | null) => {
         if (settled) return;
         settled = true;
         this.hostTimers.clear(timer);
-        this.udpClose(sourcePort);
+        connected?.close();
         resolve(result);
       };
 
-      try {
-        this.udpBind(sourcePort, ({ udp }) => {
+      const opened = this.udpConnect(serverIP, port, {
+        processName: 'resolver',
+        onDatagram: ({ udp }) => {
           const response = this.decodeDnsReply(udp.payload, wire.id);
           if (response) finish(response);
-        }, 'resolver');
-      } catch {
+        },
+      });
+      if (typeof opened === 'string') {
         resolve(null);
         return;
       }
+      connected = opened;
 
-      const sent = this.sendUdpDatagramTo(
-        serverIP, port, sourcePort, wire.bytes, wire.bytes.length,
-      );
-      if (!sent) {
+      if (opened.send(wire.bytes) !== null) {
+        finish(null);
+        return;
+      }
+      if (opened.peekError() === 'ECONNREFUSED') {
+        options.onTransportFailure?.('refused');
         finish(null);
         return;
       }

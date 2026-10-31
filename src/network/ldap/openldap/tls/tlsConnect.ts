@@ -22,6 +22,7 @@ export interface TlsHandshakeFacts {
 
 export interface TlsConnectHost {
   readonly files: TlsFiles;
+  nowMs?(): number;
   localFqdn(): Promise<string>;
   handshake(config: TlsClientConfig): TlsHandshakeFacts;
   detach(): void;
@@ -63,6 +64,7 @@ export async function connectTls(request: TlsUpgradeRequest, host: TlsConnectHos
       trustAnchors: context.trustAnchors,
       crls: context.revocationLists,
       revocationCheck: context.revocationLists.length > 0 ? 'crl' : 'none',
+      ...(host.nowMs === undefined ? {} : { clock: () => host.nowMs!() }),
     }),
     ...(context.clientKey !== null && context.clientCertificates.length > 0 ? {
       clientCert: context.clientCertificates[0],

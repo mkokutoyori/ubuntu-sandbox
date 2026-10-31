@@ -788,7 +788,7 @@ export abstract class CLITerminalSession extends TerminalSession {
   private async runRemoteLine(line: string): Promise<void> {
     const sub = this.remoteSubShell;
     if (!sub) return;
-    let result = await sub.processLine(line, (text) => this.addLine(text));
+    let result = await this.holdSubShellForeground(sub.processLine(line, (text) => this.addLine(text)));
     for (;;) {
       for (const out of result.output) this.addLine(out);
       if (result.exit) { sub.dispose(); this.releaseRemote(); break; }

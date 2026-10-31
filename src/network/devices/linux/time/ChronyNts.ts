@@ -105,7 +105,7 @@ export class ChronyNts implements NtsSupport {
     const tcp = this.host.tcpStack?.();
     if (entry === undefined || tcp === undefined) return;
     if (!client.beginKeyExchange(nowMs)) return;
-    const verifier = new CertificateVerifier({ trustAnchors: this.trustSet(entry.source.certSet) });
+    const verifier = new CertificateVerifier({ trustAnchors: this.trustSet(entry.source.certSet), clock: () => nowMs });
     const outcome = runNtsKe(tcp, association.serverIp, entry.source.ntsPort, association.serverIp, verifier);
     if (!outcome.ok) {
       client.failKeyExchange(outcome.stage === 'connect' ? KE_RETRY_FACTOR_CONNECT : KE_RETRY_FACTOR_TLS, nowMs);

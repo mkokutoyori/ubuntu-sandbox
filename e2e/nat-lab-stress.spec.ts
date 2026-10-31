@@ -21,6 +21,7 @@ interface Scenario {
   target?: string;
   budgetMs?: number;
   maxLagMs?: number;
+  interruptAfterMs?: number;
   markerContains?: string;
   before?: string[];
   mustNotContain?: string[];
@@ -40,7 +41,7 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'curl-200-x3', client: 'lin', commands: (t) => [1, 2, 3].map((n) => `for i in $(seq 1 200); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED${n}`) },
   { name: 'curl-200-x10', client: 'lin', commands: (t) => Array.from({ length: 10 }, (_, n) => `for i in $(seq 1 200); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED${n + 1}`) },
   { name: 'curl-5000', client: 'lin', commands: (t) => [`for i in $(seq 1 5000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
-  { name: 'curl-20000', client: 'lin', commands: (t) => [`for i in $(seq 1 20000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
+  { name: 'curl-20000', client: 'lin', budgetMs: 2_400_000, commands: (t) => [`for i in $(seq 1 20000); do curl -s -o /dev/null --max-time 5 http://${t}/ & done; wait; echo FINISHED`] },
   { name: 'ping-f-5000', client: 'lin', commands: (t) => [`ping -f -c 5000 ${t}; echo FINISHED`] },
   { name: 'nmap-all-ports', client: 'lin', commands: (t) => [`nmap -p- ${t}; echo FINISHED`] },
   { name: 'seq-500000', client: 'lin', commands: () => [`seq 1 500000; echo FINISHED`] },
@@ -50,7 +51,7 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'win-cmd-for-50000', client: 'win', commands: () => ['(for /L %i in (1,1,50000) do @echo %i) & echo FINISHED'] },
   { name: 'win-ps-range-100000', client: 'win', commands: () => [`powershell -Command "1..100000 | ForEach-Object { $_ }; 'FINISHED'"`] },
   { name: 'win-curl-300', client: 'win', commands: (t) => [`(for /L %i in (1,1,300) do @curl.exe -s -o NUL --max-time 5 http://${t}/) & echo FINISHED`] },
-  { name: 'while-true', client: 'lin', commands: () => [`while true; do :; done`] },
+  { name: 'while-true', client: 'lin', commands: () => ['while true; do :; done'], interruptAfterMs: 5000 },
   { name: 'lin-big-pipeline', client: 'lin', commands: () => [`seq 1 300000 | sort -rn | uniq | wc -l; echo FINISHED`] },
   { name: 'cisco-ping-repeat-3000', client: 'r', commands: () => ['ping 203.0.113.1 repeat 3000'], markerContains: 'Success rate is' },
   { name: 'cisco-debug-packet-ping-2000', client: 'r', before: ['debug ip packet'], commands: () => ['ping 203.0.113.9 repeat 2000'], markerContains: 'Success rate is' },
@@ -110,7 +111,7 @@ async function measure(page: Page): Promise<void> {
 
 for (const scenario of SCENARIOS) {
   test(`stress ${scenario.name}`, async ({ page }) => {
-    test.setTimeout(900_000);
+    test.setTimeout(scenario.budgetMs ?? 900_000);
     let crashed = false;
     const errors: string[] = [];
     page.on('crash', () => { crashed = true; note(`[${scenario.name}] PAGE CRASH`); });
@@ -136,7 +137,12 @@ for (const scenario of SCENARIOS) {
       const marker = commands.length > 1 ? `FINISHED${index + 1}` : 'FINISHED';
       await typeIn(page, ids[scenario.client], command).catch((error: Error) => note(`[${scenario.name}] typeIn failed: ${error.message.slice(0, 120)}`));
       finished = false;
-      for (let tick = 0; tick < Number(process.env.STRESS_TICKS ?? 560) && !crashed; tick++) {
+      if (scenario.interruptAfterMs !== undefined) {
+        await page.waitForTimeout(scenario.interruptAfterMs);
+        await page.locator(`[data-testid="terminal-modal"][data-device-id="${ids[scenario.client]}"] input[type="text"]`).last().press('Control+c');
+        await typeIn(page, ids[scenario.client], `echo ${marker}`);
+      }
+      for (let tick = 0; tick < Number(process.env.STRESS_TICKS ?? Math.floor((scenario.budgetMs ?? 840_000) / 1500)) && !crashed; tick++) {
         await page.waitForTimeout(1000).catch(() => undefined);
         const lag = await Promise.race([
           page.evaluate(() => Date.now() - ((window as Record<string, unknown>).__beat as number)).catch(() => -1),

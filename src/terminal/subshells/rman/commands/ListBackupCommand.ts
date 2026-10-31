@@ -6,7 +6,8 @@
  */
 
 
-import { ok, type Result } from '../core/Result';
+import { err, ok, type Result } from '../core/Result';
+import { completedWithin, parseCompletedClause } from '../core/completedTime';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
 import type { BackupSet } from '../catalog/types';
@@ -35,7 +36,7 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
   readonly name = 'LIST BACKUP';
   constructor(private readonly variant: ListVariant = 'DETAIL') {}
 
-  execute(_args: string[], { catalog, policy, ctx }: RmanCommandContext): Result<string[], RmanError> {
+  execute(args: string[], { catalog, policy, ctx }: RmanCommandContext): Result<string[], RmanError> {
     if (this.variant === 'INCARNATION') {
       const rows = [
         {
@@ -91,7 +92,15 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
       return ok(lines);
     }
 
-    const { sets } = snap.value;
+    let { sets } = snap.value;
+    if (args[0] !== undefined) {
+      const window = parseCompletedClause(args[0], rmanNowMs(ctx));
+      if (window === null) {
+        return err({ code: 'RMAN_01009', message: `LIST BACKUP ${args[0]}: invalid date` });
+      }
+      sets = sets.filter(set => completedWithin(window, set.completionTime));
+      if (sets.length === 0) return ok(['', 'specification does not match any backup in the repository', '']);
+    }
     if (sets.length === 0) {
       return ok(['', 'List of Backups', '===============', 'no backup found in the repository', '']);
     }

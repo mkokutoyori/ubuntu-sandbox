@@ -12,9 +12,10 @@
 import { useLocale } from '@/i18n/useLocale';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  X, Minus, Maximize2, Copy, Circle, Download, Settings2, Lightbulb, ClipboardPaste,
+  X, Minus, Maximize2, Copy, Circle, Download, Settings2, Lightbulb, ClipboardPaste, Plus,
 } from 'lucide-react';
 import { Equipment, isFullyImplemented } from '@/network';
+import { consolePortUnique } from '@/network/equipment/HostCapabilities';
 import { TerminalView, useTerminalSession } from '@/components/terminal/TerminalView';
 import type { TerminalSession } from '@/terminal/sessions/TerminalSession';
 import type { SessionRecording } from '@/terminal/sessions/TerminalSession';
@@ -33,11 +34,12 @@ interface TerminalModalProps {
   session: TerminalSession;
   onClose: () => void;
   onMinimize?: () => void;
+  onNewVtyWindow?: () => void;
   /** When true, fills parent container instead of rendering as a fixed modal */
   embedded?: boolean;
 }
 
-export function TerminalModal({ session, onClose, onMinimize, embedded = false }: TerminalModalProps) {
+export function TerminalModal({ session, onClose, onMinimize, onNewVtyWindow, embedded = false }: TerminalModalProps) {
   const { t } = useLocale();
   // Subscribe to session so we re-render on changes (e.g. Windows shell mode)
   useTerminalSession(session);
@@ -244,6 +246,16 @@ export function TerminalModal({ session, onClose, onMinimize, embedded = false }
             : <Circle className="w-3 h-3 text-white/40 hover:text-white/70" />
           }
         </button>
+        {onNewVtyWindow && consolePortUnique(device) && (
+          <button
+            onClick={onNewVtyWindow}
+            className="w-8 h-full flex items-center justify-center hover:bg-white/10 transition-colors"
+            title={t('terminal.newVty')}
+            aria-label={t('terminal.newVtyLabel')}
+          >
+            <Plus className="w-3 h-3 text-white/40 hover:text-white/70" />
+          </button>
+        )}
         <button onClick={onMinimize} className="w-11 h-full flex items-center justify-center hover:bg-white/10 transition-colors" title={t('terminal.minimize')} aria-label={t('terminal.minimizeLabel')}>
           <Minus className="w-4 h-4 text-white/70" />
         </button>

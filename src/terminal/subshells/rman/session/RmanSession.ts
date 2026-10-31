@@ -23,7 +23,7 @@ import { RemoteRecoveryCatalog } from '../catalog/RemoteRecoveryCatalog';
 import { RmanJobEngine } from '../job/RmanJobEngine';
 import { RmanCommandDispatcher } from '../commands/RmanCommandDispatcher';
 import { ok, err, type Result } from '../core/Result';
-import { formatOracleDate, rmanWall } from '../core/pureUtils';
+import { formatOracleDate, rmanNowMs, rmanWall } from '../core/pureUtils';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanSession } from './IRmanSession';
 import type { RmanSessionOptions, RmanSessionState } from './types';
@@ -142,7 +142,7 @@ export class RmanSession implements IRmanSession {
       type: 'CONNECTED',
       dbId: String(this._options.dbId.value),
       dbName: this._options.dbId.name,
-      connectedAt: simulationNowMs(),
+      connectedAt: rmanNowMs(this._ctx),
     });
     return ok(undefined);
   }

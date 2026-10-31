@@ -119,6 +119,7 @@ import { HostLifecycle } from '../host/lifecycle';
 import { defaultHostClockPort, type HostClockPort } from '../../core/time/HostClockPort';
 import { KernelModuleTable } from './kernel/KernelModuleTable';
 import { SystemIdentity } from '../host/identity';
+import type { InterruptToken } from '@/bash/interpreter/BashInterpreter';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import { seedWithShellOnly } from '@/bash/runtime/Environment';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
@@ -2949,6 +2950,7 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
       release: OPENSSH_UBUNTU_22_04,
       zoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
+      nowSeconds: () => Math.floor(this.simulatedDate().getTime() / 1000),
       agent: keygenAgentOf(this.agentPort()),
     });
   }
@@ -4475,6 +4477,9 @@ export class LinuxCommandExecutor {
     const io = this.buildIOContext();
     const initialPwd = this.cwd;
     const initialVars = this.buildEnvVars();
+    const outerInterrupt = this.interpreterInterrupt;
+    const interrupt: InterruptToken = { requested: false };
+    this.interpreterInterrupt = interrupt;
     const result = await runScriptContentAsync(
       trimmed,
       'bash',
@@ -4482,10 +4487,10 @@ export class LinuxCommandExecutor {
       (argv, env, background, outputPiped, stdin) => this.dispatchMaybeNetwork(argv, env, background, stdin, outputPiped),
       initialVars,
       io,
-      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, interactive: !this.childShellRunning },
+      { pid: this.currentBashPid(), ppid: this.shellPpid, initialExitCode: this.lastExitCode, interactive: !this.childShellRunning, interrupt },
       this.aliases,
       this.functions,
-    );
+    ).finally(() => { this.interpreterInterrupt = outerInterrupt; });
     return this.applyInterpreterResult(result, initialPwd, initialVars);
   }
 
@@ -4661,6 +4666,14 @@ export class LinuxCommandExecutor {
 
   foregroundProcessId(): number | null {
     return this.foregroundNetworkPid;
+  }
+
+  private interpreterInterrupt: InterruptToken | null = null;
+
+  interruptInterpreter(): boolean {
+    if (this.interpreterInterrupt === null || this.interpreterInterrupt.requested) return false;
+    this.interpreterInterrupt.requested = true;
+    return true;
   }
 
   private readonly signalAwarePids = new Set<number>();

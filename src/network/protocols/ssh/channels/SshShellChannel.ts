@@ -5,7 +5,7 @@ import type { EditorView } from '@/network/devices/linux/editors/EditorView';
 import type { ConnectionChannel, SshConnection } from '../connection/SshConnection';
 import {
   COMPLETE_REQUEST, COMPLETE_RESULT_REQUEST, EDITOR_REQUEST, EDITOR_VIEW_REQUEST, LINE_RESULT_REQUEST,
-  SHELL_INFO_REQUEST, STREAM_BEGIN_REQUEST, TTY_OP_ECHO, encodeTerminalModes,
+  SHELL_INFO_REQUEST, STREAM_BEGIN_REQUEST, STREAM_END_REQUEST, TTY_OP_ECHO, encodeTerminalModes,
   type EditorAction, type LineResultPayload, type ShellInfoPayload,
 } from '../connection/SandboxExtensions';
 import {
@@ -261,6 +261,9 @@ export class SshShellChannel
       }
       case STREAM_BEGIN_REQUEST:
         if (this.pendingLine !== null) this.pendingLine.streaming = true;
+        return;
+      case STREAM_END_REQUEST:
+        if (this.pendingLine !== null) this.pendingLine.streaming = false;
         return;
       case LINE_RESULT_REQUEST:
         this.finishLine(JSON.parse(text ?? '{}') as LineResultPayload);

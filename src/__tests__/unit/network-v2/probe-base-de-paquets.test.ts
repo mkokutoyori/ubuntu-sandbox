@@ -79,7 +79,7 @@ describe('la base de paquets décrit la machine', () => {
   it('une option n est pas prise pour un paquet', async () => {
     const out = await machine().executeCommand('apt install -y curl');
     expect(out.split('\n')).toContain(
-      'curl is already the newest version (7.81.0-1ubuntu1.15).');
+      'curl is already the newest version (8.5.0-2ubuntu10.6).');
     expect(out).not.toContain('-y');
   });
 
