@@ -90,7 +90,6 @@ export function executeBuiltin(
     case 'times': return { output: '0m0.000s 0m0.000s\n0m0.000s 0m0.000s\n', exitCode: 0 };
     case 'caller': return builtinCaller(args, env);
     case 'read': return builtinRead(args, env, stdin, readFd);
-    case 'type': return builtinType(args, functions, aliases);
     case 'set': return args.length === 0 ? declaration('declare', [], env, functions) : optionResult(runSet(args, env), env);
     case 'shopt': return optionResult(runShopt(args, env), env);
     case 'source': case '.': return args.length === 0 ? fail(`bash: ${name}: filename argument required\n${name}: usage: ${name} filename [arguments]`, 2) : { output: '', exitCode: 0 }; // handled at higher level
@@ -707,35 +706,6 @@ function builtinRead(args: string[], env: Environment, input?: StdinReader, read
   }
   const errors = failures.map((message) => `${message}\n`).join('');
   return { output: '', exitCode: failures.length > 0 ? 1 : status, ...(errors === '' ? {} : { stderr: errors }) };
-}
-
-// ─── type ───────────────────────────────────────────────────────
-
-function builtinType(
-  args: string[],
-  functions: Map<string, Command>,
-  aliases?: AliasTable,
-): BuiltinResult {
-  // `-t` prints only the one-word type; other flags are accepted as no-ops.
-  const terse = args.includes('-t');
-  const names = args.filter(a => !a.startsWith('-'));
-  const outputs: string[] = [];
-  const errors: string[] = [];
-  let exitCode = 0;
-  for (const name of names) {
-    const alias = aliases?.get(name);
-    if (alias) {
-      outputs.push(terse ? 'alias\n' : `${name} is aliased to \`${alias.value}'\n`);
-    } else if (BUILTIN_NAMES.has(name)) {
-      outputs.push(terse ? 'builtin\n' : `${name} is a shell builtin\n`);
-    } else if (functions.has(name)) {
-      outputs.push(terse ? 'function\n' : `${name} is a function\n`);
-    } else {
-      if (!terse) errors.push(`bash: type: ${name}: not found\n`);
-      exitCode = 1;
-    }
-  }
-  return { output: outputs.join(''), exitCode, ...(errors.length === 0 ? {} : { stderr: errors.join('') }) };
 }
 
 // ─── set ────────────────────────────────────────────────────────
