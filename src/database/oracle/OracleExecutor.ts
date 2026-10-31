@@ -4067,9 +4067,16 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.orReplace && this.storage.viewExists(schema, name)) {
       this.storage.dropView(schema, name);
     }
-    // Reconstruct the query text from the AST by re-serializing the SELECT
-    // We store the original query text for DBA_VIEWS
     const queryText = this.serializeSelect(stmt.query);
+    let compilationFailed = false;
+    try {
+      this.executeSelect(stmt.query);
+    } catch (failure) {
+      const unresolved = failure instanceof OracleError && (failure.code === 'ORA-00942' || failure.code === 'ORA-00904');
+      if (!unresolved) throw failure;
+      if (!stmt.force) throw failure;
+      compilationFailed = true;
+    }
     this.storage.createView({
       schema, name,
       columns: stmt.columns,
@@ -4078,7 +4085,7 @@ export class OracleExecutor extends BaseExecutor {
       withCheckOption: stmt.withCheckOption,
       withReadOnly: stmt.withReadOnly,
     });
-    return emptyResult('View created.');
+    return emptyResult(compilationFailed ? 'Warning: View created with compilation errors.' : 'View created.');
   }
 
   private executeDropView(stmt: DropViewStatement): ResultSet {

@@ -1,6 +1,6 @@
 /**
  * shadow(5) / crypt(3) : /etc/shadow ne porte plus le mot de passe, mais un hash SHA-512-crypt que l'authentification recalcule ; un ancien « $6$simulated$… » est converti à la lecture.
- * Mesure de départ : chpasswd écrivait « $6$simulated$<clair> ». 4 des 5 cas tombent avant ; le témoin (la connexion avec le bon mot de passe) passe dans les deux états.
+ * Mesure de départ : chpasswd écrivait « $6$simulated$<clair> ». 4 des 5 cas d'origine tombent avant (le cas du sel d'usine fixe a été ajouté après qu'un sel aléatoire eut fait écrire /etc/shadow par la persistance) ; le témoin (la connexion avec le bon mot de passe) passe dans les deux états.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -30,6 +30,10 @@ describe('/etc/shadow sans clair', () => {
     await pc.executeCommand(`sudo sed -i 's|^user:[^:]*:|user:${pasted.replace(/\$/g, '\\$')}:|' /etc/shadow`);
     expect(pc.checkPassword('user', 'collé')).toBe(true);
     expect(pc.checkPassword('user', 'autre')).toBe(false);
+  });
+  it('deux machines neuves portent le même /etc/shadow (le sel d\'usine est fixe)', async () => {
+    const other = new LinuxPC('linux-pc', 'PC2');
+    expect(await other.executeCommand('sudo cat /etc/shadow')).toBe(await pc.executeCommand('sudo cat /etc/shadow'));
   });
   it('témoin : le bon mot de passe ouvre, le mauvais non', async () => {
     await pc.executeCommand('echo user:Secret123 | sudo chpasswd');

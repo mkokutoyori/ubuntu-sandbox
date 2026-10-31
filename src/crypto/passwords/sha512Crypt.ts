@@ -75,7 +75,20 @@ function parseShaCrypt(variant: ShaCryptVariant, secret: string): ShaCryptParts 
   return match === null ? null : { salt: match[2], rounds: match[1] === undefined ? null : Number(match[1]), checksum: match[3] };
 }
 
+const COMPUTED = new Map<string, string>();
+const COMPUTED_LIMIT = 256;
+
 function shaCrypt(variant: ShaCryptVariant, password: string, salt: string, rounds: number | null): string {
+  const memoKey = `${variant.magic}\0${salt}\0${rounds}\0${password}`;
+  const known = COMPUTED.get(memoKey);
+  if (known !== undefined) return known;
+  const result = computeShaCrypt(variant, password, salt, rounds);
+  if (COMPUTED.size >= COMPUTED_LIMIT) COMPUTED.delete(COMPUTED.keys().next().value as string);
+  COMPUTED.set(memoKey, result);
+  return result;
+}
+
+function computeShaCrypt(variant: ShaCryptVariant, password: string, salt: string, rounds: number | null): string {
   const hash = variant.digest;
   const effectiveRounds = rounds === null ? DEFAULT_ROUNDS : Math.min(999999999, Math.max(1000, rounds));
   const saltText = salt.slice(0, MAX_SALT_LENGTH);
