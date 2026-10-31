@@ -1176,7 +1176,7 @@ export class LinuxCommandExecutor {
       // Add default groups for regular user (like Ubuntu)
       this.userMgr.usermod('user', { aG: 'sudo,adm' });
       // Set default password 'admin'
-      this.userMgr.setPassword('user', 'admin');
+      this.userMgr.provisionPassword('user', 'admin');
       // Create skeleton files
       this.createSkeletonFiles('/home/user', uid, gid);
       this.userMgr.currentUser = 'user';
@@ -1191,7 +1191,7 @@ export class LinuxCommandExecutor {
     for (const u of ['alice', 'bob', 'carl', 'dave']) {
       if (!this.userMgr.getUser(u)) {
         this.userMgr.useradd(u, { m: true, s: '/bin/bash' });
-        this.userMgr.setPassword(u, u);
+        this.userMgr.provisionPassword(u, u);
         this.userMgr.usermod(u, { aG: 'sudo' });
       }
     }

@@ -249,8 +249,7 @@ dans une section de topologie propre ; le choix change le format du fichier.
 ### [oracle] fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse, FORCE sans effet, synonymes hors DML
 **Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et
 `pkg.g()` est refuse par l'analyseur. `ALTER TRIGGER scott.t DISABLE` rend `Unsupported ALTER target: TRIGGER`.
-`CREATE FORCE VIEW` est lu mais jamais evalue : une vue sur une table absente est toujours creee, sans l'ORA-00942
-du `NOFORCE` par defaut. Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils ne le sont
+`CREATE VIEW` refuse maintenant une table absente (ORA-00942) ou une colonne inconnue (ORA-00904) et `FORCE` cree la vue avec l'avertissement ; la colonne STATUS de la vue reste VALID (pas d'etat INVALID). Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils ne le sont
 pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonctions (`EXEC syn_proc`), `TRUNCATE`,
 `LOCK TABLE`, `DESCRIBE`, `GRANT ... ON synonyme` ni `COMMENT ON`.
 **Pourquoi ce n'est pas ferme** : chacun est un point d'entree distinct de l'executeur (resolution des sequences,
