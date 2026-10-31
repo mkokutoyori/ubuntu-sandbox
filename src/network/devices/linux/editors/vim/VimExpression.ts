@@ -8,7 +8,32 @@ import { formatLocalTime } from '@/network/devices/linux/system/SystemInfo';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { sha256 } from '@/crypto/hash/sha256';
 
+export class VimVariables {
+  private readonly stored = new Map<string, VimValue>();
+
+  static key(name: string): string | null {
+    if (/^[gbwt]:[A-Za-z_][\w#]*$/.test(name)) return name;
+    if (/^[A-Za-z_][\w#]*$/.test(name)) return `g:${name}`;
+    return null;
+  }
+
+  lookup(name: string): VimValue | undefined {
+    const key = VimVariables.key(name);
+    return key === null ? undefined : this.stored.get(key);
+  }
+
+  assign(key: string, value: VimValue): void {
+    this.stored.set(key, value);
+  }
+
+  remove(name: string): boolean {
+    const key = VimVariables.key(name);
+    return key !== null && this.stored.delete(key);
+  }
+}
+
 export interface ExpressionHost {
+  readonly variables: VimVariables;
   readonly lines: readonly string[];
   readonly lineNumber: number;
   readonly columnIndex: number;
@@ -1117,7 +1142,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     if (name.startsWith('&')) return num(context.host.option(name.replace(/^&([lg]:)?/, ''), 'effective') === undefined ? 0 : 1);
     if (name.startsWith('$')) return num(context.host.environment(name.slice(1)) === '' ? 0 : 1);
     if (name.startsWith('*')) return num(FUNCTIONS.has(name.slice(1)) ? 1 : 0);
-    return num(0);
+    return num(context.host.variables.lookup(name) === undefined ? 0 : 1);
   } }],
   ['has', { min: 1, max: 2, run: (args, context) => num(['unix', 'linux', 'multi_byte', 'eval', 'float'].includes(context.stringOf(args[0], false)) ? 1 : 0) }],
 ]);
@@ -1955,6 +1980,8 @@ class Parser {
       const found = context.scopes[at].get(name);
       if (found !== undefined) return found;
     }
+    const stored = context.host.variables.lookup(name);
+    if (stored !== undefined) return stored;
     if (name === 'v:hlsearch') return num(context.host.highlightSearch ? 1 : 0);
     if (name === 'v:searchforward') return num(context.host.searchForward ? 1 : 0);
     if (name in constants) return constants[name];
@@ -2042,4 +2069,107 @@ export function evaluateReplacementExpression(source: string, host: ExpressionHo
     if (!(failure instanceof Abort)) throw failure;
   }
   return { text, errors: context.errors };
+}
+
+const LET_ASSIGNMENT = /^(\[[^\]]*\]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
+const LET_OPERATOR: Record<string, string> = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '..=': '..', '.=': '.' };
+
+function splitAccess(target: string): { name: string; accessors: string[] } | null {
+  const head = target.match(/^[A-Za-z_][\w:#]*/);
+  if (head === null) return null;
+  const accessors: string[] = [];
+  let rest = target.slice(head[0].length);
+  while (rest !== '') {
+    const bracket = rest.match(/^\[([^\]]*)\]/);
+    const dotted = rest.match(/^\.([A-Za-z_]\w*)/);
+    if (bracket !== null) {
+      accessors.push(bracket[1]);
+      rest = rest.slice(bracket[0].length);
+    } else if (dotted !== null) {
+      accessors.push(`'${dotted[1]}'`);
+      rest = rest.slice(dotted[0].length);
+    } else {
+      return null;
+    }
+  }
+  return { name: head[0], accessors };
+}
+
+function assignTarget(target: string, operator: string, value: VimValue, context: Context): void {
+  const access = splitAccess(target);
+  if (access === null) context.fail(`E15: Invalid expression: "${target}"`);
+  const { name, accessors } = access;
+  const key = VimVariables.key(name);
+  if (key === null) context.fail(`E461: Illegal variable name: ${name}`);
+  const combine = (current: VimValue | undefined): VimValue => {
+    if (operator === '=') return value;
+    if (operator === '+=' && current?.kind === 'list' && value.kind === 'list') {
+      current.items.push(...value.items);
+      return current;
+    }
+    if (current === undefined) return context.fail(`E121: Undefined variable: ${name}`);
+    const frame = new Map<string, VimValue>([['lhs_', current], ['rhs_', value]]);
+    context.scopes.push(frame);
+    try {
+      return runExpression(`lhs_ ${LET_OPERATOR[operator]} rhs_`, context);
+    } finally {
+      context.scopes.pop();
+    }
+  };
+  if (accessors.length === 0) {
+    context.host.variables.assign(key, combine(context.host.variables.lookup(key)));
+    return;
+  }
+  if (context.host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${name}`);
+  const holder = runExpression(`${name}${accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+  const last = runExpression(accessors[accessors.length - 1], context);
+  if (holder.kind === 'list') {
+    let at = Number(context.numberOf(last, true));
+    if (at < 0) at += holder.items.length;
+    if (at < 0 || at > holder.items.length) context.fail(`E684: List index out of range: ${at}`);
+    holder.items[at] = combine(holder.items[at]);
+  } else if (holder.kind === 'dict') {
+    const field = context.stringOf(last, true);
+    holder.entries.set(field, combine(holder.entries.get(field)));
+  } else {
+    context.fail('E689: Can only index a List, Dictionary or Blob');
+  }
+}
+
+export function executeLetCommand(argument: string, host: ExpressionHost): readonly string[] {
+  const context = new Context(host);
+  try {
+    const parsed = argument.trim().match(LET_ASSIGNMENT);
+    if (parsed === null) {
+      if (/^[A-Za-z_][\w:#]*$/.test(argument.trim())) {
+        const name = argument.trim();
+        const found = host.variables.lookup(name);
+        if (found === undefined) context.fail(`E121: Undefined variable: ${name}`);
+        return [];
+      }
+      return [`E15: Invalid expression: "${argument.trim()}"`];
+    }
+    const [, target, operator, source] = parsed;
+    const value = runExpression(source, context);
+    if (target.startsWith('[')) {
+      const names = target.slice(1, -1).split(',').map((piece) => piece.trim());
+      if (value.kind !== 'list') return context.fail('E714: List required');
+      if (value.items.length < names.length) return context.fail('E688: More targets than List items');
+      if (value.items.length > names.length) return context.fail('E687: Less targets than List items');
+      names.forEach((name, at) => assignTarget(name, operator, value.items[at], context));
+    } else {
+      assignTarget(target, operator, value, context);
+    }
+  } catch (failure) {
+    if (!(failure instanceof Abort)) throw failure;
+  }
+  return context.errors;
+}
+
+export function executeUnletCommand(names: string, bang: boolean, host: ExpressionHost): readonly string[] {
+  const errors: string[] = [];
+  for (const name of names.split(/\s+/).filter((piece) => piece !== '')) {
+    if (!host.variables.remove(name) && !bang) errors.push(`E108: No such variable: "${name}"`);
+  }
+  return errors;
 }

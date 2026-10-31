@@ -26,7 +26,7 @@ import { DEFAULT_WORD_CLASSES, wordClasses, type WordClasses } from './vim/VimCh
 import { backspaceTarget, indentString, indentWidth, insertTab, joinText, reindentLine, removeChars, roundedIndent, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
 import { VimOptions } from './vim/VimOptions';
 import { parseRange, type RangeEnvironment } from './vim/VimExRange';
-import { evaluateReplacementExpression } from './vim/VimExpression';
+import { evaluateReplacementExpression, executeLetCommand, type ExpressionHost, executeUnletCommand, VimVariables } from './vim/VimExpression';
 
 function normalKeyOf(character: string): EditorKeyInput {
   const code = character.charCodeAt(0);
@@ -128,6 +128,22 @@ function findEnclosingBracketPair(line: string, col: number, open: string, close
     }
   }
   return best;
+}
+
+function barOutsideExpression(text: string): number {
+  let quote = '';
+  for (let at = 0; at < text.length; at++) {
+    const character = text[at];
+    if (quote !== '') {
+      if (character === quote) quote = '';
+      else if (character === '\\' && quote === '"') at++;
+    } else if (character === '"' || character === "'") quote = character;
+    else if (character === '|') {
+      if (text[at + 1] === '|') at++;
+      else return at;
+    }
+  }
+  return -1;
 }
 
 type Operator = 'd' | 'y' | 'c' | '<' | '>' | 'g~' | 'gu' | 'gU';
@@ -274,6 +290,7 @@ export class VimEngine {
   private substitutionLines = 0;
   private expressionError: string | null = null;
   private readonly lambdaCounter = { next: 1 };
+  private readonly variables = new VimVariables();
   private wordClassesCache: WordClasses = DEFAULT_WORD_CLASSES;
   private _pendingMatch: PendingSubstMatch | null = null;
   private pendingBackwardsRange: string | null = null;
@@ -2884,6 +2901,12 @@ export class VimEngine {
       }
     }
 
+    const variableCommand = ligne.match(/^(let|unl(?:e(?:t)?)?)(!?)(?:\s+(.*))?$/s);
+    if (variableCommand !== null) {
+      this.runVariableCommand(variableCommand[1], variableCommand[2] === '!', variableCommand[3] ?? '');
+      return;
+    }
+
     const global = this.parseGlobalCmd(rest);
     if (global !== null) {
       if (global.pattern !== '') this.rememberSearchPattern(global.pattern);
@@ -3290,8 +3313,19 @@ export class VimEngine {
     if (state.nextCommand !== null && state.nextCommand.trim() !== '' && !/^E\d+:/.test(this._message)) this.executeExCommand(state.nextCommand);
   }
 
-  private evaluateReplacement(source: string, match: MultiMatch, lineNumber: number, columnIndex: number): string {
-    const outcome = evaluateReplacementExpression(source, {
+  private runVariableCommand(word: string, bang: boolean, argument: string): void {
+    const bar = barOutsideExpression(argument);
+    const body = bar === -1 ? argument : argument.slice(0, bar);
+    const next = bar === -1 ? '' : argument.slice(bar + 1);
+    const host = this.expressionHost({ groups: [] } as unknown as MultiMatch, this._cursorLine + 1, this._cursorCol);
+    const errors = word === 'let' ? executeLetCommand(body, host) : executeUnletCommand(body, bang, host);
+    this._message = errors.length > 0 ? errors[0] : '';
+    this._mode = 'normal';
+    if (errors.length === 0 && next.trim() !== '') this.executeExCommand(next);
+  }
+
+  private expressionHost(match: MultiMatch, lineNumber: number, columnIndex: number): ExpressionHost {
+    return {
       lines: this.linesArr,
       lineNumber,
       columnIndex,
@@ -3302,13 +3336,18 @@ export class VimEngine {
       windowTop: this.window.top + 1,
       windowBottom: this.window.top + this.window.height,
       lambdaCounter: this.lambdaCounter,
+      variables: this.variables,
       submatch: (index) => match.groups[index],
       mark: (name) => this.patternMark(name),
       register: (name) => this.registerContent(name),
       option: (name, scope) => this.options.lookup(name, scope),
       environment: (name) => this.environmentVariable(name),
       shell: (command, input) => (input === null ? this.fs.runShellCommand(command) : this.fs.filterThroughShell(command, input)),
-    });
+    };
+  }
+
+  private evaluateReplacement(source: string, match: MultiMatch, lineNumber: number, columnIndex: number): string {
+    const outcome = evaluateReplacementExpression(source, this.expressionHost(match, lineNumber, columnIndex));
     if (outcome.errors.length > 0 && this.expressionError === null) this.expressionError = outcome.errors[0];
     return outcome.text;
   }

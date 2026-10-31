@@ -748,8 +748,12 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
   function` meme quand vim le connait (`v:shell_error`, `getenv`...). `reduce`, `mapnew`, `sha256`, `strftime`,
   `json_encode`, `json_decode`, `system` et `systemlist` existent.
-- **Pas de variables ni de `:let`** : `g:x`, `s:x`, `l:x`, `b:x`, `w:x` repondent
-  E121. Une lambda ne capture que les parametres des lambdas qui l'entourent.
+- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
+  `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
+  destructuration. Restent refusees les cibles `$ENV`, `@r`, `&opt`, les
+  tranches `l[a:b]`, `s:` / `l:` / `a:` hors fonction, `v:shell_error` et
+  `:function`. Une lambda ne capture que les parametres des lambdas qui
+  l'entourent.
 - **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
   moteur n'a ni l'un ni l'autre.
 - **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options
