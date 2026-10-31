@@ -167,9 +167,10 @@ rsyslog (gtls/ossl), de `ldapsearch`, du DNS sur TLS et de NTS pour chronyd
 suit maintenant l'horloge de sa machine, comme l'authentification IKE par
 certificat de Cisco et l'inspection SSL du pare-feu. Le verificateur de certificats clients de nginx/Apache et leur journal d'acces aussi. Les caches DNS du poste Windows, de BIND et de `systemd-resolved` vieillissent sur
 l'horloge de leur machine. Les fenetres de signature DNSSEC de BIND, de `systemd-resolved` et de Windows
-Server aussi. Les autres — horodatages SSH — lisent l'heure
-globale : une machine decalee de dix minutes ne voit toujours pas, par ces
-chemins, un certificat « pas encore valide ». Le `START` de `ps` des processus de demarrage et les dates de
+Server, la validite des certificats utilisateur de sshd et `ssh-keygen` aussi.
+Restent sur l'heure globale les horodatages de session de sshd
+(`SshServerHandler`, `SshShellSession`) et `CrossVendorSshHost` : les horodatages
+et la duree d'une session ne suivent pas `date -s`. Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
 sur un vrai noyau `ps` suit (btime recalcule), `last` non.
 **Pourquoi ce n'est pas ferme** : chaque pile prend l'horloge de sa machine par
