@@ -907,7 +907,6 @@ Autres ecarts mesures, non fermes :
   regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
 - `ls` avec plusieurs operandes dossiers : le tri est celui des operandes (fichiers d'abord) mais la mise en colonnes de
   la sortie non tty n'a pas ete comparee.
-- `install -D -t`, `install -s` et `install --strip` : seul le jeu d'options du corpus (`-m -d -D -o -g -v`) est enregistre.
 
 ### [ps] ce que le portage de `ps` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `ps-procps-4.0.4.json`, 5 labos, 629 pas, procps-ng 4.0.4 sur Ubuntu 24.04, pty

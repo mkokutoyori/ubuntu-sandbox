@@ -6153,7 +6153,7 @@ export class LinuxCommandExecutor {
       case 'install': {
         for (const p of installOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
         const outInstall = cmdInstall(c, args);
-        return { output: outInstall, exitCode: /^install:/m.test(outInstall) ? 1 : 0 };
+        return { output: outInstall, exitCode: /^(install: (?!creating directory)|strip:)/m.test(outInstall) ? 1 : 0 };
       }
       case 'mv': {
         for (const p of mvOperands(args)) {
