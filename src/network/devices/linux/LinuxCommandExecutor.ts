@@ -1302,6 +1302,9 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/cmdline', () => `${this.logMgr.kernelCommandLine()}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
+    this.vfs.registerWritableGeneratedFile('/proc/sys/kernel/pid_max',
+      () => `${this.processMgr.pidMax}\n`,
+      (text) => /^\s*\d+\s*$/.test(text) && this.processMgr.setPidMax(Number(text.trim())));
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
     this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
