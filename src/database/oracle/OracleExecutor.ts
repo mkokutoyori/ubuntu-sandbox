@@ -3083,10 +3083,25 @@ export class OracleExecutor extends BaseExecutor {
 
   // ── INSERT ────────────────────────────────────────────────────────
 
+  private insteadOfView(schema: string, name: string, event: 'INSERT' | 'UPDATE' | 'DELETE') {
+    const view = this.storage.getViewMeta(schema, name);
+    if (!view || this.triggersFor(schema, name, event, 'INSTEAD OF', true).length === 0) return null;
+    return this.loadView(view, name);
+  }
+
   private executeInsert(stmt: InsertStatement): ResultSet {
     this.requireWritableTransaction();
     this.txn.begin();
     const { schema, name: tableName } = this.resolveTableTarget(stmt.table.schema, stmt.table.name);
+    const viewSource = this.insteadOfView(schema, tableName, 'INSERT');
+    if (viewSource !== null && stmt.values) {
+      const viewMeta = { columns: viewSource.columns } as unknown as TableMeta;
+      for (const valueList of stmt.values) {
+        const row = this.buildInsertRow(viewMeta, stmt.columns, valueList);
+        this.fireRowTriggers(schema, tableName, viewMeta, 'INSERT', 'INSTEAD OF', null, row);
+      }
+      return rowsCreated(stmt.values.length);
+    }
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'INSERT');
@@ -3242,6 +3257,23 @@ export class OracleExecutor extends BaseExecutor {
     this.requireWritableTransaction();
     this.txn.begin();
     const { schema, name: tableName } = this.resolveTableTarget(stmt.table.schema, stmt.table.name);
+    const viewSource = this.insteadOfView(schema, tableName, 'UPDATE');
+    if (viewSource !== null) {
+      const viewMeta = { columns: viewSource.columns } as unknown as TableMeta;
+      const updatedColumns = stmt.assignments.map((a) => a.column.toUpperCase());
+      let count = 0;
+      for (const row of viewSource.rows) {
+        if (stmt.where && !this.evaluateCondition(stmt.where, row, viewSource.columns)) continue;
+        const newRow = [...row];
+        for (const assign of stmt.assignments) {
+          const colIdx = this.findColumnIndex(viewMeta, assign.column);
+          if (colIdx >= 0) newRow[colIdx] = this.evaluateExpression(assign.value, row, viewSource.columns);
+        }
+        this.fireRowTriggers(schema, tableName, viewMeta, 'UPDATE', 'INSTEAD OF', row, newRow, updatedColumns);
+        count++;
+      }
+      return emptyResult(`${count} row${count !== 1 ? 's' : ''} updated.`, count);
+    }
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'UPDATE');
@@ -3300,6 +3332,17 @@ export class OracleExecutor extends BaseExecutor {
     this.requireWritableTransaction();
     this.txn.begin();
     const { schema, name: tableName } = this.resolveTableTarget(stmt.table.schema, stmt.table.name);
+    const viewSource = this.insteadOfView(schema, tableName, 'DELETE');
+    if (viewSource !== null) {
+      const viewMeta = { columns: viewSource.columns } as unknown as TableMeta;
+      let count = 0;
+      for (const row of viewSource.rows) {
+        if (stmt.where && !this.evaluateCondition(stmt.where, row, viewSource.columns)) continue;
+        this.fireRowTriggers(schema, tableName, viewMeta, 'DELETE', 'INSTEAD OF', row, null);
+        count++;
+      }
+      return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
+    }
     const tableMeta = this.requireTableMeta(schema, tableName);
     this.captureFlashbackImage(schema, tableName);
     this.privileges.requireObjectAccess(schema, tableName, 'DELETE');
@@ -4332,7 +4375,7 @@ export class OracleExecutor extends BaseExecutor {
 
   private fireRowTriggers(
     schema: string, tableName: string, tableMeta: TableMeta, event: 'INSERT' | 'UPDATE' | 'DELETE',
-    timing: 'BEFORE' | 'AFTER', oldRow: StorageRow | null, newRow: StorageRow | null, updatedColumns?: readonly string[],
+    timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF', oldRow: StorageRow | null, newRow: StorageRow | null, updatedColumns?: readonly string[],
   ): void {
     for (const trigger of this.triggersFor(schema, tableName, event, timing, true, updatedColumns)) {
       const changed = this.requireCommandHost().runTrigger(this, { trigger, event, columns: tableMeta.columns, oldRow, newRow, updatedColumns });
