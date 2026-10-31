@@ -977,18 +977,6 @@ datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -
 - `find -type b` et `-type c` : le VFS ne distingue pas un peripherique bloc d'un peripherique caractere, les deux
   filtres retournent tous les peripheriques.
 
-### [pipelines] le stderr d'un etage de tube est avale par l'etage suivant
-Mesure : `ls /proc/99999/fd | tail -n +2` n'affiche rien, `ls /nonexistent | cat` affiche l'erreur (qui a transite par
-le tube) ; le vrai laisse l'erreur sur le terminal dans les deux cas. Les commandes heritees de la couche
-`ShellContext` rendent leur diagnostic dans `output` au lieu de `stderr`, si bien que l'interpreteur le pousse dans le
-tube. Vu en rejouant `ls -l /proc/$P1/fd | tail -n +2` d'un processus mort (labos unix-closed et unix-none, declares non
-portes).
-
-### [stat] `stat` est un gabarit
-Mesure : `stat /absent; echo $?` rend 0 (le vrai : 1), `stat --version` repond `stat: missing operand`, `-L`, `-f`, `-t`
-sont ignores, et le message dit « cannot stat » (coreutils 8.32 d'Ubuntu 22.04) quand les enregistrements d'Ubuntu 24.04
-disent « cannot statx ». Vu en rejouant `stat -c '%F %a %U'` (labo unix-none).
-
 ### [umask] ce que le portage de `umask` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `umask-bash-5.2.json`, 5 labos, 232 pas, bash 5.2.21 sur Ubuntu 24.04) : le
 builtin (`-S`, `-p`, octal jusqu'a 07777, mode symbolique, erreurs et codes de retour), sa portee (sous-shell, etage de

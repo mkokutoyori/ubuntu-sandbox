@@ -508,6 +508,11 @@ export abstract class TerminalSession {
     return false;
   }
 
+  private interruptRemoteForeground(): boolean {
+    const shell = this.activeShell as { interruptForeground?: () => boolean } | null;
+    return shell?.interruptForeground?.() ?? false;
+  }
+
   protected async drainTypedAhead(): Promise<void> {
     if (this.drainingTypedAhead) return;
     this.drainingTypedAhead = true;
@@ -1708,6 +1713,10 @@ export abstract class TerminalSession {
   /** Called on Ctrl+C in normal mode. */
   protected onCtrlC(): void {
     if (this.asyncRuntime.interruptForeground()) return;
+    if (this.hasSubShellForeground && this.interruptRemoteForeground()) {
+      this.notify();
+      return;
+    }
     if (this.commandInFlight && this.interruptForegroundCommand()) {
       this.typedAhead = [];
       this.input = '';
