@@ -2950,6 +2950,7 @@ export class LinuxCommandExecutor {
       cwd: this.cwd,
       release: OPENSSH_UBUNTU_22_04,
       zoneOffsetMinutes: (atMs) => ZonedDate.in(atMs, this.identity.timezone).offsetMinutes(),
+      nowSeconds: () => Math.floor(this.simulatedDate().getTime() / 1000),
       agent: keygenAgentOf(this.agentPort()),
     });
   }

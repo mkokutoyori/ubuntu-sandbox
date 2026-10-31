@@ -2812,6 +2812,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       user: this.userMgr.currentUser,
       hostname: this.hostname,
       release: OPENSSH_WINDOWS_8_6,
+      nowSeconds: () => Math.floor(this.simulatedDate().getTime() / 1000),
       agent: keygenAgentOf(this.sshAgentIfRunning()),
     };
   }
