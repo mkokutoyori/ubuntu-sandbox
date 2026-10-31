@@ -4850,7 +4850,11 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    if (adopted === null) this.bashPids.push(proc.pid);
+    const outerJobs = this.jobTable;
+    if (adopted === null) {
+      this.bashPids.push(proc.pid);
+      this.jobTable = new LinuxJobTable();
+    }
     this.syncProcPids();
     try {
       const result = run({ pid: proc.pid, ppid }, bridge);
@@ -4867,7 +4871,10 @@ export class LinuxCommandExecutor {
       if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      if (adopted === null) this.bashPids.pop();
+      if (adopted === null) {
+        this.bashPids.pop();
+        this.jobTable = outerJobs;
+      }
     }
   }
 
@@ -4918,7 +4925,11 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    if (adopted === null) this.bashPids.push(proc.pid);
+    const outerJobs = this.jobTable;
+    if (adopted === null) {
+      this.bashPids.push(proc.pid);
+      this.jobTable = new LinuxJobTable();
+    }
     this.syncProcPids();
     try {
       const result = await run({ pid: proc.pid, ppid }, bridge);
@@ -4930,7 +4941,10 @@ export class LinuxCommandExecutor {
       if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      if (adopted === null) this.bashPids.pop();
+      if (adopted === null) {
+        this.bashPids.pop();
+        this.jobTable = outerJobs;
+      }
     }
   }
 

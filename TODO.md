@@ -899,8 +899,10 @@ Autres ecarts mesures, non fermes :
   `pidof -x` (le simulateur nomme un script par son `comm` et n'a pas le `/bin/sh /chemin` du vrai dans `args`, donc `pidof nom-de-script`
   trouve un processus que le vrai `pidof` ne trouve qu'avec `-x`).
 - Pas de labo zombie ni de `setsid`/`setpriv` dans le corpus : les etats `Z`, `D`, `t` ne sont pas mesures sur le vrai.
-- Le tableau des jobs (`jobs`, `%1`) est global a la machine et non a un shell : un `bash -c` imbrique ne voit pas son
-  propre tableau.
+- Le tableau des jobs (`jobs`, `%1`, `wait`) est celui d'un shell : un `bash -c` ou un script lance en recoit un neuf et rend
+  celui du parent a sa sortie (sonde `probe-jobs-propres-a-chaque-shell`). Les sous-shells `( )` et `$( )` gardent celui du
+  parent, comme le vrai bash. Un job lance par un shell enfant et encore vivant a sa sortie n'est plus listable (le vrai
+  bash l'abandonne aussi a init, mais le processus reste visible dans `ps`).
 - `/dev/pts/N` et `/proc/tty/drivers` n'existent pas comme fichiers : `ps` lit le numero de terminal dans
   `ttyDeviceNumber`. `/proc/sys/kernel/pid_max` existe (inscriptible, 301 a 4194304, sonde `probe-kernel-pid-max`) et
   fixe l'allocation des pids et la largeur de la colonne PID ; `kernel.threads-max` et le reste de `/proc/sys/kernel`
