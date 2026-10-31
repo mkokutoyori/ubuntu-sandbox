@@ -728,9 +728,8 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
   retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait (`trim` avec
-  masque multioctet, `system`...). `reduce`, `mapnew`, `sha256`, `strftime`,
-  `json_encode` et `json_decode` existent.
+  function` meme quand vim le connait (`v:shell_error`, `getenv`...). `reduce`, `mapnew`, `sha256`, `strftime`,
+  `json_encode`, `json_decode`, `system` et `systemlist` existent.
 - **Pas de variables ni de `:let`** : `g:x`, `s:x`, `l:x`, `b:x`, `w:x` repondent
   E121. Une lambda ne capture que les parametres des lambdas qui l'entourent.
 - **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le

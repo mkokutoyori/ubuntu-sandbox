@@ -24,6 +24,7 @@ export interface ExpressionHost {
   register(name: string): string | null;
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
+  shell(command: string, input: string | null): string;
 }
 
 export interface ExpressionResult {
@@ -1067,6 +1068,16 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     return accumulator;
   } }],
   ['sha256', { min: 1, max: 1, run: (args, context) => str(Array.from(sha256(new TextEncoder().encode(context.stringOf(args[0], false))), (byte) => byte.toString(16).padStart(2, '0')).join('')) }],
+  ['system', { min: 1, max: 2, run: (args, context) => str(context.host.shell(
+    context.stringOf(args[0], false),
+    args.length > 1 ? context.stringOf(args[1], false) : null,
+  )) }],
+  ['systemlist', { min: 1, max: 2, run: (args, context) => {
+    const output = context.host.shell(context.stringOf(args[0], false), args.length > 1 ? context.stringOf(args[1], false) : null);
+    const lines = output.split('\n');
+    if (lines[lines.length - 1] === '') lines.pop();
+    return list(lines.map(str));
+  } }],
   ['strftime', { min: 1, max: 2, run: (args, context) => str(formatLocalTime(
     context.stringOf(args[0], false),
     args.length > 1 ? Number(context.numberOf(args[1], true)) * 1000 : Math.floor(simulationNowMs() / 1000) * 1000,

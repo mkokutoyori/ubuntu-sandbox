@@ -3307,6 +3307,7 @@ export class VimEngine {
       register: (name) => this.registerContent(name),
       option: (name, scope) => this.options.lookup(name, scope),
       environment: (name) => this.environmentVariable(name),
+      shell: (command, input) => (input === null ? this.fs.runShellCommand(command) : this.fs.filterThroughShell(command, input)),
     });
     if (outcome.errors.length > 0 && this.expressionError === null) this.expressionError = outcome.errors[0];
     return outcome.text;
