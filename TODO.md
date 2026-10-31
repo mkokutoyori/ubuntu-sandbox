@@ -3932,7 +3932,6 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 ### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
 
 Les trois bancs passent en entier ; restent mesures et non fermes :
-- `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
 - Un motif etendu non ferme (`echo @(a` apres `shopt -s extglob`) est refuse avec « syntax error near unexpected token `(' » la ou bash 5.2 ecrit « unexpected EOF while looking for matching `)' ».
 
 ---

@@ -7,6 +7,7 @@ import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 import { LinuxUserManager } from '@/network/devices/linux/LinuxUserManager';
 import type { ShellContext } from '@/network/devices/linux/LinuxFileCommands';
 import { runScript, runScriptContent } from '@/bash/runtime/ScriptRunner';
+import { ioContextFor } from '../../support/scriptIo';
 
 let vfs: VirtualFileSystem;
 let userMgr: LinuxUserManager;
@@ -32,14 +33,14 @@ beforeEach(() => {
 describe('ScriptRunner — File Existence', () => {
   it('returns 127 for non-existent file', () => {
     const ctx = makeCtx();
-    const result = runScript(ctx, '/tmp/nonexistent.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/nonexistent.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(127);
     expect(result.output).toContain('No such file or directory');
   });
 
   it('returns 126 for a directory', () => {
     const ctx = makeCtx();
-    const result = runScript(ctx, '/tmp', [], execCmd);
+    const result = runScript(ctx, '/tmp', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(126);
     expect(result.output).toContain('Is a directory');
   });
@@ -52,7 +53,7 @@ describe('ScriptRunner — Permission Checks', () => {
     const ctx = makeCtx(0, 0);
     vfs.writeFile('/tmp/test.sh', 'echo hello', 0, 0, 0o022);
     vfs.chmod('/tmp/test.sh', 0o755);
-    const result = runScript(ctx, '/tmp/test.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(0);
     expect(result.output).toBe('hello\n');
   });
@@ -61,7 +62,7 @@ describe('ScriptRunner — Permission Checks', () => {
     const ctx = makeCtx(0, 0);
     vfs.writeFile('/tmp/test.sh', 'echo hello', 0, 0, 0o022);
     vfs.chmod('/tmp/test.sh', 0o644);
-    const result = runScript(ctx, '/tmp/test.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(126);
     expect(result.output).toContain('Permission denied');
   });
@@ -70,7 +71,7 @@ describe('ScriptRunner — Permission Checks', () => {
     const ctx = makeCtx(1000, 1000);
     vfs.writeFile('/tmp/test.sh', 'echo hello', 1000, 1000, 0o022);
     vfs.chmod('/tmp/test.sh', 0o755);
-    const result = runScript(ctx, '/tmp/test.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(0);
   });
 
@@ -78,7 +79,7 @@ describe('ScriptRunner — Permission Checks', () => {
     const ctx = makeCtx(1000, 1000);
     vfs.writeFile('/tmp/test.sh', 'echo hello', 1000, 1000, 0o022);
     vfs.chmod('/tmp/test.sh', 0o644);
-    const result = runScript(ctx, '/tmp/test.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(126);
     expect(result.output).toContain('Permission denied');
   });
@@ -87,7 +88,7 @@ describe('ScriptRunner — Permission Checks', () => {
     const ctx = makeCtx(2000, 2000);
     vfs.writeFile('/tmp/test.sh', 'echo hello', 1000, 1000, 0o022);
     vfs.chmod('/tmp/test.sh', 0o755);
-    const result = runScript(ctx, '/tmp/test.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(0);
   });
 
@@ -95,7 +96,7 @@ describe('ScriptRunner — Permission Checks', () => {
     const ctx = makeCtx(2000, 2000);
     vfs.writeFile('/tmp/test.sh', 'echo hello', 1000, 1000, 0o022);
     vfs.chmod('/tmp/test.sh', 0o750);
-    const result = runScript(ctx, '/tmp/test.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(126);
     expect(result.output).toContain('Permission denied');
   });
@@ -108,7 +109,7 @@ describe('ScriptRunner — Shebang', () => {
     const ctx = makeCtx(0, 0);
     vfs.writeFile('/tmp/test.sh', '#!/bin/bash\necho hello', 0, 0, 0o022);
     vfs.chmod('/tmp/test.sh', 0o755);
-    const result = runScript(ctx, '/tmp/test.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.exitCode).toBe(0);
     expect(result.output).toBe('hello\n');
   });
@@ -121,7 +122,7 @@ describe('ScriptRunner — Script Arguments', () => {
     const ctx = makeCtx(0, 0);
     vfs.writeFile('/tmp/test.sh', 'echo $1 $2', 0, 0, 0o022);
     vfs.chmod('/tmp/test.sh', 0o755);
-    const result = runScript(ctx, '/tmp/test.sh', ['foo', 'bar'], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', ['foo', 'bar'], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.output).toBe('foo bar\n');
   });
 
@@ -129,7 +130,7 @@ describe('ScriptRunner — Script Arguments', () => {
     const ctx = makeCtx(0, 0);
     vfs.writeFile('/tmp/test.sh', 'echo $#', 0, 0, 0o022);
     vfs.chmod('/tmp/test.sh', 0o755);
-    const result = runScript(ctx, '/tmp/test.sh', ['a', 'b', 'c'], execCmd);
+    const result = runScript(ctx, '/tmp/test.sh', ['a', 'b', 'c'], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.output).toBe('3\n');
   });
 });
@@ -166,7 +167,7 @@ done`;
     const ctx = makeCtx(0, 0);
     vfs.writeFile('/tmp/loop.sh', script, 0, 0, 0o022);
     vfs.chmod('/tmp/loop.sh', 0o755);
-    const result = runScript(ctx, '/tmp/loop.sh', [], execCmd);
+    const result = runScript(ctx, '/tmp/loop.sh', [], execCmd, undefined, undefined, 'direct', undefined, ioContextFor(ctx));
     expect(result.output).toBe('1\n2\n3\n');
   });
 
