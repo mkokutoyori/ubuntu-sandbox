@@ -903,8 +903,6 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 Autres ecarts mesures, non fermes :
 - L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
   maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
-- `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
-  et `ls -l /proc/$$/fd` ne le montre pas.
 - `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
   regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
 

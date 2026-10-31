@@ -1666,6 +1666,11 @@ export class LinuxCommandExecutor {
     }
   }
 
+  private refreshProcDescriptors(pid: number): void {
+    if (this.materializedProcPids.has(pid)) this.materializeProcFd(pid);
+    else this.syncProcPids();
+  }
+
   /** Les trois sources de descripteurs d'un processus, pour ce module. */
   descriptorSourcesFor(pid: number): DescriptorSources {
     const p = this.processMgr.get(pid);
@@ -4849,6 +4854,7 @@ export class LinuxCommandExecutor {
       return result;
     };
     if (adopted === null) this.bashPids.push(proc.pid);
+    this.syncProcPids();
     try {
       const result = run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
@@ -4916,6 +4922,7 @@ export class LinuxCommandExecutor {
       return result;
     };
     if (adopted === null) this.bashPids.push(proc.pid);
+    this.syncProcPids();
     try {
       const result = await run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
@@ -5623,6 +5630,16 @@ export class LinuxCommandExecutor {
       ignoresStdin: (argv: readonly string[]) => ignoresStandardInput(argv),
       beginBackgroundSubshell: (label: string) => this.beginBackgroundSubshell(label),
       endBackgroundSubshell: (pid, outcome) => this.endBackgroundSubshell(pid, outcome),
+      holdShellDescriptor: (fd: number, path: string, mode: 'r' | 'w' | 'a') => {
+        const pid = this.currentBashPid();
+        this.processMgr.holdDescriptor(pid, fd, path, mode);
+        this.refreshProcDescriptors(pid);
+      },
+      releaseShellDescriptor: (fd: number) => {
+        const pid = this.currentBashPid();
+        this.processMgr.releaseDescriptor(pid, fd);
+        this.refreshProcDescriptors(pid);
+      },
       holdBackgroundStdin: (pid: number, path: string) => {
         this.processMgr.redirectStandardStream(pid, 0, this.vfs.normalizePath(path, this.cwd), 'r');
       },

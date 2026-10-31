@@ -278,6 +278,12 @@ export class OSProcess {
     this.openFiles.push({ fd, path, mode, offset: 0 });
   }
 
+  holdDescriptor(fd: number, path: string, mode: FileMode): void {
+    this.openFiles = this.openFiles.filter((f) => f.fd !== fd);
+    this.openFiles.push({ fd, path, mode, offset: 0 });
+    this.nextFd = Math.max(this.nextFd, fd + 1);
+  }
+
   closeOpenFile(fd: number): boolean {
     const before = this.openFiles.length;
     this.openFiles = this.openFiles.filter(f => f.fd !== fd);
