@@ -838,8 +838,8 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 - `builtin umask`, `command -V umask`, `type -a umask`, `help umask`, `enable -n umask`, `which umask`, un `alias umask=…`
   et `/usr/bin/umask` : le simulateur n'a pas de table des builtins (nom, etat active / desactive, aide, resolution
   alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
-- `` `umask 077` `` (mot de commande vide apres la substitution) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
-  Le piege EXIT s'execute a la sortie de `bash -c`, meme pose dans une fonction, et son `exit N` fixe le code (`probe-bash-trap-exit-global`).
+- Re-mesure : un mot de commande vide apres substitution (`` `umask 077` ``, `$(true)`, `$(exit 3)`) et le prefixe `bash: line 1: ` des
+  diagnostics d'un `bash -c` sortent deja comme le bash 5.2 reel. Le piege EXIT s'execute a la sortie de `bash -c`, meme pose dans une fonction, et son `exit N` fixe le code (`probe-bash-trap-exit-global`).
 Autres ecarts mesures, non fermes :
 - L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
   maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
