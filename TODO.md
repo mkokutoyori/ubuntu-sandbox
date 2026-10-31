@@ -1071,13 +1071,6 @@ nom, taille ou « (dir) » affichee), `goto_dir`, recherche `findfile` / `search
 sur un dossier (qu'on entre) ou sur un fichier (qui revient dans l'invite). Brique a ecrire dans le
 moteur d'invites ; elle sert les trois invites de fichier.
 
-### [nano] « File was modified since you opened it »
-Non porte : le moteur ne compare pas la date de modification du fichier a celle qu'il a relevee a
-l'ouverture. La brique existe maintenant (`EditorFsContext.modificationStamp`, ajoutee pour
-« Nothing changed » du formateur) ; reste a la relever a l'ouverture et a la relire a
-l'ecriture (`write_it_out` pose la question « File was modified since you opened it; continue
-saving? »). Aussi `rnano` (nom du programme = mode restreint) : le lanceur ne l'aiguille pas.
-
 ### [nano] annulation : « Undid insertion », `und3-175`, `un24-6`
 Cas de `nano-undo-oracle.test.ts` (UNPORTED_CASES : und3-175, un24-6) et de `nano-insert-oracle.test.ts` :
 - `und3-175` : avec `-k`, nano 7.2 annule une justification en laissant un tampon VIDE (le texte est
@@ -4260,9 +4253,9 @@ Measured: `-y`/`--side-by-side` (and `-W`, `--left-column`, `--suppress-common-l
 
 Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `bgp default local-preference ?` names the range, but still announces `<cr>` after the keyword while the command answers `% Incomplete command.` without a value. The value place is optional because `ipv4-unicast` takes none and `AdapterKeyword` has no per-choice argument (OptionSpec has `choices`, the adapter does not). Closing it needs `choices` on `AdapterKeyword`, or a separate `bgp default local-preference` registration.
 
-## mv and stat: options accepted without effect
+## mv: options accepted without effect
 
-`mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` evaluates `-c`/`--format`; `--printf`, `-t` (terse), `-f` (filesystem), `-L` (follow) are accepted and ignored. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.
+`mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` is a port of coreutils 8.32 stat.c and evaluates every option. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.
 
 ## column and awk: options accepted without effect
 

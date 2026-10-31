@@ -1191,10 +1191,12 @@ export class LinuxTerminalSession extends TerminalSession {
     const elevated = cmd.startsWith('sudo ');
     const noSudo = elevated ? cmd.slice(5).trim() : cmd;
     const parts = splitShellWords(noSudo).words;
-    const head = parts[0];
+    const restricted = parts[0] === 'rnano';
+    const head = restricted ? 'nano' : parts[0];
     if (head !== 'nano' && head !== 'vi' && head !== 'vim') return false;
-    if (!elevated || !this.shell || this.shell.uid === 0) return this.openEditor(head, parts.slice(1));
-    return this.beginElevatedEditor(cmd, head, parts.slice(1));
+    const arguments_ = restricted ? ['-R', ...parts.slice(1)] : parts.slice(1);
+    if (!elevated || !this.shell || this.shell.uid === 0) return this.openEditor(head, arguments_);
+    return this.beginElevatedEditor(cmd, head, arguments_);
   }
 
   private _editorElevation: { user: string; uid: number; gid: number } | null = null;
