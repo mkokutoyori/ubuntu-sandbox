@@ -1,3 +1,4 @@
+import { VimLineStore } from './vim/VimLineStore';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { EditorFsContext } from './EditorFsContext';
@@ -26,6 +27,14 @@ import { backspaceTarget, indentString, indentWidth, insertTab, joinText, reinde
 import { VimOptions } from './vim/VimOptions';
 import { parseRange, type RangeEnvironment } from './vim/VimExRange';
 import { evaluateReplacementExpression } from './vim/VimExpression';
+
+function normalKeyOf(character: string): EditorKeyInput {
+  const code = character.charCodeAt(0);
+  if (character === '\x1b') return { key: 'Escape' };
+  if (character === '\r') return { key: 'Enter' };
+  if (code < 32) return { key: String.fromCharCode(code + 96), ctrl: true };
+  return { key: character };
+}
 
 export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'ask-swap-range' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
 export type VimVariant = 'vim' | 'vi';
@@ -187,7 +196,7 @@ interface IncSearchState {
 const LITERAL_INSERT_CONTROLS: ReadonlySet<string> = new Set(['b', 'f', 'l', 's', 'z']);
 
 export class VimEngine {
-  private linesArr: string[];
+  private linesArr: VimLineStore;
   private _mode: VimMode = 'normal';
   private _cursorLine = 0;
   private _cursorCol = 0;
@@ -351,9 +360,9 @@ export class VimEngine {
     this.options.assign('scroll', 11);
     const body = initialContent.endsWith('\n') ? initialContent.slice(0, -1) : initialContent;
     const rawLines = body.length === 0 && initialContent.length === 0 ? [''] : body.split('\n');
-    this.linesArr = detectedFormat === 'dos'
+    this.linesArr = VimLineStore.of_lines(detectedFormat === 'dos'
       ? rawLines.map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l))
-      : rawLines;
+      : rawLines);
     this.originalDiskLines = [...this.linesArr];
     this.owner = owner;
     this._message = filePath === ''
@@ -399,7 +408,7 @@ export class VimEngine {
   // ── Public state ─────────────────────────────────────────────────
 
   get content(): string { return this.linesArr.join('\n'); }
-  get lines(): readonly string[] { return this.linesArr; }
+  get lines(): readonly string[] { return Array.from(this.linesArr); }
   get mode(): VimMode { return this._mode; }
   get cursorLine(): number { return this._cursorLine; }
   get cursorCol(): number { return this._cursorCol; }
@@ -590,7 +599,7 @@ export class VimEngine {
     if (!info) return;
 
     if (key === 'r' && info.ownedBySameUser) {
-      this.linesArr = this.recoveredLinesFromSwap.length > 0 ? [...this.recoveredLinesFromSwap] : [''];
+      this.linesArr = VimLineStore.of_lines(this.recoveredLinesFromSwap.length > 0 ? this.recoveredLinesFromSwap : ['']);
       this._modified = true;
       this.orphanSwapPath = info.swapPath;
       this.swapPath = this.pickAvailableSwapPath();
@@ -601,7 +610,7 @@ export class VimEngine {
       return;
     }
     if (key === 'e') {
-      this.linesArr = [...this.originalDiskLines];
+      this.linesArr = VimLineStore.of_lines(this.originalDiskLines);
       this.orphanSwapPath = info.swapPath;
       this.swapPath = this.pickAvailableSwapPath();
       this.syncSwapFile();
@@ -611,7 +620,7 @@ export class VimEngine {
       return;
     }
     if (key === 'o') {
-      this.linesArr = [...this.originalDiskLines];
+      this.linesArr = VimLineStore.of_lines(this.originalDiskLines);
       this._readOnly = true;
       this.swapPath = ''; // read-only sessions don't lock the file
       this._message = '';
@@ -701,7 +710,7 @@ export class VimEngine {
     while (suffix < current.length - prefix && suffix < target.length - prefix
       && current[current.length - 1 - suffix] === target[target.length - 1 - suffix]) suffix++;
     const newSize = target.length - prefix - suffix;
-    this.linesArr = [...target];
+    this.linesArr = VimLineStore.of_lines(target);
     const saved = snap.cursorLine;
     let line: number;
     let col: number;
@@ -2941,6 +2950,12 @@ export class VimEngine {
       return;
     }
 
+    const normal = /^norm(?:a(?:l)?)?(!)?(?:\s+(.*))?$/.exec(rest.trimStart());
+    if (normal !== null) {
+      this.executeNormalCommand(normal[2] ?? '', rangeStart, rangeEnd);
+      return;
+    }
+
     const substitute = this.substituteCommandName(rest.trimStart());
     if (substitute !== null) {
       this.executeSubstitute(substitute.name, substitute.argument, range);
@@ -3197,7 +3212,7 @@ export class VimEngine {
 
     if (!flags.count && !global) this.pushUndoSnapshot();
     const run: SubstituteRun = {
-      lines: this.linesArr, regex, template, flags, tracker: global?.tracker ?? null, expression: null,
+      lines: this.linesArr, regex, template, flags, tracker: null, expression: null,
       line1: first, line2: last, cursorLine: this._cursorLine + 1, cursorColumn: this._cursorCol,
       substitutions: this.substitutionCount, linesChanged: this.substitutionLines,
       gotMatch: false, gotQuit: false, firstMatchFrom: null,
@@ -3323,7 +3338,6 @@ export class VimEngine {
       const column = joinedCursorColumn(this.linesArr, first - 1, count);
       const merged = this.linesArr.slice(first - 1, first - 1 + count).join('');
       this.linesArr.splice(first - 1, count, merged);
-      global?.tracker.deleted(first, count - 1);
       this._cursorCol = Math.min(column, Math.max(merged.length - 1, 0));
       this._modified = true;
       this.substitutionCount = count - 1;
@@ -3373,6 +3387,7 @@ export class VimEngine {
       },
     };
     this.globalRun = run;
+    this.linesArr.observer = run.tracker;
     this.substitutionCount = 0;
     this.substitutionLines = 0;
     this.stepGlobal();
@@ -3395,21 +3410,33 @@ export class VimEngine {
 
   private runGlobalCommand(command: string): void {
     const global = this.globalRun!;
-    if (command === 'd' || command === 'delete') {
-      this.linesArr.splice(this._cursorLine, 1);
-      global.tracker.deleted(this._cursorLine, 1);
-      if (this.linesArr.length === 0) this.linesArr.push('');
-      global.needBeginline = true;
+    const before = this.linesArr.length;
+    this._mode = 'normal';
+    this.executeExCommand(command === '' ? 'p' : command);
+    if (this.linesArr.length !== before && this.substituteCommandName(command.trim()) === null) global.needBeginline = true;
+  }
+
+  private executeNormalCommand(keys: string, rangeStart: number | null, rangeEnd: number | null): void {
+    this._mode = 'normal';
+    if (keys === '') {
+      this._message = 'E471: Argument required';
       return;
     }
-    const substitute = this.substituteCommandName(command);
-    if (substitute !== null) {
-      this.executeSubstitute(substitute.name, substitute.argument, { start: null, end: null, rest: '', literal: '' });
+    const lo = rangeStart === null ? this._cursorLine : Math.max(0, Math.min(rangeStart, rangeEnd ?? rangeStart));
+    let hi = rangeStart === null ? this._cursorLine : Math.min(this.linesArr.length - 1, Math.max(rangeStart, rangeEnd ?? rangeStart));
+    for (let line = lo; line <= hi && line < this.linesArr.length; line++) {
+      const before = this.linesArr.length;
+      this._cursorLine = line;
+      this._cursorCol = 0;
+      for (const character of keys) this.applyKey(normalKeyOf(character));
+      if (this._mode !== 'normal' || this.hasPendingCommand()) this.applyKey({ key: 'Escape' });
+      hi += this.linesArr.length - before;
     }
   }
 
   private finishGlobal(run: GlobalRun): void {
     this.globalRun = null;
+    this.linesArr.observer = null;
     this.cmdlineColumn = null;
     const last = Math.min(this._cursorLine, this.linesArr.length - 1);
     this._cursorLine = last;
