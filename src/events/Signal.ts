@@ -58,6 +58,41 @@ export class WritableSignal<T> implements Signal<T> {
   }
 }
 
+export class LazySignal<T> implements Signal<T> {
+  private value: T | undefined;
+  private stale = true;
+  private readonly listeners = new Set<() => void>();
+
+  constructor(private readonly compute: () => T) {}
+
+  get(): T {
+    if (this.stale) {
+      this.value = this.compute();
+      this.stale = false;
+    }
+    return this.value as T;
+  }
+
+  invalidate(): void {
+    this.stale = true;
+    if (this.listeners.size === 0) return;
+    for (const l of [...this.listeners]) {
+      try {
+        l();
+      } catch (e) {
+        console.error('[Signal] listener threw:', e);
+      }
+    }
+  }
+
+  subscribe(listener: () => void): Unsubscribe {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+}
+
 /**
  * Build a derived signal whose value is recomputed when any dependency
  * changes. The derivation function is called eagerly on every dependency

@@ -29,21 +29,30 @@ function formatterFor(zone: TimeZone): Intl.DateTimeFormat {
   return created;
 }
 
-export function partsAt(zone: TimeZone, atMs: number): LocalParts {
-  const parts = formatterFor(zone).formatToParts(new Date(atMs));
-  const field = (type: string): string =>
-    parts.find(part => part.type === type)?.value ?? '';
-  const number = (type: string): number => Number.parseInt(field(type), 10) || 0;
+const lastParts = new Map<string, { second: number; parts: LocalParts }>();
 
-  return Object.freeze({
+export function partsAt(zone: TimeZone, atMs: number): LocalParts {
+  const second = Math.floor(atMs / 1000);
+  const remembered = lastParts.get(zone.name);
+  if (remembered && remembered.second === second) return remembered.parts;
+
+  const fields: Record<string, string> = {};
+  for (const part of formatterFor(zone).formatToParts(new Date(second * 1000))) {
+    fields[part.type] = part.value;
+  }
+  const number = (type: string): number => Number.parseInt(fields[type] ?? '', 10) || 0;
+
+  const parts: LocalParts = Object.freeze({
     year: number('year'),
     month: number('month'),
     day: number('day'),
     hour: number('hour') % 24,
     minute: number('minute'),
     second: number('second'),
-    weekday: WEEKDAYS[field('weekday')] ?? 0,
+    weekday: WEEKDAYS[fields.weekday ?? ''] ?? 0,
   });
+  lastParts.set(zone.name, { second, parts });
+  return parts;
 }
 
 export function partsAtOffset(offsetMinutes: number, atMs: number): LocalParts {

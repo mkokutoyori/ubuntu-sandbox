@@ -267,7 +267,17 @@ export class NATEngine {
   private readonly busHolder = new BusHolder();
   private deviceId: string = '';
   private routerName: string = '';
-  private readonly signalStore = new NATSignalStore();
+  private readonly signalStore = new NATSignalStore(
+    () => projectNatSessions(this.sessions),
+    () => projectNatStats({
+      sessions: this.sessions,
+      hits: this.hitCount,
+      misses: this.missCount,
+      expired: this.expiredCount,
+      inboundTranslations: this.inboundTranslations,
+      outboundTranslations: this.outboundTranslations,
+    }),
+  );
   /** Read-only observables (sessions, stats). */
   readonly observables: NATObservables = makeReadonlyNATObservables(this.signalStore);
   private signalRefreshActor: NATSignalRefreshActor | null = null;
@@ -292,20 +302,13 @@ export class NATEngine {
 
   /** [actor-API] Refresh sessions + stats. */
   _refreshAll(): void {
-    this.signalStore.sessions.set(projectNatSessions(this.sessions));
+    this.signalStore.sessions.invalidate();
     this._refreshStats();
   }
 
   /** [actor-API] Refresh stats only. */
   _refreshStats(): void {
-    this.signalStore.stats.set(projectNatStats({
-      sessions: this.sessions,
-      hits: this.hitCount,
-      misses: this.missCount,
-      expired: this.expiredCount,
-      inboundTranslations: this.inboundTranslations,
-      outboundTranslations: this.outboundTranslations,
-    }));
+    this.signalStore.stats.invalidate();
   }
 
   constructor() {

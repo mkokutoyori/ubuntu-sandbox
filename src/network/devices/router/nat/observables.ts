@@ -4,7 +4,7 @@
 
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import { WritableSignal, type Signal } from '@/events/Signal';
+import { LazySignal, type Signal } from '@/events/Signal';
 import type { NatSession, NatTcpState } from '../NATEngine';
 
 export interface NatSessionVM {
@@ -32,18 +32,16 @@ export interface NatStatsVM {
 }
 
 export class NATSignalStore {
-  readonly sessions = new WritableSignal<ReadonlyArray<NatSessionVM>>([]);
-  readonly stats = new WritableSignal<NatStatsVM>({
-    sessionCount: 0,
-    hits: 0,
-    misses: 0,
-    expired: 0,
-    inboundTranslations: 0,
-    outboundTranslations: 0,
-    tcpEstablished: 0,
-    tcpHalfOpen: 0,
-    tcpClosing: 0,
-  });
+  readonly sessions: LazySignal<ReadonlyArray<NatSessionVM>>;
+  readonly stats: LazySignal<NatStatsVM>;
+
+  constructor(
+    computeSessions: () => ReadonlyArray<NatSessionVM>,
+    computeStats: () => NatStatsVM,
+  ) {
+    this.sessions = new LazySignal(computeSessions);
+    this.stats = new LazySignal(computeStats);
+  }
 }
 
 export interface NATObservables {
