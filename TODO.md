@@ -719,12 +719,6 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- **`gn` / `dgn` / `cgn` sur un motif de largeur nulle** (`^`, `$`, `x*`, ce
-  que laisse `:s/^/>/`) : le moteur confond un appariement vide en colonne 0 avec
-  la fin de la ligne precedente et selectionne le saut de ligne ; vim passe par
-  `current_search` (aller-retour avec `p_ws` coupe, `zero_width`, curseur remis
-  sur `pos`). Mesure par trois transcripts du corpus `words`, retires du
-  vocabulaire plutot qu'epingles.
 - `\%V` en bloc compte des colonnes de caracteres ; `\@123<=` borne la remontee
   en caracteres ; `[[=e=]]` utilise la decomposition Unicode.
 

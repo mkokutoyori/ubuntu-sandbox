@@ -19,7 +19,7 @@ import {
 } from './vim/VimSubstitute';
 import { patternHasUppercase, skipRegexp, type PatternContext } from './vim/VimRegex';
 import {
-  NO_OFFSET, findMatch, highlightSpans, identUnderCursor, matchesEverything, parseSearchInput, patternForIdent, resolveTarget, searchPatternError, stepBack, stepForward,
+  NO_OFFSET, findCurrentMatch, findMatch, highlightSpans, identUnderCursor, matchesEverything, parseSearchInput, patternForIdent, resolveTarget, searchPatternError, stepBack, stepForward,
   type HighlightSpan, type LastSearch,
 } from './vim/VimSearch';
 import { DEFAULT_WORD_CLASSES, wordClasses, type WordClasses } from './vim/VimCharClass';
@@ -3858,22 +3858,27 @@ export class VimEngine {
     const ignoreCase = this.searchIgnoresCase(pattern, this.lastSearch.noSmartcase);
     if (this.refusesPattern(pattern, ignoreCase)) { if (op) this.cancelOperator(); return; }
     const here = { line: this._cursorLine, col: this._cursorCol };
-    const match = findMatch(this.linesArr, here, pattern, {
-      forward: !backward, count: 1, wrapscan: this.options.bool('wrapscan'), anchor: 'start', ignoreCase, acceptAtCursor: !backward, context: this.patternContext(),
+    const count = op === null ? 1 : 1;
+    const match = findCurrentMatch(this.linesArr, here, pattern, {
+      forward: !backward, count, wrapscan: this.options.bool('wrapscan'), ignoreCase, context: this.patternContext(),
     });
     if (!match) { this._message = this.searchFailure(pattern, !backward); if (op) this.cancelOperator(); return; }
-    const last = match.end.col > 0
-      ? { line: match.end.line, col: match.end.col - 1 }
-      : { line: Math.max(0, match.end.line - 1), col: Math.max(0, this.line(Math.max(0, match.end.line - 1)).length) };
+    const startLineLength = this.line(match.start.line).length;
+    const last = match.zeroWidth
+      ? { line: match.start.line, col: Math.min(match.start.col, Math.max(0, startLineLength - 1)) }
+      : match.end.col > 0
+        ? { line: match.end.line, col: match.end.col - 1 }
+        : { line: Math.max(0, match.end.line - 1), col: Math.max(0, this.line(Math.max(0, match.end.line - 1)).length) };
+    const start = match.zeroWidth ? last : match.start;
     if (op) {
-      this.executeOperator(op, { start: match.start, end: last, type: 'char', inclusive: true }, 1);
+      this.executeOperator(op, { start, end: last, type: 'char', inclusive: true }, 1);
       return;
     }
     this.keepWantThisKey = true;
-    this.visualAnchorLine = backward ? last.line : match.start.line;
-    this.visualAnchorCol = backward ? last.col : match.start.col;
-    this._cursorLine = backward ? match.start.line : last.line;
-    this._cursorCol = backward ? match.start.col : last.col;
+    this.visualAnchorLine = backward ? last.line : start.line;
+    this.visualAnchorCol = backward ? last.col : start.col;
+    this._cursorLine = backward ? start.line : last.line;
+    this._cursorCol = backward ? start.col : last.col;
     this._mode = 'visual';
   }
 
