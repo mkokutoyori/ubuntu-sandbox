@@ -663,29 +663,18 @@ justement une.
 bouclage comme `LinuxMachine.createLoopbackPort()` le fait ; elle sera
 alors `hidden` et le filtre la rendra sans une ligne de plus.
 
-### [bash] La sortie d'une commande ne porte pas son retour a la ligne final, et la lecture de l'entree standard est une liste blanche
-Mesure avec l'invite `^T` de nano (`nano-exec-oracle.test.ts`), qui lance
-la commande comme un enfant du shell (`LinuxMachine.runChildShellForEditor`)
-et lit la sortie brute :
-- `printf abc | cat`, `tr a-z A-Z` ou `cat` sur une entree sans retour a
-  la ligne final rendent `abc\n` ; le vrai rend `abc`. Les commandes
-  « orientees lignes » (`writesLines`) ou un tube terminent toujours leur
-  sortie, et `sort -r` perd les lignes vides finales (« a\n\n » → « a\n »).
-- `ls` d'un enfant tient en une seule rangee de colonnes ; le vrai (sortie
-  sur un tube) rend un nom par ligne — corrige pour l'enfant seulement
-  (`ctx().isPiped`), pas pour un `ls` redirige vers un fichier.
-- `od` n'existe pas ; `$HOME` d'un `root` vaut `/home/user`.
-- L'entree standard n'atteint que les commandes de `readsStandardInput`
-  (`cat wc sort uniq head tail cut base64 dd less more rev nl xxd tac grep
-  sed awk tr`) : `{ cmd; } < fichier` ne la transmet a personne, et `cmd < f`
-  n'est pris en charge que pour une commande simple.
-- Un enfant sans terminal prefixe `command not found` par `bash: line 1: `
-  (`childShellRunning`) ; la ligne vaut toujours 1 et les autres erreurs du
-  shell (syntaxe, redirection) n'ont pas le prefixe.
-**Report** : le modele « la sortie d'une commande est un texte sans
-terminateur » est partage par tout le simulateur ; le remplacer par un
-flux d'octets avec un terminateur explicite est un lot en soi, et le
-corpus `exec` evite ces cas (`EXEC_FILTERS`).
+### [bash] ce que l'enfant de shell de `^T` (nano) laisse apres le re-mesurage
+Re-mesure contre bash 5.2 et coreutils 9.4 : `printf abc | cat`, `tr a-z A-Z` et `sort -r` sur des lignes vides finales
+sortent comme le vrai (le modele « la sortie perd son seul retour a la ligne final » est coherent partout) ; `od` existe
+(`OdCommand.ts`) ; `{ cmd; } < f`, `( cmd ) < f`, `if ... fi < f`, une fonction et une boucle redirigees lisent bien le
+fichier ; `$HOME` suit l'utilisateur courant. Reste, de l'entree d'origine :
+- `ls` d'un enfant tient en une seule rangee de colonnes ; le vrai (sortie sur un tube) rend un nom par ligne — corrige
+  pour l'enfant seulement (`ctx().isPiped`), pas pour un `ls` redirige vers un fichier.
+- Un enfant sans terminal prefixe `command not found` par `bash: line 1: ` (`childShellRunning`) ; la ligne vaut toujours 1
+  et les autres erreurs du shell (syntaxe, redirection) n'ont pas le prefixe.
+**Report** : le modele « la sortie d'une commande est un texte sans terminateur » est partage par tout le simulateur ; le
+remplacer par un flux d'octets avec un terminateur explicite est un lot en soi, et le corpus `exec` evite ces cas
+(`EXEC_FILTERS`).
 
 ### [vim] Motifs : quelques manquements mesures apres le traducteur `VimRegex`
 Mesure avec les labos `vim-pattern-oracle.test.ts` (7661 cas enregistres
