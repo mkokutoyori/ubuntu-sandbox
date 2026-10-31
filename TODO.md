@@ -905,8 +905,6 @@ Autres ecarts mesures, non fermes :
   et `ls -l /proc/$$/fd` ne le montre pas.
 - `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
   regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
-- `ls` avec plusieurs operandes dossiers : le tri est celui des operandes (fichiers d'abord) mais la mise en colonnes de
-  la sortie non tty n'a pas ete comparee.
 
 ### [ps] ce que le portage de `ps` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `ps-procps-4.0.4.json`, 5 labos, 629 pas, procps-ng 4.0.4 sur Ubuntu 24.04, pty
