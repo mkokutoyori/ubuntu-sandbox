@@ -3498,6 +3498,7 @@ export class LinuxCommandExecutor {
       zone: this.localZone(),
       currentPid: this.currentBashPid(),
       readFile: (path: string) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
+      cgroupOf: (pid: number) => this.cgroupPathFor(pid),
       jobs: this.jobTable,
       uptimeSeconds: this.lifecycle.uptimeSeconds(),
       memory: this.hardware.memory,

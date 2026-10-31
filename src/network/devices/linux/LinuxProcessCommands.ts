@@ -48,6 +48,8 @@ export interface ProcessCmdContext {
   currentPid?: number;
   /** Reads a file of the machine (relative paths resolve against the shell's cwd) — backs `pgrep -F`. */
   readFile?: (path: string) => string | null;
+  /** Cgroup v2 path of a process, as `/proc/<pid>/cgroup` shows it after `0::` — backs `pgrep --cgroup`. */
+  cgroupOf?: (pid: number) => string;
   /** Optional per-shell job table — needed for `kill %N` jobspec resolution. */
   jobs?: LinuxJobTable;
   /** Seconds since boot, for `top`'s header. Same source as `uptime`. */

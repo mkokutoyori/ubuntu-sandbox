@@ -895,8 +895,9 @@ Autres ecarts mesures, non fermes :
   diagnostics ; `probe-top-batch-de-procps`) ; restent l'ecran interactif, `-H`, `-1`, `-E`/`-e`, `-O` (liste de champs reduite) et la
   charge CPU mesuree. `pstree` est porte (`PstreeCommand.ts`, probe `probe-pstree-de-psmisc`) ; restent `-H`, `-N`, `-Z`, `-S` et `-t`
   (pas de fils d'execution). `pgrep`, `pkill` et `pidof` sont portes (`PgrepCommand.ts`, probe `probe-pgrep-pkill-pidof-de-procps`) ;
-  `-F` (fichier de pids) est porte (sonde `probe-pgrep-fichier-de-pid`) ; `-r`/`--runstates` (etats) est porte (sonde `probe-pgrep-etats`) ; restent non portes `-w`, `--cgroup`, `--ns` et
-  `pidof -x` (le simulateur nomme un script par son `comm` et n'a pas le `/bin/sh /chemin` du vrai dans `args`, donc `pidof nom-de-script`
+  `-F` (fichier de pids) est porte (sonde `probe-pgrep-fichier-de-pid`) ; `-r`/`--runstates` (etats) est porte (sonde `probe-pgrep-etats`) ; `--ns`, `--nslist` et `--cgroup` sont portes (sonde `probe-pgrep-espaces-de-noms-et-cgroup` ; tous les processus partagent les
+  espaces de noms de l'hote, et un nom d'espace inconnu ou une valeur vide sortent en 2 sans le texte d'usage de procps) ; `-w` est
+  accepte sans effet, le simulateur n'ayant pas de fils d'execution ; reste non porte `pidof -x` (le simulateur nomme un script par son `comm` et n'a pas le `/bin/sh /chemin` du vrai dans `args`, donc `pidof nom-de-script`
   trouve un processus que le vrai `pidof` ne trouve qu'avec `-x`).
 - Pas de labo zombie ni de `setsid`/`setpriv` dans le corpus : les etats `Z`, `D`, `t` ne sont pas mesures sur le vrai.
 - Le tableau des jobs (`jobs`, `%1`, `wait`) est celui d'un shell : un `bash -c` ou un script lance en recoit un neuf et rend

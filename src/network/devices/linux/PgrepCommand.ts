@@ -1,9 +1,11 @@
 import type { Signal } from './LinuxProcessManager';
 import type { ProcessCmdContext, KillResult } from './LinuxProcessCommands';
 import { parseSignalArg } from './LinuxProcessCommands';
+import { NAMESPACE_IDS } from './process/ProcessTaskBuilder';
 
 const COMM_LIMIT = 15;
 const VERSION = 'pgrep from procps-ng 4.0.4';
+const DEFAULT_NAMESPACES: readonly string[] = ['cgroup', 'ipc', 'mnt', 'net', 'pid', 'time'];
 
 interface Selection {
   list: boolean;
@@ -26,13 +28,18 @@ interface Selection {
   gids: number[] | null;
   pidfile: string | null;
   runStates: ReadonlySet<string> | null;
+  namespaceReference: number | null;
+  namespaceNames: readonly string[];
+  cgroups: string[] | null;
   signal: Signal;
   version: boolean;
   pattern: string | null;
+  criteriaSeen: boolean;
 }
 
 type Fail = { failure: KillResult };
 
+const LONG_ONLY_VALUED: ReadonlySet<string> = new Set(['ns', 'nslist', 'cgroup']);
 const SHORT_VALUED = new Set(['d', 'g', 'G', 'O', 'P', 's', 't', 'u', 'U', 'F', 'r']);
 const LONG_TO_SHORT: Readonly<Record<string, string>> = {
   delimiter: 'd', 'list-name': 'l', 'list-full': 'a', inverse: 'v', lightweight: 'w', count: 'c', full: 'f',
@@ -71,9 +78,11 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
     list: false, full: false, inverse: false, count: false, commandLine: false, ignoreCase: false,
     newest: false, oldest: false, exact: false, delimiter: '\n', olderThan: null, parents: null, groups: null,
     sessions: null, terminals: null, euids: null, uids: null, gids: null, pidfile: null, runStates: null,
-    signal: 'SIGTERM', version: false, pattern: null,
+    namespaceReference: null, namespaceNames: DEFAULT_NAMESPACES, cgroups: null,
+    signal: 'SIGTERM', version: false, pattern: null, criteriaSeen: false,
   };
   const patterns: string[] = [];
+  let criteria = false;
   const valued = (letter: string, value: string): Fail | null => {
     const asNumbers = (): number[] | Fail => numbers(program, value);
     switch (letter) {
@@ -97,6 +106,30 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
       default: return null;
     }
   };
+  const longOnly = (name: string, value: string): Fail | null | undefined => {
+    switch (name) {
+      case 'ns': {
+        const reference = Number.parseInt(value, 10);
+        if (Number.isNaN(reference) || reference === 0) selection.runStates = new Set(value.replace(/[^A-Za-z]/g, '').split(''));
+        else selection.namespaceReference = reference;
+        criteria = true;
+        return null;
+      }
+      case 'nslist': {
+        const names = value.split(',');
+        if (value === '' || names.some((item) => !Object.prototype.hasOwnProperty.call(NAMESPACE_IDS, item))) return { failure: { output: '', exitCode: 2 } };
+        selection.namespaceNames = [names[names.length - 1]];
+        return null;
+      }
+      case 'cgroup':
+        if (value === '') return { failure: { output: '', exitCode: 2 } };
+        selection.cgroups = value.split(',');
+        criteria = true;
+        return null;
+      default:
+        return undefined;
+    }
+  };
   const flag = (letter: string): void => {
     if (letter === 'l') selection.list = true;
     else if (letter === 'a') selection.full = true;
@@ -116,6 +149,12 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
     if (token === '--') { optionsEnded = true; continue; }
     if (token.startsWith('--')) {
       const [name, inline] = token.slice(2).split(/=(.*)/s);
+      const handled = longOnly(name, inline ?? args[index + 1] ?? '');
+      if (handled !== undefined) {
+        if (inline === undefined && LONG_ONLY_VALUED.has(name)) index++;
+        if (handled !== null) return handled;
+        continue;
+      }
       const letter = LONG_TO_SHORT[name];
       if (letter === undefined) continue;
       if (SHORT_VALUED.has(letter) || letter === 'S') {
@@ -140,6 +179,7 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
     }
   }
   selection.pattern = patterns[0] ?? null;
+  selection.criteriaSeen = criteria;
   return selection;
 }
 
@@ -161,7 +201,7 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
   }
   const filtered = pidfilePid !== null || selection.runStates !== null || selection.pattern !== null || selection.parents !== null || selection.groups !== null
     || selection.sessions !== null || selection.terminals !== null || selection.euids !== null
-    || selection.uids !== null || selection.gids !== null || selection.olderThan !== null;
+    || selection.uids !== null || selection.gids !== null || selection.olderThan !== null || selection.criteriaSeen;
   if (!filtered) return usageFailure(program, 'no matching criteria specified', 2).failure;
   if (selection.newest && selection.oldest) {
     return usageFailure(program, 'only one of -n or -o may be specified', 2).failure;
@@ -180,6 +220,8 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
     ? `${program}: pattern that searches for process name longer than ${COMM_LIMIT} characters will result in zero matches\nTry \`${program} -f' option to match against the complete command line.\n`
     : '';
 
+  const referenceNamespaces: Readonly<Record<string, number>> | null = selection.namespaceReference === null ? null
+    : ctx.pm.get(selection.namespaceReference) ? NAMESPACE_IDS : Object.fromEntries(Object.keys(NAMESPACE_IDS).map((name) => [name, 0]));
   const now = Date.now();
   const self = ctx.currentPid;
   let hits = ctx.pm.list().filter((process) => {
@@ -198,6 +240,8 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
     if (selection.uids !== null && !selection.uids.includes(process.uid)) return false;
     if (selection.gids !== null && !selection.gids.includes(process.gid)) return false;
     if (selection.olderThan !== null && now - process.startTime.getTime() < selection.olderThan * 1000) return false;
+    if (referenceNamespaces !== null && !selection.namespaceNames.every((name) => NAMESPACE_IDS[name] === referenceNamespaces![name])) return false;
+    if (selection.cgroups !== null && !selection.cgroups.includes(ctx.cgroupOf?.(process.pid) ?? '')) return false;
     return true;
   });
   if (selection.inverse) {
