@@ -111,6 +111,10 @@ export class ConfigureCommand implements IRmanCommand<string[]> {
     // COMPRESSION ALGORITHM ─────────────────────────────────────────
     const mComp = upper.match(/^COMPRESSION ALGORITHM '(BASIC|LOW|MEDIUM|HIGH)'$/);
     if (mComp) delta = cfg.setCompressionAlgorithm(mComp[1] as 'BASIC' | 'LOW' | 'MEDIUM' | 'HIGH');
+    // SNAPSHOT CONTROLFILE NAME ─────────────────────────────────────
+    const mSnap = text.match(/^SNAPSHOT CONTROLFILE NAME TO '([^']+)'$/i);
+    if (mSnap) delta = cfg.setSnapshotControlfile(mSnap[1]);
+    if (upper === 'SNAPSHOT CONTROLFILE NAME CLEAR') delta = cfg.setSnapshotControlfile(undefined);
     // ENCRYPTION FOR DATABASE ───────────────────────────────────────
     if (upper === 'ENCRYPTION FOR DATABASE ON')  delta = cfg.setEncryptionForDatabase(true);
     if (upper === 'ENCRYPTION FOR DATABASE OFF') delta = cfg.setEncryptionForDatabase(false);

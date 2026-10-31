@@ -120,7 +120,7 @@ export class RmanSession implements IRmanSession {
       this._ownsCatalog = true;
     }
     this._engine     = new RmanJobEngine(this._bus, this._pool, this._catalog, _ctx,
-      () => this._config.snapshot().retentionPolicy);
+      () => this._config.snapshot().retentionPolicy, () => this._config.snapshot().snapshotControlfile);
     this._dispatcher = new RmanCommandDispatcher();
     // External config (device-scoped) wins over a fresh-per-session one.
     this._config     = _options.config

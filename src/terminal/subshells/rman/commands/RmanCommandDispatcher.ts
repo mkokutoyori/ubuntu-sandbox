@@ -187,6 +187,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SHOW ENCRYPTION FOR DATABASE$/i,   command: new ShowCommand('ENCRYPTION_FOR_DATABASE') },
       { pattern: /^SHOW ENCRYPTION ALGORITHM$/i,      command: new ShowCommand('ENCRYPTION_ALGORITHM') },
       { pattern: /^SHOW COMPRESSION ALGORITHM$/i,     command: new ShowCommand('COMPRESSION_ALGORITHM') },
+      { pattern: /^SHOW SNAPSHOT CONTROLFILE NAME$/i,      command: new ShowCommand('SNAPSHOT_CONTROLFILE') },
       { pattern: /^SHOW EXCLUDE$/i,                   command: new ShowCommand('EXCLUDE') },
       { pattern: /^SHOW ARCHIVELOG DELETION POLICY$/i, command: new ShowCommand('ARCHIVELOG_DELETION_POLICY') },
       { pattern: /^SHOW CHANNEL(?:\s+FOR DEVICE TYPE (DISK|SBT))?$/i, command: new ShowCommand('CHANNEL') },
