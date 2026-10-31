@@ -32,7 +32,7 @@ import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
+import { EndHost, ARP_MCAST_SOLICIT, ARP_RETRANS_TIME_MS, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -4772,6 +4772,10 @@ export abstract class LinuxMachine extends EndHost
   }
 
   // ─── Firewall / NAT overrides (single source of truth via iptables) ─
+
+  protected override arpSolicitPolicy(): { readonly attempts: number; readonly spacingMs: number } {
+    return { attempts: ARP_MCAST_SOLICIT, spacingMs: ARP_RETRANS_TIME_MS };
+  }
 
   protected override firewallFilter(
     portName: string,

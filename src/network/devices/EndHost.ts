@@ -204,6 +204,8 @@ const UNSPECIFIED_IPV4 = '0.0.0.0';
 export const ARP_REACHABLE_TIME_MS = 30_000;
 export const ARP_GC_STALE_TIME_MS = 60_000;
 export const ARP_AGING_INTERVAL_MS = 5_000;
+export const ARP_MCAST_SOLICIT = 3;
+export const ARP_RETRANS_TIME_MS = 1_000;
 
 /** Compute NUD (Neighbor Unreachability Detection) state from an ARP entry. */
 export function getNUDState(entry: ARPEntry): string {
@@ -4769,42 +4771,49 @@ export abstract class EndHost extends Equipment {
     throw new Error('ARP timeout');
   }
 
+  protected arpSolicitPolicy(timeoutMs: number): { readonly attempts: number; readonly spacingMs: number } {
+    return { attempts: 1, spacingMs: timeoutMs };
+  }
+
   async probeArp(portName: string, targetIP: IPAddress, timeoutMs: number): Promise<MACAddress | null> {
     const port = this.ports.get(portName);
     const myIP = port?.getIPAddress();
     if (!port || !myIP) return null;
 
     const targetIpStr = targetIP.toString();
-    const waitPromise = waitForEvent(
-      this.getBus(),
-      'host.arp.entry-learned',
-      (p) => p.deviceId === this.id && p.ip === targetIpStr,
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
+    const policy = this.arpSolicitPolicy(timeoutMs);
+    for (let attempt = 0; attempt < policy.attempts; attempt++) {
+      const waitPromise = waitForEvent(
+        this.getBus(),
+        'host.arp.entry-learned',
+        (p) => p.deviceId === this.id && p.ip === targetIpStr,
+        { timeoutMs: policy.spacingMs, scheduler: this.getScheduler() },
+      );
 
-    const arpReq: ARPPacket = {
-      type: 'arp',
-      operation: 'request',
-      senderMAC: port.getMAC(),
-      senderIP: myIP,
-      targetMAC: MACAddress.broadcast(),
-      targetIP,
-    };
-    this.emitArpRequestSent(portName, targetIpStr);
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_ARP,
-      payload: arpReq,
-    });
+      const arpReq: ARPPacket = {
+        type: 'arp',
+        operation: 'request',
+        senderMAC: port.getMAC(),
+        senderIP: myIP,
+        targetMAC: MACAddress.broadcast(),
+        targetIP,
+      };
+      this.emitArpRequestSent(portName, targetIpStr);
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP,
+        payload: arpReq,
+      });
 
-    try {
-      const learned = await waitPromise;
-      return new MACAddress(learned.mac);
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return null;
-      throw err;
+      try {
+        const learned = await waitPromise;
+        return new MACAddress(learned.mac);
+      } catch (err) {
+        if (!(err instanceof WaitForEventTimeoutError)) throw err;
+      }
     }
+    return null;
   }
 
   private armEchoWait(

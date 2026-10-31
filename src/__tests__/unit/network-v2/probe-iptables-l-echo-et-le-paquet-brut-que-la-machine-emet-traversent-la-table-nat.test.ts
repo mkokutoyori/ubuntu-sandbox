@@ -439,12 +439,12 @@ describe('the OUTPUT chain of the filter table precedes the resolution of the ne
     expect(await filterCounter(inside, 'OUTPUT')).toBe(2);
   });
 
-  it('one sequence of probes asks once for an unreachable neighbour and fails every probe with the local address', async () => {
+  it('one sequence of probes asks mcast_solicit (three) times for an unreachable neighbour and fails every probe with the local address', async () => {
     const { inside } = await natGateway();
     const sent = framesSentOn(inside, 'eth0');
     const results = await onVirtualClock(inside, () =>
       rawEchoEngine(inside).executePingSequence(new IPAddress(NOBODY), 3, 500, undefined, {}));
-    expect(arpTargetsOf(sent).filter((target) => target === NOBODY)).toHaveLength(1);
+    expect(arpTargetsOf(sent).filter((target) => target === NOBODY)).toHaveLength(3);
     expect(results.map((result) => [result.seq, result.success, result.fromIP, result.error])).toEqual([
       [1, false, INSIDE_IP, `Destination unreachable from ${INSIDE_IP} code 1`],
       [2, false, INSIDE_IP, `Destination unreachable from ${INSIDE_IP} code 1`],

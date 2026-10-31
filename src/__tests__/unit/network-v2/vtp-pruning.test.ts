@@ -3,7 +3,7 @@ import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { EventBus } from '@/events/EventBus';
-import { MACAddress, resetCounters } from '@/network/core/types';
+import { ETHERTYPE_ARP, MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 
@@ -86,6 +86,7 @@ describe('VTP pruning — a chain with no downstream interest never floods past 
     let sawOnAB = false;
     let sawOnBC = false;
     bus.subscribe('cable.frame.delivered', (e) => {
+      if (e.payload.frame.etherType !== ETHERTYPE_ARP) return;
       if (e.payload.cableId === 'sA-sB') sawOnAB = true;
       if (e.payload.cableId === 'sB-sC') sawOnBC = true;
     });

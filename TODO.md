@@ -140,20 +140,6 @@ eux echouera.
 
 ## Pile TCP/IP
 
-### [arp] une resolution sans reponse n'emet qu'UNE requete par sonde
-**Mesure** : `ping -c 2 -W 1 10.0.0.99` depuis un poste dont le voisin n'existe
-pas emet une requete ARP par sonde, espacees d'une seconde (l'intervalle du
-ping), puis `Destination Host Unreachable` aussitot. Linux emet
-`mcast_solicit` = 3 requetes espacees de `retrans_time_ms` = 1000
-(`/proc/sys/net/ipv4/neigh/default/`, ip-sysctl.rst) avant d'echouer, soit
-environ 3 s avant le premier `Destination Host Unreachable`.
-**Pourquoi ce n'est pas ferme** : `resolveARP` -> `probeArp` attend un
-evenement sur le delai d'attente de l'ordonnanceur ; le faire passer par une
-machine d'etats de voisin (INCOMPLETE -> FAILED) touche `resolveARP`,
-`resolveNDP` et le chemin d'erreur de `ping`. L'attente doit alors faire
-avancer l'horloge de la machine (`PathClock.wait`), comme le calendrier de
-DISCOVER du client DHCP.
-
 ### [horloge] des piles de protocole lisent l'heure globale, pas celle de leur machine
 **Mesure** : les lecteurs bruts `Date.now()` / `new Date()` ont ete remplaces
 par `simulationNowMs()` / `simulationDate()` (une seule lecture : l'heure de
