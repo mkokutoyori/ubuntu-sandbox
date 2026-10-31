@@ -1,7 +1,7 @@
 import { screenGo, screenLineEnd, screenLineStart } from './VimScreenMotions';
 import { findSentence } from './VimSentences';
 import {
-  Cursor, MAXCOL, bckWord, bckendWord, colAtVcol, cursorVcol, endWord, firstNonBlank, fwdWord, isWhite,
+  Cursor, MAXCOL, bckWord, charLengthAt, charStartBefore, bckendWord, colAtVcol, cursorVcol, endWord, firstNonBlank, fwdWord, isWhite,
   type FindState, type MotionBuffer, type MotionRequest, type MotionResult, type MotionType, type Pos,
 } from './VimCursor';
 
@@ -283,7 +283,7 @@ export function runMotion(buf: MotionBuffer, from: Pos, req: MotionRequest): Mot
       let moved = false;
       let noAdjust = false;
       for (let n = count1; n > 0; n--) {
-        if (col > 0) { col--; moved = true; continue; }
+        if (col > 0) { col = charStartBefore(buf.lines[line] ?? '', col); moved = true; continue; }
         if (wraps && line > 0) {
           line--;
           col = Math.max(0, (buf.lines[line] ?? '').length - 1);
@@ -307,8 +307,9 @@ export function runMotion(buf: MotionBuffer, from: Pos, req: MotionRequest): Mot
       let inclusive = false;
       for (let n = count1; n > 0; n--) {
         const cur = buf.lines[line] ?? '';
-        if (req.visual && !wraps && col < cur.length) { col++; moved = true; continue; }
-        if (col + 1 < cur.length) { col++; moved = true; continue; }
+        const step = charLengthAt(cur, col);
+        if (req.visual && !wraps && col < cur.length) { col += step; moved = true; continue; }
+        if (col + step < cur.length) { col += step; moved = true; continue; }
         if (wraps && line < lastLine) {
           if (req.operator && !inclusive && cur.length > 0) { inclusive = true; continue; }
           line++;

@@ -719,11 +719,6 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- **Caracteres hors du plan de base** : `Cursor.inc` / `dec` et les motions avancent
-  d'une unite UTF-16 ; un emoji (U+1F600) est donc deux colonnes pour `l`, `x`,
-  `w`, `~`. Sa classe de mot est juste (`VimCharClass`), c'est le curseur qui
-  coupe la paire de substitution. Les caracteres combinants (`e` + U+0301) ne
-  sont pas accroches au caractere precedent non plus.
 - **`gn` / `dgn` / `cgn` sur un motif de largeur nulle** (`^`, `$`, `x*`, ce
   que laisse `:s/^/>/`) : le moteur confond un appariement vide en colonne 0 avec
   la fin de la ligne precedente et selectionne le saut de ligne ; vim passe par

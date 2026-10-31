@@ -4,7 +4,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { EditorFsContext } from './EditorFsContext';
 import type { EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
-import { MAXCOL, byteOffset, charCells, colAtByte, colAtVcol, cursorVcol, firstNonBlank, isWhite, type FindState, type MotionBuffer } from './vim/VimCursor';
+import { MAXCOL, byteOffset, charCells, charLengthAt, charStartBefore, colAtByte, colAtVcol, cursorVcol, firstNonBlank, isWhite, type FindState, type MotionBuffer } from './vim/VimCursor';
 import { findMatchingBracket, parseMatchPairs, runMotion } from './vim/VimMotions';
 import { parseListChars, type ListSpec } from './vim/VimCells';
 import { VimWindow, type WindowSettings } from './vim/VimWindow';
@@ -1019,7 +1019,7 @@ export class VimEngine {
       this._cursorCol = indent.length;
       this._modified = true;
     } else {
-      if (kind === 'a') this._cursorCol = text.length > 0 ? Math.min(text.length, this._cursorCol + 1) : 0;
+      if (kind === 'a') this._cursorCol = text.length > 0 ? Math.min(text.length, this._cursorCol + charLengthAt(text, this._cursorCol)) : 0;
       else if (kind === 'A') this._cursorCol = text.length;
       else if (kind === 'I') this._cursorCol = firstNonWhite(text);
       else if (kind === 'gI') this._cursorCol = 0;
@@ -1195,10 +1195,10 @@ export class VimEngine {
       }
     }
     if (type === 'char' && op === 'd' && !visual && end.line > start.line) {
-      const tail = this.line(end.line).slice(end.col + (inclusive ? 1 : 0));
+      const tail = this.line(end.line).slice(end.col + (inclusive ? charLengthAt(this.line(end.line), end.col) : 0));
       if (/^[ \t]*$/.test(tail) && this.insideIndent(start)) type = 'line';
     }
-    const endExclusive = { line: end.line, col: end.col + (inclusive ? 1 : 0) };
+    const endExclusive = { line: end.line, col: end.col + (inclusive ? charLengthAt(this.line(end.line), end.col) : 0) };
     this._cursorLine = start.line;
     this._cursorCol = start.col;
 
@@ -2316,8 +2316,8 @@ export class VimEngine {
       case 'Backspace': this.insertBackspace(); return;
       case 'Enter': this.insertNewline(); this.insertedText += '\n'; return;
       case 'Tab': this.insertTabKey(); return;
-      case 'ArrowLeft': this.insertCursorMove(() => { if (this._cursorCol > 0) this._cursorCol--; }); return;
-      case 'ArrowRight': this.insertCursorMove(() => { this._cursorCol = Math.min(this.line(this._cursorLine).length, this._cursorCol + 1); }); return;
+      case 'ArrowLeft': this.insertCursorMove(() => { this._cursorCol = charStartBefore(this.line(this._cursorLine), this._cursorCol); }); return;
+      case 'ArrowRight': this.insertCursorMove(() => { this._cursorCol = Math.min(this.line(this._cursorLine).length, this._cursorCol + charLengthAt(this.line(this._cursorLine), this._cursorCol)); }); return;
       case 'Home': this.insertCursorMove(() => { this._cursorCol = 0; }); return;
       case 'End': this.insertCursorMove(() => { this._cursorCol = this.line(this._cursorLine).length; }); return;
       case 'ArrowUp': case 'ArrowDown': this.insertVerticalMove(k.key === 'ArrowDown'); return;
@@ -2377,11 +2377,11 @@ export class VimEngine {
       return;
     }
     this.setLine(this._cursorLine, l.slice(0, this._cursorCol) + ch + l.slice(this._cursorCol));
-    this._cursorCol++;
+    this._cursorCol += ch.length;
     this._modified = true;
     this.insertedText += ch;
     if (ch === ' ') this.typedSpace = true;
-    this.armShowMatch(ch, this._cursorCol - 1);
+    this.armShowMatch(ch, this._cursorCol - ch.length);
   }
 
   private armShowMatch(ch: string, col: number): void {
@@ -2459,7 +2459,7 @@ export class VimEngine {
   private insertDeleteForward(): void {
     const l = this.line(this._cursorLine);
     if (this._cursorCol < l.length) {
-      this.setLine(this._cursorLine, l.slice(0, this._cursorCol) + l.slice(this._cursorCol + 1));
+      this.setLine(this._cursorLine, l.slice(0, this._cursorCol) + l.slice(this._cursorCol + charLengthAt(l, this._cursorCol)));
     } else if (this._cursorLine < this.linesArr.length - 1) {
       this.setLine(this._cursorLine, l + this.line(this._cursorLine + 1));
       this.linesArr.splice(this._cursorLine + 1, 1);
@@ -2506,7 +2506,7 @@ export class VimEngine {
     this.insertedText = '';
     this.replaceMode = false;
     this.replacedOriginals = [];
-    this._cursorCol = Math.max(0, this._cursorCol - 1);
+    this._cursorCol = charStartBefore(this.line(this._cursorLine), this._cursorCol);
     this._mode = 'normal';
     this._message = '';
   }
@@ -2536,8 +2536,9 @@ export class VimEngine {
       this._modified = true;
     } else if (this._cursorCol > 0) {
       const l = this.line(this._cursorLine);
-      this.setLine(this._cursorLine, l.slice(0, this._cursorCol - 1) + l.slice(this._cursorCol));
-      this._cursorCol--;
+      const start = charStartBefore(l, this._cursorCol);
+      this.setLine(this._cursorLine, l.slice(0, start) + l.slice(this._cursorCol));
+      this._cursorCol = start;
       this._modified = true;
     } else if (this._cursorLine > 0) {
       const prevLen = this.line(this._cursorLine - 1).length;
