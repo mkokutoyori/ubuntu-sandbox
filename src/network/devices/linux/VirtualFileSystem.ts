@@ -17,7 +17,9 @@ import { GAI_CONF_FACTORY, GAI_CONF_PATH } from './network/GaiConf';
 import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
 import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from '../../ldap/openldap/sasl/saslFiles';
 
-export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket';
+export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'blockdev' | 'socket';
+
+const CHAR_DEVICE_DRIVERS: ReadonlyMap<string, string> = new Map([['1:3', 'null'], ['1:5', 'zero'], ['1:9', 'urandom']]);
 
 const FIND_TYPES = ['f', 'd', 'l', 'p', 's', 'c', 'b'] as const;
 
@@ -84,7 +86,8 @@ export interface INode {
   atime: number;
   ctime: number;
   revision?: number;
-  deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
+  deviceType?: string;
+  rdev?: { major: number; minor: number };
   /**
    * Attribut `i` d'ext4 (`chattr +i`) : personne, pas meme root, ne
    * peut modifier ni supprimer le fichier. C'est ce qui rend une
@@ -358,18 +361,18 @@ export class VirtualFileSystem {
     if (rootHome) rootHome.permissions = 0o700;
 
     // Create special device files
-    this.createCharDev('/dev/null', 'null');
-    this.createCharDev('/dev/zero', 'zero');
-    this.createCharDev('/dev/urandom', 'urandom');
+    this.createCharDev('/dev/null', 'null', 1, 3);
+    this.createCharDev('/dev/zero', 'zero', 1, 5);
+    this.createCharDev('/dev/urandom', 'urandom', 1, 9);
 
     // devpts — /dev/pts/N slave nodes are materialised per-session by
     // whoever opens a pty (SSH accept, local terminal); ptmx is the
     // always-present cloning device real Linux seeds at boot.
     this.mkdirp('/dev/pts', 0o755, 0, 0);
-    this.createCharDev('/dev/pts/ptmx', 'ptmx');
+    this.createCharDev('/dev/pts/ptmx', 'ptmx', 5, 2);
     // The local console VT is a static device node present from boot,
     // unlike pty slaves which come and go with sessions.
-    for (let console = 0; console <= 63; console++) this.createCharDev(`/dev/tty${console}`, 'tty');
+    for (let console = 0; console <= 63; console++) this.createCharDev(`/dev/tty${console}`, 'tty', 4, console);
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
@@ -505,7 +508,7 @@ export class VirtualFileSystem {
     // Create binaries (stubs) — placed in /usr/bin since /bin -> usr/bin
     const binaries = ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
       'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
-      'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'cd', 'bash', 'sh',
+      'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'mknod', 'echo', 'pwd', 'cd', 'bash', 'sh',
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'tee', 'sleep',
       'kill', 'locate', 'updatedb', 'install'];
     for (const bin of binaries) {
@@ -549,12 +552,27 @@ export class VirtualFileSystem {
     return inode;
   }
 
-  private createCharDev(path: string, deviceType: string): void {
+  private createCharDev(path: string, deviceType: string, major: number, minor: number): void {
     const inode = this.createFileAt(path, '', 0o666, 0, 0);
     if (inode) {
       inode.type = 'chardev';
       inode.deviceType = deviceType;
+      inode.rdev = { major, minor };
     }
+  }
+
+  createDevice(path: string, kind: 'chardev' | 'blockdev', major: number, minor: number, permissions: number, uid: number, gid: number): boolean {
+    const parent = this.resolveParent(path);
+    if (!parent) return false;
+    const [parentInode, basename] = parent;
+    if (parentInode.children.has(basename)) return false;
+    const inode = this.allocInode(kind, permissions, uid, gid);
+    inode.rdev = { major, minor };
+    if (kind === 'chardev') inode.deviceType = CHAR_DEVICE_DRIVERS.get(`${major}:${minor}`);
+    parentInode.children.set(basename, inode.id);
+    parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
+    return true;
   }
 
   // ─── Path Resolution ──────────────────────────────────────────────
@@ -1756,7 +1774,7 @@ export class VirtualFileSystem {
   matchesFindCriteria(path: string, inode: INode, options: any): boolean {
     if (options.type !== undefined) {
       const typeMap: Record<FindType, FileType> = {
-        f: 'file', d: 'directory', l: 'symlink', p: 'fifo', s: 'socket', c: 'chardev', b: 'chardev',
+        f: 'file', d: 'directory', l: 'symlink', p: 'fifo', s: 'socket', c: 'chardev', b: 'blockdev',
       };
       if (inode.type !== typeMap[options.type]) return false;
     }
@@ -1836,7 +1854,7 @@ export class VirtualFileSystem {
    */
   formatPermissions(inode: INode): string {
     const typeChars: Record<FileType, string> = {
-      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c', socket: 's'
+      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c', blockdev: 'b', socket: 's'
     };
     let s = typeChars[inode.type] || '-';
 

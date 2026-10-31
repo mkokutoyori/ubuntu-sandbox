@@ -929,8 +929,6 @@ datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -
 - `nc -U` tape seul dans le terminal (plan de flux `planNcUnix`) ouvre une prise sans processus.
 - `connect()` sur une file d'acceptation pleine (plus de `backlog + 1` connexions en attente) rend EAGAIN ici ; le vrai
   bloque jusqu'a ce que le serveur accepte.
-- `find -type b` et `-type c` : le VFS ne distingue pas un peripherique bloc d'un peripherique caractere, les deux
-  filtres retournent tous les peripheriques.
 
 ### [umask] ce que le portage de `umask` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `umask-bash-5.2.json`, 5 labos, 232 pas, bash 5.2.21 sur Ubuntu 24.04) : le

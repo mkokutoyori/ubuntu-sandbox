@@ -176,7 +176,7 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
     if (opts.inodes) return 1;
     if (opts.apparent) return inode.type === 'directory' ? 0 : inode.size;
     if (inode.type === 'directory') return BLOCK_BYTES;
-    if (inode.type === 'symlink' || inode.type === 'chardev') return 0;
+    if (inode.type === 'symlink' || inode.type === 'chardev' || inode.type === 'blockdev') return 0;
     return Math.ceil(inode.size / BLOCK_BYTES) * BLOCK_BYTES;
   };
 

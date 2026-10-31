@@ -206,7 +206,7 @@ export const lsSize = (inode: INode): number => (inode.type === 'directory' ? DI
 
 export const lsBlocksKiB = (inode: INode): number => {
   if (inode.type === 'directory') return 4;
-  if (inode.type === 'symlink' || inode.type === 'chardev') return 0;
+  if (inode.type === 'symlink' || inode.type === 'chardev' || inode.type === 'blockdev') return 0;
   return Math.ceil(inode.size / 4096) * 4;
 };
 
@@ -566,14 +566,24 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
   const lines: string[] = [];
 
   if (long) {
-    const sizeOf = (e: LsEntry): string => (opts.human === null ? String(lsSize(e.inode)) : lsHumanSize(lsSize(e.inode), opts.human));
+    const isDevice = (e: LsEntry): boolean => e.inode.rdev !== undefined && (e.inode.type === 'chardev' || e.inode.type === 'blockdev');
+    const devices = entries.filter(isDevice);
+    const majorWidth = Math.max(0, ...devices.map((e) => String(e.inode.rdev!.major).length));
+    const minorWidth = Math.max(0, ...devices.map((e) => String(e.inode.rdev!.minor).length));
+    const plainSize = (e: LsEntry): string => (opts.human === null ? String(lsSize(e.inode)) : lsHumanSize(lsSize(e.inode), opts.human));
+    const plainWidth = Math.max(1, ...entries.filter((e) => !isDevice(e)).map((e) => plainSize(e).length));
+    const deviceWidth = devices.length === 0 ? 0 : Math.max(plainWidth, majorWidth + 2 + minorWidth);
+    const shownMajorWidth = deviceWidth - 2 - minorWidth;
+    const sizeOf = (e: LsEntry): string => (isDevice(e)
+      ? `${String(e.inode.rdev!.major).padStart(shownMajorWidth)}, ${String(e.inode.rdev!.minor).padStart(minorWidth)}`
+      : plainSize(e));
     const ownerOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.uid) : ctx.userMgr.uidToName(e.inode.uid));
     const groupOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.gid) : ctx.userMgr.gidToName(e.inode.gid));
     const widths = {
       links: Math.max(1, ...entries.map((e) => String(e.inode.linkCount).length)),
       owner: Math.max(1, ...entries.map((e) => ownerOf(e).length)),
       group: Math.max(1, ...entries.map((e) => groupOf(e).length)),
-      size: Math.max(1, ...entries.map((e) => sizeOf(e).length)),
+      size: Math.max(1, deviceWidth, ...entries.map((e) => sizeOf(e).length)),
     };
     if (withTotal) {
       const total = entries.reduce((sum, e) => sum + lsBlocksKiB(e.inode), 0);
@@ -626,7 +636,8 @@ function colorName(name: string, inode: INode, useColor = true): string {
     case 'symlink': return `${C.BOLD_CYAN}${name}${C.RESET}`;
     case 'fifo': return `${C.BOLD_YELLOW}${name}${C.RESET}`;
     case 'socket': return `${C.BOLD_MAGENTA}${name}${C.RESET}`;
-    case 'chardev': return `${C.CHARDEV}${name}${C.RESET}`;
+    case 'chardev':
+    case 'blockdev': return `${C.CHARDEV}${name}${C.RESET}`;
     case 'file':
       if (inode.permissions & 0o111) return `${C.BOLD_GREEN}${name}${C.RESET}`;
       return name;
