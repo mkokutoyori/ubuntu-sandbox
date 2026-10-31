@@ -50,6 +50,7 @@ export interface ExpressionHost {
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
   environmentOrNull(name: string): string | null;
+  environmentNames(): string[];
   shellStatus(): number;
   pathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo';
   readText(path: string): string | null;
@@ -1102,6 +1103,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     }
     return accumulator;
   } }],
+  ['environ', { min: 0, max: 0, run: (_args, context) => dict(new Map(context.host.environmentNames().map((name) => [name, str(context.host.environmentOrNull(name) ?? '')] as const))) }],
   ['getenv', { min: 1, max: 1, run: (args, context) => {
     const value = context.host.environmentOrNull(context.stringOf(args[0], false));
     return value === null || value === '' ? special('null') : str(value);

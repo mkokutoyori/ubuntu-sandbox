@@ -3368,6 +3368,7 @@ export class VimEngine {
       option: (name, scope) => this.options.lookup(name, scope),
       environment: (name) => this.environmentVariable(name) ?? '',
       environmentOrNull: (name) => this.environmentVariable(name),
+      environmentNames: () => this.fs.environmentNames?.() ?? [],
       shellStatus: () => this.lastShellStatus,
       pathKind: (path) => this.fs.kindOf?.(path) ?? (this.fs.exists(this.fs.resolvePath(path)) ? 'file' : 'missing'),
       readText: (path) => this.fs.readFile(this.fs.resolvePath(path)),
