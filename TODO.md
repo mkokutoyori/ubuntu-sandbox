@@ -168,9 +168,12 @@ suit maintenant l'horloge de sa machine, comme l'authentification IKE par
 certificat de Cisco et l'inspection SSL du pare-feu. Le verificateur de certificats clients de nginx/Apache et leur journal d'acces aussi. Les caches DNS du poste Windows, de BIND et de `systemd-resolved` vieillissent sur
 l'horloge de leur machine. Les fenetres de signature DNSSEC de BIND, de `systemd-resolved` et de Windows
 Server, la validite des certificats utilisateur de sshd et `ssh-keygen` aussi.
-Restent sur l'heure globale les horodatages de session de sshd
-(`SshServerHandler`, `SshShellSession`) et `CrossVendorSshHost` : les horodatages
-et la duree d'une session ne suivent pas `date -s`. Le `START` de `ps` des processus de demarrage et les dates de
+Les sessions SSH suivent aussi l'horloge de leur machine : `who`, `last`, `lastlog`,
+la pile PAM (`chage -E`, vieillissement des mots de passe), les comptes des
+routeurs/switchs/pare-feu, les comptes Windows, le registre VTY, la comptabilite
+d'exec et les timers systemd. Restent sur l'heure globale les champs `timestamp`
+des evenements de `SshServerHandler` (aucun lecteur ne les consomme) et la duree
+d'`SshShellSession` (un ecart, donc monotone, a juste titre). Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
 sur un vrai noyau `ps` suit (btime recalcule), `last` non.
 **Pourquoi ce n'est pas ferme** : chaque pile prend l'horloge de sa machine par
