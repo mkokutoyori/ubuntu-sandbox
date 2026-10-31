@@ -467,7 +467,7 @@ async function performHttpRequest(
   // Le bocal vit pour tout le transfert, redirections comprises — et
   // c'est là qu'il sert vraiment : une session s'ouvre par un `302` qui
   // pose le témoin, et la requête suivante doit le porter.
-  const jar = jarFromArgument(opts.cookie, first.host, (p) => host.readFile(p));
+  const jar = jarFromArgument(opts.cookie, first.host, (p) => host.readFile(p), () => host.tcpStack().nowMs());
 
   // `--cacert` REPLACES the machine's trust store, it does not add to it.
   // That is the whole reason a lab uses it: the operator's own root has to

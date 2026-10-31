@@ -41,6 +41,8 @@ export interface CookieRequestOptions {
 export class CookieJar {
   private store: StoredCookie[] = [];
 
+  constructor(private readonly clock: () => number = simulationNowMs) {}
+
   private removeMatching(name: string, domain: string, path: string): void {
     this.store = this.store.filter((e) => !(e.cookie.name === name && e.cookie.domain === domain && e.cookie.path === path));
   }
@@ -55,7 +57,7 @@ export class CookieJar {
    * rejected outright (step 6). Max-Age has precedence over Expires; an
    * already-past effective expiry deletes any matching stored cookie.
    */
-  setFromHeader(header: string, requestHost: string, requestPath: string, now = simulationNowMs()): boolean {
+  setFromHeader(header: string, requestHost: string, requestPath: string, now = this.clock()): boolean {
     const cookie = parseSetCookie(header, requestHost, requestPath);
     if (!cookie) return false;
     if (!cookie.hostOnly && !domainMatch(requestHost, cookie.domain)) return false;
@@ -75,7 +77,7 @@ export class CookieJar {
    * same-site/cross-site model, not a full browser-grade origin engine —
    * cf. PRD-HTTP.md §2.2).
    */
-  cookiesFor(requestHost: string, requestPath: string, opts: CookieRequestOptions = {}, now = simulationNowMs()): Cookie[] {
+  cookiesFor(requestHost: string, requestPath: string, opts: CookieRequestOptions = {}, now = this.clock()): Cookie[] {
     const secure = opts.secure ?? false;
     const siteContext = opts.siteContext ?? 'same-site';
     return this.store
@@ -87,7 +89,7 @@ export class CookieJar {
       .map((e) => e.cookie);
   }
 
-  all(now = simulationNowMs()): Cookie[] {
+  all(now = this.clock()): Cookie[] {
     return this.store.filter((e) => this.isLive(e, now)).map((e) => e.cookie);
   }
 
@@ -100,7 +102,7 @@ export class CookieJar {
    * étape 6), et en relisant un fichier il n'y a pas d'hôte qui pose
    * quoi que ce soit. Le contrôle a déjà eu lieu à l'écriture.
    */
-  add(cookie: Cookie, now = simulationNowMs()): void {
+  add(cookie: Cookie, now = this.clock()): void {
     const expiryMs = cookie.maxAge !== undefined
       ? now + cookie.maxAge * 1000
       : cookie.expires ?? null;
@@ -117,7 +119,7 @@ export class CookieJar {
    * `Cookie.expires`, si bien que le sérialiser depuis `all()` le
    * rendrait témoin de SESSION — il disparaîtrait à la relecture.
    */
-  entries(now = simulationNowMs()): Array<{ cookie: Cookie; expiryMs: number | null }> {
+  entries(now = this.clock()): Array<{ cookie: Cookie; expiryMs: number | null }> {
     return this.store.filter((e) => this.isLive(e, now)).map((e) => ({ ...e }));
   }
 
