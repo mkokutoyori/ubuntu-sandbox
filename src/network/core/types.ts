@@ -1094,6 +1094,7 @@ export interface ARPEntry {
   /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
   type: 'dynamic' | 'static' | 'failed';
   vlan?: number;
+  probing?: { readonly state: 'delay' | 'probe'; readonly since: number };
 }
 
 // ─── ICMP (L4, inside IPv4, protocol 1) ─────────────────────────────

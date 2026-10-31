@@ -4773,6 +4773,10 @@ export abstract class LinuxMachine extends EndHost
 
   // ─── Firewall / NAT overrides (single source of truth via iptables) ─
 
+  protected override neighbourProbing(): boolean {
+    return true;
+  }
+
   protected override arpSolicitPolicy(): { readonly attempts: number; readonly spacingMs: number } {
     return { attempts: ARP_MCAST_SOLICIT, spacingMs: ARP_RETRANS_TIME_MS };
   }

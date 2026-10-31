@@ -273,18 +273,6 @@ les cles restantes demandent chacune un evaluateur de plus dans `CalendarExpress
 **Pourquoi ce n'est pas ferme** : le moteur n'a pas de type intervalle (une chaine `n UNIT`) ni de TIMESTAMP
 WITH TIME ZONE autrement que comme chaine `... +hh:mm`.
 
-### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
-**Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
-de soixante secondes (`ip neigh` -> `STALE`) puis utilisee par un
-`ping -c 1` reste `STALE` juste apres la reponse ; `getNUDState` ne connait que
-`REACHABLE` (moins de 30 s depuis `timestamp`) et `STALE`. Sur un noyau Linux,
-l'emission vers une entree STALE la passe en `DELAY` (`delay_probe_time`, 5 s),
-puis `PROBE`, puis `REACHABLE` apres la reponse a la sonde unicast.
-**Pourquoi ce n'est pas ferme** : il faut une machine d'etats de voisin
-(INCOMPLETE / REACHABLE / STALE / DELAY / PROBE / FAILED) portee par un
-planificateur, et c'est le meme chantier que l'entree `[arp]` ci-dessus
-(`resolveARP`, `resolveNDP`, chemin d'erreur de `ping`).
-
 ### [horloge] le temps de vol des trames s'ajoute a l'horloge de simulation
 **Mesure** : `PathClock.horizon()` est le maximum des arrivees et ne redescend
 jamais ; `schedulerWallClock` et `simulationNowMs` l'ajoutent a l'heure de
