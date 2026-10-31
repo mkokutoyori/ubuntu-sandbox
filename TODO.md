@@ -280,8 +280,16 @@ l'ordonnanceur. Pendant un `SimulationClock.advance(45 min)` sur un lot de cinq
 equipements, l'horloge du Windows a avance de 45 min + 35 ms : le bavardage
 STP/ARP fait croitre l'horizon de quelques dizaines de µs par trame.
 **Pourquoi ce n'est pas ferme** : l'horizon est ce qui donne des RTT non nuls
-sans file d'attente ; le plafonner a l'heure de l'ordonnanceur (horizon =
-max(horizon, now)) change tous les RTT de la base et demande une mesure propre.
+sans file d'attente. Essai mesure : le faire decroitre de ce que l'ordonnanceur
+avance entre deux lectures (temps de vol « absorbe ») fait que `advance(1 h)`
+apres un echange vaut exactement 1 h, mais 9 sondes d'age de route
+(`probe-route-ages-device-clock`) tombent : une route apprise a l'arrivee de la
+trame, 25 s avant, affiche 00:00:24. Les echanges etant synchrones et finis
+avant l'appel a `advance`, le temps de vol precede causalement l'attente : le
+modele additif est le bon pour une trame DEJA livree, et l'absorption ne serait
+juste que pour une trame encore en vol PENDANT l'avance, ce que la livraison
+synchrone ne produit pas. L'ecart de 35 ms sur 45 min est donc cause, pas
+defaut ; ne ferme que si la livraison devient asynchrone.
 
 ### [ip] l'option Timestamp : ce que les extremites non Linux ecrivent n'est pas atteste
 L'option est maintenant reelle de bout en bout : `Ipv4Options` la construit
