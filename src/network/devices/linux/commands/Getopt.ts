@@ -3,7 +3,7 @@ export type ShortOption =
   | { readonly kind: 'operand'; readonly value: string; readonly index: number }
   | { readonly kind: 'invalid'; readonly letter: string }
   | { readonly kind: 'missing-argument'; readonly letter: string; readonly long?: string }
-  | { readonly kind: 'unrecognized'; readonly token: string }
+  | { readonly kind: 'unrecognized'; readonly token: string; readonly candidates?: readonly string[] }
   | { readonly kind: 'needless-argument'; readonly long: string };
 
 export type GetoptFailure = Extract<ShortOption, {
@@ -17,11 +17,20 @@ export interface LongOption {
   readonly optionalArgument?: boolean;
 }
 
-function matchLongOption(longOptions: readonly LongOption[], name: string): LongOption | undefined {
+type LongMatch = { readonly option: LongOption } | { readonly ambiguous: readonly string[] } | null;
+
+const sameOption = (a: LongOption, b: LongOption): boolean =>
+  a.takesArgument === b.takesArgument && a.optionalArgument === b.optionalArgument
+  && (a.letter !== '' ? a.letter === b.letter : a.name === b.name);
+
+function matchLongOption(longOptions: readonly LongOption[], name: string): LongMatch {
   const exact = longOptions.find((o) => o.name === name);
-  if (exact || name.length === 0) return exact;
+  if (exact) return { option: exact };
+  if (name.length === 0) return null;
   const byPrefix = longOptions.filter((o) => o.name.startsWith(name));
-  return byPrefix.length === 1 ? byPrefix[0] : undefined;
+  if (byPrefix.length === 0) return null;
+  const differing = byPrefix.filter((o) => !sameOption(o, byPrefix[0]));
+  return differing.length === 0 ? { option: byPrefix[0] } : { ambiguous: [byPrefix[0].name, ...differing.map((o) => o.name)] };
 }
 
 function* longOption(
@@ -30,11 +39,16 @@ function* longOption(
   const eq = token.indexOf('=');
   const name = token.slice(2, eq < 0 ? undefined : eq);
   const inline = eq < 0 ? undefined : token.slice(eq + 1);
-  const option = matchLongOption(longOptions, name);
-  if (!option) {
+  const matched = matchLongOption(longOptions, name);
+  if (matched === null) {
     yield { kind: 'unrecognized', token };
     return at;
   }
+  if ('ambiguous' in matched) {
+    yield { kind: 'unrecognized', token, candidates: matched.ambiguous };
+    return at;
+  }
+  const option = matched.option;
   if (!option.takesArgument && option.optionalArgument === true && inline !== undefined) {
     yield { kind: 'option', letter: option.letter, argument: inline, long: option.name };
     return at;
@@ -107,7 +121,9 @@ export function getoptDiagnostic(program: string, failure: GetoptFailure): strin
         ? `${program}: option requires an argument -- '${failure.letter}'`
         : `${program}: option '--${failure.long}' requires an argument`;
     case 'unrecognized':
-      return `${program}: unrecognized option '${failure.token}'`;
+      return failure.candidates === undefined
+        ? `${program}: unrecognized option '${failure.token}'`
+        : `${program}: option '${failure.token}' is ambiguous; possibilities:${failure.candidates.map((name) => ` '--${name}'`).join('')}`;
     case 'needless-argument':
       return `${program}: option '--${failure.long}' doesn't allow an argument`;
   }

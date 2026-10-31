@@ -1,6 +1,7 @@
 import type { Signal } from './LinuxProcessManager';
 import type { ProcessCmdContext, KillResult } from './LinuxProcessCommands';
 import { parseSignalArg } from './LinuxProcessCommands';
+import { gnuOptionSet } from './GnuOptionGuard';
 import { NAMESPACE_IDS } from './process/ProcessTaskBuilder';
 
 const COMM_LIMIT = 15;
@@ -35,16 +36,23 @@ interface Selection {
   version: boolean;
   pattern: string | null;
   criteriaSeen: boolean;
+  ignoreAncestors: boolean;
+  echo: boolean;
+  lock: boolean;
+  help: boolean;
+  conflict: boolean;
+  repeatedIgnoreCase: boolean;
 }
 
 type Fail = { failure: KillResult };
 
 const LONG_ONLY_VALUED: ReadonlySet<string> = new Set(['ns', 'nslist', 'cgroup']);
-const SHORT_VALUED = new Set(['d', 'g', 'G', 'O', 'P', 's', 't', 'u', 'U', 'F', 'r']);
+const SHORT_VALUED = new Set(['d', 'g', 'G', 'O', 'P', 's', 't', 'u', 'U', 'F', 'r', 'q']);
 const LONG_TO_SHORT: Readonly<Record<string, string>> = {
   delimiter: 'd', 'list-name': 'l', 'list-full': 'a', inverse: 'v', lightweight: 'w', count: 'c', full: 'f',
   pgroup: 'g', group: 'G', 'ignore-case': 'i', newest: 'n', oldest: 'o', older: 'O', parent: 'P', session: 's',
   terminal: 't', euid: 'u', uid: 'U', exact: 'x', pidfile: 'F', version: 'V', signal: 'S', runstates: 'r',
+  'ignore-ancestors': 'A', logpidfile: 'L', echo: 'e', help: 'h', 'require-handler': 'H', queue: 'q',
 };
 
 function usageFailure(program: string, line: string, status: number): Fail {
@@ -79,7 +87,8 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
     newest: false, oldest: false, exact: false, delimiter: '\n', olderThan: null, parents: null, groups: null,
     sessions: null, terminals: null, euids: null, uids: null, gids: null, pidfile: null, runStates: null,
     namespaceReference: null, namespaceNames: DEFAULT_NAMESPACES, cgroups: null,
-    signal: 'SIGTERM', version: false, pattern: null, criteriaSeen: false,
+    signal: 'SIGTERM', version: false, pattern: null,
+    ignoreAncestors: false, echo: false, lock: false, help: false, conflict: false, repeatedIgnoreCase: false, criteriaSeen: false,
   };
   const patterns: string[] = [];
   let criteria = false;
@@ -133,14 +142,23 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
   const flag = (letter: string): void => {
     if (letter === 'l') selection.list = true;
     else if (letter === 'a') selection.full = true;
-    else if (letter === 'v') selection.inverse = true;
     else if (letter === 'c') selection.count = true;
     else if (letter === 'f') selection.commandLine = true;
-    else if (letter === 'i') selection.ignoreCase = true;
-    else if (letter === 'n') selection.newest = true;
-    else if (letter === 'o') selection.oldest = true;
-    else if (letter === 'x') selection.exact = true;
+    else if (letter === 'i') {
+      if (selection.ignoreCase) selection.repeatedIgnoreCase = true;
+      selection.ignoreCase = true;
+    } else if (letter === 'n' || letter === 'o' || letter === 'v') {
+      if (selection.newest || selection.oldest || selection.inverse) selection.conflict = true;
+      if (letter === 'n') selection.newest = true;
+      else if (letter === 'o') selection.oldest = true;
+      else selection.inverse = true;
+      if (letter !== 'v') criteria = true;
+    } else if (letter === 'x') selection.exact = true;
     else if (letter === 'V') selection.version = true;
+    else if (letter === 'A') selection.ignoreAncestors = true;
+    else if (letter === 'e') selection.echo = true;
+    else if (letter === 'L') selection.lock = true;
+    else if (letter === 'h') selection.help = true;
   };
   let optionsEnded = false;
   for (let index = 0; index < args.length; index++) {
@@ -178,9 +196,16 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
       flag(letter);
     }
   }
+  if (selection.lock && selection.pidfile === null) return usageFailure(program, '-L without -F makes no sense', 2);
+  if (patterns.length > 1) return usageFailure(program, 'only one pattern can be provided', 2);
   selection.pattern = patterns[0] ?? null;
   selection.criteriaSeen = criteria;
   return selection;
+}
+
+function usageText(program: 'pgrep' | 'pkill'): string {
+  const set = gnuOptionSet(program);
+  return `${set.usage ?? ''}\n${set.trailer ?? ''}`;
 }
 
 function pidfileFailure(program: string): Fail {
@@ -191,6 +216,8 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
   const parsed = parseSelection(program, args, ctx);
   if ('failure' in parsed) return parsed.failure;
   const selection = parsed;
+  if (selection.help || selection.repeatedIgnoreCase) return { output: usageText(program), exitCode: 0 };
+  if (selection.conflict) return { output: '', stderr: `${usageText(program)}\n`, exitCode: 2 };
   if (selection.version) return { output: VERSION.replace('pgrep', program), exitCode: 0 };
   let pidfilePid: number | null = null;
   if (selection.pidfile !== null) {
@@ -203,9 +230,6 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
     || selection.sessions !== null || selection.terminals !== null || selection.euids !== null
     || selection.uids !== null || selection.gids !== null || selection.olderThan !== null || selection.criteriaSeen;
   if (!filtered) return usageFailure(program, 'no matching criteria specified', 2).failure;
-  if (selection.newest && selection.oldest) {
-    return usageFailure(program, 'only one of -n or -o may be specified', 2).failure;
-  }
 
   let matcher: RegExp | null = null;
   if (selection.pattern !== null) {
@@ -224,8 +248,13 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
     : ctx.pm.get(selection.namespaceReference) ? NAMESPACE_IDS : Object.fromEntries(Object.keys(NAMESPACE_IDS).map((name) => [name, 0]));
   const now = Date.now();
   const self = ctx.currentPid;
+  const ancestors = new Set<number>();
+  if (selection.ignoreAncestors) {
+    for (let at = ctx.pm.get(self ?? -1)?.ppid ?? 0; at > 0 && !ancestors.has(at); at = ctx.pm.get(at)?.ppid ?? 0) ancestors.add(at);
+  }
   let hits = ctx.pm.list().filter((process) => {
     if (process.pid === self) return false;
+    if (ancestors.has(process.pid)) return false;
     if (pidfilePid !== null && process.pid !== pidfilePid) return false;
     if (selection.runStates !== null && !selection.runStates.has(process.state)) return false;
     if (matcher !== null) {
@@ -255,9 +284,18 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
   }
 
   if (program === 'pkill') {
+    const echoed: string[] = [];
     let signalled = 0;
-    for (const process of hits) if (ctx.pm.kill(process.pid, selection.signal)) signalled++;
-    return { output: '', ...(warning === '' ? {} : { stderr: warning }), exitCode: hits.length > 0 ? 0 : 1 };
+    for (const process of hits) {
+      if (!ctx.pm.kill(process.pid, selection.signal)) continue;
+      signalled++;
+      if (selection.echo) {
+        const shown = selection.full ? process.command : selection.list || selection.pattern !== null ? process.comm.replace(/^\[(.*)\]$/, '$1') : '';
+        echoed.push(`${shown} killed (pid ${process.pid})`);
+      }
+    }
+    if (selection.count) echoed.push(String(hits.length));
+    return { output: echoed.join('\n'), ...(warning === '' ? {} : { stderr: warning }), exitCode: signalled > 0 ? 0 : 1 };
   }
   if (selection.count) {
     return { output: String(hits.length), ...(warning === '' ? {} : { stderr: warning }), exitCode: hits.length > 0 ? 0 : 1 };
