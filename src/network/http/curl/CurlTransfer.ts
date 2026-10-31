@@ -566,9 +566,9 @@ async function performHttpRequest(
           ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
         });
         session.adopt(porte.socket);
-        stats.pretransferAt = simulationNowMs();
         const result = await session.sendAsync(request);
-        stats.appconnectAt = stats.connectAt;
+        stats.appconnectAt = session.handshakeCompletedAtMs ?? stats.connectAt;
+        stats.pretransferAt = stats.appconnectAt;
         const handshake = session.handshake;
         stats.sslVerifyResult = x509VerifyResult(
           handshake?.peerVerificationReason ?? null, session.peerCertificate ?? handshake?.peerCertificate ?? null,

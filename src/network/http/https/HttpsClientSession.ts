@@ -41,6 +41,7 @@ export class HttpsClientSession {
   private socket: TcpSocket | null = null;
   private tls: TlsClientSession | null = null;
   private lastTls: TlsClientSession | null = null;
+  private handshakeCompletedMs: number | null = null;
   private channel: TlsClientChannel | null = null;
   readonly hstsStore: HstsStore;
 
@@ -78,6 +79,7 @@ export class HttpsClientSession {
     this.lastTls = tls;
     const trailing: TlsRecord[] = [];
     runTlsHandshakeOverSocket(socket, tls, (records) => { trailing.push(...records); });
+    this.handshakeCompletedMs = simulationNowMs();
 
     if (tls.result !== 'success') {
       socket.close();
@@ -184,6 +186,10 @@ export class HttpsClientSession {
 
   get peerCertificate(): X509Certificate | null {
     return this.tls?.peerCertificate ?? null;
+  }
+
+  get handshakeCompletedAtMs(): number | null {
+    return this.handshakeCompletedMs;
   }
 
   get handshake(): TlsClientSession | null {
