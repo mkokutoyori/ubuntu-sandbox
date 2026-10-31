@@ -25,6 +25,7 @@ import { DuplicateCommand } from './DuplicateCommand';
 import { ChangeCommand } from './ChangeCommand';
 import { SetCommand } from './SetCommand';
 import { HostCommand } from './HostCommand';
+import { SwitchCommand } from './SwitchCommand';
 import { ValidateCommand } from './ValidateCommand';
 import { ConnectAuxiliaryCommand } from './ConnectAuxiliaryCommand';
 import { ResyncCatalogCommand } from './ResyncCatalogCommand';
@@ -218,6 +219,9 @@ export class RmanCommandDispatcher {
       // SET UNTIL — PITR precursor inherited by later RESTORE/RECOVER in
       // the same RUN block
       { pattern: /^HOST\s+'([^']*)'$/i,                                   command: new HostCommand() },
+      { pattern: /^SWITCH DATABASE TO COPY$/i,                            command: new SwitchCommand('DATABASE') },
+      { pattern: /^SWITCH TABLESPACE (\S+) TO COPY$/i,                       command: new SwitchCommand('TABLESPACE') },
+      { pattern: /^SWITCH DATAFILE (\d+) TO COPY$/i,                         command: new SwitchCommand('DATAFILE') },
       { pattern: /^SET DBID\s+(\d+)$/i,                                   command: new SetCommand('DBID') },
       { pattern: /^SET MAXCORRUPT FOR DATAFILE (\d+) TO (\d+)$/i,    command: new SetCommand('MAXCORRUPT') },
       { pattern: /^SET UNTIL TIME '([^']+)'$/i,                     command: new SetCommand('UNTIL_TIME') },

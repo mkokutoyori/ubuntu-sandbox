@@ -4249,13 +4249,16 @@ une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dan
 tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host` ; `HOST` sans
 commande, qui ouvre un shell, reste refuse) ; `CONFIGURE|SHOW SNAPSHOT CONTROLFILE NAME` (defaut `$ORACLE_HOME/dbs/snapcf_<SID>.f`, `# default`, `CLEAR`) : la
 sauvegarde du fichier de controle cree le snapshot a ce chemin (sonde `probe-rman-snapshot-controlfile` ; la creation par
-`RESYNC CATALOG` n'est pas faite, le catalogue de recuperation etant un autre sous-systeme) ; `SET DBID n` borne la recherche d'autosauvegarde de `RESTORE CONTROLFILE|SPFILE FROM
+`RESYNC CATALOG` n'est pas faite, le catalogue de recuperation etant un autre sous-systeme) ; `SWITCH DATABASE|TABLESPACE t|DATAFILE n TO COPY` renomme le fichier dans la base (`ALTER DATABASE RENAME FILE`), retire
+la copie du catalogue et ecrit `datafile N switched to datafile copy "p"` (sonde `probe-rman-switch-to-copy`). A VERIFIER :
+ce texte, `RMAN-06571: datafile N does not have recoverable copy` et le refus de `SWITCH DATABASE` sur une base ouverte
+(`RMAN-06403`, message de l'auteur) viennent de la memoire, pas de la documentation ; `SWITCH DATAFILE ALL` (avec
+`SET NEWNAME`) et la contrainte « fichier hors ligne » d'un `SWITCH DATAFILE` ne sont pas faits. `SET DBID n` borne la recherche d'autosauvegarde de `RESTORE CONTROLFILE|SPFILE FROM
 AUTOBACKUP` a ce DBID (sonde `probe-rman-set-dbid` ; le controle de RMAN quand une cible est deja connectee n'est pas source).
 Refuses en RMAN-01009 faute de source : `docs.oracle.com` n'est pas dans les domaines autorises de la session (WebFetch :
 `getaddrinfo ENOTFOUND docs.oracle.com`), et le §8 de CLAUDE.md interdit d'inventer le texte d'un outil proprietaire.
 Ce qu'il manque, commande par commande : `LIST BACKUP BY FILE` (mise en page des colonnes) ; `LIST FAILURE`
-(Data Recovery Advisor : depot des echecs, numeros, priorites, libelles) ; `SWITCH ... TO COPY` (le texte
-`datafile N switched to datafile copy "..."`, et le deplacement du fichier dans le catalogue et le fichier de controle) ;
+(Data Recovery Advisor : depot des echecs, numeros, priorites, libelles)  ;
 `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`
 (sorties longues, plusieurs etapes) ; Non sources non plus : le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or
 directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
