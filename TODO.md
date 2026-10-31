@@ -255,6 +255,14 @@ aussi pour les sequences (`scott.syn_seq.NEXTVAL`, `CURRVAL`), `TRUNCATE`, `LOCK
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
 
+### [oracle] declencheurs DML : ce que l'analyse et l'execution ne couvrent pas encore
+Les declencheurs BEFORE/AFTER d'instruction et de ligne s'executent (`:NEW`, `:OLD`, `INSERTING`/`UPDATING`/`DELETING`, `WHEN`,
+`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`). Restent non analyses ou non evalues : la liste
+`UPDATE OF col` (l'analyseur de `CREATE TRIGGER` ne la lit pas : `ORA-24344`), `REFERENCING` qui renomme `NEW`/`OLD`, les
+declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, `UPDATING('col')`, le declenchement depuis `MERGE`
+(la branche `INSERT` passe par `insertRowChecked` mais pas la branche `UPDATE`), `DBMS_OUTPUT` d'un declencheur (perdu), et
+la sortie de ligne `AFTER` qui voit la table avant la mise a jour (`ORA-04091` n'est pas leve).
+
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
 BYMINUTE et BYSECOND dans le fuseau du serveur. `BYSETPOS`, `BYWEEKNO`, `BYYEARDAY`, `BYDATE`, `INCLUDE` /
