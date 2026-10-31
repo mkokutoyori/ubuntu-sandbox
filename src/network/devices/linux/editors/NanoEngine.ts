@@ -1054,6 +1054,7 @@ export class NanoEngine {
   }
 
   private verbatimPending = false;
+  private verbatimDigits: string | null = null;
 
   private verbatimCharacter(k: EditorKeyInput): string | null {
     if (k.ctrl && !k.alt && k.key.length === 1) return String.fromCharCode(k.key.toUpperCase().charCodeAt(0) & 0x1f);
@@ -1064,12 +1065,50 @@ export class NanoEngine {
     return k.key.length === 1 ? k.key : null;
   }
 
-  private dispatchKey(k: EditorKeyInput): void {
-    if (this.verbatimPending && this._mode === 'edit') {
+  private finishUnicodeInput(): void {
+    const code = parseInt(this.verbatimDigits ?? '', 16);
+    this.verbatimPending = false;
+    this.verbatimDigits = null;
+    if (!Number.isFinite(code) || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+      this._statusMessage = '[ Invalid code ]';
+      return;
+    }
+    this._statusMessage = '';
+    this.typeText(String.fromCodePoint(code));
+  }
+
+  private applyVerbatimKey(k: EditorKeyInput): void {
+    const isHexDigit = !k.ctrl && !k.alt && k.key.length === 1 && /[0-9a-fA-F]/.test(k.key);
+    if (this.verbatimDigits === null) {
+      if (isHexDigit) {
+        this.verbatimDigits = k.key;
+        this._statusMessage = `[ Unicode Input: ${this.verbatimDigits.padStart(6)} ]`;
+        return;
+      }
       this.verbatimPending = false;
       this._statusMessage = '';
       const character = this.verbatimCharacter(k);
-      if (character !== null && !this._readOnly) this.typeText(character);
+      if (character !== null) this.typeText(character);
+      return;
+    }
+    if (isHexDigit) {
+      this.verbatimDigits += k.key;
+      if (this.verbatimDigits.length === 6) this.finishUnicodeInput();
+      else this._statusMessage = `[ Unicode Input: ${this.verbatimDigits.padStart(6)} ]`;
+      return;
+    }
+    if (!k.ctrl && !k.alt && (k.key === 'Enter' || k.key === ' ')) {
+      this.finishUnicodeInput();
+      return;
+    }
+    this.verbatimPending = false;
+    this.verbatimDigits = null;
+    this._statusMessage = '[ Invalid code ]';
+  }
+
+  private dispatchKey(k: EditorKeyInput): void {
+    if (this.verbatimPending && this._mode === 'edit') {
+      this.applyVerbatimKey(k);
       return;
     }
     if (k.key === 'Tab' && !k.ctrl && !k.alt && !k.shift && this.completeWithTab()) return;

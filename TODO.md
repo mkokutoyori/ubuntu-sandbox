@@ -793,12 +793,6 @@ dictionnaire. Il manque deux briques : une commande `hunspell` / `spell` avec un
 dans le depot ne porte de liste de mots) et le dialogue `fix_spello`. Le correcteur ALTERNATIF
 (`-s PROGRAMME`, `set speller`) est complet.
 
-### [nano] entree litterale (`M-V`) : les saisies numeriques manquent
-`M-V` annonce « [ Verbatim Input ] » et insere la touche suivante telle quelle (un caractere, un code de controle
-`^A`, Entree `^M`) ; mesure sous tmux sur nano 7.2. Restent les saisies numeriques (trois chiffres octaux, `u` et des
-chiffres hexadecimaux) : le binaire affiche « [ Unicode Input: 101 ] » en attendant la suite et la regle qui termine la saisie
-n'est pas mesuree.
-
 ### [nano] tampons multiples : `-F`, plusieurs fichiers, `M-<` `M->`, `M-F`, `^R` en mode vue
 Le moteur n'a qu'un tampon. Ce qui en depend, mesure sur nano 7.2 :
 - `^R` sous `-v` ouvre un NOUVEAU tampon : invite « File to read into new buffer [from ./]: »
