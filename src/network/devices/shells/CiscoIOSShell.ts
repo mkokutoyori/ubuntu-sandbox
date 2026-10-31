@@ -64,7 +64,6 @@ import { getSecurityConfig } from './cisco/CiscoSecurityCommands';
 import { zoneSpecs, type ZoneHost } from './cisco/zoneSpecs';
 import { inspectSpecs } from './cisco/inspectSpecs';
 import { tcpInterceptSpecs } from './cisco/tcpInterceptSpecs';
-import { simulationNowMs } from '@/network/core/SystemClock';
 import { pkiSpecs, type PkiHost } from './cisco/pkiSpecs';
 import { ezvpnSpecs, type EzvpnEngine } from './cisco/ezvpnSpecs';
 import { ezvpnClientSpecs } from './cisco/ezvpnClientSpecs';
@@ -1669,7 +1668,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
           revocationCheck: mapRevocationCheck(tp.revocationCheck),
         });
       },
-      now: () => simulationNowMs(),
+      now: () => router().getSystemClockMs(),
       after: (ms, fn) => router().scheduleAfter(ms, fn),
       cancel: (handle) => router().cancelScheduled(handle),
     };

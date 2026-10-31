@@ -301,7 +301,7 @@ export class SslDeepInspection {
     if (!socket || socket.state !== 'established') return null;
 
     const session = new TlsClientSession({
-      verifier: new CertificateVerifier({ trustAnchors: this.deps.trustAnchors() }),
+      verifier: new CertificateVerifier({ trustAnchors: this.deps.trustAnchors(), clock: () => this.deps.tcp().nowMs() }),
       allowUntrustedPeer: true,
       alpn: ['http/1.1'],
     });
