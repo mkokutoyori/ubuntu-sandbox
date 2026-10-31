@@ -648,11 +648,11 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
   function` meme quand vim le connait. Mesure sur vim 9.1 (73 expressions rejouees) : restent absentes `environ`, `executable`,
   `exepath`, `expand`, `glob`, `globpath`, `getftype` (le VFS d'edition rend `file` pour un lien), `getfperm`,
-  `resolve`, `mkdir`, `delete`, `rename`, `writefile`, `hostname`, `getpid`, `tempname`, `localtime`, `reltime`,
+  `resolve`, `mkdir`, `delete`, `rename`, `writefile`, `tempname`, `reltime`,
   `reltimestr`, `wordcount`, `bufname`, `mode`, `blob2list`, `list2blob`, `strptime`, `foreach` (le rejeu trouve `foreach`
   inconnue sur ce vim aussi). Existent : `reduce`, `mapnew`, `sha256`, `strftime`, `json_encode`, `json_decode`, `system`,
   `systemlist`, `v:shell_error`, `getenv`, `str2float`, `flatten`, `flattennew`, `slice`, `fmod`, `log10`, `isnan`, `strgetchar`,
-  `byteidx`, `charidx`, `utf16idx`, `indexof`, `filereadable`, `isdirectory`, `readfile`, `readdir`, `getfsize`, `getcwd` (`probe-vim-fonctions-fichiers`), `shellescape`, `simplify`, `pathshorten`, `isabsolutepath` et `fnamemodify`
+  `byteidx`, `charidx`, `utf16idx`, `indexof`, `filereadable`, `isdirectory`, `readfile`, `readdir`, `getfsize`, `getcwd`, `hostname`, `getpid`, `localtime` (`probe-vim-fonctions-fichiers`), `shellescape`, `simplify`, `pathshorten`, `isabsolutepath` et `fnamemodify`
   (`:h :t :r :e`, `:e` repete ; `:p`, `:~`, `:.`, `:s` et `:gs` restent absents) (`probe-vim-fonctions-texte-et-chemins`).
 - **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
   `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la

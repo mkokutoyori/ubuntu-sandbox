@@ -3373,6 +3373,8 @@ export class VimEngine {
       readText: (path) => this.fs.readFile(this.fs.resolvePath(path)),
       directoryEntries: (path) => this.fs.listDirectory?.(this.fs.resolvePath(path)) ?? null,
       workingDirectory: () => this.fs.resolvePath('.'),
+      hostName: () => this.fs.identity?.().host ?? '',
+      processId: () => this.fs.identity?.().pid ?? 0,
       shell: (command, input) => this.runExpressionShell(command, input),
     };
   }

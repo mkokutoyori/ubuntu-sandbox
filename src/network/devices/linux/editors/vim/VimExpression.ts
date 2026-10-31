@@ -55,6 +55,8 @@ export interface ExpressionHost {
   readText(path: string): string | null;
   directoryEntries(path: string): string[] | null;
   workingDirectory(): string;
+  hostName(): string;
+  processId(): number;
   shell(command: string, input: string | null): string;
   assignOption(name: string, value: string | number): string | null;
   assignRegister(name: string, text: string): void;
@@ -1135,6 +1137,9 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     const kept = args[1] === undefined ? names : names.filter((name) => context.numberOf(context.invoke(args[1], [str(name)]), false) !== 0n);
     return list(kept.map(str));
   } }],
+  ['localtime', { min: 0, max: 0, run: () => num(Math.floor(simulationNowMs() / 1000)) }],
+  ['hostname', { min: 0, max: 0, run: (_args, context) => str(context.host.hostName()) }],
+  ['getpid', { min: 0, max: 0, run: (_args, context) => num(context.host.processId()) }],
   ['str2float', { min: 1, max: 1, run: (args, context) => flt(parseFloatPrefix(context.stringOf(args[0], false))) }],
   ['flatten', { min: 1, max: 2, run: (args, context) => flattenList(args, context, true) }],
   ['flattennew', { min: 1, max: 2, run: (args, context) => flattenList(args, context, false) }],
