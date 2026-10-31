@@ -3366,8 +3366,14 @@ export class VimEngine {
       mark: (name) => this.patternMark(name),
       register: (name) => this.registerContent(name),
       option: (name, scope) => this.options.lookup(name, scope),
-      environment: (name) => this.environmentVariable(name),
-      shell: (command, input) => (input === null ? this.fs.runShellCommand(command) : this.fs.filterThroughShell(command, input)),
+      environment: (name) => this.environmentVariable(name) ?? '',
+      environmentOrNull: (name) => this.environmentVariable(name),
+      shellStatus: () => this.lastShellStatus,
+      pathKind: (path) => this.fs.kindOf?.(path) ?? (this.fs.exists(this.fs.resolvePath(path)) ? 'file' : 'missing'),
+      readText: (path) => this.fs.readFile(this.fs.resolvePath(path)),
+      directoryEntries: (path) => this.fs.listDirectory?.(this.fs.resolvePath(path)) ?? null,
+      workingDirectory: () => this.fs.resolvePath('.'),
+      shell: (command, input) => this.runExpressionShell(command, input),
     };
   }
 
@@ -3383,8 +3389,20 @@ export class VimEngine {
     return register.lines.join('\n') + (register.linewise ? '\n' : '');
   }
 
-  private environmentVariable(name: string): string {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? (this.fs.environmentVariable?.(name) ?? '') : '';
+  private environmentVariable(name: string): string | null {
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? (this.fs.environmentVariable?.(name) ?? null) : null;
+  }
+
+  private lastShellStatus = 0;
+
+  private runExpressionShell(command: string, input: string | null): string {
+    if (this.fs.runChildShell === undefined) {
+      this.lastShellStatus = 0;
+      return input === null ? this.fs.runShellCommand(command) : this.fs.filterThroughShell(command, input);
+    }
+    const run = this.fs.runChildShell(command, input ?? undefined);
+    this.lastShellStatus = run.status;
+    return run.output;
   }
 
   private printedLine(line: number, numbered: boolean, listed: boolean): string {

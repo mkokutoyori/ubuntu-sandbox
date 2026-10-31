@@ -646,8 +646,14 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
   retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait (`v:shell_error`, `getenv`...). `reduce`, `mapnew`, `sha256`, `strftime`,
-  `json_encode`, `json_decode`, `system` et `systemlist` existent.
+  function` meme quand vim le connait. Mesure sur vim 9.1 (73 expressions rejouees) : restent absentes `environ`, `executable`,
+  `exepath`, `expand`, `glob`, `globpath`, `getftype` (le VFS d'edition rend `file` pour un lien), `getfperm`,
+  `resolve`, `mkdir`, `delete`, `rename`, `writefile`, `hostname`, `getpid`, `tempname`, `localtime`, `reltime`,
+  `reltimestr`, `wordcount`, `bufname`, `mode`, `blob2list`, `list2blob`, `strptime`, `foreach` (le rejeu trouve `foreach`
+  inconnue sur ce vim aussi). Existent : `reduce`, `mapnew`, `sha256`, `strftime`, `json_encode`, `json_decode`, `system`,
+  `systemlist`, `v:shell_error`, `getenv`, `str2float`, `flatten`, `flattennew`, `slice`, `fmod`, `log10`, `isnan`, `strgetchar`,
+  `byteidx`, `charidx`, `utf16idx`, `indexof`, `filereadable`, `isdirectory`, `readfile`, `readdir`, `getfsize`, `getcwd` (`probe-vim-fonctions-fichiers`), `shellescape`, `simplify`, `pathshorten`, `isabsolutepath` et `fnamemodify`
+  (`:h :t :r :e`, `:e` repete ; `:p`, `:~`, `:.`, `:s` et `:gs` restent absents) (`probe-vim-fonctions-texte-et-chemins`).
 - **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
   `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
   destructuration. Restent refusees les cibles `$ENV` (l'environnement du
@@ -837,8 +843,8 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 - `builtin umask`, `command -V umask`, `type -a umask`, `help umask`, `enable -n umask`, `which umask`, un `alias umask=…`
   et `/usr/bin/umask` : le simulateur n'a pas de table des builtins (nom, etat active / desactive, aide, resolution
   alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
-- `` `umask 077` `` (mot de commande vide apres la substitution) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
-  Le piege EXIT s'execute a la sortie de `bash -c`, meme pose dans une fonction, et son `exit N` fixe le code (`probe-bash-trap-exit-global`).
+- Re-mesure : un mot de commande vide apres substitution (`` `umask 077` ``, `$(true)`, `$(exit 3)`) et le prefixe `bash: line 1: ` des
+  diagnostics d'un `bash -c` sortent deja comme le bash 5.2 reel. Le piege EXIT s'execute a la sortie de `bash -c`, meme pose dans une fonction, et son `exit N` fixe le code (`probe-bash-trap-exit-global`).
 Autres ecarts mesures, non fermes :
 - L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
   maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).

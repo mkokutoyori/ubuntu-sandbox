@@ -49,6 +49,12 @@ export interface ExpressionHost {
   register(name: string): string | null;
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
+  environmentOrNull(name: string): string | null;
+  shellStatus(): number;
+  pathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo';
+  readText(path: string): string | null;
+  directoryEntries(path: string): string[] | null;
+  workingDirectory(): string;
   shell(command: string, input: string | null): string;
   assignOption(name: string, value: string | number): string | null;
   assignRegister(name: string, text: string): void;
@@ -1094,6 +1100,80 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     }
     return accumulator;
   } }],
+  ['getenv', { min: 1, max: 1, run: (args, context) => {
+    const value = context.host.environmentOrNull(context.stringOf(args[0], false));
+    return value === null || value === '' ? special('null') : str(value);
+  } }],
+  ['filereadable', { min: 1, max: 1, run: (args, context) => num(context.host.pathKind(context.stringOf(args[0], false)) === 'file' && context.host.readText(context.stringOf(args[0], false)) !== null ? 1 : 0) }],
+  ['isdirectory', { min: 1, max: 1, run: (args, context) => num(context.host.pathKind(context.stringOf(args[0], false)) === 'directory' ? 1 : 0) }],
+  ['getcwd', { min: 0, max: 2, run: (_args, context) => str(context.host.workingDirectory()) }],
+  ['getfsize', { min: 1, max: 1, run: (args, context) => {
+    const path = context.stringOf(args[0], false);
+    const kind = context.host.pathKind(path);
+    if (kind === 'missing') return num(-1);
+    return num(kind === 'file' ? utf8Length(context.host.readText(path) ?? '') : 0);
+  } }],
+  ['readfile', { min: 1, max: 3, run: (args, context) => {
+    const name = context.stringOf(args[0], false);
+    const text = context.host.pathKind(name) === 'file' ? context.host.readText(name) : null;
+    if (text === null) {
+      context.soft(`E484: Can't open file ${name}`);
+      return list([]);
+    }
+    const binary = args[1] !== undefined && context.stringOf(args[1], false).includes('b');
+    const limit = args[2] === undefined ? Number.MAX_SAFE_INTEGER : Number(context.numberOf(args[2], false));
+    const pieces = text === '' ? [] : text.split('\n');
+    if (!binary && pieces.length > 0 && pieces[pieces.length - 1] === '') pieces.pop();
+    const lines = binary ? pieces : pieces.map((piece) => piece.replace(/\r$/, ''));
+    const chosen = limit < 0 ? lines.slice(Math.max(0, lines.length + limit)) : lines.slice(0, limit);
+    return list(chosen.map(str));
+  } }],
+  ['readdir', { min: 1, max: 2, run: (args, context) => {
+    const entries = context.host.directoryEntries(context.stringOf(args[0], false));
+    if (entries === null) return list([]);
+    const names = [...entries].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    const kept = args[1] === undefined ? names : names.filter((name) => context.numberOf(context.invoke(args[1], [str(name)]), false) !== 0n);
+    return list(kept.map(str));
+  } }],
+  ['str2float', { min: 1, max: 1, run: (args, context) => flt(parseFloatPrefix(context.stringOf(args[0], false))) }],
+  ['flatten', { min: 1, max: 2, run: (args, context) => flattenList(args, context, true) }],
+  ['flattennew', { min: 1, max: 2, run: (args, context) => flattenList(args, context, false) }],
+  ['slice', { min: 2, max: 3, run: (args, context) => sliceOf(args, context) }],
+  ['fmod', { min: 2, max: 2, run: (args, context) => flt(floatArgument(context, args[0]) % floatArgument(context, args[1])) }],
+  ['log10', { min: 1, max: 1, run: (args, context) => flt(Math.log10(floatArgument(context, args[0]))) }],
+  ['isnan', { min: 1, max: 1, run: (args, context) => num(args[0].kind === 'float' && Number.isNaN(args[0].value) ? 1 : (args[0].kind === 'number' ? 0 : (context.soft('E808: Number or Float required'), 0))) }],
+  ['strgetchar', { min: 2, max: 2, run: (args, context) => {
+    const at = Number(context.numberOf(args[1], false));
+    const picked = at < 0 ? undefined : characters(context.stringOf(args[0], false))[at];
+    return num(picked === undefined ? -1 : picked.codePointAt(0)!);
+  } }],
+  ['byteidx', { min: 2, max: 2, run: (args, context) => num(byteIndexOfCharacter(context.stringOf(args[0], false), Number(context.numberOf(args[1], false)))) }],
+  ['charidx', { min: 2, max: 3, run: (args, context) => num(characterIndexOfByte(context.stringOf(args[0], false), Number(context.numberOf(args[1], false)))) }],
+  ['utf16idx', { min: 2, max: 4, run: (args, context) => num(utf16IndexOf(
+    context.stringOf(args[0], false), Number(context.numberOf(args[1], false)), args[3] !== undefined && context.numberOf(args[3], false) !== 0n,
+  )) }],
+  ['indexof', { min: 2, max: 3, run: (args, context) => {
+    const items = listOf(args[0], context)?.items;
+    if (items === undefined) return num(-1);
+    let from = 0;
+    const options = args[2];
+    if (options !== undefined && options.kind === 'dict') {
+      const given = options.entries.get('startidx');
+      if (given !== undefined) {
+        const wanted = Number(context.numberOf(given, false));
+        from = wanted < 0 ? Math.max(0, items.length + wanted) : wanted;
+      }
+    }
+    for (let at = from; at < items.length; at++) {
+      if (context.numberOf(evaluateCallback(context, args[1], num(at), items[at]), false) !== 0n) return num(at);
+    }
+    return num(-1);
+  } }],
+  ['shellescape', { min: 1, max: 2, run: (args, context) => str(`'${context.stringOf(args[0], false).replace(/'/g, "'\\''")}'`) }],
+  ['isabsolutepath', { min: 1, max: 1, run: (args, context) => num(context.stringOf(args[0], false).startsWith('/') ? 1 : 0) }],
+  ['simplify', { min: 1, max: 1, run: (args, context) => str(simplifyPath(context.stringOf(args[0], false))) }],
+  ['pathshorten', { min: 1, max: 2, run: (args, context) => str(shortenPath(context.stringOf(args[0], false), args[1] === undefined ? 1 : Number(context.numberOf(args[1], false)))) }],
+  ['fnamemodify', { min: 2, max: 2, run: (args, context) => str(modifyFileName(context.stringOf(args[0], false), context.stringOf(args[1], false))) }],
   ['sha256', { min: 1, max: 1, run: (args, context) => str(Array.from(sha256(new TextEncoder().encode(context.stringOf(args[0], false))), (byte) => byte.toString(16).padStart(2, '0')).join('')) }],
   ['system', { min: 1, max: 2, run: (args, context) => str(context.host.shell(
     context.stringOf(args[0], false),
@@ -1142,7 +1222,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
   ['exists', { min: 1, max: 1, run: (args, context) => {
     const name = context.stringOf(args[0], false);
     if (name.startsWith('&')) return num(context.host.option(name.replace(/^&([lg]:)?/, ''), 'effective') === undefined ? 0 : 1);
-    if (name.startsWith('$')) return num(context.host.environment(name.slice(1)) === '' ? 0 : 1);
+    if (name.startsWith('$')) return num(context.host.environmentOrNull(name.slice(1)) === null ? 0 : 1);
     if (name.startsWith('*')) return num(FUNCTIONS.has(name.slice(1)) ? 1 : 0);
     return num(context.host.variables.lookup(name) === undefined ? 0 : 1);
   } }],
@@ -1225,6 +1305,133 @@ function makeFuncref(args: VimValue[], context: Context, builtinsAllowed: boolea
   }
   const bound = args[1] !== undefined && args[1].kind === 'list' ? args[1].items : [];
   return { kind: 'funcref', name, params: null, body: '', scopes: [], bound };
+}
+
+function parseFloatPrefix(text: string): number {
+  const trimmed = text.replace(/^[ \t]+/, '');
+  const hex = /^([+-]?)0[xX]([0-9a-fA-F]+)/.exec(trimmed);
+  if (hex !== null) return (hex[1] === '-' ? -1 : 1) * parseInt(hex[2], 16);
+  const word = /^([+-]?)(infinity|inf|nan)/i.exec(trimmed);
+  if (word !== null) return word[2].toLowerCase() === 'nan' ? Number.NaN : (word[1] === '-' ? -Infinity : Infinity);
+  const decimal = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(trimmed);
+  return decimal === null ? 0 : Number(decimal[0]);
+}
+
+function flattenList(args: VimValue[], context: Context, inPlace: boolean): VimValue {
+  const source = listOf(args[0], context);
+  if (source === null) return num(0);
+  const depth = args[1] === undefined ? Number.MAX_SAFE_INTEGER : Number(context.numberOf(args[1], false));
+  if (depth < 0) {
+    context.soft('E900: maxdepth must be non-negative number');
+    return num(0);
+  }
+  const spread = (items: VimValue[], remaining: number): VimValue[] => items.flatMap((item) => (item.kind === 'list' && remaining > 0 ? spread(item.items, remaining - 1) : [item]));
+  const flat = spread(source.items, depth);
+  if (!inPlace) return list(flat);
+  source.items = flat;
+  return source;
+}
+
+function sliceOf(args: VimValue[], context: Context): VimValue {
+  const target = args[0];
+  const isString = target.kind !== 'list';
+  const items: unknown[] = target.kind === 'list' ? target.items : characters(context.stringOf(target, false));
+  const resolve = (value: bigint): number => {
+    const at = Number(value);
+    return at < 0 ? Math.max(0, items.length + at) : Math.min(at, items.length);
+  };
+  const start = resolve(context.numberOf(args[1], false));
+  const end = args[2] === undefined ? items.length : resolve(context.numberOf(args[2], false));
+  const kept = start >= end ? [] : items.slice(start, end);
+  return isString ? str((kept as string[]).join('')) : list(kept as VimValue[]);
+}
+
+function byteIndexOfCharacter(text: string, wanted: number): number {
+  if (wanted < 0) return -1;
+  const chars = characters(text);
+  if (wanted > chars.length) return -1;
+  return utf8Length(chars.slice(0, wanted).join(''));
+}
+
+function characterIndexOfByte(text: string, wanted: number): number {
+  if (wanted < 0 || wanted > utf8Length(text)) return -1;
+  let bytes = 0;
+  let count = 0;
+  for (const character of characters(text)) {
+    const width = utf8Length(character);
+    if (bytes + width > wanted) return count;
+    bytes += width;
+    count++;
+  }
+  return count;
+}
+
+function utf16IndexOf(text: string, wanted: number, byCharacter: boolean): number {
+  const chars = characters(text);
+  if (byCharacter) {
+    if (wanted < 0 || wanted > chars.length) return -1;
+    return chars.slice(0, wanted).reduce((total, character) => total + character.length, 0);
+  }
+  if (wanted < 0 || wanted > utf8Length(text)) return -1;
+  const count = characterIndexOfByte(text, wanted);
+  return chars.slice(0, count).reduce((total, character) => total + character.length, 0);
+}
+
+function simplifyPath(path: string): string {
+  if (path === '') return '';
+  const absolute = path.startsWith('/');
+  const trailing = path.length > 1 && path.endsWith('/');
+  const kept: string[] = [];
+  for (const part of path.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      if (kept.length > 0 && kept[kept.length - 1] !== '..') { kept.pop(); continue; }
+      if (absolute) continue;
+    }
+    kept.push(part);
+  }
+  const joined = kept.join('/');
+  if (joined === '') return absolute ? '/' : '.';
+  const lead = absolute ? '/' : (path.startsWith('./') && kept[0] !== '..' ? './' : '');
+  return `${lead}${joined}${trailing ? '/' : ''}`;
+}
+
+function shortenPath(path: string, keep: number): string {
+  const parts = path.split('/');
+  return parts.map((part, at) => {
+    if (at === parts.length - 1 || part === '') return part;
+    const chars = characters(part);
+    let lead = 0;
+    while (lead < chars.length && (chars[lead] === '~' || chars[lead] === '.')) lead++;
+    return chars.slice(0, lead + keep).join('');
+  }).join('/');
+}
+
+function modifyFileName(name: string, modifiers: string): string {
+  let result = name;
+  let previous = '';
+  let extensionSource = name;
+  let extensionDepth = 0;
+  for (const modifier of modifiers.split(':').filter((item) => item !== '')) {
+    if (modifier === 'h') {
+      const cut = result.lastIndexOf('/');
+      const head = result.slice(0, Math.max(cut, 0)).replace(/\/+$/, '');
+      result = cut < 0 ? '.' : head === '' ? '/' : head;
+    } else if (modifier === 't') {
+      result = result.slice(result.lastIndexOf('/') + 1);
+    } else if (modifier === 'r') {
+      const dot = result.lastIndexOf('.');
+      if (dot > result.lastIndexOf('/') + 1) result = result.slice(0, dot);
+    } else if (modifier === 'e') {
+      if (previous !== 'e') { extensionSource = result; extensionDepth = 0; }
+      extensionDepth++;
+      const base = extensionSource.slice(extensionSource.lastIndexOf('/') + 1);
+      const segments = base.replace(/^\.+/, '').split('.');
+      result = segments.length <= 1 ? '' : segments.slice(-Math.min(extensionDepth, segments.length - 1)).join('.');
+    }
+    previous = modifier;
+  }
+  return result;
 }
 
 function floatArgument(context: Context, value: VimValue): number {
@@ -1984,6 +2191,7 @@ class Parser {
     }
     const stored = context.host.variables.lookup(name);
     if (stored !== undefined) return stored;
+    if (name === 'v:shell_error') return num(context.host.shellStatus());
     if (name === 'v:hlsearch') return num(context.host.highlightSearch ? 1 : 0);
     if (name === 'v:searchforward') return num(context.host.searchForward ? 1 : 0);
     if (name in constants) return constants[name];
