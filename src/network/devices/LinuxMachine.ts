@@ -5675,9 +5675,10 @@ export abstract class LinuxMachine extends EndHost
   private foregroundSession: LinuxShellSession | null = null;
 
   interruptForeground(session: LinuxShellSession): boolean {
+    if (this.foregroundSession !== session) return false;
     const pid = this.executor.foregroundProcessId();
-    if (this.foregroundSession !== session || pid === null) return false;
-    return this.executor.processMgr.kill(pid, 'SIGINT');
+    const loopInterrupted = this.executor.interruptInterpreter();
+    return pid === null ? loopInterrupted : this.executor.processMgr.kill(pid, 'SIGINT');
   }
 
   /**

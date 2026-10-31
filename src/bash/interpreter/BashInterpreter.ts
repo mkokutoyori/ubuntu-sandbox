@@ -36,7 +36,7 @@ import {
   ArithmeticError, ExitSignal, ReturnSignal, BreakSignal, ContinueSignal, DaemonParkSignal,
 } from '@/bash/errors/BashError';
 import { backgroundGroupText } from './CommandText';
-import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
+import { yieldToEventLoop, yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { isBuiltin, isShellBuiltinName, executeBuiltin } from '@/bash/runtime/Builtins';
 import { parseDeclarationFlags } from '@/bash/runtime/Declare';
 import type { DeclarationCommand } from '@/bash/runtime/Declare';
@@ -89,6 +89,7 @@ export type ExternalCommandFn = (
 /** A request the evaluation core yields to its driver. */
 export interface ExternalRequest {
   argv: string[];
+  checkpoint?: true;
   env?: Record<string, string>;
   background?: boolean;
   /**
@@ -207,7 +208,17 @@ export interface InterpreterOptions {
   stdin?: string;
   /** True for a shell reading commands from a terminal (aliases expand). */
   interactive?: boolean;
+  interrupt?: InterruptToken;
 }
+
+export interface InterruptToken {
+  requested: boolean;
+}
+
+const LOOP_CHECKPOINT_INTERVAL = 256;
+const SYNCHRONOUS_LOOP_CAP = 10000;
+const SYNCHRONOUS_ARITHMETIC_LOOP_CAP = 100_000;
+const INTERRUPTED_EXIT_CODE = 130;
 
 /**
  * Raised by the memoized substitution lookup when synchronous expansion
@@ -268,6 +279,8 @@ export class BashInterpreter {
   readonly aliases: AliasTable;
   private readonly daemonMode: boolean;
   private readonly interactive: boolean;
+  private readonly interrupt: InterruptToken | undefined;
+  private synchronousDepth = 0;
   private functionStack: string[] = [];
   private callerLines: number[] = [];
   private readonly jobs = new Map<string, number>();
@@ -280,6 +293,7 @@ export class BashInterpreter {
     this.functions = options.functions ?? new Map();
     this.daemonMode = options.daemonMode ?? false;
     this.interactive = options.interactive ?? false;
+    this.interrupt = options.interrupt;
     if (options.stdin !== undefined) this.stdin = new StdinSource(options.stdin);
     const now = (): number => this.io?.wallClock?.().nowMs() ?? Date.now();
     const startedAt = now();
@@ -375,8 +389,21 @@ export class BashInterpreter {
   // ─── Drivers ──────────────────────────────────────────────────
 
   private driveSync<T>(gen: Effects<T>): T {
+    this.synchronousDepth++;
+    try {
+      return this.driveSyncSteps(gen);
+    } finally {
+      this.synchronousDepth--;
+    }
+  }
+
+  private driveSyncSteps<T>(gen: Effects<T>): T {
     let step = gen.next();
     while (step.done !== true) {
+      if (step.value.checkpoint === true) {
+        step = gen.next({ output: '', exitCode: 0 });
+        continue;
+      }
       let feed: ExternalCommandResult;
       try {
         const raw = this.executeCommand(
@@ -405,12 +432,18 @@ export class BashInterpreter {
   private async driveAsync<T>(gen: Effects<T>): Promise<T> {
     let step = gen.next();
     while (step.done !== true) {
+      if (step.value.checkpoint === true) {
+        await yieldToEventLoop();
+        step = gen.next({ output: '', exitCode: 0 });
+        continue;
+      }
       let feed: ExternalCommandResult;
       try {
         feed = normalizeResult(await this.executeCommand(
           step.value.argv, step.value.env, step.value.background, step.value.outputPiped,
           step.value.stdin));
         await yieldWhenSliceIsSpent();
+        if (this.interrupt?.requested === true && feed.exitCode === INTERRUPTED_EXIT_CODE) throw new ExitSignal(INTERRUPTED_EXIT_CODE);
       } catch (e) {
         if (e instanceof ExitSignal || e instanceof DaemonParkSignal) {
           step = gen.throw(e);
@@ -743,6 +776,13 @@ export class BashInterpreter {
         && (node.first.commands[0].type === 'Subshell' || node.first.commands[0].type === 'BraceGroup')
         && this.io?.beginBackgroundSubshell !== undefined) {
       yield* this.runBackgroundGroup(node.first.commands[0]);
+      this.env.lastExitCode = 0;
+      return;
+    }
+    if (node.background && node.rest.length === 0 && !node.first.negated
+        && node.first.commands.length === 1 && isLoopCommand(node.first.commands[0])
+        && this.io?.beginBackgroundSubshell !== undefined) {
+      yield* this.runBackgroundGroup(loopAsGroup(node, node.first.commands[0]));
       this.env.lastExitCode = 0;
       return;
     }
@@ -1667,6 +1707,16 @@ export class BashInterpreter {
 
   // ─── Loops ────────────────────────────────────────────────────
 
+  private loopIterationCap(synchronousCap: number): number {
+    return this.synchronousDepth > 0 ? synchronousCap : Infinity;
+  }
+
+  private *loopCheckpoint(iterations: number): Effects<void> {
+    if (iterations % LOOP_CHECKPOINT_INTERVAL !== 0) return;
+    yield { argv: [], checkpoint: true };
+    if (this.interrupt?.requested === true) throw new ExitSignal(INTERRUPTED_EXIT_CODE);
+  }
+
   private *runLoopBody(body: CommandList): Effects<'continue' | 'break'> {
     this.loopDepth++;
     try {
@@ -1741,11 +1791,11 @@ export class BashInterpreter {
   }
 
   private *runConditionLoop(condition: CommandList, body: CommandList, whileTrue: boolean): Effects<void> {
-    const MAX_ITERATIONS = 10000;
     const parkAfterFirst = (this.daemonMode || this.daemonDepth > 0) && isUnconditional(condition, whileTrue);
     let iterations = 0;
     let status = 0;
-    while (iterations++ < MAX_ITERATIONS) {
+    while (iterations++ < this.loopIterationCap(SYNCHRONOUS_LOOP_CAP)) {
+      yield* this.loopCheckpoint(iterations);
       this.errexitSuppress++;
       try { yield* this.visitCommandList(condition); }
       finally { this.errexitSuppress--; }
@@ -2135,10 +2185,10 @@ export class BashInterpreter {
   // ─── for ((init; cond; update)) ──────────────────────────────
 
   private *visitCStyleFor(node: CStyleForClause): Effects<void> {
-    const MAX = 100_000;
     if (node.init) evaluateArithmetic(node.init, this.env);
     let iters = 0;
-    while (iters++ < MAX) {
+    while (iters++ < this.loopIterationCap(SYNCHRONOUS_ARITHMETIC_LOOP_CAP)) {
+      yield* this.loopCheckpoint(iters);
       if (node.cond) {
         const v = evaluateArithmetic(node.cond, this.env);
         if (Number.parseInt(v, 10) === 0) break;
@@ -2167,6 +2217,16 @@ export class BashInterpreter {
  * arguments to the local scope. `readonly` and `export` are NOT in
  * this list — they keep the parent-walking semantics.
  */
+function isLoopCommand(command: Pipeline['commands'][number]): boolean {
+  return command.type === 'WhileClause' || command.type === 'UntilClause'
+    || command.type === 'CStyleForClause' || (command.type === 'ForClause' && command.select !== true);
+}
+
+function loopAsGroup(node: AndOrList, loop: Pipeline['commands'][number]): BraceGroup {
+  const foreground: AndOrList = { ...node, first: { ...node.first, commands: [loop] }, rest: [], background: false };
+  return { type: 'BraceGroup', body: { type: 'CommandList', commands: [foreground] }, redirections: [] };
+}
+
 /** True for a bare `true`/`:` (expectTrue) or `false` (!expectTrue) condition
  *  — an unconditional loop head like `while true`/`until false`. */
 function isUnconditional(condition: CommandList, expectTrue: boolean): boolean {
