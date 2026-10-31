@@ -296,10 +296,14 @@ a la reception, la cible a l'arrivee puis dans la reponse : `ip_options_compile`
 
 **Ce qui reste, et pourquoi.**
 1. Les extremites Windows, Cisco et Huawei gardent la regle de la RFC 1122
-   §3.2.2.6 (la cible s'ecrit UNE fois, l'emetteur jamais) : le comportement de
-   `tcpip.sys`, d'IOS et de VRP sur ce point n'est atteste par aucune source
-   joignable depuis ce reseau. Une transcription de `ping -r` sous Windows ou
-   d'un `ping` etendu IOS avec `Record` la trancherait.
+   §3.2.2.6 (la cible s'ecrit UNE fois, l'emetteur jamais). Ce qui est atteste
+   pour Windows (MicrosoftDocs/windowsserverdocs, ping.md, lu sur
+   raw.githubusercontent.com) : `-r` enregistre le chemin de la requete ET de la
+   reponse, `-s` l'heure d'arrivee de l'une et de l'autre, de 1 a 9 et de 1 a 4
+   sauts ; le texte ne dit pas si l'emetteur ou la cible s'ecrivent deux fois,
+   et ne donne aucune sortie. Pour IOS et VRP rien n'est joignable. Une
+   transcription de `ping -r` sous Windows ou d'un `ping` etendu IOS avec
+   `Record` la trancherait.
 2. Le `ping` etendu de Cisco collecte toujours `Loose, Strict, Record,
    Timestamp` sans les construire (entree suivante) : le rendu IOS n'est pas
    attestable.
