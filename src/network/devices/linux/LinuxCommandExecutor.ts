@@ -6043,7 +6043,7 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
+  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
     useLocaleQuotes(this.env.get('LC_ALL') || this.env.get('LC_CTYPE') || this.env.get('LANG') || '');
