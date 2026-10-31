@@ -207,14 +207,6 @@ reseau ne joint pas ; (2) demande de passer le glissement du pas de mise a
 jour a un taux continu sur l'ordonnanceur, et de decider quoi faire des
 echantillons au saut externe.
 
-### [huawei] `undo dhcp enable` est refuse en vue systeme
-**Mesure** : `huawei-config-parity` (« should disable DHCP with undo dhcp enable ») est rouge sur `main` et
-sur toute la chaine de branches : `dhcp enable` passe, `undo dhcp enable` repond
-`Error: Unrecognized command found at '^' position.`. Sans rapport avec l'horloge, vu en passant.
-**Pourquoi ce n'est pas ferme** : le test peut encoder une fausse prémisse (la forme `undo` du
-commutateur global `dhcp enable` n'est pas verifiee sur une transcription VRP) ; il faut la source
-avant de decider entre corriger le moteur et corriger le test.
-
 ### [windows] `quser` est inconnu ; libelles d'erreur de `tzutil` et `eventcreate` non attestes
 **Mesure** : `quser` repond « not recognized » sur une machine Windows simulee. `tzutil /g|/l|/s` et
 `eventcreate` existent maintenant, sur le fuseau de l'identite (celui de `Set-TimeZone`) et sur le journal
@@ -295,12 +287,6 @@ les cles restantes demandent chacune un evaluateur de plus dans `CalendarExpress
 `TO_DSINTERVAL`, `AT TIME ZONE` sont inconnus.
 **Pourquoi ce n'est pas ferme** : le moteur n'a pas de type intervalle (une chaine `n UNIT`) ni de TIMESTAMP
 WITH TIME ZONE autrement que comme chaine `... +hh:mm`.
-
-### [oracle] `V$SESSION_CONTEXT` : `HOST` rend le nom du peripherique, pas `linux-server`
-**Mesure** : `oracle-user-activity` (« reports SESSION_USER, OS_USER, HOST and SERVICE_NAME ») est rouge
-sur `main` : le test cree une session sur un peripherique nomme `vsc-1` et attend `linux-server`.
-**Pourquoi ce n'est pas ferme** : la prémisse du test (le nom du serveur) est a trancher avant de toucher
-le moteur ou le test.
 
 ### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
 **Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
