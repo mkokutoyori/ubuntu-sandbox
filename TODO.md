@@ -529,9 +529,6 @@ paquet puis les demarre. Restent :
 - deux versions de nginx : le catalogue dit `1.18.0-6ubuntu14.4` (jammy),
   `NGINX_VERSION` (http/nginx/NginxFiles.ts) dit `1.24.0`, que `nginx -v`
   affiche ; un seul des deux doit rester ;
-- `apt install` ne demande pas root (un vrai apt refuse : « Could not open
-  lock file /var/lib/dpkg/lock-frontend ») ; l'exiger touche tous les
-  tests qui installent sans `sudo` ;
 - aucune archive n'est modelisee : les lignes de telechargement (« Need to
   get », « Get: », « Fetched ») ne sont pas imprimees, et un paquet ne pose
   que ses unites, ses fichiers de configuration connus et ses comptes.

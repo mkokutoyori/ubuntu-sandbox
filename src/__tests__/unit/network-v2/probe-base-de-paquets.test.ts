@@ -3,16 +3,16 @@
  *
  * Mesure de départ, sur une seule machine et au même instant :
  *
- *  - `apt install zorglub` répondait « zorglub is already the newest
+ *  - `sudo apt install zorglub` répondait « zorglub is already the newest
  *    version. » pendant qu'`apt-cache policy zorglub` répondait
  *    « Unable to locate package zorglub ». Deux commandes, une question,
  *    deux réponses contraires ;
- *  - `apt install bind9` disait la même chose alors qu'`apt-cache
+ *  - `sudo apt install bind9` disait la même chose alors qu'`apt-cache
  *    policy bind9` disait `Installed: (none)`, et rien n'était installé ;
- *  - `apt install --version` prenait l'OPTION pour un nom de paquet
+ *  - `sudo apt install --version` prenait l'OPTION pour un nom de paquet
  *    (« --version is already the newest version ») — le code filtrait
  *    pourtant les options une ligne plus haut, puis ignorait le résultat ;
- *  - `apt remove curl` annonçait « 0 to remove » et `which curl`
+ *  - `sudo apt remove curl` annonçait « 0 to remove » et `which curl`
  *    répondait toujours ;
  *  - `apt-cache search nginx` et `apt-cache search curl` ne rendaient
  *    RIEN alors que `which` situe les deux binaires — la base niait des
@@ -39,7 +39,7 @@
  * Deux cas ont changé de machine quand l'état de paquets est devenu
  * PROPRE À CHAQUE MACHINE (/var/lib/dpkg/status) : nginx n'est livré que
  * par l'image serveur, et bind9 n'est installé nulle part tant
- * qu'`apt install bind9` n'a pas posé /etc/bind/named.conf. Ils
+ * qu'`sudo apt install bind9` n'a pas posé /etc/bind/named.conf. Ils
  * prétendaient le contraire sur un LinuxPC, ce qui était le défaut même.
  *
  * Une remarque sur la rédaction, écrite plutôt que tue : le cas de
@@ -59,9 +59,9 @@ import {
 function machine() { return new LinuxPC('linux-pc', 'srv1', 0, 0); }
 
 describe('la base de paquets décrit la machine', () => {
-  it('apt install refuse un paquet inconnu, comme apt-cache', async () => {
+  it('sudo apt install refuse un paquet inconnu, comme apt-cache', async () => {
     const pc = machine();
-    const out = await pc.executeCommand('apt install zorglub');
+    const out = await pc.executeCommand('sudo apt install zorglub');
     expect(out).toContain('E: Unable to locate package zorglub');
     expect(out).not.toContain('already the newest version');
   });
@@ -71,13 +71,13 @@ describe('la base de paquets décrit la machine', () => {
       .toContain('Unable to locate package zorglub');
   });
 
-  it('apt install nomme la VERSION du paquet installé', async () => {
-    expect(await new LinuxServer('linux-server', 'srv1', 0, 0).executeCommand('apt install nginx'))
+  it('sudo apt install nomme la VERSION du paquet installé', async () => {
+    expect(await new LinuxServer('linux-server', 'srv1', 0, 0).executeCommand('sudo apt install nginx'))
       .toContain('nginx is already the newest version (1.18.0-6ubuntu14.4).');
   });
 
   it('une option n est pas prise pour un paquet', async () => {
-    const out = await machine().executeCommand('apt install -y curl');
+    const out = await machine().executeCommand('sudo apt install -y curl');
     expect(out.split('\n')).toContain(
       'curl is already the newest version (8.5.0-2ubuntu10.6).');
     expect(out).not.toContain('-y');
