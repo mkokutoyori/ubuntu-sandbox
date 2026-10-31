@@ -197,7 +197,7 @@ export async function sshLogin(page: Page, target: string, user: string, pass: s
 
 export async function sshHop(page: Page, sshCmd: string, pass: string, settleMs = 1000): Promise<string> {
   const before = (await termText(page)).length;
-  const legacy = sshCmd.startsWith('ssh ') && [TARGETS.ciscoR1.ip, TARGETS.hwR1.ip].some((ip) => sshCmd.includes(ip)) && !sshCmd.includes('KexAlgorithms');
+  const legacy = sshCmd.startsWith('ssh ') && !sshCmd.startsWith('ssh -l ') && [TARGETS.ciscoR1.ip, TARGETS.hwR1.ip].some((ip) => sshCmd.includes(ip)) && !sshCmd.includes('KexAlgorithms');
   await typeCommand(page, legacy ? `ssh ${LEGACY_IOS_OPTIONS} ${sshCmd.slice(4)}` : sshCmd);
   try {
     await answerHostKeyThenWaitForPassword(page, 9_000);

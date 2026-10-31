@@ -50,7 +50,7 @@ test.describe('telnet — un port de destination est un PORT', () => {
     await typeCmd(page, 'telnet 10.0.0.2 99999');
 
     const texte = await modalText(page);
-    expect(texte).toMatch(/usage: telnet/);
+    expect(texte).toMatch(/telnet: port 99999 out of range/);
     expect(texte).not.toMatch(/Trying/);
   });
 
@@ -61,7 +61,7 @@ test.describe('telnet — un port de destination est un PORT', () => {
 
     await typeCmd(page, 'telnet 10.0.0.2 0');
 
-    expect(await modalText(page)).toMatch(/usage: telnet/);
+    expect(await modalText(page)).toMatch(/telnet: port 0 out of range/);
   });
 
   test('un port valide est bien compose', async ({ page }) => {
