@@ -1,6 +1,6 @@
 /**
  * vim (ex_cmds eval.c ex_let, ex_unlet) : :let, :unlet et les variables g: b: w: t: vues par les expressions \= ; résultats relevés sur vim 8.2 réel.
- * Mesure de départ : :let était refusée et toute variable répondait E121. 12 des 14 cas tombent avant ; passent dans les deux états : le témoin (substitution sans variable) et la variable indéfinie (non-régression).
+ * Mesure de départ : :let était refusée et toute variable répondait E121. 16 des 18 cas tombent avant (les 4 cas &option et @register ajoutés après coup tombaient seuls sur la version précédente de :let) ; passent dans les deux états : le témoin (substitution sans variable) et la variable indéfinie (non-régression).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -33,4 +33,11 @@ describe(':let', () => {
   it('un nombre est copié', () => { expect(run('let a=1|let b=a|let a=2|s/x/\\=b/')).toBe('1'); });
   it('variable indéfinie : E121 et texte vide', () => { expect(run('s/x/\\=zz/')).toBe(''); });
   it('témoin : substitution sans variable', () => { expect(run('s/x/\\=1+1/')).toBe('2'); });
+});
+
+describe(':let options and registers', () => {
+  it('&option', () => { expect(run('let &tabstop=3|s/x/\\=&tabstop/')).toBe('3'); });
+  it('&option booléenne', () => { expect(run('let &ignorecase=1|s/x/\\=&ignorecase/')).toBe('1'); });
+  it('@register', () => { expect(run('let @a="reg"|s/x/\\=@a/')).toBe('reg'); });
+  it('&option +=', () => { expect(run('let &tabstop=4|let &tabstop+=2|s/x/\\=&tabstop/')).toBe('6'); });
 });
