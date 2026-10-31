@@ -2898,10 +2898,14 @@ export class OracleExecutor extends BaseExecutor {
                 newRow[colIdx] = this.evaluateExpression(assign.value, combinedRow, combinedCols);
               }
             }
+            const mergedColumns = stmt.whenMatched.assignments.map((assign) => assign.column.toUpperCase());
+            const previousRow = targetRows[tIdx];
+            this.fireRowTriggers(targetSchema, targetName, targetMeta, 'UPDATE', 'BEFORE', previousRow, newRow, mergedColumns);
             this.storage.updateRows(targetSchema, targetName,
-              (row) => JSON.stringify(row) === JSON.stringify(targetRows[tIdx]),
+              (row) => JSON.stringify(row) === JSON.stringify(previousRow),
               () => newRow
             );
+            this.fireRowTriggers(targetSchema, targetName, targetMeta, 'UPDATE', 'AFTER', previousRow, newRow, mergedColumns);
             updatedCount++;
           }
           break;
@@ -2918,7 +2922,9 @@ export class OracleExecutor extends BaseExecutor {
             newRow[colIdx] = this.evaluateExpression(stmt.whenNotMatched.values[i], combinedRow, combinedCols);
           }
         }
+        this.fireRowTriggers(targetSchema, targetName, targetMeta, 'INSERT', 'BEFORE', null, newRow);
         this.insertRowChecked(targetSchema, targetName, targetMeta, newRow);
+        this.fireRowTriggers(targetSchema, targetName, targetMeta, 'INSERT', 'AFTER', null, newRow);
         insertedCount++;
       }
     }

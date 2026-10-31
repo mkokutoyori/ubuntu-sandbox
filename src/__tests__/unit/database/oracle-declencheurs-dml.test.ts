@@ -1,6 +1,6 @@
 /**
  * Oracle : les déclencheurs DML s'exécutent (Oracle Database Concepts / PL/SQL Language Reference, « Triggers ») : BEFORE/AFTER, niveau ligne (:NEW/:OLD, affectation de :NEW dans un BEFORE) et niveau instruction, INSERTING/UPDATING/DELETING, clause WHEN, RAISE_APPLICATION_ERROR qui annule l'instruction. Aucun Oracle disponible ici : source = documentation.
- * Mesure de départ : un déclencheur était créé (DBA_TRIGGERS) mais jamais exécuté (fireTriggers était un squelette vide). 15 des 16 cas tombent avant (8 des 9 de déclenchement, les 4 de ALTER TRIGGER / ALL TRIGGERS) ; le témoin (DBA_TRIGGERS liste le déclencheur) passe dans les deux états.
+ * Mesure de départ : un déclencheur était créé (DBA_TRIGGERS) mais jamais exécuté (fireTriggers était un squelette vide). 16 des 17 cas tombent avant (8 des 9 de déclenchement, les 4 de ALTER TRIGGER / ALL TRIGGERS) ; le témoin (DBA_TRIGGERS liste le déclencheur) passe dans les deux états.
  */
 
 import { describe, test, expect, beforeEach } from 'vitest';
@@ -143,5 +143,31 @@ describe('UPDATE OF et UPDATING(\'col\')', () => {
     exec("CREATE TRIGGER trg_up AFTER UPDATE ON emp_t FOR EACH ROW BEGIN IF UPDATING('SALARY') THEN INSERT INTO audit_t VALUES ('S'); END IF; IF UPDATING('DEPT') THEN INSERT INTO audit_t VALUES ('D'); END IF; END;");
     exec("UPDATE emp_t SET dept = 'z'");
     expect(rows('SELECT * FROM audit_t')).toEqual([['D']]);
+  });
+});
+
+describe('MERGE et déclencheurs', () => {
+  let db: OracleDatabase;
+  let executor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'];
+  const exec = (sql: string) => db.executeSql(executor, sql);
+  const rows = (sql: string) => exec(sql).rows;
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup();
+    executor = db.connectAsSysdba().executor;
+    exec('CREATE TABLE tgt (id NUMBER, v NUMBER)');
+    exec('CREATE TABLE src (id NUMBER, v NUMBER)');
+    exec('CREATE TABLE audit_t (msg VARCHAR2(80))');
+    exec('INSERT INTO tgt VALUES (1, 10)');
+    exec('INSERT INTO src VALUES (1, 11)');
+    exec('INSERT INTO src VALUES (2, 20)');
+    exec("CREATE TRIGGER trg_mu AFTER UPDATE ON tgt FOR EACH ROW BEGIN INSERT INTO audit_t VALUES ('U ' || :OLD.v || '->' || :NEW.v); END;");
+    exec("CREATE TRIGGER trg_mi AFTER INSERT ON tgt FOR EACH ROW BEGIN INSERT INTO audit_t VALUES ('I ' || :NEW.id); END;");
+  });
+
+  test('les deux branches du MERGE déclenchent leurs déclencheurs', () => {
+    exec('MERGE INTO tgt t USING src s ON (t.id = s.id) WHEN MATCHED THEN UPDATE SET t.v = s.v WHEN NOT MATCHED THEN INSERT (id, v) VALUES (s.id, s.v)');
+    expect(rows('SELECT msg FROM audit_t ORDER BY msg')).toEqual([['I 2'], ['U 10->11']]);
   });
 });

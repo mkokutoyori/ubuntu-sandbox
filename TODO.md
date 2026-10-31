@@ -257,10 +257,9 @@ depuis une expression SQL est un changement d'evaluation a part entiere.
 
 ### [oracle] declencheurs DML : ce que l'analyse et l'execution ne couvrent pas encore
 Les declencheurs BEFORE/AFTER d'instruction et de ligne s'executent (`:NEW`, `:OLD`, `INSERTING`/`UPDATING`/`DELETING`, `WHEN`,
-`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`, `UPDATE OF col`, `UPDATING('col')`). Restent non analyses
+`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`, `UPDATE OF col`, `UPDATING('col')`, les deux branches de `MERGE`). Restent non analyses
 ou non evalues : `REFERENCING` qui renomme `NEW`/`OLD`, les
-declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, le declenchement depuis `MERGE`
-(la branche `INSERT` passe par `insertRowChecked` mais pas la branche `UPDATE`), `DBMS_OUTPUT` d'un declencheur (perdu), et
+declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, `DBMS_OUTPUT` d'un declencheur (perdu), et
 la sortie de ligne `AFTER` qui voit la table avant la mise a jour (`ORA-04091` n'est pas leve).
 
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
