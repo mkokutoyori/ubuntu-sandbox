@@ -3929,11 +3929,6 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`), `fold` et `rev` (fichiers operandes compris) non plus. Reste mesure et non ferme : `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee.
 
-### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
-
-Les trois bancs passent en entier ; restent mesures et non fermes :
-- Un motif etendu non ferme (`echo @(a` apres `shopt -s extglob`) est refuse avec « syntax error near unexpected token `(' » la ou bash 5.2 ecrit « unexpected EOF while looking for matching `)' ».
-
 ---
 
 ## Telnet (client netkit, serveur netkit, clients des équipements réseau)
