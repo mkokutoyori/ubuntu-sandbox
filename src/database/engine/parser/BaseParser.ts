@@ -1306,11 +1306,11 @@ export abstract class BaseParser {
       }
       actions.push({ action: 'SHRINK_SPACE', compact: compact || undefined, cascade: cascade || undefined });
     } else if (this.matchKeyword('ENABLE')) {
-      this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT');
-      actions.push({ action: 'ROW_MOVEMENT', enabled: true });
+      if (this.matchKeyword('ALL')) { this.expectKeyword('TRIGGERS'); actions.push({ action: 'ALL_TRIGGERS', enabled: true }); }
+      else { this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT'); actions.push({ action: 'ROW_MOVEMENT', enabled: true }); }
     } else if (this.matchKeyword('DISABLE')) {
-      this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT');
-      actions.push({ action: 'ROW_MOVEMENT', enabled: false });
+      if (this.matchKeyword('ALL')) { this.expectKeyword('TRIGGERS'); actions.push({ action: 'ALL_TRIGGERS', enabled: false }); }
+      else { this.expectKeyword('ROW'); this.expectKeyword('MOVEMENT'); actions.push({ action: 'ROW_MOVEMENT', enabled: false }); }
     } else if (this.matchKeyword('ROW')) {
       // ROW STORE COMPRESS [ADVANCED|BASIC]
       this.matchKeyword('STORE');

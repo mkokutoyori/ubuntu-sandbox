@@ -248,13 +248,19 @@ dans une section de topologie propre ; le choix change le format du fichier.
 
 ### [oracle] fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse, FORCE sans effet, synonymes hors DML
 **Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et
-`pkg.g()` est refuse par l'analyseur. `ALTER TRIGGER scott.t DISABLE` rend `Unsupported ALTER target: TRIGGER`.
-`CREATE VIEW` refuse maintenant une table absente (ORA-00942) ou une colonne inconnue (ORA-00904) et `FORCE` cree la vue avec l'avertissement ; la colonne STATUS de la vue reste VALID (pas d'etat INVALID). Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils le sont
+`pkg.g()` est refuse par l'analyseur. `CREATE VIEW` refuse maintenant une table absente (ORA-00942) ou une colonne inconnue (ORA-00904) et `FORCE` cree la vue avec l'avertissement ; la colonne STATUS de la vue reste VALID (pas d'etat INVALID). Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils le sont
 aussi pour les sequences (`scott.syn_seq.NEXTVAL`, `CURRVAL`), `TRUNCATE`, `LOCK TABLE`, `GRANT ... ON synonyme` et les procedures et fonctions stockees (`EXEC syn_proc`, appel dans un bloc), mais pas encore
 `DESCRIBE`, `ALTER TABLE`, `CREATE INDEX` ni `COMMENT ON`.
 **Pourquoi ce n'est pas ferme** : chacun est un point d'entree distinct de l'executeur (resolution des sequences,
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
+
+### [oracle] declencheurs DML : ce que l'analyse et l'execution ne couvrent pas encore
+Les declencheurs BEFORE/AFTER d'instruction et de ligne s'executent (`:NEW`, `:OLD`, `INSERTING`/`UPDATING`/`DELETING`, `WHEN`,
+`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`, `UPDATE OF col`, `UPDATING('col')`, les deux branches de `MERGE`). Restent non analyses
+ou non evalues : `REFERENCING` qui renomme `NEW`/`OLD`, les
+declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, `DBMS_OUTPUT` d'un declencheur (perdu), et
+la sortie de ligne `AFTER` qui voit la table avant la mise a jour (`ORA-04091` n'est pas leve).
 
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,

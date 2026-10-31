@@ -1,6 +1,6 @@
 import type { ResultSet } from '../engine/executor/ResultSet';
 import type { BaseExecutor } from '../engine/executor/BaseExecutor';
-import type { CellValue } from '../engine/storage/BaseStorage';
+import type { CellValue, StorageRow, ColumnMeta, TriggerMeta } from '../engine/storage/BaseStorage';
 import type { ExecutionContext } from '../engine/executor/BaseExecutor';
 import type {
   LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
@@ -11,7 +11,17 @@ import type {
 export type AlterTableStorageAction = Extract<AlterTableAction,
   { action: 'FLASHBACK_ARCHIVE' | 'NO_FLASHBACK_ARCHIVE' | 'INMEMORY' | 'NO_INMEMORY' }>;
 
+export interface TriggerFiring {
+  readonly trigger: TriggerMeta;
+  readonly event: 'INSERT' | 'UPDATE' | 'DELETE';
+  readonly columns: readonly ColumnMeta[];
+  readonly oldRow: StorageRow | null;
+  readonly newRow: StorageRow | null;
+  readonly updatedColumns?: readonly string[];
+}
+
 export interface SqlCommandHost {
+  runTrigger(executor: BaseExecutor, firing: TriggerFiring): StorageRow | null;
   execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet;
   execCreateFlashbackArchive(stmt: CreateFlashbackArchiveStatement, ctx: ExecutionContext): ResultSet;
   execDropFlashbackArchive(stmt: DropFlashbackArchiveStatement, ctx: ExecutionContext): ResultSet;

@@ -1,7 +1,7 @@
 import { parsePlsql } from './PlsqlParser';
 import { PlsqlInterpreter } from './PlsqlInterpreter';
 import { PlsqlException } from './PlsqlException';
-import type { PlsqlHost } from './PlsqlValue';
+import type { PlsqlHost, Scalar } from './PlsqlValue';
 
 export { PlsqlLexParseError } from './PlsqlLexer';
 export { parsePlsql } from './PlsqlParser';
@@ -16,6 +16,31 @@ export interface PlsqlRunOutcome {
   /** Compiler diagnostic when parseError is true (PLS-00103 style). */
   parseErrorMessage?: string;
   error: PlsqlException | null;
+}
+
+export interface PlsqlVariableRun {
+  readonly outcome: PlsqlRunOutcome;
+  readonly variables: Map<string, Scalar>;
+}
+
+export function runBlockWithVariables(source: string, host: PlsqlHost, preset: ReadonlyMap<string, Scalar>): PlsqlVariableRun {
+  const unchanged = new Map(preset);
+  let block;
+  try {
+    block = parsePlsql(source);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { outcome: { ok: false, parseError: true, parseErrorMessage: msg, error: null }, variables: unchanged };
+  }
+  const interp = new PlsqlInterpreter(host);
+  try {
+    const variables = interp.runWithVariables(block, preset);
+    return { outcome: { ok: true, parseError: false, error: null }, variables };
+  } catch (e) {
+    if (e instanceof PlsqlException) return { outcome: { ok: false, parseError: false, error: e }, variables: unchanged };
+    const msg = e instanceof Error ? e.message : String(e);
+    return { outcome: { ok: false, parseError: false, error: new PlsqlException('USER_DEFINED', 6512, msg, false) }, variables: unchanged };
+  }
 }
 
 export function runAnonymousBlock(source: string, host: PlsqlHost): PlsqlRunOutcome {

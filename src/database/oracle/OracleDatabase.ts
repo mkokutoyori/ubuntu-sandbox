@@ -24,7 +24,7 @@ import { parseDatafileImage } from './storage/DatafileImage';
 import { OracleCatalog } from './OracleCatalog';
 import { OracleLexer } from './OracleLexer';
 import { OracleParser } from './OracleParser';
-import type { SqlCommandHost } from './SqlCommandHost';
+import type { SqlCommandHost, TriggerFiring } from './SqlCommandHost';
 import type {
   LockTableStatement, CreateFlashbackArchiveStatement, DropFlashbackArchiveStatement,
   PluggableDatabaseStatement, CreateTypeStatement, AlterSessionStatement,
@@ -58,7 +58,8 @@ import { ORACLE_ERRORS } from './OracleConfig';
 import { emptyResult } from '../engine/executor/ResultSet';
 import { through, settle } from '../engine/executor/Continuation';
 import type { OracleDatabaseConfig } from '../engine/types/DatabaseConfig';
-import type { CellValue } from '../engine/storage/BaseStorage';
+import type { CellValue, StorageRow } from '../engine/storage/BaseStorage';
+import type { BaseExecutor } from '../engine/executor/BaseExecutor';
 import { SodEvaluator } from './security/audit/SodEvaluator';
 import { DormantAccountAnalyzer } from './security/audit/DormantAccountAnalyzer';
 import { FraudScenarioSimulator } from './security/audit/FraudScenarioSimulator';
@@ -71,7 +72,7 @@ import { SystemTrigger } from './triggers/SystemTrigger';
 import { ConsumerGroupSwitcher } from './resource/ConsumerGroupSwitcher';
 import { PlanGenerator } from './plan/PlanGenerator';
 import { PlsqlException, findPredefinedException } from './plsql/PlsqlException';
-import { runAnonymousBlockSteps, PlsqlInterpreter, type PlsqlRunOutcome } from './plsql';
+import { runAnonymousBlockSteps, runBlockWithVariables, PlsqlInterpreter, type PlsqlRunOutcome } from './plsql';
 import type { PlsqlHost, StoredUnitLike, Scalar, PackageSection, PackageRuntimeHandle, PackageSessionState } from './plsql';
 import { compilePackageSection, declarationNames } from './plsql';
 import { compileStoredUnit } from './plsql/unitSource';
@@ -135,6 +136,8 @@ interface UserPackage {
   /** Members declared in the spec — the package's public surface. */
   publicNames: Set<string>;
 }
+
+const MAX_TRIGGER_DEPTH = 50;
 
 export class OracleDatabase implements SqlCommandHost {
   readonly instance: OracleInstance;
@@ -1052,6 +1055,83 @@ export class OracleDatabase implements SqlCommandHost {
       );
     };
     return runFrom(0);
+  }
+
+  private triggerDepth = 0;
+
+  runTrigger(executor: BaseExecutor, firing: TriggerFiring): StorageRow | null {
+    const oraExecutor = executor as OracleExecutor;
+    const { trigger, event, columns, oldRow, newRow } = firing;
+    const label = `${trigger.schema}.${trigger.name}`;
+    if (this.triggerDepth >= MAX_TRIGGER_DEPTH) {
+      throw new OracleError(36, `maximum recursive SQL levels (${MAX_TRIGGER_DEPTH}) exceeded`);
+    }
+    const preset = new Map<string, Scalar>();
+    columns.forEach((column, index) => {
+      const name = column.name.toUpperCase();
+      if (newRow !== null) preset.set(`TRG_NEW_${name}`, newRow[index] as Scalar);
+      if (oldRow !== null) preset.set(`TRG_OLD_${name}`, oldRow[index] as Scalar);
+    });
+    preset.set('INSERTING', event === 'INSERT');
+    preset.set('UPDATING', event === 'UPDATE');
+    for (const column of columns) preset.set(`TRG_UPDATING_${column.name.toUpperCase()}`, event === 'UPDATE' && (firing.updatedColumns?.includes(column.name.toUpperCase()) ?? true));
+    preset.set('DELETING', event === 'DELETE');
+
+    const rewrite = (text: string): string => text
+      .replace(/\bUPDATING\s*\(\s*'(\w+)'\s*\)/gi, (_whole, column: string) => `TRG_UPDATING_${column.toUpperCase()}`)
+      .replace(/:NEW\.(\w+)/gi, (_whole, column: string) => `TRG_NEW_${column.toUpperCase()}`)
+      .replace(/:OLD\.(\w+)/gi, (_whole, column: string) => `TRG_OLD_${column.toUpperCase()}`);
+    const literal = (value: Scalar | undefined): string => {
+      if (value === null || value === undefined) return 'NULL';
+      if (typeof value === 'number') return String(value);
+      if (typeof value === 'boolean') return value ? '1' : '0';
+      if (value instanceof Date) return `TIMESTAMP '${value.toISOString().replace('T', ' ').replace('Z', '')}'`;
+      return `'${value.replace(/'/g, "''")}'`;
+    };
+
+    let body = trigger.body.trim().replace(/^FOR\s+EACH\s+ROW\s*/i, '');
+    body = body.replace(/^REFERENCING\b[\s\S]*?(?=\bFOR\s+EACH\s+ROW\b|\bWHEN\b|\bDECLARE\b|\bBEGIN\b)/i, '').replace(/^FOR\s+EACH\s+ROW\s*/i, '');
+    const when = /^WHEN\s*\(/i.exec(body);
+    if (when !== null) {
+      let depth = 0;
+      let end = when[0].length - 1;
+      for (; end < body.length; end++) {
+        if (body[end] === '(') depth++;
+        else if (body[end] === ')' && --depth === 0) break;
+      }
+      const condition = body.slice(when[0].length, end).replace(/(?<![\w.])(?::?)(NEW|OLD)\.(\w+)/gi, (_whole, which: string, column: string) =>
+        literal(preset.get(`TRG_${which.toUpperCase()}_${column.toUpperCase()}`)));
+      body = body.slice(end + 1).trim();
+      const holds = this.executeSql(oraExecutor, `SELECT 1 FROM DUAL WHERE ${condition}`);
+      if (holds.rows.length === 0) return null;
+    }
+
+    const output: string[] = [];
+    const { host } = this.buildPlsqlHost(oraExecutor, output);
+    this.triggerDepth++;
+    let run;
+    try {
+      run = runBlockWithVariables(rewrite(body), host, preset);
+    } finally {
+      this.triggerDepth--;
+    }
+    if (run.outcome.parseError) {
+      throw new OracleError(4098, `trigger '${label}' is invalid and failed re-validation`);
+    }
+    if (!run.outcome.ok && run.outcome.error) {
+      const message = run.outcome.error.message;
+      const code = /^ORA-(\d{5}):\s*([\s\S]*)$/.exec(message);
+      const detail = `\nORA-06512: at "${label}", line 1\nORA-04088: error during execution of trigger '${label}'`;
+      if (code === null) throw new Error(`${message}${detail}`);
+      throw new OracleError(Number(code[1]), `${code[2]}${detail}`);
+    }
+    if (newRow === null) return null;
+    const changed: StorageRow = [...newRow];
+    columns.forEach((column, index) => {
+      const value = run.variables.get(`TRG_NEW_${column.name.toUpperCase()}`);
+      if (value !== undefined && typeof value !== 'boolean') changed[index] = value as CellValue;
+    });
+    return changed;
   }
 
   execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {
@@ -2219,6 +2299,11 @@ export class OracleDatabase implements SqlCommandHost {
       }));
       return emptyResult('Trigger created.');
     }
+    let updateColumns: string[] | undefined;
+    sql = sql.replace(/\bUPDATE\s+OF\s+((?:"?\w+"?\s*,\s*)*"?\w+"?)(?=\s+(?:OR|ON)\b)/i, (_whole, list: string) => {
+      updateColumns = list.split(',').map((column) => column.trim().replace(/"/g, '').toUpperCase());
+      return 'UPDATE';
+    });
     const match = sql.match(
       /^CREATE\s+(OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?TRIGGER\s+(?:"?(\w+)"?\.)?"?(\w+)"?\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:"?(\w+)"?\.)?"?(\w+)"?(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
     );
@@ -2244,7 +2329,7 @@ export class OracleDatabase implements SqlCommandHost {
     this.storage.createTrigger({
       schema, name, timing, events,
       tableName, tableSchema,
-      forEachRow, body, enabled: true,
+      forEachRow, body, enabled: true, updateColumns,
     });
 
     return emptyResult('Trigger created.');
