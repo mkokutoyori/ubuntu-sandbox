@@ -21,6 +21,7 @@ const LEXER_CLOSERS: ReadonlyArray<readonly [string, string, boolean]> = [
   ['command substitution', ')', true],
   ['variable expansion', '}', false],
   ['process substitution', ')', true],
+  ['extended pattern', ')', false],
 ];
 
 function sourceLine(source: string, line: number, firstLine: number): string {

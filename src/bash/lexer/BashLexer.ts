@@ -717,13 +717,12 @@ export class BashLexer {
       if (this.isWhitespace(ch)) break;
       if (ch === '(' && value !== '' && '@?*+!'.includes(value[value.length - 1]) && this.extglobEnabled()) {
         const close = this.extendedPatternEnd();
-        if (close >= 0) {
-          while (this.pos <= close) {
-            value += this.peek();
-            this.advance();
-          }
-          continue;
+        if (close < 0) throw new LexerError("Unterminated extended pattern", this.position(), this.input);
+        while (this.pos <= close) {
+          value += this.peek();
+          this.advance();
         }
+        continue;
       }
       // Stop at ( ) but allow it inside word if preceded by alphanumeric (for func())
       if (ch === '(' || ch === ')') break;

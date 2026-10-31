@@ -33,6 +33,8 @@ export interface EditorFsContext {
   canonicalPath?(path: string): string | null;
   listDirectory?(path: string): string[] | null;
   homeDirectory?(): string | null;
+  userHomeDirectory?(name: string): string | null;
+  userNames?(): string[];
   environmentVariable?(name: string): string | null;
   makeDirectory?(path: string, mode: number): string | null;
   changeMode?(path: string, mode: number): boolean;

@@ -248,14 +248,20 @@ dans une section de topologie propre ; le choix change le format du fichier.
 
 ### [oracle] fonctions de paquetage non evaluees en SQL, ALTER TRIGGER refuse, FORCE sans effet, synonymes hors DML
 **Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et
-`pkg.g()` est refuse par l'analyseur. `ALTER TRIGGER scott.t DISABLE` rend `Unsupported ALTER target: TRIGGER`.
-`CREATE FORCE VIEW` est lu mais jamais evalue : une vue sur une table absente est toujours creee, sans l'ORA-00942
-du `NOFORCE` par defaut. Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils ne le sont
-pas encore pour les sequences (`scott.syn_seq.NEXTVAL`), les procedures et fonctions (`EXEC syn_proc`), `TRUNCATE`,
-`LOCK TABLE`, `DESCRIBE`, `GRANT ... ON synonyme` ni `COMMENT ON`.
+`pkg.g()` est refuse par l'analyseur. `CREATE VIEW` refuse maintenant une table absente (ORA-00942) ou une colonne inconnue (ORA-00904) et `FORCE` cree la vue avec l'avertissement ; la colonne STATUS de la vue reste VALID (pas d'etat INVALID). Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils le sont
+aussi pour les sequences (`scott.syn_seq.NEXTVAL`, `CURRVAL`), `TRUNCATE`, `LOCK TABLE`, `GRANT ... ON synonyme` et les procedures et fonctions stockees (`EXEC syn_proc`, appel dans un bloc), mais pas encore
+`DESCRIBE`, `ALTER TABLE`, `CREATE INDEX` ni `COMMENT ON`.
 **Pourquoi ce n'est pas ferme** : chacun est un point d'entree distinct de l'executeur (resolution des sequences,
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
 depuis une expression SQL est un changement d'evaluation a part entiere.
+
+### [oracle] declencheurs DML : ce que l'analyse et l'execution ne couvrent pas encore
+Les declencheurs BEFORE/AFTER d'instruction et de ligne s'executent (`:NEW`, `:OLD`, `INSERTING`/`UPDATING`/`DELETING`, `WHEN`,
+`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`). Restent non analyses ou non evalues : la liste
+`UPDATE OF col` (l'analyseur de `CREATE TRIGGER` ne la lit pas : `ORA-24344`), `REFERENCING` qui renomme `NEW`/`OLD`, les
+declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, `UPDATING('col')`, le declenchement depuis `MERGE`
+(la branche `INSERT` passe par `insertRowChecked` mais pas la branche `UPDATE`), `DBMS_OUTPUT` d'un declencheur (perdu), et
+la sortie de ligne `AFTER` qui voit la table avant la mise a jour (`ORA-04091` n'est pas leve).
 
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
 **Mesure** : `repeat_interval` evalue FREQ, INTERVAL, BYMONTH, BYMONTHDAY, BYDAY (avec rang : `-1FRI`), BYHOUR,
@@ -280,8 +286,16 @@ l'ordonnanceur. Pendant un `SimulationClock.advance(45 min)` sur un lot de cinq
 equipements, l'horloge du Windows a avance de 45 min + 35 ms : le bavardage
 STP/ARP fait croitre l'horizon de quelques dizaines de µs par trame.
 **Pourquoi ce n'est pas ferme** : l'horizon est ce qui donne des RTT non nuls
-sans file d'attente ; le plafonner a l'heure de l'ordonnanceur (horizon =
-max(horizon, now)) change tous les RTT de la base et demande une mesure propre.
+sans file d'attente. Essai mesure : le faire decroitre de ce que l'ordonnanceur
+avance entre deux lectures (temps de vol « absorbe ») fait que `advance(1 h)`
+apres un echange vaut exactement 1 h, mais 9 sondes d'age de route
+(`probe-route-ages-device-clock`) tombent : une route apprise a l'arrivee de la
+trame, 25 s avant, affiche 00:00:24. Les echanges etant synchrones et finis
+avant l'appel a `advance`, le temps de vol precede causalement l'attente : le
+modele additif est le bon pour une trame DEJA livree, et l'absorption ne serait
+juste que pour une trame encore en vol PENDANT l'avance, ce que la livraison
+synchrone ne produit pas. L'ecart de 35 ms sur 45 min est donc cause, pas
+defaut ; ne ferme que si la livraison devient asynchrone.
 
 ### [ip] l'option Timestamp : ce que les extremites non Linux ecrivent n'est pas atteste
 L'option est maintenant reelle de bout en bout : `Ipv4Options` la construit
@@ -296,10 +310,14 @@ a la reception, la cible a l'arrivee puis dans la reponse : `ip_options_compile`
 
 **Ce qui reste, et pourquoi.**
 1. Les extremites Windows, Cisco et Huawei gardent la regle de la RFC 1122
-   §3.2.2.6 (la cible s'ecrit UNE fois, l'emetteur jamais) : le comportement de
-   `tcpip.sys`, d'IOS et de VRP sur ce point n'est atteste par aucune source
-   joignable depuis ce reseau. Une transcription de `ping -r` sous Windows ou
-   d'un `ping` etendu IOS avec `Record` la trancherait.
+   §3.2.2.6 (la cible s'ecrit UNE fois, l'emetteur jamais). Ce qui est atteste
+   pour Windows (MicrosoftDocs/windowsserverdocs, ping.md, lu sur
+   raw.githubusercontent.com) : `-r` enregistre le chemin de la requete ET de la
+   reponse, `-s` l'heure d'arrivee de l'une et de l'autre, de 1 a 9 et de 1 a 4
+   sauts ; le texte ne dit pas si l'emetteur ou la cible s'ecrivent deux fois,
+   et ne donne aucune sortie. Pour IOS et VRP rien n'est joignable. Une
+   transcription de `ping -r` sous Windows ou d'un `ping` etendu IOS avec
+   `Record` la trancherait.
 2. Le `ping` etendu de Cisco collecte toujours `Loose, Strict, Record,
    Timestamp` sans les construire (entree suivante) : le rendu IOS n'est pas
    attestable.
@@ -781,14 +799,6 @@ dictionnaire. Il manque deux briques : une commande `hunspell` / `spell` avec un
 dans le depot ne porte de liste de mots) et le dialogue `fix_spello`. Le correcteur ALTERNATIF
 (`-s PROGRAMME`, `set speller`) est complet.
 
-### [nano] entree litterale (`M-V`) : « [ Verbatim Input ] » n'existe pas
-Mesure avec `nano-package-oracle.test.ts` (corpus package, avant le retrait de `M-v` des gestes
-tires) : `M-V` affiche « [ Verbatim Input ] » dans la barre d'etat et la touche suivante est
-inseree telle quelle (un code de controle, une sequence d'echappement, ou un point de code saisi
-en octal / hexadecimal : 3 chiffres octaux, `u` + 4 a 6 chiffres hexadecimaux) ; le moteur ne
-connait pas la touche et affiche la position du curseur. Rien a voir avec les syntaxes : c'est
-une fonction de nano 7.2 que ni le moteur ni les corpus n'avaient encore exercee.
-
 ### [nano] tampons multiples : `-F`, plusieurs fichiers, `M-<` `M->`, `M-F`, `^R` en mode vue
 Le moteur n'a qu'un tampon. Ce qui en depend, mesure sur nano 7.2 :
 - `^R` sous `-v` ouvre un NOUVEAU tampon : invite « File to read into new buffer [from ./]: »
@@ -898,8 +908,8 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 - `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
   interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
 Autres ecarts mesures, non fermes :
-- `pam_umask` : le vrai donne 0002 aux utilisateurs dont le groupe prive porte leur nom (`USERGROUPS_ENAB`) ; `sudo` et
-  `su` appliquent ici 0022 a tous. L'umask initial d'un utilisateur non root n'a pas ete enregistre.
+- L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
+  maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
 - `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
   et `ls -l /proc/$$/fd` ne le montre pas.
 - `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
@@ -1026,24 +1036,12 @@ annonce. Ce qui est fait : la barre est cliquable (`barShortcutAt`), `F6` cherch
 et Edge seulement). Reste : `^T` n'a aucune alternative clavier dans nano lui-meme ; aucune mesure dans un
 vrai navigateur (jsdom ne ferme pas d'onglet), a verifier a la main en plein ecran.
 
-### [nano] caracteres non enregistres
-Les corpus contiennent des accents precomposes (`é`, `café`) et du chinois (`中文`, largeur 2, avec
-des tabulations) mais PAS : les emoji hors du plan de base, les caracteres combinants et de largeur
-nulle (le recorder sait les compter, `cell_width`, aucun texte n'en contient), les octets UTF-8
-invalides, ni les caracteres de controle hors tabulation. Le moteur n'est donc ni valide ni
-refute sur ces textes : a enregistrer avant de pretendre que le rendu y est fidele.
-
-### [nano] `~` dans les invites de fichier
-Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
-developpe `~/x` avec le HOME du processus (`real_dir_from_tilde`, que
-`get_full_path` appelle aussi : c'est la cle de `filepos_history`) et complete
-`~util` avec `/etc/passwd` (`username_completion`). `EditorFsContext` porte
-maintenant le HOME (`environmentVariable('HOME')`, et `homeDirectory()` pour
-l'entree de passwd ; `nanoHomeDirectory` choisit entre les deux comme
-`get_homedir`) mais le moteur traite encore `~` comme un nom ordinaire : aucune
-completion, aucun developpement, y compris a l'ouverture d'un fichier.
-**Report** : brancher `nanoHomeDirectory` sur `fullPathOf` et sur les invites,
-et ajouter a `EditorFsContext` l'acces a la table des comptes pour `~util`.
+### [nano] caracteres non enregistres : ce qui reste
+Les fleches, Retour arriere et Suppr passent par-dessus un point de code entier (emoji hors du plan de base) comme nano 7.2
+(`probe-nano-caracteres-hors-plan-de-base.test.ts`, mesure sous tmux). Les corpus enregistres ne contiennent toujours pas : les
+caracteres combinants et de largeur nulle (nano place le curseur entre la base et la marque : `e` + U+0301, Droite deux fois,
+colonne 2 puis 3 sur 3), les octets UTF-8 invalides, ni les caracteres de controle hors tabulation. Les comptes du pied
+(« char 2/16 ») et les mouvements par mot sur ces textes n'ont pas ete compares non plus.
 
 ---
 
@@ -3932,17 +3930,11 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 ### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 
-`%{ssl_verify_result}` vaut toujours 0 (le vrai donne le code X509 de l'echec, 20 pour « unable to get local issuer certificate ») ; `%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; `%{time_appconnect}` d'une connexion TLS reprend `time_connect` faute de mesure de la poignee de main ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
+`%{certs}` reste vide alors que le vrai curl 8.5.0 l'emplit sans `--certinfo` (un bloc `Cle:Valeur` par certificat, extensions et `rsa(n)` compris, puis le PEM ; rien en cas d'echec de verification) : le PEM du simulateur est du JSON arme et le texte ne se comparerait pas a un vrai ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
 
 ### [bash-fin-de-ligne] un ecart restant contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
 Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`), `fold` et `rev` (fichiers operandes compris) non plus. Reste mesure et non ferme : `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee.
-
-### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
-
-Les trois bancs passent en entier ; restent mesures et non fermes :
-- `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
-- `extglob` est lu dans le texte du script (premier `shopt -s extglob` d'une ligne precedente) et non dans l'etat du shell a l'execution : un `shopt -s extglob` pose par un `source` ou une fonction n'est pas vu par le lexeur.
 
 ---
 
@@ -4251,3 +4243,10 @@ simple) ; (2) la mise en page exacte de `LIST SCRIPT NAMES` ; (3) le refus que R
 oppose a un script stocke sans catalogue de recuperation connecte (le sandbox
 l'accepte, comme le dit le tutoriel). Les commentaires `--` du tutoriel ne sont pas
 reconnus : seul `#` l'est.
+`rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
+une erreur RMAN-/ORA-) ; le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or directory`
+ici) n'est pas source, ni `msglog=`, `debug`, `trace=` et `using`. `SHOW SNAPSHOT CONTROLFILE NAME` et `CONFIGURE SNAPSHOT CONTROLFILE NAME` ne sont pas modelises (le parametre n'a pas
+d'etat, et son chemin par defaut sous `$ORACLE_HOME/dbs/snapcf_<SID>.f` n'est pas attestable depuis ce reseau). Meme
+manque pour `LIST BACKUP BY FILE`, `LIST BACKUP OF TABLESPACE`, `LIST FAILURE`, `SPOOL LOG`, `SWITCH`, `SET DBID`,
+`HOST`, `@fichier`, `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`, refuses en RMAN-01009 (mesure : tutoriel rejoue commande
+par commande).

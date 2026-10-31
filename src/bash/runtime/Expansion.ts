@@ -16,6 +16,7 @@ export interface GlobOptions {
   readonly dotglob: boolean;
   readonly nocaseglob: boolean;
   readonly globstar: boolean;
+  readonly extglob: boolean;
 }
 
 export type GlobFn = (pattern: string, options: GlobOptions) => string[] | null;
@@ -604,6 +605,7 @@ function globOptions(env: Environment): GlobOptions {
     dotglob: isShellOptionEnabled(env, 'dotglob'),
     nocaseglob: isShellOptionEnabled(env, 'nocaseglob'),
     globstar: isShellOptionEnabled(env, 'globstar'),
+    extglob: isShellOptionEnabled(env, 'extglob'),
   };
 }
 
@@ -611,8 +613,9 @@ function globField(field: Field, env: Environment, glob: GlobFn | undefined): st
   const text = plainText(field);
   if (glob === undefined || isShellOptionEnabled(env, 'noglob')) return [text];
   const pattern = globPattern(field);
-  if (!hasMagic(pattern)) return [text];
-  const hits = glob(pattern, globOptions(env));
+  const options = globOptions(env);
+  if (!hasMagic(pattern, options.extglob)) return [text];
+  const hits = glob(pattern, options);
   if (hits === null) return [text];
   if (hits.length > 0) return hits;
   if (isShellOptionEnabled(env, 'failglob')) throw new BashRuntimeError(`no match: ${unescapedGlob(pattern)}`);

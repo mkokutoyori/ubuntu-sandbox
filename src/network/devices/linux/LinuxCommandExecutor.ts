@@ -535,8 +535,9 @@ function reportsOwnFailure(argv: readonly string[], exitCode: number): boolean {
   return exitCode === WRAPPER_FAILURE_STATUS && COMMAND_WRAPPERS.has(name);
 }
 
-function rmanExitCode(output: string): number {
-  return /RMAN-\d|ORA-\d/.test(output) ? 1 : 0;
+export interface RmanRun {
+  readonly output: string;
+  readonly exitCode: number;
 }
 
 function writesLines(argv: readonly string[]): boolean {
@@ -989,8 +990,8 @@ export class LinuxCommandExecutor {
   /** Optional Oracle utility hook — backs `expdp` / `impdp` / `adrci`. */
   _oracleUtil: ((cmd: string, args: string[]) => string | null) | null = null;
   /** Optional Oracle RMAN hook — backs `rman` (batch via stdin / @script). */
-  _oracleRman: ((args: string[], stdin?: string) => string | null) | null = null;
-  _oracleRmanAsync: ((args: string[], stdin?: string) => Promise<string>) | null = null;
+  _oracleRman: ((args: string[], stdin?: string) => RmanRun | null) | null = null;
+  _oracleRmanAsync: ((args: string[], stdin?: string) => Promise<RmanRun>) | null = null;
   /**
    * Optional bridge into `LinuxMachine`'s `LinuxCommandRegistry` — set by
    * `LinuxMachine` so `LinuxCommand` objects that need full network context
@@ -1176,7 +1177,7 @@ export class LinuxCommandExecutor {
       // Add default groups for regular user (like Ubuntu)
       this.userMgr.usermod('user', { aG: 'sudo,adm' });
       // Set default password 'admin'
-      this.userMgr.setPassword('user', 'admin');
+      this.userMgr.provisionPassword('user', 'admin');
       // Create skeleton files
       this.createSkeletonFiles('/home/user', uid, gid);
       this.userMgr.currentUser = 'user';
@@ -1191,7 +1192,7 @@ export class LinuxCommandExecutor {
     for (const u of ['alice', 'bob', 'carl', 'dave']) {
       if (!this.userMgr.getUser(u)) {
         this.userMgr.useradd(u, { m: true, s: '/bin/bash' });
-        this.userMgr.setPassword(u, u);
+        this.userMgr.provisionPassword(u, u);
         this.userMgr.usermod(u, { aG: 'sudo' });
       }
     }
@@ -3118,10 +3119,10 @@ export class LinuxCommandExecutor {
 
   admitSudo(
     cmdName: string, args: readonly string[], runAs: string, pipedPassword: string | null,
-  ): { refusal: { output: string; exitCode: number } | null; close: () => void } {
+  ): { refusal: { output: string; exitCode: number } | null; close: () => void; sessionUmask: number } {
     const none = (): void => undefined;
-    const refuse = (output: string): { refusal: { output: string; exitCode: number }; close: () => void } => (
-      { refusal: { output, exitCode: 1 }, close: none }
+    const refuse = (output: string): { refusal: { output: string; exitCode: number }; close: () => void; sessionUmask: number } => (
+      { refusal: { output, exitCode: 1 }, close: none, sessionUmask: SESSION_UMASK }
     );
     const auth = this.authorizeSudo(cmdName, args, runAs);
     const command = [cmdName, ...args].join(' ');
@@ -3144,8 +3145,8 @@ export class LinuxCommandExecutor {
       return refuse(`${entry.messages}sudo: account validation failure, is your account locked?`);
     }
     this.writeSudoAuditLine('success', auth, command);
-    entry.begin(runAs);
-    return { refusal: null, close: entry.close };
+    const sessionUmask = entry.begin(runAs);
+    return { refusal: null, close: entry.close, sessionUmask };
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -4596,7 +4597,7 @@ export class LinuxCommandExecutor {
     // takes the pre-existing synchronous path (a known, narrower residual
     // gap) rather than risk bypassing sudoers enforcement.
     if (!background && argv[0] === 'rman' && stdin && this.isServer && this._oracleRmanAsync) {
-      return this._oracleRmanAsync(argv.slice(1), stdin).then((output) => ({ output, exitCode: rmanExitCode(output) }));
+      return this._oracleRmanAsync(argv.slice(1), stdin);
     }
     if (!background && argv.length > 0) {
       const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
@@ -5100,6 +5101,7 @@ export class LinuxCommandExecutor {
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
     let sudoParentUmask: number | null = null;
     let closeSudo: () => void = () => undefined;
+    let sudoSessionUmask = SESSION_UMASK;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
@@ -5134,13 +5136,14 @@ export class LinuxCommandExecutor {
       const admission = this.admitSudo(audited[0], audited.slice(1), runasUser, pipedPassword);
       if (admission.refusal !== null) return admission.refusal;
       closeSudo = admission.close;
+      sudoSessionUmask = admission.sessionUmask;
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
       const targetUserEntry = this.userMgr.getUser(runasUser)!;
       this.userMgr.currentUser = targetUserEntry.username;
       this.userMgr.currentUid = targetUserEntry.uid;
       this.userMgr.currentGid = targetUserEntry.gid;
       sudoParentUmask = this.umask;
-      this.umask = SESSION_UMASK;
+      this.umask = sudoSessionUmask;
     }
 
     if (cmdArgs.length === 0) {
@@ -7164,8 +7167,8 @@ export class LinuxCommandExecutor {
       }
       case 'rman': {
         if (this.isServer && this._oracleRman) {
-          const output = this._oracleRman(args, stdin);
-          if (output !== null) return { output, exitCode: rmanExitCode(output) };
+          const run = this._oracleRman(args, stdin);
+          if (run !== null) return run;
         }
         return {
           output: 'Recovery Manager: Release 19.0.0.0.0 - Production',
@@ -8060,7 +8063,7 @@ export class LinuxCommandExecutor {
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
-    this.umask = SESSION_UMASK;
+    this.umask = session.sessionUmask;
     if (loginShell) this.cwd = user.home;
 
     return {

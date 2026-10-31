@@ -146,7 +146,7 @@ export interface IOContext {
    * resolve the pattern (the interpreter then falls back to the literal,
    * matching bash's `nullglob`-off default).
    */
-  globExpand?(pattern: string, cwd: string, options?: { dotglob?: boolean; nocaseglob?: boolean; globstar?: boolean }): string[] | null;
+  globExpand?(pattern: string, cwd: string, options?: { dotglob?: boolean; nocaseglob?: boolean; globstar?: boolean; extglob?: boolean }): string[] | null;
   /** Resolve the home directory of `user`; `null` means the user is unknown. */
   homeFor?(user: string): string | null;
   wallClock?(): { nowMs(): number; format(pattern: string, epochMs: number): string };
@@ -464,7 +464,8 @@ export class BashInterpreter {
     this.log = new OutputLog();
     try {
       yield* this.visitTopLevel(program.body, program.warnings);
-      if (program.syntaxFailure !== undefined) this.reportSyntaxFailure(program.syntaxFailure, this.syntaxLabel());
+      const last = yield* this.resumeUnderExtglob(program, (next) => this.visitTopLevel(next.body, next.warnings));
+      if (last.syntaxFailure !== undefined) this.reportSyntaxFailure(last.syntaxFailure, this.syntaxLabel());
     } catch (e) {
       if (e instanceof ExitSignal) {
         this.env.lastExitCode = e.exitCode;
@@ -705,6 +706,15 @@ export class BashInterpreter {
     if (e instanceof BashRuntimeError) return !e.fatal;
     if (e instanceof ArithmeticError) return true;
     return e instanceof Error && /^bash: .*: readonly variable$/.test(e.message);
+  }
+
+  private *resumeUnderExtglob(program: Program, run: (next: Program) => Effects<void>): Effects<Program> {
+    let current = program;
+    while (current.syntaxFailure !== undefined && current.resume !== undefined && isShellOptionEnabled(this.env, 'extglob')) {
+      current = parseScript(current.resume.source, current.resume.line, 'always');
+      yield* run(current);
+    }
+    return current;
   }
 
   private *visitTopLevel(node: CommandList, warnings: Program['warnings'] = []): Effects<void> {
@@ -1945,7 +1955,8 @@ export class BashInterpreter {
     try {
       const ast = parseScript(code, firstLine, this.interactive || isShellOptionEnabled(this.env, 'extglob') ? 'always' : 'declared');
       yield* this.visitCommandList(ast.body);
-      if (ast.syntaxFailure !== undefined) this.reportSyntaxFailure(ast.syntaxFailure, label ?? this.syntaxLabel());
+      const last = yield* this.resumeUnderExtglob(ast, (next) => this.visitCommandList(next.body));
+      if (last.syntaxFailure !== undefined) this.reportSyntaxFailure(last.syntaxFailure, label ?? this.syntaxLabel());
     } catch (e) {
       if (sourced && e instanceof ReturnSignal) {
         this.env.lastExitCode = e.exitCode;

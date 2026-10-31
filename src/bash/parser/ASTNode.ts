@@ -25,6 +25,7 @@ export interface Program extends ASTBase {
   type: 'Program';
   body: CommandList;
   syntaxFailure?: SyntaxFailure;
+  resume?: { readonly line: number; readonly source: string };
   warnings?: ReadonlyArray<{ readonly line: number; readonly reportedLine: number; readonly text: string }>;
 }
 

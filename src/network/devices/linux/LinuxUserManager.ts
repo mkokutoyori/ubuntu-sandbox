@@ -797,6 +797,15 @@ export class LinuxUserManager {
     return '';
   }
 
+  provisionPassword(username: string, password: string): string {
+    const user = this.users.get(username);
+    if (!user) return `passwd: user '${username}' does not exist`;
+    user.password = sha512Crypt(password, `Ub2204${username}`.padEnd(16, '0').slice(0, 16));
+    user.lastChange = this.daysSinceEpoch();
+    this.syncToFilesystem();
+    return '';
+  }
+
   setPassword(username: string, password: string): string {
     const user = this.users.get(username);
     if (!user) return `passwd: user '${username}' does not exist`;

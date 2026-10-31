@@ -75,7 +75,7 @@ const DDL_STATEMENT_TYPES: ReadonlySet<string> = new Set([
   'GrantStatement', 'RevokeStatement',
   'CreateUserStatement', 'AlterUserStatement', 'DropUserStatement',
   'CreateRoleStatement', 'DropRoleStatement',
-  'CreateTriggerStatement', 'DropTriggerStatement',
+  'CreateTriggerStatement', 'DropTriggerStatement', 'AlterTriggerStatement',
   'CreateSynonymStatement', 'DropSynonymStatement',
   'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
   'CreateDiskgroupStatement', 'DropDiskgroupStatement', 'AlterDiskgroupStatement',
@@ -99,7 +99,7 @@ const REQUIRES_OPEN_DATABASE: ReadonlySet<string> = new Set([
   'CreateViewStatement', 'DropViewStatement',
   'CreateMaterializedViewStatement', 'DropMaterializedViewStatement',
   'CreateMviewLogStatement', 'DropMviewLogStatement',
-  'CreateTriggerStatement', 'DropTriggerStatement',
+  'CreateTriggerStatement', 'DropTriggerStatement', 'AlterTriggerStatement',
   'CreateSynonymStatement', 'DropSynonymStatement',
   'CreateTablespaceStatement', 'DropTablespaceStatement', 'AlterTablespaceStatement',
   'CreateTypeStatement', 'CommentStatement', 'AnalyzeStatement',
@@ -792,6 +792,7 @@ export class OracleExecutor extends BaseExecutor {
       DropRoleStatement: 'DROP ROLE',
       CreateTriggerStatement: 'CREATE TRIGGER',
       DropTriggerStatement: 'DROP TRIGGER',
+      AlterTriggerStatement: 'ALTER TRIGGER',
       CreateSynonymStatement: 'CREATE SYNONYM',
       DropSynonymStatement: 'DROP SYNONYM',
       CreateTablespaceStatement: 'CREATE TABLESPACE',
@@ -1022,6 +1023,7 @@ export class OracleExecutor extends BaseExecutor {
       case 'ExplainPlanStatement': return this.executeExplainPlan(statement);
       case 'CreateTriggerStatement': return this.executeCreateTrigger(statement);
       case 'DropTriggerStatement': return this.executeDropTrigger(statement);
+      case 'AlterTriggerStatement': return this.executeAlterTrigger(statement);
       case 'CreateSynonymStatement': return this.executeCreateSynonym(statement);
       case 'DropSynonymStatement': return this.executeDropSynonym(statement);
       case 'AlterSequenceStatement': return this.executeAlterSequence(statement);
@@ -3091,16 +3093,20 @@ export class OracleExecutor extends BaseExecutor {
       }
     };
     let insertedCount = 0;
+    this.fireStatementTriggers(schema, tableName, tableMeta, 'INSERT', 'BEFORE');
 
     if (stmt.values) {
       for (const valueList of stmt.values) {
         const row = this.buildInsertRow(tableMeta, stmt.columns, valueList);
+        this.fireRowTriggers(schema, tableName, tableMeta, 'INSERT', 'BEFORE', null, row);
         requireWritable(row);
         this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
         this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
         this.insertRowChecked(schema, tableName, tableMeta, row);
+        this.fireRowTriggers(schema, tableName, tableMeta, 'INSERT', 'AFTER', null, row);
         insertedCount++;
       }
+      this.fireStatementTriggers(schema, tableName, tableMeta, 'INSERT', 'AFTER');
     } else if (stmt.query) {
       // INSERT INTO ... SELECT — execute subquery and validate column count
       return andThen(this.driveSliced(this.selectSteps(stmt.query)), (subResult) => {
@@ -3133,12 +3139,15 @@ export class OracleExecutor extends BaseExecutor {
             }
             // Columns the SELECT did not supply fall back to their DEFAULT.
             this.applyColumnDefaults(tableMeta, row, provided);
+            this.fireRowTriggers(schema, tableName, tableMeta, 'INSERT', 'BEFORE', null, row);
             requireWritable(row);
             this.constraints.validateConstraints(schema, tableName, tableMeta, row, undefined, this.deferredConstraintPredicate);
             this.constraints.validateDataTypes(schema, tableName, tableMeta, row);
             this.insertRowChecked(schema, tableName, tableMeta, row);
+            this.fireRowTriggers(schema, tableName, tableMeta, 'INSERT', 'AFTER', null, row);
             job.inserted++;
           }
+          this.fireStatementTriggers(schema, tableName, tableMeta, 'INSERT', 'AFTER');
           return rowsCreated(job.inserted);
         };
         return insertSlice();
@@ -3240,6 +3249,7 @@ export class OracleExecutor extends BaseExecutor {
 
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
     this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
+    this.fireStatementTriggers(schema, tableName, tableMeta, 'UPDATE', 'BEFORE');
     const scan = this.storage.beginUpdateScan(schema, tableName);
     const predicate = (row: StorageRow): boolean =>
       (indexed === null || indexed.has(row)) && (!visible || visible(row))
@@ -3254,6 +3264,7 @@ export class OracleExecutor extends BaseExecutor {
             : this.evaluateExpression(assign.value, row, tableMeta.columns);
         }
       }
+      this.fireRowTriggers(schema, tableName, tableMeta, 'UPDATE', 'BEFORE', row, newRow);
       if (checkOption && !checkOption(newRow)) {
         throw new OracleError(28115, 'policy with check option violation');
       }
@@ -3263,12 +3274,14 @@ export class OracleExecutor extends BaseExecutor {
       // the PK column unchanged would self-conflict).
       this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row, this.deferredConstraintPredicate);
       this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
+      this.fireRowTriggers(schema, tableName, tableMeta, 'UPDATE', 'AFTER', row, newRow);
       return newRow;
     };
     const updateSlice = (): ResultSet => {
       if (!this.storage.advanceUpdateScan(schema, tableName, scan, predicate, updater, () => this.sliceSpent())) {
         return this.suspended(updateSlice);
       }
+      this.fireStatementTriggers(schema, tableName, tableMeta, 'UPDATE', 'AFTER');
       return emptyResult(`${scan.count} row${scan.count !== 1 ? 's' : ''} updated.`, scan.count);
     };
     return updateSlice();
@@ -3291,6 +3304,7 @@ export class OracleExecutor extends BaseExecutor {
       (indexed === null || indexed.has(row)) && (!visible || visible(row))
       && (!stmt.where || this.evaluateCondition(stmt.where, row, tableMeta.columns));
 
+    this.fireStatementTriggers(schema, tableName, tableMeta, 'DELETE', 'BEFORE');
     const scan = this.storage.beginDeleteScan(schema, tableName);
     let validated = 0;
     let scanned = false;
@@ -3304,9 +3318,13 @@ export class OracleExecutor extends BaseExecutor {
       // Validate FK constraints on rows to be deleted
       while (validated < scan.removed.length) {
         if ((validated & 255) === 255 && this.sliceSpent()) return this.suspended(deleteSlice);
-        this.constraints.validateDeleteForeignKeys(schema, tableName, scan.removed[validated++]);
+        const removedRow = scan.removed[validated++];
+        this.fireRowTriggers(schema, tableName, tableMeta, 'DELETE', 'BEFORE', removedRow, null);
+        this.constraints.validateDeleteForeignKeys(schema, tableName, removedRow);
+        this.fireRowTriggers(schema, tableName, tableMeta, 'DELETE', 'AFTER', removedRow, null);
       }
       const count = this.storage.finishDeleteScan(schema, tableName, scan);
+      this.fireStatementTriggers(schema, tableName, tableMeta, 'DELETE', 'AFTER');
       return emptyResult(`${count} row${count !== 1 ? 's' : ''} deleted.`, count);
     };
     return deleteSlice();
@@ -3749,8 +3767,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
-    const schema = this.resolveSchema(stmt.schema);
-    const tableName = stmt.name.toUpperCase();
+    const { schema, name: tableName } = this.resolveTableTarget(stmt.schema, stmt.name);
     this.requireTableMeta(schema, tableName);
     // An enabled FK from another table blocks TRUNCATE (ORA-02266) — even
     // with no child rows, unlike DELETE; self-references do not block.
@@ -3892,6 +3909,10 @@ export class OracleExecutor extends BaseExecutor {
         meta.compression = off
           ? { enabled: false }
           : { enabled: true, for: level.replace(/^FOR\s+/i, '').trim() || 'BASIC' };
+      } else if (action.action === 'ALL_TRIGGERS') {
+        for (const trigger of this.storage.getAllTriggers()) {
+          if (trigger.tableSchema.toUpperCase() === schema && trigger.tableName.toUpperCase() === tableName) trigger.enabled = action.enabled;
+        }
       } else if (action.action === 'SHRINK_SPACE' || action.action === 'ROW_MOVEMENT') {
         // No persisted state changes in the simulator; the operation
         // succeeds the same way it does on a real instance with no rows.
@@ -4067,9 +4088,16 @@ export class OracleExecutor extends BaseExecutor {
     if (stmt.orReplace && this.storage.viewExists(schema, name)) {
       this.storage.dropView(schema, name);
     }
-    // Reconstruct the query text from the AST by re-serializing the SELECT
-    // We store the original query text for DBA_VIEWS
     const queryText = this.serializeSelect(stmt.query);
+    let compilationFailed = false;
+    try {
+      this.executeSelect(stmt.query);
+    } catch (failure) {
+      const unresolved = failure instanceof OracleError && (failure.code === 'ORA-00942' || failure.code === 'ORA-00904');
+      if (!unresolved) throw failure;
+      if (!stmt.force) throw failure;
+      compilationFailed = true;
+    }
     this.storage.createView({
       schema, name,
       columns: stmt.columns,
@@ -4078,7 +4106,7 @@ export class OracleExecutor extends BaseExecutor {
       withCheckOption: stmt.withCheckOption,
       withReadOnly: stmt.withReadOnly,
     });
-    return emptyResult('View created.');
+    return emptyResult(compilationFailed ? 'Warning: View created with compilation errors.' : 'View created.');
   }
 
   private executeDropView(stmt: DropViewStatement): ResultSet {
@@ -4254,6 +4282,15 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Trigger created.');
   }
 
+  private executeAlterTrigger(stmt: import('../engine/parser/ASTNode').AlterTriggerStatement): ResultSet {
+    const schema = this.resolveSchema(stmt.schema);
+    const name = stmt.name.toUpperCase();
+    const trigger = this.storage.getAllTriggers().find((t) => t.schema === schema && t.name === name);
+    if (!trigger) throw new OracleError(4080, `trigger '${name}' does not exist`);
+    trigger.enabled = stmt.action === 'ENABLE';
+    return emptyResult('Trigger altered.');
+  }
+
   private executeDropTrigger(stmt: DropTriggerStatement): ResultSet {
     const schema = this.resolveSchema(stmt.schema);
     const name = stmt.name.toUpperCase();
@@ -4266,13 +4303,26 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Trigger dropped.');
   }
 
-  fireTriggers(schema: string, tableName: string, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER'): void {
-    const triggers = this.storage.getTriggersForTable(schema, tableName);
-    for (const trigger of triggers) {
-      if (trigger.timing === timing && trigger.events.includes(event)) {
-        // Execute the trigger body as a PL/SQL block if it contains executable SQL
-        // For the simulator, we just log that the trigger fired
-        // A full implementation would parse and execute the body
+  private triggersFor(schema: string, tableName: string, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER', rowLevel: boolean) {
+    if (!this.commandHost) return [];
+    return this.storage.getTriggersForTable(schema, tableName).filter((trigger) =>
+      trigger.enabled && trigger.timing === timing && trigger.events.includes(event) && trigger.forEachRow === rowLevel);
+  }
+
+  private fireStatementTriggers(schema: string, tableName: string, tableMeta: TableMeta, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER'): void {
+    for (const trigger of this.triggersFor(schema, tableName, event, timing, false)) {
+      this.requireCommandHost().runTrigger(this, { trigger, event, columns: tableMeta.columns, oldRow: null, newRow: null });
+    }
+  }
+
+  private fireRowTriggers(
+    schema: string, tableName: string, tableMeta: TableMeta, event: 'INSERT' | 'UPDATE' | 'DELETE',
+    timing: 'BEFORE' | 'AFTER', oldRow: StorageRow | null, newRow: StorageRow | null,
+  ): void {
+    for (const trigger of this.triggersFor(schema, tableName, event, timing, true)) {
+      const changed = this.requireCommandHost().runTrigger(this, { trigger, event, columns: tableMeta.columns, oldRow, newRow });
+      if (timing === 'BEFORE' && changed !== null && newRow !== null) {
+        for (let index = 0; index < newRow.length; index++) newRow[index] = changed[index];
       }
     }
   }
@@ -4458,8 +4508,8 @@ export class OracleExecutor extends BaseExecutor {
         if ((idName === 'NEXTVAL' || idName === 'CURRVAL') && idTable) {
           const seqSchema = idSchema || this.context.currentSchema;
           return idName === 'NEXTVAL'
-            ? this.sequenceNextVal(seqSchema, idTable)
-            : this.sequenceCurrVal(seqSchema, idTable);
+            ? this.sequenceNextVal(seqSchema, idTable, idSchema !== undefined)
+            : this.sequenceCurrVal(seqSchema, idTable, idSchema !== undefined);
         }
         // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
         const pkgName = idTable;
@@ -4543,8 +4593,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'SequenceExpr': {
         const seqSchema = expr.schema || this.context.currentSchema;
         return expr.operation === 'NEXTVAL'
-          ? this.sequenceNextVal(seqSchema, expr.sequenceName)
-          : this.sequenceCurrVal(seqSchema, expr.sequenceName);
+          ? this.sequenceNextVal(seqSchema, expr.sequenceName, expr.schema !== undefined)
+          : this.sequenceCurrVal(seqSchema, expr.sequenceName, expr.schema !== undefined);
       }
 
       default:
@@ -4552,10 +4602,16 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  private resolveSequenceTarget(schema: string, name: string, qualified: boolean): ObjectName {
+    return followSynonyms(this.storage, { schema: schema.toUpperCase(), name: name.toUpperCase() }, {
+      exists: ({ schema: owner, name: objectName }) => this.storage.sequenceExists(owner, objectName),
+      publicFallback: !qualified,
+    });
+  }
+
   /** NEXTVAL: advance the global counter, remember the value per session. */
-  private sequenceNextVal(schema: string, name: string): number {
-    const s = schema.toUpperCase();
-    const n = name.toUpperCase();
+  private sequenceNextVal(schema: string, name: string, qualified = false): number {
+    const { schema: s, name: n } = this.resolveSequenceTarget(schema, name, qualified);
     if (!this.storage.sequenceExists(s, n)) {
       throw new OracleError(2289, 'sequence does not exist');
     }
@@ -4566,9 +4622,8 @@ export class OracleExecutor extends BaseExecutor {
 
   /** CURRVAL: the last NEXTVAL of THIS session — never the global counter
    *  (ORA-08002 before the first NEXTVAL, ORA-02289 if dropped). */
-  private sequenceCurrVal(schema: string, name: string): number {
-    const s = schema.toUpperCase();
-    const n = name.toUpperCase();
+  private sequenceCurrVal(schema: string, name: string, qualified = false): number {
+    const { schema: s, name: n } = this.resolveSequenceTarget(schema, name, qualified);
     if (!this.storage.sequenceExists(s, n)) {
       throw new OracleError(2289, 'sequence does not exist');
     }

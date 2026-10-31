@@ -8,7 +8,7 @@ const SUDO_TTY = '/dev/pts/0';
 const NO_SYSLOG_PID = 0;
 
 export type SudoEntry =
-  | { readonly ok: true; readonly begin: (runAs: string) => void; readonly close: () => void }
+  | { readonly ok: true; readonly begin: (runAs: string) => number; readonly close: () => void }
   | { readonly ok: false; readonly stage: 'authentication' | 'account'; readonly messages: string };
 
 export class SudoPamSessions {
@@ -65,6 +65,7 @@ export class SudoPamSessions {
       begin: (runAs) => {
         transaction.transaction.handle.user = runAs;
         transaction.openSession();
+        return transaction.sessionUmask;
       },
       close: () => {
         transaction.closeSession();

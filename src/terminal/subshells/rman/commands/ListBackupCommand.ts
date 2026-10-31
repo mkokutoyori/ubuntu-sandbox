@@ -30,7 +30,18 @@ function lvCode(s: BackupSet): string {
   }
 }
 
-export type ListVariant = 'SUMMARY' | 'DETAIL' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY' | 'INCARNATION';
+export type ListVariant = 'SUMMARY' | 'DETAIL' | 'OF' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY' | 'INCARNATION';
+
+function backsUp(set: BackupSet, specification: string): boolean {
+  const datafile = /^DATAFILE\s+(\d+)$/i.exec(specification);
+  if (datafile !== null) return set.datafiles.some(entry => entry.fileNo === Number(datafile[1]));
+  switch (specification.toUpperCase()) {
+    case 'DATABASE':        return set.type === 'FULL' || set.type === 'INCREMENTAL_0' || set.type === 'INCREMENTAL_1';
+    case 'ARCHIVELOG ALL':  return set.type === 'ARCHIVELOG';
+    case 'CONTROLFILE':     return set.type === 'CONTROLFILE';
+    default:                return false;
+  }
+}
 
 export class ListBackupCommand implements IRmanCommand<string[]> {
   readonly name = 'LIST BACKUP';
@@ -93,6 +104,12 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     }
 
     let { sets } = snap.value;
+    if (this.variant === 'OF') {
+      const specification = args[0] ?? '';
+      sets = sets.filter(set => backsUp(set, specification));
+      if (sets.length === 0) return ok(['', 'specification does not match any backup in the repository', '']);
+      return ok(this._detail(sets, ctx));
+    }
     if (args[0] !== undefined) {
       const window = parseCompletedClause(args[0], rmanNowMs(ctx));
       if (window === null) {

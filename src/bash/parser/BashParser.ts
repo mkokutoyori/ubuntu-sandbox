@@ -81,7 +81,7 @@ export class BashParser {
     return makeProgram(body, tokens[0]?.position);
   }
 
-  parseRecovering(tokens: Token[], limitLine = Infinity): { program: Program; error: ParserError | null } {
+  parseRecovering(tokens: Token[], limitLine = Infinity): { program: Program; error: ParserError | null; resumeLine: number } {
     this.tokens = tokens;
     this.pos = 0;
     this.contextStack = [];
@@ -108,7 +108,8 @@ export class BashParser {
     const failedAt = Math.min(parseFailedAt, limitLine);
     const complete = commands.filter((_, index) => endLines[index] < failedAt);
     const position = tokens[0]?.position;
-    return { program: makeProgram(makeCommandList(complete, position), position), error };
+    const resumeLine = complete.length === 0 ? (position?.line ?? 1) : endLines[complete.length - 1] + 1;
+    return { program: makeProgram(makeCommandList(complete, position), position), error, resumeLine };
   }
 
   private unexpected(token: Token): ParserError {

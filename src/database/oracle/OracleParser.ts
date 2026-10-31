@@ -542,6 +542,13 @@ export class OracleParser extends BaseParser {
     }
     if (this.matchKeyword('SYSTEM')) return this.parseAlterSystem(pos);
     if (this.matchKeyword('DATABASE')) return this.parseAlterDatabase(pos);
+    if (this.matchKeyword('TRIGGER')) {
+      const schema = this.parseSchemaPrefix();
+      const name = this.expectIdentifier();
+      const action = this.matchWord('ENABLE') ? 'ENABLE' : this.matchWord('DISABLE') ? 'DISABLE' : null;
+      if (action === null) throw this.error('Expected ENABLE or DISABLE after ALTER TRIGGER');
+      return { type: 'AlterTriggerStatement', position: pos, schema, name, action };
+    }
     if (this.matchKeyword('SEQUENCE')) return this.parseAlterSequence(pos);
     if (this.matchKeyword('INDEX')) return this.parseAlterIndex(pos);
     if (this.matchKeyword('TABLESPACE')) return this.parseAlterTablespace(pos);

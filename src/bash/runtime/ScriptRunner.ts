@@ -43,11 +43,11 @@ export function runScript(
   scriptPath: string,
   scriptArgs: string[],
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
-  aliases?: AliasTable,
-  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+  aliases: AliasTable | undefined,
+  functions: Map<string, import('@/bash/parser/ASTNode').Command> | undefined,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean },
-  io?: IOContext,
+  identity: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean } | undefined,
+  io: IOContext,
   inherited?: Record<string, string>,
 ): ScriptResult {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
@@ -78,10 +78,9 @@ export function runScript(
   }
 
   // 4. Execute
-  const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContent(
     content, scriptPath, scriptArgs, executeCommand,
-    inherited ?? buildEnvVars(ctx), scriptIo, identity, aliases, functions,
+    inherited ?? buildEnvVars(ctx), io, identity, aliases, functions,
   );
 }
 
@@ -158,11 +157,11 @@ export async function runScriptAsync(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) =>
     { output: string; exitCode: number; stderr?: string; backgroundPid?: number }
     | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
-  aliases?: AliasTable,
-  functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
+  aliases: AliasTable | undefined,
+  functions: Map<string, import('@/bash/parser/ASTNode').Command> | undefined,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean },
-  io?: IOContext,
+  identity: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean } | undefined,
+  io: IOContext,
   inherited?: Record<string, string>,
 ): Promise<ScriptResult> {
   const absPath = ctx.vfs.normalizePath(scriptPath, ctx.cwd);
@@ -188,10 +187,9 @@ export async function runScriptAsync(
     return { output: `bash: ${scriptPath}: No such file or directory\n`, exitCode: 127 };
   }
 
-  const scriptIo = io ?? buildIOContext(ctx);
   return runScriptContentAsync(
     content, scriptPath, scriptArgs, executeCommand,
-    inherited ?? buildEnvVars(ctx), scriptIo, identity, aliases, functions,
+    inherited ?? buildEnvVars(ctx), io, identity, aliases, functions,
   );
 }
 
@@ -320,41 +318,6 @@ function stripShebang(content: string): string {
     return newline >= 0 ? content.substring(newline + 1) : '';
   }
   return content;
-}
-
-/** Build an IO context for redirections from a ShellContext. */
-function buildIOContext(ctx: ShellContext): IOContext {
-  return {
-    writeFile(path: string, content: string, append: boolean) {
-      const written = ctx.vfs.writeFile(
-        path, content, ctx.uid, ctx.gid, ctx.umask, append, undefined, false);
-      if (written) return;
-      const slash = path.lastIndexOf('/');
-      const parent = slash > 0 ? path.slice(0, slash) : '/';
-      if (!ctx.vfs.exists(parent)) {
-        throw new Error(`bash: ${path}: No such file or directory`);
-      }
-    },
-    readFile(path: string) {
-      return ctx.vfs.readFile(path);
-    },
-    resolvePath(path: string, cwd?: string) {
-      return ctx.vfs.normalizePath(path, cwd ?? ctx.cwd);
-    },
-    stat(path: string) {
-      const absPath = ctx.vfs.normalizePath(path, ctx.cwd);
-      const inode = ctx.vfs.resolveInode(absPath);
-      if (!inode) return null;
-      return { type: inode.type === 'directory' ? 'directory' as const : 'file' as const };
-    },
-    globExpand(pattern: string, cwd: string, options) {
-      return ctx.vfs.globExpand(pattern, cwd, options);
-    },
-    homeFor(user: string) {
-      const u = ctx.userMgr.getUser(user);
-      return u ? u.home : null;
-    },
-  };
 }
 
 /** Build initial environment variables from ShellContext. */

@@ -16,6 +16,8 @@ import { getOracleDatabase, parseSqlPlusInvocation, runSqlPlusScript, serveOracl
 import { installOracleClientHooks } from './linux/oracleClientHooks';
 import { handleLsnrctl, handleAdrci, handleExpdp, handleImpdp } from '@/terminal/commands/OracleCommands';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman';
+import { parseRmanInvocation } from '@/terminal/subshells/rman/RmanInvocation';
+import type { RmanRun } from './linux/LinuxCommandExecutor';
 import type { HostCapableDevice } from '@/network';
 import { RadiusServerAgent } from '../radius/RadiusServerAgent';
 import { RadiusTcpServer } from '../radius/RadiusTcpTransport';
@@ -203,10 +205,21 @@ export class LinuxServer extends LinuxMachine {
     if (!serveOracleNetConnection(this.id, socket)) socket.close();
   }
 
-  private *rmanScriptSteps(args: string[], stdin?: string): Generator<void, string> {
+  private *rmanScriptSteps(args: string[], stdin?: string): Generator<void, RmanRun> {
+    const invocation = parseRmanInvocation(args);
+    const vfs = this.executor.vfs;
+    const cwd = this.executor.getCwd();
+    let source = stdin ?? '';
+    if (invocation.commandFile !== null) {
+      const content = vfs.readFile(vfs.normalizePath(invocation.commandFile, cwd));
+      if (content === null) {
+        return { output: `cmdfile=${invocation.commandFile}: No such file or directory`, exitCode: 1 };
+      }
+      source = content;
+    }
     const { subShell, banner } = ReactiveRmanSubShell.create(this, args);
     const out = [...banner];
-    const script = (stdin ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const script = source.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     for (const line of script) {
       const res = subShell.processLine(line);
       for (const text of res.output) out.push(text);
@@ -214,7 +227,12 @@ export class LinuxServer extends LinuxMachine {
       yield;
     }
     subShell.dispose();
-    return out.join('\n');
+    const output = out.join('\n');
+    const exitCode = /RMAN-\d|ORA-\d/.test(output) ? 1 : 0;
+    if (invocation.logFile === null) return { output, exitCode };
+    const user = this.executor.ctx();
+    vfs.writeFile(vfs.normalizePath(invocation.logFile, cwd), `${output}\n`, user.uid, user.gid, user.umask, invocation.appendToLog);
+    return { output: '', exitCode };
   }
 
   /** Real freeradius ships a working-but-minimal default config (localhost-only client, no users) — so does this. */

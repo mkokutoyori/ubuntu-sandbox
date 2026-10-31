@@ -29,6 +29,9 @@ function parseUmaskOptions(pamh: PamHandle<LinuxPamHost>, args: readonly string[
     else if (lowered === 'silent') options.silent = true;
     else pamh.syslog('err', `Unknown option: \`${argument}'`);
   }
+  if (!args.some((argument) => /^(no)?usergroups$/i.test(argument))) {
+    options.usergroups = searchKey((path) => pamh.host.readFile(path), LOGIN_DEFS, 'USERGROUPS_ENAB')?.toLowerCase() === 'yes';
+  }
   if (options.umask === null) options.umask = searchKey((path) => pamh.host.readFile(path), LOGIN_DEFS, 'UMASK');
   if (options.umask === null) options.umask = searchKey((path) => pamh.host.readFile(path), LOGIN_CONF, 'UMASK');
   return options;

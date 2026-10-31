@@ -64,6 +64,7 @@ export interface ShellRegistration {
    * POSIX tools, `['cmd']` for Windows ones. Omit to match any parent.
    */
   readonly launchableFrom?: readonly string[];
+  readonly launchesWhen?: (line: string) => boolean;
 }
 
 export class ShellFactory {
@@ -88,6 +89,7 @@ export class ShellFactory {
     for (const [kind, meta] of this.launchers) {
       if (!meta.launcher?.test(trimmed)) continue;
       if (meta.launchableFrom && !meta.launchableFrom.includes(from)) continue;
+      if (meta.launchesWhen && !meta.launchesWhen(trimmed)) continue;
       return kind;
     }
     return null;

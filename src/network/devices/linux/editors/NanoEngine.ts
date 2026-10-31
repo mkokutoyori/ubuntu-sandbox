@@ -3,7 +3,7 @@ import { editorKey, type EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type DecodedFile, type NanoFileFormat } from './nano/NanoFormat';
-import { directoryNameOf, fullPathOf, openingFor, writeFailureReason } from './nano/NanoOpening';
+import { directoryNameOf, expandTilde, fullPathOf, openingFor, writeFailureReason } from './nano/NanoOpening';
 import { appendToHistory, parseHistoryLists, serializeHistoryLists } from './nano/NanoHistoryLists';
 import { findPosition, parsePositionHistory, serializePositionHistory, withPositionRecorded } from './nano/NanoPositionHistory';
 import type { NanoRcNotices } from './editorLaunch';
@@ -18,7 +18,7 @@ import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/N
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
 import { buildNanoScreen, promptCursorAtColumn } from './nano/NanoScreen';
-import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
+import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, unitsAt, unitsBefore, wideness } from './nano/NanoText';
 import {
   DEFAULT_BRACKETS, DEFAULT_PUNCTUATION, DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
   paragraphEnd, paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
@@ -1053,7 +1053,64 @@ export class NanoEngine {
     window.cursorRow = window.place({ line: this._cursorLine, col: this._cursorCol }).row;
   }
 
+  private verbatimPending = false;
+  private verbatimDigits: string | null = null;
+
+  private verbatimCharacter(k: EditorKeyInput): string | null {
+    if (k.ctrl && !k.alt && k.key.length === 1) return String.fromCharCode(k.key.toUpperCase().charCodeAt(0) & 0x1f);
+    if (k.alt) return null;
+    if (k.key === 'Enter') return '\r';
+    if (k.key === 'Tab') return '\t';
+    if (k.key === 'Backspace') return '\x7f';
+    return k.key.length === 1 ? k.key : null;
+  }
+
+  private finishUnicodeInput(): void {
+    const code = parseInt(this.verbatimDigits ?? '', 16);
+    this.verbatimPending = false;
+    this.verbatimDigits = null;
+    if (!Number.isFinite(code) || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+      this._statusMessage = '[ Invalid code ]';
+      return;
+    }
+    this._statusMessage = '';
+    this.typeText(String.fromCodePoint(code));
+  }
+
+  private applyVerbatimKey(k: EditorKeyInput): void {
+    const isHexDigit = !k.ctrl && !k.alt && k.key.length === 1 && /[0-9a-fA-F]/.test(k.key);
+    if (this.verbatimDigits === null) {
+      if (isHexDigit) {
+        this.verbatimDigits = k.key;
+        this._statusMessage = `[ Unicode Input: ${this.verbatimDigits.padStart(6)} ]`;
+        return;
+      }
+      this.verbatimPending = false;
+      this._statusMessage = '';
+      const character = this.verbatimCharacter(k);
+      if (character !== null) this.typeText(character);
+      return;
+    }
+    if (isHexDigit) {
+      this.verbatimDigits += k.key;
+      if (this.verbatimDigits.length === 6) this.finishUnicodeInput();
+      else this._statusMessage = `[ Unicode Input: ${this.verbatimDigits.padStart(6)} ]`;
+      return;
+    }
+    if (!k.ctrl && !k.alt && (k.key === 'Enter' || k.key === ' ')) {
+      this.finishUnicodeInput();
+      return;
+    }
+    this.verbatimPending = false;
+    this.verbatimDigits = null;
+    this._statusMessage = '[ Invalid code ]';
+  }
+
   private dispatchKey(k: EditorKeyInput): void {
+    if (this.verbatimPending && this._mode === 'edit') {
+      this.applyVerbatimKey(k);
+      return;
+    }
     if (k.key === 'Tab' && !k.ctrl && !k.alt && !k.shift && this.completeWithTab()) return;
     switch (this._mode) {
       case 'edit': return this.helpTitle === null ? this.applyEditKey(k) : this.applyHelpViewerKey(k);
@@ -1286,12 +1343,12 @@ export class NanoEngine {
     switch (k.key) {
       case 'ArrowLeft':
         this.manner = 'flowing';
-        if (this._cursorCol > 0) this._cursorCol--;
+        if (this._cursorCol > 0) this._cursorCol -= unitsBefore(this.line(this._cursorLine), this._cursorCol);
         else if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.line(this._cursorLine).length; }
         return;
       case 'ArrowRight':
         this.manner = 'flowing';
-        if (this._cursorCol < this.line(this._cursorLine).length) this._cursorCol++;
+        if (this._cursorCol < this.line(this._cursorLine).length) this._cursorCol += unitsAt(this.line(this._cursorLine), this._cursorCol);
         else if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = 0; }
         return;
       case 'ArrowUp':
@@ -1346,10 +1403,11 @@ export class NanoEngine {
         const before = { line: this._cursorLine, col: this._cursorCol };
         if (this._cursorCol > 0) {
           const cur = this.line(this._cursorLine);
-          this.undo.beginDeletion('BACK', this.linesArr, { line: before.line, col: before.col - 1 }, 1, before);
-          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - 1) + cur.slice(this._cursorCol);
-          this._cursorCol--;
-          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
+          const removed = unitsBefore(cur, this._cursorCol);
+          this.undo.beginDeletion('BACK', this.linesArr, { line: before.line, col: before.col - removed }, removed, before);
+          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - removed) + cur.slice(this._cursorCol);
+          this._cursorCol -= removed;
+          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - removed;
           this.undoFinish();
           this._modified = true;
         } else if (this._cursorLine > 0) {
@@ -1372,9 +1430,10 @@ export class NanoEngine {
         if (!this.live.nonewlines && this._cursorCol === cur.length && this._cursorCol !== 0 && this._cursorLine === this.linesArr.length - 2) return;
         const before = { line: this._cursorLine, col: this._cursorCol };
         if (this._cursorCol < cur.length) {
-          this.undo.beginDeletion('DEL', this.linesArr, before, 1, before);
-          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + 1);
-          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
+          const removed = unitsAt(cur, this._cursorCol);
+          this.undo.beginDeletion('DEL', this.linesArr, before, removed, before);
+          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + removed);
+          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - removed;
           this.undoFinish();
           this._modified = true;
         } else if (this._cursorLine < this.linesArr.length - 1) {
@@ -1554,6 +1613,7 @@ export class NanoEngine {
     if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollLines(false, 1); return; }
     if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollLines(true, 1); return; }
     if (key === 'z') { this.toggleHiddenInterface(); return; }
+    if (key === 'v' && !this._readOnly) { this.verbatimPending = true; this._statusMessage = '[ Verbatim Input ]'; return; }
     if (key === 'y') { this.toggleSyntax(); return; }
     if (key === 'x') { this.toggleHelpLines(); return; }
     if (key === 'c') { this.toggleConstantShow(); return; }
@@ -2150,7 +2210,7 @@ export class NanoEngine {
   }
 
   private writeTarget(name: string): string {
-    return name === this.titleName ? this.filePath : this.fs.resolvePath(name);
+    return name === this.titleName ? this.filePath : this.fs.resolvePath(expandTilde(name, this.fs));
   }
 
   private cancelPrompt(): void {
@@ -3056,7 +3116,8 @@ export class NanoEngine {
       this._statusMessage = `[ ${this.operating.readRefusal()} ]`;
       return;
     }
-    const kind = this.pathKind(name);
+    const resolved = expandTilde(name, this.fs);
+    const kind = this.pathKind(resolved);
     if (kind === 'missing') {
       this._statusMessage = `[ File "${name}" not found ]`;
       return;
@@ -3065,7 +3126,7 @@ export class NanoEngine {
       this._statusMessage = `[ "${name}" is ${kind === 'directory' ? 'a directory' : kind === 'device' ? 'a device file' : 'a FIFO'} ]`;
       return;
     }
-    this.insertDecoded(decodeFile(this.fs.readFile(name) ?? '', !this.live.noconvert, false));
+    this.insertDecoded(decodeFile(this.fs.readFile(resolved) ?? '', !this.live.noconvert, false));
   }
 
   private insertDecoded(decoded: DecodedFile): void {

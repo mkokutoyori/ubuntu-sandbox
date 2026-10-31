@@ -94,12 +94,15 @@ export interface TransferStats {
   pretransferAt: number | null;
   starttransferAt: number | null;
   redirectMs: number;
+  sslVerifyResult: number;
+  numCerts: number;
 }
 
 export function newTransferStats(): TransferStats {
   return {
     startedAt: simulationNowMs(), requestBytes: 0, uploadBytes: 0, headerBytes: 0, connects: 0, namelookupAt: null,
     connectAt: null, appconnectAt: null, pretransferAt: null, starttransferAt: null, redirectMs: 0,
+    sslVerifyResult: 0, numCerts: 0,
   };
 }
 
@@ -138,6 +141,17 @@ class InsecureCertificateVerifier extends CertificateVerifier {
   verify(): VerificationResult {
     return { ok: true };
   }
+}
+
+function x509VerifyResult(
+  reason: string | null, peer: X509Certificate | null, chain: readonly X509Certificate[],
+  anchors: readonly X509Certificate[], nowMs: number, insecure: boolean, handshakeFailed: boolean,
+): number {
+  if (peer === null) return handshakeFailed && !insecure ? 20 : 0;
+  const settled = reason !== null
+    ? { ok: false as const, reason: reason as VerificationReason }
+    : new CertificateVerifier({ trustAnchors: anchors, clock: () => nowMs }).verify(peer, undefined, chain.filter(candidate => candidate !== peer));
+  return settled.ok === false ? x509VerifyError(settled.reason, peer, []).n : 0;
 }
 
 const URL_RE = /^(?:([A-Za-z][A-Za-z0-9+.-]*):\/\/)?(?:([^/?#@]*)@)?(\[[0-9A-Fa-f:.]+\]|[^/?#:@\[\]]+)(?::(\d+))?([/?#].*)?$/;
@@ -553,10 +567,17 @@ async function performHttpRequest(
           ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
         });
         session.adopt(porte.socket);
-        stats.pretransferAt = simulationNowMs();
         const result = await session.sendAsync(request);
-        stats.appconnectAt = stats.connectAt;
+        stats.appconnectAt = session.handshakeCompletedAtMs ?? stats.connectAt;
+        stats.pretransferAt = stats.appconnectAt;
         const handshake = session.handshake;
+        stats.numCerts = handshake?.result === 'success'
+          ? handshake.peerCertificateChain.length || (session.peerCertificate ? 1 : 0) : 0;
+        stats.sslVerifyResult = x509VerifyResult(
+          handshake?.peerVerificationReason ?? null, session.peerCertificate ?? handshake?.peerCertificate ?? null,
+          handshake?.peerCertificateChain ?? [],
+          anchors, host.tcpStack().nowMs(), opts.insecure, handshake?.result === 'failure',
+        );
         const peerAlert = handshake?.peerAlert ?? null;
         const localReason = handshake?.result === 'failure' ? handshake.peerVerificationReason : null;
         const statusProblem = opts.certStatus && result.ok
