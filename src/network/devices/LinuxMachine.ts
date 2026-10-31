@@ -5137,6 +5137,10 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.userHomeDirectory(uid);
   }
 
+  editorUserNames(): string[] {
+    return this.executor.userMgr.getAllUsers().map((user) => user.username);
+  }
+
   editorUserHomeDirectory(name: string): string | null {
     return this.executor.userMgr.getUser(name)?.home ?? null;
   }

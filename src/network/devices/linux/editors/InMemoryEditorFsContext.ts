@@ -116,6 +116,10 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     return this.userHomes.get(name) ?? null;
   }
 
+  userNames(): string[] {
+    return [...this.userHomes.keys()];
+  }
+
   useUserHome(name: string, path: string): void {
     this.userHomes.set(name, path);
   }

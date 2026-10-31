@@ -65,6 +65,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorHomeDirectory(this.session);
   }
 
+  userNames(): string[] {
+    return this.dev.editorUserNames();
+  }
+
   userHomeDirectory(name: string): string | null {
     return this.dev.editorUserHomeDirectory(name);
   }

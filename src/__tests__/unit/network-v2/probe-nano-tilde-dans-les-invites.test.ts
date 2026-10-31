@@ -1,5 +1,7 @@
 /**
  * nano 7.2 files.c real_dir_from_tilde : `~` et `~/x` tapés dans une invite de fichier (^O, ^R) sont développés avec le répertoire personnel (get_homedir : celui de passwd pour root, $HOME sinon), `~user` avec la table des comptes ; mesuré sur le binaire 7.2 de cette machine sous tmux (^O sur ~/til.txt écrit /root/til.txt avec HOME=/tmp/x/nh, car l'utilisateur est root).
+
+ * Complétion (mesurée sous tmux sur le même binaire) : `~roo` Tab donne `~root/`, `~s` Tab donne le préfixe commun `~sy` et, au second Tab, la liste triée, `~zzz` ne change rien. Les 2 premiers cas de complétion tombent avant.
  * Mesure de départ : `~` était un nom ordinaire (le fichier « ~/til.txt » était cherché dans le répertoire courant). Les 5 cas tombent avant (le témoin aussi, faute de la méthode useUserHome du contexte de test) ; le témoin (nom sans tilde) vérifie que le chemin sans tilde reste intact.
  */
 
@@ -61,5 +63,30 @@ describe('nano et le tilde', () => {
     type(nano, '/home/alice/notes.txt');
     nano.applyKey(editorKey('Enter'));
     expect(nano.content).toContain('from home');
+  });
+});
+
+describe('nano : complétion de ~utilisateur par Tab', () => {
+  let fs: InMemoryEditorFsContext;
+  beforeEach(() => {
+    fs = new InMemoryEditorFsContext();
+    for (const name of ['root', 'sync', 'sys', 'systemd-network']) fs.useUserHome(name, `/home/${name}`);
+  });
+  const prompt = (typed: string): NanoEngine => {
+    const nano = new NanoEngine(fs, '/work/t.txt', '', true);
+    nano.applyKey({ ...editorKey('r'), ctrl: true });
+    type(nano, typed);
+    nano.applyKey(editorKey('Tab'));
+    return nano;
+  };
+
+  it('un seul compte : le nom complet et une barre oblique (mesuré : ~roo → ~root/)', () => {
+    expect(prompt('~roo').readFileQuery).toBe('~root/');
+  });
+  it('plusieurs comptes : le préfixe commun (mesuré : ~s → ~sy)', () => {
+    expect(prompt('~s').readFileQuery).toBe('~sy');
+  });
+  it('aucun compte : la saisie reste (mesuré : ~zzz)', () => {
+    expect(prompt('~zzz').readFileQuery).toBe('~zzz');
   });
 });
