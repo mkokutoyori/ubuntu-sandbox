@@ -3369,6 +3369,10 @@ export class VimEngine {
       environment: (name) => this.environmentVariable(name) ?? '',
       environmentOrNull: (name) => this.environmentVariable(name),
       shellStatus: () => this.lastShellStatus,
+      pathKind: (path) => this.fs.kindOf?.(path) ?? (this.fs.exists(this.fs.resolvePath(path)) ? 'file' : 'missing'),
+      readText: (path) => this.fs.readFile(this.fs.resolvePath(path)),
+      directoryEntries: (path) => this.fs.listDirectory?.(this.fs.resolvePath(path)) ?? null,
+      workingDirectory: () => this.fs.resolvePath('.'),
       shell: (command, input) => this.runExpressionShell(command, input),
     };
   }

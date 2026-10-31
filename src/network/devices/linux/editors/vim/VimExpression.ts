@@ -51,6 +51,10 @@ export interface ExpressionHost {
   environment(name: string): string;
   environmentOrNull(name: string): string | null;
   shellStatus(): number;
+  pathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo';
+  readText(path: string): string | null;
+  directoryEntries(path: string): string[] | null;
+  workingDirectory(): string;
   shell(command: string, input: string | null): string;
   assignOption(name: string, value: string | number): string | null;
   assignRegister(name: string, text: string): void;
@@ -1099,6 +1103,37 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
   ['getenv', { min: 1, max: 1, run: (args, context) => {
     const value = context.host.environmentOrNull(context.stringOf(args[0], false));
     return value === null || value === '' ? special('null') : str(value);
+  } }],
+  ['filereadable', { min: 1, max: 1, run: (args, context) => num(context.host.pathKind(context.stringOf(args[0], false)) === 'file' && context.host.readText(context.stringOf(args[0], false)) !== null ? 1 : 0) }],
+  ['isdirectory', { min: 1, max: 1, run: (args, context) => num(context.host.pathKind(context.stringOf(args[0], false)) === 'directory' ? 1 : 0) }],
+  ['getcwd', { min: 0, max: 2, run: (_args, context) => str(context.host.workingDirectory()) }],
+  ['getfsize', { min: 1, max: 1, run: (args, context) => {
+    const path = context.stringOf(args[0], false);
+    const kind = context.host.pathKind(path);
+    if (kind === 'missing') return num(-1);
+    return num(kind === 'file' ? utf8Length(context.host.readText(path) ?? '') : 0);
+  } }],
+  ['readfile', { min: 1, max: 3, run: (args, context) => {
+    const name = context.stringOf(args[0], false);
+    const text = context.host.pathKind(name) === 'file' ? context.host.readText(name) : null;
+    if (text === null) {
+      context.soft(`E484: Can't open file ${name}`);
+      return list([]);
+    }
+    const binary = args[1] !== undefined && context.stringOf(args[1], false).includes('b');
+    const limit = args[2] === undefined ? Number.MAX_SAFE_INTEGER : Number(context.numberOf(args[2], false));
+    const pieces = text === '' ? [] : text.split('\n');
+    if (!binary && pieces.length > 0 && pieces[pieces.length - 1] === '') pieces.pop();
+    const lines = binary ? pieces : pieces.map((piece) => piece.replace(/\r$/, ''));
+    const chosen = limit < 0 ? lines.slice(Math.max(0, lines.length + limit)) : lines.slice(0, limit);
+    return list(chosen.map(str));
+  } }],
+  ['readdir', { min: 1, max: 2, run: (args, context) => {
+    const entries = context.host.directoryEntries(context.stringOf(args[0], false));
+    if (entries === null) return list([]);
+    const names = [...entries].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    const kept = args[1] === undefined ? names : names.filter((name) => context.numberOf(context.invoke(args[1], [str(name)]), false) !== 0n);
+    return list(kept.map(str));
   } }],
   ['str2float', { min: 1, max: 1, run: (args, context) => flt(parseFloatPrefix(context.stringOf(args[0], false))) }],
   ['flatten', { min: 1, max: 2, run: (args, context) => flattenList(args, context, true) }],
