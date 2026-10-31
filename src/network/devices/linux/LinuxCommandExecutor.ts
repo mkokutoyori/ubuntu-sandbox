@@ -3485,6 +3485,8 @@ export class LinuxCommandExecutor {
   private processCmdContext() {
     return {
       pm: this.processMgr,
+      userUid: (name: string) => this.userMgr.resolveUid(name),
+      groupGid: (name: string) => this.userMgr.resolveGid(name),
       currentUser: this.userMgr.currentUser,
       currentUid: this.userMgr.currentUid,
       tty: 'pts/0',

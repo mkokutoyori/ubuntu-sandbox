@@ -73,7 +73,7 @@ describe('Scénario 5 — ps / pgrep : filtrage par utilisateur', () => {
   it('pgrep -u <user> sleep filtre aussi par nom de commande', async () => {
     const out = await run('pgrep -u user-admin sleep');
     expect(out.trim().split('\n').filter(Boolean).length).toBeGreaterThan(0);
-    const outWrong = await run('pgrep -u user-admin nonexistentcmd123');
+    const outWrong = await run('pgrep -u user-admin nonexistcmd1');
     expect(outWrong.trim()).toBe('');
   });
 
