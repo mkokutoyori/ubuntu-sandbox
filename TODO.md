@@ -4252,7 +4252,10 @@ une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dan
 tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host` ; `HOST` sans
 commande, qui ouvre un shell, reste refuse) ; `CONFIGURE|SHOW SNAPSHOT CONTROLFILE NAME` (defaut `$ORACLE_HOME/dbs/snapcf_<SID>.f`, `# default`, `CLEAR`) : la
 sauvegarde du fichier de controle cree le snapshot a ce chemin (sonde `probe-rman-snapshot-controlfile` ; la creation par
-`RESYNC CATALOG` n'est pas faite, le catalogue de recuperation etant un autre sous-systeme) ; `LIST FAILURE` liste les fichiers de donnees dont le fichier a disparu de la machine (SYSTEM : CRITICAL ; les autres :
+`RESYNC CATALOG` n'est pas faite, le catalogue de recuperation etant un autre sous-systeme) ; `LIST BACKUP BY FILE` regroupe par fichier : « List of Datafile Backups » puis « List of Control File Backups »
+(sonde `probe-rman-list-backup-by-file`). A VERIFIER : les titres, l'ordre et les noms de colonnes viennent de la memoire ;
+« List of Archived Log Backups » (Thrd, Seq, Low SCN...) et SPFILE manquent, le catalogue ne gardant ni thread ni sequence
+par jeu. `LIST FAILURE` liste les fichiers de donnees dont le fichier a disparu de la machine (SYSTEM : CRITICAL ; les autres :
 une defaillance HIGH) ou « no failures found that match specification » (sonde `probe-rman-list-failure`). A VERIFIER :
 les libelles, les priorites, l'en-tete du tableau et `DD-MON-YY` viennent de la memoire ; le numero (100 + le plus petit
 numero de fichier) et la date (celle de l'appel) sont des choix du simulateur ; `ADVISE FAILURE`, `REPAIR FAILURE` et
@@ -4264,8 +4267,7 @@ ce texte, `RMAN-06571: datafile N does not have recoverable copy` et le refus de
 AUTOBACKUP` a ce DBID (sonde `probe-rman-set-dbid` ; le controle de RMAN quand une cible est deja connectee n'est pas source).
 Refuses en RMAN-01009 faute de source : `docs.oracle.com` n'est pas dans les domaines autorises de la session (WebFetch :
 `getaddrinfo ENOTFOUND docs.oracle.com`), et le §8 de CLAUDE.md interdit d'inventer le texte d'un outil proprietaire.
-Ce qu'il manque, commande par commande : `LIST BACKUP BY FILE` (mise en page des colonnes) ;
-`UPGRADE CATALOG` et `TRANSPORT TABLESPACE`
+Ce qu'il manque, commande par commande : `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`
 (sorties longues, plusieurs etapes) ; Non sources non plus : le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or
 directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
 `debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.
