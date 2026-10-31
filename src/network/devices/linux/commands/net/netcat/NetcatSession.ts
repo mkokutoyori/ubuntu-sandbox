@@ -63,6 +63,7 @@ export function converse(
     let idle: (() => void) | null = null;
     let settled = false;
     let quitting = false;
+    let packets = 0;
     const finish = (): void => {
       if (settled) return;
       settled = true;
@@ -91,6 +92,7 @@ export function converse(
         if (background) ctx.executor.emitLateStdout(pid, text);
         else received += text;
         armIdle();
+        if (opts.receiveLimit > 0 && ++packets >= opts.receiveLimit) finish();
       }));
     }
     const peerGone = (): void => { if (!quitting) finish(); };

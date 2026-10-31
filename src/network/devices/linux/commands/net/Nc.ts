@@ -16,7 +16,7 @@ import { OPENBSD_NETCAT_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
 import type { TcpListenOptions } from '../../../../tcp/TcpStack';
 import { reverseNameOf } from '../../network/ReverseName';
 import { NetcatExit, parseNetcatArguments, strtonum, type NetcatOptions } from './netcat/NetcatArguments';
-import { NcOutput, announceListening, converse, wireText, type NcResult, type Peer } from './netcat/NetcatSession';
+import { NcOutput, announceListening, converse, linesOf, wireText, type NcResult, type Peer } from './netcat/NetcatSession';
 import { runUnixClient, runUnixListen } from './netcat/NetcatUnix';
 
 export { ncUnixClientPath } from './netcat/NetcatUnix';
@@ -339,7 +339,15 @@ function openTcpListener(
           stack.acceptNext(listener);
         });
         armIdle();
-        if (greeting !== '') socket.write(greeting);
+        if (greeting === '') return;
+        const pieces = opts.intervalSeconds > 0 ? linesOf(greeting) : [greeting];
+        const sendFrom = (index: number): void => {
+          if (index >= pieces.length) return;
+          const send = (): void => { socket.write(pieces[index]); sendFrom(index + 1); };
+          if (opts.intervalSeconds > 0) ctx.executor.scheduleAfter(opts.intervalSeconds * 1000, send);
+          else send();
+        };
+        sendFrom(0);
       },
       identity: { pid, processName: 'nc', uid: ownerUid },
       ownerUid, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings,

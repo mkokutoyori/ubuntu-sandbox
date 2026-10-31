@@ -833,9 +833,9 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   /etc/hosts) est dans le corpus.
 - `ncat` est un alias de `nc` dans la declaration de la commande ; c'est l'outil de Nmap, pas
   `netcat-openbsd` (options, messages et `-e` differents).
-- `-W` (arret apres N paquets) et `-t` (negociation telnet) : la boucle `readwrite` est portee
-  (`converse` dans `Nc.ts` : `-N -q -w -C -i -d`, connexion persistante, ecoute en service unique),
-  pas ces deux-la.
+- `-t` (negociation telnet) : la boucle `readwrite` est portee (`converse` dans `Nc.ts` : `-N -q -w -C -i -d -W`,
+  connexion persistante, ecoute en service unique), pas celle-la. `-W n` arrete apres n arrivees de donnees (sonde
+  `probe-nc-w-limite-de-reception`) ; le serveur `-l -i` envoie son entree ligne par ligne.
 - Entree standard du TERMINAL : un `nc host port` tape seul lit le clavier dans un vrai terminal
   (il envoie ce qu'on tape jusqu'a Ctrl-D ou Ctrl-C) ; le terminal simule n'a pas d'entree
   interactive pour une commande, donc `nc` lit la salutation du serveur puis se comporte comme un
