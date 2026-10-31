@@ -3796,6 +3796,10 @@ export class LinuxCommandExecutor {
     return new Date(this.clockPort.wall());
   }
 
+  localTimeText(format: string): string {
+    return formatLocalTime(format, this.simulatedDate().getTime(), this.identity.timezone);
+  }
+
   advanceTime(ms: number): void {
     const before = this.logicalNow();
     this.stepClock(ms);
@@ -6860,7 +6864,11 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: /(^|\n)du: (cannot|invalid|warning|\S+: No such)/.test(out) ? 1 : 0 };
       }
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
-      case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });
+      case 'vmstat': return cmdVmstat(args, {
+        pm: this.processMgr,
+        memory: this.hardware.memory,
+        formatTime: (format) => this.localTimeText(format),
+      });
       case 'mpstat': return cmdMpstat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,

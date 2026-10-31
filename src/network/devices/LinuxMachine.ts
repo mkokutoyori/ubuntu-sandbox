@@ -5916,6 +5916,10 @@ export abstract class LinuxMachine extends EndHost
     return sampleMpstat(args, this.executor.processMgr, this.getHardware().cpu);
   }
 
+  localTimeText(format: string): string {
+    return this.executor.localTimeText(format);
+  }
+
   machineDate(): Date {
     return this.executor.simulatedDate();
   }

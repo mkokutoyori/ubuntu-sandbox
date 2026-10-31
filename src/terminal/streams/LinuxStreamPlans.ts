@@ -521,8 +521,8 @@ function planVmstat(dev: LinuxMachine, commandLine: string, toks: string[]): Str
   return scrolling({
     intervalMs: intervalOf(parsed.intervalSeconds),
     maxFrames: parsed.count ?? undefined,
-    header: () => vmstatHeader(parsed),
-    frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed),
+    header: () => vmstatHeader(parsed, parsed.timestamp ? dev.localTimeText('%Z') : ''),
+    frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed, parsed.timestamp ? dev.localTimeText('%Y-%m-%d %H:%M:%S') : ''),
   });
 }
 
