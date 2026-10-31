@@ -1,4 +1,4 @@
-import { SIMULATED_HASH_PREFIX } from '../iam/fs/AccountDatabaseParser';
+import { hashPassword, verifyCrypt } from '@/crypto/passwords';
 import type { PamWritableFiles } from './PamLinuxHost';
 
 export const OPASSWD_PATH = '/etc/security/opasswd';
@@ -28,10 +28,6 @@ function render(records: readonly OpasswdRecord[]): string {
   return records.map((record) => `${record.name}:${record.uid}:${record.hashes.length}:${record.hashes.join(',')}`).join('\n') + (records.length > 0 ? '\n' : '');
 }
 
-function hashOf(password: string): string {
-  return `${SIMULATED_HASH_PREFIX}${password}`;
-}
-
 export class PamOpasswd {
   constructor(
     private readonly readFile: (path: string) => string | null,
@@ -41,7 +37,7 @@ export class PamOpasswd {
   used(name: string, password: string, depth: number): boolean {
     const record = parse(this.readFile(OPASSWD_PATH)).find((entry) => entry.name === name);
     if (record === undefined) return false;
-    return record.hashes.slice(-depth).includes(hashOf(password));
+    return record.hashes.slice(-depth).some((hash) => verifyCrypt(hash, password));
   }
 
   remember(name: string, uid: number, oldPassword: string, depth: number): void {
@@ -51,7 +47,7 @@ export class PamOpasswd {
       record = { name, uid: String(uid), hashes: [] };
       records.push(record);
     }
-    record.hashes.push(hashOf(oldPassword));
+    record.hashes.push(hashPassword(oldPassword));
     while (record.hashes.length > depth) record.hashes.shift();
     this.files.mkdirp('/etc/security');
     this.files.writeFile(OPASSWD_PATH, render(records));

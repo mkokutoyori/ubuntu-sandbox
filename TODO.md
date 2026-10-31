@@ -459,23 +459,9 @@ diverger la CLI. Elle redeviendra implementable le jour ou `Cable`
 portera une latence.
 
 ### [sysctl] `/etc/sysctl.conf` n'est pas livre, et les projections de `/proc/sys` sont en lecture seule
-Depuis le lot « `sysctl` lit `/proc/sys` », deux restes MESURES.
+Depuis le lot « `sysctl` lit `/proc/sys` », un reste MESURE (le fichier `/etc/sysctl.conf` est livre, copie de celui d'une Ubuntu 24.04 reelle).
 
-**(1) Le fichier de prechargement n'existe pas.** `sysctl -p` repond
-`sysctl: cannot open "/etc/sysctl.conf": No such file or directory` sur
-une machine neuve, alors qu'une vraie Ubuntu livre ce fichier (tout en
-commentaires) et un `/etc/sysctl.d/` avec `99-sysctl.conf`. Le depot y
-fait deja reference : `/etc/ufw/sysctl.conf` est seme et son en-tete dit
-« these settings override /etc/sysctl.conf ». **Pourquoi ce n'est pas
-ferme ici** : le contenu EXACT du fichier de Debian n'a pas pu etre
-atteste depuis ce reseau (`sources.debian.org` et `git.launchpad.net`
-sont bloques par le mandataire ; le `sysctl.conf` d'amont de procps-ng
-est un AUTRE fichier, avec des reglages actifs que Debian ne livre pas).
-L'ecrire de memoire produirait le genre de sortie plausible-et-fausse
-que ce depot passe son temps a refermer. A fermer le jour ou une copie
-du fichier Debian est atteignable.
-
-**(2) Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
+**Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
 pseudo-fichiers generes sont en lecture seule par decision du VFS
 (`writeFile` les jette en silence), et ceux d'`arp_ignore`,
 `arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une
@@ -529,18 +515,6 @@ FortiGate rejette par defaut les fragments superposes/teardrop. Le
 pare-feu simule a bien `drop-overlapped-fragment` (defaut disable, non
 active par ce test) et `Ipv4Fragmentation.overlaps`, mais aucune detection
 d'anomalie de fragments par defaut. Le test reste rouge.
-
-### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
-`echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
-le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
-mot de passe lui-meme. Tout lecteur de `/etc/shadow` (root, une sauvegarde,
-un `scp` du fichier) lit donc les mots de passe, et un exercice d'audit de
-robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
-**Mesure** : `chpasswd` puis `grep user /etc/shadow` sur un LinuxServer.
-**Pourquoi ce n'est pas ferme** : il faut un vrai SHA-512-crypt (sel,
-5000 tours par defaut) dans `src/crypto/` et migrer tous les lecteurs du
-champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
-perimetre du correctif SSH qui l'a revele.
 
 ### [apt] ce que l'etat de paquets par machine laisse encore ouvert
 `/var/lib/dpkg/status` est desormais l'etat de CHAQUE machine (apt, apt-get,
@@ -929,8 +903,6 @@ datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -
 - `nc -U` tape seul dans le terminal (plan de flux `planNcUnix`) ouvre une prise sans processus.
 - `connect()` sur une file d'acceptation pleine (plus de `backlog + 1` connexions en attente) rend EAGAIN ici ; le vrai
   bloque jusqu'a ce que le serveur accepte.
-- `find -type b` et `-type c` : le VFS ne distingue pas un peripherique bloc d'un peripherique caractere, les deux
-  filtres retournent tous les peripheriques.
 
 ### [umask] ce que le portage de `umask` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `umask-bash-5.2.json`, 5 labos, 232 pas, bash 5.2.21 sur Ubuntu 24.04) : le
@@ -3984,10 +3956,9 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 `%{ssl_verify_result}` vaut toujours 0 (le vrai donne le code X509 de l'echec, 20 pour « unable to get local issuer certificate ») ; `%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; `%{time_appconnect}` d'une connexion TLS reprend `time_connect` faute de mesure de la poignee de main ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
 
-### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
+### [bash-fin-de-ligne] un ecart restant contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
-Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
-
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`), `fold` et `rev` (fichiers operandes compris) non plus. Reste mesure et non ferme : `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee.
 
 ### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
 

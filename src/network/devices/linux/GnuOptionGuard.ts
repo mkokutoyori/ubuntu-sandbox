@@ -572,6 +572,7 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     long: [flag('no-create', 'c'), flag('io-blocks', 'o'), valued('reference', 'r'), valued('size', 's'), ...HELP_VERSION],
     operands: true,
   },
+  mknod: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
   mkfifo: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
   cksum: { optstring: '', long: [...HELP_VERSION], operands: true },
   sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },

@@ -1,10 +1,10 @@
 export interface SshLocalDirEntry {
   readonly name: string;
-  readonly inode: { readonly type: 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket' };
+  readonly inode: { readonly type: 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'blockdev' | 'socket' };
 }
 
 export interface SshLocalInode {
-  readonly type: 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket';
+  readonly type: 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'blockdev' | 'socket';
 }
 
 export interface ISshLocalFs {

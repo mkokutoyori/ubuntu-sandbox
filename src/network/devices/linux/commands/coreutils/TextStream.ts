@@ -301,8 +301,9 @@ export const foldCommand = coreutil(
     const got = inputs(ctx, files, stdin, 'fold');
     if (!Array.isArray(got)) return got;
 
-    const out: string[] = [];
+    let text = '';
     for (const content of got) {
+      const out: string[] = [];
       for (const line of toLines(content)) {
         let rest = line;
         if (rest === '') { out.push(''); continue; }
@@ -317,8 +318,9 @@ export const foldCommand = coreutil(
         }
         out.push(rest);
       }
+      text += out.join('\n') + (out.length > 0 && content.endsWith('\n') ? '\n' : '');
     }
-    return out.join('\n');
+    return text;
   },
 );
 

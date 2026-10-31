@@ -222,6 +222,7 @@ function typeLetter(inode: INode): string {
     case 'fifo': return 'p';
     case 'socket': return 's';
     case 'chardev': return 'c';
+    case 'blockdev': return 'b';
     default: return 'f';
   }
 }

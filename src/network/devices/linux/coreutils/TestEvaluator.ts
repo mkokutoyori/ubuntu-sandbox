@@ -105,7 +105,7 @@ export class TestEvaluator {
       case '-d': return this.fs.getType(abs) === 'directory';
       case '-L':
       case '-h': return this.fs.getType(abs, false) === 'symlink';
-      case '-b': return false;                              // no block devs in VFS
+      case '-b': return !!lst && lst.type === 'blockdev';
       case '-c': return !!lst && lst.type === 'chardev';
       case '-p': return !!lst && lst.type === 'fifo';
       case '-S': return !!lst && lst.type === 'socket';

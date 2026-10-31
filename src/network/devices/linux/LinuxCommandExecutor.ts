@@ -79,6 +79,7 @@ import { runCp, cpOperands } from './coreutils/CpCommand';
 import { runMv, mvOperands } from './coreutils/MvCommand';
 import { runLn } from './coreutils/LnCommand';
 import { runMkdir, mkdirOperands } from './coreutils/MkdirCommand';
+import { runMknod } from './coreutils/MknodCommand';
 import { runRmdir } from './coreutils/RmdirCommand';
 import { runSort } from './coreutils/SortCommand';
 import { asDispatch } from './coreutils/CoreutilsKit';
@@ -334,7 +335,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // File/dir basics
   'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
-  'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
+  'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo', 'mknod',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
   'dd', 'fallocate', 'sync', 'install',
   'expr', 'seq', 'od', '[',
@@ -483,7 +484,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -6395,6 +6396,7 @@ export class LinuxCommandExecutor {
       case '[': return this.handleTest(cmd, args);
       case 'expr': return this.handleExpr(args);
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
+      case 'mknod': return asDispatch(runMknod(c, args));
 
       // User commands
       case 'useradd': {
@@ -7072,10 +7074,30 @@ export class LinuxCommandExecutor {
         return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
       case 'rev': {
-        const input = stdin || '';
-        const body = input.endsWith('\n') ? input.slice(0, -1) : input;
-        const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
-        return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
+        const reverse = (input: string): string => {
+          const body = input.endsWith('\n') ? input.slice(0, -1) : input;
+          const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
+          return input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : '');
+        };
+        const files = args.filter((word) => !word.startsWith('-') || word === '-');
+        if (files.length === 0) return { output: reverse(stdin || ''), exitCode: 0 };
+        let output = '';
+        let interleaved = '';
+        const errors: string[] = [];
+        for (const file of files) {
+          const content = file === '-' ? (stdin || '') : this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
+          if (content === null) {
+            const line = `rev: cannot open ${file}: No such file or directory`;
+            errors.push(line);
+            interleaved += `${line}\n`;
+          } else {
+            const reversed = reverse(content);
+            output += reversed;
+            interleaved += reversed;
+          }
+        }
+        if (errors.length === 0) return { output, exitCode: 0 };
+        return { output, stderr: errors.join('\n'), interleaved, exitCode: 1 };
       }
       case 'basename': return asDispatch(runBasename(args));
       case 'dirname': return asDispatch(runDirname(args));
@@ -8882,7 +8904,7 @@ export class LinuxCommandExecutor {
   editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
     const type = this.vfs.getType(this.vfs.normalizePath(path, this.cwd));
     if (type === null) return 'missing';
-    return type === 'chardev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
+    return type === 'chardev' || type === 'blockdev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
   }
   getUmask(): number { return this.umask; }
 
@@ -9360,7 +9382,10 @@ export class LinuxCommandExecutor {
       return `${target}: symbolic link to ${lstat.target}`;
     }
     if (lstat.type === 'directory') return `${target}: directory`;
-    if (lstat.type === 'chardev') return `${target}: character special`;
+    if (lstat.type === 'chardev' || lstat.type === 'blockdev') {
+      const numbers = lstat.rdev === undefined ? '' : ` (${lstat.rdev.major}/${lstat.rdev.minor})`;
+      return `${target}: ${lstat.type === 'chardev' ? 'character' : 'block'} special${numbers}`;
+    }
     if (lstat.type === 'socket') return `${target}: socket`;
     const content = this.vfs.readFile(abs) ?? lstat.content;
     if (content.length === 0) return `${target}: empty`;
@@ -9384,7 +9409,8 @@ function mimeOfDescription(description: string, withCharset: boolean): string {
   else if (description === 'empty') type = 'inode/x-empty';
   else if (description === 'directory') type = 'inode/directory';
   else if (description.startsWith('symbolic link')) type = 'inode/symlink';
-  else if (description === 'character special') type = 'inode/chardevice';
+  else if (description.startsWith('character special')) type = 'inode/chardevice';
+  else if (description.startsWith('block special')) type = 'inode/blockdevice';
   else if (description === 'socket') type = 'inode/socket';
   else if (description.endsWith('script, ASCII text executable')) { type = 'text/x-shellscript'; text = true; }
   return withCharset ? `${type}; charset=${text ? 'us-ascii' : 'binary'}` : type;

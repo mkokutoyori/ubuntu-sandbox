@@ -17,7 +17,9 @@ import { GAI_CONF_FACTORY, GAI_CONF_PATH } from './network/GaiConf';
 import { SYSTEM_CONFIG_DEFAULTS, SYSTEM_CONFIG_DIRECTORY, SYSTEM_CONFIG_FILE } from '../../ldap/openldap/ldapOptions';
 import { LIBSASL2_MODULES_PLUGINS, SASL_PLUGIN_DIRECTORY, pluginFilePaths } from '../../ldap/openldap/sasl/saslFiles';
 
-export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'socket';
+export type FileType = 'file' | 'directory' | 'symlink' | 'fifo' | 'chardev' | 'blockdev' | 'socket';
+
+const CHAR_DEVICE_DRIVERS: ReadonlyMap<string, string> = new Map([['1:3', 'null'], ['1:5', 'zero'], ['1:9', 'urandom']]);
 
 const FIND_TYPES = ['f', 'd', 'l', 'p', 's', 'c', 'b'] as const;
 
@@ -84,7 +86,8 @@ export interface INode {
   atime: number;
   ctime: number;
   revision?: number;
-  deviceType?: string;    // 'null' | 'zero' | 'urandom' for chardev
+  deviceType?: string;
+  rdev?: { major: number; minor: number };
   /**
    * Attribut `i` d'ext4 (`chattr +i`) : personne, pas meme root, ne
    * peut modifier ni supprimer le fichier. C'est ce qui rend une
@@ -358,18 +361,18 @@ export class VirtualFileSystem {
     if (rootHome) rootHome.permissions = 0o700;
 
     // Create special device files
-    this.createCharDev('/dev/null', 'null');
-    this.createCharDev('/dev/zero', 'zero');
-    this.createCharDev('/dev/urandom', 'urandom');
+    this.createCharDev('/dev/null', 'null', 1, 3);
+    this.createCharDev('/dev/zero', 'zero', 1, 5);
+    this.createCharDev('/dev/urandom', 'urandom', 1, 9);
 
     // devpts — /dev/pts/N slave nodes are materialised per-session by
     // whoever opens a pty (SSH accept, local terminal); ptmx is the
     // always-present cloning device real Linux seeds at boot.
     this.mkdirp('/dev/pts', 0o755, 0, 0);
-    this.createCharDev('/dev/pts/ptmx', 'ptmx');
+    this.createCharDev('/dev/pts/ptmx', 'ptmx', 5, 2);
     // The local console VT is a static device node present from boot,
     // unlike pty slaves which come and go with sessions.
-    for (let console = 0; console <= 63; console++) this.createCharDev(`/dev/tty${console}`, 'tty');
+    for (let console = 0; console <= 63; console++) this.createCharDev(`/dev/tty${console}`, 'tty', 4, console);
 
     // Create essential system files
     this.createFileAt('/etc/hostname', 'localhost\n', 0o644, 0, 0);
@@ -429,6 +432,10 @@ export class VirtualFileSystem {
     this.createFileAt('/etc/resolv.conf', '', 0o644, 0, 0);
 
     // UFW default config files
+    this.createFileAt('/etc/sysctl.conf', "#\n# /etc/sysctl.conf - Configuration file for setting system variables\n# See /etc/sysctl.d/ for additional system variables.\n# See sysctl.conf (5) for information.\n#\n\n#kernel.domainname = example.com\n\n# Uncomment the following to stop low-level messages on console\n#kernel.printk = 3 4 1 3\n\n###################################################################\n# Functions previously found in netbase\n#\n\n# Uncomment the next two lines to enable Spoof protection (reverse-path filter)\n# Turn on Source Address Verification in all interfaces to\n# prevent some spoofing attacks\n#net.ipv4.conf.default.rp_filter=1\n#net.ipv4.conf.all.rp_filter=1\n\n# Uncomment the next line to enable TCP/IP SYN cookies\n# See http://lwn.net/Articles/277146/\n# Note: This may impact IPv6 TCP sessions too\n#net.ipv4.tcp_syncookies=1\n\n# Uncomment the next line to enable packet forwarding for IPv4\n#net.ipv4.ip_forward=1\n\n# Uncomment the next line to enable packet forwarding for IPv6\n#  Enabling this option disables Stateless Address Autoconfiguration\n#  based on Router Advertisements for this host\n#net.ipv6.conf.all.forwarding=1\n\n\n###################################################################\n# Additional settings - these settings can improve the network\n# security of the host and prevent against some network attacks\n# including spoofing attacks and man in the middle attacks through\n# redirection. Some network environments, however, require that these\n# settings are disabled so review and enable them as needed.\n#\n# Do not accept ICMP redirects (prevent MITM attacks)\n#net.ipv4.conf.all.accept_redirects = 0\n#net.ipv4.conf.default.accept_redirects = 0\n# _or_\n# Accept ICMP redirects only for gateways listed in our default\n# gateway list (enabled by default)\n# net.ipv4.conf.all.secure_redirects = 1\n#\n# Do not send ICMP redirects (we are not a router)\n#net.ipv4.conf.all.send_redirects = 0\n#\n# Log Martian Packets\n#net.ipv4.conf.all.log_martians = 1\n#\n\n###################################################################\n# Magic system request Key\n# 0=disable, 1=enable all, >1 bitmask of sysrq functions\n# See https://www.kernel.org/doc/html/latest/admin-guide/sysrq.html\n# for what other values do\n#kernel.sysrq=438\n\n", 0o644, 0, 0);
+    this.mkdirp('/etc/sysctl.d', 0o755, 0, 0);
+    this.createSymlink('/etc/sysctl.d/99-sysctl.conf', '../sysctl.conf', 0, 0);
+
     this.createFileAt('/etc/ufw/ufw.conf',
       '# /etc/ufw/ufw.conf\n#\n\n# Set to yes to start on boot\nENABLED=no\n\n# Please use the \'ufw\' command to set the loglevel.\n# Loglevel is matched on a snmp-like basis.\nLOGLEVEL=low\n',
       0o644, 0, 0);
@@ -505,7 +512,7 @@ export class VirtualFileSystem {
     // Create binaries (stubs) — placed in /usr/bin since /bin -> usr/bin
     const binaries = ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
       'chown', 'chgrp', 'ln', 'find', 'grep', 'head', 'tail', 'wc', 'sort', 'cut',
-      'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'echo', 'pwd', 'cd', 'bash', 'sh',
+      'uniq', 'tr', 'awk', 'stat', 'test', 'mkfifo', 'mknod', 'echo', 'pwd', 'cd', 'bash', 'sh',
       'id', 'whoami', 'groups', 'who', 'w', 'last', 'lastb', 'hostname', 'uname', 'tee', 'sleep',
       'kill', 'locate', 'updatedb', 'install'];
     for (const bin of binaries) {
@@ -549,12 +556,27 @@ export class VirtualFileSystem {
     return inode;
   }
 
-  private createCharDev(path: string, deviceType: string): void {
+  private createCharDev(path: string, deviceType: string, major: number, minor: number): void {
     const inode = this.createFileAt(path, '', 0o666, 0, 0);
     if (inode) {
       inode.type = 'chardev';
       inode.deviceType = deviceType;
+      inode.rdev = { major, minor };
     }
+  }
+
+  createDevice(path: string, kind: 'chardev' | 'blockdev', major: number, minor: number, permissions: number, uid: number, gid: number): boolean {
+    const parent = this.resolveParent(path);
+    if (!parent) return false;
+    const [parentInode, basename] = parent;
+    if (parentInode.children.has(basename)) return false;
+    const inode = this.allocInode(kind, permissions, uid, gid);
+    inode.rdev = { major, minor };
+    if (kind === 'chardev') inode.deviceType = CHAR_DEVICE_DRIVERS.get(`${major}:${minor}`);
+    parentInode.children.set(basename, inode.id);
+    parentInode.mtime = this.nowMs();
+    this.emitDirectoryEvent(path, 'create', false);
+    return true;
   }
 
   // ─── Path Resolution ──────────────────────────────────────────────
@@ -1756,7 +1778,7 @@ export class VirtualFileSystem {
   matchesFindCriteria(path: string, inode: INode, options: any): boolean {
     if (options.type !== undefined) {
       const typeMap: Record<FindType, FileType> = {
-        f: 'file', d: 'directory', l: 'symlink', p: 'fifo', s: 'socket', c: 'chardev', b: 'chardev',
+        f: 'file', d: 'directory', l: 'symlink', p: 'fifo', s: 'socket', c: 'chardev', b: 'blockdev',
       };
       if (inode.type !== typeMap[options.type]) return false;
     }
@@ -1836,7 +1858,7 @@ export class VirtualFileSystem {
    */
   formatPermissions(inode: INode): string {
     const typeChars: Record<FileType, string> = {
-      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c', socket: 's'
+      file: '-', directory: 'd', symlink: 'l', fifo: 'p', chardev: 'c', blockdev: 'b', socket: 's'
     };
     let s = typeChars[inode.type] || '-';
 

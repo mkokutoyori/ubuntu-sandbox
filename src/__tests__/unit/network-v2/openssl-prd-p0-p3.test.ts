@@ -162,13 +162,9 @@ describe('§P2 — base64 et mots de passe', () => {
     expect(out).toMatch(/^\$1\$abcdefgh\$/);
   });
 
-  it('`passwd -6` rend la forme que la plateforme sait relire', async () => {
-    // Décision écrite au §13.6 : l'empreinte doit être utilisable dans
-    // /etc/shadow sur CETTE machine. Une empreinte cryptographiquement
-    // exacte que le simulateur refuserait serait un exercice qui échoue
-    // en enseignant que la méthode est fausse.
+  it('`passwd -6` rend la même empreinte que l\'openssl réel, relisible par la plateforme', async () => {
     const out = (await machine().executeCommand('openssl passwd -6 -salt sel motdepasse')).trim();
-    expect(out).toBe('$6$sel$motdepasse');
+    expect(out).toBe('$6$sel$WE5TbjQhki.GaT3015GzZ5C1lzH2kj.NIXQrmyQSMZLobx2ybke1cesCH1JUws4XMPUWCLVFMcwy8AXJ.59zv0');
   });
 });
 
