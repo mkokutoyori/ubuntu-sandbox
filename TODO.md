@@ -4051,14 +4051,6 @@ Les trois bancs passent en entier ; restent mesures et non fermes :
 - Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
 - `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
-### [find-grammaire] find n'a pas la grammaire d'expressions de findutils
-
-`find` (LinuxSearchCommands.cmdFind) accepte `-perm` octal (`N`, `-N`, `/N`) et `-xdev` depuis le script d'audit lecture seule, mais ignore toujours en silence les predicats qu'il ne connait pas (`-o`, `-a`, parentheses, `-printf`, `-ls`, `-links`, `-regex`, `-perm` symbolique `u+x`, `-exec ... +`). Un critere ignore rend la recherche plus large que ce que l'operateur a ecrit ; a fermer en portant l'arbre d'expressions de findutils et en refusant l'inconnu avec `find: unknown predicate`.
-
-### [hosts-666] /etc/hosts est livre en 0666 (Ubuntu : 0644)
-
-Mesure par `find /etc -perm -0002` : `/etc/hosts` est le seul fichier de /etc ouvert en ecriture a tous (VirtualFileSystem, creation d'usine). Le passer en 0644 casse une trentaine de tests et de specs e2e qui y ajoutent une ligne en simple utilisateur (`echo ... >> /etc/hosts`, nano, sed -i) : ils doivent d'abord passer en root (`sudo sh -c`). Non ferme parce que le changement touche ces fichiers en masse ; le test `network-config-files-editing` verifie deja root:root 0644 dans un autre cas.
-
 ---
 
 ## Telnet (client netkit, serveur netkit, clients des équipements réseau)

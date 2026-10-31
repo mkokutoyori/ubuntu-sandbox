@@ -56,7 +56,7 @@ test.describe('Scénario 3 — /etc/hosts et /etc/hostname (UI réelle)', () => 
     const pcId = await addDevice(page, 'linux-pc');
     await openTerminal(page, pcId);
     await becomeRoot(page);
-    await typeCmd(page, "printf '10.0.0.99 serveur-legitime.domaine.local\\n' >> /etc/hosts");
+    await typeCmd(page, "printf '10.0.0.99 serveur-legitime.domaine.local\\n' | sudo tee -a /etc/hosts > /dev/null");
     await typeCmd(page, 'getent hosts serveur-legitime.domaine.local');
     await waitForText(page, '10.0.0.99');
   });

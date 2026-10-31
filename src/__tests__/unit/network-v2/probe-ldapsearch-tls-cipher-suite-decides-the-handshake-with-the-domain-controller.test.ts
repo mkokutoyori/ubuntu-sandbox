@@ -106,7 +106,7 @@ describe('the verification profile of the priority string judges the certificate
   beforeAll(async () => {
     const lab = await buildLab();
     workstation = lab.workstation;
-    await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' >> /etc/hosts`);
+    await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' | sudo tee -a /etc/hosts > /dev/null`);
     await workstation.executeCommand(`LDAPTLS_REQCERT=never ldapsearch -x -H ldaps://${DC_ADDRESS} -b '' -s base -LLL dn`);
     const identity = (lab.controller as unknown as { ldapStartTlsIdentity: { cert: X509Certificate } }).ldapStartTlsIdentity;
     workstation.addTrustedCertificateAuthority(identity.cert);

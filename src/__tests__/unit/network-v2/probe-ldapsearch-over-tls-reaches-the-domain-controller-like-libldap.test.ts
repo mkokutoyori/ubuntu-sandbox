@@ -44,7 +44,7 @@ describe('ldapsearch over TLS reaches the domain controller like libldap', () =>
     const lab = await buildLab();
     workstation = lab.workstation;
     controller = lab.controller;
-    await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' >> /etc/hosts`);
+    await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' | sudo tee -a /etc/hosts > /dev/null`);
     await workstation.executeCommand(`LDAPTLS_REQCERT=never ldapsearch -x -H ldaps://${DC_ADDRESS} -b '' -s base -LLL dn`);
     const cert = (controller as unknown as { ldapStartTlsIdentity: { cert: X509Certificate } }).ldapStartTlsIdentity.cert;
     workstation.writeFileFromEditor('/tmp/dc.pem', certToPem(cert));

@@ -78,7 +78,7 @@ test.describe('Scénario 2 — nsswitch.conf / resolv.conf (UI réelle)', () => 
     await becomeRoot(page);
     await typeCmd(page, 'ip addr add 10.0.1.2/24 dev eth0');
     await typeCmd(page, "printf 'nameserver 10.0.1.10\\n' > /etc/resolv.conf");
-    await typeCmd(page, "printf '10.0.1.99 serveur.domaine.local\\n' >> /etc/hosts");
+    await typeCmd(page, "printf '10.0.1.99 serveur.domaine.local\\n' | sudo tee -a /etc/hosts > /dev/null");
 
     await typeCmd(page, 'getent hosts serveur.domaine.local');
     await waitForText(page, '10.0.1.99');
@@ -100,7 +100,7 @@ test.describe('Scénario 2 — nsswitch.conf / resolv.conf (UI réelle)', () => 
     await becomeRoot(page);
     await typeCmd(page, 'ip addr add 10.0.1.2/24 dev eth0');
     await typeCmd(page, "printf 'nameserver 10.0.1.10\\n' > /etc/resolv.conf");
-    await typeCmd(page, "printf '10.0.1.99 serveur.domaine.local\\n' >> /etc/hosts");
+    await typeCmd(page, "printf '10.0.1.99 serveur.domaine.local\\n' | sudo tee -a /etc/hosts > /dev/null");
 
     await typeCmd(page, 'getent hosts serveur.domaine.local');
     await waitForText(page, '10.0.1.99');
