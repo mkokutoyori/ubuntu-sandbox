@@ -331,9 +331,10 @@ export abstract class LinuxMachine extends EndHost
   }
   protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
   protected override answersArpFor(port: Port, target: IPAddress, sender: IPAddress): boolean {
-    const mode = this.deviceConf.arpIgnore(port.getName());
+    const mode = this.deviceConf.maximum(port.getName(), 'arp_ignore');
     if (mode >= 8) return false;
-    if (mode === 1 || mode === 3) return !target.isLoopback() && port.ownsIPv4(target);
+    if (mode === 1) return !target.isLoopback() && port.ownsIPv4(target);
+    if (mode === 3 && target.isLoopback()) return false;
     if (mode === 2) {
       if (target.isLoopback() || !port.ownsIPv4(target)) return false;
       const mask = port.getIPAddress()?.equals(target)
@@ -1095,17 +1096,13 @@ export abstract class LinuxMachine extends EndHost
 
   protected override acceptsUnsolicitedArp(iface: string, sender: IPAddress, gratuitousOrReply: boolean): boolean {
     if (!gratuitousOrReply) return false;
-    const level = Math.max(this.arpAcceptLevel('all'), this.arpAcceptLevel(iface));
+    const level = this.deviceConf.maximum(iface, 'arp_accept');
     if (level === 1) return true;
     if (level !== 2) return false;
     const port = this.ports.get(iface);
     const address = port?.getIPAddress();
     const mask = port?.getSubnetMask();
     return !!address && !!mask && address.isInSameSubnet(sender, mask);
-  }
-
-  private arpAcceptLevel(scope: string): number {
-    return Number.parseInt(this.executor.vfs.readFile(`/proc/sys/net/ipv4/conf/${scope}/arp_accept`) ?? '0', 10) || 0;
   }
 
   protected override lldpSystemDescription(): string {
@@ -3806,6 +3803,14 @@ export abstract class LinuxMachine extends EndHost
     if (!port) return;
     port.setUp(enabled);
     this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
+    if (enabled) this.announceInterfaceAddresses(name);
+  }
+
+  private announceInterfaceAddresses(name: string): void {
+    const port = this.ports.get(name);
+    if (!port || this.deviceConf.maximum(name, 'arp_notify') === 0) return;
+    const addresses = [port.getIPAddress(), ...port.getSecondaryIPs().map((entry) => entry.ip)];
+    for (const address of addresses) if (address !== null) this.sendGratuitousArp(name, address, 'request');
   }
 
   private deleteVirtualInterface(name: string): string {
@@ -4546,6 +4551,7 @@ export abstract class LinuxMachine extends EndHost
         this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
       setInterfaceAdmin: (name: string, enabled: boolean): void => this.setAdminState(name, enabled),
+      announceInterfaceAddresses: (name: string): void => this.announceInterfaceAddresses(name),
       isDHCPConfigured: (name: string): boolean => {
         return this.isDHCPConfigured(name);
       },

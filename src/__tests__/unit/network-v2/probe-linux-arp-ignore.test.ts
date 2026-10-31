@@ -2,7 +2,7 @@
  * `net.ipv4.conf.<if>.arp_ignore` (Documentation/networking/ip-sysctl.rst, lu sur raw.githubusercontent.com/torvalds/linux
  * v6.8) fixe quand un hote repond a un ARP qui resout une adresse LOCALE : 0 pour toute adresse locale de toute interface,
  * 1 seulement si l'adresse est configuree sur l'interface qui recoit, 2 en plus si l'emetteur est dans le meme sous-reseau
- * sur cette interface, 3 ne repond pas aux adresses de portee « host », 8 ne repond a rien ; « le maximum de
+ * sur cette interface, 3 ne repond pas aux adresses de portee « host » mais, le noyau cherchant sur TOUTES les interfaces (arp.c : `in_dev = NULL`), repond encore pour l'adresse d'une autre interface, 8 ne repond a rien ; « le maximum de
  * conf/{all,interface} est utilise ». Le fichier etait une CONSTANTE `0` en lecture seule : `sysctl -w` etait refuse et
  * l'hote repondait toujours (regle 6). Corrige : le reglage est inscriptible par interface, `all` et `default` compris,
  * et l'hote Linux decide de sa reponse (et de ce qu'il apprend de la demande) avec le maximum des deux.
@@ -13,7 +13,7 @@
  * Banc : A (10.0.0.1/24) --switch-- B (eth0 10.0.0.2/24, eth1 192.168.1.2/24 sans cable). A ARPe 192.168.1.2 sur son lien
  * (route d'hote `dev eth0`) : adresse locale de B, mais sur une AUTRE interface que celle qui recoit.
  *
- * Discrimine par `git stash` sur src/network : 5 des 8 cas tombent avant. TEMOINS : le defaut 0 (la voisine repond), le
+ * Discrimine par `git stash` sur src/network : 5 des 8 premiers cas tombent avant le lot arp_ignore ; le neuvieme (mode 3) tombait encore apres lui, le mode 3 ayant ete lu comme le mode 1, et ne tombe plus. TEMOINS : le defaut 0 (la voisine repond), le
  * mode 1 pour l'adresse de l'interface qui recoit, et la valeur lue.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -83,6 +83,12 @@ describe('arp_ignore', () => {
   it('mode 8 answers for nothing, not even the receiving interface address', async () => {
     await run(b, 'sysctl -w net.ipv4.conf.eth0.arp_ignore=8');
     expect(await reaches('10.0.0.2')).toBe(false);
+  });
+
+  it('mode 3 still answers for the address of another interface', async () => {
+    await run(b, 'sysctl -w net.ipv4.conf.eth0.arp_ignore=3');
+    expect(await reaches('192.168.1.2')).toBe(true);
+    expect(await reaches('10.0.0.2')).toBe(true);
   });
 
   it('a reserved value behaves like 0', async () => {

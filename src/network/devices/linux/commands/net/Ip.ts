@@ -419,6 +419,7 @@ export function buildIpCtx(
       } catch {
         return `Error: argument "${mac}" is wrong: "address" is invalid lladdr.`;
       }
+      net.announceInterfaceAddresses(ifName);
       return '';
     },
     setInterfaceTxQueueLen(ifName: string, n: number): string {

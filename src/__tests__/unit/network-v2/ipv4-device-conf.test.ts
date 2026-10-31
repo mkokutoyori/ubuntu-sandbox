@@ -4,8 +4,13 @@ import { ALL_SCOPE, DEFAULT_SCOPE, IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from
 const KNOBS = ['accept_redirects', 'send_redirects', 'secure_redirects', 'shared_media'];
 
 describe('the per-device IPv4 configuration is the ipv4_devconf of the kernel', () => {
-  it('knows the four redirect knobs, each at 1', () => {
-    expect(IPV4_DEVICE_CONF_KNOBS.map((knob) => [knob.name, knob.initial])).toEqual(KNOBS.map((name) => [name, 1]));
+  it('knows the four redirect knobs, each at 1, then the ARP knobs, each at 0', () => {
+    expect(IPV4_DEVICE_CONF_KNOBS.map((knob) => [knob.name, knob.initial])).toEqual([
+      ...KNOBS.map((name) => [name, 1]),
+      ['arp_ignore', 0],
+      ['arp_accept', 0],
+      ['arp_notify', 0],
+    ]);
   });
 
   it('has the scopes all and default, then one per interface', () => {

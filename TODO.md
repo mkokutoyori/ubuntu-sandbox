@@ -413,16 +413,18 @@ commutateur une commande que son materiel n'a pas.
 Depuis le lot « `sysctl` lit `/proc/sys` », un reste MESURE (le fichier `/etc/sysctl.conf` est livre, copie de celui d'une Ubuntu 24.04 reelle).
 
 **Une projection de `/proc/sys` ne se laisse pas ecrire.** Les pseudo-fichiers generes sont en lecture seule par decision du
-VFS (`writeFile` les jette en silence) ; `arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une CONSTANTE `0` que
+VFS (`writeFile` les jette en silence) ; `arp_announce` et `proxy_arp` rendent une CONSTANTE `0` que
 personne ne lit — verifie : `Port.isProxyArpEnabled` n'a d'appelants que `Router` et les CLI Cisco/Huawei, un hote Linux ne fait
 pas de proxy ARP ici. `sysctl -w` les refuse donc par la branche EPERM de procps plutot que de les accepter sans effet.
-**`arp_ignore` est fait** (sonde `probe-linux-arp-ignore`) : inscriptible par interface, `all` et `default` compris, maximum des
-deux, modes 0, 1, 2, 3 et 8 de `Documentation/networking/ip-sysctl.rst` (lu sur GitHub, noyau 6.8) ; 4 a 7, « reserved », se
-comportent comme 0. **`arp_announce` reste ferme** : il choisit l'adresse source d'une requete ARP parmi celles de l'hote, or un
-hote du simulateur n'a qu'une adresse principale par interface (les secondaires existent mais l'adresse source du paquet IP
-n'atteint pas l'emission ARP) ; ses trois niveaux ne se distingueraient pas. **`arp_accept`** (creation d'une entree sur ARP
-gratuit, 0/1/2) et **`arp_notify`** (ARP gratuit a la mise en service) sont documentes et restent a implanter, un comportement par
-knob ; `proxy_arp` pour un hote est sans objet (un hote ne transmet pas).
+**`arp_ignore`, `arp_accept` et `arp_notify` sont faits** (sondes `probe-linux-arp-ignore`, `probe-linux-arp-notify`,
+`linux-arp-gratuitous-symmetry`) : inscriptibles par interface, `all` et `default` compris, dans `Ipv4DeviceConf` (maximum
+des deux, comme `IN_DEV_MAXCONF`). `arp_ignore` : modes 0, 1, 2, 3 et 8 de `Documentation/networking/ip-sysctl.rst` et de
+`net/ipv4/arp.c` (noyau 6.8, lus sur GitHub) ; le 3 cherche l'adresse sur TOUTES les interfaces (`in_dev = NULL`) et ne
+refuse que la portee « host » ; 4 a 7, « reserved », se comportent comme 0. `arp_notify` : une requete ARP gratuite par adresse
+de l'interface, secondaires comprises, a la mise en service et au changement de MAC. **`arp_announce` reste ferme** : il choisit
+l'adresse source d'une requete ARP parmi celles de l'hote, or un hote du simulateur n'a qu'une adresse principale par interface
+(les secondaires existent mais l'adresse source du paquet IP n'atteint pas l'emission ARP) ; ses trois niveaux ne se
+distingueraient pas. `proxy_arp` pour un hote est sans objet (un hote ne transmet pas).
 
 ---
 

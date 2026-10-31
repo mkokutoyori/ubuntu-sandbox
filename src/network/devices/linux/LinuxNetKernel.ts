@@ -81,6 +81,8 @@ export interface LinuxNetKernel {
   /** Set admin state up/down (`ip link set dev X up/down`). */
   setInterfaceAdmin(name: string, enabled: boolean): void;
 
+  announceInterfaceAddresses(name: string): void;
+
   /** True if this interface was configured via DHCP (dynamic). */
   isDHCPConfigured(name: string): boolean;
 

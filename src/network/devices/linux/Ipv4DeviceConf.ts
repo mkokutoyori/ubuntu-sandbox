@@ -14,6 +14,8 @@ export const IPV4_DEVICE_CONF_KNOBS: readonly DeviceConfKnob[] = [
   { name: 'secure_redirects', initial: 1 },
   { name: 'shared_media', initial: 1 },
   { name: 'arp_ignore', initial: 0 },
+  { name: 'arp_accept', initial: 0 },
+  { name: 'arp_notify', initial: 0 },
 ];
 
 interface DeviceScope {
@@ -74,8 +76,8 @@ export class Ipv4DeviceConf implements RedirectPolicy {
     return this.either(iface, 'send_redirects');
   }
 
-  arpIgnore(iface: string): number {
-    return Math.max(this.get(ALL_SCOPE, 'arp_ignore'), this.scoped(iface, 'arp_ignore'));
+  maximum(iface: string, knob: string): number {
+    return Math.max(this.get(ALL_SCOPE, knob), this.scoped(iface, knob));
   }
 
   sharesMedia(iface: string): boolean {

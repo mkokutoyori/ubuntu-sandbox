@@ -1337,16 +1337,12 @@ export class LinuxCommandExecutor {
     for (const scope of ['all', 'default']) {
       const base = `/proc/sys/net/ipv4/conf/${scope}`;
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
-      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
-      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
     for (const a of this.hardware.adapters) {
       const base = `/proc/sys/net/ipv4/conf/${a.name}`;
       this.vfs.mkdirp(base, 0o755, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
-      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
-      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
     const neighDefaults: Array<[string, string]> = [
