@@ -5137,6 +5137,10 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.userHomeDirectory(uid);
   }
 
+  editorUserHomeDirectory(name: string): string | null {
+    return this.executor.userMgr.getUser(name)?.home ?? null;
+  }
+
   editorEnvironmentVariable(name: string, session?: LinuxShellSession): string | null {
     if (session !== undefined && !session.disposed) return session.env.get(name) ?? null;
     return this.executor.commandEnvironment()[name] ?? null;

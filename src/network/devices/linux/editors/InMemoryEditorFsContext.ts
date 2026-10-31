@@ -27,6 +27,7 @@ export class InMemoryEditorFsContext implements EditorFsContext {
   private revisions = new Map<string, number>();
   private directories = new Set<string>();
   private environment = new Map<string, string>();
+  private userHomes = new Map<string, string>();
   private home: string | null = '/root';
   private strictDirectories = false;
   private shellLog: string[] = [];
@@ -109,6 +110,14 @@ export class InMemoryEditorFsContext implements EditorFsContext {
 
   homeDirectory(): string | null {
     return this.home;
+  }
+
+  userHomeDirectory(name: string): string | null {
+    return this.userHomes.get(name) ?? null;
+  }
+
+  useUserHome(name: string, path: string): void {
+    this.userHomes.set(name, path);
   }
 
   useHomeDirectory(path: string | null): void {
