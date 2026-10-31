@@ -161,11 +161,12 @@ l'ordonnanceur et le temps passe sur le fil), mais une machine dont on a pose
 l'horloge (`date -s`, `Set-Date`, `clock set`) n'est lue par sa propre pile
 que pour Kerberos (KDC, client, verification d'AP-REQ), TCP (`TcpStack.nowMs`),
 le systeme de fichiers, le journal, les processus, les services, les comptes,
-l'audit et l'agent NTP (qui lit ET discipline l'horloge de sa machine). La verification de certificat de `curl`, d'`openssl s_client` et du
-moteur `openssl` (delivrance, `verify`, `-checkend`, `s_server -Verify`) suit
-maintenant l'horloge de sa machine. Les autres — verificateurs des autres
-clients TLS (LDAP, rsyslog, DNS sur TLS, nginx/apache en mandataire, IPsec),
-fenetres de signature DNSSEC, horodatages SSH, caches DNS — lisent l'heure
+l'audit et l'agent NTP (qui lit ET discipline l'horloge de sa machine). La verification de certificat de `curl`, d'`openssl s_client`, du
+moteur `openssl` (delivrance, `verify`, `-checkend`, `s_server -Verify`), de
+rsyslog (gtls/ossl), de `ldapsearch`, du DNS sur TLS et de NTS pour chronyd
+suit maintenant l'horloge de sa machine. Les autres — verificateurs de
+nginx/apache en mandataire, du pare-feu (inspection SSL, IPsec), de
+Cisco, fenetres de signature DNSSEC, horodatages SSH, caches DNS — lisent l'heure
 globale : une machine decalee de dix minutes ne voit toujours pas, par ces
 chemins, un certificat « pas encore valide ». Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;

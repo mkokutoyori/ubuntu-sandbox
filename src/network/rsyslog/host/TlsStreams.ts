@@ -48,7 +48,7 @@ function readFileOrReport(path: string, files: TlsFileReader, options: StreamTls
   return text;
 }
 
-function loadMaterial(options: StreamTlsOptions, files: TlsFileReader): TlsMaterial | null {
+function loadMaterial(options: StreamTlsOptions, files: TlsFileReader, clock: TlsClock): TlsMaterial | null {
   const { runtime } = options;
   let identity: ServerIdentity | null = null;
   if (options.authMode !== 'anon') {
@@ -95,7 +95,7 @@ function loadMaterial(options: StreamTlsOptions, files: TlsFileReader): TlsMater
     }
   }
   const verifier = new CertificateVerifier({
-    trustAnchors: anchors, crls, revocationCheck: crls.length > 0 ? 'crl' : 'none',
+    trustAnchors: anchors, clock: () => clock.nowMs(), crls, revocationCheck: crls.length > 0 ? 'crl' : 'none',
     ...(options.verifyDepth === null ? {} : { maxDepth: options.verifyDepth }),
   });
   const nextUpdates = crls.map((crl) => crl.nextUpdate);
@@ -149,7 +149,7 @@ export interface TlsClock {
 export function openTlsClient(
   socket: TcpSocket, options: StreamTlsOptions, files: TlsFileReader, clock: TlsClock,
 ): StreamConnection | { readonly errno: Errno } {
-  const material = loadMaterial(options, files);
+  const material = loadMaterial(options, files, clock);
   if (material === null) {
     socket.close();
     return { errno: 'EPROTO' };
@@ -215,7 +215,7 @@ function secureConnection(
 export function acceptTlsServer(
   socket: TcpSocket, options: StreamTlsOptions, files: TlsFileReader, clock: TlsClock, onReady: (connection: StreamConnection) => void,
 ): void {
-  const material = loadMaterial(options, files);
+  const material = loadMaterial(options, files, clock);
   if (material === null) {
     socket.close();
     return;
