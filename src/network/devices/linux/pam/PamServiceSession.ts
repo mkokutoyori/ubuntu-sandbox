@@ -20,6 +20,10 @@ export class PamServiceSession {
   sessionMessages: string[] = [];
   accountMessages: string[] = [];
 
+  get sessionUmask(): number {
+    return this.transaction.handle.host.process.umask;
+  }
+
   constructor(pam: LinuxPam, service: string, options: PamTransactionOptions, subject: PamSessionSubject) {
     this.user = subject.user;
     this.transaction = pam.begin(service, options);

@@ -898,8 +898,8 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 - `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
   interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
 Autres ecarts mesures, non fermes :
-- `pam_umask` : le vrai donne 0002 aux utilisateurs dont le groupe prive porte leur nom (`USERGROUPS_ENAB`) ; `sudo` et
-  `su` appliquent ici 0022 a tous. L'umask initial d'un utilisateur non root n'a pas ete enregistre.
+- L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
+  maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
 - `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
   et `ls -l /proc/$$/fd` ne le montre pas.
 - `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier

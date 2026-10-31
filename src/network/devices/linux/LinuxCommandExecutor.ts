@@ -3118,10 +3118,10 @@ export class LinuxCommandExecutor {
 
   admitSudo(
     cmdName: string, args: readonly string[], runAs: string, pipedPassword: string | null,
-  ): { refusal: { output: string; exitCode: number } | null; close: () => void } {
+  ): { refusal: { output: string; exitCode: number } | null; close: () => void; sessionUmask: number } {
     const none = (): void => undefined;
-    const refuse = (output: string): { refusal: { output: string; exitCode: number }; close: () => void } => (
-      { refusal: { output, exitCode: 1 }, close: none }
+    const refuse = (output: string): { refusal: { output: string; exitCode: number }; close: () => void; sessionUmask: number } => (
+      { refusal: { output, exitCode: 1 }, close: none, sessionUmask: SESSION_UMASK }
     );
     const auth = this.authorizeSudo(cmdName, args, runAs);
     const command = [cmdName, ...args].join(' ');
@@ -3144,8 +3144,8 @@ export class LinuxCommandExecutor {
       return refuse(`${entry.messages}sudo: account validation failure, is your account locked?`);
     }
     this.writeSudoAuditLine('success', auth, command);
-    entry.begin(runAs);
-    return { refusal: null, close: entry.close };
+    const sessionUmask = entry.begin(runAs);
+    return { refusal: null, close: entry.close, sessionUmask };
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -5100,6 +5100,7 @@ export class LinuxCommandExecutor {
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
     let sudoParentUmask: number | null = null;
     let closeSudo: () => void = () => undefined;
+    let sudoSessionUmask = SESSION_UMASK;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
@@ -5134,13 +5135,14 @@ export class LinuxCommandExecutor {
       const admission = this.admitSudo(audited[0], audited.slice(1), runasUser, pipedPassword);
       if (admission.refusal !== null) return admission.refusal;
       closeSudo = admission.close;
+      sudoSessionUmask = admission.sessionUmask;
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
       const targetUserEntry = this.userMgr.getUser(runasUser)!;
       this.userMgr.currentUser = targetUserEntry.username;
       this.userMgr.currentUid = targetUserEntry.uid;
       this.userMgr.currentGid = targetUserEntry.gid;
       sudoParentUmask = this.umask;
-      this.umask = SESSION_UMASK;
+      this.umask = sudoSessionUmask;
     }
 
     if (cmdArgs.length === 0) {
@@ -8060,7 +8062,7 @@ export class LinuxCommandExecutor {
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
-    this.umask = SESSION_UMASK;
+    this.umask = session.sessionUmask;
     if (loginShell) this.cwd = user.home;
 
     return {
