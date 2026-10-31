@@ -3,6 +3,7 @@ import { lowerCaseChar, upperCaseChar } from './VimEditing';
 import { formatExponentialSafe, formatFixedSafe, formatFloatDefault, formatVimGeneral } from './VimFloat';
 import { compileVimPattern, type VimRegExp } from './VimPattern';
 import { expandReplacement } from './VimSubstitute';
+import { sha256 } from '@/crypto/hash/sha256';
 
 export interface ExpressionHost {
   readonly lines: readonly string[];
@@ -1024,6 +1025,46 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
   ['items', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list([...args[0].entries].map(([key, item]) => list([str(key), item]))) : dictRequired(context) }],
   ['has_key', { min: 2, max: 2, run: (args, context) => args[0].kind === 'dict' ? num(args[0].entries.has(context.stringOf(args[1], false)) ? 1 : 0) : dictRequired(context) }],
   ['map', { min: 2, max: 2, run: (args, context) => mapOrFilter(args, context, true) }],
+  ['mapnew', { min: 2, max: 2, run: (args, context) => {
+    const source = args[0];
+    if (source.kind !== 'list' && source.kind !== 'dict') {
+      context.soft('E712: Argument of mapnew() must be a List or Dictionary');
+      return num(0);
+    }
+    const copy: VimValue = source.kind === 'list' ? list([...source.items]) : dict(new Map(source.entries));
+    return mapOrFilter([copy, args[1]], context, true);
+  } }],
+  ['reduce', { min: 2, max: 3, run: (args, context) => {
+    const source = args[0];
+    if (source.kind !== 'list' && source.kind !== 'string') {
+      context.soft('E1098: String, List or Blob required for argument 1');
+      return num(0);
+    }
+    const items: VimValue[] = source.kind === 'list' ? [...source.items] : characters(source.value).map(str);
+    let accumulator: VimValue;
+    let at = 0;
+    if (args[2] === undefined) {
+      if (items.length === 0) {
+        context.soft(`E998: Reduce of an empty ${source.kind === 'list' ? 'List' : 'String'} with no initial value`);
+        return num(0);
+      }
+      accumulator = items[0];
+      at = 1;
+    } else {
+      accumulator = args[2];
+    }
+    for (; at < items.length; at++) {
+      try {
+        accumulator = context.invoke(args[1], [accumulator, items[at]]);
+      } catch (failure) {
+        if (!(failure instanceof Abort)) throw failure;
+        break;
+      }
+    }
+    return accumulator;
+  } }],
+  ['sha256', { min: 1, max: 1, run: (args, context) => str(Array.from(sha256(new TextEncoder().encode(context.stringOf(args[0], false))), (byte) => byte.toString(16).padStart(2, '0')).join('')) }],
+  ['json_encode', { min: 1, max: 1, run: (args, context) => str(jsonEncode(args[0], context)) }],
   ['filter', { min: 2, max: 2, run: (args, context) => mapOrFilter(args, context, false) }],
   ['float2nr', { min: 1, max: 1, run: (args, context) => {
     const value = floatArgument(context, args[0]);
@@ -1184,6 +1225,33 @@ function evaluateCallback(context: Context, callback: VimValue, key: VimValue, v
     return context.evaluateCallback(context.stringOf(callback, false));
   } finally {
     context.loop.pop();
+  }
+}
+
+const JSON_ESCAPES: Readonly<Record<string, string>> = { '\b': '\\b', '\t': '\\t', '\n': '\\n', '\f': '\\f', '\r': '\\r', '"': '\\"', '\\': '\\\\' };
+
+function jsonString(text: string): string {
+  let out = '"';
+  for (const character of text) {
+    const code = character.codePointAt(0)!;
+    if (JSON_ESCAPES[character] !== undefined) out += JSON_ESCAPES[character];
+    else if (code < 0x20) out += `\\u00${code.toString(16).padStart(2, '0')}`;
+    else out += character;
+  }
+  return `${out}"`;
+}
+
+function jsonEncode(value: VimValue, context: Context): string {
+  switch (value.kind) {
+    case 'number': return value.value.toString();
+    case 'float': return formatFloatDefault(value.value);
+    case 'string': return jsonString(value.value);
+    case 'special': return value.name === 'true' ? 'true' : value.name === 'false' ? 'false' : 'null';
+    case 'list': return `[${value.items.map((item) => jsonEncode(item, context)).join(',')}]`;
+    case 'dict': return `{${[...value.entries].map(([key, item]) => `${jsonString(key)}:${jsonEncode(item, context)}`).join(',')}}`;
+    default:
+      context.soft('E474: Invalid argument');
+      return '';
   }
 }
 

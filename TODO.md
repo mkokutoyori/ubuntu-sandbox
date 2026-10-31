@@ -729,8 +729,9 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   table de hachage (`hash_hash` puis perturbation). Reproduire l'ordre demande
   de porter `hashtab.c` (taille initiale 16, croissance a 2/3).
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait (`strftime`, `reduce`, `mapnew`, `trim`
-  avec masque multioctet, `json_encode`, `sha256`, `system`...).
+  function` meme quand vim le connait (`strftime`, `json_decode`, `trim` avec
+  masque multioctet, `system`...). `reduce`, `mapnew`, `sha256` et
+  `json_encode` existent.
 - **Pas de variables ni de `:let`** : `g:x`, `s:x`, `l:x`, `b:x`, `w:x` repondent
   E121. Une lambda ne capture que les parametres des lambdas qui l'entourent.
 - **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
