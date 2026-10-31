@@ -128,8 +128,8 @@ export function cmdMkdir(ctx: WinFileCommandContext, args: string[]): string {
   if (ctx.fs.exists(absPath)) {
     return `A subdirectory or file ${path} already exists.`;
   }
-  ctx.fs.mkdirp(absPath);
-  return '';
+  const made = ctx.fs.makeDirectories(absPath);
+  return made.ok ? '' : refuse(ctx, made.error!);
 }
 
 // ─── rmdir / rd ────────────────────────────────────────────────────

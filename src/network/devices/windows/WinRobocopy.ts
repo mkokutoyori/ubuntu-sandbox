@@ -565,7 +565,7 @@ function scan(run: Run, sourceDir: string, destinationDir: string, level: number
   if (destinationExists) run.dirs.skipped++;
   else run.dirs.copied++;
   if (!options.noDirList) run.lines.push(directoryLine(destinationExists ? '' : '  New Dir', sourceFiles.length, sourceDir));
-  if (!destinationExists && !options.listOnly) ctx.fs.mkdirp(destinationDir);
+  if (!destinationExists && !options.listOnly) ctx.fs.makeDirectories(destinationDir);
 
   const names = new Map<string, { source?: WinDirEntry; destination?: WinDirEntry }>();
   for (const item of sourceFiles) names.set(item.name.toLowerCase(), { source: item });

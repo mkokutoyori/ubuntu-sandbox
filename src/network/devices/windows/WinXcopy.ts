@@ -250,12 +250,12 @@ export async function cmdXcopy(ctx: WinFileCommandContext, args: string[]): Prom
   let failed = false;
 
   if (!options.listOnly && destinationIsDirectory && existing === null && (files.length > 0 || options.empty || options.treeOnly)) {
-    ctx.fs.mkdirp(destination);
+    ctx.fs.makeDirectories(destination);
   }
   if (options.empty || options.treeOnly) {
     for (const branch of branches) {
       if (options.listOnly || !(options.empty || branch.hasFiles)) continue;
-      ctx.fs.mkdirp(joinPath(destination, branch.relative));
+      ctx.fs.makeDirectories(joinPath(destination, branch.relative));
     }
   }
   if (options.treeOnly) return finish(0, 0);
@@ -290,7 +290,7 @@ export async function cmdXcopy(ctx: WinFileCommandContext, args: string[]): Prom
       }
     }
     const parent = target.slice(0, target.lastIndexOf('\\'));
-    if (parent.length > 2) ctx.fs.mkdirp(parent);
+    if (parent.length > 2) ctx.fs.makeDirectories(parent);
     const result = ctx.fs.copyFile(candidate.absolute, target, { security: options.security });
     if (!result.ok) {
       output.push(`File creation error - ${result.error ?? 'Access is denied.'}`);

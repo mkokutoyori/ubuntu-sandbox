@@ -224,7 +224,9 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     this.writeFile(path, '');
   }
   createDir(path: string): void {
-    this.fs().mkdirp(this.abs(path));
+    const abs = this.abs(path);
+    const made = this.fs().makeDirectories(abs);
+    if (!made.ok) throw new Error(dotNetIoMessage(abs, made.error));
   }
   remove(path: string, recurse: boolean): void {
     const abs = this.abs(path);
@@ -334,6 +336,7 @@ class WindowsFileSystemAdapter implements IFileSystemProvider {
     return ok;
   }
   setAclProtected(path: string, isProtected: boolean): boolean {
+    if (this.fs().isRemote(this.abs(path))) return false;
     const e = this.fs().resolve(this.abs(path));
     if (!e) return false;
     e.aclProtected = isProtected;

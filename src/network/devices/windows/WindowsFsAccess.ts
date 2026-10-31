@@ -46,7 +46,7 @@ function grants(permissions: readonly string[], right: FsRight): boolean {
 }
 
 export function permits(fs: WindowsFileSystem, path: string, who: FsPrincipal, right: FsRight): boolean {
-  if (who.administrator) return true;
+  if (who.administrator || fs.isRemote(path)) return true;
   const acl = inheritedAcl(fs, path);
   if (acl.length === 0) return true;
   const held = identities(who);

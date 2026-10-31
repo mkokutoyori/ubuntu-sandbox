@@ -758,6 +758,10 @@ function argumentNameSuffix(ctx: CmdletContext, parameter: string): string {
 
 const IO_FAILURE = { exceptionType: 'System.IO.IOException', category: 'WriteError', errorId: 'NewItemIOError' } as const;
 
+const ioFailure = (error: unknown, target: string): ProviderFailure => ({
+  ...IO_FAILURE, message: error instanceof Error ? error.message : String(error), target,
+});
+
 function newItems(ctx: CmdletContext, typedType: string): PSValue {
   const containers = pathInputs(ctx);
   const name = ctx.named['name'] === undefined ? '' : psValueToString(ctx.named['name']);
@@ -820,24 +824,30 @@ function createItem(ctx: CmdletContext, path: string, typedType: string): PSValu
     return null;
   }
   const absolute = fs.normalizePath(path, fs.getCwd());
+  const drive = /^([A-Za-z]):/.exec(absolute)?.[1];
+  if (drive !== undefined && !fs.exists(`${drive}:\\`)) return providerFailure(ctx, 'New-Item', driveNotFound(drive.toUpperCase()));
   if (kind === 'directory') {
     if (!force && fs.exists(absolute)) {
       return providerFailure(ctx, 'New-Item', directoryExists(absolute));
     }
     if (!ctx.shouldProcess(`Destination: ${absolute}`, 'Create Directory')) return null;
-    fs.createDir(absolute);
+    try {
+      fs.createDir(absolute);
+    } catch (error) {
+      return providerFailure(ctx, 'New-Item', ioFailure(error, absolute));
+    }
     return itemObject(fs, absolute);
   }
   if (!force && fs.exists(absolute)) {
     return providerFailure(ctx, 'New-Item', { ...IO_FAILURE, message: `The file '${absolute}' already exists.`, target: absolute });
   }
   if (!ctx.shouldProcess(`Destination: ${absolute}`, 'Create File')) return null;
-  if (force) fs.createDir(parentPathOf(absolute));
   try {
+    if (force) fs.createDir(parentPathOf(absolute));
     fs.createFile(absolute);
     if (ctx.named['value'] !== undefined) fs.writeFile(absolute, psValueToString(ctx.named['value']));
   } catch (error) {
-    return providerFailure(ctx, 'New-Item', { ...IO_FAILURE, message: error instanceof Error ? error.message : String(error), target: absolute });
+    return providerFailure(ctx, 'New-Item', ioFailure(error, absolute));
   }
   return itemObject(fs, absolute);
 }
@@ -1066,7 +1076,12 @@ class Copier {
       return;
     }
     if (this.fs.exists(path) && !this.fs.isDirectory(path)) return;
-    this.fs.createDir(path);
+    try {
+      this.fs.createDir(path);
+    } catch (error) {
+      this.ctx.emitFailure(ioFailure(error, path));
+      return;
+    }
     this.emit(path);
   }
 
