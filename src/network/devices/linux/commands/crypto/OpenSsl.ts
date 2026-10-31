@@ -1,4 +1,3 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
 import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 
 import type { LinuxCommand } from '../LinuxCommand';
@@ -40,7 +39,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       ctx.executor.userMgr.currentUid, ctx.executor.userMgr.currentGid, 0o022,
     ),
     fileExists: (p) => vfs.readFile(chemin(p)) !== null,
-    now: () => simulationNowMs(),
+    now: () => ctx.executor.simulatedDate().getTime(),
     randomBytes: (n) => {
       const out = new Uint8Array(n);
       for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
@@ -110,7 +109,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
         ...(tls.clientAuth ? {
           requestClientCert: true,
-          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => simulationNowMs() }),
+          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => stack.nowMs() }),
           clientCertPolicy: tls.clientAuth.required ? 'strict' as const : 'optional' as const,
         } : {}),
       };
@@ -160,7 +159,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
         ...(tls.cipherList ? { cipherList: tls.cipherList } : {}),
         ...(tls.clientAuth ? {
           requestClientCert: true,
-          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => simulationNowMs() }),
+          verifier: new CertificateVerifier({ trustAnchors: tls.clientAuth.anchors, clock: () => stack.nowMs() }),
           clientCertPolicy: tls.clientAuth.required ? 'strict' as const : 'optional' as const,
         } : {}),
       }, (req) => {

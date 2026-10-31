@@ -521,7 +521,7 @@ async function performHttpRequest(
     if (url.scheme === 'https') {
       const verifier = opts.insecure
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
-        : new CertificateVerifier({ trustAnchors: anchors });
+        : new CertificateVerifier({ trustAnchors: anchors, clock: () => host.tcpStack().nowMs() });
       const porte = await dial(host, address, url.port, budget);
       if (porte.kind !== 'open') {
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);

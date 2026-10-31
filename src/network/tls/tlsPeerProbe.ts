@@ -64,7 +64,7 @@ export function probeTlsPeer(
 
   const anchors = options.trustAnchors ?? [];
   const session = new TlsClientSession({
-    verifier: new CertificateVerifier({ trustAnchors: anchors }),
+    verifier: new CertificateVerifier({ trustAnchors: anchors, clock: () => tcp.nowMs() }),
     serverName: options.servername,
     ...(options.send !== undefined || options.keepOpen === true ? { allowUntrustedPeer: true } : {}),
     ...(options.clientCredential ? { clientCert: options.clientCredential.chain[0], clientChain: options.clientCredential.chain.slice(1), clientPrivateKey: options.clientCredential.privateKey } : {}),
