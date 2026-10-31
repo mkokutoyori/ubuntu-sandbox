@@ -165,8 +165,7 @@ l'audit et l'agent NTP (qui lit ET discipline l'horloge de sa machine). La verif
 moteur `openssl` (delivrance, `verify`, `-checkend`, `s_server -Verify`), de
 rsyslog (gtls/ossl), de `ldapsearch`, du DNS sur TLS et de NTS pour chronyd
 suit maintenant l'horloge de sa machine, comme l'authentification IKE par
-certificat de Cisco et l'inspection SSL du pare-feu. Les autres — verificateurs
-de nginx/apache en mandataire, de `ChronyNts` hors cle de recherche, fenetres de signature DNSSEC, horodatages SSH, caches DNS — lisent l'heure
+certificat de Cisco et l'inspection SSL du pare-feu. Le verificateur de certificats clients de nginx/Apache et leur journal d'acces aussi. Les autres — fenetres de signature DNSSEC, horodatages SSH, caches DNS — lisent l'heure
 globale : une machine decalee de dix minutes ne voit toujours pas, par ces
 chemins, un certificat « pas encore valide ». Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
