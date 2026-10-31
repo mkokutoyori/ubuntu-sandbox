@@ -283,16 +283,34 @@ STP/ARP fait croitre l'horizon de quelques dizaines de µs par trame.
 sans file d'attente ; le plafonner a l'heure de l'ordonnanceur (horizon =
 max(horizon, now)) change tous les RTT de la base et demande une mesure propre.
 
-### [ip] l'option Timestamp n'est ni construite ni horodatee
-La zone d'options existe desormais (RFC 791 §3.1), et Record Route comme
-le routage par la source sont honores par `Router`. L'option Timestamp
-(type 68) ne l'est PAS : son codec la transporte comme n'importe quelle
-autre option, mais aucun equipement n'y ecrit d'heure. La raison est
-mesuree et elle est dans les limites connues — la livraison des trames
-est synchrone, le RTT vaut 0 ms en temps virtuel, donc les quatre
-horodatages d'un aller-retour vaudraient tous la meme chose. Un
-horodatage identique a chaque saut serait la « valeur decorative » que ce
-depot refuse. A rouvrir le jour ou une horloge de trajet existera.
+### [ip] l'option Timestamp n'est ni construite, ni ecrite par les equipements, ni lue par un client
+Mesure : `Router`, `SwitchSvi` et `Firewall` ecrivent Record Route
+(`recordRoute`) et honorent le routage par la source, mais aucun n'ecrit
+dans une option Timestamp (type 68). Aucun client ne la construit non
+plus : `ping -R` / `ping -T` d'iputils n'existent pas sur la machine
+Linux (`Ping.ts` ne declare ni l'un ni l'autre), et `ping -r` / `-s` de
+Windows derivent la route d'un traceroute au lieu de la lire sur la
+reponse. Le `-s` de Windows n'affichait plus un nombre fabrique (heure du
+simulateur + 10 ms par saut) : il affiche maintenant les millisecondes
+depuis minuit UT de l'horloge du poste, plus la moitie du RTT MESURE de
+chaque saut. C'est une mesure, pas une lecture du fil.
+
+L'ancien obstacle (« le RTT vaut 0 ms ») est leve : `PathClock` avance de
+la propagation, de la serialisation et du delai `netem`. Ce qu'il faut :
+(1) `buildTimestampOption`/`recordTimestamp` dans `Ipv4Options` (drapeaux
+0 tsonly, 1 tsandaddr, 3 prespec, compteur de depassement, RFC 791 §3.1)
+ecrits sur l'horloge de l'equipement, aux trois sites de `recordRoute` ;
+(2) `EchoOptions.ipOptions` et la lecture des options de la reponse ;
+(3) `ping -R` / `ping -T` d'iputils, rendus d'apres `pr_options` de
+`ping/ping.c` (lu sur raw.githubusercontent.com/iputils : `RR:`, `TS:`,
+`\t%ld absolute`, `Unrecorded hops: %d`) ; (4) la regle du noyau Linux,
+qui n'est PAS celle de la RFC 1122 §3.2.2.6 que `buildEchoReply` applique :
+l'emetteur ecrit sa propre adresse a l'emission et a la reception, et la
+cible deux fois (`ip_options_compile` puis `ip_options_echo`, net/ipv4/
+ip_options.c) ; les neuf emplacements de `ping -R` s'en trouvent
+remplis comme sur une vraie machine. Les tests qui epinglent l'unique
+adresse de la cible (`probe-reponse-echo-renvoie-la-route`) devront
+changer en le disant.
 
 ### [ip] le `ping` etendu collecte `Record` / `Loose` / `Strict` sans les construire
 `ExtendedPingParams.routeOptions` porte la reponse au prompt IOS

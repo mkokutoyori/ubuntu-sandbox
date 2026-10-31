@@ -96,6 +96,7 @@ export interface WinCommandContext {
   };
   /** Device hostname */
   hostname: string;
+  hostNowMs?: () => number;
   /** All ports (Map of name → Port) */
   ports: Map<string, Port>;
   /** L'identite de la carte — description, index, GUID — lue a sa source. */

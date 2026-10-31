@@ -43,6 +43,12 @@ Options:
     -4             Force using IPv4.
     -6             Force using IPv6.`.trim();
 
+const MS_PER_DAY = 86_400_000;
+
+function millisecondsSinceUtcMidnight(epochMs: number): number {
+  return Math.round(epochMs % MS_PER_DAY);
+}
+
 export interface ParsedWinPing {
   count: number;
   size: number;
@@ -374,21 +380,23 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
   // `-r`/`-s` record the REAL forward path. Derive it once from a short
   // traceroute rather than fabricating repeated copies of the target IP.
   let routeHops: string[] = [];
+  let routeRtts: number[] = [];
   if ((parsed.recordRoute || parsed.timestamp) && results.some(r => r.success)) {
     const budget = Math.max(parsed.recordRoute ?? 0, parsed.timestamp ?? 0, 1);
     const hops = await ctx.executeTraceroute(targetIP, Math.min(budget + 1, 9), 200);
-    routeHops = hops
-      .filter(h => !h.timeout && h.ip)
-      .map(h => h.ip as string);
+    const answered = hops.filter(h => !h.timeout && h.ip);
+    routeHops = answered.map(h => h.ip as string);
+    routeRtts = answered.map(h => h.rttMs ?? 0);
     if (routeHops[routeHops.length - 1] !== targetIP.toString()) {
       routeHops.push(targetIP.toString());
+      routeRtts.push(results.find(r => r.success)?.rttMs ?? 0);
     }
   }
 
   const selfSourceIP = egress?.onLink ? egress.port.getIPAddress()?.toString() : undefined;
   return formatPingOutput(
     targetIP, parsed.count, parsed.size, results, hostname,
-    { ...parsed, selfSourceIP }, routeHops,
+    { ...parsed, selfSourceIP, hostNowMs: ctx.hostNowMs }, routeHops, routeRtts,
   );
 }
 
@@ -398,8 +406,9 @@ function formatPingOutput(
   size: number,
   results: PingResult[],
   hostname: string | undefined,
-  opts: ParsedWinPing & { selfSourceIP?: string },
+  opts: ParsedWinPing & { selfSourceIP?: string; hostNowMs?: () => number },
   routeHops: string[] = [],
+  routeRtts: number[] = [],
 ): string {
   const lines: string[] = [formatWinPingHeader(targetIP, size, hostname)];
   if (results.length === 0) {
@@ -431,8 +440,8 @@ function formatPingOutput(
     const shown = routeHops.slice(0, opts.timestamp);
     lines.push('');
     lines.push('Timestamp:');
-    const base = simulationNowMs();
-    shown.forEach((hop, i) => lines.push(`    ${hop} : ${base + i * 10}`));
+    const sentAt = (opts.hostNowMs ?? simulationNowMs)();
+    shown.forEach((hop, i) => lines.push(`    ${hop} : ${millisecondsSinceUtcMidnight(sentAt + (routeRtts[i] ?? 0) / 2)}`));
   }
 
   return lines.join('\n');
