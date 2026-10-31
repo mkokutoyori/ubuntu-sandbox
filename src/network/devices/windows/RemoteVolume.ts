@@ -33,6 +33,7 @@ export interface RemoteVolume {
 
 export interface RemoteVolumes {
   volumeAt(letter: string): RemoteVolume | null;
+  shareAt(server: string, share: string): RemoteVolume | null;
   letters(): string[];
 }
 

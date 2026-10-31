@@ -1,7 +1,7 @@
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
-import { pathInfo } from '@/powershell/runtime/PSPathInfo';
+import { pathInfo, qualifiedLocation } from '@/powershell/runtime/PSPathInfo';
 import { DRIVE_QUALIFIER } from '@/powershell/runtime/PSLocationState';
 import { isRegistryPath, registryProviderPath } from '@/network/devices/windows/PSRegistryProvider';
 
@@ -80,9 +80,9 @@ function driveNameOf(ctx: CmdletContext, path: string): string {
 
 export function pathInfoOf(ctx: CmdletContext, path: string): Record<string, PSValue> {
   return pathInfo({
-    path,
+    path: qualifiedLocation(path),
     providerPath: providerPathOf(ctx, path),
     provider: providerOfLocation(path),
-    drive: driveNameOf(ctx, path),
+    drive: path.startsWith('\\\\') ? '' : driveNameOf(ctx, path),
   });
 }

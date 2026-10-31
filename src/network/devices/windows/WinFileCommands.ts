@@ -14,11 +14,11 @@ import {
   filterFind, filterFindstr, parseFindArguments, parseFindstrArguments, textLines,
 } from './FindText';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
-import { driveLetterOf } from './windowsPath';
+import { driveLetterOf, uncRootOf } from './windowsPath';
 import { hasWildcard } from './WinPathSpec';
 import { TREE_HELP, treeBody, treeHeading } from './WinTree';
 import {
-  ERROR_DIRECTORY, ERROR_INVALID_DRIVE, ERROR_INVALID_NAME, ERROR_PATH_NOT_FOUND,
+  CMD_UNC_CURRENT_DIRECTORY, ERROR_DIRECTORY, ERROR_INVALID_DRIVE, ERROR_INVALID_NAME, ERROR_PATH_NOT_FOUND,
 } from './win32ErrorText';
 
 /** Context provided to all Windows file command modules */
@@ -44,9 +44,10 @@ export type DirectoryTarget = { readonly path: string } | { readonly error: stri
 export function locateDirectory(ctx: WinFileCommandContext, text: string): DirectoryTarget {
   if (hasWildcard(text)) return { error: ERROR_INVALID_NAME };
   const absolute = ctx.fs.normalizePath(text, ctx.cwd);
+  if (uncRootOf(absolute) !== null) return { error: CMD_UNC_CURRENT_DIRECTORY };
   if (!ctx.fs.hasDrive(absolute[0])) return { error: ERROR_INVALID_DRIVE };
   const entry = ctx.fs.resolve(absolute);
-  if (entry === null) return { error: ERROR_PATH_NOT_FOUND };
+  if (entry === null) return { error: ctx.fs.remoteRefusal(absolute) ?? ERROR_PATH_NOT_FOUND };
   if (entry.type !== 'directory') return { error: ERROR_DIRECTORY };
   return { path: ctx.fs.canonicalPath(absolute) };
 }

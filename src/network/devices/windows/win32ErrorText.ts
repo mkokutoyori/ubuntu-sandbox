@@ -9,5 +9,7 @@ export const ERROR_ACCESS_DENIED = 'Access is denied.';
 export const ERROR_ALREADY_EXISTS = 'Cannot create a file when that file already exists.';
 export const ERROR_INVALID_PARAMETER = 'The parameter is incorrect.';
 export const ERROR_NOT_SUPPORTED = 'The request is not supported.';
+export const ERROR_BAD_NETPATH = 'The network path was not found.';
+export const CMD_UNC_CURRENT_DIRECTORY = 'CMD does not support UNC paths as current directories.';
 export const ERROR_NOT_SAME_DEVICE = 'The system cannot move the file to a different disk drive.';
 export const ERROR_DUPLICATE_NAME = 'A duplicate file name exists, or the file cannot be found.';

@@ -4,6 +4,7 @@ import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
 
 import { refuse, type WinFileCommandContext } from './WinFileCommands';
 import { hasWildcard, joinPath, nameMatcher, splitFileSpec } from './WinPathSpec';
+import { parentPathOf, uncRootOf, volumeOf } from './windowsPath';
 import {
   isDefaultVisible, parseDirAttributeSpec, selectionAccepts,
   type AttributeSelection,
@@ -165,7 +166,7 @@ function parseArguments(args: readonly string[]): { options: DirOptions; positio
   return { options, positionals };
 }
 
-const isVolumeRoot = (path: string): boolean => /^[A-Za-z]:\\?$/.test(path);
+const isVolumeRoot = (path: string): boolean => /^[A-Za-z]:\\?$/.test(path) || uncRootOf(path) === path.replace(/\\+$/, '');
 
 function resolveTarget(ctx: WinFileCommandContext, positionals: readonly string[]): Target | null {
   const spec = positionals[0];
@@ -180,10 +181,16 @@ function resolveTarget(ctx: WinFileCommandContext, positionals: readonly string[
   return splitFileSpec(ctx.fs, ctx.cwd, spec);
 }
 
+function remoteRefusalOf(ctx: WinFileCommandContext, spec: string): string | null {
+  const directoryPart = spec.replace(/[\\/]?[^\\/]*[*?][^\\/]*$/, '');
+  const absolute = ctx.fs.normalizePath(directoryPart, ctx.cwd);
+  return ctx.fs.remoteRefusal(absolute) ?? ctx.fs.remoteRefusal(parentPathOf(absolute));
+}
+
 function dotRows(ctx: WinFileCommandContext, directory: string): Row[] {
   const own = ctx.fs.resolve(directory);
   const parentPath = directory.slice(0, directory.lastIndexOf('\\'));
-  const parent = ctx.fs.resolve(isVolumeRoot(parentPath) ? `${parentPath.slice(0, 2)}\\` : parentPath) ?? own;
+  const parent = ctx.fs.resolve(/^[A-Za-z]:\\?$/.test(parentPath) ? `${parentPath.slice(0, 2)}\\` : parentPath) ?? own;
   const now = simulationDate();
   return [
     { name: '.', isDirectory: true, size: 0, written: own?.mtime ?? now, created: own?.ctime ?? now, attributes: NO_ATTRIBUTES },
@@ -314,11 +321,11 @@ function volumeHeader(ctx: WinFileCommandContext, drive: string): string[] {
 }
 
 function renderNothingFound(ctx: WinFileCommandContext, directory: string): string {
-  return [...volumeHeader(ctx, directory[0]), ` Directory of ${directory}`, '', NOTHING_FOUND].join('\n');
+  return [...volumeHeader(ctx, volumeOf(directory)), ` Directory of ${directory}`, '', NOTHING_FOUND].join('\n');
 }
 
 function renderFull(ctx: WinFileCommandContext, blocks: readonly Block[], start: string, options: DirOptions): string {
-  const drive = start[0];
+  const drive = volumeOf(start);
   const free = ctx.fs.getFreeDiskSpace(drive);
   const lines: string[] = volumeHeader(ctx, drive);
   let totalFiles = 0;
@@ -353,10 +360,12 @@ export function cmdDir(ctx: WinFileCommandContext, args: string[]): string {
   options.zone = ctx.timezone;
 
   const target = resolveTarget(ctx, positionals);
-  if (target === null) return refuse(ctx, NOTHING_FOUND);
+  if (target === null) return refuse(ctx, remoteRefusalOf(ctx, positionals[0] ?? '') ?? NOTHING_FOUND);
 
   const blocks = collect(ctx, target, options);
   if (blocks.length === 0) {
+    const refusal = ctx.fs.remoteRefusal(target.directory);
+    if (refusal !== null) return refuse(ctx, refusal);
     const emptyRoot = target.pattern === null && !options.recursive && isVolumeRoot(target.directory)
       && options.selection === null;
     if (!emptyRoot) return refuse(ctx, options.bare ? NOTHING_FOUND : renderNothingFound(ctx, target.directory));

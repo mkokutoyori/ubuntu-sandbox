@@ -34,6 +34,8 @@ export interface BatchHost {
   cwd(): string;
   enterDirectory(target: string): string | null;
   directoryStack(): string[];
+  attachNetworkPath?(target: string, depth: number): { path: string } | { error: string } | null;
+  releaseTemporaryDrives?(depth: number): void;
   captureLocation(): () => void;
   prompt(): string;
   formattedDate(): string;

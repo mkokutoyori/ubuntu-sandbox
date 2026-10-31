@@ -2,28 +2,24 @@ import type { SmbConnection } from './server/smb/SmbClient';
 import type { NetUseEntry } from './WinNetUse';
 import type { RemoteVolume } from './RemoteVolume';
 
-const NO_LONGER_AVAILABLE = 'The specified network name is no longer available.';
-
-const UNAVAILABLE = { ok: false, error: NO_LONGER_AVAILABLE };
-
 export class NetworkDrive implements RemoteVolume {
   constructor(
     private readonly entry: NetUseEntry,
-    private readonly revive: (entry: NetUseEntry) => SmbConnection | null,
+    private readonly revive: (entry: NetUseEntry) => SmbConnection | string,
   ) {}
 
   get remote(): string {
     return this.entry.remote;
   }
 
-  private through<T extends { ok: boolean }>(operate: (connection: SmbConnection) => T): T | typeof UNAVAILABLE {
+  private through<T extends { ok: boolean }>(operate: (connection: SmbConnection) => T): T | { ok: boolean; error: string } {
     const held = this.entry.connection;
     const connection = held !== undefined && held.isConnected() ? held : this.revive(this.entry);
-    if (connection === null) return UNAVAILABLE;
+    if (typeof connection === 'string') return { ok: false, error: connection };
     const result = operate(connection);
     if (result.ok || connection.isConnected()) return result;
     const redialled = this.revive(this.entry);
-    return redialled === null ? UNAVAILABLE : operate(redialled);
+    return typeof redialled === 'string' ? { ok: false, error: redialled } : operate(redialled);
   }
 
   stat(path: string): ReturnType<RemoteVolume['stat']> { return this.through(connection => connection.stat(path)); }
