@@ -1,4 +1,5 @@
 import type { EditorFsContext } from '../EditorFsContext';
+import { nanoHomeDirectory } from './NanoStateDirectory';
 
 export interface NanoOpening {
   readonly path: string;
@@ -15,7 +16,16 @@ export function directoryNameOf(path: string): string {
   return parent === '' ? '/' : parent;
 }
 
-type PathHost = Pick<EditorFsContext, 'resolvePath' | 'exists' | 'kindOf' | 'canonicalPath'>;
+type PathHost = Pick<EditorFsContext, 'resolvePath' | 'exists' | 'kindOf' | 'canonicalPath' | 'identity' | 'homeDirectory' | 'userHomeDirectory' | 'environmentVariable' | 'makeDirectory'>;
+
+export function expandTilde(typed: string, fs: PathHost): string {
+  if (!typed.startsWith('~')) return typed;
+  const slash = typed.indexOf('/');
+  const name = slash < 0 ? typed.slice(1) : typed.slice(1, slash);
+  const rest = slash < 0 ? '' : typed.slice(slash);
+  const home = name === '' ? nanoHomeDirectory(fs) : (fs.userHomeDirectory?.(name) ?? null);
+  return home === null ? typed : `${home}${rest}`;
+}
 
 function canonicalOf(absolute: string, fs: PathHost): string | null {
   if (fs.canonicalPath !== undefined) return fs.canonicalPath(absolute);
@@ -26,8 +36,9 @@ function isDirectory(absolute: string, fs: PathHost): boolean {
   return (fs.kindOf?.(absolute) ?? (fs.exists(absolute) ? 'file' : 'missing')) === 'directory';
 }
 
-export function fullPathOf(typed: string, fs: PathHost): string | null {
-  if (typed === '') return null;
+export function fullPathOf(tilded: string, fs: PathHost): string | null {
+  if (tilded === '') return null;
+  const typed = expandTilde(tilded, fs);
   let target = canonicalOf(fs.resolvePath(typed), fs);
   const slash = typed.lastIndexOf('/');
   if (target === null && slash >= 0 && slash < typed.length - 1) {

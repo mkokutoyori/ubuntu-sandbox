@@ -3,7 +3,7 @@ import { editorKey, type EditorKeyInput } from './EditorKeyInput';
 import { dotSwapPathFor } from './editorPaths';
 import { buildNanoLock, cropToFit, lockQuestion, parseNanoLock } from './nano/NanoLock';
 import { decodeFile, LINE_END, type DecodedFile, type NanoFileFormat } from './nano/NanoFormat';
-import { directoryNameOf, fullPathOf, openingFor, writeFailureReason } from './nano/NanoOpening';
+import { directoryNameOf, expandTilde, fullPathOf, openingFor, writeFailureReason } from './nano/NanoOpening';
 import { appendToHistory, parseHistoryLists, serializeHistoryLists } from './nano/NanoHistoryLists';
 import { findPosition, parsePositionHistory, serializePositionHistory, withPositionRecorded } from './nano/NanoPositionHistory';
 import type { NanoRcNotices } from './editorLaunch';
@@ -2150,7 +2150,7 @@ export class NanoEngine {
   }
 
   private writeTarget(name: string): string {
-    return name === this.titleName ? this.filePath : this.fs.resolvePath(name);
+    return name === this.titleName ? this.filePath : this.fs.resolvePath(expandTilde(name, this.fs));
   }
 
   private cancelPrompt(): void {
@@ -3056,7 +3056,8 @@ export class NanoEngine {
       this._statusMessage = `[ ${this.operating.readRefusal()} ]`;
       return;
     }
-    const kind = this.pathKind(name);
+    const resolved = expandTilde(name, this.fs);
+    const kind = this.pathKind(resolved);
     if (kind === 'missing') {
       this._statusMessage = `[ File "${name}" not found ]`;
       return;
@@ -3065,7 +3066,7 @@ export class NanoEngine {
       this._statusMessage = `[ "${name}" is ${kind === 'directory' ? 'a directory' : kind === 'device' ? 'a device file' : 'a FIFO'} ]`;
       return;
     }
-    this.insertDecoded(decodeFile(this.fs.readFile(name) ?? '', !this.live.noconvert, false));
+    this.insertDecoded(decodeFile(this.fs.readFile(resolved) ?? '', !this.live.noconvert, false));
   }
 
   private insertDecoded(decoded: DecodedFile): void {

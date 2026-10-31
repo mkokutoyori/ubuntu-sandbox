@@ -1037,17 +1037,11 @@ nulle (le recorder sait les compter, `cell_width`, aucun texte n'en contient), l
 invalides, ni les caracteres de controle hors tabulation. Le moteur n'est donc ni valide ni
 refute sur ces textes : a enregistrer avant de pretendre que le rendu y est fidele.
 
-### [nano] `~` dans les invites de fichier
-Lu dans `files.c` (nano 8.x), pas encore mesure sur le binaire 7.2 : nano
-developpe `~/x` avec le HOME du processus (`real_dir_from_tilde`, que
-`get_full_path` appelle aussi : c'est la cle de `filepos_history`) et complete
-`~util` avec `/etc/passwd` (`username_completion`). `EditorFsContext` porte
-maintenant le HOME (`environmentVariable('HOME')`, et `homeDirectory()` pour
-l'entree de passwd ; `nanoHomeDirectory` choisit entre les deux comme
-`get_homedir`) mais le moteur traite encore `~` comme un nom ordinaire : aucune
-completion, aucun developpement, y compris a l'ouverture d'un fichier.
-**Report** : brancher `nanoHomeDirectory` sur `fullPathOf` et sur les invites,
-et ajouter a `EditorFsContext` l'acces a la table des comptes pour `~util`.
+### [nano] `~` dans les invites de fichier : la completion manque
+`~`, `~/x` et `~user/x` sont developpes dans les invites d'ecriture et de lecture (`expandTilde` de `NanoOpening`, mesure
+sur le binaire 7.2 : `get_homedir` donne le repertoire de passwd pour root, `$HOME` sinon, ce que `nanoHomeDirectory`
+reproduit ; `~user` passe par `EditorFsContext.userHomeDirectory`). Reste : la completion par Tab de `~util`
+(`username_completion`, lue dans `files.c`, non mesuree sur le binaire) ne propose rien.
 
 ---
 
