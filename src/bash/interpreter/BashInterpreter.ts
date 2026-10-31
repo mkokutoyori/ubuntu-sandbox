@@ -281,8 +281,9 @@ export class BashInterpreter {
   private readonly interactive: boolean;
   private readonly interrupt: InterruptToken | undefined;
   private synchronousDepth = 0;
-  private functionStack: string[] = [];
-  private callerLines: number[] = [];
+  private callFrames: Array<{ name: string; source: string; line: number; isFunction: boolean }> = [];
+  private readonly functionSources = new Map<string, string>();
+  private runningSource: string | null = null;
   private readonly jobs = new Map<string, number>();
   private jobCounter = 0;
 
@@ -320,18 +321,18 @@ export class BashInterpreter {
   private publishCallFrames(target: Environment): void {
     const script = this.env.get('0') ?? 'bash';
     const scriptMode = script !== 'bash';
-    const depth = this.functionStack.length;
-    if (depth === 0) {
+    const frames = this.callFrames;
+    if (!frames.some((frame) => frame.isFunction)) {
       target.unset('FUNCNAME');
       if (scriptMode) {
-        target.setArray('BASH_SOURCE', [script]);
-        target.setArray('BASH_LINENO', ['0']);
+        target.setArray('BASH_SOURCE', [...frames.map((frame) => frame.source), script]);
+        target.setArray('BASH_LINENO', [...frames.map((frame) => String(frame.line)), '0']);
       }
       return;
     }
-    target.setArray('FUNCNAME', [...this.functionStack, ...(scriptMode ? ['main'] : [])]);
-    target.setArray('BASH_LINENO', [...this.callerLines.map(String), ...(scriptMode ? ['0'] : [])]);
-    target.setArray('BASH_SOURCE', scriptMode ? Array(depth + 1).fill(script) : Array(depth).fill('environment'));
+    target.setArray('FUNCNAME', [...frames.map((frame) => frame.name), ...(scriptMode ? ['main'] : [])]);
+    target.setArray('BASH_LINENO', [...frames.map((frame) => String(frame.line)), ...(scriptMode ? ['0'] : [])]);
+    target.setArray('BASH_SOURCE', [...frames.map((frame) => frame.source), ...(scriptMode ? [script] : [])].map((source) => (source === '' ? 'environment' : source)));
   }
 
   // ─── Public API ───────────────────────────────────────────────
@@ -1222,7 +1223,7 @@ export class BashInterpreter {
     } else if ((cmdName === 'break' || cmdName === 'continue') && this.loopDepth === 0) {
       this.emitError(`bash: ${cmdName}: only meaningful in a \`for', \`while', or \`until' loop`);
       this.env.lastExitCode = 0;
-    } else if (cmdName === 'return' && this.functionStack.length === 0 && this.sourceDepth === 0) {
+    } else if (cmdName === 'return' && this.callFrames.length === 0 && this.sourceDepth === 0) {
       this.emitError("bash: return: can only `return' from a function or sourced script");
       this.env.lastExitCode = 2;
     } else if (cmdName === 'exit' && args.length > 1 && !this.exitArgumentsValid(args.slice(1))) {
@@ -1839,14 +1840,14 @@ export class BashInterpreter {
 
   private visitFunctionDef(node: FunctionDef): void {
     this.functions.set(node.name, node.body);
+    this.functionSources.set(node.name, this.runningSource ?? (this.env.get('0') !== 'bash' ? (this.env.get('0') ?? '') : ''));
     this.env.lastExitCode = 0;
   }
 
   private *callFunction(body: Command, args: string[], name: string): Effects<void> {
     // Create a child environment for function scope (supports `local`)
     const savedEnv = this.env;
-    this.functionStack.unshift(name);
-    this.callerLines.unshift(this.currentLine);
+    this.callFrames.unshift({ name, source: this.functionSources.get(name) ?? '', line: this.currentLine, isFunction: true });
     this.publishCallFrames(savedEnv);
     const childEnv = this.env.createChild();
     this.env = childEnv;
@@ -1863,8 +1864,7 @@ export class BashInterpreter {
       yield* this.fireSignalTrap('RETURN');
       savedEnv.lastExitCode = this.env.lastExitCode;
       this.env = savedEnv;
-      this.functionStack.shift();
-      this.callerLines.shift();
+      this.callFrames.shift();
       this.publishCallFrames(savedEnv);
     }
   }
@@ -1973,9 +1973,16 @@ export class BashInterpreter {
     const saved = extraArgs.length > 0 ? this.env.getPositionalArgs() : null;
     if (saved !== null) this.env.setPositionalArgs(extraArgs);
     this.sourceDepth++;
+    const outerSource = this.runningSource;
+    this.runningSource = filePath;
+    this.callFrames.unshift({ name: 'source', source: filePath, line: this.currentLine, isFunction: false });
+    this.publishCallFrames(this.env);
     try {
       yield* this.executeEvalG(content, true, 1, filePath);
     } finally {
+      this.callFrames.shift();
+      this.runningSource = outerSource;
+      this.publishCallFrames(this.env);
       this.sourceDepth--;
       if (saved !== null) this.env.setPositionalArgs(saved);
     }

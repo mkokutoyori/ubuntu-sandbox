@@ -3951,7 +3951,6 @@ Les trois bancs passent en entier ; restent mesures et non fermes :
 - `extglob` est lu dans le texte du script (premier `shopt -s extglob` d'une ligne precedente) et non dans l'etat du shell a l'execution : un `shopt -s extglob` pose par un `source` ou une fonction n'est pas vu par le lexeur.
 - Les erreurs de syntaxe a l'interieur d'un `$(...)` ecrit entre guillemets doubles ne sont pas relevees au parsage (seuls les `$(...)`, backticks et `<(...)` nus le sont).
 - Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
-- `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
 ---
 
