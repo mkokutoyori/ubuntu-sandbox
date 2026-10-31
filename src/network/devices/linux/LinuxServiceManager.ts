@@ -81,6 +81,7 @@ export interface ServiceUnit {
   onBootSec?: number;
   onUnitActiveSec?: number;
   onCalendar?: string;
+  persistent?: boolean;
   activates?: string;
   /** Source file the unit was loaded from. */
   loadedFrom: string;
@@ -798,7 +799,9 @@ export class LinuxServiceManager {
   setZone(zone: () => string | undefined): void { this.zoneName = zone; }
   zone(): string | undefined { return this.zoneName(); }
   clockDate(): Date { return new Date(this.nowMs()); }
-  rearmTimers(): void { this.timerScheduler.rearmCalendars(this.clockDate()); }
+  rearmTimers(): void {
+    for (const service of this.timerScheduler.rearmCalendars(this.clockDate())) this.start(service);
+  }
 
   private readonly timerScheduler = new TimerScheduler(() => this.zoneName());
 
@@ -1325,6 +1328,7 @@ export class LinuxServiceManager {
         onBootSec: parsed.onBootSec,
         onUnitActiveSec: parsed.onUnitActiveSec,
         onCalendar: parsed.onCalendar,
+        persistent: parsed.persistent,
         activates: parsed.activates,
         loadedFrom: src.path,
         // Preserve previous runtime state if the unit already existed.
@@ -1444,6 +1448,7 @@ export class LinuxServiceManager {
           onBootSec: u.onBootSec,
           onUnitActiveSec: u.onUnitActiveSec,
           onCalendar: u.onCalendar,
+          persistent: u.persistent,
         }, u.activeSince);
       }
       this.emitStateChanged(u.name, prev, 'active');
@@ -1807,6 +1812,7 @@ interface ParsedUnit {
   onBootSec?: number;
   onUnitActiveSec?: number;
   onCalendar?: string;
+  persistent?: boolean;
   activates?: string;
 }
 
@@ -1851,6 +1857,7 @@ export function parseUnitFile(content: string): ParsedUnit {
       else if (key === 'OnBootSec') out.onBootSec = parseTimeSpan(val);
       else if (key === 'OnUnitActiveSec') out.onUnitActiveSec = parseTimeSpan(val);
       else if (key === 'OnCalendar') out.onCalendar = val;
+      else if (key === 'Persistent') out.persistent = /^(yes|true|1|on)$/i.test(val);
       else if (key === 'Unit') out.activates = val;
     } else if (section === 'Install') {
       if (key === 'WantedBy') out.wantedBy = val.split(/\s+/);

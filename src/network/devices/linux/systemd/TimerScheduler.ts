@@ -7,6 +7,7 @@ export interface TimerSpec {
   onBootSec?: number;
   onUnitActiveSec?: number;
   onCalendar?: string;
+  persistent?: boolean;
 }
 
 export interface TimerEntry {
@@ -31,13 +32,19 @@ export class TimerScheduler {
     this.armed.set(spec.unit, { spec, next: this.initialElapse(spec, now), last: null });
   }
 
-  rearmCalendars(now: Date): void {
+  rearmCalendars(now: Date): string[] {
+    const caughtUp: string[] = [];
     for (const timer of this.armed.values()) {
       const { spec } = timer;
       const hasSpan = spec.onActiveSec !== undefined || spec.onBootSec !== undefined || spec.onUnitActiveSec !== undefined;
       if (spec.onCalendar === undefined || hasSpan) continue;
+      if (spec.persistent === true && timer.next !== null && timer.next.getTime() <= now.getTime()) {
+        caughtUp.push(spec.activates);
+        timer.last = timer.next;
+      }
       timer.next = nextElapseOf(spec.onCalendar, now, this.zone());
     }
+    return caughtUp;
   }
 
   disarm(unit: string): void {

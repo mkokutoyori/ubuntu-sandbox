@@ -39,6 +39,7 @@ export class LinuxService extends OSService implements ServiceUnit {
   onBootSec?: number;
   onUnitActiveSec?: number;
   onCalendar?: string;
+  persistent?: boolean;
   activates?: string;
   lastExit?: { code?: number; signal?: string };
   failedReason?: string;
@@ -90,6 +91,7 @@ export class LinuxService extends OSService implements ServiceUnit {
     this.onBootSec = init.onBootSec;
     this.onUnitActiveSec = init.onUnitActiveSec;
     this.onCalendar = init.onCalendar;
+    this.persistent = init.persistent;
     this.activates = init.activates;
   }
 

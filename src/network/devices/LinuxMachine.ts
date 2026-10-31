@@ -685,6 +685,7 @@ export abstract class LinuxMachine extends EndHost
 
     // 7. Cron daemon ticker — fires due jobs every simulated minute.
     this.startCronTicker();
+    this.getSystemClock().onStep(() => this.executor.serviceMgr.rearmTimers());
 
     // 8. DNS daemon transport: when dnsmasq starts, listen on UDP 53 so
     //    resolution travels through the simulated network (cables, routing,
