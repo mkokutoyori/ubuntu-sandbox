@@ -109,6 +109,10 @@ export abstract class CLITerminalSession extends TerminalSession {
    * socket (docs/PRD-VTY-Transport.md §2.1 item 6).
    */
   private remoteSubShell: ISubShell | null = null;
+
+  override get activeShell(): import('@/shell/IShellBase').IShellBase | null {
+    return this.remoteSubShell as unknown as import('@/shell/IShellBase').IShellBase | null;
+  }
   private remoteConn: number | null = null;
   private escapePrefix = false;
   private readonly suspendedSessions = new Map<number, ISubShell>();
@@ -514,6 +518,7 @@ export abstract class CLITerminalSession extends TerminalSession {
     }
 
     if (this.remoteSubShell) {
+      if (this.tryOpenRemoteEditor(trimmed, () => { void this.runRemoteLine(trimmed); })) return;
       await this.runRemoteLine(trimmed);
       return;
     }

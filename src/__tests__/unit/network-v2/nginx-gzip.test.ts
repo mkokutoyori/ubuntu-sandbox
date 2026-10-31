@@ -27,7 +27,7 @@ beforeEach(() => { EquipmentRegistry.getInstance().clear(); });
 const STRONG_ETAG_HEADER = `  etag off;\n  add_header ETag '"abc"';\n`;
 const WELCOME = 'Welcome to nginx!';
 
-interface Answer { readonly head: string; readonly body: string; readonly plain: string; readonly size: number }
+interface Answer { readonly head: string; readonly body: string; readonly plain: string }
 
 async function get(
   srv: LinuxServer, path: string, headers: readonly string[] = ['Accept-Encoding: gzip'], flags = '',
@@ -39,8 +39,7 @@ async function get(
   const body = await sh(srv, 'cat /tmp/body');
   const plain = head.includes('Content-Encoding: gzip')
     ? await sh(srv, 'zcat /tmp/body') : body;
-  const size = Number((await sh(srv, 'wc -c < /tmp/body')).trim());
-  return { head, body, plain, size };
+  return { head, body, plain };
 }
 
 const compressed = (a: Answer): boolean => a.head.includes('Content-Encoding: gzip');
@@ -321,7 +320,7 @@ describe('journal d\'accès : $body_bytes_sent est la taille COMPRESSÉE', () =>
     const sent = Number(/" 200 (\d+) /.exec(line)?.[1]);
     expect(compressed(a)).toBe(true);
     expect(sent).toBeLessThan(original);
-    expect(sent).toBe(a.size);
+    expect(sent).toBe(a.body.length);
   });
 });
 

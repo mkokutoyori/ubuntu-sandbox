@@ -2,7 +2,7 @@ import type { FileHandle } from '../engine/Host';
 import { RS_RET } from '../engine/Log';
 import { GzipStreamWriter } from '../Zlib';
 import type { CryptoFile, CryptoProvider } from '../crypto/CryptoProvider';
-import { bytesToFileText } from '@/crypto/encoding';
+import { latin1Text } from '../engine/Latin1';
 import { ZstdStreamWriter } from '../Zstd';
 
 export interface StreamSettings {
@@ -102,7 +102,7 @@ export class OmfileStream implements FileHandle {
       data = this.encrypted.encrypt(data);
       binary = true;
     }
-    const payload = binary ? bytesToFileText(data) : text;
+    const payload = binary ? latin1Text(data) : text;
     if (payload.length === 0) return null;
     const written = (this.handle as FileHandle).write(payload);
     if (written === null) this.offset += payload.length;
@@ -159,7 +159,7 @@ export class OmfileStream implements FileHandle {
     if (this.compressor !== null) {
       const tail = this.compressor.finish();
       this.compressor = null;
-      if (tail.length > 0) this.handle?.write(bytesToFileText(tail));
+      if (tail.length > 0) this.handle?.write(latin1Text(tail));
     }
     this.handle?.close();
     this.handle = null;

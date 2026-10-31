@@ -37,8 +37,6 @@ function unportedInEveryUnixLab(commands: readonly string[]): string[] {
 const UNPORTED_LABS: ReadonlySet<string> = new Set(['unix-user']);
 
 const UNPORTED_STEPS: ReadonlySet<string> = new Set([
-  'nc-scan-down|nc -zv -s 10.0.0.2 127.0.0.1 9000',
-  'nc-scan-up|nc -zv -s 10.0.0.2 127.0.0.1 9000',
   'ss-connected|ss -tai',
   'ss-two-connections|ss -tai',
   'fuser-files|fuser -vm / 2>&1 | head -3',
@@ -88,8 +86,6 @@ const UNPORTED_STEPS: ReadonlySet<string> = new Set([
     'ps -ef --cols 30 | cat', 'ps --forest -e -o pid,args | cat',
   ].map((command) => `ps-formats|${command}`),
   'unix-closed|ls -l /proc/$P1/fd | tail -n +2 | awk \'{print $1,$3,$4,$9,$10,$11}\'',
-  'unix-none|ls -l /proc/$P1/fd | tail -n +2 | awk \'{print $1,$3,$4,$9,$10,$11}\'',
-  'unix-none|stat -c \'%F %a %U\' /tmp/lab/s1 2>&1',
 ]);
 
 const fixtures = readdirSync(directory).filter((name) => name.endsWith('.json')).sort()

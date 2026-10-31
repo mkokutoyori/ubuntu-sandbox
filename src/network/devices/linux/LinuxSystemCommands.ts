@@ -66,7 +66,7 @@ function formatBytesHuman(bytes: number): string {
   return formatKbHuman(Math.max(1, Math.round(bytes / 1024)));
 }
 
-interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; inodesTotal: number; inodesUsed: number; }
+export interface DfEntry { fs: string; type: string; sizeKb: number; usedKb: number; availKb: number; usePct: number; mount: string; inodesTotal: number; inodesUsed: number; }
 
 /**
  * Les tailles declarees pour un systeme de fichiers pseudo. Un vrai `df`
@@ -156,6 +156,16 @@ function dfTable(ctx: DfContext): DfEntry[] {
 const PSEUDO_FSTYPES = new Set([
   'proc', 'sysfs', 'devtmpfs', 'devpts', 'cgroup', 'cgroup2', 'securityfs',
 ]);
+
+export function filesystemRowFor(ctx: DfContext, absolutePath: string): DfEntry {
+  const sizes = partitionSizesKb(ctx.storage);
+  let best: MountEntry | undefined;
+  for (const entry of ctx.mounts) {
+    const covers = entry.target === '/' || absolutePath === entry.target || absolutePath.startsWith(`${entry.target}/`);
+    if (covers && (best === undefined || entry.target.length > best.target.length)) best = entry;
+  }
+  return dfRow(ctx, best ?? ctx.mounts[0], best === undefined ? undefined : sizes.get(best.source));
+}
 
 function dfTableAll(ctx: DfContext): DfEntry[] {
   const sizes = partitionSizesKb(ctx.storage);

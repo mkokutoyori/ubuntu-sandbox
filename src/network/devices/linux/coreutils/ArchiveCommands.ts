@@ -18,7 +18,7 @@
  * dependency, testable in isolation.
  */
 import { simulationNowMs } from '@/network/core/SystemClock';
-import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
+import { binaryStringToBytes, bytesToBinaryString, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import { gzipCompress, gzipDecompressTolerant, isGzip } from '@/network/rsyslog/Zlib';
 
 import type { DirEntry, INode } from '../VirtualFileSystem';
@@ -97,7 +97,7 @@ export function gunzipText(raw: string): string | null {
 const GZIP_DEFAULT_LEVEL = 6;
 
 function packGzip(body: GzipBody): string {
-  return bytesToFileText(gzipCompress(fileTextToBytes(body.payload), GZIP_DEFAULT_LEVEL, { name: body.name, mtimeMs: body.mtime }));
+  return bytesToBinaryString(gzipCompress(fileTextToBytes(body.payload), GZIP_DEFAULT_LEVEL, { name: body.name, mtimeMs: body.mtime }));
 }
 
 function gzipHeaderName(bytes: Uint8Array): string {
@@ -111,7 +111,7 @@ function gzipHeaderName(bytes: Uint8Array): string {
 }
 
 function unpackRealGzip(raw: string): GzipBody | null {
-  const bytes = fileTextToBytes(raw);
+  const bytes = binaryStringToBytes(raw);
   if (!isGzip(bytes)) return null;
   try {
     const mtime = (bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24)) >>> 0;
