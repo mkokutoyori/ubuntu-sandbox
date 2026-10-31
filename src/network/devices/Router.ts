@@ -5821,7 +5821,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         configuredTransport: () => this.sshConfiguredTransport(),
       });
       this.wireExecAccounting();
-      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus(), now: () => this.getSystemClockMs() });
       this._credentialStore.liveSessionCount = (user) =>
         this._sshSessionRegistry!.list().filter(s => s.user === user && s.state !== 'closed').length;
       this._sshHost = new CrossVendorSshHost({

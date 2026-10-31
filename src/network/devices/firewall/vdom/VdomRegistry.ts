@@ -302,6 +302,7 @@ export class VdomRegistry {
         credentials: new NetworkOsCredentialStore({
           deviceId: `${this.deps.deviceId}:${name}`,
           bus: this.deps.bus(),
+          now: this.deps.now,
         }),
         now: this.deps.now,
       }),

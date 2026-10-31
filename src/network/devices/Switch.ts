@@ -4018,7 +4018,7 @@ export abstract class Switch extends Equipment {
         deviceId: this.id, bus: this.getBus(),
         configuredTransport: () => this.sshConfiguredTransport(),
       });
-      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus(), now: () => this.getSystemClockMs() });
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
         hostname: this.getHostname(),
