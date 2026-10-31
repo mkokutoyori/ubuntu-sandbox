@@ -206,11 +206,14 @@ export const ARP_GC_STALE_TIME_MS = 60_000;
 export const ARP_AGING_INTERVAL_MS = 5_000;
 export const ARP_MCAST_SOLICIT = 3;
 export const ARP_RETRANS_TIME_MS = 1_000;
+export const ARP_DELAY_FIRST_PROBE_MS = 5_000;
+export const ARP_UCAST_SOLICIT = 3;
 
 /** Compute NUD (Neighbor Unreachability Detection) state from an ARP entry. */
 export function getNUDState(entry: ARPEntry): string {
   if (entry.type === 'static') return 'PERMANENT';
   if (entry.type === 'failed') return 'FAILED';
+  if (entry.probing !== undefined) return entry.probing.state === 'delay' ? 'DELAY' : 'PROBE';
   return simulationNowMs() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
 }
 
@@ -2443,6 +2446,41 @@ export abstract class EndHost extends Equipment {
     return entry === undefined || entry.type === 'failed' ? undefined : entry;
   }
 
+  protected neighbourProbing(): boolean {
+    return false;
+  }
+
+  private usedNeighbour(ip: string, entry: ARPEntry): void {
+    if (!this.neighbourProbing() || entry.type !== 'dynamic' || entry.probing !== undefined) return;
+    const now = simulationNowMs();
+    if (now - entry.timestamp < ARP_REACHABLE_TIME_MS) return;
+    entry.probing = { state: 'delay', since: now };
+    this.hostTimers.setTimeout(() => this.probeNeighbour(ip, entry, 0), ARP_DELAY_FIRST_PROBE_MS);
+  }
+
+  private probeNeighbour(ip: string, entry: ARPEntry, tries: number): void {
+    if (this.arpTable.get(ip) !== entry) return;
+    if (tries >= ARP_UCAST_SOLICIT) {
+      this.arpTable.set(ip, { mac: entry.mac, iface: entry.iface, timestamp: simulationNowMs(), type: 'failed' });
+      return;
+    }
+    const port = this.ports.get(entry.iface);
+    const myIP = port?.getIPAddress();
+    if (port && myIP) {
+      entry.probing = { state: 'probe', since: simulationNowMs() };
+      this.sendFrame(entry.iface, {
+        srcMAC: port.getMAC(),
+        dstMAC: entry.mac,
+        etherType: ETHERTYPE_ARP,
+        payload: {
+          type: 'arp', operation: 'request',
+          senderMAC: port.getMAC(), senderIP: myIP, targetMAC: entry.mac, targetIP: new IPAddress(ip),
+        },
+      });
+    }
+    this.hostTimers.setTimeout(() => this.probeNeighbour(ip, entry, tries + 1), ARP_RETRANS_TIME_MS);
+  }
+
   /** Return ARP table with full entry details (type, iface, mac, timestamp). */
   getARPTableFull(): Map<string, ARPEntry> {
     return new Map(this.arpTable);
@@ -3219,6 +3257,7 @@ export abstract class EndHost extends Equipment {
     }
     const cached = this.resolvedNeighbour(nextHopIP.toString());
     if (cached) {
+      this.usedNeighbour(nextHopIP.toString(), cached);
       this.sendFrame(outPortName, {
         srcMAC: port.getMAC(), dstMAC: cached.mac,
         etherType: ETHERTYPE_IPV4, payload: ipPkt,
