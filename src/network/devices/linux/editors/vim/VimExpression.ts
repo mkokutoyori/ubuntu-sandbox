@@ -1065,6 +1065,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     return accumulator;
   } }],
   ['sha256', { min: 1, max: 1, run: (args, context) => str(Array.from(sha256(new TextEncoder().encode(context.stringOf(args[0], false))), (byte) => byte.toString(16).padStart(2, '0')).join('')) }],
+  ['json_decode', { min: 1, max: 1, run: (args, context) => jsonDecode(context.stringOf(args[0], false), context) }],
   ['json_encode', { min: 1, max: 1, run: (args, context) => str(jsonEncode(args[0], context)) }],
   ['filter', { min: 2, max: 2, run: (args, context) => mapOrFilter(args, context, false) }],
   ['float2nr', { min: 1, max: 1, run: (args, context) => {
@@ -1240,6 +1241,32 @@ function jsonString(text: string): string {
     else out += character;
   }
   return `${out}"`;
+}
+
+function jsonToVim(node: unknown, source: string | undefined): VimValue {
+  if (node === null) return special('null');
+  if (node === true) return special('true');
+  if (node === false) return special('false');
+  if (typeof node === 'string') return str(node);
+  if (typeof node === 'number') {
+    if (source !== undefined) return /^-?\d+$/.test(source) ? num(BigInt(source)) : flt(node);
+    return Number.isInteger(node) ? num(node) : flt(node);
+  }
+  if (Array.isArray(node)) return list(node.map((item) => jsonToVim(item, undefined)));
+  const entries = new Map<string, VimValue>();
+  for (const [key, item] of Object.entries(node as Record<string, unknown>)) entries.set(key, jsonToVim(item, undefined));
+  return dict(entries);
+}
+
+function jsonDecode(text: string, context: Context): VimValue {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === 'number') return jsonToVim(parsed, text.trim());
+    return jsonToVim(parsed, undefined);
+  } catch {
+    context.soft(`E491: JSON decode error at '${text}'`);
+    return special('none');
+  }
 }
 
 function jsonEncode(value: VimValue, context: Context): string {
