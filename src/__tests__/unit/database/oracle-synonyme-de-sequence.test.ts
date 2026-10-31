@@ -1,6 +1,6 @@
 /**
  * Oracle : un synonyme (privé ou public) désigne une séquence ; `syn.NEXTVAL` et `schema.syn.CURRVAL` suivent la même résolution que les tables (Oracle Database SQL Language Reference, CREATE SYNONYM : « synonym ... for ... sequence »). Aucun Oracle disponible ici : source = documentation.
- * Mesure de départ : `syn_seq.NEXTVAL` répondait ORA-02289. 3 des 5 cas de séquence , 2 des 3 cas TRUNCATE et 2 des 3 cas LOCK TABLE / GRANT tombent avant ; le témoin (NEXTVAL direct) et le synonyme inexistant (ORA-02289) passent dans les deux états.
+ * Mesure de départ : `syn_seq.NEXTVAL` répondait ORA-02289. 3 des 5 cas de séquence , 2 des 3 cas TRUNCATE et 2 des 3 cas LOCK TABLE / GRANT et 3 des 4 cas de procédures tombent avant ; le témoin (NEXTVAL direct) et le synonyme inexistant (ORA-02289) passent dans les deux états.
  */
 
 import { describe, test, expect, beforeEach } from 'vitest';
@@ -90,5 +90,39 @@ describe('LOCK TABLE et GRANT sur un synonyme', () => {
     exec('CREATE USER grantee_u IDENTIFIED BY pw');
     expect(exec('GRANT SELECT ON syn_lk TO grantee_u').message).toBe('Grant succeeded.');
     expect(exec("SELECT table_name FROM dba_tab_privs WHERE grantee='GRANTEE_U'").rows).toEqual([['T_LK']]);
+  });
+});
+
+describe('procédures et fonctions stockées derrière un synonyme', () => {
+  let db: OracleDatabase;
+  let executor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'];
+  const exec = (sql: string) => db.executeSql(executor, sql);
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup();
+    executor = db.connectAsSysdba().executor;
+    exec('CREATE TABLE log_t (n NUMBER)');
+    exec('CREATE PROCEDURE p_log AS BEGIN INSERT INTO log_t VALUES (42); END;');
+    exec('CREATE FUNCTION f_seven RETURN NUMBER AS BEGIN RETURN 7; END;');
+  });
+
+  test('un bloc PL/SQL appelle la procédure par son synonyme privé', () => {
+    exec('CREATE SYNONYM syn_p FOR p_log');
+    exec('BEGIN syn_p; END;');
+    expect(exec('SELECT n FROM log_t').rows).toEqual([[42]]);
+  });
+  test('un bloc PL/SQL appelle la procédure par un synonyme public', () => {
+    exec('CREATE PUBLIC SYNONYM pub_p FOR p_log');
+    exec('BEGIN pub_p; END;');
+    expect(exec('SELECT n FROM log_t').rows).toEqual([[42]]);
+  });
+  test('une fonction par son synonyme dans un bloc', () => {
+    exec('CREATE SYNONYM syn_f FOR f_seven');
+    exec('DECLARE v NUMBER; BEGIN v := syn_f(); INSERT INTO log_t VALUES (v); END;');
+    expect(exec('SELECT n FROM log_t').rows).toEqual([[7]]);
+  });
+  test('nom inconnu : PLS-00201', () => {
+    expect(exec('BEGIN nothing_p; END;').message).toContain('PLS-00201');
   });
 });
