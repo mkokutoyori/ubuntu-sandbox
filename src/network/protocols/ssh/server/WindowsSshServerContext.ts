@@ -7,7 +7,7 @@
 
 import { guardedFileSystem, principalOf } from '@/network/devices/windows/WindowsFsAccess';
 import { WINDOWS_OPENSSH_SSHD_CONFIG } from './WindowsSshdConfigFile';
-import { simulationDate } from '@/network/core/SystemClock';
+import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { SSH_WINDOWS_IDENTIFICATION } from '../serverIdentification';
 import type { WindowsFileSystem } from '@/network/devices/windows/WindowsFileSystem';
@@ -291,6 +291,10 @@ export class WindowsSshServerContext implements ISshServerContext {
     return null;
   }
 
+  nowMs(): number {
+    return this.shellExecutor?.nowMs?.() ?? simulationNowMs();
+  }
+
   private certificateService: SshdCertificateService | null = null;
 
   private certificates(): SshdCertificateService {
@@ -302,7 +306,7 @@ export class WindowsSshServerContext implements ISshServerContext {
         return result.ok ? result.content ?? '' : null;
       },
       emit: (event) => this.events.emit(event),
-      ...(this.shellExecutor?.nowMs === undefined ? {} : { nowMs: () => this.shellExecutor!.nowMs!() }),
+      nowMs: () => this.nowMs(),
     });
     return this.certificateService;
   }

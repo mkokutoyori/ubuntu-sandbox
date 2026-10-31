@@ -156,6 +156,7 @@ export interface HostCertificateBinding {
 export interface ISshServerContext {
   readonly hostKey: SshHostKey;
   readonly connectionLimitScope?: object;
+  nowMs?(): number;
   additionalHostKeys?(): SshHostKey[];
   hostCertificates?(): HostCertificateBinding[];
   readonly config: Readonly<SshServerConfig>;

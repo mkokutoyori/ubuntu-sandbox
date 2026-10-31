@@ -171,9 +171,8 @@ Server, la validite des certificats utilisateur de sshd et `ssh-keygen` aussi.
 Les sessions SSH suivent aussi l'horloge de leur machine : `who`, `last`, `lastlog`,
 la pile PAM (`chage -E`, vieillissement des mots de passe), les comptes des
 routeurs/switchs/pare-feu, les comptes Windows, le registre VTY, la comptabilite
-d'exec et les timers systemd. Restent sur l'heure globale les champs `timestamp`
-des evenements de `SshServerHandler` (aucun lecteur ne les consomme) et la duree
-d'`SshShellSession` (un ecart, donc monotone, a juste titre). Le `START` de `ps` des processus de demarrage et les dates de
+d'exec et les timers systemd. Les evenements du bus de sshd (`timestamp`) suivent la machine aussi ; la duree
+d'`SshShellSession` reste sur l'heure globale (un ecart, donc monotone, a juste titre). Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
 sur un vrai noyau `ps` suit (btime recalcule), `last` non.
 **Pourquoi ce n'est pas ferme** : chaque pile prend l'horloge de sa machine par
