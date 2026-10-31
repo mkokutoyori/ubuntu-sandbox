@@ -165,6 +165,7 @@ export function loadServerTls(
     verifier = buildClientVerifier({
       anchors, crls, crlChecking: settings.crl !== '',
       revocationScope: 'chain', missingCrlOk: false, maxDepth: settings.verifyDepth, ocsp,
+      ...(wire ? { clock: () => wire.now() } : {}),
     });
   }
 

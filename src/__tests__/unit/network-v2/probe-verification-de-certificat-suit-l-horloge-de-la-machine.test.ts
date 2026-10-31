@@ -47,7 +47,7 @@ async function lab(): Promise<LinuxServer> {
 }
 
 async function setClockAhead(srv: LinuxServer, days: number): Promise<void> {
-  const epoch = Math.floor((srv.executor.simulatedDate().getTime() + days * DAY) / 1000);
+  const epoch = Math.floor((srv.getSystemClockMs() + days * DAY) / 1000);
   await srv.executeCommand(`date -s @${epoch}`);
 }
 
@@ -83,7 +83,7 @@ describe('la verification d un certificat lit l horloge de la machine', () => {
     await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
     await setClockAhead(srv, 400);
     await buildPki(srv);
-    await srv.executeCommand('date -s @' + Math.floor((srv.executor.simulatedDate().getTime() - 400 * DAY) / 1000));
+    await srv.executeCommand('date -s @' + Math.floor((srv.getSystemClockMs() - 400 * DAY) / 1000));
     const out = await srv.executeCommand(
       'openssl verify -CAfile /etc/ssl/certs/ca.crt /etc/ssl/certs/srv.crt');
     expect(out).toMatch(/not yet valid|error 9|num=9/);

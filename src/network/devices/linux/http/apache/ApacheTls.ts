@@ -169,6 +169,7 @@ export function loadVhostTls(
       anchors, crls: crlTexts.flatMap((text) => crlsFromPem(text)), crlChecking,
       revocationScope: settings.crlCheck.mode === 'leaf' ? 'leaf' : 'chain',
       missingCrlOk: settings.crlCheck.noCrlForCertOk, maxDepth: settings.verifyDepth, ocsp,
+      ...(wire ? { clock: () => wire.now() } : {}),
     });
   }
 

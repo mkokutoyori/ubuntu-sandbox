@@ -62,12 +62,14 @@ export interface ClientVerifierInput {
   readonly revocationScope: 'leaf' | 'chain';
   readonly missingCrlOk: boolean;
   readonly maxDepth: number;
+  readonly clock?: () => number;
   readonly ocsp?: { readonly responder: IOcspResponder; readonly scope: 'leaf' | 'chain'; readonly missingOk: boolean };
 }
 
 export function buildClientVerifier(input: ClientVerifierInput): CertificateVerifier {
   return new CertificateVerifier({
     trustAnchors: input.anchors,
+    ...(input.clock === undefined ? {} : { clock: input.clock }),
     crls: input.crls,
     revocationCheck: input.ocsp ? 'ocsp' : input.crlChecking ? 'crl-strict' : 'none',
     crlMode: 'crl-strict',

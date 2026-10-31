@@ -1651,7 +1651,7 @@ export abstract class LinuxMachine extends EndHost
       tcpStack: () => this.getTcpStack(),
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
-      now: () => simulationDate(),
+      now: () => this.executor.simulatedDate(),
       // §P6 — le mandataire résout par la MACHINE qui l'exécute :
       // `/etc/hosts` et `/etc/resolv.conf` du serveur décident, comme
       // pour le vrai nginx. La variante synchrone est la bonne ici,
@@ -2144,7 +2144,7 @@ export abstract class LinuxMachine extends EndHost
       tcpStack: () => this.getTcpStack(),
       portTaken: (port) => this.getTcpStack().listListeners().some((l) => l.localPort === port),
       appendLog: (path, line) => this.executor.logMgr.appendLine(path, line),
-      now: () => simulationDate(),
+      now: () => this.executor.simulatedDate(),
     });
 
     this.executor.registerServiceSocketServer('apache2', this.apacheService);
