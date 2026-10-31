@@ -73,7 +73,7 @@ describe('la base de paquets décrit la machine', () => {
 
   it('sudo apt install nomme la VERSION du paquet installé', async () => {
     expect(await new LinuxServer('linux-server', 'srv1', 0, 0).executeCommand('sudo apt install nginx'))
-      .toContain('nginx is already the newest version (1.18.0-6ubuntu14.4).');
+      .toContain('nginx is already the newest version (1.24.0-1~jammy).');
   });
 
   it('une option n est pas prise pour un paquet', async () => {

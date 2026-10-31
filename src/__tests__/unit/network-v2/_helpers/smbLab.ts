@@ -43,6 +43,7 @@ export async function buildSmbLab(): Promise<SmbLab> {
   await server.executeCommand('echo hello from srv1 > C:\\Shares\\Data\\doc.txt');
   await server.executeCommand('echo outside the share > C:\\Shares\\outside.txt');
   await runPowershell(powershellOf(server), 'New-SmbShare -Name Data -Path C:\\Shares\\Data -FullAccess bob -ReadAccess alice');
+  await runPowershell(powershellOf(server), 'New-SmbShare -Name Pub -Path C:\\Shares\\Data -FullAccess Administrator');
   return {
     server, client, clientCable, plugClientBack,
     dial(share, username, password) {

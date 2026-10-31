@@ -25,6 +25,7 @@ import type { WindowsShellSession } from '@/network/devices/windows/shell/Window
 import { credentialFromValue } from '@/powershell/cmdlets/core/RemotingCmdlets';
 import { WinRmPowerShellShell } from '@/shell/adapters/WinRmPowerShellShell';
 import { makePSCredential, formatPSCredentialTable } from '@/powershell/credential/PSCredential';
+import { qualifiedLocation } from '@/powershell/runtime/PSPathInfo';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 import { scanWords, type WordScan } from '@/terminal/completion/words';
 import { completeWindowsPath } from '@/network/devices/windows/PathCompletion';
@@ -124,7 +125,7 @@ export class PowerShellSubShell implements ISubShell {
     if (this.userPromptText !== null) return this.userPromptText;
     const location = this.interp.foreignLocation()
       ?? this.session?.cwd ?? (this.device as unknown as { getCwd(): string }).getCwd();
-    return `PS ${location}> `;
+    return `PS ${qualifiedLocation(location)}> `;
   }
 
   private promptFunctionText(): string {

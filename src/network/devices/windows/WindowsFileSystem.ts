@@ -12,7 +12,7 @@
 import { deferContent } from '@/network/core/DeferredContent';
 import { simulationNowMs } from '../../core/SystemClock';
 import { IanaServiceRegistry } from '../../core/ports/IanaServiceRegistry';
-import { normalizeWindowsPath } from './windowsPath';
+import { normalizeWindowsPath, uncRootOf } from './windowsPath';
 import { WINDOWS_PROGRAMS } from './WinPrograms';
 import {
   ERROR_ACCESS_DENIED, ERROR_DIR_NOT_EMPTY, ERROR_DIRECTORY, ERROR_DUPLICATE_NAME, ERROR_FILE_NOT_FOUND,
@@ -88,7 +88,7 @@ const directoryKey = (path: string): string => path.toLowerCase().replace(/\\+$/
 
 interface RemoteLocation {
   readonly volume: RemoteVolume;
-  readonly letter: string;
+  readonly root: string;
   readonly path: string;
 }
 
@@ -491,16 +491,35 @@ export class WindowsFileSystem {
     return this.remoteAt(absPath) !== null;
   }
 
+  remoteRefusal(absPath: string): string | null {
+    const remote = this.remoteAt(absPath);
+    if (remote === null) return null;
+    const found = remote.volume.stat(remote.path);
+    if (found.ok || found.error === ERROR_FILE_NOT_FOUND || found.error === ERROR_PATH_NOT_FOUND) return null;
+    return found.error ?? null;
+  }
+
   private remoteAt(absPath: string): RemoteLocation | null {
-    if (this.remoteVolumes === null || absPath.charAt(1) !== ':') return null;
-    const letter = absPath.substring(0, 2).toUpperCase();
-    const volume = this.remoteVolumes.volumeAt(letter);
+    if (this.remoteVolumes === null) return null;
+    const share = uncRootOf(absPath);
+    if (share !== null) {
+      const [server, name] = share.slice(2).split('\\');
+      const volume = this.remoteVolumes.shareAt(server, name);
+      return volume === null ? null : { volume, root: share, path: absPath.slice(share.length).replace(/\//g, '\\').replace(/^\\+|\\+$/g, '') };
+    }
+    if (absPath.charAt(1) !== ':') return null;
+    const root = absPath.substring(0, 2).toUpperCase();
+    const volume = this.remoteVolumes.volumeAt(root);
     if (volume === null) return null;
-    return { volume, letter, path: absPath.substring(2).replace(/\//g, '\\').replace(/^\\+|\\+$/g, '') };
+    return { volume, root, path: absPath.substring(2).replace(/\//g, '\\').replace(/^\\+|\\+$/g, '') };
   }
 
   private remoteInformation(drive: string): RemoteVolumeInformation | null {
-    const volume = this.remoteVolumes?.volumeAt(`${this.normaliseDriveLetter(drive)}:`) ?? null;
+    if (this.remoteVolumes === null) return null;
+    const share = uncRootOf(drive);
+    const volume = share === null
+      ? this.remoteVolumes.volumeAt(`${this.normaliseDriveLetter(drive)}:`)
+      : this.remoteVolumes.shareAt(...(share.slice(2).split('\\') as [string, string]));
     const reported = volume === null ? null : volume.volumeInfo();
     return reported !== null && reported.ok ? reported.volume ?? null : null;
   }
@@ -515,7 +534,7 @@ export class WindowsFileSystem {
     if (remote !== null) {
       const found = remote.volume.stat(remote.path);
       const relative = found.ok ? found.canonical ?? remote.path : remote.path;
-      return `${remote.letter}\\${relative}`;
+      return relative === '' && remote.root.startsWith('\\\\') ? remote.root : `${remote.root}\\${relative}`;
     }
     const root = this.drives.get(absPath.substring(0, 2).toUpperCase());
     const letter = `${absPath.substring(0, 1).toUpperCase()}:`;
@@ -531,7 +550,7 @@ export class WindowsFileSystem {
 
   canonicalLeaf(absPath: string): string {
     const separator = absPath.lastIndexOf('\\');
-    if (separator <= 2) return absPath;
+    if (separator <= 2 || uncRootOf(absPath) === absPath) return absPath;
     const leaf = this.resolve(absPath)?.name;
     return leaf === undefined ? absPath : `${absPath.slice(0, separator + 1)}${leaf}`;
   }
@@ -605,7 +624,7 @@ export class WindowsFileSystem {
   private remoteEntry(remote: RemoteLocation): WinFSEntry | null {
     const found = remote.volume.stat(remote.path);
     if (!found.ok || found.node === undefined) return null;
-    return new RemoteEntry(remote.volume, remote.path, found.node, remote.path === '' ? remote.letter : undefined);
+    return new RemoteEntry(remote.volume, remote.path, found.node, remote.path === '' ? remote.root : undefined);
   }
 
   /**
@@ -662,7 +681,7 @@ export class WindowsFileSystem {
   }
 
   makeDirectories(absPath: string): Outcome {
-    return this.hasDrive(absPath.charAt(0)) ? this.mkdirp(absPath) : { ok: false, error: ERROR_PATH_NOT_FOUND };
+    return this.isRemote(absPath) || this.hasDrive(absPath.charAt(0)) ? this.mkdirp(absPath) : { ok: false, error: ERROR_PATH_NOT_FOUND };
   }
 
   mkdirp(absPath: string): Outcome {

@@ -178,7 +178,9 @@ import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
-import { cmdNetUse, establishMapping, releaseMapping, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
+import {
+  cmdNetUse, establishMapping, nextFreeDrive, plainNetworkError, releaseMapping, restorePersistentMappings, type NetUseEntry,
+} from './windows/WinNetUse';
 import { NetworkDrive } from './windows/NetworkDrive';
 import { RemoteVolumeError } from './windows/RemoteVolume';
 import { cmdNetView } from './windows/WinNetView';
@@ -287,7 +289,7 @@ import { cmdReg as winCmdReg } from './windows/WinRegCommand';
 import { cmdAssoc, cmdFtype } from './windows/WinAssoc';
 import { cmdTzutil } from './windows/WinTzutil';
 import { cmdEventcreate } from './windows/WinEventcreate';
-import { cmdDir, fileSummaryLine } from './windows/WinDir';
+import { cmdDir } from './windows/WinDir';
 import { cmdWhere } from './windows/WinWhere';
 import { programStem } from './windows/WinPrograms';
 import { commandExitCode } from './windows/cmdExitCode';
@@ -315,7 +317,8 @@ import {
   cmdAttrib, cmdFind, cmdFindstr, cmdMore, cmdFc,
   cmdSort, enterDirectory,
 } from './windows/WinFileCommands';
-import { directoryOfDrive, driveLetterOf } from './windows/windowsPath';
+import { directoryOfDrive, driveLetterOf, uncRootOf } from './windows/windowsPath';
+import { ERROR_BAD_NETPATH, ERROR_PATH_NOT_FOUND } from './windows/win32ErrorText';
 import { DEFAULT_PROMPT, PROMPT_HELP, renderPrompt } from './windows/WinPrompt';
 import { runNetstat, type NetstatMachine } from './windows/WinNetstat';
 import { netstatStatistics } from './windows/WinNetstatStatistics';
@@ -582,6 +585,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   /** `net use` drive-letter mappings — instance-owned. */
   readonly netUseTable: Map<string, NetUseEntry> = new Map();
   private readonly networkDrives = new WeakMap<NetUseEntry, NetworkDrive>();
+  private readonly implicitShares = new Map<string, NetUseEntry>();
+  private readonly deviceTemporaryDrives: Array<{ letter: string; depth: number }> = [];
   /** Live inbound SMB sessions (`Get-SmbSession` / `net session`). */
   readonly smbSessions: SmbSessionTable = new SmbSessionTable();
 
@@ -613,6 +618,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     });
     this.fs.attachRemoteVolumes({
       volumeAt: letter => this.networkDriveAt(letter),
+      shareAt: (server, share) => this.networkShareAt(server, share),
       letters: () => [...this.netUseTable.values()].map(entry => entry.local).filter(local => local !== ''),
     });
     this.seedVolumesFromHardware();
@@ -2363,23 +2369,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return header + rows.join('\n') + '\nThe command completed successfully.';
   }
 
-  private resolveSmbPath(raw: string): { server: string; share: string; subPath: string } | null {
-    const uncMatch = /^\\\\([^\\]+)\\([^\\]+)\\?(.*)$/.exec(raw);
-    return uncMatch ? { server: uncMatch[1], share: uncMatch[2], subPath: uncMatch[3] ?? '' } : null;
-  }
-
-  private async smbConnectionFor(
-    target: NonNullable<ReturnType<WindowsPC['resolveSmbPath']>>,
-  ): Promise<{ connection: import('./windows/server/smb/SmbClient').SmbConnection; adHoc: boolean } | { error: string }> {
-    const targetIp = await this.resolveHostname(target.server);
-    if (!targetIp) return { error: 'System error 53 has occurred.\n\nThe network path was not found.' };
-    const dial = this.dialSmbShare(targetIp.toString(), target.share, this.userMgr.currentUser, '');
-    if (!dial.ok || !dial.connection) {
-      return { error: dial.error ?? 'System error 53 has occurred.\n\nThe network path was not found.' };
-    }
-    return { connection: dial.connection, adHoc: true };
-  }
-
   /**
    * Map a network drive. `net use` and PowerShell's `New-PSDrive -Persist`
    * both land here, so the two interfaces show one table rather than each
@@ -2387,17 +2376,27 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   mapNetworkDrive(local: string, remote: string, credential?: { username: string; password: string }):
     { ok: boolean; error?: string } {
-    const account = credential?.username
+    const identity = this.networkIdentity(credential?.username);
+    return establishMapping(this.buildNetContext(), this.netUseTable, {
+      local: local ? local.toUpperCase() : '', remote, username: identity.account, password: credential?.password ?? identity.secret,
+    });
+  }
+
+  private identityOnServer(server: string): { account: string; secret: string } {
+    const held = [...this.netUseTable.values(), ...this.implicitShares.values()]
+      .find(entry => entry.secret !== undefined && uncRootOf(entry.remote)?.split('\\')[2]?.toLowerCase() === server.toLowerCase());
+    return held === undefined ? this.networkIdentity() : { account: held.user, secret: held.secret ?? '' };
+  }
+
+  private networkIdentity(account?: string): { account: string; secret: string } {
+    const named = account
       ?? (this.domainSession ? `${this.domainSession.netbiosName}\\${this.domainSession.sam}` : this.userMgr.currentUser || 'Administrator');
-    const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account;
-    const secret = credential?.password
-      ?? this.userMgr.getSavedCredential(account)
+    const bare = named.includes('\\') ? named.slice(named.indexOf('\\') + 1) : named;
+    const secret = this.userMgr.getSavedCredential(named)
       ?? this.userMgr.getSavedCredential(bare)
       ?? this.userMgr.getLogonSecret(bare)
       ?? '';
-    return establishMapping(this.buildNetContext(), this.netUseTable, {
-      local: local ? local.toUpperCase() : '', remote, username: account, password: secret,
-    });
+    return { account: named, secret };
   }
 
   /** Undo a mapping, whether named by drive letter or by UNC. */
@@ -2411,121 +2410,76 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       .map(e => ({ local: e.local, remote: e.remote, status: e.status, user: e.user }));
   }
 
-  private networkDriveAt(letter: string): NetworkDrive | null {
-    const entry = this.netUseTable.get(letter);
-    if (entry === undefined || entry.local === '') return null;
+  private networkDriveFor(entry: NetUseEntry): NetworkDrive {
     let drive = this.networkDrives.get(entry);
     if (drive === undefined) {
-      drive = new NetworkDrive(entry, mapped => this.redialMapping(mapped));
+      drive = new NetworkDrive(entry, held => this.redialMapping(held));
       this.networkDrives.set(entry, drive);
     }
     return drive;
   }
 
+  private networkDriveAt(letter: string): NetworkDrive | null {
+    const entry = this.netUseTable.get(letter);
+    return entry === undefined || entry.local === '' ? null : this.networkDriveFor(entry);
+  }
+
+  private networkShareAt(server: string, share: string): NetworkDrive {
+    const remote = `\\\\${server}\\${share}`;
+    const key = remote.toLowerCase();
+    let entry = [...this.netUseTable.values()].find(held => held.remote.toLowerCase() === key) ?? this.implicitShares.get(key);
+    if (entry === undefined) {
+      const identity = this.identityOnServer(server);
+      entry = { local: '', remote, status: 'Disconnected', user: identity.account, secret: identity.secret, persistent: false };
+      this.implicitShares.set(key, entry);
+    }
+    return this.networkDriveFor(entry);
+  }
+
   /** Re-establish a mapped drive's session with the identity that holds it. */
   private redialMapping(
     mapped: NetUseEntry,
-  ): import('./windows/server/smb/SmbClient').SmbConnection | null {
+  ): import('./windows/server/smb/SmbClient').SmbConnection | string {
     const parsed = /^\\\\([^\\]+)\\([^\\]+)/.exec(mapped.remote);
-    if (!parsed) return null;
+    if (!parsed) return ERROR_BAD_NETPATH;
     const targetIp = this.resolveHostnameSync(parsed[1]);
-    if (!targetIp) return null;
-    const account = mapped.user || this.userMgr.currentUser || 'Administrator';
-    const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account;
-    const secret = this.userMgr.getSavedCredential(account)
-      ?? this.userMgr.getSavedCredential(bare)
-      ?? this.userMgr.getLogonSecret(bare)
-      ?? '';
-    const dial = this.dialSmbShare(targetIp.toString(), parsed[2], account, secret);
-    if (!dial.ok || !dial.connection) return null;
+    if (!targetIp) return ERROR_BAD_NETPATH;
+    const identity = mapped.secret !== undefined && mapped.user !== ''
+      ? { account: mapped.user, secret: mapped.secret }
+      : this.networkIdentity(mapped.user || undefined);
+    const dial = this.dialSmbShare(targetIp.toString(), parsed[2], identity.account, identity.secret);
+    if (!dial.ok || !dial.connection) return plainNetworkError(dial.error);
     mapped.connection = dial.connection;
     mapped.status = 'OK';
-    mapped.user = account;
+    mapped.user = identity.account;
     return dial.connection;
   }
 
-  /**
-   * Handle `dir`/`copy`/`type` when a UNC path or a mapped drive letter is
-   * involved (PRD-Windows-Server.md §5 P3). Returns null when neither
-   * source nor destination is remote, so the caller falls back to the
-   * normal local-VFS command.
-   */
-  private async tryUncFileCommand(cmd: string, args: string[]): Promise<string | null> {
-    if (cmd === 'type') {
-      if (args.length === 0) return null;
-      const target = this.resolveSmbPath(args.join(' '));
-      if (!target) return null;
-      const conn = await this.smbConnectionFor(target);
-      if ('error' in conn) return conn.error;
-      const result = conn.connection.read(target.subPath);
-      if (conn.adHoc) conn.connection.disconnect();
-      return result.ok ? (result.content ?? '') : (result.error ?? 'The system cannot find the file specified.');
+  private attachNetworkPath(target: string, depth: number): { path: string } | { error: string } | null {
+    const absolute = this.fs.normalizePath(target, this.cwd);
+    const share = uncRootOf(absolute);
+    if (share === null) return null;
+    const letter = nextFreeDrive(this.buildNetContext(), this.netUseTable);
+    if (letter === null) return { error: ERROR_PATH_NOT_FOUND };
+    const identity = this.identityOnServer(share.split('\\')[2]);
+    const mapped = establishMapping(this.buildNetContext(), this.netUseTable, {
+      local: letter, remote: share, username: identity.account, password: identity.secret, persistent: false,
+    });
+    if (!mapped.ok) return { error: plainNetworkError(mapped.error) };
+    this.temporaryDrives().push({ letter, depth });
+    return { path: `${letter}${absolute.slice(share.length) || '\\'}` };
+  }
+
+  private releaseTemporaryDrives(depth: number): void {
+    const held = this.temporaryDrives();
+    for (const drive of held.filter(candidate => candidate.depth > depth)) {
+      releaseMapping(this.buildNetContext(), this.netUseTable, drive.letter);
     }
+    held.splice(0, held.length, ...held.filter(candidate => candidate.depth <= depth));
+  }
 
-    if (cmd === 'dir') {
-      const positional = args.find(a => !a.startsWith('/'));
-      if (!positional) return null;
-      const target = this.resolveSmbPath(positional);
-      if (!target) return null;
-      const conn = await this.smbConnectionFor(target);
-      if ('error' in conn) return conn.error;
-      const result = conn.connection.list(target.subPath);
-      if (conn.adHoc) conn.connection.disconnect();
-      if (!result.ok) return result.error ?? 'The network name cannot be found.';
-      const lines = [` Directory of ${positional}`, ''];
-      let fileCount = 0, dirCount = 0, totalBytes = 0;
-      for (const e of result.entries ?? []) {
-        if (e.isDirectory) { lines.push(`    <DIR>          ${e.name}`); dirCount++; }
-        else { lines.push(`${padToWidth(String(e.size), 14, 'right')} ${e.name}`); fileCount++; totalBytes += e.size; }
-      }
-      lines.push(fileSummaryLine(fileCount, totalBytes));
-      lines.push(`${padToWidth(String(dirCount), 16, 'right')} Dir(s)`);
-      return lines.join('\n');
-    }
-
-    if (cmd === 'copy') {
-      if (args.length < 2) return null;
-      const srcTarget = this.resolveSmbPath(args[0]);
-      const dstTarget = this.resolveSmbPath(args[1]);
-      if (!srcTarget && !dstTarget) return null;
-
-      const baseNameOf = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
-      const srcBaseName = baseNameOf(srcTarget ? srcTarget.subPath : args[0]);
-
-      let content: string;
-      if (srcTarget) {
-        const conn = await this.smbConnectionFor(srcTarget);
-        if ('error' in conn) return conn.error;
-        const result = conn.connection.read(srcTarget.subPath);
-        if (conn.adHoc) conn.connection.disconnect();
-        if (!result.ok) return result.error ?? 'The system cannot find the file specified.';
-        content = result.content ?? '';
-      } else {
-        const srcAbs = this.fs.normalizePath(args[0], this.cwd);
-        const local = this.fs.readFile(srcAbs);
-        if (!local.ok) return local.error!;
-        content = local.content ?? '';
-      }
-
-      if (dstTarget) {
-        // Destination is a share/subdirectory rather than a file name — keep the source's basename.
-        const dstSubPath = dstTarget.subPath === '' || dstTarget.subPath.endsWith('\\')
-          ? `${dstTarget.subPath}${srcBaseName}` : dstTarget.subPath;
-        const conn = await this.smbConnectionFor(dstTarget);
-        if ('error' in conn) return conn.error;
-        const result = conn.connection.write(dstSubPath, content);
-        if (conn.adHoc) conn.connection.disconnect();
-        if (!result.ok) return result.error ?? 'Access is denied.';
-      } else {
-        let dstAbs = this.fs.normalizePath(args[1], this.cwd);
-        if (this.fs.isDirectory(dstAbs)) dstAbs = `${dstAbs.replace(/\\$/, '')}\\${srcBaseName}`;
-        const result = this.fs.createFile(dstAbs, content);
-        if (!result.ok) return result.error!;
-      }
-      return '        1 file(s) copied.';
-    }
-
-    return null;
+  private temporaryDrives(): Array<{ letter: string; depth: number }> {
+    return this._activeShellSession?.temporaryDrives ?? this.deviceTemporaryDrives;
   }
 
   // ─── SSH server surface (consumed by the outbound ssh client) ───────
@@ -3703,6 +3657,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         currentDirectory: () => this.cwd,
         enterDirectory: target => enterDirectory(this.buildFileContext(), target),
         directoryStack: () => this.directoryStack(),
+        attachNetworkPath: (target, depth) => this.attachNetworkPath(target, depth),
+        releaseTemporaryDrives: depth => this.releaseTemporaryDrives(depth),
         captureLocation: () => this.captureLocation(),
         prompt: () => this.commandPrompt(),
         environment: () => this.getEnvVars(),
@@ -3751,13 +3707,6 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (stem === null && (driveOnly || drivePath) && args.length === 0) {
       const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
       return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
-    }
-
-    // UNC (`\\srv\share\...`) / net-use-mapped-drive access for dir/copy/type
-    // (PRD-Windows-Server.md §5 P3) — real SMB traffic, not the local VFS.
-    if (cmd === 'dir' || cmd === 'copy' || cmd === 'type') {
-      const uncResult = await this.tryUncFileCommand(cmd, args);
-      if (uncResult !== null) return uncResult;
     }
 
     // File commands (use file context)
@@ -5276,6 +5225,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.domainSession = null;
     this.kerberosTicketCache.clear();
     restorePersistentMappings(this.registry, this.netUseTable);
+    this.implicitShares.clear();
     this.userMgr.setCurrentUser(name);
   }
 

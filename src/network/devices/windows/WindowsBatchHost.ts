@@ -9,6 +9,8 @@ export interface WindowsBatchDevice {
   currentDirectory(): string;
   enterDirectory(target: string): string | null;
   directoryStack(): string[];
+  attachNetworkPath?(target: string, depth: number): { path: string } | { error: string } | null;
+  releaseTemporaryDrives?(depth: number): void;
   captureLocation(): () => void;
   prompt(): string;
   environment(): Map<string, string>;
@@ -61,6 +63,8 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
     cwd: () => device.currentDirectory(),
     enterDirectory: target => device.enterDirectory(target),
     directoryStack: () => device.directoryStack(),
+    attachNetworkPath: device.attachNetworkPath?.bind(device),
+    releaseTemporaryDrives: device.releaseTemporaryDrives?.bind(device),
     captureLocation: () => device.captureLocation(),
     prompt: () => device.prompt(),
     formattedDate: () => cmdDate([], device.timeZone(), device.nowMs()),

@@ -320,19 +320,19 @@ describe('a drive that is not mapped is not a drive', () => {
 });
 
 describe('the drive follows the network', () => {
-  it('answers that the network name is no longer available once the cable is pulled', async () => {
+  it('answers that the network path was not found once the cable is pulled', async () => {
     const { shell, lab } = await open();
     await shell.run('Z:');
     lab.clientCable.disconnect();
-    expect(await shell.run('type doc.txt')).toBe('The specified network name is no longer available.');
-    expect(await shell.run('mkdir late')).toBe('The specified network name is no longer available.');
+    expect(await shell.run('type doc.txt')).toBe('The network path was not found.');
+    expect(await shell.run('mkdir late')).toBe('The network path was not found.');
   });
 
   it('dials the share again on the first use once the cable is plugged back', async () => {
     const { shell, lab } = await open();
     await shell.run('Z:');
     lab.clientCable.disconnect();
-    expect(await shell.run('type doc.txt')).toBe('The specified network name is no longer available.');
+    expect(await shell.run('type doc.txt')).toBe('The network path was not found.');
     lab.plugClientBack();
     expect(await shell.run('type doc.txt')).toContain('hello from srv1');
     expect(await shell.run('net use')).toContain('OK');

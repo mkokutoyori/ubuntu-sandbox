@@ -526,9 +526,6 @@ paquet puis les demarre. Restent :
   pose `/etc/bind/named.conf` : `systemctl start named` marche donc sans
   paquet. Une vingtaine de tests demarrent `named` sans `apt install` ;
   retirer l'unite de l'image demande de les faire installer d'abord ;
-- deux versions de nginx : le catalogue dit `1.18.0-6ubuntu14.4` (jammy),
-  `NGINX_VERSION` (http/nginx/NginxFiles.ts) dit `1.24.0`, que `nginx -v`
-  affiche ; un seul des deux doit rester ;
 - aucune archive n'est modelisee : les lignes de telechargement (« Need to
   get », « Get: », « Fetched ») ne sont pas imprimees, et un paquet ne pose
   que ses unites, ses fichiers de configuration connus et ses comptes.
@@ -906,8 +903,6 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 Autres ecarts mesures, non fermes :
 - L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
   maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
-- `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
-  et `ls -l /proc/$$/fd` ne le montre pas.
 - `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
   regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
 

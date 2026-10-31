@@ -177,7 +177,7 @@ export function dialSmbShare(opts: {
     const r = exchange({ ...payload, treeId });
     return r?.ok
       ? { ok: true, reply: r }
-      : { ok: false, reply: {}, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
+      : { ok: false, reply: {}, error: (r as { message?: string } | null)?.message ?? 'The specified network name is no longer available.' };
   };
   const outcome = (payload: Record<string, unknown>): { ok: boolean; error?: string } => {
     const r = call(payload);

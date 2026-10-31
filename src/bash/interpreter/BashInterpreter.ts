@@ -159,6 +159,8 @@ export interface IOContext {
   setUmask?(mask: number): void;
   bindBackgroundStdout?(pid: number, path: string): void;
   bindBackgroundStderr?(pid: number, path: string, append: boolean): void;
+  holdShellDescriptor?(fd: number, path: string, mode: 'r' | 'w' | 'a'): void;
+  releaseShellDescriptor?(fd: number): void;
   holdBackgroundStdin?(pid: number, path: string): void;
   beginBackgroundSubshell?(label: string): number;
   endBackgroundSubshell?(pid: number, outcome: { cwd: string; image: readonly string[] | null; output: string; exitCode: number; parked: boolean }): void;
@@ -1650,11 +1652,13 @@ export class BashInterpreter {
           return;
         }
         this.fdInputs.set(fd, new StdinSource(content));
+        this.io?.holdShellDescriptor?.(fd, this.absolutePath(target), 'r');
         continue;
       }
       if (target === '-') {
         this.fdOutputs.delete(fd);
         this.fdInputs.delete(fd);
+        if (fd >= 3) this.io?.releaseShellDescriptor?.(fd);
         continue;
       }
       if (redir.op === '>&' && fd >= 3 && /^\d+$/.test(target)) {
@@ -1674,6 +1678,7 @@ export class BashInterpreter {
       if (fd >= 3) {
         this.io?.writeFile(path, '', append);
         this.fdOutputs.set(fd, { kind: 'file', path });
+        this.io?.holdShellDescriptor?.(fd, path, append ? 'a' : 'w');
         continue;
       }
       this.execRedirect ??= { from: this.log.entries().length };

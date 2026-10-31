@@ -241,6 +241,16 @@ export class LinuxProcessManager {
     if (process instanceof LinuxProcess) process.redirectStandardStream(fd, path, mode);
   }
 
+  holdDescriptor(pid: number, fd: number, path: string, mode: 'r' | 'w' | 'rw' | 'a'): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.holdDescriptor(fd, path, mode);
+  }
+
+  releaseDescriptor(pid: number, fd: number): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.closeOpenFile(fd);
+  }
+
   replaceImage(pid: number, cwd: string, image: readonly string[] | null): void {
     const process = this.processes.get(pid);
     if (!(process instanceof LinuxProcess)) return;
