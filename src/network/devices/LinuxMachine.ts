@@ -368,6 +368,11 @@ export abstract class LinuxMachine extends EndHost
 
   /** Kernel services: VFS, users, iptables, services, processes. */
   protected readonly executor: LinuxCommandExecutor;
+
+  runHostCommandSync(line: string): string {
+    return this.executor.execute(line);
+  }
+
   /** MaxStartups-style brute-force throttler for inbound SSH. */
   readonly sshThrottler = new SshConnectionThrottler();
 

@@ -4245,14 +4245,15 @@ reconnus : seul `#` l'est.
 `rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
 une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dans le fichier ce que la session imprime
 (sondes `probe-rman-cmdfile-et-log`, `probe-rman-spool-log`) ; `LIST BACKUP OF TABLESPACE t` filtre sur les fichiers du
-tablespace (`getDatafiles`) ; `SET DBID n` borne la recherche d'autosauvegarde de `RESTORE CONTROLFILE|SPFILE FROM
+tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host` ; `HOST` sans
+commande, qui ouvre un shell, reste refuse) ; `SET DBID n` borne la recherche d'autosauvegarde de `RESTORE CONTROLFILE|SPFILE FROM
 AUTOBACKUP` a ce DBID (sonde `probe-rman-set-dbid` ; le controle de RMAN quand une cible est deja connectee n'est pas source).
 Refuses en RMAN-01009 faute de source : `docs.oracle.com` n'est pas dans les domaines autorises de la session (WebFetch :
 `getaddrinfo ENOTFOUND docs.oracle.com`), et le §8 de CLAUDE.md interdit d'inventer le texte d'un outil proprietaire.
 Ce qu'il manque, commande par commande : `LIST BACKUP BY FILE` (mise en page des colonnes) ; `LIST FAILURE`
 (Data Recovery Advisor : depot des echecs, numeros, priorites, libelles) ; `SWITCH ... TO COPY` (le texte
 `datafile N switched to datafile copy "..."`, et le deplacement du fichier dans le catalogue et le fichier de controle) ;
-`HOST` (texte de fin de commande) ; `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`
+`UPGRADE CATALOG` et `TRANSPORT TABLESPACE`
 (sorties longues, plusieurs etapes) ; `SHOW|CONFIGURE SNAPSHOT CONTROLFILE NAME` (chemin par defaut sous
 `$ORACLE_HOME/dbs/snapcf_<SID>.f`, et creation du fichier par `RESYNC`/`BACKUP` : a evaluer des que le parametre est
 stocke, §6). Non sources non plus : le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or

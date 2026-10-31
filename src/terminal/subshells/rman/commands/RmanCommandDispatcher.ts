@@ -24,6 +24,7 @@ import { CatalogCommand } from './CatalogCommand';
 import { DuplicateCommand } from './DuplicateCommand';
 import { ChangeCommand } from './ChangeCommand';
 import { SetCommand } from './SetCommand';
+import { HostCommand } from './HostCommand';
 import { ValidateCommand } from './ValidateCommand';
 import { ConnectAuxiliaryCommand } from './ConnectAuxiliaryCommand';
 import { ResyncCatalogCommand } from './ResyncCatalogCommand';
@@ -215,6 +216,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand('NEWNAME') },
       // SET UNTIL — PITR precursor inherited by later RESTORE/RECOVER in
       // the same RUN block
+      { pattern: /^HOST\s+'([^']*)'$/i,                                   command: new HostCommand() },
       { pattern: /^SET DBID\s+(\d+)$/i,                                   command: new SetCommand('DBID') },
       { pattern: /^SET MAXCORRUPT FOR DATAFILE (\d+) TO (\d+)$/i,    command: new SetCommand('MAXCORRUPT') },
       { pattern: /^SET UNTIL TIME '([^']+)'$/i,                     command: new SetCommand('UNTIL_TIME') },
