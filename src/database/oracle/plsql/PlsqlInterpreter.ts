@@ -56,6 +56,15 @@ export class PlsqlInterpreter {
     yield* this.execBlockSteps(block, root);
   }
 
+  runWithVariables(block: Block, preset: ReadonlyMap<string, Scalar>): Map<string, Scalar> {
+    const root = new Scope(null);
+    for (const [name, value] of preset) root.declareVar(name, { type: { name: 'VARCHAR2', args: [] }, value, constant: false });
+    this.drive(this.execBlockSteps(block, root));
+    const after = new Map<string, Scalar>();
+    for (const name of preset.keys()) after.set(name, (root.vars.get(name.toUpperCase())?.value ?? null) as Scalar);
+    return after;
+  }
+
   private drive(steps: Generator<void, void, void>): void {
     let step = steps.next();
     while (!step.done) step = steps.next();

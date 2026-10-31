@@ -390,6 +390,7 @@ export type AlterTableAction =
   | { action: 'MOVE_COMPRESS'; compressionLevel?: string }
   | { action: 'SHRINK_SPACE'; compact?: boolean; cascade?: boolean }
   | { action: 'ROW_MOVEMENT'; enabled: boolean }
+  | { action: 'ALL_TRIGGERS'; enabled: boolean }
   | { action: 'ADD_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string; columns: string[]; always: boolean }
   | { action: 'DROP_SUPPLEMENTAL_LOG_GROUP'; logGroupName: string }
   | { action: 'ADD_SUPPLEMENTAL_LOG_DATA'; mode: 'PRIMARY_KEY' | 'UNIQUE' | 'FOREIGN_KEY' | 'ALL' }
@@ -836,6 +837,13 @@ export interface CreateTriggerStatement extends ASTNode {
   body: string;
 }
 
+export interface AlterTriggerStatement extends ASTNode {
+  type: 'AlterTriggerStatement';
+  schema?: string;
+  name: string;
+  action: 'ENABLE' | 'DISABLE';
+}
+
 export interface DropTriggerStatement extends ASTNode {
   type: 'DropTriggerStatement';
   schema?: string;
@@ -1196,7 +1204,7 @@ export type Statement =
   // Explain
   | ExplainPlanStatement
   // Triggers
-  | CreateTriggerStatement | DropTriggerStatement
+  | CreateTriggerStatement | DropTriggerStatement | AlterTriggerStatement
   // Synonyms
   | CreateSynonymStatement | DropSynonymStatement
   // Alter
