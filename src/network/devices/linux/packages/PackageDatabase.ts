@@ -16,6 +16,7 @@
  * paquets qu'`apt install` ne saurait pas installer.
  */
 
+import { NGINX_VERSION } from '../http/nginx/NginxFiles';
 import { commandsOfPackage } from '../commands/LinuxCommandPackages';
 import { LIBSASL2_MODULES_GSSAPI_PLUGINS, pluginFilePaths } from '../../../ldap/openldap/sasl/saslFiles';
 
@@ -111,7 +112,7 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'Unix calendar and calculator utility', },
   { name: 'net-tools', version: '2.10-0.1ubuntu4',
     arch: 'amd64', summary: 'NET-3 networking toolkit', },
-  { name: 'nginx', version: '1.18.0-6ubuntu14.4', arch: 'amd64',
+  { name: 'nginx', version: `${NGINX_VERSION}-1~jammy`, arch: 'amd64',
     summary: 'small, powerful, scalable web/proxy server', units: ['nginx'] },
   { name: 'ntpsec', version: '1.2.1+dfsg1-4', arch: 'amd64',
     summary: 'Network Time Protocol daemon and utility programs', },

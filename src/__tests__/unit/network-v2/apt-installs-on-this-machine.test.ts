@@ -42,7 +42,7 @@ describe('apt installs on this machine', () => {
   it('the server image ships nginx', async () => {
     const srv = new LinuxServer('linux-server', 'srv', 0, 0);
     srv.powerOn();
-    expect(await srv.executeCommand('sudo apt install -y nginx')).toContain('nginx is already the newest version (1.18.0-6ubuntu14.4).');
+    expect(await srv.executeCommand('sudo apt install -y nginx')).toContain('nginx is already the newest version (1.24.0-1~jammy).');
     expect(await srv.executeCommand('systemctl start nginx; echo EC=$?')).toBe('EC=0');
   });
 
@@ -62,9 +62,9 @@ describe('apt installs on this machine', () => {
       '  nginx',
       '0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.',
       'Selecting previously unselected package nginx.',
-      'Preparing to unpack .../nginx_1.18.0-6ubuntu14.4_amd64.deb ...',
-      'Unpacking nginx (1.18.0-6ubuntu14.4) ...',
-      'Setting up nginx (1.18.0-6ubuntu14.4) ...',
+      'Preparing to unpack .../nginx_1.24.0-1~jammy_amd64.deb ...',
+      'Unpacking nginx (1.24.0-1~jammy) ...',
+      'Setting up nginx (1.24.0-1~jammy) ...',
     ].join('\n'));
   });
 
@@ -85,7 +85,7 @@ describe('apt installs on this machine', () => {
     const machine = pc();
     await machine.executeCommand('sudo apt install -y nginx');
     expect(await machine.executeCommand('dpkg -l nginx')).toMatch(/^ii  nginx /m);
-    expect(await machine.executeCommand('apt list --installed')).toContain('nginx/jammy,now 1.18.0-6ubuntu14.4 amd64 [installed]');
+    expect(await machine.executeCommand('apt list --installed')).toContain('nginx/jammy,now 1.24.0-1~jammy amd64 [installed]');
     expect(await machine.executeCommand("sed -n '/^Package: nginx$/,/^$/p' /var/lib/dpkg/status")).toContain('Status: install ok installed');
   });
 
@@ -101,7 +101,7 @@ describe('apt installs on this machine', () => {
     await machine.executeCommand('sudo apt install -y nginx');
     const out = await machine.executeCommand('sudo apt remove -y nginx');
     expect(out).toContain('The following packages will be REMOVED:\n  nginx\n0 upgraded, 0 newly installed, 1 to remove and 0 not upgraded.');
-    expect(out).toContain('Removing nginx (1.18.0-6ubuntu14.4) ...');
+    expect(out).toContain('Removing nginx (1.24.0-1~jammy) ...');
     expect(await machine.executeCommand('systemctl start nginx')).toContain('Unit nginx.service not found.');
     expect(await machine.executeCommand('dpkg -l nginx')).toMatch(/^rc  nginx /m);
   });
@@ -112,5 +112,15 @@ describe('apt installs on this machine', () => {
     expect(await srv.executeCommand('dpkg -l vsftpd')).toContain('no packages found matching vsftpd');
     await srv.executeCommand('sudo apt install -y vsftpd');
     expect(await srv.executeCommand('systemctl is-active vsftpd; id -un ftp; test -d /srv/ftp && echo ROOT')).toBe('active\nftp\nROOT');
+  });
+});
+
+describe('one nginx version', () => {
+  it('nginx -v and the package catalogue name the same upstream release', async () => {
+    const machine = new LinuxPC('linux-pc', 'PC1');
+    await machine.executeCommand('sudo apt install -y nginx');
+    const reported = await machine.executeCommand('nginx -v 2>&1');
+    const packaged = await machine.executeCommand("dpkg -l nginx | tail -1 | awk '{print $3}'");
+    expect(reported).toContain(`nginx/${packaged.split('-')[0]}`);
   });
 });

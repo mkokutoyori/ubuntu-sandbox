@@ -526,9 +526,6 @@ paquet puis les demarre. Restent :
   pose `/etc/bind/named.conf` : `systemctl start named` marche donc sans
   paquet. Une vingtaine de tests demarrent `named` sans `apt install` ;
   retirer l'unite de l'image demande de les faire installer d'abord ;
-- deux versions de nginx : le catalogue dit `1.18.0-6ubuntu14.4` (jammy),
-  `NGINX_VERSION` (http/nginx/NginxFiles.ts) dit `1.24.0`, que `nginx -v`
-  affiche ; un seul des deux doit rester ;
 - aucune archive n'est modelisee : les lignes de telechargement (« Need to
   get », « Get: », « Fetched ») ne sont pas imprimees, et un paquet ne pose
   que ses unites, ses fichiers de configuration connus et ses comptes.
