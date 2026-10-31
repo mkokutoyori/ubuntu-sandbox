@@ -16,7 +16,7 @@
  * `ArpInspectionConfig` carried by the switch, which keeps the running
  * / startup config the single source of truth.
  */
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import type {
@@ -32,6 +32,7 @@ import { Logger } from '../core/Logger';
 export interface ArpInspectionHost {
   id: string;
   name: string;
+  nowMs?(): number;
   _getArpInspectionConfig(): ArpInspectionConfig;
   _getArpAccessLists(): Map<string, ArpAccessList>;
   _getSnoopingBindings(): DHCPSnoopingBinding[];
@@ -242,7 +243,7 @@ export class ArpInspectionPipeline {
 
   private appendLog(line: string, enabled: boolean): void {
     if (!enabled) return;
-    const ts = simulationDate().toISOString();
+    const ts = new Date((this.host.nowMs ?? simulationNowMs).call(this.host)).toISOString();
     this.host._addSnoopingLog(`*${ts}: ${line}`);
     Logger.warn(this.host.id, 'switch:arp-inspection', `${this.host.name}: ${line}`);
   }

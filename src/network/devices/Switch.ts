@@ -800,6 +800,7 @@ export abstract class Switch extends Equipment {
       {
         id: this.id,
         name: this.name,
+        nowMs: () => this.getSystemClockMs(),
         _getArpInspectionConfig: () => this.arpInspection,
         _getArpAccessLists: () => this.arpAccessLists,
         _getSnoopingBindings: () => this.snoopingBindings,
