@@ -1037,12 +1037,6 @@ nulle (le recorder sait les compter, `cell_width`, aucun texte n'en contient), l
 invalides, ni les caracteres de controle hors tabulation. Le moteur n'est donc ni valide ni
 refute sur ces textes : a enregistrer avant de pretendre que le rendu y est fidele.
 
-### [nano] `~` dans les invites de fichier : la completion manque
-`~`, `~/x` et `~user/x` sont developpes dans les invites d'ecriture et de lecture (`expandTilde` de `NanoOpening`, mesure
-sur le binaire 7.2 : `get_homedir` donne le repertoire de passwd pour root, `$HOME` sinon, ce que `nanoHomeDirectory`
-reproduit ; `~user` passe par `EditorFsContext.userHomeDirectory`). Reste : la completion par Tab de `~util`
-(`username_completion`, lue dans `files.c`, non mesuree sur le binaire) ne propose rien.
-
 ---
 
 ### [terminal] Ctrl-C ne libere le terminal que pour les clients declares `foregroundClient`

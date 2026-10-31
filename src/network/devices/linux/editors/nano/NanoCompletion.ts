@@ -3,7 +3,7 @@ import { breadth } from './NanoText';
 
 export const PRESENT_PATH = './';
 
-export type CompletionHost = Pick<EditorFsContext, 'resolvePath' | 'exists' | 'kindOf' | 'listDirectory'>;
+export type CompletionHost = Pick<EditorFsContext, 'resolvePath' | 'exists' | 'kindOf' | 'listDirectory' | 'userNames'>;
 
 export interface FileCompletion {
   readonly answer: string;
@@ -59,7 +59,16 @@ function commonPrefixOf(matches: readonly string[]): string {
   return first.slice(0, length).join('');
 }
 
+function completeUserName(host: CompletionHost, morsel: string): FileCompletion | null {
+  const matches = (host.userNames?.() ?? []).map((name) => `~${name}`).filter((name) => name.startsWith(morsel));
+  if (matches.length === 0) return null;
+  const shared = commonPrefixOf(matches);
+  const answer = matches.length === 1 ? `${shared}/` : shared;
+  return { answer: answer.length !== morsel.length ? answer : morsel, list: matches.length > 1 ? sortedForListing(host, matches) : null };
+}
+
 export function completeFileName(host: CompletionHost, morsel: string, allowed: EntryFilter = () => true): FileCompletion | null {
+  if (morsel.startsWith('~') && !morsel.includes('/')) return completeUserName(host, morsel);
   const matches = directoryMatches(host, morsel, allowed);
   if (matches === null || matches.length === 0) return null;
   const lastSlash = morsel.lastIndexOf('/');
