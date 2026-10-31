@@ -8778,7 +8778,7 @@ export class LinuxCommandExecutor {
     const r = runWatch(args, {
       hostname,
       now: () => {
-        return formatLocalTime('%H:%M:%S', this.wallNow(), this.identity.timezone);
+        return formatLocalTime('%a %b %e %H:%M:%S %Y', this.wallNow(), this.identity.timezone);
       },
       run: (cmdline) => this.dispatchFromInterpreter(cmdline, this._cmdEnv),
     });
