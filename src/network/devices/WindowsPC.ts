@@ -1460,6 +1460,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         banner: this.getSshBanner(),
         motd: this.getSshMotd(),
         active: this.isSshActive(),
+        now: () => this.simulatedDate().getTime(),
       });
     } else {
       this._sshHost.setSshActive(this.isSshActive());

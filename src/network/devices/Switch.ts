@@ -4026,6 +4026,7 @@ export abstract class Switch extends Equipment {
         bus: this.getBus(),
         authority: this._credentialStore,
         active: this.isSshActive(),
+        now: () => this.getSystemClockMs(),
       });
     }
     return this._credentialStore;

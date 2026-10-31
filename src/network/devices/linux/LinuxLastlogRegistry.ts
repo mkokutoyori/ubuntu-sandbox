@@ -25,6 +25,11 @@ export class LinuxLastlogRegistry {
   private readonly previous = new Map<string, LastlogEntry>();
   private vfs: VirtualFileSystem | null = null;
   private uidOf: (user: string) => number | undefined = () => undefined;
+  private now: () => number = simulationNowMs;
+
+  setClock(now: () => number): void {
+    this.now = now;
+  }
 
   bindUidResolver(resolver: (user: string) => number | undefined): void {
     this.uidOf = resolver;
@@ -40,7 +45,7 @@ export class LinuxLastlogRegistry {
     }
   }
 
-  record(user: string, sourceHost: string, tty: string, when: number = simulationNowMs()): LastlogEntry | undefined {
+  record(user: string, sourceHost: string, tty: string, when: number = this.now()): LastlogEntry | undefined {
     const uid = this.uidOf(user);
     if (this.vfs === null || uid === undefined) return undefined;
     const before = this.read(uid);

@@ -5,7 +5,7 @@
 import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationDate } from '@/network/core/SystemClock';
 import { runAusearch } from './audit/tools/AusearchTool';
 import { runAureport } from './audit/tools/AureportTool';
 import { runAusyscall } from './audit/tools/AusyscallTool';
@@ -759,7 +759,11 @@ export class LinuxCommandExecutor {
    * (and by the console-login flow in the future). Read by ssh client code
    * when composing the post-login banner.
    */
-  readonly lastlog: LinuxLastlogRegistry = new LinuxLastlogRegistry();
+  readonly lastlog: LinuxLastlogRegistry = (() => {
+    const registry = new LinuxLastlogRegistry();
+    registry.setClock(() => this.simulatedDate().getTime());
+    return registry;
+  })();
   /**
    * Name Service Switch — the resolver consulted by `getent`, `id`,
    * `gethostbyname`-equivalent code paths. Owns the per-database
@@ -1060,7 +1064,7 @@ export class LinuxCommandExecutor {
       vfs: this.vfs,
       users: this.userMgr,
       logs: this.logMgr,
-      clock: () => simulationNowMs(),
+      clock: this.wallNow,
       logins: () => this.sessionTable?.list().map((session) => ({ user: session.user })) ?? [],
       auditdRunning: () => this.auditDaemon?.running ?? false,
       hostname: () => kernelHostname(this.vfs),
@@ -1837,7 +1841,7 @@ export class LinuxCommandExecutor {
         isStopped: (pid) => this.processMgr.get(pid)?.state === 'T',
         changeRunlevel: (level) => this.changeAuditRunlevel(level),
         terminate: (pid) => { this.processMgr.kill(pid, 'SIGKILL', { silent: true }); },
-        libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, simulationNowMs()),
+        libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, this.wallNow()),
         runProgram: (pid, command, input) => this.runAuditPluginProgram(pid, command, input),
         sockets: this.localDatagramSockets,
       },
@@ -5960,7 +5964,7 @@ export class LinuxCommandExecutor {
   }
 
   private deliverLocalMail(account: string, subject: string, body: string): void {
-    const stamp = new Date(simulationNowMs()).toUTCString();
+    const stamp = new Date(this.wallNow()).toUTCString();
     this.vfs.writeFile(`/var/mail/${account}`, `From auditd ${stamp}\nSubject: ${subject}\n\n${body}\n\n`, 0, 0, 0o117, true);
   }
 

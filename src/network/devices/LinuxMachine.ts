@@ -550,6 +550,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.executor.lifecycle.bootedAt()) {
       utmpSync.appendRebootMark(this.executor.lifecycle.bootedAt()!);
     }
+    this.sessionTable.setClock(() => this.executor.simulatedDate());
     this.sessionTable.attachUtmp(utmpSync);
     this.utmpSync = utmpSync;
     this.executor.setUtmpSync(utmpSync);
@@ -2872,6 +2873,7 @@ export abstract class LinuxMachine extends EndHost
         active: this.isSshActive(),
         motd: this.executor.vfs.readFile('/etc/motd') ?? '',
         banner: this.executor.vfs.readFile('/etc/issue.net') ?? '',
+        now: () => this.executor.simulatedDate().getTime(),
       });
     } else {
       this._sshHost.applyConfig(config);

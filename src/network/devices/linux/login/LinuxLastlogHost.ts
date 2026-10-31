@@ -1,4 +1,3 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import { hostClock } from '../audit/tools/AuditHostClock';
 import { parseAccountDatabase } from '../iam/fs/AccountDatabaseParser';
@@ -11,7 +10,7 @@ export function lastlogHost(executor: LinuxCommandExecutor): LastlogHost {
   let root = '';
   const inRoot = (path: string): string => `${root}${path}`;
   return {
-    nowSec: () => Math.floor(simulationNowMs() / 1000),
+    nowSec: () => Math.floor(executor.simulatedDate().getTime() / 1000),
     clock: hostClock(executor.identity.timezone || 'UTC'),
     passwd: () => {
       if (root === '') return userMgr.getAllUsers().map((user) => ({ name: user.username, uid: user.uid }));
