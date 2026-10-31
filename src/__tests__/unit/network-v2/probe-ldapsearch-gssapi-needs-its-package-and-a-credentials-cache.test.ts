@@ -10,7 +10,7 @@
  * et sans cache, libgssapi_krb5 refuse avec le nom du cache par defaut.
  *
  * Mesure avant correction : le paquet n'existait pas dans la base
- * (`apt install` repondait « Unable to locate package ») et le plugin n'etait
+ * (`sudo apt install` repondait « Unable to locate package ») et le plugin n'etait
  * pas charge : les 6 cas tombent. Le temoin « the lab is sound » (le poste lit
  * le rootDSE du DC) passe avant et apres.
  *
@@ -42,7 +42,7 @@ describe('ldapsearch -Y GSSAPI needs its package and a credentials cache', () =>
 
   it('the package ships the GSSAPI and GS2 plugins and dpkg lists it', async () => {
     const { workstation } = await buildLab();
-    await workstation.executeCommand('apt install -y libsasl2-modules-gssapi-mit');
+    await workstation.executeCommand('sudo apt install -y libsasl2-modules-gssapi-mit');
     const listing = await workstation.executeCommand(`ls ${PLUGIN_DIRECTORY}`);
     for (const name of ['libgssapiv2.so', 'libgssapiv2.so.2', 'libgssapiv2.so.2.0.25', 'libgs2.so', 'libgs2.so.2', 'libgs2.so.2.0.25']) {
       expect(listing).toContain(name);
@@ -52,7 +52,7 @@ describe('ldapsearch -Y GSSAPI needs its package and a credentials cache', () =>
 
   it('with the package and no cache the credentials are reported missing, naming the default cache', async () => {
     const { workstation } = await buildLab();
-    await workstation.executeCommand('apt install -y libsasl2-modules-gssapi-mit');
+    await workstation.executeCommand('sudo apt install -y libsasl2-modules-gssapi-mit');
     const uid = (await workstation.executeCommand('id -u')).trim();
     const out = await workstation.executeCommand(`${GSSAPI_SEARCH}; echo "exit=$?"`);
     expect(out).toContain('SASL/GSSAPI authentication started');
@@ -63,15 +63,15 @@ describe('ldapsearch -Y GSSAPI needs its package and a credentials cache', () =>
 
   it('the cache named by KRB5CCNAME is the one reported', async () => {
     const { workstation } = await buildLab();
-    await workstation.executeCommand('apt install -y libsasl2-modules-gssapi-mit');
+    await workstation.executeCommand('sudo apt install -y libsasl2-modules-gssapi-mit');
     const out = await workstation.executeCommand(`KRB5CCNAME=/tmp/elsewhere ${GSSAPI_SEARCH}`);
     expect(out).toContain('(No Kerberos credentials available (default cache: /tmp/elsewhere))');
   });
 
   it('removing the package removes the plugin again', async () => {
     const { workstation } = await buildLab();
-    await workstation.executeCommand('apt install -y libsasl2-modules-gssapi-mit');
-    await workstation.executeCommand('apt remove -y libsasl2-modules-gssapi-mit');
+    await workstation.executeCommand('sudo apt install -y libsasl2-modules-gssapi-mit');
+    await workstation.executeCommand('sudo apt remove -y libsasl2-modules-gssapi-mit');
     expect(await workstation.executeCommand(`ls ${PLUGIN_DIRECTORY}`)).not.toContain('libgssapiv2.so');
     expect(await workstation.executeCommand(GSSAPI_SEARCH)).toContain('No worthy mechs found');
   });
