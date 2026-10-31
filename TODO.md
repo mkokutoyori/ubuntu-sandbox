@@ -822,8 +822,6 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
   le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
   prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
-- `-U -l` (ecoute sur une socket UNIX) et `-U -u` (datagramme UNIX) sont refuses : le registre
-  `localDatagramSockets` sait connecter une socket flux, pas en ecouter une.
 - Deux `nc -l 9000` : `nc` pose SO_REUSEADDR et SO_REUSEPORT, donc le vrai accepte le second
   ecouteur (meme uid) ; `SocketTable.bind` repond EADDRINUSE.
 - Les messages `-v` de l'ecoute (« Listening on 0.0.0.0 9000 ») dependent de la resolution inverse
