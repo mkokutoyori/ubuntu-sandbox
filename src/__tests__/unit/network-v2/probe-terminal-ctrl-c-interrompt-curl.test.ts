@@ -56,6 +56,7 @@ async function lab(): Promise<{ pc: LinuxPC; session: LinuxTerminalSession }> {
   await srv.executeCommand('ip addr add 10.0.0.2/24 dev eth0');
   await srv.executeCommand('ip link set eth0 up');
   await srv.executeCommand('iptables -A INPUT -p tcp --dport 80 -j DROP');
+  await srv.executeCommand('iptables -A INPUT -p udp --dport 53 -j DROP');
   return { pc, session: new LinuxTerminalSession('t', pc) };
 }
 

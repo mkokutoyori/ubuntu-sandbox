@@ -32,6 +32,7 @@ interface DigInvocation {
   tries: number;
   timeoutSeconds: number;
   trace: boolean;
+  typedArguments: string;
 }
 
 const DEFAULT_TIMEOUT_SECONDS = 5;
@@ -60,6 +61,7 @@ function newInvocation(): DigInvocation {
     tries: DEFAULT_TRIES,
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
     trace: false,
+    typedArguments: '',
   };
 }
 
@@ -151,6 +153,7 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     g.tries = tries;
     g.timeoutSeconds = timeoutSeconds;
     g.trace = trace;
+    g.typedArguments = args.join(' ');
     if (globalReverse && isIpLiteral(g.domain)) {
       g.reverse = true;
       g.qtype = 'PTR';
@@ -185,7 +188,7 @@ function shortOutput(answers: readonly ResourceRecord<ResourceRecordData>[]): st
 
 function transferOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: number): string {
   const lines: string[] = [
-    `; <<>> DiG <<>> @${invocation.server} ${invocation.domain} ${invocation.qtype}`,
+    `; <<>> DiG <<>> ${invocation.typedArguments}`,
     ';; global options: +cmd',
   ];
   const records = message.answers.filter(isDisplayableRecord);
@@ -227,7 +230,7 @@ function pushSection(
 
 function fullOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: number): string {
   const lines: string[] = [
-    `; <<>> DiG <<>> @${invocation.server} ${invocation.domain} ${invocation.qtype}`,
+    `; <<>> DiG <<>> ${invocation.typedArguments}`,
     ';; global options: +cmd',
     ';; Got answer:',
     `;; ->>HEADER<<- opcode: QUERY, status: ${rcodeFromWire(message.flags.rcode)}, id: ${message.id}`,
@@ -316,7 +319,7 @@ function pushTraceHop(
  * would send.
  */
 async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promise<string> {
-  const lines: string[] = [`; <<>> DiG <<>> ${invocation.domain} +trace`, ';; global options: +cmd'];
+  const lines: string[] = [`; <<>> DiG <<>> ${invocation.typedArguments}`, ';; global options: +cmd'];
   const timeoutMs = invocation.timeoutSeconds * 1000;
   const port = invocation.port ?? 53;
   let server = invocation.server;
@@ -371,9 +374,7 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
 }
 
 async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn): Promise<string> {
-  const banner = invocation.server
-    ? `@${invocation.server} ${invocation.domain}`
-    : invocation.domain;
+  const banner = invocation.typedArguments;
 
   if (!invocation.server || !isIpLiteral(invocation.server)) {
     return noServersLine(banner, invocation.short);
@@ -394,13 +395,24 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
   };
   let message: DnsMessage | null = null;
   let startedAt = PathClock.now();
+  const refusals: string[] = [];
+  const attemptOptions: DnsQueryOptions = {
+    ...options,
+    onTransportFailure: () => {
+      refusals.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: connection refused`);
+    },
+  };
   for (let attempt = 0; attempt < Math.max(1, invocation.tries); attempt++) {
     startedAt = PathClock.now();
     message = await query(
       invocation.server, invocation.domain, invocation.qtype,
-      invocation.timeoutSeconds * 1000, options,
+      invocation.timeoutSeconds * 1000, attemptOptions,
     );
     if (message) break;
+  }
+  if (!message && refusals.length > 0) {
+    const verdict = invocation.short ? ';; no servers could be reached' : `; <<>> DiG <<>> ${banner}\n;; no servers could be reached`;
+    return [...refusals, verdict].join('\n');
   }
   if (!message) return noServersLine(banner, invocation.short);
 
