@@ -98,9 +98,9 @@ describe('sysctl lit /proc/sys', () => {
 
   it('une projection en lecture seule refuse au lieu d accepter sans effet', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
-    expect(await pc.executeCommand('sudo sysctl -w net.ipv4.conf.all.arp_ignore=1'))
-      .toBe('sysctl: setting key "net.ipv4.conf.all.arp_ignore": Operation not permitted');
-    expect(await pc.executeCommand('cat /proc/sys/net/ipv4/conf/all/arp_ignore')).toBe('0');
+    expect(await pc.executeCommand('sudo sysctl -w net.ipv4.conf.all.arp_announce=1'))
+      .toBe('sysctl: setting key "net.ipv4.conf.all.arp_announce": Operation not permitted');
+    expect(await pc.executeCommand('cat /proc/sys/net/ipv4/conf/all/arp_announce')).toBe('0');
   });
 
   it('une cle qui nomme un repertoire liste ce qu il contient', async () => {

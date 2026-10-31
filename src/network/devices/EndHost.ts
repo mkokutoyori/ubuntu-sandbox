@@ -2683,7 +2683,7 @@ export abstract class EndHost extends Equipment {
     const isGratuitous = arp.operation === 'request' && arp.senderIP.equals(arp.targetIP);
     const learns = existing !== undefined
       || this.solicitedNeighbours.has(sender)
-      || (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP))
+      || (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP, arp.senderIP))
       || this.acceptsUnsolicitedArp(portName, arp.senderIP, isGratuitous || arp.operation === 'reply');
     if (!arp.senderIP.isUnspecified() && learns && (!existing || existing.type !== 'static')) {
       this.solicitedNeighbours.delete(sender);
@@ -2718,7 +2718,7 @@ export abstract class EndHost extends Equipment {
       if (myIP.isLinkLocal()) this.dhcpClient.handleLinkLocalConflict(portName);
     }
 
-    if (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP)) {
+    if (arp.operation === 'request' && this.answersArpFor(port, arp.targetIP, arp.senderIP)) {
       Logger.info(this.id, 'arp:reply', `${this.name}: ARP reply for ${arp.targetIP} via ${portName}`);
 
       const reply: ARPPacket = {
@@ -2744,7 +2744,7 @@ export abstract class EndHost extends Equipment {
     }
   }
 
-  private answersArpFor(port: Port, target: IPAddress): boolean {
+  protected answersArpFor(port: Port, target: IPAddress, _sender: IPAddress): boolean {
     if (target.isLoopback()) return false;
     if (port.ownsIPv4(target)) return true;
     return this.hostModel === 'weak' && this.getPortOwningIP(target) !== null;

@@ -412,18 +412,17 @@ commutateur une commande que son materiel n'a pas.
 ### [sysctl] `/etc/sysctl.conf` n'est pas livre, et les projections de `/proc/sys` sont en lecture seule
 Depuis le lot « `sysctl` lit `/proc/sys` », un reste MESURE (le fichier `/etc/sysctl.conf` est livre, copie de celui d'une Ubuntu 24.04 reelle).
 
-**Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
-pseudo-fichiers generes sont en lecture seule par decision du VFS
-(`writeFile` les jette en silence), et ceux d'`arp_ignore`,
-`arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une
-CONSTANTE `0` que personne ne lit — verifie : `Port.isProxyArpEnabled`
-n'a d'appelants que `Router` et les CLI Cisco/Huawei, un hote Linux ne
-fait pas de proxy ARP ici. `sysctl -w` les refuse donc par la branche
-EPERM de procps plutot que de les accepter sans effet. **Pourquoi ce
-n'est pas ferme ici** : les rendre inscriptibles demande de donner un
-COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
-n'evalue. C'est un chantier par knob, pas un correctif de commande. Mesure impossible ici (pas d'`ip`, pas de documentation du noyau, pas de
-namespace reseau) : la semantique de `arp_ignore` 1/2/8 et d'`arp_announce` 1/2 n'est pas attestable, donc non implantee (regle 8).
+**Une projection de `/proc/sys` ne se laisse pas ecrire.** Les pseudo-fichiers generes sont en lecture seule par decision du
+VFS (`writeFile` les jette en silence) ; `arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une CONSTANTE `0` que
+personne ne lit — verifie : `Port.isProxyArpEnabled` n'a d'appelants que `Router` et les CLI Cisco/Huawei, un hote Linux ne fait
+pas de proxy ARP ici. `sysctl -w` les refuse donc par la branche EPERM de procps plutot que de les accepter sans effet.
+**`arp_ignore` est fait** (sonde `probe-linux-arp-ignore`) : inscriptible par interface, `all` et `default` compris, maximum des
+deux, modes 0, 1, 2, 3 et 8 de `Documentation/networking/ip-sysctl.rst` (lu sur GitHub, noyau 6.8) ; 4 a 7, « reserved », se
+comportent comme 0. **`arp_announce` reste ferme** : il choisit l'adresse source d'une requete ARP parmi celles de l'hote, or un
+hote du simulateur n'a qu'une adresse principale par interface (les secondaires existent mais l'adresse source du paquet IP
+n'atteint pas l'emission ARP) ; ses trois niveaux ne se distingueraient pas. **`arp_accept`** (creation d'une entree sur ARP
+gratuit, 0/1/2) et **`arp_notify`** (ARP gratuit a la mise en service) sont documentes et restent a implanter, un comportement par
+knob ; `proxy_arp` pour un hote est sans objet (un hote ne transmet pas).
 
 ---
 

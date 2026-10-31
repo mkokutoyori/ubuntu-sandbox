@@ -330,6 +330,19 @@ export abstract class LinuxMachine extends EndHost
     return this.deviceConfStore;
   }
   protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
+  protected override answersArpFor(port: Port, target: IPAddress, sender: IPAddress): boolean {
+    const mode = this.deviceConf.arpIgnore(port.getName());
+    if (mode >= 8) return false;
+    if (mode === 1 || mode === 3) return !target.isLoopback() && port.ownsIPv4(target);
+    if (mode === 2) {
+      if (target.isLoopback() || !port.ownsIPv4(target)) return false;
+      const mask = port.getIPAddress()?.equals(target)
+        ? port.getSubnetMask()
+        : port.getSecondaryIPs().find((entry) => entry.ip.equals(target))?.mask ?? null;
+      return mask !== null && target.isInSameSubnet(sender, mask);
+    }
+    return super.answersArpFor(port, target, sender);
+  }
   private registerDeviceConfScope(scope: string): void {
     this.executor.vfs.mkdirp(`/proc/sys/net/ipv4/conf/${scope}`, 0o755, 0, 0);
     for (const knob of IPV4_DEVICE_CONF_KNOBS) {
