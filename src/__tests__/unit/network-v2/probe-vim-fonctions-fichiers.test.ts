@@ -1,6 +1,6 @@
 /**
  * vim 9.1 : filereadable, isdirectory, readfile (options b et maximum, E484), getfsize et readdir (tri, filtre) sur un système de fichiers en mémoire ; valeurs relevées sur le vrai vim de cette machine dans un répertoire /tmp/vd (f.txt = « a\nb\n\nc » sans saut final, crlf.txt, empty.txt, sub/).
- * Mesure de départ : « E117: Unknown function » pour chacune. 15 des 16 cas tombent avant ; seul le témoin trim passe dans les deux états.
+ * Mesure de départ : « E117: Unknown function » pour chacune. 15 des 16 cas tombent avant ; seul le témoin trim passe dans les deux états. Ajout : hostname, getpid et localtime (3 cas, les 3 tombent avant, E117). Ajout : environ() (3 cas, les 3 tombent avant).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -39,4 +39,26 @@ describe('fonctions de fichier de vim', () => {
   ];
   for (const [expression, expected] of ORACLE) it(expression, () => { expect(evaluate(expression)).toBe(expected); });
   it('témoin : trim', () => { expect(evaluate('trim(" a ")')).toBe('a'); });
+});
+
+describe('identité et horloge de vim', () => {
+  it('hostname rend le nom de la machine', () => { expect(evaluate('hostname()')).toBe('vm'); });
+  it('getpid rend le pid de l\'éditeur', () => { expect(evaluate('getpid()')).toBe('4321'); });
+  it('localtime est un entier de secondes récent', () => { expect(Number(evaluate('localtime()'))).toBeGreaterThan(1.5e9); });
+});
+
+describe('environ', () => {
+  const withEnvironment = (expression: string): string => {
+    const fs = new InMemoryEditorFsContext({ '/tmp/vd/t.txt': 'x\n' }, () => '', undefined, '/tmp/vd');
+    fs.useEnvironmentVariable('FOO', 'bar');
+    fs.useEnvironmentVariable('EMPTY', '');
+    const vim = new VimEngine(fs, '/tmp/vd/t.txt', 'x\n', false, 'vim', 'root');
+    vim.applyKey(editorKey(':'));
+    for (const ch of `s#x#\\=${expression}#`) vim.applyKey(editorKey(ch));
+    vim.applyKey(editorKey('Enter'));
+    return vim.content.replace(/\n$/, '');
+  };
+  it('environ() est un dictionnaire des variables posées', () => { expect(withEnvironment('environ()["FOO"]')).toBe('bar'); });
+  it('une variable vide y figure', () => { expect(withEnvironment('has_key(environ(), "EMPTY")')).toBe('1'); });
+  it('type dictionnaire', () => { expect(withEnvironment('type(environ())')).toBe('4'); });
 });

@@ -50,11 +50,14 @@ export interface ExpressionHost {
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
   environmentOrNull(name: string): string | null;
+  environmentNames(): string[];
   shellStatus(): number;
   pathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo';
   readText(path: string): string | null;
   directoryEntries(path: string): string[] | null;
   workingDirectory(): string;
+  hostName(): string;
+  processId(): number;
   shell(command: string, input: string | null): string;
   assignOption(name: string, value: string | number): string | null;
   assignRegister(name: string, text: string): void;
@@ -1100,6 +1103,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     }
     return accumulator;
   } }],
+  ['environ', { min: 0, max: 0, run: (_args, context) => dict(new Map(context.host.environmentNames().map((name) => [name, str(context.host.environmentOrNull(name) ?? '')] as const))) }],
   ['getenv', { min: 1, max: 1, run: (args, context) => {
     const value = context.host.environmentOrNull(context.stringOf(args[0], false));
     return value === null || value === '' ? special('null') : str(value);
@@ -1135,6 +1139,9 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     const kept = args[1] === undefined ? names : names.filter((name) => context.numberOf(context.invoke(args[1], [str(name)]), false) !== 0n);
     return list(kept.map(str));
   } }],
+  ['localtime', { min: 0, max: 0, run: () => num(Math.floor(simulationNowMs() / 1000)) }],
+  ['hostname', { min: 0, max: 0, run: (_args, context) => str(context.host.hostName()) }],
+  ['getpid', { min: 0, max: 0, run: (_args, context) => num(context.host.processId()) }],
   ['str2float', { min: 1, max: 1, run: (args, context) => flt(parseFloatPrefix(context.stringOf(args[0], false))) }],
   ['flatten', { min: 1, max: 2, run: (args, context) => flattenList(args, context, true) }],
   ['flattennew', { min: 1, max: 2, run: (args, context) => flattenList(args, context, false) }],

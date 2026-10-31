@@ -132,6 +132,10 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     return this.environment.get(name) ?? null;
   }
 
+  environmentNames(): string[] {
+    return [...this.environment.keys()];
+  }
+
   useEnvironmentVariable(name: string, value: string): void {
     this.environment.set(name, value);
   }

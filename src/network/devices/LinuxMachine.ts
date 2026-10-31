@@ -5174,6 +5174,11 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.commandEnvironment()[name] ?? null;
   }
 
+  editorEnvironmentNames(session?: LinuxShellSession): string[] {
+    if (session !== undefined && !session.disposed) return [...session.env.keys()];
+    return Object.keys(this.executor.commandEnvironment());
+  }
+
   editorMakeDirectory(path: string, mode: number, session?: LinuxShellSession): string | null {
     const vfs = this.executor.vfs;
     const live = session !== undefined && !session.disposed ? session : undefined;
