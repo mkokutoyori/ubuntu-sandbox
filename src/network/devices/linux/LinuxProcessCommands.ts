@@ -45,6 +45,8 @@ export interface ProcessCmdContext {
   /** PID of whoever is currently executing this command (`currentBashPid()`);
    *  used by `nice <cmd>`, which applies to the calling process, not `shellPid`. */
   currentPid?: number;
+  /** Reads a file of the machine (relative paths resolve against the shell's cwd) — backs `pgrep -F`. */
+  readFile?: (path: string) => string | null;
   /** Optional per-shell job table — needed for `kill %N` jobspec resolution. */
   jobs?: LinuxJobTable;
   /** Seconds since boot, for `top`'s header. Same source as `uptime`. */

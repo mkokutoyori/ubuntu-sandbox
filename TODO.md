@@ -951,8 +951,8 @@ Autres ecarts mesures, non fermes :
 - Chiffres memoire : seuls `bash`, `sleep`, `nc` et `ps` ont une empreinte mesuree (VSZ, RSS, TRS, PSS, USS, fautes mineures,
   octets lus) ; les autres programmes ont des proportions (texte = VSZ/12, PSS = RSS/2, USS = RSS/3).
 - `top`, `pstree` et `watch` restent sur `LinuxProcessCommands` (jouet) : `top` a son propre ecran et `pstree` / `watch` n'ont pas
-  ete rejoues. `pgrep`, `pkill` et `pidof` sont portes (`PgrepCommand.ts`, probe `probe-pgrep-pkill-pidof-de-procps`) ; restent non
-  portes `-F` (fichier de pids, refuse comme un fichier invalide), `-r` (etats), `-w`, `--cgroup`, `--ns` et `pidof -x`.
+  ete rejoues. `pgrep`, `pkill` et `pidof` sont portes (`PgrepCommand.ts`, probe `probe-pgrep-pkill-pidof-de-procps`) ; `-F` (fichier de pids) est porte (sonde
+  `probe-pgrep-fichier-de-pid`) ; restent non portes `-r` (etats), `-w`, `--cgroup`, `--ns` et `pidof -x`.
 - Pas de labo zombie ni de `setsid`/`setpriv` dans le corpus : les etats `Z`, `D`, `t` ne sont pas mesures sur le vrai.
 - Le tableau des jobs (`jobs`, `%1`) est global a la machine et non a un shell : un `bash -c` imbrique ne voit pas son
   propre tableau.

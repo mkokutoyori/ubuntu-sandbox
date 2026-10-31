@@ -150,8 +150,14 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
   if ('failure' in parsed) return parsed.failure;
   const selection = parsed;
   if (selection.version) return { output: VERSION.replace('pgrep', program), exitCode: 0 };
-  if (selection.pidfile !== null) return pidfileFailure(program).failure;
-  const filtered = selection.pattern !== null || selection.parents !== null || selection.groups !== null
+  let pidfilePid: number | null = null;
+  if (selection.pidfile !== null) {
+    const content = ctx.readFile?.(selection.pidfile) ?? null;
+    const pid = content === null ? NaN : Number(/^\s*(\d+)/.exec(content)?.[1]);
+    if (!Number.isInteger(pid) || pid <= 0) return pidfileFailure(program).failure;
+    pidfilePid = pid;
+  }
+  const filtered = pidfilePid !== null || selection.pattern !== null || selection.parents !== null || selection.groups !== null
     || selection.sessions !== null || selection.terminals !== null || selection.euids !== null
     || selection.uids !== null || selection.gids !== null || selection.olderThan !== null;
   if (!filtered) return usageFailure(program, 'no matching criteria specified', 2).failure;
@@ -176,6 +182,7 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
   const self = ctx.currentPid;
   let hits = ctx.pm.list().filter((process) => {
     if (process.pid === self) return false;
+    if (pidfilePid !== null && process.pid !== pidfilePid) return false;
     if (matcher !== null) {
       const subject = selection.commandLine ? process.command : process.comm.replace(/^\[(.*)\]$/, '$1').slice(0, COMM_LIMIT);
       if (!matcher.test(subject)) return false;

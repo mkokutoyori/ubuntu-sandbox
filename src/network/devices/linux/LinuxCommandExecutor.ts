@@ -3493,6 +3493,7 @@ export class LinuxCommandExecutor {
       shellPid: this.shellPid,
       zone: this.localZone(),
       currentPid: this.currentBashPid(),
+      readFile: (path: string) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
       jobs: this.jobTable,
       uptimeSeconds: this.lifecycle.uptimeSeconds(),
       memory: this.hardware.memory,
