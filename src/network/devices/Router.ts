@@ -5787,6 +5787,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       deviceId: this.id, bus: this.getBus(),
       attempts, withinSeconds, blockSeconds,
       onQuietMode: (change) => this.getSecurityAuditLog().recordQuietMode(change),
+      now: () => this.getSystemClockMs(),
     });
   }
 
@@ -5819,6 +5820,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
         bus: this.getBus(),
         capacity: () => this.vtyLineConfig.lineCapacity(),
         configuredTransport: () => this.sshConfiguredTransport(),
+        now: () => this.getSystemClockMs(),
       });
       this.wireExecAccounting();
       this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus(), now: () => this.getSystemClockMs() });

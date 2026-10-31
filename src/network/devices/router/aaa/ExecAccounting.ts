@@ -1,4 +1,3 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
 import type { IScheduler, TimerHandle } from '@/events/Scheduler';
 import type { TacacsClientAgent } from '../../../tacacs/TacacsClientAgent';
 import type { RadiusAccountingClient } from '../../../radius/RadiusAccountingClient';
@@ -23,6 +22,7 @@ export interface ExecAccountingDeps {
   tacacsUser(username: string, server: TacacsServer): string;
   groupOf(name: string): AaaServerGroup | undefined;
   listName(session: SshSessionRecord): string;
+  now(): number;
   ledger: ExecAccountingLedger;
   scheduler(): IScheduler;
   radiusPolicy(): RadiusAttributePolicy;
@@ -86,7 +86,7 @@ export class ExecAccounting {
   }
 
   private tacacsArguments(state: SessionState, kind: RecordKind): string[] {
-    const now = Math.floor(simulationNowMs() / 1000);
+    const now = Math.floor(this.deps.now() / 1000);
     const args = [`task_id=${state.taskId}`, 'timezone=UTC', 'service=shell'];
     if (kind === 'start') return [`start_time=${Math.floor(state.startedMs / 1000)}`, ...args];
     const elapsed = `elapsed_time=${Math.max(0, now - Math.floor(state.startedMs / 1000))}`;
@@ -151,7 +151,7 @@ export class ExecAccounting {
     const entries = this.entriesFor(session);
     if (entries.length === 0) return;
     const state: SessionState = {
-      session, taskId: this.nextTask++, startedMs: simulationNowMs(), timer: null, closing: false,
+      session, taskId: this.nextTask++, startedMs: this.deps.now(), timer: null, closing: false,
       entries: entries.map((entry) => ({ entry, startAcknowledged: false, radiusSessions: new Map() })),
     };
     this.sessions.set(session.id, state);
@@ -206,7 +206,7 @@ export class ExecAccounting {
     } as unknown as SshSessionRecord;
     const entries = this.entriesFor(probe);
     const state: SessionState = {
-      session: probe, taskId: this.nextTask++, startedMs: simulationNowMs(), timer: null, closing: true,
+      session: probe, taskId: this.nextTask++, startedMs: this.deps.now(), timer: null, closing: true,
       entries: entries.map((entry) => ({ entry, startAcknowledged: false, radiusSessions: new Map() })),
     };
     for (const entryState of state.entries) {

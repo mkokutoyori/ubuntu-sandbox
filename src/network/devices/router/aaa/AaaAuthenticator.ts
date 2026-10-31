@@ -607,6 +607,7 @@ export class AaaAuthenticator {
         },
         scheduler: () => getDefaultScheduler(),
         radiusPolicy: () => this.radiusAttributePolicy(),
+        now: () => this.router.getSystemClockMs(),
       });
     }
     return this.execAccountingInstance;
