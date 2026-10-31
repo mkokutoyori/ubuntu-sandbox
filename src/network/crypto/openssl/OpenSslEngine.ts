@@ -12,7 +12,7 @@
 import { connectErrno } from '@/network/tcp/types';
 import { errnoNumber } from '@/network/core/Errno';
 import { md4, md5, sha1, sha256, sha512, MD5, SHA1, SHA256, SHA512 } from '@/crypto/hash';
-import { md5Crypt } from '@/crypto/passwords';
+import { md5Crypt, sha256Crypt, sha512Crypt } from '@/crypto/passwords';
 import {
   bytesToBase64, base64ToBytes, bytesToHex, hexToBytes, utf8ToBytes, bytesToUtf8, bytesToFileText, fileTextToBytes,
 } from '@/crypto/encoding';
@@ -268,8 +268,8 @@ function runPasswd(host: OpenSslHost, argv: readonly string[]): OpenSslResult {
 
   if (opts.has('-1')) return ok(md5Crypt(secret, sel));
   if (opts.has('-apr1')) return ok(md5Crypt(secret, sel).replace('$1$', '$apr1$'));
-  if (opts.has('-5')) return ok(`$5$${sel}$${secret}`);
-  if (opts.has('-6')) return ok(`$6$${sel}$${secret}`);
+  if (opts.has('-5')) return ok(sha256Crypt(secret, sel));
+  if (opts.has('-6')) return ok(sha512Crypt(secret, sel));
   // Sans option, openssl utilise crypt(3) DES — que ce build n'a pas.
   return notImplemented('passwd (crypt DES)');
 }

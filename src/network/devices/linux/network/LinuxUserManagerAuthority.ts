@@ -1,3 +1,4 @@
+import { verifyCrypt } from '@/crypto/passwords';
 import type { IAccountAuthority, AccountSnapshot } from '../../../protocols/ssh/server/IAccountAuthority';
 import type { SshAuthMethod } from '../../router/aaa/NetworkOsAccount';
 
@@ -102,7 +103,7 @@ export class LinuxUserManagerAuthority implements IAccountAuthority {
     if (!u) return false;
     if (u.password === undefined) return true;
     if (u.password === '!' || u.password === '') return password === u.password;
-    return u.password === password;
+    return verifyCrypt(u.password, password);
   }
 
   recordLoginSuccess(name: string, fromIp: string, method: SshAuthMethod): void {

@@ -30,7 +30,8 @@ import { LoginDefs } from './iam/fs/LoginDefs';
 import { UseraddDefaults } from './iam/fs/UseraddDefaults';
 import { IamFilesystem } from './iam/fs/IamFilesystem';
 import { IAM_PATHS } from './iam/fs/IamPaths';
-import { parseAccountDatabase, SIMULATED_HASH_PREFIX } from './iam/fs/AccountDatabaseParser';
+import { parseAccountDatabase } from './iam/fs/AccountDatabaseParser';
+import { hashPassword, sha512Crypt, verifyCrypt } from '@/crypto/passwords';
 import {
   parseNsswitchConf, sourcesFor, DEFAULT_NSSWITCH_CONF,
 } from './nss/NssConfig';
@@ -88,6 +89,8 @@ export interface UseraddOptions {
   f?: number;
 }
 
+const ROOT_FACTORY_SALT = 'Ub2204Sandbox001';
+
 export class LinuxUserManager {
   private nowMs: () => number = simulationNowMs;
 
@@ -96,7 +99,6 @@ export class LinuxUserManager {
   private users: Map<string, LinuxUserAccount> = new Map();
   private groups: Map<string, LinuxGroup> = new Map();
   /** Plaintext password store for simulation (username → password) */
-  private passwords: Map<string, string> = new Map();
   currentUser = 'root';
   currentUid = 0;
   currentGid = 0;
@@ -163,9 +165,8 @@ export class LinuxUserManager {
     // moment anything re-read the database.
     this.addUser(new LinuxUserAccount({
       username: 'root', uid: 0, gid: 0, gecos: 'root', home: '/root', shell: '/bin/bash',
-      password: `${SIMULATED_HASH_PREFIX}admin`, locked: false, systemAccount: true,
+      password: sha512Crypt('admin', ROOT_FACTORY_SALT), locked: false, systemAccount: true,
     }));
-    this.passwords.set('root', 'admin');
     this.addUser(new LinuxUserAccount({
       username: 'daemon', uid: 1, gid: 1, gecos: 'daemon', home: '/usr/sbin', shell: '/usr/sbin/nologin',
       password: '*', locked: true, systemAccount: true,
@@ -474,13 +475,6 @@ export class LinuxUserManager {
         return existing;
       });
 
-      // Only accounts whose stored secret still yields a cleartext keep a
-      // usable password. A hand-edited hash therefore stops authenticating,
-      // which is the real consequence of editing one. A name the chain did
-      // not keep cannot authenticate either.
-      this.passwords = new Map(
-        [...parsed.cleartext].filter(([name]) => this.users.has(name)),
-      );
       this.lastKnownStamp = stamp;
     } finally {
       this.reloading = false;
@@ -795,7 +789,6 @@ export class LinuxUserManager {
     this.iamFs.removeMailSpool(username);
 
     this.users.delete(username);
-    this.passwords.delete(username);
     this.syncToFilesystem();
     this.publish({
       topic: 'linux.iam.user.deleted',
@@ -808,9 +801,8 @@ export class LinuxUserManager {
     const user = this.users.get(username);
     if (!user) return `passwd: user '${username}' does not exist`;
 
-    user.password = `$6$simulated$${password}`;
+    user.password = hashPassword(password);
     user.lastChange = this.daysSinceEpoch();
-    this.passwords.set(username, password);
     this.syncToFilesystem();
     this.publish({
       topic: 'linux.iam.user.password-changed',
@@ -843,7 +835,6 @@ export class LinuxUserManager {
     const user = this.users.get(username);
     if (!user) return `passwd: user '${username}' does not exist`;
     user.password = '';
-    this.passwords.delete(username);
     this.syncToFilesystem();
     this.publish({
       topic: 'linux.iam.user.password-changed',
@@ -907,8 +898,8 @@ export class LinuxUserManager {
   passwordMatches(username: string, password: string): boolean {
     this.reloadIfChanged();
     if (this.users.get(username)?.locked) return false;
-    const stored = this.passwords.get(username);
-    return stored !== undefined && stored === password;
+    const stored = this.users.get(username)?.password;
+    return stored !== undefined && verifyCrypt(stored, password);
   }
 
   passwdStatus(username: string): string {
@@ -1067,7 +1058,6 @@ export class LinuxUserManager {
     return this.passwordPolicy.quality.evaluate(password, {
       username,
       gecos: user?.gecos,
-      oldPassword: this.passwords.get(username),
     });
   }
 

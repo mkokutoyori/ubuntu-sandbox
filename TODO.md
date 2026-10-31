@@ -516,18 +516,6 @@ pare-feu simule a bien `drop-overlapped-fragment` (defaut disable, non
 active par ce test) et `Ipv4Fragmentation.overlaps`, mais aucune detection
 d'anomalie de fragments par defaut. Le test reste rouge.
 
-### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
-`echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
-le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
-mot de passe lui-meme. Tout lecteur de `/etc/shadow` (root, une sauvegarde,
-un `scp` du fichier) lit donc les mots de passe, et un exercice d'audit de
-robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
-**Mesure** : `chpasswd` puis `grep user /etc/shadow` sur un LinuxServer.
-**Pourquoi ce n'est pas ferme** : il faut un vrai SHA-512-crypt (sel,
-5000 tours par defaut) dans `src/crypto/` et migrer tous les lecteurs du
-champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
-perimetre du correctif SSH qui l'a revele.
-
 ### [apt] ce que l'etat de paquets par machine laisse encore ouvert
 `/var/lib/dpkg/status` est desormais l'etat de CHAQUE machine (apt, apt-get,
 dpkg -l, apt list, apt-cache le lisent), et `apt install` pose les unites du

@@ -17,11 +17,12 @@
  * because that is how an operator actually breaks and repairs these files.
  */
 
+import { verifyCrypt } from '@/crypto/passwords';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import {
-  parseAccountDatabase, parseShadowFile, cleartextOf,
+  parseAccountDatabase, parseShadowFile, upgradedSecret,
 } from '@/network/devices/linux/iam/fs/AccountDatabaseParser';
 
 beforeEach(() => {
@@ -149,7 +150,7 @@ describe('editing /etc/shadow changes authentication', () => {
     // password lived only in memory while `/etc/shadow` carried a bare `x`,
     // so the very first reload lost it. If the files are the store, root
     // has to be in them too.
-    expect(await run(d, 'grep "^root:" /etc/shadow')).toContain('$6$simulated$admin');
+    expect(await run(d, 'grep "^root:" /etc/shadow')).toContain('$6$Ub2204Sandbox001$');
     expect(mgr.passwordMatches('root', 'admin')).toBe(true);
 
     await run(d, `sed -i 's|^root:[^:]*:|root:$6$simulated$autre:|' /etc/shadow`);
@@ -252,10 +253,10 @@ describe('the parser itself', () => {
   const empty = { users: [], groups: [] };
 
   it('recovers the cleartext from the stored secret format', () => {
-    expect(cleartextOf('$6$simulated$hunter2')).toBe('hunter2');
-    expect(cleartextOf('!$6$simulated$hunter2')).toBe('hunter2');
-    expect(cleartextOf('$6$rounds=5000$xyz$abc')).toBeNull();
-    expect(cleartextOf('*')).toBeNull();
+    expect(verifyCrypt(upgradedSecret('$6$simulated$hunter2'), 'hunter2')).toBe(true);
+    expect(upgradedSecret('!$6$simulated$hunter2').startsWith('!$6$')).toBe(true);
+    expect(upgradedSecret('$6$rounds=5000$xyz$abc')).toBe('$6$rounds=5000$xyz$abc');
+    expect(upgradedSecret('*')).toBe('*');
   });
 
   it('reads the lock marker without losing the secret under it', () => {
