@@ -42,7 +42,7 @@ import {
 } from './NginxRedirect';
 import { findServerByName, serverNameMatches, type ServerNameEntry } from './NginxServerNames';
 import { NGINX_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
-import { binaryStringToBytes as bytes, fileTextToBytes } from '@/crypto/encoding';
+import { binaryStringToBytes as bytes } from '@/crypto/encoding';
 
 export interface NginxHostFs extends NginxFileSource {
   exists(path: string): boolean;
@@ -746,7 +746,7 @@ export class LinuxNginxService implements ServiceSocketServer, NginxControl {
     res.headers.set('Server', `nginx/${NGINX_VERSION}`);
     res.headers.set('Content-Type', contentTypeFor((location ?? server).contentTypes, fsPath));
     this.applyHeaders(res, server, location);
-    res.body = fileTextToBytes(this.host.fs.read(fsPath) ?? '');
+    res.body = bytes(this.host.fs.read(fsPath) ?? '');
     return this.conditional(res, req, fsPath, server, location);
   }
 

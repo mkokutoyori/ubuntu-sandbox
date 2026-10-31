@@ -88,7 +88,8 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChown, cmdChgrp, cmdStat, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChown, cmdChgrp, cmdMkfifo } from './LinuxPermCommands';
+import { runStat } from './coreutils/StatCommand';
 import { runUmask } from './umask/Umask';
 import {
   runTest, runExpr, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
@@ -6096,9 +6097,10 @@ export class LinuxCommandExecutor {
         for (const p of args.filter(a => !a.startsWith('-'))) {
           this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
         }
-        const out = cmdLs(c, args);
-        const exitCode = /^ls: invalid argument/.test(out) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(out) ? 2 : 0;
-        return { output: out, exitCode };
+        const { stdout, stderr } = cmdLs(c, args);
+        const exitCode = /^ls: invalid argument/.test(stderr) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(stderr) ? 2 : 0;
+        if (stderr === '') return { output: stdout, exitCode };
+        return { output: stdout, stderr, interleaved: stdout === '' ? stderr : `${stderr}\n${stdout}`, exitCode };
       }
       case 'cat': {
         const fileArgs = args.filter((a) => !a.startsWith('-') || a === '-');
@@ -6282,7 +6284,7 @@ export class LinuxCommandExecutor {
         const out = cmdChgrp(c, args);
         return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
       }
-      case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
+      case 'stat': return asDispatch(runStat({ ...c, mounts: this.mountTable.list(), storage: this.hardware.storage, stdin }, args));
       case 'umask': {
         const result = runUmask(args, this.umask);
         if (result.mask !== undefined) this.umask = result.mask;

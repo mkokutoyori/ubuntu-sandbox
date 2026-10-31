@@ -401,13 +401,19 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
   return { opts, paths, dirOnly };
 }
 
-export function cmdLs(ctx: ShellContext, args: string[]): string {
+export interface LsStreams {
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export function cmdLs(ctx: ShellContext, args: string[]): LsStreams {
   const parsed = parseLsArguments(ctx, args);
-  if (typeof parsed === 'string') return parsed;
+  if (typeof parsed === 'string') return { stdout: '', stderr: parsed };
   const { opts, dirOnly } = parsed;
   const paths = parsed.paths.length === 0 ? ['.'] : parsed.paths;
 
   const failures: string[] = [];
+  const diagnostics: string[] = [];
   const listedFiles: LsEntry[] = [];
   const listedDirectories: Array<{ name: string; absPath: string }> = [];
 
@@ -433,15 +439,16 @@ export function cmdLs(ctx: ShellContext, args: string[]): string {
     listedDirectories.sort(byName);
   }
   const eol = opts.zero ? '\0' : '\n';
-  const out: string[] = [...failures];
+  const out: string[] = [];
   if (listedFiles.length > 0) out.push(...renderEntries(ctx, listedFiles, opts, false).lines);
   const headed = paths.length > 1 && !opts.recursive;
   listedDirectories.forEach((directory, index) => {
     if (headed) out.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${directory.name}:`);
-    out.push(listDir(ctx, directory.absPath, directory.name, opts));
+    const listing = listDir(ctx, directory.absPath, directory.name, opts, diagnostics);
+    if (listing !== null) out.push(listing);
   });
   const text = out.join(eol);
-  return opts.zero ? `${text}\0` : text.trimEnd();
+  return { stdout: opts.zero ? `${text}\0` : text.trimEnd(), stderr: [...failures, ...diagnostics].join('\n') };
 }
 
 function lsIgnored(name: string, opts: LsOpts): boolean {
@@ -478,11 +485,15 @@ function sortEntries(entries: LsEntry[], opts: LsOpts): LsEntry[] {
   });
 }
 
-function listDir(ctx: ShellContext, absPath: string, displayPath: string, opts: LsOpts): string {
+function listDir(ctx: ShellContext, absPath: string, displayPath: string, opts: LsOpts, diagnostics: string[]): string | null {
   const entries = ctx.vfs.listDirectory(absPath);
-  if (!entries) return `ls: cannot access '${displayPath}': No such file or directory`;
+  if (!entries) {
+    diagnostics.push(`ls: cannot access '${displayPath}': No such file or directory`);
+    return null;
+  }
   if (ctx.uid !== 0 && !ctx.vfs.path(absPath, '/', actorOf(ctx)).canRead()) {
-    return `ls: cannot open directory '${displayPath}': Permission denied`;
+    diagnostics.push(`ls: cannot open directory '${displayPath}': Permission denied`);
+    return null;
   }
 
   const listed: LsEntry[] = [];
@@ -513,7 +524,8 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string, opts: 
       if (real?.type !== 'directory') continue;
       const childDisplay = displayPath.endsWith('/') ? `${displayPath}${entry.name}` : `${displayPath}/${entry.name}`;
       lines.push('');
-      lines.push(listDir(ctx, entry.absPath, childDisplay, opts));
+      const nested = listDir(ctx, entry.absPath, childDisplay, opts, diagnostics);
+      if (nested !== null) lines.push(nested);
     }
   }
   return lines.join(opts.zero ? '\0' : '\n');
