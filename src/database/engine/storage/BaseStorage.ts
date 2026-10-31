@@ -145,6 +145,7 @@ export interface TriggerMeta {
   tableSchema: string;
   forEachRow: boolean;
   whenCondition?: string;
+  updateColumns?: string[];
   body: string;
   enabled: boolean;
 }

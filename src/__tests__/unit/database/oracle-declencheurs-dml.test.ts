@@ -1,6 +1,6 @@
 /**
  * Oracle : les déclencheurs DML s'exécutent (Oracle Database Concepts / PL/SQL Language Reference, « Triggers ») : BEFORE/AFTER, niveau ligne (:NEW/:OLD, affectation de :NEW dans un BEFORE) et niveau instruction, INSERTING/UPDATING/DELETING, clause WHEN, RAISE_APPLICATION_ERROR qui annule l'instruction. Aucun Oracle disponible ici : source = documentation.
- * Mesure de départ : un déclencheur était créé (DBA_TRIGGERS) mais jamais exécuté (fireTriggers était un squelette vide). 12 des 13 cas tombent avant (8 des 9 de déclenchement, les 4 de ALTER TRIGGER / ALL TRIGGERS) ; le témoin (DBA_TRIGGERS liste le déclencheur) passe dans les deux états.
+ * Mesure de départ : un déclencheur était créé (DBA_TRIGGERS) mais jamais exécuté (fireTriggers était un squelette vide). 15 des 16 cas tombent avant (8 des 9 de déclenchement, les 4 de ALTER TRIGGER / ALL TRIGGERS) ; le témoin (DBA_TRIGGERS liste le déclencheur) passe dans les deux états.
  */
 
 import { describe, test, expect, beforeEach } from 'vitest';
@@ -109,5 +109,39 @@ describe('ALTER TRIGGER et ALTER TABLE ... ALL TRIGGERS', () => {
   });
   test('ALTER TRIGGER inconnu : ORA-04080', () => {
     expect(() => exec('ALTER TRIGGER nothing_trg DISABLE')).toThrow('ORA-04080');
+  });
+});
+
+describe('UPDATE OF et UPDATING(\'col\')', () => {
+  let db: OracleDatabase;
+  let executor: ReturnType<OracleDatabase['connectAsSysdba']>['executor'];
+  const exec = (sql: string) => db.executeSql(executor, sql);
+  const rows = (sql: string) => exec(sql).rows;
+
+  beforeEach(() => {
+    db = new OracleDatabase();
+    db.instance.startup();
+    executor = db.connectAsSysdba().executor;
+    exec('CREATE TABLE emp_t (id NUMBER, salary NUMBER, dept VARCHAR2(10))');
+    exec('CREATE TABLE audit_t (msg VARCHAR2(80))');
+    exec("INSERT INTO emp_t VALUES (1, 100, 'a')");
+  });
+
+  test('UPDATE OF salary ne se déclenche que si salary est affectée', () => {
+    exec("CREATE TRIGGER trg_of AFTER UPDATE OF salary ON emp_t FOR EACH ROW BEGIN INSERT INTO audit_t VALUES ('salary'); END;");
+    exec("UPDATE emp_t SET dept = 'b'");
+    expect(rows('SELECT * FROM audit_t')).toEqual([]);
+    exec('UPDATE emp_t SET salary = 200');
+    expect(rows('SELECT * FROM audit_t')).toEqual([['salary']]);
+  });
+  test('UPDATE OF a, b : l\'une ou l\'autre', () => {
+    exec("CREATE TRIGGER trg_of2 AFTER UPDATE OF salary, dept ON emp_t FOR EACH ROW BEGIN INSERT INTO audit_t VALUES ('either'); END;");
+    exec("UPDATE emp_t SET dept = 'c'");
+    expect(rows('SELECT * FROM audit_t')).toEqual([['either']]);
+  });
+  test('UPDATING(\'col\') dans un déclencheur', () => {
+    exec("CREATE TRIGGER trg_up AFTER UPDATE ON emp_t FOR EACH ROW BEGIN IF UPDATING('SALARY') THEN INSERT INTO audit_t VALUES ('S'); END IF; IF UPDATING('DEPT') THEN INSERT INTO audit_t VALUES ('D'); END IF; END;");
+    exec("UPDATE emp_t SET dept = 'z'");
+    expect(rows('SELECT * FROM audit_t')).toEqual([['D']]);
   });
 });

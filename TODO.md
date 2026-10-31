@@ -257,9 +257,9 @@ depuis une expression SQL est un changement d'evaluation a part entiere.
 
 ### [oracle] declencheurs DML : ce que l'analyse et l'execution ne couvrent pas encore
 Les declencheurs BEFORE/AFTER d'instruction et de ligne s'executent (`:NEW`, `:OLD`, `INSERTING`/`UPDATING`/`DELETING`, `WHEN`,
-`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`). Restent non analyses ou non evalues : la liste
-`UPDATE OF col` (l'analyseur de `CREATE TRIGGER` ne la lit pas : `ORA-24344`), `REFERENCING` qui renomme `NEW`/`OLD`, les
-declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, `UPDATING('col')`, le declenchement depuis `MERGE`
+`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`, `UPDATE OF col`, `UPDATING('col')`). Restent non analyses
+ou non evalues : `REFERENCING` qui renomme `NEW`/`OLD`, les
+declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, le declenchement depuis `MERGE`
 (la branche `INSERT` passe par `insertRowChecked` mais pas la branche `UPDATE`), `DBMS_OUTPUT` d'un declencheur (perdu), et
 la sortie de ligne `AFTER` qui voit la table avant la mise a jour (`ORA-04091` n'est pas leve).
 

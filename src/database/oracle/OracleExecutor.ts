@@ -3249,7 +3249,8 @@ export class OracleExecutor extends BaseExecutor {
 
     const indexed = this.indexedRowSet(stmt.table, schema, tableName, stmt.where);
     this.noteLogicalReads(indexed === null ? this.storage.getRows(schema, tableName).length : indexed.size);
-    this.fireStatementTriggers(schema, tableName, tableMeta, 'UPDATE', 'BEFORE');
+    const updatedColumns = stmt.assignments.map((a) => a.column.toUpperCase());
+    this.fireStatementTriggers(schema, tableName, tableMeta, 'UPDATE', 'BEFORE', updatedColumns);
     const scan = this.storage.beginUpdateScan(schema, tableName);
     const predicate = (row: StorageRow): boolean =>
       (indexed === null || indexed.has(row)) && (!visible || visible(row))
@@ -3264,7 +3265,7 @@ export class OracleExecutor extends BaseExecutor {
             : this.evaluateExpression(assign.value, row, tableMeta.columns);
         }
       }
-      this.fireRowTriggers(schema, tableName, tableMeta, 'UPDATE', 'BEFORE', row, newRow);
+      this.fireRowTriggers(schema, tableName, tableMeta, 'UPDATE', 'BEFORE', row, newRow, updatedColumns);
       if (checkOption && !checkOption(newRow)) {
         throw new OracleError(28115, 'policy with check option violation');
       }
@@ -3274,14 +3275,14 @@ export class OracleExecutor extends BaseExecutor {
       // the PK column unchanged would self-conflict).
       this.constraints.validateConstraints(schema, tableName, tableMeta, newRow, row, this.deferredConstraintPredicate);
       this.constraints.validateDataTypes(schema, tableName, tableMeta, newRow);
-      this.fireRowTriggers(schema, tableName, tableMeta, 'UPDATE', 'AFTER', row, newRow);
+      this.fireRowTriggers(schema, tableName, tableMeta, 'UPDATE', 'AFTER', row, newRow, updatedColumns);
       return newRow;
     };
     const updateSlice = (): ResultSet => {
       if (!this.storage.advanceUpdateScan(schema, tableName, scan, predicate, updater, () => this.sliceSpent())) {
         return this.suspended(updateSlice);
       }
-      this.fireStatementTriggers(schema, tableName, tableMeta, 'UPDATE', 'AFTER');
+      this.fireStatementTriggers(schema, tableName, tableMeta, 'UPDATE', 'AFTER', updatedColumns);
       return emptyResult(`${scan.count} row${scan.count !== 1 ? 's' : ''} updated.`, scan.count);
     };
     return updateSlice();
@@ -4303,24 +4304,32 @@ export class OracleExecutor extends BaseExecutor {
     return emptyResult('Trigger dropped.');
   }
 
-  private triggersFor(schema: string, tableName: string, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER', rowLevel: boolean) {
+  private triggersFor(
+    schema: string, tableName: string, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER' | 'INSTEAD OF',
+    rowLevel: boolean, updatedColumns?: readonly string[],
+  ) {
     if (!this.commandHost) return [];
     return this.storage.getTriggersForTable(schema, tableName).filter((trigger) =>
-      trigger.enabled && trigger.timing === timing && trigger.events.includes(event) && trigger.forEachRow === rowLevel);
+      trigger.enabled && trigger.timing === timing && trigger.events.includes(event) && trigger.forEachRow === rowLevel
+      && (event !== 'UPDATE' || trigger.updateColumns === undefined || updatedColumns === undefined
+        || trigger.updateColumns.some((column) => updatedColumns.includes(column))));
   }
 
-  private fireStatementTriggers(schema: string, tableName: string, tableMeta: TableMeta, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER'): void {
-    for (const trigger of this.triggersFor(schema, tableName, event, timing, false)) {
-      this.requireCommandHost().runTrigger(this, { trigger, event, columns: tableMeta.columns, oldRow: null, newRow: null });
+  private fireStatementTriggers(
+    schema: string, tableName: string, tableMeta: TableMeta, event: 'INSERT' | 'UPDATE' | 'DELETE', timing: 'BEFORE' | 'AFTER',
+    updatedColumns?: readonly string[],
+  ): void {
+    for (const trigger of this.triggersFor(schema, tableName, event, timing, false, updatedColumns)) {
+      this.requireCommandHost().runTrigger(this, { trigger, event, columns: tableMeta.columns, oldRow: null, newRow: null, updatedColumns });
     }
   }
 
   private fireRowTriggers(
     schema: string, tableName: string, tableMeta: TableMeta, event: 'INSERT' | 'UPDATE' | 'DELETE',
-    timing: 'BEFORE' | 'AFTER', oldRow: StorageRow | null, newRow: StorageRow | null,
+    timing: 'BEFORE' | 'AFTER', oldRow: StorageRow | null, newRow: StorageRow | null, updatedColumns?: readonly string[],
   ): void {
-    for (const trigger of this.triggersFor(schema, tableName, event, timing, true)) {
-      const changed = this.requireCommandHost().runTrigger(this, { trigger, event, columns: tableMeta.columns, oldRow, newRow });
+    for (const trigger of this.triggersFor(schema, tableName, event, timing, true, updatedColumns)) {
+      const changed = this.requireCommandHost().runTrigger(this, { trigger, event, columns: tableMeta.columns, oldRow, newRow, updatedColumns });
       if (timing === 'BEFORE' && changed !== null && newRow !== null) {
         for (let index = 0; index < newRow.length; index++) newRow[index] = changed[index];
       }

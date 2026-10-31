@@ -17,6 +17,7 @@ export interface TriggerFiring {
   readonly columns: readonly ColumnMeta[];
   readonly oldRow: StorageRow | null;
   readonly newRow: StorageRow | null;
+  readonly updatedColumns?: readonly string[];
 }
 
 export interface SqlCommandHost {
