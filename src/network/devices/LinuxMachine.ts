@@ -1670,6 +1670,7 @@ export abstract class LinuxMachine extends EndHost
       vfs,
       tcpStack: () => this.getTcpStack(),
       hostnameOf: (ip) => findEquipmentByIp(ip)?.getHostname() ?? null,
+      now: () => this.executor.simulatedDate(),
     });
     this.executor.registerServiceSocketServer('nfs-kernel-server', this.nfsService);
     this.executor.registerServiceSocketServer('rpcbind', this.nfsService);

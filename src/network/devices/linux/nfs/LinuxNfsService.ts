@@ -48,6 +48,7 @@ export interface NfsServiceHost {
   readonly vfs: VirtualFileSystem;
   tcpStack(): TcpStack;
   hostnameOf(ip: string): string | null;
+  now(): Date;
 }
 
 export class LinuxNfsService implements ServiceSocketServer {
@@ -65,6 +66,7 @@ export class LinuxNfsService implements ServiceSocketServer {
       fileSystem: () => fileSystem,
       hostnameOf: (ip: string) => host.hostnameOf(ip),
       fsid: () => 0x4e465301,
+      now: () => host.now(),
     };
     this.mountServer = new MountServer(serverHost, this.handles);
     this.nfsServer = new NfsServer(serverHost, this.handles);
