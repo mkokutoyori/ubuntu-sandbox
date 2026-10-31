@@ -202,7 +202,7 @@ export class Zone {
 
     const ownRrsets = this.rrsets.get(name);
     const ownNs = ownRrsets?.get(RRType.NS);
-    if (ownNs && name !== this.origin && qtype !== RRType.NS && qtype !== RRType.DS) {
+    if (ownNs && name !== this.origin && qtype !== RRType.DS) {
       return { kind: 'delegation', nsRecords: ownNs as ResourceRecord<NsRecordData>[] };
     }
 

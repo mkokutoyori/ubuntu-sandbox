@@ -179,6 +179,8 @@ import { cmdTaskkill } from './windows/WinTaskkill';
 import { cmdSc } from './windows/WinSc';
 import { cmdNetStart, cmdNetStop } from './windows/WinNetStart';
 import { cmdNetUse, establishMapping, releaseMapping, restorePersistentMappings, type NetUseEntry } from './windows/WinNetUse';
+import { NetworkDrive } from './windows/NetworkDrive';
+import { RemoteVolumeError } from './windows/RemoteVolume';
 import { cmdNetView } from './windows/WinNetView';
 import { requestDfsReferral, requestShareEnum } from './windows/server/smb/SmbClient';
 import { hostRegistrationRequest } from './windows/domain/DnsHostRegistration';
@@ -579,6 +581,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly smbShares: SmbShareTable = new SmbShareTable();
   /** `net use` drive-letter mappings — instance-owned. */
   readonly netUseTable: Map<string, NetUseEntry> = new Map();
+  private readonly networkDrives = new WeakMap<NetUseEntry, NetworkDrive>();
   /** Live inbound SMB sessions (`Get-SmbSession` / `net session`). */
   readonly smbSessions: SmbSessionTable = new SmbSessionTable();
 
@@ -607,6 +610,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.fs.attachProcesses({
       driveDirectory: letter => this.driveDirectory(letter),
       directoriesInUse: () => this.directoriesInUse(),
+    });
+    this.fs.attachRemoteVolumes({
+      volumeAt: letter => this.networkDriveAt(letter),
+      letters: () => [...this.netUseTable.values()].map(entry => entry.local).filter(local => local !== ''),
     });
     this.seedVolumesFromHardware();
     seedWindowsOpenSshFiles(this.fs);
@@ -2356,41 +2363,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return header + rows.join('\n') + '\nThe command completed successfully.';
   }
 
-  /** Parsed target for a UNC path or a `net use`-mapped drive letter. */
-  private resolveSmbPath(raw: string):
-    | { unc: true; server: string; share: string; subPath: string }
-    | { unc: false; mapped: NetUseEntry; subPath: string }
-    | null {
+  private resolveSmbPath(raw: string): { server: string; share: string; subPath: string } | null {
     const uncMatch = /^\\\\([^\\]+)\\([^\\]+)\\?(.*)$/.exec(raw);
-    if (uncMatch) return { unc: true, server: uncMatch[1], share: uncMatch[2], subPath: uncMatch[3] ?? '' };
-    const driveMatch = /^([A-Za-z]):\\?(.*)$/.exec(raw);
-    if (driveMatch) {
-      const mapped = this.netUseTable.get(`${driveMatch[1].toUpperCase()}:`);
-      if (mapped) return { unc: false, mapped, subPath: driveMatch[2] ?? '' };
-    }
-    return null;
+    return uncMatch ? { server: uncMatch[1], share: uncMatch[2], subPath: uncMatch[3] ?? '' } : null;
   }
 
-  /**
-   * Obtain an `SmbConnection` for a resolved target: the persistent
-   * session already open on a mapped drive, or a fresh ad-hoc dial (as
-   * the current user, no password) for a bare UNC path with no mapping —
-   * matching how real Windows opens an implicit admin session for a
-   * one-off `dir \\srv\share`.
-   */
   private async smbConnectionFor(
     target: NonNullable<ReturnType<WindowsPC['resolveSmbPath']>>,
   ): Promise<{ connection: import('./windows/server/smb/SmbClient').SmbConnection; adHoc: boolean } | { error: string }> {
-    if (target.unc === false) {
-      const live = target.mapped.connection;
-      if (live && live.isConnected()) return { connection: live, adHoc: false };
-      // A mapping restored at logon carries no session yet, and one whose
-      // link died carries a dead one. Either way the redirector redials on
-      // this first use, which is when a real one does it too.
-      const revived = await this.redialMapping(target.mapped);
-      if (!revived) return { error: 'The specified network name is no longer available.' };
-      return { connection: revived, adHoc: false };
-    }
     const targetIp = await this.resolveHostname(target.server);
     if (!targetIp) return { error: 'System error 53 has occurred.\n\nThe network path was not found.' };
     const dial = this.dialSmbShare(targetIp.toString(), target.share, this.userMgr.currentUser, '');
@@ -2431,13 +2411,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       .map(e => ({ local: e.local, remote: e.remote, status: e.status, user: e.user }));
   }
 
+  private networkDriveAt(letter: string): NetworkDrive | null {
+    const entry = this.netUseTable.get(letter);
+    if (entry === undefined || entry.local === '') return null;
+    let drive = this.networkDrives.get(entry);
+    if (drive === undefined) {
+      drive = new NetworkDrive(entry, mapped => this.redialMapping(mapped));
+      this.networkDrives.set(entry, drive);
+    }
+    return drive;
+  }
+
   /** Re-establish a mapped drive's session with the identity that holds it. */
-  private async redialMapping(
+  private redialMapping(
     mapped: NetUseEntry,
-  ): Promise<import('./windows/server/smb/SmbClient').SmbConnection | null> {
+  ): import('./windows/server/smb/SmbClient').SmbConnection | null {
     const parsed = /^\\\\([^\\]+)\\([^\\]+)/.exec(mapped.remote);
     if (!parsed) return null;
-    const targetIp = await this.resolveHostname(parsed[1]);
+    const targetIp = this.resolveHostnameSync(parsed[1]);
     if (!targetIp) return null;
     const account = mapped.user || this.userMgr.currentUser || 'Administrator';
     const bare = account.includes('\\') ? account.slice(account.indexOf('\\') + 1) : account;
@@ -3690,7 +3681,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return 'STOP: C0000244 {Audit Failed}\nAn attempt to generate a security audit failed.\nAn administrator must clear the Security event log or disable CrashOnAuditFail to continue.';
     }
 
-    return this.batchInterpreter().runLine(trimmed, stdin);
+    try {
+      return await this.batchInterpreter().runLine(trimmed, stdin);
+    } catch (error) {
+      if (!(error instanceof RemoteVolumeError)) throw error;
+      this.commandExitStatus = 1;
+      return error.message;
+    }
   }
 
   private batch: BatchInterpreter | null = null;

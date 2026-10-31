@@ -14,6 +14,7 @@ export { NamedConfigError } from './NamedConfigError';
 
 export type DnssecValidationMode = 'auto' | 'yes' | 'no';
 export type ForwardMode = 'first' | 'only';
+export type NotifyMode = 'yes' | 'no' | 'explicit' | 'primary-only';
 export type ZoneType = 'primary' | 'secondary' | 'forward' | 'hint';
 
 export interface NamedDns64 {
@@ -40,6 +41,8 @@ export interface NamedOptions {
   readonly allowTransfer: AddressMatchList;
   readonly forwarders: readonly string[];
   readonly forwardMode: ForwardMode;
+  readonly notify: NotifyMode;
+  readonly notifyToSoa: boolean;
 }
 
 export interface NamedZone {
@@ -49,6 +52,9 @@ export interface NamedZone {
   readonly primaries: readonly string[];
   readonly primaryKeys: ReadonlyMap<string, string>;
   readonly alsoNotify: readonly string[];
+  readonly notify: NotifyMode | null;
+  readonly notifyToSoa: boolean | null;
+  readonly allowQuery: AddressMatchList | null;
   readonly allowTransfer: AddressMatchList | null;
   readonly allowUpdate: AddressMatchList;
   readonly updatePolicy: readonly UpdatePolicyRule[] | null;
@@ -133,6 +139,13 @@ function parseBoolean(statement: NamedConfStatement): boolean {
   return fail(statement, `expected boolean near '${value ?? ';'}'`);
 }
 
+function parseNotifyMode(statement: NamedConfStatement): NotifyMode {
+  const value = argsOf(statement)[0];
+  if (value === 'explicit') return 'explicit';
+  if (value === 'master-only' || value === 'primary-only') return 'primary-only';
+  return parseBoolean(statement) ? 'yes' : 'no';
+}
+
 function parseAddressList(statement: NamedConfStatement): string[] {
   const addresses: string[] = [];
   for (const entry of requireBlock(statement)) {
@@ -163,6 +176,8 @@ interface MutableOptions {
   allowTransfer: AddressMatchList;
   forwarders: string[];
   forwardMode: ForwardMode;
+  notify: NotifyMode;
+  notifyToSoa: boolean;
 }
 
 function defaultOptions(): MutableOptions {
@@ -181,6 +196,8 @@ function defaultOptions(): MutableOptions {
     allowTransfer: AddressMatchList.any(),
     forwarders: [],
     forwardMode: 'first',
+    notify: 'yes',
+    notifyToSoa: false,
   };
 }
 
@@ -254,6 +271,12 @@ function parseOptions(
       case 'allow-transfer':
         options.allowTransfer = AddressMatchList.fromStatements(requireBlock(entry), acls);
         break;
+      case 'notify':
+        options.notify = parseNotifyMode(entry);
+        break;
+      case 'notify-to-soa':
+        options.notifyToSoa = parseBoolean(entry);
+        break;
       default:
         fail(entry, `unknown option '${keyword}'`);
     }
@@ -320,11 +343,17 @@ interface ZoneDraft {
   primaries: string[];
   primaryKeys: Map<string, string>;
   alsoNotify: string[];
+  notify: NotifyMode | null;
+  notifyToSoa: boolean | null;
+  allowQuery: AddressMatchList | null;
   allowTransfer: AddressMatchList | null;
   allowUpdate: AddressMatchList | null;
   updatePolicy: UpdatePolicyRule[] | null;
   forwarders: string[];
+  authoritativeOnly: Map<string, NamedConfStatement>;
 }
+
+const AUTHORITATIVE_ONLY_OPTIONS: readonly string[] = ['notify', 'notify-to-soa', 'allow-query'];
 
 function parseZoneEntries(
   statement: NamedConfStatement,
@@ -332,12 +361,14 @@ function parseZoneEntries(
   acls: ReadonlyMap<string, AddressMatchList>,
 ): ZoneDraft {
   const draft: ZoneDraft = {
-    type: null, file: null, primaries: [], primaryKeys: new Map(), alsoNotify: [], allowTransfer: null,
-    allowUpdate: null, updatePolicy: null, forwarders: [],
+    type: null, file: null, primaries: [], primaryKeys: new Map(), alsoNotify: [], notify: null, notifyToSoa: null,
+    allowQuery: null, allowTransfer: null, allowUpdate: null, updatePolicy: null, forwarders: [],
+    authoritativeOnly: new Map(),
   };
   for (const entry of requireBlock(statement)) {
     const keyword = keywordOf(entry);
     const args = argsOf(entry);
+    if (AUTHORITATIVE_ONLY_OPTIONS.includes(keyword)) draft.authoritativeOnly.set(keyword, entry);
     switch (keyword) {
       case 'type': {
         const type = ZONE_TYPE_ALIASES[args[0] ?? ''];
@@ -361,6 +392,15 @@ function parseZoneEntries(
       }
       case 'also-notify':
         draft.alsoNotify = parseAddressList(entry);
+        break;
+      case 'notify':
+        draft.notify = parseNotifyMode(entry);
+        break;
+      case 'notify-to-soa':
+        draft.notifyToSoa = parseBoolean(entry);
+        break;
+      case 'allow-query':
+        draft.allowQuery = AddressMatchList.fromStatements(requireBlock(entry), acls);
         break;
       case 'allow-transfer':
         draft.allowTransfer = AddressMatchList.fromStatements(requireBlock(entry), acls);
@@ -395,6 +435,11 @@ function validateZone(statement: NamedConfStatement, zoneName: string, draft: Zo
   if (draft.type === 'forward' && draft.forwarders.length === 0) {
     fail(statement, `zone '${zoneName}': missing 'forwarders' entry`);
   }
+  if (draft.type === 'hint' || draft.type === 'forward') {
+    for (const [option, entry] of draft.authoritativeOnly) {
+      fail(entry, `option '${option}' is not allowed in '${draft.type}' zone '${zoneName}'`);
+    }
+  }
   return draft.type;
 }
 
@@ -428,6 +473,9 @@ function parseZone(
     primaries: draft.primaries,
     primaryKeys: draft.primaryKeys,
     alsoNotify: draft.alsoNotify,
+    notify: draft.notify,
+    notifyToSoa: draft.notifyToSoa,
+    allowQuery: draft.allowQuery,
     allowTransfer: draft.allowTransfer,
     allowUpdate: draft.allowUpdate ?? AddressMatchList.none(),
     updatePolicy: draft.updatePolicy,

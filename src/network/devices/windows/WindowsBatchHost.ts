@@ -2,6 +2,7 @@ import type { BatchHost, CommandOutcome } from '@/cmd/BatchHost';
 import type { WindowsFileSystem } from './WindowsFileSystem';
 import { clockTimeWithCentiseconds, cmdDate } from './WinSystemCommands';
 import { commandExitCode } from './cmdExitCode';
+import { ERROR_PATH_NOT_FOUND } from './win32ErrorText';
 
 export interface WindowsBatchDevice {
   fileSystem(): WindowsFileSystem;
@@ -46,7 +47,8 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
       },
       write: (absolute, content, append) => {
         const files = device.fileSystem();
-        return (append && files.exists(absolute) ? files.appendFile(absolute, content) : files.createFile(absolute, content)).ok;
+        const written = append && files.exists(absolute) ? files.appendFile(absolute, content) : files.createFile(absolute, content);
+        return written.ok ? null : written.error ?? ERROR_PATH_NOT_FOUND;
       },
       list: absolute => device.fileSystem().listDirectory(absolute).map(({ name, entry }) => ({
         name,

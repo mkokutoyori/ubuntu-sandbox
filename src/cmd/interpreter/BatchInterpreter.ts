@@ -409,8 +409,9 @@ export class BatchInterpreter {
     if (isNullDevice(target.path)) return;
     const content = lines.length === 0 ? '' : `${lines.join('\n')}\n`;
     const absolute = this.host.fs.normalize(target.path, this.host.cwd());
-    if (!this.host.fs.write(absolute, content, target.append)) {
-      run.output.push('The system cannot find the path specified.');
+    const refusal = this.host.fs.write(absolute, content, target.append);
+    if (refusal !== null) {
+      run.output.push(refusal);
       this.errorLevel = 1;
     }
   }

@@ -196,7 +196,7 @@ import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, kernelComm, type ProcessInfo, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
 import { runPstree } from './PstreeCommand';
-import { cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
+import { cmdTop, runTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
@@ -6931,7 +6931,7 @@ export class LinuxCommandExecutor {
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);
-      case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
+      case 'top': return runTop(args, this.processCmdContext());
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
       // ── Network commands ────────────────────────────────────────────

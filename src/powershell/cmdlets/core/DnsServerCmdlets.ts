@@ -334,6 +334,129 @@ export class StartDnsServerZoneTransferCmdlet implements ICmdlet {
   }
 }
 
+function trimDot(name: string): string {
+  return name.endsWith('.') ? name.slice(0, -1) : name;
+}
+
+function belowZone(name: string, zone: string): string | null {
+  const lower = trimDot(name).toLowerCase();
+  const origin = trimDot(zone).toLowerCase();
+  return lower.endsWith(`.${origin}`) ? lower.slice(0, -origin.length - 1) : null;
+}
+
+interface DelegationArguments {
+  readonly zone: string;
+  readonly child: string;
+  readonly nameServer: string;
+  readonly addresses: string[];
+}
+
+function delegationArguments(ctx: CmdletContext): DelegationArguments {
+  const zone = psValueToString(ctx.named['name'] ?? ctx.named['zonename'] ?? ctx.positional[0] ?? '');
+  const child = psValueToString(ctx.named['childzonename'] ?? ctx.positional[1] ?? '');
+  const nameServer = psValueToString(ctx.named['nameserver'] ?? ctx.positional[2] ?? '');
+  return { zone, child: belowZone(child, zone) ?? trimDot(child), nameServer: trimDot(nameServer), addresses: stringList(ctx.named['ipaddress'] ?? ctx.positional[3]) };
+}
+
+function delegationsOf(dns: IDnsServerProvider, zone: string, child?: string): Record<string, PSValue>[] | null {
+  const records = dns.getRecords(zone);
+  if (!records) return null;
+  const wanted = child === undefined || child === '' ? null : belowZone(child, zone) ?? trimDot(child).toLowerCase();
+  const gluedBy = (host: string) => records.filter(record => (record.type === 'A' || record.type === 'AAAA')
+    && record.name.toLowerCase() === host.toLowerCase());
+  return records
+    .filter(record => record.type === 'NS' && relativeName(record.name, zone) !== '@')
+    .filter(record => wanted === null || relativeName(record.name, zone) === wanted)
+    .map(record => ({
+      ChildZoneName: record.name,
+      NameServer: recordToPSObject(record, zone),
+      IPAddress: gluedBy(psValueToString(record.data.NameServer ?? '')).map(address => recordToPSObject(address, zone)),
+      ZoneName: zone,
+    }));
+}
+
+export class AddDnsServerZoneDelegationCmdlet implements ICmdlet {
+  readonly name = 'add-dnsserverzonedelegation';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'NameServer', 'IPAddress', 'PassThru', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Add-DnsServerZoneDelegation');
+    const { zone, child, nameServer, addresses } = delegationArguments(ctx);
+    if (!zone || !child || !nameServer || addresses.length === 0) {
+      return missing(ctx, 'Add-DnsServerZoneDelegation', 'Name ChildZoneName NameServer IPAddress');
+    }
+    const delegated = dns.addRecord(zone, child, { type: 'NS', data: { NameServer: nameServer } }, undefined, false, {});
+    if (!delegated.ok) return failed(ctx, 'Add-DnsServerZoneDelegation', delegated);
+    const owner = belowZone(nameServer, zone);
+    if (owner !== null) {
+      for (const address of addresses) {
+        const type = address.includes(':') ? 'AAAA' : 'A';
+        const field = type === 'A' ? 'IPv4Address' : 'IPv6Address';
+        const glued = dns.getRecords(zone, owner, type)?.some(record => psValueToString(record.data[field] ?? '') === address);
+        if (glued) continue;
+        const added = dns.addRecord(zone, owner, { type, data: { [field]: address } }, undefined, false, {});
+        if (!added.ok) return failed(ctx, 'Add-DnsServerZoneDelegation', added);
+      }
+    }
+    return isSwitchOn(ctx.named['passthru']) ? delegationsOf(dns, zone, child) : null;
+  }
+}
+
+export class GetDnsServerZoneDelegationCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserverzonedelegation';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Get-DnsServerZoneDelegation');
+    const zone = psValueToString(ctx.named['name'] ?? ctx.named['zonename'] ?? ctx.positional[0] ?? '');
+    if (!zone) return missing(ctx, 'Get-DnsServerZoneDelegation', 'Name');
+    const found = delegationsOf(dns, zone, ctx.named['childzonename'] !== undefined ? psValueToString(ctx.named['childzonename']) : undefined);
+    if (!found) { ctx.emitError(`Get-DnsServerZoneDelegation : Zone "${zone}" does not exist on this server.`); return null; }
+    return found;
+  }
+}
+
+export class RemoveDnsServerZoneDelegationCmdlet implements ICmdlet {
+  readonly name = 'remove-dnsserverzonedelegation';
+  readonly aliases = [] as const;
+  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'NameServer', 'Force', 'Confirm', 'PassThru', 'ComputerName'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Remove-DnsServerZoneDelegation');
+    const zone = psValueToString(ctx.named['name'] ?? ctx.named['zonename'] ?? ctx.positional[0] ?? '');
+    const child = psValueToString(ctx.named['childzonename'] ?? ctx.positional[1] ?? '');
+    if (!zone || !child) return missing(ctx, 'Remove-DnsServerZoneDelegation', 'Name ChildZoneName');
+    const nameServer = ctx.named['nameserver'] ?? ctx.positional[2];
+    const label = belowZone(child, zone) ?? trimDot(child);
+    const present = delegationsOf(dns, zone, child);
+    if (!present) { ctx.emitError(`Remove-DnsServerZoneDelegation : Zone "${zone}" does not exist on this server.`); return null; }
+    const targets = nameServer === undefined ? present
+      : present.filter(entry => psValueToString((entry.NameServer as Record<string, PSValue>).RecordData
+        ? ((entry.NameServer as Record<string, PSValue>).RecordData as Record<string, PSValue>).NameServer : '').toLowerCase()
+        === trimDot(psValueToString(nameServer)).toLowerCase());
+    if (targets.length === 0) {
+      ctx.emitError(`Remove-DnsServerZoneDelegation : Cannot find the delegation "${child}" of zone "${zone}".`);
+      return null;
+    }
+    for (const entry of targets) {
+      const record = (entry.NameServer as Record<string, PSValue>).RecordData as Record<string, PSValue>;
+      const server = psValueToString(record.NameServer ?? '');
+      const removed = dns.removeRecord(zone, label, 'NS', { NameServer: server });
+      if (!removed.ok) return failed(ctx, 'Remove-DnsServerZoneDelegation', removed);
+      const host = belowZone(server, zone);
+      const stillNamed = dns.getRecords(zone)?.some(other => other.type === 'NS' && psValueToString(other.data.NameServer ?? '').toLowerCase() === server.toLowerCase());
+      if (host !== null && !stillNamed) {
+        for (const type of ['A', 'AAAA']) {
+          for (const glue of dns.getRecords(zone, host, type) ?? []) dns.removeRecord(zone, host, type, glue.data);
+        }
+      }
+    }
+    return null;
+  }
+}
+
 export class AddDnsServerTsigKeyCmdlet implements ICmdlet {
   readonly name = 'add-dnsservertsigkey';
   readonly aliases = [] as const;

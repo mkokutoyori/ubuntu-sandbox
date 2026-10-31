@@ -17,6 +17,7 @@ export interface SmbLab {
   readonly server: WindowsServer;
   readonly client: WindowsPC;
   readonly clientCable: Cable;
+  plugClientBack(): void;
   dial(share: string, username: string, password: string): SmbConnection;
 }
 
@@ -30,6 +31,7 @@ export async function buildSmbLab(): Promise<SmbLab> {
   new Cable('c-srv').connect(server.getPorts()[0], switchBox.getPorts()[0]);
   const clientCable = new Cable('c-client');
   clientCable.connect(client.getPorts()[0], switchBox.getPorts()[1]);
+  const plugClientBack = (): void => { clientCable.connect(client.getPorts()[0], switchBox.getPorts()[1]); };
   const mask = new SubnetMask('255.255.255.0');
   server.getPorts()[0].configureIP(new IPAddress('192.168.10.10'), mask);
   client.getPorts()[0].configureIP(new IPAddress('192.168.10.20'), mask);
@@ -42,7 +44,7 @@ export async function buildSmbLab(): Promise<SmbLab> {
   await server.executeCommand('echo outside the share > C:\\Shares\\outside.txt');
   await runPowershell(powershellOf(server), 'New-SmbShare -Name Data -Path C:\\Shares\\Data -FullAccess bob -ReadAccess alice');
   return {
-    server, client, clientCable,
+    server, client, clientCable, plugClientBack,
     dial(share, username, password) {
       const dialled = dialSmbShare({
         tcpStack: client.getTcpStack(), targetIp: '192.168.10.10', shareName: share, username, password,

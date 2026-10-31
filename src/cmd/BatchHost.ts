@@ -24,7 +24,7 @@ export interface BatchFileSystem {
   exists(absolutePath: string): boolean;
   isDirectory(absolutePath: string): boolean;
   read(absolutePath: string): string | null;
-  write(absolutePath: string, content: string, append: boolean): boolean;
+  write(absolutePath: string, content: string, append: boolean): string | null;
   list(absolutePath: string): DirectoryEntry[];
 }
 

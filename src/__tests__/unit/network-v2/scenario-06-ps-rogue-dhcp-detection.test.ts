@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters, IPAddress, SubnetMask } from '@/network/core/types';
 import { WindowsPC } from '@/network/devices/WindowsPC';
+import { WindowsServer } from '@/network/devices/WindowsServer';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -23,6 +24,21 @@ beforeEach(() => {
 const SERVEURS_AUTORISES = ['192.168.10.1', '192.168.10.2'];
 const PASSERELLE_ATTENDUE = '192.168.10.1';
 const DNS_ATTENDU = '192.168.10.10';
+const SERVEUR_SUPERVISION = '192.168.10.200';
+
+async function attachSupervisionServer(sw: CiscoSwitch, win: WindowsPC, port: string): Promise<void> {
+  const server = new WindowsServer('SERVEUR-SUPERVISION');
+  server.setCurrentUser('Administrator');
+  new Cable('c-s').connect(server.getPorts()[0], sw.getPort(port)!);
+  server.configureInterface('eth0', new IPAddress(SERVEUR_SUPERVISION), new SubnetMask('255.255.255.0'));
+  win.addHostsEntry(SERVEUR_SUPERVISION, 'serveur-supervision');
+  const { subShell } = PowerShellSubShell.create(server);
+  for (const line of [
+    'Install-WindowsFeature FS-FileServer',
+    'New-Item -ItemType Directory -Path C:\\Alertes -Force | Out-Null',
+    'New-SmbShare -Name alertes -Path C:\\Alertes -FullAccess Administrator | Out-Null',
+  ]) await subShell.processLine(line);
+}
 
 async function buildRogueOnlyLab() {
   const rogue = new CiscoRouter('ROGUE');
@@ -51,6 +67,7 @@ async function buildRogueOnlyLab() {
   fakeDns.configureInterface('eth0', new IPAddress('192.168.10.250'), new SubnetMask('255.255.255.0'));
   fakeDns.dnsService.addRecord({ name: 'intranet', type: 'A', value: '6.6.6.6', ttl: 3600 });
   fakeDns.dnsService.start();
+  await attachSupervisionServer(sw, win, 'GigabitEthernet0/4');
 
   return { rogue, sw, win, fakeDns };
 }
@@ -179,8 +196,8 @@ function Invoke-RogueDhcpRemediation {
   $msg = "Serveur DHCP non autorise detecte: IP=$($audit.ServeurDHCP) MAC=$($audit.MacServeur) Passerelle=$($audit.Passerelle) DNS=$($audit.DNS) Ecarts=$($audit.Ecarts -join '; ')"
   Write-EventLog -LogName Application -Source $src -EventId 2001 -EntryType Warning -Message $msg
 
-  New-Item -ItemType Directory -Path Z:\alertes -Force | Out-Null
-  $audit | ConvertTo-Json -Depth 5 | Out-File -FilePath Z:\alertes\rogue-dhcp.json
+  New-Item -ItemType Directory -Path Z:\alertes -Force -ErrorAction SilentlyContinue | Out-Null
+  $audit | ConvertTo-Json -Depth 5 | Out-File -FilePath Z:\alertes\rogue-dhcp.json -ErrorAction SilentlyContinue
 
   Invoke-Expression "ipconfig /release" | Out-Null
   Invoke-Expression "ipconfig /renew" | Out-Null

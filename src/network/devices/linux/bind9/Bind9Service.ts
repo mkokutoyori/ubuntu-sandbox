@@ -44,6 +44,8 @@ import { NamedConfigError } from './NamedConfigError';
 import { Bind9Logging } from './Bind9Logging';
 import { RndcChannel } from './RndcChannel';
 import { RndcServer } from './RndcServer';
+import type { Zone } from '@/network/dns/zone/Zone';
+import type { ResourceRecord, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
 import type { NamedConfig, NamedZone } from './NamedConfig';
 import type { RndcWireEnvelope } from './RndcWireCodec';
 import type { AclHostEnvironment } from './NamedAcl';
@@ -570,7 +572,9 @@ export class Bind9Service {
     const recursionAllowed =
       config.options.recursion && config.options.allowRecursion.matches(source, env);
 
-    if (!config.options.allowQuery.matches(source, env)) {
+    const asked = query.questions[0];
+    const queryAcl = (asked ? this.zoneFor(asked.qname)?.allowQuery : null) ?? config.options.allowQuery;
+    if (!queryAcl.matches(source, env)) {
       return this.refuse(query, recursionAllowed);
     }
 
@@ -752,10 +756,39 @@ export class Bind9Service {
     const zone = this.config?.zones.find((z) => z.name === zoneName && z.type === 'primary');
     const loaded = this.store?.findZone(zoneName);
     if (!zone || !loaded || loaded.origin !== zoneName) return;
-    const targets = zone.alsoNotify
+    void this.notifyTargets(zone, loaded).then((targets) => notifyZoneTargets(this.host, loaded, targets));
+  }
+
+  private async notifyTargets(zone: NamedZone, loaded: Zone): Promise<IPAddress[]> {
+    const options = this.config!.options;
+    const mode = zone.notify ?? options.notify;
+    if (mode === 'no') return [];
+    const listed = zone.alsoNotify
       .map((target) => IPAddress.tryParse(target))
       .filter((ip): ip is IPAddress => ip !== null);
-    notifyZoneTargets(this.host, loaded, targets);
+    if (mode === 'explicit') return listed;
+
+    const toSoa = zone.notifyToSoa ?? options.notifyToSoa;
+    const soaServer = normalizeDnsName(loaded.soa.data.mname);
+    const own = new Set(this.aclEnvironment().localAddresses);
+    const targets = new Map<string, IPAddress>();
+    for (const record of (loaded.getRRSet(loaded.origin, RRType.NS) ?? []) as ResourceRecord<NsRecordData>[]) {
+      const server = normalizeDnsName(record.data.nsdname);
+      if (server === soaServer && !toSoa) continue;
+      for (const address of await this.addressesOfServer(loaded, server)) {
+        if (!own.has(address.toString())) targets.set(address.toString(), address);
+      }
+    }
+    for (const address of listed) targets.set(address.toString(), address);
+    return [...targets.values()];
+  }
+
+  private async addressesOfServer(zone: Zone, server: string): Promise<IPAddress[]> {
+    const inZone = ((zone.getRRSet(server, RRType.A) ?? []) as ResourceRecord<ARecordData>[]).map((record) => record.data.address);
+    if (inZone.length > 0 || this.resolvers.length === 0) return inZone;
+    const resolved = await this.resolvers[0].resolve(server, RRType.A);
+    return resolved.answers.filter((record): record is ResourceRecord<ARecordData> => record.data.type === RRType.A)
+      .map((record) => record.data.address);
   }
 
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
