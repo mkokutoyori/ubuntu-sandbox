@@ -3749,8 +3749,7 @@ export class OracleExecutor extends BaseExecutor {
   }
 
   private executeTruncate(stmt: TruncateTableStatement): ResultSet {
-    const schema = this.resolveSchema(stmt.schema);
-    const tableName = stmt.name.toUpperCase();
+    const { schema, name: tableName } = this.resolveTableTarget(stmt.schema, stmt.name);
     this.requireTableMeta(schema, tableName);
     // An enabled FK from another table blocks TRUNCATE (ORA-02266) — even
     // with no child rows, unlike DELETE; self-references do not block.

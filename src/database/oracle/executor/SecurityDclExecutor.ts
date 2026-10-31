@@ -13,6 +13,7 @@
  * ORA-46651 (keystore location required).
  */
 
+import { followSynonyms } from '../naming/SynonymResolution';
 import type { ExecutionContext } from '../../engine/executor/BaseExecutor';
 import { type ResultSet, emptyResult } from '../../engine/executor/ResultSet';
 import type {
@@ -78,15 +79,17 @@ export class SecurityDclExecutor {
    * Validate the object of a GRANT exists — granting on a missing table /
    * schema must raise ORA-00942 (Oracle never silently succeeds).
    */
-  private assertGrantableObjectExists(schema: string, objName: string): void {
+  private grantableObjectExists(schema: string, objName: string): boolean {
     const tableExists = this.storage.getTableMeta(schema, objName) != null;
     const viewExists = this.storage.getViewMeta?.(schema, objName) != null;
     const sequenceExists = this.storage.getSequence?.(schema, objName) != null;
-    if (tableExists || viewExists || sequenceExists) return;
-    if (schema === 'SYS' && findView(objName) !== undefined) return;
-    // Could still be a PL/SQL object — query the catalog provider.
-    const procExists = this.catalog.getStoredUnits().some(u => u.schema === schema && u.name === objName);
-    if (!procExists) {
+    if (tableExists || viewExists || sequenceExists) return true;
+    if (schema === 'SYS' && findView(objName) !== undefined) return true;
+    return this.catalog.getStoredUnits().some(u => u.schema === schema && u.name === objName);
+  }
+
+  private assertGrantableObjectExists(schema: string, objName: string): void {
+    if (!this.grantableObjectExists(schema, objName)) {
       throw new OracleError(942, 'table or view does not exist');
     }
   }
@@ -113,8 +116,11 @@ export class SecurityDclExecutor {
     // Granting an object priv requires owning the object or having WITH GRANT OPTION.
     if (stmt.objectName) {
       const user = this.context.currentUser;
-      const schema = this.resolveSchema(stmt.objectSchema);
-      const objName = stmt.objectName.toUpperCase();
+      const { schema, name: objName } = followSynonyms(
+        this.storage,
+        { schema: this.resolveSchema(stmt.objectSchema), name: stmt.objectName.toUpperCase() },
+        { exists: (target) => this.grantableObjectExists(target.schema, target.name), publicFallback: !stmt.objectSchema },
+      );
       this.privileges.requireGrantableObjectPrivileges(schema, objName, stmt.privileges);
       this.assertGrantableObjectExists(schema, objName);
       // Self-grant (owner grants to themselves) — ORA-01749.
@@ -131,10 +137,10 @@ export class SecurityDclExecutor {
             for (const c of cols) {
               const colExists = this.storage.getTableMeta(schema, objName)?.columns.some(co => co.name === c.toUpperCase());
               if (!colExists) throw new OracleError(904, `"${c.toUpperCase()}": invalid identifier`);
-              catalog.grantColumnPrivilege(grantee, priv, schema, stmt.objectName, c, user, stmt.withGrantOption);
+              catalog.grantColumnPrivilege(grantee, priv, schema, objName, c, user, stmt.withGrantOption);
             }
           } else {
-            catalog.grantTablePrivilege(grantee, priv, schema, stmt.objectName, stmt.withGrantOption, user);
+            catalog.grantTablePrivilege(grantee, priv, schema, objName, stmt.withGrantOption, user);
           }
         }
       }
