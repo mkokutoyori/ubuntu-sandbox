@@ -5158,6 +5158,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       localTime: (format, atMs) => formatLocalTime(
         format, atMs, this.identity.timezone, windowsZoneNameAt(this.identity.timezone, atMs)),
       device: this,
+      nowMs: () => this.getSystemClockMs(),
       readFile: (p) => {
         const r = this.fs.readFile(this.fs.normalizePath(p, this.cwd));
         return r.ok ? r.content : null;

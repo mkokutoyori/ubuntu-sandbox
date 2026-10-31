@@ -6866,6 +6866,7 @@ export class LinuxCommandExecutor {
         cpu: this.hardware.cpu,
         kernel: this.identity.kernel,
         hostname: kernelHostname(this.vfs),
+        now: () => this.simulatedDate(),
       });
       case 'pidstat': return cmdPidstat(args, {
         pm: this.processMgr,
@@ -6873,6 +6874,7 @@ export class LinuxCommandExecutor {
         memory: this.hardware.memory,
         kernel: this.identity.kernel,
         hostname: kernelHostname(this.vfs),
+        now: () => this.simulatedDate(),
       });
       case 'iostat': return cmdIostat(args, {
         pm: this.processMgr,
@@ -6880,6 +6882,7 @@ export class LinuxCommandExecutor {
         storage: this.hardware.storage,
         kernel: this.identity.kernel,
         hostname: kernelHostname(this.vfs),
+        now: () => this.simulatedDate(),
       });
       case 'exportfs': return this.handleExportfs(args);
       case 'showmount': return this.handleShowmount(args);

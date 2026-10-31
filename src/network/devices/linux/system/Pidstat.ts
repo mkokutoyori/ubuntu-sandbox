@@ -1,4 +1,3 @@
-import { simulationDate } from '@/network/core/SystemClock';
 
 import type { CpuSpec } from '../../host/hardware/CpuSpec';
 import type { MemoryProfile } from '../../host/hardware/MemoryProfile';
@@ -274,12 +273,13 @@ export interface PidstatContext {
   kernel: KernelInfo;
   hostname: string;
   shellPid?: number;
+  now: () => Date;
 }
 
 export function cmdPidstat(args: string[], ctx: PidstatContext): { output: string; exitCode: number } {
   const parsed = parsePidstatArgs(args);
   if ('error' in parsed) return { output: parsed.error, exitCode: parsed.error.startsWith('sysstat') ? 0 : 1 };
-  const now = simulationDate();
+  const now = ctx.now();
   const lines: string[] = [pidstatBanner(ctx.kernel, ctx.hostname, ctx.cpu, now)];
   lines.push(pidstatColumnHeader(parsed, now));
   if (parsed.report === 'cpu') {

@@ -17,6 +17,7 @@ function scanHost(ctx: LinuxCommandContext): ScanHost {
     device: localDeviceOf(ctx),
     privileged: ctx.executor.holdsCapability('CAP_NET_RAW'),
     localTime: (format, atMs) => formatLocalTime(format, atMs, ctx.executor.identity.timezone),
+    nowMs: () => ctx.executor.simulatedDate().getTime(),
     readFile: (p) => ctx.executor.vfs.readFile(
       ctx.executor.vfs.normalizePath(p, ctx.executor.getCwd())),
     ping: (ip, timeoutMs) => (ip.includes(':')

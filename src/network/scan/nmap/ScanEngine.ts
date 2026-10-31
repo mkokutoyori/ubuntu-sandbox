@@ -1,4 +1,4 @@
-import { simulationDate } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import type { DiscoveryProbe, NmapOptions, ScanType } from './NmapOptions';
@@ -70,6 +70,7 @@ export interface ResolvedTarget {
 }
 
 export interface HostProbes {
+  nowMs?(): number;
   /** Name to address. A lookup, never a liveness test. */
   resolveTarget(target: string): ResolvedTarget | null | Promise<ResolvedTarget | null>;
   /** Time passing while the engine waits for answers before it retransmits. */
@@ -655,7 +656,7 @@ export async function scan(
   stopWire?.();
 
   return {
-    startedAt: simulationDate().toISOString(),
+    startedAt: new Date((probes.nowMs ?? simulationNowMs)()).toISOString(),
     targetsScanned,
     hostsUp: options.listScan ? 0 : hosts.filter((h) => h.up).length,
     hosts,

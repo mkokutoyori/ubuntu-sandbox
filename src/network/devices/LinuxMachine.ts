@@ -25,7 +25,7 @@
 import { asStderrResult, refuseUnknownGnuOption } from './linux/GnuOptionGuard';
 import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { LinuxPam } from './linux/pam/LinuxPam';
 import { PathClock } from '../core/time/PathClock';
@@ -5768,7 +5768,7 @@ export abstract class LinuxMachine extends EndHost
         return this.openTcpdumpCapture(iface, sink);
       },
       now: (): Date => {
-        return simulationDate();
+        return this.executor.simulatedDate();
       },
       delay: (ms: number): Promise<void> => {
         return new Promise((resolve) => setTimeout(resolve, ms));
@@ -5911,14 +5911,18 @@ export abstract class LinuxMachine extends EndHost
     return sampleMpstat(args, this.executor.processMgr, this.getHardware().cpu);
   }
 
+  machineDate(): Date {
+    return this.executor.simulatedDate();
+  }
+
   mpstatBannerLine(): string {
-    const now = simulationDate();
+    const now = this.executor.simulatedDate();
     const hostname = this.getHostname();
     return mpstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 
   pidstatBannerLine(): string {
-    const now = simulationDate();
+    const now = this.executor.simulatedDate();
     const hostname = this.getHostname();
     return pidstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
@@ -5932,7 +5936,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   iostatBannerLine(): string {
-    const now = simulationDate();
+    const now = this.executor.simulatedDate();
     const hostname = this.getHostname();
     return iostatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
