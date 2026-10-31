@@ -1030,12 +1030,12 @@ annonce. Ce qui est fait : la barre est cliquable (`barShortcutAt`), `F6` cherch
 et Edge seulement). Reste : `^T` n'a aucune alternative clavier dans nano lui-meme ; aucune mesure dans un
 vrai navigateur (jsdom ne ferme pas d'onglet), a verifier a la main en plein ecran.
 
-### [nano] caracteres non enregistres
-Les corpus contiennent des accents precomposes (`é`, `café`) et du chinois (`中文`, largeur 2, avec
-des tabulations) mais PAS : les emoji hors du plan de base, les caracteres combinants et de largeur
-nulle (le recorder sait les compter, `cell_width`, aucun texte n'en contient), les octets UTF-8
-invalides, ni les caracteres de controle hors tabulation. Le moteur n'est donc ni valide ni
-refute sur ces textes : a enregistrer avant de pretendre que le rendu y est fidele.
+### [nano] caracteres non enregistres : ce qui reste
+Les fleches, Retour arriere et Suppr passent par-dessus un point de code entier (emoji hors du plan de base) comme nano 7.2
+(`probe-nano-caracteres-hors-plan-de-base.test.ts`, mesure sous tmux). Les corpus enregistres ne contiennent toujours pas : les
+caracteres combinants et de largeur nulle (nano place le curseur entre la base et la marque : `e` + U+0301, Droite deux fois,
+colonne 2 puis 3 sur 3), les octets UTF-8 invalides, ni les caracteres de controle hors tabulation. Les comptes du pied
+(« char 2/16 ») et les mouvements par mot sur ces textes n'ont pas ete compares non plus.
 
 ---
 

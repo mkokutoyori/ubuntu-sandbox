@@ -18,7 +18,7 @@ import { NanoWindow, SHORTCUT_BARS_MINIMUM, type ViewportManner } from './nano/N
 import { MESSAGE_LEVEL, messageLevel } from './nano/NanoMessages';
 import type { MinibarInfo } from './nano/NanoScreen';
 import { buildNanoScreen, promptCursorAtColumn } from './nano/NanoScreen';
-import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, wideness } from './nano/NanoText';
+import { actualX, breadth, displayString, isBlankChar, leadingBytes, parseLineAndColumn, unitsAt, unitsBefore, wideness } from './nano/NanoText';
 import {
   DEFAULT_BRACKETS, DEFAULT_PUNCTUATION, DEFAULT_QUOTE_PATTERN, beginsParagraph, breakLine, concatenateParagraph, findParagraph, inParagraph, indentLength, justifyParagraph, leadLength,
   paragraphEnd, paragraphStart, quoteLength, rewrapParagraph, squeeze, type JustifyContext,
@@ -1343,12 +1343,12 @@ export class NanoEngine {
     switch (k.key) {
       case 'ArrowLeft':
         this.manner = 'flowing';
-        if (this._cursorCol > 0) this._cursorCol--;
+        if (this._cursorCol > 0) this._cursorCol -= unitsBefore(this.line(this._cursorLine), this._cursorCol);
         else if (this._cursorLine > 0) { this._cursorLine--; this._cursorCol = this.line(this._cursorLine).length; }
         return;
       case 'ArrowRight':
         this.manner = 'flowing';
-        if (this._cursorCol < this.line(this._cursorLine).length) this._cursorCol++;
+        if (this._cursorCol < this.line(this._cursorLine).length) this._cursorCol += unitsAt(this.line(this._cursorLine), this._cursorCol);
         else if (this._cursorLine < this.linesArr.length - 1) { this._cursorLine++; this._cursorCol = 0; }
         return;
       case 'ArrowUp':
@@ -1403,10 +1403,11 @@ export class NanoEngine {
         const before = { line: this._cursorLine, col: this._cursorCol };
         if (this._cursorCol > 0) {
           const cur = this.line(this._cursorLine);
-          this.undo.beginDeletion('BACK', this.linesArr, { line: before.line, col: before.col - 1 }, 1, before);
-          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - 1) + cur.slice(this._cursorCol);
-          this._cursorCol--;
-          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
+          const removed = unitsBefore(cur, this._cursorCol);
+          this.undo.beginDeletion('BACK', this.linesArr, { line: before.line, col: before.col - removed }, removed, before);
+          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol - removed) + cur.slice(this._cursorCol);
+          this._cursorCol -= removed;
+          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - removed;
           this.undoFinish();
           this._modified = true;
         } else if (this._cursorLine > 0) {
@@ -1429,9 +1430,10 @@ export class NanoEngine {
         if (!this.live.nonewlines && this._cursorCol === cur.length && this._cursorCol !== 0 && this._cursorLine === this.linesArr.length - 2) return;
         const before = { line: this._cursorLine, col: this._cursorCol };
         if (this._cursorCol < cur.length) {
-          this.undo.beginDeletion('DEL', this.linesArr, before, 1, before);
-          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + 1);
-          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - 1;
+          const removed = unitsAt(cur, this._cursorCol);
+          this.undo.beginDeletion('DEL', this.linesArr, before, removed, before);
+          this.linesArr[this._cursorLine] = cur.slice(0, this._cursorCol) + cur.slice(this._cursorCol + removed);
+          if (this.markLine === this._cursorLine && (this.markCol ?? 0) > this._cursorCol) this.markCol = (this.markCol ?? 0) - removed;
           this.undoFinish();
           this._modified = true;
         } else if (this._cursorLine < this.linesArr.length - 1) {

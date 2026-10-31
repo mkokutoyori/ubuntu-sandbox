@@ -196,3 +196,15 @@ export function parseLineAndColumn(input: string): { line: number | null; column
   const column = parseNumber(rest);
   return column === null ? null : { line, column };
 }
+
+export function unitsBefore(text: string, column: number): number {
+  if (column < 2) return column;
+  const low = text.charCodeAt(column - 1);
+  const high = text.charCodeAt(column - 2);
+  return low >= 0xdc00 && low <= 0xdfff && high >= 0xd800 && high <= 0xdbff ? 2 : 1;
+}
+
+export function unitsAt(text: string, column: number): number {
+  const code = text.codePointAt(column);
+  return code !== undefined && code > 0xffff ? 2 : 1;
+}
