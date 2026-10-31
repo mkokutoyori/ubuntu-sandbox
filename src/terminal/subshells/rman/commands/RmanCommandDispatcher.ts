@@ -26,6 +26,7 @@ import { ChangeCommand } from './ChangeCommand';
 import { SetCommand } from './SetCommand';
 import { HostCommand } from './HostCommand';
 import { SwitchCommand } from './SwitchCommand';
+import { ListFailureCommand } from './ListFailureCommand';
 import { ValidateCommand } from './ValidateCommand';
 import { ConnectAuxiliaryCommand } from './ConnectAuxiliaryCommand';
 import { ResyncCatalogCommand } from './ResyncCatalogCommand';
@@ -149,6 +150,7 @@ export class RmanCommandDispatcher {
       { pattern: /^LIST BACKUP$/i,               command: new ListBackupCommand('DETAIL') },
       { pattern: /^LIST BACKUP (COMPLETED\s+.+)$/i, command: new ListBackupCommand('DETAIL') },
       { pattern: /^LIST BACKUP OF (DATABASE|DATAFILE\s+\d+|TABLESPACE\s+\S+|ARCHIVELOG ALL|CONTROLFILE)$/i, command: new ListBackupCommand('OF') },
+      { pattern: /^LIST FAILURE$/i,                  command: new ListFailureCommand() },
       { pattern: /^LIST ARCHIVELOG ALL$/i,       command: new ListBackupCommand('ARCHIVELOG') },
       { pattern: /^LIST EXPIRED BACKUP$/i,       command: new ListBackupCommand('EXPIRED') },
       { pattern: /^LIST OBSOLETE$/i,             command: new ListBackupCommand('OBSOLETE') },
