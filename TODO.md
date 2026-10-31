@@ -459,23 +459,9 @@ diverger la CLI. Elle redeviendra implementable le jour ou `Cable`
 portera une latence.
 
 ### [sysctl] `/etc/sysctl.conf` n'est pas livre, et les projections de `/proc/sys` sont en lecture seule
-Depuis le lot « `sysctl` lit `/proc/sys` », deux restes MESURES.
+Depuis le lot « `sysctl` lit `/proc/sys` », un reste MESURE (le fichier `/etc/sysctl.conf` est livre, copie de celui d'une Ubuntu 24.04 reelle).
 
-**(1) Le fichier de prechargement n'existe pas.** `sysctl -p` repond
-`sysctl: cannot open "/etc/sysctl.conf": No such file or directory` sur
-une machine neuve, alors qu'une vraie Ubuntu livre ce fichier (tout en
-commentaires) et un `/etc/sysctl.d/` avec `99-sysctl.conf`. Le depot y
-fait deja reference : `/etc/ufw/sysctl.conf` est seme et son en-tete dit
-« these settings override /etc/sysctl.conf ». **Pourquoi ce n'est pas
-ferme ici** : le contenu EXACT du fichier de Debian n'a pas pu etre
-atteste depuis ce reseau (`sources.debian.org` et `git.launchpad.net`
-sont bloques par le mandataire ; le `sysctl.conf` d'amont de procps-ng
-est un AUTRE fichier, avec des reglages actifs que Debian ne livre pas).
-L'ecrire de memoire produirait le genre de sortie plausible-et-fausse
-que ce depot passe son temps a refermer. A fermer le jour ou une copie
-du fichier Debian est atteignable.
-
-**(2) Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
+**Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
 pseudo-fichiers generes sont en lecture seule par decision du VFS
 (`writeFile` les jette en silence), et ceux d'`arp_ignore`,
 `arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une
