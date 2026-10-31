@@ -372,6 +372,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       groupsOf: (user) => this.userManager.getUserGroups(user).map((group) => group.name),
       readFile: (path) => this.vfs.readFile(path),
       emit: (event) => this.events.emit(event),
+      ...(this.executor === null ? {} : { nowMs: () => this.executor!.simulatedDate().getTime() }),
     });
     return this.certificateService;
   }

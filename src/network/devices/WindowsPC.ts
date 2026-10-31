@@ -1403,6 +1403,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private buildSshServerContext(): WindowsSshServerContext {
     return new WindowsSshServerContext(this.fs, this.userMgr, this.hostname, {}, {
       executeCmdCommand: (line: string) => this.executeCmdCommand(line),
+      nowMs: () => this.simulatedDate().getTime(),
       getCwd: () => this.getCwd(),
       createVtyShell: (user: string) => this.createVtyShell(user),
       runExecAs: (user: string, line: string, stdin?: string) => this.runExecAs(user, line, stdin),

@@ -64,6 +64,7 @@ export function windowsPathOf(path: string): string {
 
 export interface WindowsShellExecutor {
   executeCmdCommand(line: string): Promise<string>;
+  nowMs?(): number;
   /** Current cmd working directory — rendered as the `C:\…>` prompt. */
   getCwd?(): string;
   /**
@@ -301,6 +302,7 @@ export class WindowsSshServerContext implements ISshServerContext {
         return result.ok ? result.content ?? '' : null;
       },
       emit: (event) => this.events.emit(event),
+      ...(this.shellExecutor?.nowMs === undefined ? {} : { nowMs: () => this.shellExecutor!.nowMs!() }),
     });
     return this.certificateService;
   }
