@@ -146,7 +146,7 @@ export class RmanCommandDispatcher {
       { pattern: /^LIST BACKUP SUMMARY$/i,       command: new ListBackupCommand('SUMMARY') },
       { pattern: /^LIST BACKUP$/i,               command: new ListBackupCommand('DETAIL') },
       { pattern: /^LIST BACKUP (COMPLETED\s+.+)$/i, command: new ListBackupCommand('DETAIL') },
-      { pattern: /^LIST BACKUP OF (DATABASE|DATAFILE\s+\d+|ARCHIVELOG ALL|CONTROLFILE)$/i, command: new ListBackupCommand('OF') },
+      { pattern: /^LIST BACKUP OF (DATABASE|DATAFILE\s+\d+|TABLESPACE\s+\S+|ARCHIVELOG ALL|CONTROLFILE)$/i, command: new ListBackupCommand('OF') },
       { pattern: /^LIST ARCHIVELOG ALL$/i,       command: new ListBackupCommand('ARCHIVELOG') },
       { pattern: /^LIST EXPIRED BACKUP$/i,       command: new ListBackupCommand('EXPIRED') },
       { pattern: /^LIST OBSOLETE$/i,             command: new ListBackupCommand('OBSOLETE') },

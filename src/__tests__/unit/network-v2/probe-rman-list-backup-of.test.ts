@@ -3,9 +3,10 @@
  * alors que la liste detaillee des jeux de sauvegarde existe (`LIST BACKUP`). Corrige : la meme liste, filtree sur ce
  * que le jeu sauvegarde (les fichiers de donnees du jeu pour DATAFILE n, le type du jeu pour les autres) ; aucun jeu ne
  * correspond -> « specification does not match any backup in the repository », texte deja emis par LIST BACKUP COMPLETED.
- * Non traites (mise en page non sourcee) : `LIST BACKUP BY FILE`, `LIST BACKUP OF TABLESPACE`.
+ * `OF TABLESPACE t` filtre sur les fichiers de donnees du tablespace (IRmanOracleContext.getDatafiles).
+ * Non traite (mise en page non sourcee) : `LIST BACKUP BY FILE`.
  *
- * Discrimine par `git stash` sur src/terminal : 4 des 5 cas tombent avant. TEMOIN : `LIST BACKUP` simple, qui liste tout
+ * Discrimine par `git stash` sur src/terminal : 5 des 6 cas tombent avant. TEMOIN : `LIST BACKUP` simple, qui liste tout
  * avant comme apres.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -50,6 +51,12 @@ describe('LIST BACKUP OF', () => {
     const out = listing(["BACKUP DATAFILE 4 TAG 'F4';", "BACKUP DATAFILE 1 TAG 'F1';"], 'LIST BACKUP OF DATAFILE 4;');
     expect(out).toContain('F4');
     expect(out).not.toContain('F1');
+  });
+
+  it('OF TABLESPACE lists the sets that hold a file of that tablespace and not the others', () => {
+    const out = listing(["BACKUP TABLESPACE USERS TAG 'TSU';", "BACKUP TABLESPACE SYSTEM TAG 'TSS';"], 'LIST BACKUP OF TABLESPACE USERS;');
+    expect(out).toContain('TSU');
+    expect(out).not.toContain('TSS');
   });
 
   it('a specification that matches no set says so', () => {

@@ -4244,11 +4244,11 @@ l'accepte, comme le dit le tutoriel). Les commentaires `--` du tutoriel ne sont 
 reconnus : seul `#` l'est.
 `rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
 une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dans le fichier ce que la session imprime
-(sondes `probe-rman-cmdfile-et-log`, `probe-rman-spool-log`).
+(sondes `probe-rman-cmdfile-et-log`, `probe-rman-spool-log`) ; `LIST BACKUP OF TABLESPACE t` filtre sur les fichiers du
+tablespace (`getDatafiles`).
 Refuses en RMAN-01009 faute de source : `docs.oracle.com` n'est pas dans les domaines autorises de la session (WebFetch :
 `getaddrinfo ENOTFOUND docs.oracle.com`), et le §8 de CLAUDE.md interdit d'inventer le texte d'un outil proprietaire.
-Ce qu'il manque, commande par commande : `LIST BACKUP BY FILE` (mise en page des colonnes) ; `LIST BACKUP OF TABLESPACE`
-(correspondance tablespace -> fichiers de donnees, presente dans la base mais non exposee a la session) ; `LIST FAILURE`
+Ce qu'il manque, commande par commande : `LIST BACKUP BY FILE` (mise en page des colonnes) ; `LIST FAILURE`
 (Data Recovery Advisor : depot des echecs, numeros, priorites, libelles) ; `SWITCH ... TO COPY` (le texte
 `datafile N switched to datafile copy "..."`, et le deplacement du fichier dans le catalogue et le fichier de controle) ;
 `SET DBID` (texte de confirmation) ; `HOST` (texte de fin de commande) ; `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`

@@ -32,7 +32,8 @@ function lvCode(s: BackupSet): string {
 
 export type ListVariant = 'SUMMARY' | 'DETAIL' | 'OF' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY' | 'INCARNATION';
 
-function backsUp(set: BackupSet, specification: string): boolean {
+function backsUp(set: BackupSet, specification: string, tablespaceFiles: ReadonlySet<number>): boolean {
+  if (/^TABLESPACE\s+\S+$/i.test(specification)) return set.datafiles.some(entry => tablespaceFiles.has(entry.fileNo));
   const datafile = /^DATAFILE\s+(\d+)$/i.exec(specification);
   if (datafile !== null) return set.datafiles.some(entry => entry.fileNo === Number(datafile[1]));
   switch (specification.toUpperCase()) {
@@ -106,7 +107,10 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     let { sets } = snap.value;
     if (this.variant === 'OF') {
       const specification = args[0] ?? '';
-      sets = sets.filter(set => backsUp(set, specification));
+      const tablespace = /^TABLESPACE\s+(\S+)$/i.exec(specification)?.[1]?.toUpperCase();
+      const tablespaceFiles = new Set(
+        ctx.getDatafiles().filter(file => file.tablespace.toUpperCase() === tablespace).map(file => file.fileNo));
+      sets = sets.filter(set => backsUp(set, specification, tablespaceFiles));
       if (sets.length === 0) return ok(['', 'specification does not match any backup in the repository', '']);
       return ok(this._detail(sets, ctx));
     }
