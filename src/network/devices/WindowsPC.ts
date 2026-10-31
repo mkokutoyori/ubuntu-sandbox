@@ -616,6 +616,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.userMgr = new WindowsUserManager();
     this.userMgr.attachPolicy(this.accountsPolicy);
     this.userMgr.attachMachine({
+      nowMs: () => this.simulatedDate().getTime(),
       hostname: () => this.hostname,
       timezone: () => this.identity.timezone,
       directoryExists: (path) => this.fs.isDirectory(this.fs.normalizePath(path, 'C:\\')),

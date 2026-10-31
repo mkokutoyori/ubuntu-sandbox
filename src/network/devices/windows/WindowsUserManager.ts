@@ -10,7 +10,7 @@
  *   - Built-in groups matching real Windows defaults
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
 import { parseAccountExpiry } from './WindowsAccountExpiry';
@@ -50,6 +50,7 @@ export interface WindowsUser {
 }
 
 export interface WindowsUserMachine {
+  nowMs(): number;
   hostname(): string;
   timezone(): string | undefined;
   directoryExists(path: string): boolean;
@@ -172,6 +173,14 @@ export class WindowsUserManager {
     this.initDefaults();
   }
 
+  private nowMs(): number {
+    return this.machine === null ? simulationNowMs() : this.machine.nowMs();
+  }
+
+  private nowDate(): Date {
+    return new Date(this.nowMs());
+  }
+
   /**
    * Attach the device event bus so account, group and logon operations are
    * published. The reactive WindowsSecurityAuditProjection subscribes and
@@ -216,7 +225,7 @@ export class WindowsUserManager {
       name: 'Administrator', fullName: '', description: 'Built-in account for administering the computer/domain',
       sid: WELL_KNOWN_SIDS['Administrator'], enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
-      passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
+      passwordLastSet: this.nowDate(), lastLogon: null, builtIn: true,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     this.passwords.set('administrator', 'admin');
@@ -225,7 +234,7 @@ export class WindowsUserManager {
       name: 'Guest', fullName: '', description: 'Built-in account for guest access to the computer/domain',
       sid: WELL_KNOWN_SIDS['Guest'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
-      passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
+      passwordLastSet: this.nowDate(), lastLogon: null, builtIn: true,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
 
@@ -233,7 +242,7 @@ export class WindowsUserManager {
       name: 'DefaultAccount', fullName: '', description: 'A user account managed by the system.',
       sid: WELL_KNOWN_SIDS['DefaultAccount'], enabled: false, password: '',
       passwordRequired: false, userMayChangePassword: false,
-      passwordLastSet: simulationDate(), lastLogon: null, builtIn: true,
+      passwordLastSet: this.nowDate(), lastLogon: null, builtIn: true,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
 
@@ -241,7 +250,7 @@ export class WindowsUserManager {
       name: 'User', fullName: '', description: '',
       sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
       passwordRequired: true, userMayChangePassword: true,
-      passwordLastSet: simulationDate(), lastLogon: simulationDate(), builtIn: false,
+      passwordLastSet: this.nowDate(), lastLogon: this.nowDate(), builtIn: false,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     this.passwords.set('user', 'user');
@@ -253,7 +262,7 @@ export class WindowsUserManager {
         name: u, fullName: '', description: '',
         sid: `${MACHINE_SID_PREFIX}-${this.nextRid++}`, enabled: true, password: 'x',
         passwordRequired: true, userMayChangePassword: true,
-        passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
+        passwordLastSet: this.nowDate(), lastLogon: null, builtIn: false,
         passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
       });
       this.passwords.set(u.toLowerCase(), u);
@@ -422,7 +431,7 @@ export class WindowsUserManager {
       name, fullName: opts.fullName ?? '', description: opts.description ?? '',
       sid, enabled: true, password: opts.noPassword ? '' : 'x',
       passwordRequired: !opts.noPassword, userMayChangePassword: true,
-      passwordLastSet: simulationDate(), lastLogon: null, builtIn: false,
+      passwordLastSet: this.nowDate(), lastLogon: null, builtIn: false,
       passwordHistory: [], failedLogonCount: 0, lockedUntil: null, accountExpires: null,
     });
     if (!opts.noPassword) {
@@ -475,7 +484,7 @@ export class WindowsUserManager {
       user.passwordHistory = [current, ...user.passwordHistory].slice(0, historyLength);
     }
     this.passwords.set(user.name.toLowerCase(), value);
-    user.passwordLastSet = simulationDate();
+    user.passwordLastSet = this.nowDate();
     return '';
   }
 
@@ -487,7 +496,7 @@ export class WindowsUserManager {
     }
     if (!user.userMayChangePassword) return 'The password of this user cannot be changed.';
     const changeableAt = user.passwordLastSet.getTime() + (this.policy?.snapshot().minPasswordAge ?? 0) * 86_400_000;
-    if (changeableAt > simulationNowMs()) return 'The password of this user is too recent to change.';
+    if (changeableAt > this.nowMs()) return 'The password of this user is too recent to change.';
     const failure = this.storePassword(user, newPassword);
     if (failure) return failure;
     this.publishAccount(user.name, 'password-changed');
@@ -497,7 +506,7 @@ export class WindowsUserManager {
   validateUserOption(property: string, value: string): string {
     switch (property.toLowerCase()) {
       case 'times': return parseLogonHours(value).ok ? '' : SYNTAX_INVALID;
-      case 'expires': return parseAccountExpiry(value, simulationNowMs(), this.dateOrder()) === undefined ? SYNTAX_INVALID : '';
+      case 'expires': return parseAccountExpiry(value, this.nowMs(), this.dateOrder()) === undefined ? SYNTAX_INVALID : '';
       case 'workstations': {
         const names = value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
         return names.length > MAX_WORKSTATIONS && !names.includes('*') ? SYNTAX_INVALID : '';
@@ -560,7 +569,7 @@ export class WindowsUserManager {
         break;
       }
       case 'expires': {
-        const parsed = parseAccountExpiry(value, simulationNowMs(), this.dateOrder());
+        const parsed = parseAccountExpiry(value, this.nowMs(), this.dateOrder());
         if (parsed === undefined) return SYNTAX_INVALID;
         user.accountExpires = parsed;
         this.publishAccount(user.name, 'modified', {
@@ -667,7 +676,7 @@ export class WindowsUserManager {
   isLockedOut(name: string): boolean {
     const user = this.users.get(name.toLowerCase());
     if (!user?.lockedUntil) return false;
-    if (user.lockedUntil.getTime() > simulationNowMs()) return true;
+    if (user.lockedUntil.getTime() > this.nowMs()) return true;
     user.lockedUntil = null;
     user.failedLogonCount = 0;
     return false;
@@ -675,7 +684,7 @@ export class WindowsUserManager {
 
   isAccountExpired(name: string): boolean {
     const expires = this.users.get(name.toLowerCase())?.accountExpires;
-    return expires != null && expires.getTime() <= simulationNowMs();
+    return expires != null && expires.getTime() <= this.nowMs();
   }
 
   /**
@@ -690,7 +699,7 @@ export class WindowsUserManager {
     if (!user.enabled) return 'disabled';
     if (this.isAccountExpired(name)) return 'expired';
     if (this.isLockedOut(name)) return 'locked';
-    if (!logonHoursAllow(user.logonHours, simulationNowMs(), this.machine?.timezone())) return 'logon-hours';
+    if (!logonHoursAllow(user.logonHours, this.nowMs(), this.machine?.timezone())) return 'logon-hours';
     if (user.workstations !== undefined) {
       const origin = (workstation ?? this.machine?.hostname() ?? '').toLowerCase();
       if (!user.workstations.some((entry) => entry.toLowerCase() === origin)) return 'workstation';
@@ -722,7 +731,7 @@ export class WindowsUserManager {
   /** Whether the account's password is past `net accounts /maxpwage`. */
   isPasswordExpired(name: string): boolean {
     const expiresAt = this.passwordExpiresAt(name);
-    return expiresAt !== null && expiresAt < simulationNowMs();
+    return expiresAt !== null && expiresAt < this.nowMs();
   }
 
   /**
@@ -797,7 +806,7 @@ export class WindowsUserManager {
         const threshold = this.policy?.snapshot().lockoutThreshold ?? 0;
         if (threshold > 0 && user.failedLogonCount >= threshold) {
           const durationMinutes = this.policy?.snapshot().lockoutDurationMinutes ?? 30;
-          user.lockedUntil = new Date(simulationNowMs() + durationMinutes * 60_000);
+          user.lockedUntil = new Date(this.nowMs() + durationMinutes * 60_000);
           this.publishAccount(user.name, 'locked-out');
         }
       }
@@ -941,7 +950,7 @@ export class WindowsUserManager {
         password: '',
         passwordRequired: false,
         userMayChangePassword: true,
-        passwordLastSet: simulationDate(),
+        passwordLastSet: this.nowDate(),
         lastLogon: null,
         builtIn: false,
         passwordHistory: [],
