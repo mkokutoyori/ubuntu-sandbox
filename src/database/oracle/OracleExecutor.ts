@@ -4465,8 +4465,8 @@ export class OracleExecutor extends BaseExecutor {
         if ((idName === 'NEXTVAL' || idName === 'CURRVAL') && idTable) {
           const seqSchema = idSchema || this.context.currentSchema;
           return idName === 'NEXTVAL'
-            ? this.sequenceNextVal(seqSchema, idTable)
-            : this.sequenceCurrVal(seqSchema, idTable);
+            ? this.sequenceNextVal(seqSchema, idTable, idSchema !== undefined)
+            : this.sequenceCurrVal(seqSchema, idTable, idSchema !== undefined);
         }
         // DBMS_RANDOM.VALUE / DBMS_RANDOM.NORMAL (no-parens access)
         const pkgName = idTable;
@@ -4550,8 +4550,8 @@ export class OracleExecutor extends BaseExecutor {
       case 'SequenceExpr': {
         const seqSchema = expr.schema || this.context.currentSchema;
         return expr.operation === 'NEXTVAL'
-          ? this.sequenceNextVal(seqSchema, expr.sequenceName)
-          : this.sequenceCurrVal(seqSchema, expr.sequenceName);
+          ? this.sequenceNextVal(seqSchema, expr.sequenceName, expr.schema !== undefined)
+          : this.sequenceCurrVal(seqSchema, expr.sequenceName, expr.schema !== undefined);
       }
 
       default:
@@ -4559,10 +4559,16 @@ export class OracleExecutor extends BaseExecutor {
     }
   }
 
+  private resolveSequenceTarget(schema: string, name: string, qualified: boolean): ObjectName {
+    return followSynonyms(this.storage, { schema: schema.toUpperCase(), name: name.toUpperCase() }, {
+      exists: ({ schema: owner, name: objectName }) => this.storage.sequenceExists(owner, objectName),
+      publicFallback: !qualified,
+    });
+  }
+
   /** NEXTVAL: advance the global counter, remember the value per session. */
-  private sequenceNextVal(schema: string, name: string): number {
-    const s = schema.toUpperCase();
-    const n = name.toUpperCase();
+  private sequenceNextVal(schema: string, name: string, qualified = false): number {
+    const { schema: s, name: n } = this.resolveSequenceTarget(schema, name, qualified);
     if (!this.storage.sequenceExists(s, n)) {
       throw new OracleError(2289, 'sequence does not exist');
     }
@@ -4573,9 +4579,8 @@ export class OracleExecutor extends BaseExecutor {
 
   /** CURRVAL: the last NEXTVAL of THIS session — never the global counter
    *  (ORA-08002 before the first NEXTVAL, ORA-02289 if dropped). */
-  private sequenceCurrVal(schema: string, name: string): number {
-    const s = schema.toUpperCase();
-    const n = name.toUpperCase();
+  private sequenceCurrVal(schema: string, name: string, qualified = false): number {
+    const { schema: s, name: n } = this.resolveSequenceTarget(schema, name, qualified);
     if (!this.storage.sequenceExists(s, n)) {
       throw new OracleError(2289, 'sequence does not exist');
     }
