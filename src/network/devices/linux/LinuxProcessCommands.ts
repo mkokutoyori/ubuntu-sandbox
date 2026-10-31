@@ -6,6 +6,7 @@
  * scripts that parse the output keep working.
  */
 
+import { runPgrep, runPidof } from './PgrepCommand';
 import { formatLocalTime } from './system/SystemInfo';
 import { simulationDate } from '@/network/core/SystemClock';
 
@@ -32,6 +33,8 @@ import { renderDependencyTree } from './systemd/DependencyTree';
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
   pm: LinuxProcessManager;
+  userUid?: (name: string) => number;
+  groupGid?: (name: string) => number;
   currentUser: string;
   currentUid: number;
   /** TTY of the current shell session, e.g. "pts/0". */
@@ -287,68 +290,15 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
 // ─── pidof / pgrep / pkill ────────────────────────────────────────────
 
 export function cmdPidof(args: string[], ctx: ProcessCmdContext): KillResult {
-  if (args.length === 0) return { output: '', exitCode: 1 };
-  const allPids: number[] = [];
-  for (const name of args) {
-    allPids.push(...ctx.pm.pidof(name));
-  }
-  if (allPids.length === 0) return { output: '', exitCode: 1 };
-  return { output: allPids.sort((a, b) => b - a).join(' '), exitCode: 0 };
+  return runPidof(args, ctx);
 }
 
 export function cmdPgrep(args: string[], ctx: ProcessCmdContext): KillResult {
-  // pgrep [-l] [-a] [-x] [-u user[,user...]] [pattern]
-  let listLong = false;
-  let listFull = false;
-  let exact = false;
-  let users: string[] | null = null;
-  const patterns: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-l') listLong = true;
-    else if (a === '-a') listFull = true;
-    else if (a === '-x') exact = true;
-    else if (a === '-u') users = (args[++i] ?? '').split(',').filter(Boolean);
-    else patterns.push(a);
-  }
-  // Real pgrep only requires *some* selection criterion — a name pattern
-  // is one, but `-u user` alone (list everything that user owns) is
-  // equally valid and a common idiom.
-  if (patterns.length === 0 && !users) {
-    return { output: 'pgrep: no matching criteria specified', exitCode: 2 };
-  }
-  const pattern = patterns[0];
-  const pids = pattern ? ctx.pm.pgrep(pattern, exact) : ctx.pm.list().map(p => p.pid);
-  const filtered = pids
-    .map(pid => ctx.pm.get(pid)!)
-    .filter(p => (users ? users.includes(p.user) : true));
-  if (filtered.length === 0) return { output: '', exitCode: 1 };
-  const lines = filtered.map(p => (
-    listFull ? `${p.pid} ${p.command}` : listLong ? `${p.pid} ${p.comm}` : String(p.pid)
-  ));
-  return { output: lines.join('\n'), exitCode: 0 };
+  return runPgrep('pgrep', args, ctx);
 }
 
 export function cmdPkill(args: string[], ctx: ProcessCmdContext): KillResult {
-  let signal: Signal = 'SIGTERM';
-  let exact = false;
-  const positional: string[] = [];
-  for (const a of args) {
-    if (a === '-x') { exact = true; continue; }
-    if (a.startsWith('-')) {
-      const sig = parseSignalArg(a);
-      if (sig) {
-        signal = sig;
-        continue;
-      }
-    }
-    positional.push(a);
-  }
-  if (positional.length === 0) {
-    return { output: 'pkill: no matching criteria specified', exitCode: 2 };
-  }
-  const count = ctx.pm.pkill(positional[0], signal, exact);
-  return { output: '', exitCode: count > 0 ? 0 : 1 };
+  return runPgrep('pkill', args, ctx);
 }
 
 /**
