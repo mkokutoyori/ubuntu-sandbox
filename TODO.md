@@ -732,7 +732,8 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   `json_encode`, `json_decode`, `system` et `systemlist` existent.
 - **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
   `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
-  destructuration. Restent refusees les cibles `$ENV`, `@r`, `&opt`, les
+  destructuration. Restent refusees les cibles `$ENV` (l'environnement du
+  processus vim n'a pas de poignee d'ecriture), les
   tranches `l[a:b]`, `s:` / `l:` / `a:` hors fonction, `v:shell_error` et
   `:function`. Une lambda ne capture que les parametres des lambdas qui
   l'entourent.

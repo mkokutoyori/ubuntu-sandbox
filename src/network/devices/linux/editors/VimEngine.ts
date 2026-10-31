@@ -3313,6 +3313,29 @@ export class VimEngine {
     if (state.nextCommand !== null && state.nextCommand.trim() !== '' && !/^E\d+:/.test(this._message)) this.executeExCommand(state.nextCommand);
   }
 
+  private assignOption(name: string, value: string | number): string | null {
+    const bare = name.replace(/^[lg]:/, '');
+    const current = this.options.lookup(bare, 'effective');
+    if (current === undefined) return `E518: Unknown option: ${bare}`;
+    const prefix = name.startsWith('g:') ? 'setglobal' : name.startsWith('l:') ? 'setlocal' : 'set';
+    const argument = typeof current === 'boolean' ? `${value ? '' : 'no'}${bare}` : `${bare}=${value}`;
+    this._message = '';
+    this.executeExCommand(`${prefix} ${argument}`);
+    return /^E\d+:/.test(this._message) ? this._message : null;
+  }
+
+  private assignRegister(name: string, text: string): void {
+    const linewise = text.endsWith('\n');
+    const lines = (linewise ? text.slice(0, -1) : text).split('\n');
+    const lower = name.toLowerCase();
+    const existing = this.registers.get(lower);
+    if (name !== lower && existing !== undefined) {
+      this.registers.set(lower, { linewise: existing.linewise || linewise, lines: [...existing.lines, ...lines] });
+      return;
+    }
+    this.registers.set(lower, { linewise, lines });
+  }
+
   private runVariableCommand(word: string, bang: boolean, argument: string): void {
     const bar = barOutsideExpression(argument);
     const body = bar === -1 ? argument : argument.slice(0, bar);
@@ -3337,6 +3360,8 @@ export class VimEngine {
       windowBottom: this.window.top + this.window.height,
       lambdaCounter: this.lambdaCounter,
       variables: this.variables,
+      assignOption: (name, value) => this.assignOption(name, value),
+      assignRegister: (name, text) => this.assignRegister(name, text),
       submatch: (index) => match.groups[index],
       mark: (name) => this.patternMark(name),
       register: (name) => this.registerContent(name),

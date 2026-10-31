@@ -50,6 +50,8 @@ export interface ExpressionHost {
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
   shell(command: string, input: string | null): string;
+  assignOption(name: string, value: string | number): string | null;
+  assignRegister(name: string, text: string): void;
 }
 
 export interface ExpressionResult {
@@ -2071,7 +2073,7 @@ export function evaluateReplacementExpression(source: string, host: ExpressionHo
   return { text, errors: context.errors };
 }
 
-const LET_ASSIGNMENT = /^(\[[^\]]*\]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
+const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|@[A-Za-z0-9"\-*+_/.:#%]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
 const LET_OPERATOR: Record<string, string> = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '..=': '..', '.=': '.' };
 
 function splitAccess(target: string): { name: string; accessors: string[] } | null {
@@ -2095,27 +2097,42 @@ function splitAccess(target: string): { name: string; accessors: string[] } | nu
   return { name: head[0], accessors };
 }
 
+function combineWith(current: VimValue | undefined, operator: string, value: VimValue, label: string, context: Context): VimValue {
+  if (operator === '=') return value;
+  if (operator === '+=' && current?.kind === 'list' && value.kind === 'list') {
+    current.items.push(...value.items);
+    return current;
+  }
+  if (current === undefined) return context.fail(`E121: Undefined variable: ${label}`);
+  const frame = new Map<string, VimValue>([['lhs_', current], ['rhs_', value]]);
+  context.scopes.push(frame);
+  try {
+    return runExpression(`lhs_ ${LET_OPERATOR[operator]} rhs_`, context);
+  } finally {
+    context.scopes.pop();
+  }
+}
+
 function assignTarget(target: string, operator: string, value: VimValue, context: Context): void {
+  if (target.startsWith('&')) {
+    const current = operator === '=' ? undefined : runExpression(target, context);
+    const combined = combineWith(current, operator, value, target, context);
+    const failure = context.host.assignOption(target.slice(1), combined.kind === 'number' ? Number(combined.value) : context.stringOf(combined, true));
+    if (failure !== null) context.fail(failure);
+    return;
+  }
+  if (target.startsWith('@')) {
+    const register = target.slice(1);
+    const current = operator === '=' ? undefined : runExpression(target, context);
+    context.host.assignRegister(register, context.stringOf(combineWith(current, operator, value, target, context), true));
+    return;
+  }
   const access = splitAccess(target);
   if (access === null) context.fail(`E15: Invalid expression: "${target}"`);
   const { name, accessors } = access;
   const key = VimVariables.key(name);
   if (key === null) context.fail(`E461: Illegal variable name: ${name}`);
-  const combine = (current: VimValue | undefined): VimValue => {
-    if (operator === '=') return value;
-    if (operator === '+=' && current?.kind === 'list' && value.kind === 'list') {
-      current.items.push(...value.items);
-      return current;
-    }
-    if (current === undefined) return context.fail(`E121: Undefined variable: ${name}`);
-    const frame = new Map<string, VimValue>([['lhs_', current], ['rhs_', value]]);
-    context.scopes.push(frame);
-    try {
-      return runExpression(`lhs_ ${LET_OPERATOR[operator]} rhs_`, context);
-    } finally {
-      context.scopes.pop();
-    }
-  };
+  const combine = (current: VimValue | undefined): VimValue => combineWith(current, operator, value, name, context);
   if (accessors.length === 0) {
     context.host.variables.assign(key, combine(context.host.variables.lookup(key)));
     return;
