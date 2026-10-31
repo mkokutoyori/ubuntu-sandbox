@@ -1512,9 +1512,17 @@ export class OracleDatabase implements SqlCommandHost {
     // members go through PlsqlHost.resolvePackage instead.
     const unit = up.includes('.')
       ? this.resolveStoredUnit(schema, up)
-      : this.storedUnits.get(`${schema}.${up}`) ?? this.storedUnits.get(`SYS.${up}`);
+      : this.storedUnits.get(`${schema}.${up}`) ?? this.storedUnits.get(`SYS.${up}`) ?? this.unitBehindSynonym(schema, up);
     if (!unit) return undefined;
     return unit as StoredUnitLike;
+  }
+
+  private unitBehindSynonym(schema: string, name: string): StoredPLSQLUnit | undefined {
+    const target = followSynonyms(this.storage, { schema, name }, {
+      exists: (candidate) => this.storedUnits.has(`${candidate.schema}.${candidate.name}`),
+      publicFallback: true,
+    });
+    return this.storedUnits.get(`${target.schema}.${target.name}`);
   }
 
   private routeBuiltinPackageCall(executor: OracleExecutor, call: string, output: string[]): boolean {

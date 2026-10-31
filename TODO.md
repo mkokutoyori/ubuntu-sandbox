@@ -250,7 +250,7 @@ dans une section de topologie propre ; le choix change le format du fichier.
 **Mesure** : `SELECT scott.pkg_lab.g FROM dual` rend NULL pour une fonction de paquetage dont le corps rend 7, et
 `pkg.g()` est refuse par l'analyseur. `ALTER TRIGGER scott.t DISABLE` rend `Unsupported ALTER target: TRIGGER`.
 `CREATE VIEW` refuse maintenant une table absente (ORA-00942) ou une colonne inconnue (ORA-00904) et `FORCE` cree la vue avec l'avertissement ; la colonne STATUS de la vue reste VALID (pas d'etat INVALID). Les synonymes sont resolus par SELECT, INSERT, UPDATE, DELETE et MERGE ; ils le sont
-aussi pour les sequences (`scott.syn_seq.NEXTVAL`, `CURRVAL`), `TRUNCATE`, `LOCK TABLE` et `GRANT ... ON synonyme`, mais pas encore pour les procedures et fonctions (`EXEC syn_proc`),
+aussi pour les sequences (`scott.syn_seq.NEXTVAL`, `CURRVAL`), `TRUNCATE`, `LOCK TABLE`, `GRANT ... ON synonyme` et les procedures et fonctions stockees (`EXEC syn_proc`, appel dans un bloc), mais pas encore
 `DESCRIBE`, `ALTER TABLE`, `CREATE INDEX` ni `COMMENT ON`.
 **Pourquoi ce n'est pas ferme** : chacun est un point d'entree distinct de l'executeur (resolution des sequences,
 des unites stockees, des commandes SQL*Plus) a brancher sur `followSynonyms` ; l'appel d'une fonction de paquetage
