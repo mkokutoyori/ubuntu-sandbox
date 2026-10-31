@@ -1270,6 +1270,7 @@ export abstract class LinuxMachine extends EndHost
           return { status: 'NOERROR', records: reply.answers, authorities: reply.authorities };
         },
         this.dnssecAnchors,
+        { now: () => Math.floor(this.executor.simulatedDate().getTime() / 1000) },
       );
     }
     return this._dnsValidator.validateAnswer(records);
