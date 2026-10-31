@@ -4,6 +4,8 @@ import { formatExponentialSafe, formatFixedSafe, formatFloatDefault, formatVimGe
 import { compileVimPattern, type VimRegExp } from './VimPattern';
 import { expandReplacement } from './VimSubstitute';
 import { inVimOrder } from './VimHashOrder';
+import { formatLocalTime } from '@/network/devices/linux/system/SystemInfo';
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { sha256 } from '@/crypto/hash/sha256';
 
 export interface ExpressionHost {
@@ -1065,6 +1067,10 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     return accumulator;
   } }],
   ['sha256', { min: 1, max: 1, run: (args, context) => str(Array.from(sha256(new TextEncoder().encode(context.stringOf(args[0], false))), (byte) => byte.toString(16).padStart(2, '0')).join('')) }],
+  ['strftime', { min: 1, max: 2, run: (args, context) => str(formatLocalTime(
+    context.stringOf(args[0], false),
+    args.length > 1 ? Number(context.numberOf(args[1], true)) * 1000 : Math.floor(simulationNowMs() / 1000) * 1000,
+  )) }],
   ['json_decode', { min: 1, max: 1, run: (args, context) => jsonDecode(context.stringOf(args[0], false), context) }],
   ['json_encode', { min: 1, max: 1, run: (args, context) => str(jsonEncode(args[0], context)) }],
   ['filter', { min: 2, max: 2, run: (args, context) => mapOrFilter(args, context, false) }],
