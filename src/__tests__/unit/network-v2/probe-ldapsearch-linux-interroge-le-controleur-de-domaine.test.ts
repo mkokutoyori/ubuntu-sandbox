@@ -71,7 +71,7 @@ async function buildForestPair(): Promise<{ workstation: LinuxPC; controller: Wi
   const shell = PowerShellSubShell.create(other as never).subShell;
   await shell.processLine('Install-WindowsFeature -Name AD-Domain-Services');
   await shell.processLine(`Install-ADDSForest -DomainName "other.local" -Force ${SAFE_MODE}`);
-  await workstation.executeCommand(`echo '${OTHER_DC_ADDRESS} other.local' >> /etc/hosts`);
+  await workstation.executeCommand(`echo '${OTHER_DC_ADDRESS} other.local' | sudo tee -a /etc/hosts > /dev/null`);
   return { workstation, controller, other };
 }
 
