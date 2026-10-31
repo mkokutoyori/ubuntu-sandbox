@@ -43,55 +43,21 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Diagnostic reseau
 
-### [traceroute] le MODE de sonde est analyse, documente, et jamais honore
-MESURE, depuis un PC Linux vers l'adresse d'une interface distante du
-pare-feu (deux sauts reels : le routeur puis le pare-feu) :
-
-    traceroute -I  (ICMP)      1 192.168.1.1   2 192.168.20.2   JUSTE
-    traceroute -T  (TCP)       1 192.168.20.2                   UN SEUL SAUT
-    traceroute -U  (UDP)       * * *                            RIEN
-    traceroute     (defaut)    * * *                            RIEN
-    tracert (Windows)          1 192.168.1.1   2 192.168.20.2   JUSTE
-
-Le mode par DEFAUT du `traceroute` de Linux ne rend rien, et c'est celui
-que tout le monde tape.
-
-LA CAUSE est structurelle et se lit dans la signature :
-`LinuxNetKernel.traceroute(target, maxHops, probesPerHop, firstTtl,
-timeoutMs)` — AUCUN parametre de methode. Le moteur ne peut donc pas
-distinguer ICMP d'UDP ni de TCP. Les drapeaux `-I`, `-U`, `-T` sont
-analyses (`parsed.method`), decrits dans l'aide (« Use TCP SYN for
-probes »), et n'atteignent jamais la sonde. C'est le §6 : toute
-l'apparence d'exister, sauf l'effet.
-
-TROIS CONSEQUENCES, toutes mesurees :
-
-1. `-T` rend UN saut vers une destination qui en compte deux : il saute
-   le routeur. Un vrai traceroute TCP sonde par TTL croissant et voit
-   chaque saut.
-
-2. Le mode UDP est decide par un ORACLE EN MEMOIRE, pas par le fil :
-   `tracerouteUdpDenied` appelle `transitUdpAclVerdict`, qui parcourt les
-   equipements et rend un verdict sans qu'aucun datagramme parte. Les
-   `sendUdpProbe` emis ensuite sont DECORATIFS — les sauts sont deja
-   calcules. C'est le §4.
-
-3. Quand la sonde ne rend rien, le code FABRIQUE des sauts : hop 1 =
-   la passerelle par defaut avec un RTT invente de 1 ms, puis des
-   `* * *`. Une sortie de diagnostic inventee est pire qu'une absence de
-   reponse, parce qu'elle se lit comme une mesure.
-
-MEME FAMILLE QUE `isPathReachable`, ferme par
-`probe-acces-admin-meme-verdict-partout.test.ts` : le client Linux decide
-hors du fil, par un parcours de la topologie en memoire. Ici l'oracle
-s'appelle `transitUdpAclVerdict` et vit dans le meme fichier
-(`HostLookup.ts`).
-
-CE QU'IL FAUT : que `traceroute` emette de VRAIES sondes a TTL croissant,
-du type demande, et lise les ICMP time-exceeded et port-unreachable qui
-reviennent. `Router.decrementForForwarding` et `IcmpErrors` portent deja
-la regle du TTL et la generation des erreurs ; il s'agit de les faire
-travailler, pas d'en ecrire une seconde.
+### [traceroute] une sonde UDP vers une adresse de ROUTEUR Cisco affiche des `*` : l'attente est comprimee, pas le limiteur d'IOS
+**Re-mesure** (PC Linux -> R1 -> R2 -> PC2, routeurs Cisco, `traceroute -n -w 1 -q 1`, en root) : l'entree d'origine
+(« le mode n'atteint jamais la sonde », « `-T` rend un saut »...) est perimee. `LinuxNetKernel.traceroute` porte desormais
+`method` et `socket`, et vers `10.0.3.2` (trois sauts) les quatre modes (defaut, `-I`, `-T`, `-U`) rendent les trois
+sauts. Vers l'adresse `10.0.3.1` de R2 (deux sauts), defaut, `-I` et `-T` rendent deux sauts ; `-U` rend
+`1  10.0.1.1`, puis cinq `*`, puis `7  10.0.2.2`.
+**Cause mesuree** : le limiteur ICMP d'IOS (`IcmpUnreachableRateLimit`, 1 inaccessible par 500 ms, valeur reelle d'IOS)
+lit `getRouterScheduler().now()`, alors que `traceroute` plafonne l'attente d'une sonde sans reponse a `PROBE_WAIT_CAP_MS`
+(100 ms, `Traceroute.ts`) : cinq `*` ne font passer que ~500 ms d'horloge de routeur, et la sonde suivante est la premiere
+admise. Un vrai `-w 1` laisse passer 1 s par `*`. Le meme effet fait echouer, d'une commande a l'autre, deux `traceroute -U`
+lances a la suite vers la meme adresse de routeur (`-p 53` repond, `-p 33434` puis `-p 161` non).
+**Pourquoi ce n'est pas ferme** : il faut une seule base de temps pour l'attente et le limiteur — faire avancer l'horloge
+de simulation du `-w` complet quand l'attente reelle est plafonnee (`PathClock.wait`), et faire lire `simulationNowMs()` au
+limiteur — ce qui touche la base de temps du routeur ; a mesurer contre les sondes de `Router`/`ip icmp rate-limit`
+avant de la changer.
 
 ## Pare-feu FortiGate
 
