@@ -4237,9 +4237,17 @@ oppose a un script stocke sans catalogue de recuperation connecte (le sandbox
 l'accepte, comme le dit le tutoriel). Les commentaires `--` du tutoriel ne sont pas
 reconnus : seul `#` l'est.
 `rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
-une erreur RMAN-/ORA-) ; le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or directory`
-ici) n'est pas source, ni `msglog=`, `debug`, `trace=` et `using`. `SHOW SNAPSHOT CONTROLFILE NAME` et `CONFIGURE SNAPSHOT CONTROLFILE NAME` ne sont pas modelises (le parametre n'a pas
-d'etat, et son chemin par defaut sous `$ORACLE_HOME/dbs/snapcf_<SID>.f` n'est pas attestable depuis ce reseau). Meme
-manque pour `LIST BACKUP BY FILE`, `LIST BACKUP OF TABLESPACE`, `LIST FAILURE`, `SPOOL LOG`, `SWITCH`, `SET DBID`,
-`HOST`, `@fichier`, `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`, refuses en RMAN-01009 (mesure : tutoriel rejoue commande
-par commande).
+une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dans le fichier ce que la session imprime
+(sondes `probe-rman-cmdfile-et-log`, `probe-rman-spool-log`).
+Refuses en RMAN-01009 faute de source : `docs.oracle.com` n'est pas dans les domaines autorises de la session (WebFetch :
+`getaddrinfo ENOTFOUND docs.oracle.com`), et le §8 de CLAUDE.md interdit d'inventer le texte d'un outil proprietaire.
+Ce qu'il manque, commande par commande : `LIST BACKUP BY FILE` (mise en page des colonnes) ; `LIST BACKUP OF TABLESPACE`
+(correspondance tablespace -> fichiers de donnees, presente dans la base mais non exposee a la session) ; `LIST FAILURE`
+(Data Recovery Advisor : depot des echecs, numeros, priorites, libelles) ; `SWITCH ... TO COPY` (le texte
+`datafile N switched to datafile copy "..."`, et le deplacement du fichier dans le catalogue et le fichier de controle) ;
+`SET DBID` (texte de confirmation) ; `HOST` (texte de fin de commande) ; `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`
+(sorties longues, plusieurs etapes) ; `SHOW|CONFIGURE SNAPSHOT CONTROLFILE NAME` (chemin par defaut sous
+`$ORACLE_HOME/dbs/snapcf_<SID>.f`, et creation du fichier par `RESYNC`/`BACKUP` : a evaluer des que le parametre est
+stocke, §6). Non sources non plus : le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or
+directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
+`debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.
