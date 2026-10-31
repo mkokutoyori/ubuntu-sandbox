@@ -21,6 +21,7 @@ interface Scenario {
   target?: string;
   budgetMs?: number;
   maxLagMs?: number;
+  interruptAfterMs?: number;
   markerContains?: string;
   before?: string[];
   mustNotContain?: string[];
@@ -50,7 +51,7 @@ const SCENARIOS: Scenario[] = (process.env.STRESS_ONLY ? [] : []).concat([
   { name: 'win-cmd-for-50000', client: 'win', commands: () => ['(for /L %i in (1,1,50000) do @echo %i) & echo FINISHED'] },
   { name: 'win-ps-range-100000', client: 'win', commands: () => [`powershell -Command "1..100000 | ForEach-Object { $_ }; 'FINISHED'"`] },
   { name: 'win-curl-300', client: 'win', commands: (t) => [`(for /L %i in (1,1,300) do @curl.exe -s -o NUL --max-time 5 http://${t}/) & echo FINISHED`] },
-  { name: 'while-true', client: 'lin', commands: () => [`while true; do :; done`] },
+  { name: 'while-true', client: 'lin', commands: () => ['while true; do :; done'], interruptAfterMs: 5000 },
   { name: 'lin-big-pipeline', client: 'lin', commands: () => [`seq 1 300000 | sort -rn | uniq | wc -l; echo FINISHED`] },
   { name: 'cisco-ping-repeat-3000', client: 'r', commands: () => ['ping 203.0.113.1 repeat 3000'], markerContains: 'Success rate is' },
   { name: 'cisco-debug-packet-ping-2000', client: 'r', before: ['debug ip packet'], commands: () => ['ping 203.0.113.9 repeat 2000'], markerContains: 'Success rate is' },
@@ -136,6 +137,11 @@ for (const scenario of SCENARIOS) {
       const marker = commands.length > 1 ? `FINISHED${index + 1}` : 'FINISHED';
       await typeIn(page, ids[scenario.client], command).catch((error: Error) => note(`[${scenario.name}] typeIn failed: ${error.message.slice(0, 120)}`));
       finished = false;
+      if (scenario.interruptAfterMs !== undefined) {
+        await page.waitForTimeout(scenario.interruptAfterMs);
+        await page.locator(`[data-testid="terminal-modal"][data-device-id="${ids[scenario.client]}"] input[type="text"]`).last().press('Control+c');
+        await typeIn(page, ids[scenario.client], `echo ${marker}`);
+      }
       for (let tick = 0; tick < Number(process.env.STRESS_TICKS ?? 560) && !crashed; tick++) {
         await page.waitForTimeout(1000).catch(() => undefined);
         const lag = await Promise.race([
