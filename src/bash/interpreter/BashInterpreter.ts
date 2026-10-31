@@ -208,6 +208,7 @@ export interface InterpreterOptions {
   stdin?: string;
   /** True for a shell reading commands from a terminal (aliases expand). */
   interactive?: boolean;
+  fromStandardInput?: boolean;
   interrupt?: InterruptToken;
 }
 
@@ -284,6 +285,7 @@ export class BashInterpreter {
   private callFrames: Array<{ name: string; source: string; line: number; isFunction: boolean }> = [];
   private readonly functionSources = new Map<string, string>();
   private runningSource: string | null = null;
+  private readonly fromStandardInput: boolean;
   private readonly jobs = new Map<string, number>();
   private jobCounter = 0;
 
@@ -294,6 +296,7 @@ export class BashInterpreter {
     this.functions = options.functions ?? new Map();
     this.daemonMode = options.daemonMode ?? false;
     this.interactive = options.interactive ?? false;
+    this.fromStandardInput = options.fromStandardInput ?? false;
     this.interrupt = options.interrupt;
     if (options.stdin !== undefined) this.stdin = new StdinSource(options.stdin);
     const now = (): number => this.io?.wallClock?.().nowMs() ?? Date.now();
@@ -680,7 +683,8 @@ export class BashInterpreter {
 
   private syntaxLabel(): string {
     const name = this.env.get('0');
-    return name === 'bash' ? 'bash: -c' : name ?? 'bash';
+    if (name === 'bash') return this.fromStandardInput ? 'bash' : 'bash: -c';
+    return name ?? 'bash';
   }
 
   private reportSyntaxFailure(failure: SyntaxFailure, label: string): void {

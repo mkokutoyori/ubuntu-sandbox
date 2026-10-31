@@ -6663,7 +6663,7 @@ export class LinuxCommandExecutor {
           return this.runScriptProcess(cmd, (identity, bridge) =>
             runScriptContent(
               stdin, parsed.arg0, [], bridge, startupVars, this.buildIOContext(),
-              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+              { ...identity, daemonMode: this.daemonMode, fromStandardInput: true }, this.aliases, this.functions,
             ));
         }
         return { output: '', exitCode: 0 };
