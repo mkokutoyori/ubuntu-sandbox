@@ -294,6 +294,8 @@ export interface TcpHost {
   getHostname(): string;
   getPort(name: string): import('../hardware/Port').Port | undefined;
   getPorts(): import('../hardware/Port').Port[];
+  isLocalAddress?(ip: IPAddress): boolean;
+  isLocalAddress6?(ip: IPv6Address): boolean;
   sendFrame(portName: string, frame: EthernetFrame): void;
   resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
   resolveRoute6?(targetIp: string): { iface: string; nextHopIp: string } | null;
@@ -3593,6 +3595,7 @@ export class TcpStack {
       let v6: IPv6Address;
       try { v6 = new IPv6Address(targetIp); } catch { return false; }
       if (v6.isLoopback()) return true;
+      if (this.host.isLocalAddress6 !== undefined) return this.host.isLocalAddress6(v6);
       const cible = v6.toString();
       for (const port of this.host.getPorts()) {
         for (const entry of port.getIPv6Addresses?.() ?? []) {
@@ -3604,6 +3607,7 @@ export class TcpStack {
     const v4 = IPAddress.tryParse(targetIp);
     if (!v4) return false;
     if (v4.isLoopback()) return true;
+    if (this.host.isLocalAddress !== undefined) return this.host.isLocalAddress(v4);
     for (const port of this.host.getPorts()) {
       const own = port.getIPAddress();
       if (own && own.equals(v4)) return true;

@@ -1078,12 +1078,6 @@ interfaces VLAN au rejeu d'un export, serveurs DNS du poste Windows dans le fich
 - Un `systemctl restart systemd-networkd` demarre maintenant un client DHCP sur toute interface netplan `dhcp4: true` (c'est
   ce que fait le vrai) : un lab qui ne veut aucun bail doit le dire par `dhcp4: false` dans son fichier.
 
-### [TCP] une adresse ajoutee a `lo` n'est pas locale pour `connect()`
-Mesure avec `ip addr add 10.0.0.1/24 dev lo` puis `nc -zv 10.0.0.1 7000` : « Network is unreachable »
-alors que `ping 10.0.0.1` aboutit et que Linux repond « Connection refused ». Le rejeu des labos
-pose donc l'adresse sur `eth0`. Meme famille : `nc -s 10.0.0.2 127.0.0.1 9000` (source locale non
-loopback vers 127.0.0.1) expire chez nous, aboutit sur Linux (2 pas declares non portes).
-
 ### [nano] navigateur de fichiers (`^T` dans `^R`, `^O`, `M-F`)
 La barre d'invite annonce `^T Browse` comme nano mais le navigateur n'existe pas : la touche est
 ignoree. Vu en mesurant : `nano-tools-oracle.test.ts` (3 cas du corpus), `nano-colors-oracle.test.ts`
