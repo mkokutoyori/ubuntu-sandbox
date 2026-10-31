@@ -24,11 +24,31 @@ function restate(failure: SyntaxFailure, token: Token, source: string, firstLine
   };
 }
 
+function quotedSubstitutions(text: string): string[] {
+  const found: string[] = [];
+  for (let at = 0; at < text.length; at++) {
+    if (text[at] === '\\') { at++; continue; }
+    if (text[at] !== '$' || text[at + 1] !== '(' || text[at + 2] === '(') continue;
+    let depth = 1;
+    let end = at + 2;
+    for (; end < text.length && depth > 0; end++) {
+      if (text[end] === '(') depth++;
+      else if (text[end] === ')') depth--;
+    }
+    found.push(text.slice(at + 2, depth === 0 ? end - 1 : end));
+    at = end - 1;
+  }
+  return found;
+}
+
 function nestedFailure(tokens: readonly Token[], source: string, firstLine: number, extglob: ExtglobPolicy): SyntaxFailure | null {
   for (const token of tokens) {
-    if (!NESTED_SCRIPT_TOKENS.has(token.type)) continue;
-    const inner = parseScript(token.value, token.position.line, extglob);
-    if (inner.syntaxFailure !== undefined) return restate(inner.syntaxFailure, token, source, firstLine);
+    const bodies = NESTED_SCRIPT_TOKENS.has(token.type) ? [token.value]
+      : token.type === TokenType.DOUBLE_QUOTED ? quotedSubstitutions(token.value) : [];
+    for (const body of bodies) {
+      const inner = parseScript(body, token.position.line, extglob);
+      if (inner.syntaxFailure !== undefined) return restate(inner.syntaxFailure, token, source, firstLine);
+    }
   }
   return null;
 }

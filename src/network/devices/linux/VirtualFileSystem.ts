@@ -503,6 +503,8 @@ export class VirtualFileSystem {
     // UFW binary stub
     this.createFileAt('/usr/sbin/ufw', '#!/bin/bash\n# ufw binary stub\n', 0o755, 0, 0);
 
+    this.createFileAt('/usr/sbin/nologin', '#!/bin/bash\n# nologin binary stub\n', 0o755, 0, 0);
+
     // iptables binary stubs
     this.createFileAt('/usr/sbin/iptables', '#!/bin/bash\n# iptables binary stub\n', 0o755, 0, 0);
     this.createFileAt('/usr/sbin/ipset', '#!/bin/bash\n# ipset binary stub\n', 0o755, 0, 0);

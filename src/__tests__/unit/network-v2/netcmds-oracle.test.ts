@@ -60,7 +60,6 @@ const UNPORTED_STEPS: ReadonlySet<string> = new Set([
     'help umask | head -3',
     'enable -n umask; umask 077; echo rc=$?; enable umask; umask',
     'umask 022; which umask; echo rc=$?',
-    'umask 077; su -s /bin/sh nobody -c umask',
   ].map((command) => `umask-scopes|${command}`),
   ...[
     'ps -M', 'ps Z', 'ps --context', 'ps -Z; echo rc=$?',

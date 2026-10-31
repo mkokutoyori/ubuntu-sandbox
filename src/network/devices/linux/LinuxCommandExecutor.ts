@@ -3118,10 +3118,10 @@ export class LinuxCommandExecutor {
 
   admitSudo(
     cmdName: string, args: readonly string[], runAs: string, pipedPassword: string | null,
-  ): { refusal: { output: string; exitCode: number } | null; close: () => void } {
+  ): { refusal: { output: string; exitCode: number } | null; close: () => void; sessionUmask: number } {
     const none = (): void => undefined;
-    const refuse = (output: string): { refusal: { output: string; exitCode: number }; close: () => void } => (
-      { refusal: { output, exitCode: 1 }, close: none }
+    const refuse = (output: string): { refusal: { output: string; exitCode: number }; close: () => void; sessionUmask: number } => (
+      { refusal: { output, exitCode: 1 }, close: none, sessionUmask: SESSION_UMASK }
     );
     const auth = this.authorizeSudo(cmdName, args, runAs);
     const command = [cmdName, ...args].join(' ');
@@ -3144,8 +3144,8 @@ export class LinuxCommandExecutor {
       return refuse(`${entry.messages}sudo: account validation failure, is your account locked?`);
     }
     this.writeSudoAuditLine('success', auth, command);
-    entry.begin(runAs);
-    return { refusal: null, close: entry.close };
+    const sessionUmask = entry.begin(runAs);
+    return { refusal: null, close: entry.close, sessionUmask };
   }
 
   /** First non-loopback IPv4 address configured on this machine. */
@@ -5100,6 +5100,7 @@ export class LinuxCommandExecutor {
     let savedUser: { user: string; uid: number; gid: number; cwd: string } | null = null;
     let sudoParentUmask: number | null = null;
     let closeSudo: () => void = () => undefined;
+    let sudoSessionUmask = SESSION_UMASK;
     if (cmdArgs[0] === 'sudo') {
       isSudo = true;
       cmdArgs = cmdArgs.slice(1);
@@ -5134,13 +5135,14 @@ export class LinuxCommandExecutor {
       const admission = this.admitSudo(audited[0], audited.slice(1), runasUser, pipedPassword);
       if (admission.refusal !== null) return admission.refusal;
       closeSudo = admission.close;
+      sudoSessionUmask = admission.sessionUmask;
       savedUser = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid, cwd: this.cwd };
       const targetUserEntry = this.userMgr.getUser(runasUser)!;
       this.userMgr.currentUser = targetUserEntry.username;
       this.userMgr.currentUid = targetUserEntry.uid;
       this.userMgr.currentGid = targetUserEntry.gid;
       sudoParentUmask = this.umask;
-      this.umask = SESSION_UMASK;
+      this.umask = sudoSessionUmask;
     }
 
     if (cmdArgs.length === 0) {
@@ -6153,7 +6155,7 @@ export class LinuxCommandExecutor {
       case 'install': {
         for (const p of installOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
         const outInstall = cmdInstall(c, args);
-        return { output: outInstall, exitCode: /^install:/m.test(outInstall) ? 1 : 0 };
+        return { output: outInstall, exitCode: /^(install: (?!creating directory)|strip:)/m.test(outInstall) ? 1 : 0 };
       }
       case 'mv': {
         for (const p of mvOperands(args)) {
@@ -6663,7 +6665,7 @@ export class LinuxCommandExecutor {
           return this.runScriptProcess(cmd, (identity, bridge) =>
             runScriptContent(
               stdin, parsed.arg0, [], bridge, startupVars, this.buildIOContext(),
-              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+              { ...identity, daemonMode: this.daemonMode, fromStandardInput: true }, this.aliases, this.functions,
             ));
         }
         return { output: '', exitCode: 0 };
@@ -7972,17 +7974,20 @@ export class LinuxCommandExecutor {
     return running === undefined ? undefined : new LocalAgentPort(running.agent);
   }
 
-  private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {
+  private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null; shell: string | null } {
     let loginShell = false;
+    let shell: string | null = null;
     let targetUser = 'root';
     let command: string | null = null;
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
       if (arg === '-' || arg === '-l' || arg === '--login') { loginShell = true; continue; }
       if (arg === '-c' || arg === '--command') { command = args.slice(i + 1).join(' '); break; }
+      if (arg === '-s' || arg === '--shell') { shell = args[++i] ?? null; continue; }
+      if (arg.startsWith('--shell=')) { shell = arg.slice('--shell='.length); continue; }
       if (!arg.startsWith('-')) targetUser = arg;
     }
-    return { loginShell, targetUser, command };
+    return { loginShell, targetUser, command, shell };
   }
 
   /**
@@ -7992,8 +7997,8 @@ export class LinuxCommandExecutor {
    * path (runSuNetworkCommand) so both stay consistent with real su.
    */
   private beginSuSession(
-    targetUser: string, loginShell: boolean, stdin?: string,
-  ): { ok: true; restore: () => void; messages: string } | { ok: false; result: { output: string; exitCode: number } } {
+    targetUser: string, loginShell: boolean, stdin?: string, shell: string | null = null,
+  ): { ok: true; restore: () => void; messages: string } | { ok: false; result: { output: string; exitCode: number; stderr?: string } } {
     const user = this.userMgr.getUser(targetUser);
     if (!user) return { ok: false, result: { output: `su: user ${targetUser} does not exist`, exitCode: 1 } };
 
@@ -8028,13 +8033,21 @@ export class LinuxCommandExecutor {
     const messages = session.sessionMessages.join('');
     this.recordPamAccount('USER_START', 'session_open', session, user.username, true);
 
-    if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
+    const effectiveShell = shell ?? user.shell;
+    if (shell !== null && !this.vfs.exists(shell)) {
+      session.closeSession();
+      this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
+      this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
+      session.end();
+      return { ok: false, result: { output: messages, stderr: `su: failed to execute ${shell}: No such file or directory`, exitCode: 127 } };
+    }
+    if (effectiveShell === '/sbin/nologin' || effectiveShell === '/usr/sbin/nologin') {
       session.closeSession();
       this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
       this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
       session.end();
       const notice = this.vfs.readFile('/etc/nologin.txt');
-      return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}`, exitCode: 1 } };
+      return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}\n`, exitCode: 1 } };
     }
 
     this.suStack.push({
@@ -8049,7 +8062,7 @@ export class LinuxCommandExecutor {
     this.userMgr.currentUser = user.username;
     this.userMgr.currentUid = user.uid;
     this.userMgr.currentGid = user.gid;
-    this.umask = SESSION_UMASK;
+    this.umask = session.sessionUmask;
     if (loginShell) this.cwd = user.home;
 
     return {
@@ -8071,9 +8084,9 @@ export class LinuxCommandExecutor {
     return frame;
   }
 
-  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
-    const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(args);
-    const session = this.beginSuSession(targetUser, loginShell, stdin);
+  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
+    const { loginShell, targetUser, command, shell } = LinuxCommandExecutor.parseSuArgs(args);
+    const session = this.beginSuSession(targetUser, loginShell, stdin, shell);
     if (session.ok === false) return session.result;
 
     // `su <user> -c "<command>"` runs a single command as the target user
@@ -8104,19 +8117,19 @@ export class LinuxCommandExecutor {
     argv: string[], env?: Record<string, string>, stdin?: string,
   ): Promise<{ output: string; exitCode: number }> | null {
     if (argv[0] !== 'su' || !this.networkRunner) return null;
-    const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(argv.slice(1));
+    const { loginShell, targetUser, command, shell } = LinuxCommandExecutor.parseSuArgs(argv.slice(1));
     if (command === null) return null;
     const innerArgv = command.trim().split(/\s+/).filter(Boolean);
     if (innerArgv.length === 0 || !this.isNetworkCommandName(innerArgv[0])) return null;
 
-    return this.runSuNetworkCommand(targetUser, loginShell, command, innerArgv, env, stdin);
+    return this.runSuNetworkCommand(targetUser, loginShell, command, innerArgv, env, stdin, shell);
   }
 
   private async runSuNetworkCommand(
     targetUser: string, loginShell: boolean, command: string, innerArgv: string[],
-    env?: Record<string, string>, stdin?: string,
-  ): Promise<{ output: string; exitCode: number }> {
-    const session = this.beginSuSession(targetUser, loginShell, stdin);
+    env?: Record<string, string>, stdin?: string, shell: string | null = null,
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    const session = this.beginSuSession(targetUser, loginShell, stdin, shell);
     if (session.ok === false) return session.result;
     try {
       if (/[|;&<>]/.test(command)) {

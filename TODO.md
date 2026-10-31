@@ -826,8 +826,6 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
   le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
   prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
-- `-U -l` (ecoute sur une socket UNIX) et `-U -u` (datagramme UNIX) sont refuses : le registre
-  `localDatagramSockets` sait connecter une socket flux, pas en ecouter une.
 - Deux `nc -l 9000` : `nc` pose SO_REUSEADDR et SO_REUSEPORT, donc le vrai accepte le second
   ecouteur (meme uid) ; `SocketTable.bind` repond EADDRINUSE.
 - Les messages `-v` de l'ecoute (« Listening on 0.0.0.0 9000 ») dependent de la resolution inverse
@@ -903,17 +901,13 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
   alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
 - `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
   interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
-- `su -s /bin/sh nobody -c umask` : `su` n'honore pas `-s`.
 Autres ecarts mesures, non fermes :
-- `pam_umask` : le vrai donne 0002 aux utilisateurs dont le groupe prive porte leur nom (`USERGROUPS_ENAB`) ; `sudo` et
-  `su` appliquent ici 0022 a tous. L'umask initial d'un utilisateur non root n'a pas ete enregistre.
+- L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
+  maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
 - `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
   et `ls -l /proc/$$/fd` ne le montre pas.
-- `cp` : `-i`, `-x` et `-Z` sont acceptes sans effet, `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un
-  lien (le seul cas enregistre est un fichier regulier).
-- `ls` avec plusieurs operandes dossiers : le tri est celui des operandes (fichiers d'abord) mais la mise en colonnes de
-  la sortie non tty n'a pas ete comparee.
-- `install -D -t`, `install -s` et `install --strip` : seul le jeu d'options du corpus (`-m -d -D -o -g -v`) est enregistre.
+- `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
+  regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
 
 ### [ps] ce que le portage de `ps` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `ps-procps-4.0.4.json`, 5 labos, 629 pas, procps-ng 4.0.4 sur Ubuntu 24.04, pty
@@ -3953,9 +3947,6 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 Les trois bancs passent en entier ; restent mesures et non fermes :
 - `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
 - `extglob` est lu dans le texte du script (premier `shopt -s extglob` d'une ligne precedente) et non dans l'etat du shell a l'execution : un `shopt -s extglob` pose par un `source` ou une fonction n'est pas vu par le lexeur.
-- Les erreurs de syntaxe a l'interieur d'un `$(...)` ecrit entre guillemets doubles ne sont pas relevees au parsage (seuls les `$(...)`, backticks et `<(...)` nus le sont).
-- Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
-- `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
 ---
 

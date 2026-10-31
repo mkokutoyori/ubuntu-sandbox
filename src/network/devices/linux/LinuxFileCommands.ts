@@ -732,6 +732,7 @@ interface InstallRequest {
   readonly owner: string | null;
   readonly group: string | null;
   readonly targetDirectory: string | null;
+  readonly strip: boolean;
   readonly operands: string[];
 }
 
@@ -743,6 +744,7 @@ function parseInstallArguments(args: readonly string[]): InstallRequest {
   let owner: string | null = null;
   let group: string | null = null;
   let targetDirectory: string | null = null;
+  let strip = false;
   const operands: string[] = [];
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
@@ -752,6 +754,7 @@ function parseInstallArguments(args: readonly string[]): InstallRequest {
     }
     if (argument === '--directory') directories = true;
     else if (argument === '--verbose') verbose = true;
+    else if (argument === '--strip') strip = true;
     else if (argument.startsWith('--mode=')) modeText = argument.slice('--mode='.length);
     else if (argument.startsWith('--owner=')) owner = argument.slice('--owner='.length);
     else if (argument.startsWith('--group=')) group = argument.slice('--group='.length);
@@ -763,6 +766,7 @@ function parseInstallArguments(args: readonly string[]): InstallRequest {
         if (flag === 'd') directories = true;
         else if (flag === 'D') createLeading = true;
         else if (flag === 'v') verbose = true;
+        else if (flag === 's') strip = true;
         else if (flag === 'm' || flag === 'o' || flag === 'g' || flag === 't') {
           const attached = argument.slice(letter + 1);
           const value = attached !== '' ? attached : args[++index] ?? '';
@@ -775,7 +779,7 @@ function parseInstallArguments(args: readonly string[]): InstallRequest {
       }
     } else operands.push(argument);
   }
-  return { directories, createLeading, verbose, modeText, owner, group, targetDirectory, operands };
+  return { directories, createLeading, verbose, modeText, owner, group, targetDirectory, strip, operands };
 }
 
 export function installOperands(args: readonly string[]): string[] {
@@ -817,6 +821,7 @@ export function cmdInstall(ctx: ShellContext, args: string[]): string {
       : `install: missing destination file operand after '${destinationName}'\nTry 'install --help' for more information.`;
   }
   const destination = ctx.vfs.normalizePath(destinationName, ctx.cwd);
+  if (request.createLeading && request.targetDirectory !== null && ctx.vfs.getType(destination) === null) makeDirectories(destination, destinationName);
   const intoDirectory = ctx.vfs.getType(destination) === 'directory';
   if (operands.length > 1 && !intoDirectory) return `install: target '${destinationName}': ${ctx.vfs.exists(destination) ? 'Not a directory' : 'No such file or directory'}`;
   for (const sourceName of operands) {
@@ -841,6 +846,10 @@ export function cmdInstall(ctx: ShellContext, args: string[]): string {
     ctx.vfs.chmod(target, mode);
     if (uid !== ctx.uid || gid !== ctx.gid) ctx.vfs.chown(target, uid, gid);
     if (request.verbose) messages.push(`'${sourceName}' -> '${targetName}'`);
+    if (request.strip && !source.content.startsWith('\x7fELF')) {
+      messages.push(`strip: ${targetName}: file format not recognized`, 'install: strip process terminated abnormally');
+      ctx.vfs.deleteFile(target);
+    }
   }
   return messages.join('\n');
 }
