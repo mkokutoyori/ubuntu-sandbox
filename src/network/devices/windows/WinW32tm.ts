@@ -164,7 +164,7 @@ function statusLines(context: W32tmContext, verbose: boolean): string {
     `Root Delay: ${seconds7(synced ? system.rootDelayMs / 1000 : 0)}`,
     `Root Dispersion: ${seconds7(synced ? agent.getRootDispersionMs() / 1000 : 0)}`,
     `ReferenceId: ${synced || local ? referenceIdText(config.refIdentifier) : '0x00000000 (unspecified)'}`,
-    `Last Successful Sync Time: ${config.lastSyncMs ? localDateTime(config.lastSyncMs, context.timezone) : 'unspecified'}`,
+    `Last Successful Sync Time: ${config.lastSyncMs ? localDateTime(agent.referenceTimeMs(), context.timezone) : 'unspecified'}`,
     `Source: ${service.sourceText()}`,
     `Poll Interval: ${pollText(pollSeconds)}`,
   ];

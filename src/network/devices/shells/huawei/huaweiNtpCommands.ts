@@ -307,7 +307,7 @@ export function displayNtpServiceStatus(agent: NtpAgent | undefined): string {
     `Root delay: ${(best ? Math.abs(best.delayMs) : 0).toFixed(2)} ms`,
     `Root dispersion: ${(best ? best.dispersionMs : maitreLocal ? 0 : 16000).toFixed(2)} ms`,
     `Peer dispersion: ${(best ? best.dispersionMs / 2 : maitreLocal ? 0 : 16000).toFixed(2)} ms`,
-    `Reference time: ${horodatageVrp(cfg.lastSyncMs || simulationNowMs())}`,
+    `Reference time: ${horodatageVrp(agent.referenceTimeMs())}`,
   ];
   if (cfg.sourceInterface) lignes.push(`Source interface: ${huaweiDisplayInterfaceName(cfg.sourceInterface)}`);
   return lignes.join('\n');
