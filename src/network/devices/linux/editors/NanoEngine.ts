@@ -211,6 +211,7 @@ export class NanoEngine {
   private bufferPath: string;
   private fileFormat: NanoFileFormat = 'unix';
   private writeMethod: 'overwrite' | 'append' | 'prepend' = 'overwrite';
+  private diskStamp: string | null = null;
   private lockPath = '';
   private lockHolder: EditorIdentity | null = null;
   private confirmation: Confirmation | null = null;
@@ -310,6 +311,7 @@ export class NanoEngine {
     this._readOnly = this.live.view;
     this.titleName = named ? typedName : '';
     this.bufferPath = opening.path;
+    this.diskStamp = opening.path === '' ? null : this.fs.modificationStamp?.(opening.path) ?? null;
     this.window = new NanoWindow(
       { lineCount: () => this.linesArr.length, lineAt: (index) => this.linesArr[index] ?? '' },
       () => ({
@@ -2233,6 +2235,14 @@ export class NanoEngine {
     const nameExists = this.pathKind(target) !== 'missing';
     const warn = this.bufferPath === '' ? nameExists : this.namesDiffer(name);
     const write = (): void => this.writeBuffer(name, target, exiting, selection);
+    const changedOnDisk = !warn && nameExists && this.bufferPath !== '' && this.diskStamp !== null
+      && this.fs.modificationStamp?.(target) !== this.diskStamp;
+    if (changedOnDisk && this.writeMethod === 'overwrite') {
+      this.pauseWith('File on disk has changed');
+      const abandon = (): void => { this.exitAfterSave = false; this.afterWrite = null; this._mode = 'edit'; this._statusMessage = ''; };
+      this.ask('File was modified since you opened it; continue saving? ', write, abandon, exiting ? () => this.backToWritePrompt() : abandon);
+      return;
+    }
     if (!warn || this.writeMethod !== 'overwrite') {
       write();
       return;
@@ -2283,6 +2293,7 @@ export class NanoEngine {
       return;
     }
     const overwrite = method === 'overwrite';
+    if (overwrite && region === null) this.diskStamp = this.fs.modificationStamp?.(target) ?? null;
     if (region !== null) {
       const count = written.split(LINE_END[this.fileFormat]).length - 1;
       this._statusMessage = `[ Wrote ${count} line${count === 1 ? '' : 's'} ]`;

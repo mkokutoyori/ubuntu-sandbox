@@ -334,7 +334,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('30. should support resolving and pinging via hostname directly if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.2.10 win-host" >> /etc/hosts'));
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.2.10 win-host" | sudo tee -a /etc/hosts > /dev/null'));
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('ping -c 1 win-host'));
       expect(output).toContain('10.0.2.10');
     });
@@ -1050,7 +1050,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('130. should support resolving and tracing via hostnames directly if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.2.10 win-host" >> /etc/hosts'));
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.2.10 win-host" | sudo tee -a /etc/hosts > /dev/null'));
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute win-host'));
       expect(output).toContain('10.0.2.10');
     });
@@ -1121,7 +1121,7 @@ describe('WAN-level Ping and Traceroute Command Suite', () => {
     it('140. should support displaying hostname aliases inside intermediate hops lists if mapped', async () => {
       const topo = setupWANTopology();
       await configureWANIPs(topo);
-      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.1.1 core-gw" >> /etc/hosts'));
+      await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('echo "10.0.1.1 core-gw" | sudo tee -a /etc/hosts > /dev/null'));
       const output = await topo.clock.advanceUntilSettled(topo.pc1.executeCommand('traceroute 10.0.2.10'));
       expect(output).toContain('core-gw');
     });

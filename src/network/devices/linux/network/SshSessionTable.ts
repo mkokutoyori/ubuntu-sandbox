@@ -9,7 +9,7 @@
  * issued on the same device can query the same table.
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationDate } from '@/network/core/SystemClock';
 
 import { SshSession, type SshSessionInit } from './SshSession';
 import type { UtmpSync } from './UtmpSync';
@@ -21,6 +21,9 @@ export class SshSessionTable {
   private history: SshSession[] = [];
   private nextPts = 0;
   private sync: UtmpSync | null = null;
+  private now: () => Date = simulationDate;
+
+  setClock(now: () => Date): void { this.now = now; }
 
   attachUtmp(sync: UtmpSync): void { this.sync = sync; }
 
@@ -35,7 +38,7 @@ export class SshSessionTable {
 
   open(init: Omit<SshSessionInit, 'tty'> & { tty?: string }): SshSession {
     const tty = init.tty ?? this.allocateTty();
-    const session = new SshSession({ ...init, tty });
+    const session = new SshSession({ loginAt: this.now(), ...init, tty });
     this.active.set(this.key(session), session);
     this.sync?.openSession(this.toRecord(session));
     return session;
@@ -46,10 +49,11 @@ export class SshSessionTable {
     let removed = false;
     for (const [k, s] of this.active) {
       if (k === key || s.tty === ttyOrKey) {
-        s.close(reason);
+        const closedAt = this.now();
+        s.close(reason, closedAt);
         this.history.push(s);
         this.active.delete(k);
-        this.sync?.closeSession(s.tty, simulationDate());
+        this.sync?.closeSession(s.tty, closedAt);
         removed = true;
       }
     }
@@ -57,7 +61,7 @@ export class SshSessionTable {
   }
 
   recordFailedLogin(user: string, fromIp: string): void {
-    this.sync?.appendFailure({ user, tty: 'ssh:notty', fromIp, at: simulationNowMs() });
+    this.sync?.appendFailure({ user, tty: 'ssh:notty', fromIp, at: this.now().getTime() });
   }
 
   /** Sessions currently open. */
@@ -98,7 +102,7 @@ export class SshSessionTable {
 
   /** Render `w` — uptime/header line followed by one row per session. */
   renderW(): string {
-    const header = ' ' + simulationDate().toUTCString().slice(5, 21) + '  up 0 min,  ' +
+    const header = ' ' + this.now().toUTCString().slice(5, 21) + '  up 0 min,  ' +
       `${this.list().length} users,  load average: ${IDLE_LOAD_AVERAGE}\n` +
       'USER     TTY       FROM             LOGIN@   IDLE   JCPU   PCPU WHAT';
     return [header, ...this.list().map(s => s.toWRow())].join('\n');

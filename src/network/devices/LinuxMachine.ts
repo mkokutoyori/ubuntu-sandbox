@@ -550,6 +550,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.executor.lifecycle.bootedAt()) {
       utmpSync.appendRebootMark(this.executor.lifecycle.bootedAt()!);
     }
+    this.sessionTable.setClock(() => this.executor.simulatedDate());
     this.sessionTable.attachUtmp(utmpSync);
     this.utmpSync = utmpSync;
     this.executor.setUtmpSync(utmpSync);
@@ -684,6 +685,7 @@ export abstract class LinuxMachine extends EndHost
 
     // 7. Cron daemon ticker — fires due jobs every simulated minute.
     this.startCronTicker();
+    this.getSystemClock().onStep(() => this.executor.serviceMgr.rearmTimers());
 
     // 8. DNS daemon transport: when dnsmasq starts, listen on UDP 53 so
     //    resolution travels through the simulated network (cables, routing,
@@ -2872,6 +2874,7 @@ export abstract class LinuxMachine extends EndHost
         active: this.isSshActive(),
         motd: this.executor.vfs.readFile('/etc/motd') ?? '',
         banner: this.executor.vfs.readFile('/etc/issue.net') ?? '',
+        now: () => this.executor.simulatedDate().getTime(),
       });
     } else {
       this._sshHost.applyConfig(config);

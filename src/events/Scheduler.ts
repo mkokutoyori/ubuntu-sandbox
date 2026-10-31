@@ -101,6 +101,11 @@ interface VirtualTask {
   fn: () => void;
   /** Insertion order to break ties deterministically. */
   seq: number;
+  cancelled?: true;
+}
+
+function before(a: VirtualTask, b: VirtualTask): boolean {
+  return a.due < b.due || (a.due === b.due && a.seq < b.seq);
 }
 
 function drainRunnableWork(): Promise<void> {
@@ -131,7 +136,8 @@ export class VirtualTimeScheduler implements IScheduler {
 
   private nextHandle = 1;
   private nextSeq = 1;
-  private readonly tasks: VirtualTask[] = [];
+  private heap: VirtualTask[] = [];
+  private readonly live = new Map<TimerHandle, VirtualTask>();
   private readonly unsettledWork = new Set<Promise<unknown>>();
   private drivingUnsettledWork = false;
 
@@ -141,7 +147,7 @@ export class VirtualTimeScheduler implements IScheduler {
 
   setTimeout(fn: () => void, delayMs: number): TimerHandle {
     const handle = this.nextHandle++;
-    this.tasks.push({
+    this.enqueue({
       handle,
       due: this.currentTime + Math.max(0, delayMs),
       fn,
@@ -153,7 +159,7 @@ export class VirtualTimeScheduler implements IScheduler {
   setInterval(fn: () => void, periodMs: number): TimerHandle {
     const handle = this.nextHandle++;
     const period = Math.max(1, periodMs);
-    this.tasks.push({
+    this.enqueue({
       handle,
       due: this.currentTime + period,
       period,
@@ -179,12 +185,8 @@ export class VirtualTimeScheduler implements IScheduler {
    * makes the clock read the delays that were actually requested.
    */
   msUntilNextTask(): number | null {
-    let soonest: number | null = null;
-    for (const t of this.tasks) {
-      const due = Math.max(0, t.due - this.currentTime);
-      if (soonest === null || due < soonest) soonest = due;
-    }
-    return soonest;
+    const next = this.peekLive();
+    return next === null ? null : Math.max(0, next.due - this.currentTime);
   }
 
   /**
@@ -252,6 +254,7 @@ export class VirtualTimeScheduler implements IScheduler {
       if (due.period !== undefined) {
         due.due = this.currentTime + due.period;
         due.seq = this.nextSeq++;
+        this.siftDown(0);
       } else {
         this.removeTask(due.handle);
       }
@@ -269,9 +272,10 @@ export class VirtualTimeScheduler implements IScheduler {
   jump(ms: number): void {
     if (ms < 0) throw new Error('VirtualTimeScheduler.jump: ms must be ≥ 0');
     const target = this.currentTime + ms;
-    for (const task of this.tasks) {
+    for (const task of this.live.values()) {
       if (task.due < target) task.due = target;
     }
+    this.rebuildHeap();
     this.advance(ms);
   }
 
@@ -286,6 +290,7 @@ export class VirtualTimeScheduler implements IScheduler {
       this.currentTime = next.due;
       if (next.period !== undefined) {
         next.due = this.currentTime + next.period;
+        this.siftDown(0);
       } else {
         this.removeTask(next.handle);
       }
@@ -299,32 +304,80 @@ export class VirtualTimeScheduler implements IScheduler {
 
   /** Drop every pending task and reset the clock. */
   reset(): void {
-    this.tasks.length = 0;
+    this.heap = [];
+    this.live.clear();
     this.currentTime = 0;
     this.nextSeq = 1;
   }
 
   /** Number of currently-pending tasks (for tests). */
   pendingCount(): number {
-    return this.tasks.length;
+    return this.live.size;
   }
 
   // ────────────────────────────────────────────────────────────────────────
 
   private pickNextDue(maxTime: number): VirtualTask | null {
-    let best: VirtualTask | null = null;
-    for (const t of this.tasks) {
-      if (t.due > maxTime) continue;
-      if (!best || t.due < best.due || (t.due === best.due && t.seq < best.seq)) {
-        best = t;
-      }
-    }
-    return best;
+    const next = this.peekLive();
+    return next !== null && next.due <= maxTime ? next : null;
   }
 
   private removeTask(handle: TimerHandle): void {
-    const idx = this.tasks.findIndex((t) => t.handle === handle);
-    if (idx >= 0) this.tasks.splice(idx, 1);
+    const task = this.live.get(handle);
+    if (task === undefined) return;
+    task.cancelled = true;
+    this.live.delete(handle);
+    if (this.heap.length > 2 * this.live.size + 64) this.rebuildHeap();
+  }
+
+  private enqueue(task: VirtualTask): void {
+    this.live.set(task.handle, task);
+    this.heap.push(task);
+    this.siftUp(this.heap.length - 1);
+  }
+
+  private peekLive(): VirtualTask | null {
+    while (this.heap.length > 0 && this.heap[0].cancelled === true) this.popTop();
+    return this.heap.length === 0 ? null : this.heap[0];
+  }
+
+  private popTop(): void {
+    const last = this.heap.pop() as VirtualTask;
+    if (this.heap.length === 0) return;
+    this.heap[0] = last;
+    this.siftDown(0);
+  }
+
+  private rebuildHeap(): void {
+    this.heap = [...this.live.values()];
+    for (let index = (this.heap.length >> 1) - 1; index >= 0; index--) this.siftDown(index);
+  }
+
+  private siftUp(start: number): void {
+    const heap = this.heap;
+    let index = start;
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (!before(heap[index], heap[parent])) break;
+      [heap[index], heap[parent]] = [heap[parent], heap[index]];
+      index = parent;
+    }
+  }
+
+  private siftDown(start: number): void {
+    const heap = this.heap;
+    const length = heap.length;
+    let index = start;
+    for (;;) {
+      const left = 2 * index + 1;
+      const right = left + 1;
+      let smallest = index;
+      if (left < length && before(heap[left], heap[smallest])) smallest = left;
+      if (right < length && before(heap[right], heap[smallest])) smallest = right;
+      if (smallest === index) break;
+      [heap[index], heap[smallest]] = [heap[smallest], heap[index]];
+      index = smallest;
+    }
   }
 }
 

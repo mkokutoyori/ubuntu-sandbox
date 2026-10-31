@@ -1,10 +1,9 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
-import { binaryStringToBytes, bytesToFileText } from '@/crypto/encoding';
 
 import { parseCurlArgs, remoteNameFor, CURL_USER_AGENT, type CurlOptions } from './CurlArgs';
 import { parseCurlUrl, performCurlRequest, isRedirect, resolveLocation, type CurlOutcome, type CurlSuccess } from './CurlTransfer';
 import { applyWriteOut, type WriteOutFacts, type WriteOutResult } from './CurlWriteOut';
-import { withBinaryUploads, type CurlHost } from './CurlHost';
+import type { CurlHost } from './CurlHost';
 
 export interface CurlRun {
   readonly output: string;
@@ -216,7 +215,7 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string, urlNum:
 
     if (exitCode === 0) {
       const payload = (opts.head || opts.include ? headerBlock(outcome) + '\n' : '') +
-        (opts.head ? '' : bytesToFileText(binaryStringToBytes(outcome.body)));
+        (opts.head ? '' : outcome.body);
       if (target && target !== '-') {
         if (host.writeFile(target, payload)) {
           stdoutParts.push('');
@@ -261,8 +260,7 @@ function versionBanner(): string {
   ].join('\n');
 }
 
-export async function runCurl(rawHost: CurlHost, args: readonly string[]): Promise<CurlRun> {
-  const host = withBinaryUploads(rawHost);
+export async function runCurl(host: CurlHost, args: readonly string[]): Promise<CurlRun> {
   const parsed = parseCurlArgs(args);
   if (parsed.ok === false) return { output: '', exitCode: parsed.exitCode, stderr: parsed.message };
 

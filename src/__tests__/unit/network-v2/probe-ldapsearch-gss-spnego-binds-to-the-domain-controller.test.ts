@@ -30,7 +30,7 @@ const SEARCH = `${KRB5} ldapsearch -H ldap://dc01.corp.local -Y GSS-SPNEGO -b dc
 async function authenticatedWorkstation(): Promise<LinuxPC> {
   const { workstation } = await buildLab();
   await workstation.executeCommand('apt install -y libsasl2-modules-gssapi-mit');
-  await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' >> /etc/hosts`);
+  await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' | sudo tee -a /etc/hosts > /dev/null`);
   await workstation.executeCommand(
     `printf '[libdefaults]\\n default_realm = CORP.LOCAL\\n dns_lookup_kdc = false\\n[realms]\\n CORP.LOCAL = {\\n  kdc = ${DC_ADDRESS}\\n }\\n' > /tmp/krb5.conf`,
   );
@@ -54,7 +54,7 @@ describe('ldapsearch -Y GSS-SPNEGO binds to the domain controller', () => {
 
   it('the root DSE announces GSSAPI then GSS-SPNEGO', async () => {
     const { workstation } = await buildLab();
-    await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' >> /etc/hosts`);
+    await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' | sudo tee -a /etc/hosts > /dev/null`);
     const output = await workstation.executeCommand('ldapsearch -x -H ldap://dc01.corp.local -b "" -s base -LLL supportedSASLMechanisms');
     expect(output.indexOf('supportedSASLMechanisms: GSSAPI')).toBeGreaterThanOrEqual(0);
     expect(output.indexOf('supportedSASLMechanisms: GSS-SPNEGO')).toBeGreaterThan(output.indexOf('supportedSASLMechanisms: GSSAPI'));

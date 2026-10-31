@@ -1,4 +1,3 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
 import type { LinuxCommandExecutor } from '../LinuxCommandExecutor';
 import { hostClock } from '../audit/tools/AuditHostClock';
 import type { LastFile, LastHost } from './LastTool';
@@ -19,8 +18,8 @@ export function lastHost(executor: LinuxCommandExecutor): LastHost {
       if (inode.type === 'directory') return { kind: 'directory', ctime };
       return { kind: 'file', bytes: binaryStringToBytes(vfs.readFile(absolute) ?? ''), ctime };
     },
-    nowSec: () => Math.floor(simulationNowMs() / 1000),
-    bootTimeSec: () => Math.floor((executor.lifecycle.bootedAt()?.getTime() ?? simulationNowMs()) / 1000),
+    nowSec: () => Math.floor(executor.simulatedDate().getTime() / 1000),
+    bootTimeSec: () => Math.floor((executor.lifecycle.bootedAt()?.getTime() ?? executor.simulatedDate().getTime()) / 1000),
     clock: hostClock(executor.identity.timezone || 'UTC'),
     userExists: (name) => {
       const user = userMgr.getUser(name);

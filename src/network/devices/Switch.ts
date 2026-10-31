@@ -4017,8 +4017,9 @@ export abstract class Switch extends Equipment {
       this._sshSessionRegistry = new SshSessionRegistry({
         deviceId: this.id, bus: this.getBus(),
         configuredTransport: () => this.sshConfiguredTransport(),
+        now: () => this.getSystemClockMs(),
       });
-      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus() });
+      this._credentialStore = new NetworkOsCredentialStore({ deviceId: this.id, bus: this.getBus(), now: () => this.getSystemClockMs() });
       this._sshHost = new CrossVendorSshHost({
         deviceId: this.id,
         hostname: this.getHostname(),
@@ -4026,6 +4027,7 @@ export abstract class Switch extends Equipment {
         bus: this.getBus(),
         authority: this._credentialStore,
         active: this.isSshActive(),
+        now: () => this.getSystemClockMs(),
       });
     }
     return this._credentialStore;

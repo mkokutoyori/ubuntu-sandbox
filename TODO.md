@@ -168,9 +168,12 @@ suit maintenant l'horloge de sa machine, comme l'authentification IKE par
 certificat de Cisco et l'inspection SSL du pare-feu. Le verificateur de certificats clients de nginx/Apache et leur journal d'acces aussi. Les caches DNS du poste Windows, de BIND et de `systemd-resolved` vieillissent sur
 l'horloge de leur machine. Les fenetres de signature DNSSEC de BIND, de `systemd-resolved` et de Windows
 Server, la validite des certificats utilisateur de sshd et `ssh-keygen` aussi.
-Restent sur l'heure globale les horodatages de session de sshd
-(`SshServerHandler`, `SshShellSession`) et `CrossVendorSshHost` : les horodatages
-et la duree d'une session ne suivent pas `date -s`. Le `START` de `ps` des processus de demarrage et les dates de
+Les sessions SSH suivent aussi l'horloge de leur machine : `who`, `last`, `lastlog`,
+la pile PAM (`chage -E`, vieillissement des mots de passe), les comptes des
+routeurs/switchs/pare-feu, les comptes Windows, le registre VTY, la comptabilite
+d'exec et les timers systemd. Restent sur l'heure globale les champs `timestamp`
+des evenements de `SshServerHandler` (aucun lecteur ne les consomme) et la duree
+d'`SshShellSession` (un ecart, donc monotone, a juste titre). Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
 sur un vrai noyau `ps` suit (btime recalcule), `last` non.
 **Pourquoi ce n'est pas ferme** : chaque pile prend l'horloge de sa machine par
@@ -203,14 +206,6 @@ connus, tous mesures sur le laboratoire :
 reseau ne joint pas ; (2) demande de passer le glissement du pas de mise a
 jour a un taux continu sur l'ordonnanceur, et de decider quoi faire des
 echantillons au saut externe.
-
-### [huawei] `undo dhcp enable` est refuse en vue systeme
-**Mesure** : `huawei-config-parity` (« should disable DHCP with undo dhcp enable ») est rouge sur `main` et
-sur toute la chaine de branches : `dhcp enable` passe, `undo dhcp enable` repond
-`Error: Unrecognized command found at '^' position.`. Sans rapport avec l'horloge, vu en passant.
-**Pourquoi ce n'est pas ferme** : le test peut encoder une fausse prémisse (la forme `undo` du
-commutateur global `dhcp enable` n'est pas verifiee sur une transcription VRP) ; il faut la source
-avant de decider entre corriger le moteur et corriger le test.
 
 ### [windows] `quser` est inconnu ; libelles d'erreur de `tzutil` et `eventcreate` non attestes
 **Mesure** : `quser` repond « not recognized » sur une machine Windows simulee. `tzutil /g|/l|/s` et
@@ -292,12 +287,6 @@ les cles restantes demandent chacune un evaluateur de plus dans `CalendarExpress
 `TO_DSINTERVAL`, `AT TIME ZONE` sont inconnus.
 **Pourquoi ce n'est pas ferme** : le moteur n'a pas de type intervalle (une chaine `n UNIT`) ni de TIMESTAMP
 WITH TIME ZONE autrement que comme chaine `... +hh:mm`.
-
-### [oracle] `V$SESSION_CONTEXT` : `HOST` rend le nom du peripherique, pas `linux-server`
-**Mesure** : `oracle-user-activity` (« reports SESSION_USER, OS_USER, HOST and SERVICE_NAME ») est rouge
-sur `main` : le test cree une session sur un peripherique nomme `vsc-1` et attend `linux-server`.
-**Pourquoi ce n'est pas ferme** : la prémisse du test (le nom du serveur) est a trancher avant de toucher
-le moteur ou le test.
 
 ### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
 **Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
@@ -977,18 +966,6 @@ datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -
 - `find -type b` et `-type c` : le VFS ne distingue pas un peripherique bloc d'un peripherique caractere, les deux
   filtres retournent tous les peripheriques.
 
-### [pipelines] le stderr d'un etage de tube est avale par l'etage suivant
-Mesure : `ls /proc/99999/fd | tail -n +2` n'affiche rien, `ls /nonexistent | cat` affiche l'erreur (qui a transite par
-le tube) ; le vrai laisse l'erreur sur le terminal dans les deux cas. Les commandes heritees de la couche
-`ShellContext` rendent leur diagnostic dans `output` au lieu de `stderr`, si bien que l'interpreteur le pousse dans le
-tube. Vu en rejouant `ls -l /proc/$P1/fd | tail -n +2` d'un processus mort (labos unix-closed et unix-none, declares non
-portes).
-
-### [stat] `stat` est un gabarit
-Mesure : `stat /absent; echo $?` rend 0 (le vrai : 1), `stat --version` repond `stat: missing operand`, `-L`, `-f`, `-t`
-sont ignores, et le message dit « cannot stat » (coreutils 8.32 d'Ubuntu 22.04) quand les enregistrements d'Ubuntu 24.04
-disent « cannot statx ». Vu en rejouant `stat -c '%F %a %U'` (labo unix-none).
-
 ### [umask] ce que le portage de `umask` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `umask-bash-5.2.json`, 5 labos, 232 pas, bash 5.2.21 sur Ubuntu 24.04) : le
 builtin (`-S`, `-p`, octal jusqu'a 07777, mode symbolique, erreurs et codes de retour), sa portee (sous-shell, etage de
@@ -1093,13 +1070,6 @@ nom, taille ou « (dir) » affichee), `goto_dir`, recherche `findfile` / `search
 / `to_last_file`, pages, fleches, mots et blocs, aide propre au navigateur, `^X` pour en sortir, Entree
 sur un dossier (qu'on entre) ou sur un fichier (qui revient dans l'invite). Brique a ecrire dans le
 moteur d'invites ; elle sert les trois invites de fichier.
-
-### [nano] « File was modified since you opened it »
-Non porte : le moteur ne compare pas la date de modification du fichier a celle qu'il a relevee a
-l'ouverture. La brique existe maintenant (`EditorFsContext.modificationStamp`, ajoutee pour
-« Nothing changed » du formateur) ; reste a la relever a l'ouverture et a la relire a
-l'ecriture (`write_it_out` pose la question « File was modified since you opened it; continue
-saving? »). Aussi `rnano` (nom du programme = mode restreint) : le lanceur ne l'aiguille pas.
 
 ### [nano] annulation : « Undid insertion », `und3-175`, `un24-6`
 Cas de `nano-undo-oracle.test.ts` (UNPORTED_CASES : und3-175, un24-6) et de `nano-insert-oracle.test.ts` :
@@ -4063,14 +4033,6 @@ Les trois bancs passent en entier ; restent mesures et non fermes :
 - Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
 - `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
-### [find-grammaire] find n'a pas la grammaire d'expressions de findutils
-
-`find` (LinuxSearchCommands.cmdFind) accepte `-perm` octal (`N`, `-N`, `/N`) et `-xdev` depuis le script d'audit lecture seule, mais ignore toujours en silence les predicats qu'il ne connait pas (`-o`, `-a`, parentheses, `-printf`, `-ls`, `-links`, `-regex`, `-perm` symbolique `u+x`, `-exec ... +`). Un critere ignore rend la recherche plus large que ce que l'operateur a ecrit ; a fermer en portant l'arbre d'expressions de findutils et en refusant l'inconnu avec `find: unknown predicate`.
-
-### [hosts-666] /etc/hosts est livre en 0666 (Ubuntu : 0644)
-
-Mesure par `find /etc -perm -0002` : `/etc/hosts` est le seul fichier de /etc ouvert en ecriture a tous (VirtualFileSystem, creation d'usine). Le passer en 0644 casse une trentaine de tests et de specs e2e qui y ajoutent une ligne en simple utilisateur (`echo ... >> /etc/hosts`, nano, sed -i) : ils doivent d'abord passer en root (`sudo sh -c`). Non ferme parce que le changement touche ces fichiers en masse ; le test `network-config-files-editing` verifie deja root:root 0644 dans un autre cas.
-
 ---
 
 ## Telnet (client netkit, serveur netkit, clients des équipements réseau)
@@ -4291,9 +4253,9 @@ Measured: `-y`/`--side-by-side` (and `-W`, `--left-column`, `--suppress-common-l
 
 Measured: `bgp default ?` now offers `ipv4-unicast` and `local-preference` and `bgp default local-preference ?` names the range, but still announces `<cr>` after the keyword while the command answers `% Incomplete command.` without a value. The value place is optional because `ipv4-unicast` takes none and `AdapterKeyword` has no per-choice argument (OptionSpec has `choices`, the adapter does not). Closing it needs `choices` on `AdapterKeyword`, or a separate `bgp default local-preference` registration.
 
-## mv and stat: options accepted without effect
+## mv: options accepted without effect
 
-`mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` evaluates `-c`/`--format`; `--printf`, `-t` (terse), `-f` (filesystem), `-L` (follow) are accepted and ignored. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.
+`mv` evaluates -f, -n, -u, -v, -T and -t (and several sources). Still accepted and ignored: `-i` (no prompt on stdin), `-b`/`--backup`, `-S`, `-Z`, `--strip-trailing-slashes`. `stat` is a port of coreutils 8.32 stat.c and evaluates every option. Measured with the table of the GnuOptionGuard; the tables are coreutils 8.32 from memory.
 
 ## column and awk: options accepted without effect
 

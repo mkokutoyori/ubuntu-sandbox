@@ -122,9 +122,10 @@ export function jarFromArgument(
   arg: string | null,
   hote: string,
   lire: (chemin: string) => string | null,
-  maintenant = simulationNowMs(),
+  horloge: () => number = simulationNowMs,
 ): CookieJar {
-  const jar = new CookieJar();
+  const maintenant = horloge();
+  const jar = new CookieJar(horloge);
   if (arg === null) return jar;
   if (cookieArgIsLiteral(arg)) {
     for (const morceau of arg.split(';')) {

@@ -560,10 +560,10 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
   },
   stat: {
-    optstring: 'c:fLtZ',
+    optstring: 'c:fLt',
     long: [
       flag('dereference', 'L'), flag('file-system', 'f'), valued('format', 'c'), valued('printf'),
-      flag('terse', 't'), flag('context', 'Z'), ...HELP_VERSION,
+      flag('terse', 't'), valued('cached'), ...HELP_VERSION,
     ],
     operands: true,
   },

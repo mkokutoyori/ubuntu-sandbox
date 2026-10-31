@@ -103,7 +103,7 @@ async function buildHijackLab() {
 
 async function pointHostsAt(client: LinuxPC, ip: string): Promise<void> {
   await client.executeCommand(
-    `cat > /etc/hosts <<'EOF'\n127.0.0.1 localhost\n${ip} serveur-legitime.domaine.local\nEOF`,
+    `sudo tee /etc/hosts > /dev/null <<'EOF'\n127.0.0.1 localhost\n${ip} serveur-legitime.domaine.local\nEOF`,
   );
 }
 

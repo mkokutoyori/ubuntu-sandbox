@@ -5,7 +5,7 @@
 import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationDate } from '@/network/core/SystemClock';
 import { runAusearch } from './audit/tools/AusearchTool';
 import { runAureport } from './audit/tools/AureportTool';
 import { runAusyscall } from './audit/tools/AusyscallTool';
@@ -88,7 +88,8 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChown, cmdChgrp, cmdStat, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChown, cmdChgrp, cmdMkfifo } from './LinuxPermCommands';
+import { runStat } from './coreutils/StatCommand';
 import { runUmask } from './umask/Umask';
 import {
   runTest, runExpr, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
@@ -372,7 +373,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'iptables', 'iptables-save', 'iptables-restore', 'ipset',
   'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd', 'netfilter-persistent',
   // Editors
-  'nano', 'vi', 'vim', 'emacs', 'ed',
+  'nano', 'rnano', 'vi', 'vim', 'emacs', 'ed',
   // Archives / packages
   'tar', 'gzip', 'gunzip', 'zcat', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
   'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',
@@ -759,7 +760,11 @@ export class LinuxCommandExecutor {
    * (and by the console-login flow in the future). Read by ssh client code
    * when composing the post-login banner.
    */
-  readonly lastlog: LinuxLastlogRegistry = new LinuxLastlogRegistry();
+  readonly lastlog: LinuxLastlogRegistry = (() => {
+    const registry = new LinuxLastlogRegistry();
+    registry.setClock(() => this.simulatedDate().getTime());
+    return registry;
+  })();
   /**
    * Name Service Switch — the resolver consulted by `getent`, `id`,
    * `gethostbyname`-equivalent code paths. Owns the per-database
@@ -1060,7 +1065,7 @@ export class LinuxCommandExecutor {
       vfs: this.vfs,
       users: this.userMgr,
       logs: this.logMgr,
-      clock: () => simulationNowMs(),
+      clock: this.wallNow,
       logins: () => this.sessionTable?.list().map((session) => ({ user: session.user })) ?? [],
       auditdRunning: () => this.auditDaemon?.running ?? false,
       hostname: () => kernelHostname(this.vfs),
@@ -1837,7 +1842,7 @@ export class LinuxCommandExecutor {
         isStopped: (pid) => this.processMgr.get(pid)?.state === 'T',
         changeRunlevel: (level) => this.changeAuditRunlevel(level),
         terminate: (pid) => { this.processMgr.kill(pid, 'SIGKILL', { silent: true }); },
-        libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, simulationNowMs()),
+        libcSyslog: (priority, ident, pid, text) => this.logMgr.submitLibcSyslog(priority, ident, pid, text, this.wallNow()),
         runProgram: (pid, command, input) => this.runAuditPluginProgram(pid, command, input),
         sockets: this.localDatagramSockets,
       },
@@ -5960,7 +5965,7 @@ export class LinuxCommandExecutor {
   }
 
   private deliverLocalMail(account: string, subject: string, body: string): void {
-    const stamp = new Date(simulationNowMs()).toUTCString();
+    const stamp = new Date(this.wallNow()).toUTCString();
     this.vfs.writeFile(`/var/mail/${account}`, `From auditd ${stamp}\nSubject: ${subject}\n\n${body}\n\n`, 0, 0, 0o117, true);
   }
 
@@ -6038,7 +6043,7 @@ export class LinuxCommandExecutor {
     }
   }
 
-  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string } {
+  private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     stdin ??= this.takeExecInput(cmd, args);
     const c = this.ctx(outputPiped);
     useLocaleQuotes(this.env.get('LC_ALL') || this.env.get('LC_CTYPE') || this.env.get('LANG') || '');
@@ -6092,9 +6097,10 @@ export class LinuxCommandExecutor {
         for (const p of args.filter(a => !a.startsWith('-'))) {
           this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
         }
-        const out = cmdLs(c, args);
-        const exitCode = /^ls: invalid argument/.test(out) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(out) ? 2 : 0;
-        return { output: out, exitCode };
+        const { stdout, stderr } = cmdLs(c, args);
+        const exitCode = /^ls: invalid argument/.test(stderr) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(stderr) ? 2 : 0;
+        if (stderr === '') return { output: stdout, exitCode };
+        return { output: stdout, stderr, interleaved: stdout === '' ? stderr : `${stderr}\n${stdout}`, exitCode };
       }
       case 'cat': {
         const fileArgs = args.filter((a) => !a.startsWith('-') || a === '-');
@@ -6278,7 +6284,7 @@ export class LinuxCommandExecutor {
         const out = cmdChgrp(c, args);
         return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
       }
-      case 'stat': return { output: cmdStat(c, args), exitCode: 0 };
+      case 'stat': return asDispatch(runStat({ ...c, mounts: this.mountTable.list(), storage: this.hardware.storage, stdin }, args));
       case 'umask': {
         const result = runUmask(args, this.umask);
         if (result.mask !== undefined) this.umask = result.mask;
