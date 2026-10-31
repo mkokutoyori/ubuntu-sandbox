@@ -635,7 +635,10 @@ export class BashInterpreter {
     if (!handler) return;
     this.env.clearTrap('EXIT');                              // prevent re-entry
     const savedExit = this.env.lastExitCode;
-    try { yield* this.executeEvalG(handler, false, this.currentLine); } catch { /* swallow — trap must not abort cleanup */ }
+    try { yield* this.executeEvalG(handler, false, this.currentLine); }
+    catch (e) {
+      if (e instanceof ExitSignal) { this.env.lastExitCode = e.exitCode; return; }
+    }
     this.env.lastExitCode = savedExit;
   }
 

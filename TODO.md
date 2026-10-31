@@ -438,7 +438,8 @@ fait pas de proxy ARP ici. `sysctl -w` les refuse donc par la branche
 EPERM de procps plutot que de les accepter sans effet. **Pourquoi ce
 n'est pas ferme ici** : les rendre inscriptibles demande de donner un
 COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
-n'evalue. C'est un chantier par knob, pas un correctif de commande.
+n'evalue. C'est un chantier par knob, pas un correctif de commande. Mesure impossible ici (pas d'`ip`, pas de documentation du noyau, pas de
+namespace reseau) : la semantique de `arp_ignore` 1/2/8 et d'`arp_announce` 1/2 n'est pas attestable, donc non implantee (regle 8).
 
 ---
 
@@ -853,8 +854,8 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 - `builtin umask`, `command -V umask`, `type -a umask`, `help umask`, `enable -n umask`, `which umask`, un `alias umask=…`
   et `/usr/bin/umask` : le simulateur n'a pas de table des builtins (nom, etat active / desactive, aide, resolution
   alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
-- `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
-  interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
+- `` `umask 077` `` (mot de commande vide apres la substitution) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
+  Le piege EXIT s'execute a la sortie de `bash -c`, meme pose dans une fonction, et son `exit N` fixe le code (`probe-bash-trap-exit-global`).
 Autres ecarts mesures, non fermes :
 - L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
   maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
