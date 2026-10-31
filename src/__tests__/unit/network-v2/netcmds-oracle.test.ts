@@ -34,7 +34,7 @@ function unportedInEveryUnixLab(commands: readonly string[]): string[] {
   return UNIX_LABS.flatMap((lab) => commands.map((command) => `${lab}|${command}`));
 }
 
-const UNPORTED_LABS: ReadonlySet<string> = new Set(['unix-user']);
+const UNPORTED_LABS: ReadonlySet<string> = new Set<string>();
 
 const UNPORTED_STEPS: ReadonlySet<string> = new Set([
   'ss-connected|ss -tai',

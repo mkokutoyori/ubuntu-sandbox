@@ -931,10 +931,6 @@ datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -
 - `ss -xaE` : refus explicite (« needs a stream of socket events ») ; le vrai n'affiche rien et rend la main.
 - `ss -e` d'une prise UNIX dont le pair est parti : la fleche `<->` ne devient pas `<--` / `-->` (aucune mesure faite).
   Mesure faite pour un proprietaire non root : `ss -xlpe` n'affiche pas `uid:` pour une prise UNIX, ce que fait le simulateur.
-- Le labo `unix-user` (un `nc -lU` lance par `nobody`) est declare non porte en entier : `sudo -u nobody nc -lU p &`
-  rend 127 (le chemin des travaux d'arriere-plan ne retire que le mot `sudo`, pas `-u utilisateur`, et lance la commande reseau
-  sous l'identite de l'appelant). Les vues d'un proprietaire non root (`netstat -p` d'un autre utilisateur, `fuser -u`,
-  `EACCES` sur une prise dont l'utilisateur n'a pas le droit d'ecriture) y sont enregistrees et attendent ce correctif.
 - Les prises UNIX que posent rsyslog (`/dev/log`, imptcp) et auditd n'ont pas de porteur : elles figurent dans
   `/proc/net/unix` et `ss -x` sans `users:` ni descripteur, parce que leur donner un pid decalerait les numeros de
   descripteur que les tests rsyslog lisent deja.

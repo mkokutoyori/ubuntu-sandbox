@@ -809,7 +809,7 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
-    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin, outputPiped = false) => {
+    this.executor.setNetworkCommandRunner((argv, env, viaSudo: boolean | string = false, stdin, outputPiped = false) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
       const unavailable = this.registryDependencyFailure(cmd, argv[0]);
@@ -833,7 +833,7 @@ export abstract class LinuxMachine extends EndHost
       // seule, et l'autorisation sudoers n'était jamais consultée.
       let closeSudo = (): void => undefined;
       if (viaSudo) {
-        const admission = this.executor.admitSudo(argv[0], args, 'root', null);
+        const admission = this.executor.admitSudo(argv[0], args, typeof viaSudo === 'string' ? viaSudo : 'root', null);
         if (admission.refusal !== null) return Promise.resolve(admission.refusal);
         closeSudo = admission.close;
       }
@@ -842,9 +842,10 @@ export abstract class LinuxMachine extends EndHost
         ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
         : null;
       if (saved) {
-        userMgr.currentUser = 'root';
-        userMgr.currentUid = 0;
-        userMgr.currentGid = 0;
+        const runAs = (typeof viaSudo === 'string' ? userMgr.getUser(viaSudo) : undefined) ?? userMgr.getUser('root')!;
+        userMgr.currentUser = runAs.username;
+        userMgr.currentUid = runAs.uid;
+        userMgr.currentGid = runAs.gid;
       }
       const restore = (): void => {
         closeSudo();
