@@ -1053,7 +1053,25 @@ export class NanoEngine {
     window.cursorRow = window.place({ line: this._cursorLine, col: this._cursorCol }).row;
   }
 
+  private verbatimPending = false;
+
+  private verbatimCharacter(k: EditorKeyInput): string | null {
+    if (k.ctrl && !k.alt && k.key.length === 1) return String.fromCharCode(k.key.toUpperCase().charCodeAt(0) & 0x1f);
+    if (k.alt) return null;
+    if (k.key === 'Enter') return '\r';
+    if (k.key === 'Tab') return '\t';
+    if (k.key === 'Backspace') return '\x7f';
+    return k.key.length === 1 ? k.key : null;
+  }
+
   private dispatchKey(k: EditorKeyInput): void {
+    if (this.verbatimPending && this._mode === 'edit') {
+      this.verbatimPending = false;
+      this._statusMessage = '';
+      const character = this.verbatimCharacter(k);
+      if (character !== null && !this._readOnly) this.typeText(character);
+      return;
+    }
     if (k.key === 'Tab' && !k.ctrl && !k.alt && !k.shift && this.completeWithTab()) return;
     switch (this._mode) {
       case 'edit': return this.helpTitle === null ? this.applyEditKey(k) : this.applyHelpViewerKey(k);
@@ -1554,6 +1572,7 @@ export class NanoEngine {
     if (k.key === 'ArrowUp') { this.manner = 'flowing'; this.scrollLines(false, 1); return; }
     if (k.key === 'ArrowDown') { this.manner = 'flowing'; this.scrollLines(true, 1); return; }
     if (key === 'z') { this.toggleHiddenInterface(); return; }
+    if (key === 'v' && !this._readOnly) { this.verbatimPending = true; this._statusMessage = '[ Verbatim Input ]'; return; }
     if (key === 'y') { this.toggleSyntax(); return; }
     if (key === 'x') { this.toggleHelpLines(); return; }
     if (key === 'c') { this.toggleConstantShow(); return; }
