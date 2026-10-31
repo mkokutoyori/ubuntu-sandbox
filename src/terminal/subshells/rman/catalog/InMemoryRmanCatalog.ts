@@ -15,6 +15,7 @@ import type { BackupKey } from '../values/BackupKey';
 import type { RmanTag } from '../values/RmanTag';
 import type { RmanEvent } from '../core/types';
 import { DbId } from '../values/DbId';
+import { StoredScripts } from './StoredScripts';
 
 function pieceKeyStr(k: BackupKey): string { return `${k.bsKey}:${k.bpKey}`; }
 
@@ -25,6 +26,8 @@ export class InMemoryRmanCatalog implements IRmanCatalogRepository {
 
   readonly changes$: RmanObservable<Extract<RmanEvent, { type: 'CATALOG_UPDATED' }>>
     = this._changes$.asObservable();
+
+  readonly scripts = new StoredScripts();
 
   // ── Writer ────────────────────────────────────────────────────────
 

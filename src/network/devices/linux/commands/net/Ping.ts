@@ -1,10 +1,14 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
-
 import {
   formatPingHeader, formatPing6Header, formatPingRedirectLine, formatPingReplyLine, formatPingStats,
   pingErrorCount, PING_TIMING_MIN_SIZE, type PingAddressRenderer,
 } from '@/network/devices/linux/LinuxFormatHelpers';
-import { IPv6Address, IPAddress } from '@/network/core/types';
+import {
+  IPv6Address, IPAddress, IP_OPTION_RECORD_ROUTE, IP_OPTION_TIMESTAMP, type IPv4Option,
+} from '@/network/core/types';
+import {
+  buildRecordRouteOption, buildTimestampOption, readTimestamp, routeAddressesOf,
+  TIMESTAMP_FLAG_ONLY, TIMESTAMP_FLAG_PRESPECIFIED, TIMESTAMP_FLAG_WITH_ADDRESS,
+} from '@/network/layers/internet/Ipv4Options';
 import { inetAton } from '@/network/core/InetAton';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -23,6 +27,11 @@ const MIN_USER_INTERVAL_MS = 2;
 const MIN_USER_BROADCAST_INTERVAL_MS = 1000;
 const IP_AND_ICMP_HEADERS = 28;
 const MAX_PATTERN_BYTES = 16;
+const MAX_PRESPECIFIED_TARGETS = 5;
+const RECORD_ROUTE_SLOTS = 9;
+const TIMESTAMP_ONLY_SLOTS = 9;
+const TIMESTAMP_WITH_ADDRESS_SLOTS = 4;
+const IP_OPTION_AREA_BYTES = 40;
 
 const OPTSTRING = 'h?4bRT:6F:N:aABc:CdDe:fi:I:l:Lm:M:nOp:qQ:rs:S:t:UvVw:W:';
 
@@ -33,8 +42,6 @@ const UNBUILDABLE: Readonly<Record<string, string>> = {
   l: 'a preload of unanswered probes',
   m: 'SO_MARK',
   r: 'SO_DONTROUTE',
-  R: 'the IP record-route option',
-  T: 'the IP timestamp option',
   U: 'user-to-user latency',
   N: 'ICMPv6 node information queries',
 };
@@ -116,6 +123,8 @@ export interface ParsedPingArgs {
   tos?: number;
   flowLabel?: number;
   flood: boolean;
+  recordRoute: boolean;
+  ipTimestamp?: 'tsonly' | 'tsandaddr' | 'tsprespec';
 }
 
 type ParseOutcome =
@@ -148,7 +157,7 @@ export function parsePingArgs(args: readonly string[], cmd: 'ping' | 'ping6' = '
     intervalMs: DEFAULT_INTERVAL_MS, intervalGiven: false,
     targets: [], family: cmd === 'ping6' ? 6 : undefined,
     quiet: false, numeric: false, timestamp: false, broadcast: false,
-    outstanding: false, flood: false,
+    outstanding: false, flood: false, recordRoute: false,
   };
   const warnings: string[] = [];
   const fail = (line: string): ParseOutcome => ({ kind: 'exit', lines: [...warnings, line], code: 2 });
@@ -162,6 +171,13 @@ export function parsePingArgs(args: readonly string[], cmd: 'ping' | 'ping6' = '
         if (parsed.family === 4) return fail(`${cmd}: only one -4 or -6 option may be specified`);
         parsed.family = 6; return null;
       case 'b': parsed.broadcast = true; return null;
+      case 'R':
+        if (parsed.ipTimestamp !== undefined) return fail(`${cmd}: only one of -T or -R may be used`);
+        parsed.recordRoute = true; return null;
+      case 'T':
+        if (parsed.recordRoute) return fail(`${cmd}: only one of -T or -R may be used`);
+        if (arg === 'tsonly' || arg === 'tsandaddr' || arg === 'tsprespec') { parsed.ipTimestamp = arg; return null; }
+        return fail(`${cmd}: invalid timestamp type: ${arg}`);
       case 'B': case 'C': case 'd': case 'L': case 'v': return null;
       case 'c': {
         const r = strtolOrErr(cmd, arg!, 'invalid argument', 1n, BigInt(LONG_MAX));
@@ -253,6 +269,7 @@ export interface EchoProbe {
   dataSize: number;
   df: boolean;
   socket: TraceSocketOptions;
+  ipOptions?: readonly IPv4Option[];
 }
 
 export interface Echo6Probe {
@@ -280,6 +297,7 @@ export interface PingHost {
   echo6(target: IPv6Address, seq: number, probe: Echo6Probe): Promise<PingResult>;
   sleep(ms: number): Promise<void>;
   now(): number;
+  wallClockMs(): number;
 }
 
 export interface PingRun {
@@ -300,9 +318,8 @@ function patternBytes(pattern: string): number[] {
   return bytes;
 }
 
-function timestampPrefix(enabled: boolean): string {
+function timestampPrefix(enabled: boolean, nowMs: number): string {
   if (!enabled) return '';
-  const nowMs = simulationNowMs();
   return `[${Math.floor(nowMs / 1000)}.${String((nowMs % 1000) * 1000).padStart(6, '0')}] `;
 }
 
@@ -320,6 +337,48 @@ function renderLocalError(error: LocalSocketError, mtuSeparator: string): string
     : `local error: ${strerror(error.errno)}`;
 }
 
+interface RenderedOptions {
+  readonly suffix: string;
+  readonly lines: readonly string[];
+}
+
+function renderReplyOptions(
+  options: readonly IPv4Option[] | undefined, render: PingAddressRenderer, previousRoute: { value: string },
+): RenderedOptions {
+  let suffix = '';
+  const lines: string[] = [];
+  for (const option of options ?? []) {
+    if (option.type === IP_OPTION_RECORD_ROUTE) {
+      const hops = routeAddressesOf(option).map(a => a.toString());
+      if (hops.length === 0) continue;
+      const key = hops.join(',');
+      if (key === previousRoute.value) { suffix += '\t(same route)'; continue; }
+      previousRoute.value = key;
+      hops.forEach((hop, i) => lines.push(`${i === 0 ? 'RR: ' : ''}\t${hop === '0.0.0.0' ? hop : render(hop)}`));
+    } else if (option.type === IP_OPTION_TIMESTAMP) {
+      const reading = readTimestamp(option);
+      if (reading.entries.length === 0) continue;
+      let standard = 0;
+      let nonStandard = 0;
+      reading.entries.forEach((entry, i) => {
+        const address = entry.address === null ? '' : `\t${entry.address.toString() === '0.0.0.0' ? '0.0.0.0' : render(entry.address.toString())}`;
+        let time: string;
+        if (entry.nonStandard) {
+          time = nonStandard === 0 ? `\t${entry.msOfDay} absolute not-standard` : `\t${entry.msOfDay - nonStandard} not-standard`;
+          nonStandard = entry.msOfDay;
+        } else {
+          time = standard === 0 ? `\t${entry.msOfDay} absolute` : `\t${entry.msOfDay - standard}`;
+          standard = entry.msOfDay;
+        }
+        lines.push(`${i === 0 ? 'TS: ' : ''}${address}${time}`);
+      });
+      if (reading.overflow > 0) lines.push(`Unrecorded hops: ${reading.overflow}`);
+    }
+  }
+  if (lines.length > 0) lines.push('');
+  return { suffix, lines };
+}
+
 export function createPing(
   argv: readonly string[], host: PingHost, emit: (line: string) => void,
   options: { cmd?: 'ping' | 'ping6'; detached?: boolean } = {},
@@ -332,6 +391,7 @@ export function createPing(
   let finished = false;
   let dots = '';
   let ewmaUs8: number | undefined;
+  const previousRoute = { value: '' };
 
   const summary = (interrupted = false): number => {
     if (finished || plan === null || parsed === null) return finished ? 0 : 2;
@@ -359,8 +419,12 @@ export function createPing(
     parsed = args;
     if (args.targets.length === 0) { emit(`${cmd}: usage error: Destination address required`); return 1; }
     if (args.targets.length > 1) {
-      emit(`${cmd}: ${args.targets.length} destinations: this simulator cannot build IP source routing`);
-      return 2;
+      const prespecified = args.ipTimestamp === 'tsprespec' && args.targets.length <= MAX_PRESPECIFIED_TARGETS;
+      if (args.recordRoute || (args.ipTimestamp !== undefined && !prespecified)) { emit(PING_USAGE); return 2; }
+      if (!prespecified) {
+        emit(`${cmd}: ${args.targets.length} destinations: this simulator cannot build IP source routing`);
+        return 2;
+      }
     }
     if (!options.detached || args.countGiven || args.deadlineMs !== undefined) {
       if (!args.countGiven) args.count = 0;
@@ -377,7 +441,7 @@ export function createPing(
         emit(`PATTERN: 0x${patternBytes(args.pattern).map((b) => b.toString(16).padStart(2, '0')).join('')}`);
       }
     }
-    const target = args.targets[0];
+    const target = args.targets[args.targets.length - 1];
     const v6 = args.family === 6 || (args.family !== 4 && target.includes(':'));
     const prepared = v6 ? await prepareV6(args, target) : await prepareV4(args, target);
     if (typeof prepared === 'number') return prepared;
@@ -390,6 +454,21 @@ export function createPing(
       return 2;
     }
     return null;
+  };
+
+  const buildProbeOptions = async (args: ParsedPingArgs): Promise<IPv4Option[] | null> => {
+    if (args.recordRoute) return [buildRecordRouteOption(RECORD_ROUTE_SLOTS)];
+    if (args.ipTimestamp === 'tsonly') return [buildTimestampOption(TIMESTAMP_FLAG_ONLY, TIMESTAMP_ONLY_SLOTS)];
+    if (args.ipTimestamp === 'tsandaddr') return [buildTimestampOption(TIMESTAMP_FLAG_WITH_ADDRESS, TIMESTAMP_WITH_ADDRESS_SLOTS)];
+    if (args.ipTimestamp !== 'tsprespec') return [];
+    const named: IPAddress[] = [];
+    for (const word of args.targets.slice(0, -1)) {
+      const literal = inetAton(word);
+      const address = literal ?? await host.resolveHostname(word);
+      if (address === null) { emit(`${cmd}: ${word}: Name or service not known`); return null; }
+      named.push(address);
+    }
+    return [buildTimestampOption(TIMESTAMP_FLAG_PRESPECIFIED, 0, named)];
   };
 
   const prepareV4 = async (args: ParsedPingArgs, target: string): Promise<PingPlan | number> => {
@@ -429,8 +508,11 @@ export function createPing(
       emit(`${cmd}: bind: Cannot assign requested address`);
       return 2;
     }
+    const ipOptions = await buildProbeOptions(args);
+    if (ipOptions === null) return 2;
+    const optionBytes = ipOptions.length === 0 ? 0 : IP_OPTION_AREA_BYTES;
     const mtuDisc = args.mtuDisc ?? (broadcast ? 'do' : 'want');
-    const packetSize = args.size + IP_AND_ICMP_HEADERS;
+    const packetSize = args.size + IP_AND_ICMP_HEADERS + optionBytes;
     const ident = host.allocateIdent();
     const renderAddress: PingAddressRenderer = numeric
       ? (ip) => ip
@@ -440,7 +522,7 @@ export function createPing(
       : undefined;
     return {
       label: target,
-      header: formatPingHeader(address, args.size, target === address.toString() ? undefined : target, bound),
+      header: formatPingHeader(address, args.size, target === address.toString() ? undefined : target, bound, optionBytes),
       renderAddress,
       echo: async (seq) => {
         const path = host.route(address, socket);
@@ -449,6 +531,7 @@ export function createPing(
         return host.echo(address, seq, {
           ident, timeoutMs: args.timeoutMs, ttl: args.ttl, tos: args.tos, dataSize: args.size,
           df: mtuDisc === 'do' || (mtuDisc === 'want' && fits), socket,
+          ...(ipOptions.length === 0 ? {} : { ipOptions }),
         });
       },
       localErrorText: (error) => renderLocalError(error, '='),
@@ -489,12 +572,14 @@ export function createPing(
     }
     if (args.quiet) return;
     for (const notice of r.redirects ?? []) {
-      emit(`${timestampPrefix(args.timestamp)}${formatPingRedirectLine(r.seq, notice, current.renderAddress)}`);
+      emit(`${timestampPrefix(args.timestamp, host.wallClockMs())}${formatPingRedirectLine(r.seq, notice, current.renderAddress)}`);
     }
     if (r.localError !== undefined) { emit(`${cmd}: ${current.localErrorText(r.localError)}`); return; }
     const line = formatPingReplyLine(r, args.size, current.renderAddress);
     if (line === null) return;
-    emit(`${timestampPrefix(args.timestamp)}${line}`);
+    const shown = renderReplyOptions(r.replyOptions, current.renderAddress, previousRoute);
+    emit(`${timestampPrefix(args.timestamp, host.wallClockMs())}${line}${shown.suffix}`);
+    for (const optionLine of shown.lines) emit(optionLine);
     if (r.sendError !== undefined) emit(`${cmd}: sendmsg: ${strerror(r.sendError)}`);
   };
 
@@ -522,7 +607,7 @@ export function createPing(
       if (failure !== null) throw failure;
       if (shouldStop() || finished) break;
       if (args.outstanding && seq > 1 && !results.some((x) => x.seq === seq - 1 && x.success) && !args.quiet && !args.flood) {
-        emit(`${timestampPrefix(args.timestamp)}no answer yet for icmp_seq=${seq - 1}`);
+        emit(`${timestampPrefix(args.timestamp, host.wallClockMs())}no answer yet for icmp_seq=${seq - 1}`);
       }
       sendTimes.push(host.now());
       const pace = host.sleep(args.intervalMs);
@@ -578,6 +663,7 @@ export function pingHostOf(
     echo: async (target, seq, probe) => {
       const [result] = await ctx.net.pingSequence(target, 1, probe.timeoutMs, probe.ttl, {
         dataSize: probe.dataSize, tos: probe.tos, df: probe.df, firstSeq: seq, ident: probe.ident, socket: probe.socket,
+        ...(probe.ipOptions === undefined ? {} : { ipOptions: probe.ipOptions }),
       });
       return result ?? { success: false, rttMs: 0, ttl: 0, seq, bytes: 0, fromIP: '' };
     },
@@ -590,6 +676,7 @@ export function pingHostOf(
     },
     sleep: timing.sleep,
     now: timing.now,
+    wallClockMs: () => ctx.executor.simulatedDate().getTime(),
   };
 }
 

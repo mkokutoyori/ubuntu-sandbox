@@ -103,6 +103,10 @@ export class SshServerHandler {
     this.eventBus = eventBus ?? ctx.events ?? new SshServerEventBus();
   }
 
+  private wallClockMs(): number {
+    return this.ctx.nowMs?.() ?? simulationNowMs();
+  }
+
   get events(): ISshServerEventBus {
     return this.eventBus;
   }
@@ -125,7 +129,7 @@ export class SshServerHandler {
           kind: 'client_disconnected',
           user: '', ip: clientIp,
           reason: 'too_many_failures',
-          timestamp: simulationNowMs(),
+          timestamp: this.wallClockMs(),
         });
         return;
       }
@@ -134,7 +138,7 @@ export class SshServerHandler {
       kind: 'client_connected',
       ip: clientIp,
       port: this.ctx.clientPort?.(clientIp),
-      timestamp: simulationNowMs(),
+      timestamp: this.wallClockMs(),
     });
     if (this.ctx.isClientBlocked?.(clientIp)) {
       conn.close();
@@ -143,7 +147,7 @@ export class SshServerHandler {
         user: '',
         ip: clientIp,
         reason: 'throttled',
-        timestamp: simulationNowMs(),
+        timestamp: this.wallClockMs(),
       });
       return;
     }
@@ -287,7 +291,7 @@ export class SshServerHandler {
           user: '',
           ip: clientIp,
           reason: 'auth_grace_timeout',
-          timestamp: simulationNowMs(),
+          timestamp: this.wallClockMs(),
         });
         conn.close();
       }, graceSec * 1000);
@@ -302,7 +306,7 @@ export class SshServerHandler {
             user: userCtx?.username ?? '',
             ip: clientIp,
             reason: 'client-alive-timeout',
-            timestamp: simulationNowMs(),
+            timestamp: this.wallClockMs(),
           });
           conn.close();
           return;
@@ -327,7 +331,7 @@ export class SshServerHandler {
           user: userCtx?.username ?? '',
           ip: clientIp,
           reason: 'exec_timeout',
-          timestamp: simulationNowMs(),
+          timestamp: this.wallClockMs(),
         });
         conn.close();
       }, ms);
@@ -356,7 +360,7 @@ export class SshServerHandler {
           ? { receivedDisconnect: { code: transport.peerDisconnect.reason, description: transport.peerDisconnect.description } }
           : {}),
         reason: reason === 'rst' ? 'reset' : 'closed',
-        timestamp: simulationNowMs(),
+        timestamp: this.wallClockMs(),
       });
       const releaseSession = (): void => {
         if (closedUser !== null) this.ctx.connectionClosed?.(closedUser, clientIp, conn.remotePort);
@@ -789,7 +793,7 @@ export class SshServerHandler {
           user,
           ip: clientIp,
           port: this.ctx.clientPort?.(clientIp),
-          timestamp: simulationNowMs(),
+          timestamp: this.wallClockMs(),
         });
       }
       if (passwordBacked && !credentialless && !challenge) {
@@ -900,7 +904,7 @@ export class SshServerHandler {
       method: method ?? 'unknown',
       ip: clientIp,
       port: this.ctx.clientPort?.(clientIp),
-      timestamp: simulationNowMs(),
+      timestamp: this.wallClockMs(),
       ...(authenticatedKey === null ? {} : keyEvidence(authenticatedKey)),
     });
     const userCtx =

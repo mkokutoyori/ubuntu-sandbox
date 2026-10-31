@@ -96,7 +96,7 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string; interactive?: boolean },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string; interactive?: boolean; fromStandardInput?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
@@ -120,6 +120,7 @@ export function runScriptContent(
       functions,
       daemonMode: identity?.daemonMode,
       interactive: identity?.interactive,
+      fromStandardInput: identity?.fromStandardInput,
       stdin: identity?.stdin,
     });
 

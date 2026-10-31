@@ -12,6 +12,7 @@ const FILE_TYPE_OF: Readonly<Partial<Record<Ftype3, FileType>>> = {
   [Ftype3.NF3LNK]: 'symlink',
   [Ftype3.NF3FIFO]: 'fifo',
   [Ftype3.NF3CHR]: 'chardev',
+  [Ftype3.NF3BLK]: 'blockdev',
 };
 
 export interface NfsMountBinding {

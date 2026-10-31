@@ -197,7 +197,8 @@ function normalizeProcNetUnix(lines: readonly string[]): string[] {
   return [...header, ...rows, ...others];
 }
 
-export function normalizeNetOutput(output: string, side: NormalizeSide, command = '', loose = false): string {
+export function normalizeNetOutput(output: string, side: NormalizeSide, typedCommand = '', loose = false): string {
+  const command = typedCommand.replace(/^sudo\s+(-u\s+\S+\s+)?/, '');
   const plain = maskKernelIdentity(output);
   if (isPsInvocation(command)) return normalizePs(plain, side, pidNamesOf(side), command);
   if (/^netstat\b/.test(command)) return normalizeNetstat(plain, side);

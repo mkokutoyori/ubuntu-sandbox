@@ -22,11 +22,7 @@ const FORMAT_OWNERS = 'Access: (%04a/%10.10A)  Uid: (%5u/%8U)   Gid: (%5g/%8G)\n
 const FORMAT_TIMES = 'Access: %x\nModify: %y\nChange: %z\n Birth: %w\n';
 
 const TYPE_BITS: Readonly<Record<INode['type'], number>> = {
-  file: 0o100000, directory: 0o040000, symlink: 0o120000, fifo: 0o010000, chardev: 0o020000, socket: 0o140000,
-};
-
-const CHARDEV_NUMBERS: Readonly<Record<string, readonly [number, number]>> = {
-  null: [1, 3], zero: [1, 5], random: [1, 8], urandom: [1, 9],
+  file: 0o100000, directory: 0o040000, symlink: 0o120000, fifo: 0o010000, chardev: 0o020000, blockdev: 0o060000, socket: 0o140000,
 };
 
 const FILESYSTEM_TYPES: Readonly<Record<string, readonly [number, string]>> = {
@@ -149,13 +145,13 @@ function fileType(inode: INode): string {
     case 'symlink': return 'symbolic link';
     case 'fifo': return 'fifo';
     case 'socket': return 'socket';
+    case 'blockdev': return 'block special file';
     default: return 'character special file';
   }
 }
 
 function deviceNumbers(inode: INode): readonly [number, number] {
-  if (inode.type !== 'chardev') return [0, 0];
-  return CHARDEV_NUMBERS[inode.deviceType ?? ''] ?? [0, 0];
+  return inode.rdev === undefined ? [0, 0] : [inode.rdev.major, inode.rdev.minor];
 }
 
 function quoteName(text: string): string {
@@ -335,7 +331,7 @@ export function runStat(ctx: StatContext, args: string[]): CoreutilsRun {
         continue;
       }
       const { inode } = subject;
-      const template = format ?? defaultFormat(inode.type === 'chardev');
+      const template = format ?? defaultFormat(inode.type === 'chardev' || inode.type === 'blockdev');
       let failed = false;
       const text = render(template, (spec, directive) => {
         const [major, minor] = deviceNumbers(inode);

@@ -64,7 +64,8 @@ test.describe('Scénario 6 (e2e) — fichiers de configuration réseau', () => {
 
   test('nano /etc/hosts: add entries, save, resolved via getent', async ({ page }) => {
     await typeCmd(page, 'cp /etc/hosts /tmp/hosts.bak');
-    await typeCmd(page, 'nano /etc/hosts');
+    await typeCmd(page, 'sudo nano /etc/hosts');
+    await answerSudo(page);
     await expect(page.getByText('GNU nano')).toBeVisible({ timeout: 5_000 });
 
     for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown'); // clamps at the last line

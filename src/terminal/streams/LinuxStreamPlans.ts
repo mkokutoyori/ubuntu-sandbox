@@ -1,4 +1,4 @@
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { IPAddress } from '@/network/core/types';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
@@ -323,7 +323,7 @@ function planMtr(dev: LinuxMachine, commandLine: string, toks: string[], screen:
     if (!discovery.resolved) { ctx.sink.error(`mtr: Failed to resolve host: ${parsed.target}`); return; }
     if (!resolved || hopIps.length === 0) { ctx.sink.error('mtr: no hops discovered'); return; }
     const stats = hopIps.map(() => new MtrHopStats());
-    const startedAt = simulationDate();
+    const startedAt = dev.machineDate();
     const hostname = dev.getHostname();
     const targetIp = hopIps[hopIps.length - 1] ?? parsed.target;
     const paint = (): void => {
@@ -521,8 +521,8 @@ function planVmstat(dev: LinuxMachine, commandLine: string, toks: string[]): Str
   return scrolling({
     intervalMs: intervalOf(parsed.intervalSeconds),
     maxFrames: parsed.count ?? undefined,
-    header: () => vmstatHeader(parsed),
-    frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed),
+    header: () => vmstatHeader(parsed, parsed.timestamp ? dev.localTimeText('%Z') : ''),
+    frame: () => formatVmstatRow(dev.sampleVmstatSnapshot(), parsed, parsed.timestamp ? dev.localTimeText('%Y-%m-%d %H:%M:%S') : ''),
   });
 }
 
@@ -534,11 +534,11 @@ function planMpstat(dev: LinuxMachine, commandLine: string, toks: string[]): Str
   return scrolling({
     intervalMs: intervalOf(parsed.intervalSeconds),
     maxFrames: parsed.count ?? undefined,
-    header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(simulationDate())}`,
+    header: () => `${dev.mpstatBannerLine()}\n${mpstatColumnHeader(dev.machineDate())}`,
     frame: () => {
       const rows = dev.sampleMpstatSnapshot(parsed);
       accumulator.add(rows);
-      const now = simulationDate();
+      const now = dev.machineDate();
       return rows.map((r) => formatMpstatRow(now, r)).join('\n');
     },
     trailer: () => (accumulator.sampleCount() === 0 ? '' : ['', ...accumulator.averages().map((r) => formatMpstatAverageRow(r))].join('\n')),
@@ -552,7 +552,7 @@ function planPidstat(dev: LinuxMachine, commandLine: string, toks: string[]): St
   const common = {
     intervalMs: intervalOf(parsed.intervalSeconds),
     maxFrames: parsed.count ?? undefined,
-    header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, simulationDate())}`,
+    header: () => `${dev.pidstatBannerLine()}\n${pidstatColumnHeader(parsed, dev.machineDate())}`,
   };
   if (parsed.report === 'cpu') {
     const accumulator = new PidstatAccumulator<PidstatCpuRow>('cpu');
@@ -561,7 +561,7 @@ function planPidstat(dev: LinuxMachine, commandLine: string, toks: string[]): St
       frame: () => {
         const rows = dev.samplePidstatCpu(parsed);
         accumulator.add(rows);
-        const now = simulationDate();
+        const now = dev.machineDate();
         return rows.map((r) => formatPidstatCpuRow(now, r)).join('\n');
       },
       trailer: () => (accumulator.sampleCount() === 0 ? '' : ['', ...accumulator.averages().map((r) => formatPidstatAverageCpuRow(r))].join('\n')),
@@ -573,7 +573,7 @@ function planPidstat(dev: LinuxMachine, commandLine: string, toks: string[]): St
     frame: () => {
       const rows = dev.samplePidstatMemory(parsed);
       accumulator.add(rows);
-      const now = simulationDate();
+      const now = dev.machineDate();
       return rows.map((r) => formatPidstatMemRow(now, r)).join('\n');
     },
     trailer: () => (accumulator.sampleCount() === 0 ? '' : ['', ...accumulator.averages().map((r) => formatPidstatAverageMemRow(r))].join('\n')),
@@ -588,7 +588,7 @@ function planIostat(dev: LinuxMachine, commandLine: string, toks: string[]): Str
     intervalMs: intervalOf(parsed.intervalSeconds),
     maxFrames: parsed.count ?? undefined,
     header: () => dev.iostatBannerLine(),
-    frame: () => `\n${renderIostatReport(parsed, dev.sampleIostatCpuSnapshot(), dev.sampleIostatDevicesSnapshot(parsed), simulationDate())}`,
+    frame: () => `\n${renderIostatReport(parsed, dev.sampleIostatCpuSnapshot(), dev.sampleIostatDevicesSnapshot(parsed), dev.machineDate())}`,
   });
 }
 

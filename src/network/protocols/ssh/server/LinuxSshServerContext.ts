@@ -9,6 +9,7 @@
  */
 
 
+import { simulationNowMs } from '@/network/core/SystemClock';
 import { readSshdConfig } from './SshdConfigText';
 import { UBUNTU_2204_SSHD_CONFIG } from './UbuntuSshdConfigFile';
 import { hostnameOf, type HostnameSource } from '@/network/devices/linux/KernelHostname';
@@ -364,6 +365,10 @@ export class LinuxSshServerContext implements ISshServerContext {
     return content ? findAdmittedKey(content, publicKey, source) : null;
   }
 
+  nowMs(): number {
+    return this.executor === null ? simulationNowMs() : this.executor.simulatedDate().getTime();
+  }
+
   private certificateService: SshdCertificateService | null = null;
 
   private certificates(): SshdCertificateService {
@@ -372,7 +377,7 @@ export class LinuxSshServerContext implements ISshServerContext {
       groupsOf: (user) => this.userManager.getUserGroups(user).map((group) => group.name),
       readFile: (path) => this.vfs.readFile(path),
       emit: (event) => this.events.emit(event),
-      ...(this.executor === null ? {} : { nowMs: () => this.executor!.simulatedDate().getTime() }),
+      nowMs: () => this.nowMs(),
     });
     return this.certificateService;
   }

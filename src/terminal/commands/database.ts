@@ -5,7 +5,6 @@
  * automatically started (OPEN state) with demo schemas installed.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
 
 import { OracleDatabase } from '@/database/oracle/OracleDatabase';
 import { SQLPlusSession } from '@/database/oracle/commands/SQLPlusSession';
@@ -563,6 +562,7 @@ export function initOracleFilesystem(device: import('@/network').HostCapableDevi
   const oracleBase = ORACLE_CONFIG.BASE;
   const sid = ORACLE_CONFIG.SID;
   const oradata = `${oracleBase}/oradata/${sid}`;
+  const machineStamp = new Date(device.getSystemClockMs()).toISOString();
 
   // ── Configuration files ───────────────────────────────────────
 
@@ -673,7 +673,7 @@ remote_login_passwordfile = EXCLUSIVE
 `# Oracle password file (binary format simulated)
 # Format: Oracle proprietary
 # Users:   SYS (SYSDBA, SYSOPER)
-# Created: ${simulationDate().toISOString().slice(0, 19)}
+# Created: ${machineStamp.slice(0, 19)}
 `,
 
     // ── /etc config ─────────────────────────────────────────────
@@ -780,7 +780,7 @@ SELECT 'All objects recompiled successfully.' FROM DUAL;
 
     // ── Diagnostic trace dir ──────────────────────────────────
     [`${ORACLE_CONFIG.DIAG_TRACE}/alert_${sid}.log`]:
-`${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}
+`${machineStamp.replace('T', ' ').slice(0, 19)}
 Starting ORACLE instance (normal)
 LICENSE_MAX_SESSION = 0
 LICENSE_SESSIONS_WARNING = 0
@@ -801,7 +801,7 @@ No Resource Manager plan active
 replication_dependency_tracking turned off (no async multimaster replication found)
 Starting background process MMON
 Starting background process MMNL
-${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}
+${machineStamp.replace('T', ' ').slice(0, 19)}
 Database ${sid} opened.
 Completed: ALTER DATABASE OPEN
 `,

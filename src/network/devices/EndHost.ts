@@ -19,12 +19,13 @@
  */
 
 import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
-import { simulationNowMs } from '@/network/core/SystemClock';
+import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
+import { stampAtHost } from '../layers/internet/Ipv4Options';
 import {
   classifyIpv4Destination, decrementForForwarding, invalidSourceFor, ipv4HeaderProblem,
   addressesOnLink, connectedPrefixesOfPort, isDirectedBroadcast, martianSource, type ConnectedIpv4Prefix,
@@ -204,11 +205,16 @@ const UNSPECIFIED_IPV4 = '0.0.0.0';
 export const ARP_REACHABLE_TIME_MS = 30_000;
 export const ARP_GC_STALE_TIME_MS = 60_000;
 export const ARP_AGING_INTERVAL_MS = 5_000;
+export const ARP_MCAST_SOLICIT = 3;
+export const ARP_RETRANS_TIME_MS = 1_000;
+export const ARP_DELAY_FIRST_PROBE_MS = 5_000;
+export const ARP_UCAST_SOLICIT = 3;
 
 /** Compute NUD (Neighbor Unreachability Detection) state from an ARP entry. */
 export function getNUDState(entry: ARPEntry): string {
   if (entry.type === 'static') return 'PERMANENT';
   if (entry.type === 'failed') return 'FAILED';
+  if (entry.probing !== undefined) return entry.probing.state === 'delay' ? 'DELAY' : 'PROBE';
   return simulationNowMs() - entry.timestamp < ARP_REACHABLE_TIME_MS ? 'REACHABLE' : 'STALE';
 }
 
@@ -234,6 +240,7 @@ export interface PingResult {
   bytes: number;
   fromIP: string;
   redirects?: IcmpRedirectNotice[];
+  replyOptions?: readonly IPv4Option[];
 }
 
 export interface TracerouteProbeResult {
@@ -349,6 +356,7 @@ export interface EchoOptions {
   ident?: number;
   socket?: TraceSocketOptions;
   pauseAfterErrorReplyMs?: number;
+  ipOptions?: readonly IPv4Option[];
 }
 
 export interface Echo6Options {
@@ -564,7 +572,6 @@ export interface Dhcpv6InformationState {
 }
 
 const ICMP_TIMESTAMP_BYTES = 12;
-const MS_PER_DAY = 86_400_000;
 
 const TRACE_IDENT_MEMORY = 64;
 
@@ -1123,7 +1130,7 @@ export abstract class EndHost extends Equipment {
   /** Bus emission helper for ICMP echo reply received. */
   protected emitIcmpEchoReply(payload: {
     fromIp: string; toIp: string; id: number; seq: number; ttl: number; rttMs: number;
-    ipId?: number; tos?: number; ipLen?: number;
+    ipId?: number; tos?: number; ipLen?: number; options?: readonly IPv4Option[];
   }): void {
     this.icmpEchosReceived++;
     this.getBus().publish({
@@ -2441,6 +2448,41 @@ export abstract class EndHost extends Equipment {
     return entry === undefined || entry.type === 'failed' ? undefined : entry;
   }
 
+  protected neighbourProbing(): boolean {
+    return false;
+  }
+
+  private usedNeighbour(ip: string, entry: ARPEntry): void {
+    if (!this.neighbourProbing() || entry.type !== 'dynamic' || entry.probing !== undefined) return;
+    const now = simulationNowMs();
+    if (now - entry.timestamp < ARP_REACHABLE_TIME_MS) return;
+    entry.probing = { state: 'delay', since: now };
+    this.hostTimers.setTimeout(() => this.probeNeighbour(ip, entry, 0), ARP_DELAY_FIRST_PROBE_MS);
+  }
+
+  private probeNeighbour(ip: string, entry: ARPEntry, tries: number): void {
+    if (this.arpTable.get(ip) !== entry) return;
+    if (tries >= ARP_UCAST_SOLICIT) {
+      this.arpTable.set(ip, { mac: entry.mac, iface: entry.iface, timestamp: simulationNowMs(), type: 'failed' });
+      return;
+    }
+    const port = this.ports.get(entry.iface);
+    const myIP = port?.getIPAddress();
+    if (port && myIP) {
+      entry.probing = { state: 'probe', since: simulationNowMs() };
+      this.sendFrame(entry.iface, {
+        srcMAC: port.getMAC(),
+        dstMAC: entry.mac,
+        etherType: ETHERTYPE_ARP,
+        payload: {
+          type: 'arp', operation: 'request',
+          senderMAC: port.getMAC(), senderIP: myIP, targetMAC: entry.mac, targetIP: new IPAddress(ip),
+        },
+      });
+    }
+    this.hostTimers.setTimeout(() => this.probeNeighbour(ip, entry, tries + 1), ARP_RETRANS_TIME_MS);
+  }
+
   /** Return ARP table with full entry details (type, iface, mac, timestamp). */
   getARPTableFull(): Map<string, ARPEntry> {
     return new Map(this.arpTable);
@@ -3217,6 +3259,7 @@ export abstract class EndHost extends Equipment {
     }
     const cached = this.resolvedNeighbour(nextHopIP.toString());
     if (cached) {
+      this.usedNeighbour(nextHopIP.toString(), cached);
       this.sendFrame(outPortName, {
         srcMAC: port.getMAC(), dstMAC: cached.mac,
         etherType: ETHERTYPE_IPV4, payload: ipPkt,
@@ -3289,6 +3332,7 @@ export abstract class EndHost extends Equipment {
         ipId: ipPkt.identification,
         tos: ipPkt.tos,
         ipLen: ipPkt.totalLength,
+        ...(ipPkt.options === undefined ? {} : { options: this.stampedAtEndpoint(ipPkt, ipPkt.destinationIP).options }),
       });
     } else if (icmp.icmpType === 'timestamp-request') {
       if (this.answersIcmpTimestamp()) this.sendTimestampReply(portName, ipPkt, icmp);
@@ -3363,6 +3407,16 @@ export abstract class EndHost extends Equipment {
     return request.flags;
   }
 
+  protected stampsRecordedOptionsAtEndpoints(): boolean {
+    return false;
+  }
+
+  private stampedAtEndpoint(packet: IPv4Packet, address: IPAddress): IPv4Packet {
+    return this.stampsRecordedOptionsAtEndpoints() && packet.options !== undefined
+      ? stampAtHost(packet, address, this.millisecondsSinceMidnight())
+      : packet;
+  }
+
   protected echoReplyTos(_request: IPv4Packet): number {
     return 0;
   }
@@ -3376,7 +3430,7 @@ export abstract class EndHost extends Equipment {
   }
 
   private millisecondsSinceMidnight(): number {
-    return Math.floor(this.getSystemClockMs()) % MS_PER_DAY;
+    return millisecondsSinceUtcMidnight(this.getSystemClockMs());
   }
 
   private sendTimestampReply(portName: string, requestIP: IPv4Packet, request: ICMPPacket): void {
@@ -3406,6 +3460,7 @@ export abstract class EndHost extends Equipment {
     if (portName === 'lo') {
       const reply = buildEchoReply(
         requestIP, requestICMP, requestIP.destinationIP, this.defaultTTL, this.echoReplyFlags(requestIP), this.echoReplyTos(requestIP),
+        this.millisecondsSinceMidnight(),
       );
       const leg = this.loopLocal(reply);
       if (leg.delivery === 'delivered') this.handleICMP('lo', leg.packet);
@@ -3423,7 +3478,8 @@ export abstract class EndHost extends Equipment {
     if (!myIP) return;
 
     const replyIP = buildEchoReply(
-      requestIP, requestICMP, myIP, this.defaultTTL, this.echoReplyFlags(requestIP), this.echoReplyTos(requestIP),
+      this.stampedAtEndpoint(requestIP, myIP), requestICMP, myIP, this.defaultTTL, this.echoReplyFlags(requestIP), this.echoReplyTos(requestIP),
+      this.millisecondsSinceMidnight(),
     );
 
     // Route the reply — source may be on a different subnet (via default gateway)
@@ -4769,42 +4825,49 @@ export abstract class EndHost extends Equipment {
     throw new Error('ARP timeout');
   }
 
+  protected arpSolicitPolicy(timeoutMs: number): { readonly attempts: number; readonly spacingMs: number } {
+    return { attempts: 1, spacingMs: timeoutMs };
+  }
+
   async probeArp(portName: string, targetIP: IPAddress, timeoutMs: number): Promise<MACAddress | null> {
     const port = this.ports.get(portName);
     const myIP = port?.getIPAddress();
     if (!port || !myIP) return null;
 
     const targetIpStr = targetIP.toString();
-    const waitPromise = waitForEvent(
-      this.getBus(),
-      'host.arp.entry-learned',
-      (p) => p.deviceId === this.id && p.ip === targetIpStr,
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
+    const policy = this.arpSolicitPolicy(timeoutMs);
+    for (let attempt = 0; attempt < policy.attempts; attempt++) {
+      const waitPromise = waitForEvent(
+        this.getBus(),
+        'host.arp.entry-learned',
+        (p) => p.deviceId === this.id && p.ip === targetIpStr,
+        { timeoutMs: policy.spacingMs, scheduler: this.getScheduler() },
+      );
 
-    const arpReq: ARPPacket = {
-      type: 'arp',
-      operation: 'request',
-      senderMAC: port.getMAC(),
-      senderIP: myIP,
-      targetMAC: MACAddress.broadcast(),
-      targetIP,
-    };
-    this.emitArpRequestSent(portName, targetIpStr);
-    this.sendFrame(portName, {
-      srcMAC: port.getMAC(),
-      dstMAC: MACAddress.broadcast(),
-      etherType: ETHERTYPE_ARP,
-      payload: arpReq,
-    });
+      const arpReq: ARPPacket = {
+        type: 'arp',
+        operation: 'request',
+        senderMAC: port.getMAC(),
+        senderIP: myIP,
+        targetMAC: MACAddress.broadcast(),
+        targetIP,
+      };
+      this.emitArpRequestSent(portName, targetIpStr);
+      this.sendFrame(portName, {
+        srcMAC: port.getMAC(),
+        dstMAC: MACAddress.broadcast(),
+        etherType: ETHERTYPE_ARP,
+        payload: arpReq,
+      });
 
-    try {
-      const learned = await waitPromise;
-      return new MACAddress(learned.mac);
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return null;
-      throw err;
+      try {
+        const learned = await waitPromise;
+        return new MACAddress(learned.mac);
+      } catch (err) {
+        if (!(err instanceof WaitForEventTimeoutError)) throw err;
+      }
     }
+    return null;
   }
 
   private armEchoWait(
@@ -4948,11 +5011,14 @@ export abstract class EndHost extends Equipment {
       id, sequence: seq, dataSize,
     };
     const icmpSize = 8 + dataSize;
-    const packet = createIPv4Packet(
+    const built = createIPv4Packet(
       source, target, IP_PROTO_ICMP, ttl ?? this.defaultTTL, icmp, icmpSize,
-      { ...(opts?.df === undefined ? {} : { flags: opts.df ? IPV4_FLAG_DF : 0b000 }), tos: opts?.tos },
+      {
+        ...(opts?.df === undefined ? {} : { flags: opts.df ? IPV4_FLAG_DF : 0b000 }), tos: opts?.tos,
+        ...(opts?.ipOptions === undefined || opts.ipOptions.length === 0 ? {} : { ipOptions: [...opts.ipOptions] }),
+      },
     );
-    return { packet, icmpSize };
+    return { packet: this.stampedAtEndpoint(built, source), icmpSize };
   }
 
   private async settleEcho(outcome: () => Promise<EchoOutcome>, probe: EchoSettlement): Promise<PingResult> {
@@ -4971,6 +5037,7 @@ export abstract class EndHost extends Equipment {
         ...(winner.r.ipId === undefined ? {} : { ipId: winner.r.ipId }),
         ...(winner.r.tos === undefined ? {} : { tos: winner.r.tos }),
         ...(winner.r.ipLen === undefined ? {} : { ipLen: winner.r.ipLen }),
+        ...(winner.r.options === undefined ? {} : { replyOptions: winner.r.options }),
       };
     } catch (err) {
       if (err instanceof WaitForEventTimeoutError) {

@@ -62,7 +62,7 @@ export function acctAttributesFor(record: AcctRecord, policy?: RadiusAttributePo
   ];
   const identifier = policy?.nasIdentifier?.(record.nasIp);
   if (identifier !== undefined) attrs.push(attr('nas-identifier', identifier));
-  if (policy?.eventTimestampInAccounting) attrs.push(attr('event-timestamp', Math.floor(simulationNowMs() / 1000)));
+  if (policy?.eventTimestampInAccounting) attrs.push(attr('event-timestamp', Math.floor((policy.nowMs ?? simulationNowMs)() / 1000)));
   if (record.status !== 'start') {
     attrs.push(attr('acct-session-time', record.sessionTimeSec));
     attrs.push(attr('acct-input-octets', record.inputOctets));

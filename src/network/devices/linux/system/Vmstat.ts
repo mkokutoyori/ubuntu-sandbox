@@ -8,6 +8,7 @@ export interface VmstatArgs {
   unit: 'k' | 'K' | 'm' | 'M';
   wide: boolean;
   noRecurringHeader: boolean;
+  timestamp: boolean;
 }
 
 export interface VmstatSample {
@@ -36,17 +37,19 @@ export function parseVmstatArgs(args: string[]): VmstatArgs | { error: string } 
   let unit: 'k' | 'K' | 'm' | 'M' = 'k';
   let wide = false;
   let noRecurringHeader = false;
+  let timestamp = false;
   const positional: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === '-w' || a === '--wide') wide = true;
     else if (a === '-n' || a === '--one-header') noRecurringHeader = true;
+    else if (a === '-t' || a === '--timestamp') timestamp = true;
     else if (a === '-S' || a === '--unit') {
       const v = args[++i] ?? '';
       if (v !== 'k' && v !== 'K' && v !== 'm' && v !== 'M') return { error: `vmstat: -S requires k, K, m, or M` };
       unit = v;
-    } else if (a === '-a' || a === '-d' || a === '-D' || a === '-f' || a === '-m' || a === '-s' || a === '-t' || a === '-V') {
+    } else if (a === '-a' || a === '-d' || a === '-D' || a === '-f' || a === '-m' || a === '-s' || a === '-V') {
       // accepted but not implemented in this snapshot mode
     } else if (a.startsWith('-')) {
       return { error: `vmstat: unrecognized option: ${a}` };
@@ -61,20 +64,25 @@ export function parseVmstatArgs(args: string[]): VmstatArgs | { error: string } 
   if (positional.length >= 2) count = parseInt(positional[1], 10);
   if (positional.length > 2) return { error: 'vmstat: too many arguments' };
 
-  return { intervalSeconds, count, unit, wide, noRecurringHeader };
+  return { intervalSeconds, count, unit, wide, noRecurringHeader, timestamp };
 }
 
-export function vmstatHeader(args: VmstatArgs): string {
+const TIMESTAMP_HEADER = ' -----timestamp-----';
+
+export function vmstatHeader(args: VmstatArgs, zoneName = ''): string {
+  const stamped = (title: string, columns: string): string[] => (args.timestamp
+    ? [title + TIMESTAMP_HEADER, `${columns} ${zoneName.padStart(TIMESTAMP_HEADER.length - 1)}`]
+    : [title, columns]);
   if (args.wide) {
-    return [
+    return stamped(
       '--procs-- -----------------------memory---------------------- ---swap-- -----io---- -system-- --------cpu--------',
       '   r    b         swpd         free         buff        cache   si   so    bi    bo   in   cs  us  sy  id  wa  st',
-    ].join('\n');
+    ).join('\n');
   }
-  return [
+  return stamped(
     'procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----',
     ' r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st',
-  ].join('\n');
+  ).join('\n');
 }
 
 function scaleMemory(kib: number, unit: VmstatArgs['unit']): number {
@@ -86,7 +94,12 @@ function scaleMemory(kib: number, unit: VmstatArgs['unit']): number {
   }
 }
 
-export function formatVmstatRow(sample: VmstatSample, args: VmstatArgs): string {
+export function formatVmstatRow(sample: VmstatSample, args: VmstatArgs, stamp = ''): string {
+  const row = formatVmstatColumns(sample, args);
+  return args.timestamp ? `${row} ${stamp}` : row;
+}
+
+function formatVmstatColumns(sample: VmstatSample, args: VmstatArgs): string {
   const m = (kib: number) => scaleMemory(kib, args.unit);
   if (args.wide) {
     return [
@@ -162,13 +175,14 @@ export function sampleVmstat(pm: LinuxProcessManager, memory: MemoryProfile): Vm
 export interface VmstatContext {
   pm: LinuxProcessManager;
   memory: MemoryProfile;
+  formatTime: (format: string) => string;
 }
 
 export function cmdVmstat(args: string[], ctx: VmstatContext): { output: string; exitCode: number } {
   const parsed = parseVmstatArgs(args);
   if ('error' in parsed) return { output: parsed.error, exitCode: 1 };
-  const lines: string[] = [vmstatHeader(parsed)];
+  const lines: string[] = [vmstatHeader(parsed, parsed.timestamp ? ctx.formatTime('%Z') : '')];
   const sample = sampleVmstat(ctx.pm, ctx.memory);
-  lines.push(formatVmstatRow(sample, parsed));
+  lines.push(formatVmstatRow(sample, parsed, parsed.timestamp ? ctx.formatTime('%Y-%m-%d %H:%M:%S') : ''));
   return { output: lines.join('\n'), exitCode: 0 };
 }

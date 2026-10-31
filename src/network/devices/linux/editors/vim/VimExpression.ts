@@ -3,8 +3,37 @@ import { lowerCaseChar, upperCaseChar } from './VimEditing';
 import { formatExponentialSafe, formatFixedSafe, formatFloatDefault, formatVimGeneral } from './VimFloat';
 import { compileVimPattern, type VimRegExp } from './VimPattern';
 import { expandReplacement } from './VimSubstitute';
+import { inVimOrder } from './VimHashOrder';
+import { formatLocalTime } from '@/network/devices/linux/system/SystemInfo';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import { sha256 } from '@/crypto/hash/sha256';
+
+export class VimVariables {
+  private readonly stored = new Map<string, VimValue>();
+
+  static key(name: string): string | null {
+    if (/^[gbwt]:[A-Za-z_][\w#]*$/.test(name)) return name;
+    if (/^[A-Za-z_][\w#]*$/.test(name)) return `g:${name}`;
+    return null;
+  }
+
+  lookup(name: string): VimValue | undefined {
+    const key = VimVariables.key(name);
+    return key === null ? undefined : this.stored.get(key);
+  }
+
+  assign(key: string, value: VimValue): void {
+    this.stored.set(key, value);
+  }
+
+  remove(name: string): boolean {
+    const key = VimVariables.key(name);
+    return key !== null && this.stored.delete(key);
+  }
+}
 
 export interface ExpressionHost {
+  readonly variables: VimVariables;
   readonly lines: readonly string[];
   readonly lineNumber: number;
   readonly columnIndex: number;
@@ -20,6 +49,9 @@ export interface ExpressionHost {
   register(name: string): string | null;
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
+  shell(command: string, input: string | null): string;
+  assignOption(name: string, value: string | number): string | null;
+  assignRegister(name: string, text: string): void;
 }
 
 export interface ExpressionResult {
@@ -175,7 +207,7 @@ function echoString(value: VimValue, quoted: boolean): string {
     case 'funcref': return value.bound.length > 0 ? `function('${value.name}', ${echoString(list([...value.bound]), true)})` : `function('${value.name}')`;
     case 'string': return quoted ? `'${value.value.replace(/'/g, "''")}'` : value.value;
     case 'list': return `[${value.items.map((item) => echoString(item, true)).join(', ')}]`;
-    case 'dict': return `{${[...value.entries].map(([key, item]) => `'${key.replace(/'/g, "''")}': ${echoString(item, true)}`).join(', ')}}`;
+    case 'dict': return `{${inVimOrder(value.entries).map(([key, item]) => `'${key.replace(/'/g, "''")}': ${echoString(item, true)}`).join(', ')}}`;
   }
 }
 
@@ -995,7 +1027,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
       const wanted = ignoreCase ? foldCase(needle) : needle;
       return num(subject.split(wanted).length - 1);
     }
-    const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? [...target.entries.values()] : [];
+    const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? inVimOrder(target.entries).map(([, item]) => item) : [];
     return num(items.filter((item) => sameValue(item, args[1], ignoreCase)).length);
   } }],
   ['index', { min: 2, max: 4, run: (args, context) => {
@@ -1019,11 +1051,66 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     context.soft('E896: Argument of get() must be a List, Dictionary or Blob');
     return num(0);
   } }],
-  ['keys', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list([...args[0].entries.keys()].map(str)) : dictRequired(context) }],
-  ['values', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list([...args[0].entries.values()]) : dictRequired(context) }],
-  ['items', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list([...args[0].entries].map(([key, item]) => list([str(key), item]))) : dictRequired(context) }],
+  ['keys', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list(inVimOrder(args[0].entries).map(([key]) => str(key))) : dictRequired(context) }],
+  ['values', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list(inVimOrder(args[0].entries).map(([, item]) => item)) : dictRequired(context) }],
+  ['items', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list(inVimOrder(args[0].entries).map(([key, item]) => list([str(key), item]))) : dictRequired(context) }],
   ['has_key', { min: 2, max: 2, run: (args, context) => args[0].kind === 'dict' ? num(args[0].entries.has(context.stringOf(args[1], false)) ? 1 : 0) : dictRequired(context) }],
   ['map', { min: 2, max: 2, run: (args, context) => mapOrFilter(args, context, true) }],
+  ['mapnew', { min: 2, max: 2, run: (args, context) => {
+    const source = args[0];
+    if (source.kind !== 'list' && source.kind !== 'dict') {
+      context.soft('E712: Argument of mapnew() must be a List or Dictionary');
+      return num(0);
+    }
+    const copy: VimValue = source.kind === 'list' ? list([...source.items]) : dict(new Map(source.entries));
+    return mapOrFilter([copy, args[1]], context, true);
+  } }],
+  ['reduce', { min: 2, max: 3, run: (args, context) => {
+    const source = args[0];
+    if (source.kind !== 'list' && source.kind !== 'string') {
+      context.soft('E1098: String, List or Blob required for argument 1');
+      return num(0);
+    }
+    const items: VimValue[] = source.kind === 'list' ? [...source.items] : characters(source.value).map(str);
+    let accumulator: VimValue;
+    let at = 0;
+    if (args[2] === undefined) {
+      if (items.length === 0) {
+        context.soft(`E998: Reduce of an empty ${source.kind === 'list' ? 'List' : 'String'} with no initial value`);
+        return num(0);
+      }
+      accumulator = items[0];
+      at = 1;
+    } else {
+      accumulator = args[2];
+    }
+    for (; at < items.length; at++) {
+      try {
+        accumulator = context.invoke(args[1], [accumulator, items[at]]);
+      } catch (failure) {
+        if (!(failure instanceof Abort)) throw failure;
+        break;
+      }
+    }
+    return accumulator;
+  } }],
+  ['sha256', { min: 1, max: 1, run: (args, context) => str(Array.from(sha256(new TextEncoder().encode(context.stringOf(args[0], false))), (byte) => byte.toString(16).padStart(2, '0')).join('')) }],
+  ['system', { min: 1, max: 2, run: (args, context) => str(context.host.shell(
+    context.stringOf(args[0], false),
+    args.length > 1 ? context.stringOf(args[1], false) : null,
+  )) }],
+  ['systemlist', { min: 1, max: 2, run: (args, context) => {
+    const output = context.host.shell(context.stringOf(args[0], false), args.length > 1 ? context.stringOf(args[1], false) : null);
+    const lines = output.split('\n');
+    if (lines[lines.length - 1] === '') lines.pop();
+    return list(lines.map(str));
+  } }],
+  ['strftime', { min: 1, max: 2, run: (args, context) => str(formatLocalTime(
+    context.stringOf(args[0], false),
+    args.length > 1 ? Number(context.numberOf(args[1], true)) * 1000 : Math.floor(simulationNowMs() / 1000) * 1000,
+  )) }],
+  ['json_decode', { min: 1, max: 1, run: (args, context) => jsonDecode(context.stringOf(args[0], false), context) }],
+  ['json_encode', { min: 1, max: 1, run: (args, context) => str(jsonEncode(args[0], context)) }],
   ['filter', { min: 2, max: 2, run: (args, context) => mapOrFilter(args, context, false) }],
   ['float2nr', { min: 1, max: 1, run: (args, context) => {
     const value = floatArgument(context, args[0]);
@@ -1057,7 +1144,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     if (name.startsWith('&')) return num(context.host.option(name.replace(/^&([lg]:)?/, ''), 'effective') === undefined ? 0 : 1);
     if (name.startsWith('$')) return num(context.host.environment(name.slice(1)) === '' ? 0 : 1);
     if (name.startsWith('*')) return num(FUNCTIONS.has(name.slice(1)) ? 1 : 0);
-    return num(0);
+    return num(context.host.variables.lookup(name) === undefined ? 0 : 1);
   } }],
   ['has', { min: 1, max: 2, run: (args, context) => num(['unix', 'linux', 'multi_byte', 'eval', 'float'].includes(context.stringOf(args[0], false)) ? 1 : 0) }],
 ]);
@@ -1153,7 +1240,7 @@ function dictRequired(context: Context): VimValue {
 }
 
 function extreme(target: VimValue, context: Context, maximum: boolean): VimValue {
-  const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? [...target.entries.values()] : null;
+  const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? inVimOrder(target.entries).map(([, item]) => item) : null;
   if (items === null) {
     context.soft('E712: Argument of max() must be a List or Dictionary');
     return num(0);
@@ -1187,6 +1274,59 @@ function evaluateCallback(context: Context, callback: VimValue, key: VimValue, v
   }
 }
 
+const JSON_ESCAPES: Readonly<Record<string, string>> = { '\b': '\\b', '\t': '\\t', '\n': '\\n', '\f': '\\f', '\r': '\\r', '"': '\\"', '\\': '\\\\' };
+
+function jsonString(text: string): string {
+  let out = '"';
+  for (const character of text) {
+    const code = character.codePointAt(0)!;
+    if (JSON_ESCAPES[character] !== undefined) out += JSON_ESCAPES[character];
+    else if (code < 0x20) out += `\\u00${code.toString(16).padStart(2, '0')}`;
+    else out += character;
+  }
+  return `${out}"`;
+}
+
+function jsonToVim(node: unknown, source: string | undefined): VimValue {
+  if (node === null) return special('null');
+  if (node === true) return special('true');
+  if (node === false) return special('false');
+  if (typeof node === 'string') return str(node);
+  if (typeof node === 'number') {
+    if (source !== undefined) return /^-?\d+$/.test(source) ? num(BigInt(source)) : flt(node);
+    return Number.isInteger(node) ? num(node) : flt(node);
+  }
+  if (Array.isArray(node)) return list(node.map((item) => jsonToVim(item, undefined)));
+  const entries = new Map<string, VimValue>();
+  for (const [key, item] of Object.entries(node as Record<string, unknown>)) entries.set(key, jsonToVim(item, undefined));
+  return dict(entries);
+}
+
+function jsonDecode(text: string, context: Context): VimValue {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === 'number') return jsonToVim(parsed, text.trim());
+    return jsonToVim(parsed, undefined);
+  } catch {
+    context.soft(`E491: JSON decode error at '${text}'`);
+    return special('none');
+  }
+}
+
+function jsonEncode(value: VimValue, context: Context): string {
+  switch (value.kind) {
+    case 'number': return value.value.toString();
+    case 'float': return formatFloatDefault(value.value);
+    case 'string': return jsonString(value.value);
+    case 'special': return value.name === 'true' ? 'true' : value.name === 'false' ? 'false' : 'null';
+    case 'list': return `[${value.items.map((item) => jsonEncode(item, context)).join(',')}]`;
+    case 'dict': return `{${inVimOrder(value.entries).map(([key, item]) => `${jsonString(key)}:${jsonEncode(item, context)}`).join(',')}}`;
+    default:
+      context.soft('E474: Invalid argument');
+      return '';
+  }
+}
+
 function mapOrFilter(args: VimValue[], context: Context, mapping: boolean): VimValue {
   const target = args[0];
   if (target.kind !== 'list' && target.kind !== 'dict') {
@@ -1194,8 +1334,8 @@ function mapOrFilter(args: VimValue[], context: Context, mapping: boolean): VimV
     return num(0);
   }
   const callback = args[1];
-  const keys: VimValue[] = target.kind === 'list' ? target.items.map((_, at) => num(at)) : [...target.entries.keys()].map(str);
-  const values: VimValue[] = target.kind === 'list' ? [...target.items] : [...target.entries.values()];
+  const keys: VimValue[] = target.kind === 'list' ? target.items.map((_, at) => num(at)) : inVimOrder(target.entries).map(([key]) => str(key));
+  const values: VimValue[] = target.kind === 'list' ? [...target.items] : inVimOrder(target.entries).map(([, item]) => item);
   const results: VimValue[] = [];
   for (let at = 0; at < keys.length; at++) {
     try {
@@ -1210,7 +1350,7 @@ function mapOrFilter(args: VimValue[], context: Context, mapping: boolean): VimV
   if (target.kind === 'list') {
     target.items = (mapping ? results : values).filter((_, at) => keep(at));
   } else {
-    const names = [...target.entries.keys()];
+    const names = inVimOrder(target.entries).map(([key]) => key);
     const kept = names.map((name, at) => ({ name, at })).filter(({ at }) => keep(at));
     target.entries = new Map(kept.map(({ name, at }) => [name, mapping ? results[at] : values[at]]));
   }
@@ -1842,6 +1982,8 @@ class Parser {
       const found = context.scopes[at].get(name);
       if (found !== undefined) return found;
     }
+    const stored = context.host.variables.lookup(name);
+    if (stored !== undefined) return stored;
     if (name === 'v:hlsearch') return num(context.host.highlightSearch ? 1 : 0);
     if (name === 'v:searchforward') return num(context.host.searchForward ? 1 : 0);
     if (name in constants) return constants[name];
@@ -1929,4 +2071,122 @@ export function evaluateReplacementExpression(source: string, host: ExpressionHo
     if (!(failure instanceof Abort)) throw failure;
   }
   return { text, errors: context.errors };
+}
+
+const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|@[A-Za-z0-9"\-*+_/.:#%]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
+const LET_OPERATOR: Record<string, string> = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '..=': '..', '.=': '.' };
+
+function splitAccess(target: string): { name: string; accessors: string[] } | null {
+  const head = target.match(/^[A-Za-z_][\w:#]*/);
+  if (head === null) return null;
+  const accessors: string[] = [];
+  let rest = target.slice(head[0].length);
+  while (rest !== '') {
+    const bracket = rest.match(/^\[([^\]]*)\]/);
+    const dotted = rest.match(/^\.([A-Za-z_]\w*)/);
+    if (bracket !== null) {
+      accessors.push(bracket[1]);
+      rest = rest.slice(bracket[0].length);
+    } else if (dotted !== null) {
+      accessors.push(`'${dotted[1]}'`);
+      rest = rest.slice(dotted[0].length);
+    } else {
+      return null;
+    }
+  }
+  return { name: head[0], accessors };
+}
+
+function combineWith(current: VimValue | undefined, operator: string, value: VimValue, label: string, context: Context): VimValue {
+  if (operator === '=') return value;
+  if (operator === '+=' && current?.kind === 'list' && value.kind === 'list') {
+    current.items.push(...value.items);
+    return current;
+  }
+  if (current === undefined) return context.fail(`E121: Undefined variable: ${label}`);
+  const frame = new Map<string, VimValue>([['lhs_', current], ['rhs_', value]]);
+  context.scopes.push(frame);
+  try {
+    return runExpression(`lhs_ ${LET_OPERATOR[operator]} rhs_`, context);
+  } finally {
+    context.scopes.pop();
+  }
+}
+
+function assignTarget(target: string, operator: string, value: VimValue, context: Context): void {
+  if (target.startsWith('&')) {
+    const current = operator === '=' ? undefined : runExpression(target, context);
+    const combined = combineWith(current, operator, value, target, context);
+    const failure = context.host.assignOption(target.slice(1), combined.kind === 'number' ? Number(combined.value) : context.stringOf(combined, true));
+    if (failure !== null) context.fail(failure);
+    return;
+  }
+  if (target.startsWith('@')) {
+    const register = target.slice(1);
+    const current = operator === '=' ? undefined : runExpression(target, context);
+    context.host.assignRegister(register, context.stringOf(combineWith(current, operator, value, target, context), true));
+    return;
+  }
+  const access = splitAccess(target);
+  if (access === null) context.fail(`E15: Invalid expression: "${target}"`);
+  const { name, accessors } = access;
+  const key = VimVariables.key(name);
+  if (key === null) context.fail(`E461: Illegal variable name: ${name}`);
+  const combine = (current: VimValue | undefined): VimValue => combineWith(current, operator, value, name, context);
+  if (accessors.length === 0) {
+    context.host.variables.assign(key, combine(context.host.variables.lookup(key)));
+    return;
+  }
+  if (context.host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${name}`);
+  const holder = runExpression(`${name}${accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+  const last = runExpression(accessors[accessors.length - 1], context);
+  if (holder.kind === 'list') {
+    let at = Number(context.numberOf(last, true));
+    if (at < 0) at += holder.items.length;
+    if (at < 0 || at > holder.items.length) context.fail(`E684: List index out of range: ${at}`);
+    holder.items[at] = combine(holder.items[at]);
+  } else if (holder.kind === 'dict') {
+    const field = context.stringOf(last, true);
+    holder.entries.set(field, combine(holder.entries.get(field)));
+  } else {
+    context.fail('E689: Can only index a List, Dictionary or Blob');
+  }
+}
+
+export function executeLetCommand(argument: string, host: ExpressionHost): readonly string[] {
+  const context = new Context(host);
+  try {
+    const parsed = argument.trim().match(LET_ASSIGNMENT);
+    if (parsed === null) {
+      if (/^[A-Za-z_][\w:#]*$/.test(argument.trim())) {
+        const name = argument.trim();
+        const found = host.variables.lookup(name);
+        if (found === undefined) context.fail(`E121: Undefined variable: ${name}`);
+        return [];
+      }
+      return [`E15: Invalid expression: "${argument.trim()}"`];
+    }
+    const [, target, operator, source] = parsed;
+    const value = runExpression(source, context);
+    if (target.startsWith('[')) {
+      const names = target.slice(1, -1).split(',').map((piece) => piece.trim());
+      if (value.kind !== 'list') return context.fail('E714: List required');
+      if (value.items.length < names.length) return context.fail('E688: More targets than List items');
+      if (value.items.length > names.length) return context.fail('E687: Less targets than List items');
+      names.forEach((name, at) => assignTarget(name, operator, value.items[at], context));
+    } else {
+      assignTarget(target, operator, value, context);
+    }
+  } catch (failure) {
+    if (!(failure instanceof Abort)) throw failure;
+  }
+  return context.errors;
+}
+
+export function executeUnletCommand(names: string, bang: boolean, host: ExpressionHost): readonly string[] {
+  const errors: string[] = [];
+  for (const name of names.split(/\s+/).filter((piece) => piece !== '')) {
+    if (!host.variables.remove(name) && !bang) errors.push(`E108: No such variable: "${name}"`);
+  }
+  return errors;
 }

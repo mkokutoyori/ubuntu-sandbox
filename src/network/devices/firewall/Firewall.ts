@@ -32,7 +32,8 @@ import {
   type IPv4Packet,
   type UDPPacket,
 } from '../../core/types';
-import { recordRoute } from '../../layers/internet/Ipv4Options';
+import { millisecondsSinceUtcMidnight } from '@/network/core/SystemClock';
+import { recordRoute, recordTimestamp, type TimestampStamp } from '../../layers/internet/Ipv4Options';
 import {
   buildICMPError, mayGenerateICMPError,
   ICMP_TTL_EXPIRED_IN_TRANSIT, ICMP_UNREACH_FRAG_NEEDED, ICMP_UNREACH_PORT,
@@ -2739,11 +2740,21 @@ export class Firewall extends Equipment {
         || vdom.settings.opmode === 'transparent'));
   }
 
+  private timestampStampFor(address: IPAddress): TimestampStamp {
+    return {
+      address,
+      msOfDay: millisecondsSinceUtcMidnight(this.getSystemClockMs()),
+      owns: named => this.interfaces.all().some(iface => iface.ip === named.toString()),
+    };
+  }
+
   private recordRouteOnEgress(egressPort: string, packet: IPv4Packet): IPv4Packet | null {
     const address = this.interfaces.get(egressPort)?.ip;
     if (!address) return packet;
     const outcome = recordRoute(packet, new IPAddress(address));
-    return outcome.kind === 'error' ? null : outcome.packet;
+    if (outcome.kind === 'error') return null;
+    const stamped = recordTimestamp(outcome.packet, this.timestampStampFor(new IPAddress(address)));
+    return stamped.kind === 'error' ? null : stamped.packet;
   }
 
   private resetExpiredSession(vdomName: string, session: FirewallSession): void {
@@ -2854,6 +2865,7 @@ export class Firewall extends Equipment {
   private deliverLocally(portName: string, packet: IPv4Packet): void {
     deliverLocally({
       ikeDatagram: (p) => ikeDatagram(p),
+      msOfDay: () => millisecondsSinceUtcMidnight(this.getSystemClockMs()),
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
       observedBySdwan: (p) => this.dnsClient.observe(p) || this.ddns.observe(p)
         || this.traceroute.observe(p) || this.ping.observeReply(p)

@@ -1,4 +1,3 @@
-import { simulationDate } from '@/network/core/SystemClock';
 
 import type { CpuSpec } from '../../host/hardware/CpuSpec';
 import type { StorageDevice } from '../../host/hardware/StorageDevice';
@@ -229,6 +228,7 @@ export interface IostatContext {
   storage: StorageDevice[];
   kernel: KernelInfo;
   hostname: string;
+  now: () => Date;
 }
 
 export function cmdIostat(args: string[], ctx: IostatContext): { output: string; exitCode: number } {
@@ -236,7 +236,7 @@ export function cmdIostat(args: string[], ctx: IostatContext): { output: string;
   if ('error' in parsed) {
     return { output: parsed.error, exitCode: parsed.error.startsWith('sysstat') ? 0 : 1 };
   }
-  const now = simulationDate();
+  const now = ctx.now();
   const banner = iostatBanner(ctx.kernel, ctx.hostname, ctx.cpu, now);
   const cpuRow = sampleIostatCpu(ctx.pm, ctx.cpu);
   const devices = sampleIostatDevices(parsed, ctx.storage);

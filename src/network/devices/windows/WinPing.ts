@@ -1,8 +1,10 @@
-import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { readIcmpUnreachable } from '@/network/core/icmpUnreachable';
 import type { WinCommandContext, PingResult } from './WinCommandExecutor';
-import { IPAddress } from '../../core/types';
+import { IPAddress, IP_OPTION_RECORD_ROUTE, IP_OPTION_TIMESTAMP, type IPv4Option } from '../../core/types';
+import {
+  buildRecordRouteOption, buildTimestampOption, readTimestamp, routeAddressesOf, TIMESTAMP_FLAG_WITH_ADDRESS,
+} from '../../layers/internet/Ipv4Options';
 import { requireWindowsService } from './WinFeatureGate';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
@@ -368,28 +370,22 @@ export async function cmdPing(ctx: WinCommandContext, args: string[]): Promise<s
   }
 
   const results = await ctx.executePingSequence(targetIP, parsed.count, parsed.timeoutMs, parsed.ttl,
-    { dataSize: parsed.size, df: parsed.dontFragment, pauseAfterErrorReplyMs: WINDOWS_PING_INTERVAL_MS });
+    {
+      dataSize: parsed.size, df: parsed.dontFragment, pauseAfterErrorReplyMs: WINDOWS_PING_INTERVAL_MS,
+      ...(optionsRequested(parsed).length === 0 ? {} : { ipOptions: optionsRequested(parsed) }),
+    });
   const hostname = parsed.targetStr !== targetIP.toString() ? parsed.targetStr : undefined;
-
-  // `-r`/`-s` record the REAL forward path. Derive it once from a short
-  // traceroute rather than fabricating repeated copies of the target IP.
-  let routeHops: string[] = [];
-  if ((parsed.recordRoute || parsed.timestamp) && results.some(r => r.success)) {
-    const budget = Math.max(parsed.recordRoute ?? 0, parsed.timestamp ?? 0, 1);
-    const hops = await ctx.executeTraceroute(targetIP, Math.min(budget + 1, 9), 200);
-    routeHops = hops
-      .filter(h => !h.timeout && h.ip)
-      .map(h => h.ip as string);
-    if (routeHops[routeHops.length - 1] !== targetIP.toString()) {
-      routeHops.push(targetIP.toString());
-    }
-  }
 
   const selfSourceIP = egress?.onLink ? egress.port.getIPAddress()?.toString() : undefined;
   return formatPingOutput(
-    targetIP, parsed.count, parsed.size, results, hostname,
-    { ...parsed, selfSourceIP }, routeHops,
+    targetIP, parsed.count, parsed.size, results, hostname, { ...parsed, selfSourceIP },
   );
+}
+
+function optionsRequested(parsed: ParsedWinPing): IPv4Option[] {
+  if (parsed.recordRoute) return [buildRecordRouteOption(parsed.recordRoute)];
+  if (parsed.timestamp) return [buildTimestampOption(TIMESTAMP_FLAG_WITH_ADDRESS, parsed.timestamp)];
+  return [];
 }
 
 function formatPingOutput(
@@ -399,7 +395,6 @@ function formatPingOutput(
   results: PingResult[],
   hostname: string | undefined,
   opts: ParsedWinPing & { selfSourceIP?: string },
-  routeHops: string[] = [],
 ): string {
   const lines: string[] = [formatWinPingHeader(targetIP, size, hostname)];
   if (results.length === 0) {
@@ -417,22 +412,27 @@ function formatPingOutput(
   }
   lines.push(...formatWinPingStats(targetIP.toString(), count, results));
 
-  // `-r N` / `-s N` display the recorded route / timestamps for the real
-  // hops (capped at the requested count), not repeated copies of the
-  // target. Windows shows nothing here when the path could not be traced.
-  if (opts.recordRoute && routeHops.length > 0) {
-    const shown = routeHops.slice(0, opts.recordRoute);
-    lines.push('');
-    lines.push('Route:');
-    for (const hop of shown) lines.push(`    ${hop}`);
+  const answer = results.find(r => r.success && r.replyOptions !== undefined);
+  const carried = (type: number): IPv4Option | undefined => answer?.replyOptions?.find(o => o.type === type);
+
+  const route = carried(IP_OPTION_RECORD_ROUTE);
+  if (opts.recordRoute && route !== undefined) {
+    const hops = routeAddressesOf(route);
+    if (hops.length > 0) {
+      lines.push('');
+      lines.push('Route:');
+      for (const hop of hops) lines.push(`    ${hop}`);
+    }
   }
 
-  if (opts.timestamp && routeHops.length > 0) {
-    const shown = routeHops.slice(0, opts.timestamp);
-    lines.push('');
-    lines.push('Timestamp:');
-    const base = simulationNowMs();
-    shown.forEach((hop, i) => lines.push(`    ${hop} : ${base + i * 10}`));
+  const stamped = carried(IP_OPTION_TIMESTAMP);
+  if (opts.timestamp && stamped !== undefined) {
+    const entries = readTimestamp(stamped).entries;
+    if (entries.length > 0) {
+      lines.push('');
+      lines.push('Timestamp:');
+      for (const entry of entries) lines.push(`    ${entry.address} : ${entry.msOfDay}`);
+    }
   }
 
   return lines.join('\n');

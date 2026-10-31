@@ -1,11 +1,17 @@
 import {
   IPAddress, computeIPv4Checksum,
-  IP_OPTION_RECORD_ROUTE, IP_OPTION_LOOSE_SOURCE_ROUTE, IP_OPTION_STRICT_SOURCE_ROUTE,
+  IP_OPTION_RECORD_ROUTE, IP_OPTION_LOOSE_SOURCE_ROUTE, IP_OPTION_STRICT_SOURCE_ROUTE, IP_OPTION_TIMESTAMP,
   type IPv4Option, type IPv4Packet,
 } from '../../core/types';
 
 const SMALLEST_LEGAL_POINTER = 4;
 const ADDRESS_OCTETS = 4;
+const SMALLEST_TIMESTAMP_POINTER = 5;
+const MAXIMUM_OVERFLOW = 15;
+
+export const TIMESTAMP_FLAG_ONLY = 0;
+export const TIMESTAMP_FLAG_WITH_ADDRESS = 1;
+export const TIMESTAMP_FLAG_PRESPECIFIED = 3;
 
 function isSourceRouteOption(type: number): boolean {
   return type === IP_OPTION_LOOSE_SOURCE_ROUTE || type === IP_OPTION_STRICT_SOURCE_ROUTE;
@@ -169,4 +175,123 @@ export function reverseSourceRoute(
   const data: number[] = [SMALLEST_LEGAL_POINTER];
   for (const hop of remaining) data.push(...hop.getOctets());
   return { firstHop, option: { type: option.type, data } };
+}
+
+export interface TimestampStamp {
+  readonly address: IPAddress;
+  readonly msOfDay: number;
+  owns(address: IPAddress): boolean;
+}
+
+function writeWord(data: number[], at: number, value: number): void {
+  data[at] = (value >>> 24) & 0xff;
+  data[at + 1] = (value >>> 16) & 0xff;
+  data[at + 2] = (value >>> 8) & 0xff;
+  data[at + 3] = value & 0xff;
+}
+
+export function recordTimestamp(pkt: IPv4Packet, stamp: TimestampStamp): RecordRouteOutcome {
+  const option = findOption(pkt, type => type === IP_OPTION_TIMESTAMP);
+  if (!option) return { kind: 'unchanged', packet: pkt };
+
+  const length = optionLength(option);
+  const pointer = option.data[0];
+  const flagByte = option.data[1];
+  if (length < 4 || pointer === undefined || flagByte === undefined || pointer < SMALLEST_TIMESTAMP_POINTER) {
+    return { kind: 'error' };
+  }
+  const flag = flagByte & 0x0f;
+  const data = [...option.data];
+  const start = pointer - 3;
+
+  if (pointer <= length) {
+    if (pointer + 3 > length) return { kind: 'error' };
+    if (flag === TIMESTAMP_FLAG_ONLY) {
+      writeWord(data, start, stamp.msOfDay);
+      data[0] = pointer + 4;
+    } else if (flag === TIMESTAMP_FLAG_WITH_ADDRESS) {
+      if (pointer + 7 > length) return { kind: 'error' };
+      data.splice(start, ADDRESS_OCTETS, ...stamp.address.getOctets());
+      writeWord(data, start + ADDRESS_OCTETS, stamp.msOfDay);
+      data[0] = pointer + 8;
+    } else if (flag === TIMESTAMP_FLAG_PRESPECIFIED) {
+      if (pointer + 7 > length) return { kind: 'error' };
+      const named = new IPAddress([data[start], data[start + 1], data[start + 2], data[start + 3]]);
+      if (!stamp.owns(named)) return { kind: 'unchanged', packet: pkt };
+      writeWord(data, start + ADDRESS_OCTETS, stamp.msOfDay);
+      data[0] = pointer + 8;
+    } else {
+      return { kind: 'unchanged', packet: pkt };
+    }
+  } else if (flag !== TIMESTAMP_FLAG_PRESPECIFIED) {
+    const overflow = flagByte >> 4;
+    if (overflow === MAXIMUM_OVERFLOW) return { kind: 'error' };
+    data[1] = flag | ((overflow + 1) << 4);
+  } else {
+    return { kind: 'unchanged', packet: pkt };
+  }
+  return {
+    kind: 'recorded',
+    packet: resealed(pkt, { ...pkt, options: withOption(pkt, option, { type: option.type, data }) }),
+  };
+}
+
+export function buildTimestampOption(
+  flag: number, slots: number, prespecified: readonly IPAddress[] = [],
+): IPv4Option {
+  if (flag === TIMESTAMP_FLAG_PRESPECIFIED) {
+    const data: number[] = [SMALLEST_TIMESTAMP_POINTER, flag];
+    for (const named of prespecified) data.push(...named.getOctets(), 0, 0, 0, 0);
+    return { type: IP_OPTION_TIMESTAMP, data };
+  }
+  const width = flag === TIMESTAMP_FLAG_ONLY ? 4 : 8;
+  return { type: IP_OPTION_TIMESTAMP, data: [SMALLEST_TIMESTAMP_POINTER, flag, ...new Array(slots * width).fill(0)] };
+}
+
+export interface TimestampEntry {
+  readonly address: IPAddress | null;
+  readonly msOfDay: number;
+  readonly nonStandard: boolean;
+}
+
+export interface TimestampReading {
+  readonly flag: number;
+  readonly overflow: number;
+  readonly entries: readonly TimestampEntry[];
+}
+
+export function readTimestamp(option: IPv4Option): TimestampReading {
+  const pointer = option.data[0] ?? SMALLEST_TIMESTAMP_POINTER;
+  const flagByte = option.data[1] ?? 0;
+  const flag = flagByte & 0x0f;
+  const width = flag === TIMESTAMP_FLAG_ONLY ? 4 : 8;
+  const entries: TimestampEntry[] = [];
+  for (let p = SMALLEST_TIMESTAMP_POINTER; p + width - 1 < pointer; p += width) {
+    const at = p - 3;
+    const timeAt = flag === TIMESTAMP_FLAG_ONLY ? at : at + ADDRESS_OCTETS;
+    const raw = ((option.data[timeAt] << 24) | (option.data[timeAt + 1] << 16)
+      | (option.data[timeAt + 2] << 8) | option.data[timeAt + 3]) >>> 0;
+    entries.push({
+      address: flag === TIMESTAMP_FLAG_ONLY ? null : addressAt(option, p),
+      msOfDay: raw & 0x7fffffff,
+      nonStandard: (raw & 0x80000000) !== 0,
+    });
+  }
+  return { flag, overflow: flagByte >> 4, entries };
+}
+
+export function reflectTimestamp(pkt: IPv4Packet, stamp: TimestampStamp): IPv4Option | null {
+  const option = findOption(pkt, type => type === IP_OPTION_TIMESTAMP);
+  if (!option) return null;
+  const carried: IPv4Packet = { ...pkt, options: [option] };
+  const outcome = recordTimestamp(carried, stamp);
+  if (outcome.kind === 'error') return option;
+  return outcome.packet.options?.[0] ?? option;
+}
+
+export function stampAtHost(pkt: IPv4Packet, address: IPAddress, msOfDay: number): IPv4Packet {
+  const recorded = recordRoute(pkt, address);
+  const afterRoute = recorded.kind === 'recorded' ? recorded.packet : pkt;
+  const stamped = recordTimestamp(afterRoute, { address, msOfDay, owns: named => named.equals(address) });
+  return stamped.kind === 'recorded' ? stamped.packet : afterRoute;
 }

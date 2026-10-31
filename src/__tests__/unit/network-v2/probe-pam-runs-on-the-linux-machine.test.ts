@@ -93,7 +93,8 @@ describe('PAM on the Linux machine', () => {
     expect(runPamSync(transaction.chauthtok(), recording(['fresh-secret', 'fresh-secret']).converse)).toBe(PamReturn.SUCCESS);
     expect(machine.userMgr.passwordMatches('user', 'fresh-secret')).toBe(true);
     expect(machine.userMgr.passwordMatches('user', 'admin')).toBe(false);
-    expect(machine.vfs.readFile('/etc/shadow')).toMatch(/^user:\$6\$simulated\$fresh-secret:/m);
+    expect(machine.vfs.readFile('/etc/shadow')).toMatch(/^user:\$6\$[./0-9A-Za-z]{16}\$[./0-9A-Za-z]{86}:/m);
+    expect(machine.vfs.readFile('/etc/shadow')).not.toContain('fresh-secret');
   });
 
   it('remember= keeps old passwords in /etc/security/opasswd and refuses a reuse', () => {
@@ -102,7 +103,7 @@ describe('PAM on the Linux machine', () => {
     const first = machine.pc.getPam().begin('changer', { caller: own });
     first.handle.user = 'user';
     expect(runPamSync(first.chauthtok(), recording(['admin', 'second-pw', 'second-pw']).converse)).toBe(PamReturn.SUCCESS);
-    expect(machine.vfs.readFile('/etc/security/opasswd')).toMatch(/^user:1000:1:\$6\$simulated\$admin\n$/);
+    expect(machine.vfs.readFile('/etc/security/opasswd')).toMatch(/^user:1000:1:\$6\$[./0-9A-Za-z]{16}\$[./0-9A-Za-z]{86}\n$/);
     const again = machine.pc.getPam().begin('changer', { caller: own });
     again.handle.user = 'user';
     const conversation = recording(['second-pw', 'admin', 'admin']);

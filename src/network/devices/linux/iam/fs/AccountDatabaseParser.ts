@@ -22,12 +22,10 @@
  *    lives in `/var/log/lastlog`. So they are carried over from the account of the same
  *    name rather than reset, which is what a real reload does too.
  *
- * 2. **The password.** `passwd` stores the secret as `$6$simulated$<clear>`,
- *    so the cleartext round-trips through the file. A secret that does NOT
- *    have that shape — a hash pasted in by hand, a `*`, a `!` — yields no
- *    usable cleartext, and the account simply cannot authenticate by
- *    password. That is the real consequence of hand-editing a hash, not a
- *    parser limitation.
+ * 2. **The password.** `passwd` stores a real SHA-512 crypt hash, so the
+ *    file carries no cleartext and authentication re-hashes the candidate. A
+ *    secret written by an older build as `$6$simulated$<clear>` is upgraded to
+ *    a real hash when it is read.
  *
  * 3. **`shadow` is optional.** A user present in `/etc/passwd` with no
  *    `/etc/shadow` line still exists and still resolves; it just has no
@@ -37,16 +35,16 @@
 
 import { LinuxUserAccount } from '../LinuxUserAccount';
 import { LinuxGroup } from '../LinuxGroup';
+import { hashPassword } from '@/crypto/passwords';
 
-/** The password prefix `passwd` writes; the cleartext is recoverable from it. */
-export const SIMULATED_HASH_PREFIX = '$6$simulated$';
+const LEGACY_HASH_PREFIX = '$6$simulated$';
 
-/** Cleartext behind a stored secret, or null when it is not recoverable. */
-export function cleartextOf(secret: string): string | null {
-  const bare = secret.startsWith('!') ? secret.slice(1) : secret;
-  return bare.startsWith(SIMULATED_HASH_PREFIX)
-    ? bare.slice(SIMULATED_HASH_PREFIX.length)
-    : null;
+export function upgradedSecret(secret: string): string {
+  const locked = secret.startsWith('!');
+  const bare = locked ? secret.slice(1) : secret;
+  if (!bare.startsWith(LEGACY_HASH_PREFIX)) return secret;
+  const hashed = hashPassword(bare.slice(LEGACY_HASH_PREFIX.length));
+  return locked ? `!${hashed}` : hashed;
 }
 
 /** One parsed `/etc/shadow` record. */
@@ -102,7 +100,6 @@ export interface ParsedAccountDatabase {
   users: LinuxUserAccount[];
   groups: LinuxGroup[];
   /** Cleartext recovered per user, for the simulator's password store. */
-  cleartext: Map<string, string>;
 }
 
 /**
@@ -120,7 +117,6 @@ export function parseAccountDatabase(
   const shadow = parseShadowFile(text.shadow);
 
   const users: LinuxUserAccount[] = [];
-  const cleartext = new Map<string, string>();
 
   const seenUsers = new Set<string>();
   for (const f of records(text.passwd)) {
@@ -146,7 +142,7 @@ export function parseAccountDatabase(
       shell: f[6],
       // No shadow line at all: the account exists with no password entry,
       // which is a state `pwck` names rather than one that deletes the user.
-      password: sh ? sh.secret : '!',
+      password: sh ? upgradedSecret(sh.secret) : '!',
       locked: sh ? sh.locked : false,
       lastChange: sh ? sh.lastChange : 0,
       minDays: sh?.minDays,
@@ -165,8 +161,6 @@ export function parseAccountDatabase(
     }
     users.push(account);
 
-    const clear = sh ? cleartextOf(sh.secret) : null;
-    if (clear !== null) cleartext.set(username, clear);
   }
 
   // `/etc/gshadow` carries the administrator roster and the group password;
@@ -203,5 +197,5 @@ export function parseAccountDatabase(
     }));
   }
 
-  return { users, groups, cleartext };
+  return { users, groups };
 }

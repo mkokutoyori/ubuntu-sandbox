@@ -100,9 +100,8 @@ export class RmanCommandDispatcher {
       { pattern: /^RECOVER COPY OF DATABASE(?:\s+WITH TAG\s+'([^']+)')?(?:\s+UNTIL TIME\s+'[^']+')?$/i, command: new BlockRecoverCommand('COPY_OF_DATABASE') },
       { pattern: /^RECOVER COPY OF DATAFILE (\d+)(?:\s+WITH TAG\s+'([^']+)')?$/i, command: new BlockRecoverCommand('COPY_OF_DATAFILE') },
       // Stored scripts
-      { pattern: /^CREATE SCRIPT (\S+)\s*\{.*\}\s*;?$/i,                         command: new CreateScriptCommand() },
-      { pattern: /^CREATE SCRIPT (\S+)$/i,                                       command: new CreateScriptCommand() },
-      { pattern: /^REPLACE SCRIPT (\S+)\s*\{.*\}\s*;?$/i,                        command: new ReplaceScriptCommand() },
+      { pattern: /^CREATE SCRIPT (\S+?)\s*\{(.*)\}\s*;?$/i,                     command: new CreateScriptCommand() },
+      { pattern: /^REPLACE SCRIPT (\S+?)\s*\{(.*)\}\s*;?$/i,                    command: new ReplaceScriptCommand() },
       { pattern: /^DELETE SCRIPT (\S+)$/i,                                       command: new DeleteScriptCommand() },
       { pattern: /^PRINT SCRIPT (\S+)$/i,                                        command: new PrintScriptCommand() },
       { pattern: /^EXECUTE SCRIPT (\S+|'[^']+')$/i,                              command: new ExecuteScriptCommand() },

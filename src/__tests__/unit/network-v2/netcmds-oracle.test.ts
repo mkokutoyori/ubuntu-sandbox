@@ -34,7 +34,7 @@ function unportedInEveryUnixLab(commands: readonly string[]): string[] {
   return UNIX_LABS.flatMap((lab) => commands.map((command) => `${lab}|${command}`));
 }
 
-const UNPORTED_LABS: ReadonlySet<string> = new Set(['unix-user']);
+const UNPORTED_LABS: ReadonlySet<string> = new Set<string>();
 
 const UNPORTED_STEPS: ReadonlySet<string> = new Set([
   'ss-connected|ss -tai',
@@ -60,7 +60,6 @@ const UNPORTED_STEPS: ReadonlySet<string> = new Set([
     'help umask | head -3',
     'enable -n umask; umask 077; echo rc=$?; enable umask; umask',
     'umask 022; which umask; echo rc=$?',
-    'umask 077; su -s /bin/sh nobody -c umask',
   ].map((command) => `umask-scopes|${command}`),
   ...[
     'ps -M', 'ps Z', 'ps --context', 'ps -Z; echo rc=$?',

@@ -10,7 +10,7 @@ import {
   type ConnectedIpv4Prefix,
 } from '../layers/internet/InternetLayer';
 import {
-  advanceSourceRoute, recordRoute, sourceRouteState,
+  advanceSourceRoute, recordRoute, recordTimestamp, sourceRouteState,
 } from '../layers/internet/Ipv4Options';
 import { buildEchoReply } from '../icmp/IcmpEcho';
 import {
@@ -68,6 +68,7 @@ export function sviLabel(svi: SviInterface): string {
 export interface SviHost {
   readonly deviceId: string;
   getHostname(): string;
+  msOfDay(): number;
   bus(): IEventBus;
   /** Bridge base MAC — every SVI shares it, like real IOS. */
   getBridgeMac(): MACAddress;
@@ -636,6 +637,17 @@ export class SwitchSvi {
         return;
       }
       fwd = recorded.packet;
+      const stamped = recordTimestamp(fwd, {
+        address: egressAddress,
+        msOfDay: this.host.msOfDay(),
+        owns: named => this.isOwnAddress(named),
+      });
+      if (stamped.kind === 'error') {
+        Logger.warn(this.host.deviceId, 'svi:timestamp-malformed',
+          `timestamp option from ${ip.sourceIP} is malformed, dropping`);
+        return;
+      }
+      fwd = stamped.packet;
     }
 
     if (this.host.natTranslateOutbound) {
@@ -901,7 +913,7 @@ export class SwitchSvi {
   private sendEchoReply(
     vlan: number, selfIp: IPAddress, reqIp: IPv4Packet, reqIcmp: ICMPPacket,
   ): void {
-    const ipPkt = buildEchoReply(reqIp, reqIcmp, selfIp, 255);
+    const ipPkt = buildEchoReply(reqIp, reqIcmp, selfIp, 255, reqIp.flags, 0, this.host.msOfDay());
     const route = this.lookupRoute(ipPkt.destinationIP);
     const egressVlan = route?.egress.vlan ?? vlan;
     const nextHopMac = route !== null && route.egress.ip !== undefined

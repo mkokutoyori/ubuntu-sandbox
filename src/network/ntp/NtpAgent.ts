@@ -659,6 +659,11 @@ export class NtpAgent {
     return this.clock.now();
   }
 
+  referenceTimeMs(): number {
+    const { lastSyncMs } = this.config;
+    return lastSyncMs ? lastSyncMs + (this.now() - simulationNowMs()) : this.now();
+  }
+
   private nts: NtsSupport | null = null;
   private rawPayload: Uint8Array = new Uint8Array(0);
 

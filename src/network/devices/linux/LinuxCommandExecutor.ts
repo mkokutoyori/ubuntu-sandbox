@@ -79,6 +79,7 @@ import { runCp, cpOperands } from './coreutils/CpCommand';
 import { runMv, mvOperands } from './coreutils/MvCommand';
 import { runLn } from './coreutils/LnCommand';
 import { runMkdir, mkdirOperands } from './coreutils/MkdirCommand';
+import { runMknod } from './coreutils/MknodCommand';
 import { runRmdir } from './coreutils/RmdirCommand';
 import { runSort } from './coreutils/SortCommand';
 import { asDispatch } from './coreutils/CoreutilsKit';
@@ -123,6 +124,7 @@ import { SystemIdentity } from '../host/identity';
 import type { InterruptToken } from '@/bash/interpreter/BashInterpreter';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import { seedWithShellOnly } from '@/bash/runtime/Environment';
+import { invocationShellOptions, withInvocationOptions } from '@/bash/runtime/ShellOptions';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
 import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
@@ -333,7 +335,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // File/dir basics
   'ls', 'cd', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod',
   'chown', 'chgrp', 'ln', 'find', 'grep', 'egrep', 'fgrep', 'head', 'tail',
-  'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo',
+  'wc', 'sort', 'cut', 'uniq', 'tr', 'awk', 'sed', 'stat', 'test', 'mkfifo', 'mknod',
   'tee', 'basename', 'dirname', 'readlink', 'realpath', 'file', 'xargs', 'truncate',
   'dd', 'fallocate', 'sync', 'install',
   'expr', 'seq', 'od', '[',
@@ -482,7 +484,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -1611,7 +1613,8 @@ export class LinuxCommandExecutor {
   }
 
   private holdDescriptorsOfBackgroundJob(pid: number, commandLine: string): void {
-    const { argv, stdinPath, stdoutPath, stderrPath, stderrAppend } = splitRedirections(simpleTokenize(commandLine.replace(/^(sudo|nohup)\s+/, '')));
+    const typed = simpleTokenize(commandLine.replace(/^nohup\s+/, ''));
+    const { argv, stdinPath, stdoutPath, stderrPath, stderrAppend } = splitRedirections(typed[0] === 'sudo' ? parseSudoLead(typed.slice(1)).rest : typed);
     const absolute = (path: string): string => this.vfs.normalizePath(path, this.cwd);
     if (stdinPath !== undefined) this.processMgr.redirectStandardStream(pid, 0, absolute(stdinPath), 'r');
     if (stdoutPath !== undefined) this.processMgr.redirectStandardStream(pid, 1, absolute(stdoutPath), 'w');
@@ -2029,14 +2032,16 @@ export class LinuxCommandExecutor {
   private async runScriptElevated(
     effective: string[],
     run: () => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+    targetUser = 'root',
   ): Promise<{ output: string; exitCode: number; stderr?: string }> {
-    const admission = this.admitSudo(effective[0], effective.slice(1), 'root', null);
+    const admission = this.admitSudo(effective[0], effective.slice(1), targetUser, null);
     if (admission.refusal !== null) return admission.refusal;
     const um = this.userMgr;
     const saved = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
-    um.currentUser = 'root';
-    um.currentUid = 0;
-    um.currentGid = 0;
+    const target = um.getUser(targetUser) ?? um.getUser('root')!;
+    um.currentUser = target.username;
+    um.currentUid = target.uid;
+    um.currentGid = target.gid;
     try {
       return await run()!;
     } finally {
@@ -3620,15 +3625,18 @@ export class LinuxCommandExecutor {
     const c = this.ctx();
     // real nice(1) execve()s over itself, so comm/cmdline should reflect
     // the wrapped command, not "nice" — see niceWrappedCommand().
-    const niceInner = niceWrappedCommand(argv);
-    const spawnCommand = (niceInner?.argv ?? argv).join(' ');
-    const spawnComm = basenameOf((niceInner?.argv ?? argv)[0]);
+    const privileged = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
+    const niceInner = niceWrappedCommand(privileged);
+    const spawnCommand = (niceInner?.argv ?? privileged).join(' ');
+    const spawnComm = basenameOf((niceInner?.argv ?? privileged)[0] ?? 'sudo');
+    const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
+    const runAs = sudoLead === null ? undefined : this.userMgr.getUser(sudoLead.user ?? 'root');
     const proc = this.processMgr.spawn({
       command: spawnCommand,
       comm: spawnComm,
-      user: this.userMgr.currentUser,
-      uid: c.uid,
-      gid: c.gid,
+      user: runAs?.username ?? this.userMgr.currentUser,
+      uid: runAs?.uid ?? c.uid,
+      gid: runAs?.gid ?? c.gid,
       ppid: nohup ? 1 : this.currentBashPid(),
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
@@ -3687,17 +3695,31 @@ export class LinuxCommandExecutor {
     const noNetworkWork: Promise<unknown> = Promise.resolve();
     let settled: Promise<unknown> = noNetworkWork;
     if (exitCode === 127 && this.networkRunner) {
+      const typedTokens = leadingAssignments(simpleTokenize(cmdLine)).rest;
       const { argv: netArgv, stdoutPath, stdinPath, stderrPath, stderrAppend } = splitRedirections(
-        simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
+        sudoLead === null ? typedTokens : parseSudoLead(typedTokens.slice(1)).rest);
       if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
       if (stderrPath !== undefined) this.bindBackgroundStderr(proc.pid, this.vfs.normalizePath(stderrPath, this.cwd), stderrAppend);
       const netStdin = stdinPath === undefined ? pipedInput
         : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
-      const pending = netArgv.length > 0
-        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
-        : null;
+      const callerIdentity = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
+      if (runAs !== undefined) {
+        this.userMgr.currentUser = runAs.username;
+        this.userMgr.currentUid = runAs.uid;
+        this.userMgr.currentGid = runAs.gid;
+      }
+      let pending: ReturnType<typeof runner> | null = null;
+      try {
+        pending = netArgv.length > 0
+          ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
+          : null;
+      } finally {
+        this.userMgr.currentUser = callerIdentity.user;
+        this.userMgr.currentUid = callerIdentity.uid;
+        this.userMgr.currentGid = callerIdentity.gid;
+      }
       this.runningBackgroundJobPid = null;
       this.materializeProcFd(proc.pid);
       if (pending) {
@@ -3794,6 +3816,10 @@ export class LinuxCommandExecutor {
   /** L'heure de la machine simulée, pas celle du navigateur. */
   simulatedDate(): Date {
     return new Date(this.clockPort.wall());
+  }
+
+  localTimeText(format: string): string {
+    return formatLocalTime(format, this.simulatedDate().getTime(), this.identity.timezone);
   }
 
   advanceTime(ms: number): void {
@@ -4405,11 +4431,11 @@ export class LinuxCommandExecutor {
    * argv is not a network command and the synchronous dispatch applies.
    */
   private networkRunner:
-    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
+    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean | string, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
     | null = null;
 
   setNetworkCommandRunner(
-    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean | string, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
   ): void {
     this.networkRunner = runner;
   }
@@ -4535,8 +4561,9 @@ export class LinuxCommandExecutor {
     outputPiped?: boolean,
   ): { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }> {
     if (!background && this.networkRunner && argv.length > 0) {
-      const viaSudo = argv[0] === 'sudo';
-      const effective = viaSudo ? argv.slice(1) : argv;
+      const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
+      const viaSudo: boolean | string = sudoLead === null ? false : (sudoLead.user ?? true);
+      const effective = sudoLead === null ? argv : sudoLead.rest;
       const previousEnv = this._cmdEnv;
       this._cmdEnv = env;
       const runner = this.networkRunner;
@@ -4572,8 +4599,9 @@ export class LinuxCommandExecutor {
       return this._oracleRmanAsync(argv.slice(1), stdin).then((output) => ({ output, exitCode: rmanExitCode(output) }));
     }
     if (!background && argv.length > 0) {
-      const viaSudo = argv[0] === 'sudo';
-      const effective = viaSudo ? argv.slice(1) : argv;
+      const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
+      const viaSudo = sudoLead !== null;
+      const effective = sudoLead === null ? argv : sudoLead.rest;
       const cmd0 = effective[0] ?? '';
       const rest = effective.slice(1);
       const scriptForm = (): Promise<{ output: string; exitCode: number; stderr?: string }> | null => {
@@ -4592,7 +4620,7 @@ export class LinuxCommandExecutor {
       // compte élevé. La Phase 2 s'arrêtait devant `sudo` pour ne pas
       // court-circuiter la politique ; la reproduire ici l'applique au
       // lieu de la contourner.
-      if (pending) return viaSudo ? this.runScriptElevated(effective, scriptForm) : pending;
+      if (pending) return sudoLead !== null ? this.runScriptElevated(effective, scriptForm, sudoLead.user ?? 'root') : pending;
       const transfer = this.sshTransferInvocation(argv);
       if (transfer) {
         return this.runSshTransportAsync(transfer.cmd, transfer.args, transfer.password, stdin);
@@ -4906,8 +4934,9 @@ export class LinuxCommandExecutor {
   private static parseBashOrShArgs(
     cmd: string,
     args: string[],
-  ): { arg0: string; cmdString: string | null; scriptArgv: string[]; login: boolean; interactive: boolean } {
+  ): { arg0: string; cmdString: string | null; scriptArgv: string[]; login: boolean; interactive: boolean; options: readonly string[] } {
     let i = 0;
+    const options = invocationShellOptions(args).enabled;
     let login = false;
     let interactive = false;
     let cmdString: string | null = null;
@@ -4924,9 +4953,9 @@ export class LinuxCommandExecutor {
     }
     const defaultArg0 = login ? '-bash' : cmd;
     if (cmdString !== null) {
-      return { arg0: args[i] ?? defaultArg0, cmdString, scriptArgv: args.slice(i + 1), login, interactive };
+      return { arg0: args[i] ?? defaultArg0, cmdString, scriptArgv: args.slice(i + 1), login, interactive, options };
     }
-    return { arg0: defaultArg0, cmdString, scriptArgv: args.slice(i), login, interactive };
+    return { arg0: defaultArg0, cmdString, scriptArgv: args.slice(i), login, interactive, options };
   }
 
   /**
@@ -4948,9 +4977,9 @@ export class LinuxCommandExecutor {
     // le détour par le jumeau async le sautait.
     this.noteInterpreterExec(cmd);
     const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
-    const startupVars = cmd === 'bash'
+    const startupVars = withInvocationOptions(cmd === 'bash'
       ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-      : { ...this.commandEnvironment() };
+      : { ...this.commandEnvironment() }, parsed.options);
     if (parsed.cmdString !== null) {
       return this.runScriptProcessAsync(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
         runScriptContentAsync(
@@ -4961,7 +4990,7 @@ export class LinuxCommandExecutor {
     }
     if (parsed.scriptArgv.length > 0) {
       return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), { ...this.commandEnvironment() }));
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
     }
     return { output: '', exitCode: 0 };
   }
@@ -6124,7 +6153,7 @@ export class LinuxCommandExecutor {
       case 'install': {
         for (const p of installOperands(args)) this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'w', 'open');
         const outInstall = cmdInstall(c, args);
-        return { output: outInstall, exitCode: /^install:/m.test(outInstall) ? 1 : 0 };
+        return { output: outInstall, exitCode: /^(install: (?!creating directory)|strip:)/m.test(outInstall) ? 1 : 0 };
       }
       case 'mv': {
         for (const p of mvOperands(args)) {
@@ -6367,6 +6396,7 @@ export class LinuxCommandExecutor {
       case '[': return this.handleTest(cmd, args);
       case 'expr': return this.handleExpr(args);
       case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
+      case 'mknod': return asDispatch(runMknod(c, args));
 
       // User commands
       case 'useradd': {
@@ -6613,9 +6643,9 @@ export class LinuxCommandExecutor {
       case 'bash':
       case 'sh': {
         const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
-        const startupVars = cmd === 'bash'
+        const startupVars = withInvocationOptions(cmd === 'bash'
           ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-          : { ...this.commandEnvironment() };
+          : { ...this.commandEnvironment() }, parsed.options);
         if (parsed.cmdString !== null) {
           this.execInput = stdin ?? this.execInput;
           return this.runScriptProcess(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
@@ -6627,13 +6657,13 @@ export class LinuxCommandExecutor {
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), { ...this.commandEnvironment() }));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
         }
         if (stdin !== undefined && stdin !== '') {
           return this.runScriptProcess(cmd, (identity, bridge) =>
             runScriptContent(
               stdin, parsed.arg0, [], bridge, startupVars, this.buildIOContext(),
-              { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+              { ...identity, daemonMode: this.daemonMode, fromStandardInput: true }, this.aliases, this.functions,
             ));
         }
         return { output: '', exitCode: 0 };
@@ -6860,12 +6890,17 @@ export class LinuxCommandExecutor {
         return { output: out, exitCode: /(^|\n)du: (cannot|invalid|warning|\S+: No such)/.test(out) ? 1 : 0 };
       }
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
-      case 'vmstat': return cmdVmstat(args, { pm: this.processMgr, memory: this.hardware.memory });
+      case 'vmstat': return cmdVmstat(args, {
+        pm: this.processMgr,
+        memory: this.hardware.memory,
+        formatTime: (format) => this.localTimeText(format),
+      });
       case 'mpstat': return cmdMpstat(args, {
         pm: this.processMgr,
         cpu: this.hardware.cpu,
         kernel: this.identity.kernel,
         hostname: kernelHostname(this.vfs),
+        now: () => this.simulatedDate(),
       });
       case 'pidstat': return cmdPidstat(args, {
         pm: this.processMgr,
@@ -6873,6 +6908,7 @@ export class LinuxCommandExecutor {
         memory: this.hardware.memory,
         kernel: this.identity.kernel,
         hostname: kernelHostname(this.vfs),
+        now: () => this.simulatedDate(),
       });
       case 'iostat': return cmdIostat(args, {
         pm: this.processMgr,
@@ -6880,6 +6916,7 @@ export class LinuxCommandExecutor {
         storage: this.hardware.storage,
         kernel: this.identity.kernel,
         hostname: kernelHostname(this.vfs),
+        now: () => this.simulatedDate(),
       });
       case 'exportfs': return this.handleExportfs(args);
       case 'showmount': return this.handleShowmount(args);
@@ -7037,10 +7074,30 @@ export class LinuxCommandExecutor {
         return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
       case 'rev': {
-        const input = stdin || '';
-        const body = input.endsWith('\n') ? input.slice(0, -1) : input;
-        const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
-        return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
+        const reverse = (input: string): string => {
+          const body = input.endsWith('\n') ? input.slice(0, -1) : input;
+          const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
+          return input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : '');
+        };
+        const files = args.filter((word) => !word.startsWith('-') || word === '-');
+        if (files.length === 0) return { output: reverse(stdin || ''), exitCode: 0 };
+        let output = '';
+        let interleaved = '';
+        const errors: string[] = [];
+        for (const file of files) {
+          const content = file === '-' ? (stdin || '') : this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
+          if (content === null) {
+            const line = `rev: cannot open ${file}: No such file or directory`;
+            errors.push(line);
+            interleaved += `${line}\n`;
+          } else {
+            const reversed = reverse(content);
+            output += reversed;
+            interleaved += reversed;
+          }
+        }
+        if (errors.length === 0) return { output, exitCode: 0 };
+        return { output, stderr: errors.join('\n'), interleaved, exitCode: 1 };
       }
       case 'basename': return asDispatch(runBasename(args));
       case 'dirname': return asDispatch(runDirname(args));
@@ -7915,17 +7972,20 @@ export class LinuxCommandExecutor {
     return running === undefined ? undefined : new LocalAgentPort(running.agent);
   }
 
-  private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null } {
+  private static parseSuArgs(args: string[]): { loginShell: boolean; targetUser: string; command: string | null; shell: string | null } {
     let loginShell = false;
+    let shell: string | null = null;
     let targetUser = 'root';
     let command: string | null = null;
     for (let i = 0; i < args.length; i++) {
       const arg = args[i];
       if (arg === '-' || arg === '-l' || arg === '--login') { loginShell = true; continue; }
       if (arg === '-c' || arg === '--command') { command = args.slice(i + 1).join(' '); break; }
+      if (arg === '-s' || arg === '--shell') { shell = args[++i] ?? null; continue; }
+      if (arg.startsWith('--shell=')) { shell = arg.slice('--shell='.length); continue; }
       if (!arg.startsWith('-')) targetUser = arg;
     }
-    return { loginShell, targetUser, command };
+    return { loginShell, targetUser, command, shell };
   }
 
   /**
@@ -7935,8 +7995,8 @@ export class LinuxCommandExecutor {
    * path (runSuNetworkCommand) so both stay consistent with real su.
    */
   private beginSuSession(
-    targetUser: string, loginShell: boolean, stdin?: string,
-  ): { ok: true; restore: () => void; messages: string } | { ok: false; result: { output: string; exitCode: number } } {
+    targetUser: string, loginShell: boolean, stdin?: string, shell: string | null = null,
+  ): { ok: true; restore: () => void; messages: string } | { ok: false; result: { output: string; exitCode: number; stderr?: string } } {
     const user = this.userMgr.getUser(targetUser);
     if (!user) return { ok: false, result: { output: `su: user ${targetUser} does not exist`, exitCode: 1 } };
 
@@ -7971,13 +8031,21 @@ export class LinuxCommandExecutor {
     const messages = session.sessionMessages.join('');
     this.recordPamAccount('USER_START', 'session_open', session, user.username, true);
 
-    if (user.shell === '/sbin/nologin' || user.shell === '/usr/sbin/nologin') {
+    const effectiveShell = shell ?? user.shell;
+    if (shell !== null && !this.vfs.exists(shell)) {
+      session.closeSession();
+      this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
+      this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
+      session.end();
+      return { ok: false, result: { output: messages, stderr: `su: failed to execute ${shell}: No such file or directory`, exitCode: 127 } };
+    }
+    if (effectiveShell === '/sbin/nologin' || effectiveShell === '/usr/sbin/nologin') {
       session.closeSession();
       this.recordPamAccount('USER_END', 'session_close', session, user.username, true);
       this.recordPamAccount('CRED_DISP', 'setcred', session, user.username, true);
       session.end();
       const notice = this.vfs.readFile('/etc/nologin.txt');
-      return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}`, exitCode: 1 } };
+      return { ok: false, result: { output: `${messages}${notice === null ? 'This account is currently not available.' : notice.replace(/\n+$/, '')}\n`, exitCode: 1 } };
     }
 
     this.suStack.push({
@@ -8014,9 +8082,9 @@ export class LinuxCommandExecutor {
     return frame;
   }
 
-  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number } {
-    const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(args);
-    const session = this.beginSuSession(targetUser, loginShell, stdin);
+  private handleSu(args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
+    const { loginShell, targetUser, command, shell } = LinuxCommandExecutor.parseSuArgs(args);
+    const session = this.beginSuSession(targetUser, loginShell, stdin, shell);
     if (session.ok === false) return session.result;
 
     // `su <user> -c "<command>"` runs a single command as the target user
@@ -8047,19 +8115,19 @@ export class LinuxCommandExecutor {
     argv: string[], env?: Record<string, string>, stdin?: string,
   ): Promise<{ output: string; exitCode: number }> | null {
     if (argv[0] !== 'su' || !this.networkRunner) return null;
-    const { loginShell, targetUser, command } = LinuxCommandExecutor.parseSuArgs(argv.slice(1));
+    const { loginShell, targetUser, command, shell } = LinuxCommandExecutor.parseSuArgs(argv.slice(1));
     if (command === null) return null;
     const innerArgv = command.trim().split(/\s+/).filter(Boolean);
     if (innerArgv.length === 0 || !this.isNetworkCommandName(innerArgv[0])) return null;
 
-    return this.runSuNetworkCommand(targetUser, loginShell, command, innerArgv, env, stdin);
+    return this.runSuNetworkCommand(targetUser, loginShell, command, innerArgv, env, stdin, shell);
   }
 
   private async runSuNetworkCommand(
     targetUser: string, loginShell: boolean, command: string, innerArgv: string[],
-    env?: Record<string, string>, stdin?: string,
-  ): Promise<{ output: string; exitCode: number }> {
-    const session = this.beginSuSession(targetUser, loginShell, stdin);
+    env?: Record<string, string>, stdin?: string, shell: string | null = null,
+  ): Promise<{ output: string; exitCode: number; stderr?: string }> {
+    const session = this.beginSuSession(targetUser, loginShell, stdin, shell);
     if (session.ok === false) return session.result;
     try {
       if (/[|;&<>]/.test(command)) {
@@ -8847,7 +8915,7 @@ export class LinuxCommandExecutor {
   editorPathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo' {
     const type = this.vfs.getType(this.vfs.normalizePath(path, this.cwd));
     if (type === null) return 'missing';
-    return type === 'chardev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
+    return type === 'chardev' || type === 'blockdev' || type === 'socket' ? 'device' : type === 'symlink' ? 'file' : type;
   }
   getUmask(): number { return this.umask; }
 
@@ -9097,7 +9165,7 @@ export class LinuxCommandExecutor {
   }
 
   private networkCommandBehindWrapper(
-    argv: string[], env: Record<string, string> | undefined, viaSudo: boolean,
+    argv: string[], env: Record<string, string> | undefined, viaSudo: boolean | string,
     stdin: string | undefined, outputPiped: boolean | undefined,
   ): Promise<{ output: string; exitCode: number; stderr?: string }> | null {
     const run = (inner: string[], innerEnv: Record<string, string> | undefined, piped: boolean | undefined) =>
@@ -9325,7 +9393,10 @@ export class LinuxCommandExecutor {
       return `${target}: symbolic link to ${lstat.target}`;
     }
     if (lstat.type === 'directory') return `${target}: directory`;
-    if (lstat.type === 'chardev') return `${target}: character special`;
+    if (lstat.type === 'chardev' || lstat.type === 'blockdev') {
+      const numbers = lstat.rdev === undefined ? '' : ` (${lstat.rdev.major}/${lstat.rdev.minor})`;
+      return `${target}: ${lstat.type === 'chardev' ? 'character' : 'block'} special${numbers}`;
+    }
     if (lstat.type === 'socket') return `${target}: socket`;
     const content = this.vfs.readFile(abs) ?? lstat.content;
     if (content.length === 0) return `${target}: empty`;
@@ -9349,7 +9420,8 @@ function mimeOfDescription(description: string, withCharset: boolean): string {
   else if (description === 'empty') type = 'inode/x-empty';
   else if (description === 'directory') type = 'inode/directory';
   else if (description.startsWith('symbolic link')) type = 'inode/symlink';
-  else if (description === 'character special') type = 'inode/chardevice';
+  else if (description.startsWith('character special')) type = 'inode/chardevice';
+  else if (description.startsWith('block special')) type = 'inode/blockdevice';
   else if (description === 'socket') type = 'inode/socket';
   else if (description.endsWith('script, ASCII text executable')) { type = 'text/x-shellscript'; text = true; }
   return withCharset ? `${type}; charset=${text ? 'us-ascii' : 'binary'}` : type;
@@ -9370,7 +9442,8 @@ function stripTrailingAmp(command: string): string {
 const PERSISTENT_LISTENER_DURATION_MS = 100 * 365 * 86_400_000;
 
 function isBackgroundListener(cmdLine: string): boolean {
-  const argv = simpleTokenize(cmdLine);
+  const typed = simpleTokenize(cmdLine);
+  const argv = typed[0] === 'sudo' ? parseSudoLead(typed.slice(1)).rest : typed;
   if (argv.length === 0) return false;
   const head = basenameOf(argv[0]);
   if (head === 'tail') return argv.slice(1).some((a) => /^-[A-Za-z]*[fF]/.test(a) || a.startsWith('--follow'));

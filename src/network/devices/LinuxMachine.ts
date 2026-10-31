@@ -25,14 +25,14 @@
 import { asStderrResult, refuseUnknownGnuOption } from './linux/GnuOptionGuard';
 import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { LinuxPam } from './linux/pam/LinuxPam';
 import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
+import { EndHost, ARP_MCAST_SOLICIT, ARP_RETRANS_TIME_MS, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -809,7 +809,7 @@ export abstract class LinuxMachine extends EndHost
       if (v6 !== null) this.executor.ip6tables.executeRestore(v6);
     });
 
-    this.executor.setNetworkCommandRunner((argv, env, viaSudo = false, stdin, outputPiped = false) => {
+    this.executor.setNetworkCommandRunner((argv, env, viaSudo: boolean | string = false, stdin, outputPiped = false) => {
       const cmd = this.commands.get(argv[0]);
       if (!cmd || !cmd.needsNetworkContext) return null;
       const unavailable = this.registryDependencyFailure(cmd, argv[0]);
@@ -833,7 +833,7 @@ export abstract class LinuxMachine extends EndHost
       // seule, et l'autorisation sudoers n'était jamais consultée.
       let closeSudo = (): void => undefined;
       if (viaSudo) {
-        const admission = this.executor.admitSudo(argv[0], args, 'root', null);
+        const admission = this.executor.admitSudo(argv[0], args, typeof viaSudo === 'string' ? viaSudo : 'root', null);
         if (admission.refusal !== null) return Promise.resolve(admission.refusal);
         closeSudo = admission.close;
       }
@@ -842,9 +842,10 @@ export abstract class LinuxMachine extends EndHost
         ? { user: userMgr.currentUser, uid: userMgr.currentUid, gid: userMgr.currentGid }
         : null;
       if (saved) {
-        userMgr.currentUser = 'root';
-        userMgr.currentUid = 0;
-        userMgr.currentGid = 0;
+        const runAs = (typeof viaSudo === 'string' ? userMgr.getUser(viaSudo) : undefined) ?? userMgr.getUser('root')!;
+        userMgr.currentUser = runAs.username;
+        userMgr.currentUid = runAs.uid;
+        userMgr.currentGid = runAs.gid;
       }
       const restore = (): void => {
         closeSudo();
@@ -1056,6 +1057,10 @@ export abstract class LinuxMachine extends EndHost
 
   protected override echoReplyFlags(): number {
     return 0;
+  }
+
+  protected override stampsRecordedOptionsAtEndpoints(): boolean {
+    return true;
   }
 
   protected override echoReplyTos(request: IPv4Packet): number {
@@ -1670,6 +1675,7 @@ export abstract class LinuxMachine extends EndHost
       vfs,
       tcpStack: () => this.getTcpStack(),
       hostnameOf: (ip) => findEquipmentByIp(ip)?.getHostname() ?? null,
+      now: () => this.executor.simulatedDate(),
     });
     this.executor.registerServiceSocketServer('nfs-kernel-server', this.nfsService);
     this.executor.registerServiceSocketServer('rpcbind', this.nfsService);
@@ -4773,6 +4779,14 @@ export abstract class LinuxMachine extends EndHost
 
   // ─── Firewall / NAT overrides (single source of truth via iptables) ─
 
+  protected override neighbourProbing(): boolean {
+    return true;
+  }
+
+  protected override arpSolicitPolicy(): { readonly attempts: number; readonly spacingMs: number } {
+    return { attempts: ARP_MCAST_SOLICIT, spacingMs: ARP_RETRANS_TIME_MS };
+  }
+
   protected override firewallFilter(
     portName: string,
     ipPkt: IPv4Packet,
@@ -5764,7 +5778,7 @@ export abstract class LinuxMachine extends EndHost
         return this.openTcpdumpCapture(iface, sink);
       },
       now: (): Date => {
-        return simulationDate();
+        return this.executor.simulatedDate();
       },
       delay: (ms: number): Promise<void> => {
         return new Promise((resolve) => setTimeout(resolve, ms));
@@ -5907,14 +5921,22 @@ export abstract class LinuxMachine extends EndHost
     return sampleMpstat(args, this.executor.processMgr, this.getHardware().cpu);
   }
 
+  localTimeText(format: string): string {
+    return this.executor.localTimeText(format);
+  }
+
+  machineDate(): Date {
+    return this.executor.simulatedDate();
+  }
+
   mpstatBannerLine(): string {
-    const now = simulationDate();
+    const now = this.executor.simulatedDate();
     const hostname = this.getHostname();
     return mpstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
 
   pidstatBannerLine(): string {
-    const now = simulationDate();
+    const now = this.executor.simulatedDate();
     const hostname = this.getHostname();
     return pidstatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }
@@ -5928,7 +5950,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   iostatBannerLine(): string {
-    const now = simulationDate();
+    const now = this.executor.simulatedDate();
     const hostname = this.getHostname();
     return iostatBanner(this.executor.identity.kernel, hostname, this.getHardware().cpu, now);
   }

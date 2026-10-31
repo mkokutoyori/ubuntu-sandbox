@@ -29,7 +29,7 @@
 
 import { primaryShellKindFor } from '@/shell/shellKind';
 import { AdditionalRsaHostKey } from '../protocols/ssh/server/SshdRsaHostKey';
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { millisecondsSinceUtcMidnight, simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { SSH_SERVER_IDENTIFICATION } from '@/network/protocols/ssh/serverIdentification';
 import { Equipment } from '../equipment/Equipment';
@@ -579,6 +579,7 @@ export abstract class Switch extends Equipment {
       .map((l) => l.ip).filter((ip): ip is IPAddress => ip !== undefined),
     deviceId: this.id,
     getHostname: () => this.getHostname(),
+    msOfDay: () => millisecondsSinceUtcMidnight(this.getSystemClockMs()),
     bus: () => this.getBus(),
     getBridgeMac: () => this.getBridgeMac(),
     egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
@@ -800,6 +801,7 @@ export abstract class Switch extends Equipment {
       {
         id: this.id,
         name: this.name,
+        nowMs: () => this.getSystemClockMs(),
         _getArpInspectionConfig: () => this.arpInspection,
         _getArpAccessLists: () => this.arpAccessLists,
         _getSnoopingBindings: () => this.snoopingBindings,

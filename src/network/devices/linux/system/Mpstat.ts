@@ -1,4 +1,3 @@
-import { simulationDate } from '@/network/core/SystemClock';
 
 import type { CpuSpec } from '../../host/hardware/CpuSpec';
 import type { KernelInfo } from '../../host/identity/KernelInfo';
@@ -169,12 +168,13 @@ export interface MpstatContext {
   cpu: CpuSpec;
   kernel: KernelInfo;
   hostname: string;
+  now: () => Date;
 }
 
 export function cmdMpstat(args: string[], ctx: MpstatContext): { output: string; exitCode: number } {
   const parsed = parseMpstatArgs(args);
   if ('error' in parsed) return { output: parsed.error, exitCode: parsed.error.startsWith('sysstat') ? 0 : 1 };
-  const now = simulationDate();
+  const now = ctx.now();
   const lines: string[] = [mpstatBanner(ctx.kernel, ctx.hostname, ctx.cpu, now)];
   lines.push(mpstatColumnHeader(now));
   const sample = sampleMpstat(parsed, ctx.pm, ctx.cpu);

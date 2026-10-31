@@ -876,6 +876,7 @@ export interface IPv4Option {
 export const IP_OPTION_END = 0;
 export const IP_OPTION_NOP = 1;
 export const IP_OPTION_RECORD_ROUTE = 7;
+export const IP_OPTION_TIMESTAMP = 68;
 export const IP_OPTION_LOOSE_SOURCE_ROUTE = 131;
 export const IP_OPTION_STRICT_SOURCE_ROUTE = 137;
 export const IP_OPTION_ROUTER_ALERT = 148;
@@ -1094,6 +1095,7 @@ export interface ARPEntry {
   /** Dynamic = learned, static = manual, failed = resolution timed out (NUD FAILED). */
   type: 'dynamic' | 'static' | 'failed';
   vlan?: number;
+  probing?: { readonly state: 'delay' | 'probe'; readonly since: number };
 }
 
 // ─── ICMP (L4, inside IPv4, protocol 1) ─────────────────────────────

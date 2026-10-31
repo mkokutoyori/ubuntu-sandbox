@@ -51,6 +51,7 @@ export interface CpRequest {
   preserve: Set<PreserveAttribute>;
   noClobber: boolean;
   interactive: boolean;
+  oneFileSystem: boolean;
   verbose: boolean;
   updateOnly: boolean;
   hardLink: boolean;
@@ -71,7 +72,7 @@ type Parsed = { request: CpRequest } | { early: CoreutilsRun };
 
 function parseArguments(args: readonly string[]): Parsed {
   const request: CpRequest = {
-    recursive: false, preserve: new Set(), noClobber: false, interactive: false, verbose: false, updateOnly: false,
+    recursive: false, preserve: new Set(), noClobber: false, interactive: false, oneFileSystem: false, verbose: false, updateOnly: false,
     hardLink: false, symbolicLink: false, backup: 'none', suffix: '~', noTargetDirectory: false, targetDirectory: null,
     dereference: null, parents: false, removeDestination: false, attributesOnly: false,
     reflink: 'never', operands: [],
@@ -126,7 +127,8 @@ function parseArguments(args: readonly string[]): Parsed {
       case 'L': request.dereference = 'always'; break;
       case 'P': request.dereference = 'never'; break;
       case 'd': request.dereference = 'never'; problem = addPreserve('links', false); break;
-      case 'x': case 'Z': case '2': break;
+      case 'x': request.oneFileSystem = true; break;
+      case 'Z': case '2': break;
       case 't': request.targetDirectory = item.argument ?? null; break;
       case '1': request.attributesOnly = true; break;
       case '4': request.parents = true; break;
@@ -226,8 +228,10 @@ class Copier {
         if (!ctx.vfs.mkdir(target, mode, ctx.uid, ctx.gid)) { this.fail(`cannot create directory ${quoteShell(targetName)}: No such file or directory`); return; }
         this.announce(sourceName, targetName, null);
       } else if (request.verbose) this.announce(sourceName, targetName, null);
+      const rootDevice = request.oneFileSystem ? ctx.deviceOf?.(source) : undefined;
       for (const entry of ctx.vfs.listDirectory(source) ?? []) {
         if (entry.name === '.' || entry.name === '..' || `${source}/${entry.name}` === target) continue;
+        if (rootDevice !== undefined && ctx.vfs.lstat(`${source}/${entry.name}`)?.type === 'directory' && ctx.deviceOf?.(`${source}/${entry.name}`) !== rootDevice) continue;
         this.copy(`${source}/${entry.name}`, `${target}/${entry.name}`, `${sourceName}/${entry.name}`, `${targetName}/${entry.name}`, depth + 1);
       }
       this.preserveMetadata(target, inode);

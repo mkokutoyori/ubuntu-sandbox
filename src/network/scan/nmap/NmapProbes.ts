@@ -30,6 +30,7 @@ export interface ScanHost {
   readonly device: Equipment | null;
   readonly privileged: boolean;
   localTime(format: string, atMs: number): string;
+  nowMs?(): number;
   readFile(path: string): string | null;
   ping(ip: string, timeoutMs: number): Promise<Array<{
     success: boolean; rttMs?: number; ttl?: number;
@@ -432,6 +433,7 @@ export function buildScanProbes(
   };
 
   return {
+    nowMs: host.nowMs,
     async resolveTarget(target: string) {
       if (isNumericAddress(target)) return { ip: target };
       const found = resolve(target);

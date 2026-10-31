@@ -1,8 +1,5 @@
 /**
- * Stored-script management — no-ops against the in-memory catalog.
- *
- * In real RMAN these persist scripts in the recovery catalog DB. The
- * simulator just accepts the syntax so DBA scripts can paste-and-run.
+ * Stored scripts.
  *
  *   CREATE SCRIPT <name> { ... }
  *   REPLACE SCRIPT <name> { ... }
@@ -10,65 +7,90 @@
  *   PRINT SCRIPT <name>
  *   EXECUTE SCRIPT <name>          (also EXECUTE SCRIPT '<name>')
  *   LIST SCRIPT NAMES
+ *
+ * The bodies live in the device's catalog (StoredScripts) and EXECUTE runs
+ * them through the session's block runner, exactly as a RUN block.
  */
 
-import { ok, type Result } from '../core/Result';
+import { err, ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
-import type { IRmanCommand } from './types';
+import type { IRmanCommand, RmanCommandContext } from './types';
+
+function unavailable(): Result<string[], RmanError> {
+  return err({ code: 'RMAN_03002', message: 'stored scripts are not available in this session' });
+}
+
+function statementsOf(body: string): string[] {
+  return body.split(';').map(statement => statement.trim()).filter(Boolean);
+}
 
 export class CreateScriptCommand implements IRmanCommand<string[]> {
   readonly name = 'CREATE SCRIPT';
-  execute(args: string[]): Result<string[], RmanError> {
-    return ok([`created script ${args[0] ?? ''}`]);
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    if (cmdCtx.scripts === undefined) return unavailable();
+    const created = cmdCtx.scripts.create(args[0], statementsOf(args[1] ?? ''));
+    if (!created.ok) return created as Result<never, RmanError>;
+    return ok([`created script ${args[0]}`]);
   }
 }
 
 export class ReplaceScriptCommand implements IRmanCommand<string[]> {
   readonly name = 'REPLACE SCRIPT';
-  execute(args: string[]): Result<string[], RmanError> {
-    return ok([`replaced script ${args[0] ?? ''}`]);
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    if (cmdCtx.scripts === undefined) return unavailable();
+    const outcome = cmdCtx.scripts.replace(args[0], statementsOf(args[1] ?? ''));
+    return ok([`${outcome} script ${args[0]}`]);
   }
 }
 
 export class DeleteScriptCommand implements IRmanCommand<string[]> {
   readonly name = 'DELETE SCRIPT';
-  execute(args: string[]): Result<string[], RmanError> {
-    return ok([`deleted script ${args[0] ?? ''}`]);
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    if (cmdCtx.scripts === undefined) return unavailable();
+    const removed = cmdCtx.scripts.remove(args[0]);
+    if (!removed.ok) return removed as Result<never, RmanError>;
+    return ok([`deleted script ${args[0]}`]);
   }
 }
 
 export class PrintScriptCommand implements IRmanCommand<string[]> {
   readonly name = 'PRINT SCRIPT';
-  execute(args: string[]): Result<string[], RmanError> {
-    const name = args[0] ?? '';
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    if (cmdCtx.scripts === undefined) return unavailable();
+    const body = cmdCtx.scripts.read(args[0]);
+    if (!body.ok) return body as Result<never, RmanError>;
     return ok([
-      `printing stored script: ${name}`,
-      `{`,
-      `  BACKUP DATABASE;`,
-      `}`,
+      `printing stored script: ${args[0]}`,
+      '{',
+      ...body.value.map(statement => `  ${statement};`),
+      '}',
     ]);
   }
 }
 
 export class ExecuteScriptCommand implements IRmanCommand<string[]> {
   readonly name = 'EXECUTE SCRIPT';
-  execute(args: string[]): Result<string[], RmanError> {
-    const name = (args[0] ?? '').replace(/^'|'$/g, '');
-    return ok([
-      `executing script: ${name}`,
-      `script ${name} completed`,
-    ]);
+  execute(args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    if (cmdCtx.scripts === undefined || cmdCtx.runBlock === undefined) return unavailable();
+    const name = args[0].replace(/^'|'$/g, '');
+    const body = cmdCtx.scripts.read(name);
+    if (!body.ok) return body as Result<never, RmanError>;
+    const ran = cmdCtx.runBlock([...body.value]);
+    if (!ran.ok) return ran;
+    return ok([`executing script: ${name}`, '', ...ran.value]);
   }
 }
 
 export class ListScriptNamesCommand implements IRmanCommand<string[]> {
   readonly name = 'LIST SCRIPT NAMES';
-  execute(): Result<string[], RmanError> {
+  execute(_args: string[], cmdCtx: RmanCommandContext): Result<string[], RmanError> {
+    if (cmdCtx.scripts === undefined) return unavailable();
+    const names = cmdCtx.scripts.names();
     return ok([
       '',
       'List of Stored Scripts in Recovery Catalog',
       '',
-      'no scripts stored',
+      ...(names.length === 0 ? ['no scripts stored'] : names.map(name => `   ${name}`)),
       '',
     ]);
   }

@@ -107,6 +107,12 @@ export function simulationNowMs(): number {
   return Math.floor(base + PathClock.horizon());
 }
 
+const MS_PER_UTC_DAY = 86_400_000;
+
+export function millisecondsSinceUtcMidnight(epochMs: number): number {
+  return Math.floor(epochMs) % MS_PER_UTC_DAY;
+}
+
 export function simulationDate(): Date {
   return new Date(simulationNowMs());
 }

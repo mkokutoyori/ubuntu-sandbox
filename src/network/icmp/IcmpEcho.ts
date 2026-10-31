@@ -2,7 +2,7 @@ import {
   IPAddress, IP_PROTO_ICMP, computeIPv4Checksum, createIPv4Packet,
   type ICMPPacket, type IPv4Option, type IPv4Packet,
 } from '../core/types';
-import { reflectRecordRoute, reverseSourceRoute } from '../layers/internet/Ipv4Options';
+import { reflectRecordRoute, reflectTimestamp, reverseSourceRoute } from '../layers/internet/Ipv4Options';
 
 export const ECHO_DATA_BYTES = 56;
 
@@ -40,7 +40,7 @@ export function buildEchoRequest(
 
 export function buildEchoReply(
   request: IPv4Packet, requestIcmp: ICMPPacket, source: IPAddress, ttl: number,
-  flags: number = request.flags, tos: number = 0,
+  flags: number, tos: number, msOfDay: number,
 ): IPv4Packet {
   const reply: ICMPPacket = {
     type: 'icmp', icmpType: 'echo-reply', code: 0,
@@ -52,6 +52,8 @@ export function buildEchoReply(
   const ipOptions: IPv4Option[] = [];
   if (returnRoute) ipOptions.push(returnRoute.option);
   if (recorded) ipOptions.push(recorded);
+  const timestamped = reflectTimestamp(request, { address: source, msOfDay, owns: address => address.equals(source) });
+  if (timestamped) ipOptions.push(timestamped);
 
   return createIPv4Packet(
     source, returnRoute ? returnRoute.firstHop : request.sourceIP,

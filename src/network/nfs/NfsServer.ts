@@ -23,6 +23,7 @@ export interface NfsServerHost {
   fileSystem(): NfsExportedFileSystem;
   hostnameOf(ip: string): string | null;
   fsid(): number;
+  now?(): Date;
 }
 
 function timeOf(date: Date): NfsTime3 {
@@ -184,7 +185,7 @@ export class NfsServer implements RpcProgramHandler {
       });
     }
     const effective = this.effective(who, client);
-    let status = fs.setAttributes(target.path, sattrToChanges(args.newAttributes), effective);
+    let status = fs.setAttributes(target.path, sattrToChanges(args.newAttributes, this.host.now?.() ?? simulationDate()), effective);
     if (status === NfsStatus.NFS3_OK && args.newAttributes.size !== undefined) {
       status = fs.truncateFile(target.path, Number(args.newAttributes.size), effective);
     }
@@ -672,7 +673,7 @@ export class NfsServer implements RpcProgramHandler {
   }
 }
 
-function sattrToChanges(attr: Sattr3): {
+function sattrToChanges(attr: Sattr3, serverNow: Date): {
   mode?: number; uid?: number; gid?: number; atime?: Date; mtime?: Date;
 } {
   const changes: { mode?: number; uid?: number; gid?: number; atime?: Date; mtime?: Date } = {};
@@ -682,10 +683,10 @@ function sattrToChanges(attr: Sattr3): {
   if (attr.atime?.how === TimeHow.SET_TO_CLIENT_TIME && attr.atime.time) {
     changes.atime = new Date(attr.atime.time.seconds * 1000 + attr.atime.time.nseconds / 1e6);
   }
-  if (attr.atime?.how === TimeHow.SET_TO_SERVER_TIME) changes.atime = simulationDate();
+  if (attr.atime?.how === TimeHow.SET_TO_SERVER_TIME) changes.atime = serverNow;
   if (attr.mtime?.how === TimeHow.SET_TO_CLIENT_TIME && attr.mtime.time) {
     changes.mtime = new Date(attr.mtime.time.seconds * 1000 + attr.mtime.time.nseconds / 1e6);
   }
-  if (attr.mtime?.how === TimeHow.SET_TO_SERVER_TIME) changes.mtime = simulationDate();
+  if (attr.mtime?.how === TimeHow.SET_TO_SERVER_TIME) changes.mtime = serverNow;
   return changes;
 }

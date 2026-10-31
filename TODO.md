@@ -140,20 +140,6 @@ eux echouera.
 
 ## Pile TCP/IP
 
-### [arp] une resolution sans reponse n'emet qu'UNE requete par sonde
-**Mesure** : `ping -c 2 -W 1 10.0.0.99` depuis un poste dont le voisin n'existe
-pas emet une requete ARP par sonde, espacees d'une seconde (l'intervalle du
-ping), puis `Destination Host Unreachable` aussitot. Linux emet
-`mcast_solicit` = 3 requetes espacees de `retrans_time_ms` = 1000
-(`/proc/sys/net/ipv4/neigh/default/`, ip-sysctl.rst) avant d'echouer, soit
-environ 3 s avant le premier `Destination Host Unreachable`.
-**Pourquoi ce n'est pas ferme** : `resolveARP` -> `probeArp` attend un
-evenement sur le delai d'attente de l'ordonnanceur ; le faire passer par une
-machine d'etats de voisin (INCOMPLETE -> FAILED) touche `resolveARP`,
-`resolveNDP` et le chemin d'erreur de `ping`. L'attente doit alors faire
-avancer l'horloge de la machine (`PathClock.wait`), comme le calendrier de
-DISCOVER du client DHCP.
-
 ### [horloge] des piles de protocole lisent l'heure globale, pas celle de leur machine
 **Mesure** : les lecteurs bruts `Date.now()` / `new Date()` ont ete remplaces
 par `simulationNowMs()` / `simulationDate()` (une seule lecture : l'heure de
@@ -171,9 +157,8 @@ Server, la validite des certificats utilisateur de sshd et `ssh-keygen` aussi.
 Les sessions SSH suivent aussi l'horloge de leur machine : `who`, `last`, `lastlog`,
 la pile PAM (`chage -E`, vieillissement des mots de passe), les comptes des
 routeurs/switchs/pare-feu, les comptes Windows, le registre VTY, la comptabilite
-d'exec et les timers systemd. Restent sur l'heure globale les champs `timestamp`
-des evenements de `SshServerHandler` (aucun lecteur ne les consomme) et la duree
-d'`SshShellSession` (un ecart, donc monotone, a juste titre). Le `START` de `ps` des processus de demarrage et les dates de
+d'exec et les timers systemd. Les evenements du bus de sshd (`timestamp`) suivent la machine aussi ; la duree
+d'`SshShellSession` reste sur l'heure globale (un ecart, donc monotone, a juste titre). Le `START` de `ps` des processus de demarrage et les dates de
 `last` / `who` (enregistrements utmp) gardent l'heure reelle apres `date -s` ;
 sur un vrai noyau `ps` suit (btime recalcule), `last` non.
 **Pourquoi ce n'est pas ferme** : chaque pile prend l'horloge de sa machine par
@@ -288,18 +273,6 @@ les cles restantes demandent chacune un evaluateur de plus dans `CalendarExpress
 **Pourquoi ce n'est pas ferme** : le moteur n'a pas de type intervalle (une chaine `n UNIT`) ni de TIMESTAMP
 WITH TIME ZONE autrement que comme chaine `... +hh:mm`.
 
-### [arp] une entree STALE utilisee par un `ping` ne passe pas en DELAY
-**Mesure** : sous le pilote `SimulationClock`, une entree de voisinage vieillie
-de soixante secondes (`ip neigh` -> `STALE`) puis utilisee par un
-`ping -c 1` reste `STALE` juste apres la reponse ; `getNUDState` ne connait que
-`REACHABLE` (moins de 30 s depuis `timestamp`) et `STALE`. Sur un noyau Linux,
-l'emission vers une entree STALE la passe en `DELAY` (`delay_probe_time`, 5 s),
-puis `PROBE`, puis `REACHABLE` apres la reponse a la sonde unicast.
-**Pourquoi ce n'est pas ferme** : il faut une machine d'etats de voisin
-(INCOMPLETE / REACHABLE / STALE / DELAY / PROBE / FAILED) portee par un
-planificateur, et c'est le meme chantier que l'entree `[arp]` ci-dessus
-(`resolveARP`, `resolveNDP`, chemin d'erreur de `ping`).
-
 ### [horloge] le temps de vol des trames s'ajoute a l'horloge de simulation
 **Mesure** : `PathClock.horizon()` est le maximum des arrivees et ne redescend
 jamais ; `schedulerWallClock` et `simulationNowMs` l'ajoutent a l'heure de
@@ -310,16 +283,26 @@ STP/ARP fait croitre l'horizon de quelques dizaines de µs par trame.
 sans file d'attente ; le plafonner a l'heure de l'ordonnanceur (horizon =
 max(horizon, now)) change tous les RTT de la base et demande une mesure propre.
 
-### [ip] l'option Timestamp n'est ni construite ni horodatee
-La zone d'options existe desormais (RFC 791 §3.1), et Record Route comme
-le routage par la source sont honores par `Router`. L'option Timestamp
-(type 68) ne l'est PAS : son codec la transporte comme n'importe quelle
-autre option, mais aucun equipement n'y ecrit d'heure. La raison est
-mesuree et elle est dans les limites connues — la livraison des trames
-est synchrone, le RTT vaut 0 ms en temps virtuel, donc les quatre
-horodatages d'un aller-retour vaudraient tous la meme chose. Un
-horodatage identique a chaque saut serait la « valeur decorative » que ce
-depot refuse. A rouvrir le jour ou une horloge de trajet existera.
+### [ip] l'option Timestamp : ce que les extremites non Linux ecrivent n'est pas atteste
+L'option est maintenant reelle de bout en bout : `Ipv4Options` la construit
+(`buildTimestampOption`, drapeaux 0/1/3), l'ecrit (`recordTimestamp`,
+compteur de depassement, prespecifie) et la lit (`readTimestamp`) ;
+`Router`, `SwitchSvi` et `Firewall` l'ecrivent a chaque saut sur LEUR horloge,
+`buildEchoReply` la reflechit, `ping -R` / `ping -T` d'iputils (rendu de
+`pr_options`) et `ping -r` / `-s` de Windows la construisent et relisent celle de
+la reponse. Une machine Linux ecrit comme le noyau (l'emetteur a l'emission et
+a la reception, la cible a l'arrivee puis dans la reponse : `ip_options_compile`
++ `ip_options_echo`, net/ipv4/ip_options.c v5.15).
+
+**Ce qui reste, et pourquoi.**
+1. Les extremites Windows, Cisco et Huawei gardent la regle de la RFC 1122
+   §3.2.2.6 (la cible s'ecrit UNE fois, l'emetteur jamais) : le comportement de
+   `tcpip.sys`, d'IOS et de VRP sur ce point n'est atteste par aucune source
+   joignable depuis ce reseau. Une transcription de `ping -r` sous Windows ou
+   d'un `ping` etendu IOS avec `Record` la trancherait.
+2. Le `ping` etendu de Cisco collecte toujours `Loose, Strict, Record,
+   Timestamp` sans les construire (entree suivante) : le rendu IOS n'est pas
+   attestable.
 
 ### [ip] le `ping` etendu collecte `Record` / `Loose` / `Strict` sans les construire
 `ExtendedPingParams.routeOptions` porte la reponse au prompt IOS
@@ -459,40 +442,10 @@ commutateur une commande que son materiel n'a pas.
 
 ## Postes Linux
 
-### [dhcp] `dhclient -t N` est accepte, et aucun delai ne le lit
-La duree passee a `-t` (et le `-w` qui la porte a 60) traverse
-`Dhclient.ts` jusqu'a `DHCPClient.requestLease` et n'est lue par personne.
-Elle ne l'a jamais ete comme un DELAI : son seul lecteur, jusqu'au
-correctif de l'auto-attribution de lien-local, etait la condition qui
-DESACTIVAIT l'APIPA — une valeur qui servait a autre chose que ce
-qu'elle nomme. **Mesure** : `dhclient -t 1 eth0` sans serveur rend le
-meme texte et le meme etat que `dhclient eth0`, immediatement.
-**Pourquoi ce n'est pas ferme ici** : la livraison des trames est
-SYNCHRONE dans ce simulateur — un DISCOVER est repondu dans le meme tour
-ou jamais — donc un delai n'a rien a mesurer et l'implementer poserait
-une valeur decorative, exactement ce que ce depot refuse. L'option reste
-acceptee parce qu'un vrai `dhclient` l'accepte, et la refuser ferait
-diverger la CLI. Elle redeviendra implementable le jour ou `Cable`
-portera une latence.
-
 ### [sysctl] `/etc/sysctl.conf` n'est pas livre, et les projections de `/proc/sys` sont en lecture seule
-Depuis le lot « `sysctl` lit `/proc/sys` », deux restes MESURES.
+Depuis le lot « `sysctl` lit `/proc/sys` », un reste MESURE (le fichier `/etc/sysctl.conf` est livre, copie de celui d'une Ubuntu 24.04 reelle).
 
-**(1) Le fichier de prechargement n'existe pas.** `sysctl -p` repond
-`sysctl: cannot open "/etc/sysctl.conf": No such file or directory` sur
-une machine neuve, alors qu'une vraie Ubuntu livre ce fichier (tout en
-commentaires) et un `/etc/sysctl.d/` avec `99-sysctl.conf`. Le depot y
-fait deja reference : `/etc/ufw/sysctl.conf` est seme et son en-tete dit
-« these settings override /etc/sysctl.conf ». **Pourquoi ce n'est pas
-ferme ici** : le contenu EXACT du fichier de Debian n'a pas pu etre
-atteste depuis ce reseau (`sources.debian.org` et `git.launchpad.net`
-sont bloques par le mandataire ; le `sysctl.conf` d'amont de procps-ng
-est un AUTRE fichier, avec des reglages actifs que Debian ne livre pas).
-L'ecrire de memoire produirait le genre de sortie plausible-et-fausse
-que ce depot passe son temps a refermer. A fermer le jour ou une copie
-du fichier Debian est atteignable.
-
-**(2) Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
+**Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
 pseudo-fichiers generes sont en lecture seule par decision du VFS
 (`writeFile` les jette en silence), et ceux d'`arp_ignore`,
 `arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une
@@ -546,18 +499,6 @@ FortiGate rejette par defaut les fragments superposes/teardrop. Le
 pare-feu simule a bien `drop-overlapped-fragment` (defaut disable, non
 active par ce test) et `Ipv4Fragmentation.overlaps`, mais aucune detection
 d'anomalie de fragments par defaut. Le test reste rouge.
-
-### [iam] /etc/shadow stocke le mot de passe EN CLAIR derriere un faux prefixe SHA-512
-`echo user:Secret123 | chpasswd` ecrit `user:$6$simulated$Secret123:…` :
-le champ a la forme d'un hash crypt(3) SHA-512 (`$6$sel$…`) mais porte le
-mot de passe lui-meme. Tout lecteur de `/etc/shadow` (root, une sauvegarde,
-un `scp` du fichier) lit donc les mots de passe, et un exercice d'audit de
-robustesse (john, hashcat, comparaison de hashes) n'a aucun sens.
-**Mesure** : `chpasswd` puis `grep user /etc/shadow` sur un LinuxServer.
-**Pourquoi ce n'est pas ferme** : il faut un vrai SHA-512-crypt (sel,
-5000 tours par defaut) dans `src/crypto/` et migrer tous les lecteurs du
-champ (`checkPassword`, PAM, faillock, `passwd -S`, `chage`) ; hors du
-perimetre du correctif SSH qui l'a revele.
 
 ### [apt] ce que l'etat de paquets par machine laisse encore ouvert
 `/var/lib/dpkg/status` est desormais l'etat de CHAQUE machine (apt, apt-get,
@@ -746,37 +687,24 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- **`:g`** n'execute que `d` et `s///` : toute autre commande (`:g/x/normal dd`,
-  `m0`, `t.`, `j`) est ignoree sans message. Le moteur n'a pas d'identite de
-  ligne a marquer comme `ml_setmarked` : `LineTracker` ne suit que les lignes
-  que `:d` et `:s` inserent ou retirent, il faudrait que chaque commande ex qui
-  deplace des lignes (`:m`, `:t`, `:j`, `:normal`, `:>`...) previenne le meme
-  suiveur. 'report' est desormais respecte par `:g` et `:s`.
-- **Caracteres hors du plan de base** : `Cursor.inc` / `dec` et les motions avancent
-  d'une unite UTF-16 ; un emoji (U+1F600) est donc deux colonnes pour `l`, `x`,
-  `w`, `~`. Sa classe de mot est juste (`VimCharClass`), c'est le curseur qui
-  coupe la paire de substitution. Les caracteres combinants (`e` + U+0301) ne
-  sont pas accroches au caractere precedent non plus.
-- **`gn` / `dgn` / `cgn` sur un motif de largeur nulle** (`^`, `$`, `x*`, ce
-  que laisse `:s/^/>/`) : le moteur confond un appariement vide en colonne 0 avec
-  la fin de la ligne precedente et selectionne le saut de ligne ; vim passe par
-  `current_search` (aller-retour avec `p_ws` coupe, `zero_width`, curseur remis
-  sur `pos`). Mesure par trois transcripts du corpus `words`, retires du
-  vocabulaire plutot qu'epingles.
 - `\%V` en bloc compte des colonnes de caracteres ; `\@123<=` borne la remontee
   en caracteres ; `[[=e=]]` utilise la decomposition Unicode.
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
-- **Ordre des dictionnaires** : `keys()`, `values()`, `items()`, `string()`,
-  `map()` parcourent un dictionnaire dans l'ordre d'insertion ; vim suit sa
-  table de hachage (`hash_hash` puis perturbation). Reproduire l'ordre demande
-  de porter `hashtab.c` (taille initiale 16, croissance a 2/3).
+- **Ordre des dictionnaires** : l'ordre de `hashtab.c` est porte pour un
+  dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
+  retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait (`strftime`, `reduce`, `mapnew`, `trim`
-  avec masque multioctet, `json_encode`, `sha256`, `system`...).
-- **Pas de variables ni de `:let`** : `g:x`, `s:x`, `l:x`, `b:x`, `w:x` repondent
-  E121. Une lambda ne capture que les parametres des lambdas qui l'entourent.
+  function` meme quand vim le connait (`v:shell_error`, `getenv`...). `reduce`, `mapnew`, `sha256`, `strftime`,
+  `json_encode`, `json_decode`, `system` et `systemlist` existent.
+- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
+  `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
+  destructuration. Restent refusees les cibles `$ENV` (l'environnement du
+  processus vim n'a pas de poignee d'ecriture), les
+  tranches `l[a:b]`, `s:` / `l:` / `a:` hors fonction, `v:shell_error` et
+  `:function`. Une lambda ne capture que les parametres des lambdas qui
+  l'entourent.
 - **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
   moteur n'a ni l'un ni l'autre.
 - **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options
@@ -833,15 +761,15 @@ portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que 
 pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
 `^R` en mode vue (entree suivante).
 
-### [machine Linux] `dash` absent, `sh -n` et `bash -n` sans effet
+### [machine Linux] `dash` absent
 Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
 n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
-`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' » ; et `sh -n script` /
-`bash -n script` n'ont pas la semantique « analyser sans executer » (le script est lance, `sh -n`
-sur un fichier correct execute ses commandes). Les messages d'erreur d'analyse de dash
-(« t.sh: 3: Syntax error: Unterminated quoted string ») different aussi de ceux de l'analyseur de
-bash du simulateur. Sans ce chaînon le linter par defaut des fichiers shell ne peut pas
-fonctionner comme sur Ubuntu.
+`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' ». `sh -n` et `bash -n`
+analysent maintenant sans executer (les lettres d'invocation arrivent a `SHELLOPTS`), mais les
+messages d'erreur d'analyse de dash (« t.sh: 3: Syntax error: Unterminated quoted string »)
+different de ceux de l'analyseur de bash du simulateur, que `sh` reutilise. Sans une
+grammaire d'erreurs propre a dash le linter par defaut des fichiers shell ne parle pas comme
+sur Ubuntu.
 
 ### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
 Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut
@@ -894,8 +822,6 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
   le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
   prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
-- `-U -l` (ecoute sur une socket UNIX) et `-U -u` (datagramme UNIX) sont refuses : le registre
-  `localDatagramSockets` sait connecter une socket flux, pas en ecouter une.
 - Deux `nc -l 9000` : `nc` pose SO_REUSEADDR et SO_REUSEPORT, donc le vrai accepte le second
   ecouteur (meme uid) ; `SocketTable.bind` repond EADDRINUSE.
 - Les messages `-v` de l'ecoute (« Listening on 0.0.0.0 9000 ») dependent de la resolution inverse
@@ -953,18 +879,12 @@ datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -
 - `ss -xaE` : refus explicite (« needs a stream of socket events ») ; le vrai n'affiche rien et rend la main.
 - `ss -e` d'une prise UNIX dont le pair est parti : la fleche `<->` ne devient pas `<--` / `-->` (aucune mesure faite).
   Mesure faite pour un proprietaire non root : `ss -xlpe` n'affiche pas `uid:` pour une prise UNIX, ce que fait le simulateur.
-- Le labo `unix-user` (un `nc -lU` lance par `nobody`) est declare non porte en entier : `sudo -u nobody nc -lU p &`
-  rend 127 (le chemin des travaux d'arriere-plan ne retire que le mot `sudo`, pas `-u utilisateur`, et lance la commande reseau
-  sous l'identite de l'appelant). Les vues d'un proprietaire non root (`netstat -p` d'un autre utilisateur, `fuser -u`,
-  `EACCES` sur une prise dont l'utilisateur n'a pas le droit d'ecriture) y sont enregistrees et attendent ce correctif.
 - Les prises UNIX que posent rsyslog (`/dev/log`, imptcp) et auditd n'ont pas de porteur : elles figurent dans
   `/proc/net/unix` et `ss -x` sans `users:` ni descripteur, parce que leur donner un pid decalerait les numeros de
   descripteur que les tests rsyslog lisent deja.
 - `nc -U` tape seul dans le terminal (plan de flux `planNcUnix`) ouvre une prise sans processus.
 - `connect()` sur une file d'acceptation pleine (plus de `backlog + 1` connexions en attente) rend EAGAIN ici ; le vrai
   bloque jusqu'a ce que le serveur accepte.
-- `find -type b` et `-type c` : le VFS ne distingue pas un peripherique bloc d'un peripherique caractere, les deux
-  filtres retournent tous les peripheriques.
 
 ### [umask] ce que le portage de `umask` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `umask-bash-5.2.json`, 5 labos, 232 pas, bash 5.2.21 sur Ubuntu 24.04) : le
@@ -977,17 +897,13 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
   alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
 - `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
   interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
-- `su -s /bin/sh nobody -c umask` : `su` n'honore pas `-s`.
 Autres ecarts mesures, non fermes :
 - `pam_umask` : le vrai donne 0002 aux utilisateurs dont le groupe prive porte leur nom (`USERGROUPS_ENAB`) ; `sudo` et
   `su` appliquent ici 0022 a tous. L'umask initial d'un utilisateur non root n'a pas ete enregistre.
 - `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
   et `ls -l /proc/$$/fd` ne le montre pas.
-- `cp` : `-i`, `-x` et `-Z` sont acceptes sans effet, `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un
-  lien (le seul cas enregistre est un fichier regulier).
-- `ls` avec plusieurs operandes dossiers : le tri est celui des operandes (fichiers d'abord) mais la mise en colonnes de
-  la sortie non tty n'a pas ete comparee.
-- `install -D -t`, `install -s` et `install --strip` : seul le jeu d'options du corpus (`-m -d -D -o -g -v`) est enregistre.
+- `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
+  regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
 
 ### [ps] ce que le portage de `ps` laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `ps-procps-4.0.4.json`, 5 labos, 629 pas, procps-ng 4.0.4 sur Ubuntu 24.04, pty
@@ -4018,20 +3934,15 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 `%{ssl_verify_result}` vaut toujours 0 (le vrai donne le code X509 de l'echec, 20 pour « unable to get local issuer certificate ») ; `%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; `%{time_appconnect}` d'une connexion TLS reprend `time_connect` faute de mesure de la poignee de main ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
 
-### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
+### [bash-fin-de-ligne] un ecart restant contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
-Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
-
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`), `fold` et `rev` (fichiers operandes compris) non plus. Reste mesure et non ferme : `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee.
 
 ### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
 
 Les trois bancs passent en entier ; restent mesures et non fermes :
-- `type` existe deux fois : `Builtins.builtinType` (atteignable seulement par `executeBuiltin('type', ...)`, donc par les tests) et `LinuxCommandExecutor.handleType` (la voie reelle, qui s'appuie sur `CommandResolver`). A fermer en supprimant la premiere et en deplacant ses tests vers l'executeur.
 - `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
 - `extglob` est lu dans le texte du script (premier `shopt -s extglob` d'une ligne precedente) et non dans l'etat du shell a l'execution : un `shopt -s extglob` pose par un `source` ou une fonction n'est pas vu par le lexeur.
-- Les erreurs de syntaxe a l'interieur d'un `$(...)` ecrit entre guillemets doubles ne sont pas relevees au parsage (seuls les `$(...)`, backticks et `<(...)` nus le sont).
-- Le libelle d'une erreur de syntaxe de `bash -c` est `bash: -c: line N:` ; celui d'un script lu sur l'entree standard devrait etre `bash: line N:`, ce que le runner ne distingue pas.
-- `FUNCNAME`, `BASH_SOURCE` et `BASH_LINENO` ne suivent pas les fichiers charges par `source` (le fichier source apparait sous le nom du script).
 
 ---
 
@@ -4329,3 +4240,14 @@ Mesuré avec `iptables -A INPUT -m <module> … -j ACCEPT` (iptables 1.8.7) : `p
 
 ### [ipset] ce qui n'est pas construit
 `ipset` (7.15) couvre `hash:ip`, `hash:net`, `hash:ip,port` et `bitmap:ip` avec `create/add/del/test/list/save/restore/flush/destroy/rename/swap/version`, `timeout`, `netmask`, `comment`, `forceadd`, `maxelem`, `hashsize` et la cible/correspondance iptables `set` / `SET`. Manquent : les compteurs et `skbinfo` (refuses en le disant), les autres types (`bitmap:ip,mac`, `bitmap:port`, `hash:net,port`, `hash:ip,mark`, `list:set`…), `--return-nomatch` et `nomatch`, `--map-set`, le mode interactif et la résolution de noms d'hôte. « Size in memory » est une approximation (200 + 64 par élément) : le noyau l'obtient de ses allocations, sans formule exploitable depuis les sources. `-m physdev` reste refusé : pas de pont filtrant dans le simulateur.
+
+### [rman] scripts stockes : les erreurs et la mise en page de `LIST SCRIPT NAMES` ne sont pas sourcees
+`CREATE|REPLACE|PRINT|EXECUTE|DELETE SCRIPT` gardent maintenant le corps dans le
+catalogue de la machine et `EXECUTE` le rejoue comme un bloc `RUN` (sonde
+`probe-rman-scripts-stockes-et-commentaires`). Restent non sources, faute d'acces a la
+documentation des messages RMAN depuis ce reseau (`docs.oracle.com` est bloque) :
+(1) le code d'un script introuvable ou deja existant (`RMAN-03002` ici, avec un texte
+simple) ; (2) la mise en page exacte de `LIST SCRIPT NAMES` ; (3) le refus que RMAN
+oppose a un script stocke sans catalogue de recuperation connecte (le sandbox
+l'accepte, comme le dit le tutoriel). Les commentaires `--` du tutoriel ne sont pas
+reconnus : seul `#` l'est.

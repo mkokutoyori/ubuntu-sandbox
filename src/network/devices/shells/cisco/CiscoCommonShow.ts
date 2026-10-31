@@ -898,7 +898,7 @@ export function showNtpStatus(dev?: ShowStateDevice): string {
     tete,
     `nominal freq is ${nominalHz.toFixed(4)} Hz, actual freq is ${actualHz.toFixed(4)} Hz, precision is 2**18`,
     `ntp uptime is ${ntp.getUptimeSec() * 100} (1/100 of seconds), resolution is 4001`,
-    `reference time is ${formatNtpReferenceTime(cfg.lastSyncMs || simulationNowMs())}`,
+    `reference time is ${formatNtpReferenceTime(ntp.referenceTimeMs())}`,
     `clock offset is ${cfg.offsetMs.toFixed(4)} msec, root delay is ${rootDelay.toFixed(2)} msec`,
     `root dispersion is ${rootDisp.toFixed(2)} msec, peer dispersion is ${peerDisp.toFixed(2)} msec`,
     // L'etat de la boucle est LU sur la discipline (lot N9) : il valait

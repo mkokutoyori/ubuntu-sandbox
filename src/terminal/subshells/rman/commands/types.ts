@@ -13,6 +13,7 @@ import type { IRetentionPolicy } from '../policy/IRetentionPolicy';
 import type { RmanConfig } from '../session/RmanConfig';
 import type { IChannelPool } from '../channel/IChannelPool';
 import type { ChannelHandle } from '../channel/types';
+import type { StoredScripts } from '../catalog/StoredScripts';
 
 export interface RmanCommandContext {
   readonly bus:     RmanEventBus;
@@ -31,6 +32,8 @@ export interface RmanCommandContext {
   readonly setMaxCorrupt?: Map<number, number>;
   /** Optional UNTIL binding populated by SET UNTIL TIME / SET UNTIL SCN. */
   readonly setUntil?:    { untilTime?: string; untilScn?: number };
+  readonly scripts?: StoredScripts;
+  readonly runBlock?: (lines: string[]) => Result<string[], RmanError>;
   readonly recoveryCatalog?: RemoteRecoveryCatalog | null;
   readonly auxiliary?: IRmanOracleContext | null;
 }

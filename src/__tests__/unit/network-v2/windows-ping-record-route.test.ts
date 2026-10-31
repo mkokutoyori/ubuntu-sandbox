@@ -34,13 +34,14 @@ describe('ping -r records the real route', () => {
 
     const out = await win.executeCommand('ping -n 1 -r 4 10.0.0.6');
     expect(out).toContain('Reply from 10.0.0.6');
-    // On a directly-connected /24 the recorded route is just the target,
-    // listed ONCE — never four fabricated copies.
+    // On a directly-connected /24 the route is read off the reply: a Linux
+    // target writes itself twice (arrival, then the reply it builds), as
+    // net/ipv4/ip_options.c does — never four fabricated copies.
     const routeIdx = out.indexOf('Route:');
     if (routeIdx >= 0) {
       const routeBlock = out.slice(routeIdx);
       const occurrences = (routeBlock.match(/10\.0\.0\.6/g) ?? []).length;
-      expect(occurrences).toBeLessThanOrEqual(1);
+      expect(occurrences).toBe(2);
     }
   });
 

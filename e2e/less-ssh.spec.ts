@@ -10,8 +10,7 @@ async function exerciseLess(page: import('@playwright/test').Page): Promise<void
   await expect(body).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('[data-testid="less-line"]').first()).toHaveText('1');
   await page.keyboard.press('Space');
-  const first = await page.locator('[data-testid="less-line"]').first().innerText();
-  expect(Number(first)).toBeGreaterThan(5);
+  await expect.poll(async () => Number(await page.locator('[data-testid="less-line"]').first().innerText())).toBeGreaterThan(5);
   await page.keyboard.type('/^150$');
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-testid="less-line"]').first()).toHaveText('150');

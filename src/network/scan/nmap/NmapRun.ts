@@ -54,7 +54,7 @@ export async function runNmap(host: ScanHost, args: string[]): Promise<NmapRunRe
   const clock: NmapClock = (format, atMs) => host.localTime(format, atMs);
   if (options.fatalAfterBanner !== undefined) {
     return refuse([
-      ...options.warnings, bannerLine(clock, simulationNowMs()), options.fatalAfterBanner, 'QUITTING!',
+      ...options.warnings, bannerLine(clock, (host.nowMs ?? simulationNowMs)()), options.fatalAfterBanner, 'QUITTING!',
     ].join('\n'));
   }
 

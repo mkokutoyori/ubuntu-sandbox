@@ -14,7 +14,7 @@
  *   user, privileged, config, config-if, config-vlan
  */
 
-import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
+import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { CiscoShellBase } from './CiscoShellBase';
 import {
@@ -873,7 +873,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
   }
 
   private stpDebugEvents(sw: CiscoSwitch, before: Map<string, import('../../devices/Switch').STPPortState>): string {
-    const stamp = simulationDate().toISOString().slice(11, 19);
+    const stamp = new Date(sw.getSystemClockMs()).toISOString().slice(11, 19);
     const lines: string[] = [];
     for (const [port, state] of sw._getSTPStates()) {
       if (before.get(port) === state) continue;
