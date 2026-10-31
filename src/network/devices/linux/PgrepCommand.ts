@@ -25,6 +25,7 @@ interface Selection {
   uids: number[] | null;
   gids: number[] | null;
   pidfile: string | null;
+  runStates: ReadonlySet<string> | null;
   signal: Signal;
   version: boolean;
   pattern: string | null;
@@ -36,7 +37,7 @@ const SHORT_VALUED = new Set(['d', 'g', 'G', 'O', 'P', 's', 't', 'u', 'U', 'F', 
 const LONG_TO_SHORT: Readonly<Record<string, string>> = {
   delimiter: 'd', 'list-name': 'l', 'list-full': 'a', inverse: 'v', lightweight: 'w', count: 'c', full: 'f',
   pgroup: 'g', group: 'G', 'ignore-case': 'i', newest: 'n', oldest: 'o', older: 'O', parent: 'P', session: 's',
-  terminal: 't', euid: 'u', uid: 'U', exact: 'x', pidfile: 'F', version: 'V', signal: 'S',
+  terminal: 't', euid: 'u', uid: 'U', exact: 'x', pidfile: 'F', version: 'V', signal: 'S', runstates: 'r',
 };
 
 function usageFailure(program: string, line: string, status: number): Fail {
@@ -69,7 +70,7 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
   const selection: Selection = {
     list: false, full: false, inverse: false, count: false, commandLine: false, ignoreCase: false,
     newest: false, oldest: false, exact: false, delimiter: '\n', olderThan: null, parents: null, groups: null,
-    sessions: null, terminals: null, euids: null, uids: null, gids: null, pidfile: null,
+    sessions: null, terminals: null, euids: null, uids: null, gids: null, pidfile: null, runStates: null,
     signal: 'SIGTERM', version: false, pattern: null,
   };
   const patterns: string[] = [];
@@ -78,6 +79,7 @@ function parseSelection(program: 'pgrep' | 'pkill', args: readonly string[], ctx
     switch (letter) {
       case 'd': selection.delimiter = value; return null;
       case 'F': selection.pidfile = value; return null;
+      case 'r': selection.runStates = new Set(value.replace(/[^A-Za-z]/g, '').split('')); return null;
       case 'O': { const n = asNumbers(); if ('failure' in n) return n; selection.olderThan = n[0] ?? 0; return null; }
       case 'P': { const n = asNumbers(); if ('failure' in n) return n; selection.parents = n; return null; }
       case 'g': { const n = asNumbers(); if ('failure' in n) return n; selection.groups = n; return null; }
@@ -157,7 +159,7 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
     if (!Number.isInteger(pid) || pid <= 0) return pidfileFailure(program).failure;
     pidfilePid = pid;
   }
-  const filtered = pidfilePid !== null || selection.pattern !== null || selection.parents !== null || selection.groups !== null
+  const filtered = pidfilePid !== null || selection.runStates !== null || selection.pattern !== null || selection.parents !== null || selection.groups !== null
     || selection.sessions !== null || selection.terminals !== null || selection.euids !== null
     || selection.uids !== null || selection.gids !== null || selection.olderThan !== null;
   if (!filtered) return usageFailure(program, 'no matching criteria specified', 2).failure;
@@ -183,6 +185,7 @@ export function runPgrep(program: 'pgrep' | 'pkill', args: readonly string[], ct
   let hits = ctx.pm.list().filter((process) => {
     if (process.pid === self) return false;
     if (pidfilePid !== null && process.pid !== pidfilePid) return false;
+    if (selection.runStates !== null && !selection.runStates.has(process.state)) return false;
     if (matcher !== null) {
       const subject = selection.commandLine ? process.command : process.comm.replace(/^\[(.*)\]$/, '$1').slice(0, COMM_LIMIT);
       if (!matcher.test(subject)) return false;

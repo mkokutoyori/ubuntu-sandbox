@@ -948,7 +948,7 @@ Autres ecarts mesures, non fermes :
   diagnostics ; `probe-top-batch-de-procps`) ; restent l'ecran interactif, `-H`, `-1`, `-E`/`-e`, `-O` (liste de champs reduite) et la
   charge CPU mesuree. `pstree` est porte (`PstreeCommand.ts`, probe `probe-pstree-de-psmisc`) ; restent `-H`, `-N`, `-Z`, `-S` et `-t`
   (pas de fils d'execution). `pgrep`, `pkill` et `pidof` sont portes (`PgrepCommand.ts`, probe `probe-pgrep-pkill-pidof-de-procps`) ;
-  `-F` (fichier de pids) est porte (sonde `probe-pgrep-fichier-de-pid`) ; restent non portes `-r` (etats), `-w`, `--cgroup`, `--ns` et
+  `-F` (fichier de pids) est porte (sonde `probe-pgrep-fichier-de-pid`) ; `-r`/`--runstates` (etats) est porte (sonde `probe-pgrep-etats`) ; restent non portes `-w`, `--cgroup`, `--ns` et
   `pidof -x`.
 - Pas de labo zombie ni de `setsid`/`setpriv` dans le corpus : les etats `Z`, `D`, `t` ne sont pas mesures sur le vrai.
 - Le tableau des jobs (`jobs`, `%1`) est global a la machine et non a un shell : un `bash -c` imbrique ne voit pas son
