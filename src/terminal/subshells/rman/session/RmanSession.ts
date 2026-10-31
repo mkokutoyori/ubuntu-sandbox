@@ -86,6 +86,7 @@ export class RmanSession implements IRmanSession {
   /** Rename map populated by SET NEWNAME FOR DATAFILE inside a RUN block. */
   private readonly _setNewname = new Map<number, string>();
   private readonly _setMaxCorrupt = new Map<number, number>();
+  private readonly _setDbid: { value?: number } = {};
   /** UNTIL TIME / UNTIL SCN binding set inside a RUN block — cleared on block close. */
   private readonly _setUntil: { untilTime?: string; untilScn?: number } = {};
   private _state: RmanSessionState = 'IDLE';
@@ -331,6 +332,7 @@ export class RmanSession implements IRmanSession {
       userChannels: this._userChannels,
       setNewname:   this._setNewname,
       setMaxCorrupt: this._setMaxCorrupt,
+      setDbid:      this._setDbid,
       setUntil:     this._setUntil,
       scripts:      this._catalog.scripts,
       runBlock:     (lines: string[]) => this._runBlock(lines),

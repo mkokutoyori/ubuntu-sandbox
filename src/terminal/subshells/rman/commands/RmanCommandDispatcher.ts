@@ -215,6 +215,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand('NEWNAME') },
       // SET UNTIL — PITR precursor inherited by later RESTORE/RECOVER in
       // the same RUN block
+      { pattern: /^SET DBID\s+(\d+)$/i,                                   command: new SetCommand('DBID') },
       { pattern: /^SET MAXCORRUPT FOR DATAFILE (\d+) TO (\d+)$/i,    command: new SetCommand('MAXCORRUPT') },
       { pattern: /^SET UNTIL TIME '([^']+)'$/i,                     command: new SetCommand('UNTIL_TIME') },
       { pattern: /^SET UNTIL SCN (\d+)$/i,                          command: new SetCommand('UNTIL_SCN')  },

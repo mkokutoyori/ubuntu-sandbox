@@ -32,6 +32,8 @@ export interface RmanCommandContext {
   readonly setMaxCorrupt?: Map<number, number>;
   /** Optional UNTIL binding populated by SET UNTIL TIME / SET UNTIL SCN. */
   readonly setUntil?:    { untilTime?: string; untilScn?: number };
+  /** Session binding populated by SET DBID n; RESTORE ... FROM AUTOBACKUP looks for this database's autobackups. */
+  readonly setDbid?:     { value?: number };
   readonly scripts?: StoredScripts;
   readonly runBlock?: (lines: string[]) => Result<string[], RmanError>;
   readonly recoveryCatalog?: RemoteRecoveryCatalog | null;
