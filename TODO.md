@@ -719,12 +719,6 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- **`:g`** n'execute que `d` et `s///` : toute autre commande (`:g/x/normal dd`,
-  `m0`, `t.`, `j`) est ignoree sans message. Le moteur n'a pas d'identite de
-  ligne a marquer comme `ml_setmarked` : `LineTracker` ne suit que les lignes
-  que `:d` et `:s` inserent ou retirent, il faudrait que chaque commande ex qui
-  deplace des lignes (`:m`, `:t`, `:j`, `:normal`, `:>`...) previenne le meme
-  suiveur. 'report' est desormais respecte par `:g` et `:s`.
 - **Caracteres hors du plan de base** : `Cursor.inc` / `dec` et les motions avancent
   d'une unite UTF-16 ; un emoji (U+1F600) est donc deux colonnes pour `l`, `x`,
   `w`, `~`. Sa classe de mot est juste (`VimCharClass`), c'est le curseur qui
