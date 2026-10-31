@@ -724,10 +724,9 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
-- **Ordre des dictionnaires** : `keys()`, `values()`, `items()`, `string()`,
-  `map()` parcourent un dictionnaire dans l'ordre d'insertion ; vim suit sa
-  table de hachage (`hash_hash` puis perturbation). Reproduire l'ordre demande
-  de porter `hashtab.c` (taille initiale 16, croissance a 2/3).
+- **Ordre des dictionnaires** : l'ordre de `hashtab.c` est porte pour un
+  dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
+  retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
   function` meme quand vim le connait (`strftime`, `json_decode`, `trim` avec
   masque multioctet, `system`...). `reduce`, `mapnew`, `sha256` et

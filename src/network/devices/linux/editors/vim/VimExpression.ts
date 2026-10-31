@@ -3,6 +3,7 @@ import { lowerCaseChar, upperCaseChar } from './VimEditing';
 import { formatExponentialSafe, formatFixedSafe, formatFloatDefault, formatVimGeneral } from './VimFloat';
 import { compileVimPattern, type VimRegExp } from './VimPattern';
 import { expandReplacement } from './VimSubstitute';
+import { inVimOrder } from './VimHashOrder';
 import { sha256 } from '@/crypto/hash/sha256';
 
 export interface ExpressionHost {
@@ -176,7 +177,7 @@ function echoString(value: VimValue, quoted: boolean): string {
     case 'funcref': return value.bound.length > 0 ? `function('${value.name}', ${echoString(list([...value.bound]), true)})` : `function('${value.name}')`;
     case 'string': return quoted ? `'${value.value.replace(/'/g, "''")}'` : value.value;
     case 'list': return `[${value.items.map((item) => echoString(item, true)).join(', ')}]`;
-    case 'dict': return `{${[...value.entries].map(([key, item]) => `'${key.replace(/'/g, "''")}': ${echoString(item, true)}`).join(', ')}}`;
+    case 'dict': return `{${inVimOrder(value.entries).map(([key, item]) => `'${key.replace(/'/g, "''")}': ${echoString(item, true)}`).join(', ')}}`;
   }
 }
 
@@ -996,7 +997,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
       const wanted = ignoreCase ? foldCase(needle) : needle;
       return num(subject.split(wanted).length - 1);
     }
-    const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? [...target.entries.values()] : [];
+    const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? inVimOrder(target.entries).map(([, item]) => item) : [];
     return num(items.filter((item) => sameValue(item, args[1], ignoreCase)).length);
   } }],
   ['index', { min: 2, max: 4, run: (args, context) => {
@@ -1020,9 +1021,9 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     context.soft('E896: Argument of get() must be a List, Dictionary or Blob');
     return num(0);
   } }],
-  ['keys', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list([...args[0].entries.keys()].map(str)) : dictRequired(context) }],
-  ['values', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list([...args[0].entries.values()]) : dictRequired(context) }],
-  ['items', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list([...args[0].entries].map(([key, item]) => list([str(key), item]))) : dictRequired(context) }],
+  ['keys', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list(inVimOrder(args[0].entries).map(([key]) => str(key))) : dictRequired(context) }],
+  ['values', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list(inVimOrder(args[0].entries).map(([, item]) => item)) : dictRequired(context) }],
+  ['items', { min: 1, max: 1, run: (args, context) => args[0].kind === 'dict' ? list(inVimOrder(args[0].entries).map(([key, item]) => list([str(key), item]))) : dictRequired(context) }],
   ['has_key', { min: 2, max: 2, run: (args, context) => args[0].kind === 'dict' ? num(args[0].entries.has(context.stringOf(args[1], false)) ? 1 : 0) : dictRequired(context) }],
   ['map', { min: 2, max: 2, run: (args, context) => mapOrFilter(args, context, true) }],
   ['mapnew', { min: 2, max: 2, run: (args, context) => {
@@ -1194,7 +1195,7 @@ function dictRequired(context: Context): VimValue {
 }
 
 function extreme(target: VimValue, context: Context, maximum: boolean): VimValue {
-  const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? [...target.entries.values()] : null;
+  const items = target.kind === 'list' ? target.items : target.kind === 'dict' ? inVimOrder(target.entries).map(([, item]) => item) : null;
   if (items === null) {
     context.soft('E712: Argument of max() must be a List or Dictionary');
     return num(0);
@@ -1248,7 +1249,7 @@ function jsonEncode(value: VimValue, context: Context): string {
     case 'string': return jsonString(value.value);
     case 'special': return value.name === 'true' ? 'true' : value.name === 'false' ? 'false' : 'null';
     case 'list': return `[${value.items.map((item) => jsonEncode(item, context)).join(',')}]`;
-    case 'dict': return `{${[...value.entries].map(([key, item]) => `${jsonString(key)}:${jsonEncode(item, context)}`).join(',')}}`;
+    case 'dict': return `{${inVimOrder(value.entries).map(([key, item]) => `${jsonString(key)}:${jsonEncode(item, context)}`).join(',')}}`;
     default:
       context.soft('E474: Invalid argument');
       return '';
@@ -1262,8 +1263,8 @@ function mapOrFilter(args: VimValue[], context: Context, mapping: boolean): VimV
     return num(0);
   }
   const callback = args[1];
-  const keys: VimValue[] = target.kind === 'list' ? target.items.map((_, at) => num(at)) : [...target.entries.keys()].map(str);
-  const values: VimValue[] = target.kind === 'list' ? [...target.items] : [...target.entries.values()];
+  const keys: VimValue[] = target.kind === 'list' ? target.items.map((_, at) => num(at)) : inVimOrder(target.entries).map(([key]) => str(key));
+  const values: VimValue[] = target.kind === 'list' ? [...target.items] : inVimOrder(target.entries).map(([, item]) => item);
   const results: VimValue[] = [];
   for (let at = 0; at < keys.length; at++) {
     try {
@@ -1278,7 +1279,7 @@ function mapOrFilter(args: VimValue[], context: Context, mapping: boolean): VimV
   if (target.kind === 'list') {
     target.items = (mapping ? results : values).filter((_, at) => keep(at));
   } else {
-    const names = [...target.entries.keys()];
+    const names = inVimOrder(target.entries).map(([key]) => key);
     const kept = names.map((name, at) => ({ name, at })).filter(({ at }) => keep(at));
     target.entries = new Map(kept.map(({ name, at }) => [name, mapping ? results[at] : values[at]]));
   }
