@@ -36,7 +36,7 @@ import type { DatafileEntry, BackupSet } from '../catalog/types';
 import { BackupSetFactory } from '../catalog/BackupSetFactory';
 import { RmanTag } from '../values/RmanTag';
 import { Scn } from '../values/Scn';
-import { generatePieceName, oracleStamp, rmanNowMs, rmanWall } from '../core/pureUtils';
+import { generatePieceName, oracleStamp, rmanNowMs, rmanWall, simulateBackupElapsedMs } from '../core/pureUtils';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
 import { resolveFormatSpec } from '../core/formatSpec';
@@ -292,9 +292,11 @@ export class RmanJobEngine implements IRmanJobEngine {
         const writeR = this._ctx.vfs.writeFile(
           copyPath, new TextEncoder().encode(corps), df.sizeBytes);
         if (!writeR.ok) return writeR;
+        const elapsedMs = simulateBackupElapsedMs(df.sizeBytes);
+        this._ctx.spendHostTime?.(elapsedMs);
         const set = BackupSetFactory.createBackupSet({
           type: 'DATAFILECOPY', level: 0, path: copyPath,
-          sizeBytes: df.sizeBytes, tag, nowMs: rmanNowMs(this._ctx),
+          sizeBytes: df.sizeBytes, tag, nowMs: rmanNowMs(this._ctx), elapsedMs,
           datafiles: [Object.freeze({
             fileNo: df.fileNo, level: 0 as 0 | 1,
             ckpScn: ckp, ckpTime: rmanNowMs(this._ctx), path: df.path,
@@ -307,7 +309,7 @@ export class RmanJobEngine implements IRmanJobEngine {
         });
         const recR = this._catalog.recordBackupSet(set);
         if (!recR.ok) return recR;
-        this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: df.sizeBytes });
+        this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: df.sizeBytes, elapsedMs });
       }
       return ok(undefined);
     }
@@ -362,8 +364,10 @@ export class RmanJobEngine implements IRmanJobEngine {
       const writeResult = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body), size);
       if (!writeResult.ok) return writeResult;
 
+      const elapsedMs = simulateBackupElapsedMs(size);
+      this._ctx.spendHostTime?.(elapsedMs);
       const set = BackupSetFactory.createBackupSet({
-        type, level, path, sizeBytes: size, tag, nowMs: rmanNowMs(this._ctx),
+        type, level, path, sizeBytes: size, tag, nowMs: rmanNowMs(this._ctx), elapsedMs,
         datafiles: i === 1 ? dfEntries : [],
         compressed, encrypted, keepNote,
       });
@@ -385,7 +389,7 @@ export class RmanJobEngine implements IRmanJobEngine {
         startedAt: set.startTime, completedAt: set.completionTime,
       });
 
-      this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size });
+      this._bus.emit({ type: 'BACKUP_SET_COMPLETE', jobId: job.id, bsKey: set.bsKey, tag, sizeBytes: size, elapsedMs });
     }
 
     // Une sauvegarde rend a nouveau recuperables les fichiers qu'une

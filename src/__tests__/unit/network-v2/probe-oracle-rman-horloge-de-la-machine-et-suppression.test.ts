@@ -83,7 +83,7 @@ describe('RMAN suit l\'horloge de la machine', () => {
   it('la sauvegarde porte la date et l\'etiquette du jour de la machine', async () => {
     await setClock('2026-03-15 09:30:00');
     const out = rman.execute('BACKUP DATABASE;');
-    expect(out).toContain('Finished backup at 15-MAR-2026 09:30:00');
+    expect(out).toContain('Finished backup at 15-MAR-2026 09:30:33');
     expect(rman.execute('LIST BACKUP SUMMARY;')).toContain('TAG20260315T093000');
   });
 

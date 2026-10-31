@@ -79,6 +79,7 @@ export interface IRmanOracleContext {
   readonly dbName:  string;
   hostZoneName?(): string;
   hostNowMs?(): number;
+  spendHostTime?(ms: number): void;
   readonly vfs:     VfsAdapter;
   getDatafiles():   ReadonlyArray<DatafileInfo>;
   getSpfileParam(name: string): string | undefined;

@@ -66,7 +66,7 @@ export class RmanBusBridge {
         case 'BACKUP_SET_COMPLETE':
           return {
             topic: 'rman.backup.set-complete',
-            payload: { sessionId, jobId: e.jobId, bsKey: e.bsKey, tag: e.tag.label, sizeBytes: e.sizeBytes },
+            payload: { sessionId, jobId: e.jobId, bsKey: e.bsKey, tag: e.tag.label, sizeBytes: e.sizeBytes, elapsedMs: e.elapsedMs },
           };
         case 'CHANNEL_ALLOCATED':
           return { topic: 'rman.channel.allocated', payload: { sessionId, channelId: e.channelId, sid: e.sid, deviceType: e.deviceType } };
