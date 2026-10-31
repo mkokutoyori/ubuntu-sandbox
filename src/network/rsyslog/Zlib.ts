@@ -209,6 +209,11 @@ export function crc32(bytes: Uint8Array, seed = 0): number {
 
 const GZIP_PENDING_FLUSH_BYTES = 16384;
 
+export interface GzipOrigin {
+  readonly name: string;
+  readonly mtimeMs: number;
+}
+
 export class GzipStreamWriter {
   private headerWritten = false;
   private readonly pending: Uint8Array[] = [];
@@ -216,11 +221,18 @@ export class GzipStreamWriter {
   private checksum = 0;
   private total = 0;
 
-  constructor(private readonly level: number) {}
+  constructor(private readonly level: number, private readonly origin: GzipOrigin | null = null) {}
 
   private header(): number[] {
     const flags = this.level === 9 ? 2 : this.level === 1 ? 4 : 0;
-    return [0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, flags, 0x03];
+    if (this.origin === null) return [0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, flags, 0x03];
+    const seconds = Math.max(0, Math.floor(this.origin.mtimeMs / 1000)) >>> 0;
+    const name = Array.from(new TextEncoder().encode(this.origin.name));
+    return [
+      0x1f, 0x8b, 0x08, 0x08,
+      seconds & 0xff, (seconds >>> 8) & 0xff, (seconds >>> 16) & 0xff, (seconds >>> 24) & 0xff,
+      flags, 0x03, ...name, 0,
+    ];
   }
 
   private emit(final: boolean, sync: boolean): Uint8Array {
@@ -266,8 +278,8 @@ export class GzipStreamWriter {
   }
 }
 
-export function gzipCompress(data: Uint8Array, level: number): Uint8Array {
-  const writer = new GzipStreamWriter(Math.max(1, Math.min(9, level)));
+export function gzipCompress(data: Uint8Array, level: number, origin: GzipOrigin | null = null): Uint8Array {
+  const writer = new GzipStreamWriter(Math.max(1, Math.min(9, level)), origin);
   const parts: Uint8Array[] = [];
   let offset = 0;
   do {

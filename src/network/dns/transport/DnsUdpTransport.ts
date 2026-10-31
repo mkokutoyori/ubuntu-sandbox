@@ -48,6 +48,17 @@ export interface DnsUdpClient {
     payload: Uint8Array,
     payloadBytes?: number,
   ): boolean;
+  udpConnect(
+    remote: IPAddress | IPv6Address,
+    remotePort: number,
+    options: {
+      readonly onDatagram: (delivery: {
+        readonly sourceIP: { toString(): string };
+        readonly udp: { readonly payload: unknown; readonly sourcePort: number };
+      }) => void;
+      readonly processName: string;
+    },
+  ): { send(payload: Uint8Array): string | null; peekError(): string | null; close(): void } | string;
 }
 
 export function udpClientOf(host: EndHost): DnsUdpClient {
@@ -57,6 +68,7 @@ export function udpClientOf(host: EndHost): DnsUdpClient {
     udpClose: (port) => host.udpClose(port),
     sendUdpDatagramTo: (ip, dstPort, srcPort, payload, bytes) =>
       host.sendUdpDatagramTo(ip, dstPort, srcPort, payload, bytes ?? payload.length),
+    udpConnect: (remote, remotePort, options) => host.udpConnect(remote, remotePort, options),
   };
 }
 
@@ -159,6 +171,8 @@ export function queryDnsOverUdp(
   return askOverUdp(udpClientOf(host), serverIP, query, port, timeoutMs, encode);
 }
 
+export type UdpExchangeFailure = 'refused';
+
 export function askOverUdp(
   host: DnsUdpClient,
   serverIP: IPAddress | IPv6Address,
@@ -166,27 +180,23 @@ export function askOverUdp(
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
   encode: DnsMessageEncoder = encodeDnsMessage,
+  onFailure?: (failure: UdpExchangeFailure) => void,
 ): Promise<DnsMessage | null> {
-  let sourcePort: number;
-  try {
-    sourcePort = host.allocateEphemeralPort();
-  } catch {
-    return Promise.resolve(null);
-  }
-
   return new Promise<DnsMessage | null>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let settled = false;
+    let socket: Exclude<ReturnType<DnsUdpClient['udpConnect']>, string> | null = null;
     const finish = (result: DnsMessage | null): void => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      host.udpClose(sourcePort);
+      socket?.close();
       resolve(result);
     };
 
-    try {
-      host.udpBind(sourcePort, ({ sourceIP, udp }) => {
+    const opened = host.udpConnect(serverIP, port, {
+      processName: 'dns-client',
+      onDatagram: ({ sourceIP, udp }) => {
         if (!(udp.payload instanceof Uint8Array)) return;
         if (sourceIP.toString() !== serverIP.toString() || udp.sourcePort !== port) return;
         try {
@@ -195,15 +205,21 @@ export function askOverUdp(
         } catch {
           return;
         }
-      }, 'dns-client');
-    } catch {
+      },
+    });
+    if (typeof opened === 'string') {
       resolve(null);
       return;
     }
+    socket = opened;
 
     const bytes = encode(query);
-    const sent = host.sendUdpDatagramTo(serverIP, port, sourcePort, bytes, bytes.length);
-    if (!sent) {
+    if (opened.send(bytes) !== null) {
+      finish(null);
+      return;
+    }
+    if (opened.peekError() === 'ECONNREFUSED') {
+      onFailure?.('refused');
       finish(null);
       return;
     }

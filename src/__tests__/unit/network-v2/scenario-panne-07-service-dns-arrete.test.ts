@@ -137,7 +137,7 @@ chmod +x /tmp/impact-dns.sh`);
       // `+short` supprime la bannière et les lignes de commentaire ; il
       // reste le diagnostic, que dig écrit sur stderr et qu'un terminal
       // affiche donc bel et bien. Ce qui compte : plus aucune adresse.
-      expect(out).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+      expect(out.split('\n').filter((line) => !line.startsWith(';;')).join('\n')).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
       expect(out).toContain('no servers could be reached');
     }, LONG);
 

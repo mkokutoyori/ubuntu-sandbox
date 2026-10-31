@@ -83,12 +83,13 @@ describe('dig -p <port> (PRD-Nslookup-Dig-Rndc-Runas.md P3)', () => {
     expect(out).toContain(`SERVER: ${NS1_IP}#5300`);
   });
 
-  it('times out against the default port 53 when the server only listens on 5300', async () => {
+  it('is refused on the default port 53 when the server only listens on 5300', async () => {
     const { pc } = await buildLab('  listen-on port 5300 { any; };');
 
     const out = await pc.executeCommand(`dig @${NS1_IP} www.example.com +tries=1`);
 
-    expect(out).toContain('connection timed out; no servers could be reached');
+    expect(out).toContain(`;; communications error to ${NS1_IP}#53: connection refused`);
+    expect(out).toContain(';; no servers could be reached');
   }, 8000);
 });
 
@@ -129,7 +130,8 @@ describe('dig +tries= is honored (PRD P3)', () => {
 
     const out = await pc.executeCommand(`dig @${NS1_IP} www.example.com +tries=2 +time=1`);
 
-    expect(out).toContain('connection timed out; no servers could be reached');
+    expect(out.split('\n').filter((l) => l.includes('connection refused'))).toHaveLength(2);
+    expect(out).toContain(';; no servers could be reached');
     expect(spy).toHaveBeenCalledTimes(2);
   });
 

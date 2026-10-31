@@ -636,11 +636,20 @@ async function performHttpRequest(
       // AAA répond après un aller-retour, et le contrat synchrone rendait
       // sa réponse invisible. Un serveur synchrone répond au premier tour,
       // donc rien ne change pour nginx, Apache ou IIS.
-      const result = await session.sendAsync(request);
+      const responseWait = budget.maxTimeMs === null
+        ? undefined
+        : { timeoutMs: Math.max(0, budget.maxTimeMs - (host.tcpStack().clock().now() - budget.operationStartedAt)) };
+      const result = await session.sendAsync(request, undefined, responseWait);
       session.close();
       if (!result.ok || !result.response) {
         const empty = result.error === 'Empty reply from server';
-        failure = empty
+        failure = result.failure === 'response-timeout'
+          ? {
+            ok: false, code: 28,
+            message: `curl: (28) Operation timed out after ${Math.round(host.tcpStack().clock().now() - budget.operationStartedAt)} milliseconds with 0 bytes received`,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          }
+          : empty
           ? {
             ok: false, code: 52, message: 'curl: (52) Empty reply from server',
             url, remoteIp, method, numRedirects: redirects, trace,
