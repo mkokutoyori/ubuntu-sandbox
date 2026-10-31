@@ -3956,10 +3956,9 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 `%{ssl_verify_result}` vaut toujours 0 (le vrai donne le code X509 de l'echec, 20 pour « unable to get local issuer certificate ») ; `%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; `%{time_appconnect}` d'une connexion TLS reprend `time_connect` faute de mesure de la poignee de main ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
 
-### [bash-fin-de-ligne] trois ecarts restants contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
+### [bash-fin-de-ligne] un ecart restant contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 
-Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`). Restent mesures et non fermes : `fold` sur une entree non terminee en rend un de trop ; `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee. `rev fichier` ne lit pas ses operandes fichier (stdin seulement).
-
+Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf abc 2>/dev/null; echo END` rend `abcEND`), `fold` et `rev` (fichiers operandes compris) non plus. Reste mesure et non ferme : `xxd` n'est pas installe sur la machine de reference, donc sa sortie n'est pas comparee.
 
 ### [bash-ecarts-restants] ecarts mesures contre bash 5.2 apres les trois bancs (langage 880, scripts 176, diagnostics 104)
 

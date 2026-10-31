@@ -484,7 +484,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -7074,10 +7074,30 @@ export class LinuxCommandExecutor {
         return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
       case 'rev': {
-        const input = stdin || '';
-        const body = input.endsWith('\n') ? input.slice(0, -1) : input;
-        const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
-        return { output: input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : ''), exitCode: 0 };
+        const reverse = (input: string): string => {
+          const body = input.endsWith('\n') ? input.slice(0, -1) : input;
+          const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
+          return input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : '');
+        };
+        const files = args.filter((word) => !word.startsWith('-') || word === '-');
+        if (files.length === 0) return { output: reverse(stdin || ''), exitCode: 0 };
+        let output = '';
+        let interleaved = '';
+        const errors: string[] = [];
+        for (const file of files) {
+          const content = file === '-' ? (stdin || '') : this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
+          if (content === null) {
+            const line = `rev: cannot open ${file}: No such file or directory`;
+            errors.push(line);
+            interleaved += `${line}\n`;
+          } else {
+            const reversed = reverse(content);
+            output += reversed;
+            interleaved += reversed;
+          }
+        }
+        if (errors.length === 0) return { output, exitCode: 0 };
+        return { output, stderr: errors.join('\n'), interleaved, exitCode: 1 };
       }
       case 'basename': return asDispatch(runBasename(args));
       case 'dirname': return asDispatch(runDirname(args));
