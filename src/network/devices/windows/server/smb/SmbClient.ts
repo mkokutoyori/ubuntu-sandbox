@@ -13,7 +13,7 @@
  */
 
 import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
-import type { SmbEnumeratedShare, SmbListEntry } from './SmbTypes';
+import type { SmbEnumeratedShare, SmbListEntry, SmbVolumeInfo } from './SmbTypes';
 
 export interface SmbConnection {
   readonly shareName: string;
@@ -22,6 +22,14 @@ export interface SmbConnection {
   read(path: string): { ok: boolean; content?: string; error?: string };
   write(path: string, content: string): { ok: boolean; error?: string };
   list(path: string): { ok: boolean; entries?: SmbListEntry[]; error?: string };
+  stat(path: string): { ok: boolean; node?: SmbListEntry; canonical?: string; error?: string };
+  mkdir(path: string): { ok: boolean; error?: string };
+  remove(path: string): { ok: boolean; error?: string };
+  removeDirectory(path: string): { ok: boolean; error?: string };
+  rename(path: string, target: string, replace?: boolean): { ok: boolean; error?: string };
+  setAttributes(path: string, attributes: string[]): { ok: boolean; error?: string };
+  setModified(path: string, modified: number): { ok: boolean; error?: string };
+  volumeInfo(): { ok: boolean; volume?: SmbVolumeInfo; error?: string };
   disconnect(): void;
 }
 
@@ -164,23 +172,45 @@ export function dialSmbShare(opts: {
     return answer;
   };
 
+  const call = (payload: Record<string, unknown>): { ok: boolean; reply: Record<string, unknown>; error?: string } => {
+    if (disconnected) return { ok: false, reply: {}, error: 'The specified network name is no longer available.' };
+    const r = exchange({ ...payload, treeId });
+    return r?.ok
+      ? { ok: true, reply: r }
+      : { ok: false, reply: {}, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
+  };
+  const outcome = (payload: Record<string, unknown>): { ok: boolean; error?: string } => {
+    const r = call(payload);
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  };
+
   const connection: SmbConnection = {
     shareName: opts.shareName,
     isConnected: () => !disconnected && socket.state === 'established',
     read(path: string) {
-      if (disconnected) return { ok: false, error: 'The specified network name is no longer available.' };
-      const r = exchange({ op: 'read', treeId, path });
-      return r?.ok ? { ok: true, content: r.content as string } : { ok: false, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
+      const r = call({ op: 'read', path });
+      return r.ok ? { ok: true, content: r.reply.content as string } : { ok: false, error: r.error };
     },
-    write(path: string, content: string) {
-      if (disconnected) return { ok: false, error: 'The specified network name is no longer available.' };
-      const r = exchange({ op: 'write', treeId, path, content });
-      return r?.ok ? { ok: true } : { ok: false, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
-    },
+    write: (path: string, content: string) => outcome({ op: 'write', path, content }),
     list(path: string) {
-      if (disconnected) return { ok: false, error: 'The specified network name is no longer available.' };
-      const r = exchange({ op: 'list', treeId, path });
-      return r?.ok ? { ok: true, entries: r.entries as SmbListEntry[] } : { ok: false, error: (r as { message?: string } | null)?.message ?? 'Unknown error' };
+      const r = call({ op: 'list', path });
+      return r.ok ? { ok: true, entries: r.reply.entries as SmbListEntry[] } : { ok: false, error: r.error };
+    },
+    stat(path: string) {
+      const r = call({ op: 'stat', path });
+      return r.ok
+        ? { ok: true, node: r.reply.node as SmbListEntry, canonical: r.reply.canonical as string }
+        : { ok: false, error: r.error };
+    },
+    mkdir: (path: string) => outcome({ op: 'mkdir', path }),
+    remove: (path: string) => outcome({ op: 'delete', path }),
+    removeDirectory: (path: string) => outcome({ op: 'rmdir', path }),
+    rename: (path: string, target: string, replace = false) => outcome({ op: 'rename', path, target, replace }),
+    setAttributes: (path: string, attributes: string[]) => outcome({ op: 'set_attributes', path, attributes }),
+    setModified: (path: string, modified: number) => outcome({ op: 'set_times', path, modified }),
+    volumeInfo() {
+      const r = call({ op: 'volume_info' });
+      return r.ok ? { ok: true, volume: r.reply.volume as SmbVolumeInfo } : { ok: false, error: r.error };
     },
     disconnect() {
       if (disconnected) return;

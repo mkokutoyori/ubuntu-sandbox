@@ -4,3 +4,7 @@ export const ERROR_SHARING_VIOLATION = 'The process cannot access the file becau
 export const ERROR_INVALID_NAME = 'The filename, directory name, or volume label syntax is incorrect.';
 export const ERROR_DIR_NOT_EMPTY = 'The directory is not empty.';
 export const ERROR_DIRECTORY = 'The directory name is invalid.';
+export const ERROR_FILE_NOT_FOUND = 'The system cannot find the file specified.';
+export const ERROR_ACCESS_DENIED = 'Access is denied.';
+export const ERROR_ALREADY_EXISTS = 'Cannot create a file when that file already exists.';
+export const ERROR_INVALID_PARAMETER = 'The parameter is incorrect.';
