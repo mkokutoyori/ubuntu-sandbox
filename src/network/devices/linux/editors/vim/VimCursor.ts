@@ -57,6 +57,28 @@ export function wordClassAt(words: WordClasses, line: string, col: number, big: 
   return cls !== 0 && big ? 1 : cls;
 }
 
+function isCombining(code: number): boolean {
+  return code >= 0x300 && codePointWidth(code) === 0;
+}
+
+export function charLengthAt(text: string, col: number): number {
+  if (col >= text.length) return 1;
+  let end = col + (text.codePointAt(col)! > 0xffff ? 2 : 1);
+  while (end < text.length && isCombining(text.codePointAt(end)!)) end += text.codePointAt(end)! > 0xffff ? 2 : 1;
+  return end - col;
+}
+
+export function charStartBefore(text: string, col: number): number {
+  let start = Math.min(col, text.length);
+  if (start <= 0) return 0;
+  for (;;) {
+    start -= 1;
+    if (start > 0 && text.charCodeAt(start) >= 0xdc00 && text.charCodeAt(start) <= 0xdfff
+        && text.charCodeAt(start - 1) >= 0xd800 && text.charCodeAt(start - 1) <= 0xdbff) start -= 1;
+    if (start === 0 || !isCombining(text.codePointAt(start)!)) return start;
+  }
+}
+
 export function charCells(ch: string, vcol: number, tabstop: number, ctrlTab = false): number {
   if (ch === '\t') return ctrlTab ? 2 : tabstop - (vcol % tabstop);
   return codePointWidth(ch.codePointAt(0)!);
@@ -64,9 +86,14 @@ export function charCells(ch: string, vcol: number, tabstop: number, ctrlTab = f
 
 export function cursorVcol(line: string, col: number, tabstop: number, normalMode = true, ctrlTab = false): number {
   let vcol = 0;
-  for (let i = 0; i < col && i < line.length; i++) vcol += charCells(line[i], vcol, tabstop, ctrlTab);
+  let i = 0;
+  while (i < col && i < line.length) {
+    const length = charLengthAt(line, i);
+    vcol += charCells(String.fromCodePoint(line.codePointAt(i)!), vcol, tabstop, ctrlTab);
+    i += length;
+  }
   if (col < line.length) {
-    const width = charCells(line[col], vcol, tabstop, ctrlTab);
+    const width = charCells(String.fromCodePoint(line.codePointAt(col)!), vcol, tabstop, ctrlTab);
     if (line[col] === '\t' && normalMode) return vcol + width - 1;
   }
   return vcol;
@@ -76,8 +103,8 @@ export function colAtVcol(line: string, want: number, tabstop: number, allowEol 
   const last = allowEol ? line.length : Math.max(0, line.length - 1);
   if (want >= MAXCOL) return last;
   let vcol = 0;
-  for (let i = 0; i < line.length; i++) {
-    const width = charCells(line[i], vcol, tabstop, ctrlTab);
+  for (let i = 0; i < line.length; i += charLengthAt(line, i)) {
+    const width = charCells(String.fromCodePoint(line.codePointAt(i)!), vcol, tabstop, ctrlTab);
     if (want < vcol + width) return i;
     vcol += width;
   }
@@ -118,7 +145,7 @@ export class Cursor {
   inc(): number {
     const text = this.text();
     if (this.col < text.length) {
-      this.col++;
+      this.col += charLengthAt(text, this.col);
       return this.col < text.length ? 0 : 2;
     }
     if (this.line < this.lastLine()) {
@@ -131,7 +158,7 @@ export class Cursor {
 
   dec(): number {
     if (this.col > 0) {
-      this.col--;
+      this.col = charStartBefore(this.text(), this.col);
       return 0;
     }
     if (this.line > 0) {
@@ -158,7 +185,7 @@ export class Cursor {
 
   oneLeft(): boolean {
     if (this.col === 0) return false;
-    this.col--;
+    this.col = charStartBefore(this.text(), this.col);
     return true;
   }
 

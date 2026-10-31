@@ -37,8 +37,8 @@ import { replayScreenCase, type ScreenCase } from '../../support/oracle/vimScree
 
 const UNPORTED_CASES: ReadonlySet<string> = new Set([
   'hl3-20', 'hl3-62', 'hl3-68', 'hl3-71', 'hl3-123', 'hl3-167', 'hl3-239', 'hl3-270',
-  'hl5-28', 'hl5-40', 'hl5-82', 'hl5-120', 'hl5-132', 'hl5-142', 'hl5-162', 'hl5-168', 'hl5-194', 'hl5-201',
-  'hl6-12', 'hl6-21', 'hl6-56', 'hl6-131', 'hl6-141', 'hl6-226', 'hl6-243', 'hl6-263', 'hl6-293',
+  'hl5-28', 'hl5-40', 'hl5-82', 'hl5-120', 'hl5-132', 'hl5-162', 'hl5-168', 'hl5-194', 'hl5-201',
+  'hl6-12', 'hl6-21', 'hl6-56', 'hl6-131', 'hl6-141', 'hl6-226', 'hl6-243', 'hl6-263',
 ]);
 
 const dir = 'src/__tests__/support/oracle/vim-hlsearch';

@@ -127,6 +127,50 @@ export interface FindOptions {
   readonly context?: PatternContext;
 }
 
+export interface CurrentMatchOptions {
+  readonly forward: boolean;
+  readonly count: number;
+  readonly wrapscan: boolean;
+  readonly ignoreCase: boolean;
+  readonly context?: PatternContext;
+}
+
+export interface CurrentMatch extends MatchResult {
+  readonly zeroWidth: boolean;
+}
+
+export function findCurrentMatch(lines: readonly string[], from: Pos, pattern: string, options: CurrentMatchOptions): CurrentMatch | null {
+  if (pattern === '') return null;
+  const regex = compileVimPattern(pattern, options.ignoreCase, options.context ?? null);
+  const text = `${lines.join('\n')}\n`;
+  const starts = lineStarts(lines);
+  const origin = offsetOf(starts, from);
+  const matches = allMatches(text, regex);
+  if (matches.length === 0) return null;
+  const zeroWidth = matches[0].length === 0;
+  const key = (m: Located): number => (zeroWidth ? m.index : m.index + Math.max(0, m.length - 1));
+
+  let chosen: Located | undefined;
+  if (options.forward) {
+    const ahead = matches.filter((m) => key(m) >= origin);
+    const sequence = options.wrapscan ? [...ahead, ...matches.filter((m) => key(m) < origin)] : ahead;
+    if (sequence.length > 0 && (options.count - 1 < ahead.length || options.wrapscan)) chosen = sequence[(options.count - 1) % sequence.length];
+  } else {
+    const following = matches.find((m) => m.index > origin);
+    const limit = following === undefined ? Number.POSITIVE_INFINITY : following.index;
+    const before = matches.filter((m) => key(m) < limit).reverse();
+    const sequence = options.wrapscan ? [...before, ...matches.filter((m) => key(m) >= limit).reverse()] : before;
+    if (sequence.length > 0 && (options.count - 1 < before.length || options.wrapscan)) chosen = sequence[(options.count - 1) % sequence.length];
+  }
+  if (!chosen) return null;
+  return {
+    start: posOf(lines, starts, chosen.index),
+    end: posOf(lines, starts, chosen.index + chosen.length),
+    wrapped: false,
+    zeroWidth,
+  };
+}
+
 export function searchPatternError(pattern: string, ignoreCase: boolean, context: PatternContext | null = null): string | null {
   return pattern === '' ? null : vimPatternError(pattern, ignoreCase, context);
 }
