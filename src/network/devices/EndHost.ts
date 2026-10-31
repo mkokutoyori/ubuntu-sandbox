@@ -1250,6 +1250,8 @@ export abstract class EndHost extends Equipment {
       getHostname: () => this.getHostname(),
       getPort: (n: string) => this.getPort(n),
       getPorts: () => this.getPorts(),
+      isLocalAddress: (ip: IPAddress) => this.isLocalAddress(ip),
+      isLocalAddress6: (ip: IPv6Address) => this.isLocalAddress6(ip),
       sendFrame: (p: string, f: EthernetFrame) => { this.sendFrame(p, f); },
       resolveRoute: (targetIp: string) => {
         const addr = IPAddress.tryParse(targetIp);
