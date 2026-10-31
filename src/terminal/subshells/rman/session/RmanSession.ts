@@ -53,6 +53,21 @@ export function credentialsOf(ligne: string, asSysdba = true): RmanCredentials |
   };
 }
 
+function withoutComment(line: string): string {
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote !== null) {
+      if (ch === quote) quote = null;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else if (ch === '#') {
+      return line.slice(0, i);
+    }
+  }
+  return line;
+}
+
 export class RmanSession implements IRmanSession {
   private readonly _bus:        RmanEventBus;
   private readonly _pool:       ReactiveChannelPool;
@@ -65,6 +80,7 @@ export class RmanSession implements IRmanSession {
   /** Lines accumulated inside an active RUN { ... } block. */
   private readonly _block:      string[] = [];
   private _inBlock = false;
+  private _scriptCapture: { verb: 'CREATE' | 'REPLACE'; name: string; lines: string[] } | null = null;
   /** User-aliased channels held by ALLOCATE CHANNEL. */
   private readonly _userChannels = new Map<string, import('../channel/types').ChannelHandle>();
   /** Rename map populated by SET NEWNAME FOR DATAFILE inside a RUN block. */
@@ -148,9 +164,17 @@ export class RmanSession implements IRmanSession {
   }
 
   processLine(line: string): Result<string[], RmanError> {
-    const trimmed = line.trim();
+    const trimmed = withoutComment(line).trim();
     if (!trimmed) return ok([]);
-    if (trimmed.startsWith('#')) return ok([]); // comment
+
+    if (this._scriptCapture !== null) return this._captureScriptLine(trimmed);
+    const scriptOpening = /^(CREATE|REPLACE)\s+SCRIPT\s+(\S+?)\s*\{$/i.exec(trimmed);
+    if (scriptOpening !== null) {
+      this._scriptCapture = {
+        verb: scriptOpening[1].toUpperCase() as 'CREATE' | 'REPLACE', name: scriptOpening[2], lines: [],
+      };
+      return ok([]);
+    }
 
     const upper = trimmed.toUpperCase();
 
@@ -232,6 +256,17 @@ export class RmanSession implements IRmanSession {
     return dispatched;
   }
 
+  private _captureScriptLine(trimmed: string): Result<string[], RmanError> {
+    const capture = this._scriptCapture!;
+    if (trimmed === '}' || trimmed === '};') {
+      this._scriptCapture = null;
+      return this.processLine(`${capture.verb} SCRIPT ${capture.name} { ${capture.lines.join('; ')} }`);
+    }
+    const statement = trimmed.endsWith(';') ? trimmed.slice(0, -1).trim() : trimmed;
+    if (statement) capture.lines.push(statement);
+    return ok([]);
+  }
+
   private _implicitResync(dispatchSucceeded: boolean): void {
     const catalog = this._recoveryCatalog;
     if (!dispatchSucceeded || !catalog || !catalog.isRegistered()) return;
@@ -297,6 +332,8 @@ export class RmanSession implements IRmanSession {
       setNewname:   this._setNewname,
       setMaxCorrupt: this._setMaxCorrupt,
       setUntil:     this._setUntil,
+      scripts:      this._catalog.scripts,
+      runBlock:     (lines: string[]) => this._runBlock(lines),
     };
   }
 

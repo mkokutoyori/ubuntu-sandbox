@@ -1145,7 +1145,7 @@ RMAN> REPLACE SCRIPT daily_backup { ... }
 RMAN> DELETE SCRIPT daily_backup;
 ```
 
-> 💡 Ces scripts vivent dans le recovery catalog (en prod) ou dans le control file. Dans le sandbox, ils sont acceptés en no-op (pratique pour valider la syntaxe).
+> 💡 Ces scripts vivent dans le recovery catalog (en prod). Dans le sandbox, le corps est gardé dans le catalogue de la machine, `PRINT SCRIPT` le relit, `LIST SCRIPT NAMES` le nomme et `EXECUTE SCRIPT` le rejoue comme un bloc `RUN`. Un `#` hors guillemets commence un commentaire.
 
 ---
 

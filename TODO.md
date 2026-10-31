@@ -4266,3 +4266,14 @@ Mesuré avec `iptables -A INPUT -m <module> … -j ACCEPT` (iptables 1.8.7) : `p
 
 ### [ipset] ce qui n'est pas construit
 `ipset` (7.15) couvre `hash:ip`, `hash:net`, `hash:ip,port` et `bitmap:ip` avec `create/add/del/test/list/save/restore/flush/destroy/rename/swap/version`, `timeout`, `netmask`, `comment`, `forceadd`, `maxelem`, `hashsize` et la cible/correspondance iptables `set` / `SET`. Manquent : les compteurs et `skbinfo` (refuses en le disant), les autres types (`bitmap:ip,mac`, `bitmap:port`, `hash:net,port`, `hash:ip,mark`, `list:set`…), `--return-nomatch` et `nomatch`, `--map-set`, le mode interactif et la résolution de noms d'hôte. « Size in memory » est une approximation (200 + 64 par élément) : le noyau l'obtient de ses allocations, sans formule exploitable depuis les sources. `-m physdev` reste refusé : pas de pont filtrant dans le simulateur.
+
+### [rman] scripts stockes : les erreurs et la mise en page de `LIST SCRIPT NAMES` ne sont pas sourcees
+`CREATE|REPLACE|PRINT|EXECUTE|DELETE SCRIPT` gardent maintenant le corps dans le
+catalogue de la machine et `EXECUTE` le rejoue comme un bloc `RUN` (sonde
+`probe-rman-scripts-stockes-et-commentaires`). Restent non sources, faute d'acces a la
+documentation des messages RMAN depuis ce reseau (`docs.oracle.com` est bloque) :
+(1) le code d'un script introuvable ou deja existant (`RMAN-03002` ici, avec un texte
+simple) ; (2) la mise en page exacte de `LIST SCRIPT NAMES` ; (3) le refus que RMAN
+oppose a un script stocke sans catalogue de recuperation connecte (le sandbox
+l'accepte, comme le dit le tutoriel). Les commentaires `--` du tutoriel ne sont pas
+reconnus : seul `#` l'est.
