@@ -373,7 +373,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'iptables', 'iptables-save', 'iptables-restore', 'ipset',
   'ip6tables', 'ip6tables-save', 'ip6tables-restore', 'nft', 'ufw', 'firewall-cmd', 'netfilter-persistent',
   // Editors
-  'nano', 'vi', 'vim', 'emacs', 'ed',
+  'nano', 'rnano', 'vi', 'vim', 'emacs', 'ed',
   // Archives / packages
   'tar', 'gzip', 'gunzip', 'zcat', 'zip', 'unzip', 'bzip2', 'bunzip2', 'xz', 'unxz',
   'apt', 'apt-get', 'apt-cache', 'dpkg', 'snap',

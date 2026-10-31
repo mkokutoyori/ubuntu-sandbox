@@ -1071,13 +1071,6 @@ nom, taille ou « (dir) » affichee), `goto_dir`, recherche `findfile` / `search
 sur un dossier (qu'on entre) ou sur un fichier (qui revient dans l'invite). Brique a ecrire dans le
 moteur d'invites ; elle sert les trois invites de fichier.
 
-### [nano] « File was modified since you opened it »
-Non porte : le moteur ne compare pas la date de modification du fichier a celle qu'il a relevee a
-l'ouverture. La brique existe maintenant (`EditorFsContext.modificationStamp`, ajoutee pour
-« Nothing changed » du formateur) ; reste a la relever a l'ouverture et a la relire a
-l'ecriture (`write_it_out` pose la question « File was modified since you opened it; continue
-saving? »). Aussi `rnano` (nom du programme = mode restreint) : le lanceur ne l'aiguille pas.
-
 ### [nano] annulation : « Undid insertion », `und3-175`, `un24-6`
 Cas de `nano-undo-oracle.test.ts` (UNPORTED_CASES : und3-175, un24-6) et de `nano-insert-oracle.test.ts` :
 - `und3-175` : avec `-k`, nano 7.2 annule une justification en laissant un tampon VIDE (le texte est

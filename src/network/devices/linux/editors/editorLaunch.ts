@@ -60,6 +60,7 @@ export function parseEditorLaunch(commandLine: string): EditorLaunch | null {
   const trimmed = commandLine.trim();
   const noSudo = trimmed.startsWith('sudo ') ? trimmed.slice(5).trimStart() : trimmed;
   const parts = splitShellWords(noSudo).words;
+  if (parts[0] === 'rnano') return parseEditorArgs('nano', ['-R', ...parts.slice(1)]);
   const head = parts[0] as EditorName | undefined;
   if (!head || !EDITOR_NAMES.includes(head)) return null;
 
