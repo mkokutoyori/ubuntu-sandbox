@@ -803,15 +803,15 @@ portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que 
 pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
 `^R` en mode vue (entree suivante).
 
-### [machine Linux] `dash` absent, `sh -n` et `bash -n` sans effet
+### [machine Linux] `dash` absent
 Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
 n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
-`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' » ; et `sh -n script` /
-`bash -n script` n'ont pas la semantique « analyser sans executer » (le script est lance, `sh -n`
-sur un fichier correct execute ses commandes). Les messages d'erreur d'analyse de dash
-(« t.sh: 3: Syntax error: Unterminated quoted string ») different aussi de ceux de l'analyseur de
-bash du simulateur. Sans ce chaînon le linter par defaut des fichiers shell ne peut pas
-fonctionner comme sur Ubuntu.
+`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' ». `sh -n` et `bash -n`
+analysent maintenant sans executer (les lettres d'invocation arrivent a `SHELLOPTS`), mais les
+messages d'erreur d'analyse de dash (« t.sh: 3: Syntax error: Unterminated quoted string »)
+different de ceux de l'analyseur de bash du simulateur, que `sh` reutilise. Sans une
+grammaire d'erreurs propre a dash le linter par defaut des fichiers shell ne parle pas comme
+sur Ubuntu.
 
 ### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
 Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut
@@ -923,10 +923,6 @@ datagramme seul, fermeture, machine vide, session `nc -U`) : `ss -x`, `netstat -
 - `ss -xaE` : refus explicite (« needs a stream of socket events ») ; le vrai n'affiche rien et rend la main.
 - `ss -e` d'une prise UNIX dont le pair est parti : la fleche `<->` ne devient pas `<--` / `-->` (aucune mesure faite).
   Mesure faite pour un proprietaire non root : `ss -xlpe` n'affiche pas `uid:` pour une prise UNIX, ce que fait le simulateur.
-- Le labo `unix-user` (un `nc -lU` lance par `nobody`) est declare non porte en entier : `sudo -u nobody nc -lU p &`
-  rend 127 (le chemin des travaux d'arriere-plan ne retire que le mot `sudo`, pas `-u utilisateur`, et lance la commande reseau
-  sous l'identite de l'appelant). Les vues d'un proprietaire non root (`netstat -p` d'un autre utilisateur, `fuser -u`,
-  `EACCES` sur une prise dont l'utilisateur n'a pas le droit d'ecriture) y sont enregistrees et attendent ce correctif.
 - Les prises UNIX que posent rsyslog (`/dev/log`, imptcp) et auditd n'ont pas de porteur : elles figurent dans
   `/proc/net/unix` et `ss -x` sans `users:` ni descripteur, parce que leur donner un pid decalerait les numeros de
   descripteur que les tests rsyslog lisent deja.

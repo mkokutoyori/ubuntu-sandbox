@@ -83,3 +83,36 @@ export function optionFlags(env: Environment, interactive: boolean): string {
   const sorted = letters.sort((a, b) => order.indexOf(a) - order.indexOf(b)).join('');
   return interactive ? `${sorted}i` : sorted;
 }
+
+export interface InvocationOptions {
+  readonly enabled: readonly string[];
+  readonly consumed: number;
+}
+
+export function invocationShellOptions(args: readonly string[]): InvocationOptions {
+  const enabled: string[] = [];
+  const byLetter = new Map(SET_OPTIONS.filter((option) => option.letter !== undefined).map((option) => [option.letter!, option.name]));
+  let at = 0;
+  while (at < args.length && /^[-+]./.test(args[at]) && args[at] !== '--') {
+    const flag = args[at];
+    const on = flag[0] === '-';
+    if (flag === '-o' || flag === '+o') {
+      if (on && args[at + 1] !== undefined) enabled.push(args[at + 1]);
+      at += 2;
+      continue;
+    }
+    for (const letter of flag.slice(1)) {
+      const name = byLetter.get(letter);
+      if (name !== undefined && on) enabled.push(name);
+    }
+    at++;
+    if (flag.includes('c')) break;
+  }
+  return { enabled, consumed: at };
+}
+
+export function withInvocationOptions(variables: Record<string, string>, enabled: readonly string[]): Record<string, string> {
+  if (enabled.length === 0) return variables;
+  const merged = new Set([...names(variables.SHELLOPTS ?? DEFAULT_SET_OPTIONS.join(':')), ...enabled]);
+  return { ...variables, SHELLOPTS: [...merged].sort().join(':') };
+}

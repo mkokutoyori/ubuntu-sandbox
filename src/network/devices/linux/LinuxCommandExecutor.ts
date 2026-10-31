@@ -123,6 +123,7 @@ import { SystemIdentity } from '../host/identity';
 import type { InterruptToken } from '@/bash/interpreter/BashInterpreter';
 import { runScript, runScriptAsync, runScriptContent, runScriptContentAsync, type ScriptResult } from '@/bash/runtime/ScriptRunner';
 import { seedWithShellOnly } from '@/bash/runtime/Environment';
+import { invocationShellOptions, withInvocationOptions } from '@/bash/runtime/ShellOptions';
 import type { BashInterpreter } from '@/bash/interpreter/BashInterpreter';
 import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
@@ -1611,7 +1612,8 @@ export class LinuxCommandExecutor {
   }
 
   private holdDescriptorsOfBackgroundJob(pid: number, commandLine: string): void {
-    const { argv, stdinPath, stdoutPath, stderrPath, stderrAppend } = splitRedirections(simpleTokenize(commandLine.replace(/^(sudo|nohup)\s+/, '')));
+    const typed = simpleTokenize(commandLine.replace(/^nohup\s+/, ''));
+    const { argv, stdinPath, stdoutPath, stderrPath, stderrAppend } = splitRedirections(typed[0] === 'sudo' ? parseSudoLead(typed.slice(1)).rest : typed);
     const absolute = (path: string): string => this.vfs.normalizePath(path, this.cwd);
     if (stdinPath !== undefined) this.processMgr.redirectStandardStream(pid, 0, absolute(stdinPath), 'r');
     if (stdoutPath !== undefined) this.processMgr.redirectStandardStream(pid, 1, absolute(stdoutPath), 'w');
@@ -2029,14 +2031,16 @@ export class LinuxCommandExecutor {
   private async runScriptElevated(
     effective: string[],
     run: () => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+    targetUser = 'root',
   ): Promise<{ output: string; exitCode: number; stderr?: string }> {
-    const admission = this.admitSudo(effective[0], effective.slice(1), 'root', null);
+    const admission = this.admitSudo(effective[0], effective.slice(1), targetUser, null);
     if (admission.refusal !== null) return admission.refusal;
     const um = this.userMgr;
     const saved = { user: um.currentUser, uid: um.currentUid, gid: um.currentGid };
-    um.currentUser = 'root';
-    um.currentUid = 0;
-    um.currentGid = 0;
+    const target = um.getUser(targetUser) ?? um.getUser('root')!;
+    um.currentUser = target.username;
+    um.currentUid = target.uid;
+    um.currentGid = target.gid;
     try {
       return await run()!;
     } finally {
@@ -3620,15 +3624,18 @@ export class LinuxCommandExecutor {
     const c = this.ctx();
     // real nice(1) execve()s over itself, so comm/cmdline should reflect
     // the wrapped command, not "nice" — see niceWrappedCommand().
-    const niceInner = niceWrappedCommand(argv);
-    const spawnCommand = (niceInner?.argv ?? argv).join(' ');
-    const spawnComm = basenameOf((niceInner?.argv ?? argv)[0]);
+    const privileged = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)).rest : argv;
+    const niceInner = niceWrappedCommand(privileged);
+    const spawnCommand = (niceInner?.argv ?? privileged).join(' ');
+    const spawnComm = basenameOf((niceInner?.argv ?? privileged)[0] ?? 'sudo');
+    const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
+    const runAs = sudoLead === null ? undefined : this.userMgr.getUser(sudoLead.user ?? 'root');
     const proc = this.processMgr.spawn({
       command: spawnCommand,
       comm: spawnComm,
-      user: this.userMgr.currentUser,
-      uid: c.uid,
-      gid: c.gid,
+      user: runAs?.username ?? this.userMgr.currentUser,
+      uid: runAs?.uid ?? c.uid,
+      gid: runAs?.gid ?? c.gid,
       ppid: nohup ? 1 : this.currentBashPid(),
       tty: nohup ? '?' : 'pts/0',
       cwd: this.cwd,
@@ -3687,17 +3694,31 @@ export class LinuxCommandExecutor {
     const noNetworkWork: Promise<unknown> = Promise.resolve();
     let settled: Promise<unknown> = noNetworkWork;
     if (exitCode === 127 && this.networkRunner) {
+      const typedTokens = leadingAssignments(simpleTokenize(cmdLine)).rest;
       const { argv: netArgv, stdoutPath, stdinPath, stderrPath, stderrAppend } = splitRedirections(
-        simpleTokenize(cmdLine.replace(/^sudo\s+/, '')));
+        sudoLead === null ? typedTokens : parseSudoLead(typedTokens.slice(1)).rest);
       if (stdoutPath !== undefined) this.ioContext().bindBackgroundStdout?.(proc.pid, this.vfs.normalizePath(stdoutPath, this.cwd));
       if (stderrPath !== undefined) this.bindBackgroundStderr(proc.pid, this.vfs.normalizePath(stderrPath, this.cwd), stderrAppend);
       const netStdin = stdinPath === undefined ? pipedInput
         : this.vfs.readFile(this.vfs.normalizePath(stdinPath, this.cwd)) ?? undefined;
       const runner = this.networkRunner;
       this.runningBackgroundJobPid = proc.pid;
-      const pending = netArgv.length > 0
-        ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
-        : null;
+      const callerIdentity = { user: this.userMgr.currentUser, uid: this.userMgr.currentUid, gid: this.userMgr.currentGid };
+      if (runAs !== undefined) {
+        this.userMgr.currentUser = runAs.username;
+        this.userMgr.currentUid = runAs.uid;
+        this.userMgr.currentGid = runAs.gid;
+      }
+      let pending: ReturnType<typeof runner> | null = null;
+      try {
+        pending = netArgv.length > 0
+          ? this.withProcessIdentity(proc.pid, () => runner(netArgv, undefined, undefined, netStdin))
+          : null;
+      } finally {
+        this.userMgr.currentUser = callerIdentity.user;
+        this.userMgr.currentUid = callerIdentity.uid;
+        this.userMgr.currentGid = callerIdentity.gid;
+      }
       this.runningBackgroundJobPid = null;
       this.materializeProcFd(proc.pid);
       if (pending) {
@@ -4409,11 +4430,11 @@ export class LinuxCommandExecutor {
    * argv is not a network command and the synchronous dispatch applies.
    */
   private networkRunner:
-    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
+    | ((argv: string[], env?: Record<string, string>, viaSudo?: boolean | string, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null)
     | null = null;
 
   setNetworkCommandRunner(
-    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
+    runner: (argv: string[], env?: Record<string, string>, viaSudo?: boolean | string, stdin?: string, outputPiped?: boolean) => Promise<{ output: string; exitCode: number; stderr?: string }> | null,
   ): void {
     this.networkRunner = runner;
   }
@@ -4539,8 +4560,9 @@ export class LinuxCommandExecutor {
     outputPiped?: boolean,
   ): { output: string; exitCode: number; stderr?: string } | Promise<{ output: string; exitCode: number; stderr?: string }> {
     if (!background && this.networkRunner && argv.length > 0) {
-      const viaSudo = argv[0] === 'sudo';
-      const effective = viaSudo ? argv.slice(1) : argv;
+      const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
+      const viaSudo: boolean | string = sudoLead === null ? false : (sudoLead.user ?? true);
+      const effective = sudoLead === null ? argv : sudoLead.rest;
       const previousEnv = this._cmdEnv;
       this._cmdEnv = env;
       const runner = this.networkRunner;
@@ -4576,8 +4598,9 @@ export class LinuxCommandExecutor {
       return this._oracleRmanAsync(argv.slice(1), stdin).then((output) => ({ output, exitCode: rmanExitCode(output) }));
     }
     if (!background && argv.length > 0) {
-      const viaSudo = argv[0] === 'sudo';
-      const effective = viaSudo ? argv.slice(1) : argv;
+      const sudoLead = argv[0] === 'sudo' ? parseSudoLead(argv.slice(1)) : null;
+      const viaSudo = sudoLead !== null;
+      const effective = sudoLead === null ? argv : sudoLead.rest;
       const cmd0 = effective[0] ?? '';
       const rest = effective.slice(1);
       const scriptForm = (): Promise<{ output: string; exitCode: number; stderr?: string }> | null => {
@@ -4596,7 +4619,7 @@ export class LinuxCommandExecutor {
       // compte élevé. La Phase 2 s'arrêtait devant `sudo` pour ne pas
       // court-circuiter la politique ; la reproduire ici l'applique au
       // lieu de la contourner.
-      if (pending) return viaSudo ? this.runScriptElevated(effective, scriptForm) : pending;
+      if (pending) return sudoLead !== null ? this.runScriptElevated(effective, scriptForm, sudoLead.user ?? 'root') : pending;
       const transfer = this.sshTransferInvocation(argv);
       if (transfer) {
         return this.runSshTransportAsync(transfer.cmd, transfer.args, transfer.password, stdin);
@@ -4910,8 +4933,9 @@ export class LinuxCommandExecutor {
   private static parseBashOrShArgs(
     cmd: string,
     args: string[],
-  ): { arg0: string; cmdString: string | null; scriptArgv: string[]; login: boolean; interactive: boolean } {
+  ): { arg0: string; cmdString: string | null; scriptArgv: string[]; login: boolean; interactive: boolean; options: readonly string[] } {
     let i = 0;
+    const options = invocationShellOptions(args).enabled;
     let login = false;
     let interactive = false;
     let cmdString: string | null = null;
@@ -4928,9 +4952,9 @@ export class LinuxCommandExecutor {
     }
     const defaultArg0 = login ? '-bash' : cmd;
     if (cmdString !== null) {
-      return { arg0: args[i] ?? defaultArg0, cmdString, scriptArgv: args.slice(i + 1), login, interactive };
+      return { arg0: args[i] ?? defaultArg0, cmdString, scriptArgv: args.slice(i + 1), login, interactive, options };
     }
-    return { arg0: defaultArg0, cmdString, scriptArgv: args.slice(i), login, interactive };
+    return { arg0: defaultArg0, cmdString, scriptArgv: args.slice(i), login, interactive, options };
   }
 
   /**
@@ -4952,9 +4976,9 @@ export class LinuxCommandExecutor {
     // le détour par le jumeau async le sautait.
     this.noteInterpreterExec(cmd);
     const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
-    const startupVars = cmd === 'bash'
+    const startupVars = withInvocationOptions(cmd === 'bash'
       ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-      : { ...this.commandEnvironment() };
+      : { ...this.commandEnvironment() }, parsed.options);
     if (parsed.cmdString !== null) {
       return this.runScriptProcessAsync(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
         runScriptContentAsync(
@@ -4965,7 +4989,7 @@ export class LinuxCommandExecutor {
     }
     if (parsed.scriptArgv.length > 0) {
       return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), { ...this.commandEnvironment() }));
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
     }
     return { output: '', exitCode: 0 };
   }
@@ -6617,9 +6641,9 @@ export class LinuxCommandExecutor {
       case 'bash':
       case 'sh': {
         const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
-        const startupVars = cmd === 'bash'
+        const startupVars = withInvocationOptions(cmd === 'bash'
           ? this.runBashStartupFiles(parsed.login, parsed.interactive)
-          : { ...this.commandEnvironment() };
+          : { ...this.commandEnvironment() }, parsed.options);
         if (parsed.cmdString !== null) {
           this.execInput = stdin ?? this.execInput;
           return this.runScriptProcess(`${cmd} -c ${parsed.cmdString}`, (identity, bridge) =>
@@ -6631,7 +6655,7 @@ export class LinuxCommandExecutor {
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), { ...this.commandEnvironment() }));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
         }
         if (stdin !== undefined && stdin !== '') {
           return this.runScriptProcess(cmd, (identity, bridge) =>
@@ -9108,7 +9132,7 @@ export class LinuxCommandExecutor {
   }
 
   private networkCommandBehindWrapper(
-    argv: string[], env: Record<string, string> | undefined, viaSudo: boolean,
+    argv: string[], env: Record<string, string> | undefined, viaSudo: boolean | string,
     stdin: string | undefined, outputPiped: boolean | undefined,
   ): Promise<{ output: string; exitCode: number; stderr?: string }> | null {
     const run = (inner: string[], innerEnv: Record<string, string> | undefined, piped: boolean | undefined) =>
@@ -9381,7 +9405,8 @@ function stripTrailingAmp(command: string): string {
 const PERSISTENT_LISTENER_DURATION_MS = 100 * 365 * 86_400_000;
 
 function isBackgroundListener(cmdLine: string): boolean {
-  const argv = simpleTokenize(cmdLine);
+  const typed = simpleTokenize(cmdLine);
+  const argv = typed[0] === 'sudo' ? parseSudoLead(typed.slice(1)).rest : typed;
   if (argv.length === 0) return false;
   const head = basenameOf(argv[0]);
   if (head === 'tail') return argv.slice(1).some((a) => /^-[A-Za-z]*[fF]/.test(a) || a.startsWith('--follow'));
