@@ -46,8 +46,7 @@ test.describe('Unified input broker — bash read', () => {
     await openTerminal(page, id);
 
     await typeNormal(page, 'read -p "Continue (y/n)? " ans');
-    await expect(page.locator('[data-testid="terminal-modal"] input[type="text"]').last())
-      .toBeVisible();
+    await expect(page.locator('[data-testid="terminal-modal"]')).toContainText('Continue (y/n)?');
 
     const inputBox = page.locator('[data-testid="terminal-modal"] input[type="text"]').last();
     await inputBox.fill('yes');
