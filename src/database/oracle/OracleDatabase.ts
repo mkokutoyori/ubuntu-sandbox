@@ -9,6 +9,7 @@
  *   - OracleExecutor (statement execution)
  */
 
+import { followSynonyms } from './naming/SynonymResolution';
 import { hostOffsetSpec, hostWallDate, hostNowDate, hostNowMs, withHostClock } from './time/OracleHostClock';
 
 import { OracleInstance } from './OracleInstance';
@@ -1054,8 +1055,11 @@ export class OracleDatabase implements SqlCommandHost {
   }
 
   execLockTable(stmt: LockTableStatement, ctx: ExecutionContext): ResultSet {
-    const owner = (stmt.schema ?? ctx.currentSchema).toUpperCase();
-    const table = stmt.table.toUpperCase();
+    const { schema: owner, name: table } = followSynonyms(
+      this.storage,
+      { schema: (stmt.schema ?? ctx.currentSchema).toUpperCase(), name: stmt.table.toUpperCase() },
+      { exists: (target) => this.storage.getTableMeta(target.schema, target.name) != null, publicFallback: stmt.schema === undefined },
+    );
     if (!this.storage.getTableMeta(owner, table)) {
       return emptyResult('ORA-00942: table or view does not exist');
     }
