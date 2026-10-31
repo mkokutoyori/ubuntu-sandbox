@@ -5847,7 +5847,7 @@ export abstract class EndHost extends Equipment {
     timeoutMs: number = 2000,
     probesPerHop: number = 3,
     firstTtl: number = 1,
-    hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean },
+    hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
     method: TraceProbeMethod = { kind: 'icmp' },
     socket: TraceSocketOptions = {},
   ): Promise<TracerouteHopResult[]> {
@@ -5991,6 +5991,8 @@ export abstract class EndHost extends Equipment {
         });
         if (probe.reached) destinationReached = true;
       }
+
+      if (probes.some(p => !p.responded)) PathClock.wait(hooks?.compressedWaitMs ?? 0);
 
       // Aggregate probe results into hop summary
       const firstResponded = probes.find(p => p.responded);

@@ -597,7 +597,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private cbacSweep: symbol | null = null;
   protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
   readonly icmpUnreachableRateLimit = new IcmpUnreachableRateLimit(
-    this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now());
+    this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now() + PathClock.horizon());
   readonly icmpv6ErrorRateLimit = new IcmpErrorTokenBucket(
     this.icmpv6ErrorIntervalDefault(), () => this.getRouterScheduler().now());
   /** In-flight ARP solicitations for forwarding — dedup signal that replaces

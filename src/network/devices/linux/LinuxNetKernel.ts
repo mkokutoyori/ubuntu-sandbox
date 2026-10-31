@@ -173,7 +173,7 @@ export interface LinuxNetKernel {
   traceroute(
     target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number,
     timeoutMs?: number, method?: TraceProbeMethod, socket?: TraceSocketOptions,
-    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
   ): Promise<TracerouteHop[]>;
 
   canTraceTo(target: IPAddress, socket: TraceSocketOptions): boolean;

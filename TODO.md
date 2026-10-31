@@ -43,22 +43,6 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Diagnostic reseau
 
-### [traceroute] une sonde UDP vers une adresse de ROUTEUR Cisco affiche des `*` : l'attente est comprimee, pas le limiteur d'IOS
-**Re-mesure** (PC Linux -> R1 -> R2 -> PC2, routeurs Cisco, `traceroute -n -w 1 -q 1`, en root) : l'entree d'origine
-(« le mode n'atteint jamais la sonde », « `-T` rend un saut »...) est perimee. `LinuxNetKernel.traceroute` porte desormais
-`method` et `socket`, et vers `10.0.3.2` (trois sauts) les quatre modes (defaut, `-I`, `-T`, `-U`) rendent les trois
-sauts. Vers l'adresse `10.0.3.1` de R2 (deux sauts), defaut, `-I` et `-T` rendent deux sauts ; `-U` rend
-`1  10.0.1.1`, puis cinq `*`, puis `7  10.0.2.2`.
-**Cause mesuree** : le limiteur ICMP d'IOS (`IcmpUnreachableRateLimit`, 1 inaccessible par 500 ms, valeur reelle d'IOS)
-lit `getRouterScheduler().now()`, alors que `traceroute` plafonne l'attente d'une sonde sans reponse a `PROBE_WAIT_CAP_MS`
-(100 ms, `Traceroute.ts`) : cinq `*` ne font passer que ~500 ms d'horloge de routeur, et la sonde suivante est la premiere
-admise. Un vrai `-w 1` laisse passer 1 s par `*`. Le meme effet fait echouer, d'une commande a l'autre, deux `traceroute -U`
-lances a la suite vers la meme adresse de routeur (`-p 53` repond, `-p 33434` puis `-p 161` non).
-**Pourquoi ce n'est pas ferme** : il faut une seule base de temps pour l'attente et le limiteur — faire avancer l'horloge
-de simulation du `-w` complet quand l'attente reelle est plafonnee (`PathClock.wait`), et faire lire `simulationNowMs()` au
-limiteur — ce qui touche la base de temps du routeur ; a mesurer contre les sondes de `Router`/`ip icmp rate-limit`
-avant de la changer.
-
 ## Pare-feu FortiGate
 
 ### [fortios] un refus d'`allowaccess` route est BAVARD
