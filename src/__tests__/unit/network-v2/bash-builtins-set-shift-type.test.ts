@@ -1,3 +1,4 @@
+import { LinuxPC } from '@/network/devices/LinuxPC';
 /**
  * Tests for `set`, `shift`, and `type` builtins.
  */
@@ -116,30 +117,26 @@ describe('shift builtin', () => {
 });
 
 describe('type builtin', () => {
-  it('should identify shell builtins', () => {
-    const result = run('type', ['echo']);
-    expect(result.output).toContain('echo is a shell builtin');
+  const machine = () => new LinuxPC('linux-pc', 'PC1');
+
+  it('should identify shell builtins', async () => {
+    expect(await machine().executeCommand('type echo')).toContain('echo is a shell builtin');
   });
 
-  it('should identify functions', () => {
-    const fns = new Map();
-    fns.set('myfunc', {} as any);
-    const env = new Environment();
-    const result = executeBuiltin('type', ['myfunc'], env, fns);
-    expect(result.output).toContain('myfunc is a function');
+  it('should identify functions', async () => {
+    expect(await machine().executeCommand('myfunc() { :; }; type myfunc')).toContain('myfunc is a function');
   });
 
-  it('should report not found for unknown commands', () => {
-    const result = run('type', ['nonexistent']);
-    expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('not found');
+  it('should report not found for unknown commands', async () => {
+    expect(await machine().executeCommand('type nonexistent; echo rc=$?')).toContain('not found');
+    expect(await machine().executeCommand('type nonexistent >/dev/null 2>&1; echo rc=$?')).toBe('rc=1');
   });
 
-  it('should handle multiple arguments', () => {
-    const result = run('type', ['echo', 'cd', 'nonexistent']);
-    expect(result.output).toContain('echo is a shell builtin');
-    expect(result.output).toContain('cd is a shell builtin');
-    expect(result.stderr).toContain('not found');
-    expect(result.exitCode).toBe(1);
+  it('should handle multiple arguments', async () => {
+    const out = await machine().executeCommand('type echo cd nonexistent 2>&1; echo rc=$?');
+    expect(out).toContain('echo is a shell builtin');
+    expect(out).toContain('cd is a shell builtin');
+    expect(out).toContain('not found');
+    expect(out).toContain('rc=1');
   });
 });
