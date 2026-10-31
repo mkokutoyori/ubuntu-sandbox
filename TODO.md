@@ -942,7 +942,9 @@ cellules, et un tableau sans entete (`--no-headers -f`, `-o comm=,args=`) ne dit
 Autres ecarts mesures, non fermes :
 - Chiffres memoire : seuls `bash`, `sleep`, `nc` et `ps` ont une empreinte mesuree (VSZ, RSS, TRS, PSS, USS, fautes mineures,
   octets lus) ; les autres programmes ont des proportions (texte = VSZ/12, PSS = RSS/2, USS = RSS/3).
-- `watch` reste sur `LinuxProcessCommands` (jouet) et n'a pas ete rejoue. `top -b` est porte (colonnes, `-n -p -u -U -o -w -c -V -h`,
+- `watch` : l'en-tete, l'usage, `-v`/`-h` et les diagnostics getopt sont ceux de procps 4.0.4 (`probe-watch-de-procps`) ; reste la boucle
+  (une seule trame : pas de `-g`/`-q`/`-e` en cours de route, pas de `-d` en surbrillance, `-x` sans effet, la commande n'est pas passee a `sh -c`).
+  `top -b` est porte (colonnes, `-n -p -u -U -o -w -c -V -h`,
   diagnostics ; `probe-top-batch-de-procps`) ; restent l'ecran interactif, `-H`, `-1`, `-E`/`-e`, `-O` (liste de champs reduite) et la
   charge CPU mesuree. `pstree` est porte (`PstreeCommand.ts`, probe `probe-pstree-de-psmisc`) ; restent `-H`, `-N`, `-Z`, `-S` et `-t`
   (pas de fils d'execution). `pgrep`, `pkill` et `pidof` sont portes (`PgrepCommand.ts`, probe `probe-pgrep-pkill-pidof-de-procps`) ;
