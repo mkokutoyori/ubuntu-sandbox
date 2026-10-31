@@ -1841,7 +1841,7 @@ export class VirtualFileSystem {
     return fnmatch(pattern, text);
   }
 
-  globExpand(pattern: string, cwd: string, options: { dotglob?: boolean; nocaseglob?: boolean; globstar?: boolean } = {}): string[] {
+  globExpand(pattern: string, cwd: string, options: { dotglob?: boolean; nocaseglob?: boolean; globstar?: boolean; extglob?: boolean } = {}): string[] {
     const resolve = (path: string): string => this.normalizePath(path === '' ? '.' : path, cwd);
     return globPaths({
       listNames: (directory) => {

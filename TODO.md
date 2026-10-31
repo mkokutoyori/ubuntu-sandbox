@@ -3942,7 +3942,7 @@ Le shell ne rajoute plus de retour a la ligne aux octets d'une commande (`printf
 
 Les trois bancs passent en entier ; restent mesures et non fermes :
 - `ScriptRunner.buildIOContext` reste un second constructeur de contexte d'E/S, reduit, utilise quand un appelant sans executeur lance un script ; l'executeur passe desormais le sien (`this.buildIOContext()`) a runScript / runScriptAsync. A supprimer quand plus aucun appelant n'est sans executeur.
-- `extglob` est lu dans le texte du script (premier `shopt -s extglob` d'une ligne precedente) et non dans l'etat du shell a l'execution : un `shopt -s extglob` pose par un `source` ou une fonction n'est pas vu par le lexeur.
+- Un motif etendu non ferme (`echo @(a` apres `shopt -s extglob`) est refuse avec « syntax error near unexpected token `(' » la ou bash 5.2 ecrit « unexpected EOF while looking for matching `)' ».
 
 ---
 

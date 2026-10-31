@@ -57,7 +57,7 @@ export function parseScript(source: string, firstLine = 1, extglob: ExtglobPolic
   const { tokens, error: lexerError, warnings } = new BashLexer().tokenizeRecovering(source, true, firstLine, extglob);
   const nested = nestedFailure(tokens, source, firstLine, extglob);
   const limit = Math.min(lexerError?.position.line ?? Infinity, nested?.line ?? Infinity);
-  const { program, error: parserError } = new BashParser().parseRecovering(tokens, limit);
+  const { program, error: parserError, resumeLine } = new BashParser().parseRecovering(tokens, limit);
   const withWarnings: Program = warnings.length === 0 ? program : { ...program, warnings };
   const parserFirst = parserError !== null && (lexerError === null || parserError.detail.token?.type !== TokenType.EOF);
   const candidates: SyntaxFailure[] = [];
@@ -66,5 +66,8 @@ export function parseScript(source: string, firstLine = 1, extglob: ExtglobPolic
   if (candidates.length === 0 && lexerError !== null) candidates.push(describeLexerError(lexerError, source, firstLine));
   if (candidates.length === 0) return withWarnings;
   const earliest = candidates.reduce((best, next) => (next.line < best.line ? next : best));
-  return { ...withWarnings, syntaxFailure: earliest };
+  const resume = extglob === 'declared'
+    ? { resume: { line: resumeLine, source: source.split('\n').slice(resumeLine - firstLine).join('\n') } }
+    : {};
+  return { ...withWarnings, syntaxFailure: earliest, ...resume };
 }

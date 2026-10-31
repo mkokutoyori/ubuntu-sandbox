@@ -158,12 +158,13 @@ export function fnmatch(pattern: string, text: string, options: FnmatchOptions =
   return new RegExp(`^${toRegexSource(pattern, options.extglob === true)}$`, options.nocase === true ? 'si' : 's').test(text);
 }
 
-export function hasMagic(pattern: string): boolean {
+export function hasMagic(pattern: string, extglob = false): boolean {
   for (let i = 0; i < pattern.length; i++) {
     const char = pattern[i];
     if (char === '\\') {
       i++;
-    } else if (char === '*' || char === '?' || (char === '[' && readBracket(pattern, i) !== null)) {
+    } else if (char === '*' || char === '?' || (char === '[' && readBracket(pattern, i) !== null)
+      || (extglob && (char === '+' || char === '@' || char === '!') && pattern[i + 1] === '(')) {
       return true;
     }
   }
@@ -184,6 +185,7 @@ export interface GlobOptions {
   readonly dotglob?: boolean;
   readonly nocaseglob?: boolean;
   readonly globstar?: boolean;
+  readonly extglob?: boolean;
   readonly abortOnUnreadable?: boolean;
 }
 
@@ -213,11 +215,12 @@ function expandComponents(
     }
     return;
   }
-  if (!hasMagic(component)) {
+  const extglob = options.extglob === true;
+  if (!hasMagic(component, extglob)) {
     const path = join(unescape(component));
     if (fs.existsNoFollow(path) && (last || fs.isDirectory(path))) {
       expandComponents(fs, path, components, index + 1, out, options);
-    } else if (options.abortOnUnreadable === true && components.slice(index + 1).some(hasMagic)) {
+    } else if (options.abortOnUnreadable === true && components.slice(index + 1).some((later) => hasMagic(later, extglob))) {
       throw new GlobAborted(path);
     }
     return;
@@ -228,7 +231,7 @@ function expandComponents(
     return;
   }
   for (const name of [...names].sort()) {
-    if (!fnmatch(component, name, { period: options.dotglob !== true, nocase: options.nocaseglob === true })) continue;
+    if (!fnmatch(component, name, { period: options.dotglob !== true, nocase: options.nocaseglob === true, extglob })) continue;
     const path = join(name);
     if (last || fs.isDirectory(path)) expandComponents(fs, path, components, index + 1, out, options);
   }
