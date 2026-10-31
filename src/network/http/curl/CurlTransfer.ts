@@ -95,13 +95,14 @@ export interface TransferStats {
   starttransferAt: number | null;
   redirectMs: number;
   sslVerifyResult: number;
+  numCerts: number;
 }
 
 export function newTransferStats(): TransferStats {
   return {
     startedAt: simulationNowMs(), requestBytes: 0, uploadBytes: 0, headerBytes: 0, connects: 0, namelookupAt: null,
     connectAt: null, appconnectAt: null, pretransferAt: null, starttransferAt: null, redirectMs: 0,
-    sslVerifyResult: 0,
+    sslVerifyResult: 0, numCerts: 0,
   };
 }
 
@@ -570,6 +571,8 @@ async function performHttpRequest(
         stats.appconnectAt = session.handshakeCompletedAtMs ?? stats.connectAt;
         stats.pretransferAt = stats.appconnectAt;
         const handshake = session.handshake;
+        stats.numCerts = handshake?.result === 'success'
+          ? handshake.peerCertificateChain.length || (session.peerCertificate ? 1 : 0) : 0;
         stats.sslVerifyResult = x509VerifyResult(
           handshake?.peerVerificationReason ?? null, session.peerCertificate ?? handshake?.peerCertificate ?? null,
           handshake?.peerCertificateChain ?? [],

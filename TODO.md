@@ -3932,7 +3932,7 @@ sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocol
 
 ### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 
-`%{certs}` et `%{num_certs}` ne portent pas la chaine presentee (il faut `--certinfo`) ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
+`%{certs}` reste vide alors que le vrai curl 8.5.0 l'emplit sans `--certinfo` (un bloc `Cle:Valeur` par certificat, extensions et `rsa(n)` compris, puis le PEM ; rien en cas d'echec de verification) : le PEM du simulateur est du JSON arme et le texte ne se comparerait pas a un vrai ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.
 
 ### [bash-fin-de-ligne] un ecart restant contre bash 5.2 sur la fin de ligne (banc : shell-fin-de-ligne-oracle, 261 lignes relevees)
 

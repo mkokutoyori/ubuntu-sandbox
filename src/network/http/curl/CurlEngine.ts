@@ -114,6 +114,7 @@ function writeOutFacts(
     redirectUrl: redirectTarget !== null && redirectTarget.ok === true ? redirectTarget.url.effective : null,
     referer: opts.referer,
     sslVerifyResult: stats?.sslVerifyResult ?? 0,
+    numCerts: stats?.numCerts ?? 0,
     proxySslVerifyResult: 0,
     ftpEntryPath: null,
     connId: urlNum,

@@ -30,6 +30,7 @@ export interface WriteOutFacts {
   readonly redirectUrl: string | null;
   readonly referer: string | null;
   readonly sslVerifyResult: number;
+  readonly numCerts: number;
   readonly proxySslVerifyResult: number;
   readonly ftpEntryPath: string | null;
   readonly connId: number;
@@ -112,7 +113,7 @@ const VARIABLES: readonly Variable[] = [
   { name: 'local_ip', kind: 'string', value: (f) => f.localIp },
   { name: 'local_port', kind: 'long', value: (f) => f.localPort },
   { name: 'method', kind: 'string', value: (f) => f.method },
-  { name: 'num_certs', kind: 'long', value: () => 0 },
+  { name: 'num_certs', kind: 'long', value: (f) => f.numCerts },
   { name: 'num_connects', kind: 'long', value: (f) => f.numConnects },
   { name: 'num_headers', kind: 'long', value: (f) => f.numHeaders },
   { name: 'num_redirects', kind: 'long', value: (f) => f.numRedirects },
