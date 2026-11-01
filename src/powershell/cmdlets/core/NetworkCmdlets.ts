@@ -1841,8 +1841,8 @@ export class GetDnsClientCacheCmdlet implements ICmdlet {
     }
     return matched.map(r => ({
       Entry:      r.entry,
-      RecordName: r.recordName,
-      RecordType: r.recordType,
+      Name:       r.recordName,
+      Type:       r.recordType,
       Status:     r.status,
       Section:    r.section,
       TimeToLive: r.timeToLive,

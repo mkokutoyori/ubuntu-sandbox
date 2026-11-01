@@ -200,8 +200,8 @@ Get-DnsClientCache
 ```
 ```
 Entry      : www.banquehorizon.com
-RecordName : www.banquehorizon.com
-RecordType : CNAME
+Name       : www.banquehorizon.com
+Type       : CNAME
 Status     : Success
 Section    : Answer
 TimeToLive : 3600
@@ -209,8 +209,8 @@ DataLength : 23
 Data       : web.banquehorizon.com
 
 Entry      : www.banquehorizon.com
-RecordName : web.banquehorizon.com
-RecordType : A
+Name       : web.banquehorizon.com
+Type       : A
 Status     : Success
 Section    : Answer
 TimeToLive : 3600
@@ -218,7 +218,7 @@ DataLength : 4
 Data       : 203.0.113.20
 ```
 
-`ipconfig /displaydns` montre les mêmes enregistrements (un seul cache, deux vues). Sur **DC1**, le cache du serveur DNS :
+`ipconfig /displaydns` montre les mêmes enregistrements (un seul cache, deux vues), et `Get-DnsClientCache | Where-Object Name -like "*horizon*"` les filtre comme sur un vrai poste. Sur **DC1**, le cache du serveur DNS :
 
 ```powershell
 Show-DnsServerCache | Select-Object -First 5
