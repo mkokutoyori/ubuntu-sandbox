@@ -1,7 +1,7 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { DnsCacheSettings, GlobalQueryBlock } from '@/powershell/providers/PSProviders';
+import type { DnsCacheSettings, DnsEdnsSettings, GlobalQueryBlock } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { formatTimeSpan, makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
@@ -123,5 +123,43 @@ export class SetDnsServerGlobalQueryBlockListCmdlet implements ICmdlet {
     });
     if (!result.ok) return failed(ctx, 'Set-DnsServerGlobalQueryBlockList', result);
     return isSwitchOn(ctx.named['passthru']) ? globalQueryBlockObject(dns.getGlobalQueryBlock()) : null;
+  }
+}
+
+function ednsObject(settings: DnsEdnsSettings): Record<string, PSValue> {
+  return {
+    CacheTimeout: makeTimeSpan(settings.cacheTimeoutSeconds * MILLISECONDS),
+    EnableProbes: settings.enableProbes,
+    EnableReception: settings.enableReception,
+  };
+}
+
+export class GetDnsServerEDnsCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserveredns';
+  readonly displayName = 'Get-DnsServerEDns';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    return ednsObject(requireDns(ctx, 'Get-DnsServerEDns').getEdnsSettings());
+  }
+}
+
+export class SetDnsServerEDnsCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserveredns';
+  readonly displayName = 'Set-DnsServerEDns';
+  readonly aliases = [] as const;
+  readonly parameters = ['CacheTimeout', 'EnableProbes', 'EnableReception', 'ComputerName', 'PassThru', 'CimSession', 'ThrottleLimit', 'AsJob', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerEDns');
+    const raw = ctx.named['cachetimeout'];
+    const result = dns.setEdnsSettings({
+      cacheTimeoutSeconds: raw === undefined ? undefined : timeSpanSeconds(raw, 'CacheTimeout'),
+      enableProbes: flagSetting(ctx, 'enableprobes'),
+      enableReception: flagSetting(ctx, 'enablereception'),
+    });
+    if (!result.ok) return failed(ctx, 'Set-DnsServerEDns', result);
+    return isSwitchOn(ctx.named['passthru']) ? ednsObject(dns.getEdnsSettings()) : null;
   }
 }

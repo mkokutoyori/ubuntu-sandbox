@@ -12,6 +12,7 @@ import type {
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
 import { DnsCache, type DnsCacheLookup } from '@/network/dns/resolver/DnsCache';
+import type { EdnsSupportCache } from '@/network/dns/resolver/EdnsSupportCache';
 import { answerSpecialUseName, classifySpecialUseName } from '@/network/dns/resolver/SpecialUseNames';
 import { DnsValidator, capTtlsToSignatures } from '@/network/dns/dnssec/DnsValidator';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
@@ -46,7 +47,14 @@ export interface RecursiveResolverDnssecOptions {
   readonly now?: () => number;
 }
 
+export interface RecursiveResolverEdnsOptions {
+  readonly probes: () => boolean;
+  readonly payloadSize: number;
+  readonly support: EdnsSupportCache;
+}
+
 export interface RecursiveResolverOptions {
+  readonly edns?: RecursiveResolverEdnsOptions;
   readonly timeoutMs?: number;
   readonly maxReferrals?: number;
   readonly maxDepth?: number;
@@ -105,6 +113,7 @@ export class RecursiveResolver {
   private readonly forwardRecursively: boolean;
   private validatorInstance: DnsValidator | null = null;
   private readonly dnssecOptions: RecursiveResolverDnssecOptions | null;
+  private readonly ednsOptions: RecursiveResolverEdnsOptions | null;
   private readonly servfailTtlSeconds: number;
   private readonly resolveSpecialUseNamesUpstream: boolean;
   private readonly refuseTestNames: boolean;
@@ -120,6 +129,7 @@ export class RecursiveResolver {
     this.maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
     this.forwardRecursively = options.forwardRecursively ?? false;
     this.dnssecOptions = options.dnssec ?? null;
+    this.ednsOptions = options.edns ?? null;
     this.servfailTtlSeconds = options.servfailTtlSeconds ?? 0;
     this.resolveSpecialUseNamesUpstream = options.resolveSpecialUseNamesUpstream ?? false;
     this.refuseTestNames = options.refuseTestNames ?? false;
@@ -337,15 +347,27 @@ export class RecursiveResolver {
     qtype: number,
   ): Promise<DnsMessage | null> {
     for (const serverIP of servers) {
-      const response = await queryAuthoritativeServer(this.host, serverIP, this.buildQuery(qname, qtype), {
-        timeoutMs: this.timeoutMs,
-      });
+      const response = await this.exchange(serverIP, qname, qtype);
       if (response && response.flags.rcode !== DnsRcode.REFUSED) return response;
     }
     return null;
   }
 
-  private buildQuery(qname: string, qtype: number): DnsMessage {
+  private async exchange(serverIP: IPAddress, qname: string, qtype: number): Promise<DnsMessage | null> {
+    const edns = this.ednsOptions;
+    const server = serverIP.toString();
+    const probing = edns !== null && this.validator === null && edns.probes() && !edns.support.isUnsupported(server);
+    const response = await queryAuthoritativeServer(this.host, serverIP, this.buildQuery(qname, qtype, probing), {
+      timeoutMs: this.timeoutMs,
+    });
+    if (!probing || response === null || response.flags.rcode !== DnsRcode.FORMERR) return response;
+    edns.support.markUnsupported(server);
+    return queryAuthoritativeServer(this.host, serverIP, this.buildQuery(qname, qtype, false), {
+      timeoutMs: this.timeoutMs,
+    });
+  }
+
+  private buildQuery(qname: string, qtype: number, probing = false): DnsMessage {
     const id = this.nextQueryId;
     this.nextQueryId = (this.nextQueryId + 1) % QUERY_ID_SPACE;
     return {
@@ -359,7 +381,7 @@ export class RecursiveResolver {
       authorities: [],
       additionals: this.validator
         ? [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: true })]
-        : [],
+        : probing && this.ednsOptions !== null ? [makeOptRecord(this.ednsOptions.payloadSize)] : [],
     };
   }
 }

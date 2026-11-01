@@ -7,7 +7,8 @@ import { ZoneStore, ZoneStoreError } from '@/network/dns/zone/ZoneStore';
 import { reverseZoneNameFor, classlessOwnerFor } from '@/network/dns/zone/ReverseZoneNames';
 import { renderZoneFile, parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
-import { RecursiveResolver, type ResolutionResult } from '@/network/dns/resolver/RecursiveResolver';
+import { RecursiveResolver, type ResolutionResult, type RecursiveResolverEdnsOptions } from '@/network/dns/resolver/RecursiveResolver';
+import { EdnsSupportCache } from '@/network/dns/resolver/EdnsSupportCache';
 import { IANA_ROOT_HINTS, renderRootHintsFile, type RootHint } from '@/network/dns/resolver/RootHints';
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
@@ -46,7 +47,7 @@ import {
 import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
 import {
   DnsServerParameters, MemoryDnsParameterStore, DEFAULT_GLOBAL_QUERY_BLOCK_LIST,
-  type DnsParameterStore, type DnsCacheSettings, type GlobalQueryBlock,
+  type DnsParameterStore, type DnsCacheSettings, type DnsEdnsSettings, type GlobalQueryBlock,
 } from './DnsServerParameters';
 import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import { IPAddress } from '@/network/core/types';
@@ -151,6 +152,7 @@ const DNS_PORT = 53;
 const DAY_SECONDS = 86400;
 const DEFAULT_AGING_SECONDS = 7 * DAY_SECONDS;
 const UNLOADED_RETRY_SECONDS = 600;
+const WINDOWS_EDNS_PAYLOAD_SIZE = 1280;
 
 const RR_TYPE_NAME = new Map<number, string>(
   Object.entries(RRType).map(([name, code]) => [code, name]),
@@ -320,8 +322,10 @@ export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
   private readonly authoritative = new AuthoritativeServer(this.store, {
     blocks: (zoneOrigin, qname) => this.blockedByGlobalQueryList(zoneOrigin, qname),
+    acceptsEdns: () => this.parameters.ednsSettings().enableReception,
   });
   private readonly cache: DnsCache;
+  private readonly ednsSupport: EdnsSupportCache;
   private readonly settings = new Map<string, ZoneSettings>();
   private readonly conditional = new Map<string, ConditionalForwarder>();
   private readonly secondaries: SecondaryZoneRefresher;
@@ -356,6 +360,7 @@ export class WindowsDnsServerRole {
     this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
     this.cache = new DnsCache(this.now, () => this.parameters.cacheLimits());
+    this.ednsSupport = new EdnsSupportCache(this.now, () => this.parameters.ednsSettings().cacheTimeoutSeconds);
     if (!this.parameters.hasGlobalQueryBlock()) {
       this.parameters.setGlobalQueryBlock({ enabled: true, list: DEFAULT_GLOBAL_QUERY_BLOCK_LIST });
     }
@@ -700,12 +705,16 @@ export class WindowsDnsServerRole {
     return { ok: true, message: '' };
   }
 
+  private ednsProbing(): RecursiveResolverEdnsOptions {
+    return { probes: () => this.parameters.ednsSettings().enableProbes, payloadSize: WINDOWS_EDNS_PAYLOAD_SIZE, support: this.ednsSupport };
+  }
+
   private forwardingResolver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing() });
   }
 
   private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing() });
   }
 
   getForwarders(): string[] { return this.parameters.forwarders(); }
@@ -912,6 +921,13 @@ export class WindowsDnsServerRole {
   }
 
   clearCache(): void { this.cache.flush(); }
+
+  getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }
+
+  setEdnsSettings(changes: Partial<DnsEdnsSettings>): DnsOpResult {
+    this.parameters.setEdnsSettings(changes);
+    return { ok: true, message: '' };
+  }
 
   getGlobalQueryBlock(): GlobalQueryBlock { return this.parameters.globalQueryBlock(); }
 

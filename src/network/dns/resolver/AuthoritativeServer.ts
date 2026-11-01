@@ -11,6 +11,7 @@ type BaseFlags = Pick<DnsHeaderFlags, 'qr' | 'rd' | 'ra' | 'ad' | 'cd'>;
 
 export interface AuthoritativePolicy {
   readonly blocks?: (zoneOrigin: string, qname: string) => boolean;
+  readonly acceptsEdns?: () => boolean;
 }
 
 export class AuthoritativeServer {
@@ -28,6 +29,9 @@ export class AuthoritativeServer {
 
     const opts = findOpts(query);
     if (opts.length > 1 || opts.some((opt) => opt.name !== '')) {
+      return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
+    }
+    if (opts.length > 0 && this.policy.acceptsEdns?.() === false) {
       return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
     }
     const queryOpt = findOpt(query);

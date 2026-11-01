@@ -40,6 +40,14 @@ export interface GlobalQueryBlock {
 
 export const DEFAULT_GLOBAL_QUERY_BLOCK_LIST: readonly string[] = ['isatap', 'wpad'];
 
+export interface DnsEdnsSettings {
+  readonly cacheTimeoutSeconds: number;
+  readonly enableProbes: boolean;
+  readonly enableReception: boolean;
+}
+
+export const DEFAULT_EDNS_CACHE_TIMEOUT_SECONDS = 900;
+
 const KILOBYTE = 1024;
 const MAX_LOCKING_PERCENT = 100;
 const CACHE_SIZE_TARGET_PERCENT = 90;
@@ -120,6 +128,21 @@ export class DnsServerParameters {
 
   reorderingEnabled(): boolean {
     return this.flag('EnableForwarderReordering', true);
+  }
+
+  ednsSettings(): DnsEdnsSettings {
+    const timeout = this.count('EDnsCacheTimeout', DEFAULT_EDNS_CACHE_TIMEOUT_SECONDS);
+    return {
+      cacheTimeoutSeconds: timeout === 0 ? DEFAULT_EDNS_CACHE_TIMEOUT_SECONDS : timeout,
+      enableProbes: this.flag('EnableEDnsProbes', true),
+      enableReception: this.flag('EnableEDnsReception', true),
+    };
+  }
+
+  setEdnsSettings(changes: Partial<DnsEdnsSettings>): void {
+    if (changes.cacheTimeoutSeconds !== undefined) this.store.write('EDnsCacheTimeout', 'DWord', changes.cacheTimeoutSeconds);
+    if (changes.enableProbes !== undefined) this.store.write('EnableEDnsProbes', 'DWord', changes.enableProbes ? 1 : 0);
+    if (changes.enableReception !== undefined) this.store.write('EnableEDnsReception', 'DWord', changes.enableReception ? 1 : 0);
   }
 
   hasGlobalQueryBlock(): boolean {
