@@ -68,7 +68,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   systemctl: 'systemd', journalctl: 'systemd', timedatectl: 'systemd',
   hostnamectl: 'systemd', loginctl: 'systemd', networkctl: 'systemd',
   resolvectl: 'systemd', 'systemd-analyze': 'systemd', udevadm: 'systemd',
-  busctl: 'systemd',
+  busctl: 'systemd', 'systemd-id128': 'systemd',
   reboot: 'systemd-sysv', shutdown: 'systemd-sysv', service: 'systemd-sysv',
   poweroff: 'systemd-sysv', halt: 'systemd-sysv',
   sar: 'sysstat', iostat: 'sysstat', mpstat: 'sysstat', pidstat: 'sysstat',

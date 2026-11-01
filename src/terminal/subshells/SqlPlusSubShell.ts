@@ -179,6 +179,7 @@ export class SqlPlusSubShell implements ISubShell {
       exit: result.exit,
       prompt: result.prompt,
       clearScreen: isClear,
+      ...(result.hostShell === true ? { hostShell: true } : {}),
     };
   }
 

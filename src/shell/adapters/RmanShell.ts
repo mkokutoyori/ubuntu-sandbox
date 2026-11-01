@@ -1,5 +1,7 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
 import type { ShellLineResult } from '../IShell';
+
+const HOST_COMPLETE = 'host command complete';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 
 export class RmanShell extends AbstractShell {
@@ -7,6 +9,7 @@ export class RmanShell extends AbstractShell {
 
   private subShell: ReactiveRmanSubShell | null = null;
   private banner: readonly string[] = [];
+  private hostShellOpen = false;
 
   constructor(opts: AbstractShellOptions & { launchLine?: string }) {
     super(opts);
@@ -33,11 +36,20 @@ export class RmanShell extends AbstractShell {
       return { output: ['rman: not available on this device'], exit: true };
     }
     const r = await this.subShell.processLine(line);
+    const hostShell = r.hostShell === true ? this.openOsShell() : null;
+    this.hostShellOpen = hostShell !== null;
     return {
       output: r.output ?? [],
       exit: r.exit,
       clearScreen: r.clearScreen,
+      ...(hostShell === null ? {} : { childShell: hostShell }),
     };
+  }
+
+  override consumeResumeOutput(): readonly string[] {
+    if (!this.hostShellOpen) return [];
+    this.hostShellOpen = false;
+    return [HOST_COMPLETE];
   }
 
   override getCompletions(line: string): readonly string[] {

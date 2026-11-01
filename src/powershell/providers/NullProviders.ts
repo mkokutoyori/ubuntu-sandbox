@@ -33,6 +33,7 @@ export function nullProviders(): PSProviders {
     ad:             null,
     computer:       null,
     dns:            null,
+    dnsClient:      null,
     dhcp:           null,
     nps:            null,
     gpo:            null,

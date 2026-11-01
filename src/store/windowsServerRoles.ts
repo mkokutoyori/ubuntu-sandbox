@@ -1,4 +1,5 @@
 import { WindowsServer } from '@/network/devices/WindowsServer';
+import type { DhcpKeptLease } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { certToPem, pemToCert, pemToPrivateKey, privateKeyToPem } from '@/network/pki/pem';
 import { reserveCertificateSerial } from '@/network/pki/serialReservation';
 import type { NpsState } from '@/network/devices/windows/server/nps/WindowsNpsRole';
@@ -39,6 +40,7 @@ export interface WindowsServerRolesState {
     scopes: DhcpScopeState[];
     exclusions: Array<{ start: string; end: string }>;
     serverOptions: Array<{ optionId: number; values: string[] }>;
+    leases?: DhcpKeptLease[];
   };
 }
 
@@ -107,7 +109,8 @@ const dhcpScopes: RolePersister = {
     const exclusions = role.listCustomExclusionRanges();
     const serverOptions = role.listOptionValues().map((o) => ({ optionId: o.optionId, values: o.values }));
     if (scopes.length + exclusions.length + serverOptions.length === 0) return {};
-    return { dhcp: { scopes, exclusions, serverOptions } };
+    const leases = role.keptLeases();
+    return { dhcp: { scopes, exclusions, serverOptions, ...(leases.length > 0 ? { leases } : {}) } };
   },
   restore(server, state) {
     const role = server.getDhcpServerRole();
@@ -120,6 +123,7 @@ const dhcpScopes: RolePersister = {
       if (s.state === 'Inactive') role.setScope(s.name, { state: 'Inactive' });
     }
     for (const r of state.dhcp.exclusions) role.addExclusionRange(r.start, r.end);
+    role.restoreLeases(state.dhcp.leases ?? []);
   },
 };
 

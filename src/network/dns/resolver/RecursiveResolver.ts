@@ -11,7 +11,7 @@ import type {
   ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, ARecordData, CnameRecordData, DsRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
-import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import { DnsCache, type DnsCacheLookup } from '@/network/dns/resolver/DnsCache';
 import { answerSpecialUseName, classifySpecialUseName } from '@/network/dns/resolver/SpecialUseNames';
 import { DnsValidator, capTtlsToSignatures } from '@/network/dns/dnssec/DnsValidator';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
@@ -24,6 +24,21 @@ export interface ResolutionResult {
   readonly authorities?: readonly ResourceRecord<ResourceRecordData>[];
   readonly fromCache: boolean;
   readonly security?: DnssecStatus;
+}
+
+export function resolutionFromCache(cached: DnsCacheLookup): ResolutionResult | null {
+  if (cached.kind === 'hit') {
+    return { status: 'NOERROR', answers: cached.records, fromCache: true, security: cached.security };
+  }
+  if (cached.kind === 'servfail') return { status: 'SERVFAIL', answers: [], fromCache: true };
+  if (cached.kind === 'negative') {
+    return {
+      status: cached.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'NOERROR',
+      answers: [],
+      fromCache: true,
+    };
+  }
+  return null;
 }
 
 export interface RecursiveResolverDnssecOptions {
@@ -142,20 +157,8 @@ export class RecursiveResolver {
       return { ...answerSpecialUseName(special, qname, qtype), fromCache: false };
     }
     if (!raw) {
-      const cached = this.cache.lookup(qname, qtype);
-      if (cached.kind === 'hit') {
-        return { status: 'NOERROR', answers: cached.records, fromCache: true, security: cached.security };
-      }
-      if (cached.kind === 'servfail') {
-        return { status: 'SERVFAIL', answers: [], fromCache: true };
-      }
-      if (cached.kind === 'negative') {
-        return {
-          status: cached.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'NOERROR',
-          answers: [],
-          fromCache: true,
-        };
-      }
+      const known = resolutionFromCache(this.cache.lookup(qname, qtype));
+      if (known !== null) return known;
     }
     if (depth > this.maxDepth) {
       return { status: 'SERVFAIL', answers: [], fromCache: false };

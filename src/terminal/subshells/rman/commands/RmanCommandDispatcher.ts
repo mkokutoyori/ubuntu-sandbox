@@ -221,7 +221,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand('NEWNAME') },
       // SET UNTIL — PITR precursor inherited by later RESTORE/RECOVER in
       // the same RUN block
-      { pattern: /^HOST\s+'([^']*)'$/i,                                   command: new HostCommand() },
+      { pattern: /^HOST(?:\s+'([^']*)')?$/i,                                command: new HostCommand() },
       { pattern: /^SWITCH DATABASE TO COPY$/i,                            command: new SwitchCommand('DATABASE') },
       { pattern: /^SWITCH TABLESPACE (\S+) TO COPY$/i,                       command: new SwitchCommand('TABLESPACE') },
       { pattern: /^SWITCH DATAFILE (\d+) TO COPY$/i,                         command: new SwitchCommand('DATAFILE') },

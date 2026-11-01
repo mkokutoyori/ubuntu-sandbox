@@ -80,6 +80,7 @@ export interface SQLPlusResult {
   exit: boolean;
   needsMoreInput: boolean;
   prompt: string;
+  hostShell?: boolean;
   continuation?: () => SQLPlusResult;
 }
 
@@ -1738,10 +1739,7 @@ export class SQLPlusSession {
     if (!this.hostRunner) {
       return { output: ['SP2-0734: HOST command is not available in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
     }
-    if (!cmd) {
-      // Real SQL*Plus drops to a subshell here — not supported.
-      return { output: ['SP2-0738: interactive HOST subshell is not supported in this environment.'], exit: false, needsMoreInput: false, prompt: this.getPrompt() };
-    }
+    if (!cmd) return { output: [], exit: false, needsMoreInput: false, prompt: this.getPrompt(), hostShell: true };
     return { output: this.hostRunner.execute(cmd), exit: false, needsMoreInput: false, prompt: this.getPrompt() };
   }
 

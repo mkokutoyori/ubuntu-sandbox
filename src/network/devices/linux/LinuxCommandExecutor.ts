@@ -2,6 +2,8 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { dashedUuid, randomUuidBits } from '../host/hardware/HardwareIdentity';
+import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
@@ -358,7 +360,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
-  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
+  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'systemd-id128', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pstree', 'pidof', 'killall', 'pgid',
@@ -1050,7 +1052,7 @@ export class LinuxCommandExecutor {
       references: (name) => this.iptables.setReferences(name) + this.ip6tables.setReferences(name),
     });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
-    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId);
+    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId, () => this.identity.bootId);
     this.logMgr.setClock(this.wallNow);
     this.logMgr.setProcessProbe((pid) => {
       const process = this.processMgr.get(pid);
@@ -1294,6 +1296,13 @@ export class LinuxCommandExecutor {
    * Register the kernel `/proc` entries as generated pseudo-files, so
    * `/proc/version` and `/proc/sys/kernel/*` track the identity model live.
    */
+  private randomUuidCounter = 0;
+
+  randomUuid(): string {
+    const entropy = `random-uuid:${this.identity.bootId}:${this.wallNow()}:${this.randomUuidCounter++}`;
+    return dashedUuid(randomUuidBits(simulatedDigest(entropy)));
+  }
+
   private registerKernelProcFiles(): void {
     this.vfs.mkdirp('/proc/sys/kernel', 0o755, 0, 0);
     const k = () => this.identity.kernel;
@@ -1306,6 +1315,9 @@ export class LinuxCommandExecutor {
       () => `${this.processMgr.pidMax}\n`,
       (text) => /^\s*\d+\s*$/.test(text) && this.processMgr.setPidMax(Number(text.trim())));
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
+    this.vfs.mkdirp('/proc/sys/kernel/random', 0o555, 0, 0);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/random/boot_id', () => `${dashedUuid(this.identity.bootId)}\n`);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/random/uuid', () => `${this.randomUuid()}\n`);
     this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
     // ordre : les deux vues ne peuvent donc pas diverger.
@@ -5538,7 +5550,12 @@ export class LinuxCommandExecutor {
     const existing = this.vfs.resolveInode(absPath);
     if (existing && existing.type === 'directory') return 'Is a directory';
     if (this.mountTable.isReadOnly(absPath)) return 'Read-only file system';
-    if (existing) return this.checkPermission(existing, 'w') ? null : this.refuseOpen(absPath, 'Permission denied');
+    if (existing) {
+      if (!this.checkPermission(existing, 'w')) return this.refuseOpen(absPath, 'Permission denied');
+      return this.vfs.deniedByProtectedCreate(absPath, existing, this.currentPathActor().uid)
+        ? this.refuseOpen(absPath, 'Permission denied')
+        : null;
+    }
     if (this.vfs.isVirtualTree(absPath)) return this.refuseOpen(absPath, 'No such file or directory');
     const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
     if (!parent) return this.refuseOpen(absPath, 'No such file or directory');
@@ -5624,7 +5641,7 @@ export class LinuxCommandExecutor {
         if (refusal !== null) throw new Error(`bash: ${path}: ${refusal}`);
         const written = this.vfs.writeFile(
           absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append,
-          undefined, false);
+          undefined, false, this.currentPathActor().gids ?? []);
         if (!written && existing?.writer !== undefined) throw new RedirectWriteError('Invalid argument');
         this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },

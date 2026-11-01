@@ -56,6 +56,7 @@ export type RmanEvent =
   | { type: 'SESSION_STATE_CHANGED'; from: RmanSessionState; to: RmanSessionState }
   | { type: 'CONNECTED';             dbId: string; dbName: string; connectedAt: number }
   | { type: 'DISCONNECTED' }
+  | { type: 'HOST_SHELL_REQUESTED' }
   // Job lifecycle
   | { type: 'JOB_STARTED';    jobId: string; operation: RmanOperation; startedAt: number }
   | { type: 'JOB_COMPLETED';  jobId: string; operation: RmanOperation; elapsedMs: number }

@@ -25,6 +25,7 @@ import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { AD_NULL_GUID } from './windows/server/ad/AdTypes';
 import type { SharePermission } from './windows/server/smb/SmbTypes';
 import { WindowsDnsServerRole, type DnsZoneFileSink } from './windows/server/dns/WindowsDnsServerRole';
+import { RegistryDnsParameterStore } from './windows/server/dns/DnsServerParameters';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
@@ -242,6 +243,7 @@ export class WindowsServer extends WindowsPC {
     }
     if (!this.dnsServerRoleInstance) {
       this.dnsServerRoleInstance = new WindowsDnsServerRole(this, {
+        parameters: new RegistryDnsParameterStore(this.registry),
         now: () => this.simulatedDate().getTime(),
         zoneFiles: this.dnsZoneFileSink(),
         directoryAvailable: () => this.getDirectoryStore() !== null,

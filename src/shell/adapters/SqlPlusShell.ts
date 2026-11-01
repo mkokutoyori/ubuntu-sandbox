@@ -53,10 +53,12 @@ export class SqlPlusShell extends AbstractShell {
       return { output: ['sqlplus: not available on this device'], exit: true };
     }
     const r = await processSubShellLine(this.subShell, line);
+    const hostShell = r.hostShell === true ? this.openOsShell() : null;
     return {
       output: r.output ?? [],
       exit: r.exit,
       clearScreen: r.clearScreen,
+      ...(hostShell === null ? {} : { childShell: hostShell }),
     };
   }
 

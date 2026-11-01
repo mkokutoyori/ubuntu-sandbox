@@ -750,8 +750,13 @@ export function formatDefault(objects: PSObject[]): string {
     if (directories === null) return formatTable(objects, columns);
     return directories.map(group => `\n\n    Directory: ${group.directory}\n${formatTable(group.rows, columns)}`).join('');
   }
-  if (keys.length <= 4) return formatTable(objects, '');
+  if (keys.length <= 4 && !documentedAsList(keys)) return formatTable(objects, '');
   return formatList(objects, '');
+}
+
+function documentedAsList(keys: string[]): boolean {
+  const lower = new Set(keys.map(key => key.toLowerCase()));
+  return lower.has('usesuffixsearchlist') && lower.has('usedevolution');
 }
 
 function memberDefinitionView(objects: PSObject[]): string | null {
@@ -893,6 +898,13 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   // column alone; ProviderPath / Provider / Drive stay reachable to scripts.
   if (lower.has('path') && lower.has('providerpath') && lower.has('provider')) {
     return ['Path'];
+  }
+  if (lower.has('connectionspecificsuffix') && lower.has('registerthisconnectionsaddress')) {
+    return ['InterfaceAlias', 'InterfaceIndex', 'ConnectionSpecificSuffix', 'ConnectionSpecificSuffixSearchList',
+            'RegisterThisConnectionsAddress', 'UseSuffixWhenRegistering'];
+  }
+  if (lower.has('serveraddress') && lower.has('dohtemplate')) {
+    return ['ServerAddress', 'AllowFallbackToUdp', 'AutoUpgrade', 'DohTemplate'];
   }
   if (lower.has('hostname') && lower.has('recordtype') && lower.has('timestamp') && lower.has('recorddata')) {
     return ['HostName', 'RecordType', 'Type', 'Timestamp', 'TimeToLive', 'RecordData'];

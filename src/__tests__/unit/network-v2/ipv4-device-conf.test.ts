@@ -10,6 +10,7 @@ describe('the per-device IPv4 configuration is the ipv4_devconf of the kernel', 
       ['arp_ignore', 0],
       ['arp_accept', 0],
       ['arp_notify', 0],
+      ['rp_filter', 2],
     ]);
   });
 
@@ -24,11 +25,11 @@ describe('the per-device IPv4 configuration is the ipv4_devconf of the kernel', 
 
   it('answers 0 for a knob it does not have and refuses to write it, and has none for a scope it does not know', () => {
     const conf = new Ipv4DeviceConf(['eth0']);
-    expect(conf.has('eth0', 'rp_filter')).toBe(false);
+    expect(conf.has('eth0', 'proxy_arp')).toBe(false);
     expect(conf.has('eth9', 'send_redirects')).toBe(false);
     expect(conf.has('eth0', 'send_redirects')).toBe(true);
-    expect(conf.get('eth0', 'rp_filter')).toBe(0);
-    expect(conf.set('eth0', 'rp_filter', 1)).toBe(false);
+    expect(conf.get('eth0', 'proxy_arp')).toBe(0);
+    expect(conf.set('eth0', 'proxy_arp', 1)).toBe(false);
     expect(conf.set('eth9', 'send_redirects', 0)).toBe(false);
   });
 

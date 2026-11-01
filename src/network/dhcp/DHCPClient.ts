@@ -459,6 +459,31 @@ export class DHCPClient implements IProtocolEngine {
       ?? '01' + mac.replace(/:/g, '').toLowerCase();
   }
 
+  restoreLease(iface: string, saved: DHCPClientLease): void {
+    const state = this.getState(iface);
+    const now = this.clock();
+    const lease: DHCPClientLease = {
+      ...saved,
+      iface,
+      leaseStart: now,
+      expiration: now + saved.leaseDuration * 1000,
+      netbiosServers: [...saved.netbiosServers],
+      ntpServers: [...saved.ntpServers],
+      dnsServers: [...saved.dnsServers],
+      vendorOptions: { ...saved.vendorOptions },
+    };
+    this.clearTimers(state);
+    const previous = state.state as string;
+    state.state = 'BOUND';
+    state.lease = lease;
+    state.lastKnownLease = { ...lease };
+    state.processRunning = true;
+    state.logs.push(`bound to ${lease.ipAddress} (lease database restored)`);
+    this.emitStateChange(iface, previous, 'BOUND', 'restored');
+    this.configureIP(iface, lease.ipAddress, lease.subnetMask, lease.defaultGateway);
+    this.setupLeaseTimers(iface, state);
+  }
+
   // ─── DHCP Discover → Offer → Request → Ack (DORA) ────────────────
 
   /**

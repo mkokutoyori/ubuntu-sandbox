@@ -20,7 +20,7 @@ import { formatBytes, text, utf8 } from './JournalText';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const JOURNALCTL_VERSION = 'systemd 255 (255.4-1ubuntu8.14)';
-const FEATURES = '+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified';
+export const SYSTEMD_FEATURES = '+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified';
 
 export type PathStat =
   | { errno: string }
@@ -531,7 +531,7 @@ function parseArgv(
     if (c === 63) throw new ExitSignal(1);
     switch (c) {
       case 0x68: say(HELP()); return 'done';
-      case 0x100: say(`${JOURNALCTL_VERSION}\n${FEATURES}\n`); return 'done';
+      case 0x100: say(`${JOURNALCTL_VERSION}\n${SYSTEMD_FEATURES}\n`); return 'done';
       case 0x101: break;
       case 0x65: if (args.lines === ARG_LINES_DEFAULT) args.lines = 1000; args.boot = true; break;
       case 0x66: args.follow = true; break;

@@ -251,22 +251,11 @@ function ipconfigAll(ctx: WinCommandContext): string {
           const dhcpState = ctx.getDHCPState(name);
           if (dhcpState?.lease) {
             lines.push(`   DHCP Server . . . . . . . . . . . : ${dhcpState.lease.serverIdentifier}`);
-            if (dhcpState.lease.dnsServers && dhcpState.lease.dnsServers.length > 0) {
-              lines.push(`   DNS Servers . . . . . . . . . . . : ${dhcpState.lease.dnsServers[0]}`);
-              for (let di = 1; di < dhcpState.lease.dnsServers.length; di++) {
-                lines.push(`                                         ${dhcpState.lease.dnsServers[di]}`);
-              }
-            }
+            pushDnsServers(lines, dhcpState.lease.dnsServers ?? []);
           }
         } else {
           // Static DNS servers configured via netsh
-          const staticDns = ctx.getDnsServers(name);
-          if (staticDns.length > 0) {
-            lines.push(`   DNS Servers . . . . . . . . . . . : ${staticDns[0]}`);
-            for (let di = 1; di < staticDns.length; di++) {
-              lines.push(`                                         ${staticDns[di]}`);
-            }
-          }
+          pushDnsServers(lines, ctx.getDnsServers(name));
         }
 
         lines.push(`   NetBIOS over Tcpip. . . . . . . . : Enabled`);
@@ -512,6 +501,14 @@ function ipconfigSetClassId(ctx: WinCommandContext, args: string[], switchName: 
 // ─── Helpers ──────────────────────────────────────────────────────
 
 /** Real ipconfig lists the IPv6 gateway first, the IPv4 one on a continuation line. */
+const VALUE_COLUMN = 39;
+
+function pushDnsServers(lines: string[], servers: readonly string[]): void {
+  servers.forEach((server, index) => {
+    lines.push(index === 0 ? `   DNS Servers . . . . . . . . . . . : ${server}` : `${' '.repeat(VALUE_COLUMN)}${server}`);
+  });
+}
+
 function pushDefaultGatewayLines(lines: string[], ctx: WinCommandContext, zone: number): void {
   if (ctx.defaultGateway6) {
     lines.push(`   Default Gateway . . . . . . . . . : ${withWindowsZone(ctx.defaultGateway6, zone)}`);

@@ -432,12 +432,18 @@ show`), `kernel.printk` (`dmesg -n`), `kernel.dmesg_restrict` (`dmesg`), `kernel
 lecteur, reserve assumee (la machine accepte le reglage, le moteur n'a pas la fonction qu'il gouverne) : `kernel.kptr_restrict` (pas de
 `/proc/kallsyms`), `kernel.sysrq` (pas de clavier ; `/proc/sysrq-trigger` ignore d'ailleurs le masque), `kernel.yama.ptrace_scope` (pas de
 `ptrace`), `vm.max_map_count` et `vm.mmap_min_addr` (pas de modele de memoire par processus) ; sonde `probe-sysctl-ubuntu-hardening`.
-**Non livres** : `10-network-security.conf` (`net.ipv4.conf.{default,all}.rp_filter=2`), `10-ipv6-privacy.conf`
-(`net.ipv6.conf.{all,default}.use_tempaddr = 2`) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`) mais `protected_symlinks`, `protected_fifos`
-et `protected_regular` n'ont pas de lecteur dans le VFS (suivre un lien dans un dossier colle, `O_CREAT` sur un fichier d'autrui) et le fichier du paquet n'est donc pas livre : `sysctl --system` ecrirait des cles
-absentes, et les stocker sans lecteur affirmerait un filtre de chemin inverse qui ne jette aucun paquet (un critere de securite doit
-echouer FERME). A fermer avec leur lecteur ; `rp_filter` en premier (il rejette de vrais paquets sur une vraie machine, et demande de
-verifier qu'aucun labo ne recoit d'une source sans route).
+**`rp_filter` est ferme** (sonde `probe-rp-filter`) : Ipv4DeviceConf porte la cle (defaut 2 comme Ubuntu, maximum de `all` et de l'interface), `LinuxMachine` juge chaque
+paquet IPv4 unicast recu (mode 1 : la meilleure route vers la source sort par l'interface d'arrivee ; mode 2 : une route quelconque, defaut comprise) et
+`10-network-security.conf` est livre. Reserves : pas de compteur `IPReversePathFilter`, pas de `log_martians`, table principale seulement, diffusion, multicast et
+source 0.0.0.0 exemptes, reponse DHCP a une carte sans adresse exemptee (le client lit les trames avant la pile IP). **Non livres** : `10-ipv6-privacy.conf`
+(`net.ipv6.conf.{all,default}.use_tempaddr = 2` : la configuration IPv6 par interface existe maintenant (`Ipv6DeviceConf`, sonde `probe-linux-ipv6-conf` :
+`forwarding`, `accept_ra`, `accept_ra_defrtr`, `accept_ra_pinfo`, `autoconf`, `disable_ipv6`, portees `all`/`default` comme le noyau) mais il reste a ajouter les adresses temporaires au modele
+(les adresses SLAAC n'ont AUCUNE duree de vie : ni `valid_lft` ni `preferred_lft` ne sont lus des annonces ni rendus), a leur regeneration, a leur rendu (`temporary dynamic`) et au choix de l'adresse source,
+plus `temp_valid_lft` (604800), `temp_prefered_lft` (86400), `max_desync_factor` (600), `regen_max_retry` (3), valeurs du CODE du noyau 5.15 et 6.8 : la documentation ip-sysctl.rst dit 172800 pour
+la premiere et se trompe ; `forwarding` est stocke et decide de l'acceptation des annonces, mais un hote n'a pas de plan de transfert IPv6 (EndHost.handleIPv6 ne transmet pas) ; `hop_limit`, `dad_transmits`,
+`accept_dad`, `accept_redirects`, `mtu`, `router_solicitations` ne sont pas livres faute de lecteur ; une annonce non acceptee ignore aussi les drapeaux M et O, ce que fait le noyau pour ce qu'il notifie
+mais pas un client DHCPv6 qui lit les annonces lui-meme) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`), `fs.protected_regular` et `fs.protected_fifos` existent et l'ouverture avec creation les lit, chacun pour SON type d'objet (sonde `probe-protected-regular`) mais `protected_symlinks`
+n'a pas de lecteur dans le VFS (`resolveInode` ne recoit pas l'identite de l'appelant) ; un critere de securite stocke sans effet echouerait ouvert. Un FIFO n'a toujours pas de semantique de lecture/ecriture (`cat` d'un FIFO repond « No such file »).
 
 ---
 
@@ -763,9 +769,10 @@ est insere comme par `p`). Il faut un `applyPaste` dans `VimEngine`, les memes g
 
 ### [nc] ce que le portage de `netcat.c` (Ubuntu 1.226-1ubuntu2) laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans un espace de noms) :
-- `-x` / `-X` / `-P` (mandataires SOCKS4, SOCKS5, CONNECT) : les controles de `main()` sont portes
-  (« no proxy support for listen », « missing closing bracket in proxy »...) mais la connexion par
-  mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
+- `-x` / `-X` / `-P` (mandataires SOCKS4, SOCKS5, CONNECT) : `socks.c` est porte dans `src/network/proxy/ProxyHandshake.ts`
+  (octets et messages releves contre le vrai nc 1.226 ; sonde `probe-nc-mandataires`). Reste : le mot de passe de `-P`
+  est lu sur le terminal et une commande du simulateur n'en a pas, donc apres un 407 le moteur repond « Unable to read proxy
+  passphrase », comme le vrai nc sans tty. `-F` (passage de descripteur), `-S` (signature MD5 :
   le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
   prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
 - Deux `nc -l 9000` TCP du meme uid coexistent (SO_REUSEPORT : `TcpStack` garde les pairs d'un groupe et choisit l'ecouteur d'un SYN
@@ -906,8 +913,8 @@ Autres ecarts mesures, non fermes :
   bash l'abandonne aussi a init, mais le processus reste visible dans `ps`).
 - `/dev/pts/N` et `/proc/tty/drivers` n'existent pas comme fichiers : `ps` lit le numero de terminal dans
   `ttyDeviceNumber`. `/proc/sys/kernel/pid_max` existe (inscriptible, 301 a 4194304, sonde `probe-kernel-pid-max`) et
-  fixe l'allocation des pids et la largeur de la colonne PID ; `kernel.threads-max` et le reste de `/proc/sys/kernel`
-  (4 fichiers seulement) ne sont pas livres.
+  fixe l'allocation des pids et la largeur de la colonne PID ; `kernel.random.boot_id` et `kernel.random.uuid` existent
+  (sonde `probe-identifiant-de-demarrage-unique`) et `systemd-id128` les lit (sonde `probe-systemd-id128` : seul le chemin d'erreur d'un `/etc/machine-id` ILLISIBLE ou invalide n'est pas releve sur le vrai) ; `kernel.threads-max` et le reste de `/proc/sys/kernel` ne sont pas livres.
 
 ### [lab NTP] ecarts residuels mesures en montant le lab du tutoriel NTP (etape 0)
 Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un
@@ -4167,8 +4174,9 @@ reconnus : seul `#` l'est.
 `rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
 une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dans le fichier ce que la session imprime
 (sondes `probe-rman-cmdfile-et-log`, `probe-rman-spool-log`) ; `LIST BACKUP OF TABLESPACE t` filtre sur les fichiers du
-tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host` ; `HOST` sans
-commande, qui ouvre un shell, reste refuse) ; `CONFIGURE|SHOW SNAPSHOT CONTROLFILE NAME` (defaut `$ORACLE_HOME/dbs/snapcf_<SID>.f`, `# default`, `CLEAR`) : la
+tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host`) ; `HOST` sans commande ouvre un shell sur la machine
+et `exit` ramene au `RMAN>` de la meme session (sonde `probe-rman-host-sans-commande`). A VERIFIER : `host command complete` au retour du shell interactif vient de la forme `HOST 'commande'`, pas d'une
+source ; `CONFIGURE|SHOW SNAPSHOT CONTROLFILE NAME` (defaut `$ORACLE_HOME/dbs/snapcf_<SID>.f`, `# default`, `CLEAR`) : la
 sauvegarde du fichier de controle cree le snapshot a ce chemin (sonde `probe-rman-snapshot-controlfile` ; la creation par
 `RESYNC CATALOG` n'est pas faite, le catalogue de recuperation etant un autre sous-systeme) ; `LIST BACKUP BY FILE` regroupe par fichier : « List of Datafile Backups » puis « List of Control File Backups »
 (sonde `probe-rman-list-backup-by-file`). A VERIFIER : les titres, l'ordre et les noms de colonnes viennent de la memoire ;

@@ -18,6 +18,7 @@ import { reverseNameOf } from '../../network/ReverseName';
 import { NetcatExit, parseNetcatArguments, strtonum, type NetcatOptions } from './netcat/NetcatArguments';
 import { NcOutput, announceListening, converse, linesOf, wireText, type NcResult, type Peer } from './netcat/NetcatSession';
 import { runUnixClient, runUnixListen } from './netcat/NetcatUnix';
+import { connectThroughProxy, proxyPortOf } from './netcat/NetcatProxy';
 
 export { ncUnixClientPath } from './netcat/NetcatUnix';
 
@@ -150,11 +151,16 @@ function udpTest(send: () => Errno | null): boolean {
   return answered;
 }
 
-function tcpPeer(socket: TcpSocket): Peer {
+function tcpPeer(socket: TcpSocket, leftover = ''): Peer {
+  let pending = leftover;
   return {
     write: (text) => { socket.write(text); },
     close: () => { socket.close(); },
-    onData: (handler) => socket.onData((chunk) => handler(wireText(chunk))),
+    onData: (handler) => {
+      if (pending !== '') handler(pending);
+      pending = '';
+      return socket.onData((chunk) => handler(wireText(chunk)));
+    },
     onEnd: (handler) => socket.onEnd(handler),
     onClose: (handler) => socket.onClose(() => handler()),
   };
@@ -164,7 +170,10 @@ async function runConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: 
   const wait = (ms: number): Promise<void> => ctx.net.getScheduler().delay(ms);
   const host = opts.host!;
   const ports = buildPorts(ctx, opts);
-  const target = getaddrinfo(ctx, host, ports[0], opts);
+  const proxied = opts.proxyHost !== null;
+  const dialHost = opts.proxyHost ?? host;
+  const proxyPort = proxied ? proxyPortOf(ctx, opts) : null;
+  const target = getaddrinfo(ctx, dialHost, proxyPort ?? ports[0], opts);
   const address = target.toString();
   const sourcePort = sourcePortOf(ctx, opts.sourcePort);
   const sourceIP = sourceAddressOf(ctx, opts.sourceAddress, target);
@@ -208,26 +217,30 @@ async function runConnect(ctx: LinuxCommandContext, opts: NetcatOptions, stdin: 
     }
 
     if (!ctx.executor.hasFreeEphemeralPort() && sourcePort === undefined) {
-      if (opts.verbose) out.write('stderr', connectFailure(host, address, port, proto, 'EADDRNOTAVAIL', opts));
+      if (opts.verbose) out.write('stderr', connectFailure(dialHost, address, proxyPort ?? port, proto, 'EADDRNOTAVAIL', opts));
       continue;
     }
-    const opened = await retransmitSilentSyn(
-      () => ctx.net.tcpOpen(target, port, { sourcePort, sourceIP, ...settings, owner: { pid } }),
+    const dialPort = proxyPort ?? port;
+    const dial = () => retransmitSilentSyn(
+      () => ctx.net.tcpOpen(target, dialPort, { sourcePort, sourceIP, ...settings, owner: { pid } }),
       (attempt) => attempt.outcome === 'timeout', wait, opts.timeoutMs > 0 ? opts.timeoutMs : undefined);
+    const { opened, leftover } = proxied
+      ? await connectThroughProxy(ctx, opts, host, port, dial)
+      : { opened: await dial(), leftover: '' };
     if (opened.socket === null) {
       if (opts.verbose) {
-        out.write('stderr', connectFailure(host, address, port, proto, connectErrno(opened.outcome as Exclude<typeof opened.outcome, 'open'>), opts,
+        out.write('stderr', connectFailure(dialHost, address, dialPort, proto, connectErrno(opened.outcome as Exclude<typeof opened.outcome, 'open'>), opts,
           opened.outcome === 'timeout' && opts.timeoutMs > 0));
       }
       continue;
     }
     ret = 0;
-    if (opts.verbose || opts.zero) out.write('stderr', connectionInfo(ctx, host, address, port, proto, opts));
+    if (opts.verbose || opts.zero) out.write('stderr', connectionInfo(ctx, host, proxied ? host : address, port, proto, opts));
     if (opts.zero) {
       opened.socket.close();
       continue;
     }
-    const status = await converse(ctx, pid, tcpPeer(opened.socket), opts, stdin, out);
+    const status = await converse(ctx, pid, tcpPeer(opened.socket, leftover), opts, stdin, out);
     if (status !== null) return status;
   }
   return ret;
@@ -362,7 +375,6 @@ async function runNc(ctx: LinuxCommandContext, args: string[], stdin?: string): 
   const out = new NcOutput();
   try {
     const opts = parseNetcatArguments(args);
-    if (opts.proxyHost !== null) throw new NetcatExit(['nc: option -x: this simulator cannot build proxy connections']);
     const code = opts.family === 'unix'
       ? (opts.listen ? runUnixListen(ctx, opts, out, stdin) : await runUnixClient(ctx, opts, stdin, out))
       : opts.listen ? runListen(ctx, opts, out, stdin) : await runConnect(ctx, opts, stdin, out);

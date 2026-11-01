@@ -64,11 +64,12 @@ describe('SQL*Plus HOST command', () => {
     subShell.dispose();
   });
 
-  it('reports an empty HOST command without crashing', () => {
+  it('asks the owning shell for an OS shell on an empty HOST command', () => {
     const srv = new LinuxServer('linux-server', 'ora-host-empty', 100, 100);
     const { subShell } = SqlPlusSubShell.create(srv, ['/', 'as', 'sysdba']);
     const result = subShell.processLine('HOST');
-    expect(result.output.join('\n')).toMatch(/SP2-/);
+    expect(result.hostShell).toBe(true);
+    expect(result.output).toEqual([]);
     subShell.dispose();
   });
 });

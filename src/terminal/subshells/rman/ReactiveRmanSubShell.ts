@@ -40,6 +40,7 @@ export class ReactiveRmanSubShell implements ISubShell {
   private readonly _loggerActor:   RmanLoggerActor | null;
   private readonly _oracleWatcher: OracleInstanceWatcherActor | null;
   private _shouldExit = false;
+  private _hostShellRequested = false;
   private _disposed   = false;
 
   private constructor(
@@ -170,7 +171,9 @@ export class ReactiveRmanSubShell implements ISubShell {
     const output = [...result.value, ...this._outputBuffer];
     this._outputBuffer.length = 0;
     this._spool.record(output);
-    return { output, exit: exitNow, prompt: this.getPrompt() };
+    const hostShell = this._hostShellRequested;
+    this._hostShellRequested = false;
+    return { output, exit: exitNow, prompt: this.getPrompt(), ...(hostShell ? { hostShell } : {}) };
   }
 
   dispose(): void {
@@ -190,6 +193,9 @@ export class ReactiveRmanSubShell implements ISubShell {
 
   private _handleEvent(e: RmanEvent): void {
     switch (e.type) {
+      case 'HOST_SHELL_REQUESTED':
+        this._hostShellRequested = true;
+        break;
       case 'JOB_STARTED':
         this._push('');
         this._push(`Starting ${this._opLabel(e.operation)} at ${formatOracleDate(this._session.wallNow?.())}`);

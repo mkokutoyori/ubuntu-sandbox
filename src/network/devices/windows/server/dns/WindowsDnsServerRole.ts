@@ -44,6 +44,7 @@ import {
   type SrvRecordData, type NsRecordData, type TxtRecordData, type DhcidRecordData, makeDhcidRecord,
 } from '@/network/dns/wire/ResourceRecord';
 import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
+import { DnsServerParameters, MemoryDnsParameterStore, type DnsParameterStore } from './DnsServerParameters';
 import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import { IPAddress } from '@/network/core/types';
 
@@ -119,6 +120,7 @@ export interface DnsZoneFileSink {
 }
 
 export interface DnsRoleEnvironment {
+  parameters?: DnsParameterStore;
   now?: () => number;
   zoneFiles?: DnsZoneFileSink;
   directoryAvailable?: () => boolean;
@@ -143,7 +145,6 @@ export interface DnsPrimaryZoneChanges {
 }
 
 const DNS_PORT = 53;
-const DEFAULT_FORWARDER_TIMEOUT_SECONDS = 3;
 const DAY_SECONDS = 86400;
 const DEFAULT_AGING_SECONDS = 7 * DAY_SECONDS;
 const UNLOADED_RETRY_SECONDS = 600;
@@ -323,8 +324,9 @@ export class WindowsDnsServerRole {
   private readonly trustAnchors: ResourceRecord<DsRecordData>[] = [];
   private readonly trustAnchorKeys = new Map<string, { name: string; cryptoAlgorithm: string; base64: string }>();
   private readonly zoneDynamicUpdate = new Map<string, DnsDynamicUpdateMode>();
-  private forwarders: ForwarderEntry[] = [];
-  private enableReordering = true;
+  private forwarderEntries: ForwarderEntry[] = [];
+  private forwarderEntriesTimeout = 0;
+  private readonly parameters: DnsServerParameters;
   private readonly aging = new Map<string, ZoneAging>();
   private readonly timestamps = new Map<string, number>();
   private readonly owners = new Map<string, string>();
@@ -335,11 +337,8 @@ export class WindowsDnsServerRole {
   private scavengeRefreshSeconds = DEFAULT_AGING_SECONDS;
   private lastScavengeMs: number | null = null;
   private readonly startedAtMs: number;
-  private forwarderTimeoutSeconds = DEFAULT_FORWARDER_TIMEOUT_SECONDS;
   private rootHints: RootHint[] = IANA_ROOT_HINTS.map(h => ({ ...h }));
   private rootResolver: RecursiveResolver | null = null;
-  private useRootHint = true;
-  private recursionEnabled = true;
   private running = false;
 
   private readonly now: () => number;
@@ -349,6 +348,7 @@ export class WindowsDnsServerRole {
   constructor(private readonly host: EndHost, environment: DnsRoleEnvironment = {}) {
     this.now = environment.now ?? (() => simulationNowMs());
     this.zoneFiles = environment.zoneFiles ?? null;
+    this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
     this.cache = new DnsCache(this.now);
     this.startedAtMs = this.now();
@@ -420,7 +420,7 @@ export class WindowsDnsServerRole {
     if (outsideAuthority && question && this.hitsUnloadedSecondary(question.qname)) {
       return { ...response, flags: { ...response.flags, rcode: DnsRcode.SERVFAIL } };
     }
-    if (outsideAuthority && question && query.flags.rd && this.recursionEnabled) {
+    if (outsideAuthority && question && query.flags.rd && this.parameters.recursionEnabled()) {
       const resolvers = this.resolversFor(question.qname);
       if (resolvers.length > 0) return this.recurse(query, resolvers);
     }
@@ -453,13 +453,33 @@ export class WindowsDnsServerRole {
         }
       },
     }));
-    if (this.useRootHint && this.rootResolver) attempts.push({ resolver: this.rootResolver });
+    if (this.parameters.usesRootHints() && this.rootResolver) attempts.push({ resolver: this.rootResolver });
     return attempts;
   }
 
+  private forwarders(): ForwarderEntry[] {
+    const configured = this.parameters.forwarders();
+    const timeoutSeconds = this.parameters.forwardingTimeoutSeconds();
+    if (timeoutSeconds !== this.forwarderEntriesTimeout) {
+      this.forwarderEntries = [];
+      this.forwarderEntriesTimeout = timeoutSeconds;
+    }
+    if (configured.length === this.forwarderEntries.length && configured.every((address, index) => address === this.forwarderEntries[index].address)) {
+      return this.forwarderEntries;
+    }
+    const parsed = parseAddresses(configured);
+    if (typeof parsed === 'string') {
+      this.forwarderEntries = [];
+      return this.forwarderEntries;
+    }
+    this.forwarderEntries = configured.map((address, index) => this.forwarderEntries.find(entry => entry.address === address)
+      ?? { address, resolver: this.forwardingResolver([parsed[index]], timeoutSeconds), averageMs: null, failures: 0 });
+    return this.forwarderEntries;
+  }
+
   private orderedForwarders(): ForwarderEntry[] {
-    if (!this.enableReordering) return this.forwarders;
-    return [...this.forwarders].sort((a, b) =>
+    if (!this.parameters.reorderingEnabled()) return this.forwarders();
+    return [...this.forwarders()].sort((a, b) =>
       a.failures - b.failures || (a.averageMs ?? Infinity) - (b.averageMs ?? Infinity));
   }
 
@@ -645,10 +665,7 @@ export class WindowsDnsServerRole {
   setForwarders(addresses: readonly string[]): DnsOpResult {
     const parsed = parseAddresses(addresses);
     if (typeof parsed === 'string') return { ok: false, message: parsed };
-    this.forwarders = addresses.map((address, index) => {
-      const known = this.forwarders.find(f => f.address === address);
-      return known ?? { address, resolver: this.forwardingResolver([parsed[index]]), averageMs: null, failures: 0 };
-    });
+    this.parameters.setForwarders(addresses);
     return { ok: true, message: '' };
   }
 
@@ -666,36 +683,34 @@ export class WindowsDnsServerRole {
     if (!Number.isInteger(seconds) || seconds < 1 || seconds > 15) {
       return { ok: false, message: 'The forwarder timeout must be between 1 and 15 seconds.' };
     }
-    this.forwarderTimeoutSeconds = seconds;
-    const current = this.getForwarders();
-    this.forwarders = [];
-    return this.setForwarders(current);
-  }
-
-  setEnableReordering(enabled: boolean): DnsOpResult {
-    this.enableReordering = enabled;
+    this.parameters.setForwardingTimeoutSeconds(seconds);
     return { ok: true, message: '' };
   }
 
-  private forwardingResolver(addresses: readonly IPAddress[], timeoutSeconds = this.forwarderTimeoutSeconds): RecursiveResolver {
+  setEnableReordering(enabled: boolean): DnsOpResult {
+    this.parameters.setReorderingEnabled(enabled);
+    return { ok: true, message: '' };
+  }
+
+  private forwardingResolver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
     return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
   }
 
-  private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.forwarderTimeoutSeconds): RecursiveResolver {
+  private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
     return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
   }
 
-  getForwarders(): string[] { return this.forwarders.map(f => f.address); }
+  getForwarders(): string[] { return this.parameters.forwarders(); }
 
   getForwarderInfo(): DnsForwarderInfo {
     return {
-      addresses: this.getForwarders(), useRootHint: this.useRootHint, timeoutSeconds: this.forwarderTimeoutSeconds,
-      enableReordering: this.enableReordering,
+      addresses: this.getForwarders(), useRootHint: this.parameters.usesRootHints(), timeoutSeconds: this.parameters.forwardingTimeoutSeconds(),
+      enableReordering: this.parameters.reorderingEnabled(),
     };
   }
 
   setUseRootHint(enabled: boolean): DnsOpResult {
-    this.useRootHint = enabled;
+    this.parameters.setUsesRootHints(enabled);
     return { ok: true, message: '' };
   }
 
@@ -878,11 +893,11 @@ export class WindowsDnsServerRole {
   }
 
   setRecursion(enabled: boolean): DnsOpResult {
-    this.recursionEnabled = enabled;
+    this.parameters.setRecursionEnabled(enabled);
     return { ok: true, message: '' };
   }
 
-  isRecursionEnabled(): boolean { return this.recursionEnabled; }
+  isRecursionEnabled(): boolean { return this.parameters.recursionEnabled(); }
 
   cacheEntries(): DnsCacheRecordView[] {
     return this.cache.entries().filter(entry => !entry.negative);
@@ -981,7 +996,7 @@ export class WindowsDnsServerRole {
     return { ok: true, message: '' };
   }
 
-  addConditionalForwarderZone(name: string, masters: readonly string[], timeoutSeconds = this.forwarderTimeoutSeconds, useRecursion = true, zoneFile?: string): DnsOpResult {
+  addConditionalForwarderZone(name: string, masters: readonly string[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds(), useRecursion = true, zoneFile?: string): DnsOpResult {
     const origin = normalizeZoneKey(name);
     const parsed = parseAddresses(masters);
     if (typeof parsed === 'string') return { ok: false, message: parsed };

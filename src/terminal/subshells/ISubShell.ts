@@ -24,6 +24,8 @@ export interface SubShellResult {
   styledOutput?: RichOutputLine[];
   /** Whether the sub-shell has exited. */
   exit: boolean;
+  /** The sub-shell asks its owning shell to open an operating-system shell above it (`HOST`, `!`). */
+  hostShell?: boolean;
   /** The prompt to show for the next line of input. */
   prompt: string;
   /** Whether the terminal screen should be cleared before showing output. */
@@ -55,6 +57,9 @@ export interface SubShellKeyResult extends SubShellResult {
 export interface ISubShell extends IShellBase {
   /** Current prompt string (e.g. "SQL> ", "PS C:\> "). */
   getPrompt(): string;
+
+  /** Lines printed when a child shell pops back to this sub-shell, if it has any. */
+  consumeResumeOutput?(): readonly string[];
 
   getPromptParts?(): BashPromptParts | null;
 
