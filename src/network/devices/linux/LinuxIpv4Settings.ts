@@ -52,6 +52,38 @@ export const LINUX_KERNEL_KNOBS: readonly KernelByteKnob[] = [
   { name: 'dmesg_restrict', initial: 1, minimum: 0, maximum: 1 },
 ];
 
+export interface KernelStringKnob {
+  readonly name: string;
+  readonly initial: string;
+  readonly allowed: readonly string[];
+}
+
+export const DEFAULT_QDISC_FALLBACK = 'fq_codel';
+
+export const LINUX_CORE_STRING_KNOBS: readonly KernelStringKnob[] = [
+  { name: 'default_qdisc', initial: DEFAULT_QDISC_FALLBACK, allowed: ['pfifo_fast', 'fq_codel', 'fq', 'codel', 'sfq', 'cake'] },
+];
+
+export class KernelStringStore {
+  private readonly values: Map<string, string>;
+
+  constructor(private readonly knobs: readonly KernelStringKnob[]) {
+    this.values = new Map(knobs.map((knob) => [knob.name, knob.initial]));
+  }
+
+  get(name: string): string {
+    return this.values.get(name) ?? '';
+  }
+
+  write(name: string, text: string): boolean {
+    const knob = this.knobs.find((candidate) => candidate.name === name);
+    const value = text.trim();
+    if (knob === undefined || !knob.allowed.includes(value)) return false;
+    this.values.set(name, value);
+    return true;
+  }
+}
+
 export interface KernelVectorKnob {
   readonly name: string;
   readonly initial: readonly number[];

@@ -5,6 +5,7 @@
  * This file only bridges the `LinuxCommand` interface to `IpNetworkContext`.
  */
 
+import { DEFAULT_QDISC_FALLBACK } from '../../LinuxIpv4Settings';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { LinuxNetKernel } from '../../LinuxNetKernel';
@@ -110,6 +111,10 @@ function buildRuleCtx(net: LinuxNetKernel): IpRuleContext {
   };
 }
 
+export function defaultQdiscOf(vfs: { readFile(path: string): string | null }): string {
+  return vfs.readFile('/proc/sys/net/core/default_qdisc')?.trim() || DEFAULT_QDISC_FALLBACK;
+}
+
 export function buildIpCtx(
   net: LinuxNetKernel,
   xfrm?: IpXfrmContext,
@@ -118,6 +123,7 @@ export function buildIpCtx(
   netns?: IpNetnsContext,
   maddr?: IpMaddrContext,
   currentUid: () => number = () => 0,
+  defaultQdisc: () => string = () => DEFAULT_QDISC_FALLBACK,
 ): IpNetworkContext {
   return {
     routeLookupFacts(dest: IPAddress) {
@@ -166,6 +172,7 @@ export function buildIpCtx(
         isDHCP: net.isDHCPConfigured(name),
         carrierless: port.isCarrierless(),
         txQueueLen: port.getTxQueueLen(),
+        qdisc: defaultQdisc(),
         promiscuous: port.isPromiscuous(),
         master: (this.getLocalDevice() as unknown as
           { bondOwning?(i: string): string | null } | null)
@@ -482,7 +489,7 @@ export const ipCommand: LinuxCommand = {
       return ctx.netns.exec(name, cmdLine);
     }
     const ipCtx = buildIpCtx(ctx.net, ctx.xfrm, ctx.greAgent, ctx.linkOps, ctx.netns, ctx.maddr,
-      () => ctx.executor.userMgr.currentUid);
+      () => ctx.executor.userMgr.currentUid, () => defaultQdiscOf(ctx.executor.vfs));
     // Seul `-c=auto` consulte ce drapeau ; les autres formes de `-c`
     // tranchent d'elles-mêmes.
     const out = executeIpCommand(ipCtx, args, ctx.outputPiped === true);

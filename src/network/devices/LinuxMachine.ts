@@ -88,7 +88,7 @@ import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
-  LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
+  LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, KernelStringStore, LINUX_CORE_STRING_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
@@ -230,7 +230,7 @@ import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import { splitRegistryStdin } from './linux/commands/registryStdin';
 import { evaluatePrivilegeRequirement, type PrivilegeRequirement } from './linux/iam/policy/CommandPrivilegePolicy';
 import { holdsCapability } from './linux/iam/capabilities/LinuxCapabilities';
-import { buildIpCtx } from './linux/commands/net/Ip';
+import { buildIpCtx, defaultQdiscOf } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import type { DhcpIpEmission } from '../dhcp/types';
@@ -324,6 +324,7 @@ export abstract class LinuxMachine extends EndHost
   private readonly coreSettings = new LinuxCoreSettings();
   private readonly kernelSettings = new LinuxKernelSettings();
   private readonly kernelVectors = new KernelVectorStore(LINUX_KERNEL_VECTOR_KNOBS);
+  private readonly coreStrings = new KernelStringStore(LINUX_CORE_STRING_KNOBS);
   private readonly ipv6Settings = new LinuxIpv6Settings();
   private deviceConfStore: Ipv4DeviceConf | null = null;
   private get deviceConf(): Ipv4DeviceConf {
@@ -540,6 +541,11 @@ export abstract class LinuxMachine extends EndHost
         () => `${this.coreSettings.get(knob.name)}\n`,
         (text) => this.coreSettings.write(knob.name, text));
     }
+    for (const knob of LINUX_CORE_STRING_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/core/${knob.name}`,
+        () => `${this.coreStrings.get(knob.name)}\n`,
+        (text) => this.coreStrings.write(knob.name, text));
+    }
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
       () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`,
       (text) => {
@@ -615,7 +621,7 @@ export abstract class LinuxMachine extends EndHost
     this.greAgentInstance.start();
     this.greAgent = this.greAgentInstance;
     this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx, this.greAgentInstance,
-      undefined, undefined, undefined, () => this.executor.userMgr.currentUid));
+      undefined, undefined, undefined, () => this.executor.userMgr.currentUid, () => defaultQdiscOf(this.executor.vfs)));
     // NSS `dns` source resolves through real UDP/53 once resolv.conf
     // names a non-loopback server (loopback = systemd-resolved stub,
     // modelled by the legacy fallback).
