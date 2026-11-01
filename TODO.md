@@ -645,9 +645,6 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
-- **Ordre des dictionnaires** : l'ordre de `hashtab.c` est porte pour un
-  dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
-  retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
   function` meme quand vim le connait. Restent absentes (hors blobs) : `mode`, `foreach` (inconnue de ce vim aussi). Existent, mesurees
   contre vim 9.1 (`probe-vim-fonctions-*`) : `glob`, `globpath`, `expand` (`$VAR`, `~`, jokers, `%`, `<cword>`, `<cWORD>` ; `<sfile>`,
@@ -655,13 +652,11 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   portes), `writefile` (`b`, `a` ; `s`, `S`, `D`, `r` ne sont pas portes), `rename`, `delete`, `tempname`, `bufname` (tampon courant
   seulement), `wordcount`, `reltime`, `reltimestr`, `reltimefloat`, `strptime`, `fnamemodify` (`:h :t :r :e :p :. :~ :s :gs :S`) et
   toutes les fonctions de texte, de fichier et d'environnement des lots precedents.
-- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
-  `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
-  destructuration. Restent refusees les cibles `$ENV` (l'environnement du
-  processus vim n'a pas de poignee d'ecriture), les
-  tranches `l[a:b]`, `s:` / `l:` / `a:` hors fonction, `v:shell_error` et
-  `:function`. Une lambda ne capture que les parametres des lambdas qui
-  l'entourent.
+- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`, `t:`, les elements `l[i]` / `d.k` / `d['k']`,
+  les tranches `l[a:b]` (affectation et suppression), `$ENV` (l'environnement de vim, que voient `getenv`, `environ`,
+  `exists('$X')` et le shell de `system()`), les operateurs composes et la destructuration (`probe-vim-unlet-tranches-et-environnement`,
+  `probe-vim-ordre-des-dictionnaires-suppressions`). Restent refuses : `s:` / `l:` / `a:` hors fonction et `:function`. Une lambda ne
+  capture que les parametres des lambdas qui l'entourent.
 - **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
   moteur n'a ni l'un ni l'autre.
 - **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options

@@ -3,7 +3,7 @@ import { lowerCaseChar, upperCaseChar } from './VimEditing';
 import { formatExponentialSafe, formatFixedSafe, formatFloatDefault, formatVimGeneral } from './VimFloat';
 import { compileVimPattern, type VimRegExp } from './VimPattern';
 import { expandReplacement } from './VimSubstitute';
-import { inVimOrder } from './VimHashOrder';
+import { inVimOrder, TrackedEntries } from './VimHashOrder';
 import { formatLocalTime } from '@/network/devices/linux/system/SystemInfo';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { sha256 } from '@/crypto/hash/sha256';
@@ -52,6 +52,7 @@ export interface ExpressionHost {
   environment(name: string): string;
   environmentOrNull(name: string): string | null;
   environmentNames(): string[];
+  assignEnvironment(name: string, value: string | null): void;
   shellStatus(): number;
   pathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo';
   readText(path: string): string | null;
@@ -142,7 +143,10 @@ function list(items: VimValue[]): VimList {
 }
 
 function dict(entries: Map<string, VimValue>): VimDict {
-  return { kind: 'dict', entries };
+  if (entries instanceof TrackedEntries) return { kind: 'dict', entries };
+  const tracked = new TrackedEntries<VimValue>();
+  for (const [key, item] of entries) tracked.set(key, item);
+  return { kind: 'dict', entries: tracked };
 }
 
 function special(name: SpecialName): VimValue {
@@ -732,7 +736,7 @@ function sortList(context: Context, target: VimList, flags: VimValue | undefined
 
 function deepCopy(value: VimValue): VimValue {
   if (value.kind === 'list') return list(value.items.map(deepCopy));
-  if (value.kind === 'dict') return dict(new Map([...value.entries].map(([key, item]) => [key, deepCopy(item)])));
+  if (value.kind === 'dict') return dict(new Map(inVimOrder(value.entries).map(([key, item]) => [key, deepCopy(item)] as const)));
   return value;
 }
 
@@ -1033,7 +1037,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
   ['copy', { min: 1, max: 1, run: (args) => {
     const value = args[0];
     if (value.kind === 'list') return list([...value.items]);
-    if (value.kind === 'dict') return dict(new Map(value.entries));
+    if (value.kind === 'dict') return dict(new Map(inVimOrder(value.entries)));
     return value;
   } }],
   ['deepcopy', { min: 1, max: 2, run: (args) => deepCopy(args[0]) }],
@@ -1083,7 +1087,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
       context.soft('E712: Argument of mapnew() must be a List or Dictionary');
       return num(0);
     }
-    const copy: VimValue = source.kind === 'list' ? list([...source.items]) : dict(new Map(source.entries));
+    const copy: VimValue = source.kind === 'list' ? list([...source.items]) : dict(new Map(inVimOrder(source.entries)));
     return mapOrFilter([copy, args[1]], context, true);
   } }],
   ['reduce', { min: 2, max: 3, run: (args, context) => {
@@ -1343,7 +1347,7 @@ function extendValue(args: VimValue[], context: Context): VimValue {
       context.soft(`E475: Invalid argument: ${mode}`);
       return num(0);
     }
-    for (const [key, item] of source.entries) {
+    for (const [key, item] of inVimOrder(source.entries)) {
       if (target.entries.has(key)) {
         if (mode === 'error') {
           context.soft(`E737: Key already exists: ${key}`);
@@ -1846,8 +1850,10 @@ function mapOrFilter(args: VimValue[], context: Context, mapping: boolean): VimV
     target.items = (mapping ? results : values).filter((_, at) => keep(at));
   } else {
     const names = inVimOrder(target.entries).map(([key]) => key);
-    const kept = names.map((name, at) => ({ name, at })).filter(({ at }) => keep(at));
-    target.entries = new Map(kept.map(({ name, at }) => [name, mapping ? results[at] : values[at]]));
+    names.forEach((name, at) => {
+      if (!keep(at)) target.entries.delete(name);
+      else if (mapping) target.entries.set(name, results[at]);
+    });
   }
   return target;
 }
@@ -2569,7 +2575,7 @@ export function evaluateReplacementExpression(source: string, host: ExpressionHo
   return { text, errors: context.errors };
 }
 
-const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|@[A-Za-z0-9"\-*+_/.:#%]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
+const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|\$[A-Za-z_][A-Za-z0-9_]*|@[A-Za-z0-9"\-*+_/.:#%]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
 const LET_OPERATOR: Record<string, string> = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '..=': '..', '.=': '.' };
 
 function splitAccess(target: string): { name: string; accessors: string[] } | null {
@@ -2617,6 +2623,13 @@ function assignTarget(target: string, operator: string, value: VimValue, context
     if (failure !== null) context.fail(failure);
     return;
   }
+  if (target.startsWith('$')) {
+    if (operator !== '=' && operator !== '.=' && operator !== '..=') return context.fail(`E734: Wrong variable type for ${operator}`);
+    const variable = target.slice(1);
+    const current = operator === '=' ? undefined : runExpression(target, context);
+    context.host.assignEnvironment(variable, context.stringOf(combineWith(current, operator, value, target, context), true));
+    return;
+  }
   if (target.startsWith('@')) {
     const register = target.slice(1);
     const current = operator === '=' ? undefined : runExpression(target, context);
@@ -2635,6 +2648,11 @@ function assignTarget(target: string, operator: string, value: VimValue, context
   }
   if (context.host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${name}`);
   const holder = runExpression(`${name}${accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+  const range = sliceBounds(accessors[accessors.length - 1]);
+  if (range !== null) {
+    assignRange(holder, range, operator, value, name, context);
+    return;
+  }
   const last = runExpression(accessors[accessors.length - 1], context);
   if (holder.kind === 'list') {
     let at = Number(context.numberOf(last, true));
@@ -2644,6 +2662,74 @@ function assignTarget(target: string, operator: string, value: VimValue, context
   } else if (holder.kind === 'dict') {
     const field = context.stringOf(last, true);
     holder.entries.set(field, combine(holder.entries.get(field)));
+  } else {
+    context.fail('E689: Can only index a List, Dictionary or Blob');
+  }
+}
+
+function sliceBounds(accessor: string): { from: string; to: string } | null {
+  let quote = '';
+  let depth = 0;
+  for (let at = 0; at < accessor.length; at++) {
+    const character = accessor[at];
+    if (quote !== '') { if (character === quote) quote = ''; continue; }
+    if (character === '"' || character === "'") quote = character;
+    else if ('([{'.includes(character)) depth++;
+    else if (')]}'.includes(character)) depth--;
+    else if (character === ':' && depth === 0) return { from: accessor.slice(0, at).trim(), to: accessor.slice(at + 1).trim() };
+  }
+  return null;
+}
+
+function resolveRange(holder: VimList, range: { from: string; to: string }, context: Context): { first: number; last: number } {
+  const count = holder.items.length;
+  const bound = (text: string, fallback: number): number => {
+    if (text === '') return fallback;
+    const at = Number(context.numberOf(runExpression(text, context), true));
+    return at < 0 ? at + count : at;
+  };
+  const first = bound(range.from, 0);
+  const last = bound(range.to, count - 1);
+  if (first < 0 || first > count) context.fail(`E684: List index out of range: ${first}`);
+  if (last < first - 1 || last >= count) context.fail(`E684: List index out of range: ${last}`);
+  return { first, last };
+}
+
+function assignRange(holder: VimValue, range: { from: string; to: string }, operator: string, value: VimValue, name: string, context: Context): void {
+  if (holder.kind !== 'list') return context.fail('E689: Can only index a List, Dictionary or Blob');
+  if (value.kind !== 'list') return context.fail('E709: [:] requires a List or Blob value');
+  const { first, last } = resolveRange(holder, range, context);
+  const source = value.items;
+  let taken = 0;
+  for (let at = first; at <= last; at++) {
+    if (taken >= source.length) return context.fail('E711: List value does not have enough items');
+    holder.items[at] = combineWith(holder.items[at], operator, source[taken], name, context);
+    taken++;
+  }
+  if (taken < source.length) context.fail('E710: List value has more items than targets');
+}
+
+export function executeUnletElement(name: string, host: ExpressionHost, context: Context): void {
+  const access = splitAccess(name);
+  if (access === null || access.accessors.length === 0) return;
+  const key = VimVariables.key(access.name);
+  if (key === null || host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${access.name}`);
+  const holder = runExpression(`${access.name}${access.accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+  const last = access.accessors[access.accessors.length - 1];
+  const range = sliceBounds(last);
+  if (holder.kind === 'list') {
+    if (range !== null) {
+      const { first, last: end } = resolveRange(holder, range, context);
+      holder.items.splice(first, end - first + 1);
+      return;
+    }
+    let at = Number(context.numberOf(runExpression(last, context), true));
+    if (at < 0) at += holder.items.length;
+    if (at < 0 || at >= holder.items.length) context.fail(`E684: List index out of range: ${at}`);
+    holder.items.splice(at, 1);
+  } else if (holder.kind === 'dict') {
+    const field = context.stringOf(runExpression(last, context), true);
+    if (!holder.entries.delete(field)) context.fail(`E716: Key not present in Dictionary: "${field}"`);
   } else {
     context.fail('E689: Can only index a List, Dictionary or Blob');
   }
@@ -2680,9 +2766,16 @@ export function executeLetCommand(argument: string, host: ExpressionHost): reado
 }
 
 export function executeUnletCommand(names: string, bang: boolean, host: ExpressionHost): readonly string[] {
-  const errors: string[] = [];
+  const context = new Context(host);
   for (const name of names.split(/\s+/).filter((piece) => piece !== '')) {
-    if (!host.variables.remove(name) && !bang) errors.push(`E108: No such variable: "${name}"`);
+    try {
+      if (name.startsWith('$')) host.assignEnvironment(name.slice(1), null);
+      else if (/[[.]/.test(name)) executeUnletElement(name, host, context);
+      else if (!host.variables.remove(name) && !bang) context.soft(`E108: No such variable: "${name}"`);
+    } catch (failure) {
+      if (!(failure instanceof Abort)) throw failure;
+      break;
+    }
   }
-  return errors;
+  return context.errors;
 }

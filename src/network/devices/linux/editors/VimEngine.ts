@@ -2929,7 +2929,7 @@ export class VimEngine {
         const lo = Math.max(0, Math.min(rangeStart, rangeEnd ?? rangeStart));
         const hi = Math.min(this.linesArr.length - 1, Math.max(rangeStart, rangeEnd ?? rangeStart));
         const input = this.linesArr.slice(lo, hi + 1).join('\n') + '\n';
-        const output = this.fs.filterThroughShell(cmdStr, input);
+        const output = this.fs.filterThroughShell(this.withEnvironment(cmdStr), input);
         const body = output.endsWith('\n') ? output.slice(0, -1) : output;
         const outLines = body.length === 0 ? [''] : body.split('\n');
         this.linesArr.splice(lo, hi - lo + 1, ...outLines);
@@ -2938,7 +2938,7 @@ export class VimEngine {
         this._modified = true;
         this._message = '';
       } else {
-        this._shellOutput = this.fs.runShellCommand(cmdStr);
+        this._shellOutput = this.fs.runShellCommand(this.withEnvironment(cmdStr));
         this._message = `!${cmdStr}`;
       }
       this._mode = 'normal';
@@ -2952,7 +2952,7 @@ export class VimEngine {
       this.pushUndoSnapshot();
       let newLines: string[];
       if (arg.startsWith('!')) {
-        const output = this.fs.runShellCommand(this.expandPercent(arg.slice(1).trim()));
+        const output = this.fs.runShellCommand(this.withEnvironment(this.expandPercent(arg.slice(1).trim())));
         const body = output.endsWith('\n') ? output.slice(0, -1) : output;
         newLines = body.length === 0 ? [] : body.split('\n');
       } else {
@@ -3368,7 +3368,8 @@ export class VimEngine {
       option: (name, scope) => this.options.lookup(name, scope),
       environment: (name) => this.environmentVariable(name) ?? '',
       environmentOrNull: (name) => this.environmentVariable(name),
-      environmentNames: () => this.fs.environmentNames?.() ?? [],
+      environmentNames: () => this.environmentNamesWithOverrides(),
+      assignEnvironment: (name, value) => { this.environmentOverrides.set(name, value); },
       shellStatus: () => this.lastShellStatus,
       pathKind: (path) => this.fs.kindOf?.(path) ?? (this.fs.exists(this.fs.resolvePath(path)) ? 'file' : 'missing'),
       readText: (path) => this.fs.readFile(this.fs.resolvePath(path)),
@@ -3403,8 +3404,28 @@ export class VimEngine {
     return register.lines.join('\n') + (register.linewise ? '\n' : '');
   }
 
+  private readonly environmentOverrides = new Map<string, string | null>();
+
   private environmentVariable(name: string): string | null {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? (this.fs.environmentVariable?.(name) ?? null) : null;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return null;
+    if (this.environmentOverrides.has(name)) return this.environmentOverrides.get(name) ?? null;
+    return this.fs.environmentVariable?.(name) ?? null;
+  }
+
+  private environmentNamesWithOverrides(): string[] {
+    const names = new Set(this.fs.environmentNames?.() ?? []);
+    for (const [name, value] of this.environmentOverrides) {
+      if (value === null) names.delete(name);
+      else names.add(name);
+    }
+    return [...names];
+  }
+
+  private withEnvironment(command: string): string {
+    if (this.environmentOverrides.size === 0) return command;
+    const quote = (text: string): string => `'${text.replace(/'/g, "'\\''")}'`;
+    const setup = [...this.environmentOverrides].map(([name, value]) => (value === null ? `unset ${name}` : `export ${name}=${quote(value)}`)).join('; ');
+    return `${setup}; ${command}`;
   }
 
   private temporaryDirectory: string | null = null;
@@ -3435,9 +3456,9 @@ export class VimEngine {
   private runExpressionShell(command: string, input: string | null): string {
     if (this.fs.runChildShell === undefined) {
       this.lastShellStatus = 0;
-      return input === null ? this.fs.runShellCommand(command) : this.fs.filterThroughShell(command, input);
+      return input === null ? this.fs.runShellCommand(this.withEnvironment(command)) : this.fs.filterThroughShell(this.withEnvironment(command), input);
     }
-    const run = this.fs.runChildShell(command, input ?? undefined);
+    const run = this.fs.runChildShell(this.withEnvironment(command), input ?? undefined);
     this.lastShellStatus = run.status;
     return run.output;
   }
