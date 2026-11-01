@@ -27,6 +27,7 @@
  * niveau) passent des deux cotes.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import { FORTIOS_SCHEMA } from '@/network/devices/firewall/vendors/fortios/schema';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -116,6 +117,8 @@ describe('les queues de `diagnose` annoncent leurs mots-cles', () => {
     ['diagnose firewall auth filter ', ['clear', 'group', 'policy', 'user']],
     ['diagnose vpn ike gateway clear ', ['name']],
     ['diagnose test application ', ['dnsproxy', 'miglogd']],
+    ['diagnose firewall iprope show ', ['00100004']],
+    ['diagnose sys checkused ', ['system.interface', 'firewall.address', 'router.static']],
     ['execute log filter ', ['category', 'field', 'reset', 'view-lines']],
     ['diagnose sniffer packet ', ['any', 'port1', 'wan1']],
     ['diagnose hardware deviceinfo nic ', ['port1', 'port2', 'wan1']],
@@ -170,5 +173,30 @@ describe('garde-fou : tout mot offert par `?` s\'execute', () => {
       if (/Unknown action|unknown command|Invalid input/i.test(answer)) refused.push(`${path} => ${answer.split('\n').slice(0, 2).join(' // ')}`);
     }
     expect(refused).toEqual([]);
+  }, 120_000);
+});
+
+describe('garde-fou : l\'arbre `config` est offert en entier', () => {
+  const escape = (word: string): string => word.replace(/[-+.]/g, '\\$&');
+
+  it('chaque table du schema est offerte par `config ?`, s\'ouvre, et chacun de ses attributs disponibles par `set ?`', async () => {
+    const missing: string[] = [];
+    for (const spec of FORTIOS_SCHEMA) {
+      const fw = neuf();
+      const parent = spec.path.slice(0, -1).join(' ');
+      const rows = fw.getShell().help(`config ${parent}${parent === '' ? '' : ' '}`).join('\n');
+      if (!new RegExp(`(^|\\n)${escape(spec.path[spec.path.length - 1])}\\s`).test(rows)) missing.push(`config ?: ${spec.path.join(' ')}`);
+      if (spec.kind !== 'table') continue;
+      if ((await fw.executeCommand(`config ${spec.path.join(' ')}`)).trim() !== '') continue;
+      if ((await fw.executeCommand(`edit ${spec.keyType === 'integer' ? '1' : 'zz1'}`)).trim() !== '') continue;
+      const offeredSet = fw.getShell().help('set ').join('\n');
+      for (const attribute of spec.attributes) {
+        if (attribute.hidden === true || attribute.unimplemented !== undefined || attribute.name === 'name' || attribute.name === 'id') continue;
+        if (new RegExp(`(^|\\n)${escape(attribute.name)}\\s`).test(offeredSet)) continue;
+        const reply = await fw.executeCommand(`set ${attribute.name} 1`);
+        if (!/does not apply in the current configuration|read-only/.test(reply)) missing.push(`set ?: ${spec.path.join(' ')} ${attribute.name}`);
+      }
+    }
+    expect(missing).toEqual([]);
   }, 120_000);
 });
