@@ -58,6 +58,7 @@ export interface ExpressionHost {
   workingDirectory(): string;
   hostName(): string;
   executableAt(path: string): boolean;
+  linkInfo(path: string): { type: string; permissions: number } | null;
   resolvePath(path: string): string;
   processId(): number;
   shell(command: string, input: string | null): string;
@@ -1141,6 +1142,15 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     const kept = args[1] === undefined ? names : names.filter((name) => context.numberOf(context.invoke(args[1], [str(name)]), false) !== 0n);
     return list(kept.map(str));
   } }],
+  ['getftype', { min: 1, max: 1, run: (args, context) => {
+    const info = context.host.linkInfo(context.stringOf(args[0], false));
+    return str(info === null ? '' : (FILE_TYPE_NAMES[info.type] ?? 'other'));
+  } }],
+  ['getfperm', { min: 1, max: 1, run: (args, context) => {
+    const info = context.host.linkInfo(context.stringOf(args[0], false));
+    if (info === null) return str('');
+    return str([...'rwxrwxrwx'].map((letter, at) => ((info.permissions >> (8 - at)) & 1) === 1 ? letter : '-').join(''));
+  } }],
   ['executable', { min: 1, max: 1, run: (args, context) => num(findExecutable(context, context.stringOf(args[0], false)) === null ? 0 : 1) }],
   ['exepath', { min: 1, max: 1, run: (args, context) => str(findExecutable(context, context.stringOf(args[0], false)) ?? '') }],
   ['localtime', { min: 0, max: 0, run: () => num(Math.floor(simulationNowMs() / 1000)) }],
@@ -1317,6 +1327,10 @@ function makeFuncref(args: VimValue[], context: Context, builtinsAllowed: boolea
   const bound = args[1] !== undefined && args[1].kind === 'list' ? args[1].items : [];
   return { kind: 'funcref', name, params: null, body: '', scopes: [], bound };
 }
+
+const FILE_TYPE_NAMES: Readonly<Record<string, string>> = {
+  file: 'file', directory: 'dir', symlink: 'link', chardev: 'cdev', blockdev: 'bdev', fifo: 'fifo', socket: 'socket',
+};
 
 function findExecutable(context: Context, name: string): string | null {
   if (name === '') return null;

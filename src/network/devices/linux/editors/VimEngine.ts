@@ -3374,6 +3374,7 @@ export class VimEngine {
       readText: (path) => this.fs.readFile(this.fs.resolvePath(path)),
       directoryEntries: (path) => this.fs.listDirectory?.(this.fs.resolvePath(path)) ?? null,
       workingDirectory: () => this.fs.resolvePath('.'),
+      linkInfo: (path) => this.fs.linkInfo?.(path) ?? null,
       executableAt: (path) => this.fs.executableAt?.(path) ?? false,
       resolvePath: (path) => this.fs.resolvePath(path),
       hostName: () => this.fs.identity?.().host ?? '',
