@@ -40,7 +40,7 @@ export function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult)
   return null;
 }
 
-function missing(ctx: CmdletContext, cmdletName: string, parameters: string): null {
+export function missing(ctx: CmdletContext, cmdletName: string, parameters: string): null {
   ctx.emitError(`${cmdletName} : Cannot process command because of one or more missing mandatory parameters: ${parameters}.`);
   return null;
 }

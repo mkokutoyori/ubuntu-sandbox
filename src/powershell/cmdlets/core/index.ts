@@ -180,6 +180,7 @@ import {
   GetDnsServerSettingCmdlet, SetDnsServerSettingCmdlet,
 } from './DnsServerSettingsCmdlets';
 import { GetDnsServerDiagnosticsCmdlet, SetDnsServerDiagnosticsCmdlet } from './DnsServerDiagnosticsCmdlets';
+import { GetDnsServerStatisticsCmdlet, ClearDnsServerStatisticsCmdlet } from './DnsServerStatisticsCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -878,6 +879,8 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Set-DnsServerSetting', new SetDnsServerSettingCmdlet()));
   registry.register(remotable('Get-DnsServerDiagnostics', new GetDnsServerDiagnosticsCmdlet()));
   registry.register(remotable('Set-DnsServerDiagnostics', new SetDnsServerDiagnosticsCmdlet()));
+  registry.register(remotable('Get-DnsServerStatistics', new GetDnsServerStatisticsCmdlet()));
+  registry.register(remotable('Clear-DnsServerStatistics', new ClearDnsServerStatisticsCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));

@@ -97,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1335,6 +1335,10 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult { return this.role().setServerSettings(changes); }
   getDiagnostics(): DnsDiagnosticsEntry[] { return this.role().getDiagnostics(); }
   setDiagnostics(changes: DnsDiagnosticsChanges): DnsOpResult { return this.role().setDiagnostics(changes); }
+  getStatistics(): ServerStatisticsSnapshot { return this.role().getStatistics(); }
+  clearStatistics(): void { this.role().clearStatistics(); }
+  getZoneStatistics(names: readonly string[], clear: boolean): DnsZoneStatisticsResult { return this.role().getZoneStatistics(names, clear); }
+  clearZoneStatistics(names: readonly string[]): DnsOpResult { return this.role().clearZoneStatistics(names); }
   getGlobalNames(): DnsGlobalNames { return this.role().getGlobalNames(); }
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult { return this.role().setGlobalNames(changes); }
   getGlobalQueryBlock(): GlobalQueryBlock { return this.role().getGlobalQueryBlock(); }

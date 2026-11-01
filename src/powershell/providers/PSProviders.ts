@@ -991,19 +991,23 @@ export interface ILicensingProvider {
 import type { DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
 import type { DnsServerSettingEntry, DnsServerSettingValue } from '@/network/devices/windows/server/dns/DnsServerSettings';
 import type { DnsDiagnosticsChanges, DnsDiagnosticsEntry } from '@/network/devices/windows/server/dns/DnsServerDiagnostics';
+import type { ServerStatisticsSnapshot } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsZoneStatisticsResult,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 export type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsZoneStatisticsResult,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
 export type { DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
 export type { DnsServerSettingEntry, DnsServerSettingValue } from '@/network/devices/windows/server/dns/DnsServerSettings';
 export type { DnsDiagnosticsChanges, DnsDiagnosticsEntry, DnsDiagnosticsValue } from '@/network/devices/windows/server/dns/DnsServerDiagnostics';
+export type { ServerStatisticsSnapshot, ZoneStatisticsSnapshot, StatisticsTimes } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1060,6 +1064,10 @@ export interface IDnsServerProvider {
   setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult;
   getDiagnostics(): DnsDiagnosticsEntry[];
   setDiagnostics(changes: DnsDiagnosticsChanges): DnsOpResult;
+  getStatistics(): ServerStatisticsSnapshot;
+  clearStatistics(): void;
+  getZoneStatistics(names: readonly string[], clear: boolean): DnsZoneStatisticsResult;
+  clearZoneStatistics(names: readonly string[]): DnsOpResult;
   getGlobalNames(): DnsGlobalNames;
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult;
   getGlobalQueryBlock(): GlobalQueryBlock;

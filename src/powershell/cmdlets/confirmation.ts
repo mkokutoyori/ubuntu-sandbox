@@ -22,3 +22,9 @@ export function confirmationDue(ctx: CmdletContext, impact: ConfirmImpact): bool
   if (preference === IMPACT_RANK.None) return false;
   return IMPACT_RANK[impact] >= preference;
 }
+
+export function mayProceed(ctx: CmdletContext, cmdlet: string, impact: ConfirmImpact): boolean {
+  if (!confirmationDue(ctx, impact)) return true;
+  ctx.emitError(`${cmdlet} : ${NON_INTERACTIVE_HOST}`);
+  return false;
+}

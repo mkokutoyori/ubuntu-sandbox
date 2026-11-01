@@ -8,7 +8,7 @@ import { IPAddress } from '@/network/core/types';
 import type { DnsClientInterfaceRow, IDnsClientProvider } from '@/powershell/providers/PSProviders';
 import type { DohServerAddress, NrptRule, NrptRuleDraft } from '@/network/devices/windows/dnsClientSettings';
 import { remoteCimRefusal, notInSet } from '../cimCommon';
-import { NON_INTERACTIVE_HOST, confirmationDue, type ConfirmImpact } from '../confirmation';
+import { mayProceed } from '../confirmation';
 import {
   type DnsClientSelection, NRPT_DA_NETWORKS, NRPT_ENCODINGS, NRPT_FALLBACKS, NRPT_IPSEC_ENCRYPTIONS,
   NRPT_PROXY_TYPES, NRPT_QUERY_POLICIES, dnsClientSelectionIsEmpty, noMatchingDnsClient, selectDnsClients,
@@ -56,12 +56,6 @@ function choiceOf<T extends string>(
   if (found !== undefined) return found;
   fail(ctx, cmdlet, notInSet(parameter, given, allowed));
   return null;
-}
-
-function mayProceed(ctx: CmdletContext, cmdlet: string, impact: ConfirmImpact): boolean {
-  if (!confirmationDue(ctx, impact)) return true;
-  ctx.emitError(`${cmdlet} : ${NON_INTERACTIVE_HOST}`);
-  return false;
 }
 
 function gpoRefusal(ctx: CmdletContext, cmdlet: string): string | null {
