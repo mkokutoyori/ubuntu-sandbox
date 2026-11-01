@@ -50,6 +50,14 @@ export const LINUX_CORE_KNOBS: readonly KernelByteKnob[] = [
 
 export const LINUX_KERNEL_KNOBS: readonly KernelByteKnob[] = [
   { name: 'dmesg_restrict', initial: 1, minimum: 0, maximum: 1 },
+  { name: 'kptr_restrict', initial: 1, minimum: 0, maximum: 2 },
+  { name: 'sysrq', initial: 176, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'yama/ptrace_scope', initial: 1, minimum: 0, maximum: 3 },
+];
+
+export const LINUX_VM_KNOBS: readonly KernelByteKnob[] = [
+  { name: 'max_map_count', initial: 1048576, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'mmap_min_addr', initial: 65536, minimum: 0, maximum: 2_147_483_647 },
 ];
 
 export interface KernelStringKnob {
@@ -165,6 +173,13 @@ export class LinuxCoreSettings extends KernelKnobStore {
     return this.get('somaxconn');
   }
 }
+
+export class LinuxVmSettings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_VM_KNOBS);
+  }
+}
+
 
 export class LinuxKernelSettings extends KernelKnobStore {
   constructor() {
