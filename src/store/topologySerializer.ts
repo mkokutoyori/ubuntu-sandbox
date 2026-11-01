@@ -52,6 +52,7 @@ import {
 } from '@/terminal/commands/database';
 import { VirtualFileSystem, type INode } from '@/network/devices/linux/VirtualFileSystem';
 import { isContentDeferred } from '@/network/core/DeferredContent';
+import type { DHCPClientLease } from '@/network/dhcp/types';
 import { bondOptionLines } from '@/network/devices/linux/net/LinuxBonding';
 import { Firewall } from '@/network/devices/firewall/Firewall';
 import {
@@ -305,6 +306,7 @@ interface TopologyDeviceExport {
   windowsCertificates?: WindowsCertificateState;
   windowsDomain?: WindowsDomainState;
   windowsDnsServers?: { interface: string; servers: string[] }[];
+  dhcpLeases?: TopologyDhcpLeaseExport[];
   windowsSecurity?: WindowsSecurityPolicyState;
   activeDirectory?: {
     promotion: DirectoryPromotion; delta?: DirectoryDelta; baselineDeviceId?: string; forestFsmo?: ForestFsmoRoles;
@@ -431,6 +433,33 @@ function captureInterface(port: Port): TopologyInterfaceExport {
     }));
   }
   return entry;
+}
+
+export interface TopologyDhcpLeaseExport {
+  interface: string;
+  lease: DHCPClientLease;
+}
+
+function captureDhcpLeases(device: EndHost): TopologyDhcpLeaseExport[] {
+  const client = device.getDHCPClient();
+  const leases: TopologyDhcpLeaseExport[] = [];
+  for (const port of device.getPorts()) {
+    const lease = client.getState(port.getName()).lease;
+    if (lease === null || lease.serverIdentifier === '0.0.0.0') continue;
+    if (port.getIPAddress()?.toString() !== lease.ipAddress) continue;
+    leases.push({ interface: port.getName(), lease: { ...lease } });
+  }
+  return leases;
+}
+
+function withoutLeasedAddresses(entry: TopologyDeviceExport, leases: readonly TopologyDhcpLeaseExport[]): void {
+  for (const { interface: name, lease } of leases) {
+    const iface = entry.interfaces.find((candidate) => candidate.name === name);
+    if (iface === undefined) continue;
+    delete iface.ipAddress;
+    delete iface.subnetMask;
+    if (lease.defaultGateway !== null && entry.defaultGateway === lease.defaultGateway) delete entry.defaultGateway;
+  }
 }
 
 function captureStaticArp(device: EndHost): TopologyStaticArpExport[] {
@@ -1149,6 +1178,11 @@ function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Eq
     if (gw) entry.defaultGateway = gw.toString();
     const arp = captureStaticArp(device);
     if (arp.length > 0) entry.staticArp = arp;
+    const leases = captureDhcpLeases(device);
+    if (leases.length > 0) {
+      entry.dhcpLeases = leases;
+      withoutLeasedAddresses(entry, leases);
+    }
   }
   if (device instanceof EndHost || device instanceof Router) {
     const statics = device.getRoutingTable()
@@ -1561,6 +1595,11 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
             route.metric,
           );
         } catch { /* malformed route in file — skip */ }
+      }
+    }
+    if (devData.dhcpLeases && device instanceof EndHost) {
+      for (const { interface: ifName, lease } of devData.dhcpLeases) {
+        if (device.getPort(ifName)) device.getDHCPClient().restoreLease(ifName, lease);
       }
     }
     if (devData.staticArp && device instanceof EndHost) {
