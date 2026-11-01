@@ -433,7 +433,8 @@ lecteur, reserve assumee (la machine accepte le reglage, le moteur n'a pas la fo
 `/proc/kallsyms`), `kernel.sysrq` (pas de clavier ; `/proc/sysrq-trigger` ignore d'ailleurs le masque), `kernel.yama.ptrace_scope` (pas de
 `ptrace`), `vm.max_map_count` et `vm.mmap_min_addr` (pas de modele de memoire par processus) ; sonde `probe-sysctl-ubuntu-hardening`.
 **Non livres** : `10-network-security.conf` (`net.ipv4.conf.{default,all}.rp_filter=2`), `10-ipv6-privacy.conf`
-(`net.ipv6.conf.{all,default}.use_tempaddr = 2`) et `99-protect-links.conf` (`fs.protected_*`) : `sysctl --system` ecrirait des cles
+(`net.ipv6.conf.{all,default}.use_tempaddr = 2`) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`) mais `protected_symlinks`, `protected_fifos`
+et `protected_regular` n'ont pas de lecteur dans le VFS (suivre un lien dans un dossier colle, `O_CREAT` sur un fichier d'autrui) et le fichier du paquet n'est donc pas livre : `sysctl --system` ecrirait des cles
 absentes, et les stocker sans lecteur affirmerait un filtre de chemin inverse qui ne jette aucun paquet (un critere de securite doit
 echouer FERME). A fermer avec leur lecteur ; `rp_filter` en premier (il rejette de vrais paquets sur une vraie machine, et demande de
 verifier qu'aucun labo ne recoit d'une source sans route).

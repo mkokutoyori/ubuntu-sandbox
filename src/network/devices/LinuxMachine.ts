@@ -88,7 +88,7 @@ import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
-  LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LinuxVmSettings, LINUX_VM_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, KernelStringStore, LINUX_CORE_STRING_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
+  LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LinuxVmSettings, LINUX_VM_KNOBS, LinuxFsSettings, LINUX_FS_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, KernelStringStore, LINUX_CORE_STRING_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
@@ -324,6 +324,7 @@ export abstract class LinuxMachine extends EndHost
   private readonly coreSettings = new LinuxCoreSettings();
   private readonly kernelSettings = new LinuxKernelSettings();
   private readonly vmSettings = new LinuxVmSettings();
+  private readonly fsSettings = new LinuxFsSettings();
   private readonly kernelVectors = new KernelVectorStore(LINUX_KERNEL_VECTOR_KNOBS);
   private readonly coreStrings = new KernelStringStore(LINUX_CORE_STRING_KNOBS);
   private readonly ipv6Settings = new LinuxIpv6Settings();
@@ -528,10 +529,16 @@ export abstract class LinuxMachine extends EndHost
     this.executor.vfs.registerGeneratedFile(CA_BUNDLE_PATH, () => caBundlePem(this.trustedCAs), 0o644);
     this.executor.vfs.mkdirp('/proc/sys/kernel/yama', 0o555, 0, 0);
     this.executor.vfs.mkdirp('/proc/sys/vm', 0o555, 0, 0);
+    this.executor.vfs.mkdirp('/proc/sys/fs', 0o555, 0, 0);
     for (const knob of LINUX_KERNEL_KNOBS) {
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/kernel/${knob.name}`,
         () => `${this.kernelSettings.get(knob.name)}\n`,
         (text) => this.kernelSettings.write(knob.name, text));
+    }
+    for (const knob of LINUX_FS_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/fs/${knob.name}`,
+        () => `${this.fsSettings.get(knob.name)}\n`,
+        (text) => this.fsSettings.write(knob.name, text));
     }
     for (const knob of LINUX_VM_KNOBS) {
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/vm/${knob.name}`,

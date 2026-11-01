@@ -1,4 +1,6 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
+import type { INode } from '../VirtualFileSystem';
+import type { PathActor } from '../VfsPath';
 import { actorOf, type ShellContext } from '../LinuxFileCommands';
 import { makeBackup, parseBackupControl, type BackupControl } from './BackupControl';
 import { Streams, docsResult, quoteLocale, quoteShell, usageFailure, type CoreutilsRun } from './CoreutilsKit';
@@ -20,6 +22,16 @@ const LONG_OPTIONS: readonly LongOption[] = [
   { name: 'help', letter: 'H', takesArgument: false },
   { name: 'version', letter: 'V', takesArgument: false },
 ];
+
+function mayLinkSource(ctx: ShellContext, node: INode | null, actor: PathActor): boolean {
+  if (node === null || actor.uid === 0 || node.uid === actor.uid) return true;
+  if (ctx.vfs.readFile('/proc/sys/fs/protected_hardlinks')?.trim() !== '1') return true;
+  if (node.type !== 'file') return false;
+  if ((node.permissions & 0o4000) !== 0) return false;
+  if ((node.permissions & 0o2010) === 0o2010) return false;
+  return ctx.vfs.checkAccess(node, 'r', actor.uid, actor.gid, [...actor.gids])
+    && ctx.vfs.checkAccess(node, 'w', actor.uid, actor.gid, [...actor.gids]);
+}
 
 function relativeTarget(linkPath: string, targetPath: string): string {
   const base = linkPath.split('/').slice(1, -1);
@@ -122,7 +134,8 @@ export function runLn(ctx: ShellContext, args: readonly string[], stdin: string 
     const linkText = destination === '' && !intoDirectory ? '' : intoDirectory ? `${(destination as string) === '.' ? '.' : (destination as string).replace(/\/+$/, '')}/${name}` : (destination as string);
     const linkPath = ctx.vfs.path(linkText, ctx.cwd, actor);
     const fail = (reason: string): void => {
-      streams.diagnostic(`ln: failed to create ${kind} link ${quoteShell(linkText)}${symbolic && source === '' ? ` -> ${quoteShell(source)}` : ''}: ${reason}`);
+      const shows = symbolic ? source === '' : reason !== 'File exists';
+      streams.diagnostic(`ln: failed to create ${kind} link ${quoteShell(linkText)}${shows ? ` ${symbolic ? '->' : '=>'} ${quoteShell(source)}` : ''}: ${reason}`);
       streams.exitCode = 1;
     };
     if (linkText === '' || (symbolic && source === '')) { fail('No such file or directory'); continue; }
@@ -141,6 +154,7 @@ export function runLn(ctx: ShellContext, args: readonly string[], stdin: string 
       }
     }
     if (ctx.uid !== 0 && linkPath.parent().inode() && !linkPath.parent().isWritableDir()) { fail('Permission denied'); continue; }
+    if (!symbolic && !mayLinkSource(ctx, sourcePath.lstatNode(), actor)) { fail('Operation not permitted'); continue; }
     const parentNode = linkPath.parent().inode();
     if (parentNode === null) { fail('No such file or directory'); continue; }
     if (parentNode.type !== 'directory') { fail('Not a directory'); continue; }

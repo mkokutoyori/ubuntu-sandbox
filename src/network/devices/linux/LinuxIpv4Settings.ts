@@ -174,6 +174,16 @@ export class LinuxCoreSettings extends KernelKnobStore {
   }
 }
 
+export const LINUX_FS_KNOBS: readonly KernelByteKnob[] = [
+  { name: 'protected_hardlinks', initial: 1, minimum: 0, maximum: 1 },
+];
+
+export class LinuxFsSettings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_FS_KNOBS);
+  }
+}
+
 export class LinuxVmSettings extends KernelKnobStore {
   constructor() {
     super(LINUX_VM_KNOBS);
