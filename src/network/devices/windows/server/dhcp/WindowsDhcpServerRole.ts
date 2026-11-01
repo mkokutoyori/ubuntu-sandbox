@@ -20,7 +20,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { EndHost } from '@/network/devices/EndHost';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
-import { DHCPServer } from '@/network/dhcp/DHCPServer';
+import { DHCPServer, INFINITE_LEASE_EXPIRATION } from '@/network/dhcp/DHCPServer';
 import { WindowsDhcpv6 } from './WindowsDhcpv6';
 import { DhcpBulkLeasequeryService } from '@/network/dhcp/DhcpBulkLeasequery';
 import { DHCPPacket, DHCP_OPTION, DHCP_WIRE_BYTES } from '@/network/dhcp/DHCPPacket';
@@ -43,6 +43,15 @@ import {
 import { IPAddress, SubnetMask, type UDPPacket } from '@/network/core/types';
 
 const WIRED_SCOPE_LEASE_SECONDS = 8 * 86400;
+
+export interface DhcpKeptLease {
+  scope: string;
+  ip: string;
+  clientId: string;
+  type: 'automatic' | 'manual';
+  hostName?: string;
+  leaseSeconds: number | null;
+}
 
 export interface DhcpOpResult { ok: boolean; message: string }
 
@@ -197,11 +206,7 @@ export class WindowsDhcpServerRole {
       exportScopes: (names) => this.exportScopes(names),
       importScopes: (data, overwrite) => this.importScopes(data, overwrite),
       exportBindings: (scopes) => this.exportBindings(scopes),
-      importBinding: (binding) => this.engine.importBinding({
-        ipAddress: binding.ip, clientId: binding.clientId, hostName: binding.hostName,
-        leaseStart: binding.leaseStart, leaseExpiration: binding.leaseExpiration,
-        poolName: binding.scope, type: binding.type,
-      }),
+      importBinding: (binding) => this.adoptBinding(binding),
       dropBinding: (ip) => { this.engine.clearBinding(ip); },
       adminApReqFor: (peerName) => this.env.adminApReqFor(peerName),
       verifyAdministrator: (apReq) => this.env.verifyAdministrator(apReq),
@@ -343,15 +348,39 @@ export class WindowsDhcpServerRole {
       for (const range of scope.exclusions) this.addExclusionRange(range.start, range.end);
       for (const reservation of scope.reservations) this.addReservation(scope.name, reservation.ip, reservation.clientId);
       this.setScope(scope.name, { state: scope.state });
-      for (const binding of kept) {
-        this.engine.importBinding({
-          ipAddress: binding.ip, clientId: binding.clientId, hostName: binding.hostName,
-          leaseStart: binding.leaseStart, leaseExpiration: binding.leaseExpiration,
-          poolName: binding.scope, type: binding.type,
-        });
-      }
+      for (const binding of kept) this.adoptBinding(binding);
     }
     return { ok: true, message: '' };
+  }
+
+  private adoptBinding(binding: FailoverBinding): void {
+    this.engine.importBinding({
+      ipAddress: binding.ip, clientId: binding.clientId, hostName: binding.hostName,
+      leaseStart: binding.leaseStart, leaseExpiration: binding.leaseExpiration,
+      poolName: binding.scope, type: binding.type,
+    });
+  }
+
+  keptLeases(): DhcpKeptLease[] {
+    return this.exportBindings(this.listScopes().map(scope => scope.name)).map(binding => ({
+      scope: binding.scope, ip: binding.ip, clientId: binding.clientId, type: binding.type,
+      ...(binding.hostName === undefined ? {} : { hostName: binding.hostName }),
+      leaseSeconds: binding.leaseExpiration >= INFINITE_LEASE_EXPIRATION
+        ? null
+        : Math.max(1, Math.round((binding.leaseExpiration - binding.leaseStart) / 1000)),
+    }));
+  }
+
+  restoreLeases(leases: readonly DhcpKeptLease[]): void {
+    const at = this.env.now();
+    for (const lease of leases) {
+      if (!this.engine.getPool(lease.scope)) continue;
+      this.adoptBinding({
+        scope: lease.scope, ip: lease.ip, clientId: lease.clientId, type: lease.type, hostName: lease.hostName,
+        leaseStart: at,
+        leaseExpiration: lease.leaseSeconds === null ? INFINITE_LEASE_EXPIRATION : at + lease.leaseSeconds * 1000,
+      });
+    }
   }
 
   private exportBindings(scopes: readonly string[]): FailoverBinding[] {
