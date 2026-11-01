@@ -6,8 +6,15 @@ export interface SmtpPeerRef extends SmtpConnectionRef {
   readonly remoteIp: string;
 }
 
+export interface SmtpSessionAbort {
+  readonly reason: 'timeout' | 'lost connection';
+  readonly where: string;
+  readonly transactionOpen: boolean;
+}
+
 export interface SmtpSessionClosedPayload extends SmtpPeerRef {
   readonly commandStats: string;
+  readonly abort?: SmtpSessionAbort;
 }
 
 export interface SmtpCommandReceivedPayload extends SmtpConnectionRef {

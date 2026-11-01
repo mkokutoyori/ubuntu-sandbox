@@ -86,6 +86,19 @@ export class SmtpServer {
     const session = new SmtpServerSession(sessionConfig, socket.remoteIp);
     this.config.eventBus?.publish({ topic: 'smtp.session.opened', payload: { connectionId: session.connectionId, remoteIp: session.getRemoteIp() } });
     let awaitingDataBody = false;
+    let finished = false;
+    const finish = (reason?: 'timeout' | 'lost connection'): void => {
+      if (finished) return;
+      finished = true;
+      this.config.eventBus?.publish({
+        topic: 'smtp.session.closed',
+        payload: {
+          connectionId: session.connectionId, remoteIp: session.getRemoteIp(), commandStats: session.commandStats.format(),
+          ...(reason === undefined ? {} : { abort: { reason, ...session.abortContext() } }),
+        },
+      });
+    };
+    socket.onClose(() => finish('lost connection'));
     let idleTimer: TimerHandle | null = null;
     let unsubscribe: () => void = () => {};
 
@@ -116,7 +129,7 @@ export class SmtpServer {
       const timeoutMs = awaitingDataBody ? this.limits.idleTimeoutMs.dataInit : this.limits.idleTimeoutMs.initial;
       idleTimer = this.scheduler.setTimeout(() => {
         writeReply(replyEnhanced(421, ENHANCED.SERVICE_NOT_AVAILABLE, 'Idle timeout; closing connection.'));
-        this.config.eventBus?.publish({ topic: 'smtp.session.closed', payload: { connectionId: session.connectionId, remoteIp: session.getRemoteIp(), commandStats: session.commandStats.format() } });
+        finish('timeout');
         unsubscribe();
         socket.close();
       }, timeoutMs);
@@ -226,7 +239,7 @@ export class SmtpServer {
 
         if (session.result === 'closed') {
           clearIdle();
-          this.config.eventBus?.publish({ topic: 'smtp.session.closed', payload: { connectionId: session.connectionId, remoteIp: session.getRemoteIp(), commandStats: session.commandStats.format() } });
+          finish();
           unsubscribe();
           socket.close();
           return;

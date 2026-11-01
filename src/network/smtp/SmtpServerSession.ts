@@ -69,12 +69,19 @@ export class SmtpServerSession {
   handle(cmd: SmtpCommand): readonly SmtpReply[] {
     this.config.eventBus?.publish({ topic: 'smtp.command.received', payload: { connectionId: this.connectionId, verb: cmd.verb } });
     const replies = this.dispatch(cmd);
+    this.lastCommand = cmd.verb.toUpperCase();
     this.commandStats.record(cmd.verb, replies[0].code);
     return replies;
   }
 
   getRemoteIp(): string {
     return this.remoteIp;
+  }
+
+  private lastCommand = 'CONNECT';
+
+  abortContext(): { where: string; transactionOpen: boolean } {
+    return { where: this.lastCommand, transactionOpen: this.envelopeFrom !== null };
   }
 
   private dispatch(cmd: SmtpCommand): readonly SmtpReply[] {
@@ -184,6 +191,7 @@ export class SmtpServerSession {
   handleDataBody(rawBlob: string): SmtpReply {
     const final = this.acceptDataBody(rawBlob);
     if (final.code >= 400) this.commandStats.retract('data');
+    else this.lastCommand = 'END-OF-MESSAGE';
     return final;
   }
 

@@ -4147,11 +4147,11 @@ od is compared with GNU coreutils 9.4 (see probe-linux-od-evalue-ses-options). S
 
 ### [smtp] ce que Postfix smtpd journalise et que le serveur SMTP n'ecrit pas
 
-`connect from nom[adresse]` et `disconnect from nom[adresse] <compteurs de commandes>` sont ecrits (facility mail, etiquette `postfix/smtpd`, sonde
-`probe-smtp-journal-connexion`, smtpd.c lignes 6487 / 6536 et `smtpd_format_cmd_stats`). Restent : `lost connection after <commande> from ...` quand
-le client coupe sans QUIT (le socket simule ne notifie pas sa fermeture au serveur), les lignes de transaction (`<queueid>: client=`, `message-id=`,
-`from=<...>, size=, nrcpt=`) et `warning:` / `NOQUEUE: reject:` ; ces dernieres relevent de qmgr / cleanup / smtpd et demandent d'abord une file
-d'attente postfix (identifiants de file) qui n'existe pas.
+`connect from`, `disconnect from <compteurs>`, `NOQUEUE: lost connection after <commande> from ...` et `NOQUEUE: timeout after <commande> from ...` sont
+ecrits (facility mail, etiquette `postfix/smtpd`, sonde `probe-smtp-journal-connexion`, smtpd.c lignes 5888-5895, 6300-6315 et `smtpd_format_cmd_stats`).
+Restent : la meme ligne quand une transaction est ouverte (Postfix y met l'identifiant de file au lieu de `NOQUEUE`, et `after DATA (N bytes)`), les lignes de
+transaction (`<queueid>: client=`, `message-id=`, `from=<...>, size=, nrcpt=`) et `warning:` / `reject:` ; elles relevent de qmgr / cleanup / smtpd et
+demandent d'abord une file d'attente postfix avec ses identifiants, qui n'existe pas. Aucun identifiant n'est invente en attendant.
 
 ### [ftp] ce que le serveur FTP journalise a l'acceptation d'une connexion n'est pas verifie
 L'etiquette `ftpd` que le journal employait ne correspond a aucun demon ; vsftpd

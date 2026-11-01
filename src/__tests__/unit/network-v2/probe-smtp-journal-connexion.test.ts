@@ -5,10 +5,12 @@
  * de commandes dans l'ordre de smtpd_cmd_table (helo ehlo xclient xforward starttls auth mail rcpt data bdat rset noop vrfy etrn quit help puis unknown), `nom=reussies` ou
  * `nom=reussies/total` quand une commande a ete refusee, puis `commands=reussies` (ou `commands=reussies/total` si l'une a echoue, ou `commands=0/0` si rien n'a ete recu)
  * (smtpd_format_cmd_stats, lignes 6340 a 6390). Une commande est reussie quand sa reponse est 2xx ou 3xx ; un DATA dont le corps est refuse n'est pas compte reussi.
- * Reserves (TODO.md) : une deconnexion sans QUIT n'est pas observee (le socket ne notifie pas sa fermeture), donc `lost connection after` n'est jamais ecrit ; les autres lignes de
- * Postfix (client=, message-id=, queue id) ne sont pas ecrites.
+ * Une connexion coupee sans QUIT ecrit `NOQUEUE: lost connection after <DERNIERE COMMANDE> from nom[adresse]` (`CONNECT` quand rien n'a ete envoye) avant le `disconnect from` (smtpd.c lignes 5888 a 5895 et
+ * 6300 a 6315) ; l'expiration d'inactivite ecrit `timeout after` de la meme facon ; apres un message accepte (END-OF-MESSAGE) la source n'ecrit pas la ligne ; une transaction ouverte porte un identifiant
+ * de file Postfix qui n'existe pas ici, donc la ligne n'est pas ecrite (reserve TODO.md), comme les autres lignes de transaction (client=, message-id=).
  *
- * Discrimine par `git stash` sur src/network : tous les cas tombent avant sauf le TEMOIN, qui prouve que la session elle-meme aboutit (reponse 250 de bout en bout).
+ * Discrimine par `git stash` sur src/network : tous les cas tombent avant sauf le TEMOIN (la session elle-meme aboutit) et les deux cas negatifs « QUIT n'ecrit pas lost connection » et « transaction ouverte »,
+ * qui passent avant par absence de toute ligne : leur sens repose sur le cas frere qui ecrit la ligne dans le meme laboratoire.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
@@ -18,8 +20,13 @@ import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { SmtpClientSession } from '@/network/smtp/SmtpClientSession';
 import { SMTP_SUBMISSION_PORT } from '@/network/smtp/SmtpServer';
+import type { VirtualTimeScheduler } from '@/events/Scheduler';
+import { installVirtualClock } from '../../support/ntpTime';
+
+let clock: VirtualTimeScheduler;
 
 beforeEach(() => {
+  clock = installVirtualClock();
   resetCounters();
   resetDeviceCounters();
 });
@@ -99,5 +106,60 @@ describe('the peer name', () => {
     const client = connect(pc);
     client.sendCommand({ verb: 'QUIT' });
     expect(await mailLog()).toMatch(/connect from client\.example\.org\[10\.0\.1\.2\]$/m);
+  });
+});
+
+describe('a connection that ends without QUIT', () => {
+  it('before any command: lost connection after CONNECT, then the disconnect with commands=0/0', async () => {
+    const { pc, mailLog } = lab();
+    connect(pc).close();
+    const log = await mailLog();
+    expect(log).toMatch(/postfix\/smtpd\[\d+\]: NOQUEUE: lost connection after CONNECT from unknown\[10\.0\.1\.2\]$/m);
+    expect(log).toMatch(/disconnect from unknown\[10\.0\.1\.2\] commands=0\/0$/m);
+  });
+
+  it('after EHLO: names the last command', async () => {
+    const { pc, mailLog } = lab();
+    const client = connect(pc);
+    client.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
+    client.close();
+    const log = await mailLog();
+    expect(log).toMatch(/NOQUEUE: lost connection after EHLO from unknown\[10\.0\.1\.2\]$/m);
+    expect(log).toMatch(/disconnect from unknown\[10\.0\.1\.2\] ehlo=1 commands=1$/m);
+  });
+
+  it('a clean QUIT writes no lost connection line', async () => {
+    const { pc, mailLog } = lab();
+    const sibling = connect(pc);
+    sibling.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
+    sibling.close();
+    const client = connect(pc);
+    client.sendCommand({ verb: 'QUIT' });
+    const lost = (await mailLog()).split('\n').filter((line) => line.includes('lost connection'));
+    expect(lost.length).toBe(1);
+  });
+
+  it('with a transaction open there is a queue id in Postfix; no line is invented', async () => {
+    const { pc, mailLog } = lab();
+    const sibling = connect(pc);
+    sibling.close();
+    const client = connect(pc);
+    client.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
+    client.sendCommand({ verb: 'MAIL', argument: 'FROM:<alice@example.org>' });
+    client.close();
+    const lost = (await mailLog()).split('\n').filter((line) => line.includes('lost connection'));
+    expect(lost.length).toBe(1);
+  });
+});
+
+describe('an idle connection', () => {
+  it('is dropped by the server after the idle timeout: timeout after EHLO', async () => {
+    const { pc, mailLog } = lab();
+    const client = connect(pc);
+    client.sendCommand({ verb: 'EHLO', argument: 'client.example.org' });
+    await clock.advance(10 * 60 * 1000);
+    const log = await mailLog();
+    expect(log).toMatch(/NOQUEUE: timeout after EHLO from unknown\[10\.0\.1\.2\]$/m);
+    expect(log).toMatch(/disconnect from unknown\[10\.0\.1\.2\] ehlo=1 commands=1$/m);
   });
 });

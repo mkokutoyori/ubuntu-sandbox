@@ -292,6 +292,12 @@ export class LinuxServer extends LinuxMachine {
       this.executor.logMgr.logAt('mail.info', 'postfix/smtpd', `connect from ${peer(event.payload.remoteIp)}`, this.smtpdPid++);
     });
     bus.subscribe('smtp.session.closed', (event) => {
+      const { abort } = event.payload;
+      if (abort !== undefined && !abort.transactionOpen) {
+        this.executor.logMgr.logAt(
+          'mail.info', 'postfix/smtpd',
+          `NOQUEUE: ${abort.reason} after ${abort.where} from ${peer(event.payload.remoteIp)}`, this.smtpdPid++);
+      }
       this.executor.logMgr.logAt(
         'mail.info', 'postfix/smtpd',
         `disconnect from ${peer(event.payload.remoteIp)}${event.payload.commandStats}`, this.smtpdPid++);
