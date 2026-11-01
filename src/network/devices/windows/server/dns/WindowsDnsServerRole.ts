@@ -9,6 +9,10 @@ import { renderZoneFile, parseZoneFile, ZoneFileError } from '@/network/dns/zone
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver, type ResolutionResult, type RecursiveResolverEdnsOptions } from '@/network/dns/resolver/RecursiveResolver';
 import { EdnsSupportCache } from '@/network/dns/resolver/EdnsSupportCache';
+import {
+  readServerSettings, writeServerSettings,
+  type DnsServerIdentity, type DnsServerSettingEntry, type DnsServerSettingValue,
+} from './DnsServerSettings';
 import { IANA_ROOT_HINTS, renderRootHintsFile, type RootHint } from '@/network/dns/resolver/RootHints';
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
@@ -129,6 +133,7 @@ export interface DnsRoleEnvironment {
   now?: () => number;
   zoneFiles?: DnsZoneFileSink;
   directoryAvailable?: () => boolean;
+  identity?: () => DnsServerIdentity;
 }
 
 export interface DnsPrimaryZoneOptions {
@@ -155,6 +160,7 @@ const DEFAULT_AGING_SECONDS = 7 * DAY_SECONDS;
 const UNLOADED_RETRY_SECONDS = 600;
 const WINDOWS_EDNS_PAYLOAD_SIZE = 1280;
 const GLOBAL_NAMES_ZONE = 'globalnames';
+const DEFAULT_NON_SECURE_UPDATE_RECORDS = 30;
 
 const RR_TYPE_NAME = new Map<number, string>(
   Object.entries(RRType).map(([name, code]) => [code, name]),
@@ -325,6 +331,8 @@ export class WindowsDnsServerRole {
   private readonly authoritative = new AuthoritativeServer(this.store, {
     blocks: (zoneOrigin, qname) => this.blockedByGlobalQueryList(zoneOrigin, qname),
     acceptsEdns: () => this.parameters.ednsSettings().enableReception,
+    rotates: () => this.parameters.flag('RoundRobin', true),
+    writesApexNs: () => this.parameters.flag('WriteAuthorityNs', false),
   });
   private readonly cache: DnsCache;
   private readonly ednsSupport: EdnsSupportCache;
@@ -355,12 +363,17 @@ export class WindowsDnsServerRole {
   private readonly now: () => number;
   private readonly zoneFiles: DnsZoneFileSink | null;
   private readonly directoryAvailable: () => boolean;
+  private readonly identityOf: () => DnsServerIdentity;
 
   constructor(private readonly host: EndHost, environment: DnsRoleEnvironment = {}) {
     this.now = environment.now ?? (() => simulationNowMs());
     this.zoneFiles = environment.zoneFiles ?? null;
     this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
+    this.identityOf = environment.identity ?? (() => ({
+      computerName: this.host.getHostname(), majorVersion: 10, minorVersion: 0, buildNumber: 0, isReadOnlyDc: false,
+      directoryAvailable: this.directoryAvailable(), addresses: this.localAddresses(),
+    }));
     this.cache = new DnsCache(this.now, () => this.parameters.cacheLimits());
     this.ednsSupport = new EdnsSupportCache(this.now, () => this.parameters.ednsSettings().cacheTimeoutSeconds);
     if (!this.parameters.hasGlobalQueryBlock()) {
@@ -421,6 +434,26 @@ export class WindowsDnsServerRole {
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> => this.answer(query, 'tcp', source, raw);
 
   private answer(
+    query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
+    const reply = this.respond(query, transport, source, raw);
+    if (Array.isArray(reply)) return reply;
+    return reply instanceof Promise ? reply.then(message => this.limitAddressRecords(message)) : this.limitAddressRecords(reply);
+  }
+
+  private limitAddressRecords(message: DnsMessage): DnsMessage {
+    const limit = this.parameters.count('AddressAnswerLimit', 0);
+    if (limit <= 0) return message;
+    let kept = 0;
+    const answers = message.answers.filter(rr => {
+      if (rr.data.type !== RRType.A && rr.data.type !== RRType.AAAA) return true;
+      kept++;
+      return kept <= limit;
+    });
+    return answers.length === message.answers.length ? message : { ...message, answers };
+  }
+
+  private respond(
     query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
     const sourceAddress = source instanceof IPAddress ? source.toString() : null;
@@ -551,7 +584,7 @@ export class WindowsDnsServerRole {
     const request = parseOrFormerr(query);
     const mode = request ? this.dynamicUpdateMode(request.zone) : 'NonsecureAndSecure';
     const auth = authorizeUpdate(raw, mode === 'Secure' ? 'secure' : 'none', this.keyring, now);
-    if (mode === 'None') {
+    if (mode === 'None' || !this.parameters.flag('AllowUpdate', true)) {
       return signIfKeyed(updateResponse(query, DnsRcode.REFUSED), auth, now);
     }
     const reply = (rcode: number): DnsMessage =>
@@ -559,6 +592,9 @@ export class WindowsDnsServerRole {
 
     if (auth.rcode !== DnsRcode.NOERROR) return reply(auth.rcode);
     if (!request) return reply(DnsRcode.FORMERR);
+    if (auth.key === null && request.updates.length > (this.parameters.count('MaxResourceRecordsInNonSecureUpdate', DEFAULT_NON_SECURE_UPDATE_RECORDS) || DEFAULT_NON_SECURE_UPDATE_RECORDS)) {
+      return reply(DnsRcode.REFUSED);
+    }
 
     const zone = this.store.getZone(request.zone);
     if (!zone) return reply(DnsUpdateRcode.NOTAUTH);
@@ -982,6 +1018,13 @@ export class WindowsDnsServerRole {
   }
 
   clearCache(): void { this.cache.flush(); }
+
+  getServerSettings(): DnsServerSettingEntry[] { return readServerSettings(this.parameters, this.identityOf()); }
+
+  setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult {
+    const problem = writeServerSettings(this.parameters, this.identityOf(), changes);
+    return problem === null ? { ok: true, message: '' } : { ok: false, message: problem };
+  }
 
   getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }
 

@@ -744,10 +744,17 @@ function substituteText(context: Context, subject: string, pattern: string, repl
   let out = '';
   let copied = 0;
   let from = 0;
+  let previousEnd = -1;
   while (from <= subject.length) {
-    const match = regex.exec(subject, from);
+    const match = subject.includes('\n') ? regex.exec(subject, from) : regex.execLine([subject], 0, from);
     if (match === null) break;
     const hit: MatchHit = { start: match.index, end: match.index + match[0].length, groups: Array.from(match) };
+    if (hit.end === hit.start && hit.start === previousEnd) {
+      if (hit.end >= subject.length) break;
+      from = hit.end + (subject.codePointAt(hit.end)! > 0xffff ? 2 : 1);
+      continue;
+    }
+    previousEnd = hit.end;
     out += subject.slice(copied, hit.start);
     out += replacement.startsWith('\\=') ? nested(hit) : expandReplacement(replacement, { groups: hit.groups }, true);
     copied = hit.end;

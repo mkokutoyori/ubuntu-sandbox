@@ -1,7 +1,9 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, GlobalQueryBlock } from '@/powershell/providers/PSProviders';
+import type {
+  DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, GlobalQueryBlock,
+} from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { formatTimeSpan, makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
@@ -227,5 +229,65 @@ export class SetDnsServerGlobalNameZoneCmdlet implements ICmdlet {
     const asSpan = (bound: number): string => formatTimeSpan(bound * MILLISECONDS);
     return refuseRange(ctx, 'Set-DnsServerGlobalNameZone', 'ServerQueryInterval', psValueToString(raw), seconds,
       MIN_GLOBAL_NAMES_QUERY_INTERVAL_SECONDS, MAX_CACHE_TTL_SECONDS, asSpan) ? null : seconds;
+  }
+}
+
+function settingForOutput(entry: DnsServerSettingEntry): PSValue {
+  if (entry.kind === 'span') return makeTimeSpan(Number(entry.value) * MILLISECONDS);
+  return Array.isArray(entry.value) ? [...entry.value] : entry.value as PSValue;
+}
+
+function serverSettingsObject(entries: readonly DnsServerSettingEntry[]): Record<string, PSValue> {
+  const out: Record<string, PSValue> = {};
+  for (const entry of entries) out[entry.property] = settingForOutput(entry);
+  return out;
+}
+
+function settingFromInput(kind: DnsServerSettingEntry['kind'], value: PSValue, property: string): DnsServerSettingValue {
+  switch (kind) {
+    case 'flag': return isSwitchOn(value);
+    case 'span': return timeSpanSeconds(value, property);
+    case 'text': return psValueToString(value);
+    case 'ports': return stringList(value);
+    case 'sendPort': return psValueToString(value).toLowerCase() === 'random' ? 'Random' : Number(psValueToString(value));
+    case 'count': return Number(psValueToString(value));
+  }
+}
+
+export class GetDnsServerSettingCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserversetting';
+  readonly displayName = 'Get-DnsServerSetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['All', 'ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const all = isSwitchOn(ctx.named['all']);
+    return serverSettingsObject(requireDns(ctx, 'Get-DnsServerSetting').getServerSettings().filter(entry => all || entry.brief));
+  }
+}
+
+export class SetDnsServerSettingCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserversetting';
+  readonly displayName = 'Set-DnsServerSetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['InputObject', 'ComputerName', 'PassThru', 'CimSession', 'ThrottleLimit', 'AsJob', 'WhatIf', 'Confirm'] as const;
+  readonly pipelineByValue = 'InputObject';
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerSetting');
+    const input = ctx.named['inputobject'] ?? ctx.positional[0];
+    if (input === undefined || input === null || typeof input !== 'object' || Array.isArray(input)) {
+      ctx.emitError('Set-DnsServerSetting : Cannot process command because of one or more missing mandatory parameters: InputObject.');
+      return null;
+    }
+    const kinds = new Map(dns.getServerSettings().map(entry => [entry.property.toLowerCase(), entry.kind]));
+    const changes = new Map<string, DnsServerSettingValue>();
+    for (const [property, value] of Object.entries(input as Record<string, PSValue>)) {
+      const kind = kinds.get(property.toLowerCase());
+      if (kind !== undefined && value !== null && value !== undefined) changes.set(property, settingFromInput(kind, value, property));
+    }
+    const result = dns.setServerSettings(changes);
+    if (!result.ok) return failed(ctx, 'Set-DnsServerSetting', result);
+    return isSwitchOn(ctx.named['passthru']) ? serverSettingsObject(dns.getServerSettings()) : null;
   }
 }

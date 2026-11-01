@@ -632,25 +632,17 @@ remplacer par un flux d'octets avec un terminateur explicite est un lot en soi, 
 ### [vim] Motifs : quelques manquements mesures apres le traducteur `VimRegex`
 Mesure avec les labos `vim-pattern-oracle.test.ts` (7661 cas enregistres
 sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
-- **Retour arriere JavaScript** : `\V\>-\{-2,3}-\|\(b\%(\X\)\@=\|\f\+\_D\{-2,3}\|\L\?\)\{-1,}\(\A\{2,}\K\*\)\{-2,3}\[[:space:]o]\{2}`
-  sur un tampon de huit lignes occupe `RegExp.exec` pendant 128 s ; l'automate
-  de vim repond sans delai (aucune occurrence). Un motif a quantificateurs
-  imbriques ambigus gele donc l'editeur. Le cas est retire du corpus
-  (rnd22-202). Pas de borne de temps possible sur un `RegExp` synchrone : il
-  faut un second moteur (simulation de Thompson avec priorites) pour les motifs
-  sans reference arriere, ou une estimation de la hauteur d'etoile a la
-  traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-  **Mesure** : refuser par la forme (groupe a corps vide possible sous un quantificateur non borne, comme `\\(a*\\)*`) est FAUX : le corpus
-  compte 22 motifs sur 788 (seed1) que vim accepte et repond sans delai (`\\(a*\\)*`, `\\(\\)*`, rnd1-63, rnd1-92) ; il faut decider
-  l'AMBIGUITE des alternatives, donc le second moteur.
+- **Retour arriere JavaScript** : les motifs dont la hauteur d'etoile est au moins 2 (quantificateur non borne imbrique dans un autre) passent par
+  `VimLinearRegex.ts`, un simulateur de Thompson qui garde les atomes natifs de `RegExp` (classes, assertions, lookaround) et ne simule que
+  l'enchainement ; le motif rnd22-202 (128 s avant) repond en 74 ms sans occurrence comme vim (`probe-vim-motifs-sans-retour-arriere`) et les trois
+  corpus de motifs passent. Limite mesuree : force sur TOUS les motifs, le simulateur se trompe sur 3 cas des corpus (rnd1-529, rnd21-91,
+  rnd5-368 : `\zs`/`\ze` combines a `\@!` et a un quantificateur borne) ; il n'est donc applique qu'au cas qui gelait. Les motifs a reference
+  arriere restent sur `RegExp`, et un motif de hauteur 1 aussi (un `\(a*\)*` tres ambigu a hauteur 2 passe, lui, par le simulateur).
 - Re-mesure sur vim 9.1 (21 motifs rejoues) : `\%V` en bloc, en caracteres et en lignes, `\@N<=` borne ou non et `[[=e=]]`
   (`e`, `E`, `é`, `[^...]`, `ignorecase`) sortent comme le vrai ; ces trois lignes de l'ancien constat etaient perimees.
-  Reste les **caracteres combinants** : pour vim un « caractere » est une base suivie de ses marques (`e` + U+0301), `.`, `\a`,
-  `[^x]`, `[[=e=]]` et les classes consomment les marques (`s/./[&]/g` sur `é` donne `[é]` et non `[e]` + marque), un `e` litteral
-  n'atteint pas un `e` suivi d'une marque sauf sous `\Z`, une marque seule en debut de ligne n'est pas `\a` mais est `\k`,
-  `\S` et `[^x]`, et `e\zs.` prend la marque seule. Le traducteur travaille sur des points de code : `[[=e=]]` rend `_` + marque
-  au lieu de `_`. Brique a ecrire : un « caractere » du traducteur = point de code + marques, ce qui change les quantificateurs
-  (`\p{M}*` apres chaque atome rend `.*` ambigu et exponentiel), donc a faire avec le second moteur ci-dessus.
+  Les **caracteres combinants** existent (`probe-vim-caracteres-combinants`, 360 couples texte/motif rejoues sur vim 9.1) : un caractere est une
+  base suivie de ses marques, `.` et les classes les prennent d'un bloc, une correspondance ne commence ni ne finit dans un tel bloc, un motif qui
+  porte une marque prend toutes celles du texte, `\Z` les ignore. `[[=e=]]`, `\%d`, `\%u`, `\%x` et `\n` / `\_.` sont rejoues aussi (`probe-vim-caracteres-combinants`, 561 couples). Reste : un saut de ligne SUIVI d'une marque seule (vim refuse `\n` devant elle mais accepte `\_s`) et `^`/`$`/`\_^`/`\_$` dans une chaine de `substitute()` qui contient un saut de ligne (vim ne voit que le debut et la fin de la chaine, le moteur le debut et la fin de chaque ligne).
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :

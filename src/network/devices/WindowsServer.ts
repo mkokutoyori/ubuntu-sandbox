@@ -25,6 +25,7 @@ import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { AD_NULL_GUID } from './windows/server/ad/AdTypes';
 import type { SharePermission } from './windows/server/smb/SmbTypes';
 import { WindowsDnsServerRole, type DnsZoneFileSink } from './windows/server/dns/WindowsDnsServerRole';
+import type { DnsServerIdentity } from './windows/server/dns/DnsServerSettings';
 import { RegistryDnsParameterStore } from './windows/server/dns/DnsServerParameters';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
@@ -221,6 +222,19 @@ export class WindowsServer extends WindowsPC {
    * role (via a `DnsServer` cmdlet) immediately after installing it, so
    * this is not observable in practice.
    */
+  private dnsServerIdentity(): DnsServerIdentity {
+    const version = this.registry.getItemPropertyValues('HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion') ?? {};
+    const [major, minor] = String(version.CurrentVersion ?? '10.0').split('.').map(Number);
+    const domain = this.logonDomainNames();
+    return {
+      computerName: domain ? `${this.getHostname()}.${domain.dns}` : this.getHostname(),
+      majorVersion: major, minorVersion: minor, buildNumber: Number(version.CurrentBuildNumber ?? 0),
+      isReadOnlyDc: false,
+      directoryAvailable: this.getDirectoryStore() !== null,
+      addresses: this.getPorts().map(port => port.getIPAddress()?.toString()).filter((address): address is string => !!address),
+    };
+  }
+
   private dnsZoneFileSink(): DnsZoneFileSink {
     const directory = 'C:\\Windows\\System32\\dns';
     return {
@@ -247,6 +261,7 @@ export class WindowsServer extends WindowsPC {
         now: () => this.simulatedDate().getTime(),
         zoneFiles: this.dnsZoneFileSink(),
         directoryAvailable: () => this.getDirectoryStore() !== null,
+        identity: () => this.dnsServerIdentity(),
       });
       this.reconcileListeners();
     }
