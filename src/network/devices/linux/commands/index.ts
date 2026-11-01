@@ -136,6 +136,7 @@ import { dateCommand } from './system/Date';
 import { uptimeCommand } from './system/Uptime';
 import { unameCommand } from './system/Uname';
 import { hostnamectlCommand } from './system/Hostnamectl';
+import { systemdId128Command } from './system/SystemdId128';
 import { timedatectlCommand } from './system/Timedatectl';
 import { localectlCommand } from './system/Localectl';
 import { chronycCommand } from './system/Chronyc';
@@ -299,6 +300,7 @@ export {
   uptimeCommand,
   unameCommand,
   hostnamectlCommand,
+  systemdId128Command,
   timedatectlCommand,
   localectlCommand,
   chronycCommand,
@@ -475,6 +477,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   uptimeCommand,
   unameCommand,
   hostnamectlCommand,
+  systemdId128Command,
   timedatectlCommand,
   localectlCommand,
   chronycCommand,

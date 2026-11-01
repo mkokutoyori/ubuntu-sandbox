@@ -360,7 +360,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   // Lookup
   'which', 'whereis', 'command', 'locate', 'updatedb', 'apropos', 'man', 'info',
   // System / processes / time
-  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
+  'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'systemd-id128', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
   'pkill', 'pgrep', 'pstree', 'pidof', 'killall', 'pgid',
@@ -1298,7 +1298,7 @@ export class LinuxCommandExecutor {
    */
   private randomUuidCounter = 0;
 
-  private nextRandomUuid(): string {
+  randomUuid(): string {
     const entropy = `random-uuid:${this.identity.bootId}:${this.wallNow()}:${this.randomUuidCounter++}`;
     return dashedUuid(randomUuidBits(simulatedDigest(entropy)));
   }
@@ -1317,7 +1317,7 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
     this.vfs.mkdirp('/proc/sys/kernel/random', 0o555, 0, 0);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/random/boot_id', () => `${dashedUuid(this.identity.bootId)}\n`);
-    this.vfs.registerGeneratedFile('/proc/sys/kernel/random/uuid', () => `${this.nextRandomUuid()}\n`);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/random/uuid', () => `${this.randomUuid()}\n`);
     this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
     // ordre : les deux vues ne peuvent donc pas diverger.
