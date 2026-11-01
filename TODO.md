@@ -435,14 +435,13 @@ lecteur, reserve assumee (la machine accepte le reglage, le moteur n'a pas la fo
 **`rp_filter` est ferme** (sonde `probe-rp-filter`) : Ipv4DeviceConf porte la cle (defaut 2 comme Ubuntu, maximum de `all` et de l'interface), `LinuxMachine` juge chaque
 paquet IPv4 unicast recu (mode 1 : la meilleure route vers la source sort par l'interface d'arrivee ; mode 2 : une route quelconque, defaut comprise) et
 `10-network-security.conf` est livre. Reserves : pas de compteur `IPReversePathFilter`, pas de `log_martians`, table principale seulement, diffusion, multicast et
-source 0.0.0.0 exemptes, reponse DHCP a une carte sans adresse exemptee (le client lit les trames avant la pile IP). **Non livres** : `10-ipv6-privacy.conf`
-(`net.ipv6.conf.{all,default}.use_tempaddr = 2` : la configuration IPv6 par interface existe maintenant (`Ipv6DeviceConf`, sonde `probe-linux-ipv6-conf` :
-`forwarding`, `accept_ra`, `accept_ra_defrtr`, `accept_ra_pinfo`, `autoconf`, `disable_ipv6`, portees `all`/`default` comme le noyau) mais il reste a ajouter les adresses temporaires au modele
-(les adresses SLAAC n'ont AUCUNE duree de vie : ni `valid_lft` ni `preferred_lft` ne sont lus des annonces ni rendus), a leur regeneration, a leur rendu (`temporary dynamic`) et au choix de l'adresse source,
-plus `temp_valid_lft` (604800), `temp_prefered_lft` (86400), `max_desync_factor` (600), `regen_max_retry` (3), valeurs du CODE du noyau 5.15 et 6.8 : la documentation ip-sysctl.rst dit 172800 pour
-la premiere et se trompe ; `forwarding` est stocke et decide de l'acceptation des annonces, mais un hote n'a pas de plan de transfert IPv6 (EndHost.handleIPv6 ne transmet pas) ; `hop_limit`, `dad_transmits`,
-`accept_dad`, `accept_redirects`, `mtu`, `router_solicitations` ne sont pas livres faute de lecteur ; une annonce non acceptee ignore aussi les drapeaux M et O, ce que fait le noyau pour ce qu'il notifie
-mais pas un client DHCPv6 qui lit les annonces lui-meme) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`), `fs.protected_regular` et `fs.protected_fifos` existent et l'ouverture avec creation les lit, chacun pour SON type d'objet (sonde `probe-protected-regular`) mais `protected_symlinks`
+source 0.0.0.0 exemptes, reponse DHCP a une carte sans adresse exemptee (le client lit les trames avant la pile IP). **Livre aussi** : `10-ipv6-privacy.conf` (`use_tempaddr = 2` sur `all` et `default`, `lo` reste a -1 comme le noyau) : les adresses SLAAC portent leurs durees de vie (`valid_lft` / `preferred_lft`
+lues de l'annonce, remplacees a chaque annonce, `deprecated` a la fin de la duree preferee, retirees a la fin de la duree valide ; `dynamic mngtmpaddr` rendus par `ip -6 addr`) et un hote avec
+`use_tempaddr > 0` cree une adresse temporaire (partie hote aleatoire, `temp_valid_lft` 604800, `temp_prefered_lft` 86400, `max_desync_factor` 600, `regen_max_retry` 3 : valeurs du CODE du noyau 5.15 et 6.8,
+la documentation ip-sysctl.rst dit 172800 et se trompe), la regenere avant la fin de sa duree preferee et prefere la temporaire comme source si `use_tempaddr >= 2` (sonde `probe-linux-ipv6-adresses-temporaires`).
+Reserves : pas de DAD (donc pas de `tentative`, `dad_transmits` n'entre que dans `regen_advance`), pas d'`ip route get`, pas de `ip addr add ... valid_lft` ni de `ip token`, les RA du routeur simule ne sont pas
+periodiques (une adresse publique non renouvelee atteint donc sa fin de vie), l'ordre des sources suit seulement « non deprecie » puis « temporaire ou publique » (pas les autres regles de la RFC 6724),
+et seuls les hotes Linux portent ces durees : Windows garde des adresses SLAAC sans duree de vie. **Non livre** : `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`), `fs.protected_regular` et `fs.protected_fifos` existent et l'ouverture avec creation les lit, chacun pour SON type d'objet (sonde `probe-protected-regular`) mais `protected_symlinks`
 n'a pas de lecteur dans le VFS (`resolveInode` ne recoit pas l'identite de l'appelant) ; un critere de securite stocke sans effet echouerait ouvert. Un FIFO n'a toujours pas de semantique de lecture/ecriture (`cat` d'un FIFO repond « No such file »).
 
 ---

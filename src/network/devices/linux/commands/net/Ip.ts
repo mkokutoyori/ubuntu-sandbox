@@ -185,15 +185,26 @@ export function buildIpCtx(
           errorsIn: counters.errorsIn,
           errorsOut: counters.errorsOut,
         },
-        ipv6: port.getIPv6Addresses().map(entry => ({
+        ipv6: port.getIPv6Addresses().map(entry => {
+          const lifetimes = port.getIPv6Lifetimes(entry);
+          const dynamic = lifetimes.valid !== null;
+          return ({
           address: entry.address.toString().split('%')[0],
           prefixLength: entry.prefixLength,
+          flags: [
+            ...(entry.temporary === true ? ['temporary'] : []),
+            ...(entry.deprecated === true ? ['deprecated'] : []),
+            ...(dynamic ? ['dynamic'] : []),
+            ...(entry.managesTemporary === true ? ['mngtmpaddr'] : []),
+          ],
+          validLft: lifetimes.valid,
+          preferredLft: lifetimes.preferred,
           // `::1` est de portée HOST : elle ne quitte pas la machine,
           // exactement comme 127.0.0.1. Elle était annoncée `global`,
           // donc décrite comme routable.
           scope: entry.address.toString() === '::1' ? 'host' as const
             : entry.origin === 'link-local' ? 'link' as const : 'global' as const,
-        })),
+        }); }),
         secondaryIPs: port.getSecondaryIPs().map(e => ({ ip: e.ip.toString(), cidr: e.mask.toCIDR() })),
       };
     },

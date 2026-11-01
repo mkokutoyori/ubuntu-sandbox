@@ -93,6 +93,7 @@ import {
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import { IPV6_DEVICE_CONF_KNOBS, Ipv6DeviceConf } from './linux/Ipv6DeviceConf';
+import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
 import type { TcpStream } from '../tcp/types';
@@ -420,6 +421,17 @@ export abstract class LinuxMachine extends EndHost
       this.registerIpv6ConfScope(port.getName());
       this.applyIpv6Prohibitions();
     }
+    this.attachAddrconf(port);
+  }
+  private addrconfDraws = 0;
+  private attachAddrconf(port: Port): void {
+    const name = port.getName();
+    port.setIPv6AddrconfEnv({
+      now: () => this.getSystemClockMs(),
+      policy: () => this.ipv6Conf.addrconfPolicy(name),
+      random: () => parseInt(simulatedDigest(`${this.name}:${name}:addrconf:${this.addrconfDraws++}`).slice(0, 8), 16) / 0x100000000,
+      disableTemporaryAddresses: () => { this.ipv6Conf.set(name, 'use_tempaddr', -1); },
+    });
   }
   private setIpForwarding(enabled: boolean): void {
     const changed = this.ipForwardEnabled !== enabled;

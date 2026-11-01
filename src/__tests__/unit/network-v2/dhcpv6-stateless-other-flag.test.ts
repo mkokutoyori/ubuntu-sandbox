@@ -65,7 +65,7 @@ async function lab(options: { flag?: 'O' | 'M' | 'none'; prefix?: boolean } = {}
 const globalAddresses = async (h: LinuxPC): Promise<string[]> => {
   const output = await h.executeCommand('ip -6 addr show');
   return output.split('\n')
-    .filter((l) => l.includes('inet6') && l.includes('scope global'))
+    .filter((l) => l.includes('inet6') && l.includes('scope global') && !l.includes(' temporary'))
     .map((l) => l.trim().split(/\s+/)[1]);
 };
 

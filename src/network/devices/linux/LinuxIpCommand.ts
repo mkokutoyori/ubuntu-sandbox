@@ -65,6 +65,13 @@ export interface IpInterfaceV6Address {
   address: string;
   prefixLength: number;
   scope: 'host' | 'link' | 'global';
+  flags?: readonly string[];
+  validLft?: number | null;
+  preferredLft?: number | null;
+}
+
+function lifetimeText(seconds: number | null | undefined): string {
+  return seconds === null || seconds === undefined ? 'forever' : `${seconds}sec`;
 }
 
 export interface IpRouteEntry {
@@ -750,8 +757,9 @@ function formatAddrInterface(info: IpInterfaceInfo, idx: number, opts: IpOutputO
 
   if (family !== 'inet') {
     for (const v6 of info.ipv6 ?? []) {
-      lines.push(`    inet6 ${c.inet6(String(v6.address))}/${v6.prefixLength} scope ${v6.scope}`);
-      lines.push(`       valid_lft forever preferred_lft forever`);
+      const flags = (v6.flags ?? []).map((flag) => ` ${flag}`).join('');
+      lines.push(`    inet6 ${c.inet6(String(v6.address))}/${v6.prefixLength} scope ${v6.scope}${flags}`);
+      lines.push(`       valid_lft ${lifetimeText(v6.validLft)} preferred_lft ${lifetimeText(v6.preferredLft)}`);
     }
   }
 

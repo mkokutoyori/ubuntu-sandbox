@@ -6678,7 +6678,9 @@ export abstract class EndHost extends Equipment {
         if (prefixOpt.autonomous && prefixOpt.prefixLength === 64) {
           // Generate address via SLAAC
           const slackAddr = acceptance.autoconfigure
-            ? port.addSLAACAddress(prefixOpt.prefix, prefixOpt.prefixLength)
+            ? port.addSLAACAddress(prefixOpt.prefix, prefixOpt.prefixLength, {
+              valid: prefixOpt.validLifetime, preferred: prefixOpt.preferredLifetime,
+            })
             : prefixOpt.prefix;
 
           // Add route for this prefix
