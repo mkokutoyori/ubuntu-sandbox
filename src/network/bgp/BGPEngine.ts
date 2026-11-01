@@ -48,6 +48,8 @@ export interface BgpNeighborCfg {
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
   shutdown?: boolean;
+  inboundAllows?: (network: string, prefixLength: number) => boolean;
+  outboundAllows?: (network: string, prefixLength: number) => boolean;
   updateSource?: string;
   vpnv4?: boolean;
   vpls?: boolean;
@@ -502,9 +504,12 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     if (update.announced.length > 0 && update.attributes) {
       // §6.3 loop prevention: never accept a path that already lists us.
       if (!update.attributes.asPath.includes(this.config.asn)) {
+        const inbound = this.config.neighbors.get(ip)?.inboundAllows;
         for (const nlri of update.announced) {
           const entry = this.toRibEntry(ps, nlri, update.attributes);
-          ps.adjRibIn.set(`${entry.network}/${entry.mask}`, entry);
+          const key = `${entry.network}/${entry.mask}`;
+          if (inbound !== undefined && !inbound(nlri.network, nlri.prefixLength)) ps.adjRibIn.delete(key);
+          else ps.adjRibIn.set(key, entry);
         }
       }
     }
@@ -685,8 +690,10 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     if (!ps || !ps.session.isEstablished()) return;
     const ibgpReceiver = (ps.session.remoteAsn ?? this.config.asn) === this.config.asn;
 
+    const outbound = this.config.neighbors.get(ip)?.outboundAllows;
     const desired = new Map<string, { nlri: BgpNlri; attrs: BgpPathAttributes }>();
     for (const e of this.refreshTableVersion()) {
+      if (outbound !== undefined && !outbound(String(e.network), e.mask.toCIDR())) continue;
       if (ibgpReceiver && e.source === 'ibgp') continue;     // iBGP split-horizon
       if (e.peerIp === ip) continue;            // don't echo a route to its source
       if (e.asPath.includes(ps.session.remoteAsn ?? -1)) continue; // would loop

@@ -3,6 +3,7 @@ import { ipToUint32, tryIpToUint32, prefixLengthToMaskUint32 } from '../../../co
 import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg } from '../../../bgp/BGPEngine';
 import { BGP_PORT, CEASE_SUBCODE } from '../../../bgp/messages';
 import { BGP_DEFAULT_LOCAL_PREF } from '../../../bgp/bestPath';
+import type { IpPrefixListStore } from '../../router/policy/IpPrefixList';
 import { bgpTransport } from '../../../bgp/bgpTransport';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -27,6 +28,7 @@ export interface FirewallBgpDeps {
   }>) => void;
   readonly removeRoutes: () => void;
   readonly listen: (accept: (socket: TcpSocket) => void) => void;
+  readonly prefixLists: () => IpPrefixListStore;
 }
 
 export const AS_NUMBER_MAX = 4294967295;
@@ -92,11 +94,14 @@ export class FirewallBgp {
   private reconfigure(
     engine: BGPEngine, previous: BgpConfiguration, config: BgpConfiguration,
   ): void {
-    const avant = new Map(previous.neighbours.map(peer => [peer.ip, peer.remoteAs]));
+    const avant = new Map(previous.neighbours.map(peer => [peer.ip, peer]));
     engine.enable(this.engineConfig(config));
+    const now = new Map(config.neighbours.map(peer => [peer.ip, peer]));
     engine.resetPeers((ip, cfg) => {
       const ancien = avant.get(ip);
-      return ancien !== undefined && ancien !== cfg.remoteAs;
+      const courant = now.get(ip);
+      return ancien !== undefined && (ancien.remoteAs !== cfg.remoteAs
+        || ancien.prefixListIn !== courant?.prefixListIn || ancien.prefixListOut !== courant?.prefixListOut);
     });
     this.installRoutes();
   }
@@ -116,8 +121,18 @@ export class FirewallBgp {
       neighbors: new Map(config.neighbours.map(peer => [peer.ip, {
         ip: peer.ip, remoteAs: peer.remoteAs, activated: true, weight: peer.weight,
         shutdown: peer.shutdown === true,
+        ...this.filtersOf(peer),
       }])),
       defaultLocalPref: config.defaultLocalPreference ?? BGP_DEFAULT_LOCAL_PREF,
+    };
+  }
+
+  private filtersOf(peer: BgpConfiguration['neighbours'][number]): Pick<BgpNeighborCfg, 'inboundAllows' | 'outboundAllows'> {
+    const allows = (name: string) => (network: string, prefixLength: number): boolean =>
+      this.deps.prefixLists().get(name)?.evaluate(network, prefixLength) === 'permit';
+    return {
+      ...(peer.prefixListIn ? { inboundAllows: allows(peer.prefixListIn) } : {}),
+      ...(peer.prefixListOut ? { outboundAllows: allows(peer.prefixListOut) } : {}),
     };
   }
 

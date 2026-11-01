@@ -108,6 +108,7 @@ export class FirewallRouting {
       },
       removeRoutes: () => { deps.removeRoutes('bgp'); },
       listen: deps.listenBgp,
+      prefixLists: () => this.prefixLists,
     });
   }
 

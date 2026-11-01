@@ -388,6 +388,8 @@ const BGP_NEIGHBOR: FortiTableSpec = {
     count('weight', 'Weight applied to routes learned from this neighbor.',
       0, 65535, 0),
     enable('shutdown', 'Enable/disable shutdown this neighbor.'),
+    reference('prefix-list-in', 'Inbound filter for updates from this neighbor.', ['router prefix-list']),
+    reference('prefix-list-out', 'Outbound filter for updates to this neighbor.', ['router prefix-list']),
   ],
 };
 
@@ -442,6 +444,8 @@ export const ROUTER_BGP: FortiTableSpec = {
         remoteAs: Number.parseInt(entry.effective('remote-as')[0] ?? '0', 10),
         weight: Number.parseInt(entry.effective('weight')[0] ?? '0', 10),
         shutdown: entry.effective('shutdown')[0] === 'enable',
+        prefixListIn: entry.effective('prefix-list-in')[0] || undefined,
+        prefixListOut: entry.effective('prefix-list-out')[0] || undefined,
       })),
       networks: object.childEntries('network').map(entry => ({
         id: entry.key,

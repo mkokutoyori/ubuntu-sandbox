@@ -756,7 +756,7 @@ fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cerc
 ### [fortigate] couverture de la reference CLI (FortiOS 7.4.12, `official_docs/forti-cli-ref-7412.txt`)
 Mesure (chemins `config ...` du sommaire de la reference confrontes a `FortiConfigTree.spec`) : 93 tables sur 1034 documentees existaient ; `firewall vipgrp`, `system arp-table` et `system proxy-arp` s'y ajoutent (`probe-fortigate-vipgrp`, `probe-fortigate-arp-table-et-proxy-arp`). Les plus grands
 absents : `system` (135), `firewall` (69), `wireless-controller` (49), `switch-controller` (47), `log` (42), `vpn` (19), `router` (18), `user` (16), `webfilter`
-(10), `web-proxy` (9), `dlp` (8), `emailfilter` (8). Regle 6 : une table n'entre que si le moteur honore ses criteres. Candidats dont un consommateur existe deja :
+(10), `web-proxy` (9), `dlp` (8), `emailfilter` (8). Regle 6 : une table n'entre que si le moteur honore ses criteres. Candidats dont un consommateur existe deja (le moteur `bgp/` porte desormais les crochets `inboundAllows`/`outboundAllows` par voisin, alimentes par `prefix-list-in`/`prefix-list-out` ; une route-map y branchera de la meme facon) :
 `router route-map` / `aspath-list` / `community-list` / `key-chain` (le BGP FortiGate ne porte aujourd'hui que `as`, `router-id`, `remote-as`, `weight` ; le
 moteur `bgp/` et `router/policy/RoutePolicy` sont a brancher), `shaping-policy` / `shaping-profile`, `ippool6`, `vip6`, `vpn ipsec concentrator`,
 `user peer`. Chaque table demande de lire sa section dans la reference, de brancher l'evaluateur, et un probe.

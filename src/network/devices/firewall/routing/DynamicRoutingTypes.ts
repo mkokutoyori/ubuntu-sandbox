@@ -54,6 +54,8 @@ export interface BgpNeighbour {
   readonly remoteAs: number;
   readonly weight?: number;
   readonly shutdown?: boolean;
+  readonly prefixListIn?: string;
+  readonly prefixListOut?: string;
 }
 
 export interface BgpConfiguration {
