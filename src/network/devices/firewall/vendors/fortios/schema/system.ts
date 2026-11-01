@@ -115,6 +115,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
       1, 10, 3),
     count('admin-lockout-duration', 'Lockout duration in seconds.', 1, 2147483647, 60),
+    enable('admin-concurrent', 'Enable/disable concurrent administrator logins.', true),
     enable('admin-https-redirect',
       'Redirect HTTP administrative access to HTTPS.', true),
     enable('lldp-transmission',
@@ -240,6 +241,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       timezone: object.isExplicit('timezone')
         ? object.effective('timezone')[0] : undefined,
       adminLoginMax: number('admin-login-max', 100),
+      adminConcurrent: object.effective('admin-concurrent')[0] !== 'disable',
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
       adminHttpsRedirect: object.effective('admin-https-redirect')[0] !== 'disable',

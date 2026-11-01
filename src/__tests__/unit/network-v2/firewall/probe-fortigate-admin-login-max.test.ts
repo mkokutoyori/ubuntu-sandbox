@@ -2,7 +2,7 @@
  * `config system global` : `set admin-login-max <1-100>` (FortiOS CLI Reference 7.4.12 : « Maximum number of administrators who can be logged in at the same time »,
  * defaut 100). Une connexion SSH de plus, quand la table des sessions administrateur est pleine, est refusee meme avec le bon mot de passe ; fermer une
  * session libere la place. Le plafond vit dans le pare-feu et s'applique a `authenticateAdmin`, le point par lequel passent les connexions de gestion.
- * Mesure de depart : « unknown attribute admin-login-max » et aucun plafond ; 1 des 3 cas tombe avant (le plafond) ; le temoin (deux sessions sans plafond) et la place liberee apres une deconnexion passent des deux cotes.
+ * `set admin-concurrent disable` (meme reference) refuse une seconde session du meme compte. Mesure de depart : « unknown attribute admin-login-max » et aucun plafond ; contre le commit precedent 1 des 4 cas tombe (admin-concurrent) ; avant admin-login-max, 2 des 4 tombaient (le plafond, admin-concurrent) ; le temoin (deux sessions sans plafond) et la place liberee apres une deconnexion passent des deux cotes.
  */
 import { describe, it, expect } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
@@ -68,6 +68,15 @@ describe('system global admin-login-max', () => {
     await open();
     const index = fw.getAdminSessions().list()[0].index;
     shell.execute(`execute disconnect-admin-session ${index}`);
+    await open();
+    expect(fw.getAdminSessions().list()).toHaveLength(1);
+  });
+
+  it('admin-concurrent disable refuse une seconde session du meme compte', async () => {
+    const { fw, shell, open } = await lab();
+    for (const line of ['config system global', 'set admin-concurrent disable', 'end']) shell.execute(line);
+    expect(shell.execute('show system global')).toContain('set admin-concurrent disable');
+    await open();
     await open();
     expect(fw.getAdminSessions().list()).toHaveLength(1);
   });
