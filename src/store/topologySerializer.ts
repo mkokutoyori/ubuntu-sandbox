@@ -1363,6 +1363,7 @@ export interface ImportResult {
   projectName: string;
   deviceInstances: Map<string, Equipment>;
   connections: Connection[];
+  warnings: string[];
 }
 
 function nearestExistingOwner(vfs: VirtualFileSystem, path: string): { uid: number; gid: number } {
@@ -1499,6 +1500,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     throw new Error('Invalid topology file: unsupported version or format');
   }
 
+  const warnings: string[] = [];
   resetDeviceCounters();
   resetCounters();
   resetForestRegistry();
@@ -1704,7 +1706,9 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.windowsTeams) restoreWindowsTeams(device, devData.windowsTeams);
     }
     if (device instanceof Firewall && devData.runningConfigText) {
-      await device.replayConfig(devData.runningConfigText);
+      for (const rejected of await device.replayConfig(devData.runningConfigText)) {
+        warnings.push(`${device.getName()}: ${rejected.line} -> ${rejected.reply}`);
+      }
     }
     if ((device instanceof Router || device instanceof Switch) && devData.runningConfigText) {
       await replayVendorConfig(device, devData.runningConfigText);
@@ -1720,6 +1724,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
     projectName: json.projectName,
     deviceInstances,
     connections,
+    warnings,
   };
 }
 
