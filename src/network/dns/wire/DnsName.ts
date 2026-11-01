@@ -10,3 +10,9 @@ export function parentName(name: string): string | null {
 export function isWithinDomain(name: string, domain: string): boolean {
   return domain === '' || name === domain || name.endsWith(`.${domain}`);
 }
+
+export function relativeTo(name: string, domain: string): string | null {
+  if (domain === '') return name;
+  if (name === domain) return '';
+  return name.endsWith(`.${domain}`) ? name.slice(0, name.length - domain.length - 1) : null;
+}

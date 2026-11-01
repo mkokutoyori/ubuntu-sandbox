@@ -33,6 +33,13 @@ export const DEFAULT_CACHE_SETTINGS: DnsCacheSettings = {
   ignorePolicies: false,
 };
 
+export interface GlobalQueryBlock {
+  readonly enabled: boolean;
+  readonly list: readonly string[];
+}
+
+export const DEFAULT_GLOBAL_QUERY_BLOCK_LIST: readonly string[] = ['isatap', 'wpad'];
+
 const KILOBYTE = 1024;
 const MAX_LOCKING_PERCENT = 100;
 const CACHE_SIZE_TARGET_PERCENT = 90;
@@ -113,6 +120,27 @@ export class DnsServerParameters {
 
   reorderingEnabled(): boolean {
     return this.flag('EnableForwarderReordering', true);
+  }
+
+  hasGlobalQueryBlock(): boolean {
+    return this.store.read('EnableGlobalQueryBlockList') !== undefined || this.store.read('GlobalQueryBlockList') !== undefined;
+  }
+
+  globalQueryBlock(): GlobalQueryBlock {
+    const raw = this.store.read('GlobalQueryBlockList');
+    return {
+      enabled: this.flag('EnableGlobalQueryBlockList', true),
+      list: raw === undefined ? [] : this.splitList(String(raw)),
+    };
+  }
+
+  setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): void {
+    if (changes.enabled !== undefined) this.store.write('EnableGlobalQueryBlockList', 'DWord', changes.enabled ? 1 : 0);
+    if (changes.list !== undefined) this.store.write('GlobalQueryBlockList', 'MultiString', changes.list.join(MULTI_SZ_SEPARATOR));
+  }
+
+  private splitList(raw: string): string[] {
+    return raw.split(MULTI_SZ_SEPARATOR).map(item => item.trim().toLowerCase()).filter(item => item !== '');
   }
 
   cacheSettings(): DnsCacheSettings {

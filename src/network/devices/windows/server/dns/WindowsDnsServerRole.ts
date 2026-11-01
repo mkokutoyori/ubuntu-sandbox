@@ -34,7 +34,7 @@ import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import { normalizeDnsName } from '@/network/dns/wire/DnsName';
+import { normalizeDnsName, relativeTo } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
 import {
   makeARecord, makeAaaaRecord, makeCnameRecord, makePtrRecord, makeMxRecord, makeSrvRecord, makeSoaRecord,
@@ -44,7 +44,10 @@ import {
   type SrvRecordData, type NsRecordData, type TxtRecordData, type DhcidRecordData, makeDhcidRecord,
 } from '@/network/dns/wire/ResourceRecord';
 import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
-import { DnsServerParameters, MemoryDnsParameterStore, type DnsParameterStore, type DnsCacheSettings } from './DnsServerParameters';
+import {
+  DnsServerParameters, MemoryDnsParameterStore, DEFAULT_GLOBAL_QUERY_BLOCK_LIST,
+  type DnsParameterStore, type DnsCacheSettings, type GlobalQueryBlock,
+} from './DnsServerParameters';
 import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import { IPAddress } from '@/network/core/types';
 
@@ -315,7 +318,9 @@ interface ResolutionAttempt { resolver: RecursiveResolver; report?: (elapsedMs: 
 
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
-  private readonly authoritative = new AuthoritativeServer(this.store);
+  private readonly authoritative = new AuthoritativeServer(this.store, {
+    blocks: (zoneOrigin, qname) => this.blockedByGlobalQueryList(zoneOrigin, qname),
+  });
   private readonly cache: DnsCache;
   private readonly settings = new Map<string, ZoneSettings>();
   private readonly conditional = new Map<string, ConditionalForwarder>();
@@ -351,6 +356,9 @@ export class WindowsDnsServerRole {
     this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
     this.cache = new DnsCache(this.now, () => this.parameters.cacheLimits());
+    if (!this.parameters.hasGlobalQueryBlock()) {
+      this.parameters.setGlobalQueryBlock({ enabled: true, list: DEFAULT_GLOBAL_QUERY_BLOCK_LIST });
+    }
     this.startedAtMs = this.now();
     this.rootResolver = this.resolverOver(parseAddresses(this.rootHints.map(h => h.address)) as IPAddress[]);
     this.secondaries = new SecondaryZoneRefresher(host, (name, force) => { void this.refreshSecondary(name, force); });
@@ -904,6 +912,23 @@ export class WindowsDnsServerRole {
   }
 
   clearCache(): void { this.cache.flush(); }
+
+  getGlobalQueryBlock(): GlobalQueryBlock { return this.parameters.globalQueryBlock(); }
+
+  setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): DnsOpResult {
+    this.parameters.setGlobalQueryBlock({
+      enabled: changes.enabled,
+      list: changes.list === undefined ? undefined : [...new Set(changes.list.map(name => name.trim().toLowerCase()).filter(name => name !== ''))],
+    });
+    return { ok: true, message: '' };
+  }
+
+  private blockedByGlobalQueryList(zoneOrigin: string, qname: string): boolean {
+    const block = this.parameters.globalQueryBlock();
+    if (!block.enabled || this.settings.get(zoneOrigin)?.type !== 'Primary') return false;
+    const relative = relativeTo(normalizeDnsName(qname), zoneOrigin);
+    return relative !== null && block.list.includes(relative);
+  }
 
   getCacheSettings(): DnsCacheSettings { return this.parameters.cacheSettings(); }
 

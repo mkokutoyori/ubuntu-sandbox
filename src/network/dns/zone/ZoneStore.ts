@@ -1,4 +1,4 @@
-import { Zone } from '@/network/dns/zone/Zone';
+import { Zone, type ZoneLookupResult } from '@/network/dns/zone/Zone';
 import { normalizeDnsName as normalize, parentName as parentOf } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
@@ -23,6 +23,7 @@ export interface ZoneStoreAnswer {
 
 export interface ZoneStoreAnswerOptions {
   readonly dnssec?: boolean;
+  readonly blocked?: (zoneOrigin: string, qname: string) => boolean;
 }
 
 export class ZoneStore {
@@ -66,7 +67,9 @@ export class ZoneStore {
     }
 
     const dnssec = options.dnssec === true;
-    const result = zone.lookup(question.qname, question.qtype);
+    const result: ZoneLookupResult = options.blocked?.(zone.origin, question.qname) === true
+      ? { kind: 'nxdomain' }
+      : zone.lookup(question.qname, question.qtype);
     const synthesizedFrom = result.kind === 'answer' || result.kind === 'cname'
       ? result.synthesizedFrom : undefined;
     const sign = (records: readonly ResourceRecord<ResourceRecordData>[]) =>
