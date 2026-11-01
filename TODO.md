@@ -642,8 +642,7 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   (`e`, `E`, `é`, `[^...]`, `ignorecase`) sortent comme le vrai ; ces trois lignes de l'ancien constat etaient perimees.
   Les **caracteres combinants** existent (`probe-vim-caracteres-combinants`, 360 couples texte/motif rejoues sur vim 9.1) : un caractere est une
   base suivie de ses marques, `.` et les classes les prennent d'un bloc, une correspondance ne commence ni ne finit dans un tel bloc, un motif qui
-  porte une marque prend toutes celles du texte, `\Z` les ignore. Reste a mesurer : `[[=e=]]` rend `_` + marque, les marques sur plusieurs lignes
-  et sous `\%d` / `\%u`.
+  porte une marque prend toutes celles du texte, `\Z` les ignore. `[[=e=]]`, `\%d`, `\%u`, `\%x` et `\n` / `\_.` sont rejoues aussi (`probe-vim-caracteres-combinants`, 561 couples). Reste : un saut de ligne SUIVI d'une marque seule (vim refuse `\n` devant elle mais accepte `\_s`) et `^`/`$`/`\_^`/`\_$` dans une chaine de `substitute()` qui contient un saut de ligne (vim ne voit que le debut et la fin de la chaine, le moteur le debut et la fin de chaque ligne).
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :

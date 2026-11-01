@@ -757,7 +757,7 @@ class Translator {
       const [radix, width] = widths[next];
       const code = this.readNumber(radix, width);
       if (code === null || code > INT_MAX) return this.fail('E678: Invalid character after \\%[dxouU]');
-      return code > 0x10ffff ? { source: '(?!)', unit: false } : this.literal(String.fromCodePoint(code));
+      return code > 0x10ffff ? { source: '(?!)', unit: false } : { ...this.literal(String.fromCodePoint(code)), literal: undefined, plain: true };
     }
     if (next === '#') return { source: this.exactPosition(this.context?.cursor ?? null), unit: false };
     if (next === 'V') return { source: this.visualArea(), unit: false };
