@@ -772,14 +772,6 @@ Restent des queues `REST` qui ne disent qu'un gabarit : `diagnose firewall iprop
 attestee. Un FortiGate rejoue sa configuration ligne a ligne : les lignes refusees sont rapportees (`ImportResult.warnings`) mais
 l'ordre de rejeu reste celui de `show`.
 
-### [vim] coller depuis un autre programme (Ctrl+Maj+V, Maj+Inser, clic droit)
-Mesure en corrigeant le meme defaut dans nano : `VimEditor` annule chaque touche (`preventDefault`)
-et n'a ni gestionnaire `paste` ni moteur de collage, donc rien ne se colle dans vim depuis Notepad.
-Dans un vrai terminal le collage arrive comme des frappes (vim 9.1 active le « bracketed paste » :
-en mode Insertion le texte est insere tel quel, sans indentation automatique ; en mode Normal il
-est insere comme par `p`). Il faut un `applyPaste` dans `VimEngine`, les memes gestes que
-`NanoEditor` (`terminal/clipboard.ts`) et une mesure sous tmux du bracketed paste de vim 9.1.0016.
-
 ### [nc] ce que le portage de `netcat.c` (Ubuntu 1.226-1ubuntu2) laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans un espace de noms) :
 - `-x` / `-X` / `-P` (mandataires SOCKS4, SOCKS5, CONNECT) : `socks.c` est porte dans `src/network/proxy/ProxyHandshake.ts`

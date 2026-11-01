@@ -14,6 +14,7 @@ import { useHeldScreen } from './useHeldScreen';
 import { GRID_FONT_FAMILY, GRID_FONT_SIZE, GRID_LINE_HEIGHT } from './gridMetrics';
 import { measureCell, useGridGeometry, type GridSize } from '../gridGeometry';
 import { editorKeyOf } from './browserKeys';
+import { isNativePasteGesture, pasteFromClipboard } from '../terminal/clipboard';
 import type { CaretShape } from './gridLayout';
 
 /**
@@ -22,7 +23,7 @@ import type { CaretShape } from './gridLayout';
  * over an SSH channel (docs/PRD-SSH-Unification.md §4bis B3).
  */
 export type VimEditorDriver = Pick<VimEngine,
-  | 'applyKey' | 'screen' | 'resize' | 'scrollView' | 'clickAt' | 'content' | 'mode'
+  | 'applyKey' | 'applyPaste' | 'screen' | 'resize' | 'scrollView' | 'clickAt' | 'content' | 'mode'
   | 'exited' | 'savedOnExit' | 'isReplacing' | 'variant'
   | 'pendingBinaryWarning' | 'pendingSwapRecovery'>;
 
@@ -88,6 +89,7 @@ export const VimEditor: React.FC<VimEditorProps> = ({
   });
 
   const dispatch = useCallback((e: React.KeyboardEvent) => {
+    if (e.metaKey || isNativePasteGesture(e)) return;
     e.preventDefault();
     advance();
     engine.applyKey(editorKeyOf(e));
@@ -97,6 +99,21 @@ export const VimEditor: React.FC<VimEditorProps> = ({
     }
     bump();
   }, [engine, onExit, bump, advance]);
+
+  const paste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    engine.applyPaste(e.clipboardData.getData('text'));
+    bump();
+  }, [engine, bump]);
+
+  const pasteAtContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    void pasteFromClipboard().then((text) => {
+      if (!text) return;
+      engine.applyPaste(text);
+      bump();
+    });
+  }, [engine, bump]);
 
   const wheel = useCallback((e: React.WheelEvent) => {
     if (e.deltaY === 0) return;
@@ -168,6 +185,8 @@ export const VimEditor: React.FC<VimEditorProps> = ({
         data-testid="vim-body"
         tabIndex={0}
         onKeyDown={dispatch}
+        onPaste={paste}
+        onContextMenu={pasteAtContextMenu}
         onWheel={wheel}
         onMouseDown={click}
         className="absolute inset-0 outline-none"

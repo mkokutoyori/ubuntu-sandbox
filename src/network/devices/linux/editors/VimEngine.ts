@@ -2389,6 +2389,47 @@ export class VimEngine {
     this.insertLiteralText(register.lines.join('\n') + (register.linewise ? '\n' : ''));
   }
 
+  applyPaste(text: string): void {
+    if (this._exited || text === '') return;
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    switch (this._mode) {
+      case 'insert':
+        this.insertLiteralText(normalized);
+        return;
+      case 'normal':
+        this.pasteBeforeCursor(normalized);
+        return;
+      case 'command':
+        this.commandBuffer += normalized.split('\n')[0];
+        return;
+      case 'search':
+        this.searchBuffer += normalized.split('\n')[0];
+        return;
+      case 'expression':
+        this.expressionBuffer += normalized.split('\n')[0];
+        return;
+      default:
+        return;
+    }
+  }
+
+  private pasteBeforeCursor(text: string): void {
+    this.pushUndoSnapshot();
+    const segments = text.split('\n');
+    const line = this.line(this._cursorLine);
+    const head = line.slice(0, this._cursorCol);
+    const tail = line.slice(this._cursorCol);
+    const last = segments[segments.length - 1];
+    this.linesArr.splice(this._cursorLine, 1, ...segments.map((segment, at) => (
+      `${at === 0 ? head : ''}${segment}${at === segments.length - 1 ? tail : ''}`)));
+    this._cursorLine += segments.length - 1;
+    this._cursorCol = segments.length === 1
+      ? this._cursorCol + Math.max(0, [...last].length - 1)
+      : Math.max(0, last.length - 1);
+    this._modified = true;
+    this.window.noteWholeLineEdit();
+  }
+
   private insertLiteralText(text: string): void {
     const segments = text.split('\n');
     segments.forEach((segment, at) => {
