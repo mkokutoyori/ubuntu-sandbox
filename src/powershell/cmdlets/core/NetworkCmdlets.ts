@@ -20,6 +20,8 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { NON_INTERACTIVE_HOST, confirmationDue } from '../confirmation';
 import { remoteCimRefusal } from '../cimCommon';
+import { newErrorRecord } from '@/powershell/runtime/semantics/PSStreams';
+import { win32ErrorOf } from '@/network/devices/windows/dnsLookupFailure';
 import {
   type NetFirewallRuleEntry, type NetFirewallSelection, generatedFirewallRuleName,
   noMatchingFirewallRule, planNetFirewallRule, selectFirewallRules,
@@ -443,6 +445,17 @@ export class TestConnectionCmdlet implements ICmdlet {
 
 // ── Resolve-DnsName ───────────────────────────────────────────────────────
 
+function emitResolveFailure(ctx: CmdletContext, net: INetworkProvider, subject: string): void {
+  const error = win32ErrorOf(net.dnsLookupFailure?.() ?? 'NXDOMAIN');
+  ctx.emitErrorRecord(newErrorRecord({
+    message: `${subject} : ${error.message}`,
+    exceptionType: 'System.ComponentModel.Win32Exception',
+    fullyQualifiedErrorId: `${error.symbol},Microsoft.DnsClient.Commands.ResolveDnsName`,
+    category: 'ResourceUnavailable',
+    targetObject: subject,
+  }) as unknown as PSValue);
+}
+
 export class ResolveDnsNameCmdlet implements ICmdlet {
   readonly name = 'resolve-dnsname';
   readonly displayName = 'Resolve-DnsName';
@@ -469,7 +482,7 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
       }
       const serveur = ctx.named['server'] !== undefined ? psValueToString(ctx.named['server']) : undefined;
       const rows = net.resolveDnsRecords?.(name, 'PTR', serveur);
-      if (!rows || rows.length === 0) { ctx.emitError(`${ptrName} : DNS name does not exist`); return null; }
+      if (!rows || rows.length === 0) { emitResolveFailure(ctx, net, ptrName); return null; }
       return rows.map(r => ({
         Name: ptrName, Type: r.type, TTL: r.ttl, Section: r.section, ...r.fields,
       } as Record<string, PSValue>)) as PSValue;
@@ -496,7 +509,7 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
         ctx.emitError(`Resolve-DnsName : -Type ${askedType} is not a record type this DNS engine can encode`);
         return null;
       }
-      if (rows.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
+      if (rows.length === 0) { emitResolveFailure(ctx, net, name); return null; }
       return rows.map(r => ({
         Name: r.name, Type: r.type, TTL: r.ttl, Section: r.section, ...r.fields,
       } as Record<string, PSValue>)) as PSValue;
@@ -504,7 +517,7 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
 
     if (server && net.resolveDnsViaServerWithTtl) {
       const records = net.resolveDnsViaServerWithTtl(name, server);
-      if (records.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
+      if (records.length === 0) { emitResolveFailure(ctx, net, name); return null; }
       return records.map(r => ({
         Name: name,
         Type: r.ip.includes(':') ? 'AAAA' : 'A',
@@ -532,7 +545,7 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
       : (restricted && net.resolveDnsWithOptions
         ? net.resolveDnsWithOptions(name, restrictions)
         : net.resolveDns(name));
-    if (ips.length === 0) { ctx.emitError(`${name} : DNS name does not exist`); return null; }
+    if (ips.length === 0) { emitResolveFailure(ctx, net, name); return null; }
     const cacheEntries = net.getDnsClientCache?.() ?? [];
     const ttlFor = (ip: string): number =>
       cacheEntries.find(e => e.recordName.toLowerCase() === name.toLowerCase() && e.data === ip)?.timeToLive ?? 300;

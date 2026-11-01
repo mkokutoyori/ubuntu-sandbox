@@ -424,9 +424,11 @@ Clear-DnsClientCache
 Resolve-DnsName dc1.horizon.local
 ```
 ```
-Resolve-DnsName : dc1.horizon.local : DNS name does not exist
+Resolve-DnsName : dc1.horizon.local : This operation returned because the timeout period expired
+    + CategoryInfo          : ResourceUnavailable: (dc1.horizon.local:String) [Resolve-DnsName], Win32Exception
+    + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName
 ```
-(10.20.20.250 n'existe pas.)
+(10.20.20.250 n'existe pas : le serveur ne répond pas, et l'erreur le dit — « le nom n'existe pas » serait `DNS_ERROR_RCODE_NAME_ERROR`, « l'enregistrement n'existe pas » `DNS_ERROR_RECORD_DOES_NOT_EXIST`, « le serveur refuse » `DNS_ERROR_RCODE_REFUSED`.)
 
 ```powershell
 Add-DnsClientNrptRule -Namespace ".horizon.local" -NameServers 10.20.20.10
@@ -435,7 +437,7 @@ Get-DnsClientNrptRule
 reg query HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig /s
 ```
 
-`dc1.horizon.local` se résout de nouveau : la règle (la plus spécifique l'emporte ; `.` vaut pour tout nom) remplace les serveurs de la carte pour ce suffixe. La règle est une clé du registre (`Name`, `ConfigOptions`, `GenericDNSServers`). Retirez-la avec `Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force`, remettez les serveurs du DHCP avec `ipconfig /renew`.
+`dc1.horizon.local` se résout de nouveau : la règle (la plus spécifique l'emporte ; `.` vaut pour tout nom) remplace les serveurs de la carte pour ce suffixe. La règle est une clé du registre (`Version`, `Name`, `ConfigOptions`, `GenericDNSServers`, et rien d'autre tant qu'un champ facultatif — `-DisplayName`, `-Comment`, `-DnsSecEnable`… — n'est pas renseigné). Retirez-la avec `Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force`, remettez les serveurs du DHCP avec `ipconfig /renew`.
 
 Autres cmdlets du module DnsClient à essayer : `Get-DnsClient` (suffixe de connexion, enregistrement de l'adresse), `Set-DnsClient -ConnectionSpecificSuffix`, `Get-DnsClientGlobalSetting` / `Set-DnsClientGlobalSetting -SuffixSearchList`, `Get-DnsClientDohServerAddress`, `Register-DnsClient`.
 

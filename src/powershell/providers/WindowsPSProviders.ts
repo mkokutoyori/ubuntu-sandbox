@@ -14,6 +14,7 @@
  */
 
 
+import type { DnsLookupFailure } from '@/network/devices/windows/dnsLookupFailure';
 import type { DhcpFailoverChanges, DhcpFailoverRequest } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { findWmiClass } from '@/network/devices/windows/WmiClasses';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
@@ -2392,6 +2393,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const records = this.pc.lookupDnsRecordsSync(name, type, server);
     return records === null ? null : records.map(dnsAnswerRowOf);
   }
+  dnsLookupFailure(): DnsLookupFailure | null { return this.pc.lastDnsLookupFailure(); }
   getPrefixPolicies(): NetPrefixPolicyRow[] {
     return prefixPolicyRowsOf(this.pc.prefixPolicies.listed('active'), 'Active');
   }

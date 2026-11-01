@@ -280,6 +280,7 @@ import { cmdPrint } from './windows/WinPrint';
 import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
 import type { RunasHost } from './windows/WinRunas';
 import { WinNslookup, type WinNslookupEnvironment } from './windows/nslookup/WinNslookup';
+import { DnsFailureLedger, type DnsLookupFailure } from './windows/dnsLookupFailure';
 import type { NslookupInterpreter } from '../dns/tools/NslookupInterpreter';
 import type { DnsQueryFn } from '../dns/compat/DnsWireCompat';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
@@ -3471,6 +3472,11 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * pas d'elle-même.
    */
   private replayAwait: ReplayAwait | null = null;
+  private readonly dnsFailures = new DnsFailureLedger();
+
+  lastDnsLookupFailure(): DnsLookupFailure | null {
+    return this.dnsFailures.failure();
+  }
 
   attachReplayAwait(port: ReplayAwait | null): void {
     this.replayAwait = port;
@@ -3485,6 +3491,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   resolveDnsSync(name: string, options: DnsClientQueryOptions = {}): string[] {
+    this.dnsFailures.reset();
     const linkOnly = options.llmnrOnly === true;
     if (!options.noHostsFile && !linkOnly) {
       const hostsIp = this.readHostsFile().resolve(name, 4);
@@ -3505,6 +3512,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
           this.dnsCache.storePositive(response!.answers, qname);
           return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
         }
+        this.dnsFailures.noteUnanswered(response);
       }
     }
     if (options.dnsOnly) return [];
@@ -3525,6 +3533,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   lookupDnsRecordsSync(name: string, qtype: string, server?: string): readonly ResourceRecord[] | null {
     const wanted = rrTypeFromName(qtype);
     if (wanted === null) return null;
+    this.dnsFailures.reset();
     for (const attempt of this.typedDnsAttempts(name, server)) {
       const response = this.queryDnsServerAwaiting(attempt.server, attempt.qname, qtype);
       const answers = response?.answers ?? [];
@@ -3533,6 +3542,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         if (server === undefined) this.dnsCache.storePositive(response!.answers, attempt.qname);
         return matching;
       }
+      this.dnsFailures.noteUnanswered(response);
     }
     return [];
   }
