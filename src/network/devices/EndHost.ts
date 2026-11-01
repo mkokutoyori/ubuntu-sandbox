@@ -2941,6 +2941,12 @@ export abstract class EndHost extends Equipment {
       this.deliverUDP(portName, ipPkt, true, srcMac);
       return;
     }
+    if (portName !== 'lo' && this.rejectsBySourceRoute(portName, ipPkt)) {
+      Logger.info(this.id, 'ipv4:rp-filter',
+        `${this.name}: reverse path filter dropped ${ipPkt.sourceIP} → ${ipPkt.destinationIP} on ${portName}`);
+      return;
+    }
+
     // Also accept if destination is the broadcast for our subnet, or the
     // limited broadcast 255.255.255.255 — RFC 1122 §3.3.6 requires accepting
     // it even on an unconfigured interface (DHCP clients depend on this).
@@ -2986,6 +2992,10 @@ export abstract class EndHost extends Equipment {
       this.forwardIPv4(portName, ipPkt);
     }
     // Otherwise: End hosts don't forward — drop packets not addressed to them
+  }
+
+  protected rejectsBySourceRoute(_portName: string, _packet: IPv4Packet): boolean {
+    return false;
   }
 
   protected defragmentsBeforeRouting(): boolean {

@@ -10,6 +10,7 @@ describe('the per-device IPv4 configuration is the ipv4_devconf of the kernel', 
       ['arp_ignore', 0],
       ['arp_accept', 0],
       ['arp_notify', 0],
+      ['rp_filter', 2],
     ]);
   });
 

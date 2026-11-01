@@ -16,6 +16,7 @@ export const IPV4_DEVICE_CONF_KNOBS: readonly DeviceConfKnob[] = [
   { name: 'arp_ignore', initial: 0 },
   { name: 'arp_accept', initial: 0 },
   { name: 'arp_notify', initial: 0 },
+  { name: 'rp_filter', initial: 2 },
 ];
 
 interface DeviceScope {

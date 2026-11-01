@@ -432,12 +432,13 @@ show`), `kernel.printk` (`dmesg -n`), `kernel.dmesg_restrict` (`dmesg`), `kernel
 lecteur, reserve assumee (la machine accepte le reglage, le moteur n'a pas la fonction qu'il gouverne) : `kernel.kptr_restrict` (pas de
 `/proc/kallsyms`), `kernel.sysrq` (pas de clavier ; `/proc/sysrq-trigger` ignore d'ailleurs le masque), `kernel.yama.ptrace_scope` (pas de
 `ptrace`), `vm.max_map_count` et `vm.mmap_min_addr` (pas de modele de memoire par processus) ; sonde `probe-sysctl-ubuntu-hardening`.
-**Non livres** : `10-network-security.conf` (`net.ipv4.conf.{default,all}.rp_filter=2`), `10-ipv6-privacy.conf`
-(`net.ipv6.conf.{all,default}.use_tempaddr = 2`) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`) mais `protected_symlinks`, `protected_fifos`
-et `protected_regular` n'ont pas de lecteur dans le VFS (suivre un lien dans un dossier colle, `O_CREAT` sur un fichier d'autrui) et le fichier du paquet n'est donc pas livre : `sysctl --system` ecrirait des cles
-absentes, et les stocker sans lecteur affirmerait un filtre de chemin inverse qui ne jette aucun paquet (un critere de securite doit
-echouer FERME). A fermer avec leur lecteur ; `rp_filter` en premier (il rejette de vrais paquets sur une vraie machine, et demande de
-verifier qu'aucun labo ne recoit d'une source sans route).
+**`rp_filter` est ferme** (sonde `probe-rp-filter`) : Ipv4DeviceConf porte la cle (defaut 2 comme Ubuntu, maximum de `all` et de l'interface), `LinuxMachine` juge chaque
+paquet IPv4 unicast recu (mode 1 : la meilleure route vers la source sort par l'interface d'arrivee ; mode 2 : une route quelconque, defaut comprise) et
+`10-network-security.conf` est livre. Reserves : pas de compteur `IPReversePathFilter`, pas de `log_martians`, table principale seulement, diffusion, multicast et
+source 0.0.0.0 exemptes, reponse DHCP a une carte sans adresse exemptee (le client lit les trames avant la pile IP). **Non livres** : `10-ipv6-privacy.conf`
+(`net.ipv6.conf.{all,default}.use_tempaddr = 2` : pas de configuration IPv6 par interface, et il faudrait ajouter les adresses temporaires au modele, a leur rendu et au choix
+de l'adresse source) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`) mais `protected_symlinks`, `protected_fifos`
+et `protected_regular` n'ont pas de lecteur dans le VFS (`resolveInode` ne recoit pas l'identite de l'appelant) ; un critere de securite stocke sans effet echouerait ouvert.
 
 ---
 

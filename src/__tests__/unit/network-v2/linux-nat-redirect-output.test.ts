@@ -158,6 +158,7 @@ describe('PRD-Port-Forwarding.md Phase 6 — nat OUTPUT chain for locally-genera
     new Cable('c1').connect(host.getPort('eth0')!, original.getPort('eth0')!);
     new Cable('c2').connect(host.getPort('eth1')!, redirectedTo.getPort('eth0')!);
     await host.executeCommand('iptables -t nat -A OUTPUT -p udp --dport 80 -j DNAT --to-destination 10.0.1.2:9090');
+    await redirectedTo.executeCommand('ip route add default via 10.0.1.1');
 
     const receivedAtOriginal: string[] = [];
     const receivedAtRedirected: string[] = [];

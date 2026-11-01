@@ -33,6 +33,7 @@ import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
 import { EndHost, ARP_MCAST_SOLICIT, ARP_RETRANS_TIME_MS, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
+import { classifyIpv4Destination } from '@/network/layers/internet/InternetLayer';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
 import { adOperPortKey, buildActorState } from '@/network/lacp/types';
@@ -334,6 +335,18 @@ export abstract class LinuxMachine extends EndHost
     return this.deviceConfStore;
   }
   protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
+  protected override rejectsBySourceRoute(portName: string, packet: IPv4Packet): boolean {
+    const mode = this.deviceConf.maximum(portName, 'rp_filter');
+    const source = packet.sourceIP;
+    if (mode === 0 || source.toString() === '0.0.0.0' || classifyIpv4Destination(packet.destinationIP) !== 'unicast') return false;
+    let best: HostRouteEntry | null = null;
+    for (const route of this.getRoutingTable()) {
+      if ((route.table ?? 254) !== 254 || !source.isInSameSubnet(route.network, route.mask)) continue;
+      if (best === null || route.mask.toCIDR() > best.mask.toCIDR()
+        || (route.mask.toCIDR() === best.mask.toCIDR() && route.metric < best.metric)) best = route;
+    }
+    return best === null || (mode === 1 && best.iface !== portName);
+  }
   protected override answersArpFor(port: Port, target: IPAddress, sender: IPAddress): boolean {
     const mode = this.deviceConf.maximum(port.getName(), 'arp_ignore');
     if (mode >= 8) return false;
