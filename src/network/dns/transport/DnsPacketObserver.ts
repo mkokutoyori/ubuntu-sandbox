@@ -1,6 +1,6 @@
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 
-export type DnsPacketDirection = 'send' | 'receive';
+export type DnsPacketDirection = 'send' | 'receive' | 'timeout';
 
 export type DnsPacketTransport = 'udp' | 'tcp';
 
@@ -23,6 +23,7 @@ export function observedExchange<T extends DnsMessage | null>(
   observer({ direction: 'send', transport, remote, message: query, exchange });
   return ask().then((response) => {
     if (response !== null) observer({ direction: 'receive', transport, remote, message: response, exchange });
+    else observer({ direction: 'timeout', transport, remote, message: query, exchange });
     return response;
   });
 }

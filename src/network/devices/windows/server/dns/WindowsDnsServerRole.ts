@@ -67,7 +67,7 @@ import {
 } from './DnsServerStatistics';
 import {
   countServicePacket, countRecursionPacket, countSecondaryPacket, countNotifyPacket, countUpdate, countNotifyReceived,
-  type MasterRefusal, type UpdateFacts,
+  countValidation, type MasterRefusal, type UpdateFacts,
 } from './DnsStatisticsObservers';
 import { IPAddress } from '@/network/core/types';
 
@@ -430,6 +430,7 @@ export class WindowsDnsServerRole {
       directoryAvailable: this.directoryAvailable(), addresses: this.localAddresses(),
     }));
     this.cache = new DnsCache(this.now, () => this.parameters.cacheLimits());
+    this.statistics.gauge('RecordStatistics', 'CacheCurrent', () => this.cacheEntries().length);
     this.ednsSupport = new EdnsSupportCache(this.now, () => this.parameters.ednsSettings().cacheTimeoutSeconds);
     if (!this.parameters.hasGlobalQueryBlock()) {
       this.parameters.setGlobalQueryBlock({ enabled: true, list: DEFAULT_GLOBAL_QUERY_BLOCK_LIST });
@@ -449,7 +450,7 @@ export class WindowsDnsServerRole {
     this.statistics.restart();
     for (const name of this.settings.keys()) this.statistics.trackZone(name);
     bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, processName, undefined, undefined, { pid: identity.pid, service: identity.service }, this.serviceObserver);
-    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid, service: identity.service, observer: this.serviceObserver });
+    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid, service: identity.service, observer: this.serviceObserver, onConnection: () => this.statistics.add('QueryStatistics', 'TcpClientConnections') });
     this.running = true;
   }
 
@@ -817,6 +818,7 @@ export class WindowsDnsServerRole {
   ): Promise<ResolutionResult> {
     const started = performance.now();
     const result = await attempt.resolver.resolve(qname, qtype, options);
+    countValidation(this.statistics, result);
     attempt.report?.(performance.now() - started, result.status !== 'SERVFAIL');
     return result;
   }
@@ -872,6 +874,7 @@ export class WindowsDnsServerRole {
     const serialBefore = this.store.getZone(name)?.soa.data.serial;
     const outcome = await this.secondaries.refresh(this.store, name, masters, force);
     if (outcome.deferred) return false;
+    this.statistics.add('PrivateStatistics', 'ZoneLoadInit');
     if (!this.settings.has(name)) {
       this.store.removeZone(name);
       return false;
@@ -1265,6 +1268,7 @@ export class WindowsDnsServerRole {
   }
 
   private zoneFromFile(origin: string, fileName: string): Zone | string {
+    this.statistics.add('PrivateStatistics', 'ZoneLoadInit');
     const text = this.zoneFiles?.read(fileName) ?? null;
     if (text === null) return `The zone file "${fileName}" does not exist in C:\\Windows\\System32\\dns.`;
     try {

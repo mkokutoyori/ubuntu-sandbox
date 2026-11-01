@@ -51,6 +51,7 @@ const CONTENT_FILTERS: ReadonlyMap<number, { readonly bit: number; readonly lett
 ]);
 
 export function loggedAs(level: number, event: DnsPacketEvent): string | null {
+  if (event.direction === 'timeout') return null;
   const { opcode, qr } = event.message.flags;
   const content = CONTENT_FILTERS.get(opcode);
   if (content === undefined) return null;

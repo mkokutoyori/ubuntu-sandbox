@@ -83,6 +83,27 @@ describe('counters', () => {
   });
 });
 
+describe('gauges', () => {
+  it('read the live value instead of a counter, in the snapshot and with get', () => {
+    const stats = new DnsServerStatistics(new FakeClock(BOOT, BOOT));
+    let cached = 3;
+    stats.gauge('RecordStatistics', 'CacheCurrent', () => cached);
+    expect(stats.get('RecordStatistics', 'CacheCurrent')).toBe(3);
+    cached = 8;
+    expect(stats.snapshot().groups.RecordStatistics.CacheCurrent).toBe(8);
+    expect(stats.snapshot().groups.RecordStatistics.CacheTotal).toBe(0);
+  });
+
+  it('survive a clear and a restart, and wrap at 2^32 like the counters', () => {
+    const stats = new DnsServerStatistics(new FakeClock(BOOT, BOOT));
+    stats.gauge('RecordStatistics', 'CacheCurrent', () => 0x100000005);
+    stats.add('RecordStatistics', 'CacheCurrent', 7);
+    stats.clear();
+    stats.restart();
+    expect(stats.get('RecordStatistics', 'CacheCurrent')).toBe(5);
+  });
+});
+
 describe('the time statistics', () => {
   it('measures the server uptime and the uptime of the machine apart', () => {
     const clock = new FakeClock(BOOT + 600_000, BOOT);

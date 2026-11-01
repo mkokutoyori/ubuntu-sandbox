@@ -5,6 +5,7 @@ import { DnsUpdateRcode } from '@/network/dns/update/UpdateResponder';
 import { TsigErrorCode } from '@/network/dns/tsig/Tsig';
 import { serialGreaterThan } from '@/network/dns/zone/SerialNumber';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
 import type { TsigRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { DnsPacketEvent } from '@/network/dns/transport/DnsPacketObserver';
 import { normalizeDnsName } from '@/network/dns/wire/DnsName';
@@ -140,12 +141,23 @@ export function countRecursionPacket(statistics: DnsServerStatistics, event: Dns
     statistics.add('QueryStatistics', udp ? 'UdpQueriesSent' : 'TcpQueriesSent');
     statistics.add('RecursionStatistics', 'Sends');
     if (viaForwarder) statistics.add('RecursionStatistics', 'Forwards');
-    if (!udp) statistics.add('RecursionStatistics', 'TcpQuery');
+    if (!udp) {
+      statistics.add('RecursionStatistics', 'TcpTry');
+      statistics.add('RecursionStatistics', 'TcpQuery');
+      statistics.add('PrivateStatistics', 'TcpQuery');
+    }
   }
+  if (isRequest(event, 'timeout')) statistics.add('RecursionStatistics', 'TimedoutQueries');
   if (isResponse(event, 'receive')) {
     statistics.add('QueryStatistics', udp ? 'UdpResponsesReceived' : 'TcpResponsesReceived');
     statistics.add('RecursionStatistics', 'Responses');
-    if (!udp) statistics.add('RecursionStatistics', 'TcpResponse');
+    if (!udp) {
+      statistics.add('RecursionStatistics', 'TcpResponse');
+      statistics.add('RecursionStatistics', 'TcpConnect');
+      statistics.add('RecursionStatistics', 'TcpDisconnect');
+      statistics.add('PrivateStatistics', 'TcpConnect');
+      statistics.add('PrivateStatistics', 'TcpDisconnect');
+    }
     if (viaForwarder) statistics.add('RecursionStatistics', 'ResponseFromForwarder');
     statistics.add('RecursionStatistics', event.message.flags.aa ? 'ResponseAuthoritative' : 'ResponseNotAuthoritative');
     statistics.add('RecursionStatistics', recursionResponseCounter(event.message));
@@ -252,4 +264,12 @@ export function countNotifyReceived(statistics: DnsServerStatistics, facts: Noti
   if (facts.announcedSerial === null) return;
   if (facts.announcedSerial === facts.localSerial) statistics.add('SecondaryStatistics', 'NotifyCurrentVersion');
   else statistics.add('SecondaryStatistics', serialGreaterThan(facts.announcedSerial, facts.localSerial) ? 'NotifyNewVersion' : 'NotifyOldVersion');
+}
+
+export function countValidation(
+  statistics: DnsServerStatistics, result: { readonly security?: DnssecStatus; readonly fromCache: boolean },
+): void {
+  if (result.fromCache) return;
+  if (result.security === 'secure') statistics.add('DnssecStatistics', 'SuccessfulValidations');
+  if (result.security === 'bogus') statistics.add('DnssecStatistics', 'FailedValidations');
 }

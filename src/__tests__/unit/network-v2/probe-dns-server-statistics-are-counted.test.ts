@@ -22,6 +22,11 @@
  * Discrimination (the probe run on the tree before the change): 52 of 53 cases fall. The one that passes either way is the
  * CONTROL "the lab answers the questions the counters are about to count, over UDP and over TCP": it is the witness that
  * the lab itself is sound, the same servers, switch and client answering the same questions before the counters exist.
+ * The cases of "connections, timeouts, cache and zone loads", the TCP connection pinned in "counts a TCP query apart from
+ * UDP" and the timeouts of the silent forwarder were added with the counters of mechanisms the server already had: on the
+ * tree before that change 7 of the 60 fall. Of the cases added then, the two that pass either way are the NON-REGRESSION
+ * "keeps the cache count when the statistics are cleared" and the WITNESS "does not count a remembered name error among the
+ * records the cache holds".
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
@@ -186,8 +191,8 @@ describe('what the server receives and answers', () => {
     const reply = await askOverTcp('web.corp.test');
     expect(reply!.answers).toHaveLength(1);
     expect(nonZero(server)).toEqual({
-      'QueryStatistics.TcpQueries': 1, 'QueryStatistics.TcpResponses': 1, 'Query2Statistics.TotalQueries': 1,
-      'Query2Statistics.Standard': 1, 'Query2Statistics.TypeA': 1, 'ErrorStatistics.NoError': 1,
+      'QueryStatistics.TcpClientConnections': 1, 'QueryStatistics.TcpQueries': 1, 'QueryStatistics.TcpResponses': 1,
+      'Query2Statistics.TotalQueries': 1, 'Query2Statistics.Standard': 1, 'Query2Statistics.TypeA': 1, 'ErrorStatistics.NoError': 1,
     });
   });
 
@@ -321,6 +326,7 @@ describe('queries sent to forwarders', () => {
       'RecursionStatistics.ResponseAuthoritative': 1, 'ErrorStatistics.NoError': 1,
     });
     expect(counters['RecursionStatistics.ServerFailure']).toBeUndefined();
+    expect(counters['RecursionStatistics.TimedoutQueries']).toBeUndefined();
   });
 
   it('counts a query iterated from the root hints as sent and answered, but not as forwarded', async () => {
@@ -345,11 +351,82 @@ describe('queries sent to forwarders', () => {
     expect(reply!.flags.rcode).toBe(DnsRcode.SERVFAIL);
     const counters = nonZero(server);
     expect(counters['RecursionStatistics.QueriesRecursed']).toBe(1);
+    expect(counters['RecursionStatistics.TimedoutQueries']).toBe(counters['RecursionStatistics.Forwards']);
     expect(counters['RecursionStatistics.ServerFailure']).toBe(1);
     expect(counters['ErrorStatistics.ServFail']).toBe(1);
     expect(counters['RecursionStatistics.Forwards']).toBeGreaterThanOrEqual(1);
     expect(counters['RecursionStatistics.Responses']).toBeUndefined();
   }, 20000);
+});
+
+describe('connections, timeouts, cache and zone loads', () => {
+  it('counts the TCP connections the server accepts, one per client connection, none for UDP', async () => {
+    const { server, ask, askOverTcp } = await lab();
+    await ask('web.corp.test');
+    expect(nonZero(server)['QueryStatistics.TcpClientConnections']).toBeUndefined();
+    await askOverTcp('web.corp.test');
+    await askOverTcp('web.corp.test');
+    expect(nonZero(server)['QueryStatistics.TcpClientConnections']).toBe(2);
+    expect(await COUNTERS(server, 'QueryStatistics.TcpClientConnections')).toBe('2');
+  });
+
+  it('counts the records the cache holds right now, and none once the cache is cleared', async () => {
+    const { server, ask } = await lab();
+    await run(server, `Set-DnsServerForwarder -IPAddress ${MASTER} -UseRootHint $false`);
+    expect(await COUNTERS(server, 'RecordStatistics.CacheCurrent')).toBe('0');
+    await ask('host.ext.test');
+    expect(Number(await COUNTERS(server, 'RecordStatistics.CacheCurrent'))).toBeGreaterThanOrEqual(1);
+    await run(server, 'Clear-DnsServerCache -Force');
+    expect(await COUNTERS(server, 'RecordStatistics.CacheCurrent')).toBe('0');
+  });
+
+  it('does not count a remembered name error among the records the cache holds', async () => {
+    const { server, ask } = await lab();
+    await run(server, `Set-DnsServerForwarder -IPAddress ${MASTER} -UseRootHint $false`);
+    expect((await ask('nosuch.ext.test'))!.flags.rcode).toBe(DnsRcode.NXDOMAIN);
+    const sent = nonZero(server)['RecursionStatistics.Sends'];
+    expect((await ask('nosuch.ext.test'))!.flags.rcode).toBe(DnsRcode.NXDOMAIN);
+    expect(nonZero(server)['RecursionStatistics.Sends']).toBe(sent);
+    expect(await COUNTERS(server, 'RecordStatistics.CacheCurrent')).toBe('0');
+  });
+
+  it('keeps the cache count when the statistics are cleared', async () => {
+    const { server, ask } = await lab();
+    await run(server, `Set-DnsServerForwarder -IPAddress ${MASTER} -UseRootHint $false`);
+    await ask('host.ext.test');
+    const before = await COUNTERS(server, 'RecordStatistics.CacheCurrent');
+    await run(server, 'Clear-DnsServerStatistics -Force');
+    expect(await COUNTERS(server, 'RecordStatistics.CacheCurrent')).toBe(before);
+  });
+
+  it('counts the zone transfer a secondary zone starts', async () => {
+    const { master, server } = await lab();
+    await run(master, 'Set-DnsServerPrimaryZone -Name ext.test -SecureSecondaries TransferAnyServer');
+    await run(server, `Add-DnsServerSecondaryZone -Name ext.test -ZoneFile ext.test.dns -MasterServers ${MASTER}`);
+    await eventually(() => (server.getDnsServerRole()!.getRecords('ext.test') ?? []).length > 0);
+    expect(nonZero(server)['PrivateStatistics.ZoneLoadInit']).toBe(1);
+  }, 20000);
+
+  it('counts a transfer asked while another one runs once, when it runs, not when it is put off', async () => {
+    const { master, server } = await lab();
+    await run(master, 'Set-DnsServerPrimaryZone -Name ext.test -SecureSecondaries TransferAnyServer');
+    const role = server.getDnsServerRole()!;
+    role.addSecondaryZone('ext.test', [MASTER], 'ext.test.dns');
+    role.startZoneTransfer('ext.test');
+    await eventually(() => (nonZero(server)['PrivateStatistics.ZoneLoadInit'] ?? 0) >= 2);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(nonZero(server)['PrivateStatistics.ZoneLoadInit']).toBe(2);
+  }, 20000);
+
+  it('counts the zone loaded from a zone file', async () => {
+    const { server } = await lab();
+    await run(server, 'Add-DnsServerPrimaryZone -Name kept.test -ZoneFile kept.test.dns');
+    await run(server, 'Copy-Item C:\\Windows\\System32\\dns\\kept.test.dns C:\\Windows\\System32\\dns\\saved.dns');
+    await run(server, 'Remove-DnsServerZone -Name kept.test -Force');
+    expect(nonZero(server)['PrivateStatistics.ZoneLoadInit']).toBeUndefined();
+    await run(server, 'Add-DnsServerPrimaryZone -Name kept.test -ZoneFile saved.dns -LoadExisting');
+    expect(nonZero(server)['PrivateStatistics.ZoneLoadInit']).toBe(1);
+  });
 });
 
 describe('zone transfers served', () => {

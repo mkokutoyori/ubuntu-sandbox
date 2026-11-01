@@ -38,7 +38,7 @@ function message(over: Partial<DnsMessage['flags']> & { id?: number; qname?: str
 }
 
 function event(
-  msg: DnsMessage, direction: 'send' | 'receive' = 'receive', transport: 'udp' | 'tcp' = 'udp',
+  msg: DnsMessage, direction: DnsPacketEvent['direction'] = 'receive', transport: 'udp' | 'tcp' = 'udp',
   remote = '192.0.2.7', exchange: object = {},
 ): DnsPacketEvent {
   return { direction, transport, remote, message: msg, exchange };
@@ -57,6 +57,16 @@ function writer(options: { at?: number; zone?: string; level?: number; remotes?:
   });
   return { log, files, clock, settings };
 }
+
+describe('a query that timed out', () => {
+  it('is not a packet and is never logged, whatever the level', () => {
+    const { log, files } = writer({ level: 0xFFFFFFFF });
+    log.observe(event(message(), 'timeout'));
+    log.observe(event(message({ qr: true }), 'timeout', 'tcp'));
+    expect(files.lines()).toEqual([]);
+    expect(files.files.size).toBe(0);
+  });
+});
 
 describe('the text of a packet line', () => {
   it('a recursive query received over UDP, exactly as in the transcripts', () => {

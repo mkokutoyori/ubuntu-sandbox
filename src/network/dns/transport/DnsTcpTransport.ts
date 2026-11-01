@@ -24,13 +24,14 @@ export function bindDnsTcpServer(
   port: number = DNS_PORT,
   options: {
     address?: string; processName?: string; boundDevice?: string; pid?: number; service?: string;
-    observer?: DnsPacketObserver;
+    observer?: DnsPacketObserver; onConnection?: () => void;
   } = {},
 ): void {
   host.getTcpStack().listen(port, {
     identity: { processName: options.processName ?? 'dnsmasq', pid: options.pid, service: options.service },
     ...(options.boundDevice === undefined ? {} : { boundDevice: options.boundDevice }),
     onAccept: (socket: TcpSocket) => {
+      options.onConnection?.();
       const reader = new DnsStreamReader();
       let idle: ReturnType<typeof setTimeout> | null = null;
       const rearm = (): void => {

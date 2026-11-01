@@ -20,7 +20,7 @@ import type { DnsPacketEvent } from '@/network/dns/transport/DnsPacketObserver';
 import { DnsServerStatistics, SERVER_STATISTICS, type StatisticsGroup } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 import {
   countServicePacket, countRecursionPacket, countSecondaryPacket, countNotifyPacket, countUpdate, countNotifyReceived,
-  type NotifyFacts, type UpdateFacts,
+  countValidation, type NotifyFacts, type UpdateFacts,
 } from '@/network/devices/windows/server/dns/DnsStatisticsObservers';
 
 const TKEY = 249;
@@ -68,7 +68,7 @@ const record = (type: number): ResourceRecord<ResourceRecordData> =>
 const tsigRecord = (error: number): ResourceRecord<ResourceRecordData> =>
   ({ name: 'key', ttl: 0, rrClass: DnsClass.ANY, data: { type: RRType.TSIG, error } as unknown as ResourceRecordData });
 
-function event(direction: 'send' | 'receive', transport: 'udp' | 'tcp', spec: MessageSpec, exchange: object = {}): DnsPacketEvent {
+function event(direction: DnsPacketEvent['direction'], transport: 'udp' | 'tcp', spec: MessageSpec, exchange: object = {}): DnsPacketEvent {
   return { direction, transport, remote: '10.0.1.2', message: message(spec), exchange };
 }
 
@@ -171,7 +171,11 @@ describe('the resolvers count the queries they send and the responses they recei
     ['a query sent to a forwarder over UDP', true, event('send', 'udp', {}),
       { 'QueryStatistics.UdpQueriesSent': 1, 'RecursionStatistics.Sends': 1, 'RecursionStatistics.Forwards': 1 }],
     ['a query sent to a forwarder over TCP', true, event('send', 'tcp', {}),
-      { 'QueryStatistics.TcpQueriesSent': 1, 'RecursionStatistics.Sends': 1, 'RecursionStatistics.Forwards': 1, 'RecursionStatistics.TcpQuery': 1 }],
+      { 'QueryStatistics.TcpQueriesSent': 1, 'RecursionStatistics.Sends': 1, 'RecursionStatistics.Forwards': 1, 'RecursionStatistics.TcpTry': 1,
+        'RecursionStatistics.TcpQuery': 1, 'PrivateStatistics.TcpQuery': 1 }],
+    ['a query that timed out over UDP', true, event('timeout', 'udp', {}), { 'RecursionStatistics.TimedoutQueries': 1 }],
+    ['a query that timed out over TCP', false, event('timeout', 'tcp', {}), { 'RecursionStatistics.TimedoutQueries': 1 }],
+    ['a response is not a timed-out query', false, event('timeout', 'udp', { qr: true }), {}],
     ['a query sent while iterating from the root is not a forward', false, event('send', 'udp', {}),
       { 'QueryStatistics.UdpQueriesSent': 1, 'RecursionStatistics.Sends': 1 }],
     ['an answer from a forwarder', true, event('receive', 'udp', { qr: true, answers: [record(RRType.A)] }),
@@ -179,7 +183,9 @@ describe('the resolvers count the queries they send and the responses they recei
     ['an authoritative answer met while iterating', false, event('receive', 'udp', { qr: true, aa: true, answers: [record(RRType.A)] }),
       { 'QueryStatistics.UdpResponsesReceived': 1, 'RecursionStatistics.Responses': 1, 'RecursionStatistics.ResponseAuthoritative': 1, 'RecursionStatistics.ResponseAnswer': 1 }],
     ['a TCP answer', false, event('receive', 'tcp', { qr: true, aa: true, answers: [record(RRType.A)] }),
-      { 'QueryStatistics.TcpResponsesReceived': 1, 'RecursionStatistics.Responses': 1, 'RecursionStatistics.TcpResponse': 1, 'RecursionStatistics.ResponseAuthoritative': 1, 'RecursionStatistics.ResponseAnswer': 1 }],
+      { 'QueryStatistics.TcpResponsesReceived': 1, 'RecursionStatistics.Responses': 1, 'RecursionStatistics.TcpResponse': 1, 'RecursionStatistics.ResponseAuthoritative': 1,
+        'RecursionStatistics.ResponseAnswer': 1, 'RecursionStatistics.TcpConnect': 1, 'RecursionStatistics.TcpDisconnect': 1,
+        'PrivateStatistics.TcpConnect': 1, 'PrivateStatistics.TcpDisconnect': 1 }],
     ['a name error', false, event('receive', 'udp', { qr: true, aa: true, rcode: DnsRcode.NXDOMAIN }),
       { 'QueryStatistics.UdpResponsesReceived': 1, 'RecursionStatistics.Responses': 1, 'RecursionStatistics.ResponseAuthoritative': 1, 'RecursionStatistics.ResponseNameError': 1 }],
     ['an error other than a name error', false, event('receive', 'udp', { qr: true, rcode: DnsRcode.SERVFAIL }),
@@ -390,5 +396,33 @@ describe('dynamic updates', () => {
     expect(stats.zoneSnapshot('corp.test')!.update).toEqual({ received: 2, rejected: 1 });
     expect(stats.hasZone('unknown.test')).toBe(false);
     expect(nonZero(stats)['UpdateStatistics.Received']).toBe(4);
+  });
+});
+
+describe('a timed-out query belongs to the resolvers only', () => {
+  it.each([
+    ['the service', countServicePacket],
+    ['the secondary side', countSecondaryPacket],
+    ['the NOTIFY side', countNotifyPacket],
+  ])('is no request, no response and no NOTIFY for %s', (_label, count) => {
+    const stats = statistics();
+    count(stats, event('timeout', 'udp', { qtype: RRType.SOA }));
+    count(stats, event('timeout', 'tcp', { qtype: RRType.AXFR, opcode: DnsOpcode.NOTIFY }));
+    expect(nonZero(stats)).toEqual({});
+  });
+});
+
+describe('the validations of the recursive answers', () => {
+  it.each([
+    ['a fresh answer that validated', { security: 'secure' as const, fromCache: false }, { 'DnssecStatistics.SuccessfulValidations': 1 }],
+    ['a fresh answer that did not validate', { security: 'bogus' as const, fromCache: false }, { 'DnssecStatistics.FailedValidations': 1 }],
+    ['a fresh answer from an unsigned zone', { security: 'insecure' as const, fromCache: false }, {}],
+    ['a fresh answer nobody validated', { fromCache: false }, {}],
+    ['a validated answer served from the cache', { security: 'secure' as const, fromCache: true }, {}],
+    ['a bogus answer served from the cache', { security: 'bogus' as const, fromCache: true }, {}],
+  ])('counts %s', (_label, result, expected) => {
+    const stats = statistics();
+    countValidation(stats, result);
+    expect(nonZero(stats)).toEqual(expected);
   });
 });

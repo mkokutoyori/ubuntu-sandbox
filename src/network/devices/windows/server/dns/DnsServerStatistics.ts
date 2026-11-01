@@ -223,6 +223,7 @@ export class DnsServerStatistics {
   private readonly counters = new Map<string, number>();
   private readonly zones = new Map<string, ZoneRecord>();
   private readonly seen = new WeakMap<object, Set<string>>();
+  private readonly gauges = new Map<string, () => number>();
   private serverStartedAtMs: number;
   private lastClearedAtMs: number;
   private lastClearedUptimeMs: number;
@@ -238,8 +239,17 @@ export class DnsServerStatistics {
     this.counters.set(key, ((this.counters.get(key) ?? 0) + amount) % COUNTER_MODULUS);
   }
 
+  gauge<G extends StatisticsGroup>(group: G, counter: StatisticsCounter<G>, read: () => number): void {
+    this.gauges.set(`${group}.${counter}`, read);
+  }
+
   get<G extends StatisticsGroup>(group: G, counter: StatisticsCounter<G>): number {
-    return this.counters.get(`${group}.${counter}`) ?? 0;
+    return this.value(`${group}.${counter}`);
+  }
+
+  private value(key: string): number {
+    const read = this.gauges.get(key);
+    return read === undefined ? this.counters.get(key) ?? 0 : read() % COUNTER_MODULUS;
   }
 
   firstOf(exchange: object, tag: string): boolean {
@@ -283,7 +293,7 @@ export class DnsServerStatistics {
     const groups = {} as Record<StatisticsGroup, Record<string, number>>;
     for (const group of Object.keys(SERVER_STATISTICS) as StatisticsGroup[]) {
       const values: Record<string, number> = {};
-      for (const counter of SERVER_STATISTICS[group]) values[counter] = this.counters.get(`${group}.${counter}`) ?? 0;
+      for (const counter of SERVER_STATISTICS[group]) values[counter] = this.value(`${group}.${counter}`);
       groups[group] = values;
     }
     return { times: this.times(), groups };
