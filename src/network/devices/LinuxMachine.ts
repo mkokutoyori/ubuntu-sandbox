@@ -4278,7 +4278,7 @@ export abstract class LinuxMachine extends EndHost
       if (/Name or service not known|unknown host|Permission denied|invalid argument/i.test(output)) return true;
       return false;
     }
-    if (head === 'traceroute') {
+    if (head === 'traceroute' || head === 'traceroute6') {
       if (/unknown host|invalid argument|Permission denied/i.test(output)) return true;
       return false;
     }
@@ -4803,7 +4803,17 @@ export abstract class LinuxMachine extends EndHost
           target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl, hooks, method, socket);
         return hops as TracerouteHop[];
       },
+      traceroute6: async (
+        target: IPv6Address, maxHops?: number, probesPerHop?: number, firstTtl?: number,
+        timeoutMs?: number, method?: Exclude<TraceProbeMethod, { kind: 'raw' }>, socket?: TraceSocketOptions,
+        hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
+      ): Promise<TracerouteHop[]> => {
+        const hops = await this.executeTraceroute6(
+          target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl, hooks, method, socket);
+        return hops as TracerouteHop[];
+      },
       canTraceTo: (target: IPAddress, socket: TraceSocketOptions): boolean => this.canTraceTo(target, socket),
+      canTraceTo6: (target: IPv6Address, socket: TraceSocketOptions): boolean => this.canTraceTo6(target, socket),
       isLocalAddress: (ip: IPAddress): boolean => this.isLocalAddress(ip),
       isLocalAddress6: (ip: IPv6Address): boolean => this.isLocalAddress6(ip),
       sendUdpProbe: (

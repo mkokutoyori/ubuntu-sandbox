@@ -369,6 +369,7 @@ export interface Echo6Options {
   hopLimit?: number;
   trafficClass?: number;
   flowLabel?: number;
+  sourceIp?: IPv6Address;
   firstSeq?: number;
   ident?: number;
   pauseAfterErrorReplyMs?: number;
@@ -377,6 +378,8 @@ export interface Echo6Options {
 export interface TraceSocketOptions {
   iface?: string;
   sourceIp?: IPAddress;
+  sourceIp6?: IPv6Address;
+  flowLabel?: number;
   sourcePort?: number;
   dontFragment?: boolean;
   direct?: boolean;
@@ -4502,15 +4505,18 @@ export abstract class EndHost extends Equipment {
     sourcePort: number,
     payload: unknown,
     payloadBytes: number = 0,
-    options: { hopLimit?: number; trafficClass?: number; sourceIp?: IPv6Address } = {},
+    options: { hopLimit?: number; trafficClass?: number; flowLabel?: number; sourceIp?: IPv6Address; iface?: string } = {},
   ): boolean {
     const udp: UDPPacket = {
       type: 'udp', sourcePort, destinationPort,
       length: 8 + udpPayloadLength(payload, payloadBytes), checksum: 0, payload,
     };
     const hopLimit = options.hopLimit ?? this.defaultHopLimit;
-    const marked = (packet: IPv6Packet): IPv6Packet =>
-      options.trafficClass === undefined ? packet : { ...packet, trafficClass: options.trafficClass };
+    const marked = (packet: IPv6Packet): IPv6Packet => ({
+      ...packet,
+      ...(options.trafficClass === undefined ? {} : { trafficClass: options.trafficClass }),
+      ...(options.flowLabel === undefined ? {} : { flowLabel: options.flowLabel }),
+    });
 
     if (this.isLocalAddress6(destinationIP)) {
       const origin = options.sourceIp ?? destinationIP;
@@ -4533,13 +4539,13 @@ export abstract class EndHost extends Equipment {
     return this.emitIpv6(destinationIP, (srcIP) => marked(createIPv6Packet(
       srcIP, destinationIP, IP_PROTO_UDP, hopLimit,
       stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length,
-    )), options.sourceIp);
+    )), options.sourceIp, options.iface);
   }
 
   public emitIpv6(
-    destination: IPv6Address, build: (source: IPv6Address) => IPv6Packet, forcedSource?: IPv6Address,
+    destination: IPv6Address, build: (source: IPv6Address) => IPv6Packet, forcedSource?: IPv6Address, iface?: string,
   ): boolean {
-    const route = this.resolveIPv6Route(destination);
+    const route = this.resolveIPv6Route(destination, iface);
     if (!route) {
       this.protocolCounters.ip6OutNoRoutes++;
       return false;
@@ -5727,7 +5733,7 @@ export abstract class EndHost extends Equipment {
    * probesPerHop controls how many probes are sent per TTL value (default 3, like real Linux traceroute).
    */
   private tcpTraceProbe(
-    targetIP: IPAddress, port: number, ttl: number, tos: number | undefined, socket: TraceSocketOptions,
+    targetIP: IPAddress | IPv6Address, port: number, ttl: number, tos: number | undefined, socket: TraceSocketOptions,
   ): TraceProbeOutcome {
     const flags = noFlags();
     flags.syn = true;
@@ -5737,7 +5743,8 @@ export abstract class EndHost extends Equipment {
       dontFragment: socket.dontFragment === true,
       ...(tos === undefined ? {} : { tos }),
       ...(socket.iface === undefined ? {} : { iface: socket.iface }),
-      ...(socket.sourceIp === undefined ? {} : { sourceIp: socket.sourceIp.toString() }),
+      ...(socket.sourceIp === undefined && socket.sourceIp6 === undefined
+        ? {} : { sourceIp: (socket.sourceIp ?? socket.sourceIp6)!.toString() }),
       ...(socket.sourcePort === undefined ? {} : { sourcePort: socket.sourcePort }),
     });
     const rttMs = PathClock.now() - sentAt;
@@ -5848,7 +5855,7 @@ export abstract class EndHost extends Equipment {
   }
 
   private async awaitTraceError(
-    targetIP: IPAddress, timeoutMs: number,
+    targetIP: IPAddress | IPv6Address, timeoutMs: number,
     quotesProbe: (pl: { origProtocol?: number; origDestPort?: number }) => boolean,
     isArrival: (code: string) => boolean,
     send: () => void,
@@ -5915,24 +5922,12 @@ export abstract class EndHost extends Equipment {
     const portName = route.port.getName();
     const myIP = socket.sourceIp ?? route.port.getIPAddress()!;
 
-    // ARP resolve next hop
     try {
       await this.resolveARP(portName, route.nextHopIP, timeoutMs);
     } catch {
-      const silent: TracerouteHopResult[] = [];
-      for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
-        if (hooks?.shouldStop?.()) break;
-        const hop: TracerouteHopResult = {
-          hop: ttl, timeout: true,
-          probes: Array.from({ length: probesPerHop }, () => ({ responded: false })),
-        };
-        silent.push(hop);
-        hooks?.onHop?.(hop);
-      }
-      return silent;
+      return this.silentTraceHops({ firstTtl, maxHops, probesPerHop }, hooks);
     }
 
-    const hops: TracerouteHopResult[] = [];
     let udpPort = method.kind === 'default-udp' ? method.port : 0;
     const traceIdent = this.allocateEchoIdent();
     this.traceIdents.add(traceIdent);
@@ -5940,108 +5935,203 @@ export abstract class EndHost extends Equipment {
     let traceSequence = 0;
     const sourcePort = socket.sourcePort ?? 32768 + (this.pingIdCounter % 28000);
 
-    for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
-      if (hooks?.shouldStop?.()) break;
-      const probes: Array<{ responded: boolean; rttMs?: number; ip?: string; unreachable?: boolean; icmpCode?: number; extensions?: readonly IcmpExtensionObject[] }> = [];
-      let destinationReached = false;
+    return this.collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
+      if (method.kind !== 'icmp') {
+        const port = method.kind === 'default-udp' ? udpPort++ : method.kind === 'raw' ? 0 : method.port;
+        return method.kind === 'tcp'
+          ? this.tcpTraceProbe(targetIP, port, ttl, method.tos, socket)
+          : method.kind === 'raw'
+            ? this.rawTraceProbe(targetIP, method.protocol, ttl, timeoutMs, method.tos, socket)
+            : this.udpTraceProbe(targetIP, port, sourcePort, ttl, timeoutMs, method.tos, socket);
+      }
+      const id = traceIdent;
+      const seq = ++traceSequence & 0xffff;
+      const targetIpStr = targetIP.toString();
+      const sentAt = PathClock.now();
 
-      for (let p = 0; p < probesPerHop; p++) {
-        if (method.kind !== 'icmp') {
-          const port = method.kind === 'default-udp' ? udpPort++ : method.kind === 'raw' ? 0 : method.port;
-          const outcome = method.kind === 'tcp'
-            ? this.tcpTraceProbe(targetIP, port, ttl, method.tos, socket)
-            : method.kind === 'raw'
-              ? await this.rawTraceProbe(targetIP, method.protocol, ttl, timeoutMs, method.tos, socket)
-              : await this.udpTraceProbe(targetIP, port, sourcePort, ttl, timeoutMs, method.tos, socket);
-          probes.push({
-            responded: !outcome.timeout,
-            rttMs: outcome.rttMs,
-            ip: outcome.ip,
-            unreachable: outcome.unreachable,
-            icmpCode: outcome.icmpCode,
-            ...(outcome.extensions ? { extensions: outcome.extensions } : {}),
-          });
-          if (outcome.reached) destinationReached = true;
-          continue;
-        }
-        const id = traceIdent;
-        const seq = ++traceSequence & 0xffff;
-        const targetIpStr = targetIP.toString();
-        const sentAt = PathClock.now();
+      const replyP = waitForEvent(
+        this.getBus(),
+        'host.icmp.echo-reply',
+        (pl) => pl.deviceId === this.id && pl.fromIp === targetIpStr && pl.id === id && pl.seq === seq,
+        { timeoutMs, scheduler: this.getScheduler() },
+      );
+      const failP = waitForEvent(
+        this.getBus(),
+        'host.icmp.echo-failed',
+        (pl) => pl.deviceId === this.id && pl.id === id && pl.seq === seq,
+        { timeoutMs, scheduler: this.getScheduler() },
+      );
 
-        // Phase 5.6: traceroute also settles via the bus.
-        const replyP = waitForEvent(
-          this.getBus(),
-          'host.icmp.echo-reply',
-          (pl) => pl.deviceId === this.id && pl.fromIp === targetIpStr && pl.id === id && pl.seq === seq,
-          { timeoutMs, scheduler: this.getScheduler() },
-        );
-        const failP = waitForEvent(
-          this.getBus(),
-          'host.icmp.echo-failed',
-          (pl) => pl.deviceId === this.id && pl.id === id && pl.seq === seq,
-          { timeoutMs, scheduler: this.getScheduler() },
-        );
+      const icmp: ICMPPacket = {
+        type: 'icmp', icmpType: 'echo-request', code: 0,
+        id, sequence: seq, dataSize: 56,
+      };
+      const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64, {
+        flags: socket.dontFragment === true ? IPV4_FLAG_DF : 0,
+        ...(method.tos === undefined ? {} : { tos: method.tos }),
+      });
 
-        const icmp: ICMPPacket = {
-          type: 'icmp', icmpType: 'echo-request', code: 0,
-          id, sequence: seq, dataSize: 56,
-        };
-        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64, {
-          flags: socket.dontFragment === true ? IPV4_FLAG_DF : 0,
-          ...(method.tos === undefined ? {} : { tos: method.tos }),
-        });
+      this.dispatchOrigination(this.originate(ipPkt, route));
 
-        this.dispatchOrigination(this.originate(ipPkt, route));
-
-        const replyOutcome = replyP.then((pl) => ({
+      const replyOutcome = replyP.then((pl): TraceProbeOutcome => ({
+        ip: pl.fromIp,
+        rttMs: PathClock.now() - sentAt,
+        timeout: false, reached: true,
+      }));
+      const failOutcome = failP.then((pl): TraceProbeOutcome => {
+        const codeMatch = pl.reason.match(/code (\d+)/);
+        const isUnreachable = pl.reason.includes('Destination unreachable');
+        return {
           ip: pl.fromIp,
           rttMs: PathClock.now() - sentAt,
-          timeout: false, reached: true,
-          unreachable: undefined as boolean | undefined,
-          icmpCode: undefined as number | undefined,
-        }));
-        const failOutcome = failP.then((pl) => {
-          const codeMatch = pl.reason.match(/code (\d+)/);
-          const isUnreachable = pl.reason.includes('Destination unreachable');
-          return {
-            ip: pl.fromIp,
-            rttMs: PathClock.now() - sentAt,
-            timeout: false, reached: false,
-            unreachable: isUnreachable,
-            icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
-          };
-        });
-        // Observe the race loser's eventual timeout rejection.
-        replyOutcome.catch(() => {});
-        failOutcome.catch(() => {});
+          timeout: false, reached: false,
+          unreachable: isUnreachable,
+          icmpCode: codeMatch ? parseInt(codeMatch[1], 10) : undefined,
+        };
+      });
+      replyOutcome.catch(() => {});
+      failOutcome.catch(() => {});
 
-        const answered = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
-          if (err instanceof WaitForEventTimeoutError) {
-            return { timeout: true, reached: false } as {
-              ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
-              unreachable?: boolean; icmpCode?: number;
-            };
-          }
-          throw err;
-        });
-        const probe = answered.rttMs !== undefined && answered.rttMs > timeoutMs
-          ? { timeout: true, reached: false } as typeof answered
-          : answered;
+      const answered = await Promise.race([replyOutcome, failOutcome]).catch((err): TraceProbeOutcome => {
+        if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
+        throw err;
+      });
+      return answered.rttMs !== undefined && answered.rttMs > timeoutMs
+        ? { timeout: true, reached: false }
+        : answered;
+    });
+  }
 
+  protected async executeTraceroute6(
+    targetIP: IPv6Address,
+    maxHops: number = 30,
+    timeoutMs: number = 2000,
+    probesPerHop: number = 3,
+    firstTtl: number = 1,
+    hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
+    method: Exclude<TraceProbeMethod, { kind: 'raw' }> = { kind: 'icmp' },
+    socket: TraceSocketOptions = {},
+  ): Promise<TracerouteHopResult[]> {
+    if (this.isLocalAddress6(targetIP)) {
+      const self = targetIP.toString();
+      const hop: TracerouteHopResult = {
+        hop: firstTtl, ip: self, timeout: false,
+        probes: Array.from({ length: probesPerHop }, () => ({
+          responded: true, rttMs: LOCAL_DELIVERY_RTT_MS, ip: self,
+        })),
+      };
+      hooks?.onHop?.(hop);
+      return [hop];
+    }
+    const route = this.traceRoute6For(targetIP, socket);
+    if (!route) return [];
+
+    const portName = route.port.getName();
+    const neighbour = this.neighbourWhenNeeded(portName, route.nextHopIP, timeoutMs);
+    if (await neighbour() === null) return this.silentTraceHops({ firstTtl, maxHops, probesPerHop }, hooks);
+
+    let udpPort = method.kind === 'default-udp' ? method.port : 0;
+    const traceIdent = this.allocateEchoIdent();
+    this.traceIdents.add(traceIdent);
+    if (this.traceIdents.size > TRACE_IDENT_MEMORY) this.traceIdents.delete(this.traceIdents.values().next().value as number);
+    let traceSequence = 0;
+    const sourcePort = socket.sourcePort ?? 32768 + (this.pingIdCounter % 28000);
+    const marking = {
+      ...(method.tos === undefined ? {} : { trafficClass: method.tos }),
+      ...(socket.flowLabel === undefined ? {} : { flowLabel: socket.flowLabel }),
+      ...(socket.sourceIp6 === undefined ? {} : { sourceIp: socket.sourceIp6 }),
+    };
+
+    return this.collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
+      if (method.kind === 'tcp') return this.tcpTraceProbe(targetIP, method.port, ttl, method.tos, socket);
+      if (method.kind !== 'icmp') {
+        const port = method.kind === 'default-udp' ? udpPort++ : method.port;
+        return this.awaitTraceError(
+          targetIP, timeoutMs,
+          (pl) => pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === port,
+          (code) => code === 'port-unreachable',
+          () => this.sendUdpDatagram6(targetIP, port, sourcePort, null, TRACE_UDP_DATA_BYTES, {
+            ...marking, hopLimit: ttl, ...(socket.iface === undefined ? {} : { iface: socket.iface }),
+          }),
+        );
+      }
+      const seq = ++traceSequence & 0xffff;
+      const echo = await this.sendPing6(portName, targetIP, neighbour, seq, timeoutMs, {
+        ...marking, hopLimit: ttl, ident: traceIdent,
+      }).catch((err) => this.failedProbe(seq, err));
+      return this.traceOutcomeOfEcho6(echo);
+    });
+  }
+
+  private traceOutcomeOfEcho6(echo: PingResult): TraceProbeOutcome {
+    if (echo.success) return { timeout: false, reached: true, ip: echo.fromIP, rttMs: echo.rttMs };
+    const report = echo.icmp6;
+    if (report === undefined) return { timeout: true, reached: false };
+    if (report.type === 'time-exceeded') return { timeout: false, reached: false, ip: report.from, rttMs: echo.rttMs };
+    return {
+      timeout: false, reached: false, ip: report.from, rttMs: echo.rttMs,
+      unreachable: true, icmpCode: report.code,
+    };
+  }
+
+  private traceRoute6For(
+    target: IPv6Address, socket: TraceSocketOptions,
+  ): { port: Port; nextHopIP: IPv6Address } | null {
+    if (socket.direct !== true) return this.resolveIPv6Route(target, socket.iface);
+    const onLink = this.ipv6RoutingTable.find((route) =>
+      route.type === 'connected' && (socket.iface === undefined || route.iface === socket.iface)
+      && target.isInSameSubnet(route.prefix, route.prefixLength));
+    const port = onLink === undefined ? undefined : this.ports.get(onLink.iface);
+    return port === undefined ? null : { port, nextHopIP: target };
+  }
+
+  canTraceTo6(target: IPv6Address, socket: TraceSocketOptions): boolean {
+    return this.isLocalAddress6(target) || this.traceRoute6For(target, socket) !== null;
+  }
+
+  private silentTraceHops(
+    range: { firstTtl: number; maxHops: number; probesPerHop: number },
+    hooks: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean } | undefined,
+  ): TracerouteHopResult[] {
+    const silent: TracerouteHopResult[] = [];
+    for (let ttl = range.firstTtl; ttl <= range.maxHops; ttl++) {
+      if (hooks?.shouldStop?.()) break;
+      const hop: TracerouteHopResult = {
+        hop: ttl, timeout: true,
+        probes: Array.from({ length: range.probesPerHop }, () => ({ responded: false })),
+      };
+      silent.push(hop);
+      hooks?.onHop?.(hop);
+    }
+    return silent;
+  }
+
+  private async collectTraceHops(
+    range: { firstTtl: number; maxHops: number; probesPerHop: number },
+    hooks: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean; compressedWaitMs?: number } | undefined,
+    probeOnce: (ttl: number) => Promise<TraceProbeOutcome>,
+  ): Promise<TracerouteHopResult[]> {
+    const hops: TracerouteHopResult[] = [];
+    for (let ttl = range.firstTtl; ttl <= range.maxHops; ttl++) {
+      if (hooks?.shouldStop?.()) break;
+      const probes: TracerouteProbeResult[] = [];
+      let destinationReached = false;
+
+      for (let p = 0; p < range.probesPerHop; p++) {
+        const outcome = await probeOnce(ttl);
         probes.push({
-          responded: !probe.timeout,
-          rttMs: probe.rttMs,
-          ip: probe.ip,
-          unreachable: probe.unreachable,
-          icmpCode: probe.icmpCode,
+          responded: !outcome.timeout,
+          rttMs: outcome.rttMs,
+          ip: outcome.ip,
+          unreachable: outcome.unreachable,
+          icmpCode: outcome.icmpCode,
+          ...(outcome.extensions ? { extensions: outcome.extensions } : {}),
         });
-        if (probe.reached) destinationReached = true;
+        if (outcome.reached) destinationReached = true;
       }
 
       if (probes.some(p => !p.responded)) PathClock.wait(hooks?.compressedWaitMs ?? 0);
 
-      // Aggregate probe results into hop summary
       const firstResponded = probes.find(p => p.responded);
       const firstUnreachable = probes.find(p => p.unreachable);
       const allTimeout = probes.every(p => !p.responded);
@@ -6876,11 +6966,12 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv6 Route Resolution (LPM) ────────────────────────────────
 
-  protected resolveIPv6Route(targetIP: IPv6Address): { port: Port; nextHopIP: IPv6Address } | null {
+  protected resolveIPv6Route(targetIP: IPv6Address, iface?: string): { port: Port; nextHopIP: IPv6Address } | null {
     let bestRoute: HostIPv6RouteEntry | null = null;
     let bestPrefix = -1;
 
     for (const route of this.ipv6RoutingTable) {
+      if (iface !== undefined && route.iface !== iface) continue;
       if (targetIP.isInSameSubnet(route.prefix, route.prefixLength)) {
         if (route.prefixLength > bestPrefix ||
             (route.prefixLength === bestPrefix && bestRoute && route.metric < bestRoute.metric)) {
@@ -6915,7 +7006,7 @@ export abstract class EndHost extends Equipment {
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) throw new Error('IPv6 not enabled');
 
-    const srcIP = selectIpv6SourceAddress(port, targetIP);
+    const srcIP = opts?.sourceIp ?? selectIpv6SourceAddress(port, targetIP);
 
     if (!srcIP) throw new Error('No IPv6 address');
 

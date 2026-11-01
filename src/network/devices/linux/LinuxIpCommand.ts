@@ -1470,7 +1470,7 @@ function ipRoute6Add(ctx: IpNetworkContext, args: string[]): string {
 }
 
 function ipRoute6Del(ctx: IpNetworkContext, args: string[]): string {
-  const spec = parseRouteSpec6(args);
+  const spec = parseRouteSpec6(args, false);
   if (typeof spec === 'string') return spec;
   if (!ctx.deleteIPv6Route) return 'RTNETLINK answers: Operation not supported';
   return ctx.deleteIPv6Route(spec.prefix, spec.prefixLength, spec.gateway);
@@ -1548,7 +1548,7 @@ function routeKeyOf(args: string[]): [string, number, string | null] {
   return typeof spec === 'string' ? ['::', 0, null] : [spec.prefix, spec.prefixLength, null];
 }
 
-function parseRouteSpec6(args: string[]): ParsedRouteSpec6 | string {
+function parseRouteSpec6(args: string[], gatewayRequired = true): ParsedRouteSpec6 | string {
   if (args.length === 0) return 'Error: need a valid prefix or "default".';
 
   const isDefault = args[0] === 'default' || args[0] === '::/0';
@@ -1574,7 +1574,7 @@ function parseRouteSpec6(args: string[]): ParsedRouteSpec6 | string {
     gateway = args[viaIdx + 1];
   }
   const dev = devIdx !== -1 && args[devIdx + 1] ? args[devIdx + 1] : null;
-  if (isDefault && !gateway && !dev) {
+  if (gatewayRequired && isDefault && !gateway && !dev) {
     return 'Error: "via" is required for default route.';
   }
 

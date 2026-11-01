@@ -3,7 +3,7 @@ import { IPAddress } from '@/network/core/types';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
-import { runTraceroute } from '@/network/devices/linux/commands/net/Traceroute';
+import { runTraceroute, TRACEROUTE_COMMAND_NAMES, tracerouteArgvOf } from '@/network/devices/linux/commands/net/Traceroute';
 import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
@@ -218,7 +218,7 @@ function planStage(
     case 'auditd': return planAuditd(dev, session, commandLine, toks);
     case 'nc': case 'ncat': case 'netcat': return planNcUnix(dev, session, commandLine, toks);
     case 'ping': case 'ping6': return planPing(dev, session, commandLine, toks);
-    case 'sudo': case 'traceroute': case 'tcpdump': return planCapture(dev, session, commandLine);
+    case 'sudo': case 'traceroute': case 'traceroute6': case 'tcpdump': return planCapture(dev, session, commandLine);
     case 'mtr': return planMtr(dev, commandLine, toks, screen);
     case 'watch': return planWatch(dev, session, commandLine, toks, screen);
     case 'top': return planTop(dev, session, commandLine, toks, screen);
@@ -270,7 +270,7 @@ export function captureToolInvocation(commandLine: string): { argv: string[]; el
   const toks = commandLine.trim().split(/\s+/);
   const elevated = toks[0] === 'sudo';
   const argv = elevated ? toks.slice(1) : toks;
-  return argv[0] === 'traceroute' || argv[0] === 'tcpdump' ? { argv, elevated } : null;
+  return TRACEROUTE_COMMAND_NAMES.includes(argv[0]) || argv[0] === 'tcpdump' ? { argv, elevated } : null;
 }
 
 function planCapture(dev: LinuxMachine, session: LinuxShellSession, commandLine: string): StreamPlan | null {
@@ -286,8 +286,8 @@ export function planCaptureTool(dev: LinuxMachine, session: LinuxShellSession, a
     if (refusal !== null) return notice(refusal);
   }
   return job(async (ctx) => {
-    if (argv[0] === 'traceroute') {
-      await runTraceroute(argv.slice(1), dev.tracerouteHostInSession(session, elevated), (text) => emit(ctx, text), () => ctx.cancelled());
+    if (TRACEROUTE_COMMAND_NAMES.includes(argv[0])) {
+      await runTraceroute(tracerouteArgvOf(argv[0], argv.slice(1)), dev.tracerouteHostInSession(session, elevated), (text) => emit(ctx, text), () => ctx.cancelled());
       return;
     }
     const result = await runTcpdump(argv.slice(1), {

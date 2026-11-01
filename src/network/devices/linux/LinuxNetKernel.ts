@@ -178,7 +178,15 @@ export interface LinuxNetKernel {
     hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
   ): Promise<TracerouteHop[]>;
 
+  traceroute6(
+    target: IPv6Address, maxHops?: number, probesPerHop?: number, firstTtl?: number,
+    timeoutMs?: number, method?: Exclude<TraceProbeMethod, { kind: 'raw' }>, socket?: TraceSocketOptions,
+    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
+  ): Promise<TracerouteHop[]>;
+
   canTraceTo(target: IPAddress, socket: TraceSocketOptions): boolean;
+
+  canTraceTo6(target: IPv6Address, socket: TraceSocketOptions): boolean;
 
   isLocalAddress(ip: IPAddress): boolean;
 
