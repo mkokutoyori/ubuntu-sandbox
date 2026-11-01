@@ -1,3 +1,4 @@
+import { IPROPE_POLICY_GROUP } from './ipropeRenderer';
 import type { EnumValue } from '../../../../../../cli/ArgumentTypes';
 import { DHCP_DEBUG_APPLICATIONS } from '../../../l3/DhcpDebug';
 
@@ -96,4 +97,12 @@ export function logFilterWords(): EnumValue[] {
     { keyword: 'view-lines', description: 'Number of lines displayed.', thenWord: '<count>' },
     { keyword: 'reset', description: 'Reset every criterion.' },
   ];
+}
+
+export function ipropeGroupWords(): EnumValue[] {
+  return [{ keyword: IPROPE_POLICY_GROUP, description: 'Security policy group.', thenWord: '<policy index>' }];
+}
+
+export function datasourceWords(paths: readonly (readonly string[])[]): EnumValue[] {
+  return paths.map(path => ({ keyword: path.join('.'), description: 'Configuration table.', thenWord: '<key>' }));
 }

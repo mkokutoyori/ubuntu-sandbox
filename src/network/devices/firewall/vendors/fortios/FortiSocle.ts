@@ -2,7 +2,7 @@ import { executeCommandsIn, executeLeaves, executeLegends, missingKeywords, offe
 import { SNIFFER_SCOPE } from './diag/FortiDiagCommands';
 import {
   authFilterWords, debugApplicationWords, debugConsoleWords, flowFilterWords, flowShowWords, flowTraceWords,
-  gatewayClearWords, logFilterWords, sessionFilterWords, synchronizeWords, testApplicationWords,
+  datasourceWords, gatewayClearWords, ipropeGroupWords, logFilterWords, sessionFilterWords, synchronizeWords, testApplicationWords,
 } from './diag/diagVocabulary';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
@@ -467,7 +467,7 @@ export class FortiSocle {
         ['diagnose', 'user', 'device', 'list'], 'List the devices detected on the network.',
         () => this.deps.diagnose(['user', 'device', 'list'])),
       this.withArgument('diagnose sys checkused',
-        ['diagnose', 'sys', 'checkused', rest('rest', '<path.object.mkey> <value>')],
+        ['diagnose', 'sys', 'checkused', keywords('rest', '<path.object.mkey> <value>', datasourceWords(this.deps.tree.specPaths()))],
         'Find what references an object.', run(['sys', 'checkused'])),
       this.plain('diagnose ipv6 address list',
         ['diagnose', 'ipv6', 'address', 'list'], 'List the IPv6 interface addresses.',
@@ -694,7 +694,7 @@ export class FortiSocle {
         ['diagnose', 'firewall', 'iprope', 'list', rest('rest', 'Policy group.')],
         'List the compiled policies.', run(['firewall', 'iprope', 'list'])),
       this.withArgument('diagnose firewall iprope show',
-        ['diagnose', 'firewall', 'iprope', 'show', rest('rest', '<group> <index>')],
+        ['diagnose', 'firewall', 'iprope', 'show', keywords('rest', '<group> <index>', ipropeGroupWords())],
         'Show one compiled policy.', run(['firewall', 'iprope', 'show'])),
       this.plain('diagnose vpn tunnel list',
         ['diagnose', 'vpn', 'tunnel', 'list'],
