@@ -208,14 +208,17 @@ export class FortiNavigator {
       );
     }
 
-    const verdict = this.deps.validator.validate(spec, values);
-    if (!verdict.ok) return verdict.error;
-
-    const expanded = verdict.values.map(
-      value => this.deps.expandVariables?.(unquote(value)) ?? unquote(value));
-    const cleaned = spec.secret === true
-      ? [decodeStoredSecret(expanded)]
-      : expanded;
+    const stored = spec.secret === true && values.length === 2 && values[0] === 'ENC';
+    let cleaned: string[];
+    if (stored) {
+      cleaned = [clearOf(`${ENC_PREFIX}${values[1]}`)];
+    } else {
+      const verdict = this.deps.validator.validate(spec, values);
+      if (!verdict.ok) return verdict.error;
+      const expanded = verdict.values.map(
+        value => this.deps.expandVariables?.(unquote(value)) ?? unquote(value));
+      cleaned = spec.secret === true ? [decodeStoredSecret(expanded)] : expanded;
+    }
 
     object.set(attribute, cleaned);
     spec.appliesImmediately?.(cleaned, {
