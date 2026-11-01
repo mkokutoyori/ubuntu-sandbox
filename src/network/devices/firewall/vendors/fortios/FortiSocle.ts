@@ -2,7 +2,7 @@ import { executeCommandsIn, executeLeaves, executeLegends, missingKeywords, offe
 import { SNIFFER_SCOPE } from './diag/FortiDiagCommands';
 import {
   authFilterWords, debugApplicationWords, debugConsoleWords, flowFilterWords, flowShowWords, flowTraceWords,
-  gatewayClearWords, sessionFilterWords, synchronizeWords,
+  gatewayClearWords, sessionFilterWords, synchronizeWords, testApplicationWords,
 } from './diag/diagVocabulary';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
@@ -96,6 +96,10 @@ export const FORTI_TOKENS = Object.freeze({ escapesAnyCharacter: true, singleQuo
 const FORTI_MODES = Object.freeze({ forti: { parent: null } });
 const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });
 const MODE = ['forti'];
+
+const DYNAMIC_ARGUMENT_SOURCES: readonly string[] = Object.freeze([
+  'system interface', 'vpn ipsec phase1-interface', 'system link-monitor',
+]);
 
 export interface SocleDeps {
   readonly tree: FortiConfigTree;
@@ -235,8 +239,14 @@ export class FortiSocle {
     return `root:${principal}:${this.deps.tree.specPaths().length}:${this.operationStamp()}`;
   }
 
+  private namedStamp(): string {
+    return DYNAMIC_ARGUMENT_SOURCES
+      .map(source => this.deps.candidatesFor([source]).map(candidate => candidate.keyword).join(','))
+      .join(';');
+  }
+
   private operationStamp(): string {
-    return `${this.where()}`
+    return `${this.where()}:${this.namedStamp()}`
       + `:${(this.deps.vdomNames?.() ?? []).join(',')}`
       + `:${(this.deps.adminSessions?.() ?? []).map(s => s.index).join(',')}`;
   }
@@ -429,6 +439,10 @@ export class FortiSocle {
     const keywords = (name: string, description: string, alternatives: readonly EnumValue[]): ArgumentSpec => ({
       name, type: 'REST', optional: true, description, alternatives, leadingOnly: true,
     });
+    const named = (name: string, description: string, source: string): ArgumentSpec => ({
+      name, type: 'REST', optional: true, description, leadingOnly: true,
+      alternatives: this.deps.candidatesFor([source]).filter(candidate => candidate.description !== 'Predefined object.'),
+    });
     const run = (words: readonly string[]) =>
       (_s: CliSession, args: Readonly<Record<string, string>>): string =>
         this.deps.diagnose([...words, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]);
@@ -471,7 +485,7 @@ export class FortiSocle {
         'List the LLDP neighbours heard on every interface.',
         () => this.deps.diagnose(['lldprx', 'neighbor', 'summary'])),
       this.withArgument('diagnose lldprx port neighbor details',
-        ['diagnose', 'lldprx', 'port', 'neighbor', 'details', rest('rest', '<interface>')],
+        ['diagnose', 'lldprx', 'port', 'neighbor', 'details', named('rest', '<interface>', 'system interface')],
         'Show every TLV of the LLDP neighbours heard on one interface.',
         (_session, args) =>
           this.deps.diagnose(['lldprx', 'port', 'neighbor', 'details', ...words(args.rest)])),
@@ -503,7 +517,7 @@ export class FortiSocle {
         'Show the memory conserve mode state and its thresholds.',
         () => this.deps.diagnose(['hardware', 'sysinfo', 'conserve'])),
       this.withArgument('diagnose hardware deviceinfo nic',
-        ['diagnose', 'hardware', 'deviceinfo', 'nic', rest('rest', 'Interface name.')],
+        ['diagnose', 'hardware', 'deviceinfo', 'nic', named('rest', 'Interface name.', 'system interface')],
         'Show the network interface counters.',
         run(['hardware', 'deviceinfo', 'nic'])),
       this.plain('diagnose hardware sysinfo memory',
@@ -515,7 +529,7 @@ export class FortiSocle {
         'Show the FortiGuard database versions.',
         () => this.deps.diagnose(['autoupdate', 'versions'])),
       this.withArgument('diagnose test application',
-        ['diagnose', 'test', 'application', rest('rest', '<daemon> <level>')],
+        ['diagnose', 'test', 'application', keywords('rest', '<daemon> <level>', testApplicationWords())],
         'Query a daemon.', run(['test', 'application'])),
       this.plain('diagnose firewall vip list',
         ['diagnose', 'firewall', 'vip', 'list'], 'List the virtual IPs.',
@@ -622,7 +636,7 @@ export class FortiSocle {
         'Show what each SD-WAN health check measured.',
         run(['sys', 'sdwan', 'health-check'])),
       this.withArgument('diagnose sys link-monitor status',
-        ['diagnose', 'sys', 'link-monitor', 'status', rest('rest', 'Link monitor name.')],
+        ['diagnose', 'sys', 'link-monitor', 'status', named('rest', 'Link monitor name.', 'system link-monitor')],
         'Show what each link health monitor measured.',
         run(['sys', 'link-monitor', 'status'])),
       this.plain('diagnose sys sdwan member',
@@ -687,7 +701,7 @@ export class FortiSocle {
         'List the IPsec tunnels and their security associations.',
         () => this.deps.diagnose(['vpn', 'tunnel', 'list'])),
       this.withArgument('diagnose vpn tunnel up',
-        ['diagnose', 'vpn', 'tunnel', 'up', rest('rest', 'Tunnel name.')],
+        ['diagnose', 'vpn', 'tunnel', 'up', named('rest', 'Tunnel name.', 'vpn ipsec phase1-interface')],
         'Bring one IPsec tunnel up.', run(['vpn', 'tunnel', 'up'])),
       this.plain('diagnose vpn tunnel flush',
         ['diagnose', 'vpn', 'tunnel', 'flush'],
@@ -698,7 +712,7 @@ export class FortiSocle {
         'List the IKE gateways.',
         () => this.deps.diagnose(['vpn', 'ike', 'gateway', 'list'])),
       this.withArgument('diagnose vpn ike gateway list name',
-        ['diagnose', 'vpn', 'ike', 'gateway', 'list', 'name', rest('rest', 'Gateway name.')],
+        ['diagnose', 'vpn', 'ike', 'gateway', 'list', 'name', named('rest', 'Gateway name.', 'vpn ipsec phase1-interface')],
         'List one IKE gateway.', run(['vpn', 'ike', 'gateway', 'list', 'name'])),
       this.withArgument('diagnose vpn ike gateway clear',
         ['diagnose', 'vpn', 'ike', 'gateway', 'clear', keywords('rest', 'name <gateway>', gatewayClearWords())],

@@ -81,3 +81,10 @@ export function synchronizeWords(): EnumValue[] {
 export function gatewayClearWords(): EnumValue[] {
   return [{ keyword: 'name', description: 'Gateway to clear.', thenWord: '<gateway>' }];
 }
+
+export function testApplicationWords(): EnumValue[] {
+  return [
+    { keyword: 'dnsproxy', description: 'DNS proxy.', thenWord: '<level>' },
+    { keyword: 'miglogd', description: 'Log daemon.', thenWord: '<level>, 54 for the IP conflict cache, 55 for its probes' },
+  ];
+}
