@@ -750,7 +750,7 @@ export class VirtualFileSystem {
     return inode;
   }
 
-  createFileAt(path: string, content: string, permissions: number, uid: number, gid: number): INode | null {
+  createFileAt(path: string, content: string, permissions: number, uid: number, gid: number, gids: readonly number[] = []): INode | null {
     const parent = this.resolveParent(path);
     if (!parent) return null;
     const [parentInode, basename] = parent;
@@ -759,14 +759,14 @@ export class VirtualFileSystem {
     // the directory. Reject when a non-root caller targets a system
     // path (`/etc`, `/sbin`, `/usr`, `/boot`, `/var/log`, `/var/lib`)
     // owned by root with no world-write bit set.
-    if (!this.canWriteInParent(parentInode, uid, gid)) return null;
+    if (!this.canWriteInParent(parentInode, uid, gid, gids)) return null;
 
     // If file already exists, just update content
     const existingId = parentInode.children.get(basename);
     if (existingId !== undefined) {
       const existing = this.inodes.get(existingId);
       if (existing && existing.type === 'file') {
-        if (!this.canWriteFile(existing, uid, gid)) return null;
+        if (!this.canWriteFile(existing, uid, gid, gids)) return null;
         if (!this.fitsBytes(content.length - existing.size)) return null; // ENOSPC
         existing.content = content;
         this.resize(existing, content.length);
@@ -964,13 +964,14 @@ export class VirtualFileSystem {
     return (perms & bit) !== 0;
   }
 
-  private canWriteFile(inode: INode, uid: number, gid: number): boolean {
-    return this.checkAccess(inode, 'w', uid, gid);
+  private canWriteFile(inode: INode, uid: number, gid: number, gids: readonly number[] = []): boolean {
+    return this.checkAccess(inode, 'w', uid, gid, [...gids]);
   }
 
-  deniedByProtectedRegular(path: string, inode: INode, uid: number): boolean {
-    if (inode.uid === uid) return false;
-    const level = Number(this.readFile('/proc/sys/fs/protected_regular')?.trim() ?? '0');
+  deniedByProtectedCreate(path: string, inode: INode, uid: number): boolean {
+    const knob = inode.type === 'file' ? 'protected_regular' : inode.type === 'fifo' ? 'protected_fifos' : null;
+    if (knob === null || inode.uid === uid) return false;
+    const level = Number(this.readFile(`/proc/sys/fs/${knob}`)?.trim() ?? '0');
     if (!(level > 0)) return false;
     const resolved = this.resolveParent(path);
     if (!resolved) return false;
@@ -981,8 +982,8 @@ export class VirtualFileSystem {
     return inode.uid !== directory.uid;
   }
 
-  private canWriteInParent(parent: INode, uid: number, gid: number): boolean {
-    return this.checkAccess(parent, 'w', uid, gid);
+  private canWriteInParent(parent: INode, uid: number, gid: number, gids: readonly number[] = []): boolean {
+    return this.checkAccess(parent, 'w', uid, gid, [...gids]);
   }
 
   /**
@@ -993,7 +994,7 @@ export class VirtualFileSystem {
    * whose true size can be gigabytes. `ls -l`/`du`/`stat` all read
    * `inode.size`, so this is the only override point needed.
    */
-  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false, declaredSizeBytes?: number, createParents = true): boolean {
+  writeFile(path: string, content: string, uid: number, gid: number, umask: number, append = false, declaredSizeBytes?: number, createParents = true, gids: readonly number[] = []): boolean {
     const remote = this.remoteFor(path);
     if (remote) {
       const key = this.canonicalKey(path);
@@ -1012,13 +1013,13 @@ export class VirtualFileSystem {
       if (inode.generator) {
         const writer = inode.writer;
         if (writer === undefined) return true;
-        if (!this.canWriteFile(inode, uid, gid)) return false;
+        if (!this.canWriteFile(inode, uid, gid, gids)) return false;
         return content === '' || writer(content);
       }
       if (this.isReadOnly(path)) return false;
       if (inode.immutable) return false;
-      if (!this.canWriteFile(inode, uid, gid)) return false;
-      if (this.deniedByProtectedRegular(path, inode, uid)) return false;
+      if (!this.canWriteFile(inode, uid, gid, gids)) return false;
+      if (this.deniedByProtectedCreate(path, inode, uid)) return false;
       const nextSize = declaredSizeBytes
         ?? (append ? inode.content.length + content.length : content.length);
       if (!this.fitsBytes(nextSize - inode.size)) return false; // ENOSPC
@@ -1056,7 +1057,7 @@ export class VirtualFileSystem {
       // disk, since its placeholder content is empty.
       if (!this.fitsBytes(declaredSizeBytes ?? content.length)) return false; // ENOSPC
       const perms = 0o666 & ~umask;
-      const newInode = this.createFileAt(path, content, perms, uid, gid);
+      const newInode = this.createFileAt(path, content, perms, uid, gid, gids);
       if (newInode !== null) {
         if (declaredSizeBytes !== undefined) this.resize(newInode, declaredSizeBytes);
         this.emitWrite({

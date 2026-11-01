@@ -6,8 +6,16 @@
  * uid 65534 agit) : `>` et `>>` -> « Permission denied », `touch` et `cat` passent, un fichier de root dans un dossier de root passe, le
  * proprietaire reecrit son fichier. Le simulateur laissait n'importe qui ecraser le fichier d'un autre dans /tmp.
  *
- * Discrimine par `git stash` sur src : 4 des 8 cas tombent avant. TEMOINS : le proprietaire, le proprietaire du dossier, touch, la lecture,
- * et la valeur 0 (qui laisse tout passer, avant comme apres).
+ * `fs.protected_fifos` (Ubuntu : 1) suit la meme regle pour un FIFO (releve : uid 65534 ouvre en O_RDWR|O_CREAT le FIFO 0666 de l'uid 65533 dans
+ * /tmp -> « cannot create: Permission denied », le proprietaire passe) ; chaque reglage ne gouverne que SON type d'objet, et le niveau 1 ne regarde pas
+ * un dossier collant inscriptible par le groupe seulement, le niveau 2 oui (Documentation/admin-guide/sysctl/fs.rst).
+ *
+ * Un membre du groupe d'un dossier inscriptible par le groupe y cree un fichier (les groupes supplementaires n'atteignaient pas `writeFile`, la
+ * redirection repondait rc=0 sans rien creer).
+ *
+ * Discrimine par `git stash` sur src contre HEAD (`protected_regular` seul, fichiers ordinaires) : 4 des 15 cas tombent (valeur par defaut de protected_fifos, les deux cas de type d'objet, le dossier groupe-inscriptible); contre la base d'avant `protected_regular`, 4 des 8 cas fichiers ordinaires tombaient. TEMOINS : le proprietaire, le
+ * proprietaire du dossier, touch, la lecture, la valeur 0 (qui laisse tout passer, avant comme apres), un fichier ordinaire toujours refuse quand
+ * `protected_fifos` vaut 0.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -74,5 +82,56 @@ describe('fs.protected_regular', () => {
     const as = await twoUsers();
     await as('root', 'sysctl -w fs.protected_regular=0');
     expect(await as('bob', 'echo x > /tmp/shared; echo rc=$?; cat /tmp/shared')).toBe('rc=0\nx');
+  });
+});
+
+describe('fs.protected_fifos', () => {
+  async function fifoLab() {
+    const { as } = lab();
+    await as('root', 'useradd -m alice; useradd -m bob');
+    await as('alice', 'mkfifo /tmp/pipe; chmod 666 /tmp/pipe');
+    return as;
+  }
+
+  it('is 1 by default', async () => {
+    expect(await lab().as('alice', 'sysctl -n fs.protected_fifos')).toBe('1');
+  });
+
+  it('WITNESS — the owner opens their own fifo', async () => {
+    const as = await fifoLab();
+    expect(await as('alice', 'echo hi > /tmp/pipe; echo rc=$?')).toBe('rc=0');
+  });
+
+  it('refuses another user opening the fifo with O_CREAT', async () => {
+    const as = await fifoLab();
+    expect(await as('bob', 'echo hi > /tmp/pipe; echo rc=$?')).toContain('Permission denied');
+  });
+
+  it('protected_fifos=0 frees the fifo while protected_regular stays at 2', async () => {
+    const as = await fifoLab();
+    await as('root', 'sysctl -w fs.protected_fifos=0');
+    expect(await as('bob', 'echo hi > /tmp/pipe; echo rc=$?')).toBe('rc=0');
+  });
+
+  it('protected_regular=0 does not free the fifo', async () => {
+    const as = await fifoLab();
+    await as('root', 'sysctl -w fs.protected_regular=0');
+    expect(await as('bob', 'echo hi > /tmp/pipe; echo rc=$?')).toContain('Permission denied');
+  });
+
+  it('WITNESS — protected_fifos=0 leaves a regular file protected', async () => {
+    const as = await twoUsers();
+    await as('root', 'sysctl -w fs.protected_fifos=0');
+    expect(await as('bob', 'echo x > /tmp/shared')).toContain('Permission denied');
+  });
+
+  it('level 1 ignores a group-writable sticky directory, level 2 does not', async () => {
+    const { as } = lab();
+    await as('root', 'groupadd team; usermod -aG team alice; usermod -aG team bob');
+    await as('root', 'mkdir /tmp/g; chgrp team /tmp/g; chmod 1775 /tmp/g');
+    await as('alice', 'echo mine > /tmp/g/f; chmod 666 /tmp/g/f; mkfifo /tmp/g/p; chmod 666 /tmp/g/p');
+    expect(await as('alice', 'cat /tmp/g/f')).toBe('mine');
+    expect(await as('bob', 'echo x > /tmp/g/p; echo rc=$?')).toBe('rc=0');
+    expect(await as('bob', 'echo x > /tmp/g/f; echo rc=$?')).toContain('Permission denied');
   });
 });

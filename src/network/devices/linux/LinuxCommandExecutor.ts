@@ -5540,7 +5540,7 @@ export class LinuxCommandExecutor {
     if (this.mountTable.isReadOnly(absPath)) return 'Read-only file system';
     if (existing) {
       if (!this.checkPermission(existing, 'w')) return this.refuseOpen(absPath, 'Permission denied');
-      return this.vfs.deniedByProtectedRegular(absPath, existing, this.currentPathActor().uid)
+      return this.vfs.deniedByProtectedCreate(absPath, existing, this.currentPathActor().uid)
         ? this.refuseOpen(absPath, 'Permission denied')
         : null;
     }
@@ -5629,7 +5629,7 @@ export class LinuxCommandExecutor {
         if (refusal !== null) throw new Error(`bash: ${path}: ${refusal}`);
         const written = this.vfs.writeFile(
           absPath, content, this.ctx().uid, this.ctx().gid, this.umask, append,
-          undefined, false);
+          undefined, false, this.currentPathActor().gids ?? []);
         if (!written && existing?.writer !== undefined) throw new RedirectWriteError('Invalid argument');
         this.auditRules.onAccessIndirect(absPath, 'w', 'openat', this.snapshotActor());
       },

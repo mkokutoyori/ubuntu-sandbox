@@ -437,8 +437,8 @@ paquet IPv4 unicast recu (mode 1 : la meilleure route vers la source sort par l'
 `10-network-security.conf` est livre. Reserves : pas de compteur `IPReversePathFilter`, pas de `log_martians`, table principale seulement, diffusion, multicast et
 source 0.0.0.0 exemptes, reponse DHCP a une carte sans adresse exemptee (le client lit les trames avant la pile IP). **Non livres** : `10-ipv6-privacy.conf`
 (`net.ipv6.conf.{all,default}.use_tempaddr = 2` : pas de configuration IPv6 par interface, et il faudrait ajouter les adresses temporaires au modele, a leur rendu et au choix
-de l'adresse source) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`), `fs.protected_regular` existe et l'ouverture avec creation le lit (sonde `probe-protected-regular`) mais `protected_symlinks`
-et `protected_fifos` n'ont pas de lecteur dans le VFS (`resolveInode` ne recoit pas l'identite de l'appelant, aucun chemin d'ecriture de FIFO verifie) ; un critere de securite stocke sans effet echouerait ouvert.
+de l'adresse source) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`), `fs.protected_regular` et `fs.protected_fifos` existent et l'ouverture avec creation les lit, chacun pour SON type d'objet (sonde `probe-protected-regular`) mais `protected_symlinks`
+n'a pas de lecteur dans le VFS (`resolveInode` ne recoit pas l'identite de l'appelant) ; un critere de securite stocke sans effet echouerait ouvert. Un FIFO n'a toujours pas de semantique de lecture/ecriture (`cat` d'un FIFO repond « No such file »).
 
 ---
 
