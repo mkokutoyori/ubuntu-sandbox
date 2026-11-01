@@ -269,6 +269,13 @@ const GENERIC_SESSION_HELPERS: readonly SessionHelperEntry[] = Object.freeze([
   { id: 1, name: 'ftp', protocol: 6, port: 21 },
 ]);
 
+export interface ReplayRejection {
+  readonly line: string;
+  readonly reply: string;
+}
+
+const REPLAY_REFUSAL = /Command fail|Unknown action|parse error|^% ?Invalid|Invalid input|unknown command/im;
+
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
   private readonly savedConfig = new SavedConfiguration();
@@ -1857,11 +1864,15 @@ export class Firewall extends Equipment {
 
   getRunningConfig(): string { return this.managementRunningConfig(); }
 
-  async replayConfig(text: string): Promise<void> {
+  async replayConfig(text: string): Promise<ReplayRejection[]> {
+    const rejected: ReplayRejection[] = [];
     for (const line of text.split('\n')) {
       const trimmed = line.trim();
-      if (trimmed.length > 0) await this.executeCommand(trimmed);
+      if (trimmed.length === 0) continue;
+      const reply = await this.executeCommand(trimmed);
+      if (REPLAY_REFUSAL.test(reply)) rejected.push({ line: trimmed, reply: reply.split('\n')[0] });
     }
+    return rejected;
   }
 
   getVdomRegistry(): VdomRegistry { return this.vdoms; }

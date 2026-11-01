@@ -19,6 +19,11 @@
  * Discrimine avec `git stash push -- src/network src/store` : 4 des 9 cas tombent avant (mot de passe, mauvais mot de passe, SSH, secrets) ; les
  * TEMOINS (le lab avant sauvegarde, `trusthost` et `allowaccess`, qui sont des lignes en clair)
  * passent des deux cotes et prouvent que le lab est sain.
+ *
+ * Second lot : `replayConfig` renvoie desormais les lignes refusees, `importTopology` les rend dans
+ * `ImportResult.warnings` (« FGT: <ligne> -> <reponse> ») et la fenetre d'import les affiche ; avant,
+ * la reponse de chaque ligne rejouee etait jetee. Les 2 derniers cas (lab sain sans avertissement,
+ * ligne cassee rapportee) tombent avant ce lot.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
@@ -131,5 +136,25 @@ describe('les acces d\'un FortiGate survivent a la sauvegarde du lab', () => {
     expect(before).toContain('ENC');
     const { firewall } = await reopened(source);
     expect(await secretLines(firewall)).toBe(before);
+  });
+});
+
+describe('un rejeu qui echoue ne se perd plus en silence', () => {
+  it('TEMOIN : un lab sain s\'importe sans avertissement', async () => {
+    const source = await lab();
+    const saved = JSON.parse(JSON.stringify(exportTopology('lab', source.devices, source.connections.filter((c) => c !== null) as never)));
+    EquipmentRegistry.resetInstance(); resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
+    expect((await importTopology(saved)).warnings).toEqual([]);
+  });
+
+  it('une ligne refusee au rejeu est rapportee avec son pare-feu et la reponse', async () => {
+    const source = await lab();
+    const saved = JSON.parse(JSON.stringify(exportTopology('lab', source.devices, source.connections.filter((c) => c !== null) as never)));
+    const entry = saved.devices.find((d: { name: string }) => d.name === 'FGT');
+    entry.runningConfigText += '\nconfig system admin\nedit "casse"\nset password ENC\nnext\nend\nset inconnu 1\n';
+    EquipmentRegistry.resetInstance(); resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset();
+    const warnings = (await importTopology(saved)).warnings;
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings[0]).toMatch(/^FGT: /);
   });
 });
