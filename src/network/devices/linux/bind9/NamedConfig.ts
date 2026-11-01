@@ -59,6 +59,7 @@ export interface NamedZone {
   readonly allowUpdate: AddressMatchList;
   readonly updatePolicy: readonly UpdatePolicyRule[] | null;
   readonly forwarders: readonly string[];
+  readonly forward: ForwardMode | null;
   readonly declaredAt: { readonly file: string; readonly line: number };
 }
 
@@ -137,6 +138,14 @@ function parseBoolean(statement: NamedConfStatement): boolean {
   if (value === 'yes' || value === 'true') return true;
   if (value === 'no' || value === 'false') return false;
   return fail(statement, `expected boolean near '${value ?? ';'}'`);
+}
+
+function parseForwardMode(statement: NamedConfStatement): ForwardMode {
+  const value = argsOf(statement)[0];
+  if (value !== 'only' && value !== 'first') {
+    fail(statement, `expected 'first' or 'only' near '${value ?? ';'}'`);
+  }
+  return value;
 }
 
 function parseNotifyMode(statement: NamedConfStatement): NotifyMode {
@@ -226,10 +235,7 @@ function parseOptions(
         options.forwarders = parseAddressList(entry);
         break;
       case 'forward':
-        if (args[0] !== 'only' && args[0] !== 'first') {
-          fail(entry, `expected 'first' or 'only' near '${args[0] ?? ';'}'`);
-        }
-        options.forwardMode = args[0];
+        options.forwardMode = parseForwardMode(entry);
         break;
       case 'listen-on':
       case 'listen-on-v6': {
@@ -350,6 +356,7 @@ interface ZoneDraft {
   allowUpdate: AddressMatchList | null;
   updatePolicy: UpdatePolicyRule[] | null;
   forwarders: string[];
+  forward: ForwardMode | null;
   authoritativeOnly: Map<string, NamedConfStatement>;
 }
 
@@ -362,7 +369,7 @@ function parseZoneEntries(
 ): ZoneDraft {
   const draft: ZoneDraft = {
     type: null, file: null, primaries: [], primaryKeys: new Map(), alsoNotify: [], notify: null, notifyToSoa: null,
-    allowQuery: null, allowTransfer: null, allowUpdate: null, updatePolicy: null, forwarders: [],
+    allowQuery: null, allowTransfer: null, allowUpdate: null, updatePolicy: null, forwarders: [], forward: null,
     authoritativeOnly: new Map(),
   };
   for (const entry of requireBlock(statement)) {
@@ -414,6 +421,9 @@ function parseZoneEntries(
       case 'forwarders':
         draft.forwarders = parseAddressList(entry);
         break;
+      case 'forward':
+        draft.forward = parseForwardMode(entry);
+        break;
       default:
         fail(entry, `unknown option '${keyword}'`);
     }
@@ -434,6 +444,9 @@ function validateZone(statement: NamedConfStatement, zoneName: string, draft: Zo
   }
   if (draft.type === 'forward' && draft.forwarders.length === 0) {
     fail(statement, `zone '${zoneName}': missing 'forwarders' entry`);
+  }
+  if (draft.forward !== null && draft.type !== 'forward') {
+    fail(statement, `option 'forward' is not allowed in '${draft.type}' zone '${zoneName}'`);
   }
   if (draft.type === 'hint' || draft.type === 'forward') {
     for (const [option, entry] of draft.authoritativeOnly) {
@@ -480,6 +493,7 @@ function parseZone(
     allowUpdate: draft.allowUpdate ?? AddressMatchList.none(),
     updatePolicy: draft.updatePolicy,
     forwarders: draft.forwarders,
+    forward: draft.forward,
     declaredAt: { file: statement.file, line: statement.line },
   };
 }

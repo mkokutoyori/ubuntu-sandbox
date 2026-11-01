@@ -46,7 +46,7 @@ import { RndcChannel } from './RndcChannel';
 import { RndcServer } from './RndcServer';
 import type { Zone } from '@/network/dns/zone/Zone';
 import type { ResourceRecord, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
-import type { NamedConfig, NamedZone } from './NamedConfig';
+import type { ForwardMode, NamedConfig, NamedZone } from './NamedConfig';
 import type { RndcWireEnvelope } from './RndcWireCodec';
 import type { AclHostEnvironment } from './NamedAcl';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
@@ -76,6 +76,7 @@ export class Bind9Service {
   private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
   private resolvers: RecursiveResolver[] = [];
+  private forwardZones = new Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }>();
   private readonly cache = new DnsCache(() => this.host.getSystemClockMs());
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
@@ -348,6 +349,7 @@ export class Bind9Service {
     this.store = store;
     this.authoritative = new AuthoritativeServer(store);
     this.resolvers = this.buildResolvers(config);
+    this.forwardZones = this.buildForwardZones(config);
     this.queryLogEnabled = config.options.queryLog;
     this.dnssecValidationEnabled = config.options.dnssecValidation !== 'no';
   }
@@ -363,18 +365,54 @@ export class Bind9Service {
     const dnssec = config.options.dnssecValidation !== 'no' && config.trustAnchors.length > 0
       ? { dnssec: { anchors: config.trustAnchors, now: () => Math.floor(this.host.getSystemClockMs() / 1000) } }
       : {};
-    if (forwarders.length > 0) {
-      resolvers.push(new RecursiveResolver(
-        this.host, forwarders, this.cache, { forwardRecursively: true, servfailTtlSeconds: config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
-    }
     const hints: IPAddress[] = [];
     for (const zone of config.zones) {
       if (zone.type !== 'hint' || zone.file === null) continue;
       const content = this.readFile(zone.file);
       if (content !== null) hints.push(...collectHintAddresses(content));
     }
+    if (forwarders.length > 0) {
+      const fallsBack = config.options.forwardMode === 'first' && hints.length > 0;
+      resolvers.push(new RecursiveResolver(
+        this.host, forwarders, this.cache, { forwardRecursively: true, servfailTtlSeconds: fallsBack ? 0 : config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
+      if (config.options.forwardMode === 'only') return resolvers;
+    }
     if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, { servfailTtlSeconds: config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
     return resolvers;
+  }
+
+  private buildForwardZones(config: NamedConfig): Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }> {
+    const zones = new Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }>();
+    if (!config.options.recursion) return zones;
+    const dnssec = config.options.dnssecValidation !== 'no' && config.trustAnchors.length > 0
+      ? { dnssec: { anchors: config.trustAnchors, now: () => Math.floor(this.host.getSystemClockMs() / 1000) } }
+      : {};
+    for (const zone of config.zones) {
+      if (zone.type !== 'forward') continue;
+      const forwarders = zone.forwarders
+        .map((forwarder) => IPAddress.tryParse(forwarder))
+        .filter((ip): ip is IPAddress => ip !== null);
+      if (forwarders.length === 0) continue;
+      zones.set(zone.name, {
+        mode: zone.forward ?? config.options.forwardMode,
+        resolver: new RecursiveResolver(this.host, forwarders, this.cache, {
+          forwardRecursively: true,
+          servfailTtlSeconds: (zone.forward ?? config.options.forwardMode) === 'first' && this.resolvers.length > 0 ? 0 : config.options.servfailTtl,
+          resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec,
+        }),
+      });
+    }
+    return zones;
+  }
+
+  private resolversFor(qname: string): readonly RecursiveResolver[] {
+    let candidate: string | null = normalizeDnsName(qname);
+    while (candidate !== null) {
+      const forwarded = this.forwardZones.get(candidate);
+      if (forwarded) return forwarded.mode === 'only' ? [forwarded.resolver] : [forwarded.resolver, ...this.resolvers];
+      candidate = parentName(candidate);
+    }
+    return this.resolvers;
   }
 
   private aclEnvironment(): AclHostEnvironment {
@@ -617,7 +655,7 @@ export class Bind9Service {
     }
 
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
-    if (outsideAuthority && question && query.flags.rd && recursionAllowed && this.resolvers.length > 0) {
+    if (outsideAuthority && question && query.flags.rd && recursionAllowed && this.resolversFor(question.qname).length > 0) {
       return this.recurse(query);
     }
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
@@ -794,8 +832,9 @@ export class Bind9Service {
   private async recurse(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
     const options = recursiveResolveOptions(query);
-    let result = await this.resolvers[0].resolve(question.qname, question.qtype, options);
-    for (const next of this.resolvers.slice(1)) {
+    const resolvers = this.resolversFor(question.qname);
+    let result = await resolvers[0].resolve(question.qname, question.qtype, options);
+    for (const next of resolvers.slice(1)) {
       if (result.status !== 'SERVFAIL') break;
       result = await next.resolve(question.qname, question.qtype, options);
     }
