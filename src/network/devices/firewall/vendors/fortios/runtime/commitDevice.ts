@@ -33,6 +33,7 @@ export function buildCommitDevice(
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
+        if (patch.macOverride !== undefined) fw.setInterfaceMacOverride(name, patch.macOverride);
         if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
         if (patch.deviceIdentification !== undefined) {
           fw.getDeviceInventory().setIdentification(name, patch.deviceIdentification);

@@ -1325,6 +1325,16 @@ export class Firewall extends Equipment {
   private readonly permanentMacs = new Map<string, MACAddress>();
   private readonly factoryMacs = new Map<string, string>();
 
+  setInterfaceMacOverride(name: string, mac: string): void {
+    const port = this.getPort(name);
+    if (port === undefined) return;
+    this.rememberFactoryMac(name, port.getMAC());
+    const cleared = mac === '00:00:00:00:00:00';
+    const target = new MACAddress(cleared ? this.factoryMacs.get(name)! : mac);
+    this.permanentMacs.set(name, target);
+    if (this.haConfiguration.mode === 'standalone') port.setMAC(target);
+  }
+
   private rememberFactoryMac(name: string, mac: MACAddress): void {
     if (!this.factoryMacs.has(name)) this.factoryMacs.set(name, mac.toString());
   }

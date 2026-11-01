@@ -119,6 +119,7 @@ export interface FortiInterfacePatch {
   readonly vlanId?: number;
   readonly mtu?: number;
   readonly deviceIdentification?: boolean;
+  readonly macOverride?: string;
   readonly aggregate?: {
     readonly members: readonly string[];
     readonly lacpMode: 'static' | 'active' | 'passive';

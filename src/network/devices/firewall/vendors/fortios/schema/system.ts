@@ -674,6 +674,11 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     ], 'none'),
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
+    {
+      name: 'macaddr', help: 'Change the interface\'s MAC address.', quoted: false,
+      parts: [{ name: 'macaddr', type: 'MAC_ADDR', description: 'MAC address.' }],
+      defaultValue: ['00:00:00:00:00:00'],
+    },
     choice('device-identification', 'Enable/disable passively gathering of device identity information '
       + 'about the devices on the network connected to this interface.', [
       { keyword: 'enable', description: 'Enable passive gathering of identity information about hosts.' },
@@ -717,6 +722,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
         ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
         : undefined,
       deviceIdentification: object.effective('device-identification')[0] === 'enable',
+      macOverride: object.effective('macaddr')[0],
       lldp: {
         transmission: (object.effective('lldp-transmission')[0] ?? 'vdom') as LldpSetting,
         reception: (object.effective('lldp-reception')[0] ?? 'vdom') as LldpSetting,
