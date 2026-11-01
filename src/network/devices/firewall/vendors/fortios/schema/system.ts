@@ -805,12 +805,16 @@ export const SYSTEM_DNS: FortiTableSpec = {
     address('primary', 'Primary DNS server IP address.', '96.45.45.45'),
     address('secondary', 'Secondary DNS server IP address.', '96.45.46.46'),
     word('domain', 'Search suffix list for hostname lookup.'),
+    enable('cache-notfound-responses', 'Enable/disable response from the DNS server when a record is not in cache.'),
+    count('dns-cache-ttl', 'Duration in seconds that the DNS cache retains information.', 60, 86400, 1800),
   ],
   onCommit(object, context) {
     context.device.applyDnsSettings({
       primary: object.effective('primary')[0] ?? '',
       secondary: object.effective('secondary')[0] ?? '',
       domain: object.effective('domain')[0] ?? '',
+      cacheNotFound: object.effective('cache-notfound-responses')[0] === 'enable',
+      cacheTtlSeconds: Number.parseInt(object.effective('dns-cache-ttl')[0] ?? '1800', 10),
     });
   },
 };

@@ -4,7 +4,7 @@ import {
   buildLegacyQueryMessage, nextDnsTransactionId, resourceRecordToLegacyRecord,
 } from '../../../dns/compat/DnsWireCompat';
 import { decodeDnsMessage, encodeDnsMessage } from '../../../dns/wire/DnsMessageCodec';
-import { DnsCache } from '../../../dns/resolver/DnsCache';
+import { DEFAULT_CACHE_LIMITS, DnsCache } from '../../../dns/resolver/DnsCache';
 import { RRType } from '../../../dns/wire/RRType';
 import type {
   ResourceRecord, ResourceRecordData, SoaRecordData,
@@ -24,6 +24,8 @@ export interface FirewallDnsSettings {
   readonly primary: string;
   readonly secondary: string;
   readonly domain: string;
+  readonly cacheNotFound?: boolean;
+  readonly cacheTtlSeconds?: number;
 }
 
 export interface ResolvedFqdn {
@@ -61,7 +63,11 @@ export class FirewallDnsClient {
   private sourcePort = EPHEMERAL_BASE;
 
   constructor(private readonly deps: FirewallDnsDeps) {
-    this.cache = new DnsCache(() => deps.now());
+    this.cache = new DnsCache(() => deps.now(), () => ({
+      ...DEFAULT_CACHE_LIMITS,
+      maxTtlSeconds: this.settings.cacheTtlSeconds ?? null,
+      maxNegativeTtlSeconds: this.settings.cacheNotFound === true ? this.settings.cacheTtlSeconds ?? null : 0,
+    }));
   }
 
   applySettings(settings: FirewallDnsSettings): void {
