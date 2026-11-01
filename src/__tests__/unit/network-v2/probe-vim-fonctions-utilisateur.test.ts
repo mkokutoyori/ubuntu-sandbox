@@ -1,6 +1,6 @@
 /**
- * vim 9.1 : `:function`, `:call`, `:echo`, `:return`, `:if`/`:for`/`:while`, `:try`/`:catch`/`:finally`/`:throw`, `:echoerr`, `:const`, `:lockvar`/`:unlockvar`/`islocked()` (verrou profond des listes et dictionnaires), `:execute`, `:source`, `:delfunction`, les portees l: a: s: et les fonctions de dictionnaire. 106 scripts rejoues sur le vrai vim (`vim -Nu NONE -es -S`, curseur en ligne 1, tampon [L1, L2]) : les lignes affichees par :echo et les erreurs, dans l'ordre erreurs puis affichages.
- * Mesure de depart : sans le moteur de script les 130 cas tombent ; contre le commit precedent (sans :lockvar), les 24 cas de verrou tombent ; les 106 autres passent des deux cotes (temoins). Un cas mesure sur vim est ecarte : `lockvar M | try | call add(M,2) | catch` laisse vim afficher E741 sans que le catch l'attrape (non reproduit).
+ * vim 9.1 : `:function`, `:call`, `:echo`, `:return`, `:if`/`:for`/`:while`, `:try`/`:catch`/`:finally`/`:throw`, `:echoerr`, `:const`, `:lockvar`/`:unlockvar`/`islocked()` (membres compris ; verrou profond des listes et dictionnaires), `:execute`, `:source`, `:delfunction`, `<sfile>`, `v:throwpoint`, les portees l: a: s: et les fonctions de dictionnaire. 106 scripts rejoues sur le vrai vim (`vim -Nu NONE -es -S`, curseur en ligne 1, tampon [L1, L2]) : les lignes affichees par :echo et les erreurs, dans l'ordre erreurs puis affichages.
+ * Mesure de depart : sans le moteur de script les 146 cas tombent ; contre le commit precedent, 16 cas tombent (`<sfile>`, `v:throwpoint`, verrou de membre) ; les 130 autres passent des deux cotes (temoins). Le fichier de script commence par deux lignes de commentaire pour que les numeros de ligne soient ceux de l'oracle (qui a deux lignes de preambule). Un cas mesure sur vim est ecarte : `lockvar M | try | call add(M,2) | catch` laisse vim afficher E741 sans que le catch l'attrape (non reproduit).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -139,10 +139,26 @@ const SCRIPTS: ReadonlyArray<readonly [readonly string[], string]> = [
   [["let M = [1]", "lockvar M", "try | let M = 2 | catch | echo v:exception | endtry"], "Vim(let):E741: Value is locked: M"],
   [["let M = [1]", "lockvar M", "echo islocked('M')"], "1"],
   [["let M = [1]", "echo islocked('M')"], "0"],
+  [["echo expand('<sfile>') =~ 's.vim$'"], "1"],
+  [["function! F()", "  return substitute(expand('<sfile>'), '^.*/', '', '')", "endfunction", "echo F()"], "s.vim[6]..function F"],
+  [["function! F()", "  return substitute(expand('<sfile>'), '^.*/', '', '')", "endfunction", "function! G()", "  return F()", "endfunction", "echo G()"], "s.vim[9]..function G[1]..F"],
+  [["try", "  throw 'x'", "catch", "  echo substitute(v:throwpoint, '^.*/', '', '')", "endtry"], "s.vim, line 4"],
+  [["function! T()", "  try", "    echo undefinedv", "  catch", "    return substitute(v:throwpoint, '^.*/', '', '')", "  endtry", "endfunction", "echo T()"], "s.vim[10]..function T, line 2"],
+  [["function! T()", "  try", "    throw 'a'", "  catch", "    return substitute(v:throwpoint, '^.*/', '', '')", "  endtry", "endfunction", "echo T()"], "s.vim[10]..function T, line 2"],
+  [["try | throw 'y' | catch | echo substitute(v:throwpoint, '^.*/', '', '') | endtry"], "s.vim, line 3"],
+  [["try | throw 'y' | catch | endtry", "echo v:throwpoint"], ""],
+  [["echo v:exception"], ""],
+  [["let D = {'a': 1, 'b': 2}", "lockvar D.a", "let D.a = 5", "let D.b = 6", "echo D"], "E741: Value is locked: D.a = 5\n{'a': 1, 'b': 6}"],
+  [["let D = {'a': 1, 'b': 2}", "lockvar D.a", "echo islocked('D.a') islocked('D.b') islocked('D')"], "1 0 0"],
+  [["let D = {'a': 1, 'b': 2}", "lockvar D.a", "unlockvar D.a", "let D.a = 7", "echo D"], "{'a': 7, 'b': 2}"],
+  [["let L = [1,2]", "lockvar L[0]", "let L[0] = 9", "let L[1] = 8", "echo L"], "E741: Value is locked: L[0] = 9\n[1, 8]"],
+  [["let L = [1,2]", "lockvar L[-1]", "let L[1] = 9", "echo L"], "E741: Value is locked: L[1] = 9\n[1, 2]"],
+  [["let L = [1,2]", "lockvar L[0]", "echo islocked('L[0]') islocked('L[1]')"], "1 0"],
+  [["let D = {'a': 1}", "lockvar D.zz", "echo 1"], "E716: Key not present in Dictionary: \"zz\"\n1"],
 ];
 
 function run(script: readonly string[]): string {
-  const fs = new InMemoryEditorFsContext({ '/tmp/f': 'L1\nL2\n', '/tmp/s.vim': `${script.join('\n')}\n` });
+  const fs = new InMemoryEditorFsContext({ '/tmp/f': 'L1\nL2\n', '/tmp/s.vim': `"\n"\n${script.join('\n')}\n` });
   const vim = new VimEngine(fs, '/tmp/f', 'L1\nL2\n', false, 'vim', 'root');
   vim.applyKey(editorKey(':'));
   for (const character of 'source /tmp/s.vim') vim.applyKey(editorKey(character));

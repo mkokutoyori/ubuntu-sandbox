@@ -156,6 +156,7 @@ export interface ExpressionHost {
   homeDirectory(): string | null;
   bufferName(): string;
   alternateName(): string;
+  scriptLocation(): string;
   temporaryName(): string;
   wordUnderCursor(big: boolean): string;
   fileNameUnderCursor(): string;
@@ -1602,6 +1603,7 @@ function expandWord(context: Context, text: string, noWildcards: boolean): strin
   if (text === '#' || text.startsWith('#:')) return [modifyFileName(context.host.alternateName(), text.slice(1), context)];
   if (text === '<cword>') return [context.host.wordUnderCursor(false)];
   if (text === '<cWORD>') return [context.host.wordUnderCursor(true)];
+  if (text === '<sfile>') return [context.host.scriptLocation()];
   if (text === '<cfile>') return [context.host.fileNameUnderCursor()];
   const withVariables = text.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, bare: string | undefined, braced: string | undefined) => {
     const value = context.host.environmentOrNull(bare ?? braced ?? '');
@@ -2668,7 +2670,7 @@ class Parser {
   private variable(name: string): VimValue {
     const context = this.context;
     const constants: Record<string, VimValue> = {
-      'v:true': special('true'), 'v:false': special('false'), 'v:null': special('null'), 'v:none': special('none'),
+      'v:exception': str(''), 'v:throwpoint': str(''), 'v:true': special('true'), 'v:false': special('false'), 'v:null': special('null'), 'v:none': special('none'),
       'v:version': num(901), 'v:lnum': num(0), 'v:count': num(0), 'v:count1': num(1), 'v:errmsg': str(''), 'v:register': str('"'),
       'v:numbermax': num(NUMBER_MAX), 'v:numbermin': num(NUMBER_MIN), 'v:numbersize': num(64),
       'v:t_number': num(0), 'v:t_string': num(1), 'v:t_func': num(2), 'v:t_list': num(3), 'v:t_dict': num(4), 'v:t_float': num(5),
@@ -2961,10 +2963,12 @@ function assignTarget(target: string, operator: string, value: VimValue, context
   if (holder.kind === 'list') {
     let at = Number(context.numberOf(last, true));
     if (at < 0) at += holder.items.length;
+    if (holder.itemLocks?.has(String(at)) === true) context.fail(`E741: Value is locked: ${context.statement}`);
     if (at < 0 || at > holder.items.length) context.fail(`E684: List index out of range: ${at}`);
     holder.items[at] = combine(holder.items[at]);
   } else if (holder.kind === 'dict') {
     const field = context.stringOf(last, true);
+    if (holder.itemLocks?.has(field) === true) context.fail(`E741: Value is locked: ${context.statement}`);
     holder.entries.set(field, combine(holder.entries.get(field)));
   } else {
     context.fail('E689: Can only index a List, Dictionary or Blob');
@@ -3062,6 +3066,21 @@ function lockVariables(argument: string, on: boolean, context: Context): void {
   if (match === null) return;
   const depth = match[1] === '!' ? 100 : match[2] === undefined ? 2 : Number(match[2]);
   for (const name of match[3].split(/\s+/).filter((piece) => piece !== '')) {
+    const access = splitAccess(name);
+    if (access !== null && access.accessors.length > 0) {
+      const holder = runExpression(`${access.name}${access.accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+      const member = access.accessors[access.accessors.length - 1];
+      const field = context.stringOf(runExpression(member, context), false);
+      const held = holder.kind === 'list' || holder.kind === 'dict' ? (holder.itemLocks ?? new Set<string>()) : null;
+      if (held === null) return context.fail('E689: Can only index a List, Dictionary or Blob');
+      const index = holder.kind === 'list' && Number(field) < 0 ? String(Number(field) + holder.items.length) : field;
+      if (holder.kind === 'dict' && !holder.entries.has(field)) return context.fail(`E716: Key not present in Dictionary: "${field}"`);
+      if (holder.kind === 'list' && (Number(index) < 0 || Number(index) >= holder.items.length)) return context.fail(`E684: List index out of range: ${field}`);
+      if (on) held.add(index);
+      else held.delete(index);
+      (holder as VimList | VimDict).itemLocks = held;
+      continue;
+    }
     const key = context.host.variables.resolveKey(name);
     if (key === null) return context.fail(`E475: Invalid argument: ${name}`);
     const value = context.host.variables.lookup(key);

@@ -3514,9 +3514,9 @@ export class VimEngine {
     return /^E\d+:/.test(this._message) ? this._message : null;
   }
 
-  private runScriptLines(lines: readonly string[], keepGoing: boolean): void {
+  private runScriptLines(lines: readonly string[], keepGoing: boolean, sourceName: string | null = null): void {
     this._message = '';
-    const errors = this.script.runScript(lines, keepGoing);
+    const errors = this.script.runScript(lines, keepGoing, sourceName);
     const echoed = this.script.output.join('\n');
     const shown = [...errors, ...(echoed === '' ? [] : [echoed])].join('\n');
     if (shown !== '') this._message = shown;
@@ -3541,7 +3541,7 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
-    this.runScriptLines(text.replace(/\n$/, '').split('\n'), true);
+    this.runScriptLines(text.replace(/\n$/, '').split('\n'), true, name === '%' ? this.fs.resolvePath(this.filePath) : this.fs.resolvePath(name));
   }
 
   private expressionHost(match: MultiMatch, lineNumber: number, columnIndex: number): ExpressionHost {
@@ -3583,6 +3583,7 @@ export class VimEngine {
       homeDirectory: () => this.fs.homeDirectory?.() ?? null,
       bufferName: () => this.filePath,
       alternateName: () => this.alternate,
+      scriptLocation: () => this.script.location(),
       temporaryName: () => this.nextTemporaryName(),
       wordUnderCursor: (big) => this.wordUnderCursor(big, lineNumber - 1, columnIndex),
       fileNameUnderCursor: () => fileNameAt(this.linesArr[lineNumber - 1] ?? '', columnIndex),
