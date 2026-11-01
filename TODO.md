@@ -4209,3 +4209,18 @@ Problem ; `tracepath -6` (sonde `probe-tracepath-ipv6`), `mtr -6` (sonde `probe-
 `probe-tracert-ipv6`, mais `-R` reste lu et ignore) sont faits ; `Router.executeTraceroute6` garde sa propre boucle de sauts (doublon de
 `collectTraceHops`, a refermer en y branchant le routeur). La taille de paquet `packetlen` est imprimee dans l'entete et ne dimensionne pas les
 sondes (IPv4 comme IPv6).
+
+### [radvd] un routeur Linux ne peut pas annoncer de prefixe
+
+Mesure : `grep -ri radvd src/` ne rend rien. Depuis que `net.ipv6.conf.all.forwarding=1` fait transferer l'IPv6 (sonde `probe-linux-transfert-ipv6`),
+un LinuxServer a deux cartes route, mais ne peut pas dire a ses voisins quel prefixe il porte : SLAAC ne vient que des routeurs Cisco et Huawei
+(`IPv6DataPlane.sendRouterAdvertisement`). Le paquet `radvd` (2.19 sur Ubuntu 22.04 et 24.04), `/etc/radvd.conf` et l'unite `radvd.service` n'existent pas.
+Ce qui est lu pour le port (sources radvd-project/radvd v2.19, joignables par raw.githubusercontent.com) : `gram.y` et `scanner.l` (grammaire : blocs
+`interface`, `prefix`, `route`, `RDNSS`, `DNSSL`, `clients`, et les options d'interface), `defaults.h` (valeurs par defaut et bornes : `MaxRtrAdvInterval` 600,
+`MinRtrAdvInterval` 0.33 x Max, `AdvDefaultLifetime` max(1, 3 x Max), `AdvValidLifetime` 86400, `AdvPreferredLifetime` 14400, 3 annonces initiales a
+16 s, `MIN_DELAY_BETWEEN_RAS` 3 s), `send.c` (contenu de l'annonce) et `radvd.c` (demarrage et arret : une annonce de duree de vie 0 a l'arret).
+Ce qu'il faut construire : l'analyseur de `radvd.conf` ; un service qui envoie l'annonce a ff02::1 au demarrage, a intervalle aleatoire dans
+[Min, Max] et en reponse a une sollicitation (`EndHost.handleICMPv6` ne remet pas les `router-solicitation` a un agent) ; `NDPOption` n'a ni
+`route-info` ni `rdnss` ni `dnssl`, et la reception (`handleRouterAdvertisement`) ignore l'en-tete (hop limit, temps de joignabilite,
+preference) ; l'unite, le paquet et `radvd -c` / `-C` / `-d`. Aucune de ces options ne doit etre acceptee sans effet (§6) : une cle que le
+simulateur ne sait pas emettre est refusee dans les termes de radvd.
