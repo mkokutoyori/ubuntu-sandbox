@@ -661,7 +661,7 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 - **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`, `t:`, les elements `l[i]` / `d.k` / `d['k']`,
   les tranches `l[a:b]` (affectation et suppression), `$ENV` (l'environnement de vim, que voient `getenv`, `environ`,
   `exists('$X')` et le shell de `system()`), les operateurs composes et la destructuration (`probe-vim-unlet-tranches-et-environnement`,
-  `probe-vim-ordre-des-dictionnaires-suppressions`). Restent refuses : `s:` / `l:` / `a:` hors fonction et `:function`. Une lambda ne
+  `probe-vim-ordre-des-dictionnaires-suppressions`). Restent refuses : `s:` / `l:` / `a:` hors fonction et `:function` (le moteur n'a aucun interprete de script : une fonction utilisateur demande `:function`/`:endfunction`, `:return`, `:if`/`:for`/`:while` et les portees, et se rejoue sur vim 9.1 comme le reste). Une lambda ne
   capture que les parametres des lambdas qui l'entourent.
 - **`CTRL-R =` et le registre `"=`** passent par l'evaluateur (`probe-vim-registre-expression`, 47 cas rejoues sur vim 9.1) :
   invite `=` en insertion et en normal, expression vide = la derniere, erreur sans effet sur le tampon, `CTRL-R {registre}` en
@@ -759,6 +759,21 @@ Le moteur n'a qu'un tampon. Ce qui en depend, mesure sur nano 7.2 :
 Pas de liste de tampons ni de pile de tampons dans `NanoEngine` : `linesArr`, la marque, l'annulation,
 les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : sortir l'etat d'un
 fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
+
+### [fortigate] ce que `?` et la tabulation ne couvrent pas encore, et ce qui manque aux acces
+Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;
+`probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de
+`diagnose` annoncent leurs mots-cles et les noms vivants (interfaces, tunnels, moniteurs). Restent des queues
+`REST` qui ne disent qu'un gabarit : `diagnose sniffer packet <interface> '<filtre>' <verbose> <nombre> <horodatage>`,
+`diagnose firewall iprope list|show <groupe> <index>`, `diagnose sys top <delai> <lignes>`, `execute time|date`,
+`execute log filter <champ> <valeur>` (les champs), `diagnose sys checkused|cmdb refcnt show <chemin>` (les chemins
+`table.attribut`), `diagnose netlink aggregate name|brctl name host` (seuls les agregats / ponts de CE type, pas toutes les
+interfaces), `diagnose sys sdwan health-check <nom>` ; `get <branche>` seul repond « unknown configuration path » au lieu
+de « incomplete ». Acces : `config system api-user` n'existe pas (pas de jeton REST `Authorization: Bearer`), alors que
+l'API sait deja lire l'arbre vivant ; `execute api-user generate-key` n'est pas porte faute de sortie attestee. Un
+`FortiGate` rejoue sa configuration par `replayConfig` ligne a ligne : les lignes refusees sont maintenant rapportees
+(`ImportResult.warnings`) mais l'ordre de rejeu reste celui de `show` (un objet qui en reference un autre defini plus bas
+echoue au rejeu).
 
 ### [vim] coller depuis un autre programme (Ctrl+Maj+V, Maj+Inser, clic droit)
 Mesure en corrigeant le meme defaut dans nano : `VimEditor` annule chaque touche (`preventDefault`)
