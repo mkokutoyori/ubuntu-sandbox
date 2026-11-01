@@ -291,6 +291,8 @@ export function buildIpCtx(
         type: r.type,
         ...(r.learnedFrom === undefined ? {} : { proto: r.learnedFrom }),
         metric: r.metric,
+        ...(r.expiresInMs === undefined ? {} : { expiresInMs: r.expiresInMs }),
+        ...(r.preference === undefined ? {} : { preference: r.preference }),
       }));
     },
     configureInterface(ifName: string, ip: IPAddress, cidr: number): string {

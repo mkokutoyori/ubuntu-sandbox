@@ -211,7 +211,7 @@ describe('ip -6 route get', () => {
     const { root, host } = await lab();
     const rows = await globals(root);
     const out = await root('ip -6 route get 2001:db8::1');
-    expect(out).toBe(`2001:db8::1 from :: dev eth0 proto ra src ${temporaries(rows)[0].address} metric 0 pref medium`);
+    expect(out).toMatch(new RegExp(`^2001:db8::1 from :: dev eth0 proto ra src ${temporaries(rows)[0].address} metric 256 expires \\d+sec pref medium$`));
     expect(await echoSource(host, root)).toBe(temporaries(rows)[0].address);
   });
 
@@ -224,7 +224,7 @@ describe('ip -6 route get', () => {
   it('off-link destination: through the router learned from the advertisement', async () => {
     const { root } = await lab();
     const out = await root('ip -6 route get 2001:4860:4860::8888');
-    expect(out).toMatch(/^2001:4860:4860::8888 from :: via fe80::[0-9a-f:]+ dev eth0 proto ra src 2001:db8::[0-9a-f:]+ metric \d+ pref medium$/);
+    expect(out).toMatch(/^2001:4860:4860::8888 from :: via fe80::[0-9a-f:]+ dev eth0 proto ra src 2001:db8::[0-9a-f:]+ metric 1024 expires \d+sec pref medium$/);
   });
 
   it('works without -6 when the destination is an IPv6 address', async () => {
@@ -258,7 +258,7 @@ describe('ip -6 route get', () => {
   it('show and get agree: the default route learned from an advertisement is proto ra, without the zone', async () => {
     const { root } = await lab();
     const shown = (await root('ip -6 route show')).split('\n').find((line) => line.startsWith('default'))!;
-    expect(shown).toMatch(/^default via fe80::[0-9a-f:]+ dev eth0 proto ra metric \d+ pref medium$/);
+    expect(shown).toMatch(/^default via fe80::[0-9a-f:]+ dev eth0 proto ra metric 1024 expires \d+sec pref medium$/);
     expect(shown).not.toContain('%');
   });
 });

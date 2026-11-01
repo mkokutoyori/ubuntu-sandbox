@@ -7,8 +7,7 @@
  * celle de `AdvDefaultLifetime` tant que le transfert IPv6 est actif et ZERO sinon ; l'arret envoie une derniere annonce de duree de vie zero ; une interface absente est ignoree
  * (`IgnoreIfMissing` on) ou fatale (off) ; `check_iface` refuse un `MinRtrAdvInterval` hors bornes avec le texte de radvd ; une annonce d'un autre routeur dont les drapeaux different
  * est signalee (process_ra). Les durees de vie de prefixe par defaut sont 86400 / 14400 (DFLT_*), pas les 30 / 7 jours des routeurs Cisco.
- * Reserves (TODO.md) : Mobile IPv6, 6LoWPAN et ABRO sont lus et non emis ; `radvdump` n'existe pas ; la condition `ConditionPathExists=/etc/radvd.conf` de l'unite n'est pas modelisee ;
- * un hote ne retire pas une route par defaut apprise quand une annonce porte une duree de vie zero.
+ * Reserves (TODO.md) : Mobile IPv6, 6LoWPAN et ABRO sont lus et non emis ; `radvdump` n'existe pas ; la condition `ConditionPathExists=/etc/radvd.conf` de l'unite n'est pas modelisee.
  *
  * Discrimine par `git stash` sur src/network et src/terminal : tous les cas tombent avant, sauf le TEMOIN : `radvd` absent d'une machine sans le paquet.
  */
@@ -20,6 +19,7 @@ import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { IPv6Packet, ICMPv6Packet, NDPRouterAdvertisement } from '@/network/core/types';
 import type { VirtualTimeScheduler } from '@/events/Scheduler';
 import { installVirtualClock } from '../../support/ntpTime';
+import { radvdLab, rootOn, type Machine } from '../../support/radvdLab';
 
 let clock: VirtualTimeScheduler;
 
@@ -28,38 +28,7 @@ beforeEach(() => {
   EquipmentRegistry.getInstance().clear();
 });
 
-type Machine = LinuxPC | LinuxServer;
-
-const rootOn = (device: Machine) => {
-  const machine = device as unknown as { executor: { runAsUser<T>(user: string, work: () => Promise<T>): Promise<T> } };
-  return async (command: string): Promise<string> =>
-    String(await machine.executor.runAsUser('root', () => device.executeCommand(command))).trim();
-};
-
-interface Seen { at: number; destination: string; ra: NDPRouterAdvertisement }
-
-async function lab(config: string | null, options: { forwarding?: boolean; install?: boolean } = {}) {
-  const router = new LinuxServer('linux-server', 'R1');
-  const host = new LinuxPC('linux-pc', 'H');
-  router.powerOn();
-  host.powerOn();
-  new Cable('c').connect(router.getPort('eth0')!, host.getPort('eth0')!);
-  const onRouter = rootOn(router);
-  const onHost = rootOn(host);
-  const seen: Seen[] = [];
-  host.attachCapture(({ direction, frame }) => {
-    if (direction !== 'in') return;
-    const ip = frame.payload as IPv6Packet | undefined;
-    const icmp = ip?.payload as ICMPv6Packet | undefined;
-    if (ip?.type === 'ipv6' && icmp?.icmpType === 'router-advertisement' && icmp.ndp?.ndpType === 'router-advertisement') {
-      seen.push({ at: clock.now(), destination: ip.destinationIP.toString(), ra: icmp.ndp });
-    }
-  });
-  if (options.install !== false) await onRouter('apt install -y radvd');
-  if (options.forwarding !== false) await onRouter('sysctl -w net.ipv6.conf.all.forwarding=1');
-  if (config !== null) await onRouter(`sh -c 'cat > /etc/radvd.conf <<"EOF"\n${config}\nEOF'`);
-  return { router, host, onRouter, onHost, seen };
-}
+const lab = (config: string | null, options: { forwarding?: boolean; install?: boolean } = {}) => radvdLab(clock, config, options);
 
 const SIMPLE = 'interface eth0 {\n  AdvSendAdvert on;\n  prefix 2001:db8:77::/64 { };\n};';
 

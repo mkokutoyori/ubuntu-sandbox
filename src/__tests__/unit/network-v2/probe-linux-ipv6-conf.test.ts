@@ -61,7 +61,7 @@ describe('the host reads router advertisements by default', () => {
   it('sysctl reads and lists them', async () => {
     const { root } = await lab();
     expect(await root('sysctl -n net.ipv6.conf.eth0.accept_ra_defrtr')).toBe('1');
-    expect(await root('sysctl -a 2>/dev/null | grep -c "^net.ipv6.conf.eth0."')).toBe('13');
+    expect(await root('sysctl -a 2>/dev/null | grep -c "^net.ipv6.conf.eth0."')).toBe('16');
   });
 });
 

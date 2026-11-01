@@ -352,6 +352,8 @@ export abstract class LinuxMachine extends EndHost
       defaultRouter: conf.learnsDefaultRouter(portName),
       prefixInformation: conf.readsPrefixInformation(portName),
       autoconfigure: conf.autoconfigures(portName),
+      routerPreference: conf.readsRouterPreference(portName),
+      routeInformation: conf.routeInformationBounds(portName),
     };
   }
   override configureIPv6Interface(ifName: string, address: IPv6Address, prefixLength: number): boolean {

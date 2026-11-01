@@ -4210,11 +4210,10 @@ Problem ; `tracepath -6` (sonde `probe-tracepath-ipv6`), `mtr -6` (sonde `probe-
 `collectTraceHops`, a refermer en y branchant le routeur). La taille de paquet `packetlen` est imprimee dans l'entete et ne dimensionne pas les
 sondes (IPv4 comme IPv6).
 
-### [radvd] la reception ignore les options RDNSS, DNSSL, route d'information et MTU d'une annonce
+### [radvd] la reception ignore les options RDNSS, DNSSL et MTU et le saut limite d'une annonce
 
-Mesure : `radvd` est porte (v2.19 : `radvd.conf` verifie par `radvd -c` contre le vrai binaire, annonces initiales/periodiques/sollicitees,
-`systemctl start|stop|reload radvd`, paquet), et une annonce emise porte bien les options configurees (sonde `probe-radvd-annonces`). Ce qui est
-ouvert est cote HOTE : `EndHost.handleRouterAdvertisement` lit le prefixe (A/L, durees de vie), l'adresse de routeur et la duree de vie de routeur,
-mais ni le saut limite courant, ni le temps de joignabilite, ni les options RDNSS (RFC 8106), DNSSL, Route Information (RFC 4191) et MTU : un hote
-n'ajoute donc ni serveur de noms, ni domaine de recherche, ni route plus specifique que la route par defaut a partir d'une annonce de radvd. A
-refermer en lisant ces options dans `EndHost` (et dans `ip -6 route`, `resolvectl`), pas dans radvd.
+Mesure : l'hote lit le prefixe (A/L, durees de vie, echeance de la route), la duree de vie et la preference du routeur par defaut et les options Route
+Information (RFC 4191, bornes `accept_ra_rt_info_{min,max}_plen`) : sonde `probe-ipv6-hote-options-annonce`. Ce que `EndHost.handleRouterAdvertisement` ne lit
+toujours pas : le saut limite courant (`/proc/sys/net/ipv6/conf/<if>/hop_limit`), le temps de joignabilite, l'option MTU (`mtu6`, `accept_ra_mtu`), et les options
+RDNSS (RFC 8106) et DNSSL, que le noyau remet a l'espace utilisateur (systemd-networkd puis `resolvectl`) : un hote n'obtient donc ni serveur de noms ni domaine de
+recherche d'une annonce de radvd. A refermer cote hote, pas dans radvd : `ResolvedService` porte deja les serveurs par lien.

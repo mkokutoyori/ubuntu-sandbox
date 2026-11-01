@@ -498,6 +498,9 @@ export interface HostIPv6RouteEntry {
   learnedFrom?: 'ra';
   /** Metric */
   metric: number;
+  expiresAtMs?: number;
+  expiresInMs?: number;
+  preference?: number;
 }
 
 // ─── Routing Table Types ──────────────────────────────────────────
@@ -594,11 +597,18 @@ export interface RouterAdvertisementAcceptance {
   readonly defaultRouter: boolean;
   readonly prefixInformation: boolean;
   readonly autoconfigure: boolean;
+  readonly routerPreference: boolean;
+  readonly routeInformation: { readonly minPrefixLength: number; readonly maxPrefixLength: number } | null;
 }
 
 const ACCEPT_EVERY_ROUTER_ADVERTISEMENT: RouterAdvertisementAcceptance = {
   accepted: true, defaultRouter: true, prefixInformation: true, autoconfigure: true,
+  routerPreference: true, routeInformation: { minPrefixLength: 0, maxPrefixLength: 128 },
 };
+
+const RA_DEFAULT_ROUTE_METRIC = 1024;
+const RA_PREFIX_ROUTE_METRIC = 256;
+const INFINITE_LIFETIME = 0xffffffff;
 
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
@@ -6345,7 +6355,68 @@ export abstract class EndHost extends Equipment {
   // ─── IPv6 Routing Table ─────────────────────────────────────────
 
   getIPv6RoutingTable(): HostIPv6RouteEntry[] {
-    return [...this.ipv6RoutingTable];
+    this.purgeExpiredIPv6Routes();
+    const now = this.simulatedNowMs();
+    return this.ipv6RoutingTable.map((route) => route.expiresAtMs === undefined
+      ? { ...route }
+      : { ...route, expiresInMs: Math.max(0, route.expiresAtMs - now) });
+  }
+
+  private purgeExpiredIPv6Routes(): void {
+    const now = this.simulatedNowMs();
+    if (this.ipv6RoutingTable.every((route) => route.expiresAtMs === undefined || route.expiresAtMs > now)) return;
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter(
+      (route) => route.expiresAtMs === undefined || route.expiresAtMs > now);
+    if (this.ipv6RoutingTable.every((route) => route.type !== 'default')) this.defaultGateway6 = null;
+  }
+
+  private expiryOf(lifetimeSeconds: number): number | undefined {
+    return lifetimeSeconds === INFINITE_LIFETIME ? undefined : this.simulatedNowMs() + lifetimeSeconds * 1000;
+  }
+
+  private learnDefaultRouter(router: IPv6Address, lifetimeSeconds: number, preference: number): void {
+    const known = this.ipv6RoutingTable.find((route) =>
+      route.type === 'default' && route.learnedFrom === 'ra' && route.nextHop?.equals(router) === true);
+    if (lifetimeSeconds === 0) {
+      if (known === undefined) return;
+      this.ipv6RoutingTable = this.ipv6RoutingTable.filter((route) => route !== known);
+      if (this.ipv6RoutingTable.every((route) => route.type !== 'default')) this.defaultGateway6 = null;
+      return;
+    }
+    if (known === undefined) {
+      if (this.defaultGateway6) return;
+      this.setDefaultGateway6(router, 'ra');
+    }
+    const entry = this.ipv6RoutingTable.find((route) =>
+      route.type === 'default' && route.learnedFrom === 'ra' && route.nextHop?.equals(router) === true);
+    if (entry === undefined) return;
+    entry.expiresAtMs = this.expiryOf(lifetimeSeconds);
+    entry.preference = preference;
+  }
+
+  private learnRaRoute(
+    prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address | null, iface: string,
+    lifetimeSeconds: number, preference: number, metric: number,
+  ): void {
+    const network = prefix.getNetworkPrefix(prefixLength);
+    const known = this.ipv6RoutingTable.find((route) =>
+      route.type === 'ra' && route.iface === iface && route.prefixLength === prefixLength
+      && route.prefix.equals(network) && (route.nextHop?.toString() ?? null) === (nextHop?.toString() ?? null));
+    if (lifetimeSeconds === 0) {
+      if (known !== undefined) this.ipv6RoutingTable = this.ipv6RoutingTable.filter((route) => route !== known);
+      return;
+    }
+    if (known !== undefined) {
+      known.expiresAtMs = this.expiryOf(lifetimeSeconds);
+      known.preference = preference;
+      return;
+    }
+    if (nextHop === null && this.ipv6RoutingTable.some((route) =>
+      route.iface === iface && route.prefixLength === prefixLength && route.prefix.equals(network))) return;
+    this.ipv6RoutingTable.push({
+      prefix: network, prefixLength, nextHop, iface, type: 'ra', metric,
+      expiresAtMs: this.expiryOf(lifetimeSeconds), preference,
+    });
   }
 
   addIPv6StaticRoute(
@@ -6416,7 +6487,7 @@ export abstract class EndHost extends Equipment {
       iface: gwIface,
       type: 'default',
       ...(learnedFrom === undefined ? {} : { learnedFrom }),
-      metric: 0,
+      metric: learnedFrom === 'ra' ? RA_DEFAULT_ROUTE_METRIC : 0,
     });
 
     Logger.info(this.id, 'host:ipv6-gateway', `${this.name}: default IPv6 gateway set to ${gw}`);
@@ -6890,6 +6961,10 @@ export abstract class EndHost extends Equipment {
     return ACCEPT_EVERY_ROUTER_ADVERTISEMENT;
   }
 
+  private validRoutePreference(value: number | undefined): number {
+    return value === -1 || value === 1 ? value : 0;
+  }
+
   private handleRouterAdvertisement(portName: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
     const ra = icmpv6.ndp as NDPRouterAdvertisement;
     if (!ra || ra.ndpType !== 'router-advertisement') return;
@@ -6905,19 +6980,35 @@ export abstract class EndHost extends Equipment {
         ipv6.sourceIP.toString(), srcLLOpt.address, portName, true);
     }
 
-    // If router lifetime > 0, consider as default router
-    if (acceptance.accepted && acceptance.defaultRouter && ra.routerLifetime > 0 && !this.defaultGateway6) {
-      // The zone index never travels: it is not part of the 128 bits
-      // and means nothing to a peer. A real receiver records the
-      // interface it heard the advertisement on.
-      this.setDefaultGateway6(
-        new IPv6Address(ipv6.sourceIP.getHextets(), portName), 'ra');
+    // The zone index never travels: it is not part of the 128 bits
+    // and means nothing to a peer. A real receiver records the
+    // interface it heard the advertisement on.
+    const router = new IPv6Address(ipv6.sourceIP.getHextets(), portName);
+    const advertisedPreference = acceptance.routerPreference ? this.validRoutePreference(ra.routerPreference) : 0;
+    if (acceptance.accepted && acceptance.defaultRouter) {
+      this.learnDefaultRouter(router, ra.routerLifetime, advertisedPreference);
+    }
+    for (const opt of acceptance.accepted && acceptance.routeInformation !== null ? ra.options : []) {
+      if (opt.optionType !== 'route-info') continue;
+      const { minPrefixLength, maxPrefixLength } = acceptance.routeInformation!;
+      if (opt.prefixLength > maxPrefixLength || opt.prefixLength < minPrefixLength) continue;
+      const preference = acceptance.routerPreference ? this.validRoutePreference(opt.preference) : 0;
+      if (opt.prefixLength === 0) {
+        if (acceptance.defaultRouter) this.learnDefaultRouter(router, opt.lifetime, preference);
+      } else {
+        this.learnRaRoute(opt.prefix, opt.prefixLength, router, portName, opt.lifetime, preference, RA_DEFAULT_ROUTE_METRIC);
+      }
     }
 
     // Process prefix information for SLAAC
     for (const opt of acceptance.accepted && acceptance.prefixInformation ? ra.options : []) {
       if (opt.optionType === 'prefix-info') {
         const prefixOpt = opt as NDPOptionPrefixInfo;
+
+        if (prefixOpt.onLink && !prefixOpt.prefix.isLinkLocal()) {
+          this.learnRaRoute(prefixOpt.prefix, prefixOpt.prefixLength, null, portName,
+            prefixOpt.validLifetime, 0, RA_PREFIX_ROUTE_METRIC);
+        }
 
         // Only process if Autonomous flag is set
         if (prefixOpt.autonomous && prefixOpt.prefixLength === 64) {
@@ -6927,23 +7018,6 @@ export abstract class EndHost extends Equipment {
               valid: prefixOpt.validLifetime, preferred: prefixOpt.preferredLifetime,
             })
             : prefixOpt.prefix;
-
-          // Add route for this prefix
-          const existingRoute = this.ipv6RoutingTable.find(r =>
-            r.prefix.equals(prefixOpt.prefix.getNetworkPrefix(prefixOpt.prefixLength)) &&
-            r.prefixLength === prefixOpt.prefixLength
-          );
-
-          if (!existingRoute && prefixOpt.onLink) {
-            this.ipv6RoutingTable.push({
-              prefix: prefixOpt.prefix.getNetworkPrefix(prefixOpt.prefixLength),
-              prefixLength: prefixOpt.prefixLength,
-              nextHop: null,
-              iface: portName,
-              type: 'ra',
-              metric: 0,
-            });
-          }
 
           if (acceptance.autoconfigure) {
             Logger.info(this.id, 'slaac',
@@ -7064,6 +7138,7 @@ export abstract class EndHost extends Equipment {
     let bestRoute: HostIPv6RouteEntry | null = null;
     let bestPrefix = -1;
 
+    this.purgeExpiredIPv6Routes();
     for (const route of this.ipv6RoutingTable) {
       if (iface !== undefined && route.iface !== iface) continue;
       if (targetIP.isInSameSubnet(route.prefix, route.prefixLength)) {
