@@ -45,7 +45,7 @@ import type { NetemSpec } from '@/network/hardware/Netem';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import type { WindowsUser, WindowsGroup } from '@/network/devices/windows/WindowsUserManager';
-import type { PSRegistryProvider } from '@/network/devices/windows/PSRegistryProvider';
+import { parseRegistryAddress, type PSRegistryProvider, type RegistryAddress, type RegistryValueType } from '@/network/devices/windows/PSRegistryProvider';
 import type { WindowsService } from '@/network/devices/windows/WindowsServiceManager';
 import {
   captureOracleState, restoreOracleState, type OracleTopologyState,
@@ -146,6 +146,13 @@ interface TopologyDirectoryExport {
   mode: number;
 }
 
+interface TopologySymlinkExport {
+  path: string;
+  target: string;
+  uid: number;
+  gid: number;
+}
+
 interface TopologyVlanExport {
   id: number;
   name: string;
@@ -202,7 +209,7 @@ interface TopologyRegistryExport {
   /** Keys the operator created, including the ones holding no value. */
   keys?: string[];
   /** Values added or changed, `{ path, name, value }`. */
-  values?: { path: string; name: string; value: string | number }[];
+  values?: { path: string; name: string; value: string | number; type?: RegistryValueType }[];
   /** Seeded values the operator deleted. */
   removedValues?: { path: string; name: string }[];
   /** Seeded keys the operator deleted (the whole subtree with them). */
@@ -253,6 +260,7 @@ interface TopologyDeviceExport {
   staticArp?: TopologyStaticArpExport[];
   files?: TopologyFileExport[];
   directories?: TopologyDirectoryExport[];
+  symlinks?: TopologySymlinkExport[];
   /**
    * `iptables-save` / `ip6tables-save` text.
    *
@@ -538,6 +546,23 @@ function captureLinuxDirectories(device: LinuxMachine, twin: LinuxMachine): Topo
   return out;
 }
 
+function captureLinuxSymlinks(device: LinuxMachine, twin: LinuxMachine): TopologySymlinkExport[] {
+  const vfs = linuxVfs(device);
+  const pristine = linuxVfs(twin);
+  const out: TopologySymlinkExport[] = [];
+  for (const path of vfs.find('/', { type: 'l' })) {
+    if (!isCapturableVfsPath(path)) continue;
+    const inode = vfs.resolveInode(path, false);
+    if (!inode || inode.type !== 'symlink' || inode.targetGenerator) continue;
+    const baseline = pristine.resolveInode(path, false);
+    const unchanged = baseline !== null && baseline.type === 'symlink' && baseline.target === inode.target
+      && baseline.uid === inode.uid && baseline.gid === inode.gid;
+    if (unchanged) continue;
+    out.push({ path, target: inode.target, uid: inode.uid, gid: inode.gid });
+  }
+  return out;
+}
+
 /**
  * The Windows counterpart of {@link captureLinuxFiles}, and it exists for
  * the same reason: everything the user created or edited, and nothing of
@@ -611,6 +636,16 @@ function walkRegistry(
   for (const sub of reg.listSubkeyNames(path)) walkRegistry(reg, `${path}\\${sub}`, visit);
 }
 
+function registryAddressOf(path: string): RegistryAddress | null {
+  return parseRegistryAddress(path.replace(/^([A-Za-z]+):/, '$1'));
+}
+
+function registryValueTypes(reg: PSRegistryProvider, path: string): Map<string, RegistryValueType> {
+  const address = registryAddressOf(path);
+  const view = address === null ? null : reg.keyView(address);
+  return new Map((view?.values ?? []).map((entry) => [entry.name.toLowerCase(), entry.type]));
+}
+
 function captureRegistry(device: WindowsPC, twin: WindowsPC): TopologyRegistryExport | undefined {
   const live = device.registry;
   const base = twin.registry;
@@ -623,9 +658,12 @@ function captureRegistry(device: WindowsPC, twin: WindowsPC): TopologyRegistryEx
     walkRegistry(live, hive, (path, liveValues) => {
       if (!base.testPath(path)) keys.push(path);
       const baseValues = base.getItemPropertyValues(path) ?? {};
+      const types = registryValueTypes(live, path);
       for (const [name, value] of Object.entries(liveValues)) {
         if (baseValues[name] === value) continue;
-        values.push({ path, name, value });
+        const type = types.get(name.toLowerCase());
+        const inferred: RegistryValueType = typeof value === 'number' ? 'DWord' : 'String';
+        values.push(type === undefined || type === inferred ? { path, name, value } : { path, name, value, type });
       }
     });
 
@@ -668,11 +706,13 @@ function restoreRegistry(device: WindowsPC, data: TopologyRegistryExport): void 
   for (const path of data.removedKeys ?? []) reg.removeItem(path, true);
   for (const { path, name } of data.removedValues ?? []) reg.removeItemProperty(path, name);
   for (const path of data.keys ?? []) reg.newItem(path, true);
-  for (const { path, name, value } of data.values ?? []) {
+  for (const { path, name, value, type } of data.values ?? []) {
     // `Set-ItemProperty` refuses a path that does not exist, exactly as
     // the real cmdlet does — so create it the way `reg add` does first.
     reg.newItem(path, true);
-    reg.setItemProperty(path, name, value);
+    const address = type === undefined ? null : registryAddressOf(path);
+    if (type !== undefined && address !== null) reg.setValue(address, name, type, value);
+    else reg.setItemProperty(path, name, value);
   }
 }
 
@@ -1201,6 +1241,8 @@ function captureDevice(device: Equipment, twin: Equipment, peers: Map<string, Eq
     if (files.length > 0) entry.files = files;
     const directories = captureLinuxDirectories(device, twin);
     if (directories.length > 0) entry.directories = directories;
+    const symlinks = captureLinuxSymlinks(device, twin);
+    if (symlinks.length > 0) entry.symlinks = symlinks;
     const removed = captureLinuxRemovals(device, twin);
     if (removed.length > 0) entry.removedPaths = removed;
     const { v4, v6 } = captureIptables(device);
@@ -1333,7 +1375,7 @@ function nearestExistingOwner(vfs: VirtualFileSystem, path: string): { uid: numb
 
 function restoreLinuxFiles(
   device: LinuxMachine, files: TopologyFileExport[], directories: TopologyDirectoryExport[] = [],
-  removedPaths: string[] = [],
+  removedPaths: string[] = [], symlinks: TopologySymlinkExport[] = [],
 ): void {
   const vfs = linuxVfs(device);
   for (const path of removedPaths) vfs.rmrf(path);
@@ -1342,6 +1384,15 @@ function restoreLinuxFiles(
     if (!vfs.exists(d.path)) vfs.mkdirp(d.path, d.mode, owner.uid, owner.gid);
     vfs.chown(d.path, d.uid, d.gid);
     vfs.chmod(d.path, d.mode);
+  }
+  for (const link of symlinks) {
+    const parent = link.path.slice(0, Math.max(1, link.path.lastIndexOf('/')));
+    const owner = nearestExistingOwner(vfs, link.path);
+    if (!vfs.exists(parent)) vfs.mkdirp(parent, 0o755, owner.uid, owner.gid);
+    const current = vfs.resolveInode(link.path, false);
+    if (current?.type === 'symlink' && current.target === link.target) continue;
+    if (current !== null) vfs.rmrf(link.path);
+    vfs.createSymlink(link.path, link.target, link.uid, link.gid);
   }
   for (const f of files) {
     const owner = f.uid !== undefined && f.gid !== undefined
@@ -1614,8 +1665,8 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       }
     }
     if (device instanceof LinuxMachine) {
-      if (devData.removedPaths || devData.files || devData.directories) {
-        restoreLinuxFiles(device, devData.files ?? [], devData.directories ?? [], devData.removedPaths ?? []);
+      if (devData.removedPaths || devData.files || devData.directories || devData.symlinks) {
+        restoreLinuxFiles(device, devData.files ?? [], devData.directories ?? [], devData.removedPaths ?? [], devData.symlinks ?? []);
       }
       restoreIptables(device, devData.iptablesRules, devData.ip6tablesRules);
       // After the files, because a unit file the lab wrote has to exist
