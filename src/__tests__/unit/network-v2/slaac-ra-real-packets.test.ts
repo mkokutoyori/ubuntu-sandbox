@@ -146,7 +146,8 @@ describe('the zone index never travels', () => {
     // The zone index is not part of the 128 bits and means nothing to a
     // peer: taking the router's gave the host a route naming an
     // interface it does not have.
-    expect(line).toContain('%eth0');
+    expect(line).toContain('dev eth0');
+    expect(line).not.toContain('%');
     expect(line).not.toContain('GigabitEthernet');
   });
 });

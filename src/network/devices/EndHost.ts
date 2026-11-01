@@ -483,6 +483,7 @@ export interface HostIPv6RouteEntry {
   iface: string;
   /** Route type */
   type: 'connected' | 'static' | 'default' | 'ra';
+  learnedFrom?: 'ra';
   /** Metric */
   metric: number;
 }
@@ -6203,7 +6204,7 @@ export abstract class EndHost extends Equipment {
     if (this.ipv6RoutingTable.every((route) => route.type !== 'default')) this.defaultGateway6 = null;
   }
 
-  setDefaultGateway6(gw: IPv6Address): void {
+  setDefaultGateway6(gw: IPv6Address, learnedFrom?: 'ra'): void {
     this.defaultGateway6 = gw;
 
     // Remove old default and add new
@@ -6234,6 +6235,7 @@ export abstract class EndHost extends Equipment {
       nextHop: gw,
       iface: gwIface,
       type: 'default',
+      ...(learnedFrom === undefined ? {} : { learnedFrom }),
       metric: 0,
     });
 
@@ -6666,7 +6668,7 @@ export abstract class EndHost extends Equipment {
       // and means nothing to a peer. A real receiver records the
       // interface it heard the advertisement on.
       this.setDefaultGateway6(
-        new IPv6Address(ipv6.sourceIP.getHextets(), portName));
+        new IPv6Address(ipv6.sourceIP.getHextets(), portName), 'ra');
     }
 
     // Process prefix information for SLAAC

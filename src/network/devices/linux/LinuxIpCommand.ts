@@ -13,10 +13,10 @@ import {
   ipColorizer, parseIpColorOption, ipUnknownOptionError,
   type IpColorizer, type IpColorMode,
 } from './LinuxIpColor';
-import { IPAddress, MACAddress, SubnetMask } from '../../core/types';
+import { IPAddress, IPv6Address, MACAddress, SubnetMask } from '../../core/types';
 import type { RouteException } from '../EndHost';
 import { broadcastAddress } from '../../core/ip';
-import { parseIpv6Prefix } from '../../core/Ipv6Arithmetic';
+import { ipv6ToBigInt, parseIpv6Prefix } from '../../core/Ipv6Arithmetic';
 import {
   buildAddrJsonEntry,
   buildLinkJsonEntry,
@@ -100,6 +100,7 @@ export interface IpV6RouteEntry {
   nextHop: string | null;
   iface: string;
   type: 'connected' | 'static' | 'default' | 'ra';
+  proto?: 'ra';
   metric: number;
 }
 
@@ -147,6 +148,8 @@ export interface IpNetworkContext {
   removeInterfaceIP(ifName: string): string;
   getRoutingTable(tableId?: number): IpRouteEntry[];
   getIPv6RoutingTable?(): IpV6RouteEntry[];
+  ownsIPv6Address?(address: string): boolean;
+  selectIPv6Source?(iface: string, destination: string): string | null;
   addIPv6Route?(
     prefix: string, prefixLength: number, gateway: string | null, dev: string | null,
     metric?: number,
@@ -1302,7 +1305,7 @@ function ipRoute(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions): 
   if (args[0] === 'replace') return ipRouteReplace(ctx, args.slice(1));
   if (args[0] === 'change') return ipRouteChange(ctx, args.slice(1));
   if (args[0] === 'del' || args[0] === 'delete') return ipRouteDel(ctx, args.slice(1));
-  if (args[0] === 'get') return ipRouteGet(ctx, args.slice(1));
+  if (args[0] === 'get') return looksIpv6(args[1]) ? ipRoute6Get(ctx, args.slice(1)) : ipRouteGet(ctx, args.slice(1));
   if (args[0] === 'flush') {
     if (args[1] === 'cache' && args.length === 2 && ctx.flushRouteCache) return ctx.flushRouteCache();
     return `ip route flush ${args.slice(1).join(' ')}: this simulator cannot flush routes by selector`.trimEnd();
@@ -1482,6 +1485,7 @@ function ipRoute6(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions):
       return ipRoute6Add(ctx, args.slice(1));
     }
     if (args[0] === 'del' || args[0] === 'delete') return ipRoute6Del(ctx, args.slice(1));
+    if (args[0] === 'get') return ipRoute6Get(ctx, args.slice(1));
     return `Command "${args[0]}" is unknown, try "ip route help".`;
   }
   const table = ctx.getIPv6RoutingTable?.() ?? [];
@@ -1501,8 +1505,7 @@ function ipRoute6(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions):
   const c = opts.color;
   const lines: string[] = [];
   for (const route of table) {
-    const proto = route.type === 'connected' ? 'kernel'
-      : route.type === 'ra' ? 'ra' : 'static';
+    const proto = routeProtocol6(route);
     const dest = route.type === 'default'
       ? 'default '
       : c.inet6(`${route.prefix}/${route.prefixLength} `);
@@ -1725,6 +1728,45 @@ function ipRouteDel(ctx: IpNetworkContext, args: string[]): string {
   if (tableId !== undefined) filter.table = tableId;
 
   return ctx.deleteRoute(network, cidr, filter);
+}
+
+function routeProtocol6(route: IpV6RouteEntry): string {
+  if (route.proto !== undefined) return route.proto;
+  return route.type === 'connected' ? 'kernel' : route.type === 'ra' ? 'ra' : 'static';
+}
+
+function ipv6PrefixCovers(route: IpV6RouteEntry, destination: IPv6Address): boolean {
+  const shift = BigInt(128 - route.prefixLength);
+  return (ipv6ToBigInt(destination) >> shift) === (ipv6ToBigInt(new IPv6Address(route.prefix)) >> shift);
+}
+
+function ipRoute6Get(ctx: IpNetworkContext, args: string[]): string {
+  if (args.length === 0) return 'Error: need a valid destination address.';
+  const text = args[0];
+  let destination: IPv6Address;
+  try {
+    destination = new IPv6Address(text);
+  } catch {
+    return `Error: inet6 address is expected rather than "${text}".`;
+  }
+  const normalized = destination.toString().split('%')[0];
+  if (ctx.ownsIPv6Address?.(normalized) === true) {
+    return `local ${normalized} from :: dev lo table local proto kernel src ${normalized} metric 0 pref medium`;
+  }
+  const forced = args.indexOf('dev') !== -1 ? args[args.indexOf('dev') + 1] : null;
+  let best: IpV6RouteEntry | null = null;
+  for (const route of ctx.getIPv6RoutingTable?.() ?? []) {
+    if (forced !== null && route.iface !== forced) continue;
+    if (!ipv6PrefixCovers(route, destination)) continue;
+    if (best === null || route.prefixLength > best.prefixLength
+      || (route.prefixLength === best.prefixLength && route.metric < best.metric)) best = route;
+  }
+  if (best === null) return 'RTNETLINK answers: Network is unreachable';
+  const proto = routeProtocol6(best);
+  const via = best.nextHop !== null ? `via ${best.nextHop} ` : '';
+  const source = ctx.selectIPv6Source?.(best.iface, normalized);
+  const src = source ? `src ${source} ` : '';
+  return `${normalized} from :: ${via}dev ${best.iface} proto ${proto} ${src}metric ${best.metric} pref medium`;
 }
 
 function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {

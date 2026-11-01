@@ -5,6 +5,7 @@
  * This file only bridges the `LinuxCommand` interface to `IpNetworkContext`.
  */
 
+import { selectIpv6SourceAddress } from '../../../../layers/internet/Ipv6Egress';
 import { DEFAULT_QDISC_FALLBACK } from '../../LinuxIpv4Settings';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -271,13 +272,24 @@ export function buildIpCtx(
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
+    ownsIPv6Address(address: string): boolean {
+      const wanted = new IPv6Address(address);
+      for (const port of net.getPorts().values()) if (port.hasIPv6Address(wanted)) return true;
+      return false;
+    },
+    selectIPv6Source(iface: string, destination: string): string | null {
+      const port = net.getPorts().get(iface);
+      if (!port) return null;
+      return selectIpv6SourceAddress(port, new IPv6Address(destination))?.toString().split('%')[0] ?? null;
+    },
     getIPv6RoutingTable() {
       return net.getIPv6RoutingTable().map(r => ({
         prefix: r.prefix.toString(),
         prefixLength: r.prefixLength,
-        nextHop: r.nextHop ? r.nextHop.toString() : null,
+        nextHop: r.nextHop ? r.nextHop.toString().split('%')[0] : null,
         iface: r.iface,
         type: r.type,
+        ...(r.learnedFrom === undefined ? {} : { proto: r.learnedFrom }),
         metric: r.metric,
       }));
     },

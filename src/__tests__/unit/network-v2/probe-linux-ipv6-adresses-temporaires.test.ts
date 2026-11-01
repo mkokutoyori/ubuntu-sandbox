@@ -8,7 +8,10 @@
  * (ordre « temporary deprecated dynamic mngtmpaddr », `dynamic` = valid_lft fini) et le defaut Ubuntu `use_tempaddr = 2` de /etc/sysctl.d/10-ipv6-privacy.conf (releve sur la machine de reference ;
  * `lo` reste a -1 comme dans le noyau). L'annonce du routeur porte 30 jours (valide) et 7 jours (prefere).
  *
- * Discrimine par `git stash` sur src/network : 13 des 16 cas tombent avant. TEMOIN : `use_tempaddr=0` ne cree rien. Passent avant pour une mauvaise raison : « une duree trop courte ne cree
+ * `ip -6 route get` n'existait pas pour IPv6 (« Command get is unknown ») : sa sortie suit iproute2 (`from ::`, `proto`, `src`, `metric`, `pref medium`), la route par defaut apprise
+ * d'une annonce est `proto ra` et sans zone `%eth0` dans `show` comme dans `get`, le noyau l'installant ainsi.
+ *
+ * Discrimine par `git stash` sur src/network : 13 des 16 premiers cas tombent avant, et 8 des 9 cas de route (la commande etait inconnue ; reste vide avant : « une destination sans route »). TEMOIN : `use_tempaddr=0` ne cree rien. Passent avant pour une mauvaise raison : « une duree trop courte ne cree
  * pas d'adresse temporaire » (il n'y en avait jamais) et « supprimer l'adresse publique supprime ses temporaires » (il n'y avait pas de temporaires a supprimer). Le hasard (partie variable de l'adresse, desync_factor) vient d'un tirage deterministe par machine.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -200,5 +203,62 @@ describe('max_addresses', () => {
   it('stops the creation of autoconfigured addresses', async () => {
     const { root } = await lab(['sysctl -w net.ipv6.conf.eth0.max_addresses=1']);
     expect(await globals(root)).toEqual([]);
+  });
+});
+
+describe('ip -6 route get', () => {
+  it('on-link destination: connected route, source chosen by the same rule as the wire', async () => {
+    const { root, host } = await lab();
+    const rows = await globals(root);
+    const out = await root('ip -6 route get 2001:db8::1');
+    expect(out).toBe(`2001:db8::1 from :: dev eth0 proto ra src ${temporaries(rows)[0].address} metric 0 pref medium`);
+    expect(await echoSource(host, root)).toBe(temporaries(rows)[0].address);
+  });
+
+  it('use_tempaddr=1 keeps the public address as the source', async () => {
+    const { root } = await lab(['sysctl -w net.ipv6.conf.eth0.use_tempaddr=1']);
+    const rows = await globals(root);
+    expect(await root('ip -6 route get 2001:db8::1')).toContain(`src ${publics(rows)[0].address} `);
+  });
+
+  it('off-link destination: through the router learned from the advertisement', async () => {
+    const { root } = await lab();
+    const out = await root('ip -6 route get 2001:4860:4860::8888');
+    expect(out).toMatch(/^2001:4860:4860::8888 from :: via fe80::[0-9a-f:]+ dev eth0 proto ra src 2001:db8::[0-9a-f:]+ metric \d+ pref medium$/);
+  });
+
+  it('works without -6 when the destination is an IPv6 address', async () => {
+    const { root } = await lab();
+    expect(await root('ip route get 2001:db8::1')).toBe(await root('ip -6 route get 2001:db8::1'));
+  });
+
+  it('a local address is local, on lo', async () => {
+    const { root } = await lab();
+    expect(await root('ip -6 route get ::1')).toBe('local ::1 from :: dev lo table local proto kernel src ::1 metric 0 pref medium');
+    const pub = publics(await globals(root))[0].address;
+    expect(await root(`ip -6 route get ${pub}`)).toBe(`local ${pub} from :: dev lo table local proto kernel src ${pub} metric 0 pref medium`);
+  });
+
+  it('dev restricts the lookup to that interface', async () => {
+    const { root } = await lab();
+    expect(await root('ip -6 route get 2001:db8::1 dev eth0')).toContain('dev eth0');
+    expect(await root('ip -6 route get 2001:db8::1 dev eth1')).toBe('RTNETLINK answers: Network is unreachable');
+  });
+
+  it('a destination with no route is unreachable', async () => {
+    const { root } = await lab(['sysctl -w net.ipv6.conf.eth0.accept_ra=0']);
+    expect(await root('ip -6 route get 2001:db8:9::1')).toBe('RTNETLINK answers: Network is unreachable');
+  });
+
+  it('refuses something that is not an IPv6 address', async () => {
+    const { root } = await lab();
+    expect(await root('ip -6 route get zz')).toBe('Error: inet6 address is expected rather than "zz".');
+  });
+
+  it('show and get agree: the default route learned from an advertisement is proto ra, without the zone', async () => {
+    const { root } = await lab();
+    const shown = (await root('ip -6 route show')).split('\n').find((line) => line.startsWith('default'))!;
+    expect(shown).toMatch(/^default via fe80::[0-9a-f:]+ dev eth0 proto ra metric \d+ pref medium$/);
+    expect(shown).not.toContain('%');
   });
 });
