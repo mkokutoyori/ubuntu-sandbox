@@ -437,7 +437,7 @@ Get-DnsClientNrptRule
 reg query HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig /s
 ```
 
-`dc1.horizon.local` se résout de nouveau : la règle (la plus spécifique l'emporte ; `.` vaut pour tout nom) remplace les serveurs de la carte pour ce suffixe. La règle est une clé du registre (`Name`, `ConfigOptions`, `GenericDNSServers`). Retirez-la avec `Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force`, remettez les serveurs du DHCP avec `ipconfig /renew`.
+`dc1.horizon.local` se résout de nouveau : la règle (la plus spécifique l'emporte ; `.` vaut pour tout nom) remplace les serveurs de la carte pour ce suffixe. La règle est une clé du registre (`Version`, `Name`, `ConfigOptions`, `GenericDNSServers`, et rien d'autre tant qu'un champ facultatif — `-DisplayName`, `-Comment`, `-DnsSecEnable`… — n'est pas renseigné). Retirez-la avec `Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force`, remettez les serveurs du DHCP avec `ipconfig /renew`.
 
 Autres cmdlets du module DnsClient à essayer : `Get-DnsClient` (suffixe de connexion, enregistrement de l'adresse), `Set-DnsClient -ConnectionSpecificSuffix`, `Get-DnsClientGlobalSetting` / `Set-DnsClientGlobalSetting -SuffixSearchList`, `Get-DnsClientDohServerAddress`, `Register-DnsClient`.
 

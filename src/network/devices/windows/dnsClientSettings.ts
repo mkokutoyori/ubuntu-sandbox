@@ -2,6 +2,7 @@ import type { PSRegistryProvider, RegistryAddress, RegistryValueType } from './P
 
 const TCPIP_PARAMETERS = ['SYSTEM', 'CurrentControlSet', 'Services', 'Tcpip', 'Parameters'] as const;
 const DNSCACHE_PARAMETERS = ['SYSTEM', 'CurrentControlSet', 'Services', 'Dnscache', 'Parameters'] as const;
+const DEFAULT_NAME_ENCODING = 'Utf8WithMapping';
 const NRPT_RULES_KEY = [...DNSCACHE_PARAMETERS, 'DnsPolicyConfig'] as const;
 const NRPT_GLOBAL_KEY = [...DNSCACHE_PARAMETERS, 'NrptGlobal'] as const;
 const DOH_SERVERS_KEY = [...DNSCACHE_PARAMETERS, 'DohWellKnownServers'] as const;
@@ -163,7 +164,7 @@ export class WindowsDnsClientSettings {
       dnsSecQueryIpsecEncryption: this.text(values, 'DNSSECQueryIPSECEncryption'),
       dnsSecQueryIpsecRequired: this.flag(values, 'DNSSECQueryIPSECRequired', false),
       dnsSecValidationRequired: this.flag(values, 'DNSSECValidationRequired', false),
-      nameEncoding: this.text(values, 'NameEncoding') || 'Utf8WithMapping',
+      nameEncoding: this.text(values, 'NameEncoding') || DEFAULT_NAME_ENCODING,
       displayName: this.text(values, 'DisplayName'),
       comment: this.text(values, 'Comment'),
     };
@@ -199,19 +200,24 @@ export class WindowsDnsClientSettings {
     this.write(key, 'Version', 'DWord', rule.version);
     this.write(key, 'Name', 'MultiString', rule.namespaces.join(MULTI_SZ_SEPARATOR));
     this.write(key, 'ConfigOptions', 'DWord', options);
-    this.write(key, 'GenericDNSServers', 'String', rule.nameServers.join(SERVER_LIST_SEPARATOR));
-    this.write(key, 'DirectAccessDNSServers', 'String', rule.directAccessDnsServers.join(SERVER_LIST_SEPARATOR));
-    this.write(key, 'DirectAccessProxyType', 'String', rule.directAccessProxyType);
-    this.write(key, 'DirectAccessProxyName', 'String', rule.directAccessProxyName);
-    this.write(key, 'DirectAccessQueryIPSECEncryption', 'String', rule.directAccessQueryIpsecEncryption);
-    this.write(key, 'DirectAccessQueryIPSECRequired', 'DWord', rule.directAccessQueryIpsecRequired ? 1 : 0);
-    this.write(key, 'IPSECCARestriction', 'String', rule.ipsecCaRestriction);
-    this.write(key, 'DNSSECQueryIPSECEncryption', 'String', rule.dnsSecQueryIpsecEncryption);
-    this.write(key, 'DNSSECQueryIPSECRequired', 'DWord', rule.dnsSecQueryIpsecRequired ? 1 : 0);
-    this.write(key, 'DNSSECValidationRequired', 'DWord', rule.dnsSecValidationRequired ? 1 : 0);
-    this.write(key, 'NameEncoding', 'String', rule.nameEncoding);
-    this.write(key, 'DisplayName', 'String', rule.displayName);
-    this.write(key, 'Comment', 'String', rule.comment);
+    this.keepUnlessDefault(key, 'GenericDNSServers', 'String', rule.nameServers.join(SERVER_LIST_SEPARATOR));
+    this.keepUnlessDefault(key, 'DirectAccessDNSServers', 'String', rule.directAccessDnsServers.join(SERVER_LIST_SEPARATOR));
+    this.keepUnlessDefault(key, 'DirectAccessProxyType', 'String', rule.directAccessProxyType);
+    this.keepUnlessDefault(key, 'DirectAccessProxyName', 'String', rule.directAccessProxyName);
+    this.keepUnlessDefault(key, 'DirectAccessQueryIPSECEncryption', 'String', rule.directAccessQueryIpsecEncryption);
+    this.keepUnlessDefault(key, 'DirectAccessQueryIPSECRequired', 'DWord', rule.directAccessQueryIpsecRequired ? 1 : 0);
+    this.keepUnlessDefault(key, 'IPSECCARestriction', 'String', rule.ipsecCaRestriction);
+    this.keepUnlessDefault(key, 'DNSSECQueryIPSECEncryption', 'String', rule.dnsSecQueryIpsecEncryption);
+    this.keepUnlessDefault(key, 'DNSSECQueryIPSECRequired', 'DWord', rule.dnsSecQueryIpsecRequired ? 1 : 0);
+    this.keepUnlessDefault(key, 'DNSSECValidationRequired', 'DWord', rule.dnsSecValidationRequired ? 1 : 0);
+    this.keepUnlessDefault(key, 'NameEncoding', 'String', rule.nameEncoding === DEFAULT_NAME_ENCODING ? '' : rule.nameEncoding);
+    this.keepUnlessDefault(key, 'DisplayName', 'String', rule.displayName);
+    this.keepUnlessDefault(key, 'Comment', 'String', rule.comment);
+  }
+
+  private keepUnlessDefault(key: readonly string[], name: string, type: 'String' | 'DWord', value: string | number): void {
+    if (value === '' || value === 0) this.registry.deleteValue(address(key), name);
+    else this.write(key, name, type, value);
   }
 
   nrptGlobal(): NrptGlobalSettings {
