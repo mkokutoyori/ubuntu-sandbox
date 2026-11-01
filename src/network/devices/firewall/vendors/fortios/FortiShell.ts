@@ -707,6 +707,9 @@ export class FortiShell {
       return this.nav.set(tokens[1], tokens.slice(2));
     }
 
+    const canonical = this.canonicalWords(line);
+    if (canonical[0] === 'execute') return this.executeVerb(canonical.slice(1).concat(tokens.slice(canonical.length)));
+
     if (tokens[0] === 'config') {
       return FortiMessages.unknownPath(tokens.slice(1).join(' '));
     }

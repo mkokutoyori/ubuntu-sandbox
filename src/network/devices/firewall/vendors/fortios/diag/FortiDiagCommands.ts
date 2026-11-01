@@ -23,6 +23,7 @@ import type { FortiDiagnostics } from './FortiDiagnostics';
 import { renderDebugFlow } from './debugFlowRenderer';
 import { DHCP_DEBUG_APPLICATIONS, isDhcpDebugApplication } from '../../../l3/DhcpDebug';
 import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
+import { FLOW_FILTER_HELP, SESSION_FILTER_HELP } from './diagVocabulary';
 import { renderSniffer, type SnifferTimestamps } from './snifferRenderer';
 import { compileSnifferFilter, type SnifferMatcher } from '../../../diag/SnifferFilter';
 import {
@@ -481,6 +482,7 @@ const WHOLE_LOG_SEARCHED = 100;
 export function runExecuteLog(rest: readonly string[], deps: FortiDiagDeps): string {
   const view = deps.state.logFilter;
 
+  if (rest.length === 0) return FortiMessages.incomplete('a log operation');
   if (rest[0] === 'delete-all') {
     return `${deps.fw.getLogStore().clear()} log entries deleted`;
   }
@@ -609,7 +611,7 @@ function nextHopIpv6(
 }
 
 export const SESSION_FILTER_FIELDS: readonly string[] =
-  Object.freeze(['src', 'dst', 'sport', 'dport', 'proto', 'policy', 'vd']);
+  Object.freeze(SESSION_FILTER_HELP.map(([keyword]) => keyword));
 
 function assignSessionFilter(
   filter: SessionFilter, name: string, value: string,
@@ -711,6 +713,7 @@ function setDebugApplication(words: readonly string[], deps: FortiDiagDeps): str
 }
 
 function setDebugConsole(words: readonly string[], deps: FortiDiagDeps): string {
+  if (words.length === 0) return FortiMessages.incomplete('`timestamp`');
   if (words[0] !== 'timestamp') return FortiMessages.unknownPath(`debug console ${words.join(' ')}`.trim());
   const value = words[1];
   if (value !== 'enable' && value !== 'disable') return FortiMessages.incomplete('`enable` or `disable`');
@@ -782,7 +785,7 @@ function setFlowFilter(words: readonly string[], deps: FortiDiagDeps): string {
     case 'vd': filter.vd = value; return '';
     default:
       return FortiMessages.parseError(name,
-        'known filters: vd, addr, saddr, daddr, port, sport, dport, proto, clear.');
+        `known filters: ${FLOW_FILTER_HELP.map(([keyword]) => keyword).join(', ')}, clear.`);
   }
 }
 
