@@ -5284,10 +5284,43 @@ export abstract class LinuxMachine extends EndHost
     return this.executor.commandEnvironment()[name] ?? null;
   }
 
-  editorLinkInfo(path: string, session?: LinuxShellSession): { type: string; permissions: number } | null {
+  editorLinkInfo(path: string, session?: LinuxShellSession): { type: string; permissions: number; target?: string } | null {
     const vfs = this.executor.vfs;
     const inode = vfs.lstat(vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd()));
-    return inode === null ? null : { type: inode.type, permissions: inode.permissions };
+    if (inode === null) return null;
+    return { type: inode.type, permissions: inode.permissions, ...(inode.type === 'symlink' ? { target: inode.target } : {}) };
+  }
+
+  private mayChangeEntriesOf(parent: string, session?: LinuxShellSession): boolean {
+    const vfs = this.executor.vfs;
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    if (uid === 0) return true;
+    const gid = live?.gid ?? 1000;
+    const inode = vfs.resolveInode(parent);
+    return inode !== null && vfs.checkAccess(inode, 'w', uid, gid) && vfs.checkAccess(inode, 'x', uid, gid);
+  }
+
+  editorRemoveEntry(path: string, kind: 'file' | 'directory' | 'tree', session?: LinuxShellSession): boolean {
+    const vfs = this.executor.vfs;
+    const absolute = vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd());
+    const inode = vfs.lstat(absolute);
+    if (inode === null) return false;
+    if (!this.mayChangeEntriesOf(absolute.slice(0, absolute.lastIndexOf('/')) || '/', session)) return false;
+    if (kind === 'tree') return inode.type === 'directory' ? vfs.rmrf(absolute) : vfs.deleteFile(absolute);
+    if (kind === 'directory') return inode.type === 'directory' && vfs.rmdir(absolute);
+    return inode.type !== 'directory' && vfs.deleteFile(absolute);
+  }
+
+  editorRenameEntry(from: string, to: string, session?: LinuxShellSession): boolean {
+    const vfs = this.executor.vfs;
+    const cwd = session?.cwd ?? this.executor.getCwd();
+    const source = vfs.normalizePath(from, cwd);
+    const target = vfs.normalizePath(to, cwd);
+    if (vfs.lstat(source) === null) return false;
+    if (!this.mayChangeEntriesOf(source.slice(0, source.lastIndexOf('/')) || '/', session)) return false;
+    if (!this.mayChangeEntriesOf(target.slice(0, target.lastIndexOf('/')) || '/', session)) return false;
+    return vfs.rename(source, target);
   }
 
   editorExecutableAt(path: string, session?: LinuxShellSession): boolean {

@@ -3375,6 +3375,14 @@ export class VimEngine {
       directoryEntries: (path) => this.fs.listDirectory?.(this.fs.resolvePath(path)) ?? null,
       workingDirectory: () => this.fs.resolvePath('.'),
       linkInfo: (path) => this.fs.linkInfo?.(path) ?? null,
+      writeText: (path, text) => this.fs.writeFile(this.fs.resolvePath(path), text),
+      makeDirectory: (path, mode) => (this.fs.makeDirectory === undefined ? 'Permission denied' : this.fs.makeDirectory(path, mode)),
+      removeEntry: (path, kind) => this.fs.removeEntry?.(path, kind) ?? (kind === 'file' && this.fs.deleteFile(this.fs.resolvePath(path))),
+      renameEntry: (from, to) => this.fs.renameEntry?.(from, to) ?? false,
+      homeDirectory: () => this.fs.homeDirectory?.() ?? null,
+      bufferName: () => this.filePath,
+      temporaryName: () => this.nextTemporaryName(),
+      wordUnderCursor: (big) => this.wordUnderCursor(big, lineNumber - 1, columnIndex),
       executableAt: (path) => this.fs.executableAt?.(path) ?? false,
       resolvePath: (path) => this.fs.resolvePath(path),
       hostName: () => this.fs.identity?.().host ?? '',
@@ -3397,6 +3405,29 @@ export class VimEngine {
 
   private environmentVariable(name: string): string | null {
     return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? (this.fs.environmentVariable?.(name) ?? null) : null;
+  }
+
+  private temporaryDirectory: string | null = null;
+  private temporaryCounter = 0;
+
+  private nextTemporaryName(): string {
+    if (this.temporaryDirectory === null) {
+      const base = this.fs.environmentVariable?.('TMPDIR') ?? '/tmp';
+      const stem = `${base.replace(/\/+$/, '')}/v${(this.fs.identity?.().pid ?? 0).toString(36).padStart(6, '0').slice(-6)}`;
+      this.fs.makeDirectory?.(stem, 0o700);
+      this.temporaryDirectory = stem;
+    }
+    this.temporaryCounter++;
+    return `${this.temporaryDirectory}/${this.temporaryCounter}`;
+  }
+
+  private wordUnderCursor(big: boolean, line: number, col: number): string {
+    const text = this.linesArr[line] ?? '';
+    if (big) {
+      const found = [...text.matchAll(/\S+/g)].find((match) => match.index! + match[0].length > col);
+      return found === undefined ? '' : found[0];
+    }
+    return identUnderCursor(this.linesArr, { line, col }, this.words)?.text ?? '';
   }
 
   private lastShellStatus = 0;

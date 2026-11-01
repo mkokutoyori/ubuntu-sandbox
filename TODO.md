@@ -649,13 +649,12 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
   retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait. Mesure sur vim 9.1 (73 expressions rejouees) : restent absentes
-  `expand`, `glob`, `globpath`,   `resolve`, `mkdir`, `delete`, `rename`, `writefile`, `tempname`, `reltime`,
-  `reltimestr`, `wordcount`, `bufname`, `mode`, `blob2list`, `list2blob`, `strptime`, `foreach` (le rejeu trouve `foreach`
-  inconnue sur ce vim aussi). Existent : `reduce`, `mapnew`, `sha256`, `strftime`, `json_encode`, `json_decode`, `system`,
-  `systemlist`, `v:shell_error`, `getenv`, `str2float`, `flatten`, `flattennew`, `slice`, `fmod`, `log10`, `isnan`, `strgetchar`,
-  `byteidx`, `charidx`, `utf16idx`, `indexof`, `filereadable`, `isdirectory`, `readfile`, `readdir`, `getfsize`, `getcwd`, `hostname`, `getpid`, `localtime`, `environ`, `executable`, `exepath`, `getftype`, `getfperm` (`probe-vim-fonctions-fichiers`), `shellescape`, `simplify`, `pathshorten`, `isabsolutepath` et `fnamemodify`
-  (`:h :t :r :e`, `:e` repete ; `:p`, `:~`, `:.`, `:s` et `:gs` restent absents) (`probe-vim-fonctions-texte-et-chemins`).
+  function` meme quand vim le connait. Restent absentes (hors blobs) : `mode`, `foreach` (inconnue de ce vim aussi). Existent, mesurees
+  contre vim 9.1 (`probe-vim-fonctions-*`) : `glob`, `globpath`, `expand` (`$VAR`, `~`, jokers, `%`, `<cword>`, `<cWORD>` ; `<sfile>`,
+  `<abuf>`, `<amatch>`, `<cfile>` et `#` restent absents), `resolve`, `mkdir` (`p` ; les drapeaux `D` et `R` de vim 9.1 ne sont pas
+  portes), `writefile` (`b`, `a` ; `s`, `S`, `D`, `r` ne sont pas portes), `rename`, `delete`, `tempname`, `bufname` (tampon courant
+  seulement), `wordcount`, `reltime`, `reltimestr`, `reltimefloat`, `strptime`, `fnamemodify` (`:h :t :r :e :p :. :~ :s :gs :S`) et
+  toutes les fonctions de texte, de fichier et d'environnement des lots precedents.
 - **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
   `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
   destructuration. Restent refusees les cibles `$ENV` (l'environnement du
