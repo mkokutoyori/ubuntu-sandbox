@@ -11,7 +11,7 @@ import {
 } from './firewallLocalIn';
 import { FIREWALL_DOS_POLICY, FIREWALL_DOS_POLICY6 } from './firewallDos';
 import {
-  FIREWALL_CENTRAL_SNAT_MAP, FIREWALL_IPPOOL, FIREWALL_VIP, LDB_MONITOR,
+  FIREWALL_CENTRAL_SNAT_MAP, FIREWALL_IPPOOL, FIREWALL_VIP, FIREWALL_VIPGRP, LDB_MONITOR,
 } from './firewallNat';
 import { SYSTEM_SPECS } from './system';
 import { ROUTER_SPECS } from './router';
@@ -48,6 +48,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   FIREWALL_IPPOOL,
   LDB_MONITOR,
   FIREWALL_VIP,
+  FIREWALL_VIPGRP,
   ...UTM_SPECS,
   ...USER_SPECS,
   ...ADMIN_SPECS,

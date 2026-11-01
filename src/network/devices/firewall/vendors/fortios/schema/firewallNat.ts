@@ -526,9 +526,41 @@ export function splitPortRange(raw: string | undefined): { from: number; to: num
   return { from: low, to: to === undefined ? low : portNumber(to, low) };
 }
 
+export const FIREWALL_VIPGRP: FortiTableSpec = {
+  path: ['firewall', 'vipgrp'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'fwgrp',
+  renderOrder: 151,
+  help: 'Configure IPv4 virtual IP groups.',
+  attributes: [
+    { ...word('name', 'VIP group name.'), readOnly: true },
+    { ...word('uuid', 'Universally Unique Identifier.'), readOnly: true },
+    count('color', 'Color of icon on the GUI.', 0, 32, 0),
+    text('comments', 'Comment.'),
+    {
+      ...reference('interface', 'Interface.', INTERFACE_TARGETS),
+      unimplemented: 'a VIP already carries its own external interface, and nothing here compares it with the group interface, so accepting it would store a setting with no effect.',
+    },
+    refList('member', 'Member VIP objects of the group.', ['firewall vip']),
+  ],
+  onCommit(object, context) {
+    context.objects.removeAddressGroup(object.key);
+    const members = object.effective('member');
+    if (members.length === 0) return;
+    context.objects.addAddressGroup(object.key, members, object.effective('comments')[0] || undefined);
+  },
+  onDelete(key, context) {
+    context.objects.removeAddressGroup(key);
+  },
+};
+
 export const FIREWALL_NAT_SPECS: readonly FortiTableSpec[] = Object.freeze([
   FIREWALL_IPPOOL,
   LDB_MONITOR,
   FIREWALL_VIP,
+  FIREWALL_VIPGRP,
   FIREWALL_CENTRAL_SNAT_MAP,
 ]);

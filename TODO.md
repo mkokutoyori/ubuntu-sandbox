@@ -754,11 +754,11 @@ les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : s
 fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
 
 ### [fortigate] couverture de la reference CLI (FortiOS 7.4.12, `official_docs/forti-cli-ref-7412.txt`)
-Mesure (chemins `config ...` du sommaire de la reference confrontes a `FortiConfigTree.spec`) : 93 tables sur 1034 documentees existent. Les plus grands
+Mesure (chemins `config ...` du sommaire de la reference confrontes a `FortiConfigTree.spec`) : 93 tables sur 1034 documentees existaient ; `firewall vipgrp` s'y ajoute (`probe-fortigate-vipgrp`). Les plus grands
 absents : `system` (135), `firewall` (69), `wireless-controller` (49), `switch-controller` (47), `log` (42), `vpn` (19), `router` (18), `user` (16), `webfilter`
 (10), `web-proxy` (9), `dlp` (8), `emailfilter` (8). Regle 6 : une table n'entre que si le moteur honore ses criteres. Candidats dont un consommateur existe deja :
 `router route-map` / `aspath-list` / `community-list` / `key-chain` (le BGP FortiGate ne porte aujourd'hui que `as`, `router-id`, `remote-as`, `weight` ; le
-moteur `bgp/` et `router/policy/RoutePolicy` sont a brancher), `firewall vipgrp`, `shaping-policy` / `shaping-profile`, `ippool6`, `vip6`, `vpn ipsec concentrator`,
+moteur `bgp/` et `router/policy/RoutePolicy` sont a brancher), `shaping-policy` / `shaping-profile`, `ippool6`, `vip6`, `vpn ipsec concentrator`,
 `user peer`. Chaque table demande de lire sa section dans la reference, de brancher l'evaluateur, et un probe.
 `execute api-user generate-key <name>` existe (syntaxe de la reference 7.4.12 p.3733 ; 7.6.7 p.3882 y ajoute `<expiry>` reserve a l'utilisateur « Fortinet Support Tool »,
 non porte) ; le LIBELLE de sortie « New API key: <cle> » n'est pas dans la reference (community.fortinet.com et docs.fortinet.com sont injoignables d'ici) : a

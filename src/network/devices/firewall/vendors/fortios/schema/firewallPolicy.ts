@@ -5,7 +5,7 @@ import {
 } from './types';
 import type { SecurityRule, TcpSessionWithoutSyn } from '../../../model/SecurityRule';
 
-const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip'];
+const ADDRESS_TARGETS = ['firewall address', 'firewall addrgrp', 'firewall vip', 'firewall vipgrp'];
 const ADDRESS6_TARGETS = ['firewall address6', 'firewall addrgrp6'];
 const INTERFACE_TARGETS = ['system interface', 'system zone', 'system sdwan zone'];
 const SERVICE_TARGETS = ['firewall service custom', 'firewall service group'];
