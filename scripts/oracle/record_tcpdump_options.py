@@ -16,7 +16,7 @@ OPTION_SETS = [
     "-A -nn", "-AA -nn", "-A -nn -vvv", "-A -nn -x", "-A -nn -q",
     "-qq -nn", "-q -nn -v", "-nn -c 5 -s 60", "-nn -e -q", "-nn -N", "-nn -O", "-nn -vv", "-nn -t", "-nn -tttt -S", "-qq -nn -v", "-nn -e -q -v", "-nn -v -vv",
 ]
-LABS = ["base", "dns", "rip"]
+LABS = ["base", "dns", "rip", "ospf"]
 
 def pcap(frames):
     out = bytearray(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 262144, 1))

@@ -3861,15 +3861,16 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 (`ping -R`, `-Q`) et les en-tetes d'extension IPv6, ESP/AH/GRE/OSPF/BGP/SNMP/DHCPv6, MPTCP, les messages MLD et le routage
 (RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` et `-AA` sont portes (print.c, print-ascii.c ; mesure sur 5 jeux d'options de plus), ainsi que `-qq` (fragments non initiaux IPv4, `print-ip.c:494`) et la forme courte des types Ethernet de `-q -e` sont portes ; le `-qq` des fragments IPv6 n'est pas mesure. La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
 
-### [capture] les octets des protocoles de routage et de decouverte sont des zeros dans les captures
+### [capture] les octets de plusieurs protocoles de routage et de decouverte sont des zeros dans les captures
 
-Mesure (tcpdump 4.99.4 reel rejoue sur une capture du simulateur, laboratoire `rip` de `tcpdump-options-oracle.test.ts`) : une capture `tcpdump -w` d'un hote cable a un
-routeur Cisco contenait des octets nuls pour OSPF (`OSPFv0, unknown LS-type 0, length 64`), EIGRP (`EIGRP version 0 packet not supported`) et CDP (trame d'ethertype 0x2000 de
-60 octets nuls, au lieu d'un cadre 802.3 LLC/SNAP `AA AA 03 00 00 0C 20 00`). RIPv1/v2 est ecrit en octets reels (RFC 2453) et imprime comme `print-rip.c` ; le MD5 de RIP
-(RFC 4822, en-tete type 3 et trailer type 1) n'est pas encode : le moteur calcule un condense qui n'est pas celui de la RFC, il est donc ecrit comme un mot de passe. A faire,
-dans cet ordre, chacun avec son laboratoire dans l'oracle : OSPFv2 (RFC 2328 : Hello, DBD, LSR, LSU avec LSA routeur/reseau/resume/externe, LSAck, authentification), EIGRP (TLV de
-la documentation Cisco), CDP et LLDP (cadre 802.3 + LLC/SNAP), STP (BPDU 802.3 + LLC), BGP (RFC 4271), puis les imprimeurs `print-ospf.c`, `print-eigrp.c`, `print-cdp.c`,
-`print-lldp.c`, `print-stp.c`, `print-bgp.c`.
+Mesure (tcpdump 4.99.4 reel rejoue sur les captures du simulateur, laboratoires `rip` et `ospf` de `tcpdump-options-oracle.test.ts`) : RIPv1/v2 et OSPFv2 (Hello, DD, LS-Request, LS-Update
+avec LSA routeur / reseau / externe, LS-Ack) sont ecrits en octets reels (RFC 2453, RFC 2328, somme Fletcher des LSA selon la RFC 905) et imprimes comme `print-rip.c` et `print-ospf.c`.
+Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported`), CDP (trame d'ethertype 0x2000 de 60 octets nuls, au lieu d'un cadre 802.3
+LLC/SNAP `AA AA 03 00 00 0C 20 00`), et, non mesures faute de laboratoire, LLDP, STP (BPDU 802.3 + LLC), BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
+adresses y sont hachees, `checksum.ts`), HSRP, VRRP, PIM, IGMP. Limites connues du lot fait : le MD5 de RIP (RFC 4822) et d'OSPF (RFC 2328 D.4.3) n'est pas calcule par les moteurs, qui
+portent un condense propre : RIP l'ecrit comme un mot de passe, OSPF place les octets du condense du moteur (ou des zeros) apres le paquet ; les LSA opaques (RFC 5250), le LLS (RFC 5613)
+et les LSA de type 6 ne sont pas encodes. Pour chaque protocole restant : l'encodeur a cote du moteur (comme `ospf/OspfWire.ts`), le port de l'imprimeur (`print-eigrp.c`,
+`print-cdp.c`, `print-lldp.c`, `print-stp.c`, `print-bgp.c`), puis un laboratoire dans l'oracle.
 
 ### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 

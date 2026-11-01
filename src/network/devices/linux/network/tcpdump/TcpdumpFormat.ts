@@ -6,6 +6,7 @@ import {
 } from '@/network/core/IcmpPhrase';
 import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
+import { ospfText } from './TcpdumpOspf';
 import { ripText } from './TcpdumpRip';
 import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
 import { icmp6Text } from './TcpdumpIcmp6';
@@ -292,6 +293,11 @@ const MDNS_PORT = 5353;
 const UDP_HEADER_BYTES = 8;
 
 function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState, fragmentedV6 = false): string {
+  if (frame.l3 === 'ipv4' && frame.ipProtocol === OSPF_PROTOCOL && (frame.ipFragmentOffset ?? 0) === 0) {
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+    const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
+    return ospfText(Array.from(frame.raw.slice(start, start + length)), length, opt.verbose, (address) => state.host(address));
+  }
   if (frame.l4 === 'icmp') {
     let phrase: string;
     if (frame.icmpType === 'destination-unreachable') {
@@ -419,9 +425,14 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
  * pas de ce que la capture a su decoder : un fragment non initial reste
  * `proto TCP (6)` bien que son en-tete de transport soit ailleurs.
  */
+const OSPF_PROTOCOL = 89;
+const TRUNCATION_MARKER = /\[\|ospf2\]/;
+
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
-  [IP_PROTO_ICMP]: 'ICMP', [IP_PROTO_TCP]: 'TCP', [IP_PROTO_UDP]: 'UDP', [IP_PROTO_ICMPV6]: 'ICMPv6',
-  [IP_PROTO_IPV6_FRAGMENT]: 'Fragment',
+  0: 'Options', [IP_PROTO_ICMP]: 'ICMP', 2: 'IGMP', 4: 'IPIP', [IP_PROTO_TCP]: 'TCP', 8: 'EGP', 9: 'IGRP', [IP_PROTO_UDP]: 'UDP',
+  33: 'DCCP', 41: 'IPv6', 43: 'Routing', [IP_PROTO_IPV6_FRAGMENT]: 'Fragment', 46: 'RSVP', 47: 'GRE', 50: 'ESP', 51: 'AH',
+  55: 'Mobile IP', [IP_PROTO_ICMPV6]: 'ICMPv6', 62: 'Mobile IP (old)', 88: 'EIGRP', [OSPF_PROTOCOL]: 'OSPF', 103: 'PIM',
+  108: 'Compressed IP', 112: 'VRRP', 113: 'PGM', 132: 'SCTP', 135: 'Mobility', 143: 'Ethernet',
 };
 
 function ipProtoName(frame: CaptureFrame): string {
@@ -603,13 +614,14 @@ function cookedHeader(frame: CaptureFrame, cooked: CookedInterfaces): number[] {
   ];
 }
 
-export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string[] {
+export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState, truncated = false): string[] {
   const network = Array.from(frame.raw.slice(frame.rawLinkOffset));
   const link = state.cooked !== null
     ? [...cookedHeader(frame, state.cooked), ...frame.raw.slice(frame.rawLinkOffset - vlanTagLength(frame), frame.rawLinkOffset)]
     : Array.from(frame.raw.slice(0, frame.rawLinkOffset));
-  const bytes = (opt.hexLink ? [...link, ...network] : network).slice(0, opt.snaplen);
-  if (opt.hex === 'ascii') return bytes.length === 0 || (!opt.hexLink && network.length === 0) ? [] : asciiPrintLines(bytes).slice(1).split('\n');
+  const withLink = opt.hexLink || truncated;
+  const bytes = (withLink ? [...link, ...network] : network).slice(0, opt.snaplen);
+  if (opt.hex === 'ascii') return bytes.length === 0 || (!withLink && network.length === 0) ? [] : asciiPrintLines(bytes).slice(1).split('\n');
   const text = opt.hex === 'hexascii' ? hexAndAsciiLines(bytes, '\n\t') : hexPrintLines(bytes, '\n\t');
   return text === '' ? [] : text.slice(1).split('\n');
 }
@@ -637,6 +649,6 @@ export function formatFrame(
     body = opt.linkLevel ? `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, ${opt.quiet ? 'Unknown Ethertype' : 'ethertype Unknown'} (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
   }
   const lines = [`${number}${ts}${body}`];
-  if (opt.hex !== 'none') lines.push(...hexDump(frame, opt, state));
+  if (opt.hex !== 'none') lines.push(...hexDump(frame, opt, state, TRUNCATION_MARKER.test(body)));
   return lines.join('\n');
 }

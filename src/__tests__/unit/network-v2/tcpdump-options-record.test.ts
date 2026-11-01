@@ -11,6 +11,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { Hub } from '@/network/devices/Hub';
 import { installVirtualClock } from '../../support/ntpTime';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
@@ -145,7 +146,32 @@ async function recordRip(): Promise<string> {
   return pc.executeCommand('cat all.cap');
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip };
+async function recordOspf(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 300');
+  await new Promise((r) => setTimeout(r, 30));
+  const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
+    for (const line of lines) await router.executeCommand(line);
+  };
+  await configure(r1, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'ip ospf priority 100', 'no shutdown', 'exit',
+    'interface Loopback1', 'ip address 172.16.1.1 255.255.255.0', 'exit', 'router ospf 1', 'router-id 1.1.1.1', 'network 10.9.0.0 0.0.255.255 area 0', 'network 172.16.1.0 0.0.0.255 area 0', 'exit', 'end']);
+  await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.3 255.255.255.0', 'no shutdown', 'exit',
+    'interface Loopback1', 'ip address 172.16.3.1 255.255.255.0', 'exit', 'interface Loopback2', 'ip address 172.17.3.1 255.255.255.0', 'exit', 'router ospf 1', 'router-id 3.3.3.3', 'network 10.9.0.0 0.0.255.255 area 0', 'network 172.16.3.0 0.0.0.255 area 0', 'redistribute connected subnets', 'exit', 'end']);
+  await clock.advance(45_000);
+  await pc.executeCommand('ping -c 1 10.9.0.1');
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

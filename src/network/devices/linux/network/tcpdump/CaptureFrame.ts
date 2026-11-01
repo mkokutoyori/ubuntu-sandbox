@@ -25,6 +25,8 @@ import {
   type RIPPacket,
 } from '@/network/core/types';
 import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
+import { ospfPacketBytes } from '@/network/ospf/OspfWire';
+import type { OSPFPacket } from '@/network/ospf/types';
 import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
@@ -335,6 +337,7 @@ function synthL4Bytes(pkt: IPv4Packet): number[] {
   }
   if (payload?.type === 'udp') return synthUdpBytes(pkt.payload as UDPPacket, source, destination);
   if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
+  if (payload?.type === 'ospf') return ospfPacketBytes(pkt.payload as OSPFPacket) ?? [];
   return [];
 }
 

@@ -79,6 +79,12 @@ function serializeLSAForChecksum(lsa: LSA): number[] {
   return bytes;
 }
 
+const LSA_HEADER_AFTER_AGE_BYTES = 18;
+
+export function lsaBodyBytes(lsa: LSA): number[] {
+  return serializeLSAForChecksum(lsa).slice(LSA_HEADER_AFTER_AGE_BYTES);
+}
+
 /**
  * Compute the Fletcher-16 checksum of an LSA (RFC 2328 §12.4.7).
  * The lsAge field is excluded; the checksum field is treated as zero.

@@ -17,6 +17,11 @@
  * Third lab, "rip": a PC cabled to a Cisco router that runs RIPv2 with a neighbour (CDP switched off: its frames are still zero bytes, see TODO.md). Measured before the change: the RIP datagrams carried
  * zero-filled bytes, which the real tool printed as `RIPv0` with a hex dump; the simulator now puts the RFC 2453 wire format in the capture (command, version, entries, text authentication) and prints it like
  * print-rip.c (request with the AFI 0 entry, responses with `AFI IPv4, %15s/%-2d, tag, metric, next-hop`, `-v` hex dump of the datagram). 21 of the 29 cases of this lab fall before; the other 8 print no RIP line.
+ * Fourth lab, "ospf": a PC, two Cisco routers (one redistributing a connected network) and a hub, so the capture holds the whole OSPFv2 exchange (Hello with and without neighbours, Database Description,
+ * LS-Request, LS-Update with Router, Network and External LSAs, LS-Ack). Measured before the change: every OSPF packet carried zero bytes and an IP length of 84, the real tool printed `OSPFv0, unknown LS-type 0`.
+ * The simulator now writes the RFC 2328 wire format (src/network/ospf/OspfWire.ts: header with Internet checksum, Hello, DD, LSR, LSU, LSAck, LSA headers with the RFC 905 Fletcher checksum, MD5 trailer) and the
+ * IP length of the datagram is that of the packet; TcpdumpOspf.ts ports print-ospf.c (including the [|ospf2] that the real LS-Ack loop ends with, after which -A/-x/-X dump the frame from the link header).
+ * 28 of the 116 cases fall without the change (the lab's cases that print an OSPF line); the others print none.
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.
