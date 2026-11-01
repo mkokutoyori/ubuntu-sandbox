@@ -4,7 +4,6 @@ import {
   computeIPv4Checksum,
   type ICMPPacket,
   type IPv4Packet,
-  type TCPPacket,
   type UDPPacket,
 } from '../core/types';
 import {
@@ -17,7 +16,7 @@ import {
 } from '../layers/transport/UdpChecksum';
 
 export function recomputeL4Checksum(result: { sourceIP: { toString(): string }; destinationIP: { toString(): string }; payload: unknown }): void {
-  const payload = result.payload as (UDPPacket | TCPPacket | undefined);
+  const payload = result.payload as (UDPPacket | TcpSegment | undefined);
   if (!payload) return;
   const srcIp = result.sourceIP.toString();
   const dstIp = result.destinationIP.toString();
@@ -34,7 +33,7 @@ export function rewriteSrcIP(pkt: IPv4Packet, newSrc: string, newSrcPort?: numbe
   const result: IPv4Packet = { ...pkt, sourceIP: new IPAddress(newSrc), headerChecksum: 0 };
 
   if (newSrcPort !== undefined) {
-    const payload = pkt.payload as (UDPPacket | TCPPacket | ICMPPacket);
+    const payload = pkt.payload as (UDPPacket | TcpSegment | ICMPPacket);
     if (payload && payload.type === 'udp') {
       result.payload = { ...payload, sourcePort: newSrcPort };
     } else if (payload && payload.type === 'tcp') {
@@ -56,7 +55,7 @@ export function rewriteDestIP(pkt: IPv4Packet, newDst: string, newDstPort?: numb
   const result: IPv4Packet = { ...pkt, destinationIP: new IPAddress(newDst), headerChecksum: 0 };
 
   if (newDstPort !== undefined) {
-    const payload = pkt.payload as (UDPPacket | TCPPacket | ICMPPacket);
+    const payload = pkt.payload as (UDPPacket | TcpSegment | ICMPPacket);
     if (payload && payload.type === 'udp') {
       result.payload = { ...payload, destinationPort: newDstPort };
     } else if (payload && payload.type === 'tcp') {
@@ -75,7 +74,7 @@ export function rewriteDestIP(pkt: IPv4Packet, newDst: string, newDstPort?: numb
 }
 
 export function getPacketSrcPort(pkt: IPv4Packet): number {
-  const payload = pkt.payload as (UDPPacket | TCPPacket);
+  const payload = pkt.payload as (UDPPacket | TcpSegment);
   if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.sourcePort;
   if (pkt.protocol === IP_PROTO_ICMP) {
     const icmp = pkt.payload as ICMPPacket;
@@ -85,7 +84,7 @@ export function getPacketSrcPort(pkt: IPv4Packet): number {
 }
 
 export function getPacketDstPort(pkt: IPv4Packet): number {
-  const payload = pkt.payload as (UDPPacket | TCPPacket);
+  const payload = pkt.payload as (UDPPacket | TcpSegment);
   if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.destinationPort;
   if (pkt.protocol === IP_PROTO_ICMP) {
     const icmp = pkt.payload as ICMPPacket;

@@ -1,8 +1,9 @@
+import { type TcpSegment } from '@/network/tcp/types';
 /*
  * Probe — `diagnose sniffer packet` prints the TCP sequence and
  * acknowledgement numbers the segment really carries.
  *
- * Before: the renderer read the segment as the legacy core `TCPPacket`
+ * Before: the renderer read the segment as the legacy core `TcpSegment`
  * (`sequenceNumber`, `acknowledgementNumber`) while the TCP stack puts a
  * `TcpSegment` (`sequence`, `acknowledgement`) on the wire, so every TCP
  * line read "syn undefined" and a SYN-ACK "syn undefined ack undefined";

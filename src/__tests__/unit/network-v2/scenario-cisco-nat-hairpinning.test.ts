@@ -15,6 +15,7 @@
  * correction proposée (ACL-HAIRPIN + PAT overload) est vérifiée
  * littéralement contre le comportement réel du moteur.
  */
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -22,7 +23,6 @@ import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters, createIPv4Packet, IP_PROTO_TCP } from '@/network/core/types';
-import type { TCPPacket } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -84,10 +84,10 @@ async function buildLab(): Promise<Lab> {
 }
 
 function makeOracleSyn(): ReturnType<typeof createIPv4Packet> {
-  const tcp: TCPPacket = {
+  const tcp: TcpSegment = {
     type: 'tcp', sourcePort: 50001, destinationPort: 1521,
-    sequenceNumber: 1, acknowledgmentNumber: 0, dataOffset: 5,
-    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
+    sequence: 1, acknowledgement: 0, dataOffset: 5,
+    flags: { ...noFlags(), ...{ syn: true, ack: false, fin: false, rst: false, psh: false, urg: false } },
     window: 65535, checksum: 0, urgentPointer: 0, options: [], payload: null,
   };
   return createIPv4Packet(new IPAddress(PC_LINUX1_IP), new IPAddress(ORACLE_PUBLIC_IP), IP_PROTO_TCP, 64, tcp, 40);

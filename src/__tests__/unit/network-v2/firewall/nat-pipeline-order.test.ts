@@ -21,6 +21,7 @@
  * interface de sortie — donc la mauvaise zone de destination, donc la
  * mauvaise regle.
  */
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 
 import { describe, it, expect } from 'vitest';
 import { createCoreStages, type FirewallServices } from '@/network/devices/firewall/pipeline/stages/coreStages';
@@ -36,7 +37,7 @@ import { RouteTable } from '@/network/devices/firewall/l3/RouteTable';
 import { NatPolicyStore } from '@/network/devices/firewall/nat/NatPolicyStore';
 import { FirewallNatEngine } from '@/network/devices/firewall/nat/FirewallNatEngine';
 import { hostAddress, subnetAddress } from '@/network/devices/firewall/model/AddressObject';
-import { IPAddress, IP_PROTO_TCP, type IPv4Packet, type TCPPacket } from '@/network/core/types';
+import { IPAddress, IP_PROTO_TCP, type IPv4Packet } from '@/network/core/types';
 
 const CHAIN = [
   'ingress-zone', 'session-lookup', 'tcp-state-check', 'nat-destination',
@@ -98,12 +99,12 @@ function lab(natOrder: Partial<FirewallServices['natOrder']> = {}) {
 }
 
 function tcp(src: string, dst: string, sport = 54321, dport = 80): IPv4Packet {
-  const segment: TCPPacket = {
+  const segment: TcpSegment = {
     type: 'tcp', sourcePort: sport, destinationPort: dport,
-    sequenceNumber: 0, acknowledgementNumber: 0,
-    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
-    windowSize: 65535, checksum: 0, payload: null,
-  } as TCPPacket;
+    sequence: 0, acknowledgement: 0,
+    flags: { ...noFlags(), ...{ syn: true, ack: false, fin: false, rst: false, psh: false, urg: false } },
+    window: 65535, checksum: 0, dataOffset: 5, urgentPointer: 0, options: [], payload: null,
+  } as TcpSegment;
   return {
     type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 60,
     identification: 1, flags: 0, fragmentOffset: 0, ttl: 64,

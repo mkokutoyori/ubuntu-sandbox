@@ -13,7 +13,8 @@
  * real inside endpoint — exactly what `nat alg ftp enable` (Huawei) /
  * `ip nat service ftp` (Cisco) do on a real router.
  */
-import type { IPv4Packet, TCPPacket } from '@/network/core/types';
+import type { TcpSegment } from '../../../tcp/types';
+import type { IPv4Packet, } from '@/network/core/types';
 import { IP_PROTO_TCP, computeIPv4Checksum } from '@/network/core/types';
 import {
   decodePortArgument, encodePortArgument, parseEprtArgument, encodeEprtArgument, decodeEpsvReplyArgument,
@@ -37,7 +38,7 @@ const EPRT_COMMAND_RE = /^EPRT (\S+)\r\n/i;
 const PASV_REPLY_RE = /^227 [^(]*\(([\d,]+)\)/i;
 const EPSV_REPLY_RE = /^229 [^(]*(\([^)]*\))/i;
 
-function withPayload(pkt: IPv4Packet, tcp: TCPPacket, text: string): IPv4Packet {
+function withPayload(pkt: IPv4Packet, tcp: TcpSegment, text: string): IPv4Packet {
   const delta = text.length - (tcp.payload as string).length;
   const result: IPv4Packet = {
     ...pkt, totalLength: pkt.totalLength + delta, headerChecksum: 0, payload: { ...tcp, payload: text },
@@ -50,7 +51,7 @@ function withPayload(pkt: IPv4Packet, tcp: TCPPacket, text: string): IPv4Packet 
 export function inspectAndRewriteFtpAlg(pkt: IPv4Packet, natEngine: NATEngine, announcedIP: string): IPv4Packet {
   if (!natEngine.isAlgEnabled('ftp')) return pkt;
   if (pkt.protocol !== IP_PROTO_TCP) return pkt;
-  const tcp = pkt.payload as TCPPacket;
+  const tcp = pkt.payload as TcpSegment;
   if (!tcp || tcp.type !== 'tcp') return pkt;
   if (tcp.sourcePort !== FTP_CONTROL_PORT && tcp.destinationPort !== FTP_CONTROL_PORT) return pkt;
   if (typeof tcp.payload !== 'string') return pkt;

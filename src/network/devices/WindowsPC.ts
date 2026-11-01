@@ -14,6 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { synProbeSegment, type TcpSegment } from '../tcp/types';
 import { INTERNATIONAL_KEY, regionalFormatsFrom } from './windows/WindowsRegionalSettings';
 import { ScriptedTerminalIO } from '@/network/protocols/ssh/session/ScriptedTerminalIO';
 import type { SshSession } from '@/network/protocols/ssh/session/SshSession';
@@ -66,7 +67,7 @@ import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord } from 
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
-import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type TCPPacket, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
+import { IPAddress, IPv6Address, SubnetMask, DeviceType, type IPv4Packet, type ICMPType, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ICMP, createIPv4Packet } from '../core/types';
 import { runSshd, type SshdDaemonRequest } from '../protocols/ssh/server/SshdCommand';
 import { WINDOWS_SSHD_PROFILE } from '../protocols/ssh/server/SshdDump';
 import { WindowsSshServerContext, windowsPathOf, SSHD_EXECUTABLE } from '../protocols/ssh/server/WindowsSshServerContext';
@@ -6896,13 +6897,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   inboundSshFirewallVerdict(srcIp: string, dstPort: number): 'accept' | 'drop' {
     const dstIp = this.getPorts().map(p => p.getIPAddress()?.toString()).find(Boolean) ?? '0.0.0.0';
-    const tcp: TCPPacket = {
-      type: 'tcp',
-      sourcePort: 49152, destinationPort: dstPort,
-      sequenceNumber: 0, acknowledgementNumber: 0,
-      flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
-      windowSize: 65535, checksum: 0, payload: null,
-    };
+    const tcp = synProbeSegment(dstPort);
     const ipPkt = createIPv4Packet(
       new IPAddress(srcIp), new IPAddress(dstIp),
       IP_PROTO_TCP, 64, tcp, 20,
@@ -6982,7 +6977,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private belongsToOwnFlow(ipPkt: IPv4Packet, facts: FirewallPacketFacts): boolean {
     if (facts.direction !== 'Inbound') return false;
     if (ipPkt.protocol === IP_PROTO_TCP) {
-      const segment = ipPkt.payload as TCPPacket | null;
+      const segment = ipPkt.payload as TcpSegment | null;
       if (segment && segment.flags.syn && !segment.flags.ack) return false;
       const peer = facts.remoteAddress.toString();
       return this.getTcpStack().listSockets().some(s => s.localPort === facts.localPort

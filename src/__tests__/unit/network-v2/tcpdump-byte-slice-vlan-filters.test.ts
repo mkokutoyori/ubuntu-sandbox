@@ -1,3 +1,4 @@
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
@@ -7,7 +8,7 @@ import { decodeEthernetFrame } from '@/network/devices/linux/network/tcpdump/Cap
 import {
   MACAddress, IPAddress, resetCounters,
   ETHERTYPE_IPV4, IP_PROTO_TCP, computeIPv4Checksum,
-  type EthernetFrame, type IPv4Packet, type TCPPacket,
+  type EthernetFrame, type IPv4Packet,
 } from '@/network/core/types';
 import type { TaggedEthernetFrame, Dot1QTag } from '@/network/devices/Switch';
 import { Logger } from '@/network/core/Logger';
@@ -25,12 +26,12 @@ beforeEach(() => {
   Logger.reset();
 });
 
-function buildTcpFrame(flags: Partial<TCPPacket['flags']>, tag?: Dot1QTag): EthernetFrame {
-  const tcp: TCPPacket = {
+function buildTcpFrame(flags: Partial<TcpSegment['flags']>, tag?: Dot1QTag): EthernetFrame {
+  const tcp: TcpSegment = {
     type: 'tcp', sourcePort: 1234, destinationPort: 80,
-    sequenceNumber: 0, acknowledgementNumber: 0,
-    flags: { syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...flags },
-    windowSize: 65535, checksum: 0, payload: null,
+    sequence: 0, acknowledgement: 0,
+    flags: { ...noFlags(), ...{ syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...flags } },
+    window: 65535, checksum: 0, dataOffset: 5, urgentPointer: 0, options: [], payload: null,
   };
   const ip: IPv4Packet = {
     type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 40,

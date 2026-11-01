@@ -8,7 +8,7 @@
  * stack entirely, so this keeps that one legitimate use alive as a plain
  * test fixture instead of production source.
  */
-import type { TCPPacket } from '@/network/core/types';
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 
 export class MockTcpConnection {
   private readonly dataHandlers: Array<(data: string) => void> = [];
@@ -24,38 +24,38 @@ export class MockTcpConnection {
     readonly remoteIp: string,
     readonly remotePort: number,
     initialSeq: number,
-    private readonly sendFn: (seg: TCPPacket) => void,
+    private readonly sendFn: (seg: TcpSegment) => void,
   ) {
     this.seqNum = initialSeq;
   }
 
   write(data: string): void {
-    const seg: TCPPacket = {
+    const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: this.localPort,
       destinationPort: this.remotePort,
-      sequenceNumber: this.seqNum,
-      acknowledgementNumber: this.ackNum,
-      flags: { syn: false, ack: true, fin: false, rst: false, psh: true, urg: false },
-      windowSize: 65535,
+      sequence: this.seqNum,
+      acknowledgement: this.ackNum,
+      flags: { ...noFlags(), ...{ syn: false, ack: true, fin: false, rst: false, psh: true, urg: false } },
+      window: 65535,
       checksum: 0,
-      payload: data,
+      dataOffset: 5, urgentPointer: 0, options: [], payload: data,
     };
     this.seqNum += data.length;
     this.sendFn(seg);
   }
 
   close(): void {
-    const seg: TCPPacket = {
+    const seg: TcpSegment = {
       type: 'tcp',
       sourcePort: this.localPort,
       destinationPort: this.remotePort,
-      sequenceNumber: this.seqNum,
-      acknowledgementNumber: this.ackNum,
-      flags: { syn: false, ack: true, fin: true, rst: false, psh: false, urg: false },
-      windowSize: 65535,
+      sequence: this.seqNum,
+      acknowledgement: this.ackNum,
+      flags: { ...noFlags(), ...{ syn: false, ack: true, fin: true, rst: false, psh: false, urg: false } },
+      window: 65535,
       checksum: 0,
-      payload: null,
+      dataOffset: 5, urgentPointer: 0, options: [], payload: null,
     };
     this.sendFn(seg);
   }

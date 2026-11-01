@@ -20,6 +20,7 @@
  * `reverse(reverse(k)) === k` est vérifié sur les trois familles parce que
  * c'est l'invariant qui garantit qu'aucun sens ne se perd.
  */
+import { synProbeSegment, type TcpSegment } from '@/network/tcp/types';
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -35,7 +36,6 @@ import {
   IP_PROTO_TCP,
   IP_PROTO_UDP,
   type IPv4Packet,
-  type TCPPacket,
   type UDPPacket,
   type ICMPPacket,
   type ICMPType,
@@ -62,18 +62,8 @@ function ipv4(src: string, dst: string, protocol: number, payload: unknown): IPv
   } as IPv4Packet;
 }
 
-function tcp(sourcePort: number, destinationPort: number): TCPPacket {
-  return {
-    type: 'tcp',
-    sourcePort,
-    destinationPort,
-    sequenceNumber: 0,
-    acknowledgementNumber: 0,
-    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
-    windowSize: 65535,
-    checksum: 0,
-    payload: null,
-  } as TCPPacket;
+function tcp(sourcePort: number, destinationPort: number): TcpSegment {
+  return synProbeSegment(destinationPort, sourcePort);
 }
 
 function udp(sourcePort: number, destinationPort: number): UDPPacket {

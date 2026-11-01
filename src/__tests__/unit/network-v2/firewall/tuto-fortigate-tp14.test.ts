@@ -1,3 +1,4 @@
+import { synProbeSegment } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
@@ -6,7 +7,6 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import {
   IPAddress, IP_PROTO_TCP, MACAddress, createIPv4Packet, resetCounters,
-  type TCPPacket,
 } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -270,22 +270,12 @@ describe('TP 14 — le bilan, exigence par exigence', () => {
       const usurpe = createIPv4Packet(
         new IPAddress('192.168.10.99'), new IPAddress('192.168.10.10'),
         IP_PROTO_TCP, 64,
-        {
-          type: 'tcp', sourcePort: 49152, destinationPort: 80,
-          sequenceNumber: 0, acknowledgementNumber: 0,
-          flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
-          windowSize: 65535, checksum: 0, payload: null,
-        } as TCPPacket,
+        synProbeSegment(80),
         20);
       const legitime = createIPv4Packet(
         new IPAddress('203.0.113.50'), new IPAddress('192.168.10.10'),
         IP_PROTO_TCP, 64,
-        {
-          type: 'tcp', sourcePort: 49152, destinationPort: 80,
-          sequenceNumber: 0, acknowledgementNumber: 0,
-          flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
-          windowSize: 65535, checksum: 0, payload: null,
-        } as TCPPacket,
+        synProbeSegment(80),
         20);
 
       expect(r1.evaluateACLByName('ANTI-BRUIT', usurpe, new Date())).toBe('deny');

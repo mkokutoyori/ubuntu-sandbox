@@ -114,7 +114,6 @@ import {
   type EthernetFrame,
   type ICMPType,
   type ICMPv6Type,
-  type TCPPacket,
   type ICMPPacket,
   type ICMPv6Packet,
   icmpTypeNumber,
@@ -4909,7 +4908,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[]; tcpMss?: number } {
-    const segment = payload as TCPPacket | TcpSegment | undefined;
+    const segment = payload as TcpSegment | TcpSegment | undefined;
     if (segment?.type !== 'tcp') return {};
     const options = 'options' in segment ? segment.options : [];
     const mss = options.find((option) => option.kind === 'mss');

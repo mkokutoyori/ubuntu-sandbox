@@ -10,6 +10,7 @@
  * Group 7: Huawei VRP CLI — display commands
  * Group 8: NATEngine packet translation (SNAT/DNAT/PAT)
  */
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
@@ -19,7 +20,7 @@ import {
   IP_PROTO_ICMP, IP_PROTO_UDP, IP_PROTO_TCP,
   resetCounters,
 } from '@/network/core/types';
-import type { UDPPacket, TCPPacket, ICMPPacket, IPv4Packet } from '@/network/core/types';
+import type { UDPPacket, ICMPPacket, IPv4Packet } from '@/network/core/types';
 import { NATEngine } from '@/network/devices/router/NATEngine';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { HuaweiRouter } from '@/network/devices/HuaweiRouter';
@@ -64,11 +65,11 @@ function makeTCPPacket(
   srcIP: string, dstIP: string, srcPort: number, dstPort: number,
   flags: Partial<{ syn: boolean; ack: boolean; fin: boolean; rst: boolean }> = {},
 ): IPv4Packet {
-  const tcp: TCPPacket = {
+  const tcp: TcpSegment = {
     type: 'tcp', sourcePort: srcPort, destinationPort: dstPort,
-    sequenceNumber: 1000, acknowledgementNumber: 0,
-    flags: { syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...flags },
-    windowSize: 65535, checksum: 0, payload: null,
+    sequence: 1000, acknowledgement: 0,
+    flags: { ...noFlags(), ...{ syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...flags } },
+    window: 65535, checksum: 0, dataOffset: 5, urgentPointer: 0, options: [], payload: null,
   };
   return createIPv4Packet(new IPAddress(srcIP), new IPAddress(dstIP), IP_PROTO_TCP, 64, tcp, 40);
 }
@@ -734,7 +735,7 @@ describe('Group 9: TCP NAT/PAT', () => {
     const out = engine.translateOutbound(pkt, 'outside', 'inside');
     expect(out).not.toBeNull();
     expect(out!.sourceIP.toString()).toBe('203.0.113.1');
-    const tcp = out!.payload as TCPPacket;
+    const tcp = out!.payload as TcpSegment;
     expect(tcp.sourcePort).toBe(4321);
   });
 
@@ -742,13 +743,13 @@ describe('Group 9: TCP NAT/PAT', () => {
     engine.addDynamicRule({ aclId: '1', type: 'overload' });
     const syn = makeTCPPacket('192.168.1.10', '8.8.8.8', 4321, 80, { syn: true });
     const out = engine.translateOutbound(syn, 'outside', 'inside');
-    const mappedPort = (out!.payload as TCPPacket).sourcePort;
+    const mappedPort = (out!.payload as TcpSegment).sourcePort;
 
     const reply = makeTCPPacket('8.8.8.8', '203.0.113.1', 80, mappedPort, { syn: true, ack: true });
     const inPkt = engine.translateInbound(reply, 'outside');
     expect(inPkt).not.toBeNull();
     expect(inPkt!.destinationIP.toString()).toBe('192.168.1.10');
-    const replyTCP = inPkt!.payload as TCPPacket;
+    const replyTCP = inPkt!.payload as TcpSegment;
     expect(replyTCP.destinationPort).toBe(4321);
   });
 
@@ -758,7 +759,7 @@ describe('Group 9: TCP NAT/PAT', () => {
     const out = engine.translateInbound(pkt, 'outside');
     expect(out).not.toBeNull();
     expect(out!.destinationIP.toString()).toBe('192.168.1.20');
-    expect((out!.payload as TCPPacket).destinationPort).toBe(22);
+    expect((out!.payload as TcpSegment).destinationPort).toBe(22);
   });
 
   it('9.4 TCP static port-forwarding — does not match wrong port', () => {

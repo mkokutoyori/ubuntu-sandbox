@@ -20,6 +20,7 @@
  * cas : refus par la politique, absence de route, paquet non-SYN sans
  * session, drapeaux invalides, zone indeterminee.
  */
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createCoreStages, type FirewallServices } from '@/network/devices/firewall/pipeline/stages/coreStages';
@@ -32,7 +33,8 @@ import { PolicyEvaluator } from '@/network/devices/firewall/policy/PolicyEvaluat
 import { SessionTable } from '@/network/devices/firewall/session/SessionTable';
 import { InterfaceTable } from '@/network/devices/firewall/l3/InterfaceTable';
 import { RouteTable } from '@/network/devices/firewall/l3/RouteTable';
-import { IPAddress, IP_PROTO_TCP, type IPv4Packet, type TCPFlags, type TCPPacket } from '@/network/core/types';
+import { IPAddress, IP_PROTO_TCP, type IPv4Packet } from '@/network/core/types';
+import type { TcpFlags } from '@/network/tcp/types';
 
 const CHAIN = [
   'ingress-zone', 'session-lookup', 'tcp-state-check',
@@ -76,16 +78,16 @@ function lab() {
   return { services, zones, routes, pipeline: FirewallPipeline.fromStageNames(CHAIN, registry), policy, sessions };
 }
 
-function flags(set: Partial<TCPFlags>): TCPFlags {
-  return { syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...set };
+function flags(set: Partial<TcpFlags>): TcpFlags {
+  return { ...noFlags(), ...set };
 }
 
-function tcpPacket(src: string, dst: string, sport: number, dport: number, f: TCPFlags): IPv4Packet {
-  const segment: TCPPacket = {
+function tcpPacket(src: string, dst: string, sport: number, dport: number, f: TcpFlags): IPv4Packet {
+  const segment: TcpSegment = {
     type: 'tcp', sourcePort: sport, destinationPort: dport,
-    sequenceNumber: 0, acknowledgementNumber: 0, flags: f,
-    windowSize: 65535, checksum: 0, payload: null,
-  } as TCPPacket;
+    sequence: 0, acknowledgement: 0, flags: { ...noFlags(), ...f },
+    window: 65535, checksum: 0, dataOffset: 5, urgentPointer: 0, options: [], payload: null,
+  } as TcpSegment;
   return {
     type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 60,
     identification: 1, flags: 0, fragmentOffset: 0, ttl: 64,

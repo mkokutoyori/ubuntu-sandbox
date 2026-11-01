@@ -1,3 +1,4 @@
+import { type TcpSegment } from '@/network/tcp/types';
 /*
  * Probe — config system settings asymroute / asymroute-icmp: accepted, and
  * DECIDING what happens to a packet that matches no session.
@@ -30,7 +31,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import {
   IPAddress, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_TCP, nextIPv4Id, computeIPv4Checksum,
-  type IPv4Packet, type ICMPPacket, type TCPPacket,
+  type IPv4Packet, type ICMPPacket,
 } from '@/network/core/types';
 import { framesSentOn } from '../../../support/wireWatch';
 import { type Cli, taper } from '../../new_firewall/fortigateBatteryHarness';
@@ -70,13 +71,13 @@ async function buildLab(policy: boolean): Promise<Lab> {
   return { pc, srv, fw };
 }
 
-function tcpSegment(flags: Partial<TCPPacket['flags']>): IPv4Packet {
+function tcpSegment(flags: Partial<TcpSegment['flags']>): IPv4Packet {
   const segment = {
     type: 'tcp', sourcePort: 40000, destinationPort: 80,
     sequenceNumber: 1000, acknowledgementNumber: 5000,
     flags: { syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...flags },
     windowSize: 65535, checksum: 0, payload: null,
-  } as unknown as TCPPacket;
+  } as unknown as TcpSegment;
   return ipv4(IP_PROTO_TCP, segment, 40);
 }
 

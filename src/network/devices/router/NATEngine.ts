@@ -15,7 +15,7 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { IPAddress, IPv4Packet, computeIPv4Checksum, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '../../core/types';
-import type { UDPPacket, TCPPacket, ICMPPacket } from '../../core/types';
+import type { UDPPacket, ICMPPacket } from '../../core/types';
 import { computeTcpChecksum } from '../../tcp/types';
 import { computeUdpChecksum } from '@/network/layers/transport/UdpChecksum';
 import type { TcpSegment } from '../../tcp/types';
@@ -504,7 +504,7 @@ export class NATEngine {
   translateInbound(pkt: IPv4Packet, inIface: string): IPv4Packet | null {
     const translated = this.translateInboundPacket(pkt, inIface);
     if (!translated || translated.protocol !== IP_PROTO_TCP) return translated;
-    const tcp = pkt.payload as TCPPacket;
+    const tcp = pkt.payload as TcpSegment;
     if (!tcp || tcp.type !== 'tcp') return translated;
     const session = this.reverseSessions.get(makeKey(pkt.protocol, pkt.destinationIP.toString(), tcp.destinationPort));
     return session?.seqAdjust ? this.shiftSequence(translated, 'inbound', session) : translated;
@@ -658,10 +658,10 @@ export class NATEngine {
   noteAlgRewrite(translated: IPv4Packet, originalLength: number, newLength: number): void {
     const delta = newLength - originalLength;
     if (delta === 0) return;
-    const tcp = translated.payload as TcpWire;
+    const tcp = translated.payload as TcpSegment;
     const session = this.reverseSessions.get(makeKey(translated.protocol, translated.sourceIP.toString(), tcp.sourcePort));
     if (!session) return;
-    const pivot = (sequenceOf(tcp) + originalLength) >>> 0;
+    const pivot = (tcp.sequence + originalLength) >>> 0;
     const adjustments = session.seqAdjust ?? [];
     const last = adjustments[adjustments.length - 1];
     if (last && pivot <= last.pivot) return;
@@ -670,17 +670,17 @@ export class NATEngine {
   }
 
   insideLocalOf(translated: IPv4Packet): string | null {
-    const tcp = translated.payload as TCPPacket;
+    const tcp = translated.payload as TcpSegment;
     return this.reverseSessions.get(makeKey(translated.protocol, translated.sourceIP.toString(), tcp.sourcePort))?.localIP ?? null;
   }
 
   private shiftSequence(pkt: IPv4Packet, direction: 'outbound' | 'inbound', session?: NatSession): IPv4Packet {
-    const tcp = pkt.payload as TcpWire;
+    const tcp = pkt.payload as TcpSegment;
     const owner = session ?? this.reverseSessions.get(makeKey(pkt.protocol, pkt.sourceIP.toString(), tcp.sourcePort));
     const adjustments = owner?.seqAdjust;
     if (!adjustments || adjustments.length === 0) return pkt;
-    const sequence = sequenceOf(tcp);
-    const acknowledgement = acknowledgementOf(tcp);
+    const sequence = tcp.sequence;
+    const acknowledgement = tcp.acknowledgement;
     let shiftedSequence = sequence;
     let shiftedAcknowledgement = acknowledgement;
     if (direction === 'outbound') {
@@ -1417,7 +1417,6 @@ function makeKey4(proto: number, srcIP: string, srcPort: number, dstIP: string, 
   return `${proto}:${srcIP}:${srcPort}:${dstIP}:${dstPort}`;
 }
 
-import type { TCPPacket as _TCP } from '../../core/types';
 import {
   getPacketDstPort,
   getPacketSrcPort,
@@ -1429,7 +1428,7 @@ import {
 
 /** Update TCP session state based on observed flags (simplified RFC 6146 §2.1). */
 function updateTcpState(session: NatSession, pkt: IPv4Packet, _dir: 'in' | 'out'): void {
-  const tcp = pkt.payload as _TCP;
+  const tcp = pkt.payload as TcpSegment;
   if (!tcp || tcp.type !== 'tcp') return;
 
   const flags = tcp.flags;
@@ -1448,20 +1447,8 @@ function updateTcpState(session: NatSession, pkt: IPv4Packet, _dir: 'in' | 'out'
   }
 }
 
-type TcpWire = TCPPacket | TcpSegment;
-
-function sequenceOf(tcp: TcpWire): number {
-  return 'sequence' in tcp ? tcp.sequence : tcp.sequenceNumber;
-}
-
-function acknowledgementOf(tcp: TcpWire): number {
-  return 'acknowledgement' in tcp ? tcp.acknowledgement : tcp.acknowledgementNumber;
-}
-
-function withSequence(tcp: TcpWire, sequence: number, acknowledgement: number): TcpWire {
-  return 'sequence' in tcp
-    ? { ...tcp, sequence, acknowledgement }
-    : { ...tcp, sequenceNumber: sequence, acknowledgementNumber: acknowledgement };
+function withSequence(tcp: TcpSegment, sequence: number, acknowledgement: number): TcpSegment {
+  return { ...tcp, sequence, acknowledgement };
 }
 
 function protoToName(proto: number): string {

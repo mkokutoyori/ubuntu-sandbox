@@ -1,6 +1,7 @@
+import type { TcpSegment } from '../../tcp/types';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
-import type { IPv6Packet, ICMPv6Packet, TCPPacket } from '../../core/types';
+import type { IPv6Packet, ICMPv6Packet, } from '../../core/types';
 import { IPv6Address } from '../../core/types';
 import type { IPv6ACL, IPv6ACLEntry } from '../Router';
 import type { AclPortSpec } from './acl/AclSyntax';
@@ -120,7 +121,7 @@ function icmpv6TypeNumberOf(name: string): number | null {
 function tcpFlagsMatch(entry: IPv6ACLEntry, pkt: IPv6Packet): boolean {
   if (!entry.tcpFlags && !entry.tcpEstablished) return true;
   if (pkt.nextHeader !== IP_PROTO_TCP) return false;
-  const tcp = pkt.payload as TCPPacket | undefined;
+  const tcp = pkt.payload as TcpSegment | undefined;
   const flags = tcp && tcp.type === 'tcp' ? tcp.flags : undefined;
   if (!flags) return false;
 

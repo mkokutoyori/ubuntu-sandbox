@@ -31,10 +31,10 @@ import {
   type ObservedTcpState,
 } from '@/network/devices/firewall/session/TcpStateMachine';
 import type { TcpState } from '@/network/tcp/types';
-import type { TCPFlags } from '@/network/core/types';
+import { noFlags, type TcpFlags } from '@/network/tcp/types';
 
-function flags(set: Partial<TCPFlags>): TCPFlags {
-  return { syn: false, ack: false, fin: false, rst: false, psh: false, urg: false, ...set };
+function flags(set: Partial<TcpFlags>): TcpFlags {
+  return { ...noFlags(), ...set };
 }
 
 const SYN = flags({ syn: true });

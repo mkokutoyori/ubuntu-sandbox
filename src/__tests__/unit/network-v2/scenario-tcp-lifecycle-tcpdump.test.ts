@@ -22,7 +22,8 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { Cable } from '@/network/hardware/Cable';
 import { IPAddress, SubnetMask, MACAddress, resetCounters } from '@/network/core/types';
-import type { EthernetFrame, IPv4Packet, TCPPacket } from '@/network/core/types';
+import type { EthernetFrame, IPv4Packet } from '@/network/core/types';
+import type { TcpSegment } from '@/network/tcp/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
@@ -236,7 +237,7 @@ describe('Scénario 1 — Analyse complète du cycle de vie TCP par dissection p
       const origTransmit = lan.cable.transmit.bind(lan.cable);
       lan.cable.transmit = ((frame: EthernetFrame, fromPort: Port) => {
         const ip = frame.payload as Partial<IPv4Packet> | undefined;
-        const tcp = ip?.payload as Partial<TCPPacket> | undefined;
+        const tcp = ip?.payload as Partial<TcpSegment> | undefined;
         const dataLength = typeof tcp?.payload === 'string' ? tcp.payload.length : 0;
         const isClientDataSegment = ip?.sourceIP?.toString() === CLIENT_IP
           && ip?.destinationIP?.toString() === SERVER_IP

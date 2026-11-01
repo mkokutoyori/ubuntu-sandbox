@@ -1,5 +1,6 @@
+import type { TcpSegment } from '../../../tcp/types';
 import { IPAddress } from '../../../core/types';
-import type { IPv4Packet, UDPPacket, TCPPacket } from '../../../core/types';
+import type { IPv4Packet, UDPPacket, } from '../../../core/types';
 
 export const DEFAULT_REFLEXIVE_TIMEOUT_SEC = 300;
 export const REFLEXIVE_TIMEOUT_MIN = 0;
@@ -38,7 +39,7 @@ function portsOf(packet: IPv4Packet): { source?: number; destination?: number } 
 }
 
 function isConnectionTeardown(packet: IPv4Packet): boolean {
-  const tcp = packet.payload as TCPPacket | undefined;
+  const tcp = packet.payload as TcpSegment | undefined;
   if (!tcp || tcp.type !== 'tcp') return false;
   return !!(tcp.flags?.rst || tcp.flags?.fin);
 }

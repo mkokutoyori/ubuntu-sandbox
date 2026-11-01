@@ -19,13 +19,14 @@
  *   corriger deux fois cote routeur — et que ce modele rend impossible,
  *   puisque la traduction vit sur la session et non sur la regle.
  */
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 
 import { describe, it, expect } from 'vitest';
 import { FirewallNatEngine } from '@/network/devices/firewall/nat/FirewallNatEngine';
 import { NatPolicyStore } from '@/network/devices/firewall/nat/NatPolicyStore';
 import { ObjectStore } from '@/network/devices/firewall/model/ObjectStore';
 import { hostAddress, subnetAddress } from '@/network/devices/firewall/model/AddressObject';
-import { IPAddress, IP_PROTO_TCP, type IPv4Packet, type TCPPacket } from '@/network/core/types';
+import { IPAddress, IP_PROTO_TCP, type IPv4Packet } from '@/network/core/types';
 
 function objects(): ObjectStore {
   const s = new ObjectStore();
@@ -47,12 +48,12 @@ function engine(store = new NatPolicyStore()) {
 }
 
 function tcp(src: string, dst: string, sport = 54321, dport = 80): IPv4Packet {
-  const segment: TCPPacket = {
+  const segment: TcpSegment = {
     type: 'tcp', sourcePort: sport, destinationPort: dport,
-    sequenceNumber: 0, acknowledgementNumber: 0,
-    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
-    windowSize: 65535, checksum: 0, payload: null,
-  } as TCPPacket;
+    sequence: 0, acknowledgement: 0,
+    flags: { ...noFlags(), ...{ syn: true, ack: false, fin: false, rst: false, psh: false, urg: false } },
+    window: 65535, checksum: 0, dataOffset: 5, urgentPointer: 0, options: [], payload: null,
+  } as TcpSegment;
   return {
     type: 'ipv4', version: 4, ihl: 5, tos: 0, totalLength: 60,
     identification: 1, flags: 0, fragmentOffset: 0, ttl: 64,
@@ -67,8 +68,8 @@ const CTX = {
   ingressInterface: 'port1', egressInterface: 'port2',
 };
 
-function srcPortOf(p: IPv4Packet): number { return (p.payload as TCPPacket).sourcePort; }
-function dstPortOf(p: IPv4Packet): number { return (p.payload as TCPPacket).destinationPort; }
+function srcPortOf(p: IPv4Packet): number { return (p.payload as TcpSegment).sourcePort; }
+function dstPortOf(p: IPv4Packet): number { return (p.payload as TcpSegment).destinationPort; }
 
 describe('FirewallNatEngine — NAT source vers l\'adresse d\'interface', () => {
   function withPat() {
@@ -148,7 +149,7 @@ describe('FirewallNatEngine — NAT source vers l\'adresse d\'interface', () => 
 
     const result = nat.translateOutbound(tcp('192.168.1.10', '203.0.113.5'), CTX);
 
-    expect((result.packet.payload as TCPPacket).checksum).not.toBe(0);
+    expect((result.packet.payload as TcpSegment).checksum).not.toBe(0);
   });
 });
 

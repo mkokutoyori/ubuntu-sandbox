@@ -428,23 +428,6 @@ distingueraient pas. `proxy_arp` pour un hote est sans objet (un hote ne transme
 
 ---
 
-### [tcp] deux types pour un segment TCP : `TCPPacket` (core) et `TcpSegment` (pile)
-La pile (`tcp/TcpStack`) emet des `TcpSegment` (`sequence`,
-`acknowledgement`, `window`, `options`) ; `core/types.ts` declare encore
-`TCPPacket` (`sequenceNumber`, `acknowledgementNumber`, `windowSize`),
-qu'aucun emetteur reel ne produit. Le pare-feu lit desormais `TcpSegment`
-(le renifleur affichait « syn undefined » en lisant l'autre). Restent sur
-`TCPPacket` : `nat/rewrite.ts`, `devices/router/NATEngine.ts`,
-`router/nat/FtpAlg.ts`, `router/ACLEngine.ts`, `router/Ipv6AclEngine.ts`,
-`router/acl/ReflexiveSessions.ts`, `Router.ts`, `EndHost.ts`,
-`WindowsPC.ts`, `linux/network/HostLookup.ts`. Ils ne lisent que les
-ports et les drapeaux, communs aux deux formes — aucun defaut mesure
-aujourd'hui, mais tout nouveau lecteur de numero de sequence ou de fenetre
-y lirait `undefined`.
-**Pourquoi ce n'est pas ferme ici** : dix fichiers du routeur et de NAT,
-hors du sous-systeme corrige ; la migration consiste a supprimer
-`TCPPacket` et a faire importer `TcpSegment` partout.
-
 ### [fortios] une entree refusee par `next` reste affichee
 `config firewall policy` / `edit 62` sans `set service` : `next` repond
 « Command fail. Return code -61 / entry not set for "service" », mais

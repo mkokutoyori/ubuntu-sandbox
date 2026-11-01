@@ -15,12 +15,13 @@
  * either way: the witness (without the commands the whole string is refused) and the no-truncate
  * case (the whole string is refused there too, which is the point of the option).
  */
+import { type TcpSegment } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import {
-  IPAddress, SubnetMask, resetCounters, MACAddress, type IPv4Packet, type TCPPacket,
+  IPAddress, SubnetMask, resetCounters, MACAddress, type IPv4Packet,
 } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
@@ -40,7 +41,7 @@ function connections(device: CiscoRouter): { syns: number } {
     p.attachTap(({ direction, frame }) => {
       if (direction !== 'in') return;
       const packet = frame.payload as IPv4Packet | undefined;
-      const tcp = packet?.type === 'ipv4' ? packet.payload as TCPPacket : undefined;
+      const tcp = packet?.type === 'ipv4' ? packet.payload as TcpSegment : undefined;
       if (tcp?.type === 'tcp' && tcp.destinationPort === 49 && tcp.flags?.syn && !tcp.flags?.ack) seen.syns++;
     });
   }
