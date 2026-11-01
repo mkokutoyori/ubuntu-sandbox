@@ -1,6 +1,6 @@
 /**
  * vim 9.1 : filereadable, isdirectory, readfile (options b et maximum, E484), getfsize et readdir (tri, filtre) sur un système de fichiers en mémoire ; valeurs relevées sur le vrai vim de cette machine dans un répertoire /tmp/vd (f.txt = « a\nb\n\nc » sans saut final, crlf.txt, empty.txt, sub/).
- * Mesure de départ : « E117: Unknown function » pour chacune. 15 des 16 cas tombent avant ; seul le témoin trim passe dans les deux états. Ajout : hostname, getpid et localtime (3 cas, les 3 tombent avant, E117). Ajout : environ() (3 cas, les 3 tombent avant).
+ * Mesure de départ : « E117: Unknown function » pour chacune. 15 des 16 cas tombent avant ; seul le témoin trim passe dans les deux états. Ajout : hostname, getpid et localtime (3 cas, les 3 tombent avant, E117). Ajout : environ() (3 cas, les 3 tombent avant). Ajout : executable et exepath (13 cas rejoués sur le vrai vim, les 13 tombent avant ; un cas de plus sur la machine, executableAt, tombe aussi avant).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -61,4 +61,49 @@ describe('environ', () => {
   it('environ() est un dictionnaire des variables posées', () => { expect(withEnvironment('environ()["FOO"]')).toBe('bar'); });
   it('une variable vide y figure', () => { expect(withEnvironment('has_key(environ(), "EMPTY")')).toBe('1'); });
   it('type dictionnaire', () => { expect(withEnvironment('type(environ())')).toBe('4'); });
+});
+
+describe('executable et exepath', () => {
+  const withBinaries = (expression: string): string => {
+    const fs = new InMemoryEditorFsContext({
+      '/tmp/vd/f.txt': 'a', '/tmp/vd/crlf.txt': 'b', '/usr/bin/sh': '', '/bin/sh': '', '/tmp/vd/t.txt': 'x\n',
+    }, () => '', undefined, '/tmp/vd');
+    fs.useEnvironmentVariable('PATH', '/usr/bin:/bin');
+    fs.useExecutable('/usr/bin/sh');
+    fs.useExecutable('/bin/sh');
+    fs.useExecutable('/tmp/vd/f.txt');
+    const vim = new VimEngine(fs, '/tmp/vd/t.txt', 'x\n', false, 'vim', 'root');
+    vim.applyKey(editorKey(':'));
+    for (const ch of `s#x#\\=${expression}#`) vim.applyKey(editorKey(ch));
+    vim.applyKey(editorKey('Enter'));
+    return vim.content.replace(/\n$/, '');
+  };
+  const ORACLE: ReadonlyArray<readonly [string, string]> = [
+    ['executable("sh")', '1'],
+    ['executable("/bin/sh")', '1'],
+    ['executable("nope_zz")', '0'],
+    ['executable("f.txt")', '0'],
+    ['executable("./f.txt")', '1'],
+    ['executable("crlf.txt")', '0'],
+    ['executable("sub")', '0'],
+    ['executable("")', '0'],
+    ['exepath("sh")', '/usr/bin/sh'],
+    ['exepath("nope")', ''],
+    ['exepath("./f.txt")', '/tmp/vd/f.txt'],
+    ['exepath("/bin/sh")', '/bin/sh'],
+    ['exepath("f.txt")', ''],
+  ];
+  for (const [expression, expected] of ORACLE) it(expression, () => { expect(withBinaries(expression)).toBe(expected); });
+});
+
+describe('executableAt sur la machine', () => {
+  it('un binaire livré est exécutable, un fichier non exécutable et un répertoire ne le sont pas', async () => {
+    const { LinuxPC } = await import('@/network/devices/LinuxPC');
+    const pc = new LinuxPC('linux-pc', 'PC1');
+    await pc.executeCommand('echo hi > /tmp/plain.txt');
+    expect(pc.editorExecutableAt('/bin/ls')).toBe(true);
+    expect(pc.editorExecutableAt('/tmp/plain.txt')).toBe(false);
+    expect(pc.editorExecutableAt('/tmp')).toBe(false);
+    expect(pc.editorExecutableAt('/nope')).toBe(false);
+  });
 });

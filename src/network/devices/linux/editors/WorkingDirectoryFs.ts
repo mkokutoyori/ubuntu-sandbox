@@ -10,6 +10,7 @@ export class WorkingDirectoryFs implements EditorFsContext {
   readonly homeDirectory?: () => string | null;
   readonly environmentVariable?: (name: string) => string | null;
   readonly environmentNames?: () => string[];
+  readonly executableAt?: (path: string) => boolean;
   readonly makeDirectory?: (path: string, mode: number) => string | null;
   readonly changeMode?: (path: string, mode: number) => boolean;
   readonly readError?: (path: string) => string | null;
@@ -25,6 +26,7 @@ export class WorkingDirectoryFs implements EditorFsContext {
     if (inner.homeDirectory) this.homeDirectory = () => inner.homeDirectory!();
     if (inner.environmentVariable) this.environmentVariable = (name) => inner.environmentVariable!(name);
     if (inner.environmentNames) this.environmentNames = () => inner.environmentNames!();
+    if (inner.executableAt) this.executableAt = (path) => inner.executableAt!(this.resolvePath(path));
     if (inner.makeDirectory) this.makeDirectory = (path, mode) => inner.makeDirectory!(this.resolvePath(path), mode);
     if (inner.changeMode) this.changeMode = (path, mode) => inner.changeMode!(this.resolvePath(path), mode);
     if (inner.readError) this.readError = (path) => inner.readError!(this.resolvePath(path));

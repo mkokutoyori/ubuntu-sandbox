@@ -57,6 +57,8 @@ export interface ExpressionHost {
   directoryEntries(path: string): string[] | null;
   workingDirectory(): string;
   hostName(): string;
+  executableAt(path: string): boolean;
+  resolvePath(path: string): string;
   processId(): number;
   shell(command: string, input: string | null): string;
   assignOption(name: string, value: string | number): string | null;
@@ -1139,6 +1141,8 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     const kept = args[1] === undefined ? names : names.filter((name) => context.numberOf(context.invoke(args[1], [str(name)]), false) !== 0n);
     return list(kept.map(str));
   } }],
+  ['executable', { min: 1, max: 1, run: (args, context) => num(findExecutable(context, context.stringOf(args[0], false)) === null ? 0 : 1) }],
+  ['exepath', { min: 1, max: 1, run: (args, context) => str(findExecutable(context, context.stringOf(args[0], false)) ?? '') }],
   ['localtime', { min: 0, max: 0, run: () => num(Math.floor(simulationNowMs() / 1000)) }],
   ['hostname', { min: 0, max: 0, run: (_args, context) => str(context.host.hostName()) }],
   ['getpid', { min: 0, max: 0, run: (_args, context) => num(context.host.processId()) }],
@@ -1312,6 +1316,20 @@ function makeFuncref(args: VimValue[], context: Context, builtinsAllowed: boolea
   }
   const bound = args[1] !== undefined && args[1].kind === 'list' ? args[1].items : [];
   return { kind: 'funcref', name, params: null, body: '', scopes: [], bound };
+}
+
+function findExecutable(context: Context, name: string): string | null {
+  if (name === '') return null;
+  if (name.includes('/')) {
+    const resolved = context.host.resolvePath(name);
+    return context.host.executableAt(resolved) ? resolved : null;
+  }
+  const directories = (context.host.environmentOrNull('PATH') ?? '').split(':').filter((directory) => directory !== '');
+  for (const directory of directories) {
+    const candidate = `${directory.replace(/\/+$/, '')}/${name}`;
+    if (context.host.executableAt(candidate)) return candidate;
+  }
+  return null;
 }
 
 function parseFloatPrefix(text: string): number {
