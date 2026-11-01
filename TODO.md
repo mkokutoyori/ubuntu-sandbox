@@ -425,6 +425,17 @@ de l'interface, secondaires comprises, a la mise en service et au changement de 
 l'adresse source d'une requete ARP parmi celles de l'hote, or un hote du simulateur n'a qu'une adresse principale par interface
 (les secondaires existent mais l'adresse source du paquet IP n'atteint pas l'emission ARP) ; ses trois niveaux ne se
 distingueraient pas. `proxy_arp` pour un hote est sans objet (un hote ne transmet pas).
+**Les fichiers du paquet procps sont attestes** (machine de reference, Ubuntu 24.04, procps 4.0.4) et le simulateur n'en livre qu'un :
+`/etc/sysctl.d/99-sysctl.conf`. Manquent `10-bufferbloat.conf` (`-net.core.default_qdisc = fq_codel`, le tiret fait ignorer l'erreur),
+`10-console-messages.conf` (`kernel.printk = 4 4 1 7`), `10-ipv6-privacy.conf` (`net.ipv6.conf.{all,default}.use_tempaddr = 2`),
+`10-kernel-hardening.conf` (`kernel.kptr_restrict = 1`), `10-magic-sysrq.conf` (`kernel.sysrq = 176`), `10-map-count.conf`
+(`vm.max_map_count=1048576`), `10-network-security.conf` (`net.ipv4.conf.{default,all}.rp_filter=2`), `10-ptrace.conf`
+(`kernel.yama.ptrace_scope = 1`), `10-zeropage.conf` (`vm.mmap_min_addr = 65536`), `README.sysctl`, et sous `/usr/lib/sysctl.d`
+`50-pid-max.conf` et `99-protect-links.conf`. **Pourquoi pas livres** : `sysctl --system` ecrit chaque cle, donc livrer les fichiers sans les
+cles fait imprimer des erreurs, et livrer les cles sans que le simulateur les EVALUE (le filtre de chemin inverse `rp_filter` n'est lu par
+aucun plan de donnees, `ptrace_scope` par aucun `strace`, `kptr_restrict` par aucun `/proc/kallsyms`) afficherait `rp_filter = 2` sans
+qu'un paquet de source sans route soit jamais jete. A fermer cle par cle, chacune avec son lecteur ; `rp_filter` en premier
+(il rejette de vrais paquets sur une vraie machine, et demande de verifier qu'aucun labo ne recoit d'une source sans route).
 
 ---
 
