@@ -86,6 +86,11 @@ abstract class BaseRemoteEditorController<V extends EditorView> {
 
 export class RemoteVimController extends BaseRemoteEditorController<VimEditorView> {
   get variant(): VimVariant { return this.current.variant; }
+
+  applyPaste(text: string): void {
+    void this.transport.pasteIntoEditor(text).then((view) => this.absorb(view));
+  }
+
   get mode(): VimMode { return this.current.mode; }
   get content(): string { return this.current.content; }
   get message(): string { return this.current.message; }
