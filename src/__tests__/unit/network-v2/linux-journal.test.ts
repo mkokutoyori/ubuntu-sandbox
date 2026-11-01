@@ -498,10 +498,10 @@ describe('Group 8: Permissions and error handling', () => {
     expect(result.split('\n').filter((l) => l.trim()).length).toBeGreaterThan(1);
   });
 
-  it('should allow non-root to use dmesg', async () => {
+  it('should refuse dmesg to non-root while kernel.dmesg_restrict is 1 (the Ubuntu default)', async () => {
     const pc = new LinuxPC('pc', 'PC1');
     const result = await pc.executeCommand('dmesg');
-    expect(result).toContain('Linux version');
+    expect(result).toContain('Operation not permitted');
   });
 
   it('should reject invalid priority for journalctl -p', async () => {
@@ -519,7 +519,7 @@ describe('Group 8: Permissions and error handling', () => {
   it('should reject dmesg -c for non-root', async () => {
     const pc = new LinuxPC('pc', 'PC1');
     const result = await pc.executeCommand('dmesg -c');
-    expect(result).toContain('Permission denied');
+    expect(result).toContain('Operation not permitted');
   });
 
   it('should show error for logger with invalid priority', async () => {

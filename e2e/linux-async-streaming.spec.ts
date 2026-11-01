@@ -219,6 +219,7 @@ test.describe('Linux — dmesg -w through the real UI', () => {
     }, { id });
 
     await openTerminal(page, id);
+    await typeCmd(page, 'sudo sysctl -w kernel.dmesg_restrict=0');
     await typeCmd(page, 'dmesg -w');
     await waitForText(page, 'probeDmesgInitialBOOT');
     expect(await promptInputVisible(page)).toBe(false);

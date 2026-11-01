@@ -3241,6 +3241,11 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       user: this.userMgr.currentUser,
       groups: this.userMgr.getUserGroups(this.userMgr.currentUser).map(g => g.name),
+      sysctl: (key: string) => {
+        const text = this.vfs.readFile(`/proc/sys/${key.replace(/\./g, '/')}`);
+        const value = text === null ? Number.NaN : Number.parseInt(text, 10);
+        return Number.isNaN(value) ? null : value;
+      },
     };
   }
 

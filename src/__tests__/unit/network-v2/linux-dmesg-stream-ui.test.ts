@@ -33,10 +33,11 @@ function emitKernel(pc: LinuxPC, message: string, priority = 4): void {
 
 let pc: LinuxPC;
 let session: LinuxTerminalSession;
-beforeEach(() => {
+beforeEach(async () => {
   EquipmentRegistry.resetInstance();
   pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
   pc.powerOn();
+  await pc.executeCommand('sudo sysctl -w kernel.dmesg_restrict=0');
   session = new LinuxTerminalSession('term-1', pc);
 });
 

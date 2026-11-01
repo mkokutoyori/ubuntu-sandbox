@@ -62,6 +62,7 @@ describe('SSH Windows -> Linux is a transparent transport for behaviour', () => 
     new Cable('c2').connect(linux.getPort('eth0')!, sw.getPort('FastEthernet0/2')!);
     await win.executeCommand('netsh interface ip set address "Ethernet0" static 192.168.1.10 255.255.255.0');
     await linux.executeCommand('ifconfig eth0 192.168.1.20');
+    await linux.executeCommand('sudo sysctl -w kernel.dmesg_restrict=0');
     host = new WindowsTerminalSession('term-1', win);
     await host.init?.();
   });

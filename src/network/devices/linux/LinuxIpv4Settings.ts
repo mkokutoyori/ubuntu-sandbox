@@ -48,6 +48,10 @@ export const LINUX_CORE_KNOBS: readonly KernelByteKnob[] = [
   { name: 'wmem_max', initial: 212992, minimum: 0, maximum: 2_147_483_647 },
 ];
 
+export const LINUX_KERNEL_KNOBS: readonly KernelByteKnob[] = [
+  { name: 'dmesg_restrict', initial: 1, minimum: 0, maximum: 1 },
+];
+
 export interface KernelVectorKnob {
   readonly name: string;
   readonly initial: readonly number[];
@@ -122,6 +126,12 @@ export class LinuxCoreSettings extends KernelKnobStore {
 
   get listenBacklogLimit(): number {
     return this.get('somaxconn');
+  }
+}
+
+export class LinuxKernelSettings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_KERNEL_KNOBS);
   }
 }
 

@@ -91,7 +91,7 @@ describe('toutes les vues nomment le meme noyau', () => {
   it('la premiere ligne de dmesg', async () => {
     const pc = poste();
 
-    const ligne = (await pc.executeCommand('dmesg')).split('\n')[0];
+    const ligne = (await pc.executeCommand('sudo dmesg')).split('\n')[0];
 
     expect(ligne).toContain(`Linux version ${await noyau(pc)}`);
   });
@@ -99,7 +99,7 @@ describe('toutes les vues nomment le meme noyau', () => {
   it('la ligne de demarrage du noyau nomme le meme vmlinuz', async () => {
     const pc = poste();
 
-    expect(await pc.executeCommand('dmesg')).toContain(`BOOT_IMAGE=/vmlinuz-${await noyau(pc)}`);
+    expect(await pc.executeCommand('sudo dmesg')).toContain(`BOOT_IMAGE=/vmlinuz-${await noyau(pc)}`);
   });
 
   it('strongSwan, qui annonce le noyau sous lequel il tourne', async () => {

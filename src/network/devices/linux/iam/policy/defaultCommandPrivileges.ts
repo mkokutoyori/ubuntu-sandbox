@@ -72,11 +72,5 @@ export function createDefaultCommandPrivileges(): CommandPrivilegePolicy {
       deny: Deny.withMessage('mount: only root can do that: Permission denied'),
     })
     .declare('umount', { deny: Deny.withMessage('umount: only root can do that: Permission denied') })
-    .declare('ufw', { deny: Deny.withMessage('ERROR: You need to be root to run this script') })
-    .declare('dmesg', {
-      appliesWhen: (args) => args.some(a =>
-        a === '-c' || a === '--read-clear' || a === '-C' || a === '--clear' ||
-        a === '-n' || a === '--console-level'),
-      deny: Deny.withMessage('dmesg: read kernel buffer failed: Permission denied'),
-    });
+    .declare('ufw', { deny: Deny.withMessage('ERROR: You need to be root to run this script') });
 }

@@ -2,6 +2,7 @@ export interface PrivilegeActor {
   readonly uid: number;
   readonly user: string;
   readonly groups: readonly string[];
+  readonly sysctl?: (key: string) => number | null;
 }
 
 export interface PrivilegeDenial {

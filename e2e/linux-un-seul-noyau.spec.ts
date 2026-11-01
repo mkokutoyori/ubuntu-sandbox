@@ -60,7 +60,7 @@ test.describe('la machine nomme un seul noyau', () => {
     expect(await modalText(page)).toContain(noyau.slice(0, 16));
 
     await typeCmd(page, 'clear');
-    await typeCmd(page, 'dmesg | head -1');
+    await typeCmd(page, 'sudo dmesg | head -1');
     expect(await modalText(page)).toContain(`Linux version ${noyau}`);
 
     await closeTerminal(page);

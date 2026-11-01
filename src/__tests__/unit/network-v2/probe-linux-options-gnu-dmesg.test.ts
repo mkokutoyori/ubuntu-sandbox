@@ -22,15 +22,15 @@ function pc(): Sh {
 
 describe('dmesg refuses what it does not know', () => {
   it('a long option', async () => {
-    expect(await pc().executeCommand('dmesg --zorglub'))
+    expect(await pc().executeCommand('sudo dmesg --zorglub'))
       .toBe("dmesg: unrecognized option '--zorglub'\nTry 'dmesg --help' for more information.");
   });
   it('a short option, with status 1', async () => {
-    expect(await pc().executeCommand('dmesg -Q; echo $?'))
+    expect(await pc().executeCommand('sudo dmesg -Q; echo $?'))
       .toBe("dmesg: invalid option -- 'Q'\nTry 'dmesg --help' for more information.\n1");
   });
   it('an operand', async () => {
-    expect(await pc().executeCommand('dmesg zorglub'))
+    expect(await pc().executeCommand('sudo dmesg zorglub'))
       .toBe("dmesg: extra operand 'zorglub'\nTry 'dmesg --help' for more information.");
   });
 });

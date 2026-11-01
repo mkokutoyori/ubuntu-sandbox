@@ -123,7 +123,7 @@ describe('un verdict netfilter appartient au journal du NOYAU', () => {
     (client as unknown as {
       sendUdpDatagram: (d: IPAddress, dp: number, sp: number, p: string, s: number) => boolean;
     }).sendUdpDatagram(new IPAddress('10.0.1.2'), 9999, 5000, 'x', 1);
-    const dmesg = await client.executeCommand('dmesg');
+    const dmesg = await client.executeCommand('sudo dmesg');
     expect(dmesg).toMatch(/\[netfilter REJECT\][^\n]*DPT=9999/);
     expect(dmesg).not.toMatch(/\[netfilter DROP\][^\n]*DPT=9999/);
   });
