@@ -22,6 +22,7 @@ import {
   type NDPOption,
   type UDPPacket,
   type UDPLitePacket,
+  type RIPPacket,
 } from '@/network/core/types';
 import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
 import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
@@ -226,7 +227,27 @@ function normalizeTcpSegment(payload: unknown): TcpSegment {
   };
 }
 
+const RIP_AUTH_AFI = 0xffff;
+const RIP_AUTH_PASSWORD = 2;
+const RIP_PASSWORD_BYTES = 16;
+
+function ripWireBytes(rip: RIPPacket): number[] {
+  const bytes = [rip.command, rip.version & 0xff, 0, 0];
+  if (rip.auth !== undefined) {
+    const password = Array.from(new TextEncoder().encode(rip.auth.digest)).slice(0, RIP_PASSWORD_BYTES);
+    bytes.push(...u16(RIP_AUTH_AFI), ...u16(RIP_AUTH_PASSWORD), ...padTo(password, RIP_PASSWORD_BYTES));
+  }
+  for (const entry of rip.entries) {
+    const versionTwo = rip.version >= 2;
+    bytes.push(...u16(entry.afi), ...u16(versionTwo ? entry.routeTag : 0), ...ipBytes(entry.ipAddress.toString()),
+      ...(versionTwo ? ipBytes(entry.subnetMask.toString()) : [0, 0, 0, 0]),
+      ...(versionTwo ? ipBytes(entry.nextHop.toString()) : [0, 0, 0, 0]), ...u32(entry.metric >>> 0));
+  }
+  return bytes;
+}
+
 function appPayloadBytes(payload: unknown): number[] | undefined {
+  if ((payload as { type?: string } | null)?.type === 'rip') return ripWireBytes(payload as RIPPacket);
   if (typeof payload === 'string') return Array.from(new TextEncoder().encode(payload));
   if (payload instanceof Uint8Array) return Array.from(payload);
   if (Array.isArray(payload) && payload.every((b) => typeof b === 'number')) {

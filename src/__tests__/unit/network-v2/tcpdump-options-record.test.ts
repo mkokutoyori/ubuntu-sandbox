@@ -10,6 +10,8 @@ import { IPAddress, SubnetMask } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
+import { CiscoRouter } from '@/network/devices/CiscoRouter';
+import { installVirtualClock } from '../../support/ntpTime';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
 const RECORD_DIR = process.env.TCPDUMP_RECORD_DIR;
@@ -120,8 +122,33 @@ async function recordDns(): Promise<string> {
   return pc.executeCommand('cat all.cap');
 }
 
+async function recordRip(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('c1').connect(pc.getPort('eth0')!, r1.getPort('GigabitEthernet0/0')!);
+  new Cable('c2').connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/0')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 100');
+  await new Promise((r) => setTimeout(r, 30));
+  const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
+    for (const line of lines) await router.executeCommand(line);
+  };
+  await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.1.2 255.255.255.0', 'no shutdown', 'exit',
+    'interface Loopback1', 'ip address 172.16.5.1 255.255.255.0', 'exit', 'router rip', 'version 2', 'network 10.0.0.0', 'network 172.16.0.0', 'exit', 'end']);
+  await configure(r1, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit',
+    'interface GigabitEthernet0/1', 'ip address 10.9.1.1 255.255.255.0', 'no shutdown', 'exit', 'router rip', 'version 2', 'network 10.0.0.0', 'exit', 'end']);
+  await clock.advance(65_000);
+  await pc.executeCommand('ping -c 1 10.9.0.1');
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip };
+const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
+
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {
   mkdirSync(RECORD_DIR as string, { recursive: true });
-  writeFileSync(`${RECORD_DIR}/base.json`, await recordBase());
-  writeFileSync(`${RECORD_DIR}/dns.json`, await recordDns());
+  for (const lab of RECORD_LABS) writeFileSync(`${RECORD_DIR}/${lab}.json`, await RECORDERS[lab]());
 }, 480000);

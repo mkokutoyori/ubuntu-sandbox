@@ -6,6 +6,7 @@ import {
 } from '@/network/core/IcmpPhrase';
 import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
+import { ripText } from './TcpdumpRip';
 import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
 import { icmp6Text } from './TcpdumpIcmp6';
 import { domainText } from './TcpdumpDomain';
@@ -286,6 +287,7 @@ function clockOfDay(milliseconds: number): string {
 
 const IPV6_FRAGMENT_HEADER_BYTES = 8;
 const DNS_PORT = 53;
+const RIP_PORT = 520;
 const MDNS_PORT = 5353;
 const UDP_HEADER_BYTES = 8;
 
@@ -349,6 +351,10 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     if (frame.bootp && !opt.quiet) return bootpText(frame.bootp, opt.verbose, frame.payloadLength ?? 0);
     if (!opt.quiet && frame.appPayload && (frame.srcPort === 123 || frame.dstPort === 123)) {
       return ntpText(frame.appPayload, opt.verbose, opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose));
+    }
+    if (!opt.quiet && frame.appPayload && (frame.srcPort === RIP_PORT || frame.dstPort === RIP_PORT)) {
+      const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
+      return `${cksum}${ripText(frame.appPayload, frame.payloadLength ?? 0, opt.verbose)}`;
     }
     const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
     return `${cksum}UDP, length ${frame.payloadLength ?? 0}`;

@@ -3863,6 +3863,16 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 (`ping -R`, `-Q`) et les en-tetes d'extension IPv6, ESP/AH/GRE/OSPF/BGP/SNMP/DHCPv6, MPTCP, les messages MLD et le routage
 (RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` et `-AA` sont portes (print.c, print-ascii.c ; mesure sur 5 jeux d'options de plus), ainsi que `-qq` (fragments non initiaux IPv4, `print-ip.c:494`) et la forme courte des types Ethernet de `-q -e` sont portes ; le `-qq` des fragments IPv6 n'est pas mesure. La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
 
+### [capture] les octets des protocoles de routage et de decouverte sont des zeros dans les captures
+
+Mesure (tcpdump 4.99.4 reel rejoue sur une capture du simulateur, laboratoire `rip` de `tcpdump-options-oracle.test.ts`) : une capture `tcpdump -w` d'un hote cable a un
+routeur Cisco contenait des octets nuls pour OSPF (`OSPFv0, unknown LS-type 0, length 64`), EIGRP (`EIGRP version 0 packet not supported`) et CDP (trame d'ethertype 0x2000 de
+60 octets nuls, au lieu d'un cadre 802.3 LLC/SNAP `AA AA 03 00 00 0C 20 00`). RIPv1/v2 est ecrit en octets reels (RFC 2453) et imprime comme `print-rip.c` ; le MD5 de RIP
+(RFC 4822, en-tete type 3 et trailer type 1) n'est pas encode : le moteur calcule un condense qui n'est pas celui de la RFC, il est donc ecrit comme un mot de passe. A faire,
+dans cet ordre, chacun avec son laboratoire dans l'oracle : OSPFv2 (RFC 2328 : Hello, DBD, LSR, LSU avec LSA routeur/reseau/resume/externe, LSAck, authentification), EIGRP (TLV de
+la documentation Cisco), CDP et LLDP (cadre 802.3 + LLC/SNAP), STP (BPDU 802.3 + LLC), BGP (RFC 4271), puis les imprimeurs `print-ospf.c`, `print-eigrp.c`, `print-cdp.c`,
+`print-lldp.c`, `print-stp.c`, `print-bgp.c`.
+
 ### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 
 `%{certs}` reste vide alors que le vrai curl 8.5.0 l'emplit sans `--certinfo` (un bloc `Cle:Valeur` par certificat, extensions et `rsa(n)` compris, puis le PEM ; rien en cas d'echec de verification) : le PEM du simulateur est du JSON arme et le texte ne se comparerait pas a un vrai ; les durees viennent de l'horloge de simulation, donc de la milliseconde ; `%{speed_*}` en decoule ; `%{local_ip}`/`%{local_port}` d'un echec restent vides comme chez curl mais `%{remote_ip}` d'un echec de connexion refusee n'est pas mesure. `-o /dev/null` est accepte aussi sous Windows, ou le vrai curl.exe tente d'ouvrir `\dev\null`.

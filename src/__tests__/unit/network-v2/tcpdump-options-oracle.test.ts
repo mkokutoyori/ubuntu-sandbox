@@ -14,6 +14,9 @@
  * WITNESS cases (one timestamped line per packet, in both labs) pass either way: they prove the labs replay the same packets.
  * -A and -AA (print.c lines 476-495, print-ascii.c ascii_print: the bytes after the link header, or all of them for -AA, with CR dropped at line end and every non-graphic byte but tab, space and LF printed as a dot)
  * were added with the real binary rerun on the stored captures (5 option sets per lab, the 11 earlier ones reproduced byte for byte): all 10 fall before, none is a witness.
+ * Third lab, "rip": a PC cabled to a Cisco router that runs RIPv2 with a neighbour (CDP switched off: its frames are still zero bytes, see TODO.md). Measured before the change: the RIP datagrams carried
+ * zero-filled bytes, which the real tool printed as `RIPv0` with a hex dump; the simulator now puts the RFC 2453 wire format in the capture (command, version, entries, text authentication) and prints it like
+ * print-rip.c (request with the AFI 0 entry, responses with `AFI IPv4, %15s/%-2d, tag, metric, next-hop`, `-v` hex dump of the datagram). 21 of the 29 cases of this lab fall before; the other 8 print no RIP line.
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.
