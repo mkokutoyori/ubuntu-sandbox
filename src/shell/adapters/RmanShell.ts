@@ -1,5 +1,8 @@
 import { AbstractShell, type AbstractShellOptions } from '../AbstractShell';
-import type { ShellLineResult } from '../IShell';
+import type { IShell, ShellLineResult } from '../IShell';
+import { ShellFactory } from '../ShellFactory';
+
+const HOST_COMPLETE = 'host command complete';
 import { ReactiveRmanSubShell } from '@/terminal/subshells/rman/ReactiveRmanSubShell';
 
 export class RmanShell extends AbstractShell {
@@ -7,6 +10,7 @@ export class RmanShell extends AbstractShell {
 
   private subShell: ReactiveRmanSubShell | null = null;
   private banner: readonly string[] = [];
+  private hostShellOpen = false;
 
   constructor(opts: AbstractShellOptions & { launchLine?: string }) {
     super(opts);
@@ -33,11 +37,24 @@ export class RmanShell extends AbstractShell {
       return { output: ['rman: not available on this device'], exit: true };
     }
     const r = await this.subShell.processLine(line);
+    const hostShell = this.subShell.takeHostShellRequest() ? this.openHostShell() : null;
+    this.hostShellOpen = hostShell !== null;
     return {
       output: r.output ?? [],
       exit: r.exit,
       clearScreen: r.clearScreen,
+      ...(hostShell === null ? {} : { childShell: hostShell }),
     };
+  }
+
+  private openHostShell(): IShell | null {
+    return ShellFactory.tryCreateChild('bash', { device: this.device, user: this.user, parent: this });
+  }
+
+  override consumeResumeOutput(): readonly string[] {
+    if (!this.hostShellOpen) return [];
+    this.hostShellOpen = false;
+    return [HOST_COMPLETE];
   }
 
   override getCompletions(line: string): readonly string[] {

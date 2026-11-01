@@ -4174,8 +4174,9 @@ reconnus : seul `#` l'est.
 `rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
 une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dans le fichier ce que la session imprime
 (sondes `probe-rman-cmdfile-et-log`, `probe-rman-spool-log`) ; `LIST BACKUP OF TABLESPACE t` filtre sur les fichiers du
-tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host` ; `HOST` sans
-commande, qui ouvre un shell, reste refuse) ; `CONFIGURE|SHOW SNAPSHOT CONTROLFILE NAME` (defaut `$ORACLE_HOME/dbs/snapcf_<SID>.f`, `# default`, `CLEAR`) : la
+tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host`) ; `HOST` sans commande ouvre un shell sur la machine
+et `exit` ramene au `RMAN>` de la meme session (sonde `probe-rman-host-sans-commande`). A VERIFIER : `host command complete` au retour du shell interactif vient de la forme `HOST 'commande'`, pas d'une
+source ; `CONFIGURE|SHOW SNAPSHOT CONTROLFILE NAME` (defaut `$ORACLE_HOME/dbs/snapcf_<SID>.f`, `# default`, `CLEAR`) : la
 sauvegarde du fichier de controle cree le snapshot a ce chemin (sonde `probe-rman-snapshot-controlfile` ; la creation par
 `RESYNC CATALOG` n'est pas faite, le catalogue de recuperation etant un autre sous-systeme) ; `LIST BACKUP BY FILE` regroupe par fichier : « List of Datafile Backups » puis « List of Control File Backups »
 (sonde `probe-rman-list-backup-by-file`). A VERIFIER : les titres, l'ordre et les noms de colonnes viennent de la memoire ;

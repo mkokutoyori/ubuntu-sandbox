@@ -82,5 +82,10 @@ export class ShellSubShellAdapter implements ISubShell {
     return this.shell.completionStart?.(line) ?? null;
   }
 
+  consumeResumeOutput(): readonly string[] {
+    this.shell.resume();
+    return this.shell.consumeResumeOutput?.() ?? [];
+  }
+
   dispose(): void { this.shell.dispose(); }
 }

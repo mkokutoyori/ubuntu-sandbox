@@ -40,6 +40,7 @@ export class ReactiveRmanSubShell implements ISubShell {
   private readonly _loggerActor:   RmanLoggerActor | null;
   private readonly _oracleWatcher: OracleInstanceWatcherActor | null;
   private _shouldExit = false;
+  private _hostShellRequested = false;
   private _disposed   = false;
 
   private constructor(
@@ -188,8 +189,17 @@ export class ReactiveRmanSubShell implements ISubShell {
     this._unsubs.push(this._session.events$.subscribe(e => this._handleEvent(e)));
   }
 
+  takeHostShellRequest(): boolean {
+    const requested = this._hostShellRequested;
+    this._hostShellRequested = false;
+    return requested;
+  }
+
   private _handleEvent(e: RmanEvent): void {
     switch (e.type) {
+      case 'HOST_SHELL_REQUESTED':
+        this._hostShellRequested = true;
+        break;
       case 'JOB_STARTED':
         this._push('');
         this._push(`Starting ${this._opLabel(e.operation)} at ${formatOracleDate(this._session.wallNow?.())}`);

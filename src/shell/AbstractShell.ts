@@ -128,6 +128,8 @@ export abstract class AbstractShell implements IShell {
   activate(): void { this._active = true; this.onActivate(); }
   pause(): void { this.onPause(); }
   resume(): void { this.onResume(); }
+
+  consumeResumeOutput(): readonly string[] { return []; }
   deactivate(): void { this._active = false; this.onDeactivate(); }
   dispose(): void {
     if (this._disposed) return;

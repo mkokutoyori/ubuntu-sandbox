@@ -2930,6 +2930,15 @@ export class LinuxTerminalSession extends TerminalSession {
       this.activeSubShell.dispose();
       this.activeSubShell = null;
     }
+    const resumed = this.iShellSubStack.pop();
+    if (resumed !== undefined) {
+      this.activeSubShell = resumed;
+      for (const line of resumed.consumeResumeOutput?.() ?? []) this.addLine(line);
+      this._inputBuf = '';
+      this.inputMode = { type: 'normal' };
+      this.notify();
+      return;
+    }
     this._inputBuf = '';
     this.subShellHistory = [];
     this.subShellHistoryIndex = -1;

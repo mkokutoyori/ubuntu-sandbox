@@ -150,6 +150,9 @@ export interface IShell extends IShellBase {
   /** Lifecycle hook — called when a child shell pops back to this one. */
   resume(): void;
 
+  /** Lines this shell prints when a child shell pops back to it. */
+  consumeResumeOutput?(): readonly string[];
+
   /** Lifecycle hook — called when this shell is unwound. */
   deactivate(): void;
 

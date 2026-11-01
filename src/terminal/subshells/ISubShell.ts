@@ -56,6 +56,9 @@ export interface ISubShell extends IShellBase {
   /** Current prompt string (e.g. "SQL> ", "PS C:\> "). */
   getPrompt(): string;
 
+  /** Lines printed when a child shell pops back to this sub-shell, if it has any. */
+  consumeResumeOutput?(): readonly string[];
+
   getPromptParts?(): BashPromptParts | null;
 
   supportsInlineHelp?(): boolean;
