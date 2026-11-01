@@ -176,12 +176,12 @@ describe('HF-06 — Windows DNS fallback', () => {
 });
 
 describe('HF-07 — Windows nslookup', () => {
-  it('reports an address for a name in the hosts file', async () => {
+  it('does not answer from the hosts file: nslookup talks to DNS only', async () => {
     const win = new WindowsPC('windows-pc', 'WIN');
     win.addHostsEntry('10.0.1.42', 'fileserver');
     const out = await win.executeCommand('nslookup fileserver');
-    expect(out).toContain('10.0.1.42');
-    expect(out).toContain('fileserver');
+    expect(out).not.toContain('10.0.1.42');
+    expect(out).toContain("can't find fileserver");
   });
 
   it('reports a non-existent domain for an unknown name', async () => {

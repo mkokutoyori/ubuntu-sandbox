@@ -279,7 +279,8 @@ import { runNmap } from '@/network/scan/nmap/NmapRun';
 import { cmdPrint } from './windows/WinPrint';
 import { runRunasNonInteractive, runAsUser } from './windows/WinRunas';
 import type { RunasHost } from './windows/WinRunas';
-import { executeNslookup } from './linux/LinuxDnsService';
+import { WinNslookup, type WinNslookupEnvironment } from './windows/nslookup/WinNslookup';
+import type { NslookupInterpreter } from '../dns/tools/NslookupInterpreter';
 import type { DnsQueryFn } from '../dns/compat/DnsWireCompat';
 import { SessionWorkQueue } from './host/session/SessionWorkQueue';
 import { SessionSwapWindow, type SwapWindowOptions } from './host/session/SessionSwapWindow';
@@ -4433,6 +4434,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       getDnsSuffix: () => this.dnsSuffix,
       setDnsSuffix: (suffix: string) => { this.dnsSuffix = suffix; },
       getConnectionDnsSuffix: (ifName: string) => this.getConnectionDnsSuffix(ifName),
+      getDnsSuffixSearchList: () => this.dnsSearchSuffixes(),
 
       // ARP table mutation
       addStaticARP: (ip: IPAddress, mac: any, iface: string) => this.addStaticARP(ip, mac, iface),
@@ -5201,44 +5203,32 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return result.output;
   }
 
-  /** nslookup command implementation for Windows */
   private cmdNslookup(args: string[]): Promise<string> | string {
-    const host = args.find(a => !a.startsWith('-')) ?? '';
-    // The static hosts table (including the machine's own name) is
-    // answered locally, ahead of any DNS query — same order as the
-    // resolveHostname() resolver.
-    if (host && IPAddress.tryParse(host) === null) {
-      const ownHostName = typeof this.hostname === 'string' ? this.hostname.toLowerCase() : '';
-      const hostsIp = this.readHostsFile().resolve(host, 4)
-        ?? (ownHostName && host.toLowerCase() === ownHostName ? '127.0.0.1' : null);
-      if (hostsIp) {
-        return 'Server:  UnKnown\nAddress:  127.0.0.1\n\n' +
-               `Name:    ${host}\nAddress:  ${hostsIp}`;
-      }
-    }
     if (this.svcMgr.getService('Dnscache')?.state !== 'Running') {
+      const host = args.find(a => !a.startsWith('-')) ?? '';
       return `*** Can't find ${host}: No DNS servers available\n` +
              `The DNS Client (Dnscache) service is not running.`;
     }
-    // Allow specifying server as second argument: nslookup domain server.
-    // Queries travel over UDP/53 through the simulated network (EndHost
-    // socket layer) — an unreachable server now times out for real.
-    return executeNslookup(args, this.dnsQueryFn(), this.firstConfiguredDnsServer());
+    return new WinNslookup(this.nslookupEnvironment()).runCommandLine(args);
   }
 
-  /** Wraps `queryDnsServer` in the `(server, name, type, timeoutMs)` shape
-   *  `executeNslookup`/`NslookupSubShell` both expect — shared by the
-   *  non-interactive `nslookup` command and its interactive REPL entry
-   *  point below, so there is exactly one DNS query adapter for Windows. */
-  private dnsQueryFn(): DnsQueryFn {
-    return async (s, n, t, ms) => {
-      let server: IPAddress;
-      try { server = new IPAddress(s); } catch { return null; }
-      return this.queryDnsServer(server, n, t, ms);
+  private nslookupEnvironment(): WinNslookupEnvironment {
+    return {
+      query: this.dnsQueryFn(),
+      defaultServer: () => this.firstConfiguredDnsServer(),
+      primarySuffix: () => this.dnsSuffix,
+      searchList: () => this.dnsSearchSuffixes(),
     };
   }
 
-  /** First configured DNS server across any interface, or '' if none. */
+  private dnsQueryFn(): DnsQueryFn {
+    return async (s, n, t, ms, options) => {
+      let server: IPAddress;
+      try { server = new IPAddress(s); } catch { return null; }
+      return this.queryDnsServer(server, n, t, ms, options);
+    };
+  }
+
   private firstConfiguredDnsServer(): string {
     for (const [ifName] of this.ports) {
       const servers = this.getDnsServers(ifName);
@@ -5247,19 +5237,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return '';
   }
 
-  /**
-   * Adapter for `nslookup`'s interactive REPL (PRD-Nslookup-Dig-Rndc-Runas.md
-   * §2.1.1). Windows previously had no interactive mode at all — bare
-   * `nslookup` just fell through to `executeNslookup`'s "Usage: ..." line.
-   * Rather than reimplementing the REPL, this hands `WindowsTerminalSession`
-   * the same `{query, initialServer}` shape `NslookupSubShell` already uses
-   * for Linux, so both platforms share the exact same interactive
-   * implementation. Returns `null` when the DNS Client service isn't
-   * running, mirroring the non-interactive command's own gate above.
-   */
-  getInteractiveNslookupDeps(): { query: DnsQueryFn; initialServer: string } | null {
+  getInteractiveNslookup(): NslookupInterpreter | null {
     if (this.svcMgr.getService('Dnscache')?.state !== 'Running') return null;
-    return { query: this.dnsQueryFn(), initialServer: this.firstConfiguredDnsServer() };
+    return new WinNslookup(this.nslookupEnvironment());
   }
 
   // ─── User / Access Control ──────────────────────────────────────
