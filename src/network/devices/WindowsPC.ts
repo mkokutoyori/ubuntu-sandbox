@@ -63,6 +63,7 @@ import { runW32tm } from './windows/WinW32tm';
 import { simulatedWait } from '../core/SimulatedWait';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
+import type { DnsMessage } from '../dns/wire/DnsMessage';
 import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
@@ -119,7 +120,7 @@ import { WindowsAccountsPolicy } from './windows/security/WindowsAccountsPolicy'
 import { DoskeyTable } from './windows/cli/DoskeyTable';
 import { runPowerShellShim, createShimState, type PsShimState } from './windows/PowerShellCmdShim';
 import { PSInterpreter, PSRuntimeError, createClientCmdletOverlay } from '@/powershell/interpreter/PSInterpreter';
-import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized } from '@/powershell/nativeAsync';
+import { NativeCommandNeedsAsync, translateNativeAnswer, nativeNotRecognized, type ReplayAwait } from '@/powershell/nativeAsync';
 import { createWindowsPSProviders } from '@/powershell/providers/WindowsPSProviders';
 import type { VpnConnectionInfo } from '@/powershell/providers/PSProviders';
 import type { WinCommandContext, RouteEntry, TracerouteHop } from './windows/WinCommandExecutor';
@@ -483,6 +484,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       try {
         return interpreter.resumeInteractive();
       } catch (e) {
+        if (await interpreter.settleAwaited(e)) continue;
         if (!(e instanceof NativeCommandNeedsAsync)) {
           if (e instanceof PSRuntimeError) return e.message;
           throw e;
@@ -3456,6 +3458,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    * l'opérateur découvre *qui* a répondu, puisque la cmdlet ne le dit
    * pas d'elle-même.
    */
+  private replayAwait: ReplayAwait | null = null;
+
+  attachReplayAwait(port: ReplayAwait | null): void {
+    this.replayAwait = port;
+  }
+
+  private queryDnsServerAwaiting(server: IPAddress, qname: string, qtype: string): DnsMessage | null {
+    const awaited = this.replayAwait?.awaited(
+      `dns ${server.toString()} ${qname.toLowerCase()} ${qtype}`,
+      () => this.queryDnsServer(server, qname, qtype),
+    );
+    return awaited === null || awaited === undefined ? this.queryDnsServerSync(server, qname, qtype) : awaited.value;
+  }
+
   resolveDnsSync(name: string, options: DnsClientQueryOptions = {}): string[] {
     const linkOnly = options.llmnrOnly === true;
     if (!options.noHostsFile && !linkOnly) {
@@ -3471,7 +3487,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (options.cacheOnly) return [];
     if (!this.isMdnsName(name) && !linkOnly) {
       for (const { server, qname } of this.dnsResolutionAttempts(name)) {
-        const response = this.queryDnsServerSync(server, qname, 'A');
+        const response = this.queryDnsServerAwaiting(server, qname, 'A');
         const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
         if (aRecords.length > 0) {
           this.dnsCache.storePositive(response!.answers, qname);
@@ -3498,7 +3514,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const wanted = rrTypeFromName(qtype);
     if (wanted === null) return null;
     for (const attempt of this.typedDnsAttempts(name, server)) {
-      const response = this.queryDnsServerSync(attempt.server, attempt.qname, qtype);
+      const response = this.queryDnsServerAwaiting(attempt.server, attempt.qname, qtype);
       const answers = response?.answers ?? [];
       const matching = wanted === RRType.ANY ? answers : answers.filter((rr) => rr.data.type === wanted);
       if (matching.length > 0) {

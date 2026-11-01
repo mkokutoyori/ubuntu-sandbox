@@ -41,7 +41,20 @@ export function quoteNativeArgument(argument: string): string {
   return NEEDS_QUOTES.test(argument) ? `"${argument.replace(/"/g, '\\"')}"` : argument;
 }
 
-export class NativeCommandNeedsAsync extends PSRuntimeError {
+export abstract class PendingHostStep extends PSRuntimeError {}
+
+export interface ReplayAwait {
+  awaited<T>(key: string, work: () => Promise<T>): { readonly value: T } | null;
+}
+
+export class AwaitedWork extends PendingHostStep {
+  constructor(readonly key: string, readonly work: () => Promise<unknown>) {
+    super('Waiting for an asynchronous reply', 'System.Management.Automation.RuntimeException');
+    this.name = 'AwaitedWork';
+  }
+}
+
+export class NativeCommandNeedsAsync extends PendingHostStep {
   readonly command: string;
   readonly argv: readonly string[];
   readonly stdin: string | null;

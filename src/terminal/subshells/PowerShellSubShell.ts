@@ -310,6 +310,7 @@ export class PowerShellSubShell implements ISubShell {
       try {
         return this.interp.resumeInteractive();
       } catch (e) {
+        if (await this.interp.settleAwaited(e)) continue;
         if (!(e instanceof NativeCommandNeedsAsync)) return this.formatInterpreterError(e, line);
         const answer = await device.runProgram(e.commandLine, e.stdin ?? undefined);
         this.interp.provideNativeResult({

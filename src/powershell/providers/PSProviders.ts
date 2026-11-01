@@ -29,6 +29,7 @@ import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
 import type { NetPrefixPolicyRow } from '@/network/devices/windows/netPrefixPolicy';
 import type { DnsAnswerRow, DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
+import type { ReplayAwait } from '@/powershell/nativeAsync';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -1462,6 +1463,7 @@ export interface INetworkProvider {
   egressInfoFor(target: string): { sourceIp: string; interfaceAlias: string; nextHop: string } | null;
   /** Traceroute hop IP addresses ('0.0.0.0' for a timed-out/unreachable hop). */
   traceRoute(target: string): string[];
+  attachReplayAwait?(port: ReplayAwait | null): void;
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
   /**

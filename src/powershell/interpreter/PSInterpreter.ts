@@ -21,7 +21,7 @@ import { nullProviders }            from '@/powershell/providers/NullProviders';
 import type { PSProviders }          from '@/powershell/providers/PSProviders';
 import { registerCoreCmdlets }       from '@/powershell/cmdlets/core/index';
 import type { PSValue }              from '@/powershell/runtime/PSEnvironment';
-import type { NativeResult }         from '@/powershell/nativeAsync';
+import { AwaitedWork, type NativeResult } from '@/powershell/nativeAsync';
 import type { PSScriptBlock }        from '@/powershell/parser/PSASTNode';
 import type { ParameterValueKind } from '@/powershell/cmdlets/ICmdlet';
 
@@ -100,6 +100,12 @@ export class PSInterpreter {
   describeFailure(error: unknown): string { return this.runtime.describeFailure(error); }
 
   provideNativeResult(result: NativeResult): void { this.runtime.provideNativeResult(result); }
+
+  async settleAwaited(step: unknown): Promise<boolean> {
+    if (!(step instanceof AwaitedWork)) return false;
+    this.runtime.provideAwaited(step.key, await step.work());
+    return true;
+  }
 
   getVariable(name: string): PSValue {
     return this.runtime.getVariable(name);
