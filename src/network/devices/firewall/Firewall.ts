@@ -687,7 +687,7 @@ export class Firewall extends Equipment {
       leaveCluster: (iface, ip, mask) => this.leaveCluster(iface, ip, mask),
       setDevicePriority: (priority) => this.setDevicePriority(priority),
       authenticateAdmin: (user, password, source) =>
-        this.management.login(user, password, source),
+        this.adminSessions.list().length < this.adminLoginMax && this.management.login(user, password, source),
       adminAcceptsPublicKey: (user, material, source) =>
         this.management.acceptsPublicKey(user, material, source),
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
@@ -2645,6 +2645,10 @@ export class Firewall extends Equipment {
   revisionOnLogoutEnabled(): boolean { return this.revisionOnLogout; }
 
   bindConfigSnapshot(render: () => string): void { this.configSnapshot = render; }
+
+  private adminLoginMax = 100;
+
+  setAdminLoginMax(limit: number): void { this.adminLoginMax = limit; }
 
   getAdminSessions(): AdminSessionTable { return this.adminSessions; }
 

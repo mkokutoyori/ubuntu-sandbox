@@ -257,6 +257,7 @@ export function buildCommitDevice(
         if (settings.adminTimeoutMin !== undefined) {
           fw.setAdminIdleTimeout(settings.adminTimeoutMin);
         }
+        if (settings.adminLoginMax !== undefined) fw.setAdminLoginMax(settings.adminLoginMax);
         if (settings.adminLockoutThreshold !== undefined
           && settings.adminLockoutDurationSec !== undefined) {
           fw.setAdminLockout(

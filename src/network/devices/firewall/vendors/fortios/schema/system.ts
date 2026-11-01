@@ -111,6 +111,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       IMPLEMENTED_HOST_KEY_ALGORITHMS),
     count('admin-port', 'Administrative access port for HTTP.', 1, 65535, 80),
     count('admin-telnet-port', 'Administrative access port for TELNET.', 1, 65535, 23),
+    count('admin-login-max', 'Maximum number of administrators who can be logged in at the same time.', 1, 100, 100),
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
       1, 10, 3),
     count('admin-lockout-duration', 'Lockout duration in seconds.', 1, 2147483647, 60),
@@ -238,6 +239,7 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       adminTimeoutMin: number('admintimeout', 5),
       timezone: object.isExplicit('timezone')
         ? object.effective('timezone')[0] : undefined,
+      adminLoginMax: number('admin-login-max', 100),
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
       adminHttpsRedirect: object.effective('admin-https-redirect')[0] !== 'disable',
