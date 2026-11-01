@@ -390,6 +390,8 @@ const BGP_NEIGHBOR: FortiTableSpec = {
     enable('shutdown', 'Enable/disable shutdown this neighbor.'),
     reference('prefix-list-in', 'Inbound filter for updates from this neighbor.', ['router prefix-list']),
     reference('prefix-list-out', 'Outbound filter for updates to this neighbor.', ['router prefix-list']),
+    reference('route-map-in', 'Inbound route map filter.', ['router route-map']),
+    reference('route-map-out', 'Outbound route map filter.', ['router route-map']),
   ],
 };
 
@@ -446,6 +448,8 @@ export const ROUTER_BGP: FortiTableSpec = {
         shutdown: entry.effective('shutdown')[0] === 'enable',
         prefixListIn: entry.effective('prefix-list-in')[0] || undefined,
         prefixListOut: entry.effective('prefix-list-out')[0] || undefined,
+        routeMapIn: entry.effective('route-map-in')[0] || undefined,
+        routeMapOut: entry.effective('route-map-out')[0] || undefined,
       })),
       networks: object.childEntries('network').map(entry => ({
         id: entry.key,
@@ -457,7 +461,64 @@ export const ROUTER_BGP: FortiTableSpec = {
   },
 };
 
+const ROUTE_MAP_RULE: FortiTableSpec = {
+  path: ['router', 'route-map', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Rule.',
+  attributes: [
+    { ...word('id', 'Rule ID.'), readOnly: true },
+    choice('action', 'Action.', [
+      { keyword: 'permit', description: 'Permit.' },
+      { keyword: 'deny', description: 'Deny.' },
+    ], 'permit'),
+    reference('match-ip-address', 'Match IP address permitted by access-list or prefix-list.', ['router prefix-list']),
+    count('set-local-preference', 'BGP local preference path attribute.', 0, 4294967295, 0),
+    count('set-metric', 'Metric value.', 0, 4294967295, 0),
+    count('set-weight', 'BGP weight for routing table.', 0, 4294967295, 0),
+  ],
+};
+
+export const ROUTER_ROUTE_MAP: FortiTableSpec = {
+  path: ['router', 'route-map'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 238,
+  help: 'Configure route maps.',
+  attributes: [
+    { ...word('name', 'Name.'), readOnly: true },
+    text('comments', 'Optional comments.'),
+  ],
+  children: [ROUTE_MAP_RULE],
+  onCommit(object, context) {
+    context.device.applyRouteMap({
+      name: object.key,
+      rules: object.childEntries('rule').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'deny' ? 'deny' as const : 'permit' as const,
+        matchPrefixList: entry.effective('match-ip-address')[0] || undefined,
+        setLocalPreference: entry.isExplicit('set-local-preference')
+          ? Number.parseInt(entry.effective('set-local-preference')[0] ?? '0', 10) : undefined,
+        setMetric: entry.isExplicit('set-metric')
+          ? Number.parseInt(entry.effective('set-metric')[0] ?? '0', 10) : undefined,
+        setWeight: entry.isExplicit('set-weight')
+          ? Number.parseInt(entry.effective('set-weight')[0] ?? '0', 10) : undefined,
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeRouteMap(key);
+  },
+};
+
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
   Object.freeze([
-    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
+    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
   ]);

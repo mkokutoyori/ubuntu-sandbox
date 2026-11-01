@@ -390,6 +390,12 @@ export function buildCommitDevice(
       applyPrefixList(list) {
         fw.getRouting().applyPrefixList(list);
       },
+      applyRouteMap(patch) {
+        fw.getRouting().applyRouteMap(patch);
+      },
+      removeRouteMap(name) {
+        fw.getRouting().removeRouteMap(name);
+      },
       removePrefixList(name) {
         fw.getRouting().removePrefixList(name);
       },

@@ -36,6 +36,7 @@ export interface RoutePolicyApply {
   community?: string;
   asPath?: string;
   localPreference?: number;
+  weight?: number;
   origin?: 'igp' | 'egp' | 'incomplete';
   metricType?: 'type-1' | 'type-2';
 }

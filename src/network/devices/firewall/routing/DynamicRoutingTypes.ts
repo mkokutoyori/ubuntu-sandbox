@@ -56,6 +56,22 @@ export interface BgpNeighbour {
   readonly shutdown?: boolean;
   readonly prefixListIn?: string;
   readonly prefixListOut?: string;
+  readonly routeMapIn?: string;
+  readonly routeMapOut?: string;
+}
+
+export interface RouteMapRulePatch {
+  readonly id: number;
+  readonly action: 'permit' | 'deny';
+  readonly matchPrefixList?: string;
+  readonly setLocalPreference?: number;
+  readonly setMetric?: number;
+  readonly setWeight?: number;
+}
+
+export interface RouteMapPatch {
+  readonly name: string;
+  readonly rules: readonly RouteMapRulePatch[];
 }
 
 export interface BgpConfiguration {

@@ -441,6 +441,8 @@ export interface FortiCommitDevice {
   applyAccessList(list: AccessList): void;
   removeAccessList(name: string): void;
   applyPrefixList(list: PrefixList): void;
+  applyRouteMap(patch: import('../../../routing/DynamicRoutingTypes').RouteMapPatch): void;
+  removeRouteMap(name: string): void;
   removePrefixList(name: string): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;

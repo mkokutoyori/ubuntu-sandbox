@@ -1,9 +1,10 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { ipToUint32, tryIpToUint32, prefixLengthToMaskUint32 } from '../../../core/ip';
-import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg } from '../../../bgp/BGPEngine';
+import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg, type BgpRouteDecision } from '../../../bgp/BGPEngine';
 import { BGP_PORT, CEASE_SUBCODE } from '../../../bgp/messages';
 import { BGP_DEFAULT_LOCAL_PREF } from '../../../bgp/bestPath';
 import type { IpPrefixListStore } from '../../router/policy/IpPrefixList';
+import type { RoutePolicyStore } from '../../router/policy/RoutePolicy';
 import { bgpTransport } from '../../../bgp/bgpTransport';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -29,6 +30,7 @@ export interface FirewallBgpDeps {
   readonly removeRoutes: () => void;
   readonly listen: (accept: (socket: TcpSocket) => void) => void;
   readonly prefixLists: () => IpPrefixListStore;
+  readonly routePolicies: () => RoutePolicyStore;
 }
 
 export const AS_NUMBER_MAX = 4294967295;
@@ -101,7 +103,8 @@ export class FirewallBgp {
       const ancien = avant.get(ip);
       const courant = now.get(ip);
       return ancien !== undefined && (ancien.remoteAs !== cfg.remoteAs
-        || ancien.prefixListIn !== courant?.prefixListIn || ancien.prefixListOut !== courant?.prefixListOut);
+        || ancien.prefixListIn !== courant?.prefixListIn || ancien.prefixListOut !== courant?.prefixListOut
+        || ancien.routeMapIn !== courant?.routeMapIn || ancien.routeMapOut !== courant?.routeMapOut);
     });
     this.installRoutes();
   }
@@ -127,12 +130,19 @@ export class FirewallBgp {
     };
   }
 
-  private filtersOf(peer: BgpConfiguration['neighbours'][number]): Pick<BgpNeighborCfg, 'inboundAllows' | 'outboundAllows'> {
-    const allows = (name: string) => (network: string, prefixLength: number): boolean =>
-      this.deps.prefixLists().get(name)?.evaluate(network, prefixLength) === 'permit';
+  private filtersOf(peer: BgpConfiguration['neighbours'][number]): Pick<BgpNeighborCfg, 'inboundPolicy' | 'outboundPolicy'> {
+    const policy = (list: string | undefined, map: string | undefined) => (network: string, prefixLength: number): BgpRouteDecision | null => {
+      if (list !== undefined && this.deps.prefixLists().get(list)?.evaluate(network, prefixLength) !== 'permit') return null;
+      if (map === undefined) return {};
+      const verdict = this.deps.routePolicies().get(map)?.evaluate({ network, prefixLength }, this.deps.prefixLists());
+      if (verdict === undefined || verdict.action === 'deny') return null;
+      return {
+        localPref: verdict.apply?.localPreference, weight: verdict.apply?.weight, med: verdict.apply?.cost,
+      };
+    };
     return {
-      ...(peer.prefixListIn ? { inboundAllows: allows(peer.prefixListIn) } : {}),
-      ...(peer.prefixListOut ? { outboundAllows: allows(peer.prefixListOut) } : {}),
+      ...(peer.prefixListIn || peer.routeMapIn ? { inboundPolicy: policy(peer.prefixListIn || undefined, peer.routeMapIn || undefined) } : {}),
+      ...(peer.prefixListOut || peer.routeMapOut ? { outboundPolicy: policy(peer.prefixListOut || undefined, peer.routeMapOut || undefined) } : {}),
     };
   }
 

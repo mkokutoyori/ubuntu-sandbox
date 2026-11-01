@@ -20,11 +20,12 @@ import {
   type AccessList, type PrefixList,
 } from './AccessList';
 import { IpPrefixListStore } from '../../router/policy/IpPrefixList';
+import { RoutePolicyStore } from '../../router/policy/RoutePolicy';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import {
   OSPF_DEFAULTS, RIP_DEFAULTS,
-  type BgpConfiguration, type OspfConfiguration, type RipConfiguration,
+  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch,
 } from './DynamicRoutingTypes';
 import { FirewallBgp } from './FirewallBgp';
 import type { FirewallRoute } from '../l3/RouteTable';
@@ -92,6 +93,7 @@ export class FirewallRouting {
   private rip: RIPEngine | null = null;
   private readonly accessLists = new AccessListStore();
   private readonly prefixLists = new IpPrefixListStore();
+  private readonly routePolicies = new RoutePolicyStore();
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
   private ospfConfig: OspfConfiguration = OSPF_DEFAULTS;
@@ -109,6 +111,7 @@ export class FirewallRouting {
       removeRoutes: () => { deps.removeRoutes('bgp'); },
       listen: deps.listenBgp,
       prefixLists: () => this.prefixLists,
+      routePolicies: () => this.routePolicies,
     });
   }
 
@@ -182,6 +185,26 @@ export class FirewallRouting {
   getAccessLists(): AccessListStore { return this.accessLists; }
 
   getPrefixLists(): IpPrefixListStore { return this.prefixLists; }
+
+  getRoutePolicies(): RoutePolicyStore { return this.routePolicies; }
+
+  applyRouteMap(patch: RouteMapPatch): void {
+    this.routePolicies.remove(patch.name);
+    const policy = this.routePolicies.upsert(patch.name);
+    for (const rule of patch.rules) {
+      const node = policy.upsertNode(rule.id, rule.action);
+      if (rule.matchPrefixList !== undefined) node.ifMatch({ ipPrefix: rule.matchPrefixList });
+      node.applySet({
+        ...(rule.setLocalPreference !== undefined ? { localPreference: rule.setLocalPreference } : {}),
+        ...(rule.setMetric !== undefined ? { cost: rule.setMetric } : {}),
+        ...(rule.setWeight !== undefined ? { weight: rule.setWeight } : {}),
+      });
+    }
+  }
+
+  removeRouteMap(name: string): void {
+    this.routePolicies.remove(name);
+  }
 
   applyAccessList(list: AccessList): void {
     this.accessLists.upsert(list);

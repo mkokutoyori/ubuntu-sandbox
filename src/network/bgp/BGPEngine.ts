@@ -41,6 +41,11 @@ import { VplsBgpSpeaker, type VplsPeer, type VplsBgpHost } from './vpls/VplsBgpS
 import { electRouterId } from '../routing/RouterIdElection';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
+export interface BgpRouteDecision {
+  localPref?: number;
+  weight?: number;
+  med?: number;
+}
 export interface BgpNeighborCfg {
   ip: string;
   remoteAs?: number;
@@ -48,8 +53,8 @@ export interface BgpNeighborCfg {
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
   shutdown?: boolean;
-  inboundAllows?: (network: string, prefixLength: number) => boolean;
-  outboundAllows?: (network: string, prefixLength: number) => boolean;
+  inboundPolicy?: (network: string, prefixLength: number) => BgpRouteDecision | null;
+  outboundPolicy?: (network: string, prefixLength: number) => BgpRouteDecision | null;
   updateSource?: string;
   vpnv4?: boolean;
   vpls?: boolean;
@@ -504,12 +509,18 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     if (update.announced.length > 0 && update.attributes) {
       // §6.3 loop prevention: never accept a path that already lists us.
       if (!update.attributes.asPath.includes(this.config.asn)) {
-        const inbound = this.config.neighbors.get(ip)?.inboundAllows;
+        const inbound = this.config.neighbors.get(ip)?.inboundPolicy;
         for (const nlri of update.announced) {
           const entry = this.toRibEntry(ps, nlri, update.attributes);
           const key = `${entry.network}/${entry.mask}`;
-          if (inbound !== undefined && !inbound(nlri.network, nlri.prefixLength)) ps.adjRibIn.delete(key);
-          else ps.adjRibIn.set(key, entry);
+          const decision = inbound === undefined ? {} : inbound(nlri.network, nlri.prefixLength);
+          if (decision === null) { ps.adjRibIn.delete(key); continue; }
+          ps.adjRibIn.set(key, {
+            ...entry,
+            localPref: decision.localPref ?? entry.localPref,
+            weight: decision.weight ?? entry.weight,
+            med: decision.med ?? entry.med,
+          });
         }
       }
     }
@@ -690,10 +701,11 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     if (!ps || !ps.session.isEstablished()) return;
     const ibgpReceiver = (ps.session.remoteAsn ?? this.config.asn) === this.config.asn;
 
-    const outbound = this.config.neighbors.get(ip)?.outboundAllows;
+    const outbound = this.config.neighbors.get(ip)?.outboundPolicy;
     const desired = new Map<string, { nlri: BgpNlri; attrs: BgpPathAttributes }>();
     for (const e of this.refreshTableVersion()) {
-      if (outbound !== undefined && !outbound(String(e.network), e.mask.toCIDR())) continue;
+      const decision = outbound === undefined ? {} : outbound(String(e.network), e.mask.toCIDR());
+      if (decision === null) continue;
       if (ibgpReceiver && e.source === 'ibgp') continue;     // iBGP split-horizon
       if (e.peerIp === ip) continue;            // don't echo a route to its source
       if (e.asPath.includes(ps.session.remoteAsn ?? -1)) continue; // would loop
@@ -702,8 +714,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         origin: e.origin,
         asPath: ibgpReceiver ? e.asPath : [this.config.asn, ...e.asPath],
         nextHop: ps.link.localIp,
-        med: e.med,
-        ...(ibgpReceiver ? { localPref: e.localPref } : {}),
+        med: decision.med ?? e.med,
+        ...(ibgpReceiver ? { localPref: decision.localPref ?? e.localPref } : {}),
       };
       desired.set(key, {
         nlri: { network: String(e.network), prefixLength: e.mask.toCIDR() },

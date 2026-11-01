@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — huawei-router-ospf
-Generated: 2026-10-14T20:08:07.025Z
+Generated: 2026-11-01T20:23:05.175Z
 Topology: R1(Huawei) GE0/0/1=L1 LAN 192.168.1.0/24, GE0/0/0=WAN 10.0.0.0/30; R2(Huawei) GE0/0/1=W1 LAN 192.168.2.0/24, GE0/0/0=WAN
 focus=VRP OSPF/OSPFv3: areas, auth, import-route, timers, display
 Total steps: 247
@@ -803,7 +803,7 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  0
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  77 packets, 7816 bytes
+  Output:  77 packets, 6296 bytes
     Unicast:                    0,  Multicast:                 76
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
@@ -819,7 +819,7 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  2
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  79 packets, 8040 bytes
+  Output:  79 packets, 6548 bytes
     Unicast:                    0,  Multicast:                 78
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
@@ -1083,8 +1083,8 @@ Total steps: 247
 
 [168/247] r1 <R1> display vrrp brief
   Total:0     Master:0     Backup:0     Non-active:0
-    VRID    State         Interface          Type      Virtual IP
-    ------  ------------  -----------------  --------  ----------
+    VRID    State         Interface               Type      Virtual IP
+    ------  ------------  ----------------------  --------  ----------
 
 [169/247] r1 <R1> display ike sa
   Info: No IPSec configuration.
@@ -1120,14 +1120,14 @@ Total steps: 247
   Root delay: 0.00 ms
   Root dispersion: 16000.00 ms
   Peer dispersion: 16000.00 ms
-  Reference time: 20:08:07.210  Oct 14 2026(EE7A5FA7.35C28F5C)
+  Reference time: 20:23:05.382  Nov 1 2026(EE921E29.61D26E97)
 
 [177/247] r1 <R1> display ntp session
   Info: No NTP session exists.
 
 [178/247] r1 <R1> display clock
-  2026-10-14 20:08:07
-  Wednesday
+  2026-11-01 20:23:05
+  Sunday
   Time Zone(UTC) : UTC
 
 [179/247] r1 <R1> display lldp neighbor
@@ -1156,13 +1156,13 @@ Total steps: 247
 [181/247] r1 <R1> display cpu-usage
   CPU Usage Stat. Cycle: 60 (Second)
   CPU Usage            : 11% Max: 38%
-  CPU Usage Stat. Time : 2026-10-14 20:08:07
+  CPU Usage Stat. Time : 2026-11-01 20:23:05
   CPU utilization for five seconds: 11%: one minute: 12%: five minutes: 10%
   
   Max CPU Usage Stat. Time : 0000-00-00 00:00:00.
 
 [182/247] r1 <R1> display memory-usage
-  Memory utilization statistics at 2026-10-14 20:08:07
+  Memory utilization statistics at 2026-11-01 20:23:05
   System Total Memory Is: 536870912 bytes
   Total Memory Used Is: 193273528 bytes
   Memory Using Percentage Is: 36%
@@ -1203,10 +1203,10 @@ Total steps: 247
   Dropped messages : 0
   Overwritten messages : 0
   Current messages : 4
-  2026-10-14 20:08:07 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
-  2026-10-14 20:08:07 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
-  2026-10-14 20:08:07 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
-  2026-10-14 20:08:07 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
+  2026-11-01 20:23:05 %01LINK/3/ERRORS: Interface GE0/0/1, changed state to up
+  2026-11-01 20:23:05 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/1, changed state to up
+  2026-11-01 20:23:05 %01LINK/3/ERRORS: Interface GE0/0/0, changed state to up
+  2026-11-01 20:23:05 %01LINEPROTO/5/NOTIFICATIONS: Line protocol on Interface GE0/0/0, changed state to up
 
 [187/247] r1 <R1> display trapbuffer
   Trapping buffer configuration and contents: enabled
@@ -1276,7 +1276,7 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  0
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  77 packets, 7816 bytes
+  Output:  77 packets, 6296 bytes
     Unicast:                    0,  Multicast:                 76
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
@@ -1294,7 +1294,7 @@ Total steps: 247
     Unicast:                    0,  Multicast:                  0
     Broadcast:                  0,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
-  Output:  77 packets, 7816 bytes
+  Output:  77 packets, 6296 bytes
     Unicast:                    0,  Multicast:                 76
     Broadcast:                  1,  Jumbo:                      -
     Discard:                    0,  Total Error:                0
@@ -1724,7 +1724,7 @@ Total steps: 247
     dhcpv6               DHCPv6 configuration
     dns                  Domain Name System
     firewall             Firewall configuration
-    header               Remove the login/shell banner
+    header               Configure the login and shell banners
     ike                  Internet Key Exchange
     ikev2                Internet Key Exchange version 2
     info-center          Information center configuration
