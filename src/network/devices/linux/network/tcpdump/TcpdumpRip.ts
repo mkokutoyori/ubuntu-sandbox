@@ -1,4 +1,4 @@
-import { hexPrintLines } from './TcpdumpHex';
+import { hexPrintLines, nullPaddedText } from './TcpdumpHex';
 
 const ROUTE_LENGTH = 20;
 const HEADER_LENGTH = 4;
@@ -33,29 +33,6 @@ function maskToPrefixLength(mask: number): number {
     if (candidate === mask) return prefix;
   }
   return -1;
-}
-
-function printableByte(byte: number): string {
-  let c = byte;
-  let text = '';
-  if (c > 0x7f) {
-    c &= 0x7f;
-    text += 'M-';
-  }
-  if (c < 0x20 || c === 0x7f) {
-    c ^= 0x40;
-    text += '^';
-  }
-  return text + String.fromCharCode(c);
-}
-
-function nullPaddedText(bytes: readonly number[]): string {
-  let text = '';
-  for (const byte of bytes) {
-    if (byte === 0) break;
-    text += printableByte(byte);
-  }
-  return text;
 }
 
 function unknownData(bytes: readonly number[], ident: string): string {

@@ -3862,10 +3862,9 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 
 ### [capture] les octets de plusieurs protocoles de routage et de decouverte sont des zeros dans les captures
 
-Mesure (tcpdump 4.99.4 reel rejoue sur les captures du simulateur, laboratoires `rip` et `ospf` de `tcpdump-options-oracle.test.ts`) : RIPv1/v2 et OSPFv2 (Hello, DD, LS-Request, LS-Update
-avec LSA routeur / reseau / externe, LS-Ack) sont ecrits en octets reels (RFC 2453, RFC 2328, somme Fletcher des LSA selon la RFC 905) et imprimes comme `print-rip.c` et `print-ospf.c`.
-Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported`), CDP (trame d'ethertype 0x2000 de 60 octets nuls, au lieu d'un cadre 802.3
-LLC/SNAP `AA AA 03 00 00 0C 20 00`), et, non mesures faute de laboratoire, LLDP, STP (BPDU 802.3 + LLC), BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
+Mesure (tcpdump 4.99.4 reel rejoue sur les captures du simulateur, laboratoires `rip`, `ospf` et `cdp` de `tcpdump-options-oracle.test.ts`) : RIPv1/v2 et OSPFv2 (Hello, DD, LS-Request, LS-Update
+avec LSA routeur / reseau / externe, LS-Ack) sont ecrits en octets reels (RFC 2453, RFC 2328, somme Fletcher des LSA selon la RFC 905) et imprimes comme `print-rip.c` et `print-ospf.c` ; CDP l'est aussi (cadre 802.3 + LLC/SNAP, TLV du CDPv2, `print-cdp.c`), pour les TLV que le moteur porte (pas les prefixes, la VoIP VLAN, la puissance, le MTU, le nom de systeme).
+Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported`), et, non mesures faute de laboratoire, LLDP, STP (BPDU 802.3 + LLC), BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
 adresses y sont hachees, `checksum.ts`), HSRP, VRRP, PIM, IGMP. Limites connues du lot fait : le MD5 de RIP (RFC 4822) et d'OSPF (RFC 2328 D.4.3) n'est pas calcule par les moteurs, qui
 portent un condense propre : RIP l'ecrit comme un mot de passe, OSPF place les octets du condense du moteur (ou des zeros) apres le paquet ; les LSA opaques (RFC 5250), le LLS (RFC 5613)
 et les LSA de type 6 ne sont pas encodes. Pour chaque protocole restant : l'encodeur a cote du moteur (comme `ospf/OspfWire.ts`), le port de l'imprimeur (`print-eigrp.c`,

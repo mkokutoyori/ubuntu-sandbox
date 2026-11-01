@@ -6,6 +6,7 @@ import {
 } from '@/network/core/IcmpPhrase';
 import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
+import { cdpText } from './TcpdumpCdp';
 import { ospfText } from './TcpdumpOspf';
 import { ripText } from './TcpdumpRip';
 import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
@@ -550,6 +551,18 @@ function etherTypeText(name: string, hex: string, quiet: boolean): string {
   return quiet ? name : `ethertype ${name} (${hex})`;
 }
 
+const SNAP_HEADER_BYTES = 8;
+
+function cdpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+  const lengthField = (frame.raw[frame.rawLinkOffset - SNAP_HEADER_BYTES - 2] << 8) | frame.raw[frame.rawLinkOffset - SNAP_HEADER_BYTES - 1];
+  const payload = Array.from(frame.raw.slice(frame.rawLinkOffset, frame.rawLinkOffset + lengthField - SNAP_HEADER_BYTES));
+  const text = cdpText(payload, opt.verbose, (address) => state.host(address));
+  if (!opt.linkLevel) return text;
+  return `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, 802.3, length ${lengthField}: `
+    + 'LLC, dsap SNAP (0xaa) Individual, ssap SNAP (0xaa) Command, ctrl 0x03: '
+    + `oui Cisco (0x00000c), pid CDP (0x2000), length ${payload.length}: ${text}`;
+}
+
 function ethPrefix(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   const type = etherTypeOf(frame);
   const addresses = `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}`;
@@ -645,6 +658,8 @@ export function formatFrame(
     body = `${link}${ipLine(frame, opt, state)}`;
   } else if (frame.l3 === 'ipv6') {
     body = `${link}${ip6Line(frame, opt, state)}`;
+  } else if (frame.l3 === 'cdp') {
+    body = cdpLine(frame, opt, state);
   } else {
     body = opt.linkLevel ? `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, ${opt.quiet ? 'Unknown Ethertype' : 'ethertype Unknown'} (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
   }

@@ -171,7 +171,22 @@ async function recordOspf(): Promise<string> {
   return pc.executeCommand('cat all.cap');
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf };
+async function recordCdp(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const router = new CiscoRouter('R1');
+  new Cable('c1').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 12');
+  await new Promise((r) => setTimeout(r, 30));
+  for (const line of ['enable', 'configure terminal', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await router.executeCommand(line);
+  await clock.advance(130_000);
+  await pc.executeCommand('ping -c 1 10.9.0.1');
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

@@ -1,4 +1,4 @@
-import { hexPrintLines } from './TcpdumpHex';
+import { hexPrintLines, nullPaddedText } from './TcpdumpHex';
 
 type AddressName = (address: string) => string;
 
@@ -62,29 +62,6 @@ function bitTokens(tokens: ReadonlyArray<readonly [number, string]>, value: numb
 
 function plural(count: number): string {
   return count === 1 ? '' : 's';
-}
-
-function printableByte(byte: number): string {
-  let c = byte;
-  let text = '';
-  if (c > 0x7f) {
-    c &= 0x7f;
-    text += 'M-';
-  }
-  if (c < 0x20 || c === 0x7f) {
-    c ^= 0x40;
-    text += '^';
-  }
-  return text + String.fromCharCode(c);
-}
-
-function nullPaddedText(bytes: readonly number[]): string {
-  let text = '';
-  for (const byte of bytes) {
-    if (byte === 0) break;
-    text += printableByte(byte);
-  }
-  return text;
 }
 
 function lsaHeader(bytes: readonly number[], at: number, name: AddressName): { text: string; length: number } | null {

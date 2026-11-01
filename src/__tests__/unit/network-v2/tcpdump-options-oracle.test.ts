@@ -22,6 +22,10 @@
  * The simulator now writes the RFC 2328 wire format (src/network/ospf/OspfWire.ts: header with Internet checksum, Hello, DD, LSR, LSU, LSAck, LSA headers with the RFC 905 Fletcher checksum, MD5 trailer) and the
  * IP length of the datagram is that of the packet; TcpdumpOspf.ts ports print-ospf.c (including the [|ospf2] that the real LS-Ack loop ends with, after which -A/-x/-X dump the frame from the link header).
  * 28 of the 116 cases fall without the change (the lab's cases that print an OSPF line); the others print none.
+ * Fifth lab, "cdp": a PC cabled to a Cisco router with CDP on. Measured before the change: the CDP frame was a 60-byte block of zeros under a made-up ethertype 0x2000, the real tool printed it as an unknown ethertype.
+ * The capture now holds an 802.3 frame (length field, LLC/SNAP `AA AA 03 00 00 0C 20 00`) and the CDPv2 TLVs (src/network/cdp/CdpWire.ts: Device-ID, Addresses, Port-ID, Capabilities, Version, Platform, VTP domain, Native VLAN, Duplex,
+ * Internet checksum); TcpdumpCdp.ts ports print-cdp.c, quirks included (without -v every TLV but the Device-ID is hex-dumped), and the -e line carries the 802.3 / LLC SNAP text of print-llc.c for this one frame type.
+ * 28 of the 145 cases fall without the change (the lab's cases that print a CDP line).
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.

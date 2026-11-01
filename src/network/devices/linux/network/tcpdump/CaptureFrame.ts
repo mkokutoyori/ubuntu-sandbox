@@ -25,6 +25,8 @@ import {
   type RIPPacket,
 } from '@/network/core/types';
 import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
+import { cdpPayloadBytes, CDP_SNAP_HEADER } from '@/network/cdp/CdpWire';
+import { ETHERTYPE_CDP, type CdpFrame } from '@/network/cdp/types';
 import { ospfPacketBytes } from '@/network/ospf/OspfWire';
 import type { OSPFPacket } from '@/network/ospf/types';
 import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
@@ -43,7 +45,7 @@ import { decodeBootp, type BootpInfo } from './TcpdumpBootp';
 import { icmpWireBytes, icmpv6WireBytes, tcpWireBytes, transportChecksum, udpWireBytes, u16, u32, WIRE_PROTOCOLS } from './CaptureWire';
 
 export type CaptureDirection = 'in' | 'out';
-export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'other';
+export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'cdp' | 'other';
 export type CaptureL4 = 'icmp' | 'icmp6' | 'tcp' | 'udp' | 'other' | 'none';
 
 export interface CaptureTcpFlags {
@@ -600,6 +602,16 @@ function decodeEthernetFrameBytes(
     base.raw = built.raw;
     base.rawLinkOffset = built.offset;
     if (base.fragment6 === undefined) reconcileTransportChecksums(base, 40);
+    return base;
+  }
+
+  if (frame.etherType === ETHERTYPE_CDP && (frame.payload as { type?: string } | undefined)?.type === 'cdp') {
+    const snap = [...CDP_SNAP_HEADER, ...cdpPayloadBytes(frame.payload as CdpFrame)];
+    const eth = [...macBytes(frame.dstMAC.toString()), ...macBytes(frame.srcMAC.toString()), ...u16(snap.length)];
+    base.l3 = 'cdp';
+    base.raw = [...eth, ...snap];
+    base.rawLinkOffset = eth.length + CDP_SNAP_HEADER.length;
+    base.length = Math.max(base.raw.length, 60);
     return base;
   }
 

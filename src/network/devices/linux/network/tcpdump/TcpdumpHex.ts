@@ -48,3 +48,26 @@ export function hexAndAsciiLines(bytes: readonly number[], ident: string): strin
   }
   return text;
 }
+
+export function printableByte(byte: number): string {
+  let c = byte;
+  let text = '';
+  if (c > 0x7f) {
+    c &= 0x7f;
+    text += 'M-';
+  }
+  if (c < 0x20 || c === 0x7f) {
+    c ^= 0x40;
+    text += '^';
+  }
+  return text + String.fromCharCode(c);
+}
+
+export function nullPaddedText(bytes: readonly number[]): string {
+  let text = '';
+  for (const byte of bytes) {
+    if (byte === 0) break;
+    text += printableByte(byte);
+  }
+  return text;
+}
