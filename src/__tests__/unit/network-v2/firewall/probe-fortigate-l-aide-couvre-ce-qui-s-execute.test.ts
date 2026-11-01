@@ -108,6 +108,9 @@ describe('les queues de `diagnose` annoncent leurs mots-cles', () => {
     ['diagnose debug application ', ['dhcpc', 'dhcprelay', 'dhcps', 'ike']],
     ['diagnose firewall auth filter ', ['clear', 'group', 'policy', 'user']],
     ['diagnose vpn ike gateway clear ', ['name']],
+    ['diagnose test application ', ['dnsproxy', 'miglogd']],
+    ['diagnose hardware deviceinfo nic ', ['port1', 'port2', 'wan1']],
+    ['diagnose lldprx port neighbor details ', ['port1', 'wan1']],
   ];
   for (const [line, words] of CASES) {
     it(`${line}? rend ${words.join(', ')}`, () => {
@@ -118,6 +121,17 @@ describe('les queues de `diagnose` annoncent leurs mots-cles', () => {
   it('une valeur est decrite apres son mot-cle', () => {
     const rows = neuf().getShell().help('diagnose sys session filter src ');
     expect(rows.join('\n')).toContain('<address>');
+  });
+});
+
+describe('les noms vivants sont proposes', () => {
+  it('un tunnel IPsec configure apparait apres `diagnose vpn tunnel up` et se complete', async () => {
+    const fw = neuf();
+    expect(offered(fw, 'diagnose vpn tunnel up ')).not.toContain('tun1');
+    for (const line of ['config vpn ipsec phase1-interface', 'edit "tun1"', 'set interface "port1"', 'set remote-gw 1.2.3.4', 'set psksecret "abc123"', 'next', 'end']) await fw.executeCommand(line);
+    expect(offered(fw, 'diagnose vpn tunnel up ')).toContain('tun1');
+    expect(offered(fw, 'diagnose vpn ike gateway list name ')).toContain('tun1');
+    expect(fw.cliTabCandidates('diagnose vpn tunnel up t')).toEqual(['diagnose vpn tunnel up tun1']);
   });
 });
 
