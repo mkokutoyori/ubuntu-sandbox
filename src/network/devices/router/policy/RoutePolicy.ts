@@ -1,5 +1,6 @@
 import type { IpPrefixListStore } from './IpPrefixList';
 import type { AsPathListStore } from './AsPathList';
+import type { CommunityListStore } from './CommunityList';
 
 export type RoutePolicyAction = 'permit' | 'deny';
 
@@ -9,6 +10,7 @@ export interface RoutePolicyRouteInput {
   tag?: number;
   routeType?: string;
   asPath?: readonly number[];
+  communities?: readonly string[];
 }
 
 export interface RoutePolicyResult {
@@ -39,6 +41,8 @@ export interface RoutePolicyApply {
   asPath?: string;
   localPreference?: number;
   weight?: number;
+  communities?: readonly string[];
+  communityAdditive?: boolean;
   origin?: 'igp' | 'egp' | 'incomplete';
   metricType?: 'type-1' | 'type-2';
 }
@@ -63,7 +67,7 @@ export class RoutePolicyNode {
    * data on a redistributed route today, so a node using one of them
    * fails closed (doesn't match) rather than risk over-permitting.
    */
-  matches(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore, asPathLists?: AsPathListStore): boolean {
+  matches(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore, asPathLists?: AsPathListStore, communityLists?: CommunityListStore): boolean {
     const m = this.match;
     if (m.ipPrefix !== undefined) {
       const list = prefixLists.get(m.ipPrefix, 'ipv4');
@@ -73,9 +77,13 @@ export class RoutePolicyNode {
       const list = asPathLists?.get(m.asPath);
       if (!list || route.asPath === undefined || list.evaluate(route.asPath) !== 'permit') return false;
     }
+    if (m.community !== undefined) {
+      const list = communityLists?.get(m.community);
+      if (!list || list.evaluate(route.communities ?? []) !== 'permit') return false;
+    }
     if (m.tag !== undefined && route.tag !== m.tag) return false;
     if (m.routeType !== undefined && route.routeType !== m.routeType) return false;
-    if (m.acl !== undefined || m.community !== undefined
+    if (m.acl !== undefined
       || m.interface !== undefined || m.extCommunity !== undefined
       || m.ipv6Prefix !== undefined || m.cost !== undefined) {
       return false;
@@ -126,9 +134,9 @@ export class RoutePolicy {
   }
 
   /** First matching node wins (nodeId order), like real VRP route-policy. No match = implicit deny. */
-  evaluate(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore, asPathLists?: AsPathListStore): RoutePolicyResult {
+  evaluate(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore, asPathLists?: AsPathListStore, communityLists?: CommunityListStore): RoutePolicyResult {
     for (const node of this.list()) {
-      if (node.matches(route, prefixLists, asPathLists)) {
+      if (node.matches(route, prefixLists, asPathLists, communityLists)) {
         return node.action === 'permit'
           ? { action: 'permit', apply: node.apply }
           : { action: 'deny' };

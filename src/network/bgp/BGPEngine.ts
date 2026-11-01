@@ -42,10 +42,17 @@ import { electRouterId } from '../routing/RouterIdElection';
 
 export interface BgpNetworkStmt { network: string; mask: string; }
 export interface BgpRouteDecision {
+  communities?: readonly string[];
+  communityAdditive?: boolean;
   localPref?: number;
   weight?: number;
   med?: number;
 }
+export function withCommunities(held: readonly string[], decision: BgpRouteDecision): readonly string[] {
+  if (decision.communities === undefined) return held;
+  return decision.communityAdditive === true ? [...new Set([...held, ...decision.communities])] : [...decision.communities];
+}
+
 export interface BgpNeighborCfg {
   ip: string;
   remoteAs?: number;
@@ -53,8 +60,8 @@ export interface BgpNeighborCfg {
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
   shutdown?: boolean;
-  inboundPolicy?: (network: string, prefixLength: number, asPath: readonly number[]) => BgpRouteDecision | null;
-  outboundPolicy?: (network: string, prefixLength: number, asPath: readonly number[]) => BgpRouteDecision | null;
+  inboundPolicy?: (network: string, prefixLength: number, asPath: readonly number[], communities: readonly string[]) => BgpRouteDecision | null;
+  outboundPolicy?: (network: string, prefixLength: number, asPath: readonly number[], communities: readonly string[]) => BgpRouteDecision | null;
   updateSource?: string;
   vpnv4?: boolean;
   vpls?: boolean;
@@ -513,13 +520,14 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         for (const nlri of update.announced) {
           const entry = this.toRibEntry(ps, nlri, update.attributes);
           const key = `${entry.network}/${entry.mask}`;
-          const decision = inbound === undefined ? {} : inbound(nlri.network, nlri.prefixLength, update.attributes.asPath);
+          const decision = inbound === undefined ? {} : inbound(nlri.network, nlri.prefixLength, update.attributes.asPath, update.attributes.communities ?? []);
           if (decision === null) { ps.adjRibIn.delete(key); continue; }
           ps.adjRibIn.set(key, {
             ...entry,
             localPref: decision.localPref ?? entry.localPref,
             weight: decision.weight ?? entry.weight,
             med: decision.med ?? entry.med,
+            communities: withCommunities(entry.communities, decision),
           });
         }
       }
@@ -561,7 +569,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       network: new IPAddress(nlri.network),
       mask: this.maskOf(nlri),
       asPath: [...attrs.asPath],
-      communities: [],
+      communities: attrs.communities ?? [],
       source: isEbgp ? 'ebgp' : 'ibgp',
       // eBGP next-hop is the advertising peer (next-hop-self default here).
       nextHop: new IPAddress(ps.link.neighborIp),
@@ -704,8 +712,10 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const outbound = this.config.neighbors.get(ip)?.outboundPolicy;
     const desired = new Map<string, { nlri: BgpNlri; attrs: BgpPathAttributes }>();
     for (const e of this.refreshTableVersion()) {
-      const decision = outbound === undefined ? {} : outbound(String(e.network), e.mask.toCIDR(), e.asPath);
+      const decision = outbound === undefined ? {} : outbound(String(e.network), e.mask.toCIDR(), e.asPath, e.communities);
       if (decision === null) continue;
+      const communities = withCommunities(e.communities, decision);
+      if (communities.includes('no-advertise') || (communities.includes('no-export') && !ibgpReceiver)) continue;
       if (ibgpReceiver && e.source === 'ibgp') continue;     // iBGP split-horizon
       if (e.peerIp === ip) continue;            // don't echo a route to its source
       if (e.asPath.includes(ps.session.remoteAsn ?? -1)) continue; // would loop
@@ -715,6 +725,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         asPath: ibgpReceiver ? e.asPath : [this.config.asn, ...e.asPath],
         nextHop: ps.link.localIp,
         med: decision.med ?? e.med,
+        ...(communities.length > 0 ? { communities } : {}),
         ...(ibgpReceiver ? { localPref: decision.localPref ?? e.localPref } : {}),
       };
       desired.set(key, {

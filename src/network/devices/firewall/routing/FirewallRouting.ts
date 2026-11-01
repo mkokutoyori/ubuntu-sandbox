@@ -22,11 +22,12 @@ import {
 import { IpPrefixListStore } from '../../router/policy/IpPrefixList';
 import { RoutePolicyStore } from '../../router/policy/RoutePolicy';
 import { AsPathListStore } from '../../router/policy/AsPathList';
+import { CommunityListStore } from '../../router/policy/CommunityList';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import {
   OSPF_DEFAULTS, RIP_DEFAULTS,
-  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch, type AsPathListPatch,
+  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch, type AsPathListPatch, type CommunityListPatch,
 } from './DynamicRoutingTypes';
 import { FirewallBgp } from './FirewallBgp';
 import type { FirewallRoute } from '../l3/RouteTable';
@@ -96,6 +97,7 @@ export class FirewallRouting {
   private readonly prefixLists = new IpPrefixListStore();
   private readonly routePolicies = new RoutePolicyStore();
   private readonly asPathLists = new AsPathListStore();
+  private readonly communityLists = new CommunityListStore();
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
   private ospfConfig: OspfConfiguration = OSPF_DEFAULTS;
@@ -115,6 +117,7 @@ export class FirewallRouting {
       prefixLists: () => this.prefixLists,
       routePolicies: () => this.routePolicies,
       asPathLists: () => this.asPathLists,
+      communityLists: () => this.communityLists,
     });
   }
 
@@ -198,16 +201,26 @@ export class FirewallRouting {
       const node = policy.upsertNode(rule.id, rule.action);
       if (rule.matchPrefixList !== undefined) node.ifMatch({ ipPrefix: rule.matchPrefixList });
       if (rule.matchAsPath !== undefined) node.ifMatch({ asPath: rule.matchAsPath });
+      if (rule.matchCommunity !== undefined) node.ifMatch({ community: rule.matchCommunity });
       node.applySet({
         ...(rule.setLocalPreference !== undefined ? { localPreference: rule.setLocalPreference } : {}),
         ...(rule.setMetric !== undefined ? { cost: rule.setMetric } : {}),
         ...(rule.setWeight !== undefined ? { weight: rule.setWeight } : {}),
+        ...(rule.setCommunity !== undefined && rule.setCommunity.length > 0 ? { communities: rule.setCommunity, communityAdditive: rule.setCommunityAdditive === true } : {}),
       });
     }
   }
 
   applyAsPathList(patch: AsPathListPatch): void {
     this.asPathLists.upsert(patch.name).replace(patch.rules);
+  }
+
+  applyCommunityList(patch: CommunityListPatch): void {
+    this.communityLists.upsert(patch.name).replace(patch.rules.map(rule => ({ ...rule, kind: patch.kind })));
+  }
+
+  removeCommunityList(name: string): void {
+    this.communityLists.remove(name);
   }
 
   removeAsPathList(name: string): void {

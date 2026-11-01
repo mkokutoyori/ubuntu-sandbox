@@ -477,6 +477,12 @@ const ROUTE_MAP_RULE: FortiTableSpec = {
       { keyword: 'deny', description: 'Deny.' },
     ], 'permit'),
     reference('match-as-path', 'Match BGP AS path list.', ['router aspath-list']),
+    reference('match-community', 'Match BGP community list.', ['router community-list']),
+    {
+      name: 'set-community', help: 'BGP community attribute.', quoted: true, multiValue: true,
+      parts: [{ name: 'set-community', type: 'WORD', description: 'Community.' }],
+    },
+    enable('set-community-additive', 'Enable/disable adding set-community to existing community.'),
     reference('match-ip-address', 'Match IP address permitted by access-list or prefix-list.', ['router prefix-list']),
     count('set-local-preference', 'BGP local preference path attribute.', 0, 4294967295, 0),
     count('set-metric', 'Metric value.', 0, 4294967295, 0),
@@ -531,6 +537,60 @@ export const ROUTER_ASPATH_LIST: FortiTableSpec = {
   },
 };
 
+const COMMUNITY_LIST_RULE: FortiTableSpec = {
+  path: ['router', 'community-list', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Community list rule.',
+  attributes: [
+    { ...word('id', 'ID.'), readOnly: true },
+    choice('action', 'Permit or deny route-based operations, based on the route\'s COMMUNITY attribute.', [
+      { keyword: 'deny', description: 'Deny route-based operations.' },
+      { keyword: 'permit', description: 'Permit or allow route-based operations.' },
+    ], 'deny'),
+    text('match', 'Community specifications for matching a reserved community.'),
+    text('regexp', 'Ordered list of COMMUNITY attributes as a regular expression.'),
+  ],
+};
+
+export const ROUTER_COMMUNITY_LIST: FortiTableSpec = {
+  path: ['router', 'community-list'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 243,
+  help: 'Configure community lists.',
+  attributes: [
+    { ...word('name', 'Community list name.'), readOnly: true },
+    choice('type', 'Community list type (standard or expanded).', [
+      { keyword: 'standard', description: 'Standard community list type.' },
+      { keyword: 'expanded', description: 'Expanded community list type.' },
+    ], 'standard'),
+  ],
+  children: [COMMUNITY_LIST_RULE],
+  onCommit(object, context) {
+    context.device.applyCommunityList({
+      name: object.key,
+      kind: object.effective('type')[0] === 'expanded' ? 'expanded' : 'standard',
+      rules: object.childEntries('rule').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'permit' ? 'permit' as const : 'deny' as const,
+        communities: (entry.effective('match')[0] ?? '').split(/\s+/).filter(word => word !== ''),
+        regexp: entry.effective('regexp')[0] ?? '',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeCommunityList(key);
+  },
+};
+
 export const ROUTER_ROUTE_MAP: FortiTableSpec = {
   path: ['router', 'route-map'],
   kind: 'table',
@@ -553,6 +613,9 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
         action: entry.effective('action')[0] === 'deny' ? 'deny' as const : 'permit' as const,
         matchPrefixList: entry.effective('match-ip-address')[0] || undefined,
         matchAsPath: entry.effective('match-as-path')[0] || undefined,
+        matchCommunity: entry.effective('match-community')[0] || undefined,
+        setCommunity: entry.isExplicit('set-community') ? [...entry.effective('set-community')] : undefined,
+        setCommunityAdditive: entry.effective('set-community-additive')[0] === 'enable',
         setLocalPreference: entry.isExplicit('set-local-preference')
           ? Number.parseInt(entry.effective('set-local-preference')[0] ?? '0', 10) : undefined,
         setMetric: entry.isExplicit('set-metric')
@@ -569,5 +632,5 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
 
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
   Object.freeze([
-    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
+    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_COMMUNITY_LIST, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
   ]);

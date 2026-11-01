@@ -65,11 +65,20 @@ export interface AsPathListPatch {
   readonly rules: ReadonlyArray<{ readonly id: number; readonly action: 'permit' | 'deny'; readonly regexp: string }>;
 }
 
+export interface CommunityListPatch {
+  readonly name: string;
+  readonly kind: 'standard' | 'expanded';
+  readonly rules: ReadonlyArray<{ readonly id: number; readonly action: 'permit' | 'deny'; readonly communities: readonly string[]; readonly regexp: string }>;
+}
+
 export interface RouteMapRulePatch {
   readonly id: number;
   readonly action: 'permit' | 'deny';
   readonly matchPrefixList?: string;
   readonly matchAsPath?: string;
+  readonly matchCommunity?: string;
+  readonly setCommunity?: readonly string[];
+  readonly setCommunityAdditive?: boolean;
   readonly setLocalPreference?: number;
   readonly setMetric?: number;
   readonly setWeight?: number;

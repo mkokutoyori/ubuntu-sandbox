@@ -396,6 +396,12 @@ export function buildCommitDevice(
       applyAsPathList(patch) {
         fw.getRouting().applyAsPathList(patch);
       },
+      applyCommunityList(patch) {
+        fw.getRouting().applyCommunityList(patch);
+      },
+      removeCommunityList(name) {
+        fw.getRouting().removeCommunityList(name);
+      },
       removeAsPathList(name) {
         fw.getRouting().removeAsPathList(name);
       },
