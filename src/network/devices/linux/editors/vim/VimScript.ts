@@ -27,7 +27,7 @@ const MAX_FUNCTION_DEPTH = 100;
 const SCRIPT_WORDS: ReadonlyArray<readonly [string, number]> = [
   ['function', 2], ['endfunction', 4], ['delfunction', 4], ['return', 4], ['if', 2], ['elseif', 5], ['else', 2], ['endif', 2],
   ['while', 2], ['endwhile', 4], ['for', 3], ['endfor', 5], ['break', 4], ['continue', 3], ['call', 3], ['echo', 2],
-  ['echon', 5], ['echomsg', 5], ['echoerr', 5], ['execute', 3], ['let', 3], ['unlet', 3], ['const', 4],
+  ['echon', 5], ['echomsg', 5], ['echoerr', 5], ['execute', 3], ['let', 3], ['unlet', 3], ['const', 4], ['lockvar', 5], ['unlockvar', 4],
   ['try', 3], ['catch', 3], ['finally', 4], ['endtry', 4], ['throw', 2],
 ];
 const BLOCK_OPENERS = new Set(['if', 'while', 'for', 'try']);
@@ -335,6 +335,8 @@ export class ScriptRuntime implements UserFunctions {
       case 'throw': throw new ThrownException(session.text(session.evaluate(argument)));
       case 'echoerr': return session.fail(session.echo(argument, ' '));
       case 'const': session.assign(argument, true); return NEXT;
+      case 'lockvar': session.lock(bang ? `!${argument}` : argument, true); return NEXT;
+      case 'unlockvar': session.lock(bang ? `!${argument}` : argument, false); return NEXT;
       case 'function': skipTo(this.define(session, lines, at, end, bang, argument, skipTo)); return NEXT;
       case 'endfunction': return session.fail('E193: :endfunction not inside a function');
       case 'delfunction': this.remove(session, bang, argument); return NEXT;
