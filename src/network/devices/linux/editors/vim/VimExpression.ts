@@ -155,6 +155,7 @@ export interface ExpressionHost {
   renameEntry(from: string, to: string): boolean;
   homeDirectory(): string | null;
   bufferName(): string;
+  alternateName(): string;
   temporaryName(): string;
   wordUnderCursor(big: boolean): string;
   fileNameUnderCursor(): string;
@@ -1313,7 +1314,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     return asList ? list(expanded.map(str)) : str(expanded.join('\n'));
   } }],
   ['resolve', { min: 1, max: 1, run: (args, context) => str(resolveLinks(context, context.stringOf(args[0], false))) }],
-  ['bufname', { min: 0, max: 1, run: (args, context) => str(args[0] === undefined || ['%', ''].includes(context.stringOf(args[0], false)) ? context.host.bufferName() : '') }],
+  ['bufname', { min: 0, max: 1, run: (args, context) => str(args[0] === undefined || ['%', ''].includes(context.stringOf(args[0], false)) ? context.host.bufferName() : context.stringOf(args[0], false) === '#' ? context.host.alternateName() : '') }],
   ['wordcount', { min: 0, max: 0, run: (_args, context) => wordCount(context) }],
   ['reltime', { min: 0, max: 2, run: (args, context) => relativeTime(args, context) }],
   ['reltimestr', { min: 1, max: 1, run: (args, context) => {
@@ -1598,7 +1599,7 @@ function globFileSystem(context: Context): import('./VimGlob').GlobFileSystem {
 
 function expandWord(context: Context, text: string, noWildcards: boolean): string[] {
   if (text === '%' || text.startsWith('%:')) return [modifyFileName(context.host.bufferName(), text.slice(1), context)];
-  if (text === '#') return [''];
+  if (text === '#' || text.startsWith('#:')) return [modifyFileName(context.host.alternateName(), text.slice(1), context)];
   if (text === '<cword>') return [context.host.wordUnderCursor(false)];
   if (text === '<cWORD>') return [context.host.wordUnderCursor(true)];
   if (text === '<cfile>') return [context.host.fileNameUnderCursor()];

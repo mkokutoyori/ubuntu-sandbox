@@ -3108,6 +3108,7 @@ export class VimEngine {
         }
         const body = content.endsWith('\n') ? content.slice(0, -1) : content;
         newLines = body.length === 0 ? [] : body.split('\n');
+        if (arg !== this.filePath) this.alternate = arg;
       }
       const at = rangeStart !== null ? rangeStart : this._cursorLine;
       this.linesArr.splice(at + 1, 0, ...newLines);
@@ -3134,8 +3135,9 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
-    if (trimmed.startsWith('w ')) {
-      this.writeFile(trimmed.slice(2).trim(), false);
+    const writeNamed = /^w(?:r(?:i(?:t(?:e)?)?)?)?(!?)\s+([^!\s].*)$/.exec(trimmed);
+    if (writeNamed !== null) {
+      this.writeFile(writeNamed[2].trim(), writeNamed[1] === '!');
       this._mode = 'normal';
       return;
     }
@@ -3227,6 +3229,8 @@ export class VimEngine {
     this._mode = 'normal';
   }
 
+  private alternate = '';
+
   private writeFile(path: string, force: boolean): boolean {
     if (path === '') {
       this._message = 'E32: No file name';
@@ -3244,6 +3248,7 @@ export class VimEngine {
       return false;
     }
     this._modified = false;
+    if (path !== this.filePath) this.alternate = path;
     // Real vim reports the byte count actually written (UTF-8), not the
     // in-memory JS string length — they diverge for any multi-byte char.
     const byteLength = new TextEncoder().encode(body).length;
@@ -3577,6 +3582,7 @@ export class VimEngine {
       renameEntry: (from, to) => this.fs.renameEntry?.(from, to) ?? false,
       homeDirectory: () => this.fs.homeDirectory?.() ?? null,
       bufferName: () => this.filePath,
+      alternateName: () => this.alternate,
       temporaryName: () => this.nextTemporaryName(),
       wordUnderCursor: (big) => this.wordUnderCursor(big, lineNumber - 1, columnIndex),
       fileNameUnderCursor: () => fileNameAt(this.linesArr[lineNumber - 1] ?? '', columnIndex),
