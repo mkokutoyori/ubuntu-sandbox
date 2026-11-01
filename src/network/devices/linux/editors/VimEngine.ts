@@ -131,6 +131,27 @@ function findEnclosingBracketPair(line: string, col: number, open: string, close
   return best;
 }
 
+const FILE_NAME_CHARACTER = /[\p{L}\p{N}/._+,#$%~=-]/u;
+
+function fileNameAt(text: string, col: number): string {
+  const characters = [...text];
+  const accepts = (at: number): boolean => at >= 0 && at < characters.length && FILE_NAME_CHARACTER.test(characters[at]);
+  const urlJoint = (at: number): boolean => characters[at] === ':' && characters[at + 1] === '/' && characters[at + 2] === '/' && accepts(at - 1);
+  const member = (at: number): boolean => accepts(at) || urlJoint(at) || (at >= 2 && urlJoint(at - 2) && characters[at] === '/') || (at >= 1 && urlJoint(at - 1) && characters[at] === '/');
+  let from = Math.min(col, characters.length - 1);
+  while (from < characters.length && !member(from)) from++;
+  if (from >= characters.length) return '';
+  let start = from;
+  while (start > 0 && member(start - 1)) start--;
+  let stop = from;
+  while (stop + 1 < characters.length && member(stop + 1)) stop++;
+  const run = characters.slice(start, stop + 1).join('');
+  if (run.includes('://')) {
+    while (stop + 1 < characters.length && (accepts(stop + 1) || characters[stop + 1] === '?' || characters[stop + 1] === '&')) stop++;
+  }
+  return characters.slice(start, stop + 1).join('');
+}
+
 type Operator = 'd' | 'y' | 'c' | '<' | '>' | 'g~' | 'gu' | 'gU';
 
 interface OperatorRange {
@@ -3558,6 +3579,8 @@ export class VimEngine {
       bufferName: () => this.filePath,
       temporaryName: () => this.nextTemporaryName(),
       wordUnderCursor: (big) => this.wordUnderCursor(big, lineNumber - 1, columnIndex),
+      fileNameUnderCursor: () => fileNameAt(this.linesArr[lineNumber - 1] ?? '', columnIndex),
+      modeName: () => (this._mode === 'insert' ? 'i' : 'n'),
       executableAt: (path) => this.fs.executableAt?.(path) ?? false,
       resolvePath: (path) => this.fs.resolvePath(path),
       hostName: () => this.fs.identity?.().host ?? '',

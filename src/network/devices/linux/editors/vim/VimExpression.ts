@@ -152,6 +152,8 @@ export interface ExpressionHost {
   bufferName(): string;
   temporaryName(): string;
   wordUnderCursor(big: boolean): string;
+  fileNameUnderCursor(): string;
+  modeName(full: boolean): string;
   resolvePath(path: string): string;
   processId(): number;
   shell(command: string, input: string | null): string;
@@ -1450,6 +1452,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     if (name.startsWith('*')) return num(FUNCTIONS.has(name.slice(1)) || context.host.functions?.has(name.slice(1)) === true ? 1 : 0);
     return num(context.host.variables.lookup(name) === undefined ? 0 : 1);
   } }],
+  ['mode', { min: 0, max: 1, run: (args, context) => str(context.host.modeName(args[0] !== undefined && context.truth(args[0]))) }],
   ['has', { min: 1, max: 2, run: (args, context) => num(['unix', 'linux', 'multi_byte', 'eval', 'float'].includes(context.stringOf(args[0], false)) ? 1 : 0) }],
 ]);
 
@@ -1576,6 +1579,7 @@ function expandWord(context: Context, text: string, noWildcards: boolean): strin
   if (text === '#') return [''];
   if (text === '<cword>') return [context.host.wordUnderCursor(false)];
   if (text === '<cWORD>') return [context.host.wordUnderCursor(true)];
+  if (text === '<cfile>') return [context.host.fileNameUnderCursor()];
   const withVariables = text.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, bare: string | undefined, braced: string | undefined) => {
     const value = context.host.environmentOrNull(bare ?? braced ?? '');
     return value === null ? whole : value;

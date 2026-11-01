@@ -655,9 +655,9 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait. Restent absentes (hors blobs) : `mode`, `foreach` (inconnue de ce vim aussi). Existent, mesurees
+  function` meme quand vim le connait. Restent absentes (hors blobs) : `foreach` (inconnue de ce vim aussi). Existent, mesurees
   contre vim 9.1 (`probe-vim-fonctions-*`) : `glob`, `globpath`, `expand` (`$VAR`, `~`, jokers, `%`, `<cword>`, `<cWORD>` ; `<sfile>`,
-  `<abuf>`, `<amatch>`, `<cfile>` et `#` restent absents), `resolve`, `mkdir` (`p` ; les drapeaux `D` et `R` de vim 9.1 ne sont pas
+  `<abuf>`, `<amatch>`, et `#` restent absents ; `<cfile>` et `mode()` existent (`probe-vim-cfile-et-mode`)), `resolve`, `mkdir` (`p` ; les drapeaux `D` et `R` de vim 9.1 ne sont pas
   portes), `writefile` (`b`, `a` ; `s`, `S`, `D`, `r` ne sont pas portes), `rename`, `delete`, `tempname`, `bufname` (tampon courant
   seulement), `wordcount`, `reltime`, `reltimestr`, `reltimefloat`, `strptime`, `fnamemodify` (`:h :t :r :e :p :. :~ :s :gs :S`) et
   toutes les fonctions de texte, de fichier et d'environnement des lots precedents.
