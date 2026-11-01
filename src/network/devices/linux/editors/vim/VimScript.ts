@@ -1,0 +1,360 @@
+import { ExpressionSession, isExpressionAbort, type ExpressionHost, type UserFunctions, type VimValue } from './VimExpression';
+
+export interface ScriptHost {
+  expressionHost(): ExpressionHost;
+  runExLine(line: string): string | null;
+}
+
+interface UserFunction {
+  readonly name: string;
+  readonly parameters: readonly string[];
+  readonly variadic: boolean;
+  readonly abort: boolean;
+  readonly range: boolean;
+  readonly dict: boolean;
+  readonly body: readonly string[];
+  readonly listing: readonly string[];
+}
+
+type Outcome =
+  | { readonly kind: 'next' }
+  | { readonly kind: 'break' }
+  | { readonly kind: 'continue' }
+  | { readonly kind: 'return'; readonly value: VimValue };
+
+const NEXT: Outcome = { kind: 'next' };
+const MAX_FUNCTION_DEPTH = 100;
+const SCRIPT_WORDS: ReadonlyArray<readonly [string, number]> = [
+  ['function', 2], ['endfunction', 4], ['delfunction', 4], ['return', 4], ['if', 2], ['elseif', 5], ['else', 2], ['endif', 2],
+  ['while', 2], ['endwhile', 4], ['for', 3], ['endfor', 5], ['break', 4], ['continue', 3], ['call', 3], ['echo', 2],
+  ['echon', 5], ['echomsg', 5], ['execute', 3], ['let', 3], ['unlet', 3],
+];
+const BLOCK_OPENERS = new Set(['if', 'while', 'for']);
+const BLOCK_CLOSERS = new Set(['endif', 'endwhile', 'endfor']);
+const FUNCTION_HEADER = /^(function)(!?)\s*(.*)$/s;
+const FUNCTION_NAME = /^(?:s:|g:)?[A-Z][\w#]*$|^s:[a-z_][\w#]*$/;
+
+interface CommandWord {
+  readonly word: string;
+  readonly bang: boolean;
+  readonly argument: string;
+}
+
+function commandWord(line: string): CommandWord {
+  const matched = line.match(/^([A-Za-z]+)(!?)\s*(.*)$/s);
+  if (matched === null) return { word: '', bang: false, argument: line };
+  const typed = matched[1];
+  for (const [full, shortest] of SCRIPT_WORDS) {
+    if (typed.length >= shortest && full.startsWith(typed)) return { word: full, bang: matched[2] === '!', argument: matched[3] };
+  }
+  return { word: '', bang: false, argument: line };
+}
+
+export function isScriptCommand(line: string): boolean {
+  return commandWord(line).word !== '';
+}
+
+function barOutside(text: string): number {
+  let quote = '';
+  let brace = 0;
+  for (let at = 0; at < text.length; at++) {
+    const character = text[at];
+    if (quote !== '') {
+      if (character === quote) {
+        if (quote === "'" && text[at + 1] === "'") at++;
+        else quote = '';
+      } else if (character === '\\' && quote === '"') at++;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === '{') brace++;
+    else if (character === '}') brace--;
+    else if (character === '|' && brace <= 0) {
+      if (text[at + 1] === '|') at++;
+      else return at;
+    }
+  }
+  return -1;
+}
+
+interface Logical {
+  readonly lines: string[];
+  readonly raw: string[];
+}
+
+function normalise(lines: readonly string[]): Logical {
+  const out: Logical = { lines: [], raw: [] };
+  for (const original of lines) {
+    let rest = original.replace(/^[\s:]+/, '');
+    let first = true;
+    for (;;) {
+      if (rest.startsWith('"')) {
+        out.lines.push('');
+        out.raw.push(first ? original : rest);
+        break;
+      }
+      if (rest === '') {
+        if (first) { out.lines.push(''); out.raw.push(original); }
+        break;
+      }
+      const bar = commandWord(rest).word === '' ? -1 : barOutside(rest);
+      if (bar === -1) {
+        out.lines.push(rest.trimEnd());
+        out.raw.push(first ? original : rest);
+        break;
+      }
+      out.lines.push(rest.slice(0, bar).trimEnd());
+      out.raw.push(first ? original.slice(0, original.length - rest.length + bar) : rest.slice(0, bar));
+      rest = rest.slice(bar + 1).replace(/^[\s:]+/, '');
+      first = false;
+    }
+  }
+  return out;
+}
+
+function matching(lines: readonly string[], from: number, end: number): { branches: number[]; close: number } {
+  const branches: number[] = [];
+  let depth = 0;
+  for (let at = from + 1; at < end; at++) {
+    const { word } = commandWord(lines[at]);
+    if (BLOCK_OPENERS.has(word)) depth++;
+    else if (BLOCK_CLOSERS.has(word)) {
+      if (depth === 0) return { branches, close: at };
+      depth--;
+    } else if (depth === 0 && (word === 'elseif' || word === 'else')) branches.push(at);
+  }
+  return { branches, close: -1 };
+}
+
+class ScriptAbort extends Error {}
+
+export class ScriptRuntime implements UserFunctions {
+  private readonly functions = new Map<string, UserFunction>();
+  private readonly running: string[] = [];
+  readonly output: string[] = [];
+  private sources: readonly string[] = [];
+  private anonymous = 0;
+
+  constructor(private readonly host: ScriptHost) {}
+
+  has(name: string): boolean {
+    return this.functions.has(this.canonical(name));
+  }
+
+  private canonical(name: string): string {
+    return name.startsWith('g:') ? name.slice(2) : name;
+  }
+
+  runScript(lines: readonly string[], keepGoing: boolean): string[] {
+    this.output.length = 0;
+    const session = ExpressionSession.open(this.host.expressionHost());
+    const logical = normalise(lines);
+    this.sources = logical.raw;
+    try {
+      this.execute(session, logical.lines, 0, logical.lines.length, keepGoing);
+    } catch (failure) {
+      if (!(failure instanceof ScriptAbort)) throw failure;
+    }
+    return [...session.errors];
+  }
+
+  call(name: string, args: VimValue[], session: ExpressionSession, self: Parameters<UserFunctions['call']>[3]): VimValue {
+    const fn = this.functions.get(this.canonical(name))!;
+    if (args.length < fn.parameters.length) session.fail(`E119: Not enough arguments for function: ${name}`);
+    if (args.length > fn.parameters.length && !fn.variadic) session.fail(`E118: Too many arguments for function: ${name}`);
+    if (fn.dict && self === null) session.fail(`E725: Calling dict function without Dictionary: ${name}`);
+    if (this.running.length >= MAX_FUNCTION_DEPTH) session.fail("E132: Function call depth is higher than 'maxfuncdepth'");
+    const frame = new Map<string, VimValue>();
+    fn.parameters.forEach((parameter, at) => frame.set(`a:${parameter}`, args[at]));
+    const extra = args.slice(fn.parameters.length);
+    frame.set('a:0', ExpressionSession.number(extra.length));
+    frame.set('a:000', ExpressionSession.list(extra));
+    extra.forEach((value, at) => frame.set(`a:${at + 1}`, value));
+    if (fn.range) {
+      frame.set('a:firstline', ExpressionSession.number(session.host.lineNumber));
+      frame.set('a:lastline', ExpressionSession.number(session.host.lineNumber));
+    }
+    const variables = session.host.variables;
+    variables.enter(frame);
+    if (fn.dict && self !== null) variables.assign('l:self', self);
+    this.running.push(this.canonical(name));
+    try {
+      return this.executeBody(session, fn);
+    } finally {
+      this.running.pop();
+      variables.leave();
+    }
+  }
+
+  private executeBody(session: ExpressionSession, fn: UserFunction): VimValue {
+    try {
+      const outcome = this.execute(session, fn.body, 0, fn.body.length, !fn.abort);
+      return outcome.kind === 'return' ? outcome.value : ExpressionSession.number(0);
+    } catch (failure) {
+      if (!(failure instanceof ScriptAbort)) throw failure;
+      return ExpressionSession.number(-1);
+    }
+  }
+
+  private execute(session: ExpressionSession, lines: readonly string[], start: number, end: number, keepGoing: boolean): Outcome {
+    let at = start;
+    while (at < end) {
+      let following = at + 1;
+      try {
+        const outcome = this.statement(session, lines, at, end, keepGoing, (next) => { following = next; });
+        if (outcome.kind !== 'next') return outcome;
+      } catch (failure) {
+        if (!isExpressionAbort(failure)) throw failure;
+        if (!keepGoing) throw new ScriptAbort();
+      }
+      at = following;
+    }
+    return NEXT;
+  }
+
+  private statement(
+    session: ExpressionSession, lines: readonly string[], at: number, end: number, keepGoing: boolean, skipTo: (next: number) => void,
+  ): Outcome {
+    const { word, bang, argument } = commandWord(lines[at]);
+    switch (word) {
+      case 'if': {
+        const { branches, close } = matching(lines, at, end);
+        skipTo(close === -1 ? end : close + 1);
+        if (close === -1) session.fail('E171: Missing :endif');
+        const arms = [at, ...branches];
+        for (let index = 0; index < arms.length; index++) {
+          const arm = arms[index];
+          const header = commandWord(lines[arm]);
+          if (header.word !== 'else' && !session.condition(header.argument)) continue;
+          const outcome = this.execute(session, lines, arm + 1, index + 1 < arms.length ? arms[index + 1] : close, keepGoing);
+          return outcome;
+        }
+        return NEXT;
+      }
+      case 'while': {
+        const { close } = matching(lines, at, end);
+        skipTo(close === -1 ? end : close + 1);
+        if (close === -1) session.fail('E170: Missing :endwhile');
+        while (session.condition(argument)) {
+          const outcome = this.execute(session, lines, at + 1, close, keepGoing);
+          if (outcome.kind === 'break') break;
+          if (outcome.kind === 'return') return outcome;
+        }
+        return NEXT;
+      }
+      case 'for': {
+        const { close } = matching(lines, at, end);
+        skipTo(close === -1 ? end : close + 1);
+        if (close === -1) session.fail('E170: Missing :endfor');
+        const loop = argument.match(/^(\[[^\]]*\]|[A-Za-z_][\w:#]*)\s+in\s+(.*)$/s);
+        if (loop === null) return session.fail('E690: Missing "in" after :for');
+        const items = session.items(session.evaluate(loop[2]));
+        if (items === null) return session.fail('E1098: String, List or Blob required');
+        for (const item of items) {
+          session.declareLoopVariables(loop[1], item);
+          const outcome = this.execute(session, lines, at + 1, close, keepGoing);
+          if (outcome.kind === 'break') break;
+          if (outcome.kind === 'return') return outcome;
+        }
+        return NEXT;
+      }
+      case 'function': skipTo(this.define(session, lines, at, end, bang, argument, skipTo)); return NEXT;
+      case 'endfunction': return session.fail('E193: :endfunction not inside a function');
+      case 'delfunction': this.remove(session, bang, argument); return NEXT;
+      case 'break': return { kind: 'break' };
+      case 'continue': return { kind: 'continue' };
+      case 'return': return { kind: 'return', value: argument.trim() === '' ? ExpressionSession.number(0) : session.evaluate(argument) };
+      case 'endif': return session.fail(`E580: :endif without :if: ${lines[at]}`);
+      case 'endwhile': return session.fail(`E588: :endwhile without :while: ${lines[at]}`);
+      case 'endfor': return session.fail(`E588: :endfor without :for: ${lines[at]}`);
+      case 'elseif': return session.fail(`E582: :elseif without :if: ${lines[at]}`);
+      case 'else': return session.fail(`E581: :else without :if: ${lines[at]}`);
+      case 'let': session.assign(argument); return NEXT;
+      case 'unlet': session.unassign(argument, bang); return NEXT;
+      case 'call': session.evaluate(argument); return NEXT;
+      case 'echo': case 'echomsg': this.output.push(session.echo(argument, ' ')); return NEXT;
+      case 'echon': {
+        const text = session.echo(argument, '');
+        if (this.output.length === 0) this.output.push(text);
+        else this.output[this.output.length - 1] += text;
+        return NEXT;
+      }
+      case 'execute': {
+        const text = session.sequence(argument).map((value) => session.text(value)).join(' ');
+        const logical = normalise(text.split('\n'));
+        return this.execute(session, logical.lines, 0, logical.lines.length, keepGoing);
+      }
+      default: {
+        const failure = this.host.runExLine(lines[at]);
+        if (failure !== null) session.fail(failure);
+        return NEXT;
+      }
+    }
+  }
+
+  private list(session: ExpressionSession, argument: string): void {
+    if (argument === '') {
+      const names = [...this.functions.values()].filter((fn) => !/^\d+$/.test(fn.name));
+      const shown = [...names.filter((fn) => !fn.name.startsWith('s:')).sort((x, y) => (x.name < y.name ? -1 : 1)), ...names.filter((fn) => fn.name.startsWith('s:')).sort((x, y) => (x.name < y.name ? -1 : 1))];
+      for (const fn of shown) this.output.push(fn.listing[0].trim());
+      return;
+    }
+    const fn = this.functions.get(this.canonical(argument));
+    if (fn === undefined) return session.fail(`E123: Undefined function: ${argument}`);
+    this.output.push(...fn.listing);
+  }
+
+  private remove(session: ExpressionSession, bang: boolean, argument: string): void {
+    const name = this.canonical(argument.trim());
+    if (!this.functions.has(name)) {
+      if (bang) return;
+      session.fail(`E117: Unknown function: ${name}`);
+    }
+    if (this.running.includes(name)) session.fail(`E131: Cannot delete function ${name}: It is in use`);
+    this.functions.delete(name);
+  }
+
+  private define(
+    session: ExpressionSession, lines: readonly string[], at: number, end: number, bang: boolean, argument: string, skipTo: (next: number) => void,
+  ): number {
+    if (!argument.includes('(')) {
+      this.list(session, argument.trim());
+      return at + 1;
+    }
+    let close = at + 1;
+    for (let nesting = 0; close < end; close++) {
+      const inner = commandWord(lines[close]);
+      if (inner.word === 'function' && inner.argument.includes('(')) nesting++;
+      else if (inner.word === 'endfunction' && nesting-- === 0) break;
+    }
+    const header = argument.match(/^([^\s(]+)\s*\(([^)]*)\)\s*(.*)$/s);
+    if (header === null) return session.fail(`E124: Missing '(': ${argument.trim()}`);
+    const [, rawName, rawParameters, attributes] = header;
+    const member = rawName.match(/^([A-Za-z_][\w:#]*)\.([A-Za-z_]\w*)$/);
+    const name = member === null ? this.canonical(rawName) : String(++this.anonymous);
+    if (member === null && !FUNCTION_NAME.test(rawName)) session.fail(`E128: Function name must start with a capital or "s:": ${argument.trim()}`);
+    const pieces = rawParameters.split(',').map((piece) => piece.trim()).filter((piece) => piece !== '');
+    const variadic = pieces[pieces.length - 1] === '...';
+    const parameters = variadic ? pieces.slice(0, -1) : pieces;
+    const seen = new Set<string>();
+    for (const parameter of parameters) {
+      if (!/^[A-Za-z_]\w*$/.test(parameter)) session.fail(`E125: Illegal argument: ${rawParameters.slice(rawParameters.indexOf(parameter)).trim()})`);
+      if (seen.has(parameter)) session.fail(`E853: Duplicate argument name: ${parameter}`);
+      seen.add(parameter);
+    }
+    skipTo(close < end ? close + 1 : end);
+    if (close >= end) session.fail('E126: Missing :endfunction');
+    if (member !== null && !bang && session.truth(session.evaluate(`has_key(${member[1]}, '${member[2]}')`))) session.fail('E717: Dictionary entry already exists');
+    if (member === null && this.functions.has(name) && !bang) session.fail(`E122: Function ${name} already exists, add ! to replace it`);
+    if (this.running.includes(name)) session.fail(`E127: Cannot redefine function ${name}: It is in use`);
+    const flags = new Set(attributes.split(/\s+/).filter((word) => word !== ''));
+    for (const flag of flags) if (!['abort', 'range', 'dict', 'closure'].includes(flag)) session.fail(`E488: Trailing characters: ${attributes.trim()}`);
+    const signature = `${rawName}(${[...parameters, ...(variadic ? ['...'] : [])].join(', ')})${[...flags].map((flag) => ` ${flag}`).join('')}`;
+    this.functions.set(name, {
+      name, parameters, variadic, abort: flags.has('abort'), range: flags.has('range'), dict: flags.has('dict') || member !== null,
+      body: lines.slice(at + 1, close),
+      listing: [`   function ${signature.replace(/^s:/, '<SNR>1_')}`, ...this.sources.slice(at + 1, close).map((text, index) => `${String(index + 1).padEnd(3)}${text}`), '   endfunction'],
+    });
+    if (member !== null) session.assign(`${member[1]}.${member[2]} = function('${name}')`);
+    return close + 1;
+  }
+}
