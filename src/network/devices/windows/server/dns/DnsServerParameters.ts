@@ -48,6 +48,20 @@ export interface DnsEdnsSettings {
 
 export const DEFAULT_EDNS_CACHE_TIMEOUT_SECONDS = 900;
 
+export interface DnsGlobalNames {
+  readonly enabled: boolean;
+  readonly queryLocalZonesFirst: boolean;
+  readonly preferAaaa: boolean;
+  readonly alwaysQueryServer: boolean;
+  readonly enableEdnsProbes: boolean;
+  readonly blockUpdates: boolean;
+  readonly sendTimeoutSeconds: number;
+  readonly serverQueryIntervalSeconds: number;
+}
+
+export const DEFAULT_GLOBAL_NAMES_SEND_TIMEOUT_SECONDS = 3;
+export const DEFAULT_GLOBAL_NAMES_SERVER_QUERY_INTERVAL_SECONDS = 21600;
+
 const KILOBYTE = 1024;
 const MAX_LOCKING_PERCENT = 100;
 const CACHE_SIZE_TARGET_PERCENT = 90;
@@ -143,6 +157,35 @@ export class DnsServerParameters {
     if (changes.cacheTimeoutSeconds !== undefined) this.store.write('EDnsCacheTimeout', 'DWord', changes.cacheTimeoutSeconds);
     if (changes.enableProbes !== undefined) this.store.write('EnableEDnsProbes', 'DWord', changes.enableProbes ? 1 : 0);
     if (changes.enableReception !== undefined) this.store.write('EnableEDnsReception', 'DWord', changes.enableReception ? 1 : 0);
+  }
+
+  globalNames(): DnsGlobalNames {
+    const sendTimeout = this.count('GlobalNamesSendTimeout', DEFAULT_GLOBAL_NAMES_SEND_TIMEOUT_SECONDS);
+    const queryInterval = this.count('GlobalNamesServerQueryInterval', DEFAULT_GLOBAL_NAMES_SERVER_QUERY_INTERVAL_SECONDS);
+    return {
+      enabled: this.flag('EnableGlobalNamesSupport', false),
+      queryLocalZonesFirst: this.flag('GlobalNamesQueryOrder', false),
+      preferAaaa: this.flag('GlobalNamesPreferAAAA', false),
+      alwaysQueryServer: this.flag('GlobalNamesAlwaysQuerySrv', false),
+      enableEdnsProbes: this.flag('GlobalNamesEnableEDnsProbes', true),
+      blockUpdates: this.flag('GlobalNamesBlockUpdates', true),
+      sendTimeoutSeconds: sendTimeout === 0 ? DEFAULT_GLOBAL_NAMES_SEND_TIMEOUT_SECONDS : sendTimeout,
+      serverQueryIntervalSeconds: queryInterval === 0 ? DEFAULT_GLOBAL_NAMES_SERVER_QUERY_INTERVAL_SECONDS : queryInterval,
+    };
+  }
+
+  setGlobalNames(changes: Partial<DnsGlobalNames>): void {
+    const flag = (name: string, value: boolean | undefined): void => {
+      if (value !== undefined) this.store.write(name, 'DWord', value ? 1 : 0);
+    };
+    flag('EnableGlobalNamesSupport', changes.enabled);
+    flag('GlobalNamesQueryOrder', changes.queryLocalZonesFirst);
+    flag('GlobalNamesPreferAAAA', changes.preferAaaa);
+    flag('GlobalNamesAlwaysQuerySrv', changes.alwaysQueryServer);
+    flag('GlobalNamesEnableEDnsProbes', changes.enableEdnsProbes);
+    flag('GlobalNamesBlockUpdates', changes.blockUpdates);
+    if (changes.sendTimeoutSeconds !== undefined) this.store.write('GlobalNamesSendTimeout', 'DWord', changes.sendTimeoutSeconds);
+    if (changes.serverQueryIntervalSeconds !== undefined) this.store.write('GlobalNamesServerQueryInterval', 'DWord', changes.serverQueryIntervalSeconds);
   }
 
   hasGlobalQueryBlock(): boolean {

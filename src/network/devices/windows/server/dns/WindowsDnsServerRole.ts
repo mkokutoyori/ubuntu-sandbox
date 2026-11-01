@@ -34,6 +34,7 @@ import { isTransferQuery, refuseTransfer } from '@/network/dns/transfer/AxfrSess
 import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { normalizeDnsName, relativeTo } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -47,7 +48,7 @@ import {
 import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
 import {
   DnsServerParameters, MemoryDnsParameterStore, DEFAULT_GLOBAL_QUERY_BLOCK_LIST,
-  type DnsParameterStore, type DnsCacheSettings, type DnsEdnsSettings, type GlobalQueryBlock,
+  type DnsParameterStore, type DnsCacheSettings, type DnsEdnsSettings, type DnsGlobalNames, type GlobalQueryBlock,
 } from './DnsServerParameters';
 import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import { IPAddress } from '@/network/core/types';
@@ -153,6 +154,7 @@ const DAY_SECONDS = 86400;
 const DEFAULT_AGING_SECONDS = 7 * DAY_SECONDS;
 const UNLOADED_RETRY_SECONDS = 600;
 const WINDOWS_EDNS_PAYLOAD_SIZE = 1280;
+const GLOBAL_NAMES_ZONE = 'globalnames';
 
 const RR_TYPE_NAME = new Map<number, string>(
   Object.entries(RRType).map(([name, code]) => [code, name]),
@@ -428,6 +430,8 @@ export class WindowsDnsServerRole {
       return transport === 'udp' ? refuseTransfer(query) : this.handleTransfer(query, sourceAddress);
     }
     const response = this.authoritative.answer(query);
+    const globalName = this.answerFromGlobalNames(query, response);
+    if (globalName !== null) return globalName;
     const question = query.questions[0];
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
     if (outsideAuthority && question && this.hitsUnloadedSecondary(question.qname)) {
@@ -570,6 +574,7 @@ export class WindowsDnsServerRole {
       });
       if (foreign) return reply(DnsRcode.REFUSED);
     }
+    if (verdict.applied.additions.some(rr => this.collidesWithGlobalNames(zone.origin, rr.name))) return reply(DnsRcode.REFUSED);
     for (const rr of verdict.applied.removals) this.deleteRecord(zone, rr);
     for (const rr of verdict.applied.additions) {
       zone.addRecord(rr);
@@ -581,6 +586,62 @@ export class WindowsDnsServerRole {
       this.zoneChanged(zone);
     }
     return reply(DnsRcode.NOERROR);
+  }
+
+  private answerFromGlobalNames(query: DnsMessage, local: DnsMessage): DnsMessage | Promise<DnsMessage> | null {
+    const question = query.questions[0];
+    const settings = this.parameters.globalNames();
+    if (!settings.enabled || this.store.getZone(GLOBAL_NAMES_ZONE) === null || question === undefined || query.questions.length !== 1) return null;
+    if (local.flags.rcode === DnsRcode.FORMERR || local.flags.rcode === DnsRcode.NOTIMP) return null;
+    const label = normalizeDnsName(question.qname);
+    if (label === '' || label.includes('.')) return null;
+    const owner = `${label}.${GLOBAL_NAMES_ZONE}`;
+    const hosted = this.store.answer({ ...question, qname: owner });
+    if (hosted.rcode !== DnsRcode.NOERROR || hosted.answers.length === 0) return null;
+    const answeredLocally = local.flags.aa && local.flags.rcode === DnsRcode.NOERROR && local.answers.length > 0;
+    if (settings.queryLocalZonesFirst && answeredLocally) return null;
+    const answers = hosted.answers.map(rr => (normalizeDnsName(rr.name) === owner ? { ...rr, name: question.qname } : rr));
+    return this.completeGlobalName(query, answers);
+  }
+
+  private completeGlobalName(query: DnsMessage, answers: readonly ResourceRecord<ResourceRecordData>[]): DnsMessage | Promise<DnsMessage> {
+    const question = query.questions[0];
+    const reply = (records: readonly ResourceRecord<ResourceRecordData>[], authoritative: boolean): DnsMessage => ({
+      id: query.id,
+      flags: {
+        qr: true, opcode: DnsOpcode.QUERY, aa: authoritative, tc: false, rd: query.flags.rd,
+        ra: this.parameters.recursionEnabled(), ad: false, cd: false, rcode: DnsRcode.NOERROR,
+      },
+      questions: [question],
+      answers: records,
+      authorities: [],
+      additionals: findOpt(query) === null ? [] : [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE)],
+    });
+    const tail = answers[answers.length - 1];
+    if (tail.data.type !== RRType.CNAME || question.qtype === RRType.CNAME) return reply(answers, true);
+    const target = { ...query, questions: [{ ...question, qname: (tail.data as CnameRecordData).cname }] };
+    const hostedTarget = this.authoritative.answer(target);
+    if (hostedTarget.flags.aa) return reply([...answers, ...hostedTarget.answers], true);
+    if (query.flags.rd && this.parameters.recursionEnabled()) {
+      const resolvers = this.resolversFor(target.questions[0].qname);
+      if (resolvers.length > 0) return this.recurse(target, resolvers).then(resolved => reply([...answers, ...resolved.answers], false));
+    }
+    return reply(answers, true);
+  }
+
+  private collidesWithGlobalNames(zoneOrigin: string, name: string): boolean {
+    const settings = this.parameters.globalNames();
+    const globalNames = this.store.getZone(GLOBAL_NAMES_ZONE);
+    if (!settings.enabled || !settings.blockUpdates || globalNames === null || zoneOrigin === GLOBAL_NAMES_ZONE) return false;
+    const relative = relativeTo(normalizeDnsName(name), zoneOrigin);
+    return relative !== null && globalNames.hasName(`${relative}.${GLOBAL_NAMES_ZONE}`);
+  }
+
+  getGlobalNames(): DnsGlobalNames { return this.parameters.globalNames(); }
+
+  setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult {
+    this.parameters.setGlobalNames(changes);
+    return { ok: true, message: '' };
   }
 
   private async recurse(query: DnsMessage, attempts: readonly ResolutionAttempt[]): Promise<DnsMessage> {
