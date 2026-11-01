@@ -12,6 +12,7 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
+import type { DnsLookupFailure } from '@/network/devices/windows/dnsLookupFailure';
 import type { DhcpFailoverChanges, DhcpFailoverRequest, DhcpFailoverView } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import type {
   DhcpV6OpResult, DhcpV6ScopeInfo, DhcpV6ScopeRequest, DhcpV6LeaseInfo, DhcpV6ReservationInfo, DhcpV6ExclusionInfo,
@@ -1484,6 +1485,7 @@ export interface INetworkProvider {
   /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
   resolveDnsViaServerWithTtl?(name: string, server: string): Array<{ ip: string; ttl: number }>;
   resolveDnsRecords?(name: string, type: string, server?: string): DnsAnswerRow[] | null;
+  dnsLookupFailure?(): DnsLookupFailure | null;
   /** Get-DnsClientCache */
   getDnsClientCache?(): DnsCacheRow[];
   /** Clear-DnsClientCache */
