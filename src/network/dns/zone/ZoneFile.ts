@@ -88,15 +88,32 @@ function resolveName(token: string, origin: string): string {
   return `${token}.${origin}`;
 }
 
+export interface ParsedZoneRecords {
+  readonly records: readonly ResourceRecord[];
+  readonly soaOrigin: string | null;
+}
+
 export function parseZoneFile(text: string, defaultOrigin?: string): Zone {
+  const { records, soaOrigin } = parseZoneRecords(text, defaultOrigin);
+  const soas = records.filter((rr) => rr.data.type === RRType.SOA);
+  if (soas.length > 1) throw new ZoneFileError('a zone file may only contain one SOA record');
+  if (soas.length === 0 || soaOrigin === null) throw new ZoneFileError('zone file does not contain an SOA record');
+  const zone = new Zone(soaOrigin, soas[0] as ResourceRecord<SoaRecordData>);
+  for (const rr of records) {
+    if (rr.data.type !== RRType.SOA) zone.addRecord(rr);
+  }
+  return zone;
+}
+
+export function parseZoneRecords(text: string, defaultOrigin?: string): ParsedZoneRecords {
   const lines = preprocess(text);
 
   let origin: string | null = defaultOrigin ? normalizeOrigin(defaultOrigin) : null;
   let defaultTtl: number | undefined;
   let soaMinimum: number | undefined;
   let lastOwner: string | null = null;
-  let zone: Zone | null = null;
-  const pendingRecords: ResourceRecord[] = [];
+  let soaOrigin: string | null = null;
+  const records: ResourceRecord[] = [];
 
   for (const rawLine of lines) {
     const hasLeadingWhitespace = /^[ \t]/.test(rawLine);
@@ -218,21 +235,13 @@ export function parseZoneFile(text: string, defaultOrigin?: string): Zone {
     }
 
     if (rr.data.type === RRType.SOA) {
-      if (zone) throw new ZoneFileError('a zone file may only contain one SOA record');
-      zone = new Zone(origin, rr as ResourceRecord<SoaRecordData>);
-      for (const pendingRecord of pendingRecords) zone.addRecord(pendingRecord);
-      pendingRecords.length = 0;
-    } else if (zone) {
-      zone.addRecord(rr);
-    } else {
-      pendingRecords.push(rr);
+      if (soaOrigin !== null) throw new ZoneFileError('a zone file may only contain one SOA record');
+      soaOrigin = origin;
     }
+    records.push(rr);
   }
 
-  if (!zone) {
-    throw new ZoneFileError('zone file does not contain an SOA record');
-  }
-  return zone;
+  return { records, soaOrigin };
 }
 
 function absoluteName(name: string): string {

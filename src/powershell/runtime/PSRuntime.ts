@@ -61,7 +61,7 @@ import { classifiedError } from './semantics/PSErrorClasses';
 import { makeTypeObject } from './semantics/PSTypeObject';
 import { ARRAY_ELEMENT_TYPE, describeScalarType, isScalarInstance, parseTypeName, specEquals, stripTypeBrackets, tagArray, typeSpecName, type TypeSpec } from './semantics/PSTypes';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
-import { NativeCommandNeedsAsync, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult } from '@/powershell/nativeAsync';
+import { AwaitedWork, NativeCommandNeedsAsync, PendingHostStep, nativeArgv, isNativeProgramName, nativeOutputValue, type NativeResult, type ReplayAwait } from '@/powershell/nativeAsync';
 import { formatDefault, hasDefaultColumns, type PSObject } from '@/network/devices/windows/PSPipeline';
 import type { PSProviders } from '@/powershell/providers/PSProviders';
 import { wildcardMatches, escapeWildcard, unescapeWildcard, hasWildcard } from '@/powershell/runtime/PSWildcard';
@@ -467,6 +467,20 @@ for (const t of STACK_TYPES) {
 
 const DRIVE_NAME = /^[A-Za-z][A-Za-z0-9_]*:$/;
 
+const REPLAY_SAFE_VERBS: ReadonlySet<string> = new Set([
+  'get', 'test', 'resolve', 'select', 'where', 'foreach', 'sort', 'measure', 'format', 'compare', 'group',
+  'join', 'split', 'convertto', 'convertfrom', 'find', 'search', 'show',
+]);
+const REPLAY_SAFE_NAMES: ReadonlySet<string> = new Set([
+  'new-object', 'set-variable', 'new-variable', 'out-null', 'out-string', 'write-output', 'add-member',
+]);
+
+function replaySafe(cmdlet: { readonly name: string; readonly nativeProgram?: true }): boolean {
+  if (cmdlet.nativeProgram === true) return false;
+  const name = cmdlet.name.toLowerCase();
+  return REPLAY_SAFE_NAMES.has(name) || REPLAY_SAFE_VERBS.has(name.split('-')[0]);
+}
+
 export class PSRuntime {
   private readonly lexer: PSLexer;
   private readonly parser: PSParser;
@@ -479,7 +493,18 @@ export class PSRuntime {
   private interactive: {
     statements: PSStatement[]; traps: PSTrapStatement[];
     index: number; mark: number; results: NativeResult[];
+    driven: boolean; awaited: Map<string, unknown>; dirty: boolean;
   } | null = null;
+
+  readonly replayAwait: ReplayAwait = {
+    awaited: <T>(key: string, work: () => Promise<T>): { readonly value: T } | null => {
+      const run = this.interactive;
+      if (run === null || !run.driven) return null;
+      if (run.awaited.has(key)) return { value: run.awaited.get(key) as T };
+      if (run.dirty) return null;
+      throw new AwaitedWork(key, work);
+    },
+  };
 
   /** AST cache: same source code → reuse the parsed program. */
   private readonly astCache = new Map<string, PSProgram>();
@@ -922,7 +947,7 @@ export class PSRuntime {
 
   private isStatementTerminating(error: unknown): error is PSRuntimeError {
     return error instanceof PSRuntimeError
-      && !(error instanceof NativeCommandNeedsAsync)
+      && !(error instanceof PendingHostStep)
       && !error.thrownFromThrowStatement
       && !error.exceptionType.endsWith('.ActionPreferenceStopException');
   }
@@ -968,11 +993,15 @@ export class PSRuntime {
    * writing to the pipeline (e.g. `$x`, `2+3`) are echoed to output.
    */
   executeInteractive(code: string): string {
-    this.beginInteractive(code);
+    this.startInteractive(code, false);
     return this.resumeInteractive();
   }
 
   beginInteractive(code: string): void {
+    this.startInteractive(code, true);
+  }
+
+  private startInteractive(code: string, driven: boolean): void {
     this.outputLines = [];
     this.indexFunctionSources(code);
     const ast = this.parseCached(code);
@@ -982,11 +1011,15 @@ export class PSRuntime {
       if (statement.type === 'TrapStatement') traps.push(statement as PSTrapStatement);
       else statements.push(statement);
     }
-    this.interactive = { statements, traps, index: 0, mark: 0, results: [] };
+    this.interactive = { statements, traps, index: 0, mark: 0, results: [], driven, awaited: new Map(), dirty: false };
   }
 
   provideNativeResult(result: NativeResult): void {
     this.interactive?.results.push(result);
+  }
+
+  provideAwaited(key: string, value: unknown): void {
+    this.interactive?.awaited.set(key, value);
   }
 
   resumeInteractive(): string {
@@ -996,11 +1029,14 @@ export class PSRuntime {
       const statement = run.statements[run.index];
       this.outputLines.length = run.mark;
       this.nativeReplay = { results: run.results, cursor: 0 };
+      run.dirty = false;
+      const network = this.providers.network;
+      network?.attachReplayAwait?.(run.driven ? this.replayAwait : null);
       try {
         this.runInteractiveStatement(statement, this.global);
       } catch (e) {
-        if (e instanceof NativeCommandNeedsAsync) {
-          if (this.nativeReplay !== null && this.nativeReplay.cursor < run.results.length) {
+        if (e instanceof PendingHostStep) {
+          if (e instanceof NativeCommandNeedsAsync && this.nativeReplay !== null && this.nativeReplay.cursor < run.results.length) {
             this.interactive = null;
             this.nativeReplay = null;
             throw this.notFound(e.command);
@@ -1009,9 +1045,12 @@ export class PSRuntime {
         }
         if (!this.trapInteractive(run, e) && !this.reportStatementFailure(e, this.global)) { this.interactive = null; this.nativeReplay = null; throw e; }
         if (run.index < 0) break;
+      } finally {
+        network?.attachReplayAwait?.(null);
       }
       run.index++;
       run.results = [];
+      run.awaited.clear();
       run.mark = this.outputLines.length;
     }
     this.interactive = null;
@@ -2755,6 +2794,7 @@ export class PSRuntime {
     try {
       this.withCatchScope(node.catchClauses.length > 0, () => renderBody(node.tryBody));
     } catch (e) {
+      if (e instanceof AwaitedWork) throw e;
       // Control-flow signals (return / break / continue / exit) are not
       // errors and must not be caught by `catch` — they propagate out of
       // the try, with `finally` still running on the way. Mirrors
@@ -3761,7 +3801,7 @@ export class PSRuntime {
         this.runBlockCapture(clean, scope);
       } catch (error) {
         if (error instanceof ReturnSignal) return;
-        if (!(error instanceof PSRuntimeError) || error instanceof NativeCommandNeedsAsync) throw error;
+        if (!(error instanceof PSRuntimeError) || error instanceof PendingHostStep) throw error;
         const record = this.recordFailure(error);
         this.streams.deliver('error', record, [this.describeFailure(error)]);
       }
@@ -4041,10 +4081,12 @@ export class PSRuntime {
           positional, cmdletNamed, pipeInput, env, emittedValues, errorAction, cmdletDisplayName, common, invocationName);
         result = cmdlet.execute(ctx);
       }
+      if (this.interactive !== null && !replaySafe(cmdlet)) this.interactive.dirty = true;
       if (cmdlet.reportsExitCode !== true) this.setStatus(this.errorsWritten === errorsBefore);
       result = adoptMachineDates(result, this.providers);
       for (let i = 0; i < emittedValues.length; i++) emittedValues[i] = adoptMachineDates(emittedValues[i], this.providers);
     } catch (err) {
+      if (err instanceof AwaitedWork) throw err;
       this.setStatus(false);
       if (err instanceof PSRuntimeError && err.commandName === undefined && !err.thrownFromThrowStatement) { err.commandName = cmdletDisplayName; err.commandKind = 'cmdlet'; }
       if (silentlyCont) { failedWith(err); return null; }

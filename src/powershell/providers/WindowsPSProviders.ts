@@ -46,6 +46,7 @@ import { discoverDc, rootDnOf } from '@/network/devices/windows/domain/DcHostnam
 import { locateDomainController } from '@/network/devices/windows/domain/DcLocator';
 import { dialLdap } from '@/network/devices/windows/server/ad/ldap/LdapClient';
 import type { PSScriptBlock } from '@/powershell/parser/PSASTNode';
+import type { ReplayAwait } from '@/powershell/nativeAsync';
 
 /**
  * Map a Port's IPv4 provenance to the Windows PrefixOrigin/SuffixOrigin pair
@@ -60,6 +61,7 @@ function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: 
   }
 }
 import { JobProvider } from '@/powershell/providers/JobProvider';
+import { WindowsDnsClientAdapter } from '@/powershell/providers/WindowsDnsClientAdapter';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { WINDOWS_LOOPBACK_ROUTES, WINDOWS_LOOPBACK_ROUTES_V6, LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
 import type {
@@ -2374,6 +2376,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const probe = this.testPingProbe(target);
     return probe?.probes[0]?.success ?? false;
   }
+  attachReplayAwait(port: ReplayAwait | null): void { this.pc.attachReplayAwait(port); }
   resolveDns(name: string): string[] { return this.pc.resolveDnsSync(name); }
   resolveDnsWithOptions(name: string, options: {
     dnsOnly?: boolean; llmnrOnly?: boolean;
@@ -3894,6 +3897,7 @@ export function createWindowsPSProviders(
     ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
     computer:       new WindowsComputerAdapter(pc),
     dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,
+    dnsClient:      new WindowsDnsClientAdapter(pc),
     dhcp:           pc.getRoleManager() ? new WindowsDhcpServerAdapter(pc) : null,
     nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
     gpo:            new WindowsGpoAdapter(pc),

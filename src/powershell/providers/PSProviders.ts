@@ -29,6 +29,10 @@ import type { NetAdapterEntry } from '@/network/devices/windows/netAdapter';
 import type { NetNeighborPlan, NetNeighborRow } from '@/network/devices/windows/netNeighbor';
 import type { NetPrefixPolicyRow } from '@/network/devices/windows/netPrefixPolicy';
 import type { DnsAnswerRow, DnsCacheRow } from '@/network/devices/windows/dnsClientCache';
+import type { ReplayAwait } from '@/powershell/nativeAsync';
+import type {
+  DnsClientGlobalSettings, DohServerAddress, NrptGlobalSettings, NrptRule, NrptRuleDraft,
+} from '@/network/devices/windows/dnsClientSettings';
 
 // ─── Entry types re-exported for cmdlet use ────────────────────────────────
 
@@ -1462,6 +1466,7 @@ export interface INetworkProvider {
   egressInfoFor(target: string): { sourceIp: string; interfaceAlias: string; nextHop: string } | null;
   /** Traceroute hop IP addresses ('0.0.0.0' for a timed-out/unreachable hop). */
   traceRoute(target: string): string[];
+  attachReplayAwait?(port: ReplayAwait | null): void;
   /** Resolve-DnsName */
   resolveDns(name: string): string[];
   /**
@@ -1725,6 +1730,38 @@ export interface ITimezoneProvider {
   setTimezone(nom: string): void;
 }
 
+export interface DnsClientInterfaceRow {
+  readonly interfaceAlias: string;
+  readonly interfaceIndex: number;
+  readonly interfaceGuid: string;
+  readonly connectionSpecificSuffix: string;
+  readonly registerThisConnectionsAddress: boolean;
+  readonly useSuffixWhenRegistering: boolean;
+}
+
+export interface DnsClientInterfaceChanges {
+  readonly connectionSuffix?: string | null;
+  readonly registerThisConnectionsAddress?: boolean;
+  readonly useSuffixWhenRegistering?: boolean;
+}
+
+export interface IDnsClientProvider {
+  interfaces(): DnsClientInterfaceRow[];
+  changeInterface(interfaceGuid: string, changes: DnsClientInterfaceChanges): void;
+  registerNames(): void;
+  globalSettings(): DnsClientGlobalSettings;
+  changeGlobalSettings(changes: { suffixSearchList?: readonly string[]; useDevolution?: boolean; devolutionLevel?: number }): void;
+  nrptRules(): NrptRule[];
+  addNrptRule(draft: NrptRuleDraft): NrptRule;
+  changeNrptRule(name: string, changes: Partial<NrptRuleDraft>): NrptRule | null;
+  removeNrptRule(name: string): boolean;
+  nrptGlobal(): NrptGlobalSettings;
+  changeNrptGlobal(changes: Partial<NrptGlobalSettings>): void;
+  dohServers(): DohServerAddress[];
+  saveDohServer(entry: DohServerAddress): void;
+  removeDohServer(serverAddress: string): boolean;
+}
+
 export interface PSProviders {
   readonly identity:       ITimezoneProvider       | null;
   readonly filesystem:     IFileSystemProvider     | null;
@@ -1747,6 +1784,7 @@ export interface PSProviders {
   readonly ad:             IAdProvider             | null;
   readonly computer:       IComputerProvider       | null;
   readonly dns:            IDnsServerProvider      | null;
+  readonly dnsClient:      IDnsClientProvider      | null;
   readonly dhcp:           IDhcpServerProvider     | null;
   readonly nps:            INpsProvider            | null;
   readonly gpo:            IGpoProvider            | null;
