@@ -44,7 +44,7 @@ import {
   type SrvRecordData, type NsRecordData, type TxtRecordData, type DhcidRecordData, makeDhcidRecord,
 } from '@/network/dns/wire/ResourceRecord';
 import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
-import { DnsServerParameters, MemoryDnsParameterStore, type DnsParameterStore } from './DnsServerParameters';
+import { DnsServerParameters, MemoryDnsParameterStore, type DnsParameterStore, type DnsCacheSettings } from './DnsServerParameters';
 import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import { IPAddress } from '@/network/core/types';
 
@@ -350,7 +350,7 @@ export class WindowsDnsServerRole {
     this.zoneFiles = environment.zoneFiles ?? null;
     this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
-    this.cache = new DnsCache(this.now);
+    this.cache = new DnsCache(this.now, () => this.parameters.cacheLimits());
     this.startedAtMs = this.now();
     this.rootResolver = this.resolverOver(parseAddresses(this.rootHints.map(h => h.address)) as IPAddress[]);
     this.secondaries = new SecondaryZoneRefresher(host, (name, force) => { void this.refreshSecondary(name, force); });
@@ -904,6 +904,14 @@ export class WindowsDnsServerRole {
   }
 
   clearCache(): void { this.cache.flush(); }
+
+  getCacheSettings(): DnsCacheSettings { return this.parameters.cacheSettings(); }
+
+  setCacheSettings(changes: Partial<DnsCacheSettings>): DnsOpResult {
+    this.parameters.setCacheSettings(changes);
+    this.cache.enforceLimits();
+    return { ok: true, message: '' };
+  }
 
   private zoneNameConflict(origin: string): DnsOpResult | null {
     const problem = origin === '' ? null : zoneNameProblem(origin);

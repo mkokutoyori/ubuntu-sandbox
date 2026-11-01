@@ -1,4 +1,5 @@
 import type { PSRegistryProvider, RegistryAddress, RegistryValueType } from '../../PSRegistryProvider';
+import type { DnsCacheLimits } from '@/network/dns/resolver/DnsCache';
 
 export type DnsParameterValue = string | number;
 
@@ -11,6 +12,30 @@ const PARAMETERS_KEY = ['SYSTEM', 'CurrentControlSet', 'Services', 'DNS', 'Param
 const MULTI_SZ_SEPARATOR = '\\0';
 
 export const DEFAULT_FORWARDING_TIMEOUT_SECONDS = 3;
+
+export interface DnsCacheSettings {
+  readonly maxTtlSeconds: number;
+  readonly maxNegativeTtlSeconds: number;
+  readonly maxKBSize: number;
+  readonly pollutionProtection: boolean;
+  readonly lockingPercent: number;
+  readonly storeEmptyAuthenticationResponse: boolean;
+  readonly ignorePolicies: boolean;
+}
+
+export const DEFAULT_CACHE_SETTINGS: DnsCacheSettings = {
+  maxTtlSeconds: 86400,
+  maxNegativeTtlSeconds: 900,
+  maxKBSize: 0,
+  pollutionProtection: true,
+  lockingPercent: 100,
+  storeEmptyAuthenticationResponse: true,
+  ignorePolicies: false,
+};
+
+const KILOBYTE = 1024;
+const MAX_LOCKING_PERCENT = 100;
+const CACHE_SIZE_TARGET_PERCENT = 90;
 
 export class RegistryDnsParameterStore implements DnsParameterStore {
   constructor(private readonly registry: PSRegistryProvider) {}
@@ -88,6 +113,44 @@ export class DnsServerParameters {
 
   reorderingEnabled(): boolean {
     return this.flag('EnableForwarderReordering', true);
+  }
+
+  cacheSettings(): DnsCacheSettings {
+    const defaults = DEFAULT_CACHE_SETTINGS;
+    return {
+      maxTtlSeconds: this.count('MaxCacheTtl', defaults.maxTtlSeconds),
+      maxNegativeTtlSeconds: this.count('MaxNegativeCacheTtl', defaults.maxNegativeTtlSeconds),
+      maxKBSize: this.count('MaxCacheSize', defaults.maxKBSize),
+      pollutionProtection: this.flag('SecureResponses', defaults.pollutionProtection),
+      lockingPercent: Math.min(MAX_LOCKING_PERCENT, Math.max(0, this.count('CacheLockingPercent', defaults.lockingPercent))),
+      storeEmptyAuthenticationResponse: this.flag('CacheEmptyAuthResponses', defaults.storeEmptyAuthenticationResponse),
+      ignorePolicies: this.flag('IgnorePolicies', defaults.ignorePolicies),
+    };
+  }
+
+  setCacheSettings(changes: Partial<DnsCacheSettings>): void {
+    const dword = (name: string, value: number | boolean | undefined): void => {
+      if (value !== undefined) this.store.write(name, 'DWord', typeof value === 'boolean' ? Number(value) : value);
+    };
+    dword('MaxCacheTtl', changes.maxTtlSeconds);
+    dword('MaxNegativeCacheTtl', changes.maxNegativeTtlSeconds);
+    dword('MaxCacheSize', changes.maxKBSize);
+    dword('SecureResponses', changes.pollutionProtection);
+    dword('CacheLockingPercent', changes.lockingPercent);
+    dword('CacheEmptyAuthResponses', changes.storeEmptyAuthenticationResponse);
+    dword('IgnorePolicies', changes.ignorePolicies);
+  }
+
+  cacheLimits(): DnsCacheLimits {
+    const settings = this.cacheSettings();
+    return {
+      maxTtlSeconds: settings.maxTtlSeconds,
+      maxNegativeTtlSeconds: settings.maxNegativeTtlSeconds,
+      lockingPercent: settings.lockingPercent,
+      storeEmptyAuthoritative: settings.storeEmptyAuthenticationResponse,
+      maxBytes: settings.maxKBSize === 0 ? null : Math.floor(settings.maxKBSize * KILOBYTE * CACHE_SIZE_TARGET_PERCENT / MAX_LOCKING_PERCENT),
+      admitsUnrelatedRecords: !settings.pollutionProtection,
+    };
   }
 
   setReorderingEnabled(enabled: boolean): void {

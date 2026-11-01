@@ -5,6 +5,7 @@ import { compileRegex } from './PSRegex';
 import { truthiness } from './PSConvert';
 import { stripTypeBrackets } from './PSTypes';
 import { PSNumber } from './PSNumber';
+import { rangeViolation } from './rangeViolation';
 
 const BINDING = 'System.Management.Automation.ParameterBindingException';
 const VALIDATION = 'System.Management.Automation.ParameterBindingValidationException';
@@ -171,12 +172,11 @@ function validateElement(
       }
       const minimum = arguments_[0];
       const maximum = arguments_[1];
-      const number = Number(value);
-      if (minimum !== undefined && number < Number(minimum))
-        return `The ${shown} argument is less than the minimum allowed range of ${String(minimum)}. Supply an argument that is greater than or equal to ${String(minimum)} and then try the command again.`;
-      if (maximum !== undefined && number > Number(maximum))
-        return `The ${shown} argument is greater than the maximum allowed range of ${String(maximum)}. Supply an argument that is less than or equal to ${String(maximum)} and then try the command again.`;
-      return null;
+      return rangeViolation(
+        shown, Number(value),
+        minimum === undefined ? undefined : Number(minimum),
+        maximum === undefined ? undefined : Number(maximum),
+      );
     }
     case 'validatepattern': {
       const pattern = String(arguments_[0] ?? '');

@@ -36,7 +36,7 @@ function normalKeyOf(character: string): EditorKeyInput {
   return { key: character };
 }
 
-export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'confirm-substitute' | 'ask-swap-range' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
+export type VimMode = 'normal' | 'insert' | 'command' | 'search' | 'expression' | 'confirm-substitute' | 'ask-swap-range' | 'visual' | 'visual-line' | 'visual-block' | 'swap-recovery' | 'binary-warning';
 export type VimVariant = 'vim' | 'vi';
 
 interface UndoSnapshot {
@@ -526,7 +526,7 @@ export class VimEngine {
 
   private updateWant(): void {
     if (this.hasPendingCommand()) return;
-    if (this._mode === 'insert' || this._mode === 'command' || this._mode === 'search') return;
+    if (this._mode === 'insert' || this._mode === 'command' || this._mode === 'search' || this._mode === 'expression') return;
     if (this.explicitWant !== null) { this.want = this.explicitWant; return; }
     if (this.keepWantThisKey) return;
     this.want = this.vcolAt(this.line(this._cursorLine), this._cursorCol);
@@ -581,6 +581,7 @@ export class VimEngine {
       case 'insert': return this.applyInsertKey(k);
       case 'command': return this.applyCommandKey(k);
       case 'search': return this.applySearchKey(k);
+      case 'expression': return this.applyExpressionKey(k);
       case 'confirm-substitute': return this.applyConfirmSubstKey(k);
       case 'ask-swap-range': return this.applySwapRangeKey(k);
       case 'visual': case 'visual-line': case 'visual-block': return this.applyVisualKey(k);
@@ -697,7 +698,7 @@ export class VimEngine {
   private setRegister(reg: UnnamedRegister): void {
     const name = this.pendingRegister;
     this.pendingRegister = null;
-    if (name) {
+    if (name && name !== '=') {
       this.registers.set(name, reg);
     } else {
       this.registers.set('"', reg);
@@ -810,6 +811,7 @@ export class VimEngine {
 
     if (this.awaitingRegisterName) {
       this.awaitingRegisterName = false;
+      if (key === '=') { this.beginExpressionPrompt('register'); return; }
       if (/^[a-zA-Z0-9"*+\-]$/.test(key)) this.pendingRegister = key;
       return;
     }
@@ -1504,7 +1506,7 @@ export class VimEngine {
   }
 
   private followCursor(): void {
-    if (this._mode === 'command' || this._mode === 'search') return;
+    if (this._mode === 'command' || this._mode === 'search' || this._mode === 'expression') return;
     this.window.follow(this._cursorLine, this._cursorCol);
     this.window.followColumn(this._cursorLine, this._cursorCol, this.cursorOnTabEnd());
   }
@@ -1731,6 +1733,7 @@ export class VimEngine {
       : null;
     const commandLine = mode === 'command'
       ? { prompt: ':', text: this.commandBuffer }
+      : mode === 'expression' ? { prompt: '=', text: this.expressionBuffer }
       : mode === 'search' ? { prompt: this.searchPromptChar, text: [...this.searchBuffer].map((c) => (c.charCodeAt(0) < 32 ? `^${String.fromCharCode(c.charCodeAt(0) + 64)}` : c)).join('') } : null;
     const bottom = this.bottomMessage();
     return buildScreen(this.window, {
@@ -2298,6 +2301,15 @@ export class VimEngine {
   // ── INSERT mode ──────────────────────────────────────────────────
 
   private applyInsertKey(k: EditorKeyInput): void {
+    if (this.insertRegisterPending) {
+      if (k.ctrl && (k.key.toLowerCase() === 'r' || k.key.toLowerCase() === 'o' || k.key.toLowerCase() === 'p')) return;
+      this.insertRegisterPending = false;
+      if (k.key === 'Escape' || (k.ctrl && k.key === '[')) return;
+      if (k.key === '=') { this.beginExpressionPrompt('insert'); return; }
+      if (k.key.length === 1 && !k.ctrl) this.insertRegisterContent(k.key);
+      return;
+    }
+    if (k.ctrl && k.key.toLowerCase() === 'r') { this.insertRegisterPending = true; return; }
     if (k.key === 'Escape' || (k.ctrl && k.key === '[')) {
       this.leaveInsert();
       return;
@@ -2315,6 +2327,82 @@ export class VimEngine {
       return;
     }
     this.autoIndentPending = false;
+  }
+
+  private expressionBuffer = '';
+  private expressionTarget: 'insert' | 'register' = 'register';
+  private expressionReturn: VimMode = 'normal';
+  private lastExpression = '';
+  private insertRegisterPending = false;
+
+  private beginExpressionPrompt(target: 'insert' | 'register'): void {
+    this.expressionTarget = target;
+    this.expressionReturn = this._mode;
+    this.expressionBuffer = '';
+    this._mode = 'expression';
+  }
+
+  private finishExpressionPrompt(cancelled: boolean): void {
+    const target = this.expressionTarget;
+    this._mode = this.expressionReturn;
+    const source = this.expressionBuffer === '' ? this.lastExpression : this.expressionBuffer;
+    this.expressionBuffer = '';
+    if (target === 'register') this.pendingRegister = '=';
+    if (cancelled) return;
+    if (source === '') {
+      this._message = 'E15: Invalid expression: ""';
+      if (target === 'register') this.pendingRegister = null;
+      return;
+    }
+    const outcome = evaluateReplacementExpression(source, this.expressionHost({ groups: [] } as unknown as MultiMatch, this._cursorLine + 1, this._cursorCol));
+    if (outcome.errors.length > 0) {
+      this._message = outcome.errors[0];
+      if (target === 'register') this.pendingRegister = null;
+      return;
+    }
+    this.lastExpression = source;
+    this.storeExpressionResult(outcome.text);
+    if (target === 'insert') this.insertLiteralText(outcome.text);
+  }
+
+  private storeExpressionResult(text: string): void {
+    const linewise = text.endsWith('\n');
+    this.registers.set('=', { linewise, lines: (linewise ? text.slice(0, -1) : text).split('\n') });
+  }
+
+  private applyExpressionKey(k: EditorKeyInput): void {
+    if (k.key === 'Enter') { this.finishExpressionPrompt(false); return; }
+    if (k.key === 'Escape' || (k.ctrl && (k.key === 'c' || k.key === '['))) { this.finishExpressionPrompt(true); return; }
+    if (k.key === 'Backspace') {
+      if (this.expressionBuffer === '') this.finishExpressionPrompt(true);
+      else this.expressionBuffer = this.expressionBuffer.slice(0, -1);
+      return;
+    }
+    if (k.ctrl || k.alt) return;
+    if (k.key.length === 1) this.expressionBuffer += k.key;
+  }
+
+  private insertRegisterContent(name: string): void {
+    const lower = name.toLowerCase();
+    const register = this.registers.get(lower === '"' ? '"' : lower);
+    if (register === undefined) return;
+    this.insertLiteralText(register.lines.join('\n') + (register.linewise ? '\n' : ''));
+  }
+
+  private insertLiteralText(text: string): void {
+    const segments = text.split('\n');
+    segments.forEach((segment, at) => {
+      if (at > 0) {
+        const l = this.line(this._cursorLine);
+        this.linesArr.splice(this._cursorLine, 1, l.slice(0, this._cursorCol), l.slice(this._cursorCol));
+        this._cursorLine++;
+        this._cursorCol = 0;
+        this._modified = true;
+        this.insertTouched = true;
+        this.insertedText += '\n';
+      }
+      for (const character of segment) this.insertCharacter(character);
+    });
   }
 
   private insertKey(k: EditorKeyInput): void {
@@ -2929,7 +3017,7 @@ export class VimEngine {
         const lo = Math.max(0, Math.min(rangeStart, rangeEnd ?? rangeStart));
         const hi = Math.min(this.linesArr.length - 1, Math.max(rangeStart, rangeEnd ?? rangeStart));
         const input = this.linesArr.slice(lo, hi + 1).join('\n') + '\n';
-        const output = this.fs.filterThroughShell(cmdStr, input);
+        const output = this.fs.filterThroughShell(this.withEnvironment(cmdStr), input);
         const body = output.endsWith('\n') ? output.slice(0, -1) : output;
         const outLines = body.length === 0 ? [''] : body.split('\n');
         this.linesArr.splice(lo, hi - lo + 1, ...outLines);
@@ -2938,7 +3026,7 @@ export class VimEngine {
         this._modified = true;
         this._message = '';
       } else {
-        this._shellOutput = this.fs.runShellCommand(cmdStr);
+        this._shellOutput = this.fs.runShellCommand(this.withEnvironment(cmdStr));
         this._message = `!${cmdStr}`;
       }
       this._mode = 'normal';
@@ -2952,7 +3040,7 @@ export class VimEngine {
       this.pushUndoSnapshot();
       let newLines: string[];
       if (arg.startsWith('!')) {
-        const output = this.fs.runShellCommand(this.expandPercent(arg.slice(1).trim()));
+        const output = this.fs.runShellCommand(this.withEnvironment(this.expandPercent(arg.slice(1).trim())));
         const body = output.endsWith('\n') ? output.slice(0, -1) : output;
         newLines = body.length === 0 ? [] : body.split('\n');
       } else {
@@ -3324,7 +3412,30 @@ export class VimEngine {
     return /^E\d+:/.test(this._message) ? this._message : null;
   }
 
+  private writeRegister(name: string, lines: string[], linewise: boolean, append: boolean, fromList = false): void {
+    if (name === '=') {
+      this.assignRegister('=', lines.join('\n'));
+      return;
+    }
+    const lower = name === '"' || name === '' ? '"' : name.toLowerCase();
+    const existing = this.registers.get(lower);
+    if (!(append || /^[A-Z]$/.test(name)) || existing === undefined) {
+      this.registers.set(lower, { linewise, lines });
+      return;
+    }
+    const joined = existing.linewise || fromList
+      ? [...existing.lines, ...lines]
+      : [...existing.lines.slice(0, -1), `${existing.lines[existing.lines.length - 1] ?? ''}${lines[0] ?? ''}`, ...lines.slice(1)];
+    this.registers.set(lower, { linewise, lines: joined });
+  }
+
   private assignRegister(name: string, text: string): void {
+    if (name === '=') {
+      this.lastExpression = text;
+      const outcome = evaluateReplacementExpression(text, this.expressionHost({ groups: [] } as unknown as MultiMatch, this._cursorLine + 1, this._cursorCol));
+      if (outcome.errors.length === 0) this.storeExpressionResult(outcome.text);
+      return;
+    }
     const linewise = text.endsWith('\n');
     const lines = (linewise ? text.slice(0, -1) : text).split('\n');
     const lower = name.toLowerCase();
@@ -3365,16 +3476,27 @@ export class VimEngine {
       submatch: (index) => match.groups[index],
       mark: (name) => this.patternMark(name),
       register: (name) => this.registerContent(name),
+      expressionText: () => this.lastExpression,
+      setRegister: (name, lines, linewise, append, fromList) => this.writeRegister(name, lines, linewise, append, fromList),
       option: (name, scope) => this.options.lookup(name, scope),
       environment: (name) => this.environmentVariable(name) ?? '',
       environmentOrNull: (name) => this.environmentVariable(name),
-      environmentNames: () => this.fs.environmentNames?.() ?? [],
+      environmentNames: () => this.environmentNamesWithOverrides(),
+      assignEnvironment: (name, value) => { this.environmentOverrides.set(name, value); },
       shellStatus: () => this.lastShellStatus,
       pathKind: (path) => this.fs.kindOf?.(path) ?? (this.fs.exists(this.fs.resolvePath(path)) ? 'file' : 'missing'),
       readText: (path) => this.fs.readFile(this.fs.resolvePath(path)),
       directoryEntries: (path) => this.fs.listDirectory?.(this.fs.resolvePath(path)) ?? null,
       workingDirectory: () => this.fs.resolvePath('.'),
       linkInfo: (path) => this.fs.linkInfo?.(path) ?? null,
+      writeText: (path, text) => this.fs.writeFile(this.fs.resolvePath(path), text),
+      makeDirectory: (path, mode) => (this.fs.makeDirectory === undefined ? 'Permission denied' : this.fs.makeDirectory(path, mode)),
+      removeEntry: (path, kind) => this.fs.removeEntry?.(path, kind) ?? (kind === 'file' && this.fs.deleteFile(this.fs.resolvePath(path))),
+      renameEntry: (from, to) => this.fs.renameEntry?.(from, to) ?? false,
+      homeDirectory: () => this.fs.homeDirectory?.() ?? null,
+      bufferName: () => this.filePath,
+      temporaryName: () => this.nextTemporaryName(),
+      wordUnderCursor: (big) => this.wordUnderCursor(big, lineNumber - 1, columnIndex),
       executableAt: (path) => this.fs.executableAt?.(path) ?? false,
       resolvePath: (path) => this.fs.resolvePath(path),
       hostName: () => this.fs.identity?.().host ?? '',
@@ -3395,8 +3517,51 @@ export class VimEngine {
     return register.lines.join('\n') + (register.linewise ? '\n' : '');
   }
 
+  private readonly environmentOverrides = new Map<string, string | null>();
+
   private environmentVariable(name: string): string | null {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? (this.fs.environmentVariable?.(name) ?? null) : null;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return null;
+    if (this.environmentOverrides.has(name)) return this.environmentOverrides.get(name) ?? null;
+    return this.fs.environmentVariable?.(name) ?? null;
+  }
+
+  private environmentNamesWithOverrides(): string[] {
+    const names = new Set(this.fs.environmentNames?.() ?? []);
+    for (const [name, value] of this.environmentOverrides) {
+      if (value === null) names.delete(name);
+      else names.add(name);
+    }
+    return [...names];
+  }
+
+  private withEnvironment(command: string): string {
+    if (this.environmentOverrides.size === 0) return command;
+    const quote = (text: string): string => `'${text.replace(/'/g, "'\\''")}'`;
+    const setup = [...this.environmentOverrides].map(([name, value]) => (value === null ? `unset ${name}` : `export ${name}=${quote(value)}`)).join('; ');
+    return `${setup}; ${command}`;
+  }
+
+  private temporaryDirectory: string | null = null;
+  private temporaryCounter = 0;
+
+  private nextTemporaryName(): string {
+    if (this.temporaryDirectory === null) {
+      const base = this.fs.environmentVariable?.('TMPDIR') ?? '/tmp';
+      const stem = `${base.replace(/\/+$/, '')}/v${(this.fs.identity?.().pid ?? 0).toString(36).padStart(6, '0').slice(-6)}`;
+      this.fs.makeDirectory?.(stem, 0o700);
+      this.temporaryDirectory = stem;
+    }
+    this.temporaryCounter++;
+    return `${this.temporaryDirectory}/${this.temporaryCounter}`;
+  }
+
+  private wordUnderCursor(big: boolean, line: number, col: number): string {
+    const text = this.linesArr[line] ?? '';
+    if (big) {
+      const found = [...text.matchAll(/\S+/g)].find((match) => match.index! + match[0].length > col);
+      return found === undefined ? '' : found[0];
+    }
+    return identUnderCursor(this.linesArr, { line, col }, this.words)?.text ?? '';
   }
 
   private lastShellStatus = 0;
@@ -3404,9 +3569,9 @@ export class VimEngine {
   private runExpressionShell(command: string, input: string | null): string {
     if (this.fs.runChildShell === undefined) {
       this.lastShellStatus = 0;
-      return input === null ? this.fs.runShellCommand(command) : this.fs.filterThroughShell(command, input);
+      return input === null ? this.fs.runShellCommand(this.withEnvironment(command)) : this.fs.filterThroughShell(this.withEnvironment(command), input);
     }
-    const run = this.fs.runChildShell(command, input ?? undefined);
+    const run = this.fs.runChildShell(this.withEnvironment(command), input ?? undefined);
     this.lastShellStatus = run.status;
     return run.output;
   }

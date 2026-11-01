@@ -640,31 +640,34 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- `\%V` en bloc compte des colonnes de caracteres ; `\@123<=` borne la remontee
-  en caracteres ; `[[=e=]]` utilise la decomposition Unicode.
+- Re-mesure sur vim 9.1 (21 motifs rejoues) : `\%V` en bloc, en caracteres et en lignes, `\@N<=` borne ou non et `[[=e=]]`
+  (`e`, `E`, `é`, `[^...]`, `ignorecase`) sortent comme le vrai ; ces trois lignes de l'ancien constat etaient perimees.
+  Reste les **caracteres combinants** : pour vim un « caractere » est une base suivie de ses marques (`e` + U+0301), `.`, `\a`,
+  `[^x]`, `[[=e=]]` et les classes consomment les marques (`s/./[&]/g` sur `é` donne `[é]` et non `[e]` + marque), un `e` litteral
+  n'atteint pas un `e` suivi d'une marque sauf sous `\Z`, une marque seule en debut de ligne n'est pas `\a` mais est `\k`,
+  `\S` et `[^x]`, et `e\zs.` prend la marque seule. Le traducteur travaille sur des points de code : `[[=e=]]` rend `_` + marque
+  au lieu de `_`. Brique a ecrire : un « caractere » du traducteur = point de code + marques, ce qui change les quantificateurs
+  (`\p{M}*` apres chaque atome rend `.*` ambigu et exponentiel), donc a faire avec le second moteur ci-dessus.
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
-- **Ordre des dictionnaires** : l'ordre de `hashtab.c` est porte pour un
-  dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
-  retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait. Mesure sur vim 9.1 (73 expressions rejouees) : restent absentes
-  `expand`, `glob`, `globpath`,   `resolve`, `mkdir`, `delete`, `rename`, `writefile`, `tempname`, `reltime`,
-  `reltimestr`, `wordcount`, `bufname`, `mode`, `blob2list`, `list2blob`, `strptime`, `foreach` (le rejeu trouve `foreach`
-  inconnue sur ce vim aussi). Existent : `reduce`, `mapnew`, `sha256`, `strftime`, `json_encode`, `json_decode`, `system`,
-  `systemlist`, `v:shell_error`, `getenv`, `str2float`, `flatten`, `flattennew`, `slice`, `fmod`, `log10`, `isnan`, `strgetchar`,
-  `byteidx`, `charidx`, `utf16idx`, `indexof`, `filereadable`, `isdirectory`, `readfile`, `readdir`, `getfsize`, `getcwd`, `hostname`, `getpid`, `localtime`, `environ`, `executable`, `exepath`, `getftype`, `getfperm` (`probe-vim-fonctions-fichiers`), `shellescape`, `simplify`, `pathshorten`, `isabsolutepath` et `fnamemodify`
-  (`:h :t :r :e`, `:e` repete ; `:p`, `:~`, `:.`, `:s` et `:gs` restent absents) (`probe-vim-fonctions-texte-et-chemins`).
-- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
-  `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
-  destructuration. Restent refusees les cibles `$ENV` (l'environnement du
-  processus vim n'a pas de poignee d'ecriture), les
-  tranches `l[a:b]`, `s:` / `l:` / `a:` hors fonction, `v:shell_error` et
-  `:function`. Une lambda ne capture que les parametres des lambdas qui
-  l'entourent.
-- **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
-  moteur n'a ni l'un ni l'autre.
+  function` meme quand vim le connait. Restent absentes (hors blobs) : `mode`, `foreach` (inconnue de ce vim aussi). Existent, mesurees
+  contre vim 9.1 (`probe-vim-fonctions-*`) : `glob`, `globpath`, `expand` (`$VAR`, `~`, jokers, `%`, `<cword>`, `<cWORD>` ; `<sfile>`,
+  `<abuf>`, `<amatch>`, `<cfile>` et `#` restent absents), `resolve`, `mkdir` (`p` ; les drapeaux `D` et `R` de vim 9.1 ne sont pas
+  portes), `writefile` (`b`, `a` ; `s`, `S`, `D`, `r` ne sont pas portes), `rename`, `delete`, `tempname`, `bufname` (tampon courant
+  seulement), `wordcount`, `reltime`, `reltimestr`, `reltimefloat`, `strptime`, `fnamemodify` (`:h :t :r :e :p :. :~ :s :gs :S`) et
+  toutes les fonctions de texte, de fichier et d'environnement des lots precedents.
+- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`, `t:`, les elements `l[i]` / `d.k` / `d['k']`,
+  les tranches `l[a:b]` (affectation et suppression), `$ENV` (l'environnement de vim, que voient `getenv`, `environ`,
+  `exists('$X')` et le shell de `system()`), les operateurs composes et la destructuration (`probe-vim-unlet-tranches-et-environnement`,
+  `probe-vim-ordre-des-dictionnaires-suppressions`). Restent refuses : `s:` / `l:` / `a:` hors fonction et `:function`. Une lambda ne
+  capture que les parametres des lambdas qui l'entourent.
+- **`CTRL-R =` et le registre `"=`** passent par l'evaluateur (`probe-vim-registre-expression`, 47 cas rejoues sur vim 9.1) :
+  invite `=` en insertion et en normal, expression vide = la derniere, erreur sans effet sur le tampon, `CTRL-R {registre}` en
+  insertion, `getreg`, `getregtype`, `setreg` (sans registre bloc), `let @=`. Restent : l'historique et l'edition de l'invite `=`
+  (fleches, `CTRL-R CTRL-W`, completion), `CTRL-R CTRL-O` / `CTRL-P` (traites comme `CTRL-R`), les registres bloc (`CTRL-V`,
+  refuses par `setreg`) et le comportement de `Esc` sous `:normal` (vim evalue, le moteur annule comme un vim interactif).
 - **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options
   que le moteur ne modelise pas, enregistree par
   `scripts/oracle/record_vim_option_defaults.py` sous `vim -u NONE -N` ; les

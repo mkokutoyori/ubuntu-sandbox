@@ -14,7 +14,7 @@ import {
   type DnsTransferPolicy, type DnsNotifyPolicy, type DnsDynamicUpdateMode,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
-function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider {
+export function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider {
   if (!ctx.providers.dns) {
     throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
@@ -34,7 +34,7 @@ function withPassThru(ctx: CmdletContext, dns: IDnsServerProvider, before: Reado
   return zone ? zoneToPSObject(zone) : null;
 }
 
-function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult): null {
+export function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult): null {
   ctx.emitError(`${cmdletName} : ${res.message}`);
   return null;
 }

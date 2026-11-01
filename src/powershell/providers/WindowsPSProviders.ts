@@ -97,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1327,6 +1327,8 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
     return this.role().cacheEntries().map(e => ({ name: e.name, type: e.type, ttl: e.ttl, data: e.data }));
   }
   clearCache(): void { this.role().clearCache(); }
+  getCacheSettings(): DnsCacheSettings { return this.role().getCacheSettings(); }
+  setCacheSettings(changes: Partial<DnsCacheSettings>): DnsOpResult { return this.role().setCacheSettings(changes); }
 
   setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult {
     return this.role().setZoneDynamicUpdate(zone, mode);

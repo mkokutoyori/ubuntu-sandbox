@@ -11,7 +11,9 @@ export class WorkingDirectoryFs implements EditorFsContext {
   readonly environmentVariable?: (name: string) => string | null;
   readonly environmentNames?: () => string[];
   readonly executableAt?: (path: string) => boolean;
-  readonly linkInfo?: (path: string) => { type: string; permissions: number } | null;
+  readonly linkInfo?: (path: string) => { type: string; permissions: number; target?: string } | null;
+  readonly removeEntry?: (path: string, kind: 'file' | 'directory' | 'tree') => boolean;
+  readonly renameEntry?: (from: string, to: string) => boolean;
   readonly makeDirectory?: (path: string, mode: number) => string | null;
   readonly changeMode?: (path: string, mode: number) => boolean;
   readonly readError?: (path: string) => string | null;
@@ -28,6 +30,8 @@ export class WorkingDirectoryFs implements EditorFsContext {
     if (inner.environmentVariable) this.environmentVariable = (name) => inner.environmentVariable!(name);
     if (inner.environmentNames) this.environmentNames = () => inner.environmentNames!();
     if (inner.executableAt) this.executableAt = (path) => inner.executableAt!(this.resolvePath(path));
+    if (inner.removeEntry) this.removeEntry = (path, kind) => inner.removeEntry!(this.resolvePath(path), kind);
+    if (inner.renameEntry) this.renameEntry = (from, to) => inner.renameEntry!(this.resolvePath(from), this.resolvePath(to));
     if (inner.linkInfo) this.linkInfo = (path) => inner.linkInfo!(this.resolvePath(path));
     if (inner.makeDirectory) this.makeDirectory = (path, mode) => inner.makeDirectory!(this.resolvePath(path), mode);
     if (inner.changeMode) this.changeMode = (path, mode) => inner.changeMode!(this.resolvePath(path), mode);
