@@ -908,8 +908,8 @@ Autres ecarts mesures, non fermes :
   bash l'abandonne aussi a init, mais le processus reste visible dans `ps`).
 - `/dev/pts/N` et `/proc/tty/drivers` n'existent pas comme fichiers : `ps` lit le numero de terminal dans
   `ttyDeviceNumber`. `/proc/sys/kernel/pid_max` existe (inscriptible, 301 a 4194304, sonde `probe-kernel-pid-max`) et
-  fixe l'allocation des pids et la largeur de la colonne PID ; `kernel.threads-max` et le reste de `/proc/sys/kernel`
-  (4 fichiers seulement) ne sont pas livres.
+  fixe l'allocation des pids et la largeur de la colonne PID ; `kernel.random.boot_id` et `kernel.random.uuid` existent
+  (sonde `probe-identifiant-de-demarrage-unique`) ; `kernel.threads-max` et le reste de `/proc/sys/kernel` ne sont pas livres.
 
 ### [lab NTP] ecarts residuels mesures en montant le lab du tutoriel NTP (etape 0)
 Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un

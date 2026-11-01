@@ -106,6 +106,7 @@ function replay(scenario: Scenario): { journald: LinuxJournald; driverRecords: J
   const platform: JournaldPlatform = {
     nowUsec: () => clock.now,
     bootUsec: () => bootUsec,
+    bootId: () => bootId,
     machineId: () => fixture.machineId,
     hostname: () => fieldOf(journaldEntry, '_HOSTNAME') as string,
     probe: (pid) => {

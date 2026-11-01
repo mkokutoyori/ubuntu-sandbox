@@ -153,7 +153,7 @@ import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
 import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
 import { HardwareProfile } from './host/hardware';
-import { machineIdFor } from './host/hardware/HardwareIdentity';
+import { bootIdFor, machineIdFor } from './host/hardware/HardwareIdentity';
 import { HostLifecycle } from './host/lifecycle';
 import { SystemIdentity } from './host/identity';
 import { DHCPClient } from '../dhcp/DHCPClient';
@@ -1319,6 +1319,7 @@ export abstract class EndHost extends Equipment {
       ? (String(type).includes('server') ? SystemIdentity.windowsServer() : SystemIdentity.windows())
       : SystemIdentity.ubuntu();
     this.identity.machineId = machineIdFor(this.name);
+    this.identity.bootId = bootIdFor(this.name);
     this.identity.attachBus(this.getBus(), this.id);
     this.attachHostActors();
     this.dhcpClient = new DHCPClient(

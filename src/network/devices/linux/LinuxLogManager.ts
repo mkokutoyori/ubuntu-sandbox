@@ -205,7 +205,7 @@ export class LinuxLogManager {
 
   setProcessProbe(probe: (pid: number) => ProcessFacts | null): void { this.processProbe = probe; }
 
-  constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts, private readonly machineId: () => string = () => '0'.repeat(32)) {
+  constructor(private vfs: VirtualFileSystem, facts?: KernelBootFacts, private readonly machineId: () => string = () => '0'.repeat(32), private readonly bootId: () => string = () => '0'.repeat(32)) {
     this.bootFacts = facts ?? defaultKernelBootFacts();
     this.kernelRelease = this.bootFacts.kernelRelease;
     this.bootTime = new Date(simulationNowMs() - 30_000);
@@ -214,6 +214,7 @@ export class LinuxLogManager {
       nowUsec: () => this.nowMs() * 1000,
       bootUsec: () => this.bootTime.getTime() * 1000,
       machineId: () => this.machineId(),
+      bootId: () => this.bootId(),
       hostname: () => this.currentHostname(),
       probe: (pid) => this.probeFacts(pid),
       journaldPid: () => null,

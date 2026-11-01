@@ -9,6 +9,7 @@ import type { SealKey } from './seal/SealChain';
 export interface JournaldPlatform {
   nowUsec(): number;
   bootUsec(): number;
+  bootId(): string;
   machineId(): string;
   hostname(): string;
   probe(pid: number): ProcessFacts | null;
@@ -57,7 +58,7 @@ export class LinuxJournald {
   private unstoredSequence = 1;
 
   constructor(private readonly platform: JournaldPlatform, settings: JournaldSettings = defaultJournaldSettings(), firstSeqnum = 1) {
-    this.bootId = hex128(`boot:${platform.hostname()}:${platform.machineId()}:${platform.bootUsec()}`);
+    this.bootId = platform.bootId();
     const host: JournaldHost = {
       probe: pid => platform.probe(pid),
       identity: () => ({ bootId: this.bootId, machineId: platform.machineId(), hostname: platform.hostname() }),

@@ -2,6 +2,8 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { dashedUuid, randomUuidBits } from '../host/hardware/HardwareIdentity';
+import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
 import { TimeZone } from '@/network/core/time/TimeZone';
 import type { InteractiveHandoff } from './commands/crypto/InteractiveHandoff';
@@ -1050,7 +1052,7 @@ export class LinuxCommandExecutor {
       references: (name) => this.iptables.setReferences(name) + this.ip6tables.setReferences(name),
     });
     this.firewall = new LinuxFirewallManager(this.vfs, this.iptables, this.ip6tables);
-    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId);
+    this.logMgr = new LinuxLogManager(this.vfs, this.bootFacts(), () => this.identity.machineId, () => this.identity.bootId);
     this.logMgr.setClock(this.wallNow);
     this.logMgr.setProcessProbe((pid) => {
       const process = this.processMgr.get(pid);
@@ -1294,6 +1296,13 @@ export class LinuxCommandExecutor {
    * Register the kernel `/proc` entries as generated pseudo-files, so
    * `/proc/version` and `/proc/sys/kernel/*` track the identity model live.
    */
+  private randomUuidCounter = 0;
+
+  private nextRandomUuid(): string {
+    const entropy = `random-uuid:${this.identity.bootId}:${this.wallNow()}:${this.randomUuidCounter++}`;
+    return dashedUuid(randomUuidBits(simulatedDigest(entropy)));
+  }
+
   private registerKernelProcFiles(): void {
     this.vfs.mkdirp('/proc/sys/kernel', 0o755, 0, 0);
     const k = () => this.identity.kernel;
@@ -1306,6 +1315,9 @@ export class LinuxCommandExecutor {
       () => `${this.processMgr.pidMax}\n`,
       (text) => /^\s*\d+\s*$/.test(text) && this.processMgr.setPidMax(Number(text.trim())));
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
+    this.vfs.mkdirp('/proc/sys/kernel/random', 0o555, 0, 0);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/random/boot_id', () => `${dashedUuid(this.identity.bootId)}\n`);
+    this.vfs.registerGeneratedFile('/proc/sys/kernel/random/uuid', () => `${this.nextRandomUuid()}\n`);
     this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
     // ordre : les deux vues ne peuvent donc pas diverger.
