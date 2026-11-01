@@ -17,6 +17,8 @@ type Instruction =
   | { op: 'split'; first: number; second: number }
   | { op: 'jump'; to: number }
   | { op: 'save'; slot: number }
+  | { op: 'mark'; slot: number }
+  | { op: 'progress'; slot: number }
   | { op: 'match' };
 
 class Unsupported extends Error {}
@@ -122,6 +124,7 @@ class Parser {
     }
     if (head.startsWith('(?=') || head.startsWith('(?!') || head.startsWith('(?<=') || head.startsWith('(?<!')) {
       this.at = this.closingParenthesis(start);
+      this.groups += this.capturesWithin(this.source.slice(start + 1, this.at - 1));
       return { kind: 'atom', source: this.source.slice(start, this.at), zeroWidth: true };
     }
     const named = /^\(\?<[A-Za-z_]\w*>/.exec(this.source.slice(this.at));
@@ -131,6 +134,19 @@ class Parser {
     const body = this.alternation();
     this.expectClose();
     return { kind: 'group', index, body };
+  }
+
+  private capturesWithin(text: string): number {
+    let count = 0;
+    for (let at = 0; at < text.length; at++) {
+      const character = text[at];
+      if (character === '\\') at++;
+      else if (character === '[') {
+        at++;
+        while (at < text.length && text[at] !== ']') at += text[at] === '\\' ? 2 : 1;
+      } else if (character === '(' && (text[at + 1] !== '?' || /^\(\?<[A-Za-z_]/.test(text.slice(at)))) count++;
+    }
+    return count;
   }
 
   private expectClose(): void {
@@ -176,7 +192,16 @@ function heightOf(node: Node): number {
 class Compiler {
   readonly program: Instruction[] = [];
 
-  constructor(private readonly matcherFor: (source: string) => RegExp) {}
+  private loops = 0;
+
+  constructor(private readonly matcherFor: (source: string) => RegExp, private readonly slotBase: number) {}
+
+  private compileIteration(body: Node): void {
+    const slot = this.slotBase + this.loops++;
+    this.emit({ op: 'mark', slot });
+    this.compile(body);
+    this.emit({ op: 'progress', slot });
+  }
 
   emit(instruction: Instruction): number {
     if (this.program.length >= MAX_PROGRAM) throw new Unsupported();
@@ -224,7 +249,7 @@ class Compiler {
     if (node.max === Infinity) {
       const split = this.emit({ op: 'split', first: 0, second: 0 });
       const bodyStart = this.program.length;
-      this.compile(node.body);
+      this.compileIteration(node.body);
       this.emit({ op: 'jump', to: split });
       const exit = this.program.length;
       this.program[split] = node.lazy ? { op: 'split', first: exit, second: bodyStart } : { op: 'split', first: bodyStart, second: exit };
@@ -233,7 +258,7 @@ class Compiler {
     const splits: number[] = [];
     for (let count = node.min; count < node.max; count++) {
       splits.push(this.emit({ op: 'split', first: 0, second: 0 }));
-      this.compile(node.body);
+      this.compileIteration(node.body);
     }
     const exit = this.program.length;
     splits.forEach((split) => {
@@ -267,7 +292,7 @@ export class LinearRegExp implements PatternMatcher {
           cache.set(atom, matcher);
         }
         return matcher;
-      });
+      }, (parser.groups + 1) * 2);
       compiler.compile(tree);
       compiler.emit({ op: 'match' });
       return new LinearRegExp(compiler.program, parser.groups, flags.includes('d'));
@@ -334,12 +359,16 @@ export class LinearRegExp implements PatternMatcher {
               stack.push({ pc: instruction.second, captures: current.captures });
               stack.push({ pc: instruction.first, captures: current.captures });
               break;
-            case 'save': {
+            case 'save':
+            case 'mark': {
               const next = [...current.captures];
               next[instruction.slot] = position;
               stack.push({ pc: current.pc + 1, captures: next });
               break;
             }
+            case 'progress':
+              if (current.captures[instruction.slot] !== position) stack.push({ pc: current.pc + 1, captures: current.captures });
+              break;
             case 'assert': {
               instruction.matcher.lastIndex = position;
               const found = instruction.matcher.exec(text);
