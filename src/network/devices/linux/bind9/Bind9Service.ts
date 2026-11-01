@@ -2,9 +2,9 @@ import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
 import { ZoneStore } from '@/network/dns/zone/ZoneStore';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
-import { RecursiveResolver } from '@/network/dns/resolver/RecursiveResolver';
+import { RecursiveResolver, resolutionFromCache } from '@/network/dns/resolver/RecursiveResolver';
 import { DnsCache } from '@/network/dns/resolver/DnsCache';
-import { parseZoneFile, renderZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
+import { parseZoneFile, parseZoneRecords, renderZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
@@ -45,7 +45,7 @@ import { Bind9Logging } from './Bind9Logging';
 import { RndcChannel } from './RndcChannel';
 import { RndcServer } from './RndcServer';
 import type { Zone } from '@/network/dns/zone/Zone';
-import type { ResourceRecord, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
+import type { ResourceRecord, ResourceRecordData, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
 import type { ForwardMode, NamedConfig, NamedZone } from './NamedConfig';
 import type { RndcWireEnvelope } from './RndcWireCodec';
 import type { AclHostEnvironment } from './NamedAcl';
@@ -76,6 +76,7 @@ export class Bind9Service {
   private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
   private resolvers: RecursiveResolver[] = [];
+  private rootHints: { readonly ns: readonly ResourceRecord<NsRecordData>[]; readonly glue: readonly ResourceRecord<ResourceRecordData>[] } | null = null;
   private forwardZones = new Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }>();
   private readonly cache = new DnsCache(() => this.host.getSystemClockMs());
   private readonly loadedZones = new Map<string, number>();
@@ -355,6 +356,7 @@ export class Bind9Service {
   }
 
   private buildResolvers(config: NamedConfig): RecursiveResolver[] {
+    this.rootHints = null;
     if (!config.options.recursion) return [];
     const resolvers: RecursiveResolver[] = [];
     const forwarders: IPAddress[] = [];
@@ -365,11 +367,16 @@ export class Bind9Service {
     const dnssec = config.options.dnssecValidation !== 'no' && config.trustAnchors.length > 0
       ? { dnssec: { anchors: config.trustAnchors, now: () => Math.floor(this.host.getSystemClockMs() / 1000) } }
       : {};
-    const hints: IPAddress[] = [];
-    for (const zone of config.zones) {
-      if (zone.type !== 'hint' || zone.file === null) continue;
-      const content = this.readFile(zone.file);
-      if (content !== null) hints.push(...collectHintAddresses(content));
+    const hintRecords = this.readHintRecords(config);
+    const hints = hintRecords
+      .filter((record): record is ResourceRecord<ARecordData> => record.data.type === RRType.A)
+      .map((record) => record.data.address);
+    const hintNs = hintRecords.filter((record): record is ResourceRecord<NsRecordData> => record.data.type === RRType.NS);
+    if (hintNs.length > 0) {
+      this.rootHints = {
+        ns: hintNs,
+        glue: hintRecords.filter((record) => record.data.type === RRType.A || record.data.type === RRType.AAAA),
+      };
     }
     if (forwarders.length > 0) {
       const fallsBack = config.options.forwardMode === 'first' && hints.length > 0;
@@ -379,6 +386,21 @@ export class Bind9Service {
     }
     if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, { servfailTtlSeconds: config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
     return resolvers;
+  }
+
+  private readHintRecords(config: NamedConfig): ResourceRecord<ResourceRecordData>[] {
+    const records: ResourceRecord<ResourceRecordData>[] = [];
+    for (const zone of config.zones) {
+      if (zone.type !== 'hint' || zone.file === null) continue;
+      const content = this.readFile(zone.file);
+      if (content === null) continue;
+      try {
+        records.push(...parseZoneRecords(content, '.').records);
+      } catch (error) {
+        if (!(error instanceof ZoneFileError)) throw error;
+      }
+    }
+    return records;
   }
 
   private buildForwardZones(config: NamedConfig): Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }> {
@@ -658,7 +680,31 @@ export class Bind9Service {
     if (outsideAuthority && question && query.flags.rd && recursionAllowed && this.resolversFor(question.qname).length > 0) {
       return this.recurse(query);
     }
+    if (outsideAuthority && question && !query.flags.rd && recursionAllowed) {
+      const fromCache = this.answerWithoutRecursion(query);
+      if (fromCache !== null) return fromCache;
+    }
     return { ...response, flags: { ...response.flags, ra: recursionAllowed } };
+  }
+
+  private answerWithoutRecursion(query: DnsMessage): DnsMessage | null {
+    const question = query.questions[0];
+    const known = resolutionFromCache(this.cache.lookup(question.qname, question.qtype));
+    if (known !== null) return buildRecursiveResponse(query, known);
+    const hints = this.rootHints;
+    if (hints === null) return null;
+    const priming = normalizeDnsName(question.qname) === normalizeDnsName('.') && question.qtype === RRType.NS;
+    return {
+      id: query.id,
+      flags: {
+        qr: true, opcode: query.flags.opcode, aa: false, tc: false,
+        rd: query.flags.rd, ra: true, ad: false, cd: query.flags.cd, rcode: DnsRcode.NOERROR,
+      },
+      questions: query.questions,
+      answers: priming ? [...hints.ns] : [],
+      authorities: priming ? [] : [...hints.ns],
+      additionals: [...hints.glue],
+    };
   }
 
   private handleUpdate(query: DnsMessage, sourceIP?: IPAddress | IPv6Address, raw?: Uint8Array): DnsMessage {
@@ -866,18 +912,4 @@ export class Bind9Service {
     }
     return false;
   }
-}
-
-const HINT_ADDRESS_PATTERN = /\bA\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*$/;
-
-function collectHintAddresses(content: string): IPAddress[] {
-  const addresses: IPAddress[] = [];
-  for (const line of content.split('\n')) {
-    const stripped = line.split(';')[0].trimEnd();
-    const match = HINT_ADDRESS_PATTERN.exec(stripped);
-    if (!match) continue;
-    const parsed = IPAddress.tryParse(match[1]);
-    if (parsed) addresses.push(parsed);
-  }
-  return addresses;
 }
