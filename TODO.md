@@ -760,20 +760,17 @@ Pas de liste de tampons ni de pile de tampons dans `NanoEngine` : `linesArr`, la
 les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : sortir l'etat d'un
 fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
 
-### [fortigate] ce que `?` et la tabulation ne couvrent pas encore, et ce qui manque aux acces
+### [fortigate] ce que `?` et la tabulation ne couvrent pas encore
 Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;
-`probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de
-`diagnose` annoncent leurs mots-cles et les noms vivants (interfaces, tunnels, moniteurs). Restent des queues
-`REST` qui ne disent qu'un gabarit : `diagnose sniffer packet <interface> '<filtre>' <verbose> <nombre> <horodatage>`,
-`diagnose firewall iprope list|show <groupe> <index>`, `diagnose sys top <delai> <lignes>`, `execute time|date`,
-`execute log filter <champ> <valeur>` (les champs), `diagnose sys checkused|cmdb refcnt show <chemin>` (les chemins
-`table.attribut`), `diagnose netlink aggregate name|brctl name host` (seuls les agregats / ponts de CE type, pas toutes les
-interfaces), `diagnose sys sdwan health-check <nom>` ; `get <branche>` seul repond « unknown configuration path » au lieu
-de « incomplete ». Acces : `config system api-user` n'existe pas (pas de jeton REST `Authorization: Bearer`), alors que
-l'API sait deja lire l'arbre vivant ; `execute api-user generate-key` n'est pas porte faute de sortie attestee. Un
-`FortiGate` rejoue sa configuration par `replayConfig` ligne a ligne : les lignes refusees sont maintenant rapportees
-(`ImportResult.warnings`) mais l'ordre de rejeu reste celui de `show` (un objet qui en reference un autre defini plus bas
-echoue au rejeu).
+`probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de `diagnose`
+annoncent leurs mots-cles, les noms vivants (interfaces, tunnels, moniteurs) et les champs de `execute log filter`.
+Restent des queues `REST` qui ne disent qu'un gabarit : `diagnose firewall iprope list|show <groupe> <index>`, `execute time|date`,
+`diagnose sys checkused|cmdb refcnt show <chemin>` (les chemins `table.attribut`), `diagnose netlink aggregate name|brctl name host`
+(seuls les agregats / ponts de CE type, pas toutes les interfaces), `diagnose sys sdwan health-check <nom>`. `diagnose sys top
+<delai> <lignes>` ignore ses arguments (le gabarit est conserve). `config system api-user` existe (cle ENC, profil, trusthost,
+`Authorization: Bearer` ou `access_token`, lecture seule de l'API) ; `execute api-user generate-key` n'est pas porte faute de sortie
+attestee. Un FortiGate rejoue sa configuration ligne a ligne : les lignes refusees sont rapportees (`ImportResult.warnings`) mais
+l'ordre de rejeu reste celui de `show`.
 
 ### [vim] coller depuis un autre programme (Ctrl+Maj+V, Maj+Inser, clic droit)
 Mesure en corrigeant le meme defaut dans nano : `VimEditor` annule chaque touche (`preventDefault`)

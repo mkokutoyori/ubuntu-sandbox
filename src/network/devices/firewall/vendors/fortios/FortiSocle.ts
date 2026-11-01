@@ -2,7 +2,7 @@ import { executeCommandsIn, executeLeaves, executeLegends, missingKeywords, offe
 import { SNIFFER_SCOPE } from './diag/FortiDiagCommands';
 import {
   authFilterWords, debugApplicationWords, debugConsoleWords, flowFilterWords, flowShowWords, flowTraceWords,
-  gatewayClearWords, sessionFilterWords, synchronizeWords, testApplicationWords,
+  gatewayClearWords, logFilterWords, sessionFilterWords, synchronizeWords, testApplicationWords,
 } from './diag/diagVocabulary';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
@@ -439,9 +439,9 @@ export class FortiSocle {
     const keywords = (name: string, description: string, alternatives: readonly EnumValue[]): ArgumentSpec => ({
       name, type: 'REST', optional: true, description, alternatives, leadingOnly: true,
     });
-    const named = (name: string, description: string, source: string): ArgumentSpec => ({
+    const named = (name: string, description: string, source: string, extra: readonly EnumValue[] = []): ArgumentSpec => ({
       name, type: 'REST', optional: true, description, leadingOnly: true,
-      alternatives: this.deps.candidatesFor([source]).filter(candidate => candidate.description !== 'Predefined object.'),
+      alternatives: [...extra, ...this.deps.candidatesFor([source]).filter(candidate => candidate.description !== 'Predefined object.')],
     });
     const run = (words: readonly string[]) =>
       (_s: CliSession, args: Readonly<Record<string, string>>): string =>
@@ -589,7 +589,7 @@ export class FortiSocle {
         (_s, args) => this.deps.runExecute(
           ['log', 'list', ...(args.category ? [args.category] : [])])),
       this.withArgument('execute log filter',
-        ['execute', 'log', 'filter', rest('rest', 'Filter criterion.')],
+        ['execute', 'log', 'filter', keywords('rest', 'Filter criterion.', logFilterWords())],
         'Set the log display filter.', run2(['log', 'filter'])),
       this.withArgument('execute log filter category',
         ['execute', 'log', 'filter', 'category', {
@@ -735,7 +735,7 @@ export class FortiSocle {
         'Restrict what the authenticated-user list shows.',
         run(['firewall', 'auth', 'filter'])),
       ...(offeredIn(SNIFFER_SCOPE, this.where()) ? [this.withArgument('diagnose sniffer packet',
-        ['diagnose', 'sniffer', 'packet', rest('rest', '<interface> <filter> [verbose] [count]')],
+        ['diagnose', 'sniffer', 'packet', named('rest', '<interface> <filter> [verbose] [count]', 'system interface', [{ keyword: 'any', description: 'Every interface.' }])],
         'Capture packets on an interface.', run(['sniffer', 'packet']))] : []),
     ];
   }

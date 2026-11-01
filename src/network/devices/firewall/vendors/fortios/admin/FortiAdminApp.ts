@@ -15,6 +15,8 @@ export interface FortiAdminAppDeps {
   serial(): string;
   vdom(): string;
   login(user: string, password: string, source: string): boolean;
+  apiKey?(token: string, source: string): { readonly name: string; readonly profile: string } | null;
+  mayRead?(profile: string, group: string): boolean;
   now(): number;
 }
 
@@ -32,7 +34,7 @@ export class FortiAdminApp implements AdminHttpApp {
   handle(request: HttpMessage, peer: AdminHttpPeer): HttpMessage {
     const target = pathOf(request.target ?? '/');
     if (target === LOGIN_PATH) return this.logincheck(request, peer);
-    if (target.startsWith(CMDB_BASE)) return this.cmdb(request, target);
+    if (target.startsWith(CMDB_BASE)) return this.cmdb(request, target, peer);
     return this.page(200, 'OK', loginPage());
   }
 
@@ -49,9 +51,22 @@ export class FortiAdminApp implements AdminHttpApp {
     return accepted;
   }
 
-  private cmdb(request: HttpMessage, target: string): HttpMessage {
+  private bearerOf(request: HttpMessage): string {
+    for (const raw of request.headers.getAll('authorization')) {
+      const found = /^Bearer\s+(\S+)/i.exec(raw.trim());
+      if (found) return found[1];
+    }
+    const query = (request.target ?? '').split('?')[1] ?? '';
+    return parseForm(query.replace(/&/g, '&')).get('access_token') ?? '';
+  }
+
+  private cmdb(request: HttpMessage, target: string, peer: AdminHttpPeer): HttpMessage {
+    let principalProfile: string | null = null;
     if (this.sessionOf(request) === undefined) {
-      return this.envelope(401, 'Unauthorized', [], [], 'error');
+      const token = this.bearerOf(request);
+      const principal = token === '' ? null : this.deps.apiKey?.(token, peer.ip) ?? null;
+      if (principal === null) return this.envelope(401, 'Unauthorized', [], [], 'error');
+      principalProfile = principal.profile;
     }
 
     const words = target.slice(CMDB_BASE.length).split('/').filter(Boolean)
@@ -61,6 +76,10 @@ export class FortiAdminApp implements AdminHttpApp {
     const path = words.slice(0, 2);
     const spec = this.deps.tree().spec(path);
     if (spec === undefined) return this.envelope(404, 'Not Found', path, [], 'error');
+
+    if (principalProfile !== null && this.deps.mayRead?.(principalProfile, spec.accessGroup ?? 'sysgrp') === false) {
+      return this.envelope(403, 'Forbidden', path, [], 'error');
+    }
 
     const results = this.resultsOf(path, words[2]);
     if (results === null) return this.envelope(404, 'Not Found', path, [], 'error');

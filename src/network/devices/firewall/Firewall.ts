@@ -121,7 +121,7 @@ import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
 import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
 import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
-import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
+import { remoteAuthenticate, type AdminAccountDraft, type ApiPrincipal, type ApiUserDraft } from './identity/AdminAccounts';
 import type { PasswordHistory } from './identity/PasswordHistory';
 import { FirewallIpv6 } from './l3/FirewallIpv6';
 import { FirewallDhcp6, type Dhcp6Scope } from './l3/FirewallDhcp6';
@@ -1657,6 +1657,9 @@ export class Firewall extends Equipment {
   startAuthPortal(): boolean { return this.portals.startAuth(); }
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
+  applyApiUser(user: ApiUserDraft): void { this.management.applyApiUser(user); }
+  removeApiUser(name: string): void { this.management.removeApiUser(name); }
+  authenticateApiKey(key: string, source: string): ApiPrincipal | null { return this.management.authenticateApiKey(key, source); }
 
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void {
     this.management.applyPasswordExpiry(policy);

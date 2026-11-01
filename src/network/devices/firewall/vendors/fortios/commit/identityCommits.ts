@@ -10,7 +10,8 @@ type IdentityHandlers = Pick<FortiCommitDevice,
   | 'applyRemoteAuthServer' | 'applyLdapServer' | 'removeRemoteAuthServer'
   | 'applyAuthSetting'
   | 'applyAccessProfile' | 'removeAccessProfile'
-  | 'applyAdminAccount' | 'removeAdminAccount'>;
+  | 'applyAdminAccount' | 'removeAdminAccount'
+  | 'applyApiUser' | 'removeApiUser'>;
 
 export function identityCommitHandlers(fw: Firewall): IdentityHandlers {
   return {
@@ -92,6 +93,12 @@ export function identityCommitHandlers(fw: Firewall): IdentityHandlers {
   },
   removeAdminAccount(name) {
     fw.getAccessMatrix().removeAdmin(name);
+  },
+  applyApiUser(user) {
+    fw.applyApiUser(user);
+  },
+  removeApiUser(name) {
+    fw.removeApiUser(name);
   },
   };
 }

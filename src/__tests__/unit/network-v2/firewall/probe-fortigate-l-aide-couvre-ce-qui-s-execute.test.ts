@@ -91,6 +91,13 @@ describe('le vocabulaire imbrique de `execute`', () => {
     expect(await fw.executeCommand('execute set system')).toMatch(/missing/);
   });
 
+  it('une branche de `get` seule est INCOMPLETE, pas un chemin inconnu', async () => {
+    const fw = neuf();
+    for (const line of ['get system', 'get firewall', 'get router']) {
+      expect(await fw.executeCommand(line)).toMatch(/missing/);
+    }
+  });
+
   it('TEMOIN : ce qui s\'executait s\'execute toujours', async () => {
     const fw = neuf();
     expect(await fw.executeCommand('execute clear system arp table')).toBe('');
@@ -109,6 +116,8 @@ describe('les queues de `diagnose` annoncent leurs mots-cles', () => {
     ['diagnose firewall auth filter ', ['clear', 'group', 'policy', 'user']],
     ['diagnose vpn ike gateway clear ', ['name']],
     ['diagnose test application ', ['dnsproxy', 'miglogd']],
+    ['execute log filter ', ['category', 'field', 'reset', 'view-lines']],
+    ['diagnose sniffer packet ', ['any', 'port1', 'wan1']],
     ['diagnose hardware deviceinfo nic ', ['port1', 'port2', 'wan1']],
     ['diagnose lldprx port neighbor details ', ['port1', 'wan1']],
   ];

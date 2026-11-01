@@ -15,6 +15,30 @@ export interface AdminAccountDraft {
   readonly comments?: string;
 }
 
+export interface ApiUserDraft {
+  readonly name: string;
+  readonly apiKey?: string;
+  readonly profile: string;
+  readonly trustHosts: readonly { index: number; address: string; mask: string }[];
+}
+
+export interface ApiPrincipal {
+  readonly name: string;
+  readonly profile: string;
+}
+
+export function authenticateApiKey(
+  users: ReadonlyMap<string, ApiUserDraft>, key: string, source: string,
+): ApiPrincipal | null {
+  if (key === '') return null;
+  for (const user of users.values()) {
+    if (user.apiKey !== key) continue;
+    if (!trustHostAllows(user.trustHosts, source)) return null;
+    return { name: user.name, profile: user.profile };
+  }
+  return null;
+}
+
 export interface LdapBindTarget {
   readonly address: string;
   readonly baseDn?: string;

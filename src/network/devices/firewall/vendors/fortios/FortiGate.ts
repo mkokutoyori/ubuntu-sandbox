@@ -31,6 +31,8 @@ export class FortiGate extends Firewall {
         serial: () => this.serialNumber(),
         vdom: () => 'root',
         login: (user, password, source) => this.authenticateAdmin(user, password, source),
+        apiKey: (token, source) => this.authenticateApiKey(token, source),
+        mayRead: (profile, group) => this.getAccessMatrix().authorize(profile, group as never, 'read') !== 'absent',
         now: () => this.now(),
       });
     }
