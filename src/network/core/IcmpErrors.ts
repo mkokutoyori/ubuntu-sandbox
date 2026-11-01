@@ -58,6 +58,7 @@ export function unreachableCodeName(code: number | undefined): UnreachableCodeNa
 
 export const ICMPV6_UNREACH_NO_ROUTE = 0;
 export const ICMPV6_UNREACH_ADMIN_PROHIBITED = 1;
+export const ICMPV6_UNREACH_NOT_NEIGHBOUR = 2;
 export const ICMPV6_UNREACH_ADDRESS = 3;
 export const ICMPV6_UNREACH_PORT = 4;
 export const ICMPV6_UNREACH_POLICY_FAILED = 5;

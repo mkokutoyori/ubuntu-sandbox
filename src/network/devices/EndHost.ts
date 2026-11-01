@@ -124,6 +124,9 @@ import {
   ICMP_UNREACH_PORT,
   ICMP_UNREACH_FRAG_NEEDED,
   ICMPV6_UNREACH_ADDRESS,
+  ICMPV6_UNREACH_NO_ROUTE,
+  ICMPV6_UNREACH_NOT_NEIGHBOUR,
+  ICMPV6_EXCEEDED_HOP_LIMIT,
   ICMPV6_UNREACH_PORT,
   ICMPV6_EXCEEDED_REASSEMBLY,
   icmp6ReportOf,
@@ -4689,7 +4692,7 @@ export abstract class EndHost extends Equipment {
     }
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
-    const srcIP = offendingPkt.destinationIP;
+    const srcIP = errorSource ?? offendingPkt.destinationIP;
     if (!srcIP) return;
 
     const icmpError: ICMPv6Packet = {
@@ -6341,7 +6344,63 @@ export abstract class EndHost extends Equipment {
       }
       return;
     }
+    if (this.ipv6ForwardingEnabled()) {
+      this.forwardIPv6(portName, ipv6);
+      return;
+    }
     this.protocolCounters.ip6InAddrErrors++;
+  }
+
+  protected ipv6ForwardingEnabled(): boolean {
+    return false;
+  }
+
+  private forwardIPv6(inPort: string, ipv6: IPv6Packet): void {
+    const counters = this.protocolCounters;
+    if (ipv6.hopLimit <= 1) {
+      counters.ip6InHdrErrors++;
+      this.sendICMPv6Error(inPort, ipv6, 'time-exceeded', ICMPV6_EXCEEDED_HOP_LIMIT, {}, this.forwardErrorSource(inPort, ipv6));
+      return;
+    }
+    const route = this.resolveIPv6Route(ipv6.destinationIP);
+    if (!route) {
+      counters.ip6InNoRoutes++;
+      this.sendICMPv6Error(inPort, ipv6, 'destination-unreachable', ICMPV6_UNREACH_NO_ROUTE, {}, this.forwardErrorSource(inPort, ipv6));
+      return;
+    }
+    const outPortName = route.port.getName();
+    if (outPortName !== inPort) {
+      const source = ipv6.sourceIP;
+      if (source.isUnspecified() || source.isMulticast() || source.isLoopback()) {
+        counters.ip6InAddrErrors++;
+        return;
+      }
+      if (source.isLinkLocal()) {
+        counters.ip6InAddrErrors++;
+        this.sendICMPv6Error(inPort, ipv6, 'destination-unreachable', ICMPV6_UNREACH_NOT_NEIGHBOUR, {}, this.forwardErrorSource(inPort, ipv6));
+        return;
+      }
+    }
+    const mtu = Math.max(route.port.getIPv6MTU(), MTU.MIN_IPV6);
+    if (ipv6PacketBytes(ipv6) > mtu) {
+      counters.ip6InTooBigErrors++;
+      this.sendICMPv6Error(inPort, ipv6, 'packet-too-big', 0, { mtu }, this.forwardErrorSource(inPort, ipv6));
+      return;
+    }
+    const forwarded: IPv6Packet = { ...ipv6, hopLimit: ipv6.hopLimit - 1 };
+    const verdict = this.firewallFilter6(inPort, forwarded, 'forward', outPortName);
+    if (verdict === 'drop') return;
+    if (verdict === 'reject') {
+      this.sendIpv6Reject(inPort, ipv6);
+      return;
+    }
+    counters.ip6OutForwDatagrams++;
+    this.sendIpv6FrameNdpAware(outPortName, forwarded, route.nextHopIP);
+  }
+
+  private forwardErrorSource(inPort: string, offending: IPv6Packet): IPv6Address | undefined {
+    const port = this.ports.get(inPort);
+    return port ? selectIpv6SourceAddress(port, offending.sourceIP) ?? undefined : undefined;
   }
 
   private reassembleIPv6(portName: string, packet: IPv6Packet): IPv6Packet | null {

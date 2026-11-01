@@ -341,6 +341,9 @@ export abstract class LinuxMachine extends EndHost
     this.ipv6ConfStore ??= new Ipv6DeviceConf([...this.ports.keys()]);
     return this.ipv6ConfStore;
   }
+  protected override ipv6ForwardingEnabled(): boolean {
+    return this.ipv6Conf.forwards('all');
+  }
   protected override routerAdvertisementAcceptance(portName: string): RouterAdvertisementAcceptance {
     const conf = this.ipv6Conf;
     return {
