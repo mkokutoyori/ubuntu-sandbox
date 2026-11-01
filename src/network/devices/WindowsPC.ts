@@ -4469,6 +4469,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       // Hostname resolution
       resolveHostname: (name: string) => this.resolveHostname(name),
+      resolveHostname6: (name: string) => this.resolveHostname6(name),
+      executeTraceroute6: (
+        target: IPv6Address, maxHops?: number, timeoutMs?: number,
+        hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+        sourceIp?: IPv6Address,
+      ) => this.executeTraceroute6(
+        target, maxHops, timeoutMs ?? 500, 3, 1,
+        hooks as { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean } | undefined,
+        { kind: 'icmp' }, sourceIp === undefined ? {} : { sourceIp6: sourceIp },
+      ) as Promise<TracerouteHop[]>,
 
       // Service state query
       isServiceRunning: (name: string) => {

@@ -210,6 +210,14 @@ export interface WinCommandContext {
   // UDP/53 through the simulated network — hence asynchronous.
   resolveHostname(name: string): Promise<IPAddress | null>;
 
+  resolveHostname6?(name: string): Promise<IPv6Address | null>;
+
+  executeTraceroute6?(
+    target: IPv6Address, maxHops?: number, timeoutMs?: number,
+    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+    sourceIp?: IPv6Address,
+  ): Promise<TracerouteHop[]>;
+
   reverseLookup?(ip: string): string | null;
 
   /** IPv4 multicast groups this host has joined (`netsh … show joins`). */
