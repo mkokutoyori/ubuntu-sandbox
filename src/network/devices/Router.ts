@@ -119,6 +119,7 @@ import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { IcmpUnreachableRateLimit } from './router/IcmpUnreachableRateLimit';
 import { IcmpErrorTokenBucket, type TokenBucketSetting } from './router/IcmpErrorTokenBucket';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
+import { collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
 import type { HostIcmpUnreachablePayload } from './host/events';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { evaluateIpv6Acl, formatIpv6AclLogMessage } from './router/Ipv6AclEngine';
@@ -6566,86 +6567,51 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const egress = this.ipv6Engine.resolveEgress(targetIP);
     if (!egress) return [];
     const targetStr = targetIP.toString();
-    const hops: TracerouteHop[] = [];
     const udpSourcePort = EPHEMERAL_TRACE_PORT_BASE + (++this.pingIdCounter % EPHEMERAL_TRACE_PORT_SPAN);
     let udpPort = probeKind.kind === 'udp' ? probeKind.basePort : 0;
 
-    for (let hopLimit = firstHopLimit; hopLimit <= maxHops; hopLimit++) {
-      const probes: TracerouteProbe[] = [];
-      let reached = false;
-
-      for (let p = 0; p < probesPerHop; p++) {
-        if (probeKind.kind === 'udp') {
-          const destinationPort = udpPort++;
-          const outcome = await this.udpTraceProbe(destinationPort, timeoutMs,
-            () => this.ipv6Engine.sendUdpProbe(egress, targetIP, udpSourcePort, destinationPort, hopLimit));
-          probes.push(outcome.probe);
-          if (outcome.reached) reached = true;
-          continue;
-        }
-        this.pingIdCounter++;
-        const id = this.pingIdCounter;
-        const seq = p + 1;
-        const sentAt = PathClock.now();
-
-        const replyP = waitForEvent(
-          this.getBus(), 'host.icmp.echo-reply',
-          (pl) => pl.deviceId === this.id && pl.fromIp === targetStr
-            && pl.id === id && pl.seq === seq,
-          { timeoutMs, scheduler: this.getRouterScheduler() },
-        );
-        const failP = waitForEvent(
-          this.getBus(), 'host.icmp.echo-failed',
-          (pl) => pl.deviceId === this.id && (pl.id === -1 || (pl.id === id && pl.seq === seq)),
-          { timeoutMs, scheduler: this.getRouterScheduler() },
-        );
-        const replyOutcome = replyP.then((pl) => ({
-          ip: pl.fromIp, rttMs: PathClock.now() - sentAt,
-          timeout: false, reached: true, unreachable: undefined as boolean | undefined,
-        }));
-        const failOutcome = failP.then((pl) => ({
-          ip: pl.fromIp, rttMs: PathClock.now() - sentAt,
-          timeout: false, reached: false, unreachable: pl.reason === 'unreachable',
-        }));
-        replyOutcome.catch(() => {});
-        failOutcome.catch(() => {});
-
-        this.ipv6Engine.sendEchoRequest(egress, targetIP, id, seq, 56, hopLimit);
-
-        const answered = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
-          if (err instanceof WaitForEventTimeoutError) {
-            return { timeout: true, reached: false } as {
-              ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
-              unreachable?: boolean;
-            };
-          }
-          throw err;
-        });
-        const probe = answered.rttMs !== undefined && answered.rttMs > timeoutMs
-          ? { timeout: true, reached: false } as typeof answered
-          : answered;
-
-        probes.push({
-          responded: !probe.timeout, rttMs: probe.rttMs,
-          ip: probe.ip, unreachable: probe.unreachable,
-        });
-        if (probe.reached) reached = true;
+    return collectTraceHops({ firstTtl: firstHopLimit, maxHops, probesPerHop }, undefined, async (hopLimit, p) => {
+      if (probeKind.kind === 'udp') {
+        const destinationPort = udpPort++;
+        return this.udpTraceProbe(destinationPort, timeoutMs,
+          () => this.ipv6Engine.sendUdpProbe(egress, targetIP, udpSourcePort, destinationPort, hopLimit));
       }
+      this.pingIdCounter++;
+      const id = this.pingIdCounter;
+      const seq = p + 1;
+      const sentAt = PathClock.now();
 
-      const firstResponded = probes.find(p => p.responded);
-      const firstUnreachable = probes.find(p => p.unreachable);
-      hops.push({
-        hop: hopLimit,
-        ip: firstResponded?.ip,
-        rttMs: firstResponded?.rttMs,
-        timeout: probes.every(p => !p.responded),
-        unreachable: !!firstUnreachable,
-        probes,
+      const replyP = waitForEvent(
+        this.getBus(), 'host.icmp.echo-reply',
+        (pl) => pl.deviceId === this.id && pl.fromIp === targetStr
+          && pl.id === id && pl.seq === seq,
+        { timeoutMs, scheduler: this.getRouterScheduler() },
+      );
+      const failP = waitForEvent(
+        this.getBus(), 'host.icmp.echo-failed',
+        (pl) => pl.deviceId === this.id && (pl.id === -1 || (pl.id === id && pl.seq === seq)),
+        { timeoutMs, scheduler: this.getRouterScheduler() },
+      );
+      const replyOutcome = replyP.then((pl): TraceProbeOutcome => ({
+        ip: pl.fromIp, rttMs: PathClock.now() - sentAt, timeout: false, reached: true,
+      }));
+      const failOutcome = failP.then((pl): TraceProbeOutcome => ({
+        ip: pl.fromIp, rttMs: PathClock.now() - sentAt, timeout: false, reached: false,
+        unreachable: pl.reason === 'unreachable',
+      }));
+      replyOutcome.catch(() => {});
+      failOutcome.catch(() => {});
+
+      this.ipv6Engine.sendEchoRequest(egress, targetIP, id, seq, 56, hopLimit);
+
+      const answered = await Promise.race([replyOutcome, failOutcome]).catch((err): TraceProbeOutcome => {
+        if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
+        throw err;
       });
-
-      if (reached || firstUnreachable) break;
-    }
-    return hops;
+      return answered.rttMs !== undefined && answered.rttMs > timeoutMs
+        ? { timeout: true, reached: false }
+        : answered;
+    }) as Promise<TracerouteHop[]>;
   }
 
   /**
@@ -6679,125 +6645,78 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       if (!nextHopMAC) return [{ hop: 1, timeout: true, probes: [{ responded: false }] }];
     }
 
-    const hops: TracerouteHop[] = [];
     const udpSourcePort = EPHEMERAL_TRACE_PORT_BASE + (++this.pingIdCounter % EPHEMERAL_TRACE_PORT_SPAN);
     let udpPort = probeKind.kind === 'udp' ? probeKind.basePort : 0;
 
-    for (let ttl = firstTtl; ttl <= maxHops; ttl++) {
-      const probes: TracerouteProbe[] = [];
-      let destinationReached = false;
-
-      for (let p = 0; p < probesPerHop; p++) {
-        if (probeKind.kind === 'udp') {
-          const destinationPort = udpPort++;
-          const outcome = await this.udpTraceProbe(destinationPort, timeoutMs, () => this.sendFrame(route.iface, {
-            srcMAC: outPort.getMAC(),
-            dstMAC: nextHopMAC!,
-            etherType: ETHERTYPE_IPV4,
-            payload: buildUdpOverIpv4(myIP, {
-              destination: targetIP, destinationPort, sourcePort: udpSourcePort, payload: null, payloadBytes: 0, ttl,
-            }),
-          }));
-          probes.push(outcome.probe);
-          if (outcome.reached) destinationReached = true;
-          continue;
-        }
-        this.pingIdCounter++;
-        const id = this.pingIdCounter;
-        const seq = p + 1;
-        const targetIpStr = targetIP.toString();
-        const sentAt = PathClock.now();
-
-        // Phase 5.9: traceroute settles via the bus.
-        const replyP = waitForEvent(
-          this.getBus(),
-          'host.icmp.echo-reply',
-          (pl) => pl.deviceId === this.id && pl.fromIp === targetIpStr && pl.id === id && pl.seq === seq,
-          { timeoutMs, scheduler: this.getRouterScheduler() },
-        );
-        const failP = waitForEvent(
-          this.getBus(),
-          'host.icmp.echo-failed',
-          (pl) => pl.deviceId === this.id && pl.id === id && pl.seq === seq,
-          { timeoutMs, scheduler: this.getRouterScheduler() },
-        );
-
-        const icmp: ICMPPacket = {
-          type: 'icmp', icmpType: 'echo-request', code: 0,
-          id, sequence: seq, dataSize: 56,
-        };
-        const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
-
-        if (this.zoneFirewallPermits(null, route.iface, ipPkt)) {
-          this.sendFrame(route.iface, {
-            srcMAC: outPort.getMAC(),
-            dstMAC: nextHopMAC!,
-            etherType: ETHERTYPE_IPV4,
-            payload: ipPkt,
-          });
-        }
-
-        const replyOutcome = replyP.then((pl) => ({
-          ip: pl.fromIp,
-          rttMs: PathClock.now() - sentAt,
-          timeout: false, reached: true,
-          unreachable: undefined as boolean | undefined,
+    return collectTraceHops({ firstTtl, maxHops, probesPerHop }, undefined, async (ttl, p) => {
+      if (probeKind.kind === 'udp') {
+        const destinationPort = udpPort++;
+        return this.udpTraceProbe(destinationPort, timeoutMs, () => this.sendFrame(route.iface, {
+          srcMAC: outPort.getMAC(),
+          dstMAC: nextHopMAC!,
+          etherType: ETHERTYPE_IPV4,
+          payload: buildUdpOverIpv4(myIP, {
+            destination: targetIP, destinationPort, sourcePort: udpSourcePort, payload: null, payloadBytes: 0, ttl,
+          }),
         }));
-        const failOutcome = failP.then((pl) => ({
-          ip: pl.fromIp,
-          rttMs: PathClock.now() - sentAt,
-          timeout: false, reached: false,
-          unreachable: pl.reason.includes('Destination unreachable'),
-        }));
-        // Observe the race loser's eventual timeout rejection.
-        replyOutcome.catch(() => {});
-        failOutcome.catch(() => {});
+      }
+      this.pingIdCounter++;
+      const id = this.pingIdCounter;
+      const seq = p + 1;
+      const targetIpStr = targetIP.toString();
+      const sentAt = PathClock.now();
 
-        const answered = await Promise.race([replyOutcome, failOutcome]).catch((err) => {
-          if (err instanceof WaitForEventTimeoutError) {
-            return { timeout: true, reached: false } as {
-              ip?: string; rttMs?: number; timeout: boolean; reached: boolean;
-              unreachable?: boolean;
-            };
-          }
-          throw err;
-        });
-        const probe = answered.rttMs !== undefined && answered.rttMs > timeoutMs
-          ? { timeout: true, reached: false } as typeof answered
-          : answered;
+      const replyP = waitForEvent(
+        this.getBus(),
+        'host.icmp.echo-reply',
+        (pl) => pl.deviceId === this.id && pl.fromIp === targetIpStr && pl.id === id && pl.seq === seq,
+        { timeoutMs, scheduler: this.getRouterScheduler() },
+      );
+      const failP = waitForEvent(
+        this.getBus(),
+        'host.icmp.echo-failed',
+        (pl) => pl.deviceId === this.id && pl.id === id && pl.seq === seq,
+        { timeoutMs, scheduler: this.getRouterScheduler() },
+      );
 
-        probes.push({
-          responded: !probe.timeout,
-          rttMs: probe.rttMs,
-          ip: probe.ip,
-          unreachable: probe.unreachable,
+      const icmp: ICMPPacket = {
+        type: 'icmp', icmpType: 'echo-request', code: 0,
+        id, sequence: seq, dataSize: 56,
+      };
+      const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, ttl, icmp, 64);
+
+      if (this.zoneFirewallPermits(null, route.iface, ipPkt)) {
+        this.sendFrame(route.iface, {
+          srcMAC: outPort.getMAC(),
+          dstMAC: nextHopMAC!,
+          etherType: ETHERTYPE_IPV4,
+          payload: ipPkt,
         });
-        if (probe.reached) destinationReached = true;
       }
 
-      const firstResponded = probes.find(p => p.responded);
-      const firstUnreachable = probes.find(p => p.unreachable);
-      const allTimeout = probes.every(p => !p.responded);
+      const replyOutcome = replyP.then((pl): TraceProbeOutcome => ({
+        ip: pl.fromIp, rttMs: PathClock.now() - sentAt, timeout: false, reached: true,
+      }));
+      const failOutcome = failP.then((pl): TraceProbeOutcome => ({
+        ip: pl.fromIp, rttMs: PathClock.now() - sentAt, timeout: false, reached: false,
+        unreachable: pl.reason.includes('Destination unreachable'),
+      }));
+      replyOutcome.catch(() => {});
+      failOutcome.catch(() => {});
 
-      hops.push({
-        hop: ttl,
-        ip: firstResponded?.ip,
-        rttMs: firstResponded?.rttMs,
-        timeout: allTimeout,
-        unreachable: !!firstUnreachable,
-        probes,
+      const answered = await Promise.race([replyOutcome, failOutcome]).catch((err): TraceProbeOutcome => {
+        if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
+        throw err;
       });
-
-      if (destinationReached) break;
-      if (firstUnreachable) break;
-    }
-
-    return hops;
+      return answered.rttMs !== undefined && answered.rttMs > timeoutMs
+        ? { timeout: true, reached: false }
+        : answered;
+    }) as Promise<TracerouteHop[]>;
   }
 
   private async udpTraceProbe(
     destinationPort: number, timeoutMs: number, send: () => void,
-  ): Promise<{ probe: TracerouteProbe; reached: boolean }> {
+  ): Promise<TraceProbeOutcome> {
     const sentAt = PathClock.now();
     const answer = waitForEvent(
       this.getBus(),
@@ -6809,12 +6728,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     send();
     try {
       const reply = await answer;
-      const probe: TracerouteProbe = { responded: true, rttMs: PathClock.now() - sentAt, ip: reply.fromIp };
-      if (reply.code === 'ttl-exceeded') return { probe, reached: false };
-      if (reply.code === 'port-unreachable') return { probe, reached: true };
-      return { probe: { ...probe, unreachable: true, code: reply.code }, reached: false };
+      const outcome: TraceProbeOutcome = { timeout: false, reached: false, rttMs: PathClock.now() - sentAt, ip: reply.fromIp };
+      if (reply.code === 'ttl-exceeded') return outcome;
+      if (reply.code === 'port-unreachable') return { ...outcome, reached: true };
+      return { ...outcome, unreachable: true, code: reply.code };
     } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return { probe: { responded: false }, reached: false };
+      if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
       throw err;
     }
   }

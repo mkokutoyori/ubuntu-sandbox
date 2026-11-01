@@ -4214,15 +4214,17 @@ Ce qu'il manque, commande par commande : `UPGRADE CATALOG` et `TRANSPORT TABLESP
 directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
 `debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.
 
-### [traceroute] IPv6 : `tracert -R` et la boucle dupliquee du routeur
+### [traceroute] `tracert -R` lu et ignore, et deux doublons du routeur qui restent
 
 `traceroute -6` et `traceroute6` existent sur un hote Linux (sondes UDP, `-I` ICMPv6, `-T` TCP, `-P`/`-M raw` avec le Parameter Problem de la cible imprime
-`!<4-1>`, `-l`, `-s`, `-i`, `-r`, annotations lues dans traceroute.c 2.1.0 ; sonde `probe-traceroute-ipv6`), sur la boucle de sauts d'IPv4
-(`EndHost.collectTraceHops`). `tracepath -6` (sonde `probe-tracepath-ipv6`), `mtr -6` (sonde `probe-mtr-ipv6`) et `tracert -6` de Windows (sonde
-`probe-tracert-ipv6`, mais `-R` reste lu et ignore) sont faits. Reste ouvert : `Router.executeTraceroute6` garde sa propre boucle de sauts (doublon de
-`collectTraceHops`, a refermer en y branchant le routeur) ; le pointeur d'un Parameter Problem vaut toujours 6 (le champ Next Header de l'en-tete fixe), le
-simulateur ne portant pas d'en-tetes d'extension autres que le fragment. La taille de paquet `packetlen` est imprimee dans l'entete et ne dimensionne pas les
-sondes (IPv4 comme IPv6).
+`!<4-1>`, `-l`, `-s`, `-i`, `-r`, annotations lues dans traceroute.c 2.1.0 ; sonde `probe-traceroute-ipv6`). `tracepath -6` (sonde `probe-tracepath-ipv6`),
+`mtr -6` (sonde `probe-mtr-ipv6`) et `tracert -6` de Windows (sonde `probe-tracert-ipv6`, mais `-R` reste lu et ignore) sont faits. La boucle de sauts est
+unique (`host/traceHops.collectTraceHops`, appelee par `EndHost` et par `Router.executeTraceroute` / `executeTraceroute6`). Reste ouvert, deux doublons dans
+`Router` : `udpTraceProbe` refait `EndHost.awaitQuotedIcmpError` + `awaitTraceError` (attente de `host.icmp.unreachable` citant la sonde), et
+l'attente d'un echo-reply / echo-failed par sonde ICMP refait `sendPing`/`sendPing6` ; le routeur y met `code` (nom) la ou l'hote met `icmpCode` (numero), et
+`iosUnreachableMark` lit le nom. Les unifier demande de porter le rendu IOS sur le numero. Le pointeur d'un Parameter Problem vaut toujours 6 (le champ Next
+Header de l'en-tete fixe), le simulateur ne portant pas d'en-tetes d'extension autres que le fragment. La taille de paquet `packetlen` est imprimee dans
+l'entete et ne dimensionne pas les sondes (IPv4 comme IPv6).
 
 ### [radvd] la reception ignore les options RDNSS, DNSSL et MTU et le saut limite d'une annonce
 

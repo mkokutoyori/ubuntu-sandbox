@@ -23,6 +23,7 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
+import { collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
@@ -256,6 +257,7 @@ export interface TracerouteProbeResult {
   unreachable?: boolean;
   icmpCode?: number;
   icmpType?: number;
+  code?: HostIcmpUnreachablePayload['code'];
   extensions?: readonly IcmpExtensionObject[];
 }
 
@@ -403,17 +405,6 @@ export type UdpErrorReport =
     readonly timeExceeded: boolean; readonly mtu?: number; readonly replyTtl?: number; readonly rttMs: number;
   }
   | { readonly origin: 'none' };
-
-interface TraceProbeOutcome {
-  timeout: boolean;
-  reached: boolean;
-  ip?: string;
-  rttMs?: number;
-  unreachable?: boolean;
-  icmpCode?: number;
-  icmpType?: number;
-  extensions?: readonly IcmpExtensionObject[];
-}
 
 const TRACE_UDP_DATA_BYTES = 32;
 const TRACE_RAW_DATA_BYTES = 40;
@@ -6056,7 +6047,7 @@ export abstract class EndHost extends Equipment {
     let traceSequence = 0;
     const sourcePort = socket.sourcePort ?? 32768 + (this.pingIdCounter % 28000);
 
-    return this.collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
+    return collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
       if (method.kind !== 'icmp') {
         const port = method.kind === 'default-udp' ? udpPort++ : method.kind === 'raw' ? 0 : method.port;
         return method.kind === 'tcp'
@@ -6163,7 +6154,7 @@ export abstract class EndHost extends Equipment {
       ...(socket.sourceIp6 === undefined ? {} : { sourceIp: socket.sourceIp6 }),
     };
 
-    return this.collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
+    return collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
       if (method.kind === 'tcp') return this.tcpTraceProbe(targetIP, method.port, ttl, method.tos, socket);
       if (method.kind === 'raw') return this.rawTraceProbe6(targetIP, method.protocol, ttl, timeoutMs, socket, marking);
       if (method.kind !== 'icmp') {
@@ -6226,57 +6217,6 @@ export abstract class EndHost extends Equipment {
       hooks?.onHop?.(hop);
     }
     return silent;
-  }
-
-  private async collectTraceHops(
-    range: { firstTtl: number; maxHops: number; probesPerHop: number },
-    hooks: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean; compressedWaitMs?: number } | undefined,
-    probeOnce: (ttl: number) => Promise<TraceProbeOutcome>,
-  ): Promise<TracerouteHopResult[]> {
-    const hops: TracerouteHopResult[] = [];
-    for (let ttl = range.firstTtl; ttl <= range.maxHops; ttl++) {
-      if (hooks?.shouldStop?.()) break;
-      const probes: TracerouteProbeResult[] = [];
-      let destinationReached = false;
-
-      for (let p = 0; p < range.probesPerHop; p++) {
-        const outcome = await probeOnce(ttl);
-        probes.push({
-          responded: !outcome.timeout,
-          rttMs: outcome.rttMs,
-          ip: outcome.ip,
-          unreachable: outcome.unreachable,
-          icmpCode: outcome.icmpCode,
-          icmpType: outcome.icmpType,
-          ...(outcome.extensions ? { extensions: outcome.extensions } : {}),
-        });
-        if (outcome.reached) destinationReached = true;
-      }
-
-      if (probes.some(p => !p.responded)) PathClock.wait(hooks?.compressedWaitMs ?? 0);
-
-      const firstResponded = probes.find(p => p.responded);
-      const firstUnreachable = probes.find(p => p.unreachable);
-      const allTimeout = probes.every(p => !p.responded);
-
-      const hop: TracerouteHopResult = {
-        hop: ttl,
-        ip: firstResponded?.ip,
-        rttMs: firstResponded?.rttMs,
-        timeout: allTimeout,
-        unreachable: !!firstUnreachable,
-        icmpCode: firstUnreachable?.icmpCode ?? firstResponded?.icmpCode,
-        probes,
-      };
-
-      hops.push(hop);
-      hooks?.onHop?.(hop);
-
-      if (destinationReached) break;
-      if (firstUnreachable) break;
-    }
-
-    return hops;
   }
 
   // ═══════════════════════════════════════════════════════════════════
