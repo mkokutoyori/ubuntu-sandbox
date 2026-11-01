@@ -25,12 +25,15 @@ import { RadiusClientAgent } from '../radius/RadiusClientAgent';
 import { RadiusdService, CLIENTS_CONF_PATH, USERS_FILE_PATH } from './linux/freeradius/RadiusdService';
 import type { LinuxCommandContext } from './linux/commands/LinuxCommandContext';
 import type { OperationResult } from './linux/LinuxServiceManager';
+import { reverseNameOf } from './linux/network/ReverseName';
 import { SmtpServer, SMTP_PORT, SMTP_SUBMISSION_PORT, SMTP_SUBMISSION_TLS_PORT } from '../smtp/SmtpServer';
 import { selfSignedSmtpCert, type TlsServerConfig } from '../smtp/starttls';
 import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 
 /** Dedicated UDP port for the `radtest` probe client's replies — see `radtestClient`'s doc comment. */
 const RADTEST_SOURCE_PORT = 49999;
+
+const SMTPD_FIRST_PID = 3100;
 
 export class LinuxServer extends LinuxMachine {
   /** freeradius-equivalent: a Linux Server can host the RADIUS protocol server (PRD-RADIUS P8) — not just Cisco/Huawei routers. */
@@ -274,6 +277,25 @@ export class LinuxServer extends LinuxMachine {
     this.smtpServer.start();
     this.smtpSubmissionServer.start();
     this.smtpImplicitTlsServer.start();
+    this.logSmtpConnections();
+  }
+
+  private smtpConnectionLogging = false;
+  private smtpdPid = SMTPD_FIRST_PID;
+
+  private logSmtpConnections(): void {
+    if (this.smtpConnectionLogging) return;
+    this.smtpConnectionLogging = true;
+    const peer = (remoteIp: string): string => `${reverseNameOf(this.executor.nss, remoteIp) ?? 'unknown'}[${remoteIp}]`;
+    const bus = this.getBus();
+    bus.subscribe('smtp.session.opened', (event) => {
+      this.executor.logMgr.logAt('mail.info', 'postfix/smtpd', `connect from ${peer(event.payload.remoteIp)}`, this.smtpdPid++);
+    });
+    bus.subscribe('smtp.session.closed', (event) => {
+      this.executor.logMgr.logAt(
+        'mail.info', 'postfix/smtpd',
+        `disconnect from ${peer(event.payload.remoteIp)}${event.payload.commandStats}`, this.smtpdPid++);
+    });
   }
 
   /** Expose a background process in `ps` output (used by Oracle DBMS). */

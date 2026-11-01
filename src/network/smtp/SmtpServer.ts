@@ -84,7 +84,7 @@ export class SmtpServer {
       submissionMode: this.port === SMTP_SUBMISSION_PORT,
     };
     const session = new SmtpServerSession(sessionConfig, socket.remoteIp);
-    this.config.eventBus?.publish({ topic: 'smtp.session.opened', payload: { connectionId: session.connectionId } });
+    this.config.eventBus?.publish({ topic: 'smtp.session.opened', payload: { connectionId: session.connectionId, remoteIp: session.getRemoteIp() } });
     let awaitingDataBody = false;
     let idleTimer: TimerHandle | null = null;
     let unsubscribe: () => void = () => {};
@@ -116,7 +116,7 @@ export class SmtpServer {
       const timeoutMs = awaitingDataBody ? this.limits.idleTimeoutMs.dataInit : this.limits.idleTimeoutMs.initial;
       idleTimer = this.scheduler.setTimeout(() => {
         writeReply(replyEnhanced(421, ENHANCED.SERVICE_NOT_AVAILABLE, 'Idle timeout; closing connection.'));
-        this.config.eventBus?.publish({ topic: 'smtp.session.closed', payload: { connectionId: session.connectionId } });
+        this.config.eventBus?.publish({ topic: 'smtp.session.closed', payload: { connectionId: session.connectionId, remoteIp: session.getRemoteIp(), commandStats: session.commandStats.format() } });
         unsubscribe();
         socket.close();
       }, timeoutMs);
@@ -226,7 +226,7 @@ export class SmtpServer {
 
         if (session.result === 'closed') {
           clearIdle();
-          this.config.eventBus?.publish({ topic: 'smtp.session.closed', payload: { connectionId: session.connectionId } });
+          this.config.eventBus?.publish({ topic: 'smtp.session.closed', payload: { connectionId: session.connectionId, remoteIp: session.getRemoteIp(), commandStats: session.commandStats.format() } });
           unsubscribe();
           socket.close();
           return;

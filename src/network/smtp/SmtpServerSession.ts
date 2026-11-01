@@ -13,6 +13,7 @@ import { evaluateRcpt } from './relayPolicy';
 import { parseRcptDsnParams, type DsnRequest } from './dsn';
 import type { IEventBus } from '@/events/EventBus';
 import { randomSmtpConnectionId } from './events';
+import { SmtpCommandStats } from './commandStats';
 
 export interface SmtpServerConfig {
   readonly hostname: string;
@@ -35,6 +36,7 @@ export class SmtpServerSession {
   result: 'open' | 'closed' = 'open';
   heloDomain: string | null = null;
   readonly connectionId = randomSmtpConnectionId();
+  readonly commandStats = new SmtpCommandStats();
 
   private state: SmtpSessionState = 'connected';
   private envelopeFrom: string | null = null;
@@ -66,6 +68,16 @@ export class SmtpServerSession {
 
   handle(cmd: SmtpCommand): readonly SmtpReply[] {
     this.config.eventBus?.publish({ topic: 'smtp.command.received', payload: { connectionId: this.connectionId, verb: cmd.verb } });
+    const replies = this.dispatch(cmd);
+    this.commandStats.record(cmd.verb, replies[0].code);
+    return replies;
+  }
+
+  getRemoteIp(): string {
+    return this.remoteIp;
+  }
+
+  private dispatch(cmd: SmtpCommand): readonly SmtpReply[] {
     switch (cmd.verb) {
       case 'HELO': return [this.handleHelo(cmd)];
       case 'EHLO': return [this.handleEhlo(cmd)];
@@ -170,6 +182,12 @@ export class SmtpServerSession {
   }
 
   handleDataBody(rawBlob: string): SmtpReply {
+    const final = this.acceptDataBody(rawBlob);
+    if (final.code >= 400) this.commandStats.retract('data');
+    return final;
+  }
+
+  private acceptDataBody(rawBlob: string): SmtpReply {
     if (this.state !== 'data') return replyEnhanced(503, ENHANCED.BAD_SEQUENCE, 'DATA not expected.');
     const lines = rawBlob.split(CRLF);
     const termIdx = lines.indexOf('.');

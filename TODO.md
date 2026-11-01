@@ -4153,14 +4153,13 @@ cp, mv, ln, rm, rmdir, mkdir, chmod, cat, basename, dirname, seq, echo and print
 
 od is compared with GNU coreutils 9.4 (see probe-linux-od-evalue-ses-options). Still approximate: `-w0` aborts in the real command and prints the dump with the minimum width here; in `--traditional` mode an offset operand ending in `.` (decimal) is refused as an extra operand, as the real command does, but the label form is only checked against one file; `-S` does not quote non-printing bytes inside a string; reading a directory reports "Is a directory" and prints the final address like the real command, but a read error on a file that opened is not distinguishable here.
 
-### [smtp] le serveur SMTP ne journalise pas `connect from` / `disconnect from`
-Postfix `smtpd` ecrit `connect from host[ip]` et `disconnect from host[ip] ehlo=1
-...` via syslog (facility mail, etiquette `postfix/smtpd[pid]`) : verifie dans
-`src/smtpd/smtpd.c:6487` et `:6536` du depot vdukhovni/postfix. Le simulateur
-ecrivait a la place `smtp[...]: Accepted connection from ...` dans le syslog
-(ligne inventee, retiree avec le journal d'nginx) et n'ecrit plus rien. Pour
-fermer : emettre ces deux lignes sous la facility mail depuis le serveur SMTP,
-avec les compteurs de commandes du `disconnect`.
+### [smtp] ce que Postfix smtpd journalise et que le serveur SMTP n'ecrit pas
+
+`connect from nom[adresse]` et `disconnect from nom[adresse] <compteurs de commandes>` sont ecrits (facility mail, etiquette `postfix/smtpd`, sonde
+`probe-smtp-journal-connexion`, smtpd.c lignes 6487 / 6536 et `smtpd_format_cmd_stats`). Restent : `lost connection after <commande> from ...` quand
+le client coupe sans QUIT (le socket simule ne notifie pas sa fermeture au serveur), les lignes de transaction (`<queueid>: client=`, `message-id=`,
+`from=<...>, size=, nrcpt=`) et `warning:` / `NOQUEUE: reject:` ; ces dernieres relevent de qmgr / cleanup / smtpd et demandent d'abord une file
+d'attente postfix (identifiants de file) qui n'existe pas.
 
 ### [ftp] ce que le serveur FTP journalise a l'acceptation d'une connexion n'est pas verifie
 L'etiquette `ftpd` que le journal employait ne correspond a aucun demon ; vsftpd
