@@ -349,8 +349,8 @@ function openTcpListener(
         };
         sendFrom(0);
       },
-      identity: { pid, processName: 'nc', uid: ownerUid },
-      ownerUid, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings,
+      identity: { pid, processName: 'nc', uid: ownerUid, reusePort: true },
+      ownerUid, reusePort: true, backlog: OPENBSD_NETCAT_LISTEN_BACKLOG, ...settings,
     }, address);
     return null;
   } catch (error) {

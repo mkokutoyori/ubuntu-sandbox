@@ -54,6 +54,7 @@ export interface SocketEntry {
   serviceName?: string;
   uid?: number;
   boundDevice?: string;
+  reusePort?: boolean;
   /**
    * Application-layer greeting the service writes as the first bytes on a
    * fresh TCP connection (e.g. `SSH-2.0-...\r\n`, `220 mail.example.com\r\n`).
@@ -109,14 +110,14 @@ export class SocketTable {
     pid?: number,
     processName?: string,
     banner?: string,
-    options?: { reuseAddr?: boolean; ownerUid?: number; boundDevice?: string; serviceName?: string },
+    options?: { reuseAddr?: boolean; reusePort?: boolean; ownerUid?: number; boundDevice?: string; serviceName?: string },
   ): SocketEntry {
     if (localPort !== 0 && options?.ownerUid !== undefined && this.bindingPolicy !== null
       && !this.bindingPolicy.permits(localPort, { uid: options.ownerUid })) {
       throw new Error(`EACCES: Permission denied binding port ${localPort}/${protocol}`);
     }
     const key = this.bindKey(protocol, localPort, localAddress);
-    if (this.bindings.has(key)) {
+    if (this.bindings.has(key) && !this.joinsReusePortGroup(protocol, localPort, localAddress, options)) {
       const holder = this.findByBinding(protocol, localPort, localAddress);
       const timeWaitOnly = holder !== undefined && holder.state === 'TIME_WAIT';
       const reuse = options?.reuseAddr === true || this.twReuseEnabled;
@@ -148,6 +149,7 @@ export class SocketTable {
       banner,
       uid: options?.ownerUid,
       boundDevice: options?.boundDevice,
+      ...(options?.reusePort === true ? { reusePort: true } : {}),
     };
 
     this.put(entry);
@@ -208,10 +210,11 @@ export class SocketTable {
     return entry;
   }
 
-  setListenerState(protocol: SocketProtocol, localAddress: string, localPort: number, state: SocketState): boolean {
+  setListenerState(protocol: SocketProtocol, localAddress: string, localPort: number, state: SocketState, ownerPid?: number): boolean {
     for (const entry of this.sockets.values()) {
       if (entry.remoteAddress !== '*' || entry.protocol !== protocol) continue;
       if (entry.localAddress !== localAddress || entry.localPort !== localPort) continue;
+      if (ownerPid !== undefined && entry.reusePort === true && entry.pid !== ownerPid) continue;
       entry.state = state;
       return true;
     }
@@ -276,6 +279,29 @@ export class SocketTable {
     }
     this.twTimers.set(socketId, timer);
     return true;
+  }
+
+  private joinsReusePortGroup(
+    protocol: SocketProtocol, port: number, localAddress: string, options?: { reusePort?: boolean; ownerUid?: number },
+  ): boolean {
+    if (options?.reusePort !== true) return false;
+    let holders = 0;
+    for (const entry of this.sockets.values()) {
+      if (entry.protocol !== protocol || entry.localPort !== port || entry.localAddress !== localAddress) continue;
+      if (entry.reusePort !== true || entry.uid !== options.ownerUid) return false;
+      if (entry.state !== 'LISTEN' && entry.state !== 'BOUND') return false;
+      holders++;
+    }
+    return holders > 0;
+  }
+
+  private releaseBinding(entry: SocketEntry): void {
+    for (const other of this.sockets.values()) {
+      if (other !== entry && other.reusePort === true && entry.reusePort === true
+        && other.protocol === entry.protocol && other.localPort === entry.localPort
+        && other.localAddress === entry.localAddress) return;
+    }
+    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
   }
 
   private findByBinding(protocol: SocketProtocol, port: number, localAddress: string): SocketEntry | undefined {
@@ -422,14 +448,14 @@ export class SocketTable {
    * Returns the number of sockets removed. Used by service-lifecycle
    * reactors (e.g. `systemctl stop ssh` → unbind tcp:22).
    */
-  unbind(protocol: SocketProtocol, localAddress: string, localPort: number): number {
+  unbind(protocol: SocketProtocol, localAddress: string, localPort: number, pid?: number): number {
     let removed = 0;
-    for (const [id, entry] of this.sockets) {
-      if (entry.protocol === protocol && entry.localAddress === localAddress && entry.localPort === localPort) {
-        this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
-        this.drop(entry);
-        removed++;
-      }
+    for (const entry of [...this.sockets.values()]) {
+      if (entry.protocol !== protocol || entry.localAddress !== localAddress || entry.localPort !== localPort) continue;
+      if (pid !== undefined && entry.reusePort === true && entry.pid !== pid) continue;
+      this.drop(entry);
+      this.releaseBinding(entry);
+      removed++;
     }
     return removed;
   }
@@ -442,8 +468,8 @@ export class SocketTable {
     const entry = this.sockets.get(socketId);
     if (!entry) return false;
 
-    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
     this.drop(entry);
+    this.releaseBinding(entry);
     return true;
   }
 

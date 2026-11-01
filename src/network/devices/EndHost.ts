@@ -2134,22 +2134,22 @@ export abstract class EndHost extends Equipment {
     this.tcpv2.attachSocketSink({
       announce: (localIp, localPort, identity, boundDevice, bound) => {
         const family = localIp.includes(':') ? 'v6' : 'v4';
-        if (this.socketTable.isPortBound(localPort, 'tcp', family)) return;
+        if (this.socketTable.isPortBound(localPort, 'tcp', family) && identity.reusePort !== true) return;
         try {
           const entry = this.socketTable.bind(
             'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,
-            { boundDevice, serviceName: identity.service, ownerUid: identity.uid },
+            { boundDevice, serviceName: identity.service, ownerUid: identity.uid, reusePort: identity.reusePort },
           );
           if (bound) entry.state = 'BOUND';
-          this.sinkOwnedListeners.add(`${localIp}:${localPort}`);
+          this.sinkOwnedListeners.add(`${localIp}:${localPort}:${identity.pid ?? ''}`);
         } catch { /* déjà annoncé par ailleurs — l'entrée existante fait foi */ }
       },
-      promote: (localIp, localPort) => {
-        this.socketTable.setListenerState('tcp', localIp, localPort, 'LISTEN');
+      promote: (localIp, localPort, ownerPid) => {
+        this.socketTable.setListenerState('tcp', localIp, localPort, 'LISTEN', ownerPid);
       },
-      withdraw: (localIp, localPort) => {
-        if (!this.sinkOwnedListeners.delete(`${localIp}:${localPort}`)) return;
-        this.socketTable.unbind('tcp', localIp, localPort);
+      withdraw: (localIp, localPort, ownerPid) => {
+        if (!this.sinkOwnedListeners.delete(`${localIp}:${localPort}:${ownerPid ?? ''}`)) return;
+        this.socketTable.unbind('tcp', localIp, localPort, ownerPid);
       },
     });
   }
@@ -4199,9 +4199,9 @@ export abstract class EndHost extends Equipment {
           else this.udpCloseAddress(sock.localAddress, sock.localPort);
           continue;
         }
-        this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort);
+        this.socketTable.unbind(sock.protocol, sock.localAddress, sock.localPort, sock.pid);
         if (sock.protocol === 'tcp' && (sock.state === 'LISTEN' || sock.state === 'BOUND')) {
-          stack.closeListener(sock.localPort, sock.localAddress);
+          stack.closeListener(sock.localPort, sock.localAddress, sock.reusePort === true ? sock.pid : undefined);
           closedListeners.push(sock.localPort);
         }
       } else if (outliving.has(`${sock.localPort}|${sock.remoteAddress}|${sock.remotePort}`)) {
