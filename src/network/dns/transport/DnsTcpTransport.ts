@@ -7,6 +7,7 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { DNS_PORT, queryDnsOverUdp, answersQuestion } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
+import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 
 export const DNS_TCP_IDLE_TIMEOUT_MS = 10000;
 
@@ -21,7 +22,10 @@ export function bindDnsTcpServer(
   host: EndHost,
   handler: DnsStreamHandler,
   port: number = DNS_PORT,
-  options: { address?: string; processName?: string; boundDevice?: string; pid?: number; service?: string } = {},
+  options: {
+    address?: string; processName?: string; boundDevice?: string; pid?: number; service?: string;
+    observer?: DnsPacketObserver;
+  } = {},
 ): void {
   host.getTcpStack().listen(port, {
     identity: { processName: options.processName ?? 'dnsmasq', pid: options.pid, service: options.service },
@@ -50,9 +54,14 @@ export function bindDnsTcpServer(
             socket.close();
             return;
           }
+          const exchange = {};
+          options.observer?.({ direction: 'receive', transport: 'tcp', remote: socket.remoteIp, message: query, exchange });
           const send = (response: DnsMessage | readonly DnsMessage[]): void => {
             const messages = Array.isArray(response) ? response : [response as DnsMessage];
-            for (const message of messages) socket.send(frameDnsMessage(encodeDnsMessage(message)));
+            for (const message of messages) {
+              options.observer?.({ direction: 'send', transport: 'tcp', remote: socket.remoteIp, message, exchange });
+              socket.send(frameDnsMessage(encodeDnsMessage(message)));
+            }
           };
           const result = handler(
             query, IPAddress.tryParse(socket.remoteIp) ?? undefined, socket.remotePort, raw,
@@ -102,9 +111,12 @@ export async function queryDnsOverTcp(
   query: DnsMessage,
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
+  observer?: DnsPacketObserver,
 ): Promise<DnsMessage | null> {
   const socket = await connectWithin(host, serverIP.toString(), port, timeoutMs);
   if (!socket) return null;
+  const exchange = {};
+  const remote = serverIP.toString();
 
   return new Promise<DnsMessage | null>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -129,6 +141,7 @@ export async function queryDnsOverTcp(
           return;
         }
         if (!answersQuestion(query, response)) continue;
+        observer?.({ direction: 'receive', transport: 'tcp', remote, message: response, exchange });
         finish(response);
         socket.close();
         return;
@@ -136,6 +149,7 @@ export async function queryDnsOverTcp(
     });
     socket.onClose(() => finish(null));
 
+    observer?.({ direction: 'send', transport: 'tcp', remote, message: query, exchange });
     socket.send(frameDnsMessage(encodeDnsMessage(query)));
     timer = setTimeout(() => { finish(null); socket.close(); }, timeoutMs);
   });
@@ -148,9 +162,12 @@ export async function queryDnsOverTcpStream(
   isComplete: (messages: readonly DnsMessage[]) => boolean,
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
+  observer?: DnsPacketObserver,
 ): Promise<{ messages: DnsMessage[]; frames: Uint8Array[] } | null> {
   const socket = await connectWithin(host, serverIP.toString(), port, timeoutMs);
   if (!socket) return null;
+  const exchange = {};
+  const remote = serverIP.toString();
 
   return new Promise((resolve) => {
     const messages: DnsMessage[] = [];
@@ -176,12 +193,14 @@ export async function queryDnsOverTcpStream(
           return;
         }
         if (!answersQuestion(query, message)) continue;
+        observer?.({ direction: 'receive', transport: 'tcp', remote, message, exchange });
         messages.push(message);
         frames.push(raw);
         if (isComplete(messages)) { finish({ messages, frames }); return; }
       }
     });
     socket.onClose(() => finish(null));
+    observer?.({ direction: 'send', transport: 'tcp', remote, message: query, exchange });
     socket.send(frameDnsMessage(encodeDnsMessage(query)));
     if (!settled) timer = setTimeout(() => finish(null), timeoutMs);
   });
@@ -191,13 +210,13 @@ export async function queryAuthoritativeServer(
   host: EndHost,
   serverIP: IPAddress | IPv6Address,
   query: DnsMessage,
-  opts: { port?: number; timeoutMs?: number } = {},
+  opts: { port?: number; timeoutMs?: number; observer?: DnsPacketObserver } = {},
 ): Promise<DnsMessage | null> {
   const port = opts.port ?? DNS_PORT;
   const timeoutMs = opts.timeoutMs ?? 2000;
 
-  const udpResponse = await queryDnsOverUdp(host, serverIP, query, port, timeoutMs);
+  const udpResponse = await queryDnsOverUdp(host, serverIP, query, port, timeoutMs, undefined, opts.observer);
   if (!udpResponse || !udpResponse.flags.tc) return udpResponse;
 
-  return queryDnsOverTcp(host, serverIP, query, port, timeoutMs);
+  return queryDnsOverTcp(host, serverIP, query, port, timeoutMs, opts.observer);
 }

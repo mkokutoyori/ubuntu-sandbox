@@ -12,6 +12,7 @@ import { isTransferQuery, zoneFromTransferAnswers, transferComplete } from '@/ne
 import { isDeltaTransfer, applyIxfrDeltas } from '@/network/dns/transfer/IxfrSession';
 import { askOverUdp, DNS_PORT, type DnsUdpClient } from '@/network/dns/transport/DnsUdpTransport';
 import { queryDnsOverTcpStream, type DnsTcpClient } from '@/network/dns/transport/DnsTcpTransport';
+import { observedExchange, type DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 
 export interface ZoneTransferTransport {
   askOverUdp(server: IPAddress, query: DnsMessage, timeoutMs: number): Promise<DnsMessage | null>;
@@ -21,13 +22,13 @@ export interface ZoneTransferTransport {
 }
 
 export function transferTransportOf(
-  udp: DnsUdpClient, tcp: DnsTcpClient, port: number = DNS_PORT,
+  udp: DnsUdpClient, tcp: DnsTcpClient, port: number = DNS_PORT, observer?: DnsPacketObserver,
 ): ZoneTransferTransport {
   return {
     askOverUdp: (server, query, timeoutMs) =>
-      askOverUdp(udp, server, query, port, timeoutMs),
+      observedExchange(observer, 'udp', server.toString(), query, () => askOverUdp(udp, server, query, port, timeoutMs)),
     askTransfer: (server, query, timeoutMs) =>
-      queryDnsOverTcpStream(tcp, server, query, transferComplete, port, timeoutMs),
+      queryDnsOverTcpStream(tcp, server, query, transferComplete, port, timeoutMs, observer),
   };
 }
 

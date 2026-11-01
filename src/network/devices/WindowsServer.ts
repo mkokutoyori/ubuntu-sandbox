@@ -25,6 +25,7 @@ import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { AD_NULL_GUID } from './windows/server/ad/AdTypes';
 import type { SharePermission } from './windows/server/smb/SmbTypes';
 import { WindowsDnsServerRole, type DnsZoneFileSink } from './windows/server/dns/WindowsDnsServerRole';
+import type { DnsLogFileSink } from './windows/server/dns/DnsDebugLog';
 import type { DnsServerIdentity } from './windows/server/dns/DnsServerSettings';
 import { RegistryDnsParameterStore } from './windows/server/dns/DnsServerParameters';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
@@ -250,6 +251,20 @@ export class WindowsServer extends WindowsPC {
     };
   }
 
+  private dnsLogFileSink(): DnsLogFileSink {
+    return {
+      size: (path) => {
+        const file = this.getFileSystem().readFile(path);
+        return file.ok ? (file.content ?? '').length : null;
+      },
+      append: (path, text) => { this.getFileSystem().appendFile(path, text); },
+      replace: (path, text) => {
+        this.getFileSystem().deleteFile(path);
+        this.getFileSystem().createFile(path, text);
+      },
+    };
+  }
+
   getDnsServerRole(): WindowsDnsServerRole | null {
     if (!this.roleManager.isInstalled('DNS')) {
       if (this.dnsServerRoleInstance) { this.dnsServerRoleInstance.stop(); this.dnsServerRoleInstance = null; }
@@ -259,7 +274,9 @@ export class WindowsServer extends WindowsPC {
       this.dnsServerRoleInstance = new WindowsDnsServerRole(this, {
         parameters: new RegistryDnsParameterStore(this.registry),
         now: () => this.simulatedDate().getTime(),
+        timeZone: () => this.identity.timezone,
         zoneFiles: this.dnsZoneFileSink(),
+        logFiles: this.dnsLogFileSink(),
         directoryAvailable: () => this.getDirectoryStore() !== null,
         identity: () => this.dnsServerIdentity(),
       });

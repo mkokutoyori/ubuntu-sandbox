@@ -5,6 +5,7 @@ import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessag
 import { findOpt, CLASSIC_UDP_PAYLOAD_SIZE, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
+import { observedExchange, type DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 
 export const CLASSIC_UDP_MAX_SIZE = CLASSIC_UDP_PAYLOAD_SIZE;
 
@@ -130,6 +131,7 @@ export function bindDnsUdpServer(
   address?: string,
   boundDevice?: string,
   owner: { pid?: number; service?: string } = {},
+  observer?: DnsPacketObserver,
 ): void {
   if (port === DNS_PORT && address === undefined) host.getSocketTable().unbind('udp', '127.0.0.53', port);
   const bind = (listener: Parameters<EndHost['udpBind']>[1]): void => {
@@ -145,9 +147,13 @@ export function bindDnsUdpServer(
       return;
     }
     if (query.flags.qr) return;
+    const exchange = {};
+    const remote = sourceIP.toString();
+    observer?.({ direction: 'receive', transport: 'udp', remote, message: query, exchange });
     const send = (result: DnsMessage): void => {
       const response = truncateForUdp(result, negotiatedUdpSize(query));
       const bytes = encodeDnsMessage(response);
+      observer?.({ direction: 'send', transport: 'udp', remote, message: response, exchange });
       host.sendUdpDatagramTo(sourceIP, udp.sourcePort, port, bytes, bytes.length);
     };
     const result = handler(query, sourceIP, udp.sourcePort, udp.payload);
@@ -167,8 +173,10 @@ export function queryDnsOverUdp(
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
   encode: DnsMessageEncoder = encodeDnsMessage,
+  observer?: DnsPacketObserver,
 ): Promise<DnsMessage | null> {
-  return askOverUdp(udpClientOf(host), serverIP, query, port, timeoutMs, encode);
+  return observedExchange(observer, 'udp', serverIP.toString(), query,
+    () => askOverUdp(udpClientOf(host), serverIP, query, port, timeoutMs, encode));
 }
 
 export type UdpExchangeFailure = 'refused';

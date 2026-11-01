@@ -4,6 +4,7 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { Zone } from '@/network/dns/zone/Zone';
 import type { ZoneStore } from '@/network/dns/zone/ZoneStore';
 import { udpClientOf } from '@/network/dns/transport/DnsUdpTransport';
+import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 import { buildAxfrAnswers, buildTransferMessages } from '@/network/dns/transfer/AxfrSession';
 import { sendNotify } from '@/network/dns/transfer/NotifyProtocol';
 import { ZoneTransferClient, transferTransportOf } from '@/network/dns/transfer/ZoneTransferClient';
@@ -33,8 +34,10 @@ export function signTransferResponse(
   return signMessageStream(messages, { key: auth.key, timeSigned: now, requestMac: auth.requestMac });
 }
 
-export function notifyZoneTargets(host: EndHost, zone: Zone, targets: readonly IPAddress[]): void {
-  for (const target of targets) void sendNotify(host, target, zone.origin, zone.soa);
+export function notifyZoneTargets(
+  host: EndHost, zone: Zone, targets: readonly IPAddress[], observer?: DnsPacketObserver,
+): void {
+  for (const target of targets) void sendNotify(host, target, zone.origin, zone.soa, undefined, observer);
 }
 
 export interface SecondaryRefreshOutcome {
@@ -51,6 +54,7 @@ export class SecondaryZoneRefresher {
   constructor(
     private readonly host: EndHost,
     private readonly rerun: (zoneName: string, force: boolean) => void,
+    private readonly observer?: DnsPacketObserver,
   ) {}
 
   async refresh(
@@ -101,7 +105,7 @@ export class SecondaryZoneRefresher {
     const existing = this.clients.get(zoneName);
     if (existing) return existing;
     const client = new ZoneTransferClient(zoneName, primaries,
-      transferTransportOf(udpClientOf(this.host), this.host), { keys });
+      transferTransportOf(udpClientOf(this.host), this.host, undefined, this.observer), { keys });
     this.clients.set(zoneName, client);
     return client;
   }

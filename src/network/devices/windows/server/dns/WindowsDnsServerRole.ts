@@ -13,6 +13,12 @@ import {
   readServerSettings, writeServerSettings,
   type DnsServerIdentity, type DnsServerSettingEntry, type DnsServerSettingValue,
 } from './DnsServerSettings';
+import {
+  readDiagnostics, writeDiagnostics, readDebugLogSettings, readLogLevel,
+  type DnsDiagnosticsChanges, type DnsDiagnosticsEntry,
+} from './DnsServerDiagnostics';
+import { DnsDebugLog, type DnsLogFileSink } from './DnsDebugLog';
+import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 import { IANA_ROOT_HINTS, renderRootHintsFile, type RootHint } from '@/network/dns/resolver/RootHints';
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
@@ -131,7 +137,9 @@ export interface DnsZoneFileSink {
 export interface DnsRoleEnvironment {
   parameters?: DnsParameterStore;
   now?: () => number;
+  timeZone?: () => string;
   zoneFiles?: DnsZoneFileSink;
+  logFiles?: DnsLogFileSink;
   directoryAvailable?: () => boolean;
   identity?: () => DnsServerIdentity;
 }
@@ -292,6 +300,16 @@ function isUnder(name: string, zone: string): boolean {
   return name === zone || name.endsWith(`.${zone}`);
 }
 
+const THREAD_ID_BASE = 0x0A00;
+const THREAD_ID_SPAN = 0x0400;
+const HASH_MULTIPLIER = 31;
+
+function threadIdFor(name: string): number {
+  let hash = 0;
+  for (const character of name) hash = (hash * HASH_MULTIPLIER + character.charCodeAt(0)) >>> 0;
+  return THREAD_ID_BASE + (hash % THREAD_ID_SPAN);
+}
+
 function parseAddresses(values: readonly string[]): IPAddress[] | string {
   const parsed: IPAddress[] = [];
   for (const value of values) {
@@ -361,6 +379,8 @@ export class WindowsDnsServerRole {
   private running = false;
 
   private readonly now: () => number;
+  private readonly debugLog: DnsDebugLog;
+  private readonly packetObserver: DnsPacketObserver = (event) => this.debugLog.observe(event);
   private readonly zoneFiles: DnsZoneFileSink | null;
   private readonly directoryAvailable: () => boolean;
   private readonly identityOf: () => DnsServerIdentity;
@@ -369,6 +389,14 @@ export class WindowsDnsServerRole {
     this.now = environment.now ?? (() => simulationNowMs());
     this.zoneFiles = environment.zoneFiles ?? null;
     this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
+    this.debugLog = new DnsDebugLog({
+      level: () => readLogLevel(this.parameters),
+      settings: () => readDebugLogSettings(this.parameters),
+      files: environment.logFiles ?? null,
+      now: this.now,
+      timeZone: environment.timeZone ?? (() => 'UTC'),
+      threadId: threadIdFor(host.getHostname()),
+    });
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
     this.identityOf = environment.identity ?? (() => ({
       computerName: this.host.getHostname(), majorVersion: 10, minorVersion: 0, buildNumber: 0, isReadOnlyDc: false,
@@ -381,7 +409,7 @@ export class WindowsDnsServerRole {
     }
     this.startedAtMs = this.now();
     this.rootResolver = this.resolverOver(parseAddresses(this.rootHints.map(h => h.address)) as IPAddress[]);
-    this.secondaries = new SecondaryZoneRefresher(host, (name, force) => { void this.refreshSecondary(name, force); });
+    this.secondaries = new SecondaryZoneRefresher(host, (name, force) => { void this.refreshSecondary(name, force); }, this.packetObserver);
   }
 
   isRunning(): boolean { return this.running; }
@@ -391,8 +419,8 @@ export class WindowsDnsServerRole {
   start(identity: ListenerIdentity = {}): void {
     if (this.running) return;
     const processName = identity.processName ?? 'dns';
-    bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, processName, undefined, undefined, { pid: identity.pid, service: identity.service });
-    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid, service: identity.service });
+    bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, processName, undefined, undefined, { pid: identity.pid, service: identity.service }, this.packetObserver);
+    bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid, service: identity.service, observer: this.packetObserver });
     this.running = true;
   }
 
@@ -741,7 +769,7 @@ export class WindowsDnsServerRole {
       .filter(address => !own.includes(address) && !settings.masters.includes(address))
       .map(address => IPAddress.tryParse(address))
       .filter((ip): ip is IPAddress => ip !== null);
-    notifyZoneTargets(this.host, zone, targets);
+    notifyZoneTargets(this.host, zone, targets, this.packetObserver);
   }
 
   private async refreshSecondary(name: string, force: boolean): Promise<boolean> {
@@ -807,11 +835,11 @@ export class WindowsDnsServerRole {
   }
 
   private forwardingResolver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing() });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing(), observer: this.packetObserver });
   }
 
   private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing() });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing(), observer: this.packetObserver });
   }
 
   getForwarders(): string[] { return this.parameters.forwarders(); }
@@ -1020,6 +1048,15 @@ export class WindowsDnsServerRole {
   clearCache(): void { this.cache.flush(); }
 
   getServerSettings(): DnsServerSettingEntry[] { return readServerSettings(this.parameters, this.identityOf()); }
+
+  getDiagnostics(): DnsDiagnosticsEntry[] {
+    return readDiagnostics(this.parameters);
+  }
+
+  setDiagnostics(changes: DnsDiagnosticsChanges): DnsOpResult {
+    const refusal = writeDiagnostics(this.parameters, changes);
+    return refusal === null ? { ok: true, message: '' } : { ok: false, message: refusal };
+  }
 
   setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult {
     const problem = writeServerSettings(this.parameters, this.identityOf(), changes);
