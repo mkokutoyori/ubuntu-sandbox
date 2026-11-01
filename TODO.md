@@ -766,9 +766,7 @@ fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cerc
 Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;
 `probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de `diagnose`
 annoncent leurs mots-cles, les noms vivants (interfaces, tunnels, moniteurs) et les champs de `execute log filter`.
-Restent des queues `REST` qui ne disent qu'un gabarit : `diagnose sys cmdb refcnt show <chemin.objet.attribut>`,
-`diagnose netlink aggregate name|brctl name host` (seuls les agregats / ponts de CE type, pas toutes les interfaces),
-`diagnose sys sdwan health-check <nom>`, `diagnose firewall iprope list <groupe>` (le groupe est ignore par le gestionnaire). `execute time|date`
+`diagnose sys cmdb refcnt show` offre les chemins de datasource, `diagnose sys sdwan health-check` les controles de sante configures et `diagnose firewall iprope list` son groupe (un groupe inconnu est refuse ; `probe-fortigate-l-aide-des-queues-de-diagnose`). Restent des queues qui ne disent qu'un gabarit : `diagnose netlink aggregate name|brctl name host` (seuls les agregats / ponts de CE type, pas toutes les interfaces). `execute time|date`
 et `diagnose sys top <delai> <lignes>` prennent des VALEURS, pas des mots-cles : un gabarit est la bonne aide. Garde-fou : tous les
 tables du schema sont offerts par `config ?` et tous leurs attributs disponibles par `set ?`. `diagnose sys top
 <delai> <lignes>` ignore ses arguments (le gabarit est conserve). `config system api-user` existe (cle ENC, profil, trusthost,

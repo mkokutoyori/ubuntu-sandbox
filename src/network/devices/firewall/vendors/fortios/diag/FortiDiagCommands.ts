@@ -22,7 +22,7 @@ import { type LoggedIdentity, trafficDenyLog } from '../log/trafficLog';
 import type { FortiDiagnostics } from './FortiDiagnostics';
 import { renderDebugFlow } from './debugFlowRenderer';
 import { DHCP_DEBUG_APPLICATIONS, isDhcpDebugApplication } from '../../../l3/DhcpDebug';
-import { renderIpropeList, renderIpropeShow } from './ipropeRenderer';
+import { isPolicyGroup, renderIpropeList, renderIpropeShow } from './ipropeRenderer';
 import { FLOW_FILTER_HELP, SESSION_FILTER_HELP } from './diagVocabulary';
 import { renderSniffer, type SnifferTimestamps } from './snifferRenderer';
 import { compileSnifferFilter, type SnifferMatcher } from '../../../diag/SnifferFilter';
@@ -839,7 +839,10 @@ function diagnoseIprope(rest: readonly string[], deps: FortiDiagDeps): string {
   const options = { zones: deps.fw.getZoneTable(), vdom: 0 };
   const rules = deps.fw.getPolicyStore().ordered();
 
-  if (rest[1] === 'list') return renderIpropeList(rules, options);
+  if (rest[1] === 'list') {
+    if (rest[2] !== undefined && !isPolicyGroup(rest[2])) return FortiMessages.unknownKey(rest[2]);
+    return renderIpropeList(rules, options);
+  }
   if (rest[1] === 'show') {
     const shown = renderIpropeShow(rest[2] ?? '', rest[3] ?? '', rules, options);
     return shown ?? FortiMessages.unknownKey(`${rest[2] ?? ''} ${rest[3] ?? ''}`.trim());

@@ -2,7 +2,7 @@ import { executeCommandsIn, executeLeaves, executeLegends, missingKeywords, offe
 import { SNIFFER_SCOPE } from './diag/FortiDiagCommands';
 import {
   authFilterWords, debugApplicationWords, debugConsoleWords, flowFilterWords, flowShowWords, flowTraceWords,
-  datasourceWords, gatewayClearWords, ipropeGroupWords, logFilterWords, sessionFilterWords, synchronizeWords, testApplicationWords,
+  datasourceWords, gatewayClearWords, ipropeGroupWords, ipropeListWords, logFilterWords, sessionFilterWords, synchronizeWords, testApplicationWords,
 } from './diag/diagVocabulary';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
@@ -98,7 +98,7 @@ const FORTI_PROMPTS = Object.freeze({ forti: '{host} # ' });
 const MODE = ['forti'];
 
 const DYNAMIC_ARGUMENT_SOURCES: readonly string[] = Object.freeze([
-  'system interface', 'vpn ipsec phase1-interface', 'system link-monitor',
+  'system interface', 'vpn ipsec phase1-interface', 'system link-monitor', 'system sdwan health-check',
 ]);
 
 export interface SocleDeps {
@@ -477,7 +477,7 @@ export class FortiSocle {
         () => this.deps.diagnose(['ipv6', 'neighbor-cache', 'list'])),
       this.withArgument('diagnose sys cmdb refcnt show',
         ['diagnose', 'sys', 'cmdb', 'refcnt', 'show',
-          rest('rest', '<path.object.attribute> <value>')],
+          keywords('rest', '<path.object.attribute> <value>', datasourceWords(this.deps.tree.specPaths()))],
         'Show what references a configuration object.',
         run(['sys', 'cmdb', 'refcnt', 'show'])),
       this.plain('diagnose lldprx neighbor summary',
@@ -632,7 +632,7 @@ export class FortiSocle {
         'Clear IPv6 sessions matching the filter.',
         () => this.deps.diagnose(['sys', 'session6', 'clear'])),
       this.withArgument('diagnose sys sdwan health-check',
-        ['diagnose', 'sys', 'sdwan', 'health-check', rest('rest', 'Health check name.')],
+        ['diagnose', 'sys', 'sdwan', 'health-check', named('rest', 'Health check name.', 'system sdwan health-check')],
         'Show what each SD-WAN health check measured.',
         run(['sys', 'sdwan', 'health-check'])),
       this.withArgument('diagnose sys link-monitor status',
@@ -691,7 +691,7 @@ export class FortiSocle {
         ['diagnose', 'debug', 'flow', 'show', keywords('rest', 'Display option.', flowShowWords())],
         'Choose what the flow trace displays.', run(['debug', 'flow', 'show'])),
       this.withArgument('diagnose firewall iprope list',
-        ['diagnose', 'firewall', 'iprope', 'list', rest('rest', 'Policy group.')],
+        ['diagnose', 'firewall', 'iprope', 'list', keywords('rest', 'Policy group.', ipropeListWords())],
         'List the compiled policies.', run(['firewall', 'iprope', 'list'])),
       this.withArgument('diagnose firewall iprope show',
         ['diagnose', 'firewall', 'iprope', 'show', keywords('rest', '<group> <index>', ipropeGroupWords())],
