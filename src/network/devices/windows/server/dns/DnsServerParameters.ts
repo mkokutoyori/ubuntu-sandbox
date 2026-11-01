@@ -11,6 +11,14 @@ export interface DnsParameterStore {
 const PARAMETERS_KEY = ['SYSTEM', 'CurrentControlSet', 'Services', 'DNS', 'Parameters'] as const;
 const MULTI_SZ_SEPARATOR = '\\0';
 
+export function joinMultiString(items: readonly string[]): string {
+  return items.join(MULTI_SZ_SEPARATOR);
+}
+
+export function splitMultiString(raw: string): string[] {
+  return raw.split(MULTI_SZ_SEPARATOR).map(item => item.trim()).filter(item => item !== '');
+}
+
 export const DEFAULT_FORWARDING_TIMEOUT_SECONDS = 3;
 
 export interface DnsCacheSettings {
@@ -95,25 +103,33 @@ export class MemoryDnsParameterStore implements DnsParameterStore {
 export class DnsServerParameters {
   constructor(private readonly store: DnsParameterStore) {}
 
-  private flag(name: string, fallback: boolean): boolean {
+  flag(name: string, fallback: boolean): boolean {
     const raw = this.store.read(name);
     return raw === undefined ? fallback : Number(raw) !== 0;
   }
 
-  private count(name: string, fallback: number): number {
+  count(name: string, fallback: number): number {
     const raw = this.store.read(name);
     const parsed = raw === undefined ? NaN : Number(raw);
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
+  rawSetting(name: string): DnsParameterValue | undefined {
+    return this.store.read(name);
+  }
+
+  writeSetting(name: string, type: RegistryValueType, value: DnsParameterValue): void {
+    this.store.write(name, type, value);
+  }
+
   forwarders(): string[] {
     const raw = this.store.read('Forwarders');
     if (raw === undefined) return [];
-    return String(raw).split(MULTI_SZ_SEPARATOR).map(address => address.trim()).filter(address => address !== '');
+    return splitMultiString(String(raw));
   }
 
   setForwarders(addresses: readonly string[]): void {
-    this.store.write('Forwarders', 'MultiString', addresses.join(MULTI_SZ_SEPARATOR));
+    this.store.write('Forwarders', 'MultiString', joinMultiString(addresses));
   }
 
   forwardingTimeoutSeconds(): number {
@@ -196,17 +212,13 @@ export class DnsServerParameters {
     const raw = this.store.read('GlobalQueryBlockList');
     return {
       enabled: this.flag('EnableGlobalQueryBlockList', true),
-      list: raw === undefined ? [] : this.splitList(String(raw)),
+      list: raw === undefined ? [] : splitMultiString(String(raw)).map(item => item.toLowerCase()),
     };
   }
 
   setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): void {
     if (changes.enabled !== undefined) this.store.write('EnableGlobalQueryBlockList', 'DWord', changes.enabled ? 1 : 0);
-    if (changes.list !== undefined) this.store.write('GlobalQueryBlockList', 'MultiString', changes.list.join(MULTI_SZ_SEPARATOR));
-  }
-
-  private splitList(raw: string): string[] {
-    return raw.split(MULTI_SZ_SEPARATOR).map(item => item.trim().toLowerCase()).filter(item => item !== '');
+    if (changes.list !== undefined) this.store.write('GlobalQueryBlockList', 'MultiString', joinMultiString(changes.list));
   }
 
   cacheSettings(): DnsCacheSettings {

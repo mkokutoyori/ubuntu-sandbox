@@ -36,6 +36,7 @@ export class Zone {
   private readonly rrsets = new Map<string, Map<number, ResourceRecord<ResourceRecordData>[]>>();
   // RFC 1035 §4.3.5 round-robin rotation state, keyed by name|type.
   private readonly rrRotation = new Map<string, number>();
+  private rotating = true;
 
   constructor(origin: string, soa: ResourceRecord<SoaRecordData>) {
     this.origin = normalize(origin);
@@ -172,10 +173,14 @@ export class Zone {
     }
   }
 
+  setRotating(enabled: boolean): void {
+    this.rotating = enabled;
+  }
+
   private rotated(
     name: string, type: number, records: readonly ResourceRecord<ResourceRecordData>[],
   ): ResourceRecord<ResourceRecordData>[] {
-    if (records.length <= 1) return [...records];
+    if (records.length <= 1 || !this.rotating) return [...records];
     const key = `${name}|${type}`;
     const start = (this.rrRotation.get(key) ?? 0) % records.length;
     this.rrRotation.set(key, (start + 1) % records.length);

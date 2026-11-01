@@ -177,6 +177,7 @@ import {
   GetDnsServerGlobalQueryBlockListCmdlet, SetDnsServerGlobalQueryBlockListCmdlet,
   GetDnsServerEDnsCmdlet, SetDnsServerEDnsCmdlet,
   GetDnsServerGlobalNameZoneCmdlet, SetDnsServerGlobalNameZoneCmdlet,
+  GetDnsServerSettingCmdlet, SetDnsServerSettingCmdlet,
 } from './DnsServerSettingsCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
@@ -872,6 +873,8 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Set-DnsServerEDns', new SetDnsServerEDnsCmdlet()));
   registry.register(remotable('Get-DnsServerGlobalNameZone', new GetDnsServerGlobalNameZoneCmdlet()));
   registry.register(remotable('Set-DnsServerGlobalNameZone', new SetDnsServerGlobalNameZoneCmdlet()));
+  registry.register(remotable('Get-DnsServerSetting', new GetDnsServerSettingCmdlet()));
+  registry.register(remotable('Set-DnsServerSetting', new SetDnsServerSettingCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));
