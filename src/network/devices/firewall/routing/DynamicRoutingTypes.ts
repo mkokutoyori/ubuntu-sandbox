@@ -53,9 +53,11 @@ export interface BgpNeighbour {
   readonly ip: string;
   readonly remoteAs: number;
   readonly weight?: number;
+  readonly shutdown?: boolean;
 }
 
 export interface BgpConfiguration {
+  readonly defaultLocalPreference?: number;
   readonly enabled: boolean;
   readonly asn: number;
   readonly routerId: string;

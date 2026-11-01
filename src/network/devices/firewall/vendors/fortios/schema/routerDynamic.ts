@@ -387,6 +387,7 @@ const BGP_NEIGHBOR: FortiTableSpec = {
     count('remote-as', 'Autonomous system of the neighbor.', 1, AS_NUMBER_MAX, 0),
     count('weight', 'Weight applied to routes learned from this neighbor.',
       0, 65535, 0),
+    enable('shutdown', 'Enable/disable shutdown this neighbor.'),
   ],
 };
 
@@ -415,6 +416,7 @@ export const ROUTER_BGP: FortiTableSpec = {
   attributes: [
     count('as', 'Local autonomous system number.', 0, AS_NUMBER_MAX, 0),
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
+    count('default-local-preference', 'Default local preference.', 0, 4294967295, 100),
   ],
   children: [BGP_NEIGHBOR, BGP_NETWORK],
   onCommit(object, context) {
@@ -434,10 +436,12 @@ export const ROUTER_BGP: FortiTableSpec = {
       enabled: asn > 0,
       asn,
       routerId: object.effective('router-id')[0] ?? '0.0.0.0',
+      defaultLocalPreference: Number.parseInt(object.effective('default-local-preference')[0] ?? '100', 10),
       neighbours: neighbours.map(entry => ({
         ip: entry.key,
         remoteAs: Number.parseInt(entry.effective('remote-as')[0] ?? '0', 10),
         weight: Number.parseInt(entry.effective('weight')[0] ?? '0', 10),
+        shutdown: entry.effective('shutdown')[0] === 'enable',
       })),
       networks: object.childEntries('network').map(entry => ({
         id: entry.key,

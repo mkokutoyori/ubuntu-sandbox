@@ -2,6 +2,7 @@ import { IPAddress, SubnetMask } from '../../../core/types';
 import { ipToUint32, tryIpToUint32, prefixLengthToMaskUint32 } from '../../../core/ip';
 import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg } from '../../../bgp/BGPEngine';
 import { BGP_PORT, CEASE_SUBCODE } from '../../../bgp/messages';
+import { BGP_DEFAULT_LOCAL_PREF } from '../../../bgp/bestPath';
 import { bgpTransport } from '../../../bgp/bgpTransport';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import type { IEventBus } from '../../../../events/EventBus';
@@ -104,6 +105,7 @@ export class FirewallBgp {
     asn: number; routerId: string;
     networks: Array<{ network: string; mask: string }>;
     neighbors: Map<string, BgpNeighborCfg>;
+    defaultLocalPref: number;
   } {
     return {
       asn: config.asn,
@@ -113,7 +115,9 @@ export class FirewallBgp {
       })),
       neighbors: new Map(config.neighbours.map(peer => [peer.ip, {
         ip: peer.ip, remoteAs: peer.remoteAs, activated: true, weight: peer.weight,
+        shutdown: peer.shutdown === true,
       }])),
+      defaultLocalPref: config.defaultLocalPreference ?? BGP_DEFAULT_LOCAL_PREF,
     };
   }
 
