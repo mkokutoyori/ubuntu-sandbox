@@ -550,7 +550,7 @@ export class SetDhcpServerSettingCmdlet implements ICmdlet {
     const raw = ctx.named['conflictdetectionattempts'];
     if (raw === undefined) return null;
     const attempts = Number(psValueToString(raw));
-    if (!Number.isFinite(attempts)) {
+    if (!Number.isInteger(attempts)) {
       ctx.emitError("Set-DhcpServerSetting : Cannot bind parameter 'ConflictDetectionAttempts'. "
         + `Cannot convert value "${psValueToString(raw)}" to type "System.UInt32".`);
       return null;

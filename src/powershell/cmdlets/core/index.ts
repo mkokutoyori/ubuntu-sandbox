@@ -172,6 +172,7 @@ import {
   InstallAdcsCertificationAuthorityCmdlet, GetCATemplateCmdlet, AddCATemplateCmdlet, GetCertificateCmdlet,
 } from './AdcsCmdlets';
 import { AddComputerCmdlet, RemoveComputerCmdlet, RenameComputerCmdlet, TestComputerSecureChannelCmdlet, InstallADServiceAccountCmdlet, TestADServiceAccountCmdlet } from './ComputerCmdlets';
+import { GetDnsServerCacheCmdlet, SetDnsServerCacheCmdlet } from './DnsServerSettingsCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -858,6 +859,8 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Get-DnsServerRecursion', new GetDnsServerRecursionCmdlet()));
   registry.register(remotable('Clear-DnsServerCache', new ClearDnsServerCacheCmdlet()));
   registry.register(remotable('Show-DnsServerCache', new ShowDnsServerCacheCmdlet()));
+  registry.register(remotable('Get-DnsServerCache', new GetDnsServerCacheCmdlet()));
+  registry.register(remotable('Set-DnsServerCache', new SetDnsServerCacheCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));

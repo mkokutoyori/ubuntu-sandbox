@@ -6,6 +6,7 @@ import type { IGpoProvider, GpoInfo, GpLinkOptions, GpRegistryValueInfo } from '
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { jobInfoToPS } from './MiscCmdlets';
+import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
 
 function requireGpo(ctx: CmdletContext, cmdletName: string): IGpoProvider {
   if (!ctx.providers.gpo) {
@@ -52,9 +53,11 @@ function linkOptionsOf(ctx: CmdletContext, cmdlet: string): GpLinkOptions | 'inv
   if (enabled !== undefined) opts.linkEnabled = enabled;
   if (enforced !== undefined) opts.enforced = enforced;
   if (ctx.named['order'] !== undefined) {
-    const order = Number(psValueToString(ctx.named['order']));
-    if (!Number.isInteger(order) || order < 1) {
-      ctx.emitError(`${cmdlet} : Cannot validate argument on parameter 'Order'. The ${psValueToString(ctx.named['order'])} argument is less than the minimum allowed range of 1.`);
+    const given = psValueToString(ctx.named['order']);
+    const order = Number(given);
+    const violation = rangeViolation(given, Number.isInteger(order) ? order : 0, 1);
+    if (violation !== null) {
+      ctx.emitError(`${cmdlet} : Cannot validate argument on parameter 'Order'. ${violation}`);
       return 'invalid';
     }
     opts.order = order;

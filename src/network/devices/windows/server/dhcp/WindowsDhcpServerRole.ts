@@ -17,6 +17,7 @@
  */
 
 import { simulationNowMs } from '@/network/core/SystemClock';
+import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
 
 import type { EndHost } from '@/network/devices/EndHost';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
@@ -442,13 +443,9 @@ export class WindowsDhcpServerRole {
   getConflictDetectionAttempts(): number { return this.engine.getPingPacketCount(); }
 
   setConflictDetectionAttempts(attempts: number): DhcpOpResult {
-    if (!Number.isInteger(attempts) || attempts < 0 || attempts > 6) {
-      return {
-        ok: false,
-        message: "Cannot validate argument on parameter 'ConflictDetectionAttempts'. "
-          + `The ${attempts} argument is greater than the maximum allowed range of 6. `
-          + 'Supply an argument that is less than or equal to 6 and then try the command again.',
-      };
+    const violation = rangeViolation(String(attempts), attempts, 0, 6);
+    if (violation !== null) {
+      return { ok: false, message: `Cannot validate argument on parameter 'ConflictDetectionAttempts'. ${violation}` };
     }
     this.engine.setPingPacketCount(attempts);
     return { ok: true, message: '' };
