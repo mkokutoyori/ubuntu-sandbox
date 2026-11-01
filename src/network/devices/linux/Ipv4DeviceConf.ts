@@ -1,12 +1,7 @@
 import type { RedirectPolicy } from '@/network/layers/internet/IcmpRedirect';
+import { ALL_SCOPE, DEFAULT_SCOPE, DeviceConfScopes, type DeviceConfKnob } from './DeviceConfScopes';
 
-export const ALL_SCOPE = 'all';
-export const DEFAULT_SCOPE = 'default';
-
-export interface DeviceConfKnob {
-  readonly name: string;
-  readonly initial: number;
-}
+export { ALL_SCOPE, DEFAULT_SCOPE, type DeviceConfKnob };
 
 export const IPV4_DEVICE_CONF_KNOBS: readonly DeviceConfKnob[] = [
   { name: 'accept_redirects', initial: 1 },
@@ -19,58 +14,17 @@ export const IPV4_DEVICE_CONF_KNOBS: readonly DeviceConfKnob[] = [
   { name: 'rp_filter', initial: 2 },
 ];
 
-interface DeviceScope {
-  readonly values: Map<string, number>;
-  readonly written: Set<string>;
-}
-
-export class Ipv4DeviceConf implements RedirectPolicy {
-  private readonly everywhere = this.newScope();
-  private readonly defaults = this.newScope();
-  private readonly table = new Map<string, DeviceScope>([[ALL_SCOPE, this.everywhere], [DEFAULT_SCOPE, this.defaults]]);
-
+export class Ipv4DeviceConf extends DeviceConfScopes implements RedirectPolicy {
   constructor(interfaces: readonly string[]) {
-    for (const name of interfaces) this.addInterface(name);
+    super(interfaces, IPV4_DEVICE_CONF_KNOBS);
   }
 
-  scopes(): string[] {
-    return [...this.table.keys()];
-  }
-
-  addInterface(name: string): boolean {
-    if (this.table.has(name)) return false;
-    this.table.set(name, { values: new Map(this.defaults.values), written: new Set() });
+  protected defaultReachesExistingInterfaces(): boolean {
     return true;
-  }
-
-  removeInterface(name: string): boolean {
-    return name !== ALL_SCOPE && name !== DEFAULT_SCOPE && this.table.delete(name);
-  }
-
-  has(scope: string, knob: string): boolean {
-    return this.table.get(scope)?.values.has(knob) ?? false;
-  }
-
-  get(scope: string, knob: string): number {
-    return this.table.get(scope)?.values.get(knob) ?? 0;
-  }
-
-  set(scope: string, knob: string, value: number): boolean {
-    const scoped = this.table.get(scope);
-    if (scoped === undefined || !scoped.values.has(knob)) return false;
-    scoped.values.set(knob, value);
-    if (scope === DEFAULT_SCOPE) this.propagateDefault(knob, value);
-    else scoped.written.add(knob);
-    return true;
-  }
-
-  write(scope: string, knob: string, text: string): boolean {
-    const value = text.trim();
-    return /^-?\d+$/.test(value) && this.set(scope, knob, Number(value));
   }
 
   forwardingChanged(enabled: boolean): void {
-    this.everywhere.values.set('accept_redirects', enabled ? 0 : 1);
+    this.setSilently(ALL_SCOPE, 'accept_redirects', enabled ? 0 : 1);
   }
 
   sends(iface: string): boolean {
@@ -97,20 +51,5 @@ export class Ipv4DeviceConf implements RedirectPolicy {
 
   private either(iface: string, knob: string): boolean {
     return this.get(ALL_SCOPE, knob) !== 0 || this.scoped(iface, knob) !== 0;
-  }
-
-  private scoped(iface: string, knob: string): number {
-    return this.table.get(iface)?.values.get(knob) ?? this.get(DEFAULT_SCOPE, knob);
-  }
-
-  private propagateDefault(knob: string, value: number): void {
-    for (const [scope, scoped] of this.table) {
-      if (scope === ALL_SCOPE || scope === DEFAULT_SCOPE) continue;
-      if (!scoped.written.has(knob)) scoped.values.set(knob, value);
-    }
-  }
-
-  private newScope(): DeviceScope {
-    return { values: new Map(IPV4_DEVICE_CONF_KNOBS.map((knob) => [knob.name, knob.initial])), written: new Set() };
   }
 }

@@ -213,8 +213,8 @@ export function buildIpCtx(
       const port = net.getPorts().get(ifName);
       if (!port) return `Cannot find device "${ifName}"`;
       try {
-        net.configureIPv6Interface(ifName, new IPv6Address(addr), prefixLength);
-        return '';
+        return net.configureIPv6Interface(ifName, new IPv6Address(addr), prefixLength)
+          ? '' : 'RTNETLINK answers: Permission denied';
       } catch (e) {
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }

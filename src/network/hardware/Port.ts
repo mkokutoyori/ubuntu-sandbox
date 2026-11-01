@@ -94,6 +94,7 @@ export class Port {
   // IPv6 configuration (multiple addresses per interface)
   private ipv6Addresses: IPv6AddressEntry[] = [];
   private ipv6Enabled: boolean = false;
+  private ipv6Prohibited: boolean = false;
   private isUp: boolean = true;
   private adminDown: boolean = false;
   private readonly tapPoint = new TapPoint();
@@ -491,7 +492,7 @@ export class Port {
   // ─── IPv6 Configuration ────────────────────────────────────────
 
   enableIPv6(): void {
-    if (this.ipv6Enabled) return;
+    if (this.ipv6Enabled || this.ipv6Prohibited) return;
     this.ipv6Enabled = true;
 
     // Une interface de bouclage n'a PAS d'adresse de lien : il n'y a pas
@@ -534,10 +535,21 @@ export class Port {
     return this.ipv6Enabled;
   }
 
+  isIPv6Prohibited(): boolean {
+    return this.ipv6Prohibited;
+  }
+
+  setIPv6Prohibited(prohibited: boolean): void {
+    if (this.ipv6Prohibited === prohibited) return;
+    this.ipv6Prohibited = prohibited;
+    if (prohibited) this.disableIPv6();
+  }
+
   configureIPv6(address: IPv6Address, prefixLength: number): void {
     if (!this.ipv6Enabled) {
       this.enableIPv6();
     }
+    if (this.ipv6Prohibited) return;
 
     const exists = this.ipv6Addresses.some(e =>
       e.address.equals(address) && e.prefixLength === prefixLength
@@ -584,6 +596,7 @@ export class Port {
     if (!this.ipv6Enabled) {
       this.enableIPv6();
     }
+    if (this.ipv6Prohibited) return prefix;
 
     const linkLocal = IPv6Address.fromMAC(this.mac);
     const linkLocalHextets = linkLocal.getHextets();
@@ -613,6 +626,7 @@ export class Port {
     if (!this.ipv6Enabled) {
       this.enableIPv6();
     }
+    if (this.ipv6Prohibited) return;
 
     const exists = this.ipv6Addresses.some(e => e.address.equals(address));
     if (exists) return;

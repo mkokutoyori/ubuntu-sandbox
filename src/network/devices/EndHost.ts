@@ -576,6 +576,17 @@ const ICMP_TIMESTAMP_BYTES = 12;
 
 const TRACE_IDENT_MEMORY = 64;
 
+export interface RouterAdvertisementAcceptance {
+  readonly accepted: boolean;
+  readonly defaultRouter: boolean;
+  readonly prefixInformation: boolean;
+  readonly autoconfigure: boolean;
+}
+
+const ACCEPT_EVERY_ROUTER_ADVERTISEMENT: RouterAdvertisementAcceptance = {
+  accepted: true, defaultRouter: true, prefixInformation: true, autoconfigure: true,
+};
+
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
   /** Per-device socket table — tracks listening and established sockets */
@@ -6187,6 +6198,11 @@ export abstract class EndHost extends Equipment {
     return this.defaultGateway6;
   }
 
+  protected flushIPv6Routes(ifName: string): void {
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter((route) => route.iface !== ifName);
+    if (this.ipv6RoutingTable.every((route) => route.type !== 'default')) this.defaultGateway6 = null;
+  }
+
   setDefaultGateway6(gw: IPv6Address): void {
     this.defaultGateway6 = gw;
 
@@ -6625,12 +6641,17 @@ export abstract class EndHost extends Equipment {
 
   // ─── NDP: Router Advertisement (RFC 4861 §6.3.4) ────────────────
 
+  protected routerAdvertisementAcceptance(_portName: string): RouterAdvertisementAcceptance {
+    return ACCEPT_EVERY_ROUTER_ADVERTISEMENT;
+  }
+
   private handleRouterAdvertisement(portName: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
     const ra = icmpv6.ndp as NDPRouterAdvertisement;
     if (!ra || ra.ndpType !== 'router-advertisement') return;
 
     const port = this.ports.get(portName);
     if (!port) return;
+    const acceptance = this.routerAdvertisementAcceptance(portName);
 
     // Learn router's link-layer address
     const srcLLOpt = ra.options.find(o => o.optionType === 'source-link-layer');
@@ -6640,7 +6661,7 @@ export abstract class EndHost extends Equipment {
     }
 
     // If router lifetime > 0, consider as default router
-    if (ra.routerLifetime > 0 && !this.defaultGateway6) {
+    if (acceptance.accepted && acceptance.defaultRouter && ra.routerLifetime > 0 && !this.defaultGateway6) {
       // The zone index never travels: it is not part of the 128 bits
       // and means nothing to a peer. A real receiver records the
       // interface it heard the advertisement on.
@@ -6649,14 +6670,16 @@ export abstract class EndHost extends Equipment {
     }
 
     // Process prefix information for SLAAC
-    for (const opt of ra.options) {
+    for (const opt of acceptance.accepted && acceptance.prefixInformation ? ra.options : []) {
       if (opt.optionType === 'prefix-info') {
         const prefixOpt = opt as NDPOptionPrefixInfo;
 
         // Only process if Autonomous flag is set
         if (prefixOpt.autonomous && prefixOpt.prefixLength === 64) {
           // Generate address via SLAAC
-          const slackAddr = port.addSLAACAddress(prefixOpt.prefix, prefixOpt.prefixLength);
+          const slackAddr = acceptance.autoconfigure
+            ? port.addSLAACAddress(prefixOpt.prefix, prefixOpt.prefixLength)
+            : prefixOpt.prefix;
 
           // Add route for this prefix
           const existingRoute = this.ipv6RoutingTable.find(r =>
@@ -6675,8 +6698,10 @@ export abstract class EndHost extends Equipment {
             });
           }
 
-          Logger.info(this.id, 'slaac',
-            `${this.name}: SLAAC configured ${slackAddr}/${prefixOpt.prefixLength}`);
+          if (acceptance.autoconfigure) {
+            Logger.info(this.id, 'slaac',
+              `${this.name}: SLAAC configured ${slackAddr}/${prefixOpt.prefixLength}`);
+          }
         }
       }
     }
@@ -6684,6 +6709,7 @@ export abstract class EndHost extends Equipment {
     // RFC 4861 §4.2 / RFC 8415 §5: the M flag tells the host to fetch an
     // address by DHCPv6. The prefix's A flag stays independent
     // (RFC 4862 §5.5.3), so both addresses may legitimately coexist.
+    if (!acceptance.accepted) return;
     if (ra.managedFlag) this.requestDhcpv6LeaseIfNeeded(portName);
     // The O flag alone (RFC 4861 §4.2): no address wanted, only the
     // other configuration. Under M the full lease already carries it.

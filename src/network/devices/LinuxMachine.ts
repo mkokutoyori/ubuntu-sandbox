@@ -32,7 +32,7 @@ import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, ARP_MCAST_SOLICIT, ARP_RETRANS_TIME_MS, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions } from './EndHost';
+import { EndHost, ARP_MCAST_SOLICIT, ARP_RETRANS_TIME_MS, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions, type RouterAdvertisementAcceptance } from './EndHost';
 import { classifyIpv4Destination } from '@/network/layers/internet/InternetLayer';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
@@ -92,6 +92,7 @@ import {
   LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LinuxVmSettings, LINUX_VM_KNOBS, LinuxFsSettings, LINUX_FS_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, KernelStringStore, LINUX_CORE_STRING_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
+import { IPV6_DEVICE_CONF_KNOBS, Ipv6DeviceConf } from './linux/Ipv6DeviceConf';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
 import type { TcpStream } from '../tcp/types';
@@ -334,6 +335,49 @@ export abstract class LinuxMachine extends EndHost
     this.deviceConfStore ??= new Ipv4DeviceConf([...this.ports.keys()]);
     return this.deviceConfStore;
   }
+  private ipv6ConfStore: Ipv6DeviceConf | null = null;
+  private get ipv6Conf(): Ipv6DeviceConf {
+    this.ipv6ConfStore ??= new Ipv6DeviceConf([...this.ports.keys()]);
+    return this.ipv6ConfStore;
+  }
+  protected override routerAdvertisementAcceptance(portName: string): RouterAdvertisementAcceptance {
+    const conf = this.ipv6Conf;
+    return {
+      accepted: conf.acceptsRouterAdvertisements(portName),
+      defaultRouter: conf.learnsDefaultRouter(portName),
+      prefixInformation: conf.readsPrefixInformation(portName),
+      autoconfigure: conf.autoconfigures(portName),
+    };
+  }
+  override configureIPv6Interface(ifName: string, address: IPv6Address, prefixLength: number): boolean {
+    if (this.ports.get(ifName)?.isIPv6Prohibited()) return false;
+    return super.configureIPv6Interface(ifName, address, prefixLength);
+  }
+  private registerIpv6ConfScope(scope: string): void {
+    this.executor.vfs.mkdirp(`/proc/sys/net/ipv6/conf/${scope}`, 0o755, 0, 0);
+    for (const knob of IPV6_DEVICE_CONF_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv6/conf/${scope}/${knob.name}`,
+        () => `${this.ipv6Conf.get(scope, knob.name)}\n`,
+        (text) => {
+          const written = this.ipv6Conf.write(scope, knob.name, text);
+          if (written && knob.name === 'disable_ipv6') this.applyIpv6Prohibitions();
+          return written;
+        });
+    }
+  }
+  private applyIpv6Prohibitions(): void {
+    for (const [name, port] of this.ports) {
+      const prohibited = this.ipv6Conf.disabled(name);
+      if (prohibited === port.isIPv6Prohibited()) continue;
+      port.setIPv6Prohibited(prohibited);
+      if (prohibited) {
+        this.flushIPv6Routes(name);
+        continue;
+      }
+      if (port.isLoopback()) port.configureIPv6(new IPv6Address('::1'), 128);
+      else if (port.hasCarrier()) port.enableIPv6();
+    }
+  }
   protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
   protected override rejectsBySourceRoute(portName: string, packet: IPv4Packet): boolean {
     const mode = this.deviceConf.maximum(portName, 'rp_filter');
@@ -372,6 +416,10 @@ export abstract class LinuxMachine extends EndHost
   protected override addPort(port: Port): void {
     super.addPort(port);
     if (this.deviceConfStore?.addInterface(port.getName())) this.registerDeviceConfScope(port.getName());
+    if (this.ipv6ConfStore?.addInterface(port.getName())) {
+      this.registerIpv6ConfScope(port.getName());
+      this.applyIpv6Prohibitions();
+    }
   }
   private setIpForwarding(enabled: boolean): void {
     const changed = this.ipForwardEnabled !== enabled;
@@ -513,6 +561,7 @@ export abstract class LinuxMachine extends EndHost
         return true;
       });
     for (const scope of this.deviceConf.scopes()) this.registerDeviceConfScope(scope);
+    for (const scope of this.ipv6Conf.scopes()) this.registerIpv6ConfScope(scope);
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
@@ -3868,6 +3917,7 @@ export abstract class LinuxMachine extends EndHost
     if (this.ports.get(name)?.getIsUp()) this.setAdminState(name, false);
     this.ports.delete(name);
     if (this.deviceConf.removeInterface(name)) this.executor.vfs.rmrf(`/proc/sys/net/ipv4/conf/${name}`);
+    if (this.ipv6Conf.removeInterface(name)) this.executor.vfs.rmrf(`/proc/sys/net/ipv6/conf/${name}`);
     this.virtualInterfaces.delete(name);
     this.unregisterVlanSubInterface(name);
     if (vlan) this.withdrawVlanFromMvrp(vlan.parent, vlan.vid);
