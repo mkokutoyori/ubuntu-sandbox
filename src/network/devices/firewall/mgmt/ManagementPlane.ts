@@ -4,6 +4,9 @@ import { withinMask, type AccessMatrix } from '../authz/AccessMatrix';
 import {
   adminAcceptsPublicKey, adminHasNoPassword, adminTrustsSource, applyAdminAccount, authenticateAdmin,
   type AdminAccountDraft,
+  type ApiPrincipal,
+  type ApiUserDraft,
+  authenticateApiKey,
 } from '../identity/AdminAccounts';
 import { PasswordHistory } from '../identity/PasswordHistory';
 import type { AdminHttpServer } from './AdminHttpServer';
@@ -160,6 +163,20 @@ export class ManagementPlane {
 
   applyAdmin(admin: AdminAccountDraft): void {
     applyAdminAccount(this.access, this.secrets, admin, this.history, this.now());
+  }
+
+  private readonly apiUsers = new Map<string, ApiUserDraft>();
+
+  applyApiUser(user: ApiUserDraft): void {
+    this.apiUsers.set(user.name, user);
+  }
+
+  removeApiUser(name: string): void {
+    this.apiUsers.delete(name);
+  }
+
+  authenticateApiKey(key: string, source: string): ApiPrincipal | null {
+    return authenticateApiKey(this.apiUsers, key, source);
   }
 
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void {

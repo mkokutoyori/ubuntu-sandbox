@@ -88,3 +88,12 @@ export function testApplicationWords(): EnumValue[] {
     { keyword: 'miglogd', description: 'Log daemon.', thenWord: '<level>, 54 for the IP conflict cache, 55 for its probes' },
   ];
 }
+
+export function logFilterWords(): EnumValue[] {
+  return [
+    { keyword: 'category', description: 'Restrict the display to one log category.', thenWord: '<category index>' },
+    { keyword: 'field', description: 'Match one field of the records.', thenWord: '<field> [value]' },
+    { keyword: 'view-lines', description: 'Number of lines displayed.', thenWord: '<count>' },
+    { keyword: 'reset', description: 'Reset every criterion.' },
+  ];
+}

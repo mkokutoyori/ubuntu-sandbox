@@ -169,9 +169,64 @@ function readTrustHosts(object: FortiObjectView) {
   return out;
 }
 
+export const SYSTEM_API_USER: FortiTableSpec = {
+  path: ['system', 'api-user'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 575,
+  help: 'Configure API users, for REST API authorization.',
+  attributes: [
+    { ...word('name', 'User name.'), readOnly: true },
+    text('comments', 'Comment.'),
+    { ...text('api-key', 'Admin user password.'), quoted: true, secret: true },
+    reference('accprofile', 'Admin user access profile.', ['system accprofile']),
+    refList('vdom', 'Virtual domains.', ['vdom']),
+  ],
+  children: [{
+    path: ['trusthost'],
+    kind: 'table',
+    keyType: 'integer',
+    ordered: false,
+    scope: 'global',
+    accessGroup: 'sysgrp',
+    renderOrder: 576,
+    help: 'Trusthost.',
+    attributes: [
+      {
+        name: 'id', help: 'ID.', quoted: false, readOnly: true,
+        parts: [{ name: 'id', type: 'INT', description: 'ID.', range: [0, 4294967295] }],
+      },
+      choice('type', 'Trusted host type.', [
+        { keyword: 'ipv4-trusthost', description: 'IPv4 trusted host.' },
+      ], 'ipv4-trusthost'),
+      addressMask('ipv4-trusthost', 'IPv4 trusted host address and netmask.', ['0.0.0.0', '0.0.0.0']),
+    ],
+    onCommit() {},
+  }],
+  onCommit(object, context) {
+    const hosts = object.childEntries('trusthost');
+    context.device.applyApiUser({
+      name: object.key,
+      apiKey: object.effective('api-key')[0] || undefined,
+      profile: object.effective('accprofile')[0] ?? 'no_access',
+      trustHosts: hosts.flatMap((entry, index) => {
+        const declared = entry.effective('ipv4-trusthost');
+        return declared.length < 2 ? [] : [{ index: index + 1, address: declared[0], mask: declared[1] }];
+      }),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeApiUser(key);
+  },
+};
+
 export const ADMIN_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_ACCPROFILE,
   SYSTEM_ADMIN,
+  SYSTEM_API_USER,
 ]);
 
 export { NO_TOKEN };

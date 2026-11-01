@@ -885,6 +885,9 @@ export class FortiShell {
       if (lines === null) return FortiMessages.unknownKey(key ?? '');
       return lines.join('\n');
     }
+    if (this.tree.branchNames(rest).length > 0 || viewContinuations(FORTI_GET_VIEWS, rest).length > 0) {
+      return FortiMessages.incomplete('a path');
+    }
     return FortiMessages.unknownPath(rest.join(' '), 'get');
   }
 

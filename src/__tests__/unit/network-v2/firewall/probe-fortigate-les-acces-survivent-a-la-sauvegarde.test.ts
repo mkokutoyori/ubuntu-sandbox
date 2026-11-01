@@ -158,3 +158,63 @@ describe('un rejeu qui echoue ne se perd plus en silence', () => {
     expect(warnings[0]).toMatch(/^FGT: /);
   });
 });
+
+describe('`config system api-user` : un jeton REST est un acces comme un autre', () => {
+  async function avecApi() {
+    const source = await lab();
+    for (const line of [
+      'config system accprofile', 'edit "reseau"', 'set netgrp read', 'next', 'end',
+      'config system api-user', 'edit "robot"', 'set api-key "Abc123Def456Ghi789"', 'set accprofile "super_admin"',
+      'config trusthost', 'edit 1', 'set ipv4-trusthost 10.0.10.0 255.255.255.0', 'next', 'end', 'next',
+      'edit "limite"', 'set api-key "Limite0000Limite"', 'set accprofile "reseau"', 'next', 'end',
+    ]) await source.firewall.executeCommand(line);
+    return source;
+  }
+  const get = (pc: LinuxPC, path: string, token: string) =>
+    pc.executeCommand(`curl -k -s -i --connect-timeout 3 -H "Authorization: Bearer ${token}" https://10.0.10.2${path}`);
+
+  async function ouvert() {
+    const source = await avecApi();
+    await source.firewall.executeCommand('config system interface');
+    await source.firewall.executeCommand('edit "port1"');
+    await source.firewall.executeCommand('set allowaccess ping ssh https');
+    await source.firewall.executeCommand('next');
+    await source.firewall.executeCommand('end');
+    return source;
+  }
+
+  it('le jeton ouvre l\'API sans session', async () => {
+    const { pc } = await ouvert();
+    expect(await get(pc, '/api/v2/cmdb/system/admin', 'Abc123Def456Ghi789')).toContain('200 OK');
+  });
+
+  it('un mauvais jeton est refuse en 401', async () => {
+    const { pc } = await ouvert();
+    expect(await get(pc, '/api/v2/cmdb/system/admin', 'faux')).toContain('401');
+  });
+
+  it('le profil limite ce que le jeton lit', async () => {
+    const { pc } = await ouvert();
+    expect(await get(pc, '/api/v2/cmdb/system/admin', 'Limite0000Limite')).toContain('403');
+  });
+
+  it('le jeton est rendu sous la forme ENC, jamais en clair', async () => {
+    const { pc } = await ouvert();
+    const body = await get(pc, '/api/v2/cmdb/system/api-user', 'Abc123Def456Ghi789');
+    expect(body).not.toContain('Abc123Def456Ghi789');
+    expect(body).toMatch(/"api-key":"ENC [^"]+"/);
+  });
+
+  it('la trusthost du jeton filtre la source', async () => {
+    const { pc, firewall } = await ouvert();
+    for (const line of ['config system api-user', 'edit "robot"', 'config trusthost', 'edit 1', 'set ipv4-trusthost 172.16.0.0 255.255.0.0', 'next', 'end', 'next', 'end']) await firewall.executeCommand(line);
+    expect(await get(pc, '/api/v2/cmdb/system/admin', 'Abc123Def456Ghi789')).toContain('401');
+  });
+
+  it('le jeton, son profil et sa trusthost survivent a la sauvegarde', async () => {
+    const { pc } = await reopened(await ouvert());
+    expect(await get(pc, '/api/v2/cmdb/system/admin', 'Abc123Def456Ghi789')).toContain('200 OK');
+    expect(await get(pc, '/api/v2/cmdb/system/admin', 'Limite0000Limite')).toContain('403');
+    expect(await get(pc, '/api/v2/cmdb/system/admin', 'faux')).toContain('401');
+  });
+});
