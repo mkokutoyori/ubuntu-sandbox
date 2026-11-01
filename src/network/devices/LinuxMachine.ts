@@ -49,6 +49,7 @@ import { GAI_CONF_PATH, parseGaiConf } from './linux/network/GaiConf';
 import { GLIBC_POLICY, type DestinationPolicy } from '../layers/internet/DestinationSelection';
 import { LinuxNginxService } from './linux/http/nginx/LinuxNginxService';
 import { LinuxVsftpdService } from './linux/ftp/LinuxVsftpdService';
+import { LinuxRadvdService, type RadvdPortView, RADVD_CONFIG_PATH } from './linux/radvd/LinuxRadvdService';
 import { LinuxNfsService, EXPORTS_PATH, DEBIAN_EXPORTS_FILE } from './linux/nfs/LinuxNfsService';
 import { NfsMountedFileSystem } from '@/network/nfs/NfsMountedFileSystem';
 import { NfsClient, TcpRpcTransport } from '@/network/nfs/NfsClient';
@@ -248,7 +249,7 @@ import { probeSshHostKey } from '../protocols/ssh/SshHostKeyProbe';
 import type { SshDaemonPort } from '../protocols/ssh/server/SshDaemonPort';
 import { validateSshdConfig } from '../protocols/ssh/server/SshdConfigValidator';
 import {
-  checkSshdCriticalFiles, checkCommandDependencies, canonicalBinPath,
+  checkSshdCriticalFiles, checkCommandDependencies, canonicalBinPath, STANDARD_BIN_PATHS,
   commandNotFoundMessage,
 } from './linux/service/CriticalFiles';
 import { SshSessionTable } from './linux/network/SshSessionTable';
@@ -787,7 +788,8 @@ export abstract class LinuxMachine extends EndHost
       return { output: result, exitCode: this.inferRegistryExitCode(cmd, result) };
     };
     this.executor._registryPrivilegeHook = (cmd) => this.commands.get(cmd)?.privilege;
-    this.executor.registeredCommandNames = () => this.commands.list().map(c => c.name);
+    this.executor.registeredCommandNames = () => this.commands.list()
+      .filter(c => this.commandIsInstalled(c)).map(c => c.name);
 
     // 5. Initialise SSH server config files on first boot:
     //    /etc/ssh/sshd_config + /etc/ssh/ssh_host_ed25519_key(.pub).
@@ -796,6 +798,7 @@ export abstract class LinuxMachine extends EndHost
     this.initSshFiles();
     this.initNginx();
     this.initChrony();
+    this.initRadvd();
     this.initApache();
     this.executor.netConfig.seedDefaults(this.getPortNames().filter(n => n !== 'lo'));
     this.wireNetworkConfigLifecycle();
@@ -2119,6 +2122,83 @@ export abstract class LinuxMachine extends EndHost
    * les routeurs utilisent déjà. Ce qu'il apporte est ce que chronyd
    * apporte vraiment — la lecture de son fichier de configuration.
    */
+  private radvdPortViews(): RadvdPortView[] {
+    return [...this.ports.values()].filter((port) => port.getName() !== 'lo').map((port) => ({
+      name: port.getName(),
+      isUp: !port.isAdminDown(),
+      isRunning: port.isOperationallyUp(),
+      mtu: port.getIPv6MTU(),
+      mac: port.getMAC(),
+      linkLocal: port.getLinkLocalIPv6(),
+      addresses: port.getIPv6Addresses().map((entry) => entry.address),
+      globalPrefixes: port.getIPv6Addresses()
+        .filter((entry) => !entry.address.isLinkLocal() && !entry.address.isLoopback())
+        .map((entry) => ({ prefix: entry.address.getNetworkPrefix(entry.prefixLength), length: entry.prefixLength })),
+    }));
+  }
+
+  private initRadvd(): void {
+    const executor = this.executor;
+    let controlPid = 0;
+    const pid = (): number => executor.serviceMgr.getPortBinding('radvd')?.mainPid ?? (controlPid ||= 20000 + (this.radvdDraws++ % 1000));
+    const priority: Record<string, number> = { crit: 2, err: 3, warning: 4, info: 6, debug: 7 };
+    const service = new LinuxRadvdService({
+      readConfig: (path) => executor.readFile(path),
+      ports: () => this.radvdPortViews(),
+      forwardingAll: () => this.ipv6Conf.forwards('all'),
+      forwardingOn: (name) => this.ipv6Conf.forwards(name),
+      joinAllRouters: (name) => { this.joinIPv6Group(name, 'ff02::2'); },
+      leaveAllRouters: (name) => { this.leaveIPv6Group(name, 'ff02::2'); },
+      send: (name, source, destination, message) => this.sendIcmpv6Message(name, source, destination, message, 16),
+      nowMs: () => this.simulatedNowMs(),
+      schedule: (callback, delayMs) => this.scheduleCancellableTimer(callback, delayMs),
+      random: () => parseInt(simulatedDigest(`${this.name}:radvd:${this.radvdDraws++}`).slice(0, 8), 16) / 0x100000000,
+      log: (level, message) => {
+        if (level === 'debug') return;
+        executor.logMgr.logService('radvd', 'radvd', message, pid(), priority[level]);
+      },
+    });
+    this.radvdService = service;
+    executor.radvdService = service;
+    executor.serviceMgr.registerConfigCheck('radvd', () => {
+      if (executor.readFile(RADVD_CONFIG_PATH) === null && !service.isRunning()) {
+        return { ok: false, error: `Job for radvd.service failed because of unavailable resources or another system error.\nSee "systemctl status radvd.service" and "journalctl -xeu radvd.service" for details.`, verbatim: true };
+      }
+      const started = service.start();
+      if (started.ok) return { ok: true };
+      return {
+        ok: false, verbatim: true,
+        error: 'Job for radvd.service failed because the control process exited with error code.\n'
+          + 'See "systemctl status radvd.service" and "journalctl -xeu radvd.service" for details.',
+      };
+    }, { checksOnReload: false });
+    executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'radvd') return;
+      if (event === 'stop') service.stop();
+      else if (event === 'reload') service.reload();
+      else if (event === 'restart') service.stop();
+    });
+    this.onRouterDiscovery(({ portName, packet, message }) => {
+      if (message.icmpType === 'router-solicitation') {
+        const ndp = message.ndp;
+        const options = ndp?.ndpType === 'router-solicitation' ? ndp.options : [];
+        service.receiveSolicitation(portName, packet.sourceIP.withScopeId(null), options.some((o) => o.optionType === 'source-link-layer'), packet.hopLimit);
+      } else if (message.ndp?.ndpType === 'router-advertisement' && !this.isLocalAddress6(packet.sourceIP)) {
+        const ra = message.ndp;
+        service.receiveAdvertisement(portName, packet.sourceIP.withScopeId(null), {
+          curHopLimit: ra.curHopLimit, managed: ra.managedFlag, other: ra.otherConfigFlag,
+          reachableTime: ra.reachableTime, retransTimer: ra.retransTimer, options: ra.options,
+        });
+      }
+    });
+    const bus = this.getBus();
+    bus.subscribeWhere('host.link.state-changed', (p) => p.deviceId === this.id, (event) => service.linkChanged(event.payload.iface));
+    bus.subscribeWhere('host.address.changed', (p) => p.deviceId === this.id, (event) => service.linkChanged(event.payload.iface));
+  }
+
+  radvdService: LinuxRadvdService | null = null;
+  private radvdDraws = 0;
+
   private initChrony(): void {
     const vfs = this.executor.vfs;
     for (const dir of ['/etc/chrony', '/var/lib/chrony', '/var/log/chrony']) {
@@ -3527,9 +3607,17 @@ export abstract class LinuxMachine extends EndHost
     const missing = checkCommandDependencies(this.executor.vfs, name, cmd.criticalFiles);
     if (missing) return { output: missing.message, exitCode: missing.exitCode };
     if (cmd.binaryPath && !this.executor.vfs.exists(canonicalBinPath(cmd.binaryPath))) {
-      return { output: commandNotFoundMessage(name, cmd.binaryPath), exitCode: 127 };
+      return {
+        output: STANDARD_BIN_PATHS[name] === undefined ? `bash: ${name}: command not found` : commandNotFoundMessage(name, cmd.binaryPath),
+        exitCode: 127,
+      };
     }
     return null;
+  }
+
+  private commandIsInstalled(cmd: LinuxCommand): boolean {
+    if (cmd.binaryPath === undefined || STANDARD_BIN_PATHS[cmd.name] !== undefined) return true;
+    return this.executor.vfs.exists(canonicalBinPath(cmd.binaryPath));
   }
 
   /** Register core commands (ping, traceroute, dhclient, …). */

@@ -148,6 +148,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'system and service manager', },
   { name: 'systemd-sysv', version: '249.11-0ubuntu3', arch: 'amd64',
     summary: 'system and service manager - SysV links', },
+  { name: 'radvd', version: '1:2.19-1ubuntu1', arch: 'amd64',
+    summary: 'IPv6 Router Advertisement Daemon', units: ['radvd'], programFiles: ['/usr/sbin/radvd'] },
   { name: 'tar', version: '1.34+dfsg-1ubuntu0.1.22.04.2', arch: 'amd64',
     summary: 'GNU version of the tar archiving utility', },
   { name: 'tcpdump', version: '4.99.1-3build2', arch: 'amd64',

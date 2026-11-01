@@ -872,6 +872,7 @@ export class LinuxCommandExecutor {
 
   /** Le demon chrony de cette machine (`PRD-NTP-Tutoriel.md` §4). */
   chronyService: import('./time/LinuxChronyService').LinuxChronyService | null = null;
+  radvdService: import('./radvd/LinuxRadvdService').LinuxRadvdService | null = null;
   /** The apache2 server, for the `apachectl` command (§M4a). */
   apacheService: ApacheControl | null = null;
   /** Records port bind / release activity into the system log, reactively. */

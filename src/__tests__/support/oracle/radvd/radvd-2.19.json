@@ -1,0 +1,221 @@
+{
+ "tool": "radvd 2.19-1ubuntu1 (Ubuntu 24.04), radvd -c --logmethod stderr_clean",
+ "cases": [
+  {
+   "id": "minimal",
+   "config": "interface eth0 { AdvSendAdvert on; prefix 2001:db8::/64 { }; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "empty-file",
+   "config": "",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "only-newline",
+   "config": "\n",
+   "output": "/tmp/r.conf:2 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "missing-semicolon",
+   "config": "interface eth0 { AdvSendAdvert on; prefix 2001:db8::/64 { } };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "bad-character",
+   "config": "interface eth0 { AdvSendAdvert on; @ };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "unknown-key",
+   "config": "interface eth0 { Bogus on; };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "preferred-above-valid",
+   "config": "interface eth0 { prefix 2001:db8::/64 { AdvPreferredLifetime 100000; AdvValidLifetime 1000; }; };\n",
+   "output": "AdvValidLifeTime must be greater than AdvPreferredLifetime in /tmp/r.conf, line 1\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "duplicate-interface",
+   "config": "interface eth0 { };\ninterface eth0 { };\n",
+   "output": "duplicate interface definition for eth0\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "prefix-length-129",
+   "config": "interface eth0 { prefix 2001:db8::/129 { }; };\n",
+   "output": "invalid prefix length in /tmp/r.conf, line 1\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "rdnss-without-address",
+   "config": "interface eth0 { RDNSS { }; };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "rdnss-four-addresses",
+   "config": "interface eth0 { RDNSS 2001:db8::1 2001:db8::2 2001:db8::3 2001:db8::4 { }; };\n",
+   "output": "too many addresses in RDNSS section\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "dnssl-bad-suffix",
+   "config": "interface eth0 { DNSSL a_b.example { }; };\n",
+   "output": "invalid domain suffix specified\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "full-featured",
+   "config": "interface eth0 { AdvSendAdvert on; MinRtrAdvInterval 3; MaxRtrAdvInterval 10; AdvManagedFlag on; AdvOtherConfigFlag on; AdvLinkMTU 1400; AdvCurHopLimit 32; AdvDefaultPreference high; prefix 2001:db8:1::/64 { AdvOnLink on; AdvAutonomous off; AdvValidLifetime infinity; AdvPreferredLifetime 3600; }; route 2001:db8:ff::/48 { AdvRouteLifetime 1800; }; RDNSS 2001:db8::53 { AdvRDNSSLifetime 30; }; DNSSL example.com lab.local { }; };\n",
+   "output": "warning: AdvRDNSSLifetime <= 2*MaxRtrAdvInterval would allow stale DNS servers to be deleted faster\nwarning: (/tmp/r.conf:1) AdvRDNSSLifetime <= 2*MaxRtrAdvInterval would allow stale DNS servers to be deleted faster\nconfig file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "comments-and-lines",
+   "config": "# a comment\ninterface eth0 # trailing\n{\n  AdvSendAdvert on;\n  # inside\n  prefix 2001:db8:5::/64\n  {\n  };\n};\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "error-on-third-line",
+   "config": "interface eth0\n{\n  AdvSendAdvert maybe;\n};\n",
+   "output": "/tmp/r.conf:3 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "two-interfaces",
+   "config": "interface eth0 { AdvSendAdvert on; };\ninterface eth1 { AdvSendAdvert on; prefix 2001:db8:2::/64 { }; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "clients",
+   "config": "interface eth0 { AdvSendAdvert on; clients { fe80::1; fe80::2; }; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "preference-numeric",
+   "config": "interface eth0 { AdvDefaultPreference 1; };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "preference-negative",
+   "config": "interface eth0 { AdvDefaultPreference -1; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "ra-source-address",
+   "config": "interface eth0 { AdvSendAdvert on; AdvRASrcAddress { fe80::1; }; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "lowpanco",
+   "config": "interface eth0 { lowpanco { AdvContextLength 64; AdvContextID 1; AdvLifeTime 600; }; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "abro-with-length",
+   "config": "interface eth0 { abro 2001:db8::1/64 { AdvVersionLow 1; }; };\n",
+   "output": "/tmp/r.conf:1 abro prefix length deprecated, remove trailing '/64'\nconfig file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "decimal-interval",
+   "config": "interface eth0 { MaxRtrAdvInterval 10.5; MinRtrAdvInterval 3.25; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "number-too-large",
+   "config": "interface eth0 { AdvLinkMTU 4294967296; };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "unterminated-string",
+   "config": "interface \"eth0 { };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "no-braces",
+   "config": "interface eth0;\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "rdnss-lifetime-below-max",
+   "config": "interface eth0 { MaxRtrAdvInterval 100; RDNSS 2001:db8::1 { AdvRDNSSLifetime 50; }; };\n",
+   "output": "AdvRDNSSLifetime must be at least MaxRtrAdvInterval\nconfig file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "dnssl-lifetime-below-max",
+   "config": "interface eth0 { MaxRtrAdvInterval 100; DNSSL example.com { AdvDNSSLLifetime 50; }; };\n",
+   "output": "AdvDNSSLLifetime must be at least MaxRtrAdvInterval\nconfig file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "rdnss-deprecated-keys",
+   "config": "interface eth0 { RDNSS 2001:db8::1 { AdvRDNSSPreference 8; AdvRDNSSOpen on; }; };\n",
+   "output": "ignoring deprecated RDNSS preference\nignoring deprecated RDNSS open flag\nconfig file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "base6-not-slash-64",
+   "config": "interface eth0 { prefix 2001:db8::/48 { Base6Interface eth1; }; };\n",
+   "output": "only /64 is allowed with Base6Interface.  /tmp/r.conf:1\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "triple-colon-address",
+   "config": "interface eth0 { prefix 2001:db8:::/64 { }; };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "prefix-without-block",
+   "config": "interface eth0 { prefix 2001:db8::/64; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "route-bad-length",
+   "config": "interface eth0 { route 2001:db8::/200 { }; };\n",
+   "output": "invalid route prefix length in /tmp/r.conf, line 1\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "quoted-interface-name",
+   "config": "interface \"eth0\" { AdvSendAdvert on; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  },
+  {
+   "id": "mixed-case-switch",
+   "config": "interface eth0 { AdvSendAdvert ON; };\n",
+   "output": "/tmp/r.conf:1 error: syntax error\nexiting, failed to read config file",
+   "exitCode": 1
+  },
+  {
+   "id": "route-default-lifetime-flap",
+   "config": "interface eth0 { AdvDefaultLifetime 0; route ::/0 { AdvRouteLifetime 100; }; };\n",
+   "output": "config file, /tmp/r.conf, syntax ok",
+   "exitCode": 0
+  }
+ ]
+}

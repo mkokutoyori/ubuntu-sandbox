@@ -375,6 +375,12 @@ export interface Echo6Options {
   pauseAfterErrorReplyMs?: number;
 }
 
+export interface RouterDiscoveryEvent {
+  portName: string;
+  packet: IPv6Packet;
+  message: ICMPv6Packet;
+}
+
 export interface TraceSocketOptions {
   iface?: string;
   sourceIp?: IPAddress;
@@ -6663,6 +6669,13 @@ export abstract class EndHost extends Equipment {
         break;
       case 'router-advertisement':
         this.handleRouterAdvertisement(portName, ipv6, icmpv6);
+        this.notifyRouterDiscovery(portName, ipv6, icmpv6);
+        break;
+      case 'router-solicitation':
+        if (this.ipv6ForwardingEnabled()) {
+          this.learnSolicitingNeighbour(portName, ipv6, icmpv6);
+          this.notifyRouterDiscovery(portName, ipv6, icmpv6);
+        }
         break;
       case 'time-exceeded':
       case 'destination-unreachable':
@@ -7322,6 +7335,44 @@ export abstract class EndHost extends Equipment {
    * Linux equivalent — a SLAAC-only network has no DHCPv6 lease to
    * renew, so a real renew there re-solicits the on-link router(s).
    */
+  private learnSolicitingNeighbour(portName: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    const solicitation = icmpv6.ndp;
+    if (solicitation?.ndpType !== 'router-solicitation' || ipv6.sourceIP.isUnspecified()) return;
+    const link = solicitation.options.find((option) => option.optionType === 'source-link-layer');
+    if (link?.optionType === 'source-link-layer') this.neighborCache.learnFromSource(ipv6.sourceIP.toString(), link.address, portName, false);
+  }
+
+  private readonly routerDiscoveryListeners = new Set<(event: RouterDiscoveryEvent) => void>();
+
+  onRouterDiscovery(listener: (event: RouterDiscoveryEvent) => void): () => void {
+    this.routerDiscoveryListeners.add(listener);
+    return () => { this.routerDiscoveryListeners.delete(listener); };
+  }
+
+  private notifyRouterDiscovery(portName: string, packet: IPv6Packet, message: ICMPv6Packet): void {
+    for (const listener of [...this.routerDiscoveryListeners]) listener({ portName, packet, message });
+  }
+
+  sendIcmpv6Message(
+    portName: string, source: IPv6Address, destination: IPv6Address, message: ICMPv6Packet, payloadBytes: number,
+  ): boolean {
+    const port = this.ports.get(portName);
+    if (!port || !port.isIPv6Enabled()) return false;
+    const packet = createIPv6Packet(source, destination, IP_PROTO_ICMPV6, 255, message, payloadBytes);
+    if (destination.isMulticast()) return this.sendNeighbourDiscovery(portName, packet, destination.toMulticastMAC());
+    const neighbour = this.neighborCache.get(destination.toString());
+    if (neighbour) return this.sendNeighbourDiscovery(portName, packet, neighbour.mac);
+    this.sendIpv6FrameNdpAware(portName, packet, destination);
+    return true;
+  }
+
+  scheduleCancellableTimer(callback: () => void, delayMs: number): () => void {
+    const token = this.hostTimers.setTimeout(callback, delayMs);
+    return () => this.hostTimers.clear(token);
+  }
+
+  simulatedNowMs(): number { return this.getScheduler().now(); }
+
   sendRouterSolicitation(portName: string): void {
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;
