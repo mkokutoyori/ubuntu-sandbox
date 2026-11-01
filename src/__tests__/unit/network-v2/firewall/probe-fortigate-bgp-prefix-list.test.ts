@@ -3,7 +3,7 @@
  * Le moteur BGP gagne deux crochets par voisin (`inboundAllows` a la reception d'un UPDATE, `outboundAllows` a l'annonce) que la FortiGate alimente avec ses listes
  * `router prefix-list` (une liste absente ou vide refuse tout, comme le refus implicite d'une liste). Changer le filtre d'un voisin remet sa session a zero,
  * comme un `clear` apres un changement de politique.
- * `router route-map` (regles : action, match-ip-address, set-local-preference, set-metric, set-weight ; les autres match-*/set-* de la reference sont refuses comme attributs inconnus faute de moteur) se branche sur `route-map-in` / `route-map-out` en reutilisant `RoutePolicy` du depot (premier noeud qui correspond, refus implicite) ; les crochets du moteur BGP rendent maintenant une decision (refus, ou LOCAL_PREF / poids / MED). Mesure de depart (prefix-list) : « unknown attribute » ; les 2 filtres des prefix-lists tombaient avant ; le temoin (sans filtre le Cisco recoit les deux reseaux) et le refus d'une liste inconnue (attribut inconnu avant) passent des deux cotes.
+ * `router route-map` (regles : action, match-ip-address, set-local-preference, set-metric, set-weight ; les autres autres criteres match et set de la reference sont refuses comme attributs inconnus faute de moteur) se branche sur `route-map-in` / `route-map-out` en reutilisant `RoutePolicy` du depot (premier noeud qui correspond, refus implicite) ; les crochets du moteur BGP rendent maintenant une decision (refus, ou LOCAL_PREF / poids / MED). Mesure de depart (prefix-list) : « unknown attribute » ; les 2 filtres des prefix-lists tombaient avant ; le temoin (sans filtre le Cisco recoit les deux reseaux) et le refus d'une liste inconnue (attribut inconnu avant) passent des deux cotes.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FortiGate } from '@/network/devices/firewall/vendors/fortios/FortiGate';
@@ -32,13 +32,17 @@ beforeEach(() => {
 const PERMIT_16 = ['config router prefix-list', 'edit "only16"', 'config rule', 'edit 1', 'set prefix 172.16.0.0 255.255.0.0', 'set action permit', 'next', 'end', 'next', 'end'];
 const MAP_OUT = ['config router route-map', 'edit "tag"', 'config rule', 'edit 1', 'set match-ip-address "only16"', 'set set-metric 77', 'next', 'end', 'next', 'end'];
 const MAP_IN = ['config router route-map', 'edit "boost"', 'config rule', 'edit 1', 'set match-ip-address "only1"', 'set set-local-preference 250', 'set set-weight 40', 'next', 'end', 'next', 'end'];
+const ASPATH_LISTS = ['config router aspath-list', 'edit "from65002"', 'config rule', 'edit 1', 'set action permit', 'set regexp "^65002$"', 'next', 'end', 'next',
+  'edit "from65099"', 'config rule', 'edit 1', 'set action permit', 'set regexp "^65099_"', 'next', 'end', 'next', 'end'];
+const MAP_PATH_OK = ['config router route-map', 'edit "pathok"', 'config rule', 'edit 1', 'set match-as-path "from65002"', 'next', 'end', 'next', 'end'];
+const MAP_PATH_NO = ['config router route-map', 'edit "pathno"', 'config rule', 'edit 1', 'set match-as-path "from65099"', 'next', 'end', 'next', 'end'];
 const PERMIT_CISCO_1 = ['config router prefix-list', 'edit "only1"', 'config rule', 'edit 1', 'set prefix 10.1.1.0 255.255.255.0', 'set action permit', 'next', 'end', 'next', 'end'];
 
 async function peering(neighbourLines: readonly string[]) {
   const firewall = new FortiGate('firewall-fortinet', 'FGT', 0, 0);
   const cisco = new CiscoRouter('R1', 200, 0);
   new Cable('transit').connect(firewall.getPort('port2')!, cisco.getPort('GigabitEthernet0/0')!);
-  await type(firewall, [...PERMIT_16, ...PERMIT_CISCO_1, ...MAP_OUT, ...MAP_IN,
+  await type(firewall, [...PERMIT_16, ...PERMIT_CISCO_1, ...MAP_OUT, ...MAP_IN, ...ASPATH_LISTS, ...MAP_PATH_OK, ...MAP_PATH_NO,
     'config system interface', 'edit port1', 'set ip 172.16.0.1 255.255.0.0', 'next',
     'edit port3', 'set ip 172.17.0.1 255.255.0.0', 'next',
     'edit port2', 'set ip 10.9.0.1 255.255.255.0', 'set allowaccess ping', 'next', 'end']);
@@ -110,6 +114,27 @@ describe('router route-map sur un voisin', () => {
     await type(firewall, ['config router bgp', 'set as 65001', 'config neighbor', 'edit "10.9.0.2"', 'set remote-as 65002']);
     const reply = await firewall.executeCommand('set route-map-in "ghost"');
     await type(firewall, ['next', 'end', 'end']);
+    expect(reply).toMatch(/entry not found|not found|parse error/i);
+  });
+});
+
+describe('router aspath-list dans une route-map', () => {
+  it('un chemin qui correspond a l expression est retenu', async () => {
+    const { learned } = await peering(['set route-map-in "pathok"']);
+    expect(learned).toContain('10.1.1.0');
+    expect(learned).toContain('10.2.2.0');
+  });
+
+  it('un chemin qui ne correspond pas est refuse', async () => {
+    const { learned } = await peering(['set route-map-in "pathno"']);
+    expect(learned.filter((network) => network.startsWith('10.'))).toEqual([]);
+  });
+
+  it('une aspath-list inconnue est refusee dans une regle', async () => {
+    const firewall = new FortiGate('firewall-fortinet', 'FGT', 0, 0);
+    await type(firewall, ['config router route-map', 'edit "x"', 'config rule', 'edit 1']);
+    const reply = await firewall.executeCommand('set match-as-path "ghost"');
+    await type(firewall, ['next', 'end', 'next', 'end']);
     expect(reply).toMatch(/entry not found|not found|parse error/i);
   });
 });

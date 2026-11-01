@@ -53,8 +53,8 @@ export interface BgpNeighborCfg {
   /** Cisco `neighbor <ip> weight <n>` — local preference knob. */
   weight?: number;
   shutdown?: boolean;
-  inboundPolicy?: (network: string, prefixLength: number) => BgpRouteDecision | null;
-  outboundPolicy?: (network: string, prefixLength: number) => BgpRouteDecision | null;
+  inboundPolicy?: (network: string, prefixLength: number, asPath: readonly number[]) => BgpRouteDecision | null;
+  outboundPolicy?: (network: string, prefixLength: number, asPath: readonly number[]) => BgpRouteDecision | null;
   updateSource?: string;
   vpnv4?: boolean;
   vpls?: boolean;
@@ -513,7 +513,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         for (const nlri of update.announced) {
           const entry = this.toRibEntry(ps, nlri, update.attributes);
           const key = `${entry.network}/${entry.mask}`;
-          const decision = inbound === undefined ? {} : inbound(nlri.network, nlri.prefixLength);
+          const decision = inbound === undefined ? {} : inbound(nlri.network, nlri.prefixLength, update.attributes.asPath);
           if (decision === null) { ps.adjRibIn.delete(key); continue; }
           ps.adjRibIn.set(key, {
             ...entry,
@@ -704,7 +704,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const outbound = this.config.neighbors.get(ip)?.outboundPolicy;
     const desired = new Map<string, { nlri: BgpNlri; attrs: BgpPathAttributes }>();
     for (const e of this.refreshTableVersion()) {
-      const decision = outbound === undefined ? {} : outbound(String(e.network), e.mask.toCIDR());
+      const decision = outbound === undefined ? {} : outbound(String(e.network), e.mask.toCIDR(), e.asPath);
       if (decision === null) continue;
       if (ibgpReceiver && e.source === 'ibgp') continue;     // iBGP split-horizon
       if (e.peerIp === ip) continue;            // don't echo a route to its source

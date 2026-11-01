@@ -476,11 +476,59 @@ const ROUTE_MAP_RULE: FortiTableSpec = {
       { keyword: 'permit', description: 'Permit.' },
       { keyword: 'deny', description: 'Deny.' },
     ], 'permit'),
+    reference('match-as-path', 'Match BGP AS path list.', ['router aspath-list']),
     reference('match-ip-address', 'Match IP address permitted by access-list or prefix-list.', ['router prefix-list']),
     count('set-local-preference', 'BGP local preference path attribute.', 0, 4294967295, 0),
     count('set-metric', 'Metric value.', 0, 4294967295, 0),
     count('set-weight', 'BGP weight for routing table.', 0, 4294967295, 0),
   ],
+};
+
+const ASPATH_LIST_RULE: FortiTableSpec = {
+  path: ['router', 'aspath-list', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'AS path list rule.',
+  attributes: [
+    { ...word('id', 'ID.'), readOnly: true },
+    choice('action', 'Permit or deny route-based operations, based on the route\'s AS_PATH attribute.', [
+      { keyword: 'deny', description: 'Deny route-based operations.' },
+      { keyword: 'permit', description: 'Permit route-based operations.' },
+    ], 'deny'),
+    text('regexp', 'Regular-expression to match the Border Gateway Protocol (BGP) AS paths.'),
+  ],
+};
+
+export const ROUTER_ASPATH_LIST: FortiTableSpec = {
+  path: ['router', 'aspath-list'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 239,
+  help: 'Configure Autonomous System (AS) path lists.',
+  attributes: [
+    { ...word('name', 'AS path list name.'), readOnly: true },
+  ],
+  children: [ASPATH_LIST_RULE],
+  onCommit(object, context) {
+    context.device.applyAsPathList({
+      name: object.key,
+      rules: object.childEntries('rule').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'permit' ? 'permit' as const : 'deny' as const,
+        regexp: entry.effective('regexp')[0] ?? '',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeAsPathList(key);
+  },
 };
 
 export const ROUTER_ROUTE_MAP: FortiTableSpec = {
@@ -504,6 +552,7 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
         id: Number.parseInt(entry.key, 10),
         action: entry.effective('action')[0] === 'deny' ? 'deny' as const : 'permit' as const,
         matchPrefixList: entry.effective('match-ip-address')[0] || undefined,
+        matchAsPath: entry.effective('match-as-path')[0] || undefined,
         setLocalPreference: entry.isExplicit('set-local-preference')
           ? Number.parseInt(entry.effective('set-local-preference')[0] ?? '0', 10) : undefined,
         setMetric: entry.isExplicit('set-metric')
@@ -520,5 +569,5 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
 
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
   Object.freeze([
-    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
+    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
   ]);

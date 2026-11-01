@@ -21,11 +21,12 @@ import {
 } from './AccessList';
 import { IpPrefixListStore } from '../../router/policy/IpPrefixList';
 import { RoutePolicyStore } from '../../router/policy/RoutePolicy';
+import { AsPathListStore } from '../../router/policy/AsPathList';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import {
   OSPF_DEFAULTS, RIP_DEFAULTS,
-  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch,
+  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch, type AsPathListPatch,
 } from './DynamicRoutingTypes';
 import { FirewallBgp } from './FirewallBgp';
 import type { FirewallRoute } from '../l3/RouteTable';
@@ -94,6 +95,7 @@ export class FirewallRouting {
   private readonly accessLists = new AccessListStore();
   private readonly prefixLists = new IpPrefixListStore();
   private readonly routePolicies = new RoutePolicyStore();
+  private readonly asPathLists = new AsPathListStore();
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
   private ospfConfig: OspfConfiguration = OSPF_DEFAULTS;
@@ -112,6 +114,7 @@ export class FirewallRouting {
       listen: deps.listenBgp,
       prefixLists: () => this.prefixLists,
       routePolicies: () => this.routePolicies,
+      asPathLists: () => this.asPathLists,
     });
   }
 
@@ -194,12 +197,21 @@ export class FirewallRouting {
     for (const rule of patch.rules) {
       const node = policy.upsertNode(rule.id, rule.action);
       if (rule.matchPrefixList !== undefined) node.ifMatch({ ipPrefix: rule.matchPrefixList });
+      if (rule.matchAsPath !== undefined) node.ifMatch({ asPath: rule.matchAsPath });
       node.applySet({
         ...(rule.setLocalPreference !== undefined ? { localPreference: rule.setLocalPreference } : {}),
         ...(rule.setMetric !== undefined ? { cost: rule.setMetric } : {}),
         ...(rule.setWeight !== undefined ? { weight: rule.setWeight } : {}),
       });
     }
+  }
+
+  applyAsPathList(patch: AsPathListPatch): void {
+    this.asPathLists.upsert(patch.name).replace(patch.rules);
+  }
+
+  removeAsPathList(name: string): void {
+    this.asPathLists.remove(name);
   }
 
   removeRouteMap(name: string): void {

@@ -60,10 +60,16 @@ export interface BgpNeighbour {
   readonly routeMapOut?: string;
 }
 
+export interface AsPathListPatch {
+  readonly name: string;
+  readonly rules: ReadonlyArray<{ readonly id: number; readonly action: 'permit' | 'deny'; readonly regexp: string }>;
+}
+
 export interface RouteMapRulePatch {
   readonly id: number;
   readonly action: 'permit' | 'deny';
   readonly matchPrefixList?: string;
+  readonly matchAsPath?: string;
   readonly setLocalPreference?: number;
   readonly setMetric?: number;
   readonly setWeight?: number;

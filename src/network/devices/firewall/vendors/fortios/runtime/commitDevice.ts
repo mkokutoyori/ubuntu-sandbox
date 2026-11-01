@@ -393,6 +393,12 @@ export function buildCommitDevice(
       applyRouteMap(patch) {
         fw.getRouting().applyRouteMap(patch);
       },
+      applyAsPathList(patch) {
+        fw.getRouting().applyAsPathList(patch);
+      },
+      removeAsPathList(name) {
+        fw.getRouting().removeAsPathList(name);
+      },
       removeRouteMap(name) {
         fw.getRouting().removeRouteMap(name);
       },

@@ -443,6 +443,8 @@ export interface FortiCommitDevice {
   applyPrefixList(list: PrefixList): void;
   applyRouteMap(patch: import('../../../routing/DynamicRoutingTypes').RouteMapPatch): void;
   removeRouteMap(name: string): void;
+  applyAsPathList(patch: import('../../../routing/DynamicRoutingTypes').AsPathListPatch): void;
+  removeAsPathList(name: string): void;
   removePrefixList(name: string): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;

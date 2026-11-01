@@ -1,4 +1,5 @@
 import type { IpPrefixListStore } from './IpPrefixList';
+import type { AsPathListStore } from './AsPathList';
 
 export type RoutePolicyAction = 'permit' | 'deny';
 
@@ -7,6 +8,7 @@ export interface RoutePolicyRouteInput {
   prefixLength: number;
   tag?: number;
   routeType?: string;
+  asPath?: readonly number[];
 }
 
 export interface RoutePolicyResult {
@@ -61,15 +63,19 @@ export class RoutePolicyNode {
    * data on a redistributed route today, so a node using one of them
    * fails closed (doesn't match) rather than risk over-permitting.
    */
-  matches(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore): boolean {
+  matches(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore, asPathLists?: AsPathListStore): boolean {
     const m = this.match;
     if (m.ipPrefix !== undefined) {
       const list = prefixLists.get(m.ipPrefix, 'ipv4');
       if (!list || list.evaluate(route.network, route.prefixLength) !== 'permit') return false;
     }
+    if (m.asPath !== undefined) {
+      const list = asPathLists?.get(m.asPath);
+      if (!list || route.asPath === undefined || list.evaluate(route.asPath) !== 'permit') return false;
+    }
     if (m.tag !== undefined && route.tag !== m.tag) return false;
     if (m.routeType !== undefined && route.routeType !== m.routeType) return false;
-    if (m.acl !== undefined || m.community !== undefined || m.asPath !== undefined
+    if (m.acl !== undefined || m.community !== undefined
       || m.interface !== undefined || m.extCommunity !== undefined
       || m.ipv6Prefix !== undefined || m.cost !== undefined) {
       return false;
@@ -120,9 +126,9 @@ export class RoutePolicy {
   }
 
   /** First matching node wins (nodeId order), like real VRP route-policy. No match = implicit deny. */
-  evaluate(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore): RoutePolicyResult {
+  evaluate(route: RoutePolicyRouteInput, prefixLists: IpPrefixListStore, asPathLists?: AsPathListStore): RoutePolicyResult {
     for (const node of this.list()) {
-      if (node.matches(route, prefixLists)) {
+      if (node.matches(route, prefixLists, asPathLists)) {
         return node.action === 'permit'
           ? { action: 'permit', apply: node.apply }
           : { action: 'deny' };
