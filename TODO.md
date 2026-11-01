@@ -764,9 +764,10 @@ est insere comme par `p`). Il faut un `applyPaste` dans `VimEngine`, les memes g
 
 ### [nc] ce que le portage de `netcat.c` (Ubuntu 1.226-1ubuntu2) laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans un espace de noms) :
-- `-x` / `-X` / `-P` (mandataires SOCKS4, SOCKS5, CONNECT) : les controles de `main()` sont portes
-  (« no proxy support for listen », « missing closing bracket in proxy »...) mais la connexion par
-  mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
+- `-x` / `-X` / `-P` (mandataires SOCKS4, SOCKS5, CONNECT) : `socks.c` est porte dans `src/network/proxy/ProxyHandshake.ts`
+  (octets et messages releves contre le vrai nc 1.226 ; sonde `probe-nc-mandataires`). Reste : le mot de passe de `-P`
+  est lu sur le terminal et une commande du simulateur n'en a pas, donc apres un 407 le moteur repond « Unable to read proxy
+  passphrase », comme le vrai nc sans tty. `-F` (passage de descripteur), `-S` (signature MD5 :
   le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
   prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
 - Deux `nc -l 9000` TCP du meme uid coexistent (SO_REUSEPORT : `TcpStack` garde les pairs d'un groupe et choisit l'ecouteur d'un SYN
