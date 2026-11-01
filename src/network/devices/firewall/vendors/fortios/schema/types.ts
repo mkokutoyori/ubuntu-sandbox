@@ -383,6 +383,10 @@ export interface FortiCommitDevice {
   onPolicyChanged(policyId: string, policyMode: string): void;
   applyIpPool(pool: FortiIpPoolPatch): void;
   removeIpPool(name: string): void;
+  applyStaticArp(id: string, entry: { readonly interface: string; readonly ip: string; readonly mac: string }): void;
+  removeStaticArp(id: string): void;
+  applyProxyArp(id: string, entry: { readonly interface: string; readonly ip: string; readonly endIp: string }): void;
+  removeProxyArp(id: string): void;
   applyVip(vip: FortiVipPatch): void;
   applyFqdnVip(vip: FortiFqdnVipPatch): string | void;
   removeVip(name: string): void;

@@ -907,10 +907,7 @@ Total steps: 339
 <empty>
 
 [145/339] lhq lhq$ ip neigh show nud permanent
-  10.1.1.1 dev eth0 lladdr 02:00:00:00:00:01 REACHABLE
-  10.1.1.250 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
-  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
-  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  Error: any valid prefix is expected rather than "nud".
 
 [146/339] lhq lhq$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -940,9 +937,7 @@ Total steps: 339
 <empty>
 
 [154/339] lbr lbr$ ip neigh show nud permanent
-  10.2.2.1 dev eth0 lladdr 02:00:00:00:00:05 REACHABLE
-  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
-  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  Error: any valid prefix is expected rather than "nud".
 
 [155/339] lbr lbr$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -971,9 +966,7 @@ Total steps: 339
 <empty>
 
 [163/339] ldc ldc$ ip neigh show nud permanent
-  10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
-  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
-  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  Error: any valid prefix is expected rather than "nud".
 
 [164/339] ldc ldc$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -1002,9 +995,7 @@ Total steps: 339
 <empty>
 
 [172/339] srvdc srvdc$ ip neigh show nud permanent
-  10.3.3.1 dev eth0 lladdr 02:00:00:00:00:09 REACHABLE
-  10.255.255.1 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
-  10.255.255.2 dev eth0 lladdr 02:00:00:de:ad:01 PERMANENT
+  Error: any valid prefix is expected rather than "nud".
 
 [173/339] srvdc srvdc$ ip neigh replace 10.255.255.2 lladdr 02:00:00:de:ad:02 dev eth0 nud permanent
 <empty>
@@ -1267,14 +1258,14 @@ Total steps: 339
 
 [232/339] lhq lhq$ arping -c 1 -D -I eth0 10.1.1.11
   ARPING 10.1.1.11 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  1.134ms
+  Unicast reply from 10.1.1.11 [02:00:00:00:00:4B]  2.059ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [233/339] lhq lhq$ arping -c 2 -I eth0 10.1.1.1
   ARPING 10.1.1.1 from 10.1.1.10 eth0
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.792ms
-  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.617ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  1.304ms
+  Unicast reply from 10.1.1.1 [02:00:00:00:00:01]  0.927ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1288,14 +1279,14 @@ Total steps: 339
 
 [236/339] lbr lbr$ arping -c 1 -D -I eth0 10.2.2.10
   ARPING 10.2.2.10 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  0.784ms
+  Unicast reply from 10.2.2.10 [02:00:00:00:00:4F]  1.860ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [237/339] lbr lbr$ arping -c 2 -I eth0 10.2.2.1
   ARPING 10.2.2.1 from 10.2.2.11 eth0
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.658ms
-  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.518ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  1.032ms
+  Unicast reply from 10.2.2.1 [02:00:00:00:00:05]  0.777ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1309,14 +1300,14 @@ Total steps: 339
 
 [240/339] ldc ldc$ arping -c 1 -D -I eth0 10.3.3.10
   ARPING 10.3.3.10 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.802ms
+  Unicast reply from 10.3.3.10 [02:00:00:00:00:57]  0.940ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [241/339] ldc ldc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.11 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.684ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.573ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.997ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.714ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1330,14 +1321,14 @@ Total steps: 339
 
 [244/339] srvdc srvdc$ arping -c 1 -D -I eth0 10.3.3.11
   ARPING 10.3.3.11 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.647ms
+  Unicast reply from 10.3.3.11 [02:00:00:00:00:5B]  0.896ms
   Sent 1 probes (1 broadcast(s))
   Received 1 response(s)
 
 [245/339] srvdc srvdc$ arping -c 2 -I eth0 10.3.3.1
   ARPING 10.3.3.1 from 10.3.3.10 eth0
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.629ms
-  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.523ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.654ms
+  Unicast reply from 10.3.3.1 [02:00:00:00:00:09]  0.679ms
   Sent 2 probes (2 broadcast(s))
   Received 2 response(s)
 
@@ -1400,7 +1391,7 @@ Total steps: 339
   net.ipv4.conf.all.arp_ignore = 0
 
 [260/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_ignore=1
-  sysctl: setting key "net.ipv4.conf.all.arp_ignore": Operation not permitted
+  net.ipv4.conf.all.arp_ignore = 1
 
 [261/339] srvdc srvdc$ sysctl -w net.ipv4.conf.all.arp_announce=2
   sysctl: setting key "net.ipv4.conf.all.arp_announce": Operation not permitted
@@ -1412,7 +1403,7 @@ Total steps: 339
   net.ipv4.arp_cache_size = 1024
   net.ipv4.conf.all.arp_accept = 0
   net.ipv4.conf.all.arp_announce = 0
-  net.ipv4.conf.all.arp_ignore = 0
+  net.ipv4.conf.all.arp_ignore = 1
   net.ipv4.conf.all.arp_notify = 0
   net.ipv4.conf.all.proxy_arp = 0
   net.ipv4.conf.default.arp_accept = 0
@@ -1425,6 +1416,18 @@ Total steps: 339
   net.ipv4.conf.eth0.arp_ignore = 0
   net.ipv4.conf.eth0.arp_notify = 0
   net.ipv4.conf.eth0.proxy_arp = 0
+  net.ipv4.conf.eth1.arp_accept = 0
+  net.ipv4.conf.eth1.arp_ignore = 0
+  net.ipv4.conf.eth1.arp_notify = 0
+  net.ipv4.conf.eth2.arp_accept = 0
+  net.ipv4.conf.eth2.arp_ignore = 0
+  net.ipv4.conf.eth2.arp_notify = 0
+  net.ipv4.conf.eth3.arp_accept = 0
+  net.ipv4.conf.eth3.arp_ignore = 0
+  net.ipv4.conf.eth3.arp_notify = 0
+  net.ipv4.conf.lo.arp_accept = 0
+  net.ipv4.conf.lo.arp_ignore = 0
+  net.ipv4.conf.lo.arp_notify = 0
 
 [264/339] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1754,10 +1757,37 @@ Total steps: 339
     > arp -a                                     .... Displays the arp table.
 
 [319/339] whq whq$ arp -x
+  Displays and modifies the IP-to-Physical address translation tables used by
+  address resolution protocol (ARP).
   
-  Interface: 10.1.1.11 --- 0x2
-    Internet Address      Physical Address      Type
-    10.1.1.10             02-00-00-00-00-47     dynamic
+  ARP -s inet_addr eth_addr [if_addr]
+  ARP -d inet_addr [if_addr]
+  ARP -a [inet_addr] [-N if_addr] [-v]
+  
+    -a            Displays current ARP entries by interrogating the current
+                  protocol data.  If inet_addr is specified, the IP and Physical
+                  addresses for only the specified computer are displayed.  If
+                  more than one network interface uses ARP, entries for each ARP
+                  table are displayed.
+    -g            Same as -a.
+    -v            Displays current ARP entries in verbose mode.  All invalid
+                  entries and entries on the loop-back interface will be shown.
+    inet_addr     Specifies an internet address.
+    -N if_addr    Displays the ARP entries for the network interface specified
+                  by if_addr.
+    -d            Deletes the host specified by inet_addr. inet_addr may be
+                  wildcarded with * to delete all hosts.
+    -s            Adds the host and associates the Internet address inet_addr
+                  with the Physical address eth_addr.  The Physical address is
+                  given as 6 hexadecimal bytes separated by hyphens. The entry
+                  is permanent.
+    eth_addr      Specifies a physical address.
+    if_addr       If present, this specifies the Internet address of the
+                  interface whose address translation table should be modified.
+                  If not present, the first applicable interface will be used.
+  Example:
+    > arp -s 157.55.85.212   00-aa-00-62-c6-09  .... Adds a static entry.
+    > arp -a                                     .... Displays the arp table.
 
 
 --- [320] § ARP — désactivation debug & état final ---
@@ -1913,7 +1943,7 @@ Total steps: 339
   *Jun  6 08:00:00.000: %SYS-5-CONFIG_I: Configured from console by console
   *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.1 0000.0000.0000 GigabitEthernet0/0
   *Jun  6 08:00:00.000: IP ARP: sent rep src 10.1.1.1 0200.0000.0001, dst 10.1.1.10 0200.0000.0047 GigabitEthernet0/0
-  *Jun  6 08:00:00.000: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.11 0000.0000.0000 GigabitEthernet0/0
+  *Jun  6 08:00:00.001: IP ARP: rcvd req src 10.1.1.10 0200.0000.0047, dst 10.1.1.11 0000.0000.0000 GigabitEthernet0/0
 
 [339/339] rbr <R-BR> display logbuffer
   Logging buffer configuration and contents: enabled

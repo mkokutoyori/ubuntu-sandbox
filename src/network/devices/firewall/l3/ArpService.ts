@@ -60,6 +60,12 @@ export class ArpService implements INeighborResolver<string> {
     this.settle(address, mac);
   }
 
+  removeStatic(address: string): void {
+    if (this.cache.get(address)?.type !== 'static') return;
+    this.cache.delete(address);
+    this.deps.onCacheChanged?.();
+  }
+
   forget(address: string): void {
     if (this.cache.get(address)?.type === 'static') return;
     if (this.cache.delete(address)) this.deps.onCacheChanged?.();

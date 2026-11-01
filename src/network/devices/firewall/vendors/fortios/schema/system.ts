@@ -1653,6 +1653,68 @@ export const SYSTEM_LINK_MONITOR: FortiTableSpec = {
   },
 };
 
+const INTERFACE_ONLY = ['system interface'];
+
+export const SYSTEM_ARP_TABLE: FortiTableSpec = {
+  path: ['system', 'arp-table'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 84,
+  help: 'Configure ARP table.',
+  attributes: [
+    { ...word('id', 'Unique integer ID of the entry.'), readOnly: true },
+    reference('interface', 'Interface name.', INTERFACE_ONLY),
+    address('ip', 'IP address.', '0.0.0.0'),
+    {
+      name: 'mac', help: 'MAC address.', quoted: false,
+      parts: [{ name: 'mac', type: 'MAC_ADDR', description: 'MAC address.' }],
+      defaultValue: ['00:00:00:00:00:00'],
+    },
+  ],
+  onCommit(object, context) {
+    const iface = object.effective('interface')[0] ?? '';
+    const ip = object.effective('ip')[0] ?? '0.0.0.0';
+    if (iface === '' || ip === '0.0.0.0') return 'an ARP entry needs an interface and an IP address.';
+    context.device.applyStaticArp(object.key, {
+      interface: iface, ip, mac: object.effective('mac')[0] ?? '00:00:00:00:00:00',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeStaticArp(key);
+  },
+};
+
+export const SYSTEM_PROXY_ARP: FortiTableSpec = {
+  path: ['system', 'proxy-arp'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 85,
+  help: 'Configure proxy-ARP.',
+  attributes: [
+    { ...word('id', 'Unique integer ID of the entry.'), readOnly: true },
+    reference('interface', 'Interface acting proxy-ARP.', INTERFACE_ONLY),
+    address('ip', 'IP address or start IP to be proxied.', '0.0.0.0'),
+    address('end-ip', 'End IP of IP range to be proxied.', '0.0.0.0'),
+  ],
+  onCommit(object, context) {
+    const iface = object.effective('interface')[0] ?? '';
+    const ip = object.effective('ip')[0] ?? '0.0.0.0';
+    if (iface === '' || ip === '0.0.0.0') return 'a proxy-ARP entry needs an interface and an IP address.';
+    context.device.applyProxyArp(object.key, {
+      interface: iface, ip, endIp: object.effective('end-ip')[0] ?? '0.0.0.0',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeProxyArp(key);
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1671,4 +1733,6 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_SESSION_TTL,
   SYSTEM_SESSION_HELPER,
   SYSTEM_LINK_MONITOR,
+  SYSTEM_ARP_TABLE,
+  SYSTEM_PROXY_ARP,
 ]);

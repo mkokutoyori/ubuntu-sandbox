@@ -2083,6 +2083,21 @@ export class Firewall extends Equipment {
     this.proxyArp.clear(proxyOwnerKey('ippool', name));
   }
 
+  private readonly staticArpOwners = new Map<string, string>();
+
+  bindStaticArp(owner: string, address: string, mac: string, iface: string): void {
+    this.unbindStaticArp(owner);
+    this.arp.setStatic(address, new MACAddress(mac), iface);
+    this.staticArpOwners.set(owner, address);
+  }
+
+  unbindStaticArp(owner: string): void {
+    const held = this.staticArpOwners.get(owner);
+    if (held === undefined) return;
+    this.arp.removeStatic(held);
+    this.staticArpOwners.delete(owner);
+  }
+
   setProxyArpEntries(owner: string, entries: readonly ProxyArpEntry[]): void {
     this.proxyArp.set(owner, entries);
   }

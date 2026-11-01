@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-acl-aaa-security
-Generated: 2026-10-16T19:11:23.712Z
+Generated: 2026-11-01T17:54:56.699Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=ACL(all kinds)/AAA/SSH-hardening/CoPP/uRPF/ZBF
 Total steps: 388
@@ -948,47 +948,47 @@ Total steps: 388
   %No SSHv1 server connections running.
 
 [216/388] r1 R1# show crypto key mypubkey rsa
-  % Key pair was generated at: 19:11:24 UTC Oct 16 2026
+  % Key pair was generated at: 17:54:57 UTC Nov 1 2026
   Key name: R1.lab.local
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
     30820122 300D0609 2A864886 F70D0101 01050003 82010F00 3082010A 02820101
-    00B4C6AD 1F0EAD74 4195CC6D 3C7ED004 C0B533A9 265DF89B 54A3BA7C 6695F509
-    E46F448D 6F6BE711 6EDE9CD4 51E06C03 C86C7DB0 742ECA67 9A3F1F63 77B586BF
-    DB6CF66A D5A8B020 26B6CD76 05108965 6F186531 18514D78 157E4417 7B2FA31B
-    15170383 7AA70D77 D8372208 3B295EF9 E40B4888 5E00A335 1DA934FC BDB44816
-    FC2322DE EA870458 45350D26 98626911 5DB5B5B9 394E6275 03C97397 F60D1701
-    321AFD6F C89299B6 F6F54909 303BF468 77630EFC 6F1C4E4B 675D3EB1 2D8EB5B4
-    523350D7 6225E747 6E6945D0 CC9ABF69 8F68F742 8757B448 43646495 F1914B91
-    E206B1F5 68BA5871 0082BF89 AFF019C1 8AF75AD4 C08F83B2 D659628C 401ADB47
-    F5020301 0001
+    00C55408 B44B718B C81C1669 963EABC6 6C7FDD00 11FD9440 A414AC0C 069CBA21
+    24EF069D A360A3AA 9518F73C 5EE1201D 435069E0 D8E66A3C AE9D04FF 8026F0B2
+    22359116 07BAB3A3 B08A52CF 45628186 2E7B484F DBE65146 153708DA 7F2B17FE
+    82B5D36E A8C20CE7 73881118 E4946498 87EA07E6 D2502F7E 98F1D1E3 C5791354
+    40713D84 B95F4893 EFCBEB63 EB1D3DB1 C44D78ED D213580F E29D4F37 791F925C
+    74DB3EF4 4A8F99EC A004CA56 0563DEC1 71A4D505 61F6587A 4E1CBCB3 B434209E
+    D90F3AA2 27275544 04BDD876 A70DC1E1 B85FD605 67FAF61A F43EEE24 BB9FFFD1
+    02AEBFFE 517DDE37 BC664CE7 1C6477E6 C024102E FEE74BDC 7B57BCC6 E2B94DA4
+    D9020301 0001
   
-  % Key pair was generated at: 19:11:24 UTC Oct 16 2026
+  % Key pair was generated at: 17:54:57 UTC Nov 1 2026
   Key name: SSH-KEY
    Storage Device: not specified
    Usage: General Purpose Key
    Key is not exportable.
    Key Data:
     30820222 300D0609 2A864886 F70D0101 01050003 82020F00 3082020A 02820201
-    00AFECBE E1303906 CE0B6C91 443507A9 C0F4F08C F75F0EF5 7E97390A 28AC294C
-    143EEBDE 7C2E6875 1F512299 486A57D3 476DEBA0 290F918C 89A96C15 E8CB6041
-    E57DBECC 2FC0CA06 B15ABCD6 F99F2A54 7390E8A6 7A977BAE 7D886CAB D5FF40E8
-    2DE5385B D4361F32 216E1CC3 4115BA33 D525F70C D8297F87 357CFE49 943C742A
-    F154BF44 14E6ACFB 79132B75 E4C2E2BD ABD086FB CE4AB55D 1082A174 276C2C30
-    068843BB 2F207E85 B554EDC0 132EE25A A44C16BE 7011B0F8 5B5F3326 377782C6
-    D448F4E9 762E2D2B 49F8D2CC E9687107 B6FCECB2 1D613088 D8E7F1E7 F12FBA10
-    D33152E7 E5F7B648 D5C9BB16 D74D0C7A 3B400ED9 7659F168 4AEA9B6F 294AD9B1
-    29791DC0 1F2BB08B 25664B5E 0C9525B6 6920ED93 7A7D6198 4C3BFB08 242587AE
-    79AB3851 9C25322C 152C442F 0026E1BF 68C1BF78 5716CEA1 FFE8ED22 48DDCCD8
-    7764A2FE E8A4EE16 E9A1E3CA A4FDC2AA 737D303E DB86EA6D 0EFD096E BEB5F924
-    277EA2ED 2A8DAF84 7ED1118A 864446F0 215B79B3 44DAD72C 41C2E21C E5B70783
-    63CF3818 F55FB656 E8245103 95F2A3F1 FECA7221 9AC21611 E23A2DDE 9B83921F
-    08E629B7 0A981014 2805183E 413D4366 BC04A950 304DA356 714C8EB5 BB0D6F80
-    647FC981 FEE1AD99 ED29C9D4 DCF8876D 1C2A6664 67B8512A 5580F7AC 52F3AC5E
-    9CB0DDB9 6C5E7046 8E257EBE ADFE502A 5680E0D9 64A4010D BA642984 D72B9C1D
-    39020301 0001
+    00A441CA 9E5F1397 19480D43 C5AFAD50 DBD68094 A8A9E457 C9C36E6B 7B547FFD
+    328E6F90 72D34B67 9C5201DA B1478E8F 835D21EA 66049A59 DCA2A00C 72662554
+    1E4A72E6 5334DA42 66600984 E4447C99 39E7906A 89040D3A 261FF0C7 02D57838
+    FC926BC2 04FC4879 29EDB12D 9B024B16 4FD56E38 B54BAFE6 D8753820 DCA9176A
+    C6731357 BC1EF12A D9796268 3835C46E 7FCC380C B66DC1E3 EF2440E1 25CD67D3
+    B595FE7C FC9E846D 74E8A4C6 0EE244F0 5493F8CC 33D8E143 D599D28E A208556C
+    51325344 EEE62514 5E3FF66A F0BA83CD ED2A1523 FBC1AE75 9B7E2ABF 11C17DEC
+    535F07A4 9A311BB9 E0F584F5 6576B1B8 416248FC AD6644B7 AD27B4C7 350671A4
+    DC406130 3132B5E1 F2618FDB 94B4498D 85B612AA 2D929DC4 2A995B45 111059C0
+    C2F2EA7B 03C60CEB C49D9978 A50FDC1F DD709B2D FD1C109D F34D19E6 FCA58AF0
+    4D490408 801A9D34 22726606 E389E124 8AE28E4A D750F91A F2A37DDA E014752B
+    B5DAA707 457C951D 10A69525 74871B73 5600647D 7E8317F6 8D26CA57 13F1D9D5
+    1EF9C449 67531474 D4FDDC1F EF2A7B61 549DFE34 B1368D99 D4838013 5F787393
+    1322B955 058A4560 9E547EB1 298E3A3A 7C75DD00 F674C932 2B602852 43A2356D
+    7FF92F7A B7BECD38 3BB13AF6 EDE6FBEF 6DCDF827 538042DE 0C3149C3 1179964B
+    10847DF1 DC8B27B3 C9A3F1F8 29FB750C 437500A6 DB120AE4 408F0911 64C1A431
+    83020301 0001
 
 [217/388] r1 R1# show login
   A login delay of 2 seconds is applied.
@@ -1267,7 +1267,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX511164ZX
+  Processor board ID FTX551013MK
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1277,9 +1277,9 @@ Total steps: 388
 [281/388] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 6957 bytes
+  Current configuration : 6956 bytes
   !
-  ! Last configuration change at 19:11:29 UTC Fri Oct 16 2026 by console
+  ! Last configuration change at 17:55:03 UTC Sun Nov 1 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -1940,21 +1940,21 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Oct 16 19:11:23.704: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 16 19:11:23.705: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 16 19:11:23.707: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 16 19:11:23.707: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 16 19:11:23.771: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.829: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.915: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.970: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.997: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.017: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.030: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.084: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.149: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:29.882: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:29.912: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.692: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:54:56.692: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:54:56.694: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:54:56.695: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:54:56.742: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.807: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.884: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.953: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.967: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.980: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.992: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:57.051: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:57.111: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:55:03.257: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:55:03.287: %SYS-5-CONFIG_I: Configured from console by console
 
 [315/388] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1965,8 +1965,8 @@ Total steps: 388
 [316/388] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 600 (1/100 of seconds), resolution is 4001
-  reference time is EE7CF562.05E353F7 (19:11:30.023 UTC Fri Oct 16 2026)
+  ntp uptime is 700 (1/100 of seconds), resolution is 4001
+  reference time is EE91FB77.63548312 (17:55:03.388 UTC Sun Nov 1 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1977,7 +1977,7 @@ Total steps: 388
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [318/388] r1 R1# show clock
-  *19:11:30.000 UTC Fri Oct 16 2026
+  *17:55:03.000 UTC Sun Nov 1 2026
 
 [319/388] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2162,7 +2162,7 @@ Total steps: 388
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX511164ZX
+  Processor board ID FTX551013MK
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2172,9 +2172,9 @@ Total steps: 388
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 6957 bytes
+  Current configuration : 6956 bytes
   !
-  ! Last configuration change at 19:11:29 UTC Fri Oct 16 2026 by console
+  ! Last configuration change at 17:55:03 UTC Sun Nov 1 2026 by console
   !
   service password-encryption
   service timestamps debug datetime msec
@@ -2576,25 +2576,25 @@ Total steps: 388
   
   Log Buffer (4096 bytes):
   
-  *Oct 16 19:11:23.704: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 16 19:11:23.705: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 16 19:11:23.707: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 16 19:11:23.707: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 16 19:11:23.771: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.829: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.915: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.970: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:23.997: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.017: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.030: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.084: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:24.149: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:29.882: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 16 19:11:29.912: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.692: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:54:56.692: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:54:56.694: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:54:56.695: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:54:56.742: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.807: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.884: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.953: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.967: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.980: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:56.992: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:57.051: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:54:57.111: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:55:03.257: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:55:03.287: %SYS-5-CONFIG_I: Configured from console by console
 
 [332/388] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX511164ZX
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX551013MK
 
 [333/388] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2606,10 +2606,10 @@ Total steps: 388
   % Invalid input detected at '^' marker.
 
 [335/388] r1 R1# show ip vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [336/388] r1 R1# show vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [337/388] r1 R1# show hosts
   Default domain is lab.local
@@ -2904,7 +2904,7 @@ Total steps: 388
 [345/388] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 6957 bytes
+  Current configuration : 6956 bytes
   service password-encryption
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -3240,7 +3240,7 @@ Total steps: 388
     domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
-    domain-name        Define the default domain name
+    domain-name        Remove the default domain name
     finger             Enable finger service
     flow-cache         How long an active flow stays in the cache
     flow-export        Address of the NetFlow collector
@@ -3251,7 +3251,7 @@ Total steps: 388
     inspect            Limit the established sessions of an inspection rule
     local              IP local address pool
     multicast-routing  Enable IP multicast routing
-    name-server        Specify address of name server to use
+    name-server        Remove a name server
     nat                Wipe NAT configuration
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
@@ -3277,7 +3277,7 @@ Total steps: 388
     dynamic-map  Define a dynamic crypto map
     gdoi         Define a GDOI GET-VPN group
     identity     Identity of the peers allowed to use a crypto map
-    ikev2        Define IKEv2 proposal
+    ikev2        Global IKEv2 DPD interval / retry
     ipsec        Configure IPSec policy
     isakmp       Enable the default IKE policies
     key          Generate RSA key
@@ -3286,49 +3286,53 @@ Total steps: 388
     pki          Get the CA certificate and authenticate it
 
 [385/388] r1 R1(config)# no ?
-    aaa            Disable accounting update records
-    access-list    Remove an access list
-    alias          Remove a command alias
-    arp            Add static ARP entry
-    banner         Remove a banner
-    boot           Specify system image to load
-    cdp            Enable CDP globally
-    class-map      Remove a class map
-    clock          Remove hardware calendar is a valid time source
-    crypto         Remove every configured peer public key
-    enable         Remove the privileged level secret
-    event          Register an EEM applet
-    hostname       Set system hostname
-    interface      Remove a virtual interface
-    ip             Disable IP routing
-    ipv6           Remove the IPv6 prefix pool
-    key            Define a key chain
-    line           Enter line configuration
-    lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
-    ntp            Authenticate time sources
-    object-group   Remove a network object group
-    parser         Remove a CLI view
-    policy-map     Remove a policy map
-    priority-list  Remove build a priority list
-    privilege      Remove a command privilege rule
-    queue-list     Remove build a custom queue list
-    radius         Remove a named RADIUS server
-    radius-server  Specify a RADIUS server
-    route-map      Remove a route-map
-    router         Enter RIP routing protocol configuration
-    service        Disable a network based service
-    snmp-server    Set community string and access privs
-    sntp           SNTP server (alias for ntp server)
-    tacacs         Remove a named TACACS+ server
-    tacacs-server  Specify a TACACS+ server
-    time-range     Remove a time range
-    track          Remove a tracked object
-    username       Remove a local user
-    vrf            Remove configure a vrf
-    zone           Define security zone
-    zone-pair      Define zone-pair
+    aaa               Disable accounting update records
+    access-list       Remove an access list
+    alias             Remove a command alias
+    arp               Remove ARP entry
+    banner            Remove a banner
+    boot              Remove a system image from the boot list
+    cdp               Enable CDP globally
+    class-map         Remove a class map
+    clock             Remove hardware calendar is a valid time source
+    crypto            Remove every configured peer public key
+    enable            Remove the privileged level secret
+    event             Register an EEM applet
+    hostname          Reset hostname
+    interface         Remove a virtual interface
+    ip                Disable IP routing
+    ipv6              Remove the IPv6 prefix pool
+    kerberos          Remove the Kerberos realm of this router
+    key               Remove a key chain
+    l2                Remove the Layer 2 virtual forwarding instance
+    line              Remove line configuration
+    lldp              Enable LLDP globally
+    logging           Count every log message and timestamp last occurrence
+    login             Remove the login blocking period
+    mpls              Disable dynamic MPLS forwarding on the whole router
+    ntp               Authenticate time sources
+    object-group      Remove a network object group
+    parser            Remove a CLI view
+    policy-map        Remove a policy map
+    priority-list     Remove build a priority list
+    privilege         Remove a command privilege rule
+    pseudowire-class  Remove the pseudowire class
+    queue-list        Remove build a custom queue list
+    radius            Remove a named RADIUS server
+    radius-server     Specify a RADIUS server
+    route-map         Remove a route-map
+    router            Enter RIP routing protocol configuration
+    service           Disable a network based service
+    snmp-server       Set community string and access privs
+    sntp              SNTP server (alias for ntp server)
+    tacacs            Remove a named TACACS+ server
+    tacacs-server     Specify a TACACS+ server
+    time-range        Remove a time range
+    track             Remove a tracked object
+    username          Remove a local user
+    vrf               Remove configure a vrf
+    zone              Define security zone
+    zone-pair         Define zone-pair
 
 [386/388] r1 R1(config)# end
 <empty>

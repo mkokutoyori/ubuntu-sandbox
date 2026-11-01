@@ -533,7 +533,7 @@ export const FIREWALL_VIPGRP: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'fwgrp',
-  renderOrder: 151,
+  renderOrder: 152,
   help: 'Configure IPv4 virtual IP groups.',
   attributes: [
     { ...word('name', 'VIP group name.'), readOnly: true },

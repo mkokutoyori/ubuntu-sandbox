@@ -560,6 +560,20 @@ export function buildCommitDevice(
       applyFqdnVip(vip) {
         return applyFqdnVipToFirewall(fw, vip);
       },
+      applyStaticArp(id, entry) {
+        fw.bindStaticArp(id, entry.ip, entry.mac, entry.interface);
+      },
+      removeStaticArp(id) {
+        fw.unbindStaticArp(id);
+      },
+      applyProxyArp(id, entry) {
+        fw.setProxyArpEntries(proxyOwnerKey('proxy-arp', id), [{
+          from: entry.ip, to: entry.endIp === '0.0.0.0' ? entry.ip : entry.endIp, iface: entry.interface,
+        }]);
+      },
+      removeProxyArp(id) {
+        fw.clearProxyArpEntries(proxyOwnerKey('proxy-arp', id));
+      },
       applyVip(vip) {
         applyVipToFirewall(fw, vip);
       },
