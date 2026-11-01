@@ -434,7 +434,7 @@ distingueraient pas. `proxy_arp` pour un hote est sans objet (un hote ne transme
 `50-pid-max.conf` et `99-protect-links.conf`. **Pourquoi pas livres** : `sysctl --system` ecrit chaque cle, donc livrer les fichiers sans les
 cles fait imprimer des erreurs, et livrer les cles sans que le simulateur les EVALUE (le filtre de chemin inverse `rp_filter` n'est lu par
 aucun plan de donnees, `ptrace_scope` par aucun `strace`, `kptr_restrict` par aucun `/proc/kallsyms`) afficherait `rp_filter = 2` sans
-qu'un paquet de source sans route soit jamais jete. `kernel.dmesg_restrict` (defaut 1, 10-kernel-hardening.conf) est ferme : `dmesg` d'un non-root dit « read kernel buffer failed: Operation not permitted » (sonde `probe-dmesg-restrict`). A fermer cle par cle, chacune avec son lecteur ; `rp_filter` en premier
+qu'un paquet de source sans route soit jamais jete. `kernel.printk` (4 4 1 7, `10-console-messages.conf` livre) est ferme et `dmesg -n` l'ecrit, au lieu d'etre accepte puis ignore (sonde `probe-kernel-printk`). `kernel.dmesg_restrict` (defaut 1, 10-kernel-hardening.conf) est ferme : `dmesg` d'un non-root dit « read kernel buffer failed: Operation not permitted » (sonde `probe-dmesg-restrict`). A fermer cle par cle, chacune avec son lecteur ; `rp_filter` en premier
 (il rejette de vrais paquets sur une vraie machine, et demande de verifier qu'aucun labo ne recoit d'une source sans route).
 
 ---

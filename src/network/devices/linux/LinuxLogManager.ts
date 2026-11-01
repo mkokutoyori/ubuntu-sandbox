@@ -436,7 +436,11 @@ export class LinuxLogManager {
       }
     }
 
-    if (setConsoleLevel !== null) return '';
+    if (setConsoleLevel !== null) {
+      const fields = (this.vfs.readFile('/proc/sys/kernel/printk') ?? '').trim().split(/\s+/);
+      if (fields.length === 4) this.vfs.writeFile('/proc/sys/kernel/printk', [setConsoleLevel, ...fields.slice(1)].join('\t') + '\n', 0, 0, 0o022);
+      return '';
+    }
 
     if (clearOnly) { this.dmesgBuffer = []; return ''; }
 

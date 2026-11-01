@@ -55,7 +55,12 @@ export const LINUX_KERNEL_KNOBS: readonly KernelByteKnob[] = [
 export interface KernelVectorKnob {
   readonly name: string;
   readonly initial: readonly number[];
+  readonly unordered?: boolean;
 }
+
+export const LINUX_KERNEL_VECTOR_KNOBS: readonly KernelVectorKnob[] = [
+  { name: 'printk', initial: [4, 4, 1, 7], unordered: true },
+];
 
 export const LINUX_IPV4_VECTOR_KNOBS: readonly KernelVectorKnob[] = [
   { name: 'tcp_rmem', initial: [4096, 131072, 6291456] },
@@ -82,7 +87,7 @@ export class KernelVectorStore {
     const fields = text.trim().split(/\s+/);
     if (knob === undefined || fields.length !== knob.initial.length || !fields.every((field) => /^\d+$/.test(field))) return false;
     const numbers = fields.map(Number);
-    if (numbers.some((value, index) => index > 0 && value < numbers[index - 1])) return false;
+    if (knob.unordered !== true && numbers.some((value, index) => index > 0 && value < numbers[index - 1])) return false;
     this.values.set(name, numbers);
     return true;
   }
