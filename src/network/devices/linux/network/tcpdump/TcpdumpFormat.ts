@@ -6,7 +6,7 @@ import {
 } from '@/network/core/IcmpPhrase';
 import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
-import { hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
+import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
 import { icmp6Text } from './TcpdumpIcmp6';
 import { domainText } from './TcpdumpDomain';
 import { resetDataText, tcpApplicationText } from './TcpdumpTextProtocols';
@@ -598,6 +598,7 @@ export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: Tcpdump
     ? [...cookedHeader(frame, state.cooked), ...frame.raw.slice(frame.rawLinkOffset - vlanTagLength(frame), frame.rawLinkOffset)]
     : Array.from(frame.raw.slice(0, frame.rawLinkOffset));
   const bytes = (opt.hexLink ? [...link, ...network] : network).slice(0, opt.snaplen);
+  if (opt.hex === 'ascii') return bytes.length === 0 || (!opt.hexLink && network.length === 0) ? [] : asciiPrintLines(bytes).slice(1).split('\n');
   const text = opt.hex === 'hexascii' ? hexAndAsciiLines(bytes, '\n\t') : hexPrintLines(bytes, '\n\t');
   return text === '' ? [] : text.slice(1).split('\n');
 }
@@ -626,9 +627,5 @@ export function formatFrame(
   }
   const lines = [`${number}${ts}${body}`];
   if (opt.hex !== 'none') lines.push(...hexDump(frame, opt, state));
-  if (opt.ascii && frame.appPayload && frame.appPayload.length > 0) {
-    const text = frame.appPayload.map(b => (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.').join('');
-    lines.push(text);
-  }
   return lines.join('\n');
 }

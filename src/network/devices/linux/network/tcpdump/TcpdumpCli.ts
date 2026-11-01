@@ -1,7 +1,7 @@
 import { OPENSSL_VERSION_TEXT } from '@/network/crypto/openssl/opensslVersion';
 
 export type TimestampMode = 'time' | 'none' | 'epoch' | 'delta' | 'datetime' | 'since-first';
-export type HexMode = 'none' | 'hex' | 'hexascii';
+export type HexMode = 'none' | 'hex' | 'hexascii' | 'ascii';
 
 export interface TcpdumpOptions {
   iface: string;
@@ -14,7 +14,6 @@ export interface TcpdumpOptions {
   quiet: boolean;
   hex: HexMode;
   hexLink: boolean;
-  ascii: boolean;
   writeFile: string | null;
   readFile: string | null;
   linkType: string;
@@ -102,7 +101,6 @@ function defaults(): TcpdumpOptions {
     quiet: false,
     hex: 'none',
     hexLink: false,
-    ascii: false,
     writeFile: null,
     readFile: null,
     linkType: 'EN10MB',
@@ -196,6 +194,7 @@ interface ParseState {
   vCount: number;
   xUpper: number;
   xLower: number;
+  aUpper: number;
   listInterfaces: boolean;
   listLinkTypes: boolean;
 }
@@ -216,7 +215,7 @@ function applyFlag(state: ParseState, ch: string): Invocation | null {
     case 'h': return { kind: 'help', text: USAGE_TEXT };
     case 'e': opt.linkLevel = true; return null;
     case 'q': opt.quiet = true; return null;
-    case 'A': opt.ascii = true; return null;
+    case 'A': state.aUpper++; return null;
     case 'S': opt.absoluteSeq = true; return null;
     case 'K': opt.skipChecksumCheck = true; return null;
     case '#': opt.packetNumbers = true; return null;
@@ -342,7 +341,7 @@ function applyLong(state: ParseState, option: LongOption, value: string | undefi
 
 export function parseInvocation(tokens: string[]): Invocation {
   const state: ParseState = {
-    opt: defaults(), tCount: 0, vCount: 0, xUpper: 0, xLower: 0,
+    opt: defaults(), tCount: 0, vCount: 0, xUpper: 0, xLower: 0, aUpper: 0,
     listInterfaces: false, listLinkTypes: false,
   };
   const opt = state.opt;
@@ -404,6 +403,7 @@ export function parseInvocation(tokens: string[]): Invocation {
   opt.verbose = state.vCount;
   if (state.xUpper > 0) { opt.hex = 'hexascii'; opt.hexLink = state.xUpper >= 2; }
   else if (state.xLower > 0) { opt.hex = 'hex'; opt.hexLink = state.xLower >= 2; }
+  else if (state.aUpper > 0) { opt.hex = 'ascii'; opt.hexLink = state.aUpper >= 2; }
   if (state.listLinkTypes) return { kind: 'list-link-types', iface: opt.iface };
 
   opt.filterTokens = expandFilterTokens(filter);

@@ -13,6 +13,7 @@ from datetime import datetime
 
 OPTION_SETS = [
     "-nn", "-tttt", "-vvv", "-XX", "-nn -tttt -vvv -XX", "-X", "-e -nn -vvv", "-q -nn", "-nn -ttt", "-nn -tt", "-nn -S -vv",
+    "-A -nn", "-AA -nn", "-A -nn -vvv", "-A -nn -x", "-A -nn -q",
 ]
 LABS = ["base", "dns"]
 

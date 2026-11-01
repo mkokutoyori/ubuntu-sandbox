@@ -1,5 +1,5 @@
 /**
- * tcpdump -nn, -tttt, -vvv and -XX (alone and combined, with -X, -e, -q, -S and -ttt/-tt), against the real tcpdump 4.99.4 /
+ * tcpdump -nn, -tttt, -vvv, -XX and -A/-AA (alone and combined, with -X, -x, -e, -q, -S and -ttt/-tt), against the real tcpdump 4.99.4 /
  * libpcap 1.10.4 (Ubuntu 24.04).
  *
  * scripts/oracle/record_tcpdump_options.py writes the frames of two simulator labs into pcap files (the bytes each frame carries are
@@ -12,6 +12,8 @@
  * every checksum, the ICMP error quotes, ARP padding, NDP bodies, fragment tails, the 16-octet ICMPv6/IPv6 sizes) or on printers (ICMPv6,
  * DNS, SSH/HTTP/FTP/SMTP, the -XX column and its ASCII rule, "-v" ARP, signed -ttt deltas, protocol names of fragments). The 2
  * WITNESS cases (one timestamped line per packet, in both labs) pass either way: they prove the labs replay the same packets.
+ * -A and -AA (print.c lines 476-495, print-ascii.c ascii_print: the bytes after the link header, or all of them for -AA, with CR dropped at line end and every non-graphic byte but tab, space and LF printed as a dot)
+ * were added with the real binary rerun on the stored captures (5 option sets per lab, the 11 earlier ones reproduced byte for byte): all 10 fall before, none is a witness.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
