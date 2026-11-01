@@ -640,6 +640,9 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
+  **Mesure** : refuser par la forme (groupe a corps vide possible sous un quantificateur non borne, comme `\\(a*\\)*`) est FAUX : le corpus
+  compte 22 motifs sur 788 (seed1) que vim accepte et repond sans delai (`\\(a*\\)*`, `\\(\\)*`, rnd1-63, rnd1-92) ; il faut decider
+  l'AMBIGUITE des alternatives, donc le second moteur.
 - Re-mesure sur vim 9.1 (21 motifs rejoues) : `\%V` en bloc, en caracteres et en lignes, `\@N<=` borne ou non et `[[=e=]]`
   (`e`, `E`, `é`, `[^...]`, `ignorecase`) sortent comme le vrai ; ces trois lignes de l'ancien constat etaient perimees.
   Reste les **caracteres combinants** : pour vim un « caractere » est une base suivie de ses marques (`e` + U+0301), `.`, `\a`,
