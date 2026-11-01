@@ -351,6 +351,7 @@ export class WindowsDnsServerRole {
     acceptsEdns: () => this.parameters.ednsSettings().enableReception,
     rotates: () => this.parameters.flag('RoundRobin', true),
     writesApexNs: () => this.parameters.flag('WriteAuthorityNs', false),
+    recursionAvailable: () => this.parameters.recursionEnabled(),
   });
   private readonly cache: DnsCache;
   private readonly ednsSupport: EdnsSupportCache;

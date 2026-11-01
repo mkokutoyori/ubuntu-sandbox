@@ -14,13 +14,16 @@ export interface AuthoritativePolicy {
   readonly acceptsEdns?: () => boolean;
   readonly rotates?: () => boolean;
   readonly writesApexNs?: () => boolean;
+  readonly recursionAvailable?: () => boolean;
 }
 
 export class AuthoritativeServer {
   constructor(private readonly zones: ZoneStore, private readonly policy: AuthoritativePolicy = {}) {}
 
   answer(query: DnsMessage): DnsMessage {
-    const baseFlags: BaseFlags = { qr: true, rd: query.flags.rd, ra: false, ad: false, cd: false };
+    const baseFlags: BaseFlags = {
+      qr: true, rd: query.flags.rd, ra: this.policy.recursionAvailable?.() ?? false, ad: false, cd: false,
+    };
 
     if (query.flags.opcode !== DnsOpcode.QUERY) {
       return this.errorResponse(query, baseFlags, DnsRcode.NOTIMP);
