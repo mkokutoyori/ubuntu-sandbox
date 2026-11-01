@@ -988,7 +988,7 @@ export interface ILicensingProvider {
 
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
-import type { DnsCacheSettings } from '@/network/devices/windows/server/dns/DnsServerParameters';
+import type { DnsCacheSettings, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
@@ -999,7 +999,7 @@ export type {
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
-export type { DnsCacheSettings } from '@/network/devices/windows/server/dns/DnsServerParameters';
+export type { DnsCacheSettings, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1050,6 +1050,8 @@ export interface IDnsServerProvider {
   clearCache(): void;
   getCacheSettings(): DnsCacheSettings;
   setCacheSettings(changes: Partial<DnsCacheSettings>): DnsOpResult;
+  getGlobalQueryBlock(): GlobalQueryBlock;
+  setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): DnsOpResult;
 
   setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult;
   addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult;

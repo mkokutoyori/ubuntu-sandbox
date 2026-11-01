@@ -754,9 +754,14 @@ export function formatDefault(objects: PSObject[]): string {
   return formatList(objects, '');
 }
 
+const DOCUMENTED_LIST_VIEWS: readonly (readonly string[])[] = [
+  ['usesuffixsearchlist', 'usedevolution'],
+  ['enable', 'list'],
+];
+
 function documentedAsList(keys: string[]): boolean {
   const lower = new Set(keys.map(key => key.toLowerCase()));
-  return lower.has('usesuffixsearchlist') && lower.has('usedevolution');
+  return DOCUMENTED_LIST_VIEWS.some(view => view.every(key => lower.has(key)));
 }
 
 function memberDefinitionView(objects: PSObject[]): string | null {

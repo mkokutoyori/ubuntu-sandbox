@@ -9,8 +9,12 @@ import type { ZoneStore } from '@/network/dns/zone/ZoneStore';
 
 type BaseFlags = Pick<DnsHeaderFlags, 'qr' | 'rd' | 'ra' | 'ad' | 'cd'>;
 
+export interface AuthoritativePolicy {
+  readonly blocks?: (zoneOrigin: string, qname: string) => boolean;
+}
+
 export class AuthoritativeServer {
-  constructor(private readonly zones: ZoneStore) {}
+  constructor(private readonly zones: ZoneStore, private readonly policy: AuthoritativePolicy = {}) {}
 
   answer(query: DnsMessage): DnsMessage {
     const baseFlags: BaseFlags = { qr: true, rd: query.flags.rd, ra: false, ad: false, cd: false };
@@ -42,7 +46,7 @@ export class AuthoritativeServer {
 
     const question = query.questions[0];
     const wantDnssec = queryOpt?.data.dnssecOk === true;
-    const result = this.zones.answer(question, { dnssec: wantDnssec });
+    const result = this.zones.answer(question, { dnssec: wantDnssec, blocked: this.policy.blocks });
     const additionals: ResourceRecord<ResourceRecordData>[] = [...result.additional];
     if (queryOpt) {
       additionals.push(makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: wantDnssec }));

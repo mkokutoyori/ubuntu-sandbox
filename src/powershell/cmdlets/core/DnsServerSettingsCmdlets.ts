@@ -1,11 +1,11 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { DnsCacheSettings } from '@/powershell/providers/PSProviders';
+import type { DnsCacheSettings, GlobalQueryBlock } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { formatTimeSpan, makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
-import { failed, isSwitchOn, requireDns, timeSpanSeconds } from './DnsServerCmdlets';
+import { failed, isSwitchOn, requireDns, stringList, timeSpanSeconds } from './DnsServerCmdlets';
 
 const MAX_CACHE_TTL_SECONDS = 2592000;
 const MAX_LOCKING_PERCENT = 100;
@@ -90,5 +90,38 @@ export class SetDnsServerCacheCmdlet implements ICmdlet {
     const result = dns.setCacheSettings(defined);
     if (!result.ok) return failed(ctx, 'Set-DnsServerCache', result);
     return isSwitchOn(ctx.named['passthru']) ? cacheObject(dns.getCacheSettings()) : null;
+  }
+}
+
+function globalQueryBlockObject(block: GlobalQueryBlock): Record<string, PSValue> {
+  return { Enable: block.enabled, List: [...block.list] };
+}
+
+export class GetDnsServerGlobalQueryBlockListCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserverglobalqueryblocklist';
+  readonly displayName = 'Get-DnsServerGlobalQueryBlockList';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    return globalQueryBlockObject(requireDns(ctx, 'Get-DnsServerGlobalQueryBlockList').getGlobalQueryBlock());
+  }
+}
+
+export class SetDnsServerGlobalQueryBlockListCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserverglobalqueryblocklist';
+  readonly displayName = 'Set-DnsServerGlobalQueryBlockList';
+  readonly aliases = [] as const;
+  readonly parameters = ['Enable', 'List', 'ComputerName', 'PassThru', 'CimSession', 'ThrottleLimit', 'AsJob', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerGlobalQueryBlockList');
+    const given = ctx.named['list'] ?? (ctx.positional.length > 0 ? ctx.positional : undefined);
+    const result = dns.setGlobalQueryBlock({
+      enabled: flagSetting(ctx, 'enable'),
+      list: given === undefined ? undefined : stringList(given),
+    });
+    if (!result.ok) return failed(ctx, 'Set-DnsServerGlobalQueryBlockList', result);
+    return isSwitchOn(ctx.named['passthru']) ? globalQueryBlockObject(dns.getGlobalQueryBlock()) : null;
   }
 }
