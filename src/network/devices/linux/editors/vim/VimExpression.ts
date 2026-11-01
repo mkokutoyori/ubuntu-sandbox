@@ -102,6 +102,11 @@ export class VimVariables {
     this.locks.set(store, held);
   }
 
+  unlock(key: string): void {
+    const { store, at } = this.slot(key);
+    this.locks.get(store)?.delete(at);
+  }
+
   isLocked(key: string): boolean {
     const { store, at } = this.slot(key);
     return this.locks.get(store)?.has(at) === true;
@@ -150,8 +155,11 @@ export interface ExpressionHost {
   renameEntry(from: string, to: string): boolean;
   homeDirectory(): string | null;
   bufferName(): string;
+  alternateName(): string;
   temporaryName(): string;
   wordUnderCursor(big: boolean): string;
+  fileNameUnderCursor(): string;
+  modeName(full: boolean): string;
   resolvePath(path: string): string;
   processId(): number;
   shell(command: string, input: string | null): string;
@@ -169,12 +177,14 @@ type SpecialName = 'true' | 'false' | 'null' | 'none';
 interface VimList {
   readonly kind: 'list';
   locked?: boolean;
+  itemLocks?: Set<string>;
   items: VimValue[];
 }
 
 interface VimDict {
   readonly kind: 'dict';
   locked?: boolean;
+  itemLocks?: Set<string>;
   entries: Map<string, VimValue>;
 }
 
@@ -1304,7 +1314,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     return asList ? list(expanded.map(str)) : str(expanded.join('\n'));
   } }],
   ['resolve', { min: 1, max: 1, run: (args, context) => str(resolveLinks(context, context.stringOf(args[0], false))) }],
-  ['bufname', { min: 0, max: 1, run: (args, context) => str(args[0] === undefined || ['%', ''].includes(context.stringOf(args[0], false)) ? context.host.bufferName() : '') }],
+  ['bufname', { min: 0, max: 1, run: (args, context) => str(args[0] === undefined || ['%', ''].includes(context.stringOf(args[0], false)) ? context.host.bufferName() : context.stringOf(args[0], false) === '#' ? context.host.alternateName() : '') }],
   ['wordcount', { min: 0, max: 0, run: (_args, context) => wordCount(context) }],
   ['reltime', { min: 0, max: 2, run: (args, context) => relativeTime(args, context) }],
   ['reltimestr', { min: 1, max: 1, run: (args, context) => {
@@ -1450,6 +1460,22 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     if (name.startsWith('*')) return num(FUNCTIONS.has(name.slice(1)) || context.host.functions?.has(name.slice(1)) === true ? 1 : 0);
     return num(context.host.variables.lookup(name) === undefined ? 0 : 1);
   } }],
+  ['mode', { min: 0, max: 1, run: (args, context) => str(context.host.modeName(args[0] !== undefined && context.truth(args[0]))) }],
+  ['islocked', { min: 1, max: 1, run: (args, context) => {
+    const name = context.stringOf(args[0], false);
+    const access = splitAccess(name);
+    if (access === null) return num(-1);
+    const key = context.host.variables.resolveKey(access.name);
+    const value = key === null ? undefined : context.host.variables.lookup(key);
+    if (key === null || value === undefined) return num(-1);
+    if (access.accessors.length === 0) return num(context.host.variables.isLocked(key) || (value.kind !== 'list' && value.kind !== 'dict' ? false : value.locked === true) ? 1 : 0);
+    const holder = runExpression(`${access.name}${access.accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+    const last = access.accessors[access.accessors.length - 1];
+    const field = context.stringOf(runExpression(last, context), false);
+    if (holder.kind === 'dict') return holder.entries.has(field) ? num(holder.itemLocks?.has(field) === true ? 1 : 0) : num(-1);
+    if (holder.kind === 'list') return num(holder.itemLocks?.has(field) === true ? 1 : 0);
+    return num(-1);
+  } }],
   ['has', { min: 1, max: 2, run: (args, context) => num(['unix', 'linux', 'multi_byte', 'eval', 'float'].includes(context.stringOf(args[0], false)) ? 1 : 0) }],
 ]);
 
@@ -1573,9 +1599,10 @@ function globFileSystem(context: Context): import('./VimGlob').GlobFileSystem {
 
 function expandWord(context: Context, text: string, noWildcards: boolean): string[] {
   if (text === '%' || text.startsWith('%:')) return [modifyFileName(context.host.bufferName(), text.slice(1), context)];
-  if (text === '#') return [''];
+  if (text === '#' || text.startsWith('#:')) return [modifyFileName(context.host.alternateName(), text.slice(1), context)];
   if (text === '<cword>') return [context.host.wordUnderCursor(false)];
   if (text === '<cWORD>') return [context.host.wordUnderCursor(true)];
+  if (text === '<cfile>') return [context.host.fileNameUnderCursor()];
   const withVariables = text.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, bare: string | undefined, braced: string | undefined) => {
     const value = context.host.environmentOrNull(bare ?? braced ?? '');
     return value === null ? whole : value;
@@ -2813,6 +2840,10 @@ export class ExpressionSession {
     letInContext(argument, this.context, constant);
   }
 
+  lock(argument: string, on: boolean): void {
+    lockVariables(argument, on, this.context);
+  }
+
   unassign(names: string, bang: boolean): void {
     unletInContext(names, bang, this.context);
   }
@@ -3006,6 +3037,38 @@ export function executeUnletElement(name: string, host: ExpressionHost, context:
     if (!holder.entries.delete(field)) context.fail(`E716: Key not present in Dictionary: "${field}"`);
   } else {
     context.fail('E689: Can only index a List, Dictionary or Blob');
+  }
+}
+
+function lockValue(value: VimValue, depth: number, on: boolean): void {
+  if (depth < 1 || (value.kind !== 'list' && value.kind !== 'dict')) return;
+  value.locked = on;
+  const children: [string, VimValue][] = value.kind === 'list'
+    ? value.items.map((item, at): [string, VimValue] => [String(at), item])
+    : [...value.entries];
+  const held = value.itemLocks ?? new Set<string>();
+  for (const [name, child] of children) {
+    if (depth >= 2) {
+      if (on) held.add(name);
+      else held.delete(name);
+    }
+    lockValue(child, depth - 1, on);
+  }
+  value.itemLocks = held;
+}
+
+function lockVariables(argument: string, on: boolean, context: Context): void {
+  const match = argument.trim().match(/^(!?)\s*(\d+)?\s*(.*)$/s);
+  if (match === null) return;
+  const depth = match[1] === '!' ? 100 : match[2] === undefined ? 2 : Number(match[2]);
+  for (const name of match[3].split(/\s+/).filter((piece) => piece !== '')) {
+    const key = context.host.variables.resolveKey(name);
+    if (key === null) return context.fail(`E475: Invalid argument: ${name}`);
+    const value = context.host.variables.lookup(key);
+    if (value === undefined) continue;
+    if (on) context.host.variables.lock(key);
+    else context.host.variables.unlock(key);
+    lockValue(value, depth, on);
   }
 }
 

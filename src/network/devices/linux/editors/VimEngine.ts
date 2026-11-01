@@ -131,6 +131,27 @@ function findEnclosingBracketPair(line: string, col: number, open: string, close
   return best;
 }
 
+const FILE_NAME_CHARACTER = /[\p{L}\p{N}/._+,#$%~=-]/u;
+
+function fileNameAt(text: string, col: number): string {
+  const characters = [...text];
+  const accepts = (at: number): boolean => at >= 0 && at < characters.length && FILE_NAME_CHARACTER.test(characters[at]);
+  const urlJoint = (at: number): boolean => characters[at] === ':' && characters[at + 1] === '/' && characters[at + 2] === '/' && accepts(at - 1);
+  const member = (at: number): boolean => accepts(at) || urlJoint(at) || (at >= 2 && urlJoint(at - 2) && characters[at] === '/') || (at >= 1 && urlJoint(at - 1) && characters[at] === '/');
+  let from = Math.min(col, characters.length - 1);
+  while (from < characters.length && !member(from)) from++;
+  if (from >= characters.length) return '';
+  let start = from;
+  while (start > 0 && member(start - 1)) start--;
+  let stop = from;
+  while (stop + 1 < characters.length && member(stop + 1)) stop++;
+  const run = characters.slice(start, stop + 1).join('');
+  if (run.includes('://')) {
+    while (stop + 1 < characters.length && (accepts(stop + 1) || characters[stop + 1] === '?' || characters[stop + 1] === '&')) stop++;
+  }
+  return characters.slice(start, stop + 1).join('');
+}
+
 type Operator = 'd' | 'y' | 'c' | '<' | '>' | 'g~' | 'gu' | 'gU';
 
 interface OperatorRange {
@@ -3087,6 +3108,7 @@ export class VimEngine {
         }
         const body = content.endsWith('\n') ? content.slice(0, -1) : content;
         newLines = body.length === 0 ? [] : body.split('\n');
+        if (arg !== this.filePath) this.alternate = arg;
       }
       const at = rangeStart !== null ? rangeStart : this._cursorLine;
       this.linesArr.splice(at + 1, 0, ...newLines);
@@ -3113,8 +3135,9 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
-    if (trimmed.startsWith('w ')) {
-      this.writeFile(trimmed.slice(2).trim(), false);
+    const writeNamed = /^w(?:r(?:i(?:t(?:e)?)?)?)?(!?)\s+([^!\s].*)$/.exec(trimmed);
+    if (writeNamed !== null) {
+      this.writeFile(writeNamed[2].trim(), writeNamed[1] === '!');
       this._mode = 'normal';
       return;
     }
@@ -3206,6 +3229,8 @@ export class VimEngine {
     this._mode = 'normal';
   }
 
+  private alternate = '';
+
   private writeFile(path: string, force: boolean): boolean {
     if (path === '') {
       this._message = 'E32: No file name';
@@ -3223,6 +3248,7 @@ export class VimEngine {
       return false;
     }
     this._modified = false;
+    if (path !== this.filePath) this.alternate = path;
     // Real vim reports the byte count actually written (UTF-8), not the
     // in-memory JS string length — they diverge for any multi-byte char.
     const byteLength = new TextEncoder().encode(body).length;
@@ -3556,8 +3582,11 @@ export class VimEngine {
       renameEntry: (from, to) => this.fs.renameEntry?.(from, to) ?? false,
       homeDirectory: () => this.fs.homeDirectory?.() ?? null,
       bufferName: () => this.filePath,
+      alternateName: () => this.alternate,
       temporaryName: () => this.nextTemporaryName(),
       wordUnderCursor: (big) => this.wordUnderCursor(big, lineNumber - 1, columnIndex),
+      fileNameUnderCursor: () => fileNameAt(this.linesArr[lineNumber - 1] ?? '', columnIndex),
+      modeName: () => (this._mode === 'insert' ? 'i' : 'n'),
       executableAt: (path) => this.fs.executableAt?.(path) ?? false,
       resolvePath: (path) => this.fs.resolvePath(path),
       hostName: () => this.fs.identity?.().host ?? '',

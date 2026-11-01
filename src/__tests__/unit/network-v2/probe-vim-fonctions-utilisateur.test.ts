@@ -1,6 +1,6 @@
 /**
- * vim 9.1 : `:function`, `:call`, `:echo`, `:return`, `:if`/`:for`/`:while`, `:try`/`:catch`/`:finally`/`:throw`, `:echoerr`, `:const` (verrou profond des listes et dictionnaires), `:execute`, `:source`, `:delfunction`, les portees l: a: s: et les fonctions de dictionnaire. 106 scripts rejoues sur le vrai vim (`vim -Nu NONE -es -S`, curseur en ligne 1, tampon [L1, L2]) : les lignes affichees par :echo et les erreurs, dans l'ordre erreurs puis affichages.
- * Mesure de depart : sans le moteur de script les 106 cas tombent ; contre le moteur de script sans :try, :throw, :echoerr ni :const, 36 cas tombent (les 70 autres sont des temoins de non-regression).
+ * vim 9.1 : `:function`, `:call`, `:echo`, `:return`, `:if`/`:for`/`:while`, `:try`/`:catch`/`:finally`/`:throw`, `:echoerr`, `:const`, `:lockvar`/`:unlockvar`/`islocked()` (verrou profond des listes et dictionnaires), `:execute`, `:source`, `:delfunction`, les portees l: a: s: et les fonctions de dictionnaire. 106 scripts rejoues sur le vrai vim (`vim -Nu NONE -es -S`, curseur en ligne 1, tampon [L1, L2]) : les lignes affichees par :echo et les erreurs, dans l'ordre erreurs puis affichages.
+ * Mesure de depart : sans le moteur de script les 130 cas tombent ; contre le commit precedent (sans :lockvar), les 24 cas de verrou tombent ; les 106 autres passent des deux cotes (temoins). Un cas mesure sur vim est ecarte : `lockvar M | try | call add(M,2) | catch` laisse vim afficher E741 sans que le catch l'attrape (non reproduit).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -115,6 +115,30 @@ const SCRIPTS: ReadonlyArray<readonly [readonly string[], string]> = [
   [["throw 'top'", "echo 'never'"], "E605: Exception not caught: top"],
   [["function! F()", "  const c = 1", "  let c = 2", "endfunction", "call F()"], "E741: Value is locked: c"],
   [["function! F()", "  const c = [1]", "  call add(c, 2)", "  return c", "endfunction", "echo F()"], "E741: Value is locked: add() argument\n[1]"],
+  [["let M = [1]", "lockvar M", "call add(M, 2)", "echo M"], "E741: Value is locked: add() argument\n[1]"],
+  [["let M = [1]", "lockvar M", "let M = []", "echo M"], "E741: Value is locked: M\n[1]"],
+  [["let M = [1]", "lockvar M", "let M[0] = 5", "echo M"], "E741: Value is locked: M[0] = 5\n[1]"],
+  [["let M = [1]", "lockvar M", "unlockvar M", "call add(M, 2)", "echo M"], "[1, 2]"],
+  [["let M = [1, [2]]", "lockvar M", "call add(M[1], 3)", "echo M"], "E741: Value is locked: add() argument\n[1, [2]]"],
+  [["let M = [1, [2]]", "lockvar 1 M", "call add(M[1], 3)", "echo M"], "[1, [2, 3]]"],
+  [["let M = [1, [2]]", "lockvar 1 M", "call add(M, 3)", "echo M"], "E741: Value is locked: add() argument\n[1, [2]]"],
+  [["let M = [1, [2]]", "lockvar! M", "call add(M[1], 3)", "echo M"], "E741: Value is locked: add() argument\n[1, [2]]"],
+  [["let n = 1", "lockvar n", "let n = 2", "echo n"], "E741: Value is locked: n\n1"],
+  [["let n = 1", "lockvar n", "unlet n", "echo exists('n')"], "0"],
+  [["let n = 1", "lockvar n", "unlockvar n", "let n = 2", "echo n"], "2"],
+  [["lockvar nope"], ""],
+  [["unlockvar nope"], ""],
+  [["let a = 1", "let b = 2", "lockvar a b", "let b = 3"], "E741: Value is locked: b"],
+  [["let D = {'k': 1}", "lockvar D", "let D.k = 2", "echo D"], "E741: Value is locked: D.k = 2\n{'k': 1}"],
+  [["let D = {'k': 1}", "lockvar D", "let D.z = 2"], "E741: Value is locked: D.z = 2"],
+  [["let D = {'k': 1}", "lockvar D", "unlet D.k"], "E741: Value is locked: D.k"],
+  [["let D = {'k': 1}", "lockvar D", "echo islocked('D') islocked('D.k') islocked('nope')"], "1 1 -1"],
+  [["let D = {'k': 1}", "lockvar! D", "echo islocked('D') islocked('D.k')"], "1 1"],
+  [["function! F()", "  let l = [1]", "  lockvar l", "  call add(l, 2)", "endfunction", "call F()"], "E741: Value is locked: add() argument"],
+  [["const C = 1", "unlockvar C", "let C = 2", "echo C"], "2"],
+  [["let M = [1]", "lockvar M", "try | let M = 2 | catch | echo v:exception | endtry"], "Vim(let):E741: Value is locked: M"],
+  [["let M = [1]", "lockvar M", "echo islocked('M')"], "1"],
+  [["let M = [1]", "echo islocked('M')"], "0"],
 ];
 
 function run(script: readonly string[]): string {
