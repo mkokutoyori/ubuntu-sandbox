@@ -27,10 +27,11 @@ const MAX_FUNCTION_DEPTH = 100;
 const SCRIPT_WORDS: ReadonlyArray<readonly [string, number]> = [
   ['function', 2], ['endfunction', 4], ['delfunction', 4], ['return', 4], ['if', 2], ['elseif', 5], ['else', 2], ['endif', 2],
   ['while', 2], ['endwhile', 4], ['for', 3], ['endfor', 5], ['break', 4], ['continue', 3], ['call', 3], ['echo', 2],
-  ['echon', 5], ['echomsg', 5], ['execute', 3], ['let', 3], ['unlet', 3],
+  ['echon', 5], ['echomsg', 5], ['echoerr', 5], ['execute', 3], ['let', 3], ['unlet', 3], ['const', 4],
+  ['try', 3], ['catch', 3], ['finally', 4], ['endtry', 4], ['throw', 2],
 ];
-const BLOCK_OPENERS = new Set(['if', 'while', 'for']);
-const BLOCK_CLOSERS = new Set(['endif', 'endwhile', 'endfor']);
+const BLOCK_OPENERS = new Set(['if', 'while', 'for', 'try']);
+const BLOCK_CLOSERS = new Set(['endif', 'endwhile', 'endfor', 'endtry']);
 const FUNCTION_HEADER = /^(function)(!?)\s*(.*)$/s;
 const FUNCTION_NAME = /^(?:s:|g:)?[A-Z][\w#]*$|^s:[a-z_][\w#]*$/;
 
@@ -120,12 +121,18 @@ function matching(lines: readonly string[], from: number, end: number): { branch
     else if (BLOCK_CLOSERS.has(word)) {
       if (depth === 0) return { branches, close: at };
       depth--;
-    } else if (depth === 0 && (word === 'elseif' || word === 'else')) branches.push(at);
+    } else if (depth === 0 && (word === 'elseif' || word === 'else' || word === 'catch' || word === 'finally')) branches.push(at);
   }
   return { branches, close: -1 };
 }
 
 class ScriptAbort extends Error {}
+
+class ThrownException extends Error {
+  constructor(readonly text: string) {
+    super(text);
+  }
+}
 
 export class ScriptRuntime implements UserFunctions {
   private readonly functions = new Map<string, UserFunction>();
@@ -133,6 +140,7 @@ export class ScriptRuntime implements UserFunctions {
   readonly output: string[] = [];
   private sources: readonly string[] = [];
   private anonymous = 0;
+  private tryDepth = 0;
 
   constructor(private readonly host: ScriptHost) {}
 
@@ -152,7 +160,8 @@ export class ScriptRuntime implements UserFunctions {
     try {
       this.execute(session, logical.lines, 0, logical.lines.length, keepGoing);
     } catch (failure) {
-      if (!(failure instanceof ScriptAbort)) throw failure;
+      if (failure instanceof ThrownException) this.output.push(`E605: Exception not caught: ${failure.text}`);
+      else if (!(failure instanceof ScriptAbort)) throw failure;
     }
     return [...session.errors];
   }
@@ -199,16 +208,78 @@ export class ScriptRuntime implements UserFunctions {
     let at = start;
     while (at < end) {
       let following = at + 1;
+      const before = session.errors.length;
       try {
         const outcome = this.statement(session, lines, at, end, keepGoing, (next) => { following = next; });
+        if (this.tryDepth > 0 && session.errors.length > before) throw this.exceptionFrom(session, lines[at]);
         if (outcome.kind !== 'next') return outcome;
       } catch (failure) {
         if (!isExpressionAbort(failure)) throw failure;
+        if (this.tryDepth > 0) throw this.exceptionFrom(session, lines[at]);
         if (!keepGoing) throw new ScriptAbort();
       }
       at = following;
     }
     return NEXT;
+  }
+
+  private exceptionFrom(session: ExpressionSession, line: string): ThrownException {
+    const message = session.popError() ?? '';
+    const word = commandWord(line).word || (line.match(/^[A-Za-z]+/)?.[0] ?? '');
+    return new ThrownException(`Vim(${word}):${message}`);
+  }
+
+  private tryStatement(
+    session: ExpressionSession, lines: readonly string[], at: number, end: number, keepGoing: boolean, skipTo: (next: number) => void,
+  ): Outcome {
+    const { branches, close } = matching(lines, at, end);
+    skipTo(close === -1 ? end : close + 1);
+    if (close === -1) return session.fail('E600: Missing :endtry');
+    const arms = [at, ...branches, close];
+    const segment = (index: number): { start: number; stop: number } => ({ start: arms[index] + 1, stop: arms[index + 1] });
+    const finallyIndex = arms.findIndex((arm, index) => index > 0 && index < arms.length - 1 && commandWord(lines[arm]).word === 'finally');
+    const guarded = finallyIndex === -1 ? arms.length - 1 : finallyIndex;
+    let outcome: Outcome = NEXT;
+    let pending: unknown = null;
+    this.tryDepth++;
+    try {
+      try {
+        const body = segment(0);
+        outcome = this.execute(session, lines, body.start, body.stop, keepGoing);
+      } catch (failure) {
+        if (!(failure instanceof ThrownException)) throw failure;
+        let handled = false;
+        for (let index = 1; index < guarded && !handled; index++) {
+          const header = commandWord(lines[arms[index]]);
+          const pattern = header.argument.trim();
+          const delimiter = pattern[0];
+          const source = pattern === '' ? null : pattern.slice(1, pattern.lastIndexOf(delimiter) > 0 ? pattern.lastIndexOf(delimiter) : undefined);
+          if (source !== null && !session.matches(source, failure.text)) continue;
+          handled = true;
+          const saved = session.host.variables.lookup('v:exception');
+          session.host.variables.assign('v:exception', ExpressionSession.fromScalar(failure.text));
+          try {
+            const body = segment(index);
+            outcome = this.execute(session, lines, body.start, body.stop, keepGoing);
+          } finally {
+            if (saved === undefined) session.host.variables.remove('v:exception');
+            else session.host.variables.assign('v:exception', saved);
+          }
+        }
+        if (!handled) throw failure;
+      }
+    } catch (failure) {
+      pending = failure;
+    } finally {
+      this.tryDepth--;
+    }
+    if (finallyIndex !== -1) {
+      const body = segment(finallyIndex);
+      const after = this.execute(session, lines, body.start, body.stop, keepGoing);
+      if (after.kind !== 'next') return after;
+    }
+    if (pending !== null) throw pending;
+    return outcome;
   }
 
   private statement(
@@ -257,6 +328,13 @@ export class ScriptRuntime implements UserFunctions {
         }
         return NEXT;
       }
+      case 'try': return this.tryStatement(session, lines, at, end, keepGoing, skipTo);
+      case 'catch': return session.fail(`E603: :catch without :try: ${lines[at]}`);
+      case 'finally': return session.fail(`E606: :finally without :try: ${lines[at]}`);
+      case 'endtry': return session.fail(`E602: :endtry without :try: ${lines[at]}`);
+      case 'throw': throw new ThrownException(session.text(session.evaluate(argument)));
+      case 'echoerr': return session.fail(session.echo(argument, ' '));
+      case 'const': session.assign(argument, true); return NEXT;
       case 'function': skipTo(this.define(session, lines, at, end, bang, argument, skipTo)); return NEXT;
       case 'endfunction': return session.fail('E193: :endfunction not inside a function');
       case 'delfunction': this.remove(session, bang, argument); return NEXT;

@@ -17,9 +17,10 @@ interface CallFrame {
 export class VimVariables {
   private readonly stored = new Map<string, VimValue>();
   private readonly frames: CallFrame[] = [];
+  private readonly locks = new WeakMap<Map<string, VimValue>, Set<string>>();
 
   static key(name: string): string | null {
-    if (/^[gbwtlsa]:[A-Za-z_][\w#]*$/.test(name) || /^a:\d+$/.test(name)) return name;
+    if (/^[gbwtlsav]:[A-Za-z_][\w#]*$/.test(name) || /^a:\d+$/.test(name)) return name;
     if (/^[A-Za-z_][\w#]*$/.test(name)) return `g:${name}`;
     return null;
   }
@@ -90,7 +91,20 @@ export class VimVariables {
     const key = this.resolveKey(name);
     if (key === null) return false;
     const { store, at } = this.slot(key);
+    this.locks.get(store)?.delete(at);
     return store.delete(at);
+  }
+
+  lock(key: string): void {
+    const { store, at } = this.slot(key);
+    const held = this.locks.get(store) ?? new Set<string>();
+    held.add(at);
+    this.locks.set(store, held);
+  }
+
+  isLocked(key: string): boolean {
+    const { store, at } = this.slot(key);
+    return this.locks.get(store)?.has(at) === true;
   }
 }
 
@@ -154,11 +168,13 @@ type SpecialName = 'true' | 'false' | 'null' | 'none';
 
 interface VimList {
   readonly kind: 'list';
+  locked?: boolean;
   items: VimValue[];
 }
 
 interface VimDict {
   readonly kind: 'dict';
+  locked?: boolean;
   entries: Map<string, VimValue>;
 }
 
@@ -356,6 +372,7 @@ function compareText(left: string, right: string, ignoreCase: boolean): number {
 
 class Context {
   readonly errors: string[] = [];
+  statement = '';
   readonly loop: { key: VimValue; val: VimValue }[] = [];
   scopes: Map<string, VimValue>[] = [];
 
@@ -1435,6 +1452,19 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
   } }],
   ['has', { min: 1, max: 2, run: (args, context) => num(['unix', 'linux', 'multi_byte', 'eval', 'float'].includes(context.stringOf(args[0], false)) ? 1 : 0) }],
 ]);
+
+const MUTATORS = new Set(['add', 'insert', 'remove', 'extend', 'sort', 'reverse', 'map', 'filter', 'uniq']);
+for (const name of MUTATORS) {
+  const original = FUNCTIONS.get(name)!;
+  (FUNCTIONS as Map<string, FunctionDefinition>).set(name, {
+    ...original,
+    run: (args, context) => {
+      const target = args[0];
+      if ((target.kind === 'list' || target.kind === 'dict') && target.locked === true) context.fail(`E741: Value is locked: ${name}() argument`);
+      return original.run(args, context);
+    },
+  });
+}
 
 function extendValue(args: VimValue[], context: Context): VimValue {
   const [target, source] = args;
@@ -2719,6 +2749,16 @@ export class ExpressionSession {
     return this.context.errors;
   }
 
+  popError(): string | undefined {
+    return this.context.errors.pop();
+  }
+
+  matches(pattern: string, subject: string): boolean {
+    const regex = this.context.regexp(pattern, this.context.host.ignoreCase, subject);
+    if (regex.error !== null) return this.context.fail(regex.error);
+    return regex.exec(subject, 0) !== null;
+  }
+
   clearErrors(): void {
     this.context.errors.length = 0;
   }
@@ -2769,8 +2809,8 @@ export class ExpressionSession {
     names.forEach((name, at) => assignTarget(name, '=', (value as VimList).items[at] ?? special('none'), this.context));
   }
 
-  assign(argument: string): void {
-    letInContext(argument, this.context);
+  assign(argument: string, constant = false): void {
+    letInContext(argument, this.context, constant);
   }
 
   unassign(names: string, bang: boolean): void {
@@ -2872,6 +2912,7 @@ function assignTarget(target: string, operator: string, value: VimValue, context
   const key = context.host.variables.resolveKey(name);
   if (key === null) context.fail(`E461: Illegal variable name: ${name}`);
   if (context.host.variables.isReadOnly(key)) context.fail(`E46: Cannot change read-only variable "${key}"`);
+  if (context.host.variables.isLocked(key)) context.fail(`E741: Value is locked: ${accessors.length === 0 ? name : context.statement}`);
   const combine = (current: VimValue | undefined): VimValue => combineWith(current, operator, value, name, context);
   if (accessors.length === 0) {
     context.host.variables.assign(key, combine(context.host.variables.lookup(key)));
@@ -2879,6 +2920,7 @@ function assignTarget(target: string, operator: string, value: VimValue, context
   }
   if (context.host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${name}`);
   const holder = runExpression(`${name}${accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+  if ((holder.kind === 'list' || holder.kind === 'dict') && holder.locked === true) context.fail(`E741: Value is locked: ${context.statement}`);
   const range = sliceBounds(accessors[accessors.length - 1]);
   if (range !== null) {
     assignRange(holder, range, operator, value, name, context);
@@ -2947,6 +2989,7 @@ export function executeUnletElement(name: string, host: ExpressionHost, context:
   if (key === null || host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${access.name}`);
   const holder = runExpression(`${access.name}${access.accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
   const last = access.accessors[access.accessors.length - 1];
+  if ((holder.kind === 'list' || holder.kind === 'dict') && holder.locked === true) context.fail(`E741: Value is locked: ${name}`);
   const range = sliceBounds(last);
   if (holder.kind === 'list') {
     if (range !== null) {
@@ -2966,7 +3009,18 @@ export function executeUnletElement(name: string, host: ExpressionHost, context:
   }
 }
 
-function letInContext(argument: string, context: Context): void {
+function lockDeep(value: VimValue): void {
+  if (value.kind === 'list') {
+    value.locked = true;
+    value.items.forEach(lockDeep);
+  } else if (value.kind === 'dict') {
+    value.locked = true;
+    for (const item of value.entries.values()) lockDeep(item);
+  }
+}
+
+function letInContext(argument: string, context: Context, constant = false): void {
+  context.statement = argument.trim();
   const parsed = argument.trim().match(LET_ASSIGNMENT);
   if (parsed === null) {
     const name = argument.trim();
@@ -2978,12 +3032,21 @@ function letInContext(argument: string, context: Context): void {
   }
   const [, target, operator, source] = parsed;
   const value = runExpression(source, context);
-  if (!target.startsWith('[')) return assignTarget(target, operator, value, context);
+  const bind = (name: string, item: VimValue): void => {
+    if (!constant) return assignTarget(name, operator, item, context);
+    const key = context.host.variables.resolveKey(name);
+    if (key === null) return context.fail(`E461: Illegal variable name: ${name}`);
+    if (context.host.variables.lookup(key) !== undefined) return context.fail('E995: Cannot modify existing variable');
+    assignTarget(name, operator, item, context);
+    lockDeep(item);
+    context.host.variables.lock(key);
+  };
+  if (!target.startsWith('[')) return bind(target, value);
   const names = target.slice(1, -1).split(',').map((piece) => piece.trim());
   if (value.kind !== 'list') return context.fail('E714: List required');
   if (value.items.length < names.length) return context.fail('E688: More targets than List items');
   if (value.items.length > names.length) return context.fail('E687: Less targets than List items');
-  names.forEach((name, at) => assignTarget(name, operator, value.items[at], context));
+  names.forEach((name, at) => bind(name, value.items[at]));
 }
 
 function unletInContext(names: string, bang: boolean, context: Context): void {

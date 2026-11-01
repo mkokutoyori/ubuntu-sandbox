@@ -103,6 +103,10 @@ export function ipropeGroupWords(): EnumValue[] {
   return [{ keyword: IPROPE_POLICY_GROUP, description: 'Security policy group.', thenWord: '<policy index>' }];
 }
 
+export function ipropeListWords(): EnumValue[] {
+  return [{ keyword: IPROPE_POLICY_GROUP, description: 'Security policy group.' }];
+}
+
 export function datasourceWords(paths: readonly (readonly string[])[]): EnumValue[] {
   return paths.map(path => ({ keyword: path.join('.'), description: 'Configuration table.', thenWord: '<key>' }));
 }
