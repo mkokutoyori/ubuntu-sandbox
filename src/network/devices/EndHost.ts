@@ -5486,6 +5486,37 @@ export abstract class EndHost extends Equipment {
     return { success: false, rttMs: 0, ttl: 0 };
   }
 
+  sendPingProbeSync6(targetIP: IPv6Address): { success: boolean; rttMs: number; ttl: number } {
+    if (this.isLocalAddress6(targetIP)) {
+      return { success: true, rttMs: 0.02, ttl: this.defaultHopLimit };
+    }
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route) return { success: false, rttMs: 0, ttl: 0 };
+    const source = selectIpv6SourceAddress(route.port, targetIP);
+    if (!source) return { success: false, rttMs: 0, ttl: 0 };
+    this.resolveNdpSync(targetIP);
+
+    const request = this.echoRequest6(source, targetIP, 1);
+    const targetText = targetIP.toString();
+    const sentAt = PathClock.now();
+    let reply: { rttMs: number; ttl: number } | null = null;
+    const stopWatching = this.getBus().subscribe('host.icmp.echo-reply', (event) => {
+      const payload = event.payload;
+      if (payload.deviceId === this.id && payload.fromIp === targetText && payload.id === request.id && payload.seq === 1) {
+        reply = { rttMs: PathClock.now() - sentAt, ttl: payload.ttl };
+      }
+    });
+    this.emitIcmpEchoSent({
+      fromIp: source.toString(), toIp: targetText, id: request.id, seq: 1,
+      ttl: request.packet.hopLimit, size: request.packet.payloadLength,
+    });
+    if (this.firewallFilter6(route.port.getName(), request.packet, 'out') === 'accept') {
+      this.sendIpv6FrameNdpAware(route.port.getName(), request.packet, route.nextHopIP);
+    }
+    stopWatching();
+    return reply === null ? { success: false, rttMs: 0, ttl: 0 } : { success: true, ...(reply as { rttMs: number; ttl: number }) };
+  }
+
   /** Vrai quand la route vers `targetIP` sort sans saut suivant : la cible EST le saut. */
   isDirectlyConnected(targetIP: IPAddress): boolean {
     const route = this.resolveRoute(targetIP);
@@ -5677,6 +5708,27 @@ export abstract class EndHost extends Equipment {
     const hops = await this.executeTraceroute(
       ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, opts.firstTtl,
       { onHop: opts.onHop, shouldStop: opts.shouldStop }, opts.method, opts.socket,
+    );
+    return { resolved: true, routed: hops.length > 0 };
+  }
+
+  async tracerouteStreamInSession6(
+    targetStr: string,
+    opts: {
+      maxHops?: number;
+      probesPerHop?: number;
+      timeoutMs?: number;
+      onResolved?: (ip: IPv6Address, hostname?: string) => void;
+      onHop: (hop: TracerouteHopResult) => void;
+      shouldStop: () => boolean;
+    },
+  ): Promise<{ resolved: boolean; routed: boolean }> {
+    const ip = IPv6Address.tryParse(targetStr) ?? await this.resolveHost6ForCommand(targetStr);
+    if (!ip) return { resolved: false, routed: false };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+    const hops = await this.executeTraceroute6(
+      ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, 1,
+      { onHop: opts.onHop, shouldStop: opts.shouldStop },
     );
     return { resolved: true, routed: hops.length > 0 };
   }

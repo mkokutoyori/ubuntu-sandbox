@@ -4199,13 +4199,13 @@ Ce qu'il manque, commande par commande : `UPGRADE CATALOG` et `TRANSPORT TABLESP
 directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
 `debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.
 
-### [traceroute] IPv6 : `-P` / `-M raw`, `mtr -6`, `tracert -R` et la boucle dupliquee du routeur
+### [traceroute] IPv6 : `-P` / `-M raw`, `tracert -R` et la boucle dupliquee du routeur
 
 `traceroute -6` et `traceroute6` existent sur un hote Linux (sondes UDP, `-I` ICMPv6, `-T` TCP, `-l`, `-s`, `-i`, `-r`, annotations `!N !H !X`
 lues dans traceroute.c 2.1.0 ; sonde `probe-traceroute-ipv6`), sur la boucle de sauts d'IPv4 (`EndHost.collectTraceHops`). Reste ouvert :
 `-P` et `-M raw` sont refuses en IPv6 parce qu'un hote ne repond pas a un en-tete suivant inconnu par un ICMPv6 Parameter Problem
 (code 1, pointeur sur Next Header) : `EndHost.handleIPv6` compte `Ip6InUnknownProtos` et se tait, et `handleICMPv6` ne lit aucun Parameter
-Problem ; `mtr -6` n'a pas de chemin IPv6 (`tracepath -6` est fait : sonde `probe-tracepath-ipv6` ; `tracert -6` de Windows aussi : sonde
-`probe-tracert-ipv6`, mais `-R` reste lu et ignore) ; `Router.executeTraceroute6` garde sa propre boucle de sauts (doublon de
+Problem ; `tracepath -6` (sonde `probe-tracepath-ipv6`), `mtr -6` (sonde `probe-mtr-ipv6`) et `tracert -6` de Windows (sonde
+`probe-tracert-ipv6`, mais `-R` reste lu et ignore) sont faits ; `Router.executeTraceroute6` garde sa propre boucle de sauts (doublon de
 `collectTraceHops`, a refermer en y branchant le routeur). La taille de paquet `packetlen` est imprimee dans l'entete et ne dimensionne pas les
 sondes (IPv4 comme IPv6).

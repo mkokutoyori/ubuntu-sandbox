@@ -21,9 +21,9 @@
 import { simulationDate } from '@/network/core/SystemClock';
 
 import { kernelHostname } from '../../KernelHostname';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
-import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION } from '../../Mtr';
+import { parseMtrArgs, mtrWantsIpv6, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION } from '../../Mtr';
 import { makeArgCompleter } from '../completionHelpers';
 
 export const mtrCommand: LinuxCommand = {
@@ -41,9 +41,11 @@ export const mtrCommand: LinuxCommand = {
     { flag: '-c', description: 'Number of pings sent to each hop.', takesArg: true, argName: 'count' },
     { flag: '-m', description: 'Maximum number of hops.', takesArg: true, argName: 'max_hops' },
     { flag: '-n', description: 'Print numeric addresses without DNS lookup.' },
+    { flag: '-4', description: 'Use IPv4 only.' },
+    { flag: '-6', description: 'Use IPv6 only.' },
   ],
   complete: makeArgCompleter({
-    flags: ['-r', '--report', '-c', '-m', '-n', '-w', '-i', '--help', '--version'],
+    flags: ['-4', '-6', '-r', '--report', '-c', '-m', '-n', '-w', '-i', '--help', '--version'],
     hostsAtBarePosition: true,
   }),
   run: async (ctx, args) => {
@@ -58,17 +60,20 @@ export const mtrCommand: LinuxCommand = {
       return 'mtr: no curses display available outside a terminal — use -r/--report';
     }
 
-    let ip = await ctx.net.resolveHostname(parsed.target);
-    if (!ip && parsed.target.toLowerCase() === 'localhost') {
-      try { ip = new IPAddress('127.0.0.1'); } catch { /* rien */ }
-    }
+    const ipv6 = mtrWantsIpv6(parsed);
+    let ip: IPAddress | IPv6Address | null = ipv6
+      ? IPv6Address.tryParse(parsed.target) ?? await ctx.net.resolveHostname6(parsed.target)
+      : await ctx.net.resolveHostname(parsed.target);
+    if (!ip && parsed.target.toLowerCase() === 'localhost') ip = ipv6 ? new IPv6Address('::1') : new IPAddress('127.0.0.1');
     if (!ip) return `mtr: Failed to resolve host: ${parsed.target}`;
 
     const maxHops = Math.min(parsed.maxHops, 8);
     const cycles = Math.max(1, Math.min(parsed.cycles, 10));
     const stats: MtrHopStats[] = [];
     for (let tour = 0; tour < cycles; tour++) {
-      const hops = await ctx.net.traceroute(ip, maxHops, 1, 1, 100);
+      const hops = ip instanceof IPv6Address
+        ? await ctx.net.traceroute6(ip, maxHops, 1, 1, 100)
+        : await ctx.net.traceroute(ip, maxHops, 1, 1, 100);
       if (hops.length === 0) return 'mtr: no hops discovered';
       hops.forEach((hop, idx) => {
         if (!stats[idx]) stats[idx] = new MtrHopStats();
