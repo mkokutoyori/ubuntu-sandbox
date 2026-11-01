@@ -80,11 +80,14 @@ function barOutside(text: string): number {
 interface Logical {
   readonly lines: string[];
   readonly raw: string[];
+  readonly origin: number[];
 }
 
 function normalise(lines: readonly string[]): Logical {
-  const out: Logical = { lines: [], raw: [] };
+  const out: Logical = { lines: [], raw: [], origin: [] };
+  let physical = 0;
   for (const original of lines) {
+    physical++;
     let rest = original.replace(/^[\s:]+/, '');
     let first = true;
     for (;;) {
@@ -108,6 +111,7 @@ function normalise(lines: readonly string[]): Logical {
       rest = rest.slice(bar + 1).replace(/^[\s:]+/, '');
       first = false;
     }
+    while (out.origin.length < out.lines.length) out.origin.push(physical);
   }
   return out;
 }
@@ -129,7 +133,7 @@ function matching(lines: readonly string[], from: number, end: number): { branch
 class ScriptAbort extends Error {}
 
 class ThrownException extends Error {
-  constructor(readonly text: string) {
+  constructor(readonly text: string, readonly point: string) {
     super(text);
   }
 }
@@ -141,6 +145,24 @@ export class ScriptRuntime implements UserFunctions {
   private sources: readonly string[] = [];
   private anonymous = 0;
   private tryDepth = 0;
+  private sourceName: string | null = null;
+  private line = 0;
+  private readonly frames: { name: string; caller: number }[] = [];
+  private readonly origins = new WeakMap<readonly string[], readonly number[]>();
+
+  location(): string {
+    let text = this.sourceName ?? '';
+    this.frames.forEach((frame, index) => {
+      if (index === 0) text = `${this.sourceName === null ? '' : `${this.sourceName}[${frame.caller}]..`}function ${frame.name}`;
+      else text = `${text}[${frame.caller}]..${frame.name}`;
+    });
+    return text;
+  }
+
+  private throwpoint(): string {
+    const where = this.location();
+    return where === '' ? '' : `${where}, line ${this.line}`;
+  }
 
   constructor(private readonly host: ScriptHost) {}
 
@@ -152,11 +174,13 @@ export class ScriptRuntime implements UserFunctions {
     return name.startsWith('g:') ? name.slice(2) : name;
   }
 
-  runScript(lines: readonly string[], keepGoing: boolean): string[] {
+  runScript(lines: readonly string[], keepGoing: boolean, sourceName: string | null): string[] {
     this.output.length = 0;
+    this.sourceName = sourceName;
     const session = ExpressionSession.open(this.host.expressionHost());
     const logical = normalise(lines);
     this.sources = logical.raw;
+    this.origins.set(logical.lines, logical.origin);
     try {
       this.execute(session, logical.lines, 0, logical.lines.length, keepGoing);
     } catch (failure) {
@@ -186,9 +210,13 @@ export class ScriptRuntime implements UserFunctions {
     variables.enter(frame);
     if (fn.dict && self !== null) variables.assign('l:self', self);
     this.running.push(this.canonical(name));
+    this.frames.push({ name, caller: this.line });
+    const savedLine = this.line;
     try {
       return this.executeBody(session, fn);
     } finally {
+      this.line = savedLine;
+      this.frames.pop();
       this.running.pop();
       variables.leave();
     }
@@ -209,6 +237,8 @@ export class ScriptRuntime implements UserFunctions {
     while (at < end) {
       let following = at + 1;
       const before = session.errors.length;
+      const numbers = this.origins.get(lines);
+      if (numbers !== undefined) this.line = numbers[at];
       try {
         const outcome = this.statement(session, lines, at, end, keepGoing, (next) => { following = next; });
         if (this.tryDepth > 0 && session.errors.length > before) throw this.exceptionFrom(session, lines[at]);
@@ -226,7 +256,7 @@ export class ScriptRuntime implements UserFunctions {
   private exceptionFrom(session: ExpressionSession, line: string): ThrownException {
     const message = session.popError() ?? '';
     const word = commandWord(line).word || (line.match(/^[A-Za-z]+/)?.[0] ?? '');
-    return new ThrownException(`Vim(${word}):${message}`);
+    return new ThrownException(`Vim(${word}):${message}`, this.throwpoint());
   }
 
   private tryStatement(
@@ -256,14 +286,18 @@ export class ScriptRuntime implements UserFunctions {
           const source = pattern === '' ? null : pattern.slice(1, pattern.lastIndexOf(delimiter) > 0 ? pattern.lastIndexOf(delimiter) : undefined);
           if (source !== null && !session.matches(source, failure.text)) continue;
           handled = true;
-          const saved = session.host.variables.lookup('v:exception');
+          const saved = ['v:exception', 'v:throwpoint'].map((name) => session.host.variables.lookup(name));
           session.host.variables.assign('v:exception', ExpressionSession.fromScalar(failure.text));
+          session.host.variables.assign('v:throwpoint', ExpressionSession.fromScalar(failure.point));
           try {
             const body = segment(index);
             outcome = this.execute(session, lines, body.start, body.stop, keepGoing);
           } finally {
-            if (saved === undefined) session.host.variables.remove('v:exception');
-            else session.host.variables.assign('v:exception', saved);
+            ['v:exception', 'v:throwpoint'].forEach((name, at) => {
+              const previous = saved[at];
+              if (previous === undefined) session.host.variables.remove(name);
+              else session.host.variables.assign(name, previous);
+            });
           }
         }
         if (!handled) throw failure;
@@ -332,7 +366,7 @@ export class ScriptRuntime implements UserFunctions {
       case 'catch': return session.fail(`E603: :catch without :try: ${lines[at]}`);
       case 'finally': return session.fail(`E606: :finally without :try: ${lines[at]}`);
       case 'endtry': return session.fail(`E602: :endtry without :try: ${lines[at]}`);
-      case 'throw': throw new ThrownException(session.text(session.evaluate(argument)));
+      case 'throw': throw new ThrownException(session.text(session.evaluate(argument)), this.throwpoint());
       case 'echoerr': return session.fail(session.echo(argument, ' '));
       case 'const': session.assign(argument, true); return NEXT;
       case 'lockvar': session.lock(bang ? `!${argument}` : argument, true); return NEXT;
@@ -429,9 +463,12 @@ export class ScriptRuntime implements UserFunctions {
     const flags = new Set(attributes.split(/\s+/).filter((word) => word !== ''));
     for (const flag of flags) if (!['abort', 'range', 'dict', 'closure'].includes(flag)) session.fail(`E488: Trailing characters: ${attributes.trim()}`);
     const signature = `${rawName}(${[...parameters, ...(variadic ? ['...'] : [])].join(', ')})${[...flags].map((flag) => ` ${flag}`).join('')}`;
+    const body = lines.slice(at + 1, close);
+    const numbers = this.origins.get(lines);
+    if (numbers !== undefined) this.origins.set(body, numbers.slice(at + 1, close).map((number) => number - numbers[at]));
     this.functions.set(name, {
       name, parameters, variadic, abort: flags.has('abort'), range: flags.has('range'), dict: flags.has('dict') || member !== null,
-      body: lines.slice(at + 1, close),
+      body,
       listing: [`   function ${signature.replace(/^s:/, '<SNR>1_')}`, ...this.sources.slice(at + 1, close).map((text, index) => `${String(index + 1).padEnd(3)}${text}`), '   endfunction'],
     });
     if (member !== null) session.assign(`${member[1]}.${member[2]} = function('${name}')`);
