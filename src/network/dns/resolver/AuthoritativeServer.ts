@@ -11,6 +11,9 @@ type BaseFlags = Pick<DnsHeaderFlags, 'qr' | 'rd' | 'ra' | 'ad' | 'cd'>;
 
 export interface AuthoritativePolicy {
   readonly blocks?: (zoneOrigin: string, qname: string) => boolean;
+  readonly acceptsEdns?: () => boolean;
+  readonly rotates?: () => boolean;
+  readonly writesApexNs?: () => boolean;
 }
 
 export class AuthoritativeServer {
@@ -30,6 +33,9 @@ export class AuthoritativeServer {
     if (opts.length > 1 || opts.some((opt) => opt.name !== '')) {
       return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
     }
+    if (opts.length > 0 && this.policy.acceptsEdns?.() === false) {
+      return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
+    }
     const queryOpt = findOpt(query);
     if (queryOpt && queryOpt.data.version > EDNS_VERSION) {
       return {
@@ -46,7 +52,12 @@ export class AuthoritativeServer {
 
     const question = query.questions[0];
     const wantDnssec = queryOpt?.data.dnssecOk === true;
-    const result = this.zones.answer(question, { dnssec: wantDnssec, blocked: this.policy.blocks });
+    const result = this.zones.answer(question, {
+      dnssec: wantDnssec,
+      blocked: this.policy.blocks,
+      rotate: this.policy.rotates?.(),
+      apexNs: this.policy.writesApexNs?.(),
+    });
     const additionals: ResourceRecord<ResourceRecordData>[] = [...result.additional];
     if (queryOpt) {
       additionals.push(makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: wantDnssec }));

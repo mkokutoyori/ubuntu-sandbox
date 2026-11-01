@@ -632,37 +632,30 @@ remplacer par un flux d'octets avec un terminateur explicite est un lot en soi, 
 ### [vim] Motifs : quelques manquements mesures apres le traducteur `VimRegex`
 Mesure avec les labos `vim-pattern-oracle.test.ts` (7661 cas enregistres
 sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
-- **Retour arriere JavaScript** : `\V\>-\{-2,3}-\|\(b\%(\X\)\@=\|\f\+\_D\{-2,3}\|\L\?\)\{-1,}\(\A\{2,}\K\*\)\{-2,3}\[[:space:]o]\{2}`
-  sur un tampon de huit lignes occupe `RegExp.exec` pendant 128 s ; l'automate
-  de vim repond sans delai (aucune occurrence). Un motif a quantificateurs
-  imbriques ambigus gele donc l'editeur. Le cas est retire du corpus
-  (rnd22-202). Pas de borne de temps possible sur un `RegExp` synchrone : il
-  faut un second moteur (simulation de Thompson avec priorites) pour les motifs
-  sans reference arriere, ou une estimation de la hauteur d'etoile a la
-  traduction qui refuse avec E363 comme vim le fait pour sa memoire.
+- **Retour arriere JavaScript** : les motifs dont la hauteur d'etoile est au moins 2 (quantificateur non borne imbrique dans un autre) passent par
+  `VimLinearRegex.ts`, un simulateur de Thompson qui garde les atomes natifs de `RegExp` (classes, assertions, lookaround) et ne simule que
+  l'enchainement ; le motif rnd22-202 (128 s avant) repond en 74 ms sans occurrence comme vim (`probe-vim-motifs-sans-retour-arriere`) et les trois
+  corpus de motifs passent. Limite mesuree : force sur TOUS les motifs, le simulateur se trompe sur 3 cas des corpus (rnd1-529, rnd21-91,
+  rnd5-368 : `\zs`/`\ze` combines a `\@!` et a un quantificateur borne) ; il n'est donc applique qu'au cas qui gelait. Les motifs a reference
+  arriere restent sur `RegExp`, et un motif de hauteur 1 aussi (un `\(a*\)*` tres ambigu a hauteur 2 passe, lui, par le simulateur).
 - Re-mesure sur vim 9.1 (21 motifs rejoues) : `\%V` en bloc, en caracteres et en lignes, `\@N<=` borne ou non et `[[=e=]]`
   (`e`, `E`, `é`, `[^...]`, `ignorecase`) sortent comme le vrai ; ces trois lignes de l'ancien constat etaient perimees.
-  Reste les **caracteres combinants** : pour vim un « caractere » est une base suivie de ses marques (`e` + U+0301), `.`, `\a`,
-  `[^x]`, `[[=e=]]` et les classes consomment les marques (`s/./[&]/g` sur `é` donne `[é]` et non `[e]` + marque), un `e` litteral
-  n'atteint pas un `e` suivi d'une marque sauf sous `\Z`, une marque seule en debut de ligne n'est pas `\a` mais est `\k`,
-  `\S` et `[^x]`, et `e\zs.` prend la marque seule. Le traducteur travaille sur des points de code : `[[=e=]]` rend `_` + marque
-  au lieu de `_`. Brique a ecrire : un « caractere » du traducteur = point de code + marques, ce qui change les quantificateurs
-  (`\p{M}*` apres chaque atome rend `.*` ambigu et exponentiel), donc a faire avec le second moteur ci-dessus.
+  Les **caracteres combinants** existent (`probe-vim-caracteres-combinants`, 360 couples texte/motif rejoues sur vim 9.1) : un caractere est une
+  base suivie de ses marques, `.` et les classes les prennent d'un bloc, une correspondance ne commence ni ne finit dans un tel bloc, un motif qui
+  porte une marque prend toutes celles du texte, `\Z` les ignore. `[[=e=]]`, `\%d`, `\%u`, `\%x` et `\n` / `\_.` sont rejoues aussi (`probe-vim-caracteres-combinants`, 561 couples). Reste : un saut de ligne SUIVI d'une marque seule (vim refuse `\n` devant elle mais accepte `\_s`). `^`, `$`, `\_^` et `\_$` ne voient que le debut et la fin d'une chaine de `substitute()`/`match()` qui contient un saut de ligne (26 couples rejoues).
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait. Restent absentes (hors blobs) : `mode`, `foreach` (inconnue de ce vim aussi). Existent, mesurees
-  contre vim 9.1 (`probe-vim-fonctions-*`) : `glob`, `globpath`, `expand` (`$VAR`, `~`, jokers, `%`, `<cword>`, `<cWORD>` ; `<sfile>`,
-  `<abuf>`, `<amatch>`, `<cfile>` et `#` restent absents), `resolve`, `mkdir` (`p` ; les drapeaux `D` et `R` de vim 9.1 ne sont pas
+  function` meme quand vim le connait. Restent absentes (hors blobs) : `foreach` (inconnue de ce vim aussi). Existent, mesurees
+  contre vim 9.1 (`probe-vim-fonctions-*`) : `glob`, `globpath`, `expand` (`$VAR`, `~`, jokers, `%`, `<cword>`, `<cWORD>` ; `<abuf>`, `<amatch>`, restent absents ; `#` existe (`probe-vim-fichier-alterne`, `:w nom`, `:r nom`) ; `<cfile>` et `mode()` existent (`probe-vim-cfile-et-mode`)), `resolve`, `mkdir` (`p` ; les drapeaux `D` et `R` de vim 9.1 ne sont pas
   portes), `writefile` (`b`, `a` ; `s`, `S`, `D`, `r` ne sont pas portes), `rename`, `delete`, `tempname`, `bufname` (tampon courant
   seulement), `wordcount`, `reltime`, `reltimestr`, `reltimefloat`, `strptime`, `fnamemodify` (`:h :t :r :e :p :. :~ :s :gs :S`) et
   toutes les fonctions de texte, de fichier et d'environnement des lots precedents.
 - **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`, `t:`, les elements `l[i]` / `d.k` / `d['k']`,
   les tranches `l[a:b]` (affectation et suppression), `$ENV` (l'environnement de vim, que voient `getenv`, `environ`,
   `exists('$X')` et le shell de `system()`), les operateurs composes et la destructuration (`probe-vim-unlet-tranches-et-environnement`,
-  `probe-vim-ordre-des-dictionnaires-suppressions`). Restent refuses : `s:` / `l:` / `a:` hors fonction et `:function`. Une lambda ne
-  capture que les parametres des lambdas qui l'entourent.
+  `probe-vim-ordre-des-dictionnaires-suppressions`). Le script existe (`VimScript.ts`, `probe-vim-fonctions-utilisateur`, 70 scripts rejoues sur vim 9.1) : `:function[!]` (parametres, `...`, `abort`, `range`, `dict`, `d.name`, imbrication), `:delfunction`, `:call`, `:echo`/`:echon`/`:echomsg`, `:return`, `:if`/`:elseif`/`:else`, `:for` (listes, chaines, destructuration), `:while`, `:break`/`:continue`, `:execute`, `:let`/`:unlet`, `:source {fichier|%}` et `:@r`, les portees `l:`/`a:`/`s:`/`g:` et leurs dictionnaires, `self`, la fermeture d'une lambda sur les variables locales de la fonction et l'arret ou la poursuite apres une erreur (`abort`). `:try`/`:catch`/`:finally`/`:throw` (`v:exception`), `:echoerr` et `:const` (verrou profond) existent ; 106 scripts. `<sfile>` et `v:throwpoint` existent (numeros de ligne du script et des fonctions, chaine d'appel `chemin[ligne]..function F[ligne]..G`). Restent absents : un E741 de `add()` apres `:lockvar` que vim 9.1 ne laisse pas attraper par `:catch` (non reproduit), `:final` (vim9script seul), `:function /motif/`, `<SID>`/`<SNR>` (le numero de script du listage est fige a `1`), `:autocmd`, les fonctions `def` de vim9script et la capture d'une lambda sur les parametres d'une fonction par `function('f', [..], dict)`.
 - **`CTRL-R =` et le registre `"=`** passent par l'evaluateur (`probe-vim-registre-expression`, 47 cas rejoues sur vim 9.1) :
   invite `=` en insertion et en normal, expression vide = la derniere, erreur sans effet sur le tampon, `CTRL-R {registre}` en
   insertion, `getreg`, `getregtype`, `setreg` (sans registre bloc), `let @=`. Restent : l'historique et l'edition de l'invite `=`
@@ -760,13 +753,17 @@ Pas de liste de tampons ni de pile de tampons dans `NanoEngine` : `linesArr`, la
 les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : sortir l'etat d'un
 fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
 
-### [vim] coller depuis un autre programme (Ctrl+Maj+V, Maj+Inser, clic droit)
-Mesure en corrigeant le meme defaut dans nano : `VimEditor` annule chaque touche (`preventDefault`)
-et n'a ni gestionnaire `paste` ni moteur de collage, donc rien ne se colle dans vim depuis Notepad.
-Dans un vrai terminal le collage arrive comme des frappes (vim 9.1 active le « bracketed paste » :
-en mode Insertion le texte est insere tel quel, sans indentation automatique ; en mode Normal il
-est insere comme par `p`). Il faut un `applyPaste` dans `VimEngine`, les memes gestes que
-`NanoEditor` (`terminal/clipboard.ts`) et une mesure sous tmux du bracketed paste de vim 9.1.0016.
+### [fortigate] ce que `?` et la tabulation ne couvrent pas encore
+Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;
+`probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de `diagnose`
+annoncent leurs mots-cles, les noms vivants (interfaces, tunnels, moniteurs) et les champs de `execute log filter`.
+`diagnose sys cmdb refcnt show` offre les chemins de datasource, `diagnose sys sdwan health-check` les controles de sante configures et `diagnose firewall iprope list` son groupe (un groupe inconnu est refuse ; `probe-fortigate-l-aide-des-queues-de-diagnose`). `diagnose netlink aggregate name` et `brctl name host` n'offrent que les agregats et les ponts qui existent : c'est ce que le FortiGate accepte, pas un manque. `execute time|date`
+et `diagnose sys top <delai> <lignes>` prennent des VALEURS, pas des mots-cles : un gabarit est la bonne aide. Garde-fou : tous les
+tables du schema sont offerts par `config ?` et tous leurs attributs disponibles par `set ?`. `diagnose sys top
+<delai> <lignes>` ignore ses arguments (le gabarit est conserve). `config system api-user` existe (cle ENC, profil, trusthost,
+`Authorization: Bearer` ou `access_token`, lecture seule de l'API) ; `execute api-user generate-key` n'est pas porte faute de sortie
+attestee. Un FortiGate rejoue sa configuration ligne a ligne : les lignes refusees sont rapportees (`ImportResult.warnings`) mais
+l'ordre de rejeu reste celui de `show`.
 
 ### [nc] ce que le portage de `netcat.c` (Ubuntu 1.226-1ubuntu2) laisse
 Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans un espace de noms) :
@@ -3850,12 +3847,20 @@ tty vivant.
 
 ### [tcpdump-options] ce que -nn, -tttt, -vvv et -XX ne couvrent pas encore (mesure contre tcpdump 4.99.4)
 Mesure par `scripts/oracle/record_tcpdump_options.py` sur deux labos (LAN ICMP/TCP/UDP/IPv6/NDP/fragments/HTTP/FTP/SMTP/SSH ;
-BIND A/MX/AAAA/SOA/NS/ANY/NXDOMAIN/troncature/DNS sur TCP) : le texte complet est identique pour 11 jeux d'options. Non mesures
+BIND A/MX/AAAA/SOA/NS/ANY/NXDOMAIN/troncature/DNS sur TCP) : le texte complet est identique pour 27 jeux d'options. Non mesures
 faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-telnet.c`, les commandes IAC), les options IPv4
 (`ping -R`, `-Q`) et les en-tetes d'extension IPv6, ESP/AH/GRE/OSPF/BGP/SNMP/DHCPv6, MPTCP, les messages MLD et le routage
-(RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` n'est pas porte (le texte ASCII est imprime
-sans le decodage du `print-ascii.c`) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
-(`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
+(RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` et `-AA` sont portes (print.c, print-ascii.c ; mesure sur 5 jeux d'options de plus), ainsi que `-qq` (fragments non initiaux IPv4, `print-ip.c:494`) et la forme courte des types Ethernet de `-q -e` sont portes ; le `-qq` des fragments IPv6 n'est pas mesure. La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
+
+### [capture] les octets de plusieurs protocoles de routage et de decouverte sont des zeros dans les captures
+
+Mesure (tcpdump 4.99.4 reel rejoue sur les captures du simulateur, laboratoires `rip`, `ospf` et `cdp` de `tcpdump-options-oracle.test.ts`) : RIPv1/v2 et OSPFv2 (Hello, DD, LS-Request, LS-Update
+avec LSA routeur / reseau / externe, LS-Ack) sont ecrits en octets reels (RFC 2453, RFC 2328, somme Fletcher des LSA selon la RFC 905) et imprimes comme `print-rip.c` et `print-ospf.c` ; CDP l'est aussi (cadre 802.3 + LLC/SNAP, TLV du CDPv2, `print-cdp.c`), pour les TLV que le moteur porte (pas les prefixes, la VoIP VLAN, la puissance, le MTU, le nom de systeme).
+Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported`), et, non mesures faute de laboratoire, LLDP, STP (BPDU 802.3 + LLC), BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
+adresses y sont hachees, `checksum.ts`), HSRP, VRRP, PIM, IGMP. Limites connues du lot fait : le MD5 de RIP (RFC 4822) et d'OSPF (RFC 2328 D.4.3) n'est pas calcule par les moteurs, qui
+portent un condense propre : RIP l'ecrit comme un mot de passe, OSPF place les octets du condense du moteur (ou des zeros) apres le paquet ; les LSA opaques (RFC 5250), le LLS (RFC 5613)
+et les LSA de type 6 ne sont pas encodes. Pour chaque protocole restant : l'encodeur a cote du moteur (comme `ospf/OspfWire.ts`), le port de l'imprimeur (`print-eigrp.c`,
+`print-cdp.c`, `print-lldp.c`, `print-stp.c`, `print-bgp.c`), puis un laboratoire dans l'oracle.
 
 ### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 
@@ -4141,14 +4146,13 @@ cp, mv, ln, rm, rmdir, mkdir, chmod, cat, basename, dirname, seq, echo and print
 
 od is compared with GNU coreutils 9.4 (see probe-linux-od-evalue-ses-options). Still approximate: `-w0` aborts in the real command and prints the dump with the minimum width here; in `--traditional` mode an offset operand ending in `.` (decimal) is refused as an extra operand, as the real command does, but the label form is only checked against one file; `-S` does not quote non-printing bytes inside a string; reading a directory reports "Is a directory" and prints the final address like the real command, but a read error on a file that opened is not distinguishable here.
 
-### [smtp] le serveur SMTP ne journalise pas `connect from` / `disconnect from`
-Postfix `smtpd` ecrit `connect from host[ip]` et `disconnect from host[ip] ehlo=1
-...` via syslog (facility mail, etiquette `postfix/smtpd[pid]`) : verifie dans
-`src/smtpd/smtpd.c:6487` et `:6536` du depot vdukhovni/postfix. Le simulateur
-ecrivait a la place `smtp[...]: Accepted connection from ...` dans le syslog
-(ligne inventee, retiree avec le journal d'nginx) et n'ecrit plus rien. Pour
-fermer : emettre ces deux lignes sous la facility mail depuis le serveur SMTP,
-avec les compteurs de commandes du `disconnect`.
+### [smtp] ce que Postfix smtpd journalise et que le serveur SMTP n'ecrit pas
+
+`connect from`, `disconnect from <compteurs>`, `NOQUEUE: lost connection after <commande> from ...` et `NOQUEUE: timeout after <commande> from ...` sont
+ecrits (facility mail, etiquette `postfix/smtpd`, sonde `probe-smtp-journal-connexion`, smtpd.c lignes 5888-5895, 6300-6315 et `smtpd_format_cmd_stats`).
+Restent : la meme ligne quand une transaction est ouverte (Postfix y met l'identifiant de file au lieu de `NOQUEUE`, et `after DATA (N bytes)`), les lignes de
+transaction (`<queueid>: client=`, `message-id=`, `from=<...>, size=, nrcpt=`) et `warning:` / `reject:` ; elles relevent de qmgr / cleanup / smtpd et
+demandent d'abord une file d'attente postfix avec ses identifiants, qui n'existe pas. Aucun identifiant n'est invente en attendant.
 
 ### [ftp] ce que le serveur FTP journalise a l'acceptation d'une connexion n'est pas verifie
 L'etiquette `ftpd` que le journal employait ne correspond a aucun demon ; vsftpd
@@ -4199,13 +4203,22 @@ Ce qu'il manque, commande par commande : `UPGRADE CATALOG` et `TRANSPORT TABLESP
 directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
 `debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.
 
-### [traceroute] IPv6 : `-P` / `-M raw`, `mtr -6`, `tracert -R` et la boucle dupliquee du routeur
+### [traceroute] `tracert -R` lu et ignore, et deux doublons du routeur qui restent
 
-`traceroute -6` et `traceroute6` existent sur un hote Linux (sondes UDP, `-I` ICMPv6, `-T` TCP, `-l`, `-s`, `-i`, `-r`, annotations `!N !H !X`
-lues dans traceroute.c 2.1.0 ; sonde `probe-traceroute-ipv6`), sur la boucle de sauts d'IPv4 (`EndHost.collectTraceHops`). Reste ouvert :
-`-P` et `-M raw` sont refuses en IPv6 parce qu'un hote ne repond pas a un en-tete suivant inconnu par un ICMPv6 Parameter Problem
-(code 1, pointeur sur Next Header) : `EndHost.handleIPv6` compte `Ip6InUnknownProtos` et se tait, et `handleICMPv6` ne lit aucun Parameter
-Problem ; `mtr -6` n'a pas de chemin IPv6 (`tracepath -6` est fait : sonde `probe-tracepath-ipv6` ; `tracert -6` de Windows aussi : sonde
-`probe-tracert-ipv6`, mais `-R` reste lu et ignore) ; `Router.executeTraceroute6` garde sa propre boucle de sauts (doublon de
-`collectTraceHops`, a refermer en y branchant le routeur). La taille de paquet `packetlen` est imprimee dans l'entete et ne dimensionne pas les
-sondes (IPv4 comme IPv6).
+`traceroute -6` et `traceroute6` existent sur un hote Linux (sondes UDP, `-I` ICMPv6, `-T` TCP, `-P`/`-M raw` avec le Parameter Problem de la cible imprime
+`!<4-1>`, `-l`, `-s`, `-i`, `-r`, annotations lues dans traceroute.c 2.1.0 ; sonde `probe-traceroute-ipv6`). `tracepath -6` (sonde `probe-tracepath-ipv6`),
+`mtr -6` (sonde `probe-mtr-ipv6`) et `tracert -6` de Windows (sonde `probe-tracert-ipv6`, mais `-R` reste lu et ignore) sont faits. La boucle de sauts est
+unique (`host/traceHops.collectTraceHops`, appelee par `EndHost` et par `Router.executeTraceroute` / `executeTraceroute6`). Reste ouvert, deux doublons dans
+`Router` : `udpTraceProbe` refait `EndHost.awaitQuotedIcmpError` + `awaitTraceError` (attente de `host.icmp.unreachable` citant la sonde), et
+l'attente d'un echo-reply / echo-failed par sonde ICMP refait `sendPing`/`sendPing6` ; le routeur y met `code` (nom) la ou l'hote met `icmpCode` (numero), et
+`iosUnreachableMark` lit le nom. Les unifier demande de porter le rendu IOS sur le numero. Le pointeur d'un Parameter Problem vaut toujours 6 (le champ Next
+Header de l'en-tete fixe), le simulateur ne portant pas d'en-tetes d'extension autres que le fragment. La taille de paquet `packetlen` est imprimee dans
+l'entete et ne dimensionne pas les sondes (IPv4 comme IPv6).
+
+### [radvd] la reception ignore les options RDNSS, DNSSL et MTU et le saut limite d'une annonce
+
+Mesure : l'hote lit le prefixe (A/L, durees de vie, echeance de la route), la duree de vie et la preference du routeur par defaut et les options Route
+Information (RFC 4191, bornes `accept_ra_rt_info_{min,max}_plen`) : sonde `probe-ipv6-hote-options-annonce`. Ce que `EndHost.handleRouterAdvertisement` ne lit
+toujours pas : le saut limite courant (`/proc/sys/net/ipv6/conf/<if>/hop_limit`), le temps de joignabilite, l'option MTU (`mtu6`, `accept_ra_mtu`), et les options
+RDNSS (RFC 8106) et DNSSL, que le noyau remet a l'espace utilisateur (systemd-networkd puis `resolvectl`) : un hote n'obtient donc ni serveur de noms ni domaine de
+recherche d'une annonce de radvd. A refermer cote hote, pas dans radvd : `ResolvedService` porte deja les serveurs par lien.

@@ -23,6 +23,7 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
+import { collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
@@ -89,6 +90,7 @@ import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, type IPv4Option, type UDPLitePacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
+  ICMPV6_PARAMETER_PROBLEM,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, IP_PROTO_IPV6_FRAGMENT,
   nextIPv6FragmentId, createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
   // IPv6 types
@@ -131,6 +133,7 @@ import {
   ICMPV6_EXCEEDED_REASSEMBLY,
   icmp6ReportOf,
   ICMPV6_PARAMPROB_HEADER_FIELD,
+  ICMPV6_PARAMPROB_UNKNOWN_NEXT_HEADER,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   ICMP_REDIRECT_CODES,
   ICMP_REDIRECT_HOST,
@@ -253,6 +256,8 @@ export interface TracerouteProbeResult {
   ip?: string;
   unreachable?: boolean;
   icmpCode?: number;
+  icmpType?: number;
+  code?: HostIcmpUnreachablePayload['code'];
   extensions?: readonly IcmpExtensionObject[];
 }
 
@@ -375,6 +380,12 @@ export interface Echo6Options {
   pauseAfterErrorReplyMs?: number;
 }
 
+export interface RouterDiscoveryEvent {
+  portName: string;
+  packet: IPv6Packet;
+  message: ICMPv6Packet;
+}
+
 export interface TraceSocketOptions {
   iface?: string;
   sourceIp?: IPAddress;
@@ -395,18 +406,9 @@ export type UdpErrorReport =
   }
   | { readonly origin: 'none' };
 
-interface TraceProbeOutcome {
-  timeout: boolean;
-  reached: boolean;
-  ip?: string;
-  rttMs?: number;
-  unreachable?: boolean;
-  icmpCode?: number;
-  extensions?: readonly IcmpExtensionObject[];
-}
-
 const TRACE_UDP_DATA_BYTES = 32;
 const TRACE_RAW_DATA_BYTES = 40;
+const IPV6_NEXT_HEADER_OFFSET = 6;
 const LOCAL_DELIVERY_RTT_MS = 0.02;
 const ICMP_TYPE_TIME_EXCEEDED_VALUE = 11;
 
@@ -492,6 +494,9 @@ export interface HostIPv6RouteEntry {
   learnedFrom?: 'ra';
   /** Metric */
   metric: number;
+  expiresAtMs?: number;
+  expiresInMs?: number;
+  preference?: number;
 }
 
 // ─── Routing Table Types ──────────────────────────────────────────
@@ -588,11 +593,18 @@ export interface RouterAdvertisementAcceptance {
   readonly defaultRouter: boolean;
   readonly prefixInformation: boolean;
   readonly autoconfigure: boolean;
+  readonly routerPreference: boolean;
+  readonly routeInformation: { readonly minPrefixLength: number; readonly maxPrefixLength: number } | null;
 }
 
 const ACCEPT_EVERY_ROUTER_ADVERTISEMENT: RouterAdvertisementAcceptance = {
   accepted: true, defaultRouter: true, prefixInformation: true, autoconfigure: true,
+  routerPreference: true, routeInformation: { minPrefixLength: 0, maxPrefixLength: 128 },
 };
+
+const RA_DEFAULT_ROUTE_METRIC = 1024;
+const RA_PREFIX_ROUTE_METRIC = 256;
+const INFINITE_LIFETIME = 0xffffffff;
 
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
@@ -5486,6 +5498,37 @@ export abstract class EndHost extends Equipment {
     return { success: false, rttMs: 0, ttl: 0 };
   }
 
+  sendPingProbeSync6(targetIP: IPv6Address): { success: boolean; rttMs: number; ttl: number } {
+    if (this.isLocalAddress6(targetIP)) {
+      return { success: true, rttMs: 0.02, ttl: this.defaultHopLimit };
+    }
+    const route = this.resolveIPv6Route(targetIP);
+    if (!route) return { success: false, rttMs: 0, ttl: 0 };
+    const source = selectIpv6SourceAddress(route.port, targetIP);
+    if (!source) return { success: false, rttMs: 0, ttl: 0 };
+    this.resolveNdpSync(targetIP);
+
+    const request = this.echoRequest6(source, targetIP, 1);
+    const targetText = targetIP.toString();
+    const sentAt = PathClock.now();
+    let reply: { rttMs: number; ttl: number } | null = null;
+    const stopWatching = this.getBus().subscribe('host.icmp.echo-reply', (event) => {
+      const payload = event.payload;
+      if (payload.deviceId === this.id && payload.fromIp === targetText && payload.id === request.id && payload.seq === 1) {
+        reply = { rttMs: PathClock.now() - sentAt, ttl: payload.ttl };
+      }
+    });
+    this.emitIcmpEchoSent({
+      fromIp: source.toString(), toIp: targetText, id: request.id, seq: 1,
+      ttl: request.packet.hopLimit, size: request.packet.payloadLength,
+    });
+    if (this.firewallFilter6(route.port.getName(), request.packet, 'out') === 'accept') {
+      this.sendIpv6FrameNdpAware(route.port.getName(), request.packet, route.nextHopIP);
+    }
+    stopWatching();
+    return reply === null ? { success: false, rttMs: 0, ttl: 0 } : { success: true, ...(reply as { rttMs: number; ttl: number }) };
+  }
+
   /** Vrai quand la route vers `targetIP` sort sans saut suivant : la cible EST le saut. */
   isDirectlyConnected(targetIP: IPAddress): boolean {
     const route = this.resolveRoute(targetIP);
@@ -5677,6 +5720,27 @@ export abstract class EndHost extends Equipment {
     const hops = await this.executeTraceroute(
       ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, opts.firstTtl,
       { onHop: opts.onHop, shouldStop: opts.shouldStop }, opts.method, opts.socket,
+    );
+    return { resolved: true, routed: hops.length > 0 };
+  }
+
+  async tracerouteStreamInSession6(
+    targetStr: string,
+    opts: {
+      maxHops?: number;
+      probesPerHop?: number;
+      timeoutMs?: number;
+      onResolved?: (ip: IPv6Address, hostname?: string) => void;
+      onHop: (hop: TracerouteHopResult) => void;
+      shouldStop: () => boolean;
+    },
+  ): Promise<{ resolved: boolean; routed: boolean }> {
+    const ip = IPv6Address.tryParse(targetStr) ?? await this.resolveHost6ForCommand(targetStr);
+    if (!ip) return { resolved: false, routed: false };
+    opts.onResolved?.(ip, targetStr !== ip.toString() ? targetStr : undefined);
+    const hops = await this.executeTraceroute6(
+      ip, opts.maxHops, opts.timeoutMs ?? 2000, opts.probesPerHop, 1,
+      { onHop: opts.onHop, shouldStop: opts.shouldStop },
     );
     return { resolved: true, routed: hops.length > 0 };
   }
@@ -5883,6 +5947,24 @@ export abstract class EndHost extends Equipment {
     };
   }
 
+  private rawTraceProbe6(
+    targetIP: IPv6Address, protocol: number, hopLimit: number, timeoutMs: number, socket: TraceSocketOptions,
+    marking: { trafficClass?: number; flowLabel?: number },
+  ): Promise<TraceProbeOutcome> {
+    return this.awaitTraceError(
+      targetIP, timeoutMs,
+      (pl) => pl.origProtocol === protocol,
+      () => false,
+      () => {
+        this.emitIpv6(targetIP, (source) => ({
+          ...createIPv6Packet(
+            source, targetIP, protocol, hopLimit, new Uint8Array(TRACE_RAW_DATA_BYTES), TRACE_RAW_DATA_BYTES),
+          ...marking,
+        }), socket.sourceIp6, socket.iface);
+      },
+    );
+  }
+
   private async awaitTraceError(
     targetIP: IPAddress | IPv6Address, timeoutMs: number,
     quotesProbe: (pl: { origProtocol?: number; origDestPort?: number }) => boolean,
@@ -5901,6 +5983,7 @@ export abstract class EndHost extends Equipment {
     return {
       timeout: false, reached: pl.fromIp === targetIP.toString(), ip: pl.fromIp, rttMs,
       unreachable: true, icmpCode: pl.icmpCode,
+      ...(pl.icmpType === 'parameter-problem' ? { icmpType: ICMPV6_PARAMETER_PROBLEM } : {}),
     };
   }
 
@@ -5964,7 +6047,7 @@ export abstract class EndHost extends Equipment {
     let traceSequence = 0;
     const sourcePort = socket.sourcePort ?? 32768 + (this.pingIdCounter % 28000);
 
-    return this.collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
+    return collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
       if (method.kind !== 'icmp') {
         const port = method.kind === 'default-udp' ? udpPort++ : method.kind === 'raw' ? 0 : method.port;
         return method.kind === 'tcp'
@@ -6038,7 +6121,7 @@ export abstract class EndHost extends Equipment {
     probesPerHop: number = 3,
     firstTtl: number = 1,
     hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
-    method: Exclude<TraceProbeMethod, { kind: 'raw' }> = { kind: 'icmp' },
+    method: TraceProbeMethod = { kind: 'icmp' },
     socket: TraceSocketOptions = {},
   ): Promise<TracerouteHopResult[]> {
     if (this.isLocalAddress6(targetIP)) {
@@ -6071,8 +6154,9 @@ export abstract class EndHost extends Equipment {
       ...(socket.sourceIp6 === undefined ? {} : { sourceIp: socket.sourceIp6 }),
     };
 
-    return this.collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
+    return collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
       if (method.kind === 'tcp') return this.tcpTraceProbe(targetIP, method.port, ttl, method.tos, socket);
+      if (method.kind === 'raw') return this.rawTraceProbe6(targetIP, method.protocol, ttl, timeoutMs, socket, marking);
       if (method.kind !== 'icmp') {
         const port = method.kind === 'default-udp' ? udpPort++ : method.port;
         return this.awaitTraceError(
@@ -6133,56 +6217,6 @@ export abstract class EndHost extends Equipment {
       hooks?.onHop?.(hop);
     }
     return silent;
-  }
-
-  private async collectTraceHops(
-    range: { firstTtl: number; maxHops: number; probesPerHop: number },
-    hooks: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean; compressedWaitMs?: number } | undefined,
-    probeOnce: (ttl: number) => Promise<TraceProbeOutcome>,
-  ): Promise<TracerouteHopResult[]> {
-    const hops: TracerouteHopResult[] = [];
-    for (let ttl = range.firstTtl; ttl <= range.maxHops; ttl++) {
-      if (hooks?.shouldStop?.()) break;
-      const probes: TracerouteProbeResult[] = [];
-      let destinationReached = false;
-
-      for (let p = 0; p < range.probesPerHop; p++) {
-        const outcome = await probeOnce(ttl);
-        probes.push({
-          responded: !outcome.timeout,
-          rttMs: outcome.rttMs,
-          ip: outcome.ip,
-          unreachable: outcome.unreachable,
-          icmpCode: outcome.icmpCode,
-          ...(outcome.extensions ? { extensions: outcome.extensions } : {}),
-        });
-        if (outcome.reached) destinationReached = true;
-      }
-
-      if (probes.some(p => !p.responded)) PathClock.wait(hooks?.compressedWaitMs ?? 0);
-
-      const firstResponded = probes.find(p => p.responded);
-      const firstUnreachable = probes.find(p => p.unreachable);
-      const allTimeout = probes.every(p => !p.responded);
-
-      const hop: TracerouteHopResult = {
-        hop: ttl,
-        ip: firstResponded?.ip,
-        rttMs: firstResponded?.rttMs,
-        timeout: allTimeout,
-        unreachable: !!firstUnreachable,
-        icmpCode: firstUnreachable?.icmpCode ?? firstResponded?.icmpCode,
-        probes,
-      };
-
-      hops.push(hop);
-      hooks?.onHop?.(hop);
-
-      if (destinationReached) break;
-      if (firstUnreachable) break;
-    }
-
-    return hops;
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -6287,7 +6321,68 @@ export abstract class EndHost extends Equipment {
   // ─── IPv6 Routing Table ─────────────────────────────────────────
 
   getIPv6RoutingTable(): HostIPv6RouteEntry[] {
-    return [...this.ipv6RoutingTable];
+    this.purgeExpiredIPv6Routes();
+    const now = this.simulatedNowMs();
+    return this.ipv6RoutingTable.map((route) => route.expiresAtMs === undefined
+      ? { ...route }
+      : { ...route, expiresInMs: Math.max(0, route.expiresAtMs - now) });
+  }
+
+  private purgeExpiredIPv6Routes(): void {
+    const now = this.simulatedNowMs();
+    if (this.ipv6RoutingTable.every((route) => route.expiresAtMs === undefined || route.expiresAtMs > now)) return;
+    this.ipv6RoutingTable = this.ipv6RoutingTable.filter(
+      (route) => route.expiresAtMs === undefined || route.expiresAtMs > now);
+    if (this.ipv6RoutingTable.every((route) => route.type !== 'default')) this.defaultGateway6 = null;
+  }
+
+  private expiryOf(lifetimeSeconds: number): number | undefined {
+    return lifetimeSeconds === INFINITE_LIFETIME ? undefined : this.simulatedNowMs() + lifetimeSeconds * 1000;
+  }
+
+  private learnDefaultRouter(router: IPv6Address, lifetimeSeconds: number, preference: number): void {
+    const known = this.ipv6RoutingTable.find((route) =>
+      route.type === 'default' && route.learnedFrom === 'ra' && route.nextHop?.equals(router) === true);
+    if (lifetimeSeconds === 0) {
+      if (known === undefined) return;
+      this.ipv6RoutingTable = this.ipv6RoutingTable.filter((route) => route !== known);
+      if (this.ipv6RoutingTable.every((route) => route.type !== 'default')) this.defaultGateway6 = null;
+      return;
+    }
+    if (known === undefined) {
+      if (this.defaultGateway6) return;
+      this.setDefaultGateway6(router, 'ra');
+    }
+    const entry = this.ipv6RoutingTable.find((route) =>
+      route.type === 'default' && route.learnedFrom === 'ra' && route.nextHop?.equals(router) === true);
+    if (entry === undefined) return;
+    entry.expiresAtMs = this.expiryOf(lifetimeSeconds);
+    entry.preference = preference;
+  }
+
+  private learnRaRoute(
+    prefix: IPv6Address, prefixLength: number, nextHop: IPv6Address | null, iface: string,
+    lifetimeSeconds: number, preference: number, metric: number,
+  ): void {
+    const network = prefix.getNetworkPrefix(prefixLength);
+    const known = this.ipv6RoutingTable.find((route) =>
+      route.type === 'ra' && route.iface === iface && route.prefixLength === prefixLength
+      && route.prefix.equals(network) && (route.nextHop?.toString() ?? null) === (nextHop?.toString() ?? null));
+    if (lifetimeSeconds === 0) {
+      if (known !== undefined) this.ipv6RoutingTable = this.ipv6RoutingTable.filter((route) => route !== known);
+      return;
+    }
+    if (known !== undefined) {
+      known.expiresAtMs = this.expiryOf(lifetimeSeconds);
+      known.preference = preference;
+      return;
+    }
+    if (nextHop === null && this.ipv6RoutingTable.some((route) =>
+      route.iface === iface && route.prefixLength === prefixLength && route.prefix.equals(network))) return;
+    this.ipv6RoutingTable.push({
+      prefix: network, prefixLength, nextHop, iface, type: 'ra', metric,
+      expiresAtMs: this.expiryOf(lifetimeSeconds), preference,
+    });
   }
 
   addIPv6StaticRoute(
@@ -6358,7 +6453,7 @@ export abstract class EndHost extends Equipment {
       iface: gwIface,
       type: 'default',
       ...(learnedFrom === undefined ? {} : { learnedFrom }),
-      metric: 0,
+      metric: learnedFrom === 'ra' ? RA_DEFAULT_ROUTE_METRIC : 0,
     });
 
     Logger.info(this.id, 'host:ipv6-gateway', `${this.name}: default IPv6 gateway set to ${gw}`);
@@ -6441,15 +6536,17 @@ export abstract class EndHost extends Equipment {
         return;
       }
       const isUdpLite = ipv6.nextHeader === IP_PROTO_UDPLITE && this.udpLite !== null;
-      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP && !isUdpLite) {
-        this.protocolCounters.ip6InUnknownProtos++;
-        return;
-      }
-
       const verdict = this.firewallFilter6(portName, ipv6, 'in');
       if (verdict === 'drop') return;
       if (verdict === 'reject') {
         this.sendIpv6Reject(portName, ipv6);
+        return;
+      }
+      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP && !isUdpLite) {
+        this.protocolCounters.ip6InUnknownProtos++;
+        this.sendICMPv6Error(portName, ipv6, 'parameter-problem', ICMPV6_PARAMPROB_UNKNOWN_NEXT_HEADER, {
+          pointer: IPV6_NEXT_HEADER_OFFSET,
+        });
         return;
       }
 
@@ -6611,10 +6708,18 @@ export abstract class EndHost extends Equipment {
         break;
       case 'router-advertisement':
         this.handleRouterAdvertisement(portName, ipv6, icmpv6);
+        this.notifyRouterDiscovery(portName, ipv6, icmpv6);
+        break;
+      case 'router-solicitation':
+        if (this.ipv6ForwardingEnabled()) {
+          this.learnSolicitingNeighbour(portName, ipv6, icmpv6);
+          this.notifyRouterDiscovery(portName, ipv6, icmpv6);
+        }
         break;
       case 'time-exceeded':
       case 'destination-unreachable':
       case 'packet-too-big':
+      case 'parameter-problem':
         this.handleICMPv6Error(ipv6, icmpv6);
         break;
     }
@@ -6702,7 +6807,9 @@ export abstract class EndHost extends Equipment {
       ? `Hop limit exceeded (from ${ipv6.sourceIP})`
       : packetTooBig
         ? `Packet too big (from ${ipv6.sourceIP}) mtu ${icmpv6.mtu ?? 0}`
-        : `Destination unreachable (from ${ipv6.sourceIP})`;
+        : icmpv6.icmpType === 'parameter-problem'
+          ? `Parameter problem (from ${ipv6.sourceIP}) pointer ${icmpv6.pointer ?? 0}`
+          : `Destination unreachable (from ${ipv6.sourceIP})`;
 
     this.publishIcmpv6Unreachable(ipv6, icmpv6);
     this.reportUdpSocketError6(icmpv6);
@@ -6825,6 +6932,10 @@ export abstract class EndHost extends Equipment {
     return ACCEPT_EVERY_ROUTER_ADVERTISEMENT;
   }
 
+  private validRoutePreference(value: number | undefined): number {
+    return value === -1 || value === 1 ? value : 0;
+  }
+
   private handleRouterAdvertisement(portName: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
     const ra = icmpv6.ndp as NDPRouterAdvertisement;
     if (!ra || ra.ndpType !== 'router-advertisement') return;
@@ -6840,19 +6951,35 @@ export abstract class EndHost extends Equipment {
         ipv6.sourceIP.toString(), srcLLOpt.address, portName, true);
     }
 
-    // If router lifetime > 0, consider as default router
-    if (acceptance.accepted && acceptance.defaultRouter && ra.routerLifetime > 0 && !this.defaultGateway6) {
-      // The zone index never travels: it is not part of the 128 bits
-      // and means nothing to a peer. A real receiver records the
-      // interface it heard the advertisement on.
-      this.setDefaultGateway6(
-        new IPv6Address(ipv6.sourceIP.getHextets(), portName), 'ra');
+    // The zone index never travels: it is not part of the 128 bits
+    // and means nothing to a peer. A real receiver records the
+    // interface it heard the advertisement on.
+    const router = new IPv6Address(ipv6.sourceIP.getHextets(), portName);
+    const advertisedPreference = acceptance.routerPreference ? this.validRoutePreference(ra.routerPreference) : 0;
+    if (acceptance.accepted && acceptance.defaultRouter) {
+      this.learnDefaultRouter(router, ra.routerLifetime, advertisedPreference);
+    }
+    for (const opt of acceptance.accepted && acceptance.routeInformation !== null ? ra.options : []) {
+      if (opt.optionType !== 'route-info') continue;
+      const { minPrefixLength, maxPrefixLength } = acceptance.routeInformation!;
+      if (opt.prefixLength > maxPrefixLength || opt.prefixLength < minPrefixLength) continue;
+      const preference = acceptance.routerPreference ? this.validRoutePreference(opt.preference) : 0;
+      if (opt.prefixLength === 0) {
+        if (acceptance.defaultRouter) this.learnDefaultRouter(router, opt.lifetime, preference);
+      } else {
+        this.learnRaRoute(opt.prefix, opt.prefixLength, router, portName, opt.lifetime, preference, RA_DEFAULT_ROUTE_METRIC);
+      }
     }
 
     // Process prefix information for SLAAC
     for (const opt of acceptance.accepted && acceptance.prefixInformation ? ra.options : []) {
       if (opt.optionType === 'prefix-info') {
         const prefixOpt = opt as NDPOptionPrefixInfo;
+
+        if (prefixOpt.onLink && !prefixOpt.prefix.isLinkLocal()) {
+          this.learnRaRoute(prefixOpt.prefix, prefixOpt.prefixLength, null, portName,
+            prefixOpt.validLifetime, 0, RA_PREFIX_ROUTE_METRIC);
+        }
 
         // Only process if Autonomous flag is set
         if (prefixOpt.autonomous && prefixOpt.prefixLength === 64) {
@@ -6862,23 +6989,6 @@ export abstract class EndHost extends Equipment {
               valid: prefixOpt.validLifetime, preferred: prefixOpt.preferredLifetime,
             })
             : prefixOpt.prefix;
-
-          // Add route for this prefix
-          const existingRoute = this.ipv6RoutingTable.find(r =>
-            r.prefix.equals(prefixOpt.prefix.getNetworkPrefix(prefixOpt.prefixLength)) &&
-            r.prefixLength === prefixOpt.prefixLength
-          );
-
-          if (!existingRoute && prefixOpt.onLink) {
-            this.ipv6RoutingTable.push({
-              prefix: prefixOpt.prefix.getNetworkPrefix(prefixOpt.prefixLength),
-              prefixLength: prefixOpt.prefixLength,
-              nextHop: null,
-              iface: portName,
-              type: 'ra',
-              metric: 0,
-            });
-          }
 
           if (acceptance.autoconfigure) {
             Logger.info(this.id, 'slaac',
@@ -6999,6 +7109,7 @@ export abstract class EndHost extends Equipment {
     let bestRoute: HostIPv6RouteEntry | null = null;
     let bestPrefix = -1;
 
+    this.purgeExpiredIPv6Routes();
     for (const route of this.ipv6RoutingTable) {
       if (iface !== undefined && route.iface !== iface) continue;
       if (targetIP.isInSameSubnet(route.prefix, route.prefixLength)) {
@@ -7270,6 +7381,44 @@ export abstract class EndHost extends Equipment {
    * Linux equivalent — a SLAAC-only network has no DHCPv6 lease to
    * renew, so a real renew there re-solicits the on-link router(s).
    */
+  private learnSolicitingNeighbour(portName: string, ipv6: IPv6Packet, icmpv6: ICMPv6Packet): void {
+    const solicitation = icmpv6.ndp;
+    if (solicitation?.ndpType !== 'router-solicitation' || ipv6.sourceIP.isUnspecified()) return;
+    const link = solicitation.options.find((option) => option.optionType === 'source-link-layer');
+    if (link?.optionType === 'source-link-layer') this.neighborCache.learnFromSource(ipv6.sourceIP.toString(), link.address, portName, false);
+  }
+
+  private readonly routerDiscoveryListeners = new Set<(event: RouterDiscoveryEvent) => void>();
+
+  onRouterDiscovery(listener: (event: RouterDiscoveryEvent) => void): () => void {
+    this.routerDiscoveryListeners.add(listener);
+    return () => { this.routerDiscoveryListeners.delete(listener); };
+  }
+
+  private notifyRouterDiscovery(portName: string, packet: IPv6Packet, message: ICMPv6Packet): void {
+    for (const listener of [...this.routerDiscoveryListeners]) listener({ portName, packet, message });
+  }
+
+  sendIcmpv6Message(
+    portName: string, source: IPv6Address, destination: IPv6Address, message: ICMPv6Packet, payloadBytes: number,
+  ): boolean {
+    const port = this.ports.get(portName);
+    if (!port || !port.isIPv6Enabled()) return false;
+    const packet = createIPv6Packet(source, destination, IP_PROTO_ICMPV6, 255, message, payloadBytes);
+    if (destination.isMulticast()) return this.sendNeighbourDiscovery(portName, packet, destination.toMulticastMAC());
+    const neighbour = this.neighborCache.get(destination.toString());
+    if (neighbour) return this.sendNeighbourDiscovery(portName, packet, neighbour.mac);
+    this.sendIpv6FrameNdpAware(portName, packet, destination);
+    return true;
+  }
+
+  scheduleCancellableTimer(callback: () => void, delayMs: number): () => void {
+    const token = this.hostTimers.setTimeout(callback, delayMs);
+    return () => this.hostTimers.clear(token);
+  }
+
+  simulatedNowMs(): number { return this.getScheduler().now(); }
+
   sendRouterSolicitation(portName: string): void {
     const port = this.ports.get(portName);
     if (!port || !port.isIPv6Enabled()) return;

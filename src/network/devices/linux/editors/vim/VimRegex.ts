@@ -17,6 +17,7 @@ export interface PatternContext {
   readonly visual: VisualArea | null;
   readonly lastSubstitute?: string | null;
   readonly words?: WordClasses;
+  readonly stringSubject?: boolean;
 }
 
 export interface PatternLayout {
@@ -43,6 +44,8 @@ interface Atom {
   readonly source: string;
   readonly unit: boolean;
   readonly group?: boolean;
+  readonly literal?: string;
+  readonly plain?: boolean;
 }
 
 interface Range {
@@ -63,6 +66,9 @@ const BACKSLASH_ABBREVIATIONS: Readonly<Record<string, string>> = { r: '\r', t: 
 const VERY_MAGIC_ONLY = '(){%+=?@!&|<>#"\',-:;`/';
 
 const ANYTHING = '[^]';
+const MARKS = '\\p{M}';
+const INSIDE_CHARACTER = `(?!(?<=[^\\n])${MARKS})`;
+const MARK_CHARACTER = /^\p{M}$/u;
 
 const START_OF_LINE = '(?<![^\\n])';
 const END_OF_LINE = '(?![^\\n])';
@@ -321,8 +327,11 @@ class Translator {
   private needsBuffer = false;
   private matchesNewline = false;
   private emptyTilde = false;
+  private readonly ignoreComposing: boolean;
 
-  constructor(private readonly pattern: string, private readonly ignoreCase: boolean, private readonly context: PatternContext | null) {}
+  constructor(private readonly pattern: string, private readonly ignoreCase: boolean, private readonly context: PatternContext | null) {
+    this.ignoreComposing = /(^|[^\\])(\\\\)*\\Z/.test(pattern);
+  }
 
   static run(pattern: string, ignoreCase: boolean, context: PatternContext | null): TranslatedPattern {
     const first = new Translator(pattern, ignoreCase, context);
@@ -337,11 +346,12 @@ class Translator {
       throw new VimPatternError(this.level === 'v' ? 'E55: Unmatched )' : 'E55: Unmatched \\)');
     }
     const indexes = numberGroups(source);
+    const bounded = `${INSIDE_CHARACTER}(?:${source})${INSIDE_CHARACTER}`;
     const slots: (number | undefined)[] = [undefined];
     for (let n = 1; n <= 9; n++) slots.push(indexes.get(`v${n}`));
     const marks = (names: readonly string[]): number[] => names.map((name) => indexes.get(name)!);
     return {
-      source,
+      source: bounded,
       flags: `dgu${this.ignoreCase && this.usesBackReference ? 'i' : ''}`,
       needsBuffer: this.needsBuffer,
       matchesNewline: this.matchesNewline,
@@ -501,8 +511,24 @@ class Translator {
     return token.magic && '*+=?@{'.includes(token.ch);
   }
 
+  private startOfLine(): string {
+    return this.context?.stringSubject === true ? '(?<![^])' : START_OF_LINE;
+  }
+
+  private endOfLine(): string {
+    return this.context?.stringSubject === true ? '(?![^])' : END_OF_LINE;
+  }
+
+  private composing(atom: Atom): Atom {
+    if (!atom.unit || atom.plain === true || atom.group === true) return atom;
+    if (atom.literal === undefined) return { ...atom, source: `(?:${atom.source}${MARKS}*(?!${MARKS}))` };
+    if (MARK_CHARACTER.test(atom.literal)) return { ...atom, source: this.ignoreComposing ? '(?:)' : `(?:${atom.source}${MARKS}*)` };
+    if (this.ignoreComposing) return { ...atom, source: `(?:${atom.source}${MARKS}*)` };
+    return atom;
+  }
+
   private parsePiece(): string {
-    const atom = this.parseAtom();
+    const atom = this.composing(this.parseAtom());
     if (!this.isMulti(this.peek())) return atom.source;
     if (this.emptyTilde) this.fail(`E874: ${NFA} Could not pop the stack!`);
     const operator = this.peek().ch;
@@ -584,12 +610,12 @@ class Translator {
       return this.literal(token.ch);
     }
     switch (token.ch) {
-      case '^': this.skip(); return { source: START_OF_LINE, unit: false };
-      case '$': this.skip(); return { source: END_OF_LINE, unit: false };
+      case '^': this.skip(); return { source: this.startOfLine(), unit: false };
+      case '$': this.skip(); return { source: this.endOfLine(), unit: false };
       case '<': this.skip(); return { source: `(?:${this.wordClassBodies().map((body) => `(?<![${body}])(?=[${body}])`).join('|')})`, unit: false };
       case '>': this.skip(); return { source: `(?:${this.wordClassBodies().map((body) => `(?<=[${body}])(?![${body}])`).join('|')})`, unit: false };
       case '.': this.skip(); return { source: '[^\\n]', unit: true };
-      case 'n': this.skip(); this.matchesNewline = true; return { source: '\\n', unit: true };
+      case 'n': this.skip(); this.matchesNewline = true; return { source: '\\n', unit: true, plain: true };
       case '(': this.skip(); return this.group(true);
       case '_': this.skip(); return this.underscore();
       case '[': return this.collection(false);
@@ -628,9 +654,9 @@ class Translator {
   private literal(character: string): Atom {
     if (this.ignoreCase) {
       const variants = caseVariants(character);
-      if (variants.length > 1) return { source: `[${variants.map((variant) => escapeInClass(variant.codePointAt(0)!)).join('')}]`, unit: true };
+      if (variants.length > 1) return { source: `[${variants.map((variant) => escapeInClass(variant.codePointAt(0)!)).join('')}]`, unit: true, literal: character };
     }
-    return { source: escapeLiteral(character), unit: true };
+    return { source: escapeLiteral(character), unit: true, literal: character };
   }
 
   private wordClassBodies(): readonly string[] {
@@ -660,8 +686,8 @@ class Translator {
     const next = String.fromCodePoint(text.codePointAt(this.position)!);
     this.position += next.length;
     this.current = null;
-    if (next === '^') return { source: START_OF_LINE, unit: false };
-    if (next === '$') return { source: END_OF_LINE, unit: false };
+    if (next === '^') return { source: this.startOfLine(), unit: false };
+    if (next === '$') return { source: this.endOfLine(), unit: false };
     this.matchesNewline = true;
     if (next === '.') return { source: ANYTHING, unit: true };
     if (next === '[') return this.collection(true);
@@ -740,7 +766,7 @@ class Translator {
       const [radix, width] = widths[next];
       const code = this.readNumber(radix, width);
       if (code === null || code > INT_MAX) return this.fail('E678: Invalid character after \\%[dxouU]');
-      return code > 0x10ffff ? { source: '(?!)', unit: false } : this.literal(String.fromCodePoint(code));
+      return code > 0x10ffff ? { source: '(?!)', unit: false } : { ...this.literal(String.fromCodePoint(code)), literal: undefined, plain: true };
     }
     if (next === '#') return { source: this.exactPosition(this.context?.cursor ?? null), unit: false };
     if (next === 'V') return { source: this.visualArea(), unit: false };

@@ -1,6 +1,7 @@
 import type { VirtualFileSystem } from '../VirtualFileSystem';
 import type { UseraddOptions } from '../LinuxUserManager';
 import { VSFTPD_CONF_PATH, VSFTPD_UPSTREAM_SAMPLE_CONF } from '../ftp/LinuxVsftpdService';
+import { RADVD_PACKAGE_FILES } from '../radvd/RadvdPackageFiles';
 import type { PackageEntry } from './PackageDatabase';
 import { recordPackageState, type PackageStateHost } from './PackageState';
 
@@ -55,9 +56,21 @@ function provisionVsftpd(host: PackageHost): void {
   }
 }
 
+function provisionRadvd(host: PackageHost): void {
+  if (!host.userMgr.getUser('radvd')) {
+    host.userMgr.useradd('radvd', { r: true, M: true, d: '/run/radvd', s: '/usr/sbin/nologin' });
+  }
+  for (const [path, content] of RADVD_PACKAGE_FILES) {
+    const directory = path.slice(0, path.lastIndexOf('/'));
+    if (!host.vfs.exists(directory)) host.vfs.mkdirp(directory, 0o755, 0, 0);
+    if (host.vfs.readFile(path) == null) host.vfs.writeFile(path, content, 0, 0, 0o022);
+  }
+}
+
 const PROVISIONERS: Readonly<Record<string, (host: PackageHost) => void>> = {
   bind9: provisionBind9,
   vsftpd: provisionVsftpd,
+  radvd: provisionRadvd,
 };
 
 const PROGRAM_FILE_CONTENT = '\x7fELF';

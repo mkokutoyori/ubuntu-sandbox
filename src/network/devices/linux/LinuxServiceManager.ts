@@ -417,6 +417,15 @@ const BASE_UNITS: DefaultUnit[] = [
 
 const PACKAGED_UNITS: DefaultUnit[] = [
   {
+    name: 'radvd',
+    description: 'Router advertisement daemon for IPv6',
+    type: 'forking',
+    execStart: '/usr/sbin/radvd --logmethod stderr_clean',
+    execReload: '/bin/kill -HUP $MAINPID',
+    after: ['network.target'],
+    enabledByDefault: true,
+  },
+  {
     name: 'vsftpd',
     description: 'vsftpd FTP server',
     type: 'simple',
@@ -568,6 +577,7 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
   },
   chrony: { processName: 'chronyd', sockets: [{ port: 123, protocol: 'udp' }] },
   lldpd: { processName: 'lldpd', sockets: [] },
+  radvd: { processName: 'radvd', sockets: [] },
   nginx: {
     processName: 'nginx',
     sockets: [{ port: 80, protocol: 'tcp' }, { port: 443, protocol: 'tcp' }],

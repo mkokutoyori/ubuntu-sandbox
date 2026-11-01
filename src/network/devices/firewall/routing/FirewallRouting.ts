@@ -8,6 +8,7 @@ import {
   type EthernetFrame, type IPv4Packet, type RIPPacket,
 } from '../../../core/types';
 import { ipv4MulticastToMac } from '../../../core/ip';
+import { ospfWireLength } from '../../../ospf/OspfWire';
 import { OSPFEngine } from '../../../ospf/OSPFEngine';
 import type {
   OSPFNetworkType, OSPFPacket, LSA, RouterLSA, SummaryLSA, ExternalLSA,
@@ -407,7 +408,7 @@ export class FirewallRouting {
     if (!port) return;
 
     const ipPacket = createIPv4Packet(
-      new IPAddress(port.ip), new IPAddress(destIP), IP_PROTO_OSPF, 1, packet, 64);
+      new IPAddress(port.ip), new IPAddress(destIP), IP_PROTO_OSPF, 1, packet, ospfWireLength(packet));
 
     this.deps.sendFrame(iface, {
       srcMAC: port.mac,

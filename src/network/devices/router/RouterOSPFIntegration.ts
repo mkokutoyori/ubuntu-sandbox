@@ -17,6 +17,7 @@ import {
   ETHERTYPE_IPV4, ETHERTYPE_IPV6, IP_PROTO_OSPF,
   createIPv4Packet, createIPv6Packet,
 } from '../../core/types';
+import { ospfWireLength } from '../../ospf/OspfWire';
 import { resolveAcrossTransparentDevices } from '../../equipment/TopologyWalk';
 import { ipv4MulticastToMac } from '../../core/ip';
 import { Logger } from '../../core/Logger';
@@ -305,7 +306,7 @@ export class RouterOSPFIntegration {
       IP_PROTO_OSPF,
       1,  // TTL=1 (link-local)
       ospfPkt,
-      64,
+      ospfWireLength(ospfPkt),
     );
 
     // Determine destination MAC (RFC 1112 §6.4 for multicast groups)

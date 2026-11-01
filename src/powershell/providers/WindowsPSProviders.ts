@@ -97,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1329,6 +1329,12 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   clearCache(): void { this.role().clearCache(); }
   getCacheSettings(): DnsCacheSettings { return this.role().getCacheSettings(); }
   setCacheSettings(changes: Partial<DnsCacheSettings>): DnsOpResult { return this.role().setCacheSettings(changes); }
+  getEdnsSettings(): DnsEdnsSettings { return this.role().getEdnsSettings(); }
+  setEdnsSettings(changes: Partial<DnsEdnsSettings>): DnsOpResult { return this.role().setEdnsSettings(changes); }
+  getServerSettings(): DnsServerSettingEntry[] { return this.role().getServerSettings(); }
+  setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult { return this.role().setServerSettings(changes); }
+  getGlobalNames(): DnsGlobalNames { return this.role().getGlobalNames(); }
+  setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult { return this.role().setGlobalNames(changes); }
   getGlobalQueryBlock(): GlobalQueryBlock { return this.role().getGlobalQueryBlock(); }
   setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): DnsOpResult { return this.role().setGlobalQueryBlock(changes); }
 

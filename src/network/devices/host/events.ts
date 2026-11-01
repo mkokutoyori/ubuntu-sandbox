@@ -130,7 +130,7 @@ export interface HostIcmpUnreachablePayload extends HostDeviceRef {
   ttl?: number;
   origProtocol?: number;
   origDestPort?: number;
-  icmpType?: 'time-exceeded' | 'destination-unreachable';
+  icmpType?: 'time-exceeded' | 'destination-unreachable' | 'parameter-problem';
   mtu?: number;
   extensions?: readonly IcmpExtensionObject[];
 }

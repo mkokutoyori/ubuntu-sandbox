@@ -7,7 +7,12 @@ import { ZoneStore, ZoneStoreError } from '@/network/dns/zone/ZoneStore';
 import { reverseZoneNameFor, classlessOwnerFor } from '@/network/dns/zone/ReverseZoneNames';
 import { renderZoneFile, parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
-import { RecursiveResolver, type ResolutionResult } from '@/network/dns/resolver/RecursiveResolver';
+import { RecursiveResolver, type ResolutionResult, type RecursiveResolverEdnsOptions } from '@/network/dns/resolver/RecursiveResolver';
+import { EdnsSupportCache } from '@/network/dns/resolver/EdnsSupportCache';
+import {
+  readServerSettings, writeServerSettings,
+  type DnsServerIdentity, type DnsServerSettingEntry, type DnsServerSettingValue,
+} from './DnsServerSettings';
 import { IANA_ROOT_HINTS, renderRootHintsFile, type RootHint } from '@/network/dns/resolver/RootHints';
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
@@ -33,6 +38,7 @@ import { isTransferQuery, refuseTransfer } from '@/network/dns/transfer/AxfrSess
 import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { normalizeDnsName, relativeTo } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -46,7 +52,7 @@ import {
 import { dhcidToPresentation } from '@/network/dns/wire/Dhcid';
 import {
   DnsServerParameters, MemoryDnsParameterStore, DEFAULT_GLOBAL_QUERY_BLOCK_LIST,
-  type DnsParameterStore, type DnsCacheSettings, type GlobalQueryBlock,
+  type DnsParameterStore, type DnsCacheSettings, type DnsEdnsSettings, type DnsGlobalNames, type GlobalQueryBlock,
 } from './DnsServerParameters';
 import { ptrQName } from '@/network/dns/compat/DnsWireCompat';
 import { IPAddress } from '@/network/core/types';
@@ -127,6 +133,7 @@ export interface DnsRoleEnvironment {
   now?: () => number;
   zoneFiles?: DnsZoneFileSink;
   directoryAvailable?: () => boolean;
+  identity?: () => DnsServerIdentity;
 }
 
 export interface DnsPrimaryZoneOptions {
@@ -151,6 +158,9 @@ const DNS_PORT = 53;
 const DAY_SECONDS = 86400;
 const DEFAULT_AGING_SECONDS = 7 * DAY_SECONDS;
 const UNLOADED_RETRY_SECONDS = 600;
+const WINDOWS_EDNS_PAYLOAD_SIZE = 1280;
+const GLOBAL_NAMES_ZONE = 'globalnames';
+const DEFAULT_NON_SECURE_UPDATE_RECORDS = 30;
 
 const RR_TYPE_NAME = new Map<number, string>(
   Object.entries(RRType).map(([name, code]) => [code, name]),
@@ -320,8 +330,12 @@ export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
   private readonly authoritative = new AuthoritativeServer(this.store, {
     blocks: (zoneOrigin, qname) => this.blockedByGlobalQueryList(zoneOrigin, qname),
+    acceptsEdns: () => this.parameters.ednsSettings().enableReception,
+    rotates: () => this.parameters.flag('RoundRobin', true),
+    writesApexNs: () => this.parameters.flag('WriteAuthorityNs', false),
   });
   private readonly cache: DnsCache;
+  private readonly ednsSupport: EdnsSupportCache;
   private readonly settings = new Map<string, ZoneSettings>();
   private readonly conditional = new Map<string, ConditionalForwarder>();
   private readonly secondaries: SecondaryZoneRefresher;
@@ -349,13 +363,19 @@ export class WindowsDnsServerRole {
   private readonly now: () => number;
   private readonly zoneFiles: DnsZoneFileSink | null;
   private readonly directoryAvailable: () => boolean;
+  private readonly identityOf: () => DnsServerIdentity;
 
   constructor(private readonly host: EndHost, environment: DnsRoleEnvironment = {}) {
     this.now = environment.now ?? (() => simulationNowMs());
     this.zoneFiles = environment.zoneFiles ?? null;
     this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
+    this.identityOf = environment.identity ?? (() => ({
+      computerName: this.host.getHostname(), majorVersion: 10, minorVersion: 0, buildNumber: 0, isReadOnlyDc: false,
+      directoryAvailable: this.directoryAvailable(), addresses: this.localAddresses(),
+    }));
     this.cache = new DnsCache(this.now, () => this.parameters.cacheLimits());
+    this.ednsSupport = new EdnsSupportCache(this.now, () => this.parameters.ednsSettings().cacheTimeoutSeconds);
     if (!this.parameters.hasGlobalQueryBlock()) {
       this.parameters.setGlobalQueryBlock({ enabled: true, list: DEFAULT_GLOBAL_QUERY_BLOCK_LIST });
     }
@@ -416,6 +436,26 @@ export class WindowsDnsServerRole {
   private answer(
     query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
   ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
+    const reply = this.respond(query, transport, source, raw);
+    if (Array.isArray(reply)) return reply;
+    return reply instanceof Promise ? reply.then(message => this.limitAddressRecords(message)) : this.limitAddressRecords(reply);
+  }
+
+  private limitAddressRecords(message: DnsMessage): DnsMessage {
+    const limit = this.parameters.count('AddressAnswerLimit', 0);
+    if (limit <= 0) return message;
+    let kept = 0;
+    const answers = message.answers.filter(rr => {
+      if (rr.data.type !== RRType.A && rr.data.type !== RRType.AAAA) return true;
+      kept++;
+      return kept <= limit;
+    });
+    return answers.length === message.answers.length ? message : { ...message, answers };
+  }
+
+  private respond(
+    query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
     const sourceAddress = source instanceof IPAddress ? source.toString() : null;
     if (isNotify(query)) return this.handleNotify(query, sourceAddress);
     if (isUpdateMessage(query)) return this.handleUpdate(query, raw);
@@ -423,6 +463,8 @@ export class WindowsDnsServerRole {
       return transport === 'udp' ? refuseTransfer(query) : this.handleTransfer(query, sourceAddress);
     }
     const response = this.authoritative.answer(query);
+    const globalName = this.answerFromGlobalNames(query, response);
+    if (globalName !== null) return globalName;
     const question = query.questions[0];
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
     if (outsideAuthority && question && this.hitsUnloadedSecondary(question.qname)) {
@@ -542,7 +584,7 @@ export class WindowsDnsServerRole {
     const request = parseOrFormerr(query);
     const mode = request ? this.dynamicUpdateMode(request.zone) : 'NonsecureAndSecure';
     const auth = authorizeUpdate(raw, mode === 'Secure' ? 'secure' : 'none', this.keyring, now);
-    if (mode === 'None') {
+    if (mode === 'None' || !this.parameters.flag('AllowUpdate', true)) {
       return signIfKeyed(updateResponse(query, DnsRcode.REFUSED), auth, now);
     }
     const reply = (rcode: number): DnsMessage =>
@@ -550,6 +592,9 @@ export class WindowsDnsServerRole {
 
     if (auth.rcode !== DnsRcode.NOERROR) return reply(auth.rcode);
     if (!request) return reply(DnsRcode.FORMERR);
+    if (auth.key === null && request.updates.length > (this.parameters.count('MaxResourceRecordsInNonSecureUpdate', DEFAULT_NON_SECURE_UPDATE_RECORDS) || DEFAULT_NON_SECURE_UPDATE_RECORDS)) {
+      return reply(DnsRcode.REFUSED);
+    }
 
     const zone = this.store.getZone(request.zone);
     if (!zone) return reply(DnsUpdateRcode.NOTAUTH);
@@ -565,6 +610,7 @@ export class WindowsDnsServerRole {
       });
       if (foreign) return reply(DnsRcode.REFUSED);
     }
+    if (verdict.applied.additions.some(rr => this.collidesWithGlobalNames(zone.origin, rr.name))) return reply(DnsRcode.REFUSED);
     for (const rr of verdict.applied.removals) this.deleteRecord(zone, rr);
     for (const rr of verdict.applied.additions) {
       zone.addRecord(rr);
@@ -576,6 +622,62 @@ export class WindowsDnsServerRole {
       this.zoneChanged(zone);
     }
     return reply(DnsRcode.NOERROR);
+  }
+
+  private answerFromGlobalNames(query: DnsMessage, local: DnsMessage): DnsMessage | Promise<DnsMessage> | null {
+    const question = query.questions[0];
+    const settings = this.parameters.globalNames();
+    if (!settings.enabled || this.store.getZone(GLOBAL_NAMES_ZONE) === null || question === undefined || query.questions.length !== 1) return null;
+    if (local.flags.rcode === DnsRcode.FORMERR || local.flags.rcode === DnsRcode.NOTIMP) return null;
+    const label = normalizeDnsName(question.qname);
+    if (label === '' || label.includes('.')) return null;
+    const owner = `${label}.${GLOBAL_NAMES_ZONE}`;
+    const hosted = this.store.answer({ ...question, qname: owner });
+    if (hosted.rcode !== DnsRcode.NOERROR || hosted.answers.length === 0) return null;
+    const answeredLocally = local.flags.aa && local.flags.rcode === DnsRcode.NOERROR && local.answers.length > 0;
+    if (settings.queryLocalZonesFirst && answeredLocally) return null;
+    const answers = hosted.answers.map(rr => (normalizeDnsName(rr.name) === owner ? { ...rr, name: question.qname } : rr));
+    return this.completeGlobalName(query, answers);
+  }
+
+  private completeGlobalName(query: DnsMessage, answers: readonly ResourceRecord<ResourceRecordData>[]): DnsMessage | Promise<DnsMessage> {
+    const question = query.questions[0];
+    const reply = (records: readonly ResourceRecord<ResourceRecordData>[], authoritative: boolean): DnsMessage => ({
+      id: query.id,
+      flags: {
+        qr: true, opcode: DnsOpcode.QUERY, aa: authoritative, tc: false, rd: query.flags.rd,
+        ra: this.parameters.recursionEnabled(), ad: false, cd: false, rcode: DnsRcode.NOERROR,
+      },
+      questions: [question],
+      answers: records,
+      authorities: [],
+      additionals: findOpt(query) === null ? [] : [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE)],
+    });
+    const tail = answers[answers.length - 1];
+    if (tail.data.type !== RRType.CNAME || question.qtype === RRType.CNAME) return reply(answers, true);
+    const target = { ...query, questions: [{ ...question, qname: (tail.data as CnameRecordData).cname }] };
+    const hostedTarget = this.authoritative.answer(target);
+    if (hostedTarget.flags.aa) return reply([...answers, ...hostedTarget.answers], true);
+    if (query.flags.rd && this.parameters.recursionEnabled()) {
+      const resolvers = this.resolversFor(target.questions[0].qname);
+      if (resolvers.length > 0) return this.recurse(target, resolvers).then(resolved => reply([...answers, ...resolved.answers], false));
+    }
+    return reply(answers, true);
+  }
+
+  private collidesWithGlobalNames(zoneOrigin: string, name: string): boolean {
+    const settings = this.parameters.globalNames();
+    const globalNames = this.store.getZone(GLOBAL_NAMES_ZONE);
+    if (!settings.enabled || !settings.blockUpdates || globalNames === null || zoneOrigin === GLOBAL_NAMES_ZONE) return false;
+    const relative = relativeTo(normalizeDnsName(name), zoneOrigin);
+    return relative !== null && globalNames.hasName(`${relative}.${GLOBAL_NAMES_ZONE}`);
+  }
+
+  getGlobalNames(): DnsGlobalNames { return this.parameters.globalNames(); }
+
+  setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult {
+    this.parameters.setGlobalNames(changes);
+    return { ok: true, message: '' };
   }
 
   private async recurse(query: DnsMessage, attempts: readonly ResolutionAttempt[]): Promise<DnsMessage> {
@@ -700,12 +802,16 @@ export class WindowsDnsServerRole {
     return { ok: true, message: '' };
   }
 
+  private ednsProbing(): RecursiveResolverEdnsOptions {
+    return { probes: () => this.parameters.ednsSettings().enableProbes, payloadSize: WINDOWS_EDNS_PAYLOAD_SIZE, support: this.ednsSupport };
+  }
+
   private forwardingResolver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, forwardRecursively: true, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing() });
   }
 
   private resolverOver(addresses: readonly IPAddress[], timeoutSeconds = this.parameters.forwardingTimeoutSeconds()): RecursiveResolver {
-    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) } });
+    return new RecursiveResolver(this.host, addresses, this.cache, { timeoutMs: timeoutSeconds * 1000, dnssec: { anchors: this.trustAnchors, now: () => Math.floor(this.now() / 1000) }, edns: this.ednsProbing() });
   }
 
   getForwarders(): string[] { return this.parameters.forwarders(); }
@@ -912,6 +1018,20 @@ export class WindowsDnsServerRole {
   }
 
   clearCache(): void { this.cache.flush(); }
+
+  getServerSettings(): DnsServerSettingEntry[] { return readServerSettings(this.parameters, this.identityOf()); }
+
+  setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult {
+    const problem = writeServerSettings(this.parameters, this.identityOf(), changes);
+    return problem === null ? { ok: true, message: '' } : { ok: false, message: problem };
+  }
+
+  getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }
+
+  setEdnsSettings(changes: Partial<DnsEdnsSettings>): DnsOpResult {
+    this.parameters.setEdnsSettings(changes);
+    return { ok: true, message: '' };
+  }
 
   getGlobalQueryBlock(): GlobalQueryBlock { return this.parameters.globalQueryBlock(); }
 

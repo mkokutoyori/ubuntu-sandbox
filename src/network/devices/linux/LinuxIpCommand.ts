@@ -102,6 +102,14 @@ export interface IpV6RouteEntry {
   type: 'connected' | 'static' | 'default' | 'ra';
   proto?: 'ra';
   metric: number;
+  expiresInMs?: number;
+  preference?: number;
+}
+
+function routeTail6(route: IpV6RouteEntry): string {
+  const expires = route.expiresInMs === undefined ? '' : `expires ${Math.floor(route.expiresInMs / 1000)}sec `;
+  const preference = route.preference === 1 ? 'high' : route.preference === -1 ? 'low' : 'medium';
+  return `${expires}pref ${preference}`;
 }
 
 export interface IpTunnelInfo {
@@ -1510,7 +1518,7 @@ function ipRoute6(ctx: IpNetworkContext, args: string[], opts: IpOutputOptions):
       ? 'default '
       : c.inet6(`${route.prefix}/${route.prefixLength} `);
     const via = route.nextHop ? `via ${c.inet6(`${route.nextHop} `)}` : '';
-    lines.push(`${dest}${via}dev ${c.ifname(`${route.iface} `)}proto ${proto} metric ${route.metric} pref medium`);
+    lines.push(`${dest}${via}dev ${c.ifname(`${route.iface} `)}proto ${proto} metric ${route.metric} ${routeTail6(route)}`);
   }
   return lines.join('\n');
 }
@@ -1766,7 +1774,7 @@ function ipRoute6Get(ctx: IpNetworkContext, args: string[]): string {
   const via = best.nextHop !== null ? `via ${best.nextHop} ` : '';
   const source = ctx.selectIPv6Source?.(best.iface, normalized);
   const src = source ? `src ${source} ` : '';
-  return `${normalized} from :: ${via}dev ${best.iface} proto ${proto} ${src}metric ${best.metric} pref medium`;
+  return `${normalized} from :: ${via}dev ${best.iface} proto ${proto} ${src}metric ${best.metric} ${routeTail6(best)}`;
 }
 
 function ipRouteGet(ctx: IpNetworkContext, args: string[]): string {

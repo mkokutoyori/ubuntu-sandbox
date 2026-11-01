@@ -1482,7 +1482,30 @@ export interface NDPOptionMTU {
   mtu: number;
 }
 
-export type NDPOption = NDPOptionLinkLayerAddress | NDPOptionPrefixInfo | NDPOptionMTU;
+export interface NDPOptionRouteInformation {
+  optionType: 'route-info';
+  prefix: IPv6Address;
+  prefixLength: number;
+  /** RFC 4191 §2.3: -1 low, 0 medium, 1 high */
+  preference: number;
+  lifetime: number;
+}
+
+export interface NDPOptionRdnss {
+  optionType: 'rdnss';
+  lifetime: number;
+  addresses: IPv6Address[];
+}
+
+export interface NDPOptionDnssl {
+  optionType: 'dnssl';
+  lifetime: number;
+  domains: string[];
+}
+
+export type NDPOption =
+  | NDPOptionLinkLayerAddress | NDPOptionPrefixInfo | NDPOptionMTU
+  | NDPOptionRouteInformation | NDPOptionRdnss | NDPOptionDnssl;
 
 // ─── NDP Message Types ───────────────────────────────────────────────
 
@@ -1503,6 +1526,8 @@ export interface NDPRouterAdvertisement {
   otherConfigFlag: boolean;
   /** Router lifetime in seconds (0 = not a default router) */
   routerLifetime: number;
+  /** RFC 4191 §2.2 default router preference: -1 low, 0 medium, 1 high */
+  routerPreference?: number;
   /** Reachable time in milliseconds (0 = unspecified) */
   reachableTime: number;
   /** Retransmit timer in milliseconds (0 = unspecified) */

@@ -6,7 +6,10 @@ import {
 } from '@/network/core/IcmpPhrase';
 import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
-import { hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
+import { cdpText } from './TcpdumpCdp';
+import { ospfText } from './TcpdumpOspf';
+import { ripText } from './TcpdumpRip';
+import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
 import { icmp6Text } from './TcpdumpIcmp6';
 import { domainText } from './TcpdumpDomain';
 import { resetDataText, tcpApplicationText } from './TcpdumpTextProtocols';
@@ -286,10 +289,16 @@ function clockOfDay(milliseconds: number): string {
 
 const IPV6_FRAGMENT_HEADER_BYTES = 8;
 const DNS_PORT = 53;
+const RIP_PORT = 520;
 const MDNS_PORT = 5353;
 const UDP_HEADER_BYTES = 8;
 
 function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState, fragmentedV6 = false): string {
+  if (frame.l3 === 'ipv4' && frame.ipProtocol === OSPF_PROTOCOL && (frame.ipFragmentOffset ?? 0) === 0) {
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+    const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
+    return ospfText(Array.from(frame.raw.slice(start, start + length)), length, opt.verbose, (address) => state.host(address));
+  }
   if (frame.l4 === 'icmp') {
     let phrase: string;
     if (frame.icmpType === 'destination-unreachable') {
@@ -349,6 +358,10 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     if (frame.bootp && !opt.quiet) return bootpText(frame.bootp, opt.verbose, frame.payloadLength ?? 0);
     if (!opt.quiet && frame.appPayload && (frame.srcPort === 123 || frame.dstPort === 123)) {
       return ntpText(frame.appPayload, opt.verbose, opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose));
+    }
+    if (!opt.quiet && frame.appPayload && (frame.srcPort === RIP_PORT || frame.dstPort === RIP_PORT)) {
+      const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
+      return `${cksum}${ripText(frame.appPayload, frame.payloadLength ?? 0, opt.verbose)}`;
     }
     const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
     return `${cksum}UDP, length ${frame.payloadLength ?? 0}`;
@@ -413,9 +426,14 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
  * pas de ce que la capture a su decoder : un fragment non initial reste
  * `proto TCP (6)` bien que son en-tete de transport soit ailleurs.
  */
+const OSPF_PROTOCOL = 89;
+const TRUNCATION_MARKER = /\[\|ospf2\]/;
+
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
-  [IP_PROTO_ICMP]: 'ICMP', [IP_PROTO_TCP]: 'TCP', [IP_PROTO_UDP]: 'UDP', [IP_PROTO_ICMPV6]: 'ICMPv6',
-  [IP_PROTO_IPV6_FRAGMENT]: 'Fragment',
+  0: 'Options', [IP_PROTO_ICMP]: 'ICMP', 2: 'IGMP', 4: 'IPIP', [IP_PROTO_TCP]: 'TCP', 8: 'EGP', 9: 'IGRP', [IP_PROTO_UDP]: 'UDP',
+  33: 'DCCP', 41: 'IPv6', 43: 'Routing', [IP_PROTO_IPV6_FRAGMENT]: 'Fragment', 46: 'RSVP', 47: 'GRE', 50: 'ESP', 51: 'AH',
+  55: 'Mobile IP', [IP_PROTO_ICMPV6]: 'ICMPv6', 62: 'Mobile IP (old)', 88: 'EIGRP', [OSPF_PROTOCOL]: 'OSPF', 103: 'PIM',
+  108: 'Compressed IP', 112: 'VRRP', 113: 'PGM', 132: 'SCTP', 135: 'Mobility', 143: 'Ethernet',
 };
 
 function ipProtoName(frame: CaptureFrame): string {
@@ -473,14 +491,15 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderSt
   const withPort = !trunc && (frame.l4 === 'tcp' || frame.l4 === 'udp');
   const src = endpoint(state, frame.srcIp, withPort ? frame.srcPort : undefined, transportOf(frame.l4));
   const dst = endpoint(state, frame.dstIp, withPort ? frame.dstPort : undefined, transportOf(frame.l4));
-  const detail = trunc ?? l4Detail(frame, opt, state);
+  const suppressed = opt.ultraQuiet && (frame.ipFragmentOffset ?? 0) > 0;
+  const detail = suppressed ? '' : trunc ?? l4Detail(frame, opt, state);
   if (opt.verbose > 0) {
     const offset = (frame.ipFragmentOffset ?? 0) * 8;
     const header = `${opt.linkLevel ? '' : 'IP '}(${tosToken(frame)}, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
       + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${ipChecksumSuffix(frame, opt)})`;
-    return `${header}\n    ${src} > ${dst}: ${detail}${encapsulatedLines(frame, opt, state)}`;
+    return suppressed ? `${header}\n    ` : `${header}\n    ${src} > ${dst}: ${detail}${encapsulatedLines(frame, opt, state)}`;
   }
-  return `${opt.linkLevel ? '' : 'IP '}${src} > ${dst}: ${detail}`;
+  return suppressed ? `${opt.linkLevel ? '' : 'IP '}` : `${opt.linkLevel ? '' : 'IP '}${src} > ${dst}: ${detail}`;
 }
 
 function ip6FragmentLine(
@@ -528,14 +547,30 @@ function etherTypeOf(frame: CaptureFrame): { name: string; hex: string; value: n
   return { name: 'IPv4', hex: '0x0800', value: 0x0800 };
 }
 
-function ethPrefix(frame: CaptureFrame, state: TcpdumpRenderState): string {
+function etherTypeText(name: string, hex: string, quiet: boolean): string {
+  return quiet ? name : `ethertype ${name} (${hex})`;
+}
+
+const SNAP_HEADER_BYTES = 8;
+
+function cdpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+  const lengthField = (frame.raw[frame.rawLinkOffset - SNAP_HEADER_BYTES - 2] << 8) | frame.raw[frame.rawLinkOffset - SNAP_HEADER_BYTES - 1];
+  const payload = Array.from(frame.raw.slice(frame.rawLinkOffset, frame.rawLinkOffset + lengthField - SNAP_HEADER_BYTES));
+  const text = cdpText(payload, opt.verbose, (address) => state.host(address));
+  if (!opt.linkLevel) return text;
+  return `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, 802.3, length ${lengthField}: `
+    + 'LLC, dsap SNAP (0xaa) Individual, ssap SNAP (0xaa) Command, ctrl 0x03: '
+    + `oui Cisco (0x00000c), pid CDP (0x2000), length ${payload.length}: ${text}`;
+}
+
+function ethPrefix(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   const type = etherTypeOf(frame);
   const addresses = `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}`;
   if (frame.vlanId !== undefined) {
-    return `${addresses}, ethertype 802.1Q (0x8100), length ${frame.length}: `
-      + `vlan ${frame.vlanId}, p ${frame.vlanPriority ?? 0}, ethertype ${type.name} (${type.hex}), `;
+    return `${addresses}, ${etherTypeText('802.1Q', '0x8100', opt.quiet)}, length ${frame.length}: `
+      + `vlan ${frame.vlanId}, p ${frame.vlanPriority ?? 0}, ${etherTypeText(type.name, type.hex, opt.quiet)}, `;
   }
-  return `${addresses}, ethertype ${type.name} (${type.hex}), length ${frame.length}: `;
+  return `${addresses}, ${etherTypeText(type.name, type.hex, opt.quiet)}, length ${frame.length}: `;
 }
 
 const SLL_HEADER_LENGTH = 16;
@@ -592,12 +627,14 @@ function cookedHeader(frame: CaptureFrame, cooked: CookedInterfaces): number[] {
   ];
 }
 
-export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string[] {
+export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState, truncated = false): string[] {
   const network = Array.from(frame.raw.slice(frame.rawLinkOffset));
   const link = state.cooked !== null
     ? [...cookedHeader(frame, state.cooked), ...frame.raw.slice(frame.rawLinkOffset - vlanTagLength(frame), frame.rawLinkOffset)]
     : Array.from(frame.raw.slice(0, frame.rawLinkOffset));
-  const bytes = (opt.hexLink ? [...link, ...network] : network).slice(0, opt.snaplen);
+  const withLink = opt.hexLink || truncated;
+  const bytes = (withLink ? [...link, ...network] : network).slice(0, opt.snaplen);
+  if (opt.hex === 'ascii') return bytes.length === 0 || (!withLink && network.length === 0) ? [] : asciiPrintLines(bytes).slice(1).split('\n');
   const text = opt.hex === 'hexascii' ? hexAndAsciiLines(bytes, '\n\t') : hexPrintLines(bytes, '\n\t');
   return text === '' ? [] : text.slice(1).split('\n');
 }
@@ -613,7 +650,7 @@ export function formatFrame(
   const cooked = state.cooked;
   const link = cooked !== null
     ? cookedPrefix(frame, opt, state, cooked)
-    : opt.linkLevel ? ethPrefix(frame, state) : '';
+    : opt.linkLevel ? ethPrefix(frame, opt, state) : '';
   let body: string;
   if (frame.l3 === 'arp') {
     body = `${link}${arpLine(frame, opt, state)}`;
@@ -621,14 +658,12 @@ export function formatFrame(
     body = `${link}${ipLine(frame, opt, state)}`;
   } else if (frame.l3 === 'ipv6') {
     body = `${link}${ip6Line(frame, opt, state)}`;
+  } else if (frame.l3 === 'cdp') {
+    body = cdpLine(frame, opt, state);
   } else {
-    body = opt.linkLevel ? `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, ethertype Unknown (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
+    body = opt.linkLevel ? `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, ${opt.quiet ? 'Unknown Ethertype' : 'ethertype Unknown'} (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
   }
   const lines = [`${number}${ts}${body}`];
-  if (opt.hex !== 'none') lines.push(...hexDump(frame, opt, state));
-  if (opt.ascii && frame.appPayload && frame.appPayload.length > 0) {
-    const text = frame.appPayload.map(b => (b >= 0x20 && b <= 0x7e) ? String.fromCharCode(b) : '.').join('');
-    lines.push(text);
-  }
+  if (opt.hex !== 'none') lines.push(...hexDump(frame, opt, state, TRUNCATION_MARKER.test(body)));
   return lines.join('\n');
 }

@@ -510,6 +510,8 @@ export interface FortiCommitDevice {
   removeAccessProfile(name: string): void;
   applyAdminAccount(admin: FortiAdminPatch): void;
   removeAdminAccount(name: string): void;
+  applyApiUser(user: FortiApiUserPatch): void;
+  removeApiUser(name: string): void;
   applyUrlFilterTable(table: FortiFilterTablePatch): void;
   removeUrlFilterTable(id: string): void;
   applyDomainFilterTable(table: FortiFilterTablePatch): void;
@@ -683,6 +685,13 @@ export interface FortiAdminPatch {
   readonly trustHosts: readonly FortiTrustHostPatch[];
   readonly sshPublicKeys?: readonly string[];
   readonly comments?: string;
+}
+
+export interface FortiApiUserPatch {
+  readonly name: string;
+  readonly apiKey?: string;
+  readonly profile: string;
+  readonly trustHosts: readonly FortiTrustHostPatch[];
 }
 
 export interface FortiFilterTablePatch {

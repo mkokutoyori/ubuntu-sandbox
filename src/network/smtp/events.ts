@@ -2,6 +2,21 @@ export interface SmtpConnectionRef {
   readonly connectionId: string;
 }
 
+export interface SmtpPeerRef extends SmtpConnectionRef {
+  readonly remoteIp: string;
+}
+
+export interface SmtpSessionAbort {
+  readonly reason: 'timeout' | 'lost connection';
+  readonly where: string;
+  readonly transactionOpen: boolean;
+}
+
+export interface SmtpSessionClosedPayload extends SmtpPeerRef {
+  readonly commandStats: string;
+  readonly abort?: SmtpSessionAbort;
+}
+
 export interface SmtpCommandReceivedPayload extends SmtpConnectionRef {
   readonly verb: string;
 }
@@ -50,8 +65,8 @@ export interface SmtpQueueExpiredPayload {
 }
 
 export type SmtpDomainEvent =
-  | { topic: 'smtp.session.opened'; payload: SmtpConnectionRef }
-  | { topic: 'smtp.session.closed'; payload: SmtpConnectionRef }
+  | { topic: 'smtp.session.opened'; payload: SmtpPeerRef }
+  | { topic: 'smtp.session.closed'; payload: SmtpSessionClosedPayload }
   | { topic: 'smtp.command.received'; payload: SmtpCommandReceivedPayload }
   | { topic: 'smtp.mail.accepted'; payload: SmtpMailPayload }
   | { topic: 'smtp.mail.rejected'; payload: SmtpMailRejectedPayload }

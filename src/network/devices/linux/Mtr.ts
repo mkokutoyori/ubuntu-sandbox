@@ -5,6 +5,7 @@ export interface MtrParsedArgs {
   cycles: number;
   intervalSec: number;
   noDns: boolean;
+  family?: 4 | 6;
   maxHops: number;
   showHelp: boolean;
   showVersion: boolean;
@@ -22,6 +23,10 @@ export const MTR_USAGE = `usage: mtr [-rwxFnoiBgcfqsmStTUI4*6*][-PORT][--display
   --help                       print this help and exit`;
 
 export const MTR_VERSION = 'mtr 0.95';
+
+export function mtrWantsIpv6(parsed: MtrParsedArgs): boolean {
+  return parsed.family === 6 || (parsed.family === undefined && parsed.target.includes(':'));
+}
 
 export function parseMtrArgs(args: string[]): MtrParsedArgs {
   const out: MtrParsedArgs = {
@@ -42,6 +47,8 @@ export function parseMtrArgs(args: string[]): MtrParsedArgs {
     if (a === '-V' || a === '--version') { out.showVersion = true; continue; }
     if (a === '-r' || a === '--report') { out.reportMode = true; continue; }
     if (a === '-n' || a === '--no-dns') { out.noDns = true; continue; }
+    if (a === '-4') { out.family = 4; continue; }
+    if (a === '-6') { out.family = 6; continue; }
     if (a === '-c' || a === '--report-cycles') {
       const v = parseInt(stack.shift() ?? '', 10);
       if (!Number.isFinite(v) || v <= 0) { out.parseError = `mtr: bad cycles ${a}`; return out; }

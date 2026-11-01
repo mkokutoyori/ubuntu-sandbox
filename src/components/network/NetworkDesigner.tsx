@@ -105,6 +105,9 @@ export function NetworkDesigner() {
       replaceTopology(result.deviceInstances, result.connections);
       setProjectName(result.projectName);
       setMinimizedSessions(new Set());
+      if (result.warnings.length > 0) {
+        setMessage({ title: translate(getLocale(), 'designer.importWarnings'), description: result.warnings.slice(0, 12).join('\n') });
+      }
     } catch (err) {
       if (err instanceof Error && err.message !== 'No file selected') {
         setMessage({ title: translate(getLocale(), 'designer.importFailed'), description: err.message });
@@ -146,6 +149,9 @@ export function NetworkDesigner() {
       replaceTopology(result.deviceInstances, result.connections);
       setProjectName(result.projectName);
       setMinimizedSessions(new Set());
+      if (result.warnings.length > 0) {
+        setMessage({ title: translate(getLocale(), 'designer.importWarnings'), description: result.warnings.slice(0, 12).join('\n') });
+      }
     } catch (err) {
       setMessage({ title: translate(getLocale(), 'designer.openFailed'), description: err instanceof Error ? err.message : String(err) });
     }

@@ -1,10 +1,10 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { LinuxMachine } from '@/network/devices/LinuxMachine';
 import type { LinuxShellSession } from '@/network/devices/linux/shell/LinuxShellSession';
 import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
 import { runTraceroute, TRACEROUTE_COMMAND_NAMES, tracerouteArgvOf } from '@/network/devices/linux/commands/net/Traceroute';
-import { parseMtrArgs, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
+import { parseMtrArgs, mtrWantsIpv6, MtrHopStats, formatMtrFrame, MTR_USAGE, MTR_VERSION, type MtrHopProbe } from '@/network/devices/linux/Mtr';
 import { parseWatchArgs } from '@/network/devices/linux/coreutils/WatchRunner';
 import { parseIpMonitorSpec } from '@/network/devices/linux/LinuxIpCommand';
 import { parseVmstatArgs, vmstatHeader, formatVmstatRow } from '@/network/devices/linux/system/Vmstat';
@@ -312,7 +312,9 @@ function planMtr(dev: LinuxMachine, commandLine: string, toks: string[], screen:
   return job(async (ctx) => {
     const hopIps: (string | null)[] = [];
     let resolved = false;
-    const discovery = await dev.tracerouteStreamInSession(parsed.target, {
+    const ipv6 = mtrWantsIpv6(parsed);
+    const discoverWith = ipv6 ? dev.tracerouteStreamInSession6.bind(dev) : dev.tracerouteStreamInSession.bind(dev);
+    const discovery = await discoverWith(parsed.target, {
       maxHops: parsed.maxHops,
       probesPerHop: 1,
       onResolved: () => { resolved = true; },
@@ -341,7 +343,7 @@ function planMtr(dev: LinuxMachine, commandLine: string, toks: string[], screen:
           probe = { lost: true };
         } else {
           try {
-            const result = dev.sendPingProbeSync(new IPAddress(ip));
+            const result = ipv6 ? dev.sendPingProbeSync6(new IPv6Address(ip)) : dev.sendPingProbeSync(new IPAddress(ip));
             probe = result.success ? { ip, rttMs: result.rttMs, lost: false } : { ip, lost: true };
           } catch {
             probe = { ip, lost: true };

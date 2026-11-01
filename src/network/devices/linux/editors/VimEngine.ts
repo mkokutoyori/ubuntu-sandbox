@@ -26,7 +26,8 @@ import { DEFAULT_WORD_CLASSES, wordClasses, type WordClasses } from './vim/VimCh
 import { backspaceTarget, indentString, indentWidth, insertTab, joinText, reindentLine, removeChars, roundedIndent, shiftLine, sliceChars, softBackspace, swapCase, tabSpaces } from './vim/VimEditing';
 import { VimOptions } from './vim/VimOptions';
 import { parseRange, type RangeEnvironment } from './vim/VimExRange';
-import { evaluateReplacementExpression, executeLetCommand, type ExpressionHost, executeUnletCommand, VimVariables } from './vim/VimExpression';
+import { isScriptCommand, ScriptRuntime } from './vim/VimScript';
+import { evaluateReplacementExpression, type ExpressionHost, VimVariables } from './vim/VimExpression';
 
 function normalKeyOf(character: string): EditorKeyInput {
   const code = character.charCodeAt(0);
@@ -130,20 +131,25 @@ function findEnclosingBracketPair(line: string, col: number, open: string, close
   return best;
 }
 
-function barOutsideExpression(text: string): number {
-  let quote = '';
-  for (let at = 0; at < text.length; at++) {
-    const character = text[at];
-    if (quote !== '') {
-      if (character === quote) quote = '';
-      else if (character === '\\' && quote === '"') at++;
-    } else if (character === '"' || character === "'") quote = character;
-    else if (character === '|') {
-      if (text[at + 1] === '|') at++;
-      else return at;
-    }
+const FILE_NAME_CHARACTER = /[\p{L}\p{N}/._+,#$%~=-]/u;
+
+function fileNameAt(text: string, col: number): string {
+  const characters = [...text];
+  const accepts = (at: number): boolean => at >= 0 && at < characters.length && FILE_NAME_CHARACTER.test(characters[at]);
+  const urlJoint = (at: number): boolean => characters[at] === ':' && characters[at + 1] === '/' && characters[at + 2] === '/' && accepts(at - 1);
+  const member = (at: number): boolean => accepts(at) || urlJoint(at) || (at >= 2 && urlJoint(at - 2) && characters[at] === '/') || (at >= 1 && urlJoint(at - 1) && characters[at] === '/');
+  let from = Math.min(col, characters.length - 1);
+  while (from < characters.length && !member(from)) from++;
+  if (from >= characters.length) return '';
+  let start = from;
+  while (start > 0 && member(start - 1)) start--;
+  let stop = from;
+  while (stop + 1 < characters.length && member(stop + 1)) stop++;
+  const run = characters.slice(start, stop + 1).join('');
+  if (run.includes('://')) {
+    while (stop + 1 < characters.length && (accepts(stop + 1) || characters[stop + 1] === '?' || characters[stop + 1] === '&')) stop++;
   }
-  return -1;
+  return characters.slice(start, stop + 1).join('');
 }
 
 type Operator = 'd' | 'y' | 'c' | '<' | '>' | 'g~' | 'gu' | 'gU';
@@ -290,6 +296,10 @@ export class VimEngine {
   private substitutionLines = 0;
   private expressionError: string | null = null;
   private readonly lambdaCounter = { next: 1 };
+  private readonly script = new ScriptRuntime({
+    expressionHost: () => this.expressionHost({ groups: [] } as unknown as MultiMatch, this._cursorLine + 1, this._cursorCol),
+    runExLine: (line) => this.runNestedEx(line),
+  });
   private readonly variables = new VimVariables();
   private wordClassesCache: WordClasses = DEFAULT_WORD_CLASSES;
   private _pendingMatch: PendingSubstMatch | null = null;
@@ -2389,6 +2399,47 @@ export class VimEngine {
     this.insertLiteralText(register.lines.join('\n') + (register.linewise ? '\n' : ''));
   }
 
+  applyPaste(text: string): void {
+    if (this._exited || text === '') return;
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    switch (this._mode) {
+      case 'insert':
+        this.insertLiteralText(normalized);
+        return;
+      case 'normal':
+        this.pasteBeforeCursor(normalized);
+        return;
+      case 'command':
+        this.commandBuffer += normalized.split('\n')[0];
+        return;
+      case 'search':
+        this.searchBuffer += normalized.split('\n')[0];
+        return;
+      case 'expression':
+        this.expressionBuffer += normalized.split('\n')[0];
+        return;
+      default:
+        return;
+    }
+  }
+
+  private pasteBeforeCursor(text: string): void {
+    this.pushUndoSnapshot();
+    const segments = text.split('\n');
+    const line = this.line(this._cursorLine);
+    const head = line.slice(0, this._cursorCol);
+    const tail = line.slice(this._cursorCol);
+    const last = segments[segments.length - 1];
+    this.linesArr.splice(this._cursorLine, 1, ...segments.map((segment, at) => (
+      `${at === 0 ? head : ''}${segment}${at === segments.length - 1 ? tail : ''}`)));
+    this._cursorLine += segments.length - 1;
+    this._cursorCol = segments.length === 1
+      ? this._cursorCol + Math.max(0, [...last].length - 1)
+      : Math.max(0, last.length - 1);
+    this._modified = true;
+    this.window.noteWholeLineEdit();
+  }
+
   private insertLiteralText(text: string): void {
     const segments = text.split('\n');
     segments.forEach((segment, at) => {
@@ -2989,9 +3040,13 @@ export class VimEngine {
       }
     }
 
-    const variableCommand = ligne.match(/^(let|unl(?:e(?:t)?)?)(!?)(?:\s+(.*))?$/s);
-    if (variableCommand !== null) {
-      this.runVariableCommand(variableCommand[1], variableCommand[2] === '!', variableCommand[3] ?? '');
+    if (isScriptCommand(ligne)) {
+      this.runScriptLines([ligne], false);
+      return;
+    }
+    const sourced = ligne.match(/^(?:so(?:u(?:r(?:c(?:e)?)?)?)?(?![A-Za-z])|[@*](?=\S$))\s*(.*)$/s);
+    if (sourced !== null) {
+      this.sourceScript(ligne.startsWith('so') ? 'file' : 'register', sourced[1].trim());
       return;
     }
 
@@ -3053,6 +3108,7 @@ export class VimEngine {
         }
         const body = content.endsWith('\n') ? content.slice(0, -1) : content;
         newLines = body.length === 0 ? [] : body.split('\n');
+        if (arg !== this.filePath) this.alternate = arg;
       }
       const at = rangeStart !== null ? rangeStart : this._cursorLine;
       this.linesArr.splice(at + 1, 0, ...newLines);
@@ -3079,8 +3135,9 @@ export class VimEngine {
       this._mode = 'normal';
       return;
     }
-    if (trimmed.startsWith('w ')) {
-      this.writeFile(trimmed.slice(2).trim(), false);
+    const writeNamed = /^w(?:r(?:i(?:t(?:e)?)?)?)?(!?)\s+([^!\s].*)$/.exec(trimmed);
+    if (writeNamed !== null) {
+      this.writeFile(writeNamed[2].trim(), writeNamed[1] === '!');
       this._mode = 'normal';
       return;
     }
@@ -3172,6 +3229,8 @@ export class VimEngine {
     this._mode = 'normal';
   }
 
+  private alternate = '';
+
   private writeFile(path: string, force: boolean): boolean {
     if (path === '') {
       this._message = 'E32: No file name';
@@ -3189,6 +3248,7 @@ export class VimEngine {
       return false;
     }
     this._modified = false;
+    if (path !== this.filePath) this.alternate = path;
     // Real vim reports the byte count actually written (UTF-8), not the
     // in-memory JS string length — they diverge for any multi-byte char.
     const byteLength = new TextEncoder().encode(body).length;
@@ -3447,15 +3507,41 @@ export class VimEngine {
     this.registers.set(lower, { linewise, lines });
   }
 
-  private runVariableCommand(word: string, bang: boolean, argument: string): void {
-    const bar = barOutsideExpression(argument);
-    const body = bar === -1 ? argument : argument.slice(0, bar);
-    const next = bar === -1 ? '' : argument.slice(bar + 1);
-    const host = this.expressionHost({ groups: [] } as unknown as MultiMatch, this._cursorLine + 1, this._cursorCol);
-    const errors = word === 'let' ? executeLetCommand(body, host) : executeUnletCommand(body, bang, host);
-    this._message = errors.length > 0 ? errors[0] : '';
+  private runNestedEx(line: string): string | null {
+    this._message = '';
+    this.executeExCommand(line);
     this._mode = 'normal';
-    if (errors.length === 0 && next.trim() !== '') this.executeExCommand(next);
+    return /^E\d+:/.test(this._message) ? this._message : null;
+  }
+
+  private runScriptLines(lines: readonly string[], keepGoing: boolean, sourceName: string | null = null): void {
+    this._message = '';
+    const errors = this.script.runScript(lines, keepGoing, sourceName);
+    const echoed = this.script.output.join('\n');
+    const shown = [...errors, ...(echoed === '' ? [] : [echoed])].join('\n');
+    if (shown !== '') this._message = shown;
+    this._mode = 'normal';
+  }
+
+  private sourceScript(kind: 'file' | 'register', target: string): void {
+    if (kind === 'register') {
+      const text = this.registerContent(target.slice(-1)) ?? '';
+      this.runScriptLines(text.replace(/\n$/, '').split('\n'), true);
+      return;
+    }
+    const name = target.startsWith('!') ? target.slice(1).trim() : target;
+    const text = name === '%' ? this.linesArr.join('\n') : this.fs.readFile(this.fs.resolvePath(name));
+    if (name === '') {
+      this._message = 'E471: Argument required';
+      this._mode = 'normal';
+      return;
+    }
+    if (text === null) {
+      this._message = `E484: Can't open file ${name}`;
+      this._mode = 'normal';
+      return;
+    }
+    this.runScriptLines(text.replace(/\n$/, '').split('\n'), true, name === '%' ? this.fs.resolvePath(this.filePath) : this.fs.resolvePath(name));
   }
 
   private expressionHost(match: MultiMatch, lineNumber: number, columnIndex: number): ExpressionHost {
@@ -3470,6 +3556,7 @@ export class VimEngine {
       windowTop: this.window.top + 1,
       windowBottom: this.window.top + this.window.height,
       lambdaCounter: this.lambdaCounter,
+      functions: this.script,
       variables: this.variables,
       assignOption: (name, value) => this.assignOption(name, value),
       assignRegister: (name, text) => this.assignRegister(name, text),
@@ -3495,8 +3582,12 @@ export class VimEngine {
       renameEntry: (from, to) => this.fs.renameEntry?.(from, to) ?? false,
       homeDirectory: () => this.fs.homeDirectory?.() ?? null,
       bufferName: () => this.filePath,
+      alternateName: () => this.alternate,
+      scriptLocation: () => this.script.location(),
       temporaryName: () => this.nextTemporaryName(),
       wordUnderCursor: (big) => this.wordUnderCursor(big, lineNumber - 1, columnIndex),
+      fileNameUnderCursor: () => fileNameAt(this.linesArr[lineNumber - 1] ?? '', columnIndex),
+      modeName: () => (this._mode === 'insert' ? 'i' : 'n'),
       executableAt: (path) => this.fs.executableAt?.(path) ?? false,
       resolvePath: (path) => this.fs.resolvePath(path),
       hostName: () => this.fs.identity?.().host ?? '',

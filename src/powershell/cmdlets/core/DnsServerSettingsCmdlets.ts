@@ -1,7 +1,9 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { DnsCacheSettings, GlobalQueryBlock } from '@/powershell/providers/PSProviders';
+import type {
+  DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, GlobalQueryBlock,
+} from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { formatTimeSpan, makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
@@ -123,5 +125,169 @@ export class SetDnsServerGlobalQueryBlockListCmdlet implements ICmdlet {
     });
     if (!result.ok) return failed(ctx, 'Set-DnsServerGlobalQueryBlockList', result);
     return isSwitchOn(ctx.named['passthru']) ? globalQueryBlockObject(dns.getGlobalQueryBlock()) : null;
+  }
+}
+
+function ednsObject(settings: DnsEdnsSettings): Record<string, PSValue> {
+  return {
+    CacheTimeout: makeTimeSpan(settings.cacheTimeoutSeconds * MILLISECONDS),
+    EnableProbes: settings.enableProbes,
+    EnableReception: settings.enableReception,
+  };
+}
+
+export class GetDnsServerEDnsCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserveredns';
+  readonly displayName = 'Get-DnsServerEDns';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    return ednsObject(requireDns(ctx, 'Get-DnsServerEDns').getEdnsSettings());
+  }
+}
+
+export class SetDnsServerEDnsCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserveredns';
+  readonly displayName = 'Set-DnsServerEDns';
+  readonly aliases = [] as const;
+  readonly parameters = ['CacheTimeout', 'EnableProbes', 'EnableReception', 'ComputerName', 'PassThru', 'CimSession', 'ThrottleLimit', 'AsJob', 'WhatIf', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerEDns');
+    const raw = ctx.named['cachetimeout'];
+    const result = dns.setEdnsSettings({
+      cacheTimeoutSeconds: raw === undefined ? undefined : timeSpanSeconds(raw, 'CacheTimeout'),
+      enableProbes: flagSetting(ctx, 'enableprobes'),
+      enableReception: flagSetting(ctx, 'enablereception'),
+    });
+    if (!result.ok) return failed(ctx, 'Set-DnsServerEDns', result);
+    return isSwitchOn(ctx.named['passthru']) ? ednsObject(dns.getEdnsSettings()) : null;
+  }
+}
+
+const MAX_GLOBAL_NAMES_SEND_TIMEOUT_SECONDS = 15;
+const MIN_GLOBAL_NAMES_QUERY_INTERVAL_SECONDS = 60;
+
+function globalNamesObject(settings: DnsGlobalNames): Record<string, PSValue> {
+  return {
+    Enable: settings.enabled,
+    GlobalOverLocal: settings.queryLocalZonesFirst,
+    PreferAAAA: settings.preferAaaa,
+    AlwaysQueryServer: settings.alwaysQueryServer,
+    EnableEDnsProbes: settings.enableEdnsProbes,
+    BlockUpdates: settings.blockUpdates,
+    'SendTimeout(s)': settings.sendTimeoutSeconds,
+    ServerQueryInterval: makeTimeSpan(settings.serverQueryIntervalSeconds * MILLISECONDS),
+  };
+}
+
+export class GetDnsServerGlobalNameZoneCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserverglobalnamezone';
+  readonly displayName = 'Get-DnsServerGlobalNameZone';
+  readonly aliases = [] as const;
+  readonly parameters = ['ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    return globalNamesObject(requireDns(ctx, 'Get-DnsServerGlobalNameZone').getGlobalNames());
+  }
+}
+
+export class SetDnsServerGlobalNameZoneCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserverglobalnamezone';
+  readonly displayName = 'Set-DnsServerGlobalNameZone';
+  readonly aliases = [] as const;
+  readonly parameters = [
+    'AlwaysQueryServer', 'BlockUpdates', 'Enable', 'EnableEDnsProbes', 'GlobalOverLocal', 'PreferAaaa', 'ComputerName',
+    'SendTimeout', 'ServerQueryInterval', 'PassThru', 'CimSession', 'ThrottleLimit', 'AsJob', 'WhatIf', 'Confirm',
+  ] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerGlobalNameZone');
+    const sendTimeout = countSetting(ctx, 'Set-DnsServerGlobalNameZone', 'sendtimeout', 'SendTimeout', MAX_GLOBAL_NAMES_SEND_TIMEOUT_SECONDS);
+    const interval = this.queryInterval(ctx);
+    if (sendTimeout === null || interval === null) return null;
+    const result = dns.setGlobalNames({
+      enabled: flagSetting(ctx, 'enable'),
+      queryLocalZonesFirst: flagSetting(ctx, 'globaloverlocal'),
+      preferAaaa: flagSetting(ctx, 'preferaaaa'),
+      alwaysQueryServer: flagSetting(ctx, 'alwaysqueryserver'),
+      enableEdnsProbes: flagSetting(ctx, 'enableednsprobes'),
+      blockUpdates: flagSetting(ctx, 'blockupdates'),
+      sendTimeoutSeconds: sendTimeout,
+      serverQueryIntervalSeconds: interval,
+    });
+    if (!result.ok) return failed(ctx, 'Set-DnsServerGlobalNameZone', result);
+    return isSwitchOn(ctx.named['passthru']) ? globalNamesObject(dns.getGlobalNames()) : null;
+  }
+
+  private queryInterval(ctx: CmdletContext): number | undefined | null {
+    const raw = ctx.named['serverqueryinterval'];
+    if (raw === undefined) return undefined;
+    const seconds = timeSpanSeconds(raw, 'ServerQueryInterval');
+    if (seconds === 0) return 0;
+    const asSpan = (bound: number): string => formatTimeSpan(bound * MILLISECONDS);
+    return refuseRange(ctx, 'Set-DnsServerGlobalNameZone', 'ServerQueryInterval', psValueToString(raw), seconds,
+      MIN_GLOBAL_NAMES_QUERY_INTERVAL_SECONDS, MAX_CACHE_TTL_SECONDS, asSpan) ? null : seconds;
+  }
+}
+
+function settingForOutput(entry: DnsServerSettingEntry): PSValue {
+  if (entry.kind === 'span') return makeTimeSpan(Number(entry.value) * MILLISECONDS);
+  return Array.isArray(entry.value) ? [...entry.value] : entry.value as PSValue;
+}
+
+function serverSettingsObject(entries: readonly DnsServerSettingEntry[]): Record<string, PSValue> {
+  const out: Record<string, PSValue> = {};
+  for (const entry of entries) out[entry.property] = settingForOutput(entry);
+  return out;
+}
+
+function settingFromInput(kind: DnsServerSettingEntry['kind'], value: PSValue, property: string): DnsServerSettingValue {
+  switch (kind) {
+    case 'flag': return isSwitchOn(value);
+    case 'span': return timeSpanSeconds(value, property);
+    case 'text': return psValueToString(value);
+    case 'ports': return stringList(value);
+    case 'sendPort': return psValueToString(value).toLowerCase() === 'random' ? 'Random' : Number(psValueToString(value));
+    case 'count': return Number(psValueToString(value));
+  }
+}
+
+export class GetDnsServerSettingCmdlet implements ICmdlet {
+  readonly name = 'get-dnsserversetting';
+  readonly displayName = 'Get-DnsServerSetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['All', 'ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const all = isSwitchOn(ctx.named['all']);
+    return serverSettingsObject(requireDns(ctx, 'Get-DnsServerSetting').getServerSettings().filter(entry => all || entry.brief));
+  }
+}
+
+export class SetDnsServerSettingCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserversetting';
+  readonly displayName = 'Set-DnsServerSetting';
+  readonly aliases = [] as const;
+  readonly parameters = ['InputObject', 'ComputerName', 'PassThru', 'CimSession', 'ThrottleLimit', 'AsJob', 'WhatIf', 'Confirm'] as const;
+  readonly pipelineByValue = 'InputObject';
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, 'Set-DnsServerSetting');
+    const input = ctx.named['inputobject'] ?? ctx.positional[0];
+    if (input === undefined || input === null || typeof input !== 'object' || Array.isArray(input)) {
+      ctx.emitError('Set-DnsServerSetting : Cannot process command because of one or more missing mandatory parameters: InputObject.');
+      return null;
+    }
+    const kinds = new Map(dns.getServerSettings().map(entry => [entry.property.toLowerCase(), entry.kind]));
+    const changes = new Map<string, DnsServerSettingValue>();
+    for (const [property, value] of Object.entries(input as Record<string, PSValue>)) {
+      const kind = kinds.get(property.toLowerCase());
+      if (kind !== undefined && value !== null && value !== undefined) changes.set(property, settingFromInput(kind, value, property));
+    }
+    const result = dns.setServerSettings(changes);
+    if (!result.ok) return failed(ctx, 'Set-DnsServerSetting', result);
+    return isSwitchOn(ctx.named['passthru']) ? serverSettingsObject(dns.getServerSettings()) : null;
   }
 }

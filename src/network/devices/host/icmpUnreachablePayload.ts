@@ -30,7 +30,8 @@ export function icmpv6UnreachablePayload(
   const transport = invoking?.payload as { destinationPort?: number } | undefined;
   const timeExceeded = icmpv6.icmpType === 'time-exceeded';
   const code = timeExceeded ? 'ttl-exceeded'
-    : icmpv6.icmpType === 'packet-too-big' ? 'frag-needed' : icmpv6UnreachableCodeName(icmpv6.code);
+    : icmpv6.icmpType === 'packet-too-big' ? 'frag-needed'
+      : icmpv6.icmpType === 'parameter-problem' ? 'other' : icmpv6UnreachableCodeName(icmpv6.code);
   return {
     ...ref,
     fromIp: ipv6.sourceIP.toString(),
@@ -40,7 +41,8 @@ export function icmpv6UnreachablePayload(
     ttl: ipv6.hopLimit,
     origProtocol: invoking?.nextHeader,
     origDestPort: transport?.destinationPort,
-    icmpType: timeExceeded ? 'time-exceeded' : 'destination-unreachable',
+    icmpType: timeExceeded ? 'time-exceeded'
+      : icmpv6.icmpType === 'parameter-problem' ? 'parameter-problem' : 'destination-unreachable',
     ...(icmpv6.mtu === undefined ? {} : { mtu: icmpv6.mtu }),
   };
 }

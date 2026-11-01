@@ -988,7 +988,8 @@ export interface ILicensingProvider {
 
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
-import type { DnsCacheSettings, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
+import type { DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
+import type { DnsServerSettingEntry, DnsServerSettingValue } from '@/network/devices/windows/server/dns/DnsServerSettings';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
@@ -999,7 +1000,8 @@ export type {
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
-export type { DnsCacheSettings, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
+export type { DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
+export type { DnsServerSettingEntry, DnsServerSettingValue } from '@/network/devices/windows/server/dns/DnsServerSettings';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1050,6 +1052,12 @@ export interface IDnsServerProvider {
   clearCache(): void;
   getCacheSettings(): DnsCacheSettings;
   setCacheSettings(changes: Partial<DnsCacheSettings>): DnsOpResult;
+  getEdnsSettings(): DnsEdnsSettings;
+  setEdnsSettings(changes: Partial<DnsEdnsSettings>): DnsOpResult;
+  getServerSettings(): DnsServerSettingEntry[];
+  setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult;
+  getGlobalNames(): DnsGlobalNames;
+  setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult;
   getGlobalQueryBlock(): GlobalQueryBlock;
   setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): DnsOpResult;
 

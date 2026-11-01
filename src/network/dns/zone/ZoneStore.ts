@@ -24,6 +24,8 @@ export interface ZoneStoreAnswer {
 export interface ZoneStoreAnswerOptions {
   readonly dnssec?: boolean;
   readonly blocked?: (zoneOrigin: string, qname: string) => boolean;
+  readonly rotate?: boolean;
+  readonly apexNs?: boolean;
 }
 
 export class ZoneStore {
@@ -67,6 +69,7 @@ export class ZoneStore {
     }
 
     const dnssec = options.dnssec === true;
+    zone.setRotating(options.rotate !== false);
     const result: ZoneLookupResult = options.blocked?.(zone.origin, question.qname) === true
       ? { kind: 'nxdomain' }
       : zone.lookup(question.qname, question.qtype);
@@ -79,14 +82,14 @@ export class ZoneStore {
       case 'answer':
         return {
           aa: true, rcode: DnsRcode.NOERROR,
-          answers: sign(result.records), authority: [],
+          answers: sign(result.records), authority: options.apexNs === true ? this.apexNs(zone) : [],
           additional: this.collectGlue(zone, result.records),
         };
       case 'cname':
         return {
           aa: true, rcode: DnsRcode.NOERROR,
           answers: sign(result.finalRecords ? [...result.chain, ...result.finalRecords] : [...result.chain]),
-          authority: [], additional: [],
+          authority: options.apexNs === true ? this.apexNs(zone) : [], additional: [],
         };
       case 'nodata':
         return {
@@ -107,6 +110,10 @@ export class ZoneStore {
           additional: this.collectGlue(zone, result.nsRecords),
         };
     }
+  }
+
+  private apexNs(zone: Zone): ResourceRecord<ResourceRecordData>[] {
+    return [...(zone.getRRSet(zone.origin, RRType.NS) ?? [])];
   }
 
   private negativeAuthority(

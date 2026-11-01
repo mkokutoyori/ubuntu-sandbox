@@ -1,3 +1,4 @@
+import { LinearRegExp, starHeight, type PatternMatcher } from './VimLinearRegex';
 import { translateVimPattern, VimPatternError, type PatternContext, type PatternLayout } from './VimRegex';
 
 interface IndexedMatch extends RegExpExecArray {
@@ -60,7 +61,7 @@ export class BufferText {
 
 export class VimRegExp {
   constructor(
-    private readonly regex: RegExp | null,
+    private readonly regex: PatternMatcher | null,
     private readonly layout: PatternLayout | null,
     readonly error: string | null,
   ) {}
@@ -139,7 +140,8 @@ export class VimRegExp {
 export function compileVimPattern(pattern: string, ignoreCase: boolean, context: PatternContext | null = null): VimRegExp {
   try {
     const translated = translateVimPattern(pattern, ignoreCase, context);
-    return new VimRegExp(new RegExp(translated.source, translated.flags), translated, null);
+    const linear = starHeight(translated.source, translated.flags.includes('u')) >= 2 ? LinearRegExp.compile(translated.source, translated.flags) : null;
+    return new VimRegExp(linear ?? new RegExp(translated.source, translated.flags), translated, null);
   } catch (failure) {
     if (failure instanceof VimPatternError) return new VimRegExp(null, null, failure.message);
     if (failure instanceof SyntaxError) return new VimRegExp(null, null, `E383: Invalid search string: ${pattern}`);

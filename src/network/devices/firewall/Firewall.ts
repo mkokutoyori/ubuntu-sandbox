@@ -121,7 +121,7 @@ import { buildFirewallAgents } from './FirewallAgents';
 import { AccessMatrix } from './authz/AccessMatrix';
 import { AuthPortal, type RemoteAuthOutcome } from './auth/AuthPortal';
 import type { FirewallPortals, PortalPorts } from './auth/FirewallPortals';
-import { remoteAuthenticate, type AdminAccountDraft } from './identity/AdminAccounts';
+import { remoteAuthenticate, type AdminAccountDraft, type ApiPrincipal, type ApiUserDraft } from './identity/AdminAccounts';
 import type { PasswordHistory } from './identity/PasswordHistory';
 import { FirewallIpv6 } from './l3/FirewallIpv6';
 import { FirewallDhcp6, type Dhcp6Scope } from './l3/FirewallDhcp6';
@@ -268,6 +268,13 @@ interface LocalTrafficOrigin {
 const GENERIC_SESSION_HELPERS: readonly SessionHelperEntry[] = Object.freeze([
   { id: 1, name: 'ftp', protocol: 6, port: 21 },
 ]);
+
+export interface ReplayRejection {
+  readonly line: string;
+  readonly reply: string;
+}
+
+const REPLAY_REFUSAL = /Command fail|Unknown action|parse error|^% ?Invalid|Invalid input|unknown command/im;
 
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
@@ -1650,6 +1657,9 @@ export class Firewall extends Equipment {
   startAuthPortal(): boolean { return this.portals.startAuth(); }
 
   applyAdminAccount(admin: AdminAccountDraft): void { this.management.applyAdmin(admin); }
+  applyApiUser(user: ApiUserDraft): void { this.management.applyApiUser(user); }
+  removeApiUser(name: string): void { this.management.removeApiUser(name); }
+  authenticateApiKey(key: string, source: string): ApiPrincipal | null { return this.management.authenticateApiKey(key, source); }
 
   applyPasswordExpiry(policy: PasswordExpiryPolicy): void {
     this.management.applyPasswordExpiry(policy);
@@ -1857,11 +1867,15 @@ export class Firewall extends Equipment {
 
   getRunningConfig(): string { return this.managementRunningConfig(); }
 
-  async replayConfig(text: string): Promise<void> {
+  async replayConfig(text: string): Promise<ReplayRejection[]> {
+    const rejected: ReplayRejection[] = [];
     for (const line of text.split('\n')) {
       const trimmed = line.trim();
-      if (trimmed.length > 0) await this.executeCommand(trimmed);
+      if (trimmed.length === 0) continue;
+      const reply = await this.executeCommand(trimmed);
+      if (REPLAY_REFUSAL.test(reply)) rejected.push({ line: trimmed, reply: reply.split('\n')[0] });
     }
+    return rejected;
   }
 
   getVdomRegistry(): VdomRegistry { return this.vdoms; }

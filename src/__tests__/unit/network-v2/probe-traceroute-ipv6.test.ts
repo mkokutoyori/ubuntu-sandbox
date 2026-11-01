@@ -4,10 +4,11 @@
  * le livre (LinuxCommandPackages). Source : traceroute 2.1.0 de Dmitry Butskoy (traceroute.c, lu dans l'archive sourceforge) : l'entete imprime `header_len + data_len` soit 40 + 8 + 32 = 80 octets en IPv6 ;
  * les annotations d'erreur ICMPv6 sont NOROUTE `!N`, BEYONDSCOPE et ADDR `!H`, ADMIN `!X`, NOPORT rien (destination atteinte), autre `!<code>` ; `-l` ecrit l'etiquette de flux sur 20 bits dans
  * le paquet et `-s` d'une autre famille que la cible est refuse (« IP version mismatch in addresses specified ») ; le nom du programme finissant par `6` force la famille. Les sondes UDP (defaut), ICMP (-I) et TCP (-T)
- * decrementent la limite de sauts ; la boucle de sauts est CELLE d'IPv4 (EndHost.collectTraceHops). Reserve : `-P`/`-M raw` refuse en IPv6 car un hote ne repond pas encore par un Parameter Problem
- * a un en-tete suivant inconnu (TODO.md).
+ * decrementent la limite de sauts ; la boucle de sauts est CELLE d'IPv4 (EndHost.collectTraceHops). `-P`/`-M raw` envoie un paquet IPv6 de protocole inconnu : la cible compte Ip6InUnknownProtos et repond un
+ * Parameter Problem code 1 (RFC 4443 §3.4, ip6_input_finish) que traceroute imprime `!<4-1>` (type-code, sans nom) et qui arrete la trace ; apres le filtre INPUT d'ip6tables, qui le fait taire.
  *
- * Discrimine par `git stash` sur src/network et src/terminal : 17 des 18 cas tombent avant. TEMOIN : la trace IPv4 d'un laboratoire sain (seul cas qui passe avant, et c'est son role : la boucle de sauts partagee
+ * Lot du Parameter Problem, discrimine par `git stash` sur src/network : les 4 cas `-P`/`-M raw` tombent avant (ils recevaient le refus) et les 17 autres passent avant comme apres ; le cas ip6tables ne prouve le filtre que contre son frere sans regle (meme trace, qui repond) ; le compteur est lu sur la cible et non deduit de la trace.
+ * Lot initial, discrimine par `git stash` sur src/network et src/terminal : 17 des 18 cas tombaient avant. TEMOIN : la trace IPv4 d'un laboratoire sain (seul cas qui passe avant, et c'est son role : la boucle de sauts partagee
  * n'a pas bouge IPv4). Le cas « route absente » tombait aussi, mais pour une autre raison que celle qu'il prouve : `ip -6 route del default` exigeait `via` (reserve a `add`), si bien que la route
  * n'etait jamais retiree ; `ip -6 route del default` est corrige dans ce lot et le cas verifie d'abord que la route a disparu.
  */
@@ -94,9 +95,30 @@ describe('the other probe methods', () => {
     expect(await run(a, 'traceroute -6 -n -U 2001:db8:2::2')).toMatch(/^ 2  2001:db8:2::2/m);
   });
 
-  it('-P is refused in IPv6 with the missing brick named', async () => {
+  it('-P 253 reaches the target, which answers a Parameter Problem on the unknown next header: !<4-1>', async () => {
     const { a, run } = await lab();
-    expect(await run(a, 'traceroute -6 -P 253 2001:db8:2::2')).toMatch(/Parameter Problem/);
+    const out = await run(a, 'traceroute -6 -n -q 1 -P 253 2001:db8:2::2');
+    expect(out).toMatch(/^ 1  2001:db8:1::1  [\d.]+ ms$/m);
+    expect(out).toMatch(/^ 2  2001:db8:2::2  [\d.]+ ms !<4-1>$/m);
+    expect(out).not.toMatch(/^ 3 /m);
+  });
+
+  it('the target counts the packet in Ip6InUnknownProtos', async () => {
+    const { a, b, run } = await lab();
+    await run(a, 'traceroute -6 -n -q 1 -P 253 2001:db8:2::2');
+    expect(await run(b, 'grep Ip6InUnknownProtos /proc/net/snmp6')).toMatch(/Ip6InUnknownProtos\s+[1-9]/);
+  });
+
+  it('an ip6tables INPUT drop silences the answer: the packet never reaches the protocol demux', async () => {
+    const { a, b, run } = await lab();
+    await run(b, 'ip6tables -A INPUT -p 253 -j DROP');
+    const out = await run(a, 'traceroute -6 -n -q 1 -w 1 -m 2 -P 253 2001:db8:2::2');
+    expect(out).toMatch(/^ 2  \*$/m);
+  });
+
+  it('-M raw without -P is still the default protocol 253 trace', async () => {
+    const { a, run } = await lab();
+    expect(await run(a, 'traceroute -6 -n -q 1 -M raw 2001:db8:2::2')).toMatch(/^ 2  2001:db8:2::2  [\d.]+ ms !<4-1>$/m);
   });
 });
 
