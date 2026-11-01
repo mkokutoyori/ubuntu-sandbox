@@ -26,6 +26,7 @@ import type {
   IShell, ShellConnection, ShellKeyEvent, ShellLineResult, ShellSpecialAction,
 } from './IShell';
 import { ShellContext } from './ShellContext';
+import { ShellFactory } from './ShellFactory';
 import { nextLineId } from '@/terminal/sessions/TerminalSession';
 import { parseAnsiToSegments } from '@/terminal/core/OutputFormatter';
 import type { RichOutputLine, LineType } from '@/terminal/core/types';
@@ -130,6 +131,10 @@ export abstract class AbstractShell implements IShell {
   resume(): void { this.onResume(); }
 
   consumeResumeOutput(): readonly string[] { return []; }
+
+  protected openOsShell(): IShell | null {
+    return ShellFactory.tryCreateChild('bash', { device: this.device, user: this.user, parent: this });
+  }
   deactivate(): void { this._active = false; this.onDeactivate(); }
   dispose(): void {
     if (this._disposed) return;

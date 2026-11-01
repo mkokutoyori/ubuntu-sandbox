@@ -171,7 +171,9 @@ export class ReactiveRmanSubShell implements ISubShell {
     const output = [...result.value, ...this._outputBuffer];
     this._outputBuffer.length = 0;
     this._spool.record(output);
-    return { output, exit: exitNow, prompt: this.getPrompt() };
+    const hostShell = this._hostShellRequested;
+    this._hostShellRequested = false;
+    return { output, exit: exitNow, prompt: this.getPrompt(), ...(hostShell ? { hostShell } : {}) };
   }
 
   dispose(): void {
@@ -187,12 +189,6 @@ export class ReactiveRmanSubShell implements ISubShell {
 
   private _wireEvents(): void {
     this._unsubs.push(this._session.events$.subscribe(e => this._handleEvent(e)));
-  }
-
-  takeHostShellRequest(): boolean {
-    const requested = this._hostShellRequested;
-    this._hostShellRequested = false;
-    return requested;
   }
 
   private _handleEvent(e: RmanEvent): void {

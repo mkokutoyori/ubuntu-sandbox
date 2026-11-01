@@ -29,7 +29,7 @@ async function modalText(page: Page): Promise<string> {
   return (await page.locator('[data-testid="terminal-modal"]').innerText()).trim();
 }
 
-test.describe('RMAN : HOST sans commande', () => {
+test.describe('RMAN et SQL*Plus : HOST sans commande', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/', { timeout: 60_000 });
     await waitForStore(page);
@@ -56,5 +56,23 @@ test.describe('RMAN : HOST sans commande', () => {
     await typeCmd(page, 'exit');
     await typeCmd(page, 'echo retour-au-bash');
     expect(await modalText(page)).toContain('retour-au-bash');
+  });
+
+  test('SQL*Plus : host ouvre un shell, exit revient à SQL> sans message', async ({ page }) => {
+    test.slow();
+    const server = await addDevice(page, 'linux-server', 340, 260);
+    await openTerminal(page, server);
+
+    await typeCmd(page, 'sqlplus / as sysdba');
+    expect(await modalText(page)).toContain('Connected.');
+
+    await typeCmd(page, 'host');
+    await typeCmd(page, 'echo dans-le-shell-sqlplus');
+    expect(await modalText(page)).toContain('dans-le-shell-sqlplus');
+
+    await typeCmd(page, 'exit');
+    await typeCmd(page, 'select 1 from dual;');
+    expect(await modalText(page)).toMatch(/\n\s*1\s*\n/);
+    expect(await modalText(page)).not.toContain('SP2-0738');
   });
 });

@@ -24,6 +24,8 @@ export interface SubShellResult {
   styledOutput?: RichOutputLine[];
   /** Whether the sub-shell has exited. */
   exit: boolean;
+  /** The sub-shell asks its owning shell to open an operating-system shell above it (`HOST`, `!`). */
+  hostShell?: boolean;
   /** The prompt to show for the next line of input. */
   prompt: string;
   /** Whether the terminal screen should be cleared before showing output. */
