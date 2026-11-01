@@ -61,6 +61,7 @@ function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: 
   }
 }
 import { JobProvider } from '@/powershell/providers/JobProvider';
+import { WindowsDnsClientAdapter } from '@/powershell/providers/WindowsDnsClientAdapter';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { WINDOWS_LOOPBACK_ROUTES, WINDOWS_LOOPBACK_ROUTES_V6, LOOPBACK_IFALIAS } from '@/network/devices/windows/WindowsLoopbackRoutes';
 import type {
@@ -3896,6 +3897,7 @@ export function createWindowsPSProviders(
     ad:             pc.getRoleManager() ? new WindowsAdAdapter(pc) : null,
     computer:       new WindowsComputerAdapter(pc),
     dns:            pc.getRoleManager() ? new WindowsDnsServerAdapter(pc) : null,
+    dnsClient:      new WindowsDnsClientAdapter(pc),
     dhcp:           pc.getRoleManager() ? new WindowsDhcpServerAdapter(pc) : null,
     nps:            pc.getRoleManager() ? new WindowsNpsAdapter(pc) : null,
     gpo:            new WindowsGpoAdapter(pc),

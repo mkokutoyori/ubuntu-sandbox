@@ -63,6 +63,8 @@ import { runW32tm } from './windows/WinW32tm';
 import { simulatedWait } from '../core/SimulatedWait';
 import { DnsCache } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
+import { WindowsDnsClientSettings } from './windows/dnsClientSettings';
+import { devolvedSuffixes, nrptRuleFor } from './windows/dnsClient';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
@@ -564,6 +566,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly registry: PSRegistryProvider = new PSRegistryProvider(
     this.getDeviceType() === 'windows-server' ? WINDOWS_SERVER_PRODUCT_IDENTITY : WINDOWS_CLIENT_PRODUCT_IDENTITY,
   );
+  readonly dnsClientSettings: WindowsDnsClientSettings = new WindowsDnsClientSettings(this.registry);
   readonly rdp: WindowsRdpConfig = new WindowsRdpConfig(this.registry);
 
   /**
@@ -1692,12 +1695,20 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const membership = this.domainMembership;
     if (!membership) return false;
     const resolver = this.firstConfiguredDnsServerAddress();
-    const address = this.getInterfaces().map(p => p.getIPAddress()).find(ip => ip !== null);
+    const registering = this.getInterfaces().filter(port => this.dnsClientSettings.interfaceSettings(this.interfaceGuidOf(port.getName())).registerThisConnectionsAddress);
+    const address = registering.map(p => p.getIPAddress()).find(ip => ip !== null);
     if (!resolver || !address) return false;
     const outcome = await sendDynamicUpdate(
       this, resolver,
       hostRegistrationRequest(membership.dnsName, this.getHostname(), address),
     );
+    for (const port of registering) {
+      const connectionAddress = port.getIPAddress();
+      const settings = this.dnsClientSettings.interfaceSettings(this.interfaceGuidOf(port.getName()));
+      const suffix = this.getConnectionDnsSuffix(port.getName());
+      if (!settings.useSuffixWhenRegistering || connectionAddress === null || suffix === '' || suffix.toLowerCase() === membership.dnsName.toLowerCase()) continue;
+      await sendDynamicUpdate(this, resolver, hostRegistrationRequest(suffix, this.getHostname(), connectionAddress));
+    }
     return outcome.rcode === DnsRcode.NOERROR;
   }
 
@@ -3543,6 +3554,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   getConnectionDnsSuffix(ifName: string): string {
+    const configured = this.dnsClientSettings.interfaceSettings(this.interfaceGuidOf(ifName)).connectionSuffix;
+    if (configured !== '') return configured;
     const cfg = this.dnsConfig.get(ifName);
     const leaseSuffix = cfg?.mode === 'static' ? '' : (this.dhcpLease(ifName)?.domainName ?? '');
     return leaseSuffix || this.dnsSuffix;
@@ -3550,21 +3563,35 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private dnsSearchCandidates(name: string): string[] {
     if (name.includes('.')) return [name];
+    return [name, ...this.dnsSearchSuffixes().map((s) => `${name}.${s}`)];
+  }
+
+  private dnsSearchSuffixes(): string[] {
+    const settings = this.dnsClientSettings.globalSettings();
+    if (settings.suffixSearchList.length > 0) return [...settings.suffixSearchList];
     const suffixes = new Set<string>();
-    if (this.dnsSuffix) suffixes.add(this.dnsSuffix);
+    if (this.dnsSuffix) {
+      suffixes.add(this.dnsSuffix);
+      if (settings.useDevolution) {
+        for (const parent of devolvedSuffixes(this.dnsSuffix, settings.devolutionLevel)) suffixes.add(parent);
+      }
+    }
     for (const [ifName] of this.ports) {
       const suffix = this.getConnectionDnsSuffix(ifName);
       if (suffix) suffixes.add(suffix);
     }
-    return [name, ...[...suffixes].map((s) => `${name}.${s}`)];
+    return [...suffixes];
   }
 
   private dnsResolutionAttempts(name: string): Array<{ server: IPAddress; qname: string }> {
     const attempts: Array<{ server: IPAddress; qname: string }> = [];
+    const rules = this.dnsClientSettings.nrptRules();
     for (const qname of this.dnsSearchCandidates(name)) {
       const seen = new Set<string>();
+      const policy = nrptRuleFor(rules, qname);
       for (const [ifName] of this.ports) {
-        for (const server of this.effectiveDnsServers(ifName)) {
+        const servers = policy !== null && policy.nameServers.length > 0 ? policy.nameServers : this.effectiveDnsServers(ifName);
+        for (const server of servers) {
           if (seen.has(server)) continue;
           seen.add(server);
           try { attempts.push({ server: new IPAddress(server), qname }); } catch { void 0; }

@@ -98,6 +98,13 @@ import {
   RestartNetAdapterCmdlet, SetNetAdapterCmdlet, TestNetConnectionCmdlet,
   ClearNetNeighborCacheCmdlet, GetNetAdapterStatisticsCmdlet,
 } from './NetworkCmdlets';
+import {
+  GetDnsClientCmdlet, SetDnsClientCmdlet, RegisterDnsClientCmdlet, GetDnsClientGlobalSettingCmdlet,
+  SetDnsClientGlobalSettingCmdlet, AddDnsClientNrptRuleCmdlet, GetDnsClientNrptRuleCmdlet,
+  SetDnsClientNrptRuleCmdlet, RemoveDnsClientNrptRuleCmdlet, GetDnsClientNrptPolicyCmdlet,
+  GetDnsClientNrptGlobalCmdlet, SetDnsClientNrptGlobalCmdlet, AddDnsClientDohServerAddressCmdlet,
+  GetDnsClientDohServerAddressCmdlet, SetDnsClientDohServerAddressCmdlet, RemoveDnsClientDohServerAddressCmdlet,
+} from './DnsClientCmdlets';
 import { SendMailMessageCmdlet } from './MailMessageCmdlets';
 import { SendSyslogMessageCmdlet } from './SyslogCmdlets';
 import {
@@ -475,6 +482,22 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new SetDnsClientServerAddressCmdlet());
   registry.register(new GetDnsClientCacheCmdlet());
   registry.register(new ClearDnsClientCacheCmdlet());
+  registry.register(new GetDnsClientCmdlet());
+  registry.register(new SetDnsClientCmdlet());
+  registry.register(new RegisterDnsClientCmdlet());
+  registry.register(new GetDnsClientGlobalSettingCmdlet());
+  registry.register(new SetDnsClientGlobalSettingCmdlet());
+  registry.register(new AddDnsClientNrptRuleCmdlet());
+  registry.register(new GetDnsClientNrptRuleCmdlet());
+  registry.register(new SetDnsClientNrptRuleCmdlet());
+  registry.register(new RemoveDnsClientNrptRuleCmdlet());
+  registry.register(new GetDnsClientNrptPolicyCmdlet());
+  registry.register(new GetDnsClientNrptGlobalCmdlet());
+  registry.register(new SetDnsClientNrptGlobalCmdlet());
+  registry.register(new AddDnsClientDohServerAddressCmdlet());
+  registry.register(new GetDnsClientDohServerAddressCmdlet());
+  registry.register(new SetDnsClientDohServerAddressCmdlet());
+  registry.register(new RemoveDnsClientDohServerAddressCmdlet());
   registry.register(new GetNetFirewallRuleCmdlet());
   registry.register(new NewNetFirewallRuleCmdlet());
   registry.register(new SetNetFirewallRuleCmdlet());
