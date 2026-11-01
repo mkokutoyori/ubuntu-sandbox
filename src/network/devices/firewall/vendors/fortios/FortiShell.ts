@@ -1,4 +1,5 @@
 import { ipToUint32 } from '../../../../core/ip';
+import { generateApiKey } from '../../identity/AdminAccounts';
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
 import type { EnumValue } from '../../../../../cli/ArgumentTypes';
 import type { Suggestion, CompletionTrigger } from '../../../../../cli/CompletionEngine';
@@ -1706,6 +1707,7 @@ export class FortiShell {
     switch (resolved.name) {
       case 'log': return runExecuteLog(tail, this.diagDeps());
       case 'ha': return this.executeHa(tail);
+      case 'api-user': return this.executeApiUser(tail);
       case 'dhcp': return this.executeDhcp(tail);
       case 'dhcp6': return this.executeDhcp6(tail);
       case 'interface': return this.executeInterface(tail);
@@ -1975,6 +1977,22 @@ export class FortiShell {
         ? 'this build has no DHCPv6 client; an interface takes its IPv6 '
           + 'address by `set ip6-address` or by autoconfiguration.'
         : 'this build has no PPPoE client.');
+  }
+
+  private executeApiUser(rest: readonly string[]): string {
+    if (rest.length === 0) return FortiMessages.incomplete('an API user operation');
+    if (rest[0] !== 'generate-key') return FortiMessages.unknownAction(`api-user ${rest[0]}`);
+    if (rest.length < 2) return FortiMessages.incomplete('an API user name');
+    if (rest.length > 2) return FortiMessages.parseError(rest[2], 'unexpected argument.');
+    const spec = this.tree.spec(['system', 'api-user']);
+    if (!spec) return FortiMessages.unknownPath('api-user');
+    const table = this.tree.table(spec);
+    const user = table.get(rest[1]);
+    if (!user) return FortiMessages.unknownKey(rest[1]);
+    const key = generateApiKey();
+    user.set('api-key', [key]);
+    spec.onCommit?.(user, { ...this.commitContext(), position: table.keys().indexOf(user.key) });
+    return `New API key: ${key}`;
   }
 
   private executeDhcp(rest: readonly string[]): string {
