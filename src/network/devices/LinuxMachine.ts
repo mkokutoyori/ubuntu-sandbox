@@ -4896,7 +4896,7 @@ export abstract class LinuxMachine extends EndHost
       },
       traceroute6: async (
         target: IPv6Address, maxHops?: number, probesPerHop?: number, firstTtl?: number,
-        timeoutMs?: number, method?: Exclude<TraceProbeMethod, { kind: 'raw' }>, socket?: TraceSocketOptions,
+        timeoutMs?: number, method?: TraceProbeMethod, socket?: TraceSocketOptions,
         hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
       ): Promise<TracerouteHop[]> => {
         const hops = await this.executeTraceroute6(

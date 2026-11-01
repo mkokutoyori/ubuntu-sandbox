@@ -493,11 +493,6 @@ export async function runTraceroute(
     emit('IP version mismatch in addresses specified');
     return 2;
   }
-  if (targetIsIpv6 && parsed.method === 'raw') {
-    emit(`traceroute: option ${parsed.protocol === undefined ? '-M raw' : '-P'}: this simulator cannot build`
-      + ' an IPv6 raw-protocol trace (an unknown next header is not answered with an ICMPv6 Parameter Problem)');
-    return 2;
-  }
 
   if (RAW_SOCKET_METHODS.has(parsed.method) && !host.rawSocketsPermitted) {
     emit('You do not have enough privileges to use this traceroute method.\nsocket: Operation not permitted');
@@ -554,8 +549,7 @@ export function tracerouteHostOf(
       const timeoutMs = Math.min(parsed.waitMs, PROBE_WAIT_CAP_MS);
       if (target instanceof IPv6Address) {
         await ctx.net.traceroute6(
-          target, parsed.maxHops, parsed.probesPerHop, parsed.firstTtl, timeoutMs,
-          method as Exclude<TraceProbeMethod, { kind: 'raw' }>, socket, hooks);
+          target, parsed.maxHops, parsed.probesPerHop, parsed.firstTtl, timeoutMs, method, socket, hooks);
         return;
       }
       await ctx.net.traceroute(

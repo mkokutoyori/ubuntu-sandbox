@@ -89,6 +89,7 @@ import {
   EthernetFrame, IPv4Packet, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, type IPv4Option, type UDPLitePacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
+  ICMPV6_PARAMETER_PROBLEM,
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_UDPLITE, IP_PROTO_IPV6_FRAGMENT,
   nextIPv6FragmentId, createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
   // IPv6 types
@@ -131,6 +132,7 @@ import {
   ICMPV6_EXCEEDED_REASSEMBLY,
   icmp6ReportOf,
   ICMPV6_PARAMPROB_HEADER_FIELD,
+  ICMPV6_PARAMPROB_UNKNOWN_NEXT_HEADER,
   ICMP_TTL_EXPIRED_IN_TRANSIT,
   ICMP_REDIRECT_CODES,
   ICMP_REDIRECT_HOST,
@@ -253,6 +255,7 @@ export interface TracerouteProbeResult {
   ip?: string;
   unreachable?: boolean;
   icmpCode?: number;
+  icmpType?: number;
   extensions?: readonly IcmpExtensionObject[];
 }
 
@@ -408,11 +411,13 @@ interface TraceProbeOutcome {
   rttMs?: number;
   unreachable?: boolean;
   icmpCode?: number;
+  icmpType?: number;
   extensions?: readonly IcmpExtensionObject[];
 }
 
 const TRACE_UDP_DATA_BYTES = 32;
 const TRACE_RAW_DATA_BYTES = 40;
+const IPV6_NEXT_HEADER_OFFSET = 6;
 const LOCAL_DELIVERY_RTT_MS = 0.02;
 const ICMP_TYPE_TIME_EXCEEDED_VALUE = 11;
 
@@ -5951,6 +5956,24 @@ export abstract class EndHost extends Equipment {
     };
   }
 
+  private rawTraceProbe6(
+    targetIP: IPv6Address, protocol: number, hopLimit: number, timeoutMs: number, socket: TraceSocketOptions,
+    marking: { trafficClass?: number; flowLabel?: number },
+  ): Promise<TraceProbeOutcome> {
+    return this.awaitTraceError(
+      targetIP, timeoutMs,
+      (pl) => pl.origProtocol === protocol,
+      () => false,
+      () => {
+        this.emitIpv6(targetIP, (source) => ({
+          ...createIPv6Packet(
+            source, targetIP, protocol, hopLimit, new Uint8Array(TRACE_RAW_DATA_BYTES), TRACE_RAW_DATA_BYTES),
+          ...marking,
+        }), socket.sourceIp6, socket.iface);
+      },
+    );
+  }
+
   private async awaitTraceError(
     targetIP: IPAddress | IPv6Address, timeoutMs: number,
     quotesProbe: (pl: { origProtocol?: number; origDestPort?: number }) => boolean,
@@ -5969,6 +5992,7 @@ export abstract class EndHost extends Equipment {
     return {
       timeout: false, reached: pl.fromIp === targetIP.toString(), ip: pl.fromIp, rttMs,
       unreachable: true, icmpCode: pl.icmpCode,
+      ...(pl.icmpType === 'parameter-problem' ? { icmpType: ICMPV6_PARAMETER_PROBLEM } : {}),
     };
   }
 
@@ -6106,7 +6130,7 @@ export abstract class EndHost extends Equipment {
     probesPerHop: number = 3,
     firstTtl: number = 1,
     hooks?: { onHop?: (hop: TracerouteHopResult) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
-    method: Exclude<TraceProbeMethod, { kind: 'raw' }> = { kind: 'icmp' },
+    method: TraceProbeMethod = { kind: 'icmp' },
     socket: TraceSocketOptions = {},
   ): Promise<TracerouteHopResult[]> {
     if (this.isLocalAddress6(targetIP)) {
@@ -6141,6 +6165,7 @@ export abstract class EndHost extends Equipment {
 
     return this.collectTraceHops({ firstTtl, maxHops, probesPerHop }, hooks, async (ttl): Promise<TraceProbeOutcome> => {
       if (method.kind === 'tcp') return this.tcpTraceProbe(targetIP, method.port, ttl, method.tos, socket);
+      if (method.kind === 'raw') return this.rawTraceProbe6(targetIP, method.protocol, ttl, timeoutMs, socket, marking);
       if (method.kind !== 'icmp') {
         const port = method.kind === 'default-udp' ? udpPort++ : method.port;
         return this.awaitTraceError(
@@ -6222,6 +6247,7 @@ export abstract class EndHost extends Equipment {
           ip: outcome.ip,
           unreachable: outcome.unreachable,
           icmpCode: outcome.icmpCode,
+          icmpType: outcome.icmpType,
           ...(outcome.extensions ? { extensions: outcome.extensions } : {}),
         });
         if (outcome.reached) destinationReached = true;
@@ -6570,15 +6596,17 @@ export abstract class EndHost extends Equipment {
         return;
       }
       const isUdpLite = ipv6.nextHeader === IP_PROTO_UDPLITE && this.udpLite !== null;
-      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP && !isUdpLite) {
-        this.protocolCounters.ip6InUnknownProtos++;
-        return;
-      }
-
       const verdict = this.firewallFilter6(portName, ipv6, 'in');
       if (verdict === 'drop') return;
       if (verdict === 'reject') {
         this.sendIpv6Reject(portName, ipv6);
+        return;
+      }
+      if (ipv6.nextHeader !== IP_PROTO_UDP && ipv6.nextHeader !== IP_PROTO_TCP && !isUdpLite) {
+        this.protocolCounters.ip6InUnknownProtos++;
+        this.sendICMPv6Error(portName, ipv6, 'parameter-problem', ICMPV6_PARAMPROB_UNKNOWN_NEXT_HEADER, {
+          pointer: IPV6_NEXT_HEADER_OFFSET,
+        });
         return;
       }
 
@@ -6751,6 +6779,7 @@ export abstract class EndHost extends Equipment {
       case 'time-exceeded':
       case 'destination-unreachable':
       case 'packet-too-big':
+      case 'parameter-problem':
         this.handleICMPv6Error(ipv6, icmpv6);
         break;
     }
@@ -6838,7 +6867,9 @@ export abstract class EndHost extends Equipment {
       ? `Hop limit exceeded (from ${ipv6.sourceIP})`
       : packetTooBig
         ? `Packet too big (from ${ipv6.sourceIP}) mtu ${icmpv6.mtu ?? 0}`
-        : `Destination unreachable (from ${ipv6.sourceIP})`;
+        : icmpv6.icmpType === 'parameter-problem'
+          ? `Parameter problem (from ${ipv6.sourceIP}) pointer ${icmpv6.pointer ?? 0}`
+          : `Destination unreachable (from ${ipv6.sourceIP})`;
 
     this.publishIcmpv6Unreachable(ipv6, icmpv6);
     this.reportUdpSocketError6(icmpv6);

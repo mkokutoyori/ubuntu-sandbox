@@ -1,4 +1,5 @@
 import type { TracerouteHop } from '../LinuxNetKernel';
+import { ICMPV6_PARAMETER_PROBLEM } from '@/network/core/types';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const TRACEROUTE_VERSION_TEXT = 'Modern traceroute for Linux, version 2.1.0\n'
@@ -22,7 +23,8 @@ export function tracerouteIcmpAnnotation(code: number | undefined, mtu?: number)
   return known === undefined ? `!<${code}>` : known;
 }
 
-export function tracerouteIcmp6Annotation(code: number | undefined): string {
+export function tracerouteIcmp6Annotation(code: number | undefined, type?: number): string {
+  if (type === ICMPV6_PARAMETER_PROBLEM) return `!<${type}-${code ?? 0}>`;
   switch (code) {
     case undefined: return '';
     case 0: return '!N';
@@ -67,7 +69,7 @@ export function tracerouteHopLine(hop: TracerouteHop, options: TracerouteRenderO
     previousIp = probe.ip;
     line += `  ${(probe.rttMs ?? 0).toFixed(3)} ms`;
     const annotation = !probe.unreachable ? ''
-      : options.family === 6 ? tracerouteIcmp6Annotation(probe.icmpCode) : tracerouteIcmpAnnotation(probe.icmpCode);
+      : options.family === 6 ? tracerouteIcmp6Annotation(probe.icmpCode, probe.icmpType) : tracerouteIcmpAnnotation(probe.icmpCode);
     if (annotation !== '') line += ` ${annotation}`;
   });
   return line;

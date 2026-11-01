@@ -38,6 +38,7 @@ export interface TracerouteProbe {
   unreachable?: boolean;
   /** ICMP Destination Unreachable code (0=!N, 1=!H, 2=!P, 3=!X, 13=!A). */
   icmpCode?: number;
+  icmpType?: number;
 }
 
 export interface TracerouteHop {
@@ -180,7 +181,7 @@ export interface LinuxNetKernel {
 
   traceroute6(
     target: IPv6Address, maxHops?: number, probesPerHop?: number, firstTtl?: number,
-    timeoutMs?: number, method?: Exclude<TraceProbeMethod, { kind: 'raw' }>, socket?: TraceSocketOptions,
+    timeoutMs?: number, method?: TraceProbeMethod, socket?: TraceSocketOptions,
     hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
   ): Promise<TracerouteHop[]>;
 
