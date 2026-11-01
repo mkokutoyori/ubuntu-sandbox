@@ -48,6 +48,8 @@ export interface ExpressionHost {
   submatch(index: number): string | undefined;
   mark(name: string): { line: number; col: number } | null;
   register(name: string): string | null;
+  expressionText(): string;
+  setRegister(name: string, lines: string[], linewise: boolean, append: boolean, fromList: boolean): void;
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
   environmentOrNull(name: string): string | null;
@@ -1221,6 +1223,34 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     return pair === undefined || pair.length < 2 ? flt(0) : flt(Number(context.numberOf(pair[0], false)) + Number(context.numberOf(pair[1], false)) / 1e9);
   } }],
   ['strptime', { min: 2, max: 2, run: (args, context) => num(parseTimeText(context.stringOf(args[0], false), context.stringOf(args[1], false))) }],
+  ['getreg', { min: 0, max: 3, run: (args, context) => {
+    const name = args[0] === undefined || context.stringOf(args[0], false) === '' ? '"' : context.stringOf(args[0], false)[0];
+    const asExpression = args[1] !== undefined && context.numberOf(args[1], false) !== 0n;
+    const asList = args[2] !== undefined && context.numberOf(args[2], false) !== 0n;
+    const content = name === '=' && asExpression ? context.host.expressionText() : context.host.register(name) ?? '';
+    if (!asList) return str(content);
+    const lines = content === '' ? [] : (content.endsWith('\n') ? content.slice(0, -1) : content).split('\n');
+    return list(lines.map(str));
+  } }],
+  ['getregtype', { min: 0, max: 1, run: (args, context) => {
+    const name = args[0] === undefined || context.stringOf(args[0], false) === '' ? '"' : context.stringOf(args[0], false)[0];
+    const content = context.host.register(name);
+    if (content === null || (content === '' && name !== '=')) return str('');
+    return str(content.endsWith('\n') ? 'V' : 'v');
+  } }],
+  ['setreg', { min: 2, max: 3, run: (args, context) => {
+    const name = context.stringOf(args[0], false)[0] ?? '"';
+    const options = args[2] === undefined ? '' : context.stringOf(args[2], false);
+    if (/[b\u0016]/.test(options)) return context.fail('E475: Invalid value for argument options');
+    const value = args[1];
+    const text = value.kind === 'list' ? value.items.map((item) => context.stringOf(item, false)).join('\n') : context.stringOf(value, false);
+    const forcedLine = /[lV]/.test(options);
+    const forcedChar = /[cv]/.test(options);
+    const linewise = forcedLine || (!forcedChar && (value.kind === 'list' || text.endsWith('\n')));
+    const body = value.kind !== 'list' && text.endsWith('\n') ? text.slice(0, -1) : text;
+    context.host.setRegister(name, body.split('\n'), linewise, options.includes('a'), value.kind === 'list');
+    return num(0);
+  } }],
   ['getftype', { min: 1, max: 1, run: (args, context) => {
     const info = context.host.linkInfo(context.stringOf(args[0], false));
     return str(info === null ? '' : (FILE_TYPE_NAMES[info.type] ?? 'other'));
@@ -2444,6 +2474,7 @@ class Parser {
     const name = this.text[this.pos];
     if (name !== undefined && /[A-Za-z0-9"\-*+/.:%#=_@]/.test(name)) this.pos++;
     if (!evaluate) return num(0);
+    if (name === '=') return str(this.context.host.expressionText());
     const content = this.context.host.register(name === undefined || name === '@' ? '"' : name);
     return str(content ?? '');
   }
@@ -2575,7 +2606,7 @@ export function evaluateReplacementExpression(source: string, host: ExpressionHo
   return { text, errors: context.errors };
 }
 
-const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|\$[A-Za-z_][A-Za-z0-9_]*|@[A-Za-z0-9"\-*+_/.:#%]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
+const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|\$[A-Za-z_][A-Za-z0-9_]*|@[A-Za-z0-9"\-*+_/.:#%=]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
 const LET_OPERATOR: Record<string, string> = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '..=': '..', '.=': '.' };
 
 function splitAccess(target: string): { name: string; accessors: string[] } | null {

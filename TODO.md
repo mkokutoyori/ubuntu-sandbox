@@ -657,8 +657,11 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   `exists('$X')` et le shell de `system()`), les operateurs composes et la destructuration (`probe-vim-unlet-tranches-et-environnement`,
   `probe-vim-ordre-des-dictionnaires-suppressions`). Restent refuses : `s:` / `l:` / `a:` hors fonction et `:function`. Une lambda ne
   capture que les parametres des lambdas qui l'entourent.
-- **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
-  moteur n'a ni l'un ni l'autre.
+- **`CTRL-R =` et le registre `"=`** passent par l'evaluateur (`probe-vim-registre-expression`, 47 cas rejoues sur vim 9.1) :
+  invite `=` en insertion et en normal, expression vide = la derniere, erreur sans effet sur le tampon, `CTRL-R {registre}` en
+  insertion, `getreg`, `getregtype`, `setreg` (sans registre bloc), `let @=`. Restent : l'historique et l'edition de l'invite `=`
+  (fleches, `CTRL-R CTRL-W`, completion), `CTRL-R CTRL-O` / `CTRL-P` (traites comme `CTRL-R`), les registres bloc (`CTRL-V`,
+  refuses par `setreg`) et le comportement de `Esc` sous `:normal` (vim evalue, le moteur annule comme un vim interactif).
 - **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options
   que le moteur ne modelise pas, enregistree par
   `scripts/oracle/record_vim_option_defaults.py` sous `vim -u NONE -N` ; les
