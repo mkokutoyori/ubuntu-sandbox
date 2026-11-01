@@ -4782,6 +4782,7 @@ export abstract class LinuxMachine extends EndHost
       udpConnect: (target, port, options) => this.udpConnect(target, port, options),
       routeException: (target) => this.routeException(target),
       udpErrorProbe: (target, options) => this.udpErrorProbe(target, options),
+      udpErrorProbe6: (target, options) => this.udpErrorProbe6(target, options),
       flushRouteExceptions: () => this.flushRouteExceptions(),
       udpListen: (port, processName, owner, onDatagram, address) => this.udpListen(port, processName, owner, onDatagram, address),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),

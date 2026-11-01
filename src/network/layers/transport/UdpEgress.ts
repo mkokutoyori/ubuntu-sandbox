@@ -44,6 +44,7 @@ export interface UdpEmissionOptions {
 const DEFAULT_TTL = 64;
 
 export const UDP_OVER_IPV4_HEADER_BYTES = 28;
+export const UDP_OVER_IPV6_HEADER_BYTES = 48;
 
 export function udpPayloadLength(payload: unknown, declared: number): number {
   if (declared > 0) return declared;

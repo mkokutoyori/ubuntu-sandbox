@@ -105,7 +105,7 @@ import {
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
 import { RFC6724_POLICY, type DestinationPolicy } from '../layers/internet/DestinationSelection';
 import {
-  UDP_OVER_IPV4_HEADER_BYTES, udpPayloadLength, type UdpEmissionOptions, type UdpSendRequest,
+  UDP_OVER_IPV4_HEADER_BYTES, UDP_OVER_IPV6_HEADER_BYTES, udpPayloadLength, type UdpEmissionOptions, type UdpSendRequest,
 } from '../layers/transport/UdpEgress';
 import type { HostIcmpEchoFailedPayload, HostIcmpEchoReplyPayload, HostIcmpUnreachablePayload } from './host/events';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
@@ -5845,7 +5845,36 @@ export abstract class EndHost extends Equipment {
     );
     if (answer === null) return { origin: 'none' };
     const { payload, rttMs } = answer;
-    const error = udpSocketErrorFor(payload.icmpType ?? 'destination-unreachable', payload.icmpCode ?? 0);
+    return this.udpErrorReportOf(
+      payload, rttMs, udpSocketErrorFor(payload.icmpType ?? 'destination-unreachable', payload.icmpCode ?? 0));
+  }
+
+  public async udpErrorProbe6(
+    targetIP: IPv6Address,
+    options: { destinationPort: number; sourcePort: number; ttl: number; payloadBytes: number; timeoutMs: number },
+  ): Promise<UdpErrorReport> {
+    const local = this.isLocalAddress6(targetIP);
+    const route = local ? null : this.resolveIPv6Route(targetIP);
+    if (!local && !route) return { origin: 'local', errno: 'ENETUNREACH' };
+    const pathMtu = local ? this.loopbackMtu() : this.pathMtuTo(targetIP, route!.port.getIPv6MTU());
+    if (UDP_OVER_IPV6_HEADER_BYTES + options.payloadBytes > pathMtu) {
+      return { origin: 'local', errno: 'EMSGSIZE', mtu: pathMtu };
+    }
+    const answer = await this.awaitQuotedIcmpError(
+      options.timeoutMs,
+      (pl) => pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === options.destinationPort,
+      () => this.sendUdpDatagram6(
+        targetIP, options.destinationPort, options.sourcePort, null, options.payloadBytes, { hopLimit: options.ttl }),
+    );
+    if (answer === null) return { origin: 'none' };
+    const { payload, rttMs } = answer;
+    const kind = payload.code === 'frag-needed' ? 'packet-too-big' : payload.icmpType ?? 'destination-unreachable';
+    return this.udpErrorReportOf(payload, rttMs, udpSocketErrorForV6(kind, payload.icmpCode ?? 0));
+  }
+
+  private udpErrorReportOf(
+    payload: HostIcmpUnreachablePayload, rttMs: number, error: { errno: Errno } | null,
+  ): UdpErrorReport {
     return {
       origin: 'icmp', from: payload.fromIp, errno: error?.errno ?? 'EHOSTUNREACH',
       timeExceeded: payload.icmpType === 'time-exceeded', rttMs,

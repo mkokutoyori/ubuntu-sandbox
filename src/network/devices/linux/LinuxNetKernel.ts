@@ -259,6 +259,11 @@ export interface LinuxNetKernel {
     options: { destinationPort: number; sourcePort: number; ttl: number; payloadBytes: number; timeoutMs: number },
   ): Promise<UdpErrorReport>;
 
+  udpErrorProbe6(
+    target: IPv6Address,
+    options: { destinationPort: number; sourcePort: number; ttl: number; payloadBytes: number; timeoutMs: number },
+  ): Promise<UdpErrorReport>;
+
   flushRouteExceptions(): void;
 
   /**
