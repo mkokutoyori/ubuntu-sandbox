@@ -640,8 +640,14 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- `\%V` en bloc compte des colonnes de caracteres ; `\@123<=` borne la remontee
-  en caracteres ; `[[=e=]]` utilise la decomposition Unicode.
+- Re-mesure sur vim 9.1 (21 motifs rejoues) : `\%V` en bloc, en caracteres et en lignes, `\@N<=` borne ou non et `[[=e=]]`
+  (`e`, `E`, `é`, `[^...]`, `ignorecase`) sortent comme le vrai ; ces trois lignes de l'ancien constat etaient perimees.
+  Reste les **caracteres combinants** : pour vim un « caractere » est une base suivie de ses marques (`e` + U+0301), `.`, `\a`,
+  `[^x]`, `[[=e=]]` et les classes consomment les marques (`s/./[&]/g` sur `é` donne `[é]` et non `[e]` + marque), un `e` litteral
+  n'atteint pas un `e` suivi d'une marque sauf sous `\Z`, une marque seule en debut de ligne n'est pas `\a` mais est `\k`,
+  `\S` et `[^x]`, et `e\zs.` prend la marque seule. Le traducteur travaille sur des points de code : `[[=e=]]` rend `_` + marque
+  au lieu de `_`. Brique a ecrire : un « caractere » du traducteur = point de code + marques, ce qui change les quantificateurs
+  (`\p{M}*` apres chaque atome rend `.*` ambigu et exponentiel), donc a faire avec le second moteur ci-dessus.
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
