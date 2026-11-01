@@ -35,6 +35,7 @@ export const DEFAULT_CACHE_SETTINGS: DnsCacheSettings = {
 
 const KILOBYTE = 1024;
 const MAX_LOCKING_PERCENT = 100;
+const CACHE_SIZE_TARGET_PERCENT = 90;
 
 export class RegistryDnsParameterStore implements DnsParameterStore {
   constructor(private readonly registry: PSRegistryProvider) {}
@@ -122,7 +123,7 @@ export class DnsServerParameters {
       maxKBSize: this.count('MaxCacheSize', defaults.maxKBSize),
       pollutionProtection: this.flag('SecureResponses', defaults.pollutionProtection),
       lockingPercent: Math.min(MAX_LOCKING_PERCENT, Math.max(0, this.count('CacheLockingPercent', defaults.lockingPercent))),
-      storeEmptyAuthenticationResponse: this.flag('StoreEmptyAuthenticationResponse', defaults.storeEmptyAuthenticationResponse),
+      storeEmptyAuthenticationResponse: this.flag('CacheEmptyAuthResponses', defaults.storeEmptyAuthenticationResponse),
       ignorePolicies: this.flag('IgnorePolicies', defaults.ignorePolicies),
     };
   }
@@ -136,7 +137,7 @@ export class DnsServerParameters {
     dword('MaxCacheSize', changes.maxKBSize);
     dword('SecureResponses', changes.pollutionProtection);
     dword('CacheLockingPercent', changes.lockingPercent);
-    dword('StoreEmptyAuthenticationResponse', changes.storeEmptyAuthenticationResponse);
+    dword('CacheEmptyAuthResponses', changes.storeEmptyAuthenticationResponse);
     dword('IgnorePolicies', changes.ignorePolicies);
   }
 
@@ -147,7 +148,7 @@ export class DnsServerParameters {
       maxNegativeTtlSeconds: settings.maxNegativeTtlSeconds,
       lockingPercent: settings.lockingPercent,
       storeEmptyAuthoritative: settings.storeEmptyAuthenticationResponse,
-      maxBytes: settings.maxKBSize === 0 ? null : settings.maxKBSize * KILOBYTE,
+      maxBytes: settings.maxKBSize === 0 ? null : Math.floor(settings.maxKBSize * KILOBYTE * CACHE_SIZE_TARGET_PERCENT / MAX_LOCKING_PERCENT),
       admitsUnrelatedRecords: !settings.pollutionProtection,
     };
   }

@@ -8,14 +8,17 @@
  * server ceiling allows, never refused an overwrite, cached empty (NODATA) answers whatever the setting, grew without
  * a size bound, and admitted nothing from a response beyond the answer.
  *
- * Authority: Microsoft Learn, DnsServer module, Get-DnsServerCache and Set-DnsServerCache (MaxTtl 0 to 2592000 seconds,
- * default one day, 0 caches nothing; MaxNegativeTtl 1 to 2592000 seconds, default 15 minutes; LockingPercent, default
- * 100: the server does not overwrite a cached entry for that share of its TTL; PollutionProtection: false caches every
- * response, true only the records of the same DNS subtree; StoreEmptyAuthenticationResponse, default True, RFC 2308;
- * MaxKBSize, the size of the memory cache); dnscmd /config in the official documentation (maxcachettl, maxnegativecachettl,
- * maxcachesize, secureresponses). Not sourced: the registry value names CacheLockingPercent, StoreEmptyAuthenticationResponse
- * and IgnorePolicies, the unset default of MaxKBSize (rendered 0: no ceiling), the oldest-first eviction, and the wording
- * of an out-of-range refusal (the standard ValidateRange text, the pages give the ranges in prose only).
+ * Authority: [MS-DNSP] 3.1.1.1.1 DNS Server Integer Properties (MaxCacheTtl, default one day, zero treated literally;
+ * MaxNegativeCacheTtl, default 15 minutes, zero literal, applies to a name error or an empty authoritative response;
+ * SecureResponses, default 1: cache only the records in the same subtree as the original query name; CacheEmptyAuthResponses,
+ * default 1; MaxCacheSize, kilobytes, default 0 = no limit, a soft limit the server tries to keep at 90 percent;
+ * CacheLockingPercent, 0 to 100, default 100: a cache entry is not overwritten by a later response for that share of its
+ * TTL, and locked entries still go when the size limit is reached); Microsoft Learn, DnsServer module, Get-DnsServerCache
+ * and Set-DnsServerCache (MaxTtl 0 to 2592000 seconds, MaxNegativeTtl 1 to 2592000, the six-property output, -PassThru).
+ * Not sourced: the registry value IgnorePolicies (the property has no entry in [MS-DNSP]; it is stored and shown, no
+ * DNS policy exists to read it), the oldest-first eviction and the byte model (owner name length + 10 + wire rdata),
+ * "empty authoritative response" read as NOERROR without an answer, and the wording of an out-of-range refusal (the
+ * standard ValidateRange text; the pages give the ranges in prose only).
  *
  * Discrimination (the probe run on the tree before the change): 14 of the 22 cases fall. The eight that pass either
  * way are the WITNESS (the lab resolves and lists the cache), four NON-REGRESSIONS (a negative answer is still served
@@ -101,6 +104,7 @@ describe('the settings surface', () => {
     expect(registry).toMatch(/CacheLockingPercent\s+REG_DWORD\s+0x32/);
     expect(registry).toMatch(/MaxCacheSize\s+REG_DWORD\s+0x800/);
     expect(registry).toMatch(/SecureResponses\s+REG_DWORD\s+0x0/);
+    expect(registry).toMatch(/CacheEmptyAuthResponses\s+REG_DWORD\s+0x0/);
     const out = await run(cache, 'Get-DnsServerCache');
     expect(out).toMatch(/MaxTTL\s+:\s+00:10:00/);
     expect(out).toMatch(/MaxNegativeTTL\s+:\s+00:02:00/);
