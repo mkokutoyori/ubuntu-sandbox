@@ -49,7 +49,7 @@ describe('outbound UDP — DROP vs REJECT already differentiated (log + bus even
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sent = (client as any).sendUdpDatagram(new IPAddress('10.0.0.1'), 9999, 5000, 'x', 1);
     expect(sent).toBe(false);
-    const dmesg = await client.executeCommand('dmesg');
+    const dmesg = await client.executeCommand('sudo dmesg');
     expect(dmesg).toMatch(/\[netfilter DROP\][^\n]*DPT=9999/);
     expect(dmesg).not.toMatch(/\[netfilter REJECT\][^\n]*DPT=9999/);
   });
@@ -59,7 +59,7 @@ describe('outbound UDP — DROP vs REJECT already differentiated (log + bus even
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const sent = (client as any).sendUdpDatagram(new IPAddress('10.0.0.1'), 9999, 5000, 'x', 1);
     expect(sent).toBe(false);
-    const dmesg = await client.executeCommand('dmesg');
+    const dmesg = await client.executeCommand('sudo dmesg');
     expect(dmesg).toMatch(/\[netfilter REJECT\][^\n]*DPT=9999/);
     expect(dmesg).not.toMatch(/\[netfilter DROP\][^\n]*DPT=9999/);
   });

@@ -266,6 +266,17 @@ const TIMEDATECTL_OPTIONS: GnuOptionSet = {
   operands: true,
 };
 
+const PGREP_COMMON_SHORT = 'LF:cfinoxP:O:AHg:s:u:U:G:t:r:?Vh';
+const PGREP_LONG: readonly LongOption[] = [
+  valued('signal'), flag('ignore-ancestors', 'A'), flag('require-handler', 'H'), flag('count', 'c'), valued('cgroup'),
+  valued('delimiter', 'd'), flag('list-name', 'l'), flag('list-full', 'a'), flag('full', 'f'), valued('pgroup', 'g'),
+  valued('group', 'G'), flag('ignore-case', 'i'), flag('newest', 'n'), flag('oldest', 'o'), valued('older', 'O'),
+  valued('parent', 'P'), valued('session', 's'), valued('terminal', 't'), valued('euid', 'u'), valued('uid', 'U'),
+  flag('inverse', 'v'), flag('lightweight', 'w'), flag('exact', 'x'), valued('pidfile', 'F'), flag('logpidfile', 'L'),
+  flag('echo', 'e'), valued('ns'), valued('nslist'), valued('queue', 'q'), valued('runstates', 'r'),
+  flag('help', 'h'), flag('version', 'V'),
+];
+
 export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   systemctl: SYSTEMCTL_OPTIONS,
   loginctl: LOGINCTL_OPTIONS,
@@ -483,32 +494,16 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     failureStatus: 255,
   },
   pgrep: {
-    optstring: 'd:lavwcfg:G:inoO:P:s:t:u:U:xF:Lr:AVh',
-    long: [
-      valued('delimiter', 'd'), flag('list-name', 'l'), flag('list-full', 'a'), flag('inverse', 'v'),
-      flag('lightweight', 'w'), flag('count', 'c'), flag('full', 'f'), valued('signal'),
-      valued('pgroup', 'g'), valued('group', 'G'), flag('ignore-case', 'i'), flag('newest', 'n'), flag('oldest', 'o'),
-      valued('older', 'O'), valued('parent', 'P'), valued('session', 's'), valued('terminal', 't'),
-      valued('euid', 'u'), valued('uid', 'U'), flag('exact', 'x'), valued('pidfile', 'F'), flag('logpidfile', 'L'),
-      valued('runstates', 'r'), flag('ignore-ancestors', 'A'), valued('cgroup'), valued('ns'), valued('nslist'),
-      flag('help', 'h'), flag('version', 'V'),
-    ],
+    optstring: `lad:vw${PGREP_COMMON_SHORT}`,
+    long: PGREP_LONG,
     operands: true,
     usage: PGREP_USAGE,
     trailer: 'For more details see pgrep(1).',
     failureStatus: 2,
   },
   pkill: {
-    optstring: 'Hq:ecfvinoxAg:G:O:P:s:t:u:U:F:Lr:Vh',
-    long: [
-      flag('require-handler', 'H'), valued('queue', 'q'), flag('echo', 'e'), flag('count', 'c'), flag('full', 'f'),
-      flag('inverse', 'v'), valued('signal'),
-      valued('pgroup', 'g'), valued('group', 'G'), flag('ignore-case', 'i'), flag('newest', 'n'), flag('oldest', 'o'),
-      valued('older', 'O'), valued('parent', 'P'), valued('session', 's'), valued('terminal', 't'),
-      valued('euid', 'u'), valued('uid', 'U'), flag('exact', 'x'), valued('pidfile', 'F'), flag('logpidfile', 'L'),
-      valued('runstates', 'r'), flag('ignore-ancestors', 'A'), valued('cgroup'), valued('ns'), valued('nslist'),
-      flag('help', 'h'), flag('version', 'V'),
-    ],
+    optstring: `eq:${PGREP_COMMON_SHORT}`,
+    long: PGREP_LONG,
     operands: true,
     usage: PKILL_USAGE,
     trailer: 'For more details see pgrep(1).',

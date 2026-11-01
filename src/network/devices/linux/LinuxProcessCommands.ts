@@ -6,6 +6,7 @@
  * scripts that parse the output keep working.
  */
 
+import { runPgrep, runPidof } from './PgrepCommand';
 import { formatLocalTime } from './system/SystemInfo';
 import { simulationDate } from '@/network/core/SystemClock';
 
@@ -32,6 +33,9 @@ import { renderDependencyTree } from './systemd/DependencyTree';
 /** Parameters describing the calling shell, used to render `ps` output. */
 export interface ProcessCmdContext {
   pm: LinuxProcessManager;
+  userUid?: (name: string) => number;
+  utf8Locale?: boolean;
+  groupGid?: (name: string) => number;
   currentUser: string;
   currentUid: number;
   /** TTY of the current shell session, e.g. "pts/0". */
@@ -42,6 +46,10 @@ export interface ProcessCmdContext {
   /** PID of whoever is currently executing this command (`currentBashPid()`);
    *  used by `nice <cmd>`, which applies to the calling process, not `shellPid`. */
   currentPid?: number;
+  /** Reads a file of the machine (relative paths resolve against the shell's cwd) — backs `pgrep -F`. */
+  readFile?: (path: string) => string | null;
+  /** Cgroup v2 path of a process, as `/proc/<pid>/cgroup` shows it after `0::` — backs `pgrep --cgroup`. */
+  cgroupOf?: (pid: number) => string;
   /** Optional per-shell job table — needed for `kill %N` jobspec resolution. */
   jobs?: LinuxJobTable;
   /** Seconds since boot, for `top`'s header. Same source as `uptime`. */
@@ -88,9 +96,140 @@ function transientSelfProcess(ctx: ProcessCmdContext, comm: string): ProcessInfo
 
 // ─── top ──────────────────────────────────────────────────────────────
 
+const TOP_USAGE = [
+  '',
+  'Usage:',
+  ' top [options]',
+  '',
+  'Options:',
+  " -b, --batch-mode                run in non-interactive batch mode",
+  " -c, --cmdline-toggle            reverse last remembered 'c' state",
+  ' -d, --delay =SECS [.TENTHS]     iterative delay as SECS [.TENTHS]',
+  ' -E, --scale-summary-mem =SCALE  set mem as: k,m,g,t,p,e for SCALE',
+  ' -e, --scale-task-mem =SCALE     set mem with: k,m,g,t,p for SCALE',
+  ' -H, --threads-show              show tasks plus all their threads',
+  " -i, --idle-toggle               reverse last remembered 'i' state",
+  ' -n, --iterations =NUMBER        exit on maximum iterations NUMBER',
+  ' -O, --list-fields               output all field names, then exit',
+  ' -o, --sort-override =FIELD      force sorting on this named FIELD',
+  ' -p, --pid =PIDLIST              monitor only the tasks in PIDLIST',
+  " -S, --accum-time-toggle         reverse last remembered 'S' state",
+  ' -s, --secure-mode               run with secure mode restrictions',
+  ' -U, --filter-any-user =USER     show only processes owned by USER',
+  ' -u, --filter-only-euser =USER   show only processes owned by USER',
+  ' -w, --width [=COLUMNS]          change print width [,use COLUMNS]',
+  " -1, --single-cpu-toggle         reverse last remembered '1' state",
+  '',
+  ' -h, --help                      display this help text, then exit',
+  ' -V, --version                   output version information & exit',
+  '',
+  'For more details see top(1).',
+].join('\n');
+
+const TOP_FIELDS: Readonly<Record<string, (p: ProcessInfo, upSec: number) => number | string>> = {
+  PID: (p) => p.pid, USER: (p) => p.user, PR: (p) => p.priority, NI: (p) => p.nice, VIRT: (p) => p.vsize,
+  RES: (p) => p.rss, SHR: (p) => sharedKib(p), S: (p) => p.state[0],
+  '%CPU': (p, upSec) => (upSec > 0 ? ((p.cpuTime / 1000) / upSec) * 100 : 0), '%MEM': (p) => Number(memPercent(p.rss)),
+  'TIME+': (p) => p.cpuTime, COMMAND: (p) => p.comm,
+};
+const TOP_NUMERIC_SORT = new Set(['PID', 'PR', 'NI', 'VIRT', 'RES', 'SHR', '%CPU', '%MEM', 'TIME+']);
+
+export function runTop(args: string[], ctx: ProcessCmdContext): KillResult {
+  let iterations = 1;
+  let sortField: string | null = null;
+  let pids: number[] | null = null;
+  let user: string | null = null;
+  let width = 80;
+  let fullCommand = false;
+  const fail = (line: string): KillResult => ({ output: '', stderr: `${line}\n`, exitCode: 1 });
+  const valued = new Set(['d', 'n', 'o', 'p', 'u', 'U', 'w', 'E', 'e']);
+  for (let index = 0; index < args.length; index++) {
+    const token = args[index];
+    if (!token.startsWith('-') || token === '-') continue;
+    const long = token.startsWith('--') ? token.slice(2).split('=') : null;
+    if (long !== null) {
+      const map: Record<string, string> = { 'batch-mode': 'b', 'cmdline-toggle': 'c', delay: 'd', iterations: 'n', 'sort-override': 'o', pid: 'p', 'filter-only-euser': 'u', 'filter-any-user': 'U', width: 'w', help: 'h', version: 'V', 'threads-show': 'H', 'idle-toggle': 'i', 'list-fields': 'O', 'accum-time-toggle': 'S', 'secure-mode': 's', 'single-cpu-toggle': '1' };
+      const letter = map[long[0]];
+      if (letter === undefined) return fail(`top: unrecognized option '--${long[0]}'`);
+      args = [...args.slice(0, index), `-${letter}${long[1] !== undefined ? long[1] : ''}`, ...args.slice(index + 1)];
+      index--;
+      continue;
+    }
+    for (let at = 1; at < token.length; at++) {
+      const letter = token[at];
+      if (letter === 'h') return { output: TOP_USAGE, exitCode: 0 };
+      if (letter === 'V') return { output: 'top from procps-ng 4.0.4', exitCode: 0 };
+      if (letter === 'b' || letter === 'H' || letter === 'i' || letter === 'S' || letter === 's' || letter === '1') continue;
+      if (letter === 'c') { fullCommand = true; continue; }
+      if (letter === 'O') {
+        return { output: Object.keys(TOP_FIELDS).join('\n'), exitCode: 0 };
+      }
+      if (!valued.has(letter)) return fail(`top: invalid option -- '${letter}'`);
+      const rest = token.slice(at + 1);
+      const value = rest !== '' ? rest : (args[++index] ?? '');
+      if (letter === 'n') {
+        if (!/^\d+$/.test(value)) return fail(`top: bad iterations argument '${value}'`);
+        iterations = Number(value);
+      } else if (letter === 'd') {
+        if (!/^\d+(\.\d)?$/.test(value)) return fail(`top: bad delay interval '${value}'`);
+      } else if (letter === 'p') {
+        pids = [];
+        for (const item of value.split(',').filter(Boolean)) {
+          if (!/^\d+$/.test(item)) return fail(`top: bad pid '${item}'`);
+          pids.push(Number(item));
+        }
+      } else if (letter === 'u' || letter === 'U') {
+        if (!/^\d+$/.test(value) && (ctx.userUid?.(value) ?? 0) < 0) return fail(`top: bad user name '${value}'`);
+        user = value;
+      } else if (letter === 'o') {
+        const field = value.replace(/^[+-]/, '').toUpperCase();
+        if (!(field in TOP_FIELDS)) return fail(`top: unrecognized field name '${value}'`);
+        sortField = value.toUpperCase();
+      } else if (letter === 'w') {
+        const columns = Number(value);
+        if (Number.isFinite(columns) && columns > 0) width = columns;
+      }
+      break;
+    }
+  }
+  const snapshot = renderTop(ctx, { sortField, pids, user, width, fullCommand });
+  return { output: Array.from({ length: Math.max(iterations, 1) }, () => snapshot).join('\n'), exitCode: 0 };
+}
+
+interface TopView {
+  sortField: string | null;
+  pids: number[] | null;
+  user: string | null;
+  width: number;
+  fullCommand: boolean;
+}
+
 export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
-  // We always print one snapshot — the simulator has no interactive top.
-  const procs = [...ctx.pm.list(), transientSelfProcess(ctx, 'top')];
+  const result = runTop(args, ctx);
+  return result.stderr === undefined ? result.output : `${result.stderr.replace(/\n$/, '')}`;
+}
+
+function renderTop(ctx: ProcessCmdContext, view: TopView): string {
+  const everyone = [...ctx.pm.list(), transientSelfProcess(ctx, 'top')];
+  let procs = everyone;
+  if (view.pids !== null) procs = procs.filter((p) => view.pids!.includes(p.pid));
+  if (view.user !== null) {
+    const uid = /^\d+$/.test(view.user) ? Number(view.user) : (ctx.userUid?.(view.user) ?? -1);
+    procs = procs.filter((p) => p.uid === uid);
+  }
+  const upSec = ctx.uptimeSeconds ?? 0;
+  if (view.sortField !== null) {
+    const ascending = view.sortField.startsWith('+');
+    const name = view.sortField.replace(/^[+-]/, '');
+    const key = TOP_FIELDS[name];
+    const numeric = TOP_NUMERIC_SORT.has(name);
+    procs = [...procs].sort((a, b) => {
+      const left = key(a, upSec);
+      const right = key(b, upSec);
+      const order = numeric ? Number(left) - Number(right) : String(left).localeCompare(String(right), 'en');
+      return (numeric && !ascending ? -order : order) || a.pid - b.pid;
+    });
+  }
   const now = simulationDate();
   const timeStr = now.toLocaleTimeString('en-US', { hour12: false });
   const mib = (kib: number) => Math.round(kib / 1024);
@@ -99,16 +238,9 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
   const usedMem = mem ? mib(mem.usedKib) : 1258;
   const freeMem = mem ? mib(mem.freeKib) : 1468;
   const bufCache = mem ? mib(mem.buffCacheKib) : 1254;
-
-  const compte = (bucket: TaskBucket) =>
-    procs.filter(p => taskBucketOf(p.state) === bucket).length;
-  const running = compte('running');
-  const sleeping = compte('sleeping');
-  const stopped = compte('stopped');
-  const zombie = compte('zombie');
+  const tally = (bucket: TaskBucket) => everyone.filter((p) => taskBucketOf(p.state) === bucket).length;
 
   const lines: string[] = [];
-  const upSec = ctx.uptimeSeconds ?? 0;
   const upDays = Math.floor(upSec / 86_400);
   const upH = Math.floor((upSec % 86_400) / 3600);
   const upM = Math.floor((upSec % 3600) / 60);
@@ -116,32 +248,31 @@ export function cmdTop(args: string[], ctx: ProcessCmdContext): string {
     ? `${upDays} day${upDays > 1 ? 's' : ''}, ${upH}:${String(upM).padStart(2, '0')}`
     : upH > 0 ? `${upH}:${String(upM).padStart(2, '0')}` : `${upM} min`;
   lines.push(`top - ${timeStr} up  ${upClause},  1 user,  load average: ${IDLE_LOAD_AVERAGE}`);
-  lines.push(
-    `Tasks: ${procs.length} total,  ${running} running, ${sleeping} sleeping,  ${stopped} stopped,  ${zombie} zombie`,
-  );
+  lines.push(`Tasks: ${everyone.length} total,  ${tally('running')} running, ${tally('sleeping')} sleeping,  ${tally('stopped')} stopped,  ${tally('zombie')} zombie`);
   lines.push(`%Cpu(s):  ${CPU_IDLE_LINE}`);
   lines.push(`MiB Mem :  ${totalMem}.0 total,  ${freeMem}.0 free,  ${usedMem}.0 used,  ${bufCache}.0 buff/cache`);
   lines.push('MiB Swap:  2048.0 total,  2048.0 free,      0.0 used.  2519.0 avail Mem');
   lines.push('');
   lines.push('    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND');
-
+  const commandWidth = Math.max(view.width - 70, 1);
+  const clip = (text: string): string => (text.length > commandWidth ? `${text.slice(0, commandWidth - 1)}+` : text);
   for (const p of procs) {
     const pcpu = upSec > 0 ? ((p.cpuTime / 1000) / upSec) * 100 : 0;
-    const mem = memPercent(p.rss);
+    const user = p.user.length > 8 ? `${p.user.slice(0, 7)}+` : p.user;
     lines.push(
       [
         padToWidth(String(p.pid), 7, 'right'),
-        padToWidth(p.user, 9),
+        padToWidth(user, 8),
         padToWidth(String(p.priority), 3, 'right'),
-        padToWidth(String(p.nice), 4, 'right'),
+        padToWidth(String(p.nice), 3, 'right'),
         padToWidth(String(p.vsize), 7, 'right'),
         padToWidth(String(p.rss), 6, 'right'),
         padToWidth(String(sharedKib(p)), 6, 'right'),
         p.state[0],
         padToWidth(pcpu.toFixed(1), 5, 'right'),
-        padToWidth(mem, 5, 'right'),
+        padToWidth(memPercent(p.rss), 5, 'right'),
         padToWidth(topCpuTime(p.cpuTime), 9, 'right'),
-        topCommand(p.comm),
+        clip(view.fullCommand ? p.command : p.comm.replace(/^\[(.*)\]$/, '$1')),
       ].join(' '),
     );
   }
@@ -287,68 +418,15 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
 // ─── pidof / pgrep / pkill ────────────────────────────────────────────
 
 export function cmdPidof(args: string[], ctx: ProcessCmdContext): KillResult {
-  if (args.length === 0) return { output: '', exitCode: 1 };
-  const allPids: number[] = [];
-  for (const name of args) {
-    allPids.push(...ctx.pm.pidof(name));
-  }
-  if (allPids.length === 0) return { output: '', exitCode: 1 };
-  return { output: allPids.sort((a, b) => b - a).join(' '), exitCode: 0 };
+  return runPidof(args, ctx);
 }
 
 export function cmdPgrep(args: string[], ctx: ProcessCmdContext): KillResult {
-  // pgrep [-l] [-a] [-x] [-u user[,user...]] [pattern]
-  let listLong = false;
-  let listFull = false;
-  let exact = false;
-  let users: string[] | null = null;
-  const patterns: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-l') listLong = true;
-    else if (a === '-a') listFull = true;
-    else if (a === '-x') exact = true;
-    else if (a === '-u') users = (args[++i] ?? '').split(',').filter(Boolean);
-    else patterns.push(a);
-  }
-  // Real pgrep only requires *some* selection criterion — a name pattern
-  // is one, but `-u user` alone (list everything that user owns) is
-  // equally valid and a common idiom.
-  if (patterns.length === 0 && !users) {
-    return { output: 'pgrep: no matching criteria specified', exitCode: 2 };
-  }
-  const pattern = patterns[0];
-  const pids = pattern ? ctx.pm.pgrep(pattern, exact) : ctx.pm.list().map(p => p.pid);
-  const filtered = pids
-    .map(pid => ctx.pm.get(pid)!)
-    .filter(p => (users ? users.includes(p.user) : true));
-  if (filtered.length === 0) return { output: '', exitCode: 1 };
-  const lines = filtered.map(p => (
-    listFull ? `${p.pid} ${p.command}` : listLong ? `${p.pid} ${p.comm}` : String(p.pid)
-  ));
-  return { output: lines.join('\n'), exitCode: 0 };
+  return runPgrep('pgrep', args, ctx);
 }
 
 export function cmdPkill(args: string[], ctx: ProcessCmdContext): KillResult {
-  let signal: Signal = 'SIGTERM';
-  let exact = false;
-  const positional: string[] = [];
-  for (const a of args) {
-    if (a === '-x') { exact = true; continue; }
-    if (a.startsWith('-')) {
-      const sig = parseSignalArg(a);
-      if (sig) {
-        signal = sig;
-        continue;
-      }
-    }
-    positional.push(a);
-  }
-  if (positional.length === 0) {
-    return { output: 'pkill: no matching criteria specified', exitCode: 2 };
-  }
-  const count = ctx.pm.pkill(positional[0], signal, exact);
-  return { output: '', exitCode: count > 0 ? 0 : 1 };
+  return runPgrep('pkill', args, ctx);
 }
 
 /**

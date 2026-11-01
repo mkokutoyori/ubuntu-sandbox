@@ -32,6 +32,8 @@ export interface RmanConfigSnapshot {
   readonly channelFormat:          string | undefined;
   /** Tablespaces marked EXCLUDED via CONFIGURE EXCLUDE FOR TABLESPACE. */
   readonly excludedTablespaces:    ReadonlySet<string>;
+  /** CONFIGURE SNAPSHOT CONTROLFILE NAME TO '<x>'; undefined while the default applies. */
+  readonly snapshotControlfile:    string | undefined;
 }
 
 export interface ConfigDelta {
@@ -57,6 +59,7 @@ export class RmanConfig {
   private _backupOptimization = false;
   private _channelFormat: string | undefined;
   private _excludedTablespaces = new Set<string>();
+  private _snapshotControlfile: string | undefined;
 
   constructor(initialPolicy: IRetentionPolicy = new RedundancyPolicy(1), initialAutobackup = true) {
     this._retentionPolicy = initialPolicy;
@@ -81,6 +84,7 @@ export class RmanConfig {
       backupOptimization:     this._backupOptimization,
       channelFormat:          this._channelFormat,
       excludedTablespaces:    this._excludedTablespaces,
+      snapshotControlfile:    this._snapshotControlfile,
     };
   }
 
@@ -114,6 +118,12 @@ export class RmanConfig {
     const old = String(this._backupOptimization);
     this._backupOptimization = on;
     return { key: 'backupOptimization', oldValue: old, newValue: String(on) };
+  }
+
+  setSnapshotControlfile(path: string | undefined): ConfigDelta {
+    const old = this._snapshotControlfile ?? '<default>';
+    this._snapshotControlfile = path;
+    return { key: 'snapshotControlfile', oldValue: old, newValue: path ?? '<default>' };
   }
 
   setMaxSetSize(value: string): ConfigDelta {

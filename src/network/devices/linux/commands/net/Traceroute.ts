@@ -503,7 +503,8 @@ export function tracerouteHostOf(
     trace: async (target, parsed, method, socket, onHop, shouldStop) => {
       await ctx.net.traceroute(
         target, parsed.maxHops, parsed.probesPerHop, parsed.firstTtl,
-        Math.min(parsed.waitMs, PROBE_WAIT_CAP_MS), method, socket, { onHop, shouldStop });
+        Math.min(parsed.waitMs, PROBE_WAIT_CAP_MS), method, socket,
+        { onHop, shouldStop, compressedWaitMs: Math.max(0, parsed.waitMs - PROBE_WAIT_CAP_MS) });
     },
   };
 }

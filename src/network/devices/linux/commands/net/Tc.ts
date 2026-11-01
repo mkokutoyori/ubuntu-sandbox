@@ -1,3 +1,4 @@
+import { defaultQdiscOf } from './Ip';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { netemIsActive, type NetemSpec } from '@/network/hardware/Netem';
@@ -52,8 +53,8 @@ function parseDelayMs(args: string[]): number | null {
   return m[2] === 's' ? value * 1000 : value;
 }
 
-function qdiscShowLine(iface: string, spec: NetemSpec | undefined): string {
-  if (!netemIsActive(spec)) return `qdisc fq_codel 0: dev ${iface} root refcnt 2`;
+function qdiscShowLine(iface: string, spec: NetemSpec | undefined, defaultQdisc: string): string {
+  if (!netemIsActive(spec)) return `qdisc ${defaultQdisc} 0: dev ${iface} root refcnt 2`;
   const parts: string[] = [];
   if (spec.delayMs > 0) parts.push(`delay ${spec.delayMs}ms`);
   if (spec.lossRate > 0) parts.push(`loss ${(spec.lossRate * 100).toFixed(1).replace(/\.0$/, '')}%`);
@@ -116,7 +117,7 @@ export const tcCommand: LinuxCommand = {
       }
       case 'show':
       case 'list':
-        return qdiscShowLine(iface, cable.getEgressNetem(port));
+        return qdiscShowLine(iface, cable.getEgressNetem(port), defaultQdiscOf(ctx.executor.vfs));
       default:
         return `tc: unsupported qdisc subcommand "${sub ?? ''}"`;
     }

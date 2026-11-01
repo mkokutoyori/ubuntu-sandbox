@@ -1,5 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 
+async function answerSudoPrompt(page: Page): Promise<void> {
+  const mdp = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+  if (await mdp.count() > 0) {
+    await mdp.first().focus();
+    await mdp.first().fill('admin');
+    await mdp.first().press('Enter');
+    await page.waitForTimeout(500);
+  }
+}
+
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Record<string, unknown>).__networkStore, { timeout: 45_000 });
 }
@@ -60,7 +70,8 @@ test.describe('la machine nomme un seul noyau', () => {
     expect(await modalText(page)).toContain(noyau.slice(0, 16));
 
     await typeCmd(page, 'clear');
-    await typeCmd(page, 'dmesg | head -1');
+    await typeCmd(page, 'sudo dmesg | head -1');
+    await answerSudoPrompt(page);
     expect(await modalText(page)).toContain(`Linux version ${noyau}`);
 
     await closeTerminal(page);

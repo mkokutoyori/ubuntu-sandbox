@@ -11,13 +11,14 @@
 // docs/PRD-Frame-Only-Refactor.md §2.2 allows to enumerate the topology.
 // Every caller inside src/network passes a source device.
 // eslint-disable-next-line no-restricted-imports
+import { synProbeSegment, type TcpSegment } from '../../../tcp/types';
 import { simulationDate } from '@/network/core/SystemClock';
 
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import type { Equipment } from '@/network/equipment/Equipment';
 import { HostsFile } from '../../HostsFile';
 import type { Port } from '@/network/hardware/Port';
-import type { IPv4Packet, TCPPacket, UDPPacket } from '@/network/core/types';
+import type { IPv4Packet, UDPPacket } from '@/network/core/types';
 import { IPAddress, IP_PROTO_TCP, IP_PROTO_UDP, createIPv4Packet } from '@/network/core/types';
 
 /**
@@ -296,17 +297,7 @@ function synthUdpPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Pack
 }
 
 function synthSynPacket(srcIp: string, dstIp: string, dstPort: number): IPv4Packet {
-  const tcp: TCPPacket = {
-    type: 'tcp',
-    sourcePort: 49152,
-    destinationPort: dstPort,
-    sequenceNumber: 0,
-    acknowledgementNumber: 0,
-    flags: { syn: true, ack: false, fin: false, rst: false, psh: false, urg: false },
-    windowSize: 65535,
-    checksum: 0,
-    payload: null,
-  };
+  const tcp = synProbeSegment(dstPort);
   return createIPv4Packet(
     new IPAddress(srcIp), new IPAddress(dstIp), IP_PROTO_TCP, 64, tcp, 20,
   );
@@ -464,7 +455,7 @@ interface RouterNatSurface {
 }
 
 function packetDstPort(pkt: IPv4Packet): number {
-  const payload = pkt.payload as (UDPPacket | TCPPacket);
+  const payload = pkt.payload as (UDPPacket | TcpSegment);
   if (payload && (payload.type === 'udp' || payload.type === 'tcp')) return payload.destinationPort;
   return 0;
 }

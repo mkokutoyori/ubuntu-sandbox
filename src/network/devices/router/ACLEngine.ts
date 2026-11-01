@@ -5,10 +5,11 @@
  * Manages numbered/named ACLs and interface bindings.
  */
 
+import type { TcpSegment } from '../../tcp/types';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { ipProtocolMatches } from './acl/AclSyntax';
-import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, TCPPacket } from '../../core/types';
+import type { SubnetMask, IPv4Packet, UDPPacket, ICMPPacket, } from '../../core/types';
 import { IPAddress, createIPv4Packet } from '../../core/types';
 import { IP_PROTO_TCP } from '../../core/types';
 import { ReflexiveSessions } from './acl/ReflexiveSessions';
@@ -856,7 +857,7 @@ export class ACLEngine {
       }
 
       if (entry.protocol === 'tcp' && entry.tcpEstablished) {
-        const tcp = ipPkt.payload as TCPPacket | undefined;
+        const tcp = ipPkt.payload as TcpSegment | undefined;
         const flags = tcp && tcp.type === 'tcp' ? tcp.flags : undefined;
         if (!flags || (!flags.ack && !flags.rst)) return false;
       }
@@ -949,7 +950,7 @@ export class ACLEngine {
    * disparaissait, et `deny tcp any any match-any rst` refusait un SYN.
    */
   private static tcpFlagsMatch(entry: ACLEntry, ipPkt: IPv4Packet): boolean {
-    const tcp = ipPkt.payload as TCPPacket | undefined;
+    const tcp = ipPkt.payload as TcpSegment | undefined;
     const flags = tcp && tcp.type === 'tcp' ? tcp.flags : undefined;
     if (!flags) return false;
 

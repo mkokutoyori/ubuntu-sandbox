@@ -77,6 +77,10 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorEnvironmentVariable(name, this.session);
   }
 
+  environmentNames(): string[] {
+    return this.dev.editorEnvironmentNames(this.session);
+  }
+
   makeDirectory(path: string, mode: number): string | null {
     return this.dev.editorMakeDirectory(this.resolvePath(path), mode, this.session);
   }

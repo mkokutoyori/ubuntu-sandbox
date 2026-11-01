@@ -9,6 +9,10 @@ export interface PathInfoFacts {
 
 const PROVIDER_PREFIX = 'Microsoft.PowerShell.Core\\';
 
+export const FILESYSTEM_QUALIFIER = `${PROVIDER_PREFIX}FileSystem::`;
+
+export const qualifiedLocation = (path: string): string => (path.startsWith('\\\\') ? `${FILESYSTEM_QUALIFIER}${path}` : path);
+
 export function namedRecord(name: string, text: string): Record<string, PSValue> {
   const record: Record<string, PSValue> = { Name: name };
   Object.defineProperty(record, 'toString', { value: () => text, enumerable: false });

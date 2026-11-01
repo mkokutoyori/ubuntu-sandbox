@@ -22,6 +22,7 @@ export interface ListenerIdentity {
   processName?: string;
   service?: string;
   uid?: number;
+  reusePort?: boolean;
   /**
    * Salutation applicative : les premiers octets que le service écrit sur
    * une connexion fraîche. `TcpStack` les ÉMET à l'acceptation, avant de
@@ -33,6 +34,6 @@ export interface ListenerIdentity {
 
 export interface ListenerSocketSink {
   announce(localIp: string, localPort: number, identity: ListenerIdentity, boundDevice?: string, bound?: boolean): void;
-  promote(localIp: string, localPort: number): void;
-  withdraw(localIp: string, localPort: number): void;
+  promote(localIp: string, localPort: number, ownerPid?: number): void;
+  withdraw(localIp: string, localPort: number, ownerPid?: number): void;
 }

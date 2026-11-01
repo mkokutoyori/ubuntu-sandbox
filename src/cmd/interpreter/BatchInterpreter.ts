@@ -409,8 +409,9 @@ export class BatchInterpreter {
     if (isNullDevice(target.path)) return;
     const content = lines.length === 0 ? '' : `${lines.join('\n')}\n`;
     const absolute = this.host.fs.normalize(target.path, this.host.cwd());
-    if (!this.host.fs.write(absolute, content, target.append)) {
-      run.output.push('The system cannot find the path specified.');
+    const refusal = this.host.fs.write(absolute, content, target.append);
+    if (refusal !== null) {
+      run.output.push(refusal);
       this.errorLevel = 1;
     }
   }
@@ -575,17 +576,24 @@ export class BatchInterpreter {
     const target = rest.trim().replace(/^"(.*)"$/, '$1');
     const stack = this.host.directoryStack();
     if (target === '') return success([...stack].reverse());
+    const network = this.host.attachNetworkPath?.(target, stack.length + 1) ?? null;
+    if (network !== null && 'error' in network) return failure(network.error);
     const previous = this.host.cwd();
-    const refusal = this.host.enterDirectory(target);
-    if (refusal !== null) return failure(refusal);
+    const refusal = this.host.enterDirectory(network !== null && 'path' in network ? network.path : target);
+    if (refusal !== null) {
+      this.host.releaseTemporaryDrives?.(stack.length);
+      return failure(refusal);
+    }
     stack.push(previous);
     return success();
   }
 
   private popdBuiltin(): Produced {
-    const previous = this.host.directoryStack().pop();
+    const stack = this.host.directoryStack();
+    const previous = stack.pop();
     if (previous === undefined) return success();
     const refusal = this.host.enterDirectory(previous);
+    this.host.releaseTemporaryDrives?.(stack.length);
     return refusal === null ? success() : failure(refusal);
   }
 

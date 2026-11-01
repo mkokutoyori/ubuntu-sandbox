@@ -81,6 +81,8 @@ export interface LinuxNetKernel {
   /** Set admin state up/down (`ip link set dev X up/down`). */
   setInterfaceAdmin(name: string, enabled: boolean): void;
 
+  announceInterfaceAddresses(name: string): void;
+
   /** True if this interface was configured via DHCP (dynamic). */
   isDHCPConfigured(name: string): boolean;
 
@@ -173,7 +175,7 @@ export interface LinuxNetKernel {
   traceroute(
     target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number,
     timeoutMs?: number, method?: TraceProbeMethod, socket?: TraceSocketOptions,
-    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
   ): Promise<TracerouteHop[]>;
 
   canTraceTo(target: IPAddress, socket: TraceSocketOptions): boolean;
@@ -238,7 +240,7 @@ export interface LinuxNetKernel {
   ): ConnectedUdpSocket | Errno;
 
   udpListen(
-    port: number, processName: string, owner: { pid?: number; uid?: number },
+    port: number, processName: string, owner: { pid?: number; uid?: number; reusePort?: boolean },
     onDatagram?: (payload: Uint8Array, from: { address: string; port: number }) => void, address?: string,
   ): Errno | null;
 

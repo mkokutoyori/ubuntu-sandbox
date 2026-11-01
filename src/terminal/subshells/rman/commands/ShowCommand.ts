@@ -5,13 +5,14 @@
 import { ok, type Result } from '../core/Result';
 import type { RmanError } from '../core/RmanError';
 import type { IRmanCommand, RmanCommandContext } from './types';
+import { snapshotControlfilePath } from '../core/snapshotControlfile';
 
 export type ShowScope =
   | 'ALL' | 'RETENTION_POLICY' | 'DEFAULT_DEVICE_TYPE'
   | 'CONTROLFILE_AUTOBACKUP' | 'CONTROLFILE_AUTOBACKUP_FORMAT' | 'CHANNEL'
   | 'BACKUP_OPTIMIZATION' | 'DEVICE_TYPE' | 'DATAFILE_BACKUP_COPIES' | 'ARCHIVELOG_BACKUP_COPIES'
   | 'MAXSETSIZE' | 'ENCRYPTION_FOR_DATABASE' | 'ENCRYPTION_ALGORITHM' | 'COMPRESSION_ALGORITHM'
-  | 'EXCLUDE' | 'ARCHIVELOG_DELETION_POLICY';
+  | 'EXCLUDE' | 'ARCHIVELOG_DELETION_POLICY' | 'SNAPSHOT_CONTROLFILE';
 
 type ConfiguredScope = Exclude<ShowScope, 'ALL' | 'CHANNEL'>;
 
@@ -59,6 +60,11 @@ function configurationLines(cmdCtx: RmanCommandContext): ConfigurationLine[] {
     { scope: 'COMPRESSION_ALGORITHM', text: `CONFIGURE COMPRESSION ALGORITHM '${compAlg}' AS OF RELEASE 'DEFAULT' OPTIMIZE FOR LOAD TRUE;` },
     ...excludedLines.map((text): ConfigurationLine => ({ scope: 'EXCLUDE', text })),
     { scope: 'ARCHIVELOG_DELETION_POLICY', text: `CONFIGURE ARCHIVELOG DELETION POLICY TO ${arDelPol};` },
+    {
+      scope: 'SNAPSHOT_CONTROLFILE',
+      text: `CONFIGURE SNAPSHOT CONTROLFILE NAME TO '${snapshotControlfilePath(c?.snapshotControlfile, cmdCtx.ctx.dbName)}';`
+        + (c?.snapshotControlfile === undefined ? ' # default' : ''),
+    },
   ];
 }
 

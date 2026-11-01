@@ -48,10 +48,59 @@ export const LINUX_CORE_KNOBS: readonly KernelByteKnob[] = [
   { name: 'wmem_max', initial: 212992, minimum: 0, maximum: 2_147_483_647 },
 ];
 
+export const LINUX_KERNEL_KNOBS: readonly KernelByteKnob[] = [
+  { name: 'dmesg_restrict', initial: 1, minimum: 0, maximum: 1 },
+  { name: 'kptr_restrict', initial: 1, minimum: 0, maximum: 2 },
+  { name: 'sysrq', initial: 176, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'yama/ptrace_scope', initial: 1, minimum: 0, maximum: 3 },
+];
+
+export const LINUX_VM_KNOBS: readonly KernelByteKnob[] = [
+  { name: 'max_map_count', initial: 1048576, minimum: 0, maximum: 2_147_483_647 },
+  { name: 'mmap_min_addr', initial: 65536, minimum: 0, maximum: 2_147_483_647 },
+];
+
+export interface KernelStringKnob {
+  readonly name: string;
+  readonly initial: string;
+  readonly allowed: readonly string[];
+}
+
+export const DEFAULT_QDISC_FALLBACK = 'fq_codel';
+
+export const LINUX_CORE_STRING_KNOBS: readonly KernelStringKnob[] = [
+  { name: 'default_qdisc', initial: DEFAULT_QDISC_FALLBACK, allowed: ['pfifo_fast', 'fq_codel', 'fq', 'codel', 'sfq', 'cake'] },
+];
+
+export class KernelStringStore {
+  private readonly values: Map<string, string>;
+
+  constructor(private readonly knobs: readonly KernelStringKnob[]) {
+    this.values = new Map(knobs.map((knob) => [knob.name, knob.initial]));
+  }
+
+  get(name: string): string {
+    return this.values.get(name) ?? '';
+  }
+
+  write(name: string, text: string): boolean {
+    const knob = this.knobs.find((candidate) => candidate.name === name);
+    const value = text.trim();
+    if (knob === undefined || !knob.allowed.includes(value)) return false;
+    this.values.set(name, value);
+    return true;
+  }
+}
+
 export interface KernelVectorKnob {
   readonly name: string;
   readonly initial: readonly number[];
+  readonly unordered?: boolean;
 }
+
+export const LINUX_KERNEL_VECTOR_KNOBS: readonly KernelVectorKnob[] = [
+  { name: 'printk', initial: [4, 4, 1, 7], unordered: true },
+];
 
 export const LINUX_IPV4_VECTOR_KNOBS: readonly KernelVectorKnob[] = [
   { name: 'tcp_rmem', initial: [4096, 131072, 6291456] },
@@ -78,7 +127,7 @@ export class KernelVectorStore {
     const fields = text.trim().split(/\s+/);
     if (knob === undefined || fields.length !== knob.initial.length || !fields.every((field) => /^\d+$/.test(field))) return false;
     const numbers = fields.map(Number);
-    if (numbers.some((value, index) => index > 0 && value < numbers[index - 1])) return false;
+    if (knob.unordered !== true && numbers.some((value, index) => index > 0 && value < numbers[index - 1])) return false;
     this.values.set(name, numbers);
     return true;
   }
@@ -122,6 +171,29 @@ export class LinuxCoreSettings extends KernelKnobStore {
 
   get listenBacklogLimit(): number {
     return this.get('somaxconn');
+  }
+}
+
+export const LINUX_FS_KNOBS: readonly KernelByteKnob[] = [
+  { name: 'protected_hardlinks', initial: 1, minimum: 0, maximum: 1 },
+];
+
+export class LinuxFsSettings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_FS_KNOBS);
+  }
+}
+
+export class LinuxVmSettings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_VM_KNOBS);
+  }
+}
+
+
+export class LinuxKernelSettings extends KernelKnobStore {
+  constructor() {
+    super(LINUX_KERNEL_KNOBS);
   }
 }
 

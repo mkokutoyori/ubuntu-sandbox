@@ -226,8 +226,8 @@ describe('time', () => {
 describe('watch', () => {
   it('W1 renders the canonical header and the command output', () => {
     const out = run('watch echo hello');
-    expect(out).toMatch(/^Every 2s: echo hello/);
-    expect(out).toMatch(/\d\d:\d\d:\d\d/);
+    expect(out).toMatch(/^Every 2.0s: echo hello/);
+    expect(out).toMatch(/\d\d:\d\d:\d\d \d{4}/);
     expect(out).toContain('hello');
   });
   it('W2 -t suppresses the header', () => {
@@ -236,13 +236,13 @@ describe('watch', () => {
     expect(out).toContain('bare');
   });
   it('W3 -n changes the displayed interval', () => {
-    expect(run('watch -n 5 echo X')).toMatch(/^Every 5s:/);
+    expect(run('watch -n 5 echo X')).toMatch(/^Every 5.0s:/);
   });
   it('W4 no command → exit 1 with usage message', () => {
-    expect(run('watch')).toContain('no command given');
+    expect(run('watch')).toContain('Usage:\n watch [options] command');
   });
   it('W5 invalid -n value is rejected', () => {
-    expect(run('watch -n abc echo Y')).toContain('invalid interval');
+    expect(run('watch -n abc echo Y')).toContain("watch: failed to parse argument: 'abc': Invalid argument");
   });
   it('W6 propagates the inner exit code', () => {
     expect(run('watch -t false || echo PROP')).toContain('PROP');

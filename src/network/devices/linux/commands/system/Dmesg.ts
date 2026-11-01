@@ -20,11 +20,19 @@ export const dmesgCommand: LinuxCommand = {
   needsNetworkContext: false,
   usage: 'dmesg [options]',
   options: DMESG_OPTIONS,
-  privilege: {
-    appliesWhen: (args) => args.some((a) =>
-      a === '-c' || a === '--read-clear' || a === '-C' || a === '--clear' ||
-      a === '-n' || a === '--console-level'),
-    deny: Deny.withMessage('dmesg: read kernel buffer failed: Permission denied'),
-  },
+  privilege: [
+    {
+      appliesWhen: (args) => args.some((a) => a === '-C' || a === '--clear'),
+      deny: Deny.withMessage('dmesg: clear kernel buffer failed: Operation not permitted'),
+    },
+    {
+      appliesWhen: (args) => args.some((a) => a === '-n' || a === '--console-level'),
+      deny: Deny.withMessage('dmesg: klogctl failed: Operation not permitted'),
+    },
+    {
+      appliesWhen: (args, actor) => args.some((a) => a === '-c' || a === '--read-clear') || actor.sysctl?.('kernel.dmesg_restrict') === 1,
+      deny: Deny.withMessage('dmesg: read kernel buffer failed: Operation not permitted'),
+    },
+  ],
   run: (ctx, args) => ctx.executor.logMgr.executeDmesg(args),
 };

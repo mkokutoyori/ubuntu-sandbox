@@ -81,6 +81,7 @@ export interface IRmanOracleContext {
   hostNowMs?(): number;
   spendHostTime?(ms: number): void;
   readonly vfs:     VfsAdapter;
+  runHostCommand?(command: string): string;
   getDatafiles():   ReadonlyArray<DatafileInfo>;
   getSpfileParam(name: string): string | undefined;
   /** Optional: archivelog file paths the engine may delete after a

@@ -758,13 +758,13 @@ describe('Linux Advanced Logging and Auditing Suite', () => {
     it('102. should restrict dmesg buffer clearances to root privileges', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('su user -c "dmesg -C"');
-      expect(output.toLowerCase()).toMatch(/permission denied|error/);
+      expect(output).toContain('dmesg: clear kernel buffer failed: Operation not permitted');
     });
 
     it('103. should reject console level alterations from unprivileged users', async () => {
       const pc = setupLinuxHost();
       const output = await pc.executeCommand('su user -c "dmesg -n 1"');
-      expect(output.toLowerCase()).toMatch(/permission denied|error/);
+      expect(output).toContain('dmesg: klogctl failed: Operation not permitted');
     });
 
     it('104. should preserve kernel startup messages even after clearing syslog file manually', async () => {

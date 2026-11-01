@@ -1,5 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 
+async function answerSudoPrompt(page: Page): Promise<void> {
+  const mdp = page.locator('[data-testid="terminal-modal"] input[type="password"]');
+  if (await mdp.count() > 0) {
+    await mdp.first().focus();
+    await mdp.first().fill('admin');
+    await mdp.first().press('Enter');
+    await page.waitForTimeout(500);
+  }
+}
+
 async function waitForStore(page: Page): Promise<void> {
   await page.waitForFunction(() => !!(window as Record<string, unknown>).__networkStore, { timeout: 15_000 });
 }
@@ -219,6 +229,8 @@ test.describe('Linux — dmesg -w through the real UI', () => {
     }, { id });
 
     await openTerminal(page, id);
+    await typeCmd(page, 'sudo sysctl -w kernel.dmesg_restrict=0');
+    await answerSudoPrompt(page);
     await typeCmd(page, 'dmesg -w');
     await waitForText(page, 'probeDmesgInitialBOOT');
     expect(await promptInputVisible(page)).toBe(false);

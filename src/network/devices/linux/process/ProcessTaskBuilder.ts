@@ -3,6 +3,17 @@ import { measuredFootprintOf } from './ProcessFootprint';
 import type { LinuxProcess } from './LinuxProcess';
 import type { ProcessTask } from './ProcessTask';
 
+export const NAMESPACE_IDS: Readonly<Record<string, number>> = {
+  cgroup: 4026531835,
+  ipc: 4026531839,
+  mnt: 4026531841,
+  net: 4026531840,
+  pid: 4026531836,
+  time: 4026531834,
+  user: 4026531837,
+  uts: 4026531838,
+};
+
 export interface TaskFacts {
   readonly hertz: number;
   readonly bootEpochMs: number;
@@ -232,14 +243,14 @@ export function buildTask(info: LinuxProcess, facts: TaskFacts): ProcessTask {
     ioWriteCBytes: 0,
     ioWriteChars: info.ioWrite,
     ioWriteOps: 0,
-    nsCgroup: 4026531835,
-    nsIpc: 4026531839,
-    nsMnt: 4026531841,
-    nsNet: 4026531840,
-    nsPid: 4026531836,
-    nsTime: 4026531834,
-    nsUser: 4026531837,
-    nsUts: 4026531838,
+    nsCgroup: NAMESPACE_IDS.cgroup,
+    nsIpc: NAMESPACE_IDS.ipc,
+    nsMnt: NAMESPACE_IDS.mnt,
+    nsNet: NAMESPACE_IDS.net,
+    nsPid: NAMESPACE_IDS.pid,
+    nsTime: NAMESPACE_IDS.time,
+    nsUser: NAMESPACE_IDS.user,
+    nsUts: NAMESPACE_IDS.uts,
     oomAdj: 0,
     oomScore: info.oomScore,
     autogroupId: info.sid,

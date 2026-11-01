@@ -23,7 +23,7 @@ const SEARCH = `${KRB5} ldapsearch -H ldap://dc01.corp.local -b dc=corp,dc=local
 
 async function workstationWith(kinitOptions: string): Promise<LinuxPC> {
   const { workstation } = await buildLab();
-  await workstation.executeCommand('apt install -y libsasl2-modules-gssapi-mit');
+  await workstation.executeCommand('sudo apt install -y libsasl2-modules-gssapi-mit');
   await workstation.executeCommand(`echo '${DC_ADDRESS} dc01.corp.local dc01' | sudo tee -a /etc/hosts > /dev/null`);
   await workstation.executeCommand(
     `printf '[libdefaults]\\n default_realm = CORP.LOCAL\\n dns_lookup_kdc = false\\n[realms]\\n CORP.LOCAL = {\\n  kdc = ${DC_ADDRESS}\\n }\\n' > /tmp/krb5.conf`,

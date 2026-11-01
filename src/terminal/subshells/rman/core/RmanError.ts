@@ -17,6 +17,7 @@ export type RmanError =
   | { code: 'RMAN_06403'; message: string }   // database must be mounted (not open)
   | { code: 'RMAN_04014'; message: string }   // oracle instance is not started
   | { code: 'RMAN_04006'; message: string }   // error from target database (Oracle Net)
+  | { code: 'RMAN_06571'; message: string }   // datafile does not have recoverable copy
   | { code: 'RMAN_06172'; message: string }   // no autobackup found or specified handle is not a valid copy
   | { code: 'RMAN_06054'; message: string }   // media recovery requesting unknown archived log
   | { code: 'RMAN_06053'; message: string }   // unable to perform media recovery because of missing log

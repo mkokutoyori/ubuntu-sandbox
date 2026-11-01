@@ -1,3 +1,4 @@
+import { DEFAULT_QDISC_FALLBACK } from '../../LinuxIpv4Settings';
 import type { IpInterfaceInfo, IpRouteEntry, IpNeighborEntry, IpFamily } from '../../LinuxIpCommand';
 
 export interface JsonAddrInfoEntry {
@@ -79,7 +80,7 @@ export function buildLinkJsonEntry(info: IpInterfaceInfo, ifindex: number, flags
     ifname: info.name,
     flags,
     mtu: info.mtu,
-    qdisc: isLoopback ? 'noqueue' : 'fq_codel',
+    qdisc: isLoopback ? 'noqueue' : info.qdisc ?? DEFAULT_QDISC_FALLBACK,
     operstate: state,
     linkmode: 'DEFAULT',
     group: 'default',

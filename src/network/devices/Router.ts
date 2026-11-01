@@ -144,7 +144,6 @@ import {
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_OSPF,
   IP_PROTO_EIGRP,
   UDP_PORT_RIP, UDP_PORT_IKE, UDP_PORT_IKE_NAT_T,
-  TCPPacket,
   createIPv4Packet,
   DeviceType,
   IPv6Address, IPv6Packet, createIPv6Packet,
@@ -597,7 +596,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private cbacSweep: symbol | null = null;
   protected readonly routerTimers = new TimerSet(() => this.getRouterScheduler());
   readonly icmpUnreachableRateLimit = new IcmpUnreachableRateLimit(
-    this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now());
+    this.unreachableRateLimitDefaultMs(), () => this.getRouterScheduler().now() + PathClock.horizon());
   readonly icmpv6ErrorRateLimit = new IcmpErrorTokenBucket(
     this.icmpv6ErrorIntervalDefault(), () => this.getRouterScheduler().now());
   /** In-flight ARP solicitations for forwarding — dedup signal that replaces
@@ -3438,7 +3437,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     let destinationPort: number | undefined;
     let tcpFlags: number | undefined;
     if (pkt.protocol === IP_PROTO_TCP) {
-      const tcp = pkt.payload as TCPPacket;
+      const tcp = pkt.payload as TcpSegment;
       sourcePort = tcp.sourcePort;
       destinationPort = tcp.destinationPort;
       tcpFlags = tcpFlagBits(tcp.flags);

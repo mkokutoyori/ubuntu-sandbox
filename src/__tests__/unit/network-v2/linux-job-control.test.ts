@@ -173,7 +173,7 @@ describe('pstree', () => {
     expect(out).toMatch(/systemd\(1\)/);
   });
 
-  it('pstree -p 999999 reports no process found', () => {
-    expect(exec.execute('pstree -p 999999').toLowerCase()).toContain('no process');
+  it('pstree -p 999999 prints nothing, as psmisc 23.7 does for an unknown pid', () => {
+    expect(exec.execute('pstree -p 999999')).toBe('');
   });
 });

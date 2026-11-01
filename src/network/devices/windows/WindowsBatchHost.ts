@@ -2,12 +2,15 @@ import type { BatchHost, CommandOutcome } from '@/cmd/BatchHost';
 import type { WindowsFileSystem } from './WindowsFileSystem';
 import { clockTimeWithCentiseconds, cmdDate } from './WinSystemCommands';
 import { commandExitCode } from './cmdExitCode';
+import { ERROR_PATH_NOT_FOUND } from './win32ErrorText';
 
 export interface WindowsBatchDevice {
   fileSystem(): WindowsFileSystem;
   currentDirectory(): string;
   enterDirectory(target: string): string | null;
   directoryStack(): string[];
+  attachNetworkPath?(target: string, depth: number): { path: string } | { error: string } | null;
+  releaseTemporaryDrives?(depth: number): void;
   captureLocation(): () => void;
   prompt(): string;
   environment(): Map<string, string>;
@@ -46,7 +49,8 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
       },
       write: (absolute, content, append) => {
         const files = device.fileSystem();
-        return (append && files.exists(absolute) ? files.appendFile(absolute, content) : files.createFile(absolute, content)).ok;
+        const written = append && files.exists(absolute) ? files.appendFile(absolute, content) : files.createFile(absolute, content);
+        return written.ok ? null : written.error ?? ERROR_PATH_NOT_FOUND;
       },
       list: absolute => device.fileSystem().listDirectory(absolute).map(({ name, entry }) => ({
         name,
@@ -59,6 +63,8 @@ export function createWindowsBatchHost(device: WindowsBatchDevice): BatchHost {
     cwd: () => device.currentDirectory(),
     enterDirectory: target => device.enterDirectory(target),
     directoryStack: () => device.directoryStack(),
+    attachNetworkPath: device.attachNetworkPath?.bind(device),
+    releaseTemporaryDrives: device.releaseTemporaryDrives?.bind(device),
     captureLocation: () => device.captureLocation(),
     prompt: () => device.prompt(),
     formattedDate: () => cmdDate([], device.timeZone(), device.nowMs()),

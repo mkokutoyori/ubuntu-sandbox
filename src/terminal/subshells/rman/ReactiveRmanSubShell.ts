@@ -30,6 +30,7 @@ import { DeviceCatalogRegistry } from './catalog/DeviceCatalogRegistry';
 import { DeviceConfigRegistry } from './session/DeviceConfigRegistry';
 import type { Equipment } from '@/network';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { RmanSpool } from './RmanSpool';
 
 export class ReactiveRmanSubShell implements ISubShell {
   readonly kind = 'rman';
@@ -43,6 +44,7 @@ export class ReactiveRmanSubShell implements ISubShell {
 
   private constructor(
     private readonly _session: IRmanSession,
+    private readonly _spool: RmanSpool,
     loggerActor: RmanLoggerActor | null = null,
     oracleWatcher: OracleInstanceWatcherActor | null = null,
   ) {
@@ -61,7 +63,7 @@ export class ReactiveRmanSubShell implements ISubShell {
     ctx: IRmanOracleContext,
   ): { subShell: ReactiveRmanSubShell; banner: string[] } {
     const { session, banner } = RmanSession.create(args, ctx);
-    return { subShell: new ReactiveRmanSubShell(session), banner };
+    return { subShell: new ReactiveRmanSubShell(session, new RmanSpool(ctx.vfs)), banner };
   }
 
   /**
@@ -123,7 +125,7 @@ export class ReactiveRmanSubShell implements ISubShell {
     const deviceId      = (device as { id?: string }).id ?? '';
     const oracleWatcher = deviceId ? new OracleInstanceWatcherActor(bus, deviceId, session) : null;
     return {
-      subShell: new ReactiveRmanSubShell(session, loggerActor, oracleWatcher),
+      subShell: new ReactiveRmanSubShell(session, new RmanSpool(ctx.vfs), loggerActor, oracleWatcher),
       banner,
     };
   }
@@ -145,11 +147,18 @@ export class ReactiveRmanSubShell implements ISubShell {
     // Drain stale buffer
     this._outputBuffer.length = 0;
 
+    if (this._spool.isCommand(trimmed)) {
+      const failure = this._spool.apply(trimmed);
+      return { output: failure === null ? [] : [failure], exit: false, prompt: this.getPrompt() };
+    }
+
     const result = this._session.processLine(trimmed);
 
     if (result.ok === false) {
+      const failed = this._formatRmanError(result.error);
+      this._spool.record(failed);
       return {
-        output: this._formatRmanError(result.error),
+        output: failed,
         exit: false,
         prompt: this.getPrompt(),
       };
@@ -160,6 +169,7 @@ export class ReactiveRmanSubShell implements ISubShell {
 
     const output = [...result.value, ...this._outputBuffer];
     this._outputBuffer.length = 0;
+    this._spool.record(output);
     return { output, exit: exitNow, prompt: this.getPrompt() };
   }
 

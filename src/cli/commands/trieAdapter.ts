@@ -98,6 +98,10 @@ export interface SpecCollector {
 
 const COLLECTOR_BRAND = Symbol.for('cli.trieAdapter.collector');
 
+function identifierWord(element: string | ArgumentSpec): string {
+  return typeof element === 'string' ? element : `<${element.name}>`;
+}
+
 export function isCollector(cible: unknown): boolean {
   return typeof cible === 'object' && cible !== null && COLLECTOR_BRAND in cible;
 }
@@ -495,7 +499,7 @@ export function specsFromTrieRegistrations(
             : [sub.argument as ArgumentSpec];
       const amont = sub.afterArguments ? [...words, ...places] : [...words];
       specs.push({
-        id: [modesIci[0], ...amont, sub.keyword].join('-'),
+        id: [modesIci[0], ...amont.map(identifierWord), sub.keyword].join('-'),
         path: [...amont, sub.keyword, ...placesFille],
         description: sub.description,
         modes: modesIci,
@@ -531,7 +535,7 @@ export function specsFromTrieRegistrations(
         const propre = negations.get(entry.path);
         const cible = negationDuMotCle;
         specs.push({
-          id: ['no', modesIci[0], ...amont, sub.keyword].join('-'),
+          id: ['no', modesIci[0], ...amont.map(identifierWord), sub.keyword].join('-'),
           path: [...amont, sub.keyword],
           description: sub.description,
           modes: modesIci,

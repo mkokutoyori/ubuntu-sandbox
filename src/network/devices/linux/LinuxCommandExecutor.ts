@@ -195,11 +195,12 @@ import { atAllowed, atDenialMessage } from './jobs/AtPermissions';
 import { PortActivityLogProjection } from './ports/PortActivityLogProjection';
 import { LinuxProcessManager, kernelComm, type ProcessInfo, type Signal, SIGNAL_NUMBERS } from './LinuxProcessManager';
 import { LinuxServiceManager } from './LinuxServiceManager';
-import { cmdTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
+import { runPstree } from './PstreeCommand';
+import { cmdTop, runTop, cmdKill, cmdPidof, cmdPgrep, cmdPkill, cmdKillall, cmdSystemctl, cmdService, parseSignalArg } from './LinuxProcessCommands';
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import { LinuxJobTable } from './jobs/LinuxJobTable';
-import { cmdJobs, cmdFg, cmdBg, cmdDisown, cmdPstree } from './jobs/JobCommands';
+import { cmdJobs, cmdFg, cmdBg, cmdDisown } from './jobs/JobCommands';
 import {
   execChannelOptionsFor, joinRemoteCommand, verboseTranscript as sshVerboseTranscript, remoteQuotingOf, splitSshFlags, sshClientRefusal, sshWireFailureResult, sshWireSuccessResult,
   wireExecTarget, proxyJumpRequest, type SshClientOpts, type SshClientResult, type WireExecTarget,
@@ -360,7 +361,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'crontab', 'run-parts', 'at', 'atq', 'atrm', 'batch', 'anacron', 'systemd-analyze', 'clear', 'reset', 'date', 'uptime', 'umask', 'ulimit', 'true', 'false',
   'runlevel', 'hostnamectl', 'timedatectl', 'localectl',
   'exit', 'help', 'ps', 'top', 'htop', 'free', 'vmstat', 'mpstat', 'pidstat', 'iostat', 'dstat', 'df', 'du', 'mount', 'umount', 'findmnt',
-  'pkill', 'pgrep', 'pidof', 'killall', 'pgid',
+  'pkill', 'pgrep', 'pstree', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'rscryutil', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'nohup', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
   'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
@@ -1301,6 +1302,9 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/cmdline', () => `${this.logMgr.kernelCommandLine()}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/ostype', () => `${k().sysname}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/osrelease', () => `${k().release}\n`);
+    this.vfs.registerWritableGeneratedFile('/proc/sys/kernel/pid_max',
+      () => `${this.processMgr.pidMax}\n`,
+      (text) => /^\s*\d+\s*$/.test(text) && this.processMgr.setPidMax(Number(text.trim())));
     this.vfs.registerGeneratedFile('/proc/sys/kernel/version', () => `${k().version}\n`);
     this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
@@ -1336,18 +1340,12 @@ export class LinuxCommandExecutor {
     for (const scope of ['all', 'default']) {
       const base = `/proc/sys/net/ipv4/conf/${scope}`;
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
-      this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
-      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
-      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
     for (const a of this.hardware.adapters) {
       const base = `/proc/sys/net/ipv4/conf/${a.name}`;
       this.vfs.mkdirp(base, 0o755, 0, 0);
       this.vfs.registerGeneratedFile(`${base}/arp_announce`, () => '0\n');
-      this.vfs.registerGeneratedFile(`${base}/arp_ignore`, () => '0\n');
-      this.vfs.createFileAt(`${base}/arp_accept`, '0\n', 0o644, 0, 0);
-      this.vfs.registerGeneratedFile(`${base}/arp_notify`, () => '0\n');
       this.vfs.registerGeneratedFile(`${base}/proxy_arp`, () => '0\n');
     }
     const neighDefaults: Array<[string, string]> = [
@@ -1663,6 +1661,11 @@ export class LinuxCommandExecutor {
     for (const d of openDescriptors(this.descriptorSourcesFor(pid))) {
       this.vfs.createSymlink(`${fdDir}/${d.fd}`, d.target, p.uid, p.gid, d.writable ? 0o700 : 0o500);
     }
+  }
+
+  private refreshProcDescriptors(pid: number): void {
+    if (this.materializedProcPids.has(pid)) this.materializeProcFd(pid);
+    else this.syncProcPids();
   }
 
   /** Les trois sources de descripteurs d'un processus, pour ce module. */
@@ -3238,6 +3241,11 @@ export class LinuxCommandExecutor {
       uid: this.userMgr.currentUid,
       user: this.userMgr.currentUser,
       groups: this.userMgr.getUserGroups(this.userMgr.currentUser).map(g => g.name),
+      sysctl: (key: string) => {
+        const text = this.vfs.readFile(`/proc/sys/${key.replace(/\./g, '/')}`);
+        const value = text === null ? Number.NaN : Number.parseInt(text, 10);
+        return Number.isNaN(value) ? null : value;
+      },
     };
   }
 
@@ -3485,12 +3493,17 @@ export class LinuxCommandExecutor {
   private processCmdContext() {
     return {
       pm: this.processMgr,
+      userUid: (name: string) => this.userMgr.resolveUid(name),
+      utf8Locale: /utf-?8/i.test(this.commandEnvironment().LC_ALL || this.commandEnvironment().LANG || ''),
+      groupGid: (name: string) => this.userMgr.resolveGid(name),
       currentUser: this.userMgr.currentUser,
       currentUid: this.userMgr.currentUid,
       tty: 'pts/0',
       shellPid: this.shellPid,
       zone: this.localZone(),
       currentPid: this.currentBashPid(),
+      readFile: (path: string) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
+      cgroupOf: (pid: number) => this.cgroupPathFor(pid),
       jobs: this.jobTable,
       uptimeSeconds: this.lifecycle.uptimeSeconds(),
       memory: this.hardware.memory,
@@ -4054,7 +4067,6 @@ export class LinuxCommandExecutor {
       case 'bg':     return cmdBg(args, ctx).output;
       case 'wait':   return this.handleWait(args);
       case 'disown': return cmdDisown(args, ctx).output;
-      case 'pstree': return cmdPstree(args, ctx).output;
       case 'kill': {
         // Only intercept when a %jobspec is present; otherwise let the bash
         // interpreter expand the arguments (command substitution, globs) and
@@ -4844,7 +4856,12 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    if (adopted === null) this.bashPids.push(proc.pid);
+    const outerJobs = this.jobTable;
+    if (adopted === null) {
+      this.bashPids.push(proc.pid);
+      this.jobTable = new LinuxJobTable();
+    }
+    this.syncProcPids();
     try {
       const result = run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
@@ -4860,7 +4877,10 @@ export class LinuxCommandExecutor {
       if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      if (adopted === null) this.bashPids.pop();
+      if (adopted === null) {
+        this.bashPids.pop();
+        this.jobTable = outerJobs;
+      }
     }
   }
 
@@ -4911,7 +4931,12 @@ export class LinuxCommandExecutor {
       if (!this.processMgr.get(proc.pid)) throw new ExitSignal(killedCode());
       return result;
     };
-    if (adopted === null) this.bashPids.push(proc.pid);
+    const outerJobs = this.jobTable;
+    if (adopted === null) {
+      this.bashPids.push(proc.pid);
+      this.jobTable = new LinuxJobTable();
+    }
+    this.syncProcPids();
     try {
       const result = await run({ pid: proc.pid, ppid }, bridge);
       if (result.parked) {
@@ -4922,7 +4947,10 @@ export class LinuxCommandExecutor {
       if (adopted === null && this.processMgr.get(proc.pid)) this.processMgr.exit(proc.pid, result.exitCode);
       return LinuxCommandExecutor.separateStreams(result);
     } finally {
-      if (adopted === null) this.bashPids.pop();
+      if (adopted === null) {
+        this.bashPids.pop();
+        this.jobTable = outerJobs;
+      }
     }
   }
 
@@ -5619,6 +5647,16 @@ export class LinuxCommandExecutor {
       ignoresStdin: (argv: readonly string[]) => ignoresStandardInput(argv),
       beginBackgroundSubshell: (label: string) => this.beginBackgroundSubshell(label),
       endBackgroundSubshell: (pid, outcome) => this.endBackgroundSubshell(pid, outcome),
+      holdShellDescriptor: (fd: number, path: string, mode: 'r' | 'w' | 'a') => {
+        const pid = this.currentBashPid();
+        this.processMgr.holdDescriptor(pid, fd, path, mode);
+        this.refreshProcDescriptors(pid);
+      },
+      releaseShellDescriptor: (fd: number) => {
+        const pid = this.currentBashPid();
+        this.processMgr.releaseDescriptor(pid, fd);
+        this.refreshProcDescriptors(pid);
+      },
       holdBackgroundStdin: (pid: number, path: string) => {
         this.processMgr.redirectStandardStream(pid, 0, this.vfs.normalizePath(path, this.cwd), 'r');
       },
@@ -6818,6 +6856,7 @@ export class LinuxCommandExecutor {
         const r = cmdPgrep(args, this.processCmdContext());
         return r;
       }
+      case 'pstree': return runPstree(args, this.processCmdContext());
       case 'pgid': {
         const name = args.find(a => !a.startsWith('-'));
         if (!name) return { output: 'usage: pgid <name>', exitCode: 1 };
@@ -6926,7 +6965,7 @@ export class LinuxCommandExecutor {
       case 'mount': return this.handleMount(args);
       case 'umount': return this.handleUmount(args);
       case 'findmnt': return this.handleFindmnt(args);
-      case 'top': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
+      case 'top': return runTop(args, this.processCmdContext());
       case 'htop': return { output: cmdTop(args, this.processCmdContext()), exitCode: 0 };
 
       // ── Network commands ────────────────────────────────────────────
@@ -8756,7 +8795,7 @@ export class LinuxCommandExecutor {
     const r = runWatch(args, {
       hostname,
       now: () => {
-        return formatLocalTime('%H:%M:%S', this.wallNow(), this.identity.timezone);
+        return formatLocalTime('%a %b %e %H:%M:%S %Y', this.wallNow(), this.identity.timezone);
       },
       run: (cmdline) => this.dispatchFromInterpreter(cmdline, this._cmdEnv),
     });

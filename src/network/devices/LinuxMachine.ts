@@ -88,7 +88,7 @@ import type { TcpEcnPolicy } from '../tcp/TcpEcn';
 import type { TcpOptionPolicy } from '../tcp/TcpStack';
 import type { TcpRetryPolicy } from '../tcp/TcpRetryPolicy';
 import {
-  LinuxIpv4Settings, LinuxCoreSettings, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
+  LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LinuxVmSettings, LINUX_VM_KNOBS, LinuxFsSettings, LINUX_FS_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, KernelStringStore, LINUX_CORE_STRING_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
@@ -114,7 +114,6 @@ import {
   type EthernetFrame,
   type ICMPType,
   type ICMPv6Type,
-  type TCPPacket,
   type ICMPPacket,
   type ICMPv6Packet,
   icmpTypeNumber,
@@ -231,7 +230,7 @@ import { renderHelp, renderManPage } from './linux/commands/LinuxCommandHelp';
 import { splitRegistryStdin } from './linux/commands/registryStdin';
 import { evaluatePrivilegeRequirement, type PrivilegeRequirement } from './linux/iam/policy/CommandPrivilegePolicy';
 import { holdsCapability } from './linux/iam/capabilities/LinuxCapabilities';
-import { buildIpCtx } from './linux/commands/net/Ip';
+import { buildIpCtx, defaultQdiscOf } from './linux/commands/net/Ip';
 import { GreAgent, type GreHost } from '../gre/GreAgent';
 import type { DHCPClient } from '../dhcp/DHCPClient';
 import type { DhcpIpEmission } from '../dhcp/types';
@@ -323,6 +322,11 @@ export abstract class LinuxMachine extends EndHost
   private readonly ipv4Settings = new LinuxIpv4Settings();
   private readonly ipv4Vectors = new KernelVectorStore(LINUX_IPV4_VECTOR_KNOBS);
   private readonly coreSettings = new LinuxCoreSettings();
+  private readonly kernelSettings = new LinuxKernelSettings();
+  private readonly vmSettings = new LinuxVmSettings();
+  private readonly fsSettings = new LinuxFsSettings();
+  private readonly kernelVectors = new KernelVectorStore(LINUX_KERNEL_VECTOR_KNOBS);
+  private readonly coreStrings = new KernelStringStore(LINUX_CORE_STRING_KNOBS);
   private readonly ipv6Settings = new LinuxIpv6Settings();
   private deviceConfStore: Ipv4DeviceConf | null = null;
   private get deviceConf(): Ipv4DeviceConf {
@@ -330,6 +334,20 @@ export abstract class LinuxMachine extends EndHost
     return this.deviceConfStore;
   }
   protected override redirectPolicy(): RedirectPolicy { return this.deviceConf; }
+  protected override answersArpFor(port: Port, target: IPAddress, sender: IPAddress): boolean {
+    const mode = this.deviceConf.maximum(port.getName(), 'arp_ignore');
+    if (mode >= 8) return false;
+    if (mode === 1) return !target.isLoopback() && port.ownsIPv4(target);
+    if (mode === 3 && target.isLoopback()) return false;
+    if (mode === 2) {
+      if (target.isLoopback() || !port.ownsIPv4(target)) return false;
+      const mask = port.getIPAddress()?.equals(target)
+        ? port.getSubnetMask()
+        : port.getSecondaryIPs().find((entry) => entry.ip.equals(target))?.mask ?? null;
+      return mask !== null && target.isInSameSubnet(sender, mask);
+    }
+    return super.answersArpFor(port, target, sender);
+  }
   private registerDeviceConfScope(scope: string): void {
     this.executor.vfs.mkdirp(`/proc/sys/net/ipv4/conf/${scope}`, 0o755, 0, 0);
     for (const knob of IPV4_DEVICE_CONF_KNOBS) {
@@ -368,6 +386,11 @@ export abstract class LinuxMachine extends EndHost
 
   /** Kernel services: VFS, users, iptables, services, processes. */
   protected readonly executor: LinuxCommandExecutor;
+
+  runHostCommandSync(line: string): string {
+    return this.executor.execute(line);
+  }
+
   /** MaxStartups-style brute-force throttler for inbound SSH. */
   readonly sshThrottler = new SshConnectionThrottler();
 
@@ -504,11 +527,39 @@ export abstract class LinuxMachine extends EndHost
         (text) => this.ipv6Settings.write(knob.name, text));
     }
     this.executor.vfs.registerGeneratedFile(CA_BUNDLE_PATH, () => caBundlePem(this.trustedCAs), 0o644);
+    this.executor.vfs.mkdirp('/proc/sys/kernel/yama', 0o555, 0, 0);
+    this.executor.vfs.mkdirp('/proc/sys/vm', 0o555, 0, 0);
+    this.executor.vfs.mkdirp('/proc/sys/fs', 0o555, 0, 0);
+    for (const knob of LINUX_KERNEL_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/kernel/${knob.name}`,
+        () => `${this.kernelSettings.get(knob.name)}\n`,
+        (text) => this.kernelSettings.write(knob.name, text));
+    }
+    for (const knob of LINUX_FS_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/fs/${knob.name}`,
+        () => `${this.fsSettings.get(knob.name)}\n`,
+        (text) => this.fsSettings.write(knob.name, text));
+    }
+    for (const knob of LINUX_VM_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/vm/${knob.name}`,
+        () => `${this.vmSettings.get(knob.name)}\n`,
+        (text) => this.vmSettings.write(knob.name, text));
+    }
+    for (const knob of LINUX_KERNEL_VECTOR_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/kernel/${knob.name}`,
+        () => `${this.kernelVectors.text(knob.name)}\n`,
+        (text) => this.kernelVectors.write(knob.name, text));
+    }
     this.executor.vfs.mkdirp('/proc/sys/net/core', 0o755, 0, 0);
     for (const knob of LINUX_CORE_KNOBS) {
       this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/core/${knob.name}`,
         () => `${this.coreSettings.get(knob.name)}\n`,
         (text) => this.coreSettings.write(knob.name, text));
+    }
+    for (const knob of LINUX_CORE_STRING_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/core/${knob.name}`,
+        () => `${this.coreStrings.get(knob.name)}\n`,
+        (text) => this.coreStrings.write(knob.name, text));
     }
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/icmp_echo_ignore_broadcasts',
       () => `${this.ignoresBroadcastEcho() ? 1 : 0}\n`,
@@ -585,7 +636,7 @@ export abstract class LinuxMachine extends EndHost
     this.greAgentInstance.start();
     this.greAgent = this.greAgentInstance;
     this.executor.setIpNetworkContext(buildIpCtx(this.net, this.xfrmCtx, this.greAgentInstance,
-      undefined, undefined, undefined, () => this.executor.userMgr.currentUid));
+      undefined, undefined, undefined, () => this.executor.userMgr.currentUid, () => defaultQdiscOf(this.executor.vfs)));
     // NSS `dns` source resolves through real UDP/53 once resolv.conf
     // names a non-loopback server (loopback = systemd-resolved stub,
     // modelled by the legacy fallback).
@@ -1077,17 +1128,13 @@ export abstract class LinuxMachine extends EndHost
 
   protected override acceptsUnsolicitedArp(iface: string, sender: IPAddress, gratuitousOrReply: boolean): boolean {
     if (!gratuitousOrReply) return false;
-    const level = Math.max(this.arpAcceptLevel('all'), this.arpAcceptLevel(iface));
+    const level = this.deviceConf.maximum(iface, 'arp_accept');
     if (level === 1) return true;
     if (level !== 2) return false;
     const port = this.ports.get(iface);
     const address = port?.getIPAddress();
     const mask = port?.getSubnetMask();
     return !!address && !!mask && address.isInSameSubnet(sender, mask);
-  }
-
-  private arpAcceptLevel(scope: string): number {
-    return Number.parseInt(this.executor.vfs.readFile(`/proc/sys/net/ipv4/conf/${scope}/arp_accept`) ?? '0', 10) || 0;
   }
 
   protected override lldpSystemDescription(): string {
@@ -3788,6 +3835,14 @@ export abstract class LinuxMachine extends EndHost
     if (!port) return;
     port.setUp(enabled);
     this.getBus().publish({ topic: 'host.link.state-changed', payload: { ...this.hostRef(), iface: name, up: enabled } });
+    if (enabled) this.announceInterfaceAddresses(name);
+  }
+
+  private announceInterfaceAddresses(name: string): void {
+    const port = this.ports.get(name);
+    if (!port || this.deviceConf.maximum(name, 'arp_notify') === 0) return;
+    const addresses = [port.getIPAddress(), ...port.getSecondaryIPs().map((entry) => entry.ip)];
+    for (const address of addresses) if (address !== null) this.sendGratuitousArp(name, address, 'request');
   }
 
   private deleteVirtualInterface(name: string): string {
@@ -4528,6 +4583,7 @@ export abstract class LinuxMachine extends EndHost
         this.getBus().publish({ topic: 'host.address.changed', payload: { ...this.hostRef(), iface: name, ip: ip.toString(), cidr, added: false } });
       },
       setInterfaceAdmin: (name: string, enabled: boolean): void => this.setAdminState(name, enabled),
+      announceInterfaceAddresses: (name: string): void => this.announceInterfaceAddresses(name),
       isDHCPConfigured: (name: string): boolean => {
         return this.isDHCPConfigured(name);
       },
@@ -4663,7 +4719,7 @@ export abstract class LinuxMachine extends EndHost
       traceroute: async (
         target: IPAddress, maxHops?: number, probesPerHop?: number, firstTtl?: number,
         timeoutMs?: number, method?: TraceProbeMethod, socket?: TraceSocketOptions,
-        hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+        hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
       ): Promise<TracerouteHop[]> => {
         const hops = await this.executeTraceroute(
           target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl, hooks, method, socket);
@@ -4885,7 +4941,7 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private tcpFacts(payload: unknown): { tcpFlags?: number; tcpOptions?: number[]; tcpMss?: number } {
-    const segment = payload as TCPPacket | TcpSegment | undefined;
+    const segment = payload as TcpSegment | TcpSegment | undefined;
     if (segment?.type !== 'tcp') return {};
     const options = 'options' in segment ? segment.options : [];
     const mss = options.find((option) => option.kind === 'mss');
@@ -5148,6 +5204,11 @@ export abstract class LinuxMachine extends EndHost
   editorEnvironmentVariable(name: string, session?: LinuxShellSession): string | null {
     if (session !== undefined && !session.disposed) return session.env.get(name) ?? null;
     return this.executor.commandEnvironment()[name] ?? null;
+  }
+
+  editorEnvironmentNames(session?: LinuxShellSession): string[] {
+    if (session !== undefined && !session.disposed) return [...session.env.keys()];
+    return Object.keys(this.executor.commandEnvironment());
   }
 
   editorMakeDirectory(path: string, mode: number, session?: LinuxShellSession): string | null {

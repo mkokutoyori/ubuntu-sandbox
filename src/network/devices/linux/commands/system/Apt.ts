@@ -78,9 +78,25 @@ function remove(host: PackageHost, names: readonly string[], purge: boolean): Ap
   return { output: lines.join('\n'), exitCode: 0 };
 }
 
+const ROOT_ONLY = new Set(['install', 'remove', 'purge', 'autoremove', 'upgrade', 'dist-upgrade', 'full-upgrade', 'reinstall']);
+const SIMULATION_FLAGS = new Set(['-s', '--simulate', '--just-print', '--dry-run', '--recon', '--no-act', '-h', '--help', '-v', '--version']);
+
+function lockRefusal(): AptResult {
+  return {
+    output: [
+      'E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)',
+      'E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), are you root?',
+    ].join('\n'),
+    exitCode: 100,
+  };
+}
+
 function runApt(ctx: LinuxCommandContext, args: string[], command: string): AptResult {
   const operands = args.filter((a) => !a.startsWith('-'));
   const sub = operands[0] ?? '';
+  if (ROOT_ONLY.has(sub) && ctx.executor.userMgr.currentUid !== 0 && !args.some((a) => SIMULATION_FLAGS.has(a))) {
+    return lockRefusal();
+  }
   const names = operands.slice(1);
   const host = packageHostOf(ctx);
 

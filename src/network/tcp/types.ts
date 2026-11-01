@@ -48,6 +48,13 @@ export interface TcpSegment {
   payload: unknown;
 }
 
+export function synProbeSegment(destinationPort: number, sourcePort = 49152): TcpSegment {
+  return {
+    type: 'tcp', sourcePort, destinationPort, sequence: 0, acknowledgement: 0, dataOffset: 5,
+    flags: { ...noFlags(), syn: true }, window: 65535, checksum: 0, urgentPointer: 0, options: [], payload: null,
+  };
+}
+
 export type TcpOption =
   | { kind: 'mss'; value: number }
   | { kind: 'window-scale'; shift: number }

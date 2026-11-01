@@ -30,9 +30,10 @@ function lvCode(s: BackupSet): string {
   }
 }
 
-export type ListVariant = 'SUMMARY' | 'DETAIL' | 'OF' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY' | 'INCARNATION';
+export type ListVariant = 'SUMMARY' | 'DETAIL' | 'OF' | 'BY_FILE' | 'ARCHIVELOG' | 'EXPIRED' | 'OBSOLETE' | 'COPY' | 'INCARNATION';
 
-function backsUp(set: BackupSet, specification: string): boolean {
+function backsUp(set: BackupSet, specification: string, tablespaceFiles: ReadonlySet<number>): boolean {
+  if (/^TABLESPACE\s+\S+$/i.test(specification)) return set.datafiles.some(entry => tablespaceFiles.has(entry.fileNo));
   const datafile = /^DATAFILE\s+(\d+)$/i.exec(specification);
   if (datafile !== null) return set.datafiles.some(entry => entry.fileNo === Number(datafile[1]));
   switch (specification.toUpperCase()) {
@@ -104,9 +105,13 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     }
 
     let { sets } = snap.value;
+    if (this.variant === 'BY_FILE') return ok(this._byFile(sets, ctx));
     if (this.variant === 'OF') {
       const specification = args[0] ?? '';
-      sets = sets.filter(set => backsUp(set, specification));
+      const tablespace = /^TABLESPACE\s+(\S+)$/i.exec(specification)?.[1]?.toUpperCase();
+      const tablespaceFiles = new Set(
+        ctx.getDatafiles().filter(file => file.tablespace.toUpperCase() === tablespace).map(file => file.fileNo));
+      sets = sets.filter(set => backsUp(set, specification, tablespaceFiles));
       if (sets.length === 0) return ok(['', 'specification does not match any backup in the repository', '']);
       return ok(this._detail(sets, ctx));
     }
@@ -139,6 +144,50 @@ export class ListBackupCommand implements IRmanCommand<string[]> {
     ];
     return ['', 'List of Backups', '===============',
       ...renderTable(sets, columns, RMAN_TABLE), ''];
+  }
+
+  private _byFile(sets: ReadonlyArray<BackupSet>, ctx: IRmanOracleContext): string[] {
+    const shortDate = (epochMs: number): string =>
+      formatOracleDate(rmanWall(ctx, epochMs)).replace(/^(\d{2}-[A-Z]{3}-)\d{2}(\d{2}).*$/, '$1$2');
+    const datafileRows = sets
+      .filter(set => set.type !== 'ARCHIVELOG' && set.type !== 'CONTROLFILE' && set.type !== 'DATAFILECOPY')
+      .flatMap(set => set.datafiles.map(entry => ({ set, entry })))
+      .sort((a, b) => a.entry.fileNo - b.entry.fileNo || a.set.bsKey - b.set.bsKey);
+    const controlfileSets = sets.filter(set => set.type === 'CONTROLFILE');
+    if (datafileRows.length === 0 && controlfileSets.length === 0) {
+      return ['', 'specification does not match any backup in the repository', ''];
+    }
+    const lines: string[] = [''];
+    if (datafileRows.length > 0) {
+      const columns: ReadonlyArray<TableColumn<typeof datafileRows[number]>> = [
+        { header: 'File',  width: 4,  value: row => String(row.entry.fileNo) },
+        { header: 'Key',   width: 7,  value: row => String(row.set.bsKey) },
+        { header: 'TY',    width: 2,  value: () => 'B' },
+        { header: 'LV',    width: 2,  value: row => lvCode(row.set) },
+        { header: 'S',     width: 1,  value: () => 'A' },
+        { header: 'Ckp SCN',  width: 10, value: row => String(row.entry.ckpScn.value) },
+        { header: 'Ckp Time', width: 9,  value: row => shortDate(row.entry.ckpTime) },
+        { header: '#Pieces',  width: 7,  value: row => String(row.set.pieces.length) },
+        { header: '#Copies',  width: 7,  value: () => '1' },
+        { header: 'Compressed', width: 10, value: row => row.set.pieces.some(p => p.compressed) ? 'YES' : 'NO' },
+        { header: 'Tag',                  value: row => row.set.tag.label },
+      ];
+      lines.push('List of Datafile Backups', '========================', '', ...renderTable(datafileRows, columns, RMAN_TABLE), '');
+    }
+    if (controlfileSets.length > 0) {
+      const columns: ReadonlyArray<TableColumn<BackupSet>> = [
+        { header: 'CF Ckp SCN', width: 10, value: set => String(set.pieces[0].checkpointScn.value) },
+        { header: 'Ckp Time',   width: 9,  value: set => shortDate(set.completionTime) },
+        { header: 'BS Key',     width: 7,  value: set => String(set.bsKey) },
+        { header: 'S',          width: 1,  value: () => 'A' },
+        { header: '#Pieces',    width: 7,  value: set => String(set.pieces.length) },
+        { header: '#Copies',    width: 7,  value: () => '1' },
+        { header: 'Compressed', width: 10, value: set => set.pieces.some(p => p.compressed) ? 'YES' : 'NO' },
+        { header: 'Tag',                    value: set => set.tag.label },
+      ];
+      lines.push('List of Control File Backups', '============================', '', ...renderTable(controlfileSets, columns, RMAN_TABLE), '');
+    }
+    return lines;
   }
 
   private _detail(sets: ReadonlyArray<BackupSet>, ctx: IRmanOracleContext): string[] {

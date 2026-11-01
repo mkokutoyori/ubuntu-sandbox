@@ -128,6 +128,7 @@ const INIT_ENVIRON: Readonly<Record<string, string>> = { HOME: '/', init: '/sbin
 
 /** Ubuntu's kernel.pid_max — wraparound boundary for PID allocation. */
 export const PID_MAX = 4194304;
+export const PID_MAX_MINIMUM = 301;
 
 const KERNEL_THREADS: ReadonlyArray<{ comm: string; state: ProcessState }> = [
   { comm: '[rcu_gp]', state: 'S' },
@@ -158,6 +159,7 @@ export class LinuxProcessManager {
 
   private processes = new Map<number, LinuxProcess>();
   private nextPid = 2;
+  private pidMaxValue = PID_MAX;
   /** Reactive sink — null until a device attaches its bus. */
   private bus: IEventBus | null = null;
   private deviceId = '';
@@ -239,6 +241,16 @@ export class LinuxProcessManager {
   redirectStandardStream(pid: number, fd: 0 | 1 | 2, path: string, mode: 'r' | 'w' | 'rw' | 'a'): void {
     const process = this.processes.get(pid);
     if (process instanceof LinuxProcess) process.redirectStandardStream(fd, path, mode);
+  }
+
+  holdDescriptor(pid: number, fd: number, path: string, mode: 'r' | 'w' | 'rw' | 'a'): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.holdDescriptor(fd, path, mode);
+  }
+
+  releaseDescriptor(pid: number, fd: number): void {
+    const process = this.processes.get(pid);
+    if (process instanceof LinuxProcess) process.closeOpenFile(fd);
   }
 
   replaceImage(pid: number, cwd: string, image: readonly string[] | null): void {
@@ -789,17 +801,26 @@ export class LinuxProcessManager {
     }
   }
 
+  get pidMax(): number { return this.pidMaxValue; }
+
+  setPidMax(value: number): boolean {
+    if (!Number.isInteger(value) || value < PID_MAX_MINIMUM || value > PID_MAX) return false;
+    this.pidMaxValue = value;
+    if (this.nextPid > value) this.nextPid = 2;
+    return true;
+  }
+
   /** Allocate the next free PID, wrapping at PID_MAX. */
   private allocPid(): number {
     const start = this.nextPid;
     let candidate = start;
     do {
       if (!this.processes.has(candidate)) {
-        this.nextPid = candidate + 1 > PID_MAX ? 2 : candidate + 1;
+        this.nextPid = candidate + 1 > this.pidMaxValue ? 2 : candidate + 1;
         return candidate;
       }
       candidate++;
-      if (candidate > PID_MAX) candidate = 2;
+      if (candidate > this.pidMaxValue) candidate = 2;
     } while (candidate !== start);
     throw new Error('No free PIDs available');
   }

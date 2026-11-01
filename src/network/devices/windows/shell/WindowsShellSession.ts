@@ -47,6 +47,7 @@ export class WindowsShellSession {
    */
   driveCwd: Map<string, string> = new Map();
   directoryStack: string[] = [];
+  temporaryDrives: Array<{ letter: string; depth: number }> = [];
   /** DOSKEY-style history (bounded). */
   history: string[] = [];
   lastExitCode: number = 0;

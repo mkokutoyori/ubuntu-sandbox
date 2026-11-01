@@ -1,3 +1,4 @@
+import { reusePortHash } from '@/network/core/reusePortHash';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
@@ -400,6 +401,7 @@ export interface TcpBindOptions {
   backlog?: number;
   boundDevice?: string;
   serialAccept?: boolean;
+  reusePort?: boolean;
 }
 
 export interface TcpListenOptions extends TcpBindOptions {
@@ -809,6 +811,8 @@ export class TcpListener {
 
   serialAccept = false;
   serving = false;
+  reusePort = false;
+  ownerUid: number | undefined;
   readonly awaiting: TcpSocket[] = [];
 
   key(): string { return makeListenerKey(this.localIp, this.localPort); }
@@ -833,6 +837,7 @@ const SOCKET_KEY_COLLATOR = new Intl.Collator();
 
 export class TcpStack {
   private listeners = new Map<string, TcpListener>();
+  private reusePortPeers = new Map<string, TcpListener[]>();
   private sockets = new Map<string, TcpSocket>();
   private readonly socketsByLocalPort = new Map<number, Set<TcpSocket>>();
   private readonly sortedSockets: TcpSocket[] = [];
@@ -885,8 +890,9 @@ export class TcpStack {
     this.socketsByLocalPort.clear();
     this.sortedSockets.length = 0;
     this.sortedKeys.length = 0;
-    for (const l of this.listeners.values()) this.socketSink?.withdraw(l.localIp, l.localPort);
+    for (const l of this.allListeners()) this.socketSink?.withdraw(l.localIp, l.localPort, l.identity.pid);
     this.listeners.clear();
+    this.reusePortPeers.clear();
   }
 
   setEnabled(on: boolean): void { this.enabled = on; }
@@ -899,7 +905,7 @@ export class TcpStack {
    */
   attachSocketSink(sink: ListenerSocketSink): void {
     this.socketSink = sink;
-    for (const l of this.listeners.values()) sink.announce(l.localIp, l.localPort, l.identity, undefined, !l.accepting);
+    for (const l of this.allListeners()) sink.announce(l.localIp, l.localPort, l.identity, undefined, !l.accepting);
   }
 
   private socketSink: ListenerSocketSink | null = null;
@@ -919,9 +925,9 @@ export class TcpStack {
   }
 
   startListening(listener: TcpListener, onAccept: TcpAcceptHandler): void {
-    if (this.listeners.get(listener.key()) !== listener || listener.accepting) return;
+    if (!this.membersAt(listener.key()).includes(listener) || listener.accepting) return;
     listener.onAccept = onAccept;
-    this.socketSink?.promote(listener.localIp, listener.localPort);
+    this.socketSink?.promote(listener.localIp, listener.localPort, listener.identity.pid);
     this.announceListener(listener, true);
   }
 
@@ -967,29 +973,58 @@ export class TcpStack {
       opts.receiveWindow, opts.maxSegmentSize, opts.ttl ?? null, opts.diffServ ?? DiffServField.DEFAULT,
       opts.allowHalfOpen ?? false, opts.ttlFloor ?? TtlFloor.NONE, Math.min(opts.backlog ?? backlogLimit, backlogLimit),
       opts.boundDevice ?? null);
-    if (this.listeners.has(listener.key())) {
-      throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
+    listener.reusePort = opts.reusePort ?? false;
+    listener.ownerUid = opts.ownerUid;
+    const holders = this.membersAt(listener.key());
+    if (holders.length > 0) {
+      const sharing = listener.reusePort && holders.every((holder) => holder.reusePort && holder.ownerUid === listener.ownerUid);
+      if (!sharing) throw new Error(`TCP listener already bound on ${localIp}:${boundPort} (EADDRINUSE)`);
     }
     listener.serialAccept = opts.serialAccept ?? false;
-    this.listeners.set(listener.key(), listener);
+    if (holders.length > 0) {
+      const peers = this.reusePortPeers.get(listener.key()) ?? [];
+      peers.push(listener);
+      this.reusePortPeers.set(listener.key(), peers);
+    } else this.listeners.set(listener.key(), listener);
     this.socketSink?.announce(localIp, boundPort, listener.identity, listener.boundDevice ?? undefined, !listener.accepting);
     if (listener.accepting) this.announceListener(listener, true);
     return listener;
   }
 
-  closeListener(localPort: number, localIp = '0.0.0.0'): void {
+  closeListener(localPort: number, localIp = '0.0.0.0', ownerPid?: number): void {
     const key = makeListenerKey(localIp, localPort);
-    const listener = this.listeners.get(key);
-    if (!this.listeners.delete(key)) return;
+    const members = this.membersAt(key);
+    const listener = ownerPid === undefined ? members[0] : members.find((member) => member.identity.pid === ownerPid);
+    if (listener === undefined) return;
+    if (this.listeners.get(key) === listener) {
+      this.listeners.delete(key);
+      const peers = this.reusePortPeers.get(key) ?? [];
+      const successor = peers.shift();
+      if (successor !== undefined) this.listeners.set(key, successor);
+      if (peers.length === 0) this.reusePortPeers.delete(key);
+    } else {
+      const peers = (this.reusePortPeers.get(key) ?? []).filter((peer) => peer !== listener);
+      if (peers.length === 0) this.reusePortPeers.delete(key);
+      else this.reusePortPeers.set(key, peers);
+    }
     for (const pending of [...this.sockets.values()]) {
       if (pending.pendingListener === listener) this._teardown(pending, 'shutdown');
     }
-    this.socketSink?.withdraw(localIp, localPort);
-    if (listener?.accepting) this.announceListener(listener, false);
+    this.socketSink?.withdraw(localIp, localPort, listener.identity.pid);
+    if (listener.accepting) this.announceListener(listener, false);
+  }
+
+  private membersAt(key: string): TcpListener[] {
+    const primary = this.listeners.get(key);
+    return primary === undefined ? [] : [primary, ...(this.reusePortPeers.get(key) ?? [])];
+  }
+
+  private allListeners(): TcpListener[] {
+    return [...this.listeners.keys()].flatMap((key) => this.membersAt(key));
   }
 
   listListeners(): TcpListener[] {
-    return Array.from(this.listeners.values()).filter((listener) => listener.accepting).sort((a, b) =>
+    return this.allListeners().filter((listener) => listener.accepting).sort((a, b) =>
       a.localPort === b.localPort ? a.localIp.localeCompare(b.localIp) : a.localPort - b.localPort);
   }
 
@@ -1726,7 +1761,7 @@ export class TcpStack {
       return true;
     }
     if (seg.flags.syn && !seg.flags.ack) {
-      const listener = this.findListener(dstIp, seg.destinationPort, arrival.device);
+      const listener = this.findListener(dstIp, seg.destinationPort, arrival.device, { ip: senderIp, port: seg.sourcePort });
       if (!listener) {
         this.sendRst(dstIp, senderIp, seg);
         this.dropped(senderIp, seg.sourcePort, 'no-listener');
@@ -3462,13 +3497,15 @@ export class TcpStack {
     };
   }
 
-  private findListener(dstIp: string, port: number, device: string | null = null): import('./TcpStack').TcpListener | undefined {
+  private findListener(
+    dstIp: string, port: number, device: string | null = null, from?: { ip: string; port: number },
+  ): import('./TcpStack').TcpListener | undefined {
     const wildcard = wildcardAddressOf(ipFamilyOf(dstIp));
     for (const address of [dstIp, wildcard, '0.0.0.0']) {
-      const listener = this.listeners.get(makeListenerKey(address, port));
-      if (listener?.accepting && (device === null || listener.boundDevice === null || listener.boundDevice === device)) {
-        return listener;
-      }
+      const candidates = this.membersAt(makeListenerKey(address, port)).filter((listener) => listener.accepting
+        && (device === null || listener.boundDevice === null || listener.boundDevice === device));
+      if (candidates.length === 0) continue;
+      return candidates.length === 1 || from === undefined ? candidates[0] : candidates[reusePortHash(from.ip, from.port) % candidates.length];
     }
     return undefined;
   }

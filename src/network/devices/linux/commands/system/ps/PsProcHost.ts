@@ -1,5 +1,4 @@
 import { LocalCalendar, type BrokenDownTime } from '../../../logrotate/CalendarTime';
-import { PID_MAX } from '../../../LinuxProcessManager';
 import { buildTask, ttyDeviceNumber } from '../../../process/ProcessTaskBuilder';
 import type { ProcessTask } from '../../../process/ProcessTask';
 import type { LinuxCommandContext } from '../../LinuxCommandContext';
@@ -53,7 +52,7 @@ export class PsProcHost implements PsHost {
   get hertz(): number { return HERTZ; }
   get pageSizeBytes(): number { return PAGE_SIZE_BYTES; }
   get memoryTotalKb(): number { return this.executor.hardware.memory.totalKib; }
-  get pidDigits(): number { return Math.max(5, String(PID_MAX).length); }
+  get pidDigits(): number { return Math.max(5, String(this.executor.processMgr.pidMax).length); }
   get bootTimeSeconds(): number { return Math.floor(this.bootEpochMs / 1000); }
   get uptimeSeconds(): number { return (this.nowMs - this.bootEpochMs) / 1000; }
   get nowSeconds(): number { return Math.floor(this.nowMs / 1000); }

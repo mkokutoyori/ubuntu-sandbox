@@ -10,11 +10,12 @@
  * NAT'd router, with no FTP or ALG code involved at all — a pre-existing
  * simulator gap, not something this phase introduced or can fix).
  */
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   IPAddress, createIPv4Packet, IP_PROTO_TCP, resetCounters,
 } from '@/network/core/types';
-import type { TCPPacket, IPv4Packet } from '@/network/core/types';
+import type { IPv4Packet } from '@/network/core/types';
 import { NATEngine } from '@/network/devices/router/NATEngine';
 import { inspectAndRewriteFtpAlg } from '@/network/devices/router/nat/FtpAlg';
 import { encodeCommand, encodeReply, reply } from '@/network/ftp/replies';
@@ -29,11 +30,11 @@ beforeEach(() => {
 });
 
 function makeTcpPacket(srcIP: string, dstIP: string, srcPort: number, dstPort: number, text: string): IPv4Packet {
-  const tcp: TCPPacket = {
+  const tcp: TcpSegment = {
     type: 'tcp', sourcePort: srcPort, destinationPort: dstPort,
-    sequenceNumber: 1000, acknowledgementNumber: 0,
-    flags: { syn: false, ack: true, fin: false, rst: false, psh: true, urg: false },
-    windowSize: 65535, checksum: 0, payload: text,
+    sequence: 1000, acknowledgement: 0,
+    flags: { ...noFlags(), ...{ syn: false, ack: true, fin: false, rst: false, psh: true, urg: false } },
+    window: 65535, checksum: 0, dataOffset: 5, urgentPointer: 0, options: [], payload: text,
   };
   return createIPv4Packet(new IPAddress(srcIP), new IPAddress(dstIP), IP_PROTO_TCP, 64, tcp, 40 + text.length);
 }
@@ -45,7 +46,7 @@ describe('inspectAndRewriteFtpAlg — pure packet-level rewriting', () => {
     const pkt = makeTcpPacket('10.0.1.2', '203.0.113.50', 21000, 21, portCmd);
 
     const rewritten = inspectAndRewriteFtpAlg(pkt, engine, '198.51.100.1');
-    const tcp = rewritten.payload as TCPPacket;
+    const tcp = rewritten.payload as TcpSegment;
     expect(tcp.payload).toContain('198,51,100,1');
     expect(tcp.payload).not.toContain('10,0,1,2');
 
@@ -61,7 +62,7 @@ describe('inspectAndRewriteFtpAlg — pure packet-level rewriting', () => {
     const forwarded = engine.translateInbound(inboundSyn, 'outside');
     expect(forwarded).not.toBeNull();
     expect(forwarded!.destinationIP.toString()).toBe('10.0.1.2');
-    expect((forwarded!.payload as TCPPacket).destinationPort).toBe(40000);
+    expect((forwarded!.payload as TcpSegment).destinationPort).toBe(40000);
   });
 
   it('rewrites a PASV 227 reply payload and opens a matching pinhole', () => {
@@ -70,7 +71,7 @@ describe('inspectAndRewriteFtpAlg — pure packet-level rewriting', () => {
     const pkt = makeTcpPacket('10.0.2.10', '203.0.113.60', 21, 30500, pasvReply);
 
     const rewritten = inspectAndRewriteFtpAlg(pkt, engine, '198.51.100.1');
-    const tcp = rewritten.payload as TCPPacket;
+    const tcp = rewritten.payload as TcpSegment;
     expect(tcp.payload).toContain('198,51,100,1');
     expect(tcp.payload).not.toContain('10,0,2,10');
   });

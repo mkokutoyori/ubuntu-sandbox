@@ -32,6 +32,7 @@ beforeEach(async () => {
   pc.powerOn();
   session = new LinuxTerminalSession('term-1', pc);
   await pc.executeCommand('echo seed > /tmp/p.log');
+  await pc.executeCommand('sudo sysctl -w kernel.dmesg_restrict=0');
 });
 
 describe('streaming pipelines and sequences on the local terminal', () => {

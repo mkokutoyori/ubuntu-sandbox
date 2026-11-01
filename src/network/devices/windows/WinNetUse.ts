@@ -36,6 +36,7 @@ export interface NetUseEntry {
   status: 'OK' | 'Disconnected' | 'Unavailable';
   user: string;
   persistent: boolean;
+  secret?: string;
   /** Live SMB session backing this mapping — reused by `dir`/`copy`/`type` over `Z:\...`. */
   connection?: SmbConnection;
 }
@@ -159,7 +160,7 @@ function serverOf(remote: string): string {
  * only prior mapping was Z:), which the vendor's own "next available
  * drive letter" wording leaves open.
  */
-function nextFreeDrive(ctx: WinCommandContext, store: Map<string, NetUseEntry>): string | null {
+export function nextFreeDrive(ctx: WinCommandContext, store: Map<string, NetUseEntry>): string | null {
   const taken = new Set<string>([
     ...Array.from(store.values()).map(e => e.local.toUpperCase()).filter(Boolean),
     ...(ctx.localDrives?.() ?? []).map(d => d.toUpperCase()),
@@ -169,6 +170,11 @@ function nextFreeDrive(ctx: WinCommandContext, store: Map<string, NetUseEntry>):
     if (!taken.has(letter)) return letter;
   }
   return null;
+}
+
+export function plainNetworkError(text: string | undefined): string {
+  const lines = (text ?? ERROR_53).split('\n').map(line => line.trim()).filter(line => line !== '');
+  return lines[lines.length - 1] ?? ERROR_53;
 }
 
 function findByRemote(store: Map<string, NetUseEntry>, remote: string): NetUseEntry | null {
@@ -238,6 +244,7 @@ export function establishMapping(
     status: 'OK',
     user: request.username,
     persistent: request.persistent ?? (request.local !== '' && savesConnections(ctx)),
+    secret: request.password,
     connection: dial.connection,
   };
   store.set(keyOf(entry), entry);

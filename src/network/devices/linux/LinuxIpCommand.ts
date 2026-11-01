@@ -7,6 +7,7 @@
  * Error messages and output match real iproute2 behavior.
  */
 
+import { DEFAULT_QDISC_FALLBACK } from './LinuxIpv4Settings';
 import { findHostByAddress } from './network/HostLookup';
 import {
   ipColorizer, parseIpColorOption, ipUnknownOptionError,
@@ -38,6 +39,7 @@ export interface IpInterfaceInfo {
   isConnected: boolean;
   isDHCP: boolean;
   txQueueLen?: number;
+  qdisc?: string;
   promiscuous?: boolean;
   master?: string | null;
   counters: {
@@ -655,7 +657,7 @@ function formeLien(info: IpInterfaceInfo): { state: string; qdisc: string; qlen:
     state: info.carrierless ? 'UNKNOWN'
       : info.isUp && info.isConnected ? 'UP' : 'DOWN',
     // Pas de file sur une interface qui n'attend rien.
-    qdisc: info.carrierless ? 'noqueue' : 'fq_codel',
+    qdisc: info.carrierless ? 'noqueue' : info.qdisc ?? DEFAULT_QDISC_FALLBACK,
     qlen: ` qlen ${info.txQueueLen ?? 1000}`,
   };
 }

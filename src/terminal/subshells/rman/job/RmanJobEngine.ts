@@ -39,6 +39,7 @@ import { Scn } from '../values/Scn';
 import { generatePieceName, oracleStamp, rmanNowMs, rmanWall, simulateBackupElapsedMs } from '../core/pureUtils';
 import type { OmfBackupKind } from '@/database/oracle/storage/OracleManagedFiles';
 import { ORACLE_CONFIG } from '@/database/oracle/OracleConfig';
+import { snapshotControlfilePath } from '../core/snapshotControlfile';
 import { resolveFormatSpec } from '../core/formatSpec';
 import { renderBackupPieceImage, parseBackupPieceImage } from '../core/BackupPieceImage';
 import { restorePreviewLines } from '../core/backupSetReport';
@@ -73,6 +74,7 @@ export class RmanJobEngine implements IRmanJobEngine {
     private readonly _catalog: IRmanCatalogRepository,
     private readonly _ctx:     IRmanOracleContext,
     private readonly _retention: () => IRetentionPolicy | undefined = () => undefined,
+    private readonly _snapshotControlfile: () => string | undefined = () => undefined,
   ) {}
 
   run(job: RmanJob): Result<void, RmanError> {
@@ -363,6 +365,10 @@ export class RmanJobEngine implements IRmanJobEngine {
           `[ORACLE RMAN BACKUP PIECE - ${size} bytes]`, i === 1 ? image : null);
       const writeResult = this._ctx.vfs.writeFile(path, new TextEncoder().encode(body), size);
       if (!writeResult.ok) return writeResult;
+      if (isControlfile) {
+        const snapshot = this._writeSnapshotControlfile();
+        if (!snapshot.ok) return snapshot;
+      }
 
       const elapsedMs = simulateBackupElapsedMs(size);
       this._ctx.spendHostTime?.(elapsedMs);
@@ -523,6 +529,14 @@ export class RmanJobEngine implements IRmanJobEngine {
       this._ctx.vfs.writeFile(path,
         new TextEncoder().encode(renderDatafileImage(banner, payload)));
     }
+  }
+
+  private _writeSnapshotControlfile(): Result<void, RmanError> {
+    const path = snapshotControlfilePath(this._snapshotControlfile(), this._ctx.dbName);
+    const directory = path.slice(0, path.lastIndexOf('/'));
+    this._ctx.vfs.ensureDirectory?.(directory);
+    const body = renderControlFileImage('[ORACLE SNAPSHOT CONTROL FILE]', this._controlFileImage());
+    return this._ctx.vfs.writeFile(path, new TextEncoder().encode(body));
   }
 
   private _controlFileImage(): ControlFileImage {

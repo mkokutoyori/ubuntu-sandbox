@@ -24,7 +24,7 @@ export interface BatchFileSystem {
   exists(absolutePath: string): boolean;
   isDirectory(absolutePath: string): boolean;
   read(absolutePath: string): string | null;
-  write(absolutePath: string, content: string, append: boolean): boolean;
+  write(absolutePath: string, content: string, append: boolean): string | null;
   list(absolutePath: string): DirectoryEntry[];
 }
 
@@ -34,6 +34,8 @@ export interface BatchHost {
   cwd(): string;
   enterDirectory(target: string): string | null;
   directoryStack(): string[];
+  attachNetworkPath?(target: string, depth: number): { path: string } | { error: string } | null;
+  releaseTemporaryDrives?(depth: number): void;
   captureLocation(): () => void;
   prompt(): string;
   formattedDate(): string;

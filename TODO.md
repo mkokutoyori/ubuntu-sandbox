@@ -43,56 +43,6 @@ ne le signale. Retire avec la refutation ci-dessus.
 
 ## Diagnostic reseau
 
-### [traceroute] le MODE de sonde est analyse, documente, et jamais honore
-MESURE, depuis un PC Linux vers l'adresse d'une interface distante du
-pare-feu (deux sauts reels : le routeur puis le pare-feu) :
-
-    traceroute -I  (ICMP)      1 192.168.1.1   2 192.168.20.2   JUSTE
-    traceroute -T  (TCP)       1 192.168.20.2                   UN SEUL SAUT
-    traceroute -U  (UDP)       * * *                            RIEN
-    traceroute     (defaut)    * * *                            RIEN
-    tracert (Windows)          1 192.168.1.1   2 192.168.20.2   JUSTE
-
-Le mode par DEFAUT du `traceroute` de Linux ne rend rien, et c'est celui
-que tout le monde tape.
-
-LA CAUSE est structurelle et se lit dans la signature :
-`LinuxNetKernel.traceroute(target, maxHops, probesPerHop, firstTtl,
-timeoutMs)` — AUCUN parametre de methode. Le moteur ne peut donc pas
-distinguer ICMP d'UDP ni de TCP. Les drapeaux `-I`, `-U`, `-T` sont
-analyses (`parsed.method`), decrits dans l'aide (« Use TCP SYN for
-probes »), et n'atteignent jamais la sonde. C'est le §6 : toute
-l'apparence d'exister, sauf l'effet.
-
-TROIS CONSEQUENCES, toutes mesurees :
-
-1. `-T` rend UN saut vers une destination qui en compte deux : il saute
-   le routeur. Un vrai traceroute TCP sonde par TTL croissant et voit
-   chaque saut.
-
-2. Le mode UDP est decide par un ORACLE EN MEMOIRE, pas par le fil :
-   `tracerouteUdpDenied` appelle `transitUdpAclVerdict`, qui parcourt les
-   equipements et rend un verdict sans qu'aucun datagramme parte. Les
-   `sendUdpProbe` emis ensuite sont DECORATIFS — les sauts sont deja
-   calcules. C'est le §4.
-
-3. Quand la sonde ne rend rien, le code FABRIQUE des sauts : hop 1 =
-   la passerelle par defaut avec un RTT invente de 1 ms, puis des
-   `* * *`. Une sortie de diagnostic inventee est pire qu'une absence de
-   reponse, parce qu'elle se lit comme une mesure.
-
-MEME FAMILLE QUE `isPathReachable`, ferme par
-`probe-acces-admin-meme-verdict-partout.test.ts` : le client Linux decide
-hors du fil, par un parcours de la topologie en memoire. Ici l'oracle
-s'appelle `transitUdpAclVerdict` et vit dans le meme fichier
-(`HostLookup.ts`).
-
-CE QU'IL FAUT : que `traceroute` emette de VRAIES sondes a TTL croissant,
-du type demande, et lise les ICMP time-exceeded et port-unreachable qui
-reviennent. `Router.decrementForForwarding` et `IcmpErrors` portent deja
-la regle du TTL et la generation des erreurs ; il s'agit de les faire
-travailler, pas d'en ecrire une seconde.
-
 ## Pare-feu FortiGate
 
 ### [fortios] un refus d'`allowaccess` route est BAVARD
@@ -257,10 +207,9 @@ depuis une expression SQL est un changement d'evaluation a part entiere.
 
 ### [oracle] declencheurs DML : ce que l'analyse et l'execution ne couvrent pas encore
 Les declencheurs BEFORE/AFTER d'instruction et de ligne s'executent (`:NEW`, `:OLD`, `INSERTING`/`UPDATING`/`DELETING`, `WHEN`,
-`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`). Restent non analyses ou non evalues : la liste
-`UPDATE OF col` (l'analyseur de `CREATE TRIGGER` ne la lit pas : `ORA-24344`), `REFERENCING` qui renomme `NEW`/`OLD`, les
-declencheurs `INSTEAD OF` (jamais declenches), les declencheurs composes, `UPDATING('col')`, le declenchement depuis `MERGE`
-(la branche `INSERT` passe par `insertRowChecked` mais pas la branche `UPDATE`), `DBMS_OUTPUT` d'un declencheur (perdu), et
+`RAISE_APPLICATION_ERROR`, `ALTER TRIGGER`, `ALTER TABLE ... ALL TRIGGERS`, `UPDATE OF col`, `UPDATING('col')`, les deux branches de `MERGE`, `INSTEAD OF` sur une vue pour INSERT ... VALUES, UPDATE et DELETE ; l'`INSERT ... SELECT` dans une vue reste refuse). Restent non analyses
+ou non evalues : `REFERENCING` qui renomme `NEW`/`OLD`, les
+declencheurs composes, `DBMS_OUTPUT` d'un declencheur (perdu), et
 la sortie de ligne `AFTER` qui voit la table avant la mise a jour (`ORA-04091` n'est pas leve).
 
 ### [oracle] le calendrier du Scheduler ne couvre que FREQ, INTERVAL et les BY* courants
@@ -463,36 +412,34 @@ commutateur une commande que son materiel n'a pas.
 ### [sysctl] `/etc/sysctl.conf` n'est pas livre, et les projections de `/proc/sys` sont en lecture seule
 Depuis le lot « `sysctl` lit `/proc/sys` », un reste MESURE (le fichier `/etc/sysctl.conf` est livre, copie de celui d'une Ubuntu 24.04 reelle).
 
-**Une projection de `/proc/sys` ne se laisse pas ecrire.** Les
-pseudo-fichiers generes sont en lecture seule par decision du VFS
-(`writeFile` les jette en silence), et ceux d'`arp_ignore`,
-`arp_announce`, `arp_accept`, `arp_notify` et `proxy_arp` rendent une
-CONSTANTE `0` que personne ne lit — verifie : `Port.isProxyArpEnabled`
-n'a d'appelants que `Router` et les CLI Cisco/Huawei, un hote Linux ne
-fait pas de proxy ARP ici. `sysctl -w` les refuse donc par la branche
-EPERM de procps plutot que de les accepter sans effet. **Pourquoi ce
-n'est pas ferme ici** : les rendre inscriptibles demande de donner un
-COMPORTEMENT a chacune, sans quoi on rangerait une valeur que rien
-n'evalue. C'est un chantier par knob, pas un correctif de commande.
+**Une projection de `/proc/sys` ne se laisse pas ecrire.** Les pseudo-fichiers generes sont en lecture seule par decision du
+VFS (`writeFile` les jette en silence) ; `arp_announce` et `proxy_arp` rendent une CONSTANTE `0` que
+personne ne lit — verifie : `Port.isProxyArpEnabled` n'a d'appelants que `Router` et les CLI Cisco/Huawei, un hote Linux ne fait
+pas de proxy ARP ici. `sysctl -w` les refuse donc par la branche EPERM de procps plutot que de les accepter sans effet.
+**`arp_ignore`, `arp_accept` et `arp_notify` sont faits** (sondes `probe-linux-arp-ignore`, `probe-linux-arp-notify`,
+`linux-arp-gratuitous-symmetry`) : inscriptibles par interface, `all` et `default` compris, dans `Ipv4DeviceConf` (maximum
+des deux, comme `IN_DEV_MAXCONF`). `arp_ignore` : modes 0, 1, 2, 3 et 8 de `Documentation/networking/ip-sysctl.rst` et de
+`net/ipv4/arp.c` (noyau 6.8, lus sur GitHub) ; le 3 cherche l'adresse sur TOUTES les interfaces (`in_dev = NULL`) et ne
+refuse que la portee « host » ; 4 a 7, « reserved », se comportent comme 0. `arp_notify` : une requete ARP gratuite par adresse
+de l'interface, secondaires comprises, a la mise en service et au changement de MAC. **`arp_announce` reste ferme** : il choisit
+l'adresse source d'une requete ARP parmi celles de l'hote, or un hote du simulateur n'a qu'une adresse principale par interface
+(les secondaires existent mais l'adresse source du paquet IP n'atteint pas l'emission ARP) ; ses trois niveaux ne se
+distingueraient pas. `proxy_arp` pour un hote est sans objet (un hote ne transmet pas).
+**Les fichiers du paquet procps sont attestes** (machine de reference, Ubuntu 24.04, procps 4.0.4) et sont livres, sauf trois :
+`10-bufferbloat`, `10-console-messages`, `10-kernel-hardening`, `10-magic-sysrq`, `10-map-count`, `10-ptrace`, `10-zeropage` et
+`/usr/lib/sysctl.d/50-pid-max.conf` (`SysctlPackageFiles.ts`). Cles qui ont un LECTEUR : `net.core.default_qdisc` (`ip link`, `tc qdisc
+show`), `kernel.printk` (`dmesg -n`), `kernel.dmesg_restrict` (`dmesg`), `kernel.pid_max` (allocation, `ps`). Cles STOCKEES ET RENDUES sans
+lecteur, reserve assumee (la machine accepte le reglage, le moteur n'a pas la fonction qu'il gouverne) : `kernel.kptr_restrict` (pas de
+`/proc/kallsyms`), `kernel.sysrq` (pas de clavier ; `/proc/sysrq-trigger` ignore d'ailleurs le masque), `kernel.yama.ptrace_scope` (pas de
+`ptrace`), `vm.max_map_count` et `vm.mmap_min_addr` (pas de modele de memoire par processus) ; sonde `probe-sysctl-ubuntu-hardening`.
+**Non livres** : `10-network-security.conf` (`net.ipv4.conf.{default,all}.rp_filter=2`), `10-ipv6-privacy.conf`
+(`net.ipv6.conf.{all,default}.use_tempaddr = 2`) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`) mais `protected_symlinks`, `protected_fifos`
+et `protected_regular` n'ont pas de lecteur dans le VFS (suivre un lien dans un dossier colle, `O_CREAT` sur un fichier d'autrui) et le fichier du paquet n'est donc pas livre : `sysctl --system` ecrirait des cles
+absentes, et les stocker sans lecteur affirmerait un filtre de chemin inverse qui ne jette aucun paquet (un critere de securite doit
+echouer FERME). A fermer avec leur lecteur ; `rp_filter` en premier (il rejette de vrais paquets sur une vraie machine, et demande de
+verifier qu'aucun labo ne recoit d'une source sans route).
 
 ---
-
-### [tcp] deux types pour un segment TCP : `TCPPacket` (core) et `TcpSegment` (pile)
-La pile (`tcp/TcpStack`) emet des `TcpSegment` (`sequence`,
-`acknowledgement`, `window`, `options`) ; `core/types.ts` declare encore
-`TCPPacket` (`sequenceNumber`, `acknowledgementNumber`, `windowSize`),
-qu'aucun emetteur reel ne produit. Le pare-feu lit desormais `TcpSegment`
-(le renifleur affichait « syn undefined » en lisant l'autre). Restent sur
-`TCPPacket` : `nat/rewrite.ts`, `devices/router/NATEngine.ts`,
-`router/nat/FtpAlg.ts`, `router/ACLEngine.ts`, `router/Ipv6AclEngine.ts`,
-`router/acl/ReflexiveSessions.ts`, `Router.ts`, `EndHost.ts`,
-`WindowsPC.ts`, `linux/network/HostLookup.ts`. Ils ne lisent que les
-ports et les drapeaux, communs aux deux formes — aucun defaut mesure
-aujourd'hui, mais tout nouveau lecteur de numero de sequence ou de fenetre
-y lirait `undefined`.
-**Pourquoi ce n'est pas ferme ici** : dix fichiers du routeur et de NAT,
-hors du sous-systeme corrige ; la migration consiste a supprimer
-`TCPPacket` et a faire importer `TcpSegment` partout.
 
 ### [fortios] une entree refusee par `next` reste affichee
 `config firewall policy` / `edit 62` sans `set service` : `next` repond
@@ -527,12 +474,6 @@ paquet puis les demarre. Restent :
   pose `/etc/bind/named.conf` : `systemctl start named` marche donc sans
   paquet. Une vingtaine de tests demarrent `named` sans `apt install` ;
   retirer l'unite de l'image demande de les faire installer d'abord ;
-- deux versions de nginx : le catalogue dit `1.18.0-6ubuntu14.4` (jammy),
-  `NGINX_VERSION` (http/nginx/NginxFiles.ts) dit `1.24.0`, que `nginx -v`
-  affiche ; un seul des deux doit rester ;
-- `apt install` ne demande pas root (un vrai apt refuse : « Could not open
-  lock file /var/lib/dpkg/lock-frontend ») ; l'exiger touche tous les
-  tests qui installent sans `sudo` ;
 - aucune archive n'est modelisee : les lignes de telechargement (« Need to
   get », « Get: », « Fetched ») ne sont pas imprimees, et un paquet ne pose
   que ses unites, ses fichiers de configuration connus et ses comptes.
@@ -670,29 +611,18 @@ justement une.
 bouclage comme `LinuxMachine.createLoopbackPort()` le fait ; elle sera
 alors `hidden` et le filtre la rendra sans une ligne de plus.
 
-### [bash] La sortie d'une commande ne porte pas son retour a la ligne final, et la lecture de l'entree standard est une liste blanche
-Mesure avec l'invite `^T` de nano (`nano-exec-oracle.test.ts`), qui lance
-la commande comme un enfant du shell (`LinuxMachine.runChildShellForEditor`)
-et lit la sortie brute :
-- `printf abc | cat`, `tr a-z A-Z` ou `cat` sur une entree sans retour a
-  la ligne final rendent `abc\n` ; le vrai rend `abc`. Les commandes
-  « orientees lignes » (`writesLines`) ou un tube terminent toujours leur
-  sortie, et `sort -r` perd les lignes vides finales (« a\n\n » → « a\n »).
-- `ls` d'un enfant tient en une seule rangee de colonnes ; le vrai (sortie
-  sur un tube) rend un nom par ligne — corrige pour l'enfant seulement
-  (`ctx().isPiped`), pas pour un `ls` redirige vers un fichier.
-- `od` n'existe pas ; `$HOME` d'un `root` vaut `/home/user`.
-- L'entree standard n'atteint que les commandes de `readsStandardInput`
-  (`cat wc sort uniq head tail cut base64 dd less more rev nl xxd tac grep
-  sed awk tr`) : `{ cmd; } < fichier` ne la transmet a personne, et `cmd < f`
-  n'est pris en charge que pour une commande simple.
-- Un enfant sans terminal prefixe `command not found` par `bash: line 1: `
-  (`childShellRunning`) ; la ligne vaut toujours 1 et les autres erreurs du
-  shell (syntaxe, redirection) n'ont pas le prefixe.
-**Report** : le modele « la sortie d'une commande est un texte sans
-terminateur » est partage par tout le simulateur ; le remplacer par un
-flux d'octets avec un terminateur explicite est un lot en soi, et le
-corpus `exec` evite ces cas (`EXEC_FILTERS`).
+### [bash] ce que l'enfant de shell de `^T` (nano) laisse apres le re-mesurage
+Re-mesure contre bash 5.2 et coreutils 9.4 : `printf abc | cat`, `tr a-z A-Z` et `sort -r` sur des lignes vides finales
+sortent comme le vrai (le modele « la sortie perd son seul retour a la ligne final » est coherent partout) ; `od` existe
+(`OdCommand.ts`) ; `{ cmd; } < f`, `( cmd ) < f`, `if ... fi < f`, une fonction et une boucle redirigees lisent bien le
+fichier ; `$HOME` suit l'utilisateur courant. Reste, de l'entree d'origine :
+- `ls` d'un enfant tient en une seule rangee de colonnes ; le vrai (sortie sur un tube) rend un nom par ligne — corrige
+  pour l'enfant seulement (`ctx().isPiped`), pas pour un `ls` redirige vers un fichier.
+- Un enfant sans terminal prefixe `command not found` par `bash: line 1: ` (`childShellRunning`) ; la ligne vaut toujours 1
+  et les autres erreurs du shell (syntaxe, redirection) n'ont pas le prefixe.
+**Report** : le modele « la sortie d'une commande est un texte sans terminateur » est partage par tout le simulateur ; le
+remplacer par un flux d'octets avec un terminateur explicite est un lot en soi, et le corpus `exec` evite ces cas
+(`EXEC_FILTERS`).
 
 ### [vim] Motifs : quelques manquements mesures apres le traducteur `VimRegex`
 Mesure avec les labos `vim-pattern-oracle.test.ts` (7661 cas enregistres
@@ -714,8 +644,14 @@ Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
   dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
   retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait (`v:shell_error`, `getenv`...). `reduce`, `mapnew`, `sha256`, `strftime`,
-  `json_encode`, `json_decode`, `system` et `systemlist` existent.
+  function` meme quand vim le connait. Mesure sur vim 9.1 (73 expressions rejouees) : restent absentes `executable`,
+  `exepath`, `expand`, `glob`, `globpath`, `getftype` (le VFS d'edition rend `file` pour un lien), `getfperm`,
+  `resolve`, `mkdir`, `delete`, `rename`, `writefile`, `tempname`, `reltime`,
+  `reltimestr`, `wordcount`, `bufname`, `mode`, `blob2list`, `list2blob`, `strptime`, `foreach` (le rejeu trouve `foreach`
+  inconnue sur ce vim aussi). Existent : `reduce`, `mapnew`, `sha256`, `strftime`, `json_encode`, `json_decode`, `system`,
+  `systemlist`, `v:shell_error`, `getenv`, `str2float`, `flatten`, `flattennew`, `slice`, `fmod`, `log10`, `isnan`, `strgetchar`,
+  `byteidx`, `charidx`, `utf16idx`, `indexof`, `filereadable`, `isdirectory`, `readfile`, `readdir`, `getfsize`, `getcwd`, `hostname`, `getpid`, `localtime`, `environ` (`probe-vim-fonctions-fichiers`), `shellescape`, `simplify`, `pathshorten`, `isabsolutepath` et `fnamemodify`
+  (`:h :t :r :e`, `:e` repete ; `:p`, `:~`, `:.`, `:s` et `:gs` restent absents) (`probe-vim-fonctions-texte-et-chemins`).
 - **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
   `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
   destructuration. Restent refusees les cibles `$ENV` (l'environnement du
@@ -832,17 +768,19 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   mandataire est refusee (`socks.c` non porte). `-F` (passage de descripteur), `-S` (signature MD5 :
   le vrai demande un mot de passe sur le tty, le moteur repond l'erreur sans tty), `-Z` (DCCP : la
   prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
-- Deux `nc -l 9000` : `nc` pose SO_REUSEADDR et SO_REUSEPORT, donc le vrai accepte le second
-  ecouteur (meme uid) ; `SocketTable.bind` repond EADDRINUSE.
+- Deux `nc -l 9000` TCP du meme uid coexistent (SO_REUSEPORT : `TcpStack` garde les pairs d'un groupe et choisit l'ecouteur d'un SYN
+  par hachage de la source, `SocketTable` garde une ligne par ecouteur, la fermeture se fait par pid ; sonde `probe-nc-so-reuseport`).
+  `nc -lu` suit le meme principe : `EndHost` garde les membres d'un groupe par port, choisit le destinataire d'un datagramme par le meme
+  hachage de la source (`core/reusePortHash`) et ferme le membre du processus qui meurt.
 - Les messages `-v` de l'ecoute (« Listening on 0.0.0.0 9000 ») dependent de la resolution inverse
   (`getnameinfo`) : sur la machine d'enregistrement le DNS injoignable donne « nc: getnameinfo:
   Temporary failure in name resolution » pour un joker, donc seul 127.0.0.1 (« localhost », via
   /etc/hosts) est dans le corpus.
 - `ncat` est un alias de `nc` dans la declaration de la commande ; c'est l'outil de Nmap, pas
   `netcat-openbsd` (options, messages et `-e` differents).
-- `-W` (arret apres N paquets) et `-t` (negociation telnet) : la boucle `readwrite` est portee
-  (`converse` dans `Nc.ts` : `-N -q -w -C -i -d`, connexion persistante, ecoute en service unique),
-  pas ces deux-la.
+- `-t` (negociation telnet) : la boucle `readwrite` est portee (`converse` dans `Nc.ts` : `-N -q -w -C -i -d -W`,
+  connexion persistante, ecoute en service unique), pas celle-la. `-W n` arrete apres n arrivees de donnees (sonde
+  `probe-nc-w-limite-de-reception`) ; le serveur `-l -i` envoie son entree ligne par ligne.
 - Entree standard du TERMINAL : un `nc host port` tape seul lit le clavier dans un vrai terminal
   (il envoie ce qu'on tape jusqu'a Ctrl-D ou Ctrl-C) ; le terminal simule n'a pas d'entree
   interactive pour une commande, donc `nc` lit la salutation du serveur puis se comporte comme un
@@ -905,13 +843,11 @@ tube, `$( )`, `bash -c`, `sudo`), et son effet sur `touch`, `mkdir [-p] [-m]`, l
 - `builtin umask`, `command -V umask`, `type -a umask`, `help umask`, `enable -n umask`, `which umask`, un `alias umask=…`
   et `/usr/bin/umask` : le simulateur n'a pas de table des builtins (nom, etat active / desactive, aide, resolution
   alias > fonction > builtin > fichier). Chaque commande y est dispatchee sur un `switch` de l'executeur.
-- `` `umask 077` `` (mot de commande vide apres la substitution), `trap 'umask' EXIT` (le piege EXIT d'un shell non
-  interactif n'est pas execute a la sortie de `bash -c`) et le prefixe `bash: ` des diagnostics d'un shell lance par `bash -c`.
+- Re-mesure : un mot de commande vide apres substitution (`` `umask 077` ``, `$(true)`, `$(exit 3)`) et le prefixe `bash: line 1: ` des
+  diagnostics d'un `bash -c` sortent deja comme le bash 5.2 reel. Le piege EXIT s'execute a la sortie de `bash -c`, meme pose dans une fonction, et son `exit N` fixe le code (`probe-bash-trap-exit-global`).
 Autres ecarts mesures, non fermes :
 - L'umask initial d'un utilisateur non root ouvrant une session SSH ou de connexion n'a pas ete enregistre ; `su` et `sudo` lisent
   maintenant celui que calcule `pam_umask` (0002 pour un groupe prive du meme nom, sinon l'`UMASK` de `login.defs`).
-- `exec N> fichier` ouvre le fichier mais la table des descripteurs du shell n'existe pas : `echo x >&N` ne l'atteint pas
-  et `ls -l /proc/$$/fd` ne le montre pas.
 - `cp` : `-l` et `-s` ne conservent pas les attributs d'un lien cree sur un lien (le seul cas enregistre est un fichier
   regulier). `-i` invite et lit la reponse, `-x` laisse les points de montage de cote, `-Z` est sans objet sans SELinux.
 
@@ -951,14 +887,27 @@ cellules, et un tableau sans entete (`--no-headers -f`, `-o comm=,args=`) ne dit
 Autres ecarts mesures, non fermes :
 - Chiffres memoire : seuls `bash`, `sleep`, `nc` et `ps` ont une empreinte mesuree (VSZ, RSS, TRS, PSS, USS, fautes mineures,
   octets lus) ; les autres programmes ont des proportions (texte = VSZ/12, PSS = RSS/2, USS = RSS/3).
-- `pgrep`, `pkill`, `pidof`, `top`, `pstree` et `watch` restent sur `LinuxProcessCommands` (jouet) : ce sont d'autres
-  binaires de procps-ng (`pgrep`/`pkill` partagent `pgrep.c`, `top` a son propre ecran) et ils n'ont pas ete rejoues.
+- `watch` : l'en-tete, l'usage, `-v`/`-h` et les diagnostics getopt sont ceux de procps 4.0.4 (`probe-watch-de-procps`) ; reste la boucle
+  (une seule trame : pas de `-g`/`-q`/`-e` en cours de route, pas de `-d` en surbrillance, `-x` sans effet, la commande n'est pas passee a `sh -c`).
+  `top -b` est porte (colonnes, `-n -p -u -U -o -w -c -V -h`,
+  diagnostics ; `probe-top-batch-de-procps`) ; restent l'ecran interactif, `-H`, `-1`, `-E`/`-e`, `-O` (liste de champs reduite) et la
+  charge CPU mesuree. `pstree` est porte (`PstreeCommand.ts`, probe `probe-pstree-de-psmisc`) ; restent `-H`, `-N`, `-Z`, `-S` et `-t`
+  (pas de fils d'execution). `pgrep`, `pkill` et `pidof` sont portes (`PgrepCommand.ts`, probe `probe-pgrep-pkill-pidof-de-procps`) ;
+  `-F` (fichier de pids) est porte (sonde `probe-pgrep-fichier-de-pid`) ; `-r`/`--runstates` (etats) est porte (sonde `probe-pgrep-etats`) ; `--ns`, `--nslist` et `--cgroup` sont portes (sonde `probe-pgrep-espaces-de-noms-et-cgroup` ; tous les processus partagent les
+  espaces de noms de l'hote, et un nom d'espace inconnu ou une valeur vide sortent en 2 sans le texte d'usage de procps) ; `-w` est
+  accepte sans effet, le simulateur n'ayant pas de fils d'execution ; `-A`, `-e`, `-L` sans `-F`, `-h`, `-i -i`, `-n/-o/-v` en conflit,
+  deux motifs et `pkill -c`/`-e` sont portes (sonde `probe-pgrep-getopt-et-usage`) ; restent inertes `-H` (le simulateur n'a pas de masque
+  de signaux captes par processus que pgrep puisse lire), `-q` (pas de `sigqueue`) et `-L` avec `-F` (pas de verrou de fichier de pids) ; reste non porte `pidof -x` (le simulateur nomme un script par son `comm` et n'a pas le `/bin/sh /chemin` du vrai dans `args`, donc `pidof nom-de-script`
+  trouve un processus que le vrai `pidof` ne trouve qu'avec `-x`).
 - Pas de labo zombie ni de `setsid`/`setpriv` dans le corpus : les etats `Z`, `D`, `t` ne sont pas mesures sur le vrai.
-- Le tableau des jobs (`jobs`, `%1`) est global a la machine et non a un shell : un `bash -c` imbrique ne voit pas son
-  propre tableau.
-- `/dev/pts/N`, `/proc/tty/drivers` et `/proc/sys/kernel/pid_max` n'existent pas comme fichiers : `ps` lit le plafond des
-  pids (4194304, colonne de 7 chiffres) dans `PID_MAX` de `LinuxProcessManager`, et le numero de terminal dans
-  `ttyDeviceNumber`.
+- Le tableau des jobs (`jobs`, `%1`, `wait`) est celui d'un shell : un `bash -c` ou un script lance en recoit un neuf et rend
+  celui du parent a sa sortie (sonde `probe-jobs-propres-a-chaque-shell`). Les sous-shells `( )` et `$( )` gardent celui du
+  parent, comme le vrai bash. Un job lance par un shell enfant et encore vivant a sa sortie n'est plus listable (le vrai
+  bash l'abandonne aussi a init, mais le processus reste visible dans `ps`).
+- `/dev/pts/N` et `/proc/tty/drivers` n'existent pas comme fichiers : `ps` lit le numero de terminal dans
+  `ttyDeviceNumber`. `/proc/sys/kernel/pid_max` existe (inscriptible, 301 a 4194304, sonde `probe-kernel-pid-max`) et
+  fixe l'allocation des pids et la largeur de la colonne PID ; `kernel.threads-max` et le reste de `/proc/sys/kernel`
+  (4 fichiers seulement) ne sont pas livres.
 
 ### [lab NTP] ecarts residuels mesures en montant le lab du tutoriel NTP (etape 0)
 Mesure en rejouant la section 0 du tutoriel (R-EDGE, SW-CORE, SW-HW, cinq Ubuntu, DC01, PC-WIN), l'exercice 0, puis un
@@ -2230,18 +2179,6 @@ sont deux inventions opposees, aussi peu attestees l'une que l'autre.
 
 ## Outillage
 
-### [e2e] la PREMIÈRE navigation d'une exécution à froid dépasse le délai
-Mesuré : `npx playwright test <n'importe quel spec>` sur un serveur de
-développement non démarré fait échouer le PREMIER test sur
-`page.goto('/')` — 30 s dépassées —, et tous les suivants passent. Vérifié
-par `--repeat-each=2` sur un seul cas : la première exécution tombe, la
-seconde passe. Ce n'est donc pas le spec mais l'amorçage de Vite.
-**Report** : le délai est global (`playwright.config.ts` : `timeout` du
-test et `timeout` du serveur, 30 s chacun), donc le corriger touche un
-fichier partagé et toute la suite ; le relever dans un seul spec
-soignerait le symptôme à un endroit alors que tous y sont exposés. À
-trancher avec l'autre agent, qui exécute la même suite.
-
 ### [tests] cinq fichiers lisent le niveau `debug` du Logger comme instrument de mesure
 Le niveau `debug` est éteint par défaut ; `another_rip`, `tuto_rip`,
 `ping-through-switch`, `Logger.adapter` et
@@ -2257,8 +2194,8 @@ chacun, de choisir le bon câble et la bonne différence avec / sans la charge ;
 c'est un changement de preuve, pas un changement de niveau de journal.
 
 ### [typecheck] 229 erreurs de type au compteur
-`npm run typecheck` en compte 229, contre 341 avant la passe de cette
-session. Les erreurs des fichiers de PRODUCTION ont presque toutes été
+`npm run typecheck` en compte 249 (229 a la fin de la passe qui l'a ecrite, 341 avant), la rubrique
+fixant l'etalon a ne pas depasser. Les erreurs des fichiers de PRODUCTION ont presque toutes été
 fermées, et chacune disait quelque chose : quatre déclarations d'une même
 entrée ARP, quatre sujets de bus publiés et indéclarables, un `Send-
 MailMessage -Credential` qui ne s'authentifiait jamais, un bloc mort
@@ -2751,22 +2688,6 @@ défauts — la méthode vaut d'être reprise sur le reliquat.
   primaire — un refus est moins faux qu'une perte silencieuse. Fermer
   demande une liste d'adresses secondaires sur la SVI et les trois
   lecteurs du plan de donnees qui vont avec, ce qui est un lot a soi.
-- L'IDENTIFIANT d'une spec derivee du trie est bati en JOIGNANT les
-  elements du chemin, places d'argument comprises, si bien qu'une place
-  s'y ecrit `[object Object]` : le routeur porte
-  `config-if-ip-rip-receive-version-[object Object]-1`,
-  `…-[object Object]-2`, `config-if-ip-rip-authentication-[object Object]-mode`
-  et d'autres (`trieAdapter.ts`, `id: [modesIci[0], ...words].join('-')`).
-  Un identifiant est cense NOMMER une commande ; celui-ci nomme sa place
-  par le mot que JavaScript ecrit quand on convertit un objet en chaine,
-  donc deux commandes qui ne different que par le TYPE de leur place
-  portent le meme nom. La consequence est aujourd'hui bornee —
-  `CommandTable.specById` est le seul lecteur et le controle de doublon
-  porte sur le CHEMIN, pas sur l'identifiant — ce qui est exactement
-  pourquoi ce n'est pas corrige a la va-vite : rendre l'identifiant exact
-  demande de decider comment une place s'ecrit dedans (`<nom>`, son type,
-  son rang) et de verifier qu'aucun identifiant ecrit a la main n'entre
-  alors en collision avec un identifiant derive.
 - `storm-control`, `srr-queue` et `switchport voice` restent servis par
   la boucle GENERIQUE de `CiscoSwitchShell`, qui les enregistre en
   glouton, retient le texte tape sans l'analyser et le rend tel quel dans
@@ -4244,9 +4165,27 @@ oppose a un script stocke sans catalogue de recuperation connecte (le sandbox
 l'accepte, comme le dit le tutoriel). Les commentaires `--` du tutoriel ne sont pas
 reconnus : seul `#` l'est.
 `rman target / cmdfile=f log=l [append]` et `@f` s'executent (lot, journal dans le VFS, code de sortie 1 sur
-une erreur RMAN-/ORA-) ; le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or directory`
-ici) n'est pas source, ni `msglog=`, `debug`, `trace=` et `using`. `SHOW SNAPSHOT CONTROLFILE NAME` et `CONFIGURE SNAPSHOT CONTROLFILE NAME` ne sont pas modelises (le parametre n'a pas
-d'etat, et son chemin par defaut sous `$ORACLE_HOME/dbs/snapcf_<SID>.f` n'est pas attestable depuis ce reseau). Meme
-manque pour `LIST BACKUP BY FILE`, `LIST BACKUP OF TABLESPACE`, `LIST FAILURE`, `SPOOL LOG`, `SWITCH`, `SET DBID`,
-`HOST`, `@fichier`, `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`, refuses en RMAN-01009 (mesure : tutoriel rejoue commande
-par commande).
+une erreur RMAN-/ORA-) ; `SPOOL LOG TO f [APPEND]` / `SPOOL LOG OFF` copient dans le fichier ce que la session imprime
+(sondes `probe-rman-cmdfile-et-log`, `probe-rman-spool-log`) ; `LIST BACKUP OF TABLESPACE t` filtre sur les fichiers du
+tablespace (`getDatafiles`) ; `HOST 'cmd'` execute la commande sur la machine et ecrit `host command complete` (sonde `probe-rman-host` ; `HOST` sans
+commande, qui ouvre un shell, reste refuse) ; `CONFIGURE|SHOW SNAPSHOT CONTROLFILE NAME` (defaut `$ORACLE_HOME/dbs/snapcf_<SID>.f`, `# default`, `CLEAR`) : la
+sauvegarde du fichier de controle cree le snapshot a ce chemin (sonde `probe-rman-snapshot-controlfile` ; la creation par
+`RESYNC CATALOG` n'est pas faite, le catalogue de recuperation etant un autre sous-systeme) ; `LIST BACKUP BY FILE` regroupe par fichier : « List of Datafile Backups » puis « List of Control File Backups »
+(sonde `probe-rman-list-backup-by-file`). A VERIFIER : les titres, l'ordre et les noms de colonnes viennent de la memoire ;
+« List of Archived Log Backups » (Thrd, Seq, Low SCN...) et SPFILE manquent, le catalogue ne gardant ni thread ni sequence
+par jeu. `LIST FAILURE` liste les fichiers de donnees dont le fichier a disparu de la machine (SYSTEM : CRITICAL ; les autres :
+une defaillance HIGH) ou « no failures found that match specification » (sonde `probe-rman-list-failure`). A VERIFIER :
+les libelles, les priorites, l'en-tete du tableau et `DD-MON-YY` viennent de la memoire ; le numero (100 + le plus petit
+numero de fichier) et la date (celle de l'appel) sont des choix du simulateur ; `ADVISE FAILURE`, `REPAIR FAILURE` et
+`LIST FAILURE <n> DETAIL` ne sont pas faits. `SWITCH DATABASE|TABLESPACE t|DATAFILE n TO COPY` renomme le fichier dans la base (`ALTER DATABASE RENAME FILE`), retire
+la copie du catalogue et ecrit `datafile N switched to datafile copy "p"` (sonde `probe-rman-switch-to-copy`). A VERIFIER :
+ce texte, `RMAN-06571: datafile N does not have recoverable copy` et le refus de `SWITCH DATABASE` sur une base ouverte
+(`RMAN-06403`, message de l'auteur) viennent de la memoire, pas de la documentation ; `SWITCH DATAFILE ALL` (avec
+`SET NEWNAME`) et la contrainte « fichier hors ligne » d'un `SWITCH DATAFILE` ne sont pas faits. `SET DBID n` borne la recherche d'autosauvegarde de `RESTORE CONTROLFILE|SPFILE FROM
+AUTOBACKUP` a ce DBID (sonde `probe-rman-set-dbid` ; le controle de RMAN quand une cible est deja connectee n'est pas source).
+Refuses en RMAN-01009 faute de source : `docs.oracle.com` n'est pas dans les domaines autorises de la session (WebFetch :
+`getaddrinfo ENOTFOUND docs.oracle.com`), et le §8 de CLAUDE.md interdit d'inventer le texte d'un outil proprietaire.
+Ce qu'il manque, commande par commande : `UPGRADE CATALOG` et `TRANSPORT TABLESPACE`
+(sorties longues, plusieurs etapes) ; Non sources non plus : le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or
+directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
+`debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.

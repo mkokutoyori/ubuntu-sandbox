@@ -24,6 +24,9 @@ import { CatalogCommand } from './CatalogCommand';
 import { DuplicateCommand } from './DuplicateCommand';
 import { ChangeCommand } from './ChangeCommand';
 import { SetCommand } from './SetCommand';
+import { HostCommand } from './HostCommand';
+import { SwitchCommand } from './SwitchCommand';
+import { ListFailureCommand } from './ListFailureCommand';
 import { ValidateCommand } from './ValidateCommand';
 import { ConnectAuxiliaryCommand } from './ConnectAuxiliaryCommand';
 import { ResyncCatalogCommand } from './ResyncCatalogCommand';
@@ -146,7 +149,9 @@ export class RmanCommandDispatcher {
       { pattern: /^LIST BACKUP SUMMARY$/i,       command: new ListBackupCommand('SUMMARY') },
       { pattern: /^LIST BACKUP$/i,               command: new ListBackupCommand('DETAIL') },
       { pattern: /^LIST BACKUP (COMPLETED\s+.+)$/i, command: new ListBackupCommand('DETAIL') },
-      { pattern: /^LIST BACKUP OF (DATABASE|DATAFILE\s+\d+|ARCHIVELOG ALL|CONTROLFILE)$/i, command: new ListBackupCommand('OF') },
+      { pattern: /^LIST BACKUP BY FILE$/i,                                   command: new ListBackupCommand('BY_FILE') },
+      { pattern: /^LIST BACKUP OF (DATABASE|DATAFILE\s+\d+|TABLESPACE\s+\S+|ARCHIVELOG ALL|CONTROLFILE)$/i, command: new ListBackupCommand('OF') },
+      { pattern: /^LIST FAILURE$/i,                  command: new ListFailureCommand() },
       { pattern: /^LIST ARCHIVELOG ALL$/i,       command: new ListBackupCommand('ARCHIVELOG') },
       { pattern: /^LIST EXPIRED BACKUP$/i,       command: new ListBackupCommand('EXPIRED') },
       { pattern: /^LIST OBSOLETE$/i,             command: new ListBackupCommand('OBSOLETE') },
@@ -186,6 +191,7 @@ export class RmanCommandDispatcher {
       { pattern: /^SHOW ENCRYPTION FOR DATABASE$/i,   command: new ShowCommand('ENCRYPTION_FOR_DATABASE') },
       { pattern: /^SHOW ENCRYPTION ALGORITHM$/i,      command: new ShowCommand('ENCRYPTION_ALGORITHM') },
       { pattern: /^SHOW COMPRESSION ALGORITHM$/i,     command: new ShowCommand('COMPRESSION_ALGORITHM') },
+      { pattern: /^SHOW SNAPSHOT CONTROLFILE NAME$/i,      command: new ShowCommand('SNAPSHOT_CONTROLFILE') },
       { pattern: /^SHOW EXCLUDE$/i,                   command: new ShowCommand('EXCLUDE') },
       { pattern: /^SHOW ARCHIVELOG DELETION POLICY$/i, command: new ShowCommand('ARCHIVELOG_DELETION_POLICY') },
       { pattern: /^SHOW CHANNEL(?:\s+FOR DEVICE TYPE (DISK|SBT))?$/i, command: new ShowCommand('CHANNEL') },
@@ -215,6 +221,11 @@ export class RmanCommandDispatcher {
       { pattern: /^SET NEWNAME FOR DATAFILE (\d+) TO ('[^']+')$/i,  command: new SetCommand('NEWNAME') },
       // SET UNTIL — PITR precursor inherited by later RESTORE/RECOVER in
       // the same RUN block
+      { pattern: /^HOST\s+'([^']*)'$/i,                                   command: new HostCommand() },
+      { pattern: /^SWITCH DATABASE TO COPY$/i,                            command: new SwitchCommand('DATABASE') },
+      { pattern: /^SWITCH TABLESPACE (\S+) TO COPY$/i,                       command: new SwitchCommand('TABLESPACE') },
+      { pattern: /^SWITCH DATAFILE (\d+) TO COPY$/i,                         command: new SwitchCommand('DATAFILE') },
+      { pattern: /^SET DBID\s+(\d+)$/i,                                   command: new SetCommand('DBID') },
       { pattern: /^SET MAXCORRUPT FOR DATAFILE (\d+) TO (\d+)$/i,    command: new SetCommand('MAXCORRUPT') },
       { pattern: /^SET UNTIL TIME '([^']+)'$/i,                     command: new SetCommand('UNTIL_TIME') },
       { pattern: /^SET UNTIL SCN (\d+)$/i,                          command: new SetCommand('UNTIL_SCN')  },

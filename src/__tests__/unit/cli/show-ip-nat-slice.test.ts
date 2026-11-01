@@ -1,8 +1,9 @@
+import { type TcpSegment, noFlags } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   IPAddress, createIPv4Packet, IP_PROTO_TCP, resetCounters,
 } from '@/network/core/types';
-import type { TCPPacket, IPv4Packet } from '@/network/core/types';
+import type { IPv4Packet } from '@/network/core/types';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { NATEngine } from '@/network/devices/router/NATEngine';
 import { inspectAndRewriteFtpAlg } from '@/network/devices/router/nat/FtpAlg';
@@ -112,11 +113,11 @@ describe('`show ip nat statistics` rend le bloc d\'IOS, pas une ligne inventee',
 
 describe('`Appl doors` MESURE les portes que l\'ALG ouvre vraiment', () => {
   function paquetFtp(text: string): IPv4Packet {
-    const tcp: TCPPacket = {
+    const tcp: TcpSegment = {
       type: 'tcp', sourcePort: 21000, destinationPort: 21,
-      sequenceNumber: 1000, acknowledgementNumber: 0,
-      flags: { syn: false, ack: true, fin: false, rst: false, psh: true, urg: false },
-      windowSize: 65535, checksum: 0, payload: text,
+      sequence: 1000, acknowledgement: 0,
+      flags: { ...noFlags(), ...{ syn: false, ack: true, fin: false, rst: false, psh: true, urg: false } },
+      window: 65535, checksum: 0, dataOffset: 5, urgentPointer: 0, options: [], payload: text,
     };
     return createIPv4Packet(
       new IPAddress('10.0.1.2'), new IPAddress('203.0.113.50'),

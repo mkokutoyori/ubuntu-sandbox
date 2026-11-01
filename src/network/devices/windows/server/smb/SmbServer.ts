@@ -8,11 +8,13 @@
  */
 
 import type { TcpStream as TcpConnection } from '@/network/tcp/types';
-import type { WindowsFileSystem } from '../../WindowsFileSystem';
+import type { WindowsFileSystem, WinFSEntry } from '../../WindowsFileSystem';
 import type { WindowsUserManager } from '../../WindowsUserManager';
 import type { SmbShareTable } from './SmbShareTable';
 import type { SmbSessionTable } from './SmbSessionTable';
-import type { SharePermission } from './SmbTypes';
+import type { SharePermission, SmbListEntry, SmbShare } from './SmbTypes';
+import { SMB_STATUS_MESSAGE, type SmbStatus } from './SmbStatus';
+import { shareTarget } from './SmbSharePath';
 
 export interface SmbServerContext {
   fs: WindowsFileSystem;
@@ -35,6 +37,23 @@ export interface SmbServerContext {
 }
 
 interface TreeInfo { shareName: string }
+
+interface OpenTree { share: SmbShare; user: string; groups: string[]; canWrite: boolean }
+
+interface Located { abs: string; parent: string; root: boolean }
+
+const ATTRIBUTE_NAMES = new Set(['archive', 'hidden', 'system', 'readonly']);
+
+const relativeTo = (sharePath: string, abs: string): string => abs.slice(sharePath.replace(/\\+$/, '').length).replace(/^\\+/, '');
+
+const nodeOf = (name: string, entry: WinFSEntry): SmbListEntry => ({
+  name,
+  isDirectory: entry.type === 'directory',
+  size: entry.size,
+  modified: entry.mtime.getTime(),
+  created: entry.ctime.getTime(),
+  attributes: [...entry.attributes],
+});
 
 /**
  * `\\domain\namespace` names a root; `\\domain\namespace\folder` names a
@@ -77,7 +96,9 @@ export class SmbServerHandler {
     const trees = new Map<number, TreeInfo>();
 
     const reply = (msg: Record<string, unknown>) => conn.write(JSON.stringify(msg));
-    const denyAccess = () => reply({ ok: false, status: 'STATUS_ACCESS_DENIED', message: 'Access is denied.' });
+    const refuse = (status: SmbStatus, message: string = SMB_STATUS_MESSAGE[status]): void =>
+      reply({ ok: false, status, message });
+    const denyAccess = (): void => refuse('STATUS_ACCESS_DENIED');
 
     conn.onClose?.(() => {
       if (sessionId !== null) this.ctx.sessions.close(sessionId);
@@ -91,6 +112,48 @@ export class SmbServerHandler {
       if (!share || !user) return null;
       return this.ctx.shares.permissionFor(share, user, groupsFor(user));
     };
+
+    const openTree = (parsed: Record<string, unknown>): OpenTree | null => {
+      if (!user) { denyAccess(); return null; }
+      const tree = trees.get(Number(parsed.treeId));
+      if (!tree) { refuse('STATUS_NETWORK_NAME_DELETED'); return null; }
+      const share = this.ctx.shares.get(tree.shareName)!;
+      const perm = permissionFor(share.name);
+      if (!perm) { denyAccess(); return null; }
+      return { share, user, groups: groupsFor(user), canWrite: perm !== 'Read' };
+    };
+
+    const openWritableTree = (parsed: Record<string, unknown>): OpenTree | null => {
+      const tree = openTree(parsed);
+      if (tree && !tree.canWrite) { denyAccess(); return null; }
+      return tree;
+    };
+
+    const locate = (tree: OpenTree, requested: unknown): Located | null => {
+      const target = shareTarget(tree.share.path, requested);
+      if (target.ok === false) { refuse(target.status); return null; }
+      return target;
+    };
+
+    const absentStatus = (located: Located): SmbStatus => {
+      const parent = this.ctx.fs.resolve(located.parent);
+      return parent && parent.type === 'directory' ? 'STATUS_OBJECT_NAME_NOT_FOUND' : 'STATUS_OBJECT_PATH_NOT_FOUND';
+    };
+
+    const existing = (located: Located): WinFSEntry | null => {
+      const entry = this.ctx.fs.resolve(located.abs);
+      if (!entry) refuse(absentStatus(located));
+      return entry;
+    };
+
+    const parentDirectory = (located: Located): boolean => {
+      const parent = this.ctx.fs.resolve(located.parent);
+      if (parent && parent.type === 'directory') return true;
+      refuse('STATUS_OBJECT_PATH_NOT_FOUND');
+      return false;
+    };
+
+    const mayWrite = (tree: OpenTree, abs: string): boolean => this.ctx.fs.checkAccess(abs, tree.user, tree.groups, 'write');
 
     conn.onData((data) => {
       let parsed: Record<string, unknown>;
@@ -192,67 +255,157 @@ export class SmbServerHandler {
         }
 
         case 'read': {
-          if (!user) { denyAccess(); return; }
-          const tree = trees.get(Number(parsed.treeId));
-          if (!tree) {
-            reply({ ok: false, status: 'STATUS_NETWORK_NAME_DELETED', message: 'The specified network name is no longer available.' });
-            return;
-          }
-          const share = this.ctx.shares.get(tree.shareName)!;
-          const perm = permissionFor(share.name);
-          if (!perm) { denyAccess(); return; }
-          const absPath = this.ctx.fs.normalizePath(String(parsed.path ?? ''), share.path);
-          const groups = groupsFor(user);
-          if (!this.ctx.fs.checkAccess(absPath, user, groups, 'read')) { denyAccess(); return; }
-          const result = this.ctx.fs.readFile(absPath);
-          if (!result.ok) {
-            reply({ ok: false, status: 'STATUS_OBJECT_NAME_NOT_FOUND', message: result.error ?? 'The system cannot find the file specified.' });
-            return;
-          }
-          reply({ ok: true, content: result.content ?? '' });
+          const tree = openTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          const entry = existing(located); if (!entry) return;
+          if (entry.type === 'directory') { refuse('STATUS_FILE_IS_A_DIRECTORY'); return; }
+          if (!this.ctx.fs.checkAccess(located.abs, tree.user, tree.groups, 'read')) { denyAccess(); return; }
+          reply({ ok: true, content: entry.content });
           break;
         }
 
         case 'write': {
-          if (!user) { denyAccess(); return; }
-          const tree = trees.get(Number(parsed.treeId));
-          if (!tree) {
-            reply({ ok: false, status: 'STATUS_NETWORK_NAME_DELETED', message: 'The specified network name is no longer available.' });
-            return;
+          const tree = openWritableTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          if (located.root) { refuse('STATUS_FILE_IS_A_DIRECTORY'); return; }
+          const current = this.ctx.fs.resolve(located.abs);
+          if (current) {
+            if (current.type === 'directory') { refuse('STATUS_FILE_IS_A_DIRECTORY'); return; }
+            if (current.attributes.has('readonly') || !mayWrite(tree, located.abs)) { denyAccess(); return; }
+          } else {
+            if (!parentDirectory(located)) return;
+            if (!mayWrite(tree, located.parent)) { denyAccess(); return; }
           }
-          const share = this.ctx.shares.get(tree.shareName)!;
-          const perm = permissionFor(share.name);
-          if (!perm || perm === 'Read') { denyAccess(); return; }
-          const absPath = this.ctx.fs.normalizePath(String(parsed.path ?? ''), share.path);
-          const groups = groupsFor(user);
-          if (!this.ctx.fs.checkAccess(absPath, user, groups, 'write')) { denyAccess(); return; }
-          const result = this.ctx.fs.createFile(absPath, String(parsed.content ?? ''));
-          if (!result.ok) {
-            reply({ ok: false, status: 'STATUS_OBJECT_PATH_NOT_FOUND', message: result.error ?? 'The system cannot find the path specified.' });
-            return;
-          }
+          const result = this.ctx.fs.createFile(located.abs, String(parsed.content ?? ''));
+          if (!result.ok) { refuse('STATUS_INVALID_PARAMETER', result.error); return; }
           reply({ ok: true });
           break;
         }
 
         case 'list': {
-          if (!user) { denyAccess(); return; }
-          const tree = trees.get(Number(parsed.treeId));
-          if (!tree) {
-            reply({ ok: false, status: 'STATUS_NETWORK_NAME_DELETED', message: 'The specified network name is no longer available.' });
-            return;
-          }
-          const share = this.ctx.shares.get(tree.shareName)!;
-          const perm = permissionFor(share.name);
-          if (!perm) { denyAccess(); return; }
-          const rawPath = String(parsed.path ?? '');
-          const absPath = rawPath ? this.ctx.fs.normalizePath(rawPath, share.path) : share.path;
-          const groups = groupsFor(user);
-          if (!this.ctx.fs.checkAccess(absPath, user, groups, 'read')) { denyAccess(); return; }
-          const entries = this.ctx.fs.listDirectory(absPath).map(({ name, entry }) => ({
-            name, isDirectory: entry.type === 'directory', size: entry.size,
-          }));
-          reply({ ok: true, entries });
+          const tree = openTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          const entry = existing(located); if (!entry) return;
+          if (entry.type !== 'directory') { refuse('STATUS_NOT_A_DIRECTORY'); return; }
+          if (!this.ctx.fs.checkAccess(located.abs, tree.user, tree.groups, 'read')) { denyAccess(); return; }
+          reply({ ok: true, entries: this.ctx.fs.listDirectory(located.abs).map(({ name, entry: child }) => nodeOf(name, child)) });
+          break;
+        }
+
+        case 'stat': {
+          const tree = openTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          const entry = existing(located); if (!entry) return;
+          if (!this.ctx.fs.checkAccess(located.abs, tree.user, tree.groups, 'read')) { denyAccess(); return; }
+          reply({ ok: true, node: nodeOf(located.root ? '' : entry.name, entry), canonical: relativeTo(tree.share.path, this.ctx.fs.canonicalPath(located.abs)) });
+          break;
+        }
+
+        case 'mkdir': {
+          const tree = openWritableTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          if (located.root) { refuse(located.abs.length <= 3 ? 'STATUS_ACCESS_DENIED' : 'STATUS_OBJECT_NAME_COLLISION'); return; }
+          if (!parentDirectory(located)) return;
+          if (this.ctx.fs.resolve(located.abs)) { refuse('STATUS_OBJECT_NAME_COLLISION'); return; }
+          if (!mayWrite(tree, located.parent)) { denyAccess(); return; }
+          const result = this.ctx.fs.mkdir(located.abs);
+          if (!result.ok) { refuse('STATUS_INVALID_PARAMETER', result.error); return; }
+          reply({ ok: true });
+          break;
+        }
+
+        case 'delete': {
+          const tree = openWritableTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          if (located.root) { refuse('STATUS_FILE_IS_A_DIRECTORY'); return; }
+          const entry = existing(located); if (!entry) return;
+          if (entry.type === 'directory') { refuse('STATUS_FILE_IS_A_DIRECTORY'); return; }
+          if (!mayWrite(tree, located.parent) && !mayWrite(tree, located.abs)) { denyAccess(); return; }
+          if (entry.attributes.has('readonly')) { refuse('STATUS_CANNOT_DELETE'); return; }
+          const result = this.ctx.fs.deleteFile(located.abs);
+          if (!result.ok) { refuse('STATUS_INVALID_PARAMETER', result.error); return; }
+          reply({ ok: true });
+          break;
+        }
+
+        case 'rmdir': {
+          const tree = openWritableTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          if (located.root) { denyAccess(); return; }
+          const entry = existing(located); if (!entry) return;
+          if (entry.type !== 'directory') { refuse('STATUS_NOT_A_DIRECTORY'); return; }
+          if (!mayWrite(tree, located.parent) && !mayWrite(tree, located.abs)) { denyAccess(); return; }
+          if (entry.children.size > 0) { refuse('STATUS_DIRECTORY_NOT_EMPTY'); return; }
+          if (this.ctx.fs.isDirectoryInUse(located.abs)) { refuse('STATUS_SHARING_VIOLATION'); return; }
+          const result = this.ctx.fs.rmdir(located.abs);
+          if (!result.ok) { refuse('STATUS_INVALID_PARAMETER', result.error); return; }
+          reply({ ok: true });
+          break;
+        }
+
+        case 'rename': {
+          const tree = openWritableTree(parsed); if (!tree) return;
+          const source = locate(tree, parsed.path); if (!source) return;
+          if (source.root) { denyAccess(); return; }
+          const entry = existing(source); if (!entry) return;
+          const destination = locate(tree, parsed.target); if (!destination) return;
+          if (destination.root) { denyAccess(); return; }
+          if (!parentDirectory(destination)) return;
+          const occupant = this.ctx.fs.resolve(destination.abs);
+          const replaces = occupant !== null && occupant !== entry;
+          if (replaces && parsed.replace !== true) { refuse('STATUS_OBJECT_NAME_COLLISION'); return; }
+          if (replaces && (occupant.type === 'directory' || entry.type === 'directory' || occupant.attributes.has('readonly'))) { denyAccess(); return; }
+          const into = `${source.abs.toLowerCase()}\\`;
+          if (entry.type === 'directory' && `${destination.abs.toLowerCase()}\\`.startsWith(into)) { refuse('STATUS_INVALID_PARAMETER'); return; }
+          if (!mayWrite(tree, source.parent) || !mayWrite(tree, destination.parent)) { denyAccess(); return; }
+          if (entry.type === 'directory' && this.ctx.fs.isDirectoryInUse(source.abs)) { refuse('STATUS_SHARING_VIOLATION'); return; }
+          if (replaces) this.ctx.fs.deleteFile(destination.abs);
+          const leaf = destination.abs.slice(destination.abs.lastIndexOf('\\') + 1);
+          const result = occupant === entry
+            ? this.ctx.fs.renameEntry(source.abs, leaf)
+            : this.ctx.fs.moveFile(source.abs, destination.abs);
+          if (!result.ok) { refuse('STATUS_INVALID_PARAMETER', result.error); return; }
+          reply({ ok: true });
+          break;
+        }
+
+        case 'set_attributes': {
+          const tree = openWritableTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          const entry = existing(located); if (!entry) return;
+          if (!mayWrite(tree, located.abs)) { denyAccess(); return; }
+          const asked = Array.isArray(parsed.attributes) ? parsed.attributes.map(String) : [];
+          if (asked.some(name => !ATTRIBUTE_NAMES.has(name))) { refuse('STATUS_INVALID_PARAMETER'); return; }
+          entry.attributes = new Set(asked);
+          reply({ ok: true });
+          break;
+        }
+
+        case 'set_times': {
+          const tree = openWritableTree(parsed); if (!tree) return;
+          const located = locate(tree, parsed.path); if (!located) return;
+          const entry = existing(located); if (!entry) return;
+          if (!mayWrite(tree, located.abs)) { denyAccess(); return; }
+          const modified = Number(parsed.modified);
+          if (!Number.isFinite(modified)) { refuse('STATUS_INVALID_PARAMETER'); return; }
+          entry.mtime = new Date(modified);
+          reply({ ok: true });
+          break;
+        }
+
+        case 'volume_info': {
+          const tree = openTree(parsed); if (!tree) return;
+          if (tree.share.path === '') { refuse('STATUS_OBJECT_NAME_NOT_FOUND'); return; }
+          const drive = tree.share.path.charAt(0);
+          reply({
+            ok: true,
+            volume: {
+              label: this.ctx.fs.getVolumeLabel(drive),
+              serial: this.ctx.fs.getVolumeSerialNumber(drive),
+              capacity: this.ctx.fs.getDriveCapacity(drive),
+              free: this.ctx.fs.getFreeDiskSpace(drive),
+            },
+          });
           break;
         }
 

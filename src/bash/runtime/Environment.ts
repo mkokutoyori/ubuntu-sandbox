@@ -308,10 +308,10 @@ export class Environment implements ArithmeticScope {
   }
 
   getParent(): Environment | null { return this.parent; }
-  setTrap(signal: string, body: string): void { this.traps.set(signal, body); }
-  clearTrap(signal: string): void { this.traps.delete(signal); }
-  getTrap(signal: string): string | undefined { return this.traps.get(signal); }
-  listTraps(): Array<[string, string]> { return [...this.traps.entries()]; }
+  setTrap(signal: string, body: string): void { if (this.parent !== null) this.parent.setTrap(signal, body); else this.traps.set(signal, body); }
+  clearTrap(signal: string): void { if (this.parent !== null) this.parent.clearTrap(signal); else this.traps.delete(signal); }
+  getTrap(signal: string): string | undefined { return this.parent !== null ? this.parent.getTrap(signal) : this.traps.get(signal); }
+  listTraps(): Array<[string, string]> { return this.parent !== null ? this.parent.listTraps() : [...this.traps.entries()]; }
 
   setReadonly(name: string, value?: string): void {
     if (value !== undefined) this.set(name, value);

@@ -21,8 +21,13 @@ import { parseControlFileImage } from '@/database/oracle/storage/ControlFileImag
 
 export type RestoreSystemTarget = 'CONTROLFILE_AUTOBACKUP' | 'CONTROLFILE_FROM' | 'SPFILE_AUTOBACKUP' | 'SPFILE_TO';
 
+function searchedDbid(cmdCtx: RmanCommandContext): number {
+  return cmdCtx.setDbid?.value ?? cmdCtx.ctx.dbId.value;
+}
+
 function findAutobackupOnDisk(cmdCtx: RmanCommandContext): string {
   const { ctx } = cmdCtx;
+  if (searchedDbid(cmdCtx) !== ctx.dbId.value) return '';
   const dest = ctx.getSpfileParam('db_recovery_file_dest');
   if (!dest || !ctx.vfs.listFilesRecursively) return '';
   const root = `${dest.replace(/\/+$/, '')}/${ctx.dbName.toUpperCase()}/autobackup`;
@@ -34,7 +39,7 @@ function catalogAutobackup(cmdCtx: RmanCommandContext): string {
   const snap = cmdCtx.catalog.listAll();
   if (snap.ok === false) return '';
   const set = snap.value.sets.find(
-    s => s.type === 'CONTROLFILE' && s.tag.label.toUpperCase() === 'AUTOBACKUP',
+    s => s.type === 'CONTROLFILE' && s.tag.label.toUpperCase() === 'AUTOBACKUP' && s.dbId.value === searchedDbid(cmdCtx),
   );
   const path = set?.pieces[0]?.path ?? '';
   return path && cmdCtx.ctx.vfs.fileExists(path) ? path : '';
@@ -96,8 +101,8 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
         'channel ORA_DISK_1: SID=100 device type=DISK',
         '',
         'channel ORA_DISK_1: looking for AUTOBACKUP on day: ' + rmanWallDay(rmanWall(ctx)).replace(/-/g, ''),
-        `channel ORA_DISK_1: AUTOBACKUP found: c-${ctx.dbId.value}-${rmanWallDay(rmanWall(ctx))}-00`,
-        `channel ORA_DISK_1: restoring control file from AUTOBACKUP c-${ctx.dbId.value}-...`,
+        `channel ORA_DISK_1: AUTOBACKUP found: c-${searchedDbid(cmdCtx)}-${rmanWallDay(rmanWall(ctx))}-00`,
+        `channel ORA_DISK_1: restoring control file from AUTOBACKUP c-${searchedDbid(cmdCtx)}-...`,
         'channel ORA_DISK_1: control file restore from AUTOBACKUP complete',
         `output file name=${ctx.getControlFilePath?.() ?? '/u01/oradata/' + ctx.dbName + '/control01.ctl'}`,
         `Finished restore at ${formatOracleDate(rmanWall(ctx))}`,
@@ -128,7 +133,7 @@ export class RestoreSystemCommand implements IRmanCommand<string[]> {
         `Starting restore at ${formatOracleDate(rmanWall(ctx))}`,
         'allocated channel: ORA_DISK_1',
         `channel ORA_DISK_1: looking for AUTOBACKUP on day: ${rmanWallDay(rmanWall(ctx)).replace(/-/g, '')}`,
-        `channel ORA_DISK_1: AUTOBACKUP found: c-${ctx.dbId.value}-${rmanWallDay(rmanWall(ctx))}-00`,
+        `channel ORA_DISK_1: AUTOBACKUP found: c-${searchedDbid(cmdCtx)}-${rmanWallDay(rmanWall(ctx))}-00`,
         'channel ORA_DISK_1: restoring SPFILE from AUTOBACKUP',
         'channel ORA_DISK_1: SPFILE restore complete',
         `Finished restore at ${formatOracleDate(rmanWall(ctx))}`,

@@ -26,13 +26,14 @@
  * que la page annonce (« communication with the KDC will fail »). Avec src a HEAD : 3 cas tombent
  * (defaut refuse, none/unix refuses, no form), le temoin du compte sans preauth passe dans les deux etats.
  */
+import { type TcpSegment } from '@/network/tcp/types';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { IPAddress, SubnetMask, resetCounters, MACAddress, type IPv4Packet, type TCPPacket } from '@/network/core/types';
+import { IPAddress, SubnetMask, resetCounters, MACAddress, type IPv4Packet } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { installVirtualClock } from '@/__tests__/support/ntpTime';
@@ -74,7 +75,7 @@ async function lab(): Promise<{ nas: CiscoRouter; dc: WindowsServer; synsToSilen
   nas.getPort('GigabitEthernet0/0')!.attachTap(({ direction, frame }) => {
     if (direction !== 'out') return;
     const packet = frame.payload as IPv4Packet | undefined;
-    const tcp = packet?.type === 'ipv4' ? packet.payload as TCPPacket : undefined;
+    const tcp = packet?.type === 'ipv4' ? packet.payload as TcpSegment : undefined;
     if (tcp?.type === 'tcp' && tcp.flags.syn && !tcp.flags.ack && tcp.destinationPort === 88
       && packet!.destinationIP.toString() === SILENT) syns++;
   });

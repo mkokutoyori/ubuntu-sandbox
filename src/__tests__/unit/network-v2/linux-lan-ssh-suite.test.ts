@@ -1125,10 +1125,10 @@ describe('§16 — pstree process tree presentation', () => {
       contains: ['systemd'],
     },
     {
-      name: 'pstree on a non-existent PID reports "no process found"',
+      name: 'pstree on a non-existent PID prints nothing (psmisc 23.7)',
       on: l => l.pc1,
       cmd: 'pstree -p 999999',
-      contains: [/no process found|No such process/i],
+      excludes: [/\S/],
     },
     {
       name: 'on srv1 with Oracle started, pstree -p shows ora_pmon under systemd',

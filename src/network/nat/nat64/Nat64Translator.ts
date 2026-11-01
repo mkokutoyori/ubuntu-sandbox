@@ -1,7 +1,7 @@
+import type { TcpSegment } from '../../tcp/types';
 import {
   IPAddress, IPv6Address, IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, computeIPv4Checksum, createIPv4Packet, createIPv6Packet,
-  type ICMPPacket, type ICMPType, type ICMPv6Packet, type ICMPv6Type, type IPv4Packet, type IPv6Packet,
-  type TCPPacket, type UDPPacket,
+  type ICMPPacket, type ICMPType, type ICMPv6Packet, type ICMPv6Type, type IPv4Packet, type IPv6Packet, type UDPPacket,
 } from '@/network/core/types';
 import { IPV4_FLAG_MF, isIPv4Fragment } from '@/network/core/Ipv4Fragmentation';
 import { IPV6_FRAGMENT_HEADER_BYTES, fragmentIPv6, ipv6FirstFragmentView, ipv6FragmentCapacity, ipv6FragmentOf, type IPv6FragmentHeader } from '@/network/layers/internet/Ipv6Fragmentation';
@@ -162,7 +162,7 @@ export class Nat64Translator {
     if (fragment !== null) return this.translateFragment6to4(packet, fragment, remote);
     const protocol = protocolOf(packet.nextHeader);
     if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
-    const payload = packet.payload as TCPPacket | UDPPacket | ICMPv6Packet;
+    const payload = packet.payload as TcpSegment | UDPPacket | ICMPv6Packet;
     if (payload.type === 'icmpv6' && payload.icmpType !== 'echo-request' && payload.icmpType !== 'echo-reply') {
       return this.translateError6to4(packet, remote, payload);
     }
@@ -190,7 +190,7 @@ export class Nat64Translator {
     if (isIPv4Fragment(packet)) return this.translateFragment4to6(packet);
     const protocol = protocolOf(packet.protocol);
     if (protocol === null) return { ok: false, reason: 'unsupported-protocol' };
-    const payload = packet.payload as TCPPacket | UDPPacket | ICMPPacket;
+    const payload = packet.payload as TcpSegment | UDPPacket | ICMPPacket;
     if (payload.type === 'icmp' && payload.icmpType !== 'echo-request' && payload.icmpType !== 'echo-reply') {
       return this.translateError4to6(packet, payload);
     }
@@ -331,7 +331,7 @@ export class Nat64Translator {
     return this.timeouts.tcpTransitoryMs;
   }
 
-  private sourceEndpoint6(packet: IPv6Packet, payload: TCPPacket | UDPPacket | ICMPv6Packet): Endpoint | null {
+  private sourceEndpoint6(packet: IPv6Packet, payload: TcpSegment | UDPPacket | ICMPv6Packet): Endpoint | null {
     const ip = packet.sourceIP.toString();
     if (payload.type === 'icmpv6') {
       return payload.icmpType === 'echo-request' ? { ip, port: payload.id ?? 0 } : null;
@@ -339,17 +339,17 @@ export class Nat64Translator {
     return { ip, port: payload.sourcePort };
   }
 
-  private destinationPort6(payload: TCPPacket | UDPPacket | ICMPv6Packet): number {
+  private destinationPort6(payload: TcpSegment | UDPPacket | ICMPv6Packet): number {
     return payload.type === 'icmpv6' ? (payload.id ?? 0) : payload.destinationPort;
   }
 
-  private remoteEndpoint4(packet: IPv4Packet, payload: TCPPacket | UDPPacket | ICMPPacket): Endpoint | null {
+  private remoteEndpoint4(packet: IPv4Packet, payload: TcpSegment | UDPPacket | ICMPPacket): Endpoint | null {
     const ip = packet.sourceIP.toString();
     if (payload.type === 'icmp') return payload.icmpType === 'echo-reply' ? { ip, port: payload.id } : null;
     return { ip, port: payload.sourcePort };
   }
 
-  private localPort4(payload: TCPPacket | UDPPacket | ICMPPacket): number {
+  private localPort4(payload: TcpSegment | UDPPacket | ICMPPacket): number {
     return payload.type === 'icmp' ? payload.id : payload.destinationPort;
   }
 
@@ -412,7 +412,7 @@ export class Nat64Translator {
   }
 
   private sessionFor4(
-    protocol: Nat64Protocol, binding: Nat64Binding, remote: Endpoint, payload: TCPPacket | UDPPacket | ICMPPacket,
+    protocol: Nat64Protocol, binding: Nat64Binding, remote: Endpoint, payload: TcpSegment | UDPPacket | ICMPPacket,
   ): Nat64Session | null {
     const local = { ip: binding.v4Address, port: binding.v4Port };
     const existing = this.sessionsFrom4.get(sessionKey(protocol, local, remote));
@@ -420,7 +420,7 @@ export class Nat64Translator {
     const knowsRemote = [...this.sessionsFrom6.values()].find((s) => s.protocol === protocol
       && s.v4Source === binding.v4Address && s.v4SourcePort === binding.v4Port && s.v4Destination === remote.ip);
     if (knowsRemote === undefined) return null;
-    if (protocol === 'tcp' && !(payload as TCPPacket).flags.syn) return null;
+    if (protocol === 'tcp' && !(payload as TcpSegment).flags.syn) return null;
     const now = this.config.clock();
     const v6Destination = this.prefixOf(new IPv6Address(knowsRemote.v6Destination))!.synthesize(new IPAddress(remote.ip)).toString();
     const session: Nat64Session = {
@@ -440,7 +440,7 @@ export class Nat64Translator {
   private advanceTcp(session: Nat64Session, payload: unknown, side: 'v4' | 'v6'): void {
     session.lastUsedAt = this.config.clock();
     if (session.protocol !== 'tcp') return;
-    const flags = (payload as TCPPacket).flags;
+    const flags = (payload as TcpSegment).flags;
     if (flags.rst) { session.tcpState = 'trans'; return; }
     const state = session.tcpState;
     if (flags.syn && ((state === 'v6-init' && side === 'v4') || (state === 'v4-init' && side === 'v6'))) {
@@ -542,7 +542,7 @@ export class Nat64Translator {
   private embedded4to6(original: IPv4Packet): { packet: IPv6Packet; binding: Nat64Binding; prefix: Nat64Prefix } | null {
     const protocol = protocolOf(original.protocol);
     if (protocol === null) return null;
-    const inner = original.payload as TCPPacket | UDPPacket | ICMPPacket;
+    const inner = original.payload as TcpSegment | UDPPacket | ICMPPacket;
     const port = inner.type === 'icmp' ? inner.id : inner.sourcePort;
     const binding = this.bindings4.get(bindingKey4(protocol, { ip: original.sourceIP.toString(), port }));
     if (binding === undefined) return null;
@@ -562,7 +562,7 @@ export class Nat64Translator {
     const prefix = this.prefixOf(invoking.sourceIP);
     const remote = prefix === null ? null : prefix.extract(invoking.sourceIP);
     if (protocol === null || remote === null) return null;
-    const inner = invoking.payload as TCPPacket | UDPPacket | ICMPv6Packet;
+    const inner = invoking.payload as TcpSegment | UDPPacket | ICMPv6Packet;
     const port = inner.type === 'icmpv6' ? (inner.id ?? 0) : inner.destinationPort;
     const binding = this.bindings6.get(bindingKey6(protocol, { ip: invoking.destinationIP.toString(), port }));
     if (binding === undefined) return null;
@@ -576,7 +576,7 @@ export class Nat64Translator {
     return { packet, binding };
   }
 
-  private translatePayload6to4(payload: TCPPacket | UDPPacket | ICMPv6Packet, sourcePort: number, destinationPort: number): unknown {
+  private translatePayload6to4(payload: TcpSegment | UDPPacket | ICMPv6Packet, sourcePort: number, destinationPort: number): unknown {
     if (payload.type === 'icmpv6') {
       const echo: ICMPPacket = {
         type: 'icmp', icmpType: 'echo-request', code: 0, id: sourcePort,
@@ -587,7 +587,7 @@ export class Nat64Translator {
     return { ...payload, sourcePort, destinationPort };
   }
 
-  private translatePayload4to6(payload: TCPPacket | UDPPacket | ICMPPacket, sourcePort: number, destinationPort: number): unknown {
+  private translatePayload4to6(payload: TcpSegment | UDPPacket | ICMPPacket, sourcePort: number, destinationPort: number): unknown {
     if (payload.type === 'icmp') {
       const echo: ICMPv6Packet = {
         type: 'icmpv6', icmpType: 'echo-reply', code: 0, id: destinationPort,

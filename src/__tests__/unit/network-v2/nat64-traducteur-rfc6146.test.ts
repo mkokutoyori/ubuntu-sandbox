@@ -29,7 +29,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   IPAddress, IPv6Address, createIPv4Packet, createIPv6Packet, IP_PROTO_ICMP, IP_PROTO_ICMPV6,
-  type IPv4Packet, type IPv6Packet, type TCPPacket, type UDPPacket,
+  type IPv4Packet, type IPv6Packet, type UDPPacket,
 } from '@/network/core/types';
 import { computeTcpChecksum, type TcpSegment } from '@/network/tcp/types';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
@@ -107,7 +107,7 @@ describe('RFC 6146 section 3.5: the translation of a TCP connection', () => {
     const back = unwrap(translator.translate4to6(tcp4(SERVER, POOL, 80, 49152, { syn: true, ack: true })));
     expect(back.sourceIP.toString()).toBe(toServer());
     expect(back.destinationIP.toString()).toBe(HOST_A);
-    expect((back.payload as TCPPacket).destinationPort).toBe(49152);
+    expect((back.payload as TcpSegment).destinationPort).toBe(49152);
     expect(back.hopLimit).toBe(60);
     expect(back.trafficClass).toBe(0);
     expect(translator.getSessions()[0].tcpState).toBe('established');

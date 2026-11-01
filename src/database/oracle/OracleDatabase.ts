@@ -1074,9 +1074,11 @@ export class OracleDatabase implements SqlCommandHost {
     });
     preset.set('INSERTING', event === 'INSERT');
     preset.set('UPDATING', event === 'UPDATE');
+    for (const column of columns) preset.set(`TRG_UPDATING_${column.name.toUpperCase()}`, event === 'UPDATE' && (firing.updatedColumns?.includes(column.name.toUpperCase()) ?? true));
     preset.set('DELETING', event === 'DELETE');
 
     const rewrite = (text: string): string => text
+      .replace(/\bUPDATING\s*\(\s*'(\w+)'\s*\)/gi, (_whole, column: string) => `TRG_UPDATING_${column.toUpperCase()}`)
       .replace(/:NEW\.(\w+)/gi, (_whole, column: string) => `TRG_NEW_${column.toUpperCase()}`)
       .replace(/:OLD\.(\w+)/gi, (_whole, column: string) => `TRG_OLD_${column.toUpperCase()}`);
     const literal = (value: Scalar | undefined): string => {
@@ -2297,6 +2299,11 @@ export class OracleDatabase implements SqlCommandHost {
       }));
       return emptyResult('Trigger created.');
     }
+    let updateColumns: string[] | undefined;
+    sql = sql.replace(/\bUPDATE\s+OF\s+((?:"?\w+"?\s*,\s*)*"?\w+"?)(?=\s+(?:OR|ON)\b)/i, (_whole, list: string) => {
+      updateColumns = list.split(',').map((column) => column.trim().replace(/"/g, '').toUpperCase());
+      return 'UPDATE';
+    });
     const match = sql.match(
       /^CREATE\s+(OR\s+REPLACE\s+)?(?:EDITIONABLE\s+|NONEDITIONABLE\s+)?TRIGGER\s+(?:"?(\w+)"?\.)?"?(\w+)"?\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)(?:\s+OR\s+(INSERT|UPDATE|DELETE))?(?:\s+OR\s+(INSERT|UPDATE|DELETE))?\s+ON\s+(?:"?(\w+)"?\.)?"?(\w+)"?(?:\s+FOR\s+EACH\s+ROW)?\s*([\s\S]*)$/i
     );
@@ -2322,7 +2329,7 @@ export class OracleDatabase implements SqlCommandHost {
     this.storage.createTrigger({
       schema, name, timing, events,
       tableName, tableSchema,
-      forEachRow, body, enabled: true,
+      forEachRow, body, enabled: true, updateColumns,
     });
 
     return emptyResult('Trigger created.');
