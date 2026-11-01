@@ -1,5 +1,9 @@
-import { executeCommandsIn, offeredIn, type CliScope } from './execute/executeVocabulary';
+import { executeCommandsIn, executeLeaves, executeLegends, missingKeywords, offeredIn, type CliScope } from './execute/executeVocabulary';
 import { SNIFFER_SCOPE } from './diag/FortiDiagCommands';
+import {
+  authFilterWords, debugApplicationWords, debugConsoleWords, flowFilterWords, flowShowWords, flowTraceWords,
+  gatewayClearWords, sessionFilterWords, synchronizeWords,
+} from './diag/diagVocabulary';
 import { LOG_CATEGORIES } from './log/logCategories';
 import { argumentAccepts, type ArgumentSpec, type EnumValue } from '../../../../../cli/ArgumentTypes';
 import { CommandTable, type CommandSpec, type TreeNode } from '../../../../../cli/CommandTable';
@@ -210,7 +214,7 @@ export class FortiSocle {
 
     const table = new CommandTable();
     for (const spec of this.contextSpecs()) table.declare(spec);
-    for (const [path, legend] of LEGENDS) table.describePath(path, legend);
+    for (const [path, legend] of [...executeLegends(this.where()), ...LEGENDS]) table.describePath(path, legend);
     this.cache.set(key, table);
     return table;
   }
@@ -376,7 +380,28 @@ export class FortiSocle {
       (_session, args) => disconnect(args.index ?? ''))];
   }
 
+  private executeLeafSpecs(declared: ReadonlySet<string>): CommandSpec[] {
+    const out: CommandSpec[] = [];
+    for (const command of executeCommandsIn(this.where())) {
+      for (const leaf of executeLeaves(command)) {
+        const id = `execute ${command.name} ${leaf.words.join(' ')}`;
+        if (declared.has(id)) continue;
+        const argument: ArgumentSpec[] = leaf.argument === undefined ? [] : [{
+          name: 'rest', type: 'REST', optional: true, description: leaf.argument,
+        }];
+        out.push(this.withArgument(id, ['execute', command.name, ...leaf.words, ...argument],
+          leaf.description,
+          (_s, args) => this.deps.runExecute([command.name, ...leaf.words, ...words(args.rest)])));
+      }
+    }
+    return out;
+  }
+
   private executeSpecs(declared: ReadonlySet<string>): CommandSpec[] {
+    return [...this.executeLeafSpecs(declared), ...this.executeCommandSpecs(declared)];
+  }
+
+  private executeCommandSpecs(declared: ReadonlySet<string>): CommandSpec[] {
     return executeCommandsIn(this.where())
       .filter(command => !declared.has(`execute ${command.name}`))
       .map(command => this.withArgument(
@@ -386,14 +411,23 @@ export class FortiSocle {
         ...(command.options ? { alternatives: [...command.options] } : {}),
       }],
       command.help,
-      (_s, args) => this.deps.runExecute(
-        [command.name, ...(args.rest ?? '').split(/\s+/).filter(Boolean)]),
+      (_s, args) => {
+        const tail = (args.rest ?? '').split(/\s+/).filter(Boolean);
+        const missing = missingKeywords(command, tail);
+        if (missing !== null) {
+          return FortiMessages.incomplete(missing.map(keyword => `\`${keyword}\``).join(' or '));
+        }
+        return this.deps.runExecute([command.name, ...tail]);
+      },
       ));
   }
 
   private diagnoseSpecs(): CommandSpec[] {
     const rest = (name: string, description: string): ArgumentSpec => ({
       name, type: 'REST', optional: true, description,
+    });
+    const keywords = (name: string, description: string, alternatives: readonly EnumValue[]): ArgumentSpec => ({
+      name, type: 'REST', optional: true, description, alternatives, leadingOnly: true,
     });
     const run = (words: readonly string[]) =>
       (_s: CliSession, args: Readonly<Record<string, string>>): string =>
@@ -570,14 +604,14 @@ export class FortiSocle {
         ['diagnose', 'snmp', 'ip', 'frags'], 'IP fragment reassembly counters.',
         () => this.deps.diagnose(['snmp', 'ip', 'frags'])),
       this.withArgument('diagnose sys session filter',
-        ['diagnose', 'sys', 'session', 'filter', rest('rest', 'Filter criterion.')],
+        ['diagnose', 'sys', 'session', 'filter', keywords('rest', 'Filter criterion.', sessionFilterWords())],
         'Set the IPv4 session table filter.', run(['sys', 'session', 'filter'])),
       this.plain('diagnose sys session clear',
         ['diagnose', 'sys', 'session', 'clear'],
         'Clear IPv4 sessions matching the filter.',
         () => this.deps.diagnose(['sys', 'session', 'clear'])),
       this.withArgument('diagnose sys session6 filter',
-        ['diagnose', 'sys', 'session6', 'filter', rest('rest', 'Filter criterion.')],
+        ['diagnose', 'sys', 'session6', 'filter', keywords('rest', 'Filter criterion.', sessionFilterWords())],
         'Set the IPv6 session table filter.', run(['sys', 'session6', 'filter'])),
       this.plain('diagnose sys session6 clear',
         ['diagnose', 'sys', 'session6', 'clear'],
@@ -612,7 +646,7 @@ export class FortiSocle {
         'Reset this member cluster uptime, so the peer wins the next election.',
         () => this.deps.diagnose(['sys', 'ha', 'reset-uptime'])),
       this.withArgument('execute ha synchronize',
-        ['execute', 'ha', 'synchronize', rest('rest', '`start` or `stop`.')],
+        ['execute', 'ha', 'synchronize', keywords('rest', '`start` or `stop`.', synchronizeWords())],
         'Start or stop a configuration synchronisation.',
         run2(['ha', 'synchronize'])),
       this.plain('execute ha failover set', ['execute', 'ha', 'failover', 'set'],
@@ -628,19 +662,19 @@ export class FortiSocle {
       this.plain('diagnose debug disable', ['diagnose', 'debug', 'disable'],
         'Disable debug output.', () => this.deps.diagnose(['debug', 'disable'])),
       this.withArgument('diagnose debug application',
-        ['diagnose', 'debug', 'application', rest('rest', '`<daemon> <level>`, e.g. `dhcps -1`.')],
+        ['diagnose', 'debug', 'application', keywords('rest', '`<daemon> <level>`, e.g. `dhcps -1`.', debugApplicationWords())],
         'Set the debug level of a daemon.', run(['debug', 'application'])),
       this.withArgument('diagnose debug console',
-        ['diagnose', 'debug', 'console', rest('rest', '`timestamp enable|disable`.')],
+        ['diagnose', 'debug', 'console', keywords('rest', '`timestamp enable|disable`.', debugConsoleWords())],
         'Set the debug console options.', run(['debug', 'console'])),
       this.withArgument('diagnose debug flow filter',
-        ['diagnose', 'debug', 'flow', 'filter', rest('rest', 'Filter criterion.')],
+        ['diagnose', 'debug', 'flow', 'filter', keywords('rest', 'Filter criterion.', flowFilterWords())],
         'Set the flow trace filter.', run(['debug', 'flow', 'filter'])),
       this.withArgument('diagnose debug flow trace',
-        ['diagnose', 'debug', 'flow', 'trace', rest('rest', '`start <count>` or `stop`.')],
+        ['diagnose', 'debug', 'flow', 'trace', keywords('rest', '`start <count>` or `stop`.', flowTraceWords())],
         'Start or stop the flow trace.', run(['debug', 'flow', 'trace'])),
       this.withArgument('diagnose debug flow show',
-        ['diagnose', 'debug', 'flow', 'show', rest('rest', 'Display option.')],
+        ['diagnose', 'debug', 'flow', 'show', keywords('rest', 'Display option.', flowShowWords())],
         'Choose what the flow trace displays.', run(['debug', 'flow', 'show'])),
       this.withArgument('diagnose firewall iprope list',
         ['diagnose', 'firewall', 'iprope', 'list', rest('rest', 'Policy group.')],
@@ -667,7 +701,7 @@ export class FortiSocle {
         ['diagnose', 'vpn', 'ike', 'gateway', 'list', 'name', rest('rest', 'Gateway name.')],
         'List one IKE gateway.', run(['vpn', 'ike', 'gateway', 'list', 'name'])),
       this.withArgument('diagnose vpn ike gateway clear',
-        ['diagnose', 'vpn', 'ike', 'gateway', 'clear', rest('rest', 'name <gateway>')],
+        ['diagnose', 'vpn', 'ike', 'gateway', 'clear', keywords('rest', 'name <gateway>', gatewayClearWords())],
         'Clear one IKE gateway and renegotiate it.',
         run(['vpn', 'ike', 'gateway', 'clear'])),
       this.plain('diagnose vpn ike gateway flush',
@@ -683,7 +717,7 @@ export class FortiSocle {
         'De-authenticate every user.',
         () => this.deps.diagnose(['firewall', 'auth', 'clear'])),
       this.withArgument('diagnose firewall auth filter',
-        ['diagnose', 'firewall', 'auth', 'filter', rest('rest', 'Filter criterion.')],
+        ['diagnose', 'firewall', 'auth', 'filter', keywords('rest', 'Filter criterion.', authFilterWords())],
         'Restrict what the authenticated-user list shows.',
         run(['firewall', 'auth', 'filter'])),
       ...(offeredIn(SNIFFER_SCOPE, this.where()) ? [this.withArgument('diagnose sniffer packet',

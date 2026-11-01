@@ -3,6 +3,7 @@ import { parseForm } from '../../../auth/AuthPortal';
 import type { AdminHttpApp, AdminHttpPeer } from '../../../mgmt/AdminHttpServer';
 import type { FortiConfigTree } from '../runtime/FortiConfigTree';
 import type { FortiObject } from '../runtime/FortiObject';
+import { encodeSecret, ENC_PREFIX } from '../runtime/secretEncoding';
 
 export const CMDB_BASE = '/api/v2/cmdb/';
 export const LOGIN_PATH = '/logincheck';
@@ -139,7 +140,9 @@ function attributesOf(object: FortiObject): Record<string, string> {
   for (const attribute of object.attributeNames()) {
     const values = object.effective(attribute);
     if (values.length === 0) continue;
-    out[attribute] = values.join(' ');
+    out[attribute] = object.attribute(attribute)?.secret === true
+      ? `${ENC_PREFIX}${encodeSecret(values.join(' '))}`
+      : values.join(' ');
   }
   return out;
 }
