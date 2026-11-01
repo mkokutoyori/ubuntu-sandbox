@@ -123,7 +123,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
 
     const output = await client.executeCommand('nslookup example.com');
-    expect(output).toContain('Address: 192.168.1.100');
+    expect(output).toContain('Address:  192.168.1.100');
   });
 
   // 1.03 – dig with specific DNS server
@@ -158,7 +158,7 @@ describe('nslookup/dig – Basic A Record Lookups', () => {
     cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
 
     const output = await client.executeCommand('nslookup example.com 192.168.1.10');
-    expect(output).toContain('Address: 192.168.1.100');
+    expect(output).toContain('Address:  192.168.1.100');
   });
 
   // 1.05 – Multiple A records (round-robin)
@@ -229,7 +229,8 @@ describe('nslookup/dig – Reverse Lookups (PTR)', () => {
     cable2.connect(dnsServer.getPort('eth0')!, sw.getPort('eth1')!);
 
     const output = await client.executeCommand('nslookup 192.168.1.100');
-    expect(output).toContain('name = example.com');
+    expect(output).toContain('Name:    example.com');
+    expect(output).toContain('Address:  192.168.1.100');
   });
 });
 
@@ -276,7 +277,7 @@ describe('nslookup/dig – Other Record Types', () => {
     // We'll use a single command with echo piping? Not trivial. We'll assume we can run interactive commands.
     // For simplicity, we'll use: nslookup -type=MX example.com
     const output = await client.executeCommand('nslookup -type=MX example.com');
-    expect(output).toContain('mail exchanger = 10 mail.example.com');
+    expect(output).toContain('MX preference = 10, mail exchanger = mail.example.com');
   });
 
   // 3.03 – NS record query
@@ -535,7 +536,7 @@ describe('nslookup/dig – Advanced Features', () => {
 
     // Use standard nslookup command-line syntax
     const output = await client.executeCommand('nslookup example.com 192.168.1.10');
-    expect(output).toContain('Address: 192.168.1.100');
+    expect(output).toContain('Address:  192.168.1.100');
   });
 
   // 6.05 – nslookup set type=ANY

@@ -190,6 +190,7 @@ export interface WinCommandContext {
   getDnsSuffix(): string;
   setDnsSuffix(suffix: string): void;
   getConnectionDnsSuffix(ifName: string): string;
+  getDnsSuffixSearchList(): readonly string[];
 
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;

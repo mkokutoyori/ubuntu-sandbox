@@ -1,11 +1,9 @@
 /**
- * `nslookup`'s interactive `>` REPL, on Windows (bare `nslookup`, no
- * arguments). Windows previously fell straight through to the
- * non-interactive `executeNslookup` and printed a "Usage: ..." line —
- * this exercises the fix that gives Windows the exact same
- * `NslookupSubShell` used by `LinuxTerminalSession`
- * (see `nslookup-interactive.test.ts`, whose lab topology and BIND9 setup
- * this test mirrors) rather than a parallel Windows-only implementation.
+ * `nslookup`'s interactive `>` REPL, on Windows (bare `nslookup`, no arguments), in the Windows nslookup.exe
+ * dialect: `Default Server:  <name>` / `Address:  <ip>` (two spaces, no `#53`), the server name read from the
+ * PTR record of its address (`UnKnown` when there is none), `Name:    ` / `Address:  ` blocks, and
+ * `MX preference = N, mail exchanger = host` records. The Linux REPL keeps the BIND layout
+ * (see `nslookup-interactive.test.ts`, whose lab topology and BIND9 setup this test mirrors).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
@@ -118,8 +116,8 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
 
     await type(term, 'nslookup');
     expect(term.getPrompt()).toBe('> ');
-    expectContains(term, `Default Server:  ${NS1_IP}`);
-    expectContains(term, `Address:  ${NS1_IP}#53`);
+    expectContains(term, 'Default Server:  UnKnown');
+    expectContains(term, `Address:  ${NS1_IP}`);
   });
 
   it('resolves a bare domain name using the configured resolver', async () => {
@@ -130,8 +128,8 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
     await type(term, 'nslookup');
     await type(term, 'www.example.com');
 
-    expectContains(term, 'Name:\twww.example.com');
-    expectContains(term, 'Address: 10.0.1.80');
+    expectContains(term, 'Name:    www.example.com');
+    expectContains(term, 'Address:  10.0.1.80');
   });
 
   it('`server <host>` switches the resolver and reprints the banner', async () => {
@@ -141,10 +139,12 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
 
     await type(term, 'nslookup');
     await type(term, `server ${NS2_IP}`);
+    await new Promise<void>((resolve) => setTimeout(resolve, 2500));
 
-    expectContains(term, `Default Server:  ${NS2_IP}`);
-    expectContains(term, `Address:  ${NS2_IP}#53`);
-  });
+    expectContains(term, 'Default Server:  UnKnown');
+    expectContains(term, `Address:  ${NS2_IP}`);
+    expectContains(term, 'DNS request timed out.');
+  }, 20000);
 
   it('`set type=MX` changes the query type for subsequent lookups', async () => {
     const { win } = await buildLab();
@@ -155,7 +155,7 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
     await type(term, 'set type=MX');
     await type(term, 'example.com');
 
-    expectContains(term, /mail exchanger = 10 mail\.example\.com/);
+    expectContains(term, /MX preference = 10, mail exchanger = mail\.example\.com/);
   });
 
   it('`exit` leaves the subshell and returns to the normal cmd prompt', async () => {
@@ -177,7 +177,7 @@ describe('nslookup interactive REPL on Windows (parity with LinuxTerminalSession
 
     await type(term, `nslookup www.example.com ${NS1_IP}`);
     expect(term.getPrompt()).not.toBe('> ');
-    expectContains(term, 'Address: 10.0.1.80');
+    expectContains(term, 'Address:  10.0.1.80');
   });
 
   it('reports the same "Dnscache not running" error as the non-interactive command when the DNS Client service is stopped', async () => {

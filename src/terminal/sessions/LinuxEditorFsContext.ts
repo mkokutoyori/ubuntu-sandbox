@@ -77,6 +77,14 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorEnvironmentVariable(name, this.session);
   }
 
+  linkInfo(path: string): { type: string; permissions: number } | null {
+    return this.dev.editorLinkInfo(this.resolvePath(path), this.session);
+  }
+
+  executableAt(path: string): boolean {
+    return this.dev.editorExecutableAt(this.resolvePath(path), this.session);
+  }
+
   environmentNames(): string[] {
     return this.dev.editorEnvironmentNames(this.session);
   }

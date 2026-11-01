@@ -132,6 +132,24 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     return this.environment.get(name) ?? null;
   }
 
+  private readonly executables = new Set<string>();
+
+  linkInfo(path: string): { type: string; permissions: number } | null {
+    const kind = this.kindOf(path);
+    if (kind === 'missing') return null;
+    if (kind === 'directory') return { type: 'directory', permissions: 0o755 };
+    return { type: 'file', permissions: this.executableAt(path) ? 0o755 : 0o644 };
+  }
+
+
+  useExecutable(path: string): void {
+    this.executables.add(this.resolvePath(path));
+  }
+
+  executableAt(path: string): boolean {
+    return this.executables.has(this.resolvePath(path));
+  }
+
   environmentNames(): string[] {
     return [...this.environment.keys()];
   }

@@ -262,6 +262,70 @@ Resolve-DnsName nexiste.banquehorizon.com
 Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist
 ```
 
+**Avec `nslookup`** (cmd ou PowerShell, sur PC-GUICHET1). L'outil interroge directement un serveur DNS : il ne lit ni le fichier `hosts` ni le cache du client, et il commence par chercher le **nom** du serveur interrogé dans l'enregistrement PTR de son adresse (`UnKnown` s'il n'en a pas).
+
+```
+nslookup www.banquehorizon.com
+```
+```
+Server:  dc1.horizon.local
+Address:  10.20.20.10
+
+Non-authoritative answer:
+Name:    web.banquehorizon.com
+Address:  203.0.113.20
+Aliases:  www.banquehorizon.com
+```
+
+`Non-authoritative answer` : DC1 n'est pas faisant autorité pour `banquehorizon.com`, il a obtenu la réponse par son redirecteur. `Aliases` : le CNAME `www` est suivi jusqu'à `web`. Le type d'enregistrement se choisit avec `-type=` :
+
+```
+nslookup -type=MX banquehorizon.com
+nslookup -type=SOA banquehorizon.com
+nslookup 203.0.113.20
+nslookup nexiste.banquehorizon.com
+```
+```
+banquehorizon.com	MX preference = 10, mail exchanger = mail.banquehorizon.com
+banquehorizon.com	MX preference = 20, mail exchanger = mail2.banquehorizon.com
+
+banquehorizon.com
+	primary name server = ns1.banquehorizon.com
+	responsible mail addr = hostmaster.banquehorizon.com
+	serial  = 2026103101
+	refresh = 7200 (2 hours)
+	retry   = 900 (15 mins)
+	expire  = 1209600 (14 days)
+	default TTL = 3600 (1 hour)
+
+Name:    web.banquehorizon.com
+Address:  203.0.113.20
+
+*** dc1.horizon.local can't find nexiste.banquehorizon.com: Non-existent domain
+```
+
+`nslookup -debug www.banquehorizon.com` montre chaque paquet reçu : l'en-tête (drapeaux `response`, `want recursion`, `recursion avail.`, `auth. answer` quand le serveur fait autorité), le `rcode`, et le TTL de chaque enregistrement. Sans argument, `nslookup` ouvre une session interactive (`set type=MX`, `set all`, `server 10.20.20.53`, `exit`).
+
+Quand le serveur ne répond pas, l'outil le dit mot pour mot comme Windows :
+
+```
+nslookup www.banquehorizon.com 10.20.20.250
+```
+```
+DNS request timed out.
+    timeout was 2 seconds.
+Server:  UnKnown
+Address:  10.20.20.250
+
+DNS request timed out.
+    timeout was 2 seconds.
+DNS request timed out.
+    timeout was 2 seconds.
+*** Request to UnKnown timed-out
+```
+
+La première attente est la requête PTR qui cherche le nom du serveur ; les deux suivantes sont la question elle-même, essayée `retry+1` fois (`set all` affiche `timeout=2` et `retry=1`).
+
 ## 5. Redondance : NS1-BANK tombe, NS2-BANK prend le relais
 
 1. Sur **DNS-RES** : `sudo rndc flush` (pour que le résolveur n'ait plus rien en cache).
