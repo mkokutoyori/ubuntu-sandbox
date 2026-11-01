@@ -968,6 +968,19 @@ export class VirtualFileSystem {
     return this.checkAccess(inode, 'w', uid, gid);
   }
 
+  deniedByProtectedRegular(path: string, inode: INode, uid: number): boolean {
+    if (inode.uid === uid) return false;
+    const level = Number(this.readFile('/proc/sys/fs/protected_regular')?.trim() ?? '0');
+    if (!(level > 0)) return false;
+    const resolved = this.resolveParent(path);
+    if (!resolved) return false;
+    const directory = resolved[0];
+    if ((directory.permissions & 0o1000) === 0) return false;
+    const openedToOthers = level >= 2 ? 0o022 : 0o002;
+    if ((directory.permissions & openedToOthers) === 0) return false;
+    return inode.uid !== directory.uid;
+  }
+
   private canWriteInParent(parent: INode, uid: number, gid: number): boolean {
     return this.checkAccess(parent, 'w', uid, gid);
   }
@@ -1005,6 +1018,7 @@ export class VirtualFileSystem {
       if (this.isReadOnly(path)) return false;
       if (inode.immutable) return false;
       if (!this.canWriteFile(inode, uid, gid)) return false;
+      if (this.deniedByProtectedRegular(path, inode, uid)) return false;
       const nextSize = declaredSizeBytes
         ?? (append ? inode.content.length + content.length : content.length);
       if (!this.fitsBytes(nextSize - inode.size)) return false; // ENOSPC

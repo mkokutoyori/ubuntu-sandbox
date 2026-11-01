@@ -5538,7 +5538,12 @@ export class LinuxCommandExecutor {
     const existing = this.vfs.resolveInode(absPath);
     if (existing && existing.type === 'directory') return 'Is a directory';
     if (this.mountTable.isReadOnly(absPath)) return 'Read-only file system';
-    if (existing) return this.checkPermission(existing, 'w') ? null : this.refuseOpen(absPath, 'Permission denied');
+    if (existing) {
+      if (!this.checkPermission(existing, 'w')) return this.refuseOpen(absPath, 'Permission denied');
+      return this.vfs.deniedByProtectedRegular(absPath, existing, this.currentPathActor().uid)
+        ? this.refuseOpen(absPath, 'Permission denied')
+        : null;
+    }
     if (this.vfs.isVirtualTree(absPath)) return this.refuseOpen(absPath, 'No such file or directory');
     const parent = this.vfs.resolveInode(this.vfs.normalizePath(absPath + '/..', this.cwd));
     if (!parent) return this.refuseOpen(absPath, 'No such file or directory');
