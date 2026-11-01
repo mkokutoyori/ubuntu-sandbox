@@ -309,3 +309,32 @@ describe('TEMOIN — la porte ancienne tient', () => {
     expect([...tcp.listeners.keys()].some(k => k.endsWith(':22'))).toBe(true);
   });
 });
+
+describe('l\'API ne rend jamais un secret en clair', () => {
+  async function avecSecrets() {
+    const lab = await laboratoire();
+    run(lab.sh, 'config user local', 'edit "alice"', 'set type password', 'set passwd "Wonder-land1"', 'next', 'end');
+    await ouvrirSession(lab.poste);
+    return lab;
+  }
+
+  it('le mot de passe d\'un administrateur sort sous la forme ENC, comme `show`', async () => {
+    const { poste } = await avecSecrets();
+    const corps = await avecSession(poste, API);
+    expect(corps).not.toContain('Secret123');
+    expect(corps).toMatch(/"password":"ENC [^"]+"/);
+  });
+
+  it('le mot de passe d\'un utilisateur local aussi', async () => {
+    const { poste } = await avecSecrets();
+    const corps = await avecSession(poste, '/api/v2/cmdb/user/local');
+    expect(corps).not.toContain('Wonder-land1');
+    expect(corps).toMatch(/"passwd":"ENC [^"]+"/);
+  });
+
+  it('TEMOIN : les attributs qui ne sont pas des secrets restent lisibles', async () => {
+    const { poste } = await avecSecrets();
+    const corps = await avecSession(poste, API);
+    expect(corps).toContain('"accprofile":"super_admin"');
+  });
+});
