@@ -3859,11 +3859,10 @@ tty vivant.
 
 ### [tcpdump-options] ce que -nn, -tttt, -vvv et -XX ne couvrent pas encore (mesure contre tcpdump 4.99.4)
 Mesure par `scripts/oracle/record_tcpdump_options.py` sur deux labos (LAN ICMP/TCP/UDP/IPv6/NDP/fragments/HTTP/FTP/SMTP/SSH ;
-BIND A/MX/AAAA/SOA/NS/ANY/NXDOMAIN/troncature/DNS sur TCP) : le texte complet est identique pour 11 jeux d'options. Non mesures
+BIND A/MX/AAAA/SOA/NS/ANY/NXDOMAIN/troncature/DNS sur TCP) : le texte complet est identique pour 27 jeux d'options. Non mesures
 faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-telnet.c`, les commandes IAC), les options IPv4
 (`ping -R`, `-Q`) et les en-tetes d'extension IPv6, ESP/AH/GRE/OSPF/BGP/SNMP/DHCPv6, MPTCP, les messages MLD et le routage
-(RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` et `-AA` sont portes (print.c, print-ascii.c ; mesure sur 5 jeux d'options de plus) et `-qq` ne supprime pas encore le protocole des fragments non initiaux
-(`print-ip.c:494`). La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
+(RA/RS/redirect ICMPv6 sont portes mais l'echantillon n'a que NS/NA). `-A` et `-AA` sont portes (print.c, print-ascii.c ; mesure sur 5 jeux d'options de plus), ainsi que `-qq` (fragments non initiaux IPv4, `print-ip.c:494`) et la forme courte des types Ethernet de `-q -e` sont portes ; le `-qq` des fragments IPv6 n'est pas mesure. La sortie des DHCP/bootp a son propre oracle (`TcpdumpBootp`).
 
 ### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 

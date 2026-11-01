@@ -12,6 +12,7 @@ export interface TcpdumpOptions {
   linkLevel: boolean;
   verbose: number;
   quiet: boolean;
+  ultraQuiet: boolean;
   hex: HexMode;
   hexLink: boolean;
   writeFile: string | null;
@@ -99,6 +100,7 @@ function defaults(): TcpdumpOptions {
     linkLevel: false,
     verbose: 0,
     quiet: false,
+    ultraQuiet: false,
     hex: 'none',
     hexLink: false,
     writeFile: null,
@@ -214,7 +216,7 @@ function applyFlag(state: ParseState, ch: string): Invocation | null {
     case 'L': state.listLinkTypes = true; return null;
     case 'h': return { kind: 'help', text: USAGE_TEXT };
     case 'e': opt.linkLevel = true; return null;
-    case 'q': opt.quiet = true; return null;
+    case 'q': opt.ultraQuiet = opt.quiet; opt.quiet = true; return null;
     case 'A': state.aUpper++; return null;
     case 'S': opt.absoluteSeq = true; return null;
     case 'K': opt.skipChecksumCheck = true; return null;

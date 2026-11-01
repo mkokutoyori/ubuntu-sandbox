@@ -473,14 +473,15 @@ function ipLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderSt
   const withPort = !trunc && (frame.l4 === 'tcp' || frame.l4 === 'udp');
   const src = endpoint(state, frame.srcIp, withPort ? frame.srcPort : undefined, transportOf(frame.l4));
   const dst = endpoint(state, frame.dstIp, withPort ? frame.dstPort : undefined, transportOf(frame.l4));
-  const detail = trunc ?? l4Detail(frame, opt, state);
+  const suppressed = opt.ultraQuiet && (frame.ipFragmentOffset ?? 0) > 0;
+  const detail = suppressed ? '' : trunc ?? l4Detail(frame, opt, state);
   if (opt.verbose > 0) {
     const offset = (frame.ipFragmentOffset ?? 0) * 8;
     const header = `${opt.linkLevel ? '' : 'IP '}(${tosToken(frame)}, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
       + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${ipChecksumSuffix(frame, opt)})`;
-    return `${header}\n    ${src} > ${dst}: ${detail}${encapsulatedLines(frame, opt, state)}`;
+    return suppressed ? `${header}\n    ` : `${header}\n    ${src} > ${dst}: ${detail}${encapsulatedLines(frame, opt, state)}`;
   }
-  return `${opt.linkLevel ? '' : 'IP '}${src} > ${dst}: ${detail}`;
+  return suppressed ? `${opt.linkLevel ? '' : 'IP '}` : `${opt.linkLevel ? '' : 'IP '}${src} > ${dst}: ${detail}`;
 }
 
 function ip6FragmentLine(
@@ -528,14 +529,18 @@ function etherTypeOf(frame: CaptureFrame): { name: string; hex: string; value: n
   return { name: 'IPv4', hex: '0x0800', value: 0x0800 };
 }
 
-function ethPrefix(frame: CaptureFrame, state: TcpdumpRenderState): string {
+function etherTypeText(name: string, hex: string, quiet: boolean): string {
+  return quiet ? name : `ethertype ${name} (${hex})`;
+}
+
+function ethPrefix(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   const type = etherTypeOf(frame);
   const addresses = `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}`;
   if (frame.vlanId !== undefined) {
-    return `${addresses}, ethertype 802.1Q (0x8100), length ${frame.length}: `
-      + `vlan ${frame.vlanId}, p ${frame.vlanPriority ?? 0}, ethertype ${type.name} (${type.hex}), `;
+    return `${addresses}, ${etherTypeText('802.1Q', '0x8100', opt.quiet)}, length ${frame.length}: `
+      + `vlan ${frame.vlanId}, p ${frame.vlanPriority ?? 0}, ${etherTypeText(type.name, type.hex, opt.quiet)}, `;
   }
-  return `${addresses}, ethertype ${type.name} (${type.hex}), length ${frame.length}: `;
+  return `${addresses}, ${etherTypeText(type.name, type.hex, opt.quiet)}, length ${frame.length}: `;
 }
 
 const SLL_HEADER_LENGTH = 16;
@@ -614,7 +619,7 @@ export function formatFrame(
   const cooked = state.cooked;
   const link = cooked !== null
     ? cookedPrefix(frame, opt, state, cooked)
-    : opt.linkLevel ? ethPrefix(frame, state) : '';
+    : opt.linkLevel ? ethPrefix(frame, opt, state) : '';
   let body: string;
   if (frame.l3 === 'arp') {
     body = `${link}${arpLine(frame, opt, state)}`;
@@ -623,7 +628,7 @@ export function formatFrame(
   } else if (frame.l3 === 'ipv6') {
     body = `${link}${ip6Line(frame, opt, state)}`;
   } else {
-    body = opt.linkLevel ? `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, ethertype Unknown (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
+    body = opt.linkLevel ? `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, ${opt.quiet ? 'Unknown Ethertype' : 'ethertype Unknown'} (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
   }
   const lines = [`${number}${ts}${body}`];
   if (opt.hex !== 'none') lines.push(...hexDump(frame, opt, state));
