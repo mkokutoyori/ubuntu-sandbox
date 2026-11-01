@@ -7,6 +7,8 @@ import type { SourcePosition, Token } from '@/bash/lexer/Token';
 export interface ParserErrorDetail {
   readonly token?: Token;
   readonly closer?: string;
+  readonly expecting?: string;
+  readonly asWord?: boolean;
   readonly conditional?: 'unary' | 'binary';
 }
 

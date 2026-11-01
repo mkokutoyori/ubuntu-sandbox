@@ -720,15 +720,15 @@ portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que 
 pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
 `^R` en mode vue (entree suivante).
 
-### [machine Linux] `dash` absent
-Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
-n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
-`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' ». `sh -n` et `bash -n`
-analysent maintenant sans executer (les lettres d'invocation arrivent a `SHELLOPTS`), mais les
-messages d'erreur d'analyse de dash (« t.sh: 3: Syntax error: Unterminated quoted string »)
-different de ceux de l'analyseur de bash du simulateur, que `sh` reutilise. Sans une
-grammaire d'erreurs propre a dash le linter par defaut des fichiers shell ne parle pas comme
-sur Ubuntu.
+### [machine Linux] `dash` : analyse seulement, l'execution reste celle de bash
+`dash` existe (Ubuntu en livre une, c'est la cible de `/bin/sh`) et `sh` parle comme elle : les diagnostics d'analyse sont ceux
+de dash 0.5.12 releves sur le binaire reel (`t.sh: 2: Syntax error: end of file unexpected (expecting "fi")`, `"fi" unexpected`,
+`Unterminated quoted string`, `Missing '}'`, `Missing '))'`, `EOF in backquote substitution`, `newline unexpected`, `word unexpected
+(expecting ")")` ; 48 scripts, sonde `probe-dash-diagnostics-analyse`). Ce qui reste : dash n'a pas la grammaire de bash, or c'est
+l'analyseur de bash qui tourne, donc `x=(1 2)`, `[[ ]]`, `function f {`, `<(cmd)`, `${a[0]}`, `echo {1..3}` passent sans erreur
+la ou dash repond `Syntax error: "(" unexpected` ; l'execution (`echo -e`, `local`, `$RANDOM`, `source`) est celle de bash ; les
+diagnostics d'EXECUTION de dash (`sh: 1: foo: not found`, `sh: 1: cd: can't cd to x`) ne sont pas ceux de bash non plus et ne sont pas portes ;
+le texte d'une erreur dans une substitution imbriquee garde la forme de bash.
 
 ### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
 Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut

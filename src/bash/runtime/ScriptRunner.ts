@@ -46,7 +46,7 @@ export function runScript(
   aliases: AliasTable | undefined,
   functions: Map<string, import('@/bash/parser/ASTNode').Command> | undefined,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean } | undefined,
+  identity: { pid?: number; ppid?: number; initialExitCode?: number; stdin?: string; interactive?: boolean; dashDiagnostics?: boolean } | undefined,
   io: IOContext,
   inherited?: Record<string, string>,
 ): ScriptResult {
@@ -95,7 +95,7 @@ export function runScriptContent(
   executeCommand: (args: string[], env?: Record<string, string>, background?: boolean, outputPiped?: boolean, stdin?: string) => { output: string; exitCode: number; backgroundPid?: number },
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string; interactive?: boolean; fromStandardInput?: boolean },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; stdin?: string; interactive?: boolean; fromStandardInput?: boolean; dashDiagnostics?: boolean },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): ScriptResult {
@@ -120,6 +120,7 @@ export function runScriptContent(
       daemonMode: identity?.daemonMode,
       interactive: identity?.interactive,
       fromStandardInput: identity?.fromStandardInput,
+      dashDiagnostics: identity?.dashDiagnostics,
       stdin: identity?.stdin,
     });
 
@@ -160,7 +161,7 @@ export async function runScriptAsync(
   aliases: AliasTable | undefined,
   functions: Map<string, import('@/bash/parser/ASTNode').Command> | undefined,
   invocation: 'direct' | 'interpreter' = 'direct',
-  identity: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean } | undefined,
+  identity: { pid?: number; ppid?: number; initialExitCode?: number; interactive?: boolean; dashDiagnostics?: boolean } | undefined,
   io: IOContext,
   inherited?: Record<string, string>,
 ): Promise<ScriptResult> {
@@ -207,7 +208,7 @@ export async function runScriptContentAsync(
     | Promise<{ output: string; exitCode: number; stderr?: string; backgroundPid?: number }>,
   variables?: Record<string, string>,
   io?: IOContext,
-  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; interactive?: boolean; interrupt?: InterruptToken },
+  identity?: { pid?: number; ppid?: number; initialExitCode?: number; daemonMode?: boolean; interactive?: boolean; dashDiagnostics?: boolean; interrupt?: InterruptToken },
   aliases?: AliasTable,
   functions?: Map<string, import('@/bash/parser/ASTNode').Command>,
 ): Promise<ScriptResult> {
@@ -230,6 +231,7 @@ export async function runScriptContentAsync(
       functions,
       daemonMode: identity?.daemonMode,
       interactive: identity?.interactive,
+      dashDiagnostics: identity?.dashDiagnostics,
       interrupt: identity?.interrupt,
     });
 
