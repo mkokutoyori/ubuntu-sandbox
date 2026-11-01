@@ -1,6 +1,6 @@
 /**
- * vim 9.1 : `:function`, `:call`, `:echo`, `:return`, `:if`/`:for`/`:while`, `:execute`, `:source`, `:delfunction`, les portées l: a: s: et les fonctions de dictionnaire. 70 scripts rejoués sur le vrai vim (`vim -Nu NONE -es -S`, curseur en ligne 1, tampon [L1, L2]) : les lignes affichées par :echo et les erreurs, dans l'ordre erreurs puis affichages.
- * Mesure de départ : le moteur n'avait ni :function, ni :call, ni :echo, ni :source ; les 70 cas tombent avant, sans témoin autre que les cas dont la sortie attendue est vide.
+ * vim 9.1 : `:function`, `:call`, `:echo`, `:return`, `:if`/`:for`/`:while`, `:try`/`:catch`/`:finally`/`:throw`, `:echoerr`, `:const` (verrou profond des listes et dictionnaires), `:execute`, `:source`, `:delfunction`, les portees l: a: s: et les fonctions de dictionnaire. 106 scripts rejoues sur le vrai vim (`vim -Nu NONE -es -S`, curseur en ligne 1, tampon [L1, L2]) : les lignes affichees par :echo et les erreurs, dans l'ordre erreurs puis affichages.
+ * Mesure de depart : sans le moteur de script les 106 cas tombent ; contre le moteur de script sans :try, :throw, :echoerr ni :const, 36 cas tombent (les 70 autres sont des temoins de non-regression).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -79,6 +79,42 @@ const SCRIPTS: ReadonlyArray<readonly [readonly string[], string]> = [
   [["function! Nm()", "  normal! ihi", "endfunction", "call Nm()", "echo getline(1)"], "hiL1"],
   [["function! Ts(...)", "  return a:0 ? a:1 : 'none'", "endfunction", "echo Ts() Ts('v')"], "none v"],
   [["function! Nest()", "  function! Inner()", "    return 1", "  endfunction", "  return 2", "endfunction", "echo Nest()", "echo Inner()"], "2\n1"],
+  [["try | echo undefinedvar | catch | echo v:exception | endtry"], "Vim(echo):E121: Undefined variable: undefinedvar"],
+  [["try | throw 'boom' | catch /boom/ | echo 'got' v:exception | endtry"], "got boom"],
+  [["try | throw 'boom' | catch /other/ | echo 'no' | endtry", "echo 'after'"], "E605: Exception not caught: boom"],
+  [["try | throw 'boom' | catch /other/ | echo 'no' | endtry"], "E605: Exception not caught: boom"],
+  [["try | let x = [][1] | catch | echo v:exception | endtry"], "Vim(let):E684: List index out of range: 1"],
+  [["try | call Nope() | catch | echo v:exception | endtry"], "Vim(call):E117: Unknown function: Nope"],
+  [["try | echo 1 | finally | echo 'fin' | endtry"], "1\nfin"],
+  [["try | throw 'a' | catch | echo 'c1' | finally | echo 'fin' | endtry"], "c1\nfin"],
+  [["try | throw 'a' | finally | echo 'fin2' | endtry"], "fin2\nE605: Exception not caught: a"],
+  [["try | throw 'a' | catch /a/ | echo 'x' | finally | echo 'y' | endtry", "echo 'z'"], "x\ny\nz"],
+  [["function! F()", "  try", "    return 'inTry'", "  finally", "    echo 'cleanup'", "  endtry", "endfunction", "echo F()"], "cleanup\ninTry"],
+  [["function! G()", "  throw 'fromG'", "endfunction", "try | call G() | catch /fromG/ | echo v:exception | endtry"], "fromG"],
+  [["function! G()", "  throw 'fromG'", "endfunction", "echo 'a'", "call G()", "echo 'b'"], "a\nE605: Exception not caught: fromG"],
+  [["try | try | throw 'in' | catch /x/ | echo 'no' | endtry | catch | echo 'outer' v:exception | endtry"], "outer in"],
+  [["try | echo [1][5] | catch /E684/ | echo 'E684 caught' | endtry"], "E684 caught"],
+  [["try | throw 'a' | catch /a/ | throw 'b' | endtry", "echo 'z'"], "E605: Exception not caught: b"],
+  [["try | echoerr 'ee' | catch | echo v:exception | endtry"], "Vim(echoerr):ee"],
+  [["try | throw 1+1 | catch | echo v:exception | endtry"], "2"],
+  [["try | for i in [1,2,3] | if i == 2 | throw 'at' . i | endif | endfor | catch | echo v:exception | endtry"], "at2"],
+  [["try", "  echo 'body'", "catch", "  echo 'no'", "endtry"], "body"],
+  [["try", "  throw 'x'", "catch /^x$/", "  echo 'anchored'", "endtry"], "anchored"],
+  [["try | throw 'abc' | catch /b/ | echo 'b' | catch /a/ | echo 'a' | endtry"], "b"],
+  [["try | throw 'abc' | catch /z/ | echo 'z' | catch /c/ | echo 'c' | endtry"], "c"],
+  [["let r = []", "for i in range(3)", "  try", "    if i == 1 | continue | endif", "    call add(r, i)", "  finally", "    call add(r, 'f')", "  endtry", "endfor", "echo r"], "[0, 'f', 'f', 2, 'f']"],
+  [["const K = 3", "echo K"], "3"],
+  [["const K = 3", "let K = 4"], "E741: Value is locked: K"],
+  [["const K = 3", "const K = 5"], "E995: Cannot modify existing variable"],
+  [["const L = [1,2]", "call add(L, 3)", "echo L"], "E741: Value is locked: add() argument\n[1, 2]"],
+  [["const L = [1,2]", "let L[0] = 9"], "E741: Value is locked: L[0] = 9"],
+  [["const D = {'a': 1}", "let D.a = 2"], "E741: Value is locked: D.a = 2"],
+  [["const K = 3", "unlet K", "echo exists('K')"], "0"],
+  [["const [A, B] = [1, 2]", "echo A B"], "1 2"],
+  [["echoerr 'bad' 'thing'", "echo 'q'"], "bad thing\nq"],
+  [["throw 'top'", "echo 'never'"], "E605: Exception not caught: top"],
+  [["function! F()", "  const c = 1", "  let c = 2", "endfunction", "call F()"], "E741: Value is locked: c"],
+  [["function! F()", "  const c = [1]", "  call add(c, 2)", "  return c", "endfunction", "echo F()"], "E741: Value is locked: add() argument\n[1]"],
 ];
 
 function run(script: readonly string[]): string {
