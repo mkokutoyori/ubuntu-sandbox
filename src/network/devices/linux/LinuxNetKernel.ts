@@ -240,7 +240,7 @@ export interface LinuxNetKernel {
   ): ConnectedUdpSocket | Errno;
 
   udpListen(
-    port: number, processName: string, owner: { pid?: number; uid?: number },
+    port: number, processName: string, owner: { pid?: number; uid?: number; reusePort?: boolean },
     onDatagram?: (payload: Uint8Array, from: { address: string; port: number }) => void, address?: string,
   ): Errno | null;
 

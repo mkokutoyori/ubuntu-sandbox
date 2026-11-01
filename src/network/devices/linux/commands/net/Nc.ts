@@ -277,7 +277,7 @@ function runListen(ctx: LinuxCommandContext, opts: NetcatOptions, out: NcOutput,
   if (opts.udp) {
     const pid = ctx.executor.currentPid();
     let announced = false;
-    const failure = ctx.net.udpListen(port, 'nc', { pid, uid: ownerUid },
+    const failure = ctx.net.udpListen(port, 'nc', { pid, uid: ownerUid, reusePort: true },
       (payload, from) => {
         if (opts.verbose && !announced) ctx.executor.emitLateStderr(pid, `${reportSock(ctx, 'Connection received', from.address, from.port, opts)}\n`);
         announced = !opts.keep;

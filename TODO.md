@@ -768,7 +768,8 @@ Mesure avec `netcmds-oracle.test.ts` (corpus `nc-1.226.json`, binaire reel dans 
   prise echoue en silence, comme sur le noyau d'enregistrement), `-V` (refuse comme sur Linux).
 - Deux `nc -l 9000` TCP du meme uid coexistent (SO_REUSEPORT : `TcpStack` garde les pairs d'un groupe et choisit l'ecouteur d'un SYN
   par hachage de la source, `SocketTable` garde une ligne par ecouteur, la fermeture se fait par pid ; sonde `probe-nc-so-reuseport`).
-  Reste l'UDP (`nc -lu`) : `UdpPortTable` garde un seul ecouteur par port.
+  `nc -lu` suit le meme principe : `EndHost` garde les membres d'un groupe par port, choisit le destinataire d'un datagramme par le meme
+  hachage de la source (`core/reusePortHash`) et ferme le membre du processus qui meurt.
 - Les messages `-v` de l'ecoute (« Listening on 0.0.0.0 9000 ») dependent de la resolution inverse
   (`getnameinfo`) : sur la machine d'enregistrement le DNS injoignable donne « nc: getnameinfo:
   Temporary failure in name resolution » pour un joker, donc seul 127.0.0.1 (« localhost », via

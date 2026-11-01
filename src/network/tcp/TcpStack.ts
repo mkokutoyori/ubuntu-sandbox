@@ -1,3 +1,4 @@
+import { reusePortHash } from '@/network/core/reusePortHash';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import type { IEventBus } from '@/events/EventBus';
@@ -833,12 +834,6 @@ const ABORT_SENDS_RESET: ReadonlySet<TcpState> = new Set<TcpState>([
 ]);
 
 const SOCKET_KEY_COLLATOR = new Intl.Collator();
-
-function flowHash(ip: string, port: number): number {
-  let hash = 2166136261;
-  for (const char of `${ip}:${port}`) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0;
-  return hash;
-}
 
 export class TcpStack {
   private listeners = new Map<string, TcpListener>();
@@ -3510,7 +3505,7 @@ export class TcpStack {
       const candidates = this.membersAt(makeListenerKey(address, port)).filter((listener) => listener.accepting
         && (device === null || listener.boundDevice === null || listener.boundDevice === device));
       if (candidates.length === 0) continue;
-      return candidates.length === 1 || from === undefined ? candidates[0] : candidates[flowHash(from.ip, from.port) % candidates.length];
+      return candidates.length === 1 || from === undefined ? candidates[0] : candidates[reusePortHash(from.ip, from.port) % candidates.length];
     }
     return undefined;
   }

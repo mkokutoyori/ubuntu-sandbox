@@ -5,9 +5,10 @@
  * Le simulateur refusait le second (SocketTable.bind et TcpStack.listen n'admettaient qu'un ecouteur par adresse et port).
  * Corrige dans les trois couches : TcpStack garde les pairs d'un groupe (choix de l'ecouteur par hachage de la source,
  * fermeture par pid), SocketTable admet les liaisons du meme proprietaire et ne libere la cle qu'avec la derniere, et le puits
- * d'ecoute les relie par pid. Reste hors de ce lot : UDP (`nc -lu`), qui garde un ecouteur par port (TODO).
+ * d'ecoute les relie par pid. L'UDP (`nc -lu`) suit le meme principe : EndHost garde les membres d'un groupe par port, choisit le
+ * destinataire d'un datagramme par le meme hachage de la source (core/reusePortHash) et ferme le membre du processus qui meurt.
  *
- * Discrimine par `git stash` sur src/network : 3 des 6 cas tombent avant. TEMOINS : un seul `nc -l` ecoute ; un ecouteur d'un autre service
+ * Discrimine par `git stash` sur src/network : 3 des 6 cas TCP tombent avant le lot TCP, 2 des 3 cas UDP avant le lot UDP. TEMOINS : un seul `nc -l` ecoute ; un ecouteur d'un autre service
  * garde son EADDRINUSE ; une connexion atteint l'un des deux (avant, elle atteignait l'unique ecouteur).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -24,6 +25,7 @@ async function lab(): Promise<(command: string) => Promise<string>> {
 }
 
 const rows = (output: string): number => output.split('\n').filter((line) => line.includes(':9000 ')).length;
+const udpRows = (output: string): number => output.split('\n').filter((line) => line.startsWith('UNCONN') && line.includes(':9000 ')).length;
 
 describe('nc -l and SO_REUSEPORT', () => {
   it('WITNESS — one nc -l listens', async () => {
@@ -66,5 +68,26 @@ describe('nc -l and SO_REUSEPORT', () => {
     await run('nc -l 9000 &');
     await run('nc -l 9000 &');
     expect(await run('printf "hello\\n" | nc -N 127.0.0.1 9000; echo rc=$?')).toContain('rc=0');
+  });
+
+  it('two nc -lu on the same port are accepted and ss shows both', async () => {
+    const run = await lab();
+    await run('nc -lu 9000 &');
+    await run('nc -lu 9000 &');
+    expect(udpRows(await run('ss -lun'))).toBe(2);
+  });
+
+  it('killing one nc -lu leaves the other bound', async () => {
+    const run = await lab();
+    await run('nc -lu 9000 &');
+    await run('nc -lu 9000 &');
+    await run('kill %1');
+    expect(udpRows(await run('ss -lun'))).toBe(1);
+  });
+
+  it('WITNESS — a datagram still reaches a lone nc -lu', async () => {
+    const run = await lab();
+    await run('nc -lu 9000 &');
+    expect(await run('printf "x" | nc -u -w1 127.0.0.1 9000; echo rc=$?')).toContain('rc=0');
   });
 });

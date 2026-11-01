@@ -18,6 +18,7 @@
  *          └─ ICMP Packet (protocol 1)
  */
 
+import { reusePortHash } from '@/network/core/reusePortHash';
 import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/SystemClock';
 
@@ -3839,7 +3840,7 @@ export abstract class EndHost extends Equipment {
 
   public udpBind(
     port: number, listener: UdpListener, processName?: string,
-    owner: { pid?: number; uid?: number; service?: string; families?: readonly IpFamily[] } = {},
+    owner: { pid?: number; uid?: number; service?: string; families?: readonly IpFamily[]; reusePort?: boolean } = {},
   ): number | false {
     let bound = port;
     const taken: IpFamily[] = [];
@@ -3847,17 +3848,24 @@ export abstract class EndHost extends Equipment {
       bound = port === PORT_ANY ? this.socketTable.allocateEphemeralPort() : port;
       for (const family of owner.families ?? IPV4_ONLY) {
         this.socketTable.bind('udp', wildcardAddressOf(family), bound, owner.pid, processName, undefined,
-          { ownerUid: owner.uid, serviceName: owner.service });
+          { ownerUid: owner.uid, serviceName: owner.service, reusePort: owner.reusePort });
         taken.push(family);
       }
     } catch (error) {
-      for (const family of taken) this.socketTable.unbind('udp', wildcardAddressOf(family), bound);
+      for (const family of taken) this.socketTable.unbind('udp', wildcardAddressOf(family), bound, owner.pid);
       if (error instanceof Error && error.message.startsWith('EADDRINUSE')) return false;
       throw error;
     }
-    this.udpListeners.set(bound, listener);
+    if (owner.reusePort === true) {
+      const members = this.udpReusePortGroups.get(bound) ?? [];
+      members.push({ pid: owner.pid, listener });
+      this.udpReusePortGroups.set(bound, members);
+      this.udpListeners.set(bound, members[0].listener);
+    } else this.udpListeners.set(bound, listener);
     return bound;
   }
+
+  private readonly udpReusePortGroups = new Map<number, Array<{ pid: number | undefined; listener: UdpListener }>>();
 
   private readonly udpAddressListeners = new Map<string, { listener: UdpListener; boundDevice: string | null }>();
 
@@ -3988,7 +3996,7 @@ export abstract class EndHost extends Equipment {
   }
 
   public udpListen(
-    port: number, processName: string, owner: { pid?: number; uid?: number },
+    port: number, processName: string, owner: { pid?: number; uid?: number; reusePort?: boolean },
     onDatagram?: (payload: Uint8Array, from: { address: string; port: number }) => void, address?: string,
   ): Errno | null {
     const listener: UdpListener = onDatagram === undefined ? () => undefined : (delivery) => {
@@ -4173,9 +4181,19 @@ export abstract class EndHost extends Equipment {
     return this.udpListeners.has(port);
   }
 
-  public udpClose(port: number, family?: IpFamily): void {
+  public udpClose(port: number, family?: IpFamily, ownerPid?: number): void {
     for (const each of family === undefined ? DUAL_STACK : [family]) {
-      this.socketTable.unbind('udp', wildcardAddressOf(each), port);
+      this.socketTable.unbind('udp', wildcardAddressOf(each), port, ownerPid);
+    }
+    const group = this.udpReusePortGroups.get(port);
+    if (group !== undefined && ownerPid !== undefined) {
+      const remaining = group.filter((member) => member.pid !== ownerPid);
+      if (remaining.length > 0) {
+        this.udpReusePortGroups.set(port, remaining);
+        this.udpListeners.set(port, remaining[0].listener);
+        return;
+      }
+      this.udpReusePortGroups.delete(port);
     }
     const stillHeld = this.socketTable.getAll().some((entry) => entry.protocol === 'udp'
       && entry.localPort === port && entry.localAddress === wildcardAddressOf(ipFamilyOf(entry.localAddress)));
@@ -4195,7 +4213,7 @@ export abstract class EndHost extends Equipment {
       if (sock.remoteAddress === '*') {
         if (sock.protocol === 'udp') {
           const family = ipFamilyOf(sock.localAddress);
-          if (sock.localAddress === wildcardAddressOf(family)) this.udpClose(sock.localPort, family);
+          if (sock.localAddress === wildcardAddressOf(family)) this.udpClose(sock.localPort, family, sock.reusePort === true ? sock.pid : undefined);
           else this.udpCloseAddress(sock.localAddress, sock.localPort);
           continue;
         }
@@ -4550,7 +4568,10 @@ export abstract class EndHost extends Equipment {
       bound.listener({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC, ipOptions });
       return true;
     }
-    const listener = this.udpListeners.get(udp.destinationPort);
+    const group = this.udpReusePortGroups.get(udp.destinationPort);
+    const listener = group !== undefined && group.length > 1
+      ? group[reusePortHash(sourceIP.toString(), udp.sourcePort) % group.length].listener
+      : this.udpListeners.get(udp.destinationPort);
     if (!listener) return false;
     listener({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC, ipOptions });
     return true;
