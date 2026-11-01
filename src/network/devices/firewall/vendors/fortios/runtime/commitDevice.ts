@@ -402,6 +402,12 @@ export function buildCommitDevice(
       removeCommunityList(name) {
         fw.getRouting().removeCommunityList(name);
       },
+      applyKeyChain(patch) {
+        fw.getRouting().applyKeyChain(patch);
+      },
+      removeKeyChain(name) {
+        fw.getRouting().removeKeyChain(name);
+      },
       removeAsPathList(name) {
         fw.getRouting().removeAsPathList(name);
       },

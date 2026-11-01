@@ -187,6 +187,13 @@ const RIP_INTERFACE: FortiTableSpec = {
       { keyword: '1', description: 'RIPv1.' },
       { keyword: '2', description: 'RIPv2.' },
     ], '2'),
+    choice('auth-mode', 'Authentication mode.', [
+      { keyword: 'none', description: 'None.' },
+      { keyword: 'text', description: 'Clear text authentication.' },
+      { keyword: 'md5', description: 'Meticulous MD5 mode.' },
+    ], 'none'),
+    { ...text('auth-string', 'RIP authentication string (password).'), secret: true },
+    reference('auth-keychain', 'Authentication key-chain name.', ['router key-chain']),
   ],
 };
 
@@ -223,6 +230,10 @@ export const ROUTER_RIP: FortiTableSpec = {
         name: entry.key,
         sendVersion: entry.effective('send-version')[0] === '1' ? 1 : 2,
         receiveVersion: entry.effective('receive-version')[0] === '1' ? 1 : 2,
+        authMode: entry.effective('auth-mode')[0] === 'text' ? 'text' as const
+          : entry.effective('auth-mode')[0] === 'md5' ? 'md5' as const : undefined,
+        authString: entry.effective('auth-string')[0],
+        authKeychain: entry.effective('auth-keychain')[0] || undefined,
       })),
     });
   },
@@ -591,6 +602,53 @@ export const ROUTER_COMMUNITY_LIST: FortiTableSpec = {
   },
 };
 
+const KEY_CHAIN_KEY: FortiTableSpec = {
+  path: ['router', 'key-chain', 'key'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Configuration method to edit key settings.',
+  attributes: [
+    { ...word('id', 'Key ID (0 - 2147483647).'), readOnly: true },
+    {
+      ...choice('algorithm', 'Cryptographic algorithm.', [
+        { keyword: 'md5', description: 'MD5.' },
+      ], 'md5'),
+    },
+    { ...text('key-string', 'Password for the key (maximum = 64 characters).'), secret: true },
+  ],
+};
+
+export const ROUTER_KEY_CHAIN: FortiTableSpec = {
+  path: ['router', 'key-chain'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 244,
+  help: 'Configure key-chain.',
+  attributes: [
+    { ...word('name', 'Key-chain name.'), readOnly: true },
+  ],
+  children: [KEY_CHAIN_KEY],
+  onCommit(object, context) {
+    context.device.applyKeyChain({
+      name: object.key,
+      keys: object.childEntries('key').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        key: entry.effective('key-string')[0] ?? '',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeKeyChain(key);
+  },
+};
+
 export const ROUTER_ROUTE_MAP: FortiTableSpec = {
   path: ['router', 'route-map'],
   kind: 'table',
@@ -632,5 +690,5 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
 
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
   Object.freeze([
-    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_COMMUNITY_LIST, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
+    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_COMMUNITY_LIST, ROUTER_KEY_CHAIN, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
   ]);

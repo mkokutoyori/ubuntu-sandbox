@@ -27,7 +27,7 @@ import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import {
   OSPF_DEFAULTS, RIP_DEFAULTS,
-  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch, type AsPathListPatch, type CommunityListPatch,
+  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch, type AsPathListPatch, type CommunityListPatch, type KeyChainPatch,
 } from './DynamicRoutingTypes';
 import { FirewallBgp } from './FirewallBgp';
 import type { FirewallRoute } from '../l3/RouteTable';
@@ -97,6 +97,7 @@ export class FirewallRouting {
   private readonly prefixLists = new IpPrefixListStore();
   private readonly routePolicies = new RoutePolicyStore();
   private readonly asPathLists = new AsPathListStore();
+  private readonly keyChains = new Map<string, KeyChainPatch>();
   private readonly communityLists = new CommunityListStore();
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
@@ -221,6 +222,14 @@ export class FirewallRouting {
 
   removeCommunityList(name: string): void {
     this.communityLists.remove(name);
+  }
+
+  applyKeyChain(patch: KeyChainPatch): void {
+    this.keyChains.set(patch.name, patch);
+  }
+
+  removeKeyChain(name: string): void {
+    this.keyChains.delete(name);
   }
 
   removeAsPathList(name: string): void {
@@ -473,6 +482,13 @@ export class FirewallRouting {
         const declared = this.ripConfig.interfaces.find(entry => entry.name === name);
         if (!declared) return null;
         return { send: declared.sendVersion, receive: declared.receiveVersion };
+      },
+      getInterfaceAuth: (name: string) => {
+        const declared = this.ripConfig.interfaces.find(entry => entry.name === name);
+        if (declared?.authMode === 'text') return { mode: 'text' as const, keyId: 0, key: declared.authString ?? '' };
+        if (declared?.authMode !== 'md5') return null;
+        const lowest = [...(this.keyChains.get(declared.authKeychain ?? '')?.keys ?? [])].sort((a, b) => a.id - b.id)[0];
+        return { mode: 'md5' as const, keyId: lowest?.id ?? 0, key: lowest?.key ?? '' };
       },
       getPortIP: (name: string) => this.portOf(name)
         ? new IPAddress(this.portOf(name)!.ip) : null,

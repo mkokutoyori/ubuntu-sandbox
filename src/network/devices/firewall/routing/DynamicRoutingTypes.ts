@@ -9,6 +9,14 @@ export interface RipInterfaceSettings {
   readonly name: string;
   readonly sendVersion: 1 | 2;
   readonly receiveVersion: 1 | 2;
+  readonly authMode?: 'text' | 'md5';
+  readonly authString?: string;
+  readonly authKeychain?: string;
+}
+
+export interface KeyChainPatch {
+  readonly name: string;
+  readonly keys: ReadonlyArray<{ readonly id: number; readonly key: string }>;
 }
 
 export interface RipConfiguration {
