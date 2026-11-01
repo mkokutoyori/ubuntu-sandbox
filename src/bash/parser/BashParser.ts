@@ -59,11 +59,14 @@ type ParseContext = 'if' | 'loop' | 'case';
 
 const STRAY_RESERVED_WORDS: ReadonlySet<string> = new Set(['then', 'elif', 'else', 'fi', 'do', 'done', 'esac']);
 
+const CLOSING_KEYWORDS: ReadonlySet<string> = new Set(['fi', 'done', 'esac', 'then', 'do']);
+
 export class BashParser {
   private tokens: Token[] = [];
   private pos: number = 0;
   /** Stack of open compound contexts; the top governs which reserved words terminate. */
   private contextStack: ParseContext[] = [];
+  private closerStack: string[] = [];
 
   /**
    * Parse a token stream into a Program AST.
@@ -85,6 +88,7 @@ export class BashParser {
     this.tokens = tokens;
     this.pos = 0;
     this.contextStack = [];
+    this.closerStack = [];
     const commands: AndOrList[] = [];
     const endLines: number[] = [];
     let error: ParserError | null = null;
@@ -112,12 +116,16 @@ export class BashParser {
     return { program: makeProgram(makeCommandList(complete, position), position), error, resumeLine };
   }
 
-  private unexpected(token: Token): ParserError {
+  private unexpected(token: Token, expecting?: string): ParserError {
     const index = this.tokens.indexOf(token);
     const functionHeader = token.type === TokenType.LPAREN && index > 0 && this.tokens[index - 1].type === TokenType.WORD;
     const following = this.tokens[index + 1];
     const reported = functionHeader && following !== undefined && (following.type === TokenType.NEWLINE || following.type === TokenType.EOF) ? following : token;
-    return new ParserError(`Unexpected token '${reported.value}'`, reported.position, { token: reported });
+    const wordAfterHeader = functionHeader && following !== undefined && following.type === TokenType.WORD;
+    const closing = expecting ?? (wordAfterHeader ? ')' : (reported.type === TokenType.EOF ? this.closerStack[this.closerStack.length - 1] : undefined));
+    return new ParserError(`Unexpected token '${reported.value}'`, reported.position, {
+      token: reported, ...(closing === undefined ? {} : { expecting: closing }), ...(wordAfterHeader ? { asWord: true } : {}),
+    });
   }
 
   private parseCompoundList(): CommandList {
@@ -286,23 +294,23 @@ export class BashParser {
     this.expectWord('if');
     this.skipNewlines();
     return this.withContext('if', () => {
-      const condition = this.parseCompoundList();
+      const condition = this.withCloser('then', () => this.parseCompoundList());
       this.skipNewlines();
       this.expectWord('then');
       this.skipNewlines();
 
-      const thenBody = this.parseCompoundList();
+      const thenBody = this.withCloser('fi', () => this.parseCompoundList());
       this.skipNewlines();
 
       const elifClauses: ElifClause[] = [];
       while (this.checkWord('elif')) {
         this.advance();
         this.skipNewlines();
-        const elifCondition = this.parseCompoundList();
+        const elifCondition = this.withCloser('then', () => this.parseCompoundList());
         this.skipNewlines();
         this.expectWord('then');
         this.skipNewlines();
-        const elifBody = this.parseCompoundList();
+        const elifBody = this.withCloser('fi', () => this.parseCompoundList());
         this.skipNewlines();
         elifClauses.push({ condition: elifCondition, body: elifBody });
       }
@@ -311,7 +319,7 @@ export class BashParser {
       if (this.checkWord('else')) {
         this.advance();
         this.skipNewlines();
-        elseBody = this.parseCompoundList();
+        elseBody = this.withCloser('fi', () => this.parseCompoundList());
         this.skipNewlines();
       }
 
@@ -354,7 +362,7 @@ export class BashParser {
     return this.withContext('loop', () => {
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCompoundList();
+      const body = this.withCloser('done', () => this.parseCompoundList());
       this.skipNewlines();
       this.expectWord('done');
       const redirections = this.parseTrailingRedirections();
@@ -369,11 +377,11 @@ export class BashParser {
     this.expectWord('while');
     this.skipNewlines();
     return this.withContext('loop', () => {
-      const condition = this.parseCompoundList();
+      const condition = this.withCloser('do', () => this.parseCompoundList());
       this.skipNewlines();
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCompoundList();
+      const body = this.withCloser('done', () => this.parseCompoundList());
       this.skipNewlines();
       this.expectWord('done');
       const redirections = this.parseTrailingRedirections();
@@ -388,11 +396,11 @@ export class BashParser {
     this.expectWord('until');
     this.skipNewlines();
     return this.withContext('loop', () => {
-      const condition = this.parseCompoundList();
+      const condition = this.withCloser('do', () => this.parseCompoundList());
       this.skipNewlines();
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCompoundList();
+      const body = this.withCloser('done', () => this.parseCompoundList());
       this.skipNewlines();
       this.expectWord('done');
       const redirections = this.parseTrailingRedirections();
@@ -415,6 +423,7 @@ export class BashParser {
         items.push(this.parseCaseItem());
         this.skipNewlines();
       }
+      if (this.isAtEnd()) throw this.unexpected(this.peek(), ')');
       this.expectWord('esac');
       const redirections = this.parseTrailingRedirections();
       return { type: 'CaseClause', word, items, redirections, position: pos };
@@ -433,10 +442,12 @@ export class BashParser {
 
     this.expect(TokenType.RPAREN);
     this.skipNewlines();
+    if (this.isAtEnd()) throw this.unexpected(this.peek(), ';;');
 
     let body: CommandList | null = null;
     if (!this.isCaseTerminator() && !this.checkWord('esac')) {
-      body = this.parseCommandList();
+      body = this.withCloser(';;', () => this.parseCommandList());
+      if (this.isAtEnd()) throw this.unexpected(this.peek(), ';;');
     }
 
     let terminator: CaseTerminator = ';;';
@@ -489,7 +500,7 @@ export class BashParser {
     const pos = this.peek().position;
     this.expect(TokenType.LBRACE);
     this.skipNewlines();
-    const body = this.parseCompoundList();
+    const body = this.withCloser('}', () => this.parseCompoundList());
     this.skipNewlines();
     this.expect(TokenType.RBRACE);
     const redirections = this.parseTrailingRedirections();
@@ -500,7 +511,7 @@ export class BashParser {
     const pos = this.peek().position;
     this.expect(TokenType.LPAREN);
     this.skipNewlines();
-    const body = this.parseCompoundList();
+    const body = this.withCloser(')', () => this.parseCompoundList());
     this.skipNewlines();
     this.expect(TokenType.RPAREN);
     const redirections = this.parseTrailingRedirections();
@@ -645,7 +656,7 @@ export class BashParser {
     return this.withContext('loop', () => {
       this.expectWord('do');
       this.skipNewlines();
-      const body = this.parseCompoundList();
+      const body = this.withCloser('done', () => this.parseCompoundList());
       this.skipNewlines();
       this.expectWord('done');
       return { type: 'CStyleForClause', init, cond, update, body, position: pos };
@@ -889,7 +900,7 @@ export class BashParser {
   private expect(type: TokenType): Token {
     if (!this.check(type)) {
       const tok = this.peek();
-      throw this.unexpected(tok);
+      throw this.unexpected(tok, type === TokenType.RPAREN ? ')' : type === TokenType.RBRACE ? '}' : undefined);
     }
     return this.advance();
   }
@@ -897,7 +908,7 @@ export class BashParser {
   private expectWord(word: string): Token {
     if (!this.checkWord(word)) {
       const tok = this.peek();
-      throw this.unexpected(tok);
+      throw this.unexpected(tok, CLOSING_KEYWORDS.has(word) ? word : undefined);
     }
     return this.advance();
   }
@@ -970,6 +981,12 @@ export class BashParser {
   }
 
   /** Run `fn` with `ctx` pushed on the context stack. */
+  private withCloser<T>(closer: string, fn: () => T): T {
+    this.closerStack.push(closer);
+    try { return fn(); }
+    finally { this.closerStack.pop(); }
+  }
+
   private withContext<T>(ctx: ParseContext, fn: () => T): T {
     this.contextStack.push(ctx);
     try { return fn(); }

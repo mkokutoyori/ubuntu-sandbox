@@ -211,6 +211,7 @@ export interface InterpreterOptions {
   /** True for a shell reading commands from a terminal (aliases expand). */
   interactive?: boolean;
   fromStandardInput?: boolean;
+  dashDiagnostics?: boolean;
   interrupt?: InterruptToken;
 }
 
@@ -288,6 +289,7 @@ export class BashInterpreter {
   private readonly functionSources = new Map<string, string>();
   private runningSource: string | null = null;
   private readonly fromStandardInput: boolean;
+  private readonly dashDiagnostics: boolean;
   private readonly jobs = new Map<string, number>();
   private jobCounter = 0;
 
@@ -299,6 +301,7 @@ export class BashInterpreter {
     this.daemonMode = options.daemonMode ?? false;
     this.interactive = options.interactive ?? false;
     this.fromStandardInput = options.fromStandardInput ?? false;
+    this.dashDiagnostics = options.dashDiagnostics ?? false;
     this.interrupt = options.interrupt;
     if (options.stdin !== undefined) this.stdin = new StdinSource(options.stdin);
     const now = (): number => this.io?.wallClock?.().nowMs() ?? Date.now();
@@ -694,6 +697,12 @@ export class BashInterpreter {
   }
 
   private reportSyntaxFailure(failure: SyntaxFailure, label: string): void {
+    const dashed = this.dashDiagnostics ? failure.diagnostics[0]?.dash : undefined;
+    if (dashed !== undefined) {
+      this.log.write(2, `${label}: ${dashed}\n`, 'never');
+      this.env.lastExitCode = 2;
+      return;
+    }
     for (const diagnostic of failure.diagnostics) {
       this.log.write(2, `${label}: line ${diagnostic.line}: ${diagnostic.text}\n`, 'never');
     }
