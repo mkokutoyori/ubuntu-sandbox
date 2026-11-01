@@ -490,7 +490,15 @@ export class PSParser {
     return { type: 'PipelineExpression', pipeline: makePipeline(commands, pos), redirections, position: pos };
   }
 
+  private startsDashedGenericToken(): boolean {
+    const head = this.peek();
+    const next = this.peekAt(1);
+    return head.type === PSTokenType.PARAMETER && next !== undefined && next.type === PSTokenType.ASSIGN
+      && next.position.offset === head.end;
+  }
+
   private startsCommandArgument(): boolean {
+    if (this.startsDashedGenericToken()) return true;
     const t = this.peek().type;
     if ((t === PSTokenType.MINUS || t === PSTokenType.PLUS) && this.standsAlone()) return true;
     if (this.canStartExpression()) return true;
@@ -583,7 +591,7 @@ export class PSParser {
 
     // Parse parameters and arguments
     while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE) && !this.isRedirection()) {
-      if (this.check(PSTokenType.PARAMETER)) {
+      if (this.check(PSTokenType.PARAMETER) && !this.startsDashedGenericToken()) {
         const parameter = this.parseCommandParameter();
         parameters.push(parameter);
         sequence.push(parameter);
@@ -751,6 +759,7 @@ export class PSParser {
    * postfix path.
    */
   private parseCommandArgumentAtom(): PSExpression {
+    if (this.startsDashedGenericToken()) return this.parseBareword(false, true);
     const tok = this.peek();
     if ((tok.type === PSTokenType.MINUS || tok.type === PSTokenType.PLUS) && this.standsAlone()) {
       return this.parseBareword(false);
@@ -811,14 +820,14 @@ export class PSParser {
     return makeRange(left, end, left.position);
   }
 
-  private parseBareword(withRange: boolean): PSExpression {
+  private parseBareword(withRange: boolean, dashed = false): PSExpression {
     const pos = this.pos_();
     const head = this.advance();
     // A bareword stands for itself, so it carries the spelling typed —
     // `Data` used as an argument is the string `Data`, not the `data`
     // keyword the lexer normalized for statement position.
-    let value = tokenText(head);
-    let prevEnd = head.position.offset + head.value.length;
+    let value = dashed ? `-${tokenText(head)}` : tokenText(head);
+    let prevEnd = dashed ? head.end ?? head.position.offset + head.value.length + 1 : head.position.offset + head.value.length;
     let expandable = false;
     for (;;) {
       const nxt = this.peek();
@@ -831,7 +840,13 @@ export class PSParser {
         prevEnd = nxt.position.offset + text.length;
         continue;
       }
-      if (nxt.type === PSTokenType.ASSIGN) { value += '='; this.advance(); break; }
+      if (nxt.type === PSTokenType.ASSIGN) {
+        value += '=';
+        this.advance();
+        if (!dashed) break;
+        prevEnd = nxt.position.offset + 1;
+        continue;
+      }
       if (nxt.type === PSTokenType.RANGE && !withRange) break;
       if (nxt.type === PSTokenType.STRING_SINGLE
           || (nxt.type === PSTokenType.STRING_DOUBLE && !/[$`]/.test(nxt.value))) {
@@ -957,7 +972,8 @@ export class PSParser {
       const args:   PSExpression[]       = [];
       const sequence: Array<PSCommandParameter | PSExpression> = [];
       const takeParameters = (): void => {
-        while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)) {
+        while (this.check(PSTokenType.PARAMETER) && !PS_AMBIGUOUS_OPERATOR_PARAMS.has(this.peek().value)
+               && !this.startsDashedGenericToken()) {
           const parameter = this.parseCommandParameter();
           params.push(parameter);
           sequence.push(parameter);
@@ -966,7 +982,7 @@ export class PSParser {
       takeParameters();
       while (!this.isAtEnd() && !this.isTerminator() && !this.check(PSTokenType.PIPE)
              && !this.isRedirection()
-             && this.canStartExpression()) {
+             && (this.canStartExpression() || this.startsDashedGenericToken())) {
         const argument = this.parseCommandArgument();
         args.push(argument);
         sequence.push(argument);

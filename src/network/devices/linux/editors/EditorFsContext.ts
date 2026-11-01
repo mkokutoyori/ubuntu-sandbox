@@ -37,6 +37,10 @@ export interface EditorFsContext {
   userNames?(): string[];
   environmentVariable?(name: string): string | null;
   environmentNames?(): string[];
+  executableAt?(path: string): boolean;
+  linkInfo?(path: string): { type: string; permissions: number; target?: string } | null;
+  removeEntry?(path: string, kind: 'file' | 'directory' | 'tree'): boolean;
+  renameEntry?(from: string, to: string): boolean;
   makeDirectory?(path: string, mode: number): string | null;
   changeMode?(path: string, mode: number): boolean;
   readError?(path: string): string | null;

@@ -791,7 +791,7 @@ export class WindowsTerminalSession extends TerminalSession {
     }
 
     if (lower === 'nslookup') {
-      this.enterNslookup();
+      await this.enterNslookup();
       return;
     }
 
@@ -1072,12 +1072,6 @@ export class WindowsTerminalSession extends TerminalSession {
     return true;
   }
 
-  /**
-   * `nslookup` with no arguments (PRD-Nslookup-Dig-Rndc-Runas.md §2.1.1) —
-   * the same interactive `>` REPL as Linux. Windows previously had no
-   * interactive mode at all; this reuses `NslookupSubShell` as-is (DRY)
-   * instead of writing a second, parallel implementation.
-   */
   private async enterTelnet(args: string[]): Promise<void> {
     const sub = await launchTelnet(args, {
       device: this.device,
@@ -1094,17 +1088,17 @@ export class WindowsTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  private enterNslookup(): void {
+  private async enterNslookup(): Promise<void> {
     const dev = this.device instanceof WindowsPC ? this.device : null;
-    const deps = dev?.getInteractiveNslookupDeps() ?? null;
-    if (!deps) {
+    const interpreter = dev?.getInteractiveNslookup() ?? null;
+    if (!interpreter) {
       this.addLine("*** Can't find UnKnown: No DNS servers available", 'error');
       this.addLine('The DNS Client (Dnscache) service is not running.', 'error');
       this.notify();
       return;
     }
-    const shell = new NslookupSubShell(deps);
-    for (const line of shell.bannerLines()) this.addLine(line);
+    const shell = new NslookupSubShell(interpreter);
+    for (const line of await shell.bannerLines()) this.addLine(line);
     this.activeSubShell = shell;
     this._inputBuf = '';
     this.notify();

@@ -3,10 +3,11 @@ import { lowerCaseChar, upperCaseChar } from './VimEditing';
 import { formatExponentialSafe, formatFixedSafe, formatFloatDefault, formatVimGeneral } from './VimFloat';
 import { compileVimPattern, type VimRegExp } from './VimPattern';
 import { expandReplacement } from './VimSubstitute';
-import { inVimOrder } from './VimHashOrder';
+import { inVimOrder, TrackedEntries } from './VimHashOrder';
 import { formatLocalTime } from '@/network/devices/linux/system/SystemInfo';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { sha256 } from '@/crypto/hash/sha256';
+import { globPaths, hasWildcard } from './VimGlob';
 
 export class VimVariables {
   private readonly stored = new Map<string, VimValue>();
@@ -47,16 +48,30 @@ export interface ExpressionHost {
   submatch(index: number): string | undefined;
   mark(name: string): { line: number; col: number } | null;
   register(name: string): string | null;
+  expressionText(): string;
+  setRegister(name: string, lines: string[], linewise: boolean, append: boolean, fromList: boolean): void;
   option(name: string, scope: 'effective' | 'local' | 'global'): boolean | number | string | undefined;
   environment(name: string): string;
   environmentOrNull(name: string): string | null;
   environmentNames(): string[];
+  assignEnvironment(name: string, value: string | null): void;
   shellStatus(): number;
   pathKind(path: string): 'missing' | 'file' | 'directory' | 'device' | 'fifo';
   readText(path: string): string | null;
   directoryEntries(path: string): string[] | null;
   workingDirectory(): string;
   hostName(): string;
+  executableAt(path: string): boolean;
+  linkInfo(path: string): { type: string; permissions: number; target?: string } | null;
+  writeText(path: string, text: string): boolean;
+  makeDirectory(path: string, mode: number): string | null;
+  removeEntry(path: string, kind: 'file' | 'directory' | 'tree'): boolean;
+  renameEntry(from: string, to: string): boolean;
+  homeDirectory(): string | null;
+  bufferName(): string;
+  temporaryName(): string;
+  wordUnderCursor(big: boolean): string;
+  resolvePath(path: string): string;
   processId(): number;
   shell(command: string, input: string | null): string;
   assignOption(name: string, value: string | number): string | null;
@@ -130,7 +145,10 @@ function list(items: VimValue[]): VimList {
 }
 
 function dict(entries: Map<string, VimValue>): VimDict {
-  return { kind: 'dict', entries };
+  if (entries instanceof TrackedEntries) return { kind: 'dict', entries };
+  const tracked = new TrackedEntries<VimValue>();
+  for (const [key, item] of entries) tracked.set(key, item);
+  return { kind: 'dict', entries: tracked };
 }
 
 function special(name: SpecialName): VimValue {
@@ -720,7 +738,7 @@ function sortList(context: Context, target: VimList, flags: VimValue | undefined
 
 function deepCopy(value: VimValue): VimValue {
   if (value.kind === 'list') return list(value.items.map(deepCopy));
-  if (value.kind === 'dict') return dict(new Map([...value.entries].map(([key, item]) => [key, deepCopy(item)])));
+  if (value.kind === 'dict') return dict(new Map(inVimOrder(value.entries).map(([key, item]) => [key, deepCopy(item)] as const)));
   return value;
 }
 
@@ -1021,7 +1039,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
   ['copy', { min: 1, max: 1, run: (args) => {
     const value = args[0];
     if (value.kind === 'list') return list([...value.items]);
-    if (value.kind === 'dict') return dict(new Map(value.entries));
+    if (value.kind === 'dict') return dict(new Map(inVimOrder(value.entries)));
     return value;
   } }],
   ['deepcopy', { min: 1, max: 2, run: (args) => deepCopy(args[0]) }],
@@ -1071,7 +1089,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
       context.soft('E712: Argument of mapnew() must be a List or Dictionary');
       return num(0);
     }
-    const copy: VimValue = source.kind === 'list' ? list([...source.items]) : dict(new Map(source.entries));
+    const copy: VimValue = source.kind === 'list' ? list([...source.items]) : dict(new Map(inVimOrder(source.entries)));
     return mapOrFilter([copy, args[1]], context, true);
   } }],
   ['reduce', { min: 2, max: 3, run: (args, context) => {
@@ -1121,8 +1139,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     const name = context.stringOf(args[0], false);
     const text = context.host.pathKind(name) === 'file' ? context.host.readText(name) : null;
     if (text === null) {
-      context.soft(`E484: Can't open file ${name}`);
-      return list([]);
+      return context.fail(`E484: Can't open file ${name}`);
     }
     const binary = args[1] !== undefined && context.stringOf(args[1], false).includes('b');
     const limit = args[2] === undefined ? Number.MAX_SAFE_INTEGER : Number(context.numberOf(args[2], false));
@@ -1139,6 +1156,112 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
     const kept = args[1] === undefined ? names : names.filter((name) => context.numberOf(context.invoke(args[1], [str(name)]), false) !== 0n);
     return list(kept.map(str));
   } }],
+  ['mkdir', { min: 1, max: 3, run: (args, context) => {
+    const name = context.stringOf(args[0], false);
+    const flags = args[1] === undefined ? '' : context.stringOf(args[1], false);
+    const mode = args[2] === undefined ? 0o755 : Number(context.numberOf(args[2], false));
+    const failure = (): never => context.fail(`E739: Cannot create directory: ${name}`);
+    if (name === '' || /[^p]/.test(flags)) return name === '' ? failure() : context.fail('E474: Invalid argument');
+    if (flags.includes('p')) {
+      const parts = name.replace(/\/+$/, '').split('/');
+      for (let at = name.startsWith('/') ? 2 : 1; at <= parts.length; at++) {
+        const prefix = parts.slice(0, at).join('/');
+        if (prefix === '' || context.host.pathKind(prefix) === 'directory') continue;
+        if (context.host.makeDirectory(prefix, mode) !== null) return failure();
+      }
+      return num(1);
+    }
+    return context.host.makeDirectory(name, mode) === null ? num(1) : failure();
+  } }],
+  ['writefile', { min: 2, max: 3, run: (args, context) => {
+    const items = listOf(args[0], context)?.items;
+    const name = context.stringOf(args[1], false);
+    if (items === undefined) return num(-1);
+    const flags = args[2] === undefined ? '' : context.stringOf(args[2], false);
+    if (/[^bsSa]/.test(flags)) return context.fail('E474: Invalid argument');
+    const body = items.map((item) => context.stringOf(item, false)).join('\n') + (flags.includes('b') || items.length === 0 ? '' : '\n');
+    const previous = flags.includes('a') && context.host.pathKind(name) === 'file' ? (context.host.readText(name) ?? '') : '';
+    if (context.host.writeText(name, previous + body)) return num(0);
+    return context.fail(`E482: Can't create file ${name}`);
+  } }],
+  ['rename', { min: 2, max: 2, run: (args, context) => num(context.host.renameEntry(context.stringOf(args[0], false), context.stringOf(args[1], false)) ? 0 : -1) }],
+  ['delete', { min: 1, max: 2, run: (args, context) => {
+    const name = context.stringOf(args[0], false);
+    const flags = args[1] === undefined ? '' : context.stringOf(args[1], false);
+    if (name === '') return context.fail('E474: Invalid argument');
+    if (flags !== '' && flags !== 'd' && flags !== 'rf') return context.fail(`E15: Invalid expression: "${flags}"`);
+    const kind = flags === 'rf' ? 'tree' : flags === 'd' ? 'directory' : 'file';
+    return num(context.host.removeEntry(name, kind) ? 0 : -1);
+  } }],
+  ['tempname', { min: 0, max: 0, run: (_args, context) => str(context.host.temporaryName()) }],
+  ['glob', { min: 1, max: 4, run: (args, context) => {
+    const found = globPaths(context.stringOf(args[0], false), globFileSystem(context), (path) => context.host.resolvePath(path));
+    return args[2] !== undefined && context.numberOf(args[2], false) !== 0n ? list(found.map(str)) : str(found.join('\n'));
+  } }],
+  ['globpath', { min: 2, max: 5, run: (args, context) => {
+    const pattern = context.stringOf(args[1], false);
+    const found = context.stringOf(args[0], false).split(',').filter((directory) => directory !== '')
+      .flatMap((directory) => globPaths(`${directory.replace(/\/+$/, '')}/${pattern}`, globFileSystem(context), (path) => context.host.resolvePath(path)));
+    return args[3] !== undefined && context.numberOf(args[3], false) !== 0n ? list(found.map(str)) : str(found.join('\n'));
+  } }],
+  ['expand', { min: 1, max: 3, run: (args, context) => {
+    const asList = args[2] !== undefined && context.numberOf(args[2], false) !== 0n;
+    const expanded = expandWord(context, context.stringOf(args[0], false), args[1] !== undefined && context.numberOf(args[1], false) !== 0n);
+    return asList ? list(expanded.map(str)) : str(expanded.join('\n'));
+  } }],
+  ['resolve', { min: 1, max: 1, run: (args, context) => str(resolveLinks(context, context.stringOf(args[0], false))) }],
+  ['bufname', { min: 0, max: 1, run: (args, context) => str(args[0] === undefined || ['%', ''].includes(context.stringOf(args[0], false)) ? context.host.bufferName() : '') }],
+  ['wordcount', { min: 0, max: 0, run: (_args, context) => wordCount(context) }],
+  ['reltime', { min: 0, max: 2, run: (args, context) => relativeTime(args, context) }],
+  ['reltimestr', { min: 1, max: 1, run: (args, context) => {
+    const pair = listOf(args[0], context)?.items;
+    if (pair === undefined || pair.length < 2) return str('');
+    return str(`${String(context.numberOf(pair[0], false)).padStart(3)}.${String(context.numberOf(pair[1], false)).padStart(9, '0').slice(0, 6)}`);
+  } }],
+  ['reltimefloat', { min: 1, max: 1, run: (args, context) => {
+    const pair = listOf(args[0], context)?.items;
+    return pair === undefined || pair.length < 2 ? flt(0) : flt(Number(context.numberOf(pair[0], false)) + Number(context.numberOf(pair[1], false)) / 1e9);
+  } }],
+  ['strptime', { min: 2, max: 2, run: (args, context) => num(parseTimeText(context.stringOf(args[0], false), context.stringOf(args[1], false))) }],
+  ['getreg', { min: 0, max: 3, run: (args, context) => {
+    const name = args[0] === undefined || context.stringOf(args[0], false) === '' ? '"' : context.stringOf(args[0], false)[0];
+    const asExpression = args[1] !== undefined && context.numberOf(args[1], false) !== 0n;
+    const asList = args[2] !== undefined && context.numberOf(args[2], false) !== 0n;
+    const content = name === '=' && asExpression ? context.host.expressionText() : context.host.register(name) ?? '';
+    if (!asList) return str(content);
+    const lines = content === '' ? [] : (content.endsWith('\n') ? content.slice(0, -1) : content).split('\n');
+    return list(lines.map(str));
+  } }],
+  ['getregtype', { min: 0, max: 1, run: (args, context) => {
+    const name = args[0] === undefined || context.stringOf(args[0], false) === '' ? '"' : context.stringOf(args[0], false)[0];
+    const content = context.host.register(name);
+    if (content === null || (content === '' && name !== '=')) return str('');
+    return str(content.endsWith('\n') ? 'V' : 'v');
+  } }],
+  ['setreg', { min: 2, max: 3, run: (args, context) => {
+    const name = context.stringOf(args[0], false)[0] ?? '"';
+    const options = args[2] === undefined ? '' : context.stringOf(args[2], false);
+    if (/[b\u0016]/.test(options)) return context.fail('E475: Invalid value for argument options');
+    const value = args[1];
+    const text = value.kind === 'list' ? value.items.map((item) => context.stringOf(item, false)).join('\n') : context.stringOf(value, false);
+    const forcedLine = /[lV]/.test(options);
+    const forcedChar = /[cv]/.test(options);
+    const linewise = forcedLine || (!forcedChar && (value.kind === 'list' || text.endsWith('\n')));
+    const body = value.kind !== 'list' && text.endsWith('\n') ? text.slice(0, -1) : text;
+    context.host.setRegister(name, body.split('\n'), linewise, options.includes('a'), value.kind === 'list');
+    return num(0);
+  } }],
+  ['getftype', { min: 1, max: 1, run: (args, context) => {
+    const info = context.host.linkInfo(context.stringOf(args[0], false));
+    return str(info === null ? '' : (FILE_TYPE_NAMES[info.type] ?? 'other'));
+  } }],
+  ['getfperm', { min: 1, max: 1, run: (args, context) => {
+    const info = context.host.linkInfo(context.stringOf(args[0], false));
+    if (info === null) return str('');
+    return str([...'rwxrwxrwx'].map((letter, at) => ((info.permissions >> (8 - at)) & 1) === 1 ? letter : '-').join(''));
+  } }],
+  ['executable', { min: 1, max: 1, run: (args, context) => num(findExecutable(context, context.stringOf(args[0], false)) === null ? 0 : 1) }],
+  ['exepath', { min: 1, max: 1, run: (args, context) => str(findExecutable(context, context.stringOf(args[0], false)) ?? '') }],
   ['localtime', { min: 0, max: 0, run: () => num(Math.floor(simulationNowMs() / 1000)) }],
   ['hostname', { min: 0, max: 0, run: (_args, context) => str(context.host.hostName()) }],
   ['getpid', { min: 0, max: 0, run: (_args, context) => num(context.host.processId()) }],
@@ -1180,7 +1303,7 @@ const FUNCTIONS: ReadonlyMap<string, FunctionDefinition> = new Map<string, Funct
   ['isabsolutepath', { min: 1, max: 1, run: (args, context) => num(context.stringOf(args[0], false).startsWith('/') ? 1 : 0) }],
   ['simplify', { min: 1, max: 1, run: (args, context) => str(simplifyPath(context.stringOf(args[0], false))) }],
   ['pathshorten', { min: 1, max: 2, run: (args, context) => str(shortenPath(context.stringOf(args[0], false), args[1] === undefined ? 1 : Number(context.numberOf(args[1], false)))) }],
-  ['fnamemodify', { min: 2, max: 2, run: (args, context) => str(modifyFileName(context.stringOf(args[0], false), context.stringOf(args[1], false))) }],
+  ['fnamemodify', { min: 2, max: 2, run: (args, context) => str(modifyFileName(context.stringOf(args[0], false), context.stringOf(args[1], false), context)) }],
   ['sha256', { min: 1, max: 1, run: (args, context) => str(Array.from(sha256(new TextEncoder().encode(context.stringOf(args[0], false))), (byte) => byte.toString(16).padStart(2, '0')).join('')) }],
   ['system', { min: 1, max: 2, run: (args, context) => str(context.host.shell(
     context.stringOf(args[0], false),
@@ -1254,7 +1377,7 @@ function extendValue(args: VimValue[], context: Context): VimValue {
       context.soft(`E475: Invalid argument: ${mode}`);
       return num(0);
     }
-    for (const [key, item] of source.entries) {
+    for (const [key, item] of inVimOrder(source.entries)) {
       if (target.entries.has(key)) {
         if (mode === 'error') {
           context.soft(`E737: Key already exists: ${key}`);
@@ -1312,6 +1435,168 @@ function makeFuncref(args: VimValue[], context: Context, builtinsAllowed: boolea
   }
   const bound = args[1] !== undefined && args[1].kind === 'list' ? args[1].items : [];
   return { kind: 'funcref', name, params: null, body: '', scopes: [], bound };
+}
+
+const FILE_TYPE_NAMES: Readonly<Record<string, string>> = {
+  file: 'file', directory: 'dir', symlink: 'link', chardev: 'cdev', blockdev: 'bdev', fifo: 'fifo', socket: 'socket',
+};
+
+function findExecutable(context: Context, name: string): string | null {
+  if (name === '') return null;
+  if (name.includes('/')) {
+    const resolved = context.host.resolvePath(name);
+    return context.host.executableAt(resolved) ? resolved : null;
+  }
+  const directories = (context.host.environmentOrNull('PATH') ?? '').split(':').filter((directory) => directory !== '');
+  for (const directory of directories) {
+    const candidate = `${directory.replace(/\/+$/, '')}/${name}`;
+    if (context.host.executableAt(candidate)) return candidate;
+  }
+  return null;
+}
+
+function globFileSystem(context: Context): import('./VimGlob').GlobFileSystem {
+  return {
+    entries: (directory) => context.host.directoryEntries(directory),
+    isDirectory: (path) => context.host.pathKind(path) === 'directory',
+    exists: (path) => context.host.pathKind(path) !== 'missing',
+    home: () => context.host.homeDirectory(),
+  };
+}
+
+function expandWord(context: Context, text: string, noWildcards: boolean): string[] {
+  if (text === '%' || text.startsWith('%:')) return [modifyFileName(context.host.bufferName(), text.slice(1), context)];
+  if (text === '#') return [''];
+  if (text === '<cword>') return [context.host.wordUnderCursor(false)];
+  if (text === '<cWORD>') return [context.host.wordUnderCursor(true)];
+  const withVariables = text.replace(/\$([A-Za-z_][A-Za-z0-9_]*)|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, bare: string | undefined, braced: string | undefined) => {
+    const value = context.host.environmentOrNull(bare ?? braced ?? '');
+    return value === null ? whole : value;
+  });
+  const home = context.host.homeDirectory();
+  const withHome = (withVariables === '~' || withVariables.startsWith('~/')) && home !== null ? home + withVariables.slice(1) : withVariables;
+  if (noWildcards || !hasWildcard(withHome)) return [withHome];
+  const found = globPaths(withHome, globFileSystem(context), (path) => context.host.resolvePath(path));
+  return found.length === 0 ? [withHome] : found;
+}
+
+function resolveLinks(context: Context, path: string): string {
+  const trailing = path.length > 1 && path.endsWith('/');
+  let pending = path.replace(/\/+$/, '').split('/');
+  let done: string[] = path.startsWith('/') ? [''] : [];
+  let guard = 0;
+  while (pending.length > 0 && guard++ < 40) {
+    const [part, ...rest] = pending;
+    pending = rest;
+    if (part === '' || part === '.') { if (part === '.' && done.length === 0) done.push('.'); continue; }
+    if (part === '..') { if (done.length > 0 && done[done.length - 1] !== '..' && done[done.length - 1] !== '.') done.pop(); else done.push('..'); continue; }
+    const candidate = [...done, part].join('/') || '/';
+    const info = context.host.linkInfo(candidate);
+    if (info !== null && info.type === 'symlink' && info.target !== undefined) {
+      if (info.target.startsWith('/')) done = [''];
+      pending = [...info.target.split('/'), ...pending];
+      continue;
+    }
+    done.push(part);
+  }
+  const joined = done.length === 1 && done[0] === '' ? '/' : done.join('/');
+  return `${joined}${trailing && !joined.endsWith('/') ? '/' : ''}`;
+}
+
+function wordCount(context: Context): VimValue {
+  const lines = context.host.lines;
+  const cursorLine = context.host.lineNumber;
+  const cursorChars = characters(lines[cursorLine - 1] ?? '');
+  const column = context.host.columnIndex;
+  let chars = 0, bytes = 0, words = 0, cursorCharCount = 0, cursorByteCount = 0, cursorWordCount = 0;
+  lines.forEach((line, index) => {
+    const here = index + 1;
+    const lineChars = characters(line);
+    const reached = here < cursorLine ? lineChars.length : here === cursorLine ? Math.min(column + 1, cursorChars.length) : 0;
+    const reachedText = lineChars.slice(0, reached).join('');
+    if (here < cursorLine) { cursorCharCount += lineChars.length + 1; cursorByteCount += utf8Length(line) + 1; }
+    else if (here === cursorLine) { cursorCharCount += reached; cursorByteCount += utf8Length(reachedText); }
+    chars += lineChars.length + 1;
+    bytes += utf8Length(line) + 1;
+    for (const match of line.matchAll(/\S+/g)) {
+      words++;
+      const startChars = characters(line.slice(0, match.index)).length;
+      if (here < cursorLine || (here === cursorLine && startChars < reached)) cursorWordCount++;
+    }
+  });
+  const entries = new Map<string, VimValue>([
+    ['chars', num(chars)], ['cursor_chars', num(cursorCharCount)], ['words', num(words)], ['cursor_words', num(cursorWordCount)],
+    ['bytes', num(bytes)], ['cursor_bytes', num(cursorByteCount)],
+  ]);
+  return dict(entries);
+}
+
+function relativeTime(args: VimValue[], context: Context): VimValue {
+  const nowNs = BigInt(simulationNowMs()) * 1000000n;
+  const toNs = (value: VimValue): bigint => {
+    const pair = listOf(value, context)?.items;
+    return pair === undefined || pair.length < 2 ? 0n : context.numberOf(pair[0], false) * 1000000000n + context.numberOf(pair[1], false);
+  };
+  const span = args.length === 0 ? nowNs : args.length === 1 ? nowNs - toNs(args[0]) : toNs(args[1]) - toNs(args[0]);
+  return list([num(span / 1000000000n), num(span % 1000000000n)]);
+}
+
+const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const FULL_MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+function parseTimeText(format: string, text: string): number {
+  const fields = { year: 1900, month: 0, day: 0, hour: 0, minute: 0, second: 0, pm: null as boolean | null };
+  let at = 0;
+  const number = (maximum: number): number | null => {
+    while (text[at] === ' ') at++;
+    const match = new RegExp(`^[0-9]{1,${maximum}}`).exec(text.slice(at));
+    if (match === null) return null;
+    at += match[0].length;
+    return Number(match[0]);
+  };
+  const name = (names: readonly string[], full: readonly string[]): number | null => {
+    const rest = text.slice(at).toLowerCase();
+    const wholeIndex = full.findIndex((candidate) => rest.startsWith(candidate));
+    if (wholeIndex >= 0) { at += full[wholeIndex].length; return wholeIndex; }
+    const shortIndex = names.findIndex((candidate) => rest.startsWith(candidate));
+    if (shortIndex >= 0) { at += names[shortIndex].length; return shortIndex; }
+    return null;
+  };
+  const apply = (directive: string): boolean => {
+    switch (directive) {
+      case 'Y': { const value = number(4); if (value === null) return false; fields.year = value; return true; }
+      case 'y': { const value = number(2); if (value === null) return false; fields.year = value < 69 ? 2000 + value : 1900 + value; return true; }
+      case 'm': { const value = number(2); if (value === null || value < 1 || value > 12) return false; fields.month = value - 1; return true; }
+      case 'd': case 'e': { const value = number(2); if (value === null || value < 1 || value > 31) return false; fields.day = value; return true; }
+      case 'H': { const value = number(2); if (value === null || value > 23) return false; fields.hour = value; return true; }
+      case 'I': { const value = number(2); if (value === null || value < 1 || value > 12) return false; fields.hour = value % 12; return true; }
+      case 'M': { const value = number(2); if (value === null || value > 59) return false; fields.minute = value; return true; }
+      case 'S': { const value = number(2); if (value === null || value > 61) return false; fields.second = value; return true; }
+      case 'b': case 'B': case 'h': { const value = name(MONTH_NAMES, FULL_MONTHS); if (value === null) return false; fields.month = value; return true; }
+      case 'a': case 'A': { const value = name(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'], ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']); return value !== null; }
+      case 'p': { const rest = text.slice(at).toLowerCase(); if (rest.startsWith('am')) fields.pm = false; else if (rest.startsWith('pm')) fields.pm = true; else return false; at += 2; return true; }
+      case 'T': return apply('H') && text[at++] === ':' && apply('M') && text[at++] === ':' && apply('S');
+      case 'R': return apply('H') && text[at++] === ':' && apply('M');
+      case 'F': return apply('Y') && text[at++] === '-' && apply('m') && text[at++] === '-' && apply('d');
+      case 'D': return apply('m') && text[at++] === '/' && apply('d') && text[at++] === '/' && apply('y');
+      case '%': return text[at++] === '%';
+      case 'n': case 't': while (/\s/.test(text[at] ?? '')) at++; return true;
+      default: return false;
+    }
+  };
+  for (let index = 0; index < format.length; index++) {
+    const character = format[index];
+    if (character === '%') {
+      if (!apply(format[++index] ?? '')) return 0;
+    } else if (/\s/.test(character)) {
+      while (/\s/.test(text[at] ?? '')) at++;
+    } else if (text[at++] !== character) return 0;
+  }
+  if (fields.pm === true) fields.hour += 12;
+  const guess = Date.UTC(fields.year, fields.month, fields.day, fields.hour, fields.minute, fields.second) / 1000;
+  const zone = /([+-])(\d\d)(\d\d)/.exec(formatLocalTime('%z', guess * 1000));
+  const offset = zone === null ? 0 : (zone[1] === '-' ? -1 : 1) * (Number(zone[2]) * 3600 + Number(zone[3]) * 60);
+  return guess - offset;
 }
 
 function parseFloatPrefix(text: string): number {
@@ -1414,13 +1699,43 @@ function shortenPath(path: string, keep: number): string {
   }).join('/');
 }
 
-function modifyFileName(name: string, modifiers: string): string {
+function modifyFileName(name: string, modifiers: string, context?: Context): string {
   let result = name;
   let previous = '';
   let extensionSource = name;
   let extensionDepth = 0;
-  for (const modifier of modifiers.split(':').filter((item) => item !== '')) {
-    if (modifier === 'h') {
+  let at = 0;
+  while (at < modifiers.length) {
+    if (modifiers[at] !== ':') { at++; continue; }
+    at++;
+    let modifier = modifiers[at] ?? '';
+    let global = false;
+    if (modifier === 'g' && modifiers[at + 1] === 's') { global = true; at++; modifier = 's'; }
+    at++;
+    if (modifier === 's') {
+      const delimiter = modifiers[at] ?? '';
+      const first = modifiers.indexOf(delimiter, at + 1);
+      const second = first < 0 ? -1 : modifiers.indexOf(delimiter, first + 1);
+      if (delimiter === '' || second < 0 || context === undefined) { previous = modifier; continue; }
+      result = substituteText(context, result, modifiers.slice(at + 1, first), modifiers.slice(first + 1, second), global ? 'g' : '', () => '');
+      at = second + 1;
+    } else if (modifier === 'p') {
+      if (context !== undefined) {
+        const absolute = simplifyPath(result.startsWith('/') ? result : `${context.host.workingDirectory().replace(/\/+$/, '')}/${result}`);
+        result = context.host.pathKind(absolute) === 'directory' && !absolute.endsWith('/') ? `${absolute}/` : absolute;
+        if (result === '') result = '/';
+      }
+    } else if (modifier === '.') {
+      if (context !== undefined) {
+        const cwd = `${context.host.workingDirectory().replace(/\/+$/, '')}/`;
+        if (result.startsWith(cwd)) result = result.slice(cwd.length);
+      }
+    } else if (modifier === '~') {
+      const home = context?.host.homeDirectory() ?? null;
+      if (home !== null && home !== '/' && (result === home || result.startsWith(`${home}/`))) result = `~${result.slice(home.length)}`;
+    } else if (modifier === 'S') {
+      result = `'${result.replace(/'/g, "'\\''")}'`;
+    } else if (modifier === 'h') {
       const cut = result.lastIndexOf('/');
       const head = result.slice(0, Math.max(cut, 0)).replace(/\/+$/, '');
       result = cut < 0 ? '.' : head === '' ? '/' : head;
@@ -1565,8 +1880,10 @@ function mapOrFilter(args: VimValue[], context: Context, mapping: boolean): VimV
     target.items = (mapping ? results : values).filter((_, at) => keep(at));
   } else {
     const names = inVimOrder(target.entries).map(([key]) => key);
-    const kept = names.map((name, at) => ({ name, at })).filter(({ at }) => keep(at));
-    target.entries = new Map(kept.map(({ name, at }) => [name, mapping ? results[at] : values[at]]));
+    names.forEach((name, at) => {
+      if (!keep(at)) target.entries.delete(name);
+      else if (mapping) target.entries.set(name, results[at]);
+    });
   }
   return target;
 }
@@ -2157,6 +2474,7 @@ class Parser {
     const name = this.text[this.pos];
     if (name !== undefined && /[A-Za-z0-9"\-*+/.:%#=_@]/.test(name)) this.pos++;
     if (!evaluate) return num(0);
+    if (name === '=') return str(this.context.host.expressionText());
     const content = this.context.host.register(name === undefined || name === '@' ? '"' : name);
     return str(content ?? '');
   }
@@ -2288,7 +2606,7 @@ export function evaluateReplacementExpression(source: string, host: ExpressionHo
   return { text, errors: context.errors };
 }
 
-const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|@[A-Za-z0-9"\-*+_/.:#%]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
+const LET_ASSIGNMENT = /^(\[[^\]]*\]|&(?:[lg]:)?[A-Za-z]+|\$[A-Za-z_][A-Za-z0-9_]*|@[A-Za-z0-9"\-*+_/.:#%=]|[A-Za-z_][\w:#]*(?:\[[^\]]*\]|\.[A-Za-z_]\w*)*)\s*(\+=|-=|\*=|\/=|%=|\.\.=|\.=|=)\s*(.+)$/s;
 const LET_OPERATOR: Record<string, string> = { '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '..=': '..', '.=': '.' };
 
 function splitAccess(target: string): { name: string; accessors: string[] } | null {
@@ -2336,6 +2654,13 @@ function assignTarget(target: string, operator: string, value: VimValue, context
     if (failure !== null) context.fail(failure);
     return;
   }
+  if (target.startsWith('$')) {
+    if (operator !== '=' && operator !== '.=' && operator !== '..=') return context.fail(`E734: Wrong variable type for ${operator}`);
+    const variable = target.slice(1);
+    const current = operator === '=' ? undefined : runExpression(target, context);
+    context.host.assignEnvironment(variable, context.stringOf(combineWith(current, operator, value, target, context), true));
+    return;
+  }
   if (target.startsWith('@')) {
     const register = target.slice(1);
     const current = operator === '=' ? undefined : runExpression(target, context);
@@ -2354,6 +2679,11 @@ function assignTarget(target: string, operator: string, value: VimValue, context
   }
   if (context.host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${name}`);
   const holder = runExpression(`${name}${accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+  const range = sliceBounds(accessors[accessors.length - 1]);
+  if (range !== null) {
+    assignRange(holder, range, operator, value, name, context);
+    return;
+  }
   const last = runExpression(accessors[accessors.length - 1], context);
   if (holder.kind === 'list') {
     let at = Number(context.numberOf(last, true));
@@ -2363,6 +2693,74 @@ function assignTarget(target: string, operator: string, value: VimValue, context
   } else if (holder.kind === 'dict') {
     const field = context.stringOf(last, true);
     holder.entries.set(field, combine(holder.entries.get(field)));
+  } else {
+    context.fail('E689: Can only index a List, Dictionary or Blob');
+  }
+}
+
+function sliceBounds(accessor: string): { from: string; to: string } | null {
+  let quote = '';
+  let depth = 0;
+  for (let at = 0; at < accessor.length; at++) {
+    const character = accessor[at];
+    if (quote !== '') { if (character === quote) quote = ''; continue; }
+    if (character === '"' || character === "'") quote = character;
+    else if ('([{'.includes(character)) depth++;
+    else if (')]}'.includes(character)) depth--;
+    else if (character === ':' && depth === 0) return { from: accessor.slice(0, at).trim(), to: accessor.slice(at + 1).trim() };
+  }
+  return null;
+}
+
+function resolveRange(holder: VimList, range: { from: string; to: string }, context: Context): { first: number; last: number } {
+  const count = holder.items.length;
+  const bound = (text: string, fallback: number): number => {
+    if (text === '') return fallback;
+    const at = Number(context.numberOf(runExpression(text, context), true));
+    return at < 0 ? at + count : at;
+  };
+  const first = bound(range.from, 0);
+  const last = bound(range.to, count - 1);
+  if (first < 0 || first > count) context.fail(`E684: List index out of range: ${first}`);
+  if (last < first - 1 || last >= count) context.fail(`E684: List index out of range: ${last}`);
+  return { first, last };
+}
+
+function assignRange(holder: VimValue, range: { from: string; to: string }, operator: string, value: VimValue, name: string, context: Context): void {
+  if (holder.kind !== 'list') return context.fail('E689: Can only index a List, Dictionary or Blob');
+  if (value.kind !== 'list') return context.fail('E709: [:] requires a List or Blob value');
+  const { first, last } = resolveRange(holder, range, context);
+  const source = value.items;
+  let taken = 0;
+  for (let at = first; at <= last; at++) {
+    if (taken >= source.length) return context.fail('E711: List value does not have enough items');
+    holder.items[at] = combineWith(holder.items[at], operator, source[taken], name, context);
+    taken++;
+  }
+  if (taken < source.length) context.fail('E710: List value has more items than targets');
+}
+
+export function executeUnletElement(name: string, host: ExpressionHost, context: Context): void {
+  const access = splitAccess(name);
+  if (access === null || access.accessors.length === 0) return;
+  const key = VimVariables.key(access.name);
+  if (key === null || host.variables.lookup(key) === undefined) context.fail(`E121: Undefined variable: ${access.name}`);
+  const holder = runExpression(`${access.name}${access.accessors.slice(0, -1).map((step) => `[${step}]`).join('')}`, context);
+  const last = access.accessors[access.accessors.length - 1];
+  const range = sliceBounds(last);
+  if (holder.kind === 'list') {
+    if (range !== null) {
+      const { first, last: end } = resolveRange(holder, range, context);
+      holder.items.splice(first, end - first + 1);
+      return;
+    }
+    let at = Number(context.numberOf(runExpression(last, context), true));
+    if (at < 0) at += holder.items.length;
+    if (at < 0 || at >= holder.items.length) context.fail(`E684: List index out of range: ${at}`);
+    holder.items.splice(at, 1);
+  } else if (holder.kind === 'dict') {
+    const field = context.stringOf(runExpression(last, context), true);
+    if (!holder.entries.delete(field)) context.fail(`E716: Key not present in Dictionary: "${field}"`);
   } else {
     context.fail('E689: Can only index a List, Dictionary or Blob');
   }
@@ -2399,9 +2797,16 @@ export function executeLetCommand(argument: string, host: ExpressionHost): reado
 }
 
 export function executeUnletCommand(names: string, bang: boolean, host: ExpressionHost): readonly string[] {
-  const errors: string[] = [];
+  const context = new Context(host);
   for (const name of names.split(/\s+/).filter((piece) => piece !== '')) {
-    if (!host.variables.remove(name) && !bang) errors.push(`E108: No such variable: "${name}"`);
+    try {
+      if (name.startsWith('$')) host.assignEnvironment(name.slice(1), null);
+      else if (/[[.]/.test(name)) executeUnletElement(name, host, context);
+      else if (!host.variables.remove(name) && !bang) context.soft(`E108: No such variable: "${name}"`);
+    } catch (failure) {
+      if (!(failure instanceof Abort)) throw failure;
+      break;
+    }
   }
-  return errors;
+  return context.errors;
 }

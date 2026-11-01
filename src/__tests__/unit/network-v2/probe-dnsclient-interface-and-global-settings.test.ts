@@ -97,7 +97,7 @@ describe('Get-DnsClient and Set-DnsClient', () => {
 
   it('resolves a single-label name through the connection-specific suffix it set', async () => {
     const { ps } = await lab();
-    expect(await ps('Resolve-DnsName portal')).toContain('does not exist');
+    expect(await ps('Resolve-DnsName portal')).toContain('portal : DNS operation refused');
     await ps('Set-DnsClient -InterfaceAlias "Ethernet 0" -ConnectionSpecificSuffix corp.test');
     expect(await ps('(Resolve-DnsName portal).IPAddress')).toBe('10.0.0.80');
   });
@@ -151,7 +151,7 @@ describe('Get-DnsClientGlobalSetting and Set-DnsClientGlobalSetting', () => {
 
   it('resolves a single-label name through the global search list', async () => {
     const { ps } = await lab();
-    expect(await ps('Resolve-DnsName portal')).toContain('does not exist');
+    expect(await ps('Resolve-DnsName portal')).toContain('portal : DNS operation refused');
     await ps('Set-DnsClientGlobalSetting -SuffixSearchList corp.test');
     expect(await ps('(Resolve-DnsName portal).IPAddress')).toBe('10.0.0.80');
   });

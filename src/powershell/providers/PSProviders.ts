@@ -12,6 +12,7 @@
  *     → all nulls, used by the standalone PSInterpreter (no Windows device)
  */
 
+import type { DnsLookupFailure } from '@/network/devices/windows/dnsLookupFailure';
 import type { DhcpFailoverChanges, DhcpFailoverRequest, DhcpFailoverView } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import type {
   DhcpV6OpResult, DhcpV6ScopeInfo, DhcpV6ScopeRequest, DhcpV6LeaseInfo, DhcpV6ReservationInfo, DhcpV6ExclusionInfo,
@@ -987,6 +988,7 @@ export interface ILicensingProvider {
 
 // ── DNS Server role (PRD-Windows-Server.md §5 P7) ───────────────────────────
 
+import type { DnsCacheSettings, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
@@ -997,6 +999,7 @@ export type {
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface DnsCacheEntryInfo { name: string; type: string; ttl: number; data: string }
+export type { DnsCacheSettings, GlobalQueryBlock } from '@/network/devices/windows/server/dns/DnsServerParameters';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1045,6 +1048,10 @@ export interface IDnsServerProvider {
   isRecursionEnabled(): boolean;
   cacheEntries(): DnsCacheEntryInfo[];
   clearCache(): void;
+  getCacheSettings(): DnsCacheSettings;
+  setCacheSettings(changes: Partial<DnsCacheSettings>): DnsOpResult;
+  getGlobalQueryBlock(): GlobalQueryBlock;
+  setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): DnsOpResult;
 
   setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult;
   addTsigKey(name: string, algorithm: string, secret: string): DnsOpResult;
@@ -1484,6 +1491,7 @@ export interface INetworkProvider {
   /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
   resolveDnsViaServerWithTtl?(name: string, server: string): Array<{ ip: string; ttl: number }>;
   resolveDnsRecords?(name: string, type: string, server?: string): DnsAnswerRow[] | null;
+  dnsLookupFailure?(): DnsLookupFailure | null;
   /** Get-DnsClientCache */
   getDnsClientCache?(): DnsCacheRow[];
   /** Clear-DnsClientCache */

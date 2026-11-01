@@ -435,14 +435,13 @@ lecteur, reserve assumee (la machine accepte le reglage, le moteur n'a pas la fo
 **`rp_filter` est ferme** (sonde `probe-rp-filter`) : Ipv4DeviceConf porte la cle (defaut 2 comme Ubuntu, maximum de `all` et de l'interface), `LinuxMachine` juge chaque
 paquet IPv4 unicast recu (mode 1 : la meilleure route vers la source sort par l'interface d'arrivee ; mode 2 : une route quelconque, defaut comprise) et
 `10-network-security.conf` est livre. Reserves : pas de compteur `IPReversePathFilter`, pas de `log_martians`, table principale seulement, diffusion, multicast et
-source 0.0.0.0 exemptes, reponse DHCP a une carte sans adresse exemptee (le client lit les trames avant la pile IP). **Non livres** : `10-ipv6-privacy.conf`
-(`net.ipv6.conf.{all,default}.use_tempaddr = 2` : la configuration IPv6 par interface existe maintenant (`Ipv6DeviceConf`, sonde `probe-linux-ipv6-conf` :
-`forwarding`, `accept_ra`, `accept_ra_defrtr`, `accept_ra_pinfo`, `autoconf`, `disable_ipv6`, portees `all`/`default` comme le noyau) mais il reste a ajouter les adresses temporaires au modele
-(les adresses SLAAC n'ont AUCUNE duree de vie : ni `valid_lft` ni `preferred_lft` ne sont lus des annonces ni rendus), a leur regeneration, a leur rendu (`temporary dynamic`) et au choix de l'adresse source,
-plus `temp_valid_lft` (604800), `temp_prefered_lft` (86400), `max_desync_factor` (600), `regen_max_retry` (3), valeurs du CODE du noyau 5.15 et 6.8 : la documentation ip-sysctl.rst dit 172800 pour
-la premiere et se trompe ; `forwarding` est stocke et decide de l'acceptation des annonces, mais un hote n'a pas de plan de transfert IPv6 (EndHost.handleIPv6 ne transmet pas) ; `hop_limit`, `dad_transmits`,
-`accept_dad`, `accept_redirects`, `mtu`, `router_solicitations` ne sont pas livres faute de lecteur ; une annonce non acceptee ignore aussi les drapeaux M et O, ce que fait le noyau pour ce qu'il notifie
-mais pas un client DHCPv6 qui lit les annonces lui-meme) et `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`), `fs.protected_regular` et `fs.protected_fifos` existent et l'ouverture avec creation les lit, chacun pour SON type d'objet (sonde `probe-protected-regular`) mais `protected_symlinks`
+source 0.0.0.0 exemptes, reponse DHCP a une carte sans adresse exemptee (le client lit les trames avant la pile IP). **Livre aussi** : `10-ipv6-privacy.conf` (`use_tempaddr = 2` sur `all` et `default`, `lo` reste a -1 comme le noyau) : les adresses SLAAC portent leurs durees de vie (`valid_lft` / `preferred_lft`
+lues de l'annonce, remplacees a chaque annonce, `deprecated` a la fin de la duree preferee, retirees a la fin de la duree valide ; `dynamic mngtmpaddr` rendus par `ip -6 addr`) et un hote avec
+`use_tempaddr > 0` cree une adresse temporaire (partie hote aleatoire, `temp_valid_lft` 604800, `temp_prefered_lft` 86400, `max_desync_factor` 600, `regen_max_retry` 3 : valeurs du CODE du noyau 5.15 et 6.8,
+la documentation ip-sysctl.rst dit 172800 et se trompe), la regenere avant la fin de sa duree preferee et prefere la temporaire comme source si `use_tempaddr >= 2` (sonde `probe-linux-ipv6-adresses-temporaires`).
+Reserves : un hote Linux avec `forwarding=1` TRANSFERE l'IPv6 (sonde `probe-linux-transfert-ipv6`, port de `ip6_forward` v6.8) mais n'emet pas le Redirect quand l'interface d'entree est celle de sortie, et `traceroute -6` reste refuse (« this simulator traces over IPv4 only »), pas de DAD (donc pas de `tentative`, `dad_transmits` n'entre que dans `regen_advance`), `ip -6 route get` est livre (sonde `probe-linux-ipv6-adresses-temporaires`; format d'iproute2 lu dans les sources, non compare a un vrai : pas d'iproute2 sur la machine de mesure), pas de `ip addr add ... valid_lft` ni de `ip token`, les RA du routeur simule ne sont pas
+periodiques (une adresse publique non renouvelee atteint donc sa fin de vie), l'ordre des sources suit seulement « non deprecie » puis « temporaire ou publique » (pas les autres regles de la RFC 6724),
+et seuls les hotes Linux portent ces durees : Windows garde des adresses SLAAC sans duree de vie. **Non livre** : `99-protect-links.conf` : `fs.protected_hardlinks` existe et `ln` le lit (sonde `probe-protected-hardlinks`), `fs.protected_regular` et `fs.protected_fifos` existent et l'ouverture avec creation les lit, chacun pour SON type d'objet (sonde `probe-protected-regular`) mais `protected_symlinks`
 n'a pas de lecteur dans le VFS (`resolveInode` ne recoit pas l'identite de l'appelant) ; un critere de securite stocke sans effet echouerait ouvert. Un FIFO n'a toujours pas de semantique de lecture/ecriture (`cat` d'un FIFO repond « No such file »).
 
 ---
@@ -641,32 +640,34 @@ sur un vrai vim 9.1) et `vim-pattern-commands-oracle.test.ts` (496) :
   faut un second moteur (simulation de Thompson avec priorites) pour les motifs
   sans reference arriere, ou une estimation de la hauteur d'etoile a la
   traduction qui refuse avec E363 comme vim le fait pour sa memoire.
-- `\%V` en bloc compte des colonnes de caracteres ; `\@123<=` borne la remontee
-  en caracteres ; `[[=e=]]` utilise la decomposition Unicode.
+- Re-mesure sur vim 9.1 (21 motifs rejoues) : `\%V` en bloc, en caracteres et en lignes, `\@N<=` borne ou non et `[[=e=]]`
+  (`e`, `E`, `é`, `[^...]`, `ignorecase`) sortent comme le vrai ; ces trois lignes de l'ancien constat etaient perimees.
+  Reste les **caracteres combinants** : pour vim un « caractere » est une base suivie de ses marques (`e` + U+0301), `.`, `\a`,
+  `[^x]`, `[[=e=]]` et les classes consomment les marques (`s/./[&]/g` sur `é` donne `[é]` et non `[e]` + marque), un `e` litteral
+  n'atteint pas un `e` suivi d'une marque sauf sous `\Z`, une marque seule en debut de ligne n'est pas `\a` mais est `\k`,
+  `\S` et `[^x]`, et `e\zs.` prend la marque seule. Le traducteur travaille sur des points de code : `[[=e=]]` rend `_` + marque
+  au lieu de `_`. Brique a ecrire : un « caractere » du traducteur = point de code + marques, ce qui change les quantificateurs
+  (`\p{M}*` apres chaque atome rend `.*` ambigu et exponentiel), donc a faire avec le second moteur ci-dessus.
 
 ### [vim] Expressions `\=` : ce que `VimExpression` ne fait pas
 Mesure avec `vim-substitute-oracle.test.ts` (3860 cas dont 1004 d'expressions) :
-- **Ordre des dictionnaires** : l'ordre de `hashtab.c` est porte pour un
-  dictionnaire construit sans suppression ; une cle supprimee puis reajoutee
-  retrouve sa place d'insertion au lieu de celle de la case libre laissee.
 - **Fonctions absentes** : tout nom hors de la table repond `E117: Unknown
-  function` meme quand vim le connait. Mesure sur vim 9.1 (73 expressions rejouees) : restent absentes `executable`,
-  `exepath`, `expand`, `glob`, `globpath`, `getftype` (le VFS d'edition rend `file` pour un lien), `getfperm`,
-  `resolve`, `mkdir`, `delete`, `rename`, `writefile`, `tempname`, `reltime`,
-  `reltimestr`, `wordcount`, `bufname`, `mode`, `blob2list`, `list2blob`, `strptime`, `foreach` (le rejeu trouve `foreach`
-  inconnue sur ce vim aussi). Existent : `reduce`, `mapnew`, `sha256`, `strftime`, `json_encode`, `json_decode`, `system`,
-  `systemlist`, `v:shell_error`, `getenv`, `str2float`, `flatten`, `flattennew`, `slice`, `fmod`, `log10`, `isnan`, `strgetchar`,
-  `byteidx`, `charidx`, `utf16idx`, `indexof`, `filereadable`, `isdirectory`, `readfile`, `readdir`, `getfsize`, `getcwd`, `hostname`, `getpid`, `localtime`, `environ` (`probe-vim-fonctions-fichiers`), `shellescape`, `simplify`, `pathshorten`, `isabsolutepath` et `fnamemodify`
-  (`:h :t :r :e`, `:e` repete ; `:p`, `:~`, `:.`, `:s` et `:gs` restent absents) (`probe-vim-fonctions-texte-et-chemins`).
-- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`,
-  `t:`, les elements `l[i]` / `d.k`, les operateurs composes et la
-  destructuration. Restent refusees les cibles `$ENV` (l'environnement du
-  processus vim n'a pas de poignee d'ecriture), les
-  tranches `l[a:b]`, `s:` / `l:` / `a:` hors fonction, `v:shell_error` et
-  `:function`. Une lambda ne capture que les parametres des lambdas qui
-  l'entourent.
-- **`CTRL-R =` et le registre `"=`** ne passent pas par l'evaluateur : le
-  moteur n'a ni l'un ni l'autre.
+  function` meme quand vim le connait. Restent absentes (hors blobs) : `mode`, `foreach` (inconnue de ce vim aussi). Existent, mesurees
+  contre vim 9.1 (`probe-vim-fonctions-*`) : `glob`, `globpath`, `expand` (`$VAR`, `~`, jokers, `%`, `<cword>`, `<cWORD>` ; `<sfile>`,
+  `<abuf>`, `<amatch>`, `<cfile>` et `#` restent absents), `resolve`, `mkdir` (`p` ; les drapeaux `D` et `R` de vim 9.1 ne sont pas
+  portes), `writefile` (`b`, `a` ; `s`, `S`, `D`, `r` ne sont pas portes), `rename`, `delete`, `tempname`, `bufname` (tampon courant
+  seulement), `wordcount`, `reltime`, `reltimestr`, `reltimefloat`, `strptime`, `fnamemodify` (`:h :t :r :e :p :. :~ :s :gs :S`) et
+  toutes les fonctions de texte, de fichier et d'environnement des lots precedents.
+- **Variables** : `:let` et `:unlet` existent pour les noms nus, `g:`, `b:`, `w:`, `t:`, les elements `l[i]` / `d.k` / `d['k']`,
+  les tranches `l[a:b]` (affectation et suppression), `$ENV` (l'environnement de vim, que voient `getenv`, `environ`,
+  `exists('$X')` et le shell de `system()`), les operateurs composes et la destructuration (`probe-vim-unlet-tranches-et-environnement`,
+  `probe-vim-ordre-des-dictionnaires-suppressions`). Restent refuses : `s:` / `l:` / `a:` hors fonction et `:function`. Une lambda ne
+  capture que les parametres des lambdas qui l'entourent.
+- **`CTRL-R =` et le registre `"=`** passent par l'evaluateur (`probe-vim-registre-expression`, 47 cas rejoues sur vim 9.1) :
+  invite `=` en insertion et en normal, expression vide = la derniere, erreur sans effet sur le tampon, `CTRL-R {registre}` en
+  insertion, `getreg`, `getregtype`, `setreg` (sans registre bloc), `let @=`. Restent : l'historique et l'edition de l'invite `=`
+  (fleches, `CTRL-R CTRL-W`, completion), `CTRL-R CTRL-O` / `CTRL-P` (traites comme `CTRL-R`), les registres bloc (`CTRL-V`,
+  refuses par `setreg`) et le comportement de `Esc` sous `:normal` (vim evalue, le moteur annule comme un vim interactif).
 - **Options** : `VimOptionDefaults.ts` porte la valeur de depart des options
   que le moteur ne modelise pas, enregistree par
   `scripts/oracle/record_vim_option_defaults.py` sous `vim -u NONE -N` ; les
@@ -721,15 +722,15 @@ portees (`probe-nano-lint.test.ts`) ; « oui » ouvre un nouveau tampon, ce que 
 pas faire (tampons multiples, `-F`, `M-<` `M->`) : il agit alors comme « non ». Meme brique que
 `^R` en mode vue (entree suivante).
 
-### [machine Linux] `dash` absent
-Mesure en ecrivant le linter du paquet nano pour `sh` (`linter dash -n`) : la machine simulee
-n'a pas de commande `dash` (Ubuntu en livre une, c'est la cible de `/bin/sh`), de sorte que
-`^T ^Y` sur un fichier `.sh` repond « Error invoking 'dash -n' ». `sh -n` et `bash -n`
-analysent maintenant sans executer (les lettres d'invocation arrivent a `SHELLOPTS`), mais les
-messages d'erreur d'analyse de dash (« t.sh: 3: Syntax error: Unterminated quoted string »)
-different de ceux de l'analyseur de bash du simulateur, que `sh` reutilise. Sans une
-grammaire d'erreurs propre a dash le linter par defaut des fichiers shell ne parle pas comme
-sur Ubuntu.
+### [machine Linux] `dash` : analyse seulement, l'execution reste celle de bash
+`dash` existe (Ubuntu en livre une, c'est la cible de `/bin/sh`) et `sh` parle comme elle : les diagnostics d'analyse sont ceux
+de dash 0.5.12 releves sur le binaire reel (`t.sh: 2: Syntax error: end of file unexpected (expecting "fi")`, `"fi" unexpected`,
+`Unterminated quoted string`, `Missing '}'`, `Missing '))'`, `EOF in backquote substitution`, `newline unexpected`, `word unexpected
+(expecting ")")` ; 48 scripts, sonde `probe-dash-diagnostics-analyse`). Ce qui reste : dash n'a pas la grammaire de bash, or c'est
+l'analyseur de bash qui tourne, donc `x=(1 2)`, `[[ ]]`, `function f {`, `<(cmd)`, `${a[0]}`, `echo {1..3}` passent sans erreur
+la ou dash repond `Syntax error: "(" unexpected` ; l'execution (`echo -e`, `local`, `$RANDOM`, `source`) est celle de bash ; les
+diagnostics d'EXECUTION de dash (`sh: 1: foo: not found`, `sh: 1: cd: can't cd to x`) ne sont pas ceux de bash non plus et ne sont pas portes ;
+le texte d'une erreur dans une substitution imbriquee garde la forme de bash.
 
 ### [nano] correcteur orthographique INTERNE (`^T ^S` sans `speller`)
 Lu dans `do_int_speller` de nano 7.2 (text.c) : sans `speller`, nano lance `hunspell -l` (a defaut
@@ -4197,3 +4198,14 @@ Ce qu'il manque, commande par commande : `UPGRADE CATALOG` et `TRANSPORT TABLESP
 (sorties longues, plusieurs etapes) ; Non sources non plus : le texte d'un fichier de commandes introuvable (`cmdfile=f: No such file or
 directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
 `debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.
+
+### [traceroute] IPv6 : `-P` / `-M raw`, `mtr -6`, `tracert -R` et la boucle dupliquee du routeur
+
+`traceroute -6` et `traceroute6` existent sur un hote Linux (sondes UDP, `-I` ICMPv6, `-T` TCP, `-l`, `-s`, `-i`, `-r`, annotations `!N !H !X`
+lues dans traceroute.c 2.1.0 ; sonde `probe-traceroute-ipv6`), sur la boucle de sauts d'IPv4 (`EndHost.collectTraceHops`). Reste ouvert :
+`-P` et `-M raw` sont refuses en IPv6 parce qu'un hote ne repond pas a un en-tete suivant inconnu par un ICMPv6 Parameter Problem
+(code 1, pointeur sur Next Header) : `EndHost.handleIPv6` compte `Ip6InUnknownProtos` et se tait, et `handleICMPv6` ne lit aucun Parameter
+Problem ; `mtr -6` n'a pas de chemin IPv6 (`tracepath -6` est fait : sonde `probe-tracepath-ipv6` ; `tracert -6` de Windows aussi : sonde
+`probe-tracert-ipv6`, mais `-R` reste lu et ignore) ; `Router.executeTraceroute6` garde sa propre boucle de sauts (doublon de
+`collectTraceHops`, a refermer en y branchant le routeur). La taille de paquet `packetlen` est imprimee dans l'entete et ne dimensionne pas les
+sondes (IPv4 comme IPv6).

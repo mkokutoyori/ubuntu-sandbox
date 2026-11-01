@@ -24,6 +24,7 @@ import {
   PortDuplex, PortSpeed, PortCounters, VALID_PORT_SPEEDS, PortViolationMode,
   ethernetFrameBytes,
 } from '../core/types';
+import { Ipv6Addrconf, type Ipv6AddrconfEnv } from './Ipv6Addrconf';
 import { Logger } from '../core/Logger';
 import { TapPoint, type FrameTap, type DetachTap } from './PortTap';
 import { lineageOf } from './FrameLineage';
@@ -69,6 +70,15 @@ export interface IPv6AddressEntry {
   prefixLength: number;
   /** Origin of the address */
   origin: 'link-local' | 'static' | 'slaac' | 'dhcpv6';
+  validLifetime?: number;
+  preferredLifetime?: number;
+  stampMs?: number;
+  createdMs?: number;
+  temporary?: boolean;
+  managesTemporary?: boolean;
+  deprecated?: boolean;
+  publicKey?: string;
+  regenCount?: number;
 }
 
 /**
@@ -95,6 +105,7 @@ export class Port {
   private ipv6Addresses: IPv6AddressEntry[] = [];
   private ipv6Enabled: boolean = false;
   private ipv6Prohibited: boolean = false;
+  private addrconf: Ipv6Addrconf | null = null;
   private isUp: boolean = true;
   private adminDown: boolean = false;
   private readonly tapPoint = new TapPoint();
@@ -592,7 +603,25 @@ export class Port {
     });
   }
 
-  addSLAACAddress(prefix: IPv6Address, prefixLength: number): IPv6Address {
+  setIPv6AddrconfEnv(env: Ipv6AddrconfEnv): void {
+    this.addrconf = new Ipv6Addrconf(env);
+  }
+
+  private maintainIPv6(): void {
+    if (this.addrconf === null || this.ipv6Addresses.length === 0) return;
+    const before = this.ipv6Addresses;
+    const after = this.addrconf.verify(before);
+    if (after === before) return;
+    const lost = before.filter((entry) => !after.includes(entry));
+    this.ipv6Addresses = after;
+    for (const entry of lost) {
+      this.getBus().publish({ topic: 'port.config.ipv6-removed', payload: { ...this.portRef(), address: entry.address } });
+    }
+  }
+
+  addSLAACAddress(
+    prefix: IPv6Address, prefixLength: number, lifetimes?: { valid: number; preferred: number },
+  ): IPv6Address {
     if (!this.ipv6Enabled) {
       this.enableIPv6();
     }
@@ -607,6 +636,16 @@ export class Port {
       linkLocalHextets[4], linkLocalHextets[5], linkLocalHextets[6], linkLocalHextets[7],
     ]);
 
+    if (this.addrconf !== null && lifetimes !== undefined) {
+      const received = this.addrconf.receivePrefix(
+        this.ipv6Addresses, fullAddr, prefixLength, lifetimes.valid, lifetimes.preferred);
+      this.ipv6Addresses = received.entries;
+      if (received.created) {
+        Logger.info(this.equipmentId, 'port:slaac',
+          `${this.name}: SLAAC address ${fullAddr}/${prefixLength} configured`);
+      }
+      return fullAddr;
+    }
     const exists = this.ipv6Addresses.some(e => e.address.equals(fullAddr));
     if (!exists) {
       this.ipv6Addresses.push({
@@ -647,7 +686,9 @@ export class Port {
 
   removeIPv6Address(address: IPv6Address): boolean {
     const before = this.ipv6Addresses.length;
-    this.ipv6Addresses = this.ipv6Addresses.filter(e => !e.address.equals(address));
+    const departing = this.ipv6Addresses.find(e => e.address.equals(address));
+    this.ipv6Addresses = this.ipv6Addresses.filter(e => !e.address.equals(address)
+      && !(departing?.managesTemporary === true && e.temporary === true && e.publicKey === address.toString()));
     const removed = this.ipv6Addresses.length < before;
     if (removed) {
       this.getBus().publish({
@@ -658,7 +699,12 @@ export class Port {
     return removed;
   }
 
+  getIPv6Lifetimes(entry: IPv6AddressEntry): { valid: number | null; preferred: number | null } {
+    return this.addrconf?.remaining(entry) ?? { valid: null, preferred: null };
+  }
+
   getIPv6Addresses(): IPv6AddressEntry[] {
+    this.maintainIPv6();
     return [...this.ipv6Addresses];
   }
 
@@ -668,10 +714,16 @@ export class Port {
   }
 
   getGlobalIPv6(): IPv6Address | null {
-    const entry = this.ipv6Addresses.find(e =>
+    this.maintainIPv6();
+    const candidates = this.ipv6Addresses.filter(e =>
       e.origin !== 'link-local' && e.address.isGlobalUnicast()
     );
-    return entry?.address ?? null;
+    const preferTemporary = this.addrconf?.preferTemporary() ?? false;
+    const rank = (entry: IPv6AddressEntry): number =>
+      (entry.deprecated === true ? 2 : 0) + ((entry.temporary === true) === preferTemporary ? 0 : 1);
+    const best = candidates.reduce<IPv6AddressEntry | null>(
+      (chosen, entry) => (chosen === null || rank(entry) < rank(chosen) ? entry : chosen), null);
+    return best?.address ?? null;
   }
 
   hasIPv6Address(address: IPv6Address): boolean {

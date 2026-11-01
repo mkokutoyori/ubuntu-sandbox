@@ -148,7 +148,7 @@ export function parseWinTracertArgs(args: string[]): ParsedWinTracert {
   return result;
 }
 
-export function formatWinTracertHeader(target: IPAddress, maxHops: number, hostname?: string): string[] {
+export function formatWinTracertHeader(target: IPAddress | IPv6Address, maxHops: number, hostname?: string): string[] {
   if (hostname) {
     return ['', `Tracing route to ${hostname} [${target}]`, `over a maximum of ${maxHops} hops:`, ''];
   }
@@ -187,10 +187,12 @@ export function formatWinTracertHop(hop: TracertHopView, nameOf?: (ip: string) =
 
 export interface TracertHost {
   resolveHostname(name: string): Promise<IPAddress | null>;
+  resolveHostname6(name: string): Promise<IPv6Address | null>;
+  ownsAddress6(address: IPv6Address): boolean;
   reverseLookup?(ip: string): string | null;
   trace(
-    target: IPAddress, maxHops: number, timeoutMs: number,
-    onHop: (hop: TracertHopView) => void, shouldStop: () => boolean,
+    target: IPAddress | IPv6Address, maxHops: number, timeoutMs: number,
+    onHop: (hop: TracertHopView) => void, shouldStop: () => boolean, sourceIp?: IPv6Address,
   ): Promise<number>;
 }
 
@@ -219,10 +221,21 @@ export async function runTracert(
     emit(`Unable to resolve target system name ${parsed.targetStr}. Failed to resolve.`);
     return;
   }
-  if (isIPv6Literal(parsed.targetStr)) { emit('Unable to contact IP driver. General failure.'); return; }
-
-  const targetIP = await host.resolveHostname(parsed.targetStr);
+  const literal6 = isIPv6Literal(parsed.targetStr) ? new IPv6Address(parsed.targetStr) : null;
+  const wantsIpv6 = parsed.forceV6 || (literal6 !== null && !parsed.forceV4);
+  const targetIP: IPAddress | IPv6Address | null = wantsIpv6
+    ? literal6 ?? (isValidIPv4(parsed.targetStr) ? null : await host.resolveHostname6(parsed.targetStr))
+    : literal6 !== null ? null : await host.resolveHostname(parsed.targetStr);
   if (!targetIP) { emit(`Unable to resolve target system name ${parsed.targetStr}.`); return; }
+  let sourceIp: IPv6Address | undefined;
+  if (targetIP instanceof IPv6Address && parsed.srcAddr !== undefined) {
+    const source = isIPv6Literal(parsed.srcAddr) ? new IPv6Address(parsed.srcAddr) : null;
+    if (source === null || !host.ownsAddress6(source)) {
+      emit('Unable to contact IP driver. General failure.');
+      return;
+    }
+    sourceIp = source;
+  }
 
   const nameOf = parsed.numeric ? undefined : (ip: string) => host.reverseLookup?.(ip) ?? null;
   const hostname = parsed.targetStr !== targetIP.toString()
@@ -231,7 +244,7 @@ export async function runTracert(
   for (const line of formatWinTracertHeader(targetIP, parsed.maxHops, hostname)) emit(line);
   const traced = await host.trace(
     targetIP, parsed.maxHops, Math.min(parsed.timeoutMs, PROBE_WAIT_CAP_MS),
-    (hop) => emit(formatWinTracertHop(hop, nameOf)), shouldStop);
+    (hop) => emit(formatWinTracertHop(hop, nameOf)), shouldStop, sourceIp);
   if (shouldStop()) return;
   if (traced === 0) emit('  1  Transmit error: code 1231.');
   emit('');
@@ -247,8 +260,16 @@ export async function cmdTracert(ctx: WinCommandContext, args: string[]): Promis
 export function tracertHostOf(ctx: WinCommandContext): TracertHost {
   return {
     resolveHostname: (name) => ctx.resolveHostname(name),
+    resolveHostname6: async (name) => ctx.resolveHostname6 === undefined ? null : ctx.resolveHostname6(name),
+    ownsAddress6: (address) => [...ctx.ports.values()].some((port) =>
+      port.getIPv6Addresses().some((entry) => entry.address.equals(address))),
     reverseLookup: ctx.reverseLookup === undefined ? undefined : (ip) => ctx.reverseLookup!(ip),
-    trace: async (target, maxHops, timeoutMs, onHop, stop) =>
-      (await ctx.executeTraceroute(target, maxHops, timeoutMs, { onHop, shouldStop: stop })).length,
+    trace: async (target, maxHops, timeoutMs, onHop, stop, sourceIp) => {
+      const hooks = { onHop, shouldStop: stop };
+      const hops = target instanceof IPv6Address
+        ? await (ctx.executeTraceroute6?.(target, maxHops, timeoutMs, hooks, sourceIp) ?? Promise.resolve([]))
+        : await ctx.executeTraceroute(target, maxHops, timeoutMs, hooks);
+      return hops.length;
+    },
   };
 }

@@ -9,12 +9,13 @@ import { psValueToString, registerPSDisplayFormatter } from '@/powershell/runtim
 import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { RRType } from '@/network/dns/wire/RRType';
+import { normalizeDnsName, relativeTo } from '@/network/dns/wire/DnsName';
 import {
   DNS_TRANSFER_POLICIES, DNS_NOTIFY_POLICIES, formatRecordFields,
   type DnsTransferPolicy, type DnsNotifyPolicy, type DnsDynamicUpdateMode,
 } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
-function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider {
+export function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerProvider {
   if (!ctx.providers.dns) {
     throw new PSRuntimeError(commandNotFoundMessage(cmdletName));
   }
@@ -34,7 +35,7 @@ function withPassThru(ctx: CmdletContext, dns: IDnsServerProvider, before: Reado
   return zone ? zoneToPSObject(zone) : null;
 }
 
-function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult): null {
+export function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult): null {
   ctx.emitError(`${cmdletName} : ${res.message}`);
   return null;
 }
@@ -44,7 +45,7 @@ function missing(ctx: CmdletContext, cmdletName: string, parameters: string): nu
   return null;
 }
 
-function stringList(value: PSValue | undefined): string[] {
+export function stringList(value: PSValue | undefined): string[] {
   if (value === undefined || value === null) return [];
   const items = Array.isArray(value) ? value : psValueToString(value).split(',');
   return items.map(item => psValueToString(item).trim()).filter(item => item !== '');
@@ -91,10 +92,10 @@ function recordData(type: string, data: Record<string, string | number>): Record
 }
 
 function relativeName(fqdn: string, zone: string): string {
-  const name = fqdn.toLowerCase();
-  const origin = zone.toLowerCase();
-  if (name === origin) return '@';
-  return name.endsWith(`.${origin}`) ? name.slice(0, -origin.length - 1) : name;
+  const name = normalizeDnsName(fqdn);
+  const relative = relativeTo(name, normalizeDnsName(zone));
+  if (relative === null) return name;
+  return relative === '' ? '@' : relative;
 }
 
 function recordToPSObject(r: DnsRecordInfo, zone: string): Record<string, PSValue> {
@@ -339,9 +340,8 @@ function trimDot(name: string): string {
 }
 
 function belowZone(name: string, zone: string): string | null {
-  const lower = trimDot(name).toLowerCase();
-  const origin = trimDot(zone).toLowerCase();
-  return lower.endsWith(`.${origin}`) ? lower.slice(0, -origin.length - 1) : null;
+  const relative = relativeTo(normalizeDnsName(name), normalizeDnsName(zone));
+  return relative === null || relative === '' ? null : relative;
 }
 
 interface DelegationArguments {

@@ -189,6 +189,13 @@ function ipconfigBasic(ctx: WinCommandContext): string {
 
 // ─── /all output ──────────────────────────────────────────────────
 
+const SEARCH_LIST_CONTINUATION = ' '.repeat(39);
+
+function searchListLines(suffixes: readonly string[]): string[] {
+  return suffixes.map((suffix, index) =>
+    index === 0 ? `   DNS Suffix Search List. . . . . . : ${suffix}` : `${SEARCH_LIST_CONTINUATION}${suffix}`);
+}
+
 function ipconfigAll(ctx: WinCommandContext): string {
   const suffix = ctx.getDnsSuffix();
   const lines: string[] = [
@@ -199,6 +206,7 @@ function ipconfigAll(ctx: WinCommandContext): string {
     `   Node Type . . . . . . . . . . . . : Hybrid`,
     `   IP Routing Enabled. . . . . . . . : No`,
     `   WINS Proxy Enabled. . . . . . . . : No`,
+    ...searchListLines(ctx.getDnsSuffixSearchList()),
     '',
   ];
 

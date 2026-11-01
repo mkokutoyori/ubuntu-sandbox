@@ -1,4 +1,4 @@
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { TraceProbeMethod, TraceSocketOptions } from '../../../EndHost';
@@ -101,6 +101,9 @@ export interface ParsedTracerouteArgs {
   sourcePort?: number;
   dontFragment: boolean;
   direct: boolean;
+  family?: 4 | 6;
+  flowLabel?: number;
+  packetSizeGiven: boolean;
   numeric: boolean;
   method: MethodName;
   showVersion: boolean;
@@ -109,10 +112,8 @@ export interface ParsedTracerouteArgs {
 }
 
 const UNBUILDABLE: Readonly<Record<string, string>> = {
-  '-6': 'an IPv6 trace (this simulator traces over IPv4 only)',
   '-g': 'a loose source route (no LSRR IP option on these probes)',
   '-A': 'an AS path lookup (no routing registry is reachable)',
-  '-l': 'an IPv6 flow label (this simulator traces over IPv4 only)',
   '-O': 'a module-specific option',
   '-D': 'a DCCP Request',
   '--UL': 'a UDPLITE datagram',
@@ -255,7 +256,7 @@ export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
   const result: ParsedTracerouteArgs = {
     targetStr: '', maxHops: DEF_HOPS, probesPerHop: DEF_NUM_PROBES, firstTtl: 1,
     packetSize: DEF_PACKET_BYTES, waitMs: 5000, waitSpec: [5, 3, 10], sendSeconds: 0, namedPorts: [],
-    numeric: false, method: 'default', dontFragment: false, direct: false,
+    numeric: false, method: 'default', dontFragment: false, direct: false, packetSizeGiven: false,
     showVersion: false, showHelp: false,
   };
   const fail = (message: string): ParsedTracerouteArgs => ({ ...result, parseError: message });
@@ -275,13 +276,22 @@ export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
           + ` (argc ${position})`);
       }
       result.packetSize = length;
+      result.packetSizeGiven = true;
       continue;
     }
     if (flag === '--help') { result.showHelp = true; return result; }
     if (flag === '-V' || flag === '--version') { result.showVersion = true; return result; }
     if (UNBUILDABLE[flag] !== undefined) return fail(refuse(flag));
     switch (flag) {
-      case '-4': case '-d': case '-e': break;
+      case '-d': case '-e': break;
+      case '-4': result.family = 4; break;
+      case '-6': result.family = 6; break;
+      case '-l': {
+        const n = unsigned('-l', 'flow_label', value, position);
+        if (typeof n === 'string') return fail(n);
+        result.flowLabel = n & 0xfffff;
+        break;
+      }
       case '-n': result.numeric = true; break;
       case '-F': result.dontFragment = true; break;
       case '-r': result.direct = true; break;
@@ -350,6 +360,17 @@ export function parseTracerouteArgs(args: string[]): ParsedTracerouteArgs {
   return result;
 }
 
+const IPV6_HEADER_BYTES = 40;
+const DEF_DATA_BYTES = 40;
+const PROBE_HEADER_BYTES: Readonly<Record<string, number>> = { icmp: 8, tcp: 20 };
+
+function ipv6PacketBytesOf(parsed: ParsedTracerouteArgs): number {
+  const moduleHeader = PROBE_HEADER_BYTES[parsed.method] ?? 8;
+  const headers = IPV6_HEADER_BYTES + moduleHeader;
+  if (!parsed.packetSizeGiven) return headers + (DEF_DATA_BYTES - moduleHeader);
+  return parsed.packetSize >= headers ? parsed.packetSize : headers;
+}
+
 function probeMethod(parsed: ParsedTracerouteArgs, protocol: number): TraceProbeMethod {
   const tos = parsed.tos === undefined ? {} : { tos: parsed.tos };
   switch (parsed.method) {
@@ -361,18 +382,21 @@ function probeMethod(parsed: ParsedTracerouteArgs, protocol: number): TraceProbe
   }
 }
 
+export type TraceTarget = IPAddress | IPv6Address;
+
 export interface TracerouteHost {
   rawSocketsPermitted: boolean;
   mayBindPort(port: number): boolean;
   resolveHostname(name: string): Promise<IPAddress | null>;
+  resolveHostname6(name: string): Promise<IPv6Address | null>;
   interfaceExists(name: string): boolean;
-  ownsAddress(address: IPAddress): boolean;
-  canReach(target: IPAddress, socket: TraceSocketOptions): boolean;
+  ownsAddress(address: TraceTarget): boolean;
+  canReach(target: TraceTarget, socket: TraceSocketOptions): boolean;
   protocolNumber(name: string): number | null;
   servicePort(name: string): number | null;
   reverseName(ip: string): string | null;
   trace(
-    target: IPAddress, parsed: ParsedTracerouteArgs, method: TraceProbeMethod, socket: TraceSocketOptions,
+    target: TraceTarget, parsed: ParsedTracerouteArgs, method: TraceProbeMethod, socket: TraceSocketOptions,
     onHop: (hop: TracerouteHop) => void, shouldStop: () => boolean,
   ): Promise<void>;
 }
@@ -395,22 +419,26 @@ function rawProtocolOf(parsed: ParsedTracerouteArgs, host: TracerouteHost, args:
 
 async function sourceOf(
   parsed: ParsedTracerouteArgs, host: TracerouteHost, args: string[],
-): Promise<IPAddress | null | string> {
+): Promise<TraceTarget | null | string> {
   if (parsed.sourceStr === undefined) return null;
   const text = parsed.sourceStr;
-  const address = isValidIPv4(text) ? new IPAddress(text) : await host.resolveHostname(text);
+  const literal6 = text.includes(':') ? IPv6Address.tryParse(text) : null;
+  const address = literal6 !== null ? literal6
+    : isValidIPv4(text) ? new IPAddress(text)
+      : parsed.family === 6 ? await host.resolveHostname6(text) : await host.resolveHostname(text);
   if (address !== null) return address;
   const position = args.findIndex((a) => a === text || a.endsWith(text)) + 1;
   return `${text}: Name or service not known\n${cannotHandle('-s', 'src_addr', text, position)}`;
 }
 
 function socketErrorOf(
-  target: IPAddress, socket: TraceSocketOptions, host: TracerouteHost, bindsSourcePort: boolean,
+  target: TraceTarget, socket: TraceSocketOptions, host: TracerouteHost, bindsSourcePort: boolean,
 ): string | null {
   if (socket.iface !== undefined && !host.interfaceExists(socket.iface)) {
     return 'setsockopt SO_BINDTODEVICE: No such device';
   }
-  if (socket.sourceIp !== undefined && !host.ownsAddress(socket.sourceIp)) {
+  const boundSource = socket.sourceIp ?? socket.sourceIp6;
+  if (boundSource !== undefined && !host.ownsAddress(boundSource)) {
     return 'bind: Cannot assign requested address';
   }
   if (bindsSourcePort && socket.sourcePort !== undefined && !host.mayBindPort(socket.sourcePort)) {
@@ -448,12 +476,28 @@ export async function runTraceroute(
     emit(unknownHost(parsed.targetStr));
     return 2;
   }
-  if (parsed.targetStr.includes(':')) { emit(refuse('-6')); return 2; }
-  let target = await host.resolveHostname(parsed.targetStr);
-  if (!target && parsed.targetStr.toLowerCase() === 'localhost') target = new IPAddress('127.0.0.1');
+  const wantsIpv6 = parsed.family === 6 || (parsed.family === undefined && parsed.targetStr.includes(':'));
+  let target: TraceTarget | null;
+  if (wantsIpv6) {
+    target = IPv6Address.tryParse(parsed.targetStr) ?? await host.resolveHostname6(parsed.targetStr);
+    if (!target && parsed.targetStr.toLowerCase() === 'localhost') target = new IPv6Address('::1');
+  } else {
+    target = parsed.targetStr.includes(':') ? null : await host.resolveHostname(parsed.targetStr);
+    if (!target && parsed.targetStr.toLowerCase() === 'localhost') target = new IPAddress('127.0.0.1');
+  }
   if (!target) { emit(unknownHost(parsed.targetStr)); return 2; }
+  const targetIsIpv6 = target instanceof IPv6Address;
   const invalid = mainValidationError(parsed);
   if (invalid !== null) { emit(invalid); return 2; }
+  if (source !== null && (source instanceof IPv6Address) !== targetIsIpv6) {
+    emit('IP version mismatch in addresses specified');
+    return 2;
+  }
+  if (targetIsIpv6 && parsed.method === 'raw') {
+    emit(`traceroute: option ${parsed.protocol === undefined ? '-M raw' : '-P'}: this simulator cannot build`
+      + ' an IPv6 raw-protocol trace (an unknown next header is not answered with an ICMPv6 Parameter Problem)');
+    return 2;
+  }
 
   if (RAW_SOCKET_METHODS.has(parsed.method) && !host.rawSocketsPermitted) {
     emit('You do not have enough privileges to use this traceroute method.\nsocket: Operation not permitted');
@@ -464,10 +508,12 @@ export async function runTraceroute(
     dontFragment: parsed.dontFragment,
     direct: parsed.direct,
     ...(parsed.iface === undefined ? {} : { iface: parsed.iface }),
-    ...(source === null ? {} : { sourceIp: source }),
+    ...(source === null ? {} : source instanceof IPv6Address ? { sourceIp6: source } : { sourceIp: source }),
+    ...(parsed.flowLabel === undefined ? {} : { flowLabel: parsed.flowLabel }),
     ...(parsed.sourcePort === undefined ? {} : { sourcePort: parsed.sourcePort }),
   };
-  const header = tracerouteHeader(parsed.targetStr, target.toString(), parsed.maxHops, parsed.packetSize);
+  const packetBytes = targetIsIpv6 ? ipv6PacketBytesOf(parsed) : parsed.packetSize;
+  const header = tracerouteHeader(parsed.targetStr, target.toString(), parsed.maxHops, packetBytes);
   const perProbeSocket = parsed.method === 'default' || parsed.method === 'udp';
   const socketError = socketErrorOf(target, socket, host, perProbeSocket);
   if (socketError !== null) {
@@ -476,7 +522,7 @@ export async function runTraceroute(
   }
 
   emit(header);
-  const render = { numeric: parsed.numeric, nameOf: (ip: string) => host.reverseName(ip) };
+  const render = { numeric: parsed.numeric, nameOf: (ip: string) => host.reverseName(ip), family: targetIsIpv6 ? 6 as const : 4 as const };
   await host.trace(
     target, parsed, probeMethod(parsed, protocol), socket,
     (hop) => emit(tracerouteHopLine(hop, render)), shouldStop);
@@ -491,9 +537,12 @@ export function tracerouteHostOf(
     rawSocketsPermitted,
     mayBindPort: (port) => ctx.executor.portBindPermitted(port, uid),
     resolveHostname: (name) => ctx.net.resolveHostname(name),
+    resolveHostname6: (name) => ctx.net.resolveHostname6(name),
     interfaceExists: (name) => ctx.net.getPorts().has(name),
-    ownsAddress: (address) => ctx.net.isLocalAddress(address),
-    canReach: (target, socket) => ctx.net.canTraceTo(target, socket),
+    ownsAddress: (address) => address instanceof IPv6Address
+      ? ctx.net.isLocalAddress6(address) : ctx.net.isLocalAddress(address),
+    canReach: (target, socket) => target instanceof IPv6Address
+      ? ctx.net.canTraceTo6(target, socket) : ctx.net.canTraceTo(target, socket),
     protocolNumber: (name) => {
       const found = ctx.executor.nss.lookup<NssProtocolEntry>('protocols', (src) => src.getprotobyname?.(name));
       return found.status === 'SUCCESS' && found.entry ? found.entry.number : null;
@@ -501,12 +550,24 @@ export function tracerouteHostOf(
     servicePort: (name) => ctx.executor.resolveServicePort(name),
     reverseName: (ip) => reverseNameOf(ctx.executor.nss, ip),
     trace: async (target, parsed, method, socket, onHop, shouldStop) => {
+      const hooks = { onHop, shouldStop, compressedWaitMs: Math.max(0, parsed.waitMs - PROBE_WAIT_CAP_MS) };
+      const timeoutMs = Math.min(parsed.waitMs, PROBE_WAIT_CAP_MS);
+      if (target instanceof IPv6Address) {
+        await ctx.net.traceroute6(
+          target, parsed.maxHops, parsed.probesPerHop, parsed.firstTtl, timeoutMs,
+          method as Exclude<TraceProbeMethod, { kind: 'raw' }>, socket, hooks);
+        return;
+      }
       await ctx.net.traceroute(
-        target, parsed.maxHops, parsed.probesPerHop, parsed.firstTtl,
-        Math.min(parsed.waitMs, PROBE_WAIT_CAP_MS), method, socket,
-        { onHop, shouldStop, compressedWaitMs: Math.max(0, parsed.waitMs - PROBE_WAIT_CAP_MS) });
+        target, parsed.maxHops, parsed.probesPerHop, parsed.firstTtl, timeoutMs, method, socket, hooks);
     },
   };
+}
+
+export const TRACEROUTE_COMMAND_NAMES: readonly string[] = ['traceroute', 'traceroute6'];
+
+export function tracerouteArgvOf(name: string, args: readonly string[]): string[] {
+  return name === 'traceroute6' ? ['-6', ...args] : [...args];
 }
 
 export const tracerouteCommand: LinuxCommand = {
@@ -531,6 +592,20 @@ export const tracerouteCommand: LinuxCommand = {
   async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
     const lines: string[] = [];
     await runTraceroute(args, tracerouteHostOf(ctx), (line) => lines.push(line));
+    return lines.join('\n');
+  },
+};
+
+export const traceroute6Command: LinuxCommand = {
+  ...tracerouteCommand,
+  name: 'traceroute6',
+  usage: 'traceroute6 [ -dFITnreU ] [ -f first_ttl ] [ -i device ] [ -m max_ttl ] [ -N squeries ]'
+    + ' [ -p port ] [ -t tos ] [ -l flow_label ] [ -w MAX ] [ -q nqueries ] [ -s src_addr ] [ -z sendwait ]'
+    + ' [ -M method ] [ -P proto ] [ --sport=port ] host [ packetlen ]',
+
+  async run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
+    const lines: string[] = [];
+    await runTraceroute(tracerouteArgvOf('traceroute6', args), tracerouteHostOf(ctx), (line) => lines.push(line));
     return lines.join('\n');
   },
 };

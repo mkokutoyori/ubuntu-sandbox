@@ -68,6 +68,7 @@ const DEFAULT_TIMEOUT_MS = 2000;
 const DEFAULT_MAX_REFERRALS = 16;
 const DEFAULT_MAX_DEPTH = 8;
 const QUERY_ID_SPACE = 0x10000;
+const UNCACHEABLE_TYPES: ReadonlySet<number> = new Set([RRType.OPT, RRType.SOA, RRType.TSIG]);
 
 function servfail(): IterationOutcome {
   return { status: 'SERVFAIL', answers: [], authorities: [], negative: null };
@@ -208,7 +209,7 @@ export class RecursiveResolver {
     let servers: readonly IPAddress[] = this.rootHints;
     let zoneCut = '';
 
-    if (this.forwardRecursively) return this.forward(servers, qname, qtype);
+    if (this.forwardRecursively) return this.forward(servers, qname, qtype, raw);
 
     for (let referral = 0; referral <= this.maxReferrals; referral++) {
       const response = await this.queryFirstReachable(servers, qname, qtype);
@@ -219,8 +220,10 @@ export class RecursiveResolver {
       }
       if (response.flags.rcode !== DnsRcode.NOERROR) return servfail();
 
+      const owned = ownedByQuestion(qname, response.answers);
+      if (!raw) this.admitUnrelated(response, owned);
+
       if (response.answers.length > 0) {
-        const owned = ownedByQuestion(qname, response.answers);
         if (owned.length === 0) return servfail();
         return this.acceptAnswers(qtype, owned, response.authorities, depth, raw);
       }
@@ -238,7 +241,7 @@ export class RecursiveResolver {
   }
 
   private async forward(
-    servers: readonly IPAddress[], qname: string, qtype: number,
+    servers: readonly IPAddress[], qname: string, qtype: number, raw: boolean,
   ): Promise<IterationOutcome> {
     const response = await this.queryFirstReachable(servers, qname, qtype);
     if (!response) return servfail();
@@ -247,11 +250,19 @@ export class RecursiveResolver {
     }
     if (response.flags.rcode !== DnsRcode.NOERROR) return servfail();
     const owned = ownedByQuestion(qname, response.answers);
+    if (!raw) this.admitUnrelated(response, owned);
     if (owned.length > 0) {
       return { status: 'NOERROR', answers: owned, authorities: response.authorities, negative: null };
     }
     if (response.answers.length > 0) return servfail();
     return { status: 'NOERROR', answers: [], authorities: response.authorities, negative: 'nodata' };
+  }
+
+  private admitUnrelated(response: DnsMessage, related: readonly ResourceRecord<ResourceRecordData>[]): void {
+    if (!this.cache.admitsUnrelatedRecords()) return;
+    const unrelated = [...response.answers, ...response.authorities, ...response.additionals]
+      .filter((rr) => !related.includes(rr) && !UNCACHEABLE_TYPES.has(rr.data.type));
+    if (unrelated.length > 0) this.cache.storePositive(unrelated);
   }
 
   private async acceptAnswers(

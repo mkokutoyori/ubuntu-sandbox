@@ -64,6 +64,9 @@ export interface ProtocolCounters {
   ip6InReceives: number;
   ip6InHdrErrors: number;
   ip6InAddrErrors: number;
+  ip6InTooBigErrors: number;
+  ip6InNoRoutes: number;
+  ip6OutForwDatagrams: number;
   ip6InUnknownProtos: number;
   ip6InDiscards: number;
   ip6InDelivers: number;
@@ -142,7 +145,7 @@ export function newProtocolCounters(): ProtocolCounters {
     udpIgnoredMulti: 0,
     udpLiteInDatagrams: 0, udpLiteNoPorts: 0, udpLiteInErrors: 0, udpLiteOutDatagrams: 0,
     udpLiteInCsumErrors: 0, udpLiteIgnoredMulti: 0,
-    ip6InReceives: 0, ip6InHdrErrors: 0, ip6InAddrErrors: 0, ip6InUnknownProtos: 0,
+    ip6InReceives: 0, ip6InHdrErrors: 0, ip6InAddrErrors: 0, ip6InTooBigErrors: 0, ip6InNoRoutes: 0, ip6OutForwDatagrams: 0, ip6InUnknownProtos: 0,
     ip6InDiscards: 0, ip6InDelivers: 0, ip6OutRequests: 0, ip6OutDiscards: 0, ip6OutNoRoutes: 0,
     ip6ReasmTimeout: 0, ip6ReasmReqds: 0, ip6ReasmOKs: 0, ip6ReasmFails: 0,
     ip6FragOKs: 0, ip6FragFails: 0, ip6FragCreates: 0,

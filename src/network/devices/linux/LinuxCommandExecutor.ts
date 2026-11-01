@@ -371,7 +371,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
   'mkfs', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs', 'lvdisplay', 'vgdisplay', 'pvdisplay',
   // Networking
-  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'tracepath', 'mtr', 'netstat', 'ethtool',
+  'ifconfig', 'ip', 'ping', 'ping6', 'traceroute', 'traceroute6', 'tracepath', 'mtr', 'netstat', 'ethtool',
   'ss', 'route', 'arp', 'arping', 'dhclient', 'nslookup', 'dig', 'host', 'curl', 'wget',
   'ssh', 'sshpass', 'scp', 'sftp', 'rsync', 'telnet', 'nc', 'ncat', 'tcpdump', 'tc',
   'ssh-keygen', 'ssh-add', 'ssh-agent', 'ssh-copy-id', 'ssh-keyscan',
@@ -4630,7 +4630,7 @@ export class LinuxCommandExecutor {
       const cmd0 = effective[0] ?? '';
       const rest = effective.slice(1);
       const scriptForm = (): Promise<{ output: string; exitCode: number; stderr?: string }> | null => {
-        if (cmd0 === 'bash' || cmd0 === 'sh') return this.runBashOrShAsync(cmd0, rest);
+        if (cmd0 === 'bash' || cmd0 === 'sh' || cmd0 === 'dash') return this.runBashOrShAsync(cmd0, rest);
         if (cmd0 === 'run-parts') return this.handleRunPartsAsync(rest);
         if (cmd0.startsWith('./') || cmd0.startsWith('/')) {
           return this.runDirectScriptAsync(cmd0, rest).then(
@@ -5018,6 +5018,7 @@ export class LinuxCommandExecutor {
     // le détour par le jumeau async le sautait.
     this.noteInterpreterExec(cmd);
     const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
+    const dashDiagnostics = cmd !== 'bash';
     const startupVars = withInvocationOptions(cmd === 'bash'
       ? this.runBashStartupFiles(parsed.login, parsed.interactive)
       : { ...this.commandEnvironment() }, parsed.options);
@@ -5026,12 +5027,12 @@ export class LinuxCommandExecutor {
         runScriptContentAsync(
           parsed.cmdString!, parsed.arg0, parsed.scriptArgv, bridge,
           startupVars, this.buildIOContext(),
-          { ...identity, daemonMode: this.daemonMode }, this.aliases, this.functions,
+          { ...identity, daemonMode: this.daemonMode, dashDiagnostics }, this.aliases, this.functions,
         ));
     }
     if (parsed.scriptArgv.length > 0) {
       return this.runScriptProcessAsync(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', identity, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
+        runScriptAsync(this.ctx(), parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, dashDiagnostics }, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
     }
     return { output: '', exitCode: 0 };
   }
@@ -6699,8 +6700,10 @@ export class LinuxCommandExecutor {
 
       // Script execution
       case 'bash':
-      case 'sh': {
+      case 'sh':
+      case 'dash': {
         const parsed = LinuxCommandExecutor.parseBashOrShArgs(cmd, args);
+        const dashDiagnostics = cmd !== 'bash';
         const startupVars = withInvocationOptions(cmd === 'bash'
           ? this.runBashStartupFiles(parsed.login, parsed.interactive)
           : { ...this.commandEnvironment() }, parsed.options);
@@ -6710,18 +6713,18 @@ export class LinuxCommandExecutor {
             runScriptContent(
               parsed.cmdString!, parsed.arg0, parsed.scriptArgv, bridge,
               startupVars, this.buildIOContext(),
-              { ...identity, daemonMode: this.daemonMode, stdin: this.scriptInput(stdin) }, this.aliases, this.functions,
+              { ...identity, daemonMode: this.daemonMode, stdin: this.scriptInput(stdin), dashDiagnostics }, this.aliases, this.functions,
             ));
         }
         if (parsed.scriptArgv.length > 0) {
           return this.runScriptProcess(`${cmd} ${parsed.scriptArgv.join(' ')}`, (identity, bridge) =>
-            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin) }, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
+            runScript(c, parsed.scriptArgv[0], parsed.scriptArgv.slice(1), bridge, this.aliases, this.functions, 'interpreter', { ...identity, stdin: this.scriptInput(stdin), dashDiagnostics }, this.buildIOContext(), withInvocationOptions({ ...this.commandEnvironment() }, parsed.options)));
         }
         if (stdin !== undefined && stdin !== '') {
           return this.runScriptProcess(cmd, (identity, bridge) =>
             runScriptContent(
               stdin, parsed.arg0, [], bridge, startupVars, this.buildIOContext(),
-              { ...identity, daemonMode: this.daemonMode, fromStandardInput: true }, this.aliases, this.functions,
+              { ...identity, daemonMode: this.daemonMode, fromStandardInput: true, dashDiagnostics }, this.aliases, this.functions,
             ));
         }
         return { output: '', exitCode: 0 };

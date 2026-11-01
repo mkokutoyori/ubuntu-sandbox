@@ -77,6 +77,22 @@ export class LinuxEditorFsContext implements EditorFsContext {
     return this.dev.editorEnvironmentVariable(name, this.session);
   }
 
+  removeEntry(path: string, kind: 'file' | 'directory' | 'tree'): boolean {
+    return this.dev.editorRemoveEntry(this.resolvePath(path), kind, this.session);
+  }
+
+  renameEntry(from: string, to: string): boolean {
+    return this.dev.editorRenameEntry(this.resolvePath(from), this.resolvePath(to), this.session);
+  }
+
+  linkInfo(path: string): { type: string; permissions: number; target?: string } | null {
+    return this.dev.editorLinkInfo(this.resolvePath(path), this.session);
+  }
+
+  executableAt(path: string): boolean {
+    return this.dev.editorExecutableAt(this.resolvePath(path), this.session);
+  }
+
   environmentNames(): string[] {
     return this.dev.editorEnvironmentNames(this.session);
   }

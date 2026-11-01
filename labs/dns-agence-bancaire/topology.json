@@ -1,0 +1,2108 @@
+{
+  "version": 1,
+  "projectName": "DNS - Agence bancaire (Banque Horizon)",
+  "exportedAt": "2026-11-01T08:16:52.900Z",
+  "devices": [
+    {
+      "id": "1793521009921-1",
+      "type": "router-cisco",
+      "name": "R-ISP",
+      "x": 520,
+      "y": 40,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "GigabitEthernet0/0",
+          "mac": "02:00:00:00:00:01",
+          "ipAddress": "198.51.100.254",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:02",
+          "ipAddress": "203.0.113.254",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:03",
+          "ipAddress": "192.0.2.1",
+          "subnetMask": "255.255.255.252"
+        },
+        {
+          "name": "GigabitEthernet0/3",
+          "mac": "02:00:00:00:00:04"
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 847 bytes\n!\n! Last configuration change at 08:16:50 UTC Sun Nov 1 2026 by console\n! NVRAM config last updated at 08:16:50 UTC Sun Nov 1 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-ISP\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description DNS-INFRA racine et TLD\n ip address 198.51.100.254 255.255.255.0\n!\ninterface GigabitEthernet0/1\n description HEBERGEMENT serveurs de la banque\n ip address 203.0.113.254 255.255.255.0\n!\ninterface GigabitEthernet0/2\n description LIEN VERS AGENCE\n ip address 192.0.2.1 255.255.255.252\n!\ninterface GigabitEthernet0/3\n no ip address\n!\nend",
+      "startupConfigText": "Building configuration...\n\nCurrent configuration : 777 bytes\n!\n! Last configuration change at 08:16:50 UTC Sun Nov 1 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-ISP\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description DNS-INFRA racine et TLD\n ip address 198.51.100.254 255.255.255.0\n!\ninterface GigabitEthernet0/1\n description HEBERGEMENT serveurs de la banque\n ip address 203.0.113.254 255.255.255.0\n!\ninterface GigabitEthernet0/2\n description LIEN VERS AGENCE\n ip address 192.0.2.1 255.255.255.252\n!\ninterface GigabitEthernet0/3\n no ip address\n!\nend"
+    },
+    {
+      "id": "1793521010057-2",
+      "type": "switch-generic",
+      "name": "SW-INFRA",
+      "x": 300,
+      "y": 40,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:05"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:06"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:07"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:08"
+        },
+        {
+          "name": "eth4",
+          "mac": "02:00:00:00:00:09"
+        },
+        {
+          "name": "eth5",
+          "mac": "02:00:00:00:00:0a"
+        },
+        {
+          "name": "eth6",
+          "mac": "02:00:00:00:00:0b"
+        },
+        {
+          "name": "eth7",
+          "mac": "02:00:00:00:00:0c"
+        },
+        {
+          "name": "eth8",
+          "mac": "02:00:00:00:00:0d"
+        },
+        {
+          "name": "eth9",
+          "mac": "02:00:00:00:00:0e"
+        },
+        {
+          "name": "eth10",
+          "mac": "02:00:00:00:00:0f"
+        },
+        {
+          "name": "eth11",
+          "mac": "02:00:00:00:00:10"
+        },
+        {
+          "name": "eth12",
+          "mac": "02:00:00:00:00:11"
+        },
+        {
+          "name": "eth13",
+          "mac": "02:00:00:00:00:12"
+        },
+        {
+          "name": "eth14",
+          "mac": "02:00:00:00:00:13"
+        },
+        {
+          "name": "eth15",
+          "mac": "02:00:00:00:00:14"
+        },
+        {
+          "name": "eth16",
+          "mac": "02:00:00:00:00:15"
+        },
+        {
+          "name": "eth17",
+          "mac": "02:00:00:00:00:16"
+        },
+        {
+          "name": "eth18",
+          "mac": "02:00:00:00:00:17"
+        },
+        {
+          "name": "eth19",
+          "mac": "02:00:00:00:00:18"
+        },
+        {
+          "name": "eth20",
+          "mac": "02:00:00:00:00:19"
+        },
+        {
+          "name": "eth21",
+          "mac": "02:00:00:00:00:1a"
+        },
+        {
+          "name": "eth22",
+          "mac": "02:00:00:00:00:1b"
+        },
+        {
+          "name": "eth23",
+          "mac": "02:00:00:00:00:1c"
+        }
+      ]
+    },
+    {
+      "id": "1793521010100-3",
+      "type": "switch-generic",
+      "name": "SW-HEBERGEMENT",
+      "x": 740,
+      "y": 40,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:1d"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:1e"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:1f"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:20"
+        },
+        {
+          "name": "eth4",
+          "mac": "02:00:00:00:00:21"
+        },
+        {
+          "name": "eth5",
+          "mac": "02:00:00:00:00:22"
+        },
+        {
+          "name": "eth6",
+          "mac": "02:00:00:00:00:23"
+        },
+        {
+          "name": "eth7",
+          "mac": "02:00:00:00:00:24"
+        },
+        {
+          "name": "eth8",
+          "mac": "02:00:00:00:00:25"
+        },
+        {
+          "name": "eth9",
+          "mac": "02:00:00:00:00:26"
+        },
+        {
+          "name": "eth10",
+          "mac": "02:00:00:00:00:27"
+        },
+        {
+          "name": "eth11",
+          "mac": "02:00:00:00:00:28"
+        },
+        {
+          "name": "eth12",
+          "mac": "02:00:00:00:00:29"
+        },
+        {
+          "name": "eth13",
+          "mac": "02:00:00:00:00:2a"
+        },
+        {
+          "name": "eth14",
+          "mac": "02:00:00:00:00:2b"
+        },
+        {
+          "name": "eth15",
+          "mac": "02:00:00:00:00:2c"
+        },
+        {
+          "name": "eth16",
+          "mac": "02:00:00:00:00:2d"
+        },
+        {
+          "name": "eth17",
+          "mac": "02:00:00:00:00:2e"
+        },
+        {
+          "name": "eth18",
+          "mac": "02:00:00:00:00:2f"
+        },
+        {
+          "name": "eth19",
+          "mac": "02:00:00:00:00:30"
+        },
+        {
+          "name": "eth20",
+          "mac": "02:00:00:00:00:31"
+        },
+        {
+          "name": "eth21",
+          "mac": "02:00:00:00:00:32"
+        },
+        {
+          "name": "eth22",
+          "mac": "02:00:00:00:00:33"
+        },
+        {
+          "name": "eth23",
+          "mac": "02:00:00:00:00:34"
+        }
+      ]
+    },
+    {
+      "id": "1793521010134-4",
+      "type": "linux-server",
+      "name": "ROOT-NS",
+      "x": 200,
+      "y": 160,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:35",
+          "ipAddress": "198.51.100.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:36"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:37"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:38"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "198.51.100.254",
+      "files": [
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFp5MkzbErKiBn5o4cO7UiBmF3MC3+Ap7NNu2/quNtF1BXFFB+KLb0alUiGkE4opLQ5uhBP9U7vVwSP3TXD5Pq8= root@Server1\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQRaeTJM2xKyogZ+aOHDu1IgZhdzAt/g\nKezTbtv6rjbRdQVxRQfii29GpVIhpBOKKS0OboQT/VO71cEj901w+T6vAAAAqG4nOpBuJz\nqQAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBFp5MkzbErKiBn5o\n4cO7UiBmF3MC3+Ap7NNu2/quNtF1BXFFB+KLb0alUiGkE4opLQ5uhBP9U7vVwSP3TXD5Pq\n8AAAAgb8mcFna5l5Y8Mea4GSJaNQdahZPq40theH6ISunuLwcAAAAMcm9vdEBTZXJ2ZXIx\nAQIDBA==\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH7gTyzyiPr9xeqGsaDfkP8/RKVE39m3ooaCn3F0v9HR root@Server1\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACB+4E8s8oj6/cXqhrGg35D/P0SlRN/Zt6KGgp9xdL/R0QAAAJDUeGsW1Hhr\nFgAAAAtzc2gtZWQyNTUxOQAAACB+4E8s8oj6/cXqhrGg35D/P0SlRN/Zt6KGgp9xdL/R0Q\nAAAECVbldh15R7HP4TujAZol7T+TcN2kMXPLrgYzNnxgobQn7gTyzyiPr9xeqGsaDfkP8/\nRKVE39m3ooaCn3F0v9HRAAAADHJvb3RAU2VydmVyMQE=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 127.0.0.1\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/fstab",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=3db8bdbd-ffa1-cca5-0fee-089e920ca5b9 / ext4 relatime,errors=remount-ro 0 1\nUUID=3ab8b904-cfc0-a977-f5c8-f25174905412 /boot ext4 defaults 0 2\nUUID=35b6728e-3b64-c823-cb27-3497109c3770 /u01 ext4 defaults 0 2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/machine-id",
+          "content": "622e0d9c2920a59daab5b19f50ecd50c\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/netplan/01-lab.yaml",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [198.51.100.1/24]\n      routes:\n        - to: default\n          via: 198.51.100.254\n      nameservers:\n        addresses: [127.0.0.1]\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/bind/named.conf",
+          "content": "options {\n    directory \"/var/cache/bind\";\n    recursion no;\n    allow-query { any; };\n};\nzone \".\" { type primary; file \"/etc/bind/db.root\"; };\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/named.conf.options",
+          "content": "options {\n\tdirectory \"/var/cache/bind\";\n\n\tdnssec-validation auto;\n\n\tlisten-on-v6 { any; };\n};\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/named.conf.local",
+          "content": "",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/db.root",
+          "content": "$TTL 86400\n. IN SOA a.root-servers.net. hostmaster.root-servers.net. ( 2026103101 1800 900 604800 86400 )\n. IN NS a.root-servers.net.\na.root-servers.net. IN A 198.51.100.1\ncom. IN NS a.nic.com.\na.nic.com. IN A 198.51.100.2\n113.0.203.in-addr.arpa. IN NS ns1.banquehorizon.com.\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dpkg/status",
+          "content": "Package: apache2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.4.52-1ubuntu4\nDescription: Apache HTTP Server\n\nPackage: at\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.2.5-1ubuntu1\nDescription: Delayed job execution and batch processing\n\nPackage: auditd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.0.7-1build1\nDescription: User space tools for security auditing\n\nPackage: bash\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.1-6ubuntu1\nDescription: GNU Bourne Again SHell\n\nPackage: bind9\nStatus: install ok installed\nArchitecture: amd64\nVersion: 9.18.12-0ubuntu0.22.04.1\nDescription: Internet Domain Name Server\n\nPackage: ca-certificates\nStatus: install ok installed\nArchitecture: amd64\nVersion: 20230311ubuntu0.22.04.1\nDescription: Common CA certificates\n\nPackage: chrony\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.2-2ubuntu2\nDescription: Versatile implementation of the Network Time Protocol\n\nPackage: conntrack\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:1.4.6-2build2\nDescription: Program to modify the conntrack tables\n\nPackage: coreutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.32-4.1ubuntu1\nDescription: GNU core utilities\n\nPackage: cron\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0pl1-137ubuntu3\nDescription: process scheduling daemon\n\nPackage: curl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.5.0-2ubuntu10.6\nDescription: command line tool for transferring data with URL syntax\n\nPackage: debianutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.5-1ubuntu2\nDescription: Miscellaneous utilities specific to Debian\n\nPackage: dnsutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 9.18.12-0ubuntu0.22.04.1\nDescription: Clients provided with BIND 9\n\nPackage: dpkg\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.1ubuntu2\nDescription: Debian package management system\n\nPackage: e2fsprogs\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.46.5-2ubuntu1.1\nDescription: ext2/ext3/ext4 file system utilities\n\nPackage: findutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8.0-1ubuntu3\nDescription: utilities for finding files\n\nPackage: gawk\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:5.1.0-1ubuntu0.1\nDescription: GNU awk, a pattern scanning and processing language\n\nPackage: grep\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.7-1build1\nDescription: GNU grep, egrep and fgrep\n\nPackage: gzip\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.10-4ubuntu4.1\nDescription: GNU compression utilities\n\nPackage: iproute2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 6.1.0-1ubuntu6\nDescription: networking and traffic control tools\n\nPackage: iptables\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.8.7-1ubuntu5\nDescription: administration tools for packet filtering and NAT\n\nPackage: ipset\nStatus: install ok installed\nArchitecture: amd64\nVersion: 7.15-1build1\nDescription: administration tool for kernel IP sets\n\nPackage: iputils-ping\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3:20211215-1\nDescription: Tools to test the reachability of network hosts\n\nPackage: hping3\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.a2.ds2-9\nDescription: Active Network Smashing Tool\n\nPackage: isc-dhcp-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.4.1-2.3ubuntu2.4\nDescription: ISC DHCP server for automatic IP address assignment\n\nPackage: kmod\nStatus: install ok installed\nArchitecture: amd64\nVersion: 29-1ubuntu1\nDescription: tools for managing Linux kernel modules\n\nPackage: krb5-user\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.19.2-2ubuntu0.4\nDescription: basic programs to authenticate using MIT Kerberos\n\nPackage: ldap-utils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.5.18+dfsg-0ubuntu0.22.04.2\nDescription: OpenLDAP utilities\n\nPackage: less\nStatus: install ok installed\nArchitecture: amd64\nVersion: 590-1ubuntu0.22.04.3\nDescription: pager program similar to more\n\nPackage: libuser\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:0.62~dfsg-0.1ubuntu2\nDescription: user and group account administration library\n\nPackage: lldpd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0.16-1\nDescription: implementation of IEEE 802.1ab (LLDP)\n\nPackage: logrotate\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.19.0-1ubuntu1.1\nDescription: Log rotation utility\n\nPackage: lsof\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.93.2+dfsg-1.1build2\nDescription: Utility to list open files\n\nPackage: mtr-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 0.95-1\nDescription: Full screen ncurses traceroute tool\n\nPackage: ncal\nStatus: install ok installed\nArchitecture: amd64\nVersion: 12.1.7+nmu3\nDescription: Unix calendar and calculator utility\n\nPackage: net-tools\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.10-0.1ubuntu4\nDescription: NET-3 networking toolkit\n\nPackage: nginx\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.24.0-1~jammy\nDescription: small, powerful, scalable web/proxy server\n\nPackage: ntpsec\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.2.1+dfsg1-4\nDescription: Network Time Protocol daemon and utility programs\n\nPackage: inetutils-telnet\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:2.2-2\nDescription: telnet client\n\nPackage: openssh-client\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) client, for secure access to remote machines\n\nPackage: openssh-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) server, for secure access from remote machines\n\nPackage: openssl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0.2-0ubuntu1\nDescription: Secure Sockets Layer toolkit - cryptographic utility\n\nPackage: passwd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:4.8.1-2ubuntu2.1\nDescription: change and administer password and group data\n\nPackage: pciutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.7.0-6\nDescription: PCI utilities\n\nPackage: procps\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:3.3.17-6ubuntu2\nDescription: /proc file system utilities\n\nPackage: psmisc\nStatus: install ok installed\nArchitecture: amd64\nVersion: 23.7-1build1\nDescription: utilities that use the proc file system\n\nPackage: rsyslog\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.2610.0-1ubuntu1\nDescription: reliable system and kernel logging daemon\n\nPackage: sed\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8-1ubuntu2\nDescription: GNU stream editor for filtering/transforming text\n\nPackage: snmp\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.1+dfsg-1ubuntu2.8\nDescription: SNMP (Simple Network Management Protocol) applications\n\nPackage: sshpass\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.09-1\nDescription: Non-interactive ssh password authentication\n\nPackage: strongswan\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.5-2ubuntu2\nDescription: IPsec VPN solution\n\nPackage: sudo\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.9.9-1ubuntu2.4\nDescription: Provide limited super user privileges to specific users\n\nPackage: systemd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager\n\nPackage: systemd-sysv\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager - SysV links\n\nPackage: tar\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.34+dfsg-1ubuntu0.1.22.04.2\nDescription: GNU version of the tar archiving utility\n\nPackage: tcpdump\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.99.1-3build2\nDescription: command-line network traffic analyzer\n\nPackage: traceroute\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:2.1.0-2\nDescription: Traces the route taken by packets over an IPv4/IPv6 network\n\nPackage: tree\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.0.2-1\nDescription: displays an indented directory tree, in color\n\nPackage: util-linux\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.37.2-4ubuntu3\nDescription: miscellaneous system utilities\n\nPackage: vim\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor\n\nPackage: vim-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor - compact version\n\nPackage: wget\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.2-2ubuntu1\nDescription: retrieves files from the web\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "directories": [
+        {
+          "path": "/etc/bind",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/lib/dpkg",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/cache/bind",
+          "uid": 0,
+          "gid": 0,
+          "mode": 509
+        }
+      ],
+      "symlinks": [
+        {
+          "path": "/etc/systemd/system/multi-user.target.wants/named.service",
+          "target": "/usr/lib/systemd/system/named.service",
+          "uid": 0,
+          "gid": 0
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "named",
+          "enabled": "enabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1793521010572-5",
+      "type": "windows-server",
+      "name": "TLD-NS",
+      "x": 400,
+      "y": 160,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:39",
+          "ipAddress": "198.51.100.2",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:3a"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:3b"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:3c"
+        }
+      ],
+      "defaultGateway": "198.51.100.254",
+      "windowsFeatures": {
+        "installed": [
+          "DNS"
+        ]
+      },
+      "windowsRoles": {
+        "dnsZones": [
+          {
+            "name": "com",
+            "type": "Primary",
+            "zoneFile": "com.dns",
+            "dynamicUpdate": "NonsecureAndSecure",
+            "secureSecondaries": "TransferToZoneNameServer",
+            "secondaryServers": [],
+            "notify": "Notify",
+            "notifyServers": [],
+            "masters": []
+          }
+        ]
+      },
+      "files": [
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQThW3pfovDMNiyvgyn0QJMEq4EvuypA\n6TAgT6MWC1WNAlm7WSMRGSXtkm/T02jIoK5xETLkt8G9IVJ/sid66j3aAAAAqPkpFk75KR\nZOAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOFbel+i8Mw2LK+D\nKfRAkwSrgS+7KkDpMCBPoxYLVY0CWbtZIxEZJe2Sb9PTaMigrnERMuS3wb0hUn+yJ3rqPd\noAAAAgeG8VvjTvHGZSDBIgZHJ4T422HDSzdTMzEFRNEvYZhrEAAAAPcm9vdEBXaW5TZXJ2\nZXIxAQ==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOFbel+i8Mw2LK+DKfRAkwSrgS+7KkDpMCBPoxYLVY0CWbtZIxEZJe2Sb9PTaMigrnERMuS3wb0hUn+yJ3rqPdo= root@WinServer1\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACAeKVXzjN3gbnxu5zZPgRAqMrOb2DjV5N5/TVr4XZuDqwAAAJgWeFe7FnhX\nuwAAAAtzc2gtZWQyNTUxOQAAACAeKVXzjN3gbnxu5zZPgRAqMrOb2DjV5N5/TVr4XZuDqw\nAAAEB9RehHmNO7hQeeGfNI9RyPQOBw3NSAmoxlknh2RTDXzx4pVfOM3eBufG7nNk+BECoy\ns5vYONXk3n9NWvhdm4OrAAAAD3Jvb3RAV2luU2VydmVyMQECAwQFBg==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB4pVfOM3eBufG7nNk+BECoys5vYONXk3n9NWvhdm4Or root@WinServer1\n"
+        },
+        {
+          "path": "C:\\Windows\\System32\\dns\\com.dns",
+          "content": "$ORIGIN com.\n$TTL 3600\ncom. 3600 IN SOA ns1.com. hostmaster.com. 7 900 600 86400 3600\ncom. 3600 IN NS a.nic.com.\na.nic.com. 3600 IN A 198.51.100.2\nbanquehorizon.com. 3600 IN NS ns1.banquehorizon.com.\nbanquehorizon.com. 3600 IN NS ns2.banquehorizon.com.\nns1.banquehorizon.com. 3600 IN A 203.0.113.10\nns2.banquehorizon.com. 3600 IN A 203.0.113.11\n"
+        }
+      ],
+      "windowsDnsServers": [
+        {
+          "interface": "eth0",
+          "servers": [
+            "127.0.0.1"
+          ]
+        }
+      ],
+      "registry": {
+        "values": [
+          {
+            "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\DNS\\Parameters",
+            "name": "NoRecursion",
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "1793521010610-6",
+      "type": "linux-server",
+      "name": "NS1-BANK",
+      "x": 640,
+      "y": 160,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:3d",
+          "ipAddress": "203.0.113.10",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:3e"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:3f"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:40"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "203.0.113.254",
+      "files": [
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCjXHYyXX/nY6RxHJfdtaGx+UOtoMYzbXGD23KTjf5+Q8mxb6b0wAaqTV1xRgLVq7C2TVok0ky2GnRXnEdczvxQ= root@Server2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQQo1x2Ml1/52OkcRyX3bWhsflDraDGM\n21xg9tyk43+fkPJsW+m9MAGqk1dcUYC1auwtk1aJNJMthp0V5xHXM78UAAAAqHIWPYJyFj\n2CAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCjXHYyXX/nY6RxH\nJfdtaGx+UOtoMYzbXGD23KTjf5+Q8mxb6b0wAaqTV1xRgLVq7C2TVok0ky2GnRXnEdczvx\nQAAAAgVxLIPE5IIIA18M/wAO9yxNqQAy8XpDymSh460q8S4NYAAAAMcm9vdEBTZXJ2ZXIy\nAQIDBA==\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJHg2kw3iLl7c5YncpyDUjyitN7LFGK+7eewD8TkKgEJ root@Server2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACCR4NpMN4i5e3OWJ3Kcg1I8orTeyxRivu3nsA/E5CoBCQAAAJCbB1TImwdU\nyAAAAAtzc2gtZWQyNTUxOQAAACCR4NpMN4i5e3OWJ3Kcg1I8orTeyxRivu3nsA/E5CoBCQ\nAAAEBl7U/mDljBkzS0avph0LtvoLAnCKaKwtdYfUKrwiFh2pHg2kw3iLl7c5YncpyDUjyi\ntN7LFGK+7eewD8TkKgEJAAAADHJvb3RAU2VydmVyMgE=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 127.0.0.1\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/fstab",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=8f8ad5e2-0728-23db-64bc-fd6afb174273 / ext4 relatime,errors=remount-ro 0 1\nUUID=8e8ad44f-4c54-e565-4126-faebae2fa35b /boot ext4 defaults 0 2\nUUID=978d2111-5065-04e5-3383-4529c35b2854 /u01 ext4 defaults 0 2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/machine-id",
+          "content": "652e12553b2815658e9b84f655c15e13\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/netplan/01-lab.yaml",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [203.0.113.10/24]\n      routes:\n        - to: default\n          via: 203.0.113.254\n      nameservers:\n        addresses: [127.0.0.1]\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/bind/named.conf",
+          "content": "options {\n    directory \"/var/cache/bind\";\n    recursion no;\n    allow-query { any; };\n};\nzone \"banquehorizon.com\" {\n    type primary;\n    file \"/etc/bind/db.banquehorizon.com\";\n    allow-transfer { 203.0.113.11; };\n    notify yes;\n};\nzone \"113.0.203.in-addr.arpa\" {\n    type primary;\n    file \"/etc/bind/db.203.0.113\";\n};\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/named.conf.options",
+          "content": "options {\n\tdirectory \"/var/cache/bind\";\n\n\tdnssec-validation auto;\n\n\tlisten-on-v6 { any; };\n};\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/named.conf.local",
+          "content": "",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/db.banquehorizon.com",
+          "content": "$TTL 3600\n$ORIGIN banquehorizon.com.\n@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 2026103101 7200 900 1209600 3600 )\n@ IN NS ns1.banquehorizon.com.\n@ IN NS ns2.banquehorizon.com.\n@ IN A 203.0.113.20\n@ IN MX 10 mail.banquehorizon.com.\n@ IN MX 20 mail2.banquehorizon.com.\n@ IN TXT \"v=spf1 mx -all\"\nns1 IN A 203.0.113.10\nns2 IN A 203.0.113.11\nweb IN A 203.0.113.20\nwww IN CNAME web\nebanking IN CNAME web\nagences IN CNAME web\napi IN CNAME web\nmail IN A 203.0.113.25\nmail2 IN A 203.0.113.26\n_dmarc IN TXT \"v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com\"\n_imaps._tcp IN SRV 0 1 993 mail\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/db.203.0.113",
+          "content": "$TTL 3600\n$ORIGIN 113.0.203.in-addr.arpa.\n@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 2026103101 7200 900 1209600 3600 )\n@ IN NS ns1.banquehorizon.com.\n@ IN NS ns2.banquehorizon.com.\n10 IN PTR ns1.banquehorizon.com.\n11 IN PTR ns2.banquehorizon.com.\n20 IN PTR web.banquehorizon.com.\n25 IN PTR mail.banquehorizon.com.\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dpkg/status",
+          "content": "Package: apache2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.4.52-1ubuntu4\nDescription: Apache HTTP Server\n\nPackage: at\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.2.5-1ubuntu1\nDescription: Delayed job execution and batch processing\n\nPackage: auditd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.0.7-1build1\nDescription: User space tools for security auditing\n\nPackage: bash\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.1-6ubuntu1\nDescription: GNU Bourne Again SHell\n\nPackage: bind9\nStatus: install ok installed\nArchitecture: amd64\nVersion: 9.18.12-0ubuntu0.22.04.1\nDescription: Internet Domain Name Server\n\nPackage: ca-certificates\nStatus: install ok installed\nArchitecture: amd64\nVersion: 20230311ubuntu0.22.04.1\nDescription: Common CA certificates\n\nPackage: chrony\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.2-2ubuntu2\nDescription: Versatile implementation of the Network Time Protocol\n\nPackage: conntrack\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:1.4.6-2build2\nDescription: Program to modify the conntrack tables\n\nPackage: coreutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.32-4.1ubuntu1\nDescription: GNU core utilities\n\nPackage: cron\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0pl1-137ubuntu3\nDescription: process scheduling daemon\n\nPackage: curl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.5.0-2ubuntu10.6\nDescription: command line tool for transferring data with URL syntax\n\nPackage: debianutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.5-1ubuntu2\nDescription: Miscellaneous utilities specific to Debian\n\nPackage: dnsutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 9.18.12-0ubuntu0.22.04.1\nDescription: Clients provided with BIND 9\n\nPackage: dpkg\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.1ubuntu2\nDescription: Debian package management system\n\nPackage: e2fsprogs\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.46.5-2ubuntu1.1\nDescription: ext2/ext3/ext4 file system utilities\n\nPackage: findutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8.0-1ubuntu3\nDescription: utilities for finding files\n\nPackage: gawk\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:5.1.0-1ubuntu0.1\nDescription: GNU awk, a pattern scanning and processing language\n\nPackage: grep\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.7-1build1\nDescription: GNU grep, egrep and fgrep\n\nPackage: gzip\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.10-4ubuntu4.1\nDescription: GNU compression utilities\n\nPackage: iproute2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 6.1.0-1ubuntu6\nDescription: networking and traffic control tools\n\nPackage: iptables\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.8.7-1ubuntu5\nDescription: administration tools for packet filtering and NAT\n\nPackage: ipset\nStatus: install ok installed\nArchitecture: amd64\nVersion: 7.15-1build1\nDescription: administration tool for kernel IP sets\n\nPackage: iputils-ping\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3:20211215-1\nDescription: Tools to test the reachability of network hosts\n\nPackage: hping3\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.a2.ds2-9\nDescription: Active Network Smashing Tool\n\nPackage: isc-dhcp-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.4.1-2.3ubuntu2.4\nDescription: ISC DHCP server for automatic IP address assignment\n\nPackage: kmod\nStatus: install ok installed\nArchitecture: amd64\nVersion: 29-1ubuntu1\nDescription: tools for managing Linux kernel modules\n\nPackage: krb5-user\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.19.2-2ubuntu0.4\nDescription: basic programs to authenticate using MIT Kerberos\n\nPackage: ldap-utils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.5.18+dfsg-0ubuntu0.22.04.2\nDescription: OpenLDAP utilities\n\nPackage: less\nStatus: install ok installed\nArchitecture: amd64\nVersion: 590-1ubuntu0.22.04.3\nDescription: pager program similar to more\n\nPackage: libuser\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:0.62~dfsg-0.1ubuntu2\nDescription: user and group account administration library\n\nPackage: lldpd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0.16-1\nDescription: implementation of IEEE 802.1ab (LLDP)\n\nPackage: logrotate\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.19.0-1ubuntu1.1\nDescription: Log rotation utility\n\nPackage: lsof\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.93.2+dfsg-1.1build2\nDescription: Utility to list open files\n\nPackage: mtr-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 0.95-1\nDescription: Full screen ncurses traceroute tool\n\nPackage: ncal\nStatus: install ok installed\nArchitecture: amd64\nVersion: 12.1.7+nmu3\nDescription: Unix calendar and calculator utility\n\nPackage: net-tools\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.10-0.1ubuntu4\nDescription: NET-3 networking toolkit\n\nPackage: nginx\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.24.0-1~jammy\nDescription: small, powerful, scalable web/proxy server\n\nPackage: ntpsec\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.2.1+dfsg1-4\nDescription: Network Time Protocol daemon and utility programs\n\nPackage: inetutils-telnet\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:2.2-2\nDescription: telnet client\n\nPackage: openssh-client\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) client, for secure access to remote machines\n\nPackage: openssh-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) server, for secure access from remote machines\n\nPackage: openssl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0.2-0ubuntu1\nDescription: Secure Sockets Layer toolkit - cryptographic utility\n\nPackage: passwd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:4.8.1-2ubuntu2.1\nDescription: change and administer password and group data\n\nPackage: pciutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.7.0-6\nDescription: PCI utilities\n\nPackage: procps\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:3.3.17-6ubuntu2\nDescription: /proc file system utilities\n\nPackage: psmisc\nStatus: install ok installed\nArchitecture: amd64\nVersion: 23.7-1build1\nDescription: utilities that use the proc file system\n\nPackage: rsyslog\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.2610.0-1ubuntu1\nDescription: reliable system and kernel logging daemon\n\nPackage: sed\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8-1ubuntu2\nDescription: GNU stream editor for filtering/transforming text\n\nPackage: snmp\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.1+dfsg-1ubuntu2.8\nDescription: SNMP (Simple Network Management Protocol) applications\n\nPackage: sshpass\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.09-1\nDescription: Non-interactive ssh password authentication\n\nPackage: strongswan\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.5-2ubuntu2\nDescription: IPsec VPN solution\n\nPackage: sudo\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.9.9-1ubuntu2.4\nDescription: Provide limited super user privileges to specific users\n\nPackage: systemd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager\n\nPackage: systemd-sysv\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager - SysV links\n\nPackage: tar\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.34+dfsg-1ubuntu0.1.22.04.2\nDescription: GNU version of the tar archiving utility\n\nPackage: tcpdump\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.99.1-3build2\nDescription: command-line network traffic analyzer\n\nPackage: traceroute\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:2.1.0-2\nDescription: Traces the route taken by packets over an IPv4/IPv6 network\n\nPackage: tree\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.0.2-1\nDescription: displays an indented directory tree, in color\n\nPackage: util-linux\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.37.2-4ubuntu3\nDescription: miscellaneous system utilities\n\nPackage: vim\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor\n\nPackage: vim-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor - compact version\n\nPackage: wget\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.2-2ubuntu1\nDescription: retrieves files from the web\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "directories": [
+        {
+          "path": "/etc/bind",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/lib/dpkg",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/cache/bind",
+          "uid": 0,
+          "gid": 0,
+          "mode": 509
+        }
+      ],
+      "symlinks": [
+        {
+          "path": "/etc/systemd/system/multi-user.target.wants/named.service",
+          "target": "/usr/lib/systemd/system/named.service",
+          "uid": 0,
+          "gid": 0
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "named",
+          "enabled": "enabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1793521010675-7",
+      "type": "windows-server",
+      "name": "NS2-BANK",
+      "x": 780,
+      "y": 160,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:41",
+          "ipAddress": "203.0.113.11",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:42"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:43"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:44"
+        }
+      ],
+      "defaultGateway": "203.0.113.254",
+      "windowsFeatures": {
+        "installed": [
+          "DNS"
+        ]
+      },
+      "windowsRoles": {
+        "dnsZones": [
+          {
+            "name": "banquehorizon.com",
+            "type": "Secondary",
+            "zoneFile": "banquehorizon.com.dns",
+            "dynamicUpdate": "None",
+            "secureSecondaries": "TransferToZoneNameServer",
+            "secondaryServers": [],
+            "notify": "Notify",
+            "notifyServers": [],
+            "masters": [
+              "203.0.113.10"
+            ]
+          },
+          {
+            "name": "113.0.203.in-addr.arpa",
+            "type": "Secondary",
+            "zoneFile": "113.0.203.in-addr.arpa.dns",
+            "dynamicUpdate": "None",
+            "secureSecondaries": "TransferToZoneNameServer",
+            "secondaryServers": [],
+            "notify": "Notify",
+            "notifyServers": [],
+            "masters": [
+              "203.0.113.10"
+            ]
+          }
+        ]
+      },
+      "files": [
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQSSz4WJIdxZtums2oU7a4xNYMY5OJCF\nbGSuuioxtswPrHfYOmn3QvKbFoGQinwM8516spddHY30LviUXLlaQjdQAAAAqDOsVFQzrF\nRUAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJLPhYkh3Fm26aza\nhTtrjE1gxjk4kIVsZK66KjG2zA+sd9g6afdC8psWgZCKfAzznXqyl10djfQu+JRcuVpCN1\nAAAAAgKSAuqTdYhPeh/q5UWRIOwObsf37eKRfn645t5Mwf8K4AAAAPcm9vdEBXaW5TZXJ2\nZXIyAQ==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBJLPhYkh3Fm26azahTtrjE1gxjk4kIVsZK66KjG2zA+sd9g6afdC8psWgZCKfAzznXqyl10djfQu+JRcuVpCN1A= root@WinServer2\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACC5Me9dhf4MIBvT8nIOCNfxRn4WLrDoexe/8MLzwPh9AAAAAJi07hqRtO4a\nkQAAAAtzc2gtZWQyNTUxOQAAACC5Me9dhf4MIBvT8nIOCNfxRn4WLrDoexe/8MLzwPh9AA\nAAAEBIIe7r4lnwM44tDjYBXtXpszicY+TwByRD1pbdhMxHcLkx712F/gwgG9Pycg4I1/FG\nfhYusOh7F7/wwvPA+H0AAAAAD3Jvb3RAV2luU2VydmVyMgECAwQFBg==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILkx712F/gwgG9Pycg4I1/FGfhYusOh7F7/wwvPA+H0A root@WinServer2\n"
+        },
+        {
+          "path": "C:\\Windows\\System32\\dns\\113.0.203.in-addr.arpa.dns",
+          "content": "$ORIGIN 113.0.203.in-addr.arpa.\n$TTL 3600\n113.0.203.in-addr.arpa. 3600 IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\n113.0.203.in-addr.arpa. 3600 IN NS ns1.banquehorizon.com.\n113.0.203.in-addr.arpa. 3600 IN NS ns2.banquehorizon.com.\n10.113.0.203.in-addr.arpa. 3600 IN PTR ns1.banquehorizon.com.\n11.113.0.203.in-addr.arpa. 3600 IN PTR ns2.banquehorizon.com.\n20.113.0.203.in-addr.arpa. 3600 IN PTR web.banquehorizon.com.\n25.113.0.203.in-addr.arpa. 3600 IN PTR mail.banquehorizon.com.\n"
+        },
+        {
+          "path": "C:\\Windows\\System32\\dns\\banquehorizon.com.dns",
+          "content": "$ORIGIN banquehorizon.com.\n$TTL 3600\nbanquehorizon.com. 3600 IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\nbanquehorizon.com. 3600 IN NS ns1.banquehorizon.com.\nbanquehorizon.com. 3600 IN NS ns2.banquehorizon.com.\nbanquehorizon.com. 3600 IN A 203.0.113.20\nbanquehorizon.com. 3600 IN MX 10 mail.banquehorizon.com.\nbanquehorizon.com. 3600 IN MX 20 mail2.banquehorizon.com.\nbanquehorizon.com. 3600 IN TXT \"v=spf1 mx -all\"\nns1.banquehorizon.com. 3600 IN A 203.0.113.10\nns2.banquehorizon.com. 3600 IN A 203.0.113.11\nweb.banquehorizon.com. 3600 IN A 203.0.113.20\nwww.banquehorizon.com. 3600 IN CNAME web.banquehorizon.com.\nebanking.banquehorizon.com. 3600 IN CNAME web.banquehorizon.com.\nagences.banquehorizon.com. 3600 IN CNAME web.banquehorizon.com.\napi.banquehorizon.com. 3600 IN CNAME web.banquehorizon.com.\nmail.banquehorizon.com. 3600 IN A 203.0.113.25\nmail2.banquehorizon.com. 3600 IN A 203.0.113.26\n_dmarc.banquehorizon.com. 3600 IN TXT \"v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com\"\n_imaps._tcp.banquehorizon.com. 3600 IN SRV 0 1 993 mail.banquehorizon.com.\n"
+        }
+      ],
+      "windowsDnsServers": [
+        {
+          "interface": "eth0",
+          "servers": [
+            "127.0.0.1"
+          ]
+        }
+      ],
+      "registry": {
+        "values": [
+          {
+            "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\DNS\\Parameters",
+            "name": "NoRecursion",
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "1793521010686-8",
+      "type": "linux-server",
+      "name": "WEB-BANK",
+      "x": 920,
+      "y": 160,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:45",
+          "ipAddress": "203.0.113.20",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:46"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:47"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:48"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "203.0.113.254",
+      "files": [
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPOyqLkWlFzXxMu+JxacDWEmgjfaPKJGHUEyCQ87sP20GqjN2/gVxMAYJ+tTdYIbNBJunO4oENQmIP2+kVMV6Nc= root@Server3\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTzsqi5FpRc18TLvicWnA1hJoI32jyi\nRh1BMgkPO7D9tBqozdv4FcTAGCfrU3WCGzQSbpzuKBDUJiD9vpFTFejXAAAAqGAxsIBgMb\nCAAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPOyqLkWlFzXxMu+\nJxacDWEmgjfaPKJGHUEyCQ87sP20GqjN2/gVxMAYJ+tTdYIbNBJunO4oENQmIP2+kVMV6N\ncAAAAgfhdi3yodxHSvCLLpgZ71odKHSx4SloCsZ6q6uWPrwZgAAAAMcm9vdEBTZXJ2ZXIz\nAQIDBA==\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGx5O1Uo8GuSQ1igUhhUkXTqiHEb7PIrOh9fJt+zQRA8 root@Server3\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACBseTtVKPBrkkNYoFIYVJF06ohxG+zyKzofXybfs0EQPAAAAJD2ZXyl9mV8\npQAAAAtzc2gtZWQyNTUxOQAAACBseTtVKPBrkkNYoFIYVJF06ohxG+zyKzofXybfs0EQPA\nAAAEAOzJOKtz8r0c8SlWM/mWKc7q8WyUYz0pKts3AGwvkCk2x5O1Uo8GuSQ1igUhhUkXTq\niHEb7PIrOh9fJt+zQRA8AAAADHJvb3RAU2VydmVyMwE=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 127.0.0.53\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/fstab",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=caa78953-d0f4-6429-a163-c3edd3e3d948 / ext4 relatime,errors=remount-ro 0 1\nUUID=cba78ae6-7633-8923-28c3-8dba2b8e34f0 /boot ext4 defaults 0 2\nUUID=5aaf27c8-6cc1-3efb-c9d3-dc1c120667a1 /u01 ext4 defaults 0 2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/machine-id",
+          "content": "642e10c217ceef25f5f3329440b82481\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/nginx/sites-available/banquehorizon.conf",
+          "content": "upstream api_bancaire {\n    server 127.0.0.1:8081;\n}\n\nserver {\n    listen 8081;\n    server_name 127.0.0.1;\n    root /var/www/banquehorizon/backend;\n    access_log /var/log/nginx/api-bancaire.access.log;\n    location /v1/ {\n        try_files $uri =404;\n    }\n}\n\nserver {\n    listen 80 default_server;\n    server_name _;\n    return 404;\n}\n\nserver {\n    listen 80;\n    server_name banquehorizon.com www.banquehorizon.com ebanking.banquehorizon.com agences.banquehorizon.com;\n    return 301 https://$host$request_uri;\n}\n\nserver {\n    listen 443 ssl default_server;\n    server_name _;\n    ssl_certificate /etc/nginx/tls/banquehorizon.crt;\n    ssl_certificate_key /etc/nginx/tls/banquehorizon.key;\n    return 404;\n}\n\nserver {\n    listen 443 ssl;\n    server_name banquehorizon.com www.banquehorizon.com;\n    ssl_certificate /etc/nginx/tls/banquehorizon.crt;\n    ssl_certificate_key /etc/nginx/tls/banquehorizon.key;\n    root /var/www/banquehorizon/www;\n    index index.html;\n    gzip on;\n    gzip_types text/css application/javascript application/json;\n    add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n    add_header X-Content-Type-Options \"nosniff\" always;\n    add_header X-Frame-Options \"DENY\" always;\n    add_header Referrer-Policy \"strict-origin-when-cross-origin\" always;\n    access_log /var/log/nginx/www.access.log;\n    error_page 404 /404.html;\n    error_page 500 502 503 504 /50x.html;\n    rewrite ^/credit-immo$ /produits/credits.html permanent;\n    location / {\n        try_files $uri $uri/ =404;\n    }\n    location /api/ {\n        proxy_pass http://api_bancaire/v1/;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n\nserver {\n    listen 443 ssl;\n    server_name ebanking.banquehorizon.com;\n    ssl_certificate /etc/nginx/tls/banquehorizon.crt;\n    ssl_certificate_key /etc/nginx/tls/banquehorizon.key;\n    root /var/www/banquehorizon/ebanking;\n    index index.html;\n    add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains\" always;\n    add_header X-Frame-Options \"DENY\" always;\n    add_header Cache-Control \"no-store\" always;\n    access_log /var/log/nginx/ebanking.access.log;\n    error_page 503 /maintenance.html;\n    location / {\n        try_files $uri $uri/ =404;\n    }\n    location = /connexion {\n        return 503;\n    }\n    location /api/ {\n        proxy_pass http://api_bancaire/v1/;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-Proto $scheme;\n    }\n}\n\nserver {\n    listen 443 ssl;\n    server_name agences.banquehorizon.com;\n    ssl_certificate /etc/nginx/tls/banquehorizon.crt;\n    ssl_certificate_key /etc/nginx/tls/banquehorizon.key;\n    root /var/www/banquehorizon/agences;\n    index index.html;\n    autoindex off;\n    access_log /var/log/nginx/agences.access.log;\n    location / {\n        try_files $uri $uri/ =404;\n    }\n}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/nginx/tls/banquehorizon.key",
+          "content": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDEq8ndjUblg3yE\na5CmY3ktZktQ45AeuNqqbH/8g3FKpW/1r75fmkihtwjkgKHtPtt9Us1AsB0DlUx/\nWj+dYzl5Q3EChx6PAazk+GeAlbP57rETVnZ2t//hAaUkGhPprn2BsS6KvfhZ0xuz\n/KtNB9WzNlkJ2F+DKLbm2yrejl3pVIuJyLpZ9tQpJbtP1wjOWLL9zZHHMqZGC0Gu\nQTm3FcU2zSaeDWHUDGiBxiS5arwK3betUfHf0I3J6eWjIDhm/TOspya8toQFlUuV\nkgp7dO3XFf9jieQcjeXO1D71xuCb+1+uhDz/rVgRBx+ReDvHHiIyhk65jrNwcK8v\ngpee8idfAgMBAAECggEAEZXawviy8irDo4OKt5YFa83NxjnS1SxqQPraptWJ98a7\nMBi6yQmenPck0GnAENqh/Z69w577uSpMYMbNEWGh7fndzQAP93GK6B5eAt1f7mUt\naDE+/naNZq0i+wtp5Gc5ybLyGm3KGx4JSBq7pnOg5Blj9MFoKO4nDJVkS+om84n3\nn0LUykvBkdm+gb4jrMdAdCIPeqLBF3f+CLPPiavcFENQiJyjJ9fDPlnKeCN6cS6W\n65GKQIms2UtX+8Pk75aJkkJstUEcgUtfm4OSyXpruR1O5QcoLIRm29+6YOIe+eFk\nI42Y5bOubXIR49R8zJrNBKTe4mAfsCu4gw2Fz78LwQKBgQDiPUHfQ0oH0YB9iUfU\n5dxkltS3Z9UzT1uE/OW+MzbCA+eGNJDEc84IP3swFagIT9z+kHVRXphVegQx+LJF\n4+PZVxK7hZDSjdUOt/xsO+DubrpTZnQJPR30kB29H9GoBNaP6dp3+u7tcJm6k9s3\nlAERdV/k14TZAzx0mLLR87CShwKBgQDeis2f+dGAFXKMyEdSL6c9Td+08mblrF92\nw8y0xDQJTztkIOq2sV9EjpxZu3DPIu4yHbcm94ZFHQnRaUFbYZI5n1JpIex5noym\nHC24PUDxGVQoTeb4l/Ea/yr2ib9n8itdGEoqOdc5eXALcFD5qtSmhMzKX+XEC+W9\nLS1lrdcCaQKBgEjLSwmqXgSb/UrnRAyVlU9sVK9aonfq/diRgt6rHeBZX0KIYVhE\nprNysZFsNm/OOp5SHt16oWtHYlgt3Daut95zrNxXgpys9DPTMU4mCh7N0/gHzCg4\n2Q2a3Wa/+Talr+AIb7oRLJWLmHs3Hd8JKTrT2HIKgn1NFEOz6j2xuku7AoGANyxC\nfn75KcAnfi/JPt8Bn3lHFR1j1V0+7brtbYOXQxeZqeFfT5v5+o1Axh5qgXAvjc1A\nMzD64PeqD3kA8x7lmdOeIuJ+NkjQpf4md574Es4sxzFJKijBZegNRsIv6h1oEtSK\nzp04ds9cr/lQmhV4UzBpdWMBG/G3K4ef0a2fuMECgYBbpgH7MQPl3ubaEgMbYvME\ne7bTDg2h/DM+BxOR0ZlnikguwRwDGfe53iwk4B3GchpdH5PHSSBalX/psFfCZqWI\nyDvSTMNlEupVIdZwOIYNHwfYwupQ8gbvvlSa4ffjx4E+KMT9fvRkWe6hCb0TBqm3\nOWODPds6EraXPQ5jjY3UIw==\n-----END PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/nginx/tls/banquehorizon.crt",
+          "content": "-----BEGIN CERTIFICATE-----\nMIID4TCCAsmgAwIBAgICUAEwDQYJKoZIhvcNAQELBQAwRjELMAkGA1UEBhMCQ00x\nFzAVBgNVBAoMDkJhbnF1ZSBIb3Jpem9uMR4wHAYDVQQDDBV3d3cuYmFucXVlaG9y\naXpvbi5jb20wHhcNMjYxMTAxMDgyODUxWhcNMjkwMjAzMDgyODUxWjBGMQswCQYD\nVQQGEwJDTTEXMBUGA1UECgwOQmFucXVlIEhvcml6b24xHjAcBgNVBAMMFXd3dy5i\nYW5xdWVob3Jpem9uLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAMSryd2NRuWDfIRrkKZjeS1mS1DjkB642qpsf/yDcUqlb/Wvvl+aSKG3COSAoe0+\n231SzUCwHQOVTH9aP51jOXlDcQKHHo8BrOT4Z4CVs/nusRNWdna3/+EBpSQaE+mu\nfYGxLoq9+FnTG7P8q00H1bM2WQnYX4MotubbKt6OXelUi4nIuln21Cklu0/XCM5Y\nsv3NkccypkYLQa5BObcVxTbNJp4NYdQMaIHGJLlqvArdt61R8d/Qjcnp5aMgOGb9\nM6ynJry2hAWVS5WSCnt07dcV/2OJ5ByN5c7UPvXG4Jv7X66EPP+tWBEHH5F4O8ce\nIjKGTrmOs3Bwry+Cl57yJ18CAwEAAaOB2DCB1TAPBgNVHRMBAf8EBTADAQH/MIGB\nBgNVHREEejB4ghFiYW5xdWVob3Jpem9uLmNvbYIVd3d3LmJhbnF1ZWhvcml6b24u\nY29tghplYmFua2luZy5iYW5xdWVob3Jpem9uLmNvbYIZYWdlbmNlcy5iYW5xdWVo\nb3Jpem9uLmNvbYIVYXBpLmJhbnF1ZWhvcml6b24uY29tMB0GA1UdDgQWBBQ8gVAQ\nZb9f8cGAKv9BJbI2GIoPHjAfBgNVHSMEGDAWgBQ8gVAQZb9f8cGAKv9BJbI2GIoP\nHjANBgkqhkiG9w0BAQsFAAOCAQEALkSsRMJMELKehUuBlAXQRJhigEnryhS6/PkP\nsJWPW2kHrZtTxmJ2BBFc0PY1j3tTMa5ScF3y/uDmhGhyG0yceBsYT69VDqfOgzdF\nc5d5E11t9Pokptj3twizyudfL7P+5OVe4ipEA9peEdDWzi16/akTfCcY29udbx+o\nXWe3N59sl1MTnlFBsRlghGbDHyPkbTEcic4kMWFrtVzwcbu/7x/Na1ZKcp213mtO\nO029Ww7fNHZakCoye7yqszJMFk0/f36cEUYmIR4tZJhL5/JqwlN8E/5BumraQK8n\nFzM7as0gqD7KCOAXrZI5W3KQLYr8eYaKq6DKJ5tGnCXdZnohHg==\n-----END CERTIFICATE-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/netplan/01-lab.yaml",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [203.0.113.20/24]\n      routes:\n        - to: default\n          via: 203.0.113.254\n      nameservers:\n        addresses: [127.0.0.53]\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/var/lib/dpkg/status",
+          "content": "Package: apache2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.4.52-1ubuntu4\nDescription: Apache HTTP Server\n\nPackage: at\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.2.5-1ubuntu1\nDescription: Delayed job execution and batch processing\n\nPackage: auditd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.0.7-1build1\nDescription: User space tools for security auditing\n\nPackage: bash\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.1-6ubuntu1\nDescription: GNU Bourne Again SHell\n\nPackage: ca-certificates\nStatus: install ok installed\nArchitecture: amd64\nVersion: 20230311ubuntu0.22.04.1\nDescription: Common CA certificates\n\nPackage: chrony\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.2-2ubuntu2\nDescription: Versatile implementation of the Network Time Protocol\n\nPackage: conntrack\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:1.4.6-2build2\nDescription: Program to modify the conntrack tables\n\nPackage: coreutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.32-4.1ubuntu1\nDescription: GNU core utilities\n\nPackage: cron\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0pl1-137ubuntu3\nDescription: process scheduling daemon\n\nPackage: curl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.5.0-2ubuntu10.6\nDescription: command line tool for transferring data with URL syntax\n\nPackage: debianutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.5-1ubuntu2\nDescription: Miscellaneous utilities specific to Debian\n\nPackage: dnsutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 9.18.12-0ubuntu0.22.04.1\nDescription: Clients provided with BIND 9\n\nPackage: dpkg\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.1ubuntu2\nDescription: Debian package management system\n\nPackage: e2fsprogs\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.46.5-2ubuntu1.1\nDescription: ext2/ext3/ext4 file system utilities\n\nPackage: findutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8.0-1ubuntu3\nDescription: utilities for finding files\n\nPackage: gawk\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:5.1.0-1ubuntu0.1\nDescription: GNU awk, a pattern scanning and processing language\n\nPackage: grep\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.7-1build1\nDescription: GNU grep, egrep and fgrep\n\nPackage: gzip\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.10-4ubuntu4.1\nDescription: GNU compression utilities\n\nPackage: iproute2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 6.1.0-1ubuntu6\nDescription: networking and traffic control tools\n\nPackage: iptables\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.8.7-1ubuntu5\nDescription: administration tools for packet filtering and NAT\n\nPackage: ipset\nStatus: install ok installed\nArchitecture: amd64\nVersion: 7.15-1build1\nDescription: administration tool for kernel IP sets\n\nPackage: iputils-ping\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3:20211215-1\nDescription: Tools to test the reachability of network hosts\n\nPackage: hping3\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.a2.ds2-9\nDescription: Active Network Smashing Tool\n\nPackage: isc-dhcp-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.4.1-2.3ubuntu2.4\nDescription: ISC DHCP server for automatic IP address assignment\n\nPackage: kmod\nStatus: install ok installed\nArchitecture: amd64\nVersion: 29-1ubuntu1\nDescription: tools for managing Linux kernel modules\n\nPackage: krb5-user\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.19.2-2ubuntu0.4\nDescription: basic programs to authenticate using MIT Kerberos\n\nPackage: ldap-utils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.5.18+dfsg-0ubuntu0.22.04.2\nDescription: OpenLDAP utilities\n\nPackage: less\nStatus: install ok installed\nArchitecture: amd64\nVersion: 590-1ubuntu0.22.04.3\nDescription: pager program similar to more\n\nPackage: libuser\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:0.62~dfsg-0.1ubuntu2\nDescription: user and group account administration library\n\nPackage: lldpd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0.16-1\nDescription: implementation of IEEE 802.1ab (LLDP)\n\nPackage: logrotate\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.19.0-1ubuntu1.1\nDescription: Log rotation utility\n\nPackage: lsof\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.93.2+dfsg-1.1build2\nDescription: Utility to list open files\n\nPackage: mtr-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 0.95-1\nDescription: Full screen ncurses traceroute tool\n\nPackage: ncal\nStatus: install ok installed\nArchitecture: amd64\nVersion: 12.1.7+nmu3\nDescription: Unix calendar and calculator utility\n\nPackage: net-tools\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.10-0.1ubuntu4\nDescription: NET-3 networking toolkit\n\nPackage: nginx\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.24.0-1~jammy\nDescription: small, powerful, scalable web/proxy server\n\nPackage: ntpsec\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.2.1+dfsg1-4\nDescription: Network Time Protocol daemon and utility programs\n\nPackage: inetutils-telnet\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:2.2-2\nDescription: telnet client\n\nPackage: openssh-client\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) client, for secure access to remote machines\n\nPackage: openssh-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) server, for secure access from remote machines\n\nPackage: openssl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0.2-0ubuntu1\nDescription: Secure Sockets Layer toolkit - cryptographic utility\n\nPackage: passwd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:4.8.1-2ubuntu2.1\nDescription: change and administer password and group data\n\nPackage: pciutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.7.0-6\nDescription: PCI utilities\n\nPackage: procps\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:3.3.17-6ubuntu2\nDescription: /proc file system utilities\n\nPackage: psmisc\nStatus: install ok installed\nArchitecture: amd64\nVersion: 23.7-1build1\nDescription: utilities that use the proc file system\n\nPackage: rsyslog\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.2610.0-1ubuntu1\nDescription: reliable system and kernel logging daemon\n\nPackage: sed\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8-1ubuntu2\nDescription: GNU stream editor for filtering/transforming text\n\nPackage: snmp\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.1+dfsg-1ubuntu2.8\nDescription: SNMP (Simple Network Management Protocol) applications\n\nPackage: sshpass\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.09-1\nDescription: Non-interactive ssh password authentication\n\nPackage: strongswan\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.5-2ubuntu2\nDescription: IPsec VPN solution\n\nPackage: sudo\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.9.9-1ubuntu2.4\nDescription: Provide limited super user privileges to specific users\n\nPackage: systemd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager\n\nPackage: systemd-sysv\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager - SysV links\n\nPackage: tar\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.34+dfsg-1ubuntu0.1.22.04.2\nDescription: GNU version of the tar archiving utility\n\nPackage: tcpdump\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.99.1-3build2\nDescription: command-line network traffic analyzer\n\nPackage: traceroute\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:2.1.0-2\nDescription: Traces the route taken by packets over an IPv4/IPv6 network\n\nPackage: tree\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.0.2-1\nDescription: displays an indented directory tree, in color\n\nPackage: util-linux\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.37.2-4ubuntu3\nDescription: miscellaneous system utilities\n\nPackage: vim\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor\n\nPackage: vim-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor - compact version\n\nPackage: wget\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.2-2ubuntu1\nDescription: retrieves files from the web\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/produits/comptes.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Comptes - Banque Horizon</title>\n  <meta name=\"description\" content=\"Comptes courants et comptes joints\">\n  <link rel=\"stylesheet\" href=\"../css/site.css\">\n  <script defer src=\"../js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"../index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"../produits/comptes.html\">Comptes</a>\n      <a href=\"../produits/credits.html\">Credits</a>\n      <a href=\"../produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Comptes</h1>\n    <div class=\"carte\"><h2>Compte courant</h2><p>Carte de retrait, virements gratuits entre comptes Banque Horizon.</p></div>\n    <div class=\"carte\"><h2>Compte joint</h2><p>Deux titulaires, une seule vue.</p></div>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"../contact.html\">Contact</a> - <a href=\"../mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/produits/credits.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Credits - Banque Horizon</title>\n  <meta name=\"description\" content=\"Credit immobilier et credit a la consommation\">\n  <link rel=\"stylesheet\" href=\"../css/site.css\">\n  <script defer src=\"../js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"../index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"../produits/comptes.html\">Comptes</a>\n      <a href=\"../produits/credits.html\">Credits</a>\n      <a href=\"../produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Credits</h1>\n    <div class=\"carte\"><h2>Credit immobilier</h2><p>Jusqu'a 25 ans, taux fixe.</p></div>\n    <div class=\"carte\"><h2>Credit consommation</h2><p>Reponse de principe en 24 heures.</p></div>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"../contact.html\">Contact</a> - <a href=\"../mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/produits/epargne.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Epargne - Banque Horizon</title>\n  <meta name=\"description\" content=\"Livrets et depots a terme\">\n  <link rel=\"stylesheet\" href=\"../css/site.css\">\n  <script defer src=\"../js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"../index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"../produits/comptes.html\">Comptes</a>\n      <a href=\"../produits/credits.html\">Credits</a>\n      <a href=\"../produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Epargne</h1>\n    <div class=\"carte\"><h2>Livret Horizon</h2><p>Disponible a tout moment.</p></div>\n    <div class=\"carte\"><h2>Depot a terme</h2><p>De 6 a 60 mois.</p></div>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"../contact.html\">Contact</a> - <a href=\"../mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/css/site.css",
+          "content": ":root { --encre: #12263a; --fond: #f6f8fb; --accent: #0b6e4f; --alerte: #b3261e; }\n* { box-sizing: border-box; }\nbody { margin: 0; font-family: system-ui, sans-serif; color: var(--encre); background: var(--fond); line-height: 1.55; }\n.bandeau { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--encre); color: #fff; }\n.bandeau a { color: #fff; text-decoration: none; margin-left: 18px; }\n.marque { font-weight: 700; font-size: 1.25rem; margin-left: 0 !important; }\n.bouton { background: var(--accent); padding: 6px 14px; border-radius: 4px; }\nmain { max-width: 960px; margin: 32px auto; padding: 0 20px; }\n.carte { background: #fff; border: 1px solid #dbe3ec; border-radius: 8px; padding: 18px 22px; margin: 18px 0; }\ntable { border-collapse: collapse; width: 100%; }\nth, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e3e9f0; }\n.erreur { color: var(--alerte); }\nfooter { text-align: center; color: #5a6b7d; padding: 24px; font-size: 0.9rem; }\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/js/app.js",
+          "content": "document.addEventListener('DOMContentLoaded', function () {\n  var cible = document.querySelector('[data-taux]');\n  if (!cible) { return; }\n  fetch('/api/taux.json').then(function (reponse) { return reponse.json(); }).then(function (taux) {\n    cible.innerHTML = taux.produits.map(function (p) { return '<tr><td>' + p.nom + '</td><td>' + p.taux + ' %</td></tr>'; }).join('');\n  }).catch(function () { cible.innerHTML = '<tr><td class=\"erreur\" colspan=\"2\">Taux indisponibles</td></tr>'; });\n});\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/index.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Accueil - Banque Horizon</title>\n  <meta name=\"description\" content=\"Votre banque de proximite\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Votre agence, partout.</h1>\n    <p>Comptes, credits et epargne : Banque Horizon vous accompagne a Douala et a Yaounde.</p>\n    <div class=\"carte\">\n      <h2>Nos taux du moment</h2>\n      <table><thead><tr><th>Produit</th><th>Taux</th></tr></thead><tbody data-taux><tr><td colspan=\"2\">Chargement...</td></tr></tbody></table>\n    </div>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/contact.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Contact - Banque Horizon</title>\n  <meta name=\"description\" content=\"Contacter la banque\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Contact</h1>\n    <div class=\"carte\"><p>Service client : +237 600 00 00 00</p><p>Courrier : contact@banquehorizon.com</p></div>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/mentions-legales.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Mentions legales - Banque Horizon</title>\n  <meta name=\"description\" content=\"Mentions legales\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Mentions legales</h1>\n    <p>Banque Horizon S.A. est un etablissement fictif cree pour un laboratoire de simulation reseau.</p>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/404.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Page introuvable - Banque Horizon</title>\n  <meta name=\"description\" content=\"Erreur 404\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>404 - Page introuvable</h1>\n    <p class=\"erreur\">La page demandee n'existe pas.</p>\n    <p><a href=\"/index.html\">Retour a l'accueil</a></p>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/50x.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Service indisponible - Banque Horizon</title>\n  <meta name=\"description\" content=\"Erreur serveur\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Service momentanement indisponible</h1>\n    <p class=\"erreur\">Reessayez dans quelques minutes.</p>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/robots.txt",
+          "content": "User-agent: *\nDisallow: /ebanking/\nSitemap: https://www.banquehorizon.com/sitemap.txt\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/www/sitemap.txt",
+          "content": "https://www.banquehorizon.com/index.html\nhttps://www.banquehorizon.com/produits/comptes.html\nhttps://www.banquehorizon.com/produits/credits.html\nhttps://www.banquehorizon.com/produits/epargne.html\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/ebanking/css/site.css",
+          "content": ":root { --encre: #12263a; --fond: #f6f8fb; --accent: #0b6e4f; --alerte: #b3261e; }\n* { box-sizing: border-box; }\nbody { margin: 0; font-family: system-ui, sans-serif; color: var(--encre); background: var(--fond); line-height: 1.55; }\n.bandeau { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--encre); color: #fff; }\n.bandeau a { color: #fff; text-decoration: none; margin-left: 18px; }\n.marque { font-weight: 700; font-size: 1.25rem; margin-left: 0 !important; }\n.bouton { background: var(--accent); padding: 6px 14px; border-radius: 4px; }\nmain { max-width: 960px; margin: 32px auto; padding: 0 20px; }\n.carte { background: #fff; border: 1px solid #dbe3ec; border-radius: 8px; padding: 18px 22px; margin: 18px 0; }\ntable { border-collapse: collapse; width: 100%; }\nth, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e3e9f0; }\n.erreur { color: var(--alerte); }\nfooter { text-align: center; color: #5a6b7d; padding: 24px; font-size: 0.9rem; }\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/ebanking/js/app.js",
+          "content": "document.addEventListener('DOMContentLoaded', function () {\n  var cible = document.querySelector('[data-taux]');\n  if (!cible) { return; }\n  fetch('/api/taux.json').then(function (reponse) { return reponse.json(); }).then(function (taux) {\n    cible.innerHTML = taux.produits.map(function (p) { return '<tr><td>' + p.nom + '</td><td>' + p.taux + ' %</td></tr>'; }).join('');\n  }).catch(function () { cible.innerHTML = '<tr><td class=\"erreur\" colspan=\"2\">Taux indisponibles</td></tr>'; });\n});\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/ebanking/index.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Espace client - Banque Horizon</title>\n  <meta name=\"description\" content=\"Connexion a la banque en ligne\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Espace client</h1>\n    <div class=\"carte\">\n      <form method=\"post\" action=\"/connexion\">\n        <p><label>Identifiant <input name=\"identifiant\" autocomplete=\"username\"></label></p>\n        <p><label>Mot de passe <input name=\"secret\" type=\"password\" autocomplete=\"current-password\"></label></p>\n        <p><button type=\"submit\">Se connecter</button></p>\n      </form>\n    </div>\n    <div class=\"carte\"><h2>Taux directeurs</h2><table><tbody data-taux></tbody></table></div>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/ebanking/maintenance.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Maintenance - Banque Horizon</title>\n  <meta name=\"description\" content=\"Connexion momentanement indisponible\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Connexion momentanement indisponible</h1>\n    <p class=\"erreur\">La banque en ligne est en maintenance programmee. Reessayez plus tard.</p>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/css/site.css",
+          "content": ":root { --encre: #12263a; --fond: #f6f8fb; --accent: #0b6e4f; --alerte: #b3261e; }\n* { box-sizing: border-box; }\nbody { margin: 0; font-family: system-ui, sans-serif; color: var(--encre); background: var(--fond); line-height: 1.55; }\n.bandeau { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--encre); color: #fff; }\n.bandeau a { color: #fff; text-decoration: none; margin-left: 18px; }\n.marque { font-weight: 700; font-size: 1.25rem; margin-left: 0 !important; }\n.bouton { background: var(--accent); padding: 6px 14px; border-radius: 4px; }\nmain { max-width: 960px; margin: 32px auto; padding: 0 20px; }\n.carte { background: #fff; border: 1px solid #dbe3ec; border-radius: 8px; padding: 18px 22px; margin: 18px 0; }\ntable { border-collapse: collapse; width: 100%; }\nth, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e3e9f0; }\n.erreur { color: var(--alerte); }\nfooter { text-align: center; color: #5a6b7d; padding: 24px; font-size: 0.9rem; }\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/js/app.js",
+          "content": "document.addEventListener('DOMContentLoaded', function () {\n  var cible = document.querySelector('[data-taux]');\n  if (!cible) { return; }\n  fetch('/api/taux.json').then(function (reponse) { return reponse.json(); }).then(function (taux) {\n    cible.innerHTML = taux.produits.map(function (p) { return '<tr><td>' + p.nom + '</td><td>' + p.taux + ' %</td></tr>'; }).join('');\n  }).catch(function () { cible.innerHTML = '<tr><td class=\"erreur\" colspan=\"2\">Taux indisponibles</td></tr>'; });\n});\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/index.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Agences - Banque Horizon</title>\n  <meta name=\"description\" content=\"Nos agences\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Nos agences</h1>\n    <div class=\"carte\"><h2><a href=\"akwa.html\">Akwa</a></h2><p>Douala</p></div>\n    <div class=\"carte\"><h2><a href=\"bonanjo.html\">Bonanjo</a></h2><p>Douala</p></div>\n    <div class=\"carte\"><h2><a href=\"bastos.html\">Bastos</a></h2><p>Yaounde</p></div>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/akwa.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Agence Akwa - Banque Horizon</title>\n  <meta name=\"description\" content=\"Agence de Akwa a Douala\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Agence Akwa</h1>\n    <div class=\"carte\">\n      <p><strong>Ville :</strong> Douala</p>\n      <p><strong>Adresse :</strong> Boulevard de la Liberte</p>\n      <p><strong>Horaires :</strong> 08h00 - 16h30</p>\n    </div>\n    <p><a href=\"index.html\">Toutes les agences</a></p>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/bonanjo.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Agence Bonanjo - Banque Horizon</title>\n  <meta name=\"description\" content=\"Agence de Bonanjo a Douala\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Agence Bonanjo</h1>\n    <div class=\"carte\">\n      <p><strong>Ville :</strong> Douala</p>\n      <p><strong>Adresse :</strong> Rue du Marechal Foch</p>\n      <p><strong>Horaires :</strong> 08h00 - 16h00</p>\n    </div>\n    <p><a href=\"index.html\">Toutes les agences</a></p>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/bastos.html",
+          "content": "<!DOCTYPE html>\n<html lang=\"fr\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Agence Bastos - Banque Horizon</title>\n  <meta name=\"description\" content=\"Agence de Bastos a Yaounde\">\n  <link rel=\"stylesheet\" href=\"css/site.css\">\n  <script defer src=\"js/app.js\"></script>\n</head>\n<body>\n  <header class=\"bandeau\">\n    <a class=\"marque\" href=\"index.html\">Banque Horizon</a>\n    <nav>\n      <a href=\"produits/comptes.html\">Comptes</a>\n      <a href=\"produits/credits.html\">Credits</a>\n      <a href=\"produits/epargne.html\">Epargne</a>\n      <a href=\"https://agences.banquehorizon.com/\">Agences</a>\n      <a class=\"bouton\" href=\"https://ebanking.banquehorizon.com/\">E-banking</a>\n    </nav>\n  </header>\n  <main>\n    <h1>Agence Bastos</h1>\n    <div class=\"carte\">\n      <p><strong>Ville :</strong> Yaounde</p>\n      <p><strong>Adresse :</strong> Avenue Kennedy</p>\n      <p><strong>Horaires :</strong> 08h00 - 16h30</p>\n    </div>\n    <p><a href=\"index.html\">Toutes les agences</a></p>\n  </main>\n  <footer>\n    <p>Banque Horizon S.A. - Agence Akwa, Douala - Serveur <span data-serveur>WEB-BANK</span></p>\n    <p><a href=\"contact.html\">Contact</a> - <a href=\"mentions-legales.html\">Mentions legales</a></p>\n  </footer>\n</body>\n</html>\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/backend/v1/taux.json",
+          "content": "{\"mis_a_jour\":\"2026-10-31\",\"produits\":[{\"nom\":\"Livret Horizon\",\"taux\":2.5},{\"nom\":\"Depot a terme 12 mois\",\"taux\":3.75},{\"nom\":\"Credit immobilier 20 ans\",\"taux\":7.9}]}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/backend/v1/agences.json",
+          "content": "{\"agences\":[{\"code\":\"akwa\",\"nom\":\"Akwa\",\"ville\":\"Douala\"},{\"code\":\"bonanjo\",\"nom\":\"Bonanjo\",\"ville\":\"Douala\"},{\"code\":\"bastos\",\"nom\":\"Bastos\",\"ville\":\"Yaounde\"}]}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/www/banquehorizon/backend/v1/sante.json",
+          "content": "{\"statut\":\"ok\",\"service\":\"api-bancaire\"}\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "directories": [
+        {
+          "path": "/etc/nginx/tls",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/lib/dpkg",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/www",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/www/produits",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/www/css",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/www/js",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/ebanking",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/ebanking/css",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/ebanking/js",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/agences",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/css",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/agences/js",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/backend",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/www/banquehorizon/backend/v1",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        }
+      ],
+      "symlinks": [
+        {
+          "path": "/etc/nginx/sites-enabled/banquehorizon.conf",
+          "target": "/etc/nginx/sites-available/banquehorizon.conf",
+          "uid": 0,
+          "gid": 0
+        }
+      ],
+      "removedPaths": [
+        "/etc/nginx/sites-enabled/default"
+      ],
+      "linuxServices": [
+        {
+          "name": "nginx",
+          "enabled": "disabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1793521731736-g",
+      "type": "router-cisco",
+      "name": "R-AGENCE",
+      "x": 520,
+      "y": 300,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "GigabitEthernet0/0",
+          "mac": "02:00:00:00:00:49",
+          "ipAddress": "192.0.2.2",
+          "subnetMask": "255.255.255.252"
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:4a"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:4b"
+        },
+        {
+          "name": "GigabitEthernet0/3",
+          "mac": "02:00:00:00:00:4c"
+        },
+        {
+          "name": "GigabitEthernet0/1.10",
+          "mac": "02:00:00:00:00:4a",
+          "ipAddress": "10.20.10.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "GigabitEthernet0/1.20",
+          "mac": "02:00:00:00:00:4a",
+          "ipAddress": "10.20.20.1",
+          "subnetMask": "255.255.255.0"
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 1210 bytes\n!\n! Last configuration change at 08:28:52 UTC Sun Nov 1 2026 by console\n! NVRAM config last updated at 08:28:52 UTC Sun Nov 1 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-AGENCE\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description WAN vers R-ISP\n ip address 192.0.2.2 255.255.255.252\n ip nat outside\n!\ninterface GigabitEthernet0/1\n description LAN agence\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n!\ninterface GigabitEthernet0/3\n no ip address\n!\ninterface GigabitEthernet0/1.10\n description VLAN10 POSTES\n encapsulation dot1q 10\n ip address 10.20.10.1 255.255.255.0\n ip helper-address 10.20.20.10\n ip nat inside\n!\ninterface GigabitEthernet0/1.20\n description VLAN20 SERVEURS\n encapsulation dot1q 20\n ip address 10.20.20.1 255.255.255.0\n ip nat inside\n!\nip route 0.0.0.0 0.0.0.0 192.0.2.1\n!\nip nat inside source list 1 interface GigabitEthernet0/0 overload\n!\naccess-list 1 permit 10.20.0.0 0.0.255.255\n!\nend",
+      "startupConfigText": "Building configuration...\n\nCurrent configuration : 1140 bytes\n!\n! Last configuration change at 08:28:52 UTC Sun Nov 1 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-AGENCE\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description WAN vers R-ISP\n ip address 192.0.2.2 255.255.255.252\n ip nat outside\n!\ninterface GigabitEthernet0/1\n description LAN agence\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n!\ninterface GigabitEthernet0/3\n no ip address\n!\ninterface GigabitEthernet0/1.10\n description VLAN10 POSTES\n encapsulation dot1q 10\n ip address 10.20.10.1 255.255.255.0\n ip helper-address 10.20.20.10\n ip nat inside\n!\ninterface GigabitEthernet0/1.20\n description VLAN20 SERVEURS\n encapsulation dot1q 20\n ip address 10.20.20.1 255.255.255.0\n ip nat inside\n!\nip route 0.0.0.0 0.0.0.0 192.0.2.1\n!\nip nat inside source list 1 interface GigabitEthernet0/0 overload\n!\naccess-list 1 permit 10.20.0.0 0.0.255.255\n!\nend"
+    },
+    {
+      "id": "1793521731797-h",
+      "type": "switch-cisco",
+      "name": "SW-AGENCE",
+      "x": 520,
+      "y": 420,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "FastEthernet0/1",
+          "mac": "02:00:00:00:00:4d",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/2",
+          "mac": "02:00:00:00:00:4e",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/3",
+          "mac": "02:00:00:00:00:4f",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/4",
+          "mac": "02:00:00:00:00:50",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/5",
+          "mac": "02:00:00:00:00:51",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/6",
+          "mac": "02:00:00:00:00:52",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/7",
+          "mac": "02:00:00:00:00:53",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/8",
+          "mac": "02:00:00:00:00:54",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/9",
+          "mac": "02:00:00:00:00:55",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/10",
+          "mac": "02:00:00:00:00:56",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/11",
+          "mac": "02:00:00:00:00:57",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/12",
+          "mac": "02:00:00:00:00:58",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/13",
+          "mac": "02:00:00:00:00:59",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/14",
+          "mac": "02:00:00:00:00:5a",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/15",
+          "mac": "02:00:00:00:00:5b",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/16",
+          "mac": "02:00:00:00:00:5c",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/17",
+          "mac": "02:00:00:00:00:5d",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/18",
+          "mac": "02:00:00:00:00:5e",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/19",
+          "mac": "02:00:00:00:00:5f",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/20",
+          "mac": "02:00:00:00:00:60",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/21",
+          "mac": "02:00:00:00:00:61",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/22",
+          "mac": "02:00:00:00:00:62",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/23",
+          "mac": "02:00:00:00:00:63",
+          "speed": 100
+        },
+        {
+          "name": "FastEthernet0/24",
+          "mac": "02:00:00:00:00:64",
+          "speed": 100
+        },
+        {
+          "name": "GigabitEthernet0/1",
+          "mac": "02:00:00:00:00:65"
+        },
+        {
+          "name": "GigabitEthernet0/2",
+          "mac": "02:00:00:00:00:66"
+        }
+      ],
+      "vlans": [
+        {
+          "id": 10,
+          "name": "POSTES"
+        },
+        {
+          "id": 20,
+          "name": "SERVEURS"
+        }
+      ],
+      "switchports": [
+        {
+          "name": "FastEthernet0/1",
+          "mode": "trunk"
+        },
+        {
+          "name": "FastEthernet0/2",
+          "accessVlan": 20
+        },
+        {
+          "name": "FastEthernet0/3",
+          "accessVlan": 20
+        },
+        {
+          "name": "FastEthernet0/4",
+          "accessVlan": 10
+        },
+        {
+          "name": "FastEthernet0/5",
+          "accessVlan": 10
+        },
+        {
+          "name": "FastEthernet0/6",
+          "accessVlan": 10
+        }
+      ],
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 1392 bytes\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname SW-AGENCE\n!\ninterface FastEthernet0/1\n description TRUNK vers R-AGENCE\n switchport mode trunk\n switchport trunk allowed vlan 10,20\n!\ninterface FastEthernet0/2\n description DC1\n switchport mode access\n switchport access vlan 20\n!\ninterface FastEthernet0/3\n description DNS-RES\n switchport mode access\n switchport access vlan 20\n!\ninterface FastEthernet0/4\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/5\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/6\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/7\n!\ninterface FastEthernet0/8\n!\ninterface FastEthernet0/9\n!\ninterface FastEthernet0/10\n!\ninterface FastEthernet0/11\n!\ninterface FastEthernet0/12\n!\ninterface FastEthernet0/13\n!\ninterface FastEthernet0/14\n!\ninterface FastEthernet0/15\n!\ninterface FastEthernet0/16\n!\ninterface FastEthernet0/17\n!\ninterface FastEthernet0/18\n!\ninterface FastEthernet0/19\n!\ninterface FastEthernet0/20\n!\ninterface FastEthernet0/21\n!\ninterface FastEthernet0/22\n!\ninterface FastEthernet0/23\n!\ninterface FastEthernet0/24\n!\ninterface GigabitEthernet0/1\n!\ninterface GigabitEthernet0/2\n!\ninterface Vlan1\n no ip address\n shutdown\n!\nvlan 10\n name POSTES\n!\nvlan 20\n name SERVEURS\n!\nspanning-tree mode pvst\nport-channel load-balance src-dst-ip\n!\nend",
+      "startupConfigText": "Building configuration...\n\nCurrent configuration : 1392 bytes\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname SW-AGENCE\n!\ninterface FastEthernet0/1\n description TRUNK vers R-AGENCE\n switchport mode trunk\n switchport trunk allowed vlan 10,20\n!\ninterface FastEthernet0/2\n description DC1\n switchport mode access\n switchport access vlan 20\n!\ninterface FastEthernet0/3\n description DNS-RES\n switchport mode access\n switchport access vlan 20\n!\ninterface FastEthernet0/4\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/5\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/6\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/7\n!\ninterface FastEthernet0/8\n!\ninterface FastEthernet0/9\n!\ninterface FastEthernet0/10\n!\ninterface FastEthernet0/11\n!\ninterface FastEthernet0/12\n!\ninterface FastEthernet0/13\n!\ninterface FastEthernet0/14\n!\ninterface FastEthernet0/15\n!\ninterface FastEthernet0/16\n!\ninterface FastEthernet0/17\n!\ninterface FastEthernet0/18\n!\ninterface FastEthernet0/19\n!\ninterface FastEthernet0/20\n!\ninterface FastEthernet0/21\n!\ninterface FastEthernet0/22\n!\ninterface FastEthernet0/23\n!\ninterface FastEthernet0/24\n!\ninterface GigabitEthernet0/1\n!\ninterface GigabitEthernet0/2\n!\ninterface Vlan1\n no ip address\n shutdown\n!\nvlan 10\n name POSTES\n!\nvlan 20\n name SERVEURS\n!\nspanning-tree mode pvst\nport-channel load-balance src-dst-ip\n!\nend"
+    },
+    {
+      "id": "1793521731826-i",
+      "type": "windows-server",
+      "name": "DC1",
+      "x": 300,
+      "y": 560,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:67",
+          "ipAddress": "10.20.20.10",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:68"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:69"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:6a"
+        }
+      ],
+      "defaultGateway": "10.20.20.1",
+      "windowsFeatures": {
+        "installed": [
+          "DNS",
+          "DHCP"
+        ]
+      },
+      "windowsRoles": {
+        "dnsZones": [
+          {
+            "name": "horizon.local",
+            "type": "Primary",
+            "zoneFile": "horizon.local.dns",
+            "dynamicUpdate": "NonsecureAndSecure",
+            "secureSecondaries": "TransferToZoneNameServer",
+            "secondaryServers": [],
+            "notify": "Notify",
+            "notifyServers": [],
+            "masters": []
+          },
+          {
+            "name": "20.10.in-addr.arpa",
+            "type": "Primary",
+            "zoneFile": "20.10.in-addr.arpa.dns",
+            "dynamicUpdate": "NonsecureAndSecure",
+            "secureSecondaries": "TransferToZoneNameServer",
+            "secondaryServers": [],
+            "notify": "Notify",
+            "notifyServers": [],
+            "masters": []
+          }
+        ],
+        "dhcp": {
+          "scopes": [
+            {
+              "name": "POSTES",
+              "startRange": "10.20.10.50",
+              "endRange": "10.20.10.200",
+              "subnetMask": "255.255.255.0",
+              "leaseDuration": 691200,
+              "state": "Active",
+              "reservations": [],
+              "options": [
+                {
+                  "optionId": 3,
+                  "values": [
+                    "10.20.10.1"
+                  ]
+                },
+                {
+                  "optionId": 6,
+                  "values": [
+                    "10.20.20.10",
+                    "10.20.20.53"
+                  ]
+                },
+                {
+                  "optionId": 15,
+                  "values": [
+                    "horizon.local"
+                  ]
+                }
+              ]
+            }
+          ],
+          "exclusions": [],
+          "serverOptions": [],
+          "leases": [
+            {
+              "scope": "POSTES",
+              "ip": "10.20.10.50",
+              "clientId": "02:00:00:00:00:6F",
+              "type": "automatic",
+              "hostName": "PC-GUICHET1",
+              "leaseSeconds": 691200
+            },
+            {
+              "scope": "POSTES",
+              "ip": "10.20.10.51",
+              "clientId": "02:00:00:00:00:73",
+              "type": "automatic",
+              "hostName": "PC-GUICHET2",
+              "leaseSeconds": 691200
+            },
+            {
+              "scope": "POSTES",
+              "ip": "10.20.10.52",
+              "clientId": "02:00:00:00:00:77",
+              "type": "automatic",
+              "hostName": "PC-CONSEILLER",
+              "leaseSeconds": 691200
+            }
+          ]
+        }
+      },
+      "files": [
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQRu3iuyHJMisSSTyXRl5YDweQjLP4ux\n8rcASUr+WP2xSPvTJa7AAglGnXQAdFABVBhfW6WFKfF/GvXCcj04pgK/AAAAqKM+4TujPu\nE7AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBG7eK7IckyKxJJPJ\ndGXlgPB5CMs/i7HytwBJSv5Y/bFI+9MlrsACCUaddAB0UAFUGF9bpYUp8X8a9cJyPTimAr\n8AAAAhAPCR8FD95sOpPp0w1scrammtFyo54oM7g19MUDP0EyxoAAAAD3Jvb3RAV2luU2Vy\ndmVyMw==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBG7eK7IckyKxJJPJdGXlgPB5CMs/i7HytwBJSv5Y/bFI+9MlrsACCUaddAB0UAFUGF9bpYUp8X8a9cJyPTimAr8= root@WinServer3\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACCKhhZ3Yx8W+8b0VLKF25XQA4FkisF6NGxhGZ4XFlOcpwAAAJjSxEEa0sRB\nGgAAAAtzc2gtZWQyNTUxOQAAACCKhhZ3Yx8W+8b0VLKF25XQA4FkisF6NGxhGZ4XFlOcpw\nAAAEBvCLivCzBfKaeuhGvvImTGp22pZ+BUDYUHvBurd8cimYqGFndjHxb7xvRUsoXbldAD\ngWSKwXo0bGEZnhcWU5ynAAAAD3Jvb3RAV2luU2VydmVyMwECAwQFBg==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIqGFndjHxb7xvRUsoXbldADgWSKwXo0bGEZnhcWU5yn root@WinServer3\n"
+        },
+        {
+          "path": "C:\\Windows\\System32\\dns\\20.10.in-addr.arpa.dns",
+          "content": "$ORIGIN 20.10.in-addr.arpa.\n$TTL 3600\n20.10.in-addr.arpa. 3600 IN SOA ns1.20.10.in-addr.arpa. hostmaster.20.10.in-addr.arpa. 5 900 600 86400 3600\n10.20.20.10.in-addr.arpa. 3600 IN PTR dc1.horizon.local.\n53.20.20.10.in-addr.arpa. 3600 IN PTR dns-res.horizon.local.\n50.10.20.10.in-addr.arpa. 3600 IN PTR PC-GUICHET1.horizon.local.\n51.10.20.10.in-addr.arpa. 3600 IN PTR PC-GUICHET2.horizon.local.\n"
+        },
+        {
+          "path": "C:\\Windows\\System32\\dns\\horizon.local.dns",
+          "content": "$ORIGIN horizon.local.\n$TTL 3600\nhorizon.local. 3600 IN SOA ns1.horizon.local. hostmaster.horizon.local. 8 900 600 86400 3600\ndc1.horizon.local. 3600 IN A 10.20.20.10\ndns-res.horizon.local. 3600 IN A 10.20.20.53\nintranet.horizon.local. 3600 IN CNAME dc1.horizon.local.\nPC-GUICHET1.horizon.local. 1200 IN A 10.20.10.50\nPC-GUICHET2.horizon.local. 1200 IN A 10.20.10.51\n"
+        }
+      ],
+      "windowsDnsServers": [
+        {
+          "interface": "eth0",
+          "servers": [
+            "127.0.0.1"
+          ]
+        }
+      ],
+      "registry": {
+        "values": [
+          {
+            "path": "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\DNS\\Parameters",
+            "name": "Forwarders",
+            "value": "10.20.20.53",
+            "type": "MultiString"
+          }
+        ]
+      }
+    },
+    {
+      "id": "1793521731840-j",
+      "type": "linux-server",
+      "name": "DNS-RES",
+      "x": 460,
+      "y": 560,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:6b",
+          "ipAddress": "10.20.20.53",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:6c"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:6d"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:6e"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "10.20.20.1",
+      "files": [
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKnO/wMXhu+ekeZdz5O9NJE722n/7aF1dtPBKXdL12ko5KjdZiNOgI/aP9VVGHiTC41rw1EhI973TwIxtcHxXBc= root@Server4\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQSpzv8DF4bvnpHmXc+TvTSRO9tp/+2h\ndXbTwSl3S9dpKOSo3WYjToCP2j/VVRh4kwuNa8NRISPe908CMbXB8VwXAAAAqKozDCWqMw\nwlAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKnO/wMXhu+ekeZd\nz5O9NJE722n/7aF1dtPBKXdL12ko5KjdZiNOgI/aP9VVGHiTC41rw1EhI973TwIxtcHxXB\ncAAAAgVus7dI2seEq2aeDrCut+h7pVrdR+XeSMdxnOFL/i3WYAAAAMcm9vdEBTZXJ2ZXI0\nAQIDBA==\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFMRatxXqTKwECvO+wziuCwYfnFQ4Ec/QmAev8ZHGpbS root@Server4\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACBTEWrcV6kysBArzvsM4rgsGH5xUOBHP0JgHr/GRxqW0gAAAJCshLqyrIS6\nsgAAAAtzc2gtZWQyNTUxOQAAACBTEWrcV6kysBArzvsM4rgsGH5xUOBHP0JgHr/GRxqW0g\nAAAEAuxNNuhwpKeHAhMcffLLGpuWh/pvOL1vLzzPL+2puLR1MRatxXqTKwECvO+wziuCwY\nfnFQ4Ec/QmAev8ZHGpbSAAAADHJvb3RAU2VydmVyNAE=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 127.0.0.1\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/fstab",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=7d061c68-76aa-68fb-3587-8e8eb6cfcd4c / ext4 relatime,errors=remount-ro 0 1\nUUID=80062121-c0e5-4a9d-79cd-97ebbd1ca33a /boot ext4 defaults 0 2\nUUID=ecfe7df3-e95b-fea1-8629-b28fc951a0aa /u01 ext4 defaults 0 2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/machine-id",
+          "content": "5f2e08e31a9137cddeb2a440dee2c65e\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/netplan/01-lab.yaml",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [10.20.20.53/24]\n      routes:\n        - to: default\n          via: 10.20.20.1\n      nameservers:\n        addresses: [127.0.0.1]\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/bind/named.conf",
+          "content": "acl \"agence\" { 10.20.0.0/16; 127.0.0.0/8; };\noptions {\n    directory \"/var/cache/bind\";\n    recursion yes;\n    allow-query { agence; };\n    allow-recursion { agence; };\n    dnssec-validation no;\n};\nzone \".\" { type hint; file \"/etc/bind/db.root.hints\"; };\nzone \"horizon.local\" {\n    type forward;\n    forward only;\n    forwarders { 10.20.20.10; };\n};\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/named.conf.options",
+          "content": "options {\n\tdirectory \"/var/cache/bind\";\n\n\tdnssec-validation auto;\n\n\tlisten-on-v6 { any; };\n};\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/named.conf.local",
+          "content": "",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/bind/db.root.hints",
+          "content": ". 3600000 IN NS a.root-servers.net.\na.root-servers.net. 3600000 IN A 198.51.100.1\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/var/lib/dpkg/status",
+          "content": "Package: apache2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.4.52-1ubuntu4\nDescription: Apache HTTP Server\n\nPackage: at\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.2.5-1ubuntu1\nDescription: Delayed job execution and batch processing\n\nPackage: auditd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.0.7-1build1\nDescription: User space tools for security auditing\n\nPackage: bash\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.1-6ubuntu1\nDescription: GNU Bourne Again SHell\n\nPackage: bind9\nStatus: install ok installed\nArchitecture: amd64\nVersion: 9.18.12-0ubuntu0.22.04.1\nDescription: Internet Domain Name Server\n\nPackage: ca-certificates\nStatus: install ok installed\nArchitecture: amd64\nVersion: 20230311ubuntu0.22.04.1\nDescription: Common CA certificates\n\nPackage: chrony\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.2-2ubuntu2\nDescription: Versatile implementation of the Network Time Protocol\n\nPackage: conntrack\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:1.4.6-2build2\nDescription: Program to modify the conntrack tables\n\nPackage: coreutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.32-4.1ubuntu1\nDescription: GNU core utilities\n\nPackage: cron\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0pl1-137ubuntu3\nDescription: process scheduling daemon\n\nPackage: curl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.5.0-2ubuntu10.6\nDescription: command line tool for transferring data with URL syntax\n\nPackage: debianutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.5-1ubuntu2\nDescription: Miscellaneous utilities specific to Debian\n\nPackage: dnsutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 9.18.12-0ubuntu0.22.04.1\nDescription: Clients provided with BIND 9\n\nPackage: dpkg\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.1ubuntu2\nDescription: Debian package management system\n\nPackage: e2fsprogs\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.46.5-2ubuntu1.1\nDescription: ext2/ext3/ext4 file system utilities\n\nPackage: findutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8.0-1ubuntu3\nDescription: utilities for finding files\n\nPackage: gawk\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:5.1.0-1ubuntu0.1\nDescription: GNU awk, a pattern scanning and processing language\n\nPackage: grep\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.7-1build1\nDescription: GNU grep, egrep and fgrep\n\nPackage: gzip\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.10-4ubuntu4.1\nDescription: GNU compression utilities\n\nPackage: iproute2\nStatus: install ok installed\nArchitecture: amd64\nVersion: 6.1.0-1ubuntu6\nDescription: networking and traffic control tools\n\nPackage: iptables\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.8.7-1ubuntu5\nDescription: administration tools for packet filtering and NAT\n\nPackage: ipset\nStatus: install ok installed\nArchitecture: amd64\nVersion: 7.15-1build1\nDescription: administration tool for kernel IP sets\n\nPackage: iputils-ping\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3:20211215-1\nDescription: Tools to test the reachability of network hosts\n\nPackage: hping3\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.a2.ds2-9\nDescription: Active Network Smashing Tool\n\nPackage: isc-dhcp-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.4.1-2.3ubuntu2.4\nDescription: ISC DHCP server for automatic IP address assignment\n\nPackage: kmod\nStatus: install ok installed\nArchitecture: amd64\nVersion: 29-1ubuntu1\nDescription: tools for managing Linux kernel modules\n\nPackage: krb5-user\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.19.2-2ubuntu0.4\nDescription: basic programs to authenticate using MIT Kerberos\n\nPackage: ldap-utils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.5.18+dfsg-0ubuntu0.22.04.2\nDescription: OpenLDAP utilities\n\nPackage: less\nStatus: install ok installed\nArchitecture: amd64\nVersion: 590-1ubuntu0.22.04.3\nDescription: pager program similar to more\n\nPackage: libuser\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:0.62~dfsg-0.1ubuntu2\nDescription: user and group account administration library\n\nPackage: lldpd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0.16-1\nDescription: implementation of IEEE 802.1ab (LLDP)\n\nPackage: logrotate\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.19.0-1ubuntu1.1\nDescription: Log rotation utility\n\nPackage: lsof\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.93.2+dfsg-1.1build2\nDescription: Utility to list open files\n\nPackage: mtr-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 0.95-1\nDescription: Full screen ncurses traceroute tool\n\nPackage: ncal\nStatus: install ok installed\nArchitecture: amd64\nVersion: 12.1.7+nmu3\nDescription: Unix calendar and calculator utility\n\nPackage: net-tools\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.10-0.1ubuntu4\nDescription: NET-3 networking toolkit\n\nPackage: nginx\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.24.0-1~jammy\nDescription: small, powerful, scalable web/proxy server\n\nPackage: ntpsec\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.2.1+dfsg1-4\nDescription: Network Time Protocol daemon and utility programs\n\nPackage: inetutils-telnet\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:2.2-2\nDescription: telnet client\n\nPackage: openssh-client\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) client, for secure access to remote machines\n\nPackage: openssh-server\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:8.9p1-3ubuntu0.1\nDescription: secure shell (SSH) server, for secure access from remote machines\n\nPackage: openssl\nStatus: install ok installed\nArchitecture: amd64\nVersion: 3.0.2-0ubuntu1\nDescription: Secure Sockets Layer toolkit - cryptographic utility\n\nPackage: passwd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:4.8.1-2ubuntu2.1\nDescription: change and administer password and group data\n\nPackage: pciutils\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:3.7.0-6\nDescription: PCI utilities\n\nPackage: procps\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:3.3.17-6ubuntu2\nDescription: /proc file system utilities\n\nPackage: psmisc\nStatus: install ok installed\nArchitecture: amd64\nVersion: 23.7-1build1\nDescription: utilities that use the proc file system\n\nPackage: rsyslog\nStatus: install ok installed\nArchitecture: amd64\nVersion: 8.2610.0-1ubuntu1\nDescription: reliable system and kernel logging daemon\n\nPackage: sed\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.8-1ubuntu2\nDescription: GNU stream editor for filtering/transforming text\n\nPackage: snmp\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.1+dfsg-1ubuntu2.8\nDescription: SNMP (Simple Network Management Protocol) applications\n\nPackage: sshpass\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.09-1\nDescription: Non-interactive ssh password authentication\n\nPackage: strongswan\nStatus: install ok installed\nArchitecture: amd64\nVersion: 5.9.5-2ubuntu2\nDescription: IPsec VPN solution\n\nPackage: sudo\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.9.9-1ubuntu2.4\nDescription: Provide limited super user privileges to specific users\n\nPackage: systemd\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager\n\nPackage: systemd-sysv\nStatus: install ok installed\nArchitecture: amd64\nVersion: 249.11-0ubuntu3\nDescription: system and service manager - SysV links\n\nPackage: tar\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.34+dfsg-1ubuntu0.1.22.04.2\nDescription: GNU version of the tar archiving utility\n\nPackage: tcpdump\nStatus: install ok installed\nArchitecture: amd64\nVersion: 4.99.1-3build2\nDescription: command-line network traffic analyzer\n\nPackage: traceroute\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1:2.1.0-2\nDescription: Traces the route taken by packets over an IPv4/IPv6 network\n\nPackage: tree\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.0.2-1\nDescription: displays an indented directory tree, in color\n\nPackage: util-linux\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2.37.2-4ubuntu3\nDescription: miscellaneous system utilities\n\nPackage: vim\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor\n\nPackage: vim-tiny\nStatus: install ok installed\nArchitecture: amd64\nVersion: 2:8.2.3995-1ubuntu2\nDescription: Vi IMproved - enhanced vi editor - compact version\n\nPackage: wget\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.21.2-2ubuntu1\nDescription: retrieves files from the web\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        }
+      ],
+      "directories": [
+        {
+          "path": "/etc/bind",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/lib/dpkg",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/var/cache/bind",
+          "uid": 0,
+          "gid": 0,
+          "mode": 509
+        }
+      ],
+      "symlinks": [
+        {
+          "path": "/etc/systemd/system/multi-user.target.wants/named.service",
+          "target": "/usr/lib/systemd/system/named.service",
+          "uid": 0,
+          "gid": 0
+        }
+      ],
+      "linuxServices": [
+        {
+          "name": "named",
+          "enabled": "enabled",
+          "active": true
+        }
+      ]
+    },
+    {
+      "id": "1793521731896-k",
+      "type": "windows-pc",
+      "name": "PC-GUICHET1",
+      "x": 620,
+      "y": 560,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:6f"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:70"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:71"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:72"
+        }
+      ],
+      "dhcpLeases": [
+        {
+          "interface": "eth0",
+          "lease": {
+            "iface": "eth0",
+            "ipAddress": "10.20.10.50",
+            "subnetMask": "255.255.255.0",
+            "defaultGateway": "10.20.10.1",
+            "dnsServers": [
+              "10.20.20.10",
+              "10.20.20.53"
+            ],
+            "domainName": "horizon.local",
+            "serverIdentifier": "10.20.20.10",
+            "serverMac": "02:00:00:00:00:4a",
+            "leaseStart": 1793521972244,
+            "leaseDuration": 691200,
+            "renewalTime": 345600,
+            "rebindingTime": 604800,
+            "expiration": 1794213172244,
+            "xid": 4258757371,
+            "nextServer": null,
+            "bootfileName": null,
+            "netbiosServers": [],
+            "netbiosNodeType": null,
+            "ntpServers": [],
+            "vendorOptions": {}
+          }
+        }
+      ],
+      "files": [
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQSog8p65IT1XLK/ml5OpV1P38sCwrhA\nuaA43K8t7t15EWK93JkBi+YTn37zARguA4yROPni2opFddNTBynVkJ/RAAAAqA1WCxkNVg\nsZAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKiDynrkhPVcsr+a\nXk6lXU/fywLCuEC5oDjcry3u3XkRYr3cmQGL5hOffvMBGC4DjJE4+eLaikV101MHKdWQn9\nEAAAAhAKhURB3StAEmyN7LXGAhYHNgeKmTUJnEYUtOCwE3RPaeAAAACHJvb3RAUEMxAQID\nBAUGBw==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKiDynrkhPVcsr+aXk6lXU/fywLCuEC5oDjcry3u3XkRYr3cmQGL5hOffvMBGC4DjJE4+eLaikV101MHKdWQn9E= root@PC1\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACA811mhsLGWDdh6XB0IrRmLYDSaI8Go/Jn74HAJjmjgkgAAAJAtDNF7LQzR\newAAAAtzc2gtZWQyNTUxOQAAACA811mhsLGWDdh6XB0IrRmLYDSaI8Go/Jn74HAJjmjgkg\nAAAEBcYZg+iPPeQkH7LoN3N+2iWsP7rE61QZSCxIvbsSXz1TzXWaGwsZYN2HpcHQitGYtg\nNJojwaj8mfvgcAmOaOCSAAAACHJvb3RAUEMxAQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDzXWaGwsZYN2HpcHQitGYtgNJojwaj8mfvgcAmOaOCS root@PC1\n"
+        }
+      ]
+    },
+    {
+      "id": "1793521731910-l",
+      "type": "windows-pc",
+      "name": "PC-GUICHET2",
+      "x": 780,
+      "y": 560,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:73"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:74"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:75"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:76"
+        }
+      ],
+      "dhcpLeases": [
+        {
+          "interface": "eth0",
+          "lease": {
+            "iface": "eth0",
+            "ipAddress": "10.20.10.51",
+            "subnetMask": "255.255.255.0",
+            "defaultGateway": "10.20.10.1",
+            "dnsServers": [
+              "10.20.20.10",
+              "10.20.20.53"
+            ],
+            "domainName": "horizon.local",
+            "serverIdentifier": "10.20.20.10",
+            "serverMac": "02:00:00:00:00:4a",
+            "leaseStart": 1793521972256,
+            "leaseDuration": 691200,
+            "renewalTime": 345600,
+            "rebindingTime": 604800,
+            "expiration": 1794213172256,
+            "xid": 3645627744,
+            "nextServer": null,
+            "bootfileName": null,
+            "netbiosServers": [],
+            "netbiosNodeType": null,
+            "ntpServers": [],
+            "vendorOptions": {}
+          }
+        }
+      ],
+      "files": [
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQQJZNaR8iV/qOM79iqZGXLMk8sMFUEx\nOkdrveguR2l6DtXkfkdgQTP1fXkTxbI6NTSDzXXkCfS+TJyJDjkdJb3+AAAAqPc8CWP3PA\nljAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAlk1pHyJX+o4zv2\nKpkZcsyTywwVQTE6R2u96C5HaXoO1eR+R2BBM/V9eRPFsjo1NIPNdeQJ9L5MnIkOOR0lvf\n4AAAAhAL4hfV7dNF+TYagdt8XTSLNX7QgVeOK6xpxHHgdxDGC1AAAACHJvb3RAUEMyAQID\nBAUGBw==\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAlk1pHyJX+o4zv2KpkZcsyTywwVQTE6R2u96C5HaXoO1eR+R2BBM/V9eRPFsjo1NIPNdeQJ9L5MnIkOOR0lvf4= root@PC2\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACAs+oaTuiXAgS+niFQ+JALWlMNwPdCjCku4z2SWw+XR/gAAAJB4VIh7eFSI\newAAAAtzc2gtZWQyNTUxOQAAACAs+oaTuiXAgS+niFQ+JALWlMNwPdCjCku4z2SWw+XR/g\nAAAECNWf0gmh6iu9785IL6P6+5Q5Dfe+bnsXhJ8aYvNFEdZyz6hpO6JcCBL6eIVD4kAtaU\nw3A90KMKS7jPZJbD5dH+AAAACHJvb3RAUEMyAQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n"
+        },
+        {
+          "path": "C:\\ProgramData\\ssh\\ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICz6hpO6JcCBL6eIVD4kAtaUw3A90KMKS7jPZJbD5dH+ root@PC2\n"
+        }
+      ]
+    },
+    {
+      "id": "1793521731924-m",
+      "type": "linux-pc",
+      "name": "PC-CONSEILLER",
+      "x": 940,
+      "y": 560,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:77"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:78"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:79"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:7a"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "dhcpLeases": [
+        {
+          "interface": "eth0",
+          "lease": {
+            "iface": "eth0",
+            "ipAddress": "10.20.10.52",
+            "subnetMask": "255.255.255.0",
+            "defaultGateway": "10.20.10.1",
+            "dnsServers": [
+              "10.20.20.10",
+              "10.20.20.53"
+            ],
+            "domainName": "horizon.local",
+            "serverIdentifier": "10.20.20.10",
+            "serverMac": "02:00:00:00:00:4a",
+            "leaseStart": 1793521972279,
+            "leaseDuration": 691200,
+            "renewalTime": 345600,
+            "rebindingTime": 604800,
+            "expiration": 1794213172279,
+            "xid": 2964506093,
+            "nextServer": null,
+            "bootfileName": null,
+            "netbiosServers": [],
+            "netbiosNodeType": null,
+            "ntpServers": [],
+            "vendorOptions": {}
+          }
+        }
+      ],
+      "files": [
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMEXMzVt3fc0ScWE4wv/ENRW/NAzazvMlqPzcSMBGYLgiu9eBaf8qBhw7FlVIwVdWEdj52QzMSwuFz51NtnhWpc= root@PC3\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTBFzM1bd33NEnFhOML/xDUVvzQM2s7\nzJaj83EjARmC4IrvXgWn/KgYcOxZVSMFXVhHY+dkMzEsLhc+dTbZ4VqXAAAAoEG3sMpBt7\nDKAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMEXMzVt3fc0ScWE\n4wv/ENRW/NAzazvMlqPzcSMBGYLgiu9eBaf8qBhw7FlVIwVdWEdj52QzMSwuFz51NtnhWp\ncAAAAgVC/eE3tbCEL/I8cJam+7J1tRrPh7zcS+17n6EN8R6sQAAAAIcm9vdEBQQzM=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUgsDUsT/qYWWs1NNXS1tKDHECb4vEackn0AFVvPUGO root@PC3\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACBVILA1LE/6mFlrNTTV0tbSgxxAm+LxGnJJ9ABVbz1BjgAAAJCpPxRQqT8U\nUAAAAAtzc2gtZWQyNTUxOQAAACBVILA1LE/6mFlrNTTV0tbSgxxAm+LxGnJJ9ABVbz1Bjg\nAAAEDZGcN6IFKgn2xGb91rGB2FAKij6egQmvLxh2v5V+4DRlUgsDUsT/qYWWs1NNXS1tKD\nHECb4vEackn0AFVvPUGOAAAACHJvb3RAUEMzAQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 10.20.20.10\nnameserver 10.20.20.53\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/fstab",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=01c7465d-5a37-4a65-0710-5dcb09c2cf4d / ext4 relatime,errors=remount-ro 0 1\nUUID=fec741a4-03a6-c27b-0cb0-a09165452304 /boot ext4 defaults 0 2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/machine-id",
+          "content": "57f6e944cc8ef489d8846797d9c778c8\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/netplan/01-lab.yaml",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: true\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "sourceDeviceId": "1793521009921-1",
+      "sourceInterfaceId": "GigabitEthernet0/0",
+      "targetDeviceId": "1793521010057-2",
+      "targetInterfaceId": "eth0",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521010134-4",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521010057-2",
+      "targetInterfaceId": "eth1",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521010572-5",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521010057-2",
+      "targetInterfaceId": "eth2",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521009921-1",
+      "sourceInterfaceId": "GigabitEthernet0/1",
+      "targetDeviceId": "1793521010100-3",
+      "targetInterfaceId": "eth0",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521010610-6",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521010100-3",
+      "targetInterfaceId": "eth1",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521010675-7",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521010100-3",
+      "targetInterfaceId": "eth2",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521010686-8",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521010100-3",
+      "targetInterfaceId": "eth3",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521731736-g",
+      "sourceInterfaceId": "GigabitEthernet0/0",
+      "targetDeviceId": "1793521009921-1",
+      "targetInterfaceId": "GigabitEthernet0/2",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521731736-g",
+      "sourceInterfaceId": "GigabitEthernet0/1",
+      "targetDeviceId": "1793521731797-h",
+      "targetInterfaceId": "FastEthernet0/1",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521731826-i",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521731797-h",
+      "targetInterfaceId": "FastEthernet0/2",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521731840-j",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521731797-h",
+      "targetInterfaceId": "FastEthernet0/3",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521731896-k",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521731797-h",
+      "targetInterfaceId": "FastEthernet0/4",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521731910-l",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521731797-h",
+      "targetInterfaceId": "FastEthernet0/5",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793521731924-m",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793521731797-h",
+      "targetInterfaceId": "FastEthernet0/6",
+      "type": "ethernet"
+    }
+  ]
+}

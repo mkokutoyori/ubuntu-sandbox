@@ -1,6 +1,6 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import { strerror, type Errno } from '@/network/core/Errno';
-import { UDP_OVER_IPV4_HEADER_BYTES } from '@/network/layers/transport/UdpEgress';
+import { UDP_OVER_IPV4_HEADER_BYTES, UDP_OVER_IPV6_HEADER_BYTES } from '@/network/layers/transport/UdpEgress';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { UdpErrorReport } from '../../../EndHost';
@@ -17,6 +17,7 @@ const MAX_HOPS_LIMIT = 255;
 const HOST_COLUMN_SIZE = 52;
 const HIS_ARRAY_SIZE = 64;
 const DEFAULT_MTU_IPV4 = 65535;
+const DEFAULT_MTU_IPV6 = 128000;
 const DEFAULT_BASEPORT = 44444;
 const PROBE_WAIT_MS = 1000;
 
@@ -144,20 +145,22 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
     throw e;
   }
 
-  const literal4 = IPAddress.tryParse(parsed.target);
-  const literal6 = literal4 ? null : IPv6Address.tryParse(parsed.target);
-  if (parsed.family === 6 || literal6) {
-    return { stdout: [], stderr: ['tracepath: option -6: this simulator cannot build an IPv6 probe socket with IPV6_RECVERR'], exitCode: 1 };
-  }
-  const target = literal4 ?? await ctx.net.resolveHostname(parsed.target);
+  const literal4 = parsed.family === 6 ? null : IPAddress.tryParse(parsed.target);
+  const literal6 = literal4 || parsed.family === 4 ? null : IPv6Address.tryParse(parsed.target);
+  const target = literal4 ?? literal6
+    ?? (parsed.family === 6 ? await ctx.net.resolveHostname6(parsed.target) : await ctx.net.resolveHostname(parsed.target));
   if (!target) {
     return { stdout: [], stderr: [`tracepath: ${parsed.target}: Name or service not known`], exitCode: 1 };
   }
+  const target6 = target instanceof IPv6Address ? target : null;
+  const overhead = target6 ? UDP_OVER_IPV6_HEADER_BYTES : UDP_OVER_IPV4_HEADER_BYTES;
 
-  const state: RunState = { mtu: parsed.mtu || DEFAULT_MTU_IPV4, ttl: 1, hisptr: 0, hopsTo: -1, hopsFrom: -1 };
-  if (state.mtu <= UDP_OVER_IPV4_HEADER_BYTES) {
+  const state: RunState = {
+    mtu: parsed.mtu || (target6 ? DEFAULT_MTU_IPV6 : DEFAULT_MTU_IPV4), ttl: 1, hisptr: 0, hopsTo: -1, hopsFrom: -1,
+  };
+  if (state.mtu <= overhead) {
     return {
-      stdout: [], stderr: [`tracepath: pktlen must be within: ${UDP_OVER_IPV4_HEADER_BYTES} < value <= ${INT_MAX}`], exitCode: 1,
+      stdout: [], stderr: [`tracepath: pktlen must be within: ${overhead} < value <= ${INT_MAX}`], exitCode: 1,
     };
   }
   const sourcePort = ctx.executor.getSocketTable()?.allocateEphemeralPort() ?? 32768;
@@ -220,10 +223,11 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
     let attempt = 0;
     while (attempt < MAX_PROBES) {
       const port = parsed.basePort + state.hisptr;
-      const report = await ctx.net.udpErrorProbe(target, {
+      const probe = {
         destinationPort: port, sourcePort, ttl: state.ttl,
-        payloadBytes: state.mtu - UDP_OVER_IPV4_HEADER_BYTES, timeoutMs: PROBE_WAIT_MS,
-      });
+        payloadBytes: state.mtu - overhead, timeoutMs: PROBE_WAIT_MS,
+      };
+      const report = target6 ? await ctx.net.udpErrorProbe6(target6, probe) : await ctx.net.udpErrorProbe(target as IPAddress, probe);
       if (report.origin !== 'local') {
         state.hisptr = (state.hisptr + 1) & (HIS_ARRAY_SIZE - 1);
         return recverr(report, state.ttl);

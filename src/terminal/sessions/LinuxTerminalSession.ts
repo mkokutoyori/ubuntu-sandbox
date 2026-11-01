@@ -83,6 +83,7 @@ import type { TsigKey } from '@/network/dns/tsig/Tsig';
 import { FtpSubShell } from '@/terminal/subshells/FtpSubShell';
 import { FtpClientSession } from '@/network/ftp/FtpClientSession';
 import { NslookupSubShell } from '@/terminal/subshells/NslookupSubShell';
+import { BindNslookupInterpreter } from '@/network/devices/linux/commands/dns/BindNslookupInterpreter';
 import { readResolverIP } from '@/network/devices/linux/commands/dns/resolverIP';
 import { RemoteShellSubShell } from '@/terminal/subshells/RemoteShellSubShell';
 import { OpenSslSClientSubShell } from '@/terminal/subshells/OpenSslSClientSubShell';
@@ -966,7 +967,7 @@ export class LinuxTerminalSession extends TerminalSession {
         return;
       }
       if (parts[0] === 'nslookup' && parts.length === 1) {
-        this.enterNslookup();
+        await this.enterNslookup();
         return;
       }
       if (parts[0] === 'nsupdate' && !nsupdateNamesAFile(parts.slice(1))) {
@@ -2067,7 +2068,7 @@ export class LinuxTerminalSession extends TerminalSession {
     this.notify();
   }
 
-  private enterNslookup(): void {
+  private async enterNslookup(): Promise<void> {
     const dev = this.device as unknown as {
       net?: import('@/network/devices/linux/LinuxNetKernel').LinuxNetKernel;
       executor?: import('@/network/devices/linux/LinuxCommandExecutor').LinuxCommandExecutor;
@@ -2079,11 +2080,11 @@ export class LinuxTerminalSession extends TerminalSession {
     }
     const initialServer = readResolverIP(dev.executor);
     const net = dev.net;
-    const shell = new NslookupSubShell({
+    const shell = new NslookupSubShell(new BindNslookupInterpreter({
       query: (s, n, t, ms) => net.queryDns(s, n, t, ms),
       initialServer,
-    });
-    for (const line of shell.bannerLines()) this.addLine(line);
+    }));
+    for (const line of await shell.bannerLines()) this.addLine(line);
     this.activeSubShell = shell;
     this._inputBuf = '';
     this.notify();

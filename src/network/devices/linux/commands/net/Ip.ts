@@ -5,6 +5,7 @@
  * This file only bridges the `LinuxCommand` interface to `IpNetworkContext`.
  */
 
+import { selectIpv6SourceAddress } from '../../../../layers/internet/Ipv6Egress';
 import { DEFAULT_QDISC_FALLBACK } from '../../LinuxIpv4Settings';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
@@ -185,15 +186,26 @@ export function buildIpCtx(
           errorsIn: counters.errorsIn,
           errorsOut: counters.errorsOut,
         },
-        ipv6: port.getIPv6Addresses().map(entry => ({
+        ipv6: port.getIPv6Addresses().map(entry => {
+          const lifetimes = port.getIPv6Lifetimes(entry);
+          const dynamic = lifetimes.valid !== null;
+          return ({
           address: entry.address.toString().split('%')[0],
           prefixLength: entry.prefixLength,
+          flags: [
+            ...(entry.temporary === true ? ['temporary'] : []),
+            ...(entry.deprecated === true ? ['deprecated'] : []),
+            ...(dynamic ? ['dynamic'] : []),
+            ...(entry.managesTemporary === true ? ['mngtmpaddr'] : []),
+          ],
+          validLft: lifetimes.valid,
+          preferredLft: lifetimes.preferred,
           // `::1` est de portée HOST : elle ne quitte pas la machine,
           // exactement comme 127.0.0.1. Elle était annoncée `global`,
           // donc décrite comme routable.
           scope: entry.address.toString() === '::1' ? 'host' as const
             : entry.origin === 'link-local' ? 'link' as const : 'global' as const,
-        })),
+        }); }),
         secondaryIPs: port.getSecondaryIPs().map(e => ({ ip: e.ip.toString(), cidr: e.mask.toCIDR() })),
       };
     },
@@ -260,13 +272,24 @@ export function buildIpCtx(
         return `Error: ${e instanceof Error ? e.message : String(e)}`;
       }
     },
+    ownsIPv6Address(address: string): boolean {
+      const wanted = new IPv6Address(address);
+      for (const port of net.getPorts().values()) if (port.hasIPv6Address(wanted)) return true;
+      return false;
+    },
+    selectIPv6Source(iface: string, destination: string): string | null {
+      const port = net.getPorts().get(iface);
+      if (!port) return null;
+      return selectIpv6SourceAddress(port, new IPv6Address(destination))?.toString().split('%')[0] ?? null;
+    },
     getIPv6RoutingTable() {
       return net.getIPv6RoutingTable().map(r => ({
         prefix: r.prefix.toString(),
         prefixLength: r.prefixLength,
-        nextHop: r.nextHop ? r.nextHop.toString() : null,
+        nextHop: r.nextHop ? r.nextHop.toString().split('%')[0] : null,
         iface: r.iface,
         type: r.type,
+        ...(r.learnedFrom === undefined ? {} : { proto: r.learnedFrom }),
         metric: r.metric,
       }));
     },

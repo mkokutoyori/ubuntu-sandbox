@@ -132,6 +132,57 @@ export class InMemoryEditorFsContext implements EditorFsContext {
     return this.environment.get(name) ?? null;
   }
 
+  private readonly executables = new Set<string>();
+
+  removeEntry(path: string, kind: 'file' | 'directory' | 'tree'): boolean {
+    const target = this.resolvePath(path);
+    const type = this.kindOf(target);
+    if (type === 'missing') return false;
+    if (type === 'directory') {
+      if (kind === 'file') return false;
+      const prefix = `${target}/`;
+      const inside = [...this.files.keys()].filter((name) => name.startsWith(prefix));
+      if (kind === 'directory' && (inside.length > 0 || [...this.directories].some((name) => name.startsWith(prefix)))) return false;
+      for (const name of inside) this.files.delete(name);
+      for (const name of [...this.directories]) if (name === target || name.startsWith(prefix)) this.directories.delete(name);
+      return true;
+    }
+    return this.files.delete(target);
+  }
+
+  renameEntry(from: string, to: string): boolean {
+    const source = this.resolvePath(from);
+    const target = this.resolvePath(to);
+    const type = this.kindOf(source);
+    if (type === 'missing') return false;
+    if (type === 'directory') {
+      const prefix = `${source}/`;
+      for (const name of [...this.files.keys()]) if (name.startsWith(prefix)) { this.files.set(`${target}/${name.slice(prefix.length)}`, this.files.get(name)!); this.files.delete(name); }
+      for (const name of [...this.directories]) if (name === source || name.startsWith(prefix)) { this.directories.delete(name); this.directories.add(name === source ? target : `${target}/${name.slice(prefix.length)}`); }
+      return true;
+    }
+    this.files.set(target, this.files.get(source)!);
+    this.files.delete(source);
+    return true;
+  }
+
+  linkInfo(path: string): { type: string; permissions: number } | null {
+    const kind = this.kindOf(path);
+    if (kind === 'missing') return null;
+    const stored = this.modeOf(path);
+    if (kind === 'directory') return { type: 'directory', permissions: stored ?? 0o755 };
+    return { type: 'file', permissions: stored ?? (this.executableAt(path) ? 0o755 : 0o644) };
+  }
+
+
+  useExecutable(path: string): void {
+    this.executables.add(this.resolvePath(path));
+  }
+
+  executableAt(path: string): boolean {
+    return this.executables.has(this.resolvePath(path));
+  }
+
   environmentNames(): string[] {
     return [...this.environment.keys()];
   }

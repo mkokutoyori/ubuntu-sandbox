@@ -22,6 +22,17 @@ export function tracerouteIcmpAnnotation(code: number | undefined, mtu?: number)
   return known === undefined ? `!<${code}>` : known;
 }
 
+export function tracerouteIcmp6Annotation(code: number | undefined): string {
+  switch (code) {
+    case undefined: return '';
+    case 0: return '!N';
+    case 2: case 3: return '!H';
+    case 1: return '!X';
+    case 4: return '';
+    default: return `!<${code}>`;
+  }
+}
+
 export function tracerouteHeader(
   targetName: string, targetIp: string, maxHops: number, packetBytes: number,
 ): string {
@@ -32,6 +43,7 @@ export function tracerouteHeader(
 export interface TracerouteRenderOptions {
   numeric: boolean;
   nameOf?: (ip: string) => string | null;
+  family?: 4 | 6;
 }
 
 function addressText(ip: string, options: TracerouteRenderOptions): string {
@@ -54,7 +66,8 @@ export function tracerouteHopLine(hop: TracerouteHop, options: TracerouteRenderO
     }
     previousIp = probe.ip;
     line += `  ${(probe.rttMs ?? 0).toFixed(3)} ms`;
-    const annotation = probe.unreachable ? tracerouteIcmpAnnotation(probe.icmpCode) : '';
+    const annotation = !probe.unreachable ? ''
+      : options.family === 6 ? tracerouteIcmp6Annotation(probe.icmpCode) : tracerouteIcmpAnnotation(probe.icmpCode);
     if (annotation !== '') line += ` ${annotation}`;
   });
   return line;

@@ -14,6 +14,7 @@
  */
 
 
+import type { DnsLookupFailure } from '@/network/devices/windows/dnsLookupFailure';
 import type { DhcpFailoverChanges, DhcpFailoverRequest } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { findWmiClass } from '@/network/devices/windows/WmiClasses';
 import { CmdletRegistry } from '@/powershell/runtime/PSCmdletRegistry';
@@ -96,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1326,6 +1327,10 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
     return this.role().cacheEntries().map(e => ({ name: e.name, type: e.type, ttl: e.ttl, data: e.data }));
   }
   clearCache(): void { this.role().clearCache(); }
+  getCacheSettings(): DnsCacheSettings { return this.role().getCacheSettings(); }
+  setCacheSettings(changes: Partial<DnsCacheSettings>): DnsOpResult { return this.role().setCacheSettings(changes); }
+  getGlobalQueryBlock(): GlobalQueryBlock { return this.role().getGlobalQueryBlock(); }
+  setGlobalQueryBlock(changes: { enabled?: boolean; list?: readonly string[] }): DnsOpResult { return this.role().setGlobalQueryBlock(changes); }
 
   setZoneDynamicUpdate(zone: string, mode: DnsDynamicUpdateMode): DnsOpResult {
     return this.role().setZoneDynamicUpdate(zone, mode);
@@ -2392,6 +2397,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const records = this.pc.lookupDnsRecordsSync(name, type, server);
     return records === null ? null : records.map(dnsAnswerRowOf);
   }
+  dnsLookupFailure(): DnsLookupFailure | null { return this.pc.lastDnsLookupFailure(); }
   getPrefixPolicies(): NetPrefixPolicyRow[] {
     return prefixPolicyRowsOf(this.pc.prefixPolicies.listed('active'), 'Active');
   }

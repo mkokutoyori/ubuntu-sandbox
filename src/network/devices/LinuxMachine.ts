@@ -93,6 +93,7 @@ import {
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import { IPV6_DEVICE_CONF_KNOBS, Ipv6DeviceConf } from './linux/Ipv6DeviceConf';
+import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
 import type { TcpStream } from '../tcp/types';
@@ -340,6 +341,9 @@ export abstract class LinuxMachine extends EndHost
     this.ipv6ConfStore ??= new Ipv6DeviceConf([...this.ports.keys()]);
     return this.ipv6ConfStore;
   }
+  protected override ipv6ForwardingEnabled(): boolean {
+    return this.ipv6Conf.forwards('all');
+  }
   protected override routerAdvertisementAcceptance(portName: string): RouterAdvertisementAcceptance {
     const conf = this.ipv6Conf;
     return {
@@ -420,6 +424,17 @@ export abstract class LinuxMachine extends EndHost
       this.registerIpv6ConfScope(port.getName());
       this.applyIpv6Prohibitions();
     }
+    this.attachAddrconf(port);
+  }
+  private addrconfDraws = 0;
+  private attachAddrconf(port: Port): void {
+    const name = port.getName();
+    port.setIPv6AddrconfEnv({
+      now: () => this.getSystemClockMs(),
+      policy: () => this.ipv6Conf.addrconfPolicy(name),
+      random: () => parseInt(simulatedDigest(`${this.name}:${name}:addrconf:${this.addrconfDraws++}`).slice(0, 8), 16) / 0x100000000,
+      disableTemporaryAddresses: () => { this.ipv6Conf.set(name, 'use_tempaddr', -1); },
+    });
   }
   private setIpForwarding(enabled: boolean): void {
     const changed = this.ipForwardEnabled !== enabled;
@@ -4263,7 +4278,7 @@ export abstract class LinuxMachine extends EndHost
       if (/Name or service not known|unknown host|Permission denied|invalid argument/i.test(output)) return true;
       return false;
     }
-    if (head === 'traceroute') {
+    if (head === 'traceroute' || head === 'traceroute6') {
       if (/unknown host|invalid argument|Permission denied/i.test(output)) return true;
       return false;
     }
@@ -4767,6 +4782,7 @@ export abstract class LinuxMachine extends EndHost
       udpConnect: (target, port, options) => this.udpConnect(target, port, options),
       routeException: (target) => this.routeException(target),
       udpErrorProbe: (target, options) => this.udpErrorProbe(target, options),
+      udpErrorProbe6: (target, options) => this.udpErrorProbe6(target, options),
       flushRouteExceptions: () => this.flushRouteExceptions(),
       udpListen: (port, processName, owner, onDatagram, address) => this.udpListen(port, processName, owner, onDatagram, address),
       tcpExchange: (target, port, payload, options) => this.tcpExchange(target, port, payload, options),
@@ -4788,7 +4804,17 @@ export abstract class LinuxMachine extends EndHost
           target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl, hooks, method, socket);
         return hops as TracerouteHop[];
       },
+      traceroute6: async (
+        target: IPv6Address, maxHops?: number, probesPerHop?: number, firstTtl?: number,
+        timeoutMs?: number, method?: Exclude<TraceProbeMethod, { kind: 'raw' }>, socket?: TraceSocketOptions,
+        hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean; compressedWaitMs?: number },
+      ): Promise<TracerouteHop[]> => {
+        const hops = await this.executeTraceroute6(
+          target, maxHops, timeoutMs ?? 2000, probesPerHop, firstTtl, hooks, method, socket);
+        return hops as TracerouteHop[];
+      },
       canTraceTo: (target: IPAddress, socket: TraceSocketOptions): boolean => this.canTraceTo(target, socket),
+      canTraceTo6: (target: IPv6Address, socket: TraceSocketOptions): boolean => this.canTraceTo6(target, socket),
       isLocalAddress: (ip: IPAddress): boolean => this.isLocalAddress(ip),
       isLocalAddress6: (ip: IPv6Address): boolean => this.isLocalAddress6(ip),
       sendUdpProbe: (
@@ -5267,6 +5293,53 @@ export abstract class LinuxMachine extends EndHost
   editorEnvironmentVariable(name: string, session?: LinuxShellSession): string | null {
     if (session !== undefined && !session.disposed) return session.env.get(name) ?? null;
     return this.executor.commandEnvironment()[name] ?? null;
+  }
+
+  editorLinkInfo(path: string, session?: LinuxShellSession): { type: string; permissions: number; target?: string } | null {
+    const vfs = this.executor.vfs;
+    const inode = vfs.lstat(vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd()));
+    if (inode === null) return null;
+    return { type: inode.type, permissions: inode.permissions, ...(inode.type === 'symlink' ? { target: inode.target } : {}) };
+  }
+
+  private mayChangeEntriesOf(parent: string, session?: LinuxShellSession): boolean {
+    const vfs = this.executor.vfs;
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    const uid = live?.uid ?? this.executor.getCurrentUid();
+    if (uid === 0) return true;
+    const gid = live?.gid ?? 1000;
+    const inode = vfs.resolveInode(parent);
+    return inode !== null && vfs.checkAccess(inode, 'w', uid, gid) && vfs.checkAccess(inode, 'x', uid, gid);
+  }
+
+  editorRemoveEntry(path: string, kind: 'file' | 'directory' | 'tree', session?: LinuxShellSession): boolean {
+    const vfs = this.executor.vfs;
+    const absolute = vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd());
+    const inode = vfs.lstat(absolute);
+    if (inode === null) return false;
+    if (!this.mayChangeEntriesOf(absolute.slice(0, absolute.lastIndexOf('/')) || '/', session)) return false;
+    if (kind === 'tree') return inode.type === 'directory' ? vfs.rmrf(absolute) : vfs.deleteFile(absolute);
+    if (kind === 'directory') return inode.type === 'directory' && vfs.rmdir(absolute);
+    return inode.type !== 'directory' && vfs.deleteFile(absolute);
+  }
+
+  editorRenameEntry(from: string, to: string, session?: LinuxShellSession): boolean {
+    const vfs = this.executor.vfs;
+    const cwd = session?.cwd ?? this.executor.getCwd();
+    const source = vfs.normalizePath(from, cwd);
+    const target = vfs.normalizePath(to, cwd);
+    if (vfs.lstat(source) === null) return false;
+    if (!this.mayChangeEntriesOf(source.slice(0, source.lastIndexOf('/')) || '/', session)) return false;
+    if (!this.mayChangeEntriesOf(target.slice(0, target.lastIndexOf('/')) || '/', session)) return false;
+    return vfs.rename(source, target);
+  }
+
+  editorExecutableAt(path: string, session?: LinuxShellSession): boolean {
+    const vfs = this.executor.vfs;
+    const inode = vfs.resolveInode(vfs.normalizePath(path, session?.cwd ?? this.executor.getCwd()));
+    if (inode === null || inode.type !== 'file') return false;
+    const live = session !== undefined && !session.disposed ? session : undefined;
+    return vfs.checkAccess(inode, 'x', live?.uid ?? this.executor.userMgr.currentUid, live?.gid ?? this.executor.userMgr.currentGid);
   }
 
   editorEnvironmentNames(session?: LinuxShellSession): string[] {

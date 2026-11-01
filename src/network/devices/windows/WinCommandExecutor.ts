@@ -190,6 +190,7 @@ export interface WinCommandContext {
   getDnsSuffix(): string;
   setDnsSuffix(suffix: string): void;
   getConnectionDnsSuffix(ifName: string): string;
+  getDnsSuffixSearchList(): readonly string[];
 
   // Interface renaming
   renameInterface(oldName: string, newName: string): boolean;
@@ -208,6 +209,14 @@ export interface WinCommandContext {
   // Hostname resolution. The DNS step queries the configured servers over
   // UDP/53 through the simulated network — hence asynchronous.
   resolveHostname(name: string): Promise<IPAddress | null>;
+
+  resolveHostname6?(name: string): Promise<IPv6Address | null>;
+
+  executeTraceroute6?(
+    target: IPv6Address, maxHops?: number, timeoutMs?: number,
+    hooks?: { onHop?: (hop: TracerouteHop) => void; shouldStop?: () => boolean },
+    sourceIp?: IPv6Address,
+  ): Promise<TracerouteHop[]>;
 
   reverseLookup?(ip: string): string | null;
 
