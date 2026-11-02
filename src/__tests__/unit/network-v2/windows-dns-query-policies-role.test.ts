@@ -19,6 +19,7 @@ import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { POLICY_REFUSALS, type NewPolicy, type PolicyAction, type PolicyCriteriaText } from '@/network/devices/windows/server/dns/DnsPolicies';
 import { RRType } from '@/network/dns/wire/RRType';
+import type { DnsDatagramHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { SERVER_V4, SERVER_V6, question, roleLab, verdictOf, type Verdict } from './dnsRoleLab';
 
@@ -233,6 +234,12 @@ describe('a zone-level policy', () => {
     expect([await verdict(WEB), await verdict('host.other.test')]).toEqual(['refused', 'answered']);
   });
 
+  it('is found whatever the case of the name of its zone', async () => {
+    const { role } = await served();
+    expect(role.addQueryResolutionPolicy('CORP.Test', deny('Z', { queryType: 'EQ,A' }))).toEqual({ ok: true, message: '' });
+    expect(role.getQueryResolutionPolicies('corp.TEST').policies.map(entry => entry.zone)).toEqual(['corp.test']);
+  });
+
   it('is kept apart from the policies of the server', async () => {
     const { role } = await served();
     role.addQueryResolutionPolicy('corp.test', deny('Same', { queryType: 'EQ,A' }));
@@ -320,6 +327,35 @@ describe('a recursion policy', () => {
     role.addQueryResolutionPolicy(null, recursion('R', 'DENY', { fqdn: 'EQ,*.ext.test' }));
     role.addQueryResolutionPolicy(null, ignore('Q', { fqdn: 'EQ,*.ext.test' }));
     expect(await verdict('host.ext.test')).toBe('dropped');
+  });
+});
+
+describe('what a policy cannot decide', () => {
+  it('does not govern a datagram handed to the role without addresses by a policy on the family of the requestor', async () => {
+    const { role } = await served();
+    role.addQueryResolutionPolicy(null, deny('P', { internetProtocol: 'EQ,IPv4' }));
+    const handle = (role as unknown as { handleUdp: DnsDatagramHandler }).handleUdp;
+    expect(verdictOf(await handle(question(WEB)))).toBe('answered');
+  });
+
+  it('does not govern a message whose opcode is not QUERY', async () => {
+    const { role, ask } = await served();
+    const status = question(WEB, RRType.A, DnsOpcode.STATUS);
+    const before = (await ask(0, 4, status))?.flags.rcode;
+    expect(before).not.toBe(DnsRcode.REFUSED);
+    role.addQueryResolutionPolicy(null, deny('P', { fqdn: `EQ,${WEB}` }));
+    expect((await ask(0, 4, status))?.flags.rcode).toBe(before);
+  });
+});
+
+describe('the policies and the response rate limiting', () => {
+  it('limit the refusals of a policy like any other error response', async () => {
+    const { role, verdict } = await served();
+    role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
+    role.addQueryResolutionPolicy(null, deny('P', { fqdn: `EQ,${WEB}` }));
+    const seen: Verdict[] = [];
+    for (let index = 0; index < 8; index++) seen.push(await verdict(WEB));
+    expect(seen).toEqual(['refused', 'refused', 'refused', 'refused', 'refused', 'dropped', 'dropped', 'dropped']);
   });
 });
 

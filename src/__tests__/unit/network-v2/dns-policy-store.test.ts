@@ -122,6 +122,8 @@ describe('creating a policy', () => {
     ['a zone level recursion policy', { kind: 'Recursion', action: 'DENY', content: [] }, { zone: 'contoso.com', kinds: ['Recursion'] }],
     ['a zone level exception list', { kind: 'RrlException', action: 'DENY', content: [] }, { zone: 'contoso.com', kinds: ['RrlException'] }],
     ['an exception list that ignores', { kind: 'RrlException', action: 'IGNORE', content: [] }, RRL],
+    ['a server level zone transfer policy that allows', { kind: 'ZoneTransfer', action: 'ALLOW', content: [{ scope: '.', weight: 1 }] }, { zone: null, kinds: ['ZoneTransfer'] }],
+    ['a zone level zone transfer policy that allows', { kind: 'ZoneTransfer', action: 'ALLOW', content: [{ scope: 'contoso.com', weight: 1 }] }, { zone: 'contoso.com', kinds: ['ZoneTransfer'] }],
     ['a policy with no criterion', { criteria: {} }, SERVER],
   ] as Array<[string, Partial<NewPolicy>, PolicyScope]>)('refuses %s as having no valid settings', (_label, overrides, scope) => {
     const policies = store();
@@ -157,6 +159,12 @@ describe('creating a policy', () => {
     ['a time of day beyond the day', { timeOfDay: 'EQ,10:00-24:00' }, POLICY_REFUSALS.timeOfDay],
     ['a time of day that ends before it starts', { timeOfDay: 'EQ,12:00-10:00' }, POLICY_REFUSALS.timeOfDay],
     ['an empty criterion', { fqdn: '' }, POLICY_REFUSALS.fqdn],
+    ['an FQDN list with one value that is not a name', { fqdn: 'EQ,a.test,a..b' }, POLICY_REFUSALS.fqdn],
+    ['an interface list with one value that is not an address', { serverInterface: 'EQ,10.0.0.3,eth0' }, POLICY_REFUSALS.serverInterface],
+    ['a query type list with one value that is no type', { queryType: 'EQ,A,NOPE' }, POLICY_REFUSALS.queryType],
+    ['a transport list with one value that is neither TCP nor UDP', { transportProtocol: 'EQ,TCP,SCTP' }, POLICY_REFUSALS.transportProtocol],
+    ['an internet protocol list with one value that is neither IPv4 nor IPv6', { internetProtocol: 'EQ,IPv4,IPX' }, POLICY_REFUSALS.internetProtocol],
+    ['a time of day list with one value that is no range', { timeOfDay: 'EQ,10:00-11:00,noon' }, POLICY_REFUSALS.timeOfDay],
   ])('refuses %s and creates nothing', (_label, criteria, refusal) => {
     const policies = store();
     expect(policies.create(SERVER, policy('Bad', { criteria }))).toBe(refusal);

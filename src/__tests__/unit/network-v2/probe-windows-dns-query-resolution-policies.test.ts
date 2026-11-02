@@ -524,7 +524,8 @@ describe('the policies of a zone', () => {
 
   it('end the search with an ALLOW that holds, so that a later DENY does not apply', async () => {
     const { cmd, verdict, clientA, clientC } = await governed();
-    expect(await cmd(`${ADD} -Name AllowLan -ZoneName corp.test -Action ALLOW -ZoneScope "corp.test,1" -ClientSubnet "EQ,Lan"`)).toBe('');
+    expect(await cmd(`${ADD} -Name AllowLan -ZoneName corp.test -Action ALLOW -ZoneScope "corp.test,3" -ClientSubnet "EQ,Lan"`)).toBe('');
+    expect(await cmd(`(${GET} -ZoneName corp.test -Name AllowLan).Content | ForEach-Object { $_.ScopeName + " " + $_.Weight }`)).toBe('corp.test 3');
     await cmd(`${ADD} -Name Everyone -ZoneName corp.test -Action DENY -QType "EQ,A"`);
     expect([await verdict(clientA, 'web.corp.test'), await verdict(clientC, 'web.corp.test')]).toEqual(['answered', 'refused']);
   });
