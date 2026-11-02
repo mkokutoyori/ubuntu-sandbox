@@ -19,7 +19,7 @@ OPTION_SETS = [
     "-qq -nn", "-q -nn -v", "-nn -c 5 -s 60", "-nn -e -q", "-nn -N", "-nn -O", "-nn -vv", "-nn -t", "-nn -tttt -S", "-qq -nn -v", "-nn -e -q -v", "-nn -v -vv",
 ]
 EXTRA_OPTION_SETS = {"stpcraft": ["-nn -vv -s 60", "-nn -vv -s 70", "-nn -s 100 -x", "-nn -e -vv -s 45", "-nn -vv -s 30 -A"]}
-LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp", "dtp", "vtp", "vtpclient", "udld", "vrrp", "igmp", "igmpv1", "ipopts", "hsrp"]
+LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp", "dtp", "vtp", "vtpclient", "udld", "vrrp", "igmp", "igmpv1", "ipopts", "hsrp", "pim"]
 
 def stp_bridge(priority, last):
     return struct.pack(">H", priority) + bytes([2, 0, 0, 0, 0, last])

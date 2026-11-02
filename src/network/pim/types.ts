@@ -23,6 +23,7 @@ export interface PimJoinPruneGroup {
   prunedSources: string[];
   joinStarG: boolean;
   pruneStarG: boolean;
+  rpAddress?: string;
 }
 
 export interface PimJoinPruneBody {

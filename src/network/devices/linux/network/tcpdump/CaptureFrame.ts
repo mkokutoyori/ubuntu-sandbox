@@ -39,6 +39,8 @@ import { ETHERTYPE_VTP, type VtpFrame } from '@/network/vtp/types';
 import { ETHERTYPE_STP, PVST_PLUS_MAC, type StpBpdu } from '@/network/stp/types';
 import { ospfPacketBytes } from '@/network/ospf/OspfWire';
 import { eigrpPacketBytes } from '@/network/eigrp/EigrpPacketBytes';
+import { pimPayloadBytes } from '@/network/pim/PimWire';
+import type { PimPacket } from '@/network/pim/types';
 import { hsrpIsEncodable, hsrpPayloadBytes } from '@/network/hsrp/HsrpWire';
 import type { HsrpPacket } from '@/network/hsrp/types';
 import { igmpPayloadBytes } from '@/network/igmp/IgmpWire';
@@ -362,6 +364,7 @@ function synthL4Bytes(pkt: IPv4Packet): number[] {
   if (payload?.type === 'eigrp') return eigrpPacketBytes(pkt.payload as EigrpPacket);
   if (payload?.type === 'vrrp') return vrrpPayloadBytes(pkt.payload as VrrpPacket);
   if (payload?.type === 'igmp') return igmpPayloadBytes(pkt.payload as IgmpPacket);
+  if (payload?.type === 'pim') return pimPayloadBytes(pkt.payload as PimPacket);
   return [];
 }
 
