@@ -81,6 +81,10 @@ export const POLICY_REFUSALS = {
   exists: 'A policy with the same name already exists on this level (server level or zone level) on the DNS server.',
   missing: 'No policy with this name exists on this level (server level or zone level) on the DNS server.',
   invalidSettings: 'At least one of the settings of this policy is invalid.',
+  invalidProcessingOrder: 'Invalid policy processing order.',
+  missingCriteria: 'The policy is missing criteria.',
+  scopeRequired: 'The scope information has not been provided for a policy that requires it.',
+  scopeNotAllowed: 'The scope information has been provided for a policy that does not require it.',
   scopeMissing: 'The scope does not exist.',
   invalidWeight: 'The weight of the scope in the policy is invalid.',
   clientSubnet: 'The criterion client subnet provided in the policy is invalid.',
@@ -144,8 +148,9 @@ export class DnsPolicyStore {
     const level = scope.zone === null ? 'server' : 'zone';
     const allowed = ACTIONS_ALLOWED[level][spec.kind];
     if (allowed === undefined || !allowed.includes(spec.action)) return POLICY_REFUSALS.invalidSettings;
-    if ((spec.action === 'ALLOW') !== (spec.content.length > 0)) return POLICY_REFUSALS.invalidSettings;
-    if (Object.keys(criteria).length === 0) return POLICY_REFUSALS.invalidSettings;
+    const presence = contentPresenceRefusal(spec.action, spec.content);
+    if (presence !== null) return presence;
+    if (Object.keys(criteria).length === 0) return POLICY_REFUSALS.missingCriteria;
     const group = this.group(scope.zone, spec.kind);
     if (spec.processingOrder !== undefined && spec.processingOrder > group.length) return POLICY_REFUSALS.invalidSettings;
     if (this.policies.some(policy => policy.zone === scope.zone && sameName(policy.name, spec.name))) return POLICY_REFUSALS.exists;
@@ -166,10 +171,11 @@ export class DnsPolicyStore {
     const given = this.parse(changes.criteria ?? {});
     if (typeof given === 'string') return given;
     const group = this.group(policy.zone, policy.kind);
-    if (changes.processingOrder !== undefined && changes.processingOrder > group.length) return POLICY_REFUSALS.invalidSettings;
+    if (changes.processingOrder !== undefined && changes.processingOrder > group.length) return POLICY_REFUSALS.invalidProcessingOrder;
     const order = changes.processingOrder === 0 ? group.length : changes.processingOrder;
     if (changes.content !== undefined) {
-      if ((policy.action === 'ALLOW') !== (changes.content.length > 0)) return POLICY_REFUSALS.invalidSettings;
+      const presence = contentPresenceRefusal(policy.action, changes.content);
+      if (presence !== null) return presence;
       const refusal = this.checkContent(policy.kind, policy.zone, changes.content);
       if (refusal !== null) return refusal;
     }
@@ -326,6 +332,11 @@ export class DnsPolicyStore {
       content: policy.content.map(entry => ({ ...entry })),
     };
   }
+}
+
+function contentPresenceRefusal(action: PolicyAction, content: readonly PolicyContentEntry[]): string | null {
+  if (action === 'ALLOW') return content.length === 0 ? POLICY_REFUSALS.scopeRequired : null;
+  return content.length === 0 ? null : POLICY_REFUSALS.scopeNotAllowed;
 }
 
 function sameName(held: string, wanted: string): boolean {

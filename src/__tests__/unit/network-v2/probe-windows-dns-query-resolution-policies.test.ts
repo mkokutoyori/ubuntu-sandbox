@@ -48,6 +48,10 @@ const DISABLE = 'Disable-DnsServerPolicy';
 const EXISTS = 'A policy with the same name already exists on this level (server level or zone level) on the DNS server.';
 const MISSING = 'No policy with this name exists on this level (server level or zone level) on the DNS server.';
 const INVALID_SETTINGS = 'At least one of the settings of this policy is invalid.';
+const MISSING_CRITERIA = 'The policy is missing criteria.';
+const INVALID_ORDER = 'Invalid policy processing order.';
+const SCOPE_REQUIRED = 'The scope information has not been provided for a policy that requires it.';
+const SCOPE_NOT_ALLOWED = 'The scope information has been provided for a policy that does not require it.';
 const SCOPE_MISSING = 'The scope does not exist.';
 const INVALID_WEIGHT = 'The weight of the scope in the policy is invalid.';
 const INVALID_SUBNET = 'The criterion client subnet provided in the policy is invalid.';
@@ -266,10 +270,12 @@ describe('the refusals', () => {
   it.each([
     ['a name that is taken, whatever its case', `${ADD} -Name TAKEN -Action DENY -QType "EQ,TXT"`, ADD, EXISTS],
     ['a name that is taken by a policy of another type', `${ADD} -Name taken -Action ALLOW -ApplyOnRecursion -RecursionScope "." -Fqdn "EQ,a.test"`, ADD, EXISTS],
-    ['a policy with no criterion', `${ADD} -Name Empty -Action DENY`, ADD, INVALID_SETTINGS],
+    ['a policy with no criterion', `${ADD} -Name Empty -Action DENY`, ADD, MISSING_CRITERIA],
     ['a policy with no action', `${ADD} -Name NoAction -QType "EQ,TXT"`, ADD, INVALID_SETTINGS],
-    ['an ALLOW with no scope', `${ADD} -Name Allow -Action ALLOW -QType "EQ,TXT"`, ADD, INVALID_SETTINGS],
-    ['a DENY with a scope', `${ADD} -Name Deny -Action DENY -QType "EQ,TXT" -RecursionScope "."`, ADD, INVALID_SETTINGS],
+    ['an ALLOW of recursion with no scope', `${ADD} -Name Allow -Action ALLOW -ApplyOnRecursion -QType "EQ,TXT"`, ADD, SCOPE_REQUIRED],
+    ['an ALLOW of a zone with no scope', `${ADD} -Name Allow -ZoneName corp.test -Action ALLOW -QType "EQ,TXT"`, ADD, SCOPE_REQUIRED],
+    ['an ALLOW on queries at the server level with no scope', `${ADD} -Name Allow -Action ALLOW -QType "EQ,TXT"`, ADD, INVALID_SETTINGS],
+    ['a DENY with a scope', `${ADD} -Name Deny -Action DENY -QType "EQ,TXT" -RecursionScope "."`, ADD, SCOPE_NOT_ALLOWED],
     ['an ALLOW on queries at the server level', `${ADD} -Name Allow -Action ALLOW -RecursionScope "." -QType "EQ,TXT"`, ADD, INVALID_SETTINGS],
     ['an ECS criterion, which no policy can evaluate', `${ADD} -Name Ecs -Action DENY -ECS "EQ,10.0.0.0/8" -QType "EQ,TXT"`, ADD, INVALID_SETTINGS],
     ['a processing order beyond the next one', `${ADD} -Name Far -Action DENY -QType "EQ,TXT" -ProcessingOrder 7`, ADD, INVALID_SETTINGS],
@@ -292,7 +298,7 @@ describe('the refusals', () => {
     ['a policy that is not held, to remove', `${REMOVE} -Name Nope -Force`, REMOVE, MISSING],
     ['a policy that is not held, to disable', `${DISABLE} -Level Server -Name Nope -Force`, DISABLE, MISSING],
     ['a criterion that is not valid, to set', `${SET} -Name Taken -QType "EQ,NOPE"`, SET, INVALID_QTYPE],
-    ['a processing order beyond the last one, to set', `${SET} -Name Taken -ProcessingOrder 7`, SET, INVALID_SETTINGS],
+    ['a processing order beyond the last one, to set', `${SET} -Name Taken -ProcessingOrder 7`, SET, INVALID_ORDER],
     ['the policies of a zone that the server does not host', `${GET} -ZoneName nowhere.test`, GET, ZONE_MISSING],
   ])('refuse %s with the text of the Win32 error and change nothing', async (_label, command, cmdlet, message) => {
     const { cmd } = await governed();
