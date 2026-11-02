@@ -111,9 +111,11 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       IMPLEMENTED_HOST_KEY_ALGORITHMS),
     count('admin-port', 'Administrative access port for HTTP.', 1, 65535, 80),
     count('admin-telnet-port', 'Administrative access port for TELNET.', 1, 65535, 23),
+    count('admin-login-max', 'Maximum number of administrators who can be logged in at the same time.', 1, 100, 100),
     count('admin-lockout-threshold', 'Number of failed login attempts before lockout.',
       1, 10, 3),
     count('admin-lockout-duration', 'Lockout duration in seconds.', 1, 2147483647, 60),
+    enable('admin-concurrent', 'Enable/disable concurrent administrator logins.', true),
     enable('admin-https-redirect',
       'Redirect HTTP administrative access to HTTPS.', true),
     enable('lldp-transmission',
@@ -238,6 +240,8 @@ export const SYSTEM_GLOBAL: FortiTableSpec = {
       adminTimeoutMin: number('admintimeout', 5),
       timezone: object.isExplicit('timezone')
         ? object.effective('timezone')[0] : undefined,
+      adminLoginMax: number('admin-login-max', 100),
+      adminConcurrent: object.effective('admin-concurrent')[0] !== 'disable',
       adminLockoutThreshold: number('admin-lockout-threshold', 3),
       adminLockoutDurationSec: number('admin-lockout-duration', 60),
       adminHttpsRedirect: object.effective('admin-https-redirect')[0] !== 'disable',
@@ -674,6 +678,11 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     ], 'none'),
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
+    {
+      name: 'macaddr', help: 'Change the interface\'s MAC address.', quoted: false,
+      parts: [{ name: 'macaddr', type: 'MAC_ADDR', description: 'MAC address.' }],
+      defaultValue: ['00:00:00:00:00:00'],
+    },
     choice('device-identification', 'Enable/disable passively gathering of device identity information '
       + 'about the devices on the network connected to this interface.', [
       { keyword: 'enable', description: 'Enable passive gathering of identity information about hosts.' },
@@ -717,6 +726,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
         ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
         : undefined,
       deviceIdentification: object.effective('device-identification')[0] === 'enable',
+      macOverride: object.effective('macaddr')[0],
       lldp: {
         transmission: (object.effective('lldp-transmission')[0] ?? 'vdom') as LldpSetting,
         reception: (object.effective('lldp-reception')[0] ?? 'vdom') as LldpSetting,
@@ -795,12 +805,16 @@ export const SYSTEM_DNS: FortiTableSpec = {
     address('primary', 'Primary DNS server IP address.', '96.45.45.45'),
     address('secondary', 'Secondary DNS server IP address.', '96.45.46.46'),
     word('domain', 'Search suffix list for hostname lookup.'),
+    enable('cache-notfound-responses', 'Enable/disable response from the DNS server when a record is not in cache.'),
+    count('dns-cache-ttl', 'Duration in seconds that the DNS cache retains information.', 60, 86400, 1800),
   ],
   onCommit(object, context) {
     context.device.applyDnsSettings({
       primary: object.effective('primary')[0] ?? '',
       secondary: object.effective('secondary')[0] ?? '',
       domain: object.effective('domain')[0] ?? '',
+      cacheNotFound: object.effective('cache-notfound-responses')[0] === 'enable',
+      cacheTtlSeconds: Number.parseInt(object.effective('dns-cache-ttl')[0] ?? '1800', 10),
     });
   },
 };
@@ -1653,6 +1667,68 @@ export const SYSTEM_LINK_MONITOR: FortiTableSpec = {
   },
 };
 
+const INTERFACE_ONLY = ['system interface'];
+
+export const SYSTEM_ARP_TABLE: FortiTableSpec = {
+  path: ['system', 'arp-table'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 84,
+  help: 'Configure ARP table.',
+  attributes: [
+    { ...word('id', 'Unique integer ID of the entry.'), readOnly: true },
+    reference('interface', 'Interface name.', INTERFACE_ONLY),
+    address('ip', 'IP address.', '0.0.0.0'),
+    {
+      name: 'mac', help: 'MAC address.', quoted: false,
+      parts: [{ name: 'mac', type: 'MAC_ADDR', description: 'MAC address.' }],
+      defaultValue: ['00:00:00:00:00:00'],
+    },
+  ],
+  onCommit(object, context) {
+    const iface = object.effective('interface')[0] ?? '';
+    const ip = object.effective('ip')[0] ?? '0.0.0.0';
+    if (iface === '' || ip === '0.0.0.0') return 'an ARP entry needs an interface and an IP address.';
+    context.device.applyStaticArp(object.key, {
+      interface: iface, ip, mac: object.effective('mac')[0] ?? '00:00:00:00:00:00',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeStaticArp(key);
+  },
+};
+
+export const SYSTEM_PROXY_ARP: FortiTableSpec = {
+  path: ['system', 'proxy-arp'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 85,
+  help: 'Configure proxy-ARP.',
+  attributes: [
+    { ...word('id', 'Unique integer ID of the entry.'), readOnly: true },
+    reference('interface', 'Interface acting proxy-ARP.', INTERFACE_ONLY),
+    address('ip', 'IP address or start IP to be proxied.', '0.0.0.0'),
+    address('end-ip', 'End IP of IP range to be proxied.', '0.0.0.0'),
+  ],
+  onCommit(object, context) {
+    const iface = object.effective('interface')[0] ?? '';
+    const ip = object.effective('ip')[0] ?? '0.0.0.0';
+    if (iface === '' || ip === '0.0.0.0') return 'a proxy-ARP entry needs an interface and an IP address.';
+    context.device.applyProxyArp(object.key, {
+      interface: iface, ip, endIp: object.effective('end-ip')[0] ?? '0.0.0.0',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeProxyArp(key);
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1671,4 +1747,6 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_SESSION_TTL,
   SYSTEM_SESSION_HELPER,
   SYSTEM_LINK_MONITOR,
+  SYSTEM_ARP_TABLE,
+  SYSTEM_PROXY_ARP,
 ]);

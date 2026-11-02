@@ -3,6 +3,7 @@ import type { EndHost } from '@/network/devices/EndHost';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { queryDnsOverUdp, DNS_PORT } from '@/network/dns/transport/DnsUdpTransport';
+import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
 
@@ -55,7 +56,8 @@ export async function sendNotify(
   origin: string,
   soa: ResourceRecord<SoaRecordData>,
   timeoutMs: number = NOTIFY_TIMEOUT_MS,
+  observer?: DnsPacketObserver,
 ): Promise<boolean> {
-  const ack = await queryDnsOverUdp(host, secondaryIP, makeNotify(origin, soa), DNS_PORT, timeoutMs);
+  const ack = await queryDnsOverUdp(host, secondaryIP, makeNotify(origin, soa), DNS_PORT, timeoutMs, undefined, observer);
   return ack !== null;
 }

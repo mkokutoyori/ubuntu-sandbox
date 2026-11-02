@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-interfaces
-Generated: 2026-10-14T19:59:11.378Z
+Generated: 2026-11-01T17:56:39.480Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=IPv4/IPv6 addressing, subinterfaces, tunnels, relay, show
 Total steps: 343
@@ -1722,7 +1722,7 @@ Total steps: 343
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3919XZPN
+  Processor board ID FTX83391887
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1732,9 +1732,9 @@ Total steps: 343
 [236/343] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 3704 bytes
+  Current configuration : 3703 bytes
   !
-  ! Last configuration change at 19:59:17 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 17:56:44 UTC Sun Nov 1 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2728,24 +2728,24 @@ Total steps: 343
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:59:11.373: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:11.373: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:11.375: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:11.375: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:11.958: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.067: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.354: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.448: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.494: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.505: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  *Oct 14 19:59:17.505: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  *Oct 14 19:59:17.520: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:17.520: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:17.534: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 14 19:59:17.534: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 14 19:59:17.545: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:17.545: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:17.546: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:39.474: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:39.474: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:39.476: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:39.476: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:39.650: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.680: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.747: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.804: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.824: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.832: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Nov  1 17:56:44.832: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Nov  1 17:56:44.843: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:44.843: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:44.859: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Nov  1 17:56:44.859: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Nov  1 17:56:44.861: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:44.861: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:44.863: %SYS-5-CONFIG_I: Configured from console by console
 
 [270/343] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -2757,7 +2757,7 @@ Total steps: 343
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
   ntp uptime is 600 (1/100 of seconds), resolution is 4001
-  reference time is EE7A5D96.09374BC6 (19:59:18.036 UTC Wed Oct 14 2026)
+  reference time is EE91FBDD.03D89BA5 (17:56:45.015 UTC Sun Nov 1 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -2768,7 +2768,7 @@ Total steps: 343
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [273/343] r1 R1# show clock
-  *19:59:18.000 UTC Wed Oct 14 2026
+  *17:56:45.000 UTC Sun Nov 1 2026
 
 [274/343] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -2974,7 +2974,7 @@ Total steps: 343
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX3919XZPN
+  Processor board ID FTX83391887
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2984,9 +2984,9 @@ Total steps: 343
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 3704 bytes
+  Current configuration : 3703 bytes
   !
-  ! Last configuration change at 19:59:17 UTC Wed Oct 14 2026 by console
+  ! Last configuration change at 17:56:44 UTC Sun Nov 1 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -3858,28 +3858,28 @@ Total steps: 343
   
   Log Buffer (4096 bytes):
   
-  *Oct 14 19:59:11.373: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:11.373: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:11.375: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:11.375: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:11.958: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.067: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.354: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.448: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.494: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 14 19:59:17.505: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
-  *Oct 14 19:59:17.505: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
-  *Oct 14 19:59:17.520: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:17.520: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 14 19:59:17.534: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 14 19:59:17.534: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 14 19:59:17.545: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:17.545: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 14 19:59:17.546: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:39.474: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:39.474: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:39.476: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:39.476: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:39.650: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.680: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.747: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.804: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.824: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 17:56:44.832: %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to administratively down
+  *Nov  1 17:56:44.832: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to down
+  *Nov  1 17:56:44.843: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:44.843: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 17:56:44.859: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Nov  1 17:56:44.859: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Nov  1 17:56:44.861: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:44.861: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 17:56:44.863: %SYS-5-CONFIG_I: Configured from console by console
 
 [287/343] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX3919XZPN
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX83391887
 
 [288/343] r1 R1# show environment
   Number of Critical alarms:  0
@@ -3891,10 +3891,10 @@ Total steps: 343
   % Invalid input detected at '^' marker.
 
 [290/343] r1 R1# show ip vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [291/343] r1 R1# show vrf
-    Name                             Default RD            Protocols   Interfaces
+<empty>
 
 [292/343] r1 R1# show hosts
   Default domain is not set
@@ -4118,7 +4118,7 @@ Total steps: 343
 [300/343] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 3704 bytes
+  Current configuration : 3703 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -4455,7 +4455,7 @@ Total steps: 343
     domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
-    domain-name        Define the default domain name
+    domain-name        Remove the default domain name
     finger             Enable finger service
     flow-cache         How long an active flow stays in the cache
     flow-export        Address of the NetFlow collector
@@ -4463,9 +4463,10 @@ Total steps: 343
     host               Add a host to the host table
     http               Enable HTTP server
     icmp               ICMP options
-    local              Apply local PBR
+    inspect            Limit the established sessions of an inspection rule
+    local              IP local address pool
     multicast-routing  Enable IP multicast routing
-    name-server        Specify address of name server to use
+    name-server        Remove a name server
     nat                Wipe NAT configuration
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
@@ -4477,6 +4478,7 @@ Total steps: 343
     source-route       Accept source-routed packets
     ssh                SSH protocol version to accept
     subnet-zero        Enable use of subnet zero
+    tcp                Enable TCP intercept for the connections an access list matches
     vrf                Define a VRF instance
 
 [338/343] r1 R1(config)# router ?
@@ -4486,58 +4488,66 @@ Total steps: 343
     rip    Enter RIP routing protocol configuration
 
 [339/343] r1 R1(config)# crypto ?
+    ca           Get the CA certificate and authenticate it
     dynamic-map  Define a dynamic crypto map
     gdoi         Define a GDOI GET-VPN group
-    ikev2        Define IKEv2 proposal
+    identity     Identity of the peers allowed to use a crypto map
+    ikev2        Global IKEv2 DPD interval / retry
     ipsec        Configure IPSec policy
-    isakmp       Enable ISAKMP
+    isakmp       Enable the default IKE policies
     key          Generate RSA key
     keyring      Define an ISAKMP keyring
-    map          Define a crypto map entry
-    pki          Declare a PKI trustpoint
+    map          Remove a crypto map or one of its entries
+    pki          Get the CA certificate and authenticate it
 
 [340/343] r1 R1(config)# no ?
-    aaa            Enable NEW access control commands and functions
-    access-list    Remove an access list
-    alias          Remove a command alias
-    arp            Add static ARP entry
-    banner         Remove a banner
-    boot           Specify system image to load
-    cdp            Enable CDP globally
-    class-map      Remove a class map
-    clock          Remove hardware calendar is a valid time source
-    crypto         Restore the default DF bit handling
-    enable         Set enable secret
-    event          Register an EEM applet
-    hostname       Set system hostname
-    interface      Remove a virtual interface
-    ip             Disable IP routing
-    ipv6           Remove the IPv6 prefix pool
-    key            Define a key chain
-    line           Enter line configuration
-    lldp           Enable LLDP globally
-    logging        Count every log message and timestamp last occurrence
-    login          Set the login blocking period
-    ntp            Authenticate time sources
-    object-group   Remove a network object group
-    parser         Remove a CLI view
-    policy-map     Remove a policy map
-    priority-list  Remove build a priority list
-    privilege      Remove a command privilege rule
-    queue-list     Remove build a custom queue list
-    radius         Remove a named RADIUS server
-    radius-server  Specify a RADIUS server
-    route-map      Remove a route-map
-    router         Enter RIP routing protocol configuration
-    service        Disable a network based service
-    snmp-server    Set community string and access privs
-    sntp           SNTP server (alias for ntp server)
-    tacacs         Remove a named TACACS+ server
-    tacacs-server  Specify a TACACS+ server
-    time-range     Remove a time range
-    track          Remove a tracked object
-    username       Remove a local user
-    vrf            Remove configure a vrf
+    aaa               Disable accounting update records
+    access-list       Remove an access list
+    alias             Remove a command alias
+    arp               Remove ARP entry
+    banner            Remove a banner
+    boot              Remove a system image from the boot list
+    cdp               Enable CDP globally
+    class-map         Remove a class map
+    clock             Remove hardware calendar is a valid time source
+    crypto            Remove every configured peer public key
+    enable            Remove the privileged level secret
+    event             Register an EEM applet
+    hostname          Reset hostname
+    interface         Remove a virtual interface
+    ip                Disable IP routing
+    ipv6              Remove the IPv6 prefix pool
+    kerberos          Remove the Kerberos realm of this router
+    key               Remove a key chain
+    l2                Remove the Layer 2 virtual forwarding instance
+    line              Remove line configuration
+    lldp              Enable LLDP globally
+    logging           Count every log message and timestamp last occurrence
+    login             Remove the login blocking period
+    mpls              Disable dynamic MPLS forwarding on the whole router
+    ntp               Authenticate time sources
+    object-group      Remove a network object group
+    parser            Remove a CLI view
+    policy-map        Remove a policy map
+    priority-list     Remove build a priority list
+    privilege         Remove a command privilege rule
+    pseudowire-class  Remove the pseudowire class
+    queue-list        Remove build a custom queue list
+    radius            Remove a named RADIUS server
+    radius-server     Specify a RADIUS server
+    route-map         Remove a route-map
+    router            Enter RIP routing protocol configuration
+    service           Disable a network based service
+    snmp-server       Set community string and access privs
+    sntp              SNTP server (alias for ntp server)
+    tacacs            Remove a named TACACS+ server
+    tacacs-server     Specify a TACACS+ server
+    time-range        Remove a time range
+    track             Remove a tracked object
+    username          Remove a local user
+    vrf               Remove configure a vrf
+    zone              Define security zone
+    zone-pair         Define zone-pair
 
 [341/343] r1 R1(config)# end
 <empty>

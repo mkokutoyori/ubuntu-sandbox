@@ -179,6 +179,16 @@ import {
   GetDnsServerGlobalNameZoneCmdlet, SetDnsServerGlobalNameZoneCmdlet,
   GetDnsServerSettingCmdlet, SetDnsServerSettingCmdlet,
 } from './DnsServerSettingsCmdlets';
+import { GetDnsServerDiagnosticsCmdlet, SetDnsServerDiagnosticsCmdlet } from './DnsServerDiagnosticsCmdlets';
+import { GetDnsServerStatisticsCmdlet, ClearDnsServerStatisticsCmdlet } from './DnsServerStatisticsCmdlets';
+import {
+  AddDnsServerClientSubnetCmdlet, GetDnsServerClientSubnetCmdlet, SetDnsServerClientSubnetCmdlet, RemoveDnsServerClientSubnetCmdlet,
+} from './DnsClientSubnetCmdlets';
+import { GetDnsServerResponseRateLimitingCmdlet, SetDnsServerResponseRateLimitingCmdlet } from './DnsResponseRateLimitingCmdlets';
+import {
+  AddDnsServerResponseRateLimitingExceptionlistCmdlet, GetDnsServerResponseRateLimitingExceptionlistCmdlet,
+  SetDnsServerResponseRateLimitingExceptionlistCmdlet, RemoveDnsServerResponseRateLimitingExceptionlistCmdlet,
+} from './DnsRateLimitingExceptionCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -875,6 +885,20 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Set-DnsServerGlobalNameZone', new SetDnsServerGlobalNameZoneCmdlet()));
   registry.register(remotable('Get-DnsServerSetting', new GetDnsServerSettingCmdlet()));
   registry.register(remotable('Set-DnsServerSetting', new SetDnsServerSettingCmdlet()));
+  registry.register(remotable('Get-DnsServerDiagnostics', new GetDnsServerDiagnosticsCmdlet()));
+  registry.register(remotable('Set-DnsServerDiagnostics', new SetDnsServerDiagnosticsCmdlet()));
+  registry.register(remotable('Get-DnsServerStatistics', new GetDnsServerStatisticsCmdlet()));
+  registry.register(remotable('Clear-DnsServerStatistics', new ClearDnsServerStatisticsCmdlet()));
+  registry.register(remotable('Add-DnsServerClientSubnet', new AddDnsServerClientSubnetCmdlet()));
+  registry.register(remotable('Get-DnsServerClientSubnet', new GetDnsServerClientSubnetCmdlet()));
+  registry.register(remotable('Set-DnsServerClientSubnet', new SetDnsServerClientSubnetCmdlet()));
+  registry.register(remotable('Remove-DnsServerClientSubnet', new RemoveDnsServerClientSubnetCmdlet()));
+  registry.register(remotable('Get-DnsServerResponseRateLimiting', new GetDnsServerResponseRateLimitingCmdlet()));
+  registry.register(remotable('Set-DnsServerResponseRateLimiting', new SetDnsServerResponseRateLimitingCmdlet()));
+  registry.register(remotable('Add-DnsServerResponseRateLimitingExceptionlist', new AddDnsServerResponseRateLimitingExceptionlistCmdlet()));
+  registry.register(remotable('Get-DnsServerResponseRateLimitingExceptionlist', new GetDnsServerResponseRateLimitingExceptionlistCmdlet()));
+  registry.register(remotable('Set-DnsServerResponseRateLimitingExceptionlist', new SetDnsServerResponseRateLimitingExceptionlistCmdlet()));
+  registry.register(remotable('Remove-DnsServerResponseRateLimitingExceptionlist', new RemoveDnsServerResponseRateLimitingExceptionlistCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));

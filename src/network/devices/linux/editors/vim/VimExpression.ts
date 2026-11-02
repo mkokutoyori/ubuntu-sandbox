@@ -487,7 +487,7 @@ class Context {
 
   regexp(pattern: string, ignoreCase: boolean, subject: string): VimRegExp {
     return compileVimPattern(pattern, ignoreCase, {
-      lines: [subject], tabstop: this.host.tabstop, cursor: { line: 0, col: 0 }, mark: () => null, visual: null,
+      lines: [subject], tabstop: this.host.tabstop, cursor: { line: 0, col: 0 }, mark: () => null, visual: null, stringSubject: true,
     });
   }
 }

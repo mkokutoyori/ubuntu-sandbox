@@ -1,6 +1,6 @@
 ============================================================
 Router (L3) debug transcript — cisco-router-connectivity
-Generated: 2026-10-27T16:42:32.120Z
+Generated: 2026-11-01T20:55:02.562Z
 Topology: R1(Cisco) Gi0/0=L1 LAN 192.168.1.0/24, Gi0/1=WAN 10.0.0.0/30; R2(Cisco) Gi0/0=W1 LAN 192.168.2.0/24, Gi0/1=WAN
 focus=routed data path: static/default/OSPF/RIP/DHCP/NAT + faults
 Total steps: 313
@@ -917,7 +917,7 @@ Total steps: 313
   traceroute to 192.168.2.10 (192.168.2.10), 30 hops max, 60 byte packets
    1  192.168.1.1 (192.168.1.1)  0.001 ms  0.001 ms  0.001 ms
    2  * * *
-   3  * * 192.168.1.1 (192.168.1.1)  0.001 ms !N
+   3  192.168.1.1 (192.168.1.1)  0.001 ms !N * *
 
 [136/313] win1 win1$ ping 192.168.1.10
   
@@ -1042,7 +1042,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:42 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Nov 02 2026 08:55 PM    Automatic
 
 [154/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1250,9 +1250,9 @@ Total steps: 313
 [193/313] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1010 bytes
+  Current configuration : 1009 bytes
   !
-  ! Last configuration change at 16:42:42 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 20:55:22 UTC Sun Nov 1 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1300,9 +1300,9 @@ Total steps: 313
 [194/313] r2 R2# show running-config
   Building configuration...
   
-  Current configuration : 712 bytes
+  Current configuration : 711 bytes
   !
-  ! Last configuration change at 16:42:40 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 20:55:20 UTC Sun Nov 1 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1379,7 +1379,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:06
+      10.0.0.2        120           00:00:05
     Distance: (default is 120)
 
 [198/313] r1 R1# show ip interface brief
@@ -1403,11 +1403,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       255 packets input, 25714 bytes, 0 no buffer
+       255 packets input, 25462 bytes, 0 no buffer
        Received 4 broadcasts (12 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       167 packets output, 16730 bytes, 0 underruns
+       167 packets output, 16438 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
 
@@ -1484,7 +1484,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX6309V4KW
+  Processor board ID FTX4911GQ8E
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -1494,9 +1494,9 @@ Total steps: 313
 [206/313] r1 R1# show running-config
   Building configuration...
   
-  Current configuration : 1010 bytes
+  Current configuration : 1009 bytes
   !
-  ! Last configuration change at 16:42:42 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 20:55:22 UTC Sun Nov 1 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -1569,7 +1569,7 @@ Total steps: 313
        Received 5 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       220 packets output, 21102 bytes, 0 underruns
+       221 packets output, 20916 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -1585,11 +1585,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       255 packets input, 25714 bytes, 0 no buffer
+       255 packets input, 25462 bytes, 0 no buffer
        Received 4 broadcasts (12 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       167 packets output, 16730 bytes, 0 underruns
+       167 packets output, 16438 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -1682,7 +1682,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:06
+      10.0.0.2        120           00:00:05
     Distance: (default is 120)
 
 [213/313] r1 R1# show ip arp
@@ -1758,7 +1758,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:42 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Nov 02 2026 08:55 PM    Automatic
 
 [227/313] r1 R1# show ip dhcp pool
   Pool LAN1 :
@@ -1840,23 +1840,23 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Oct 27 16:42:32.111: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:42:32.112: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:42:32.115: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:32.116: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:32.219: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:34.400: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:34.488: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:34.517: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Oct 27 16:42:34.603: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.214: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.253: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.264: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 27 16:42:42.264: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 27 16:42:42.266: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.272: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:42.272: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:42.273: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:02.556: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 20:55:02.557: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 20:55:02.558: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:02.558: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:02.640: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:04.829: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:04.943: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:04.971: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Nov  1 20:55:05.077: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.479: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.529: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.545: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Nov  1 20:55:22.545: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Nov  1 20:55:22.548: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.561: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:22.561: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:22.563: %SYS-5-CONFIG_I: Configured from console by console
 
 [240/313] r1 R1# show snmp
   Chassis: FTX1234567A
@@ -1867,8 +1867,8 @@ Total steps: 313
 [241/313] r1 R1# show ntp status
   Clock is unsynchronized, stratum 16, no reference clock
   nominal freq is 250.0000 Hz, actual freq is 250.0000 Hz, precision is 2**18
-  ntp uptime is 800 (1/100 of seconds), resolution is 4001
-  reference time is EE8B5300.7C6A7EF9 (16:42:40.486 UTC Tue Oct 27 2026)
+  ntp uptime is 1900 (1/100 of seconds), resolution is 4001
+  reference time is EE9225BA.B32E4189 (20:55:22.699 UTC Sun Nov 1 2026)
   clock offset is 0.0000 msec, root delay is 0.00 msec
   root dispersion is 16000.00 msec, peer dispersion is 16000.00 msec
   loopfilter state is 'FSET' (Drift set from file), drift is 0.000000000 s/s
@@ -1879,7 +1879,7 @@ Total steps: 313
    * sys.peer, # selected, + candidate, - outlyer, x falseticker, ~ configured
 
 [243/313] r1 R1# show clock
-  *16:42:42.000 UTC Tue Oct 27 2026
+  *20:55:22.000 UTC Sun Nov 1 2026
 
 [244/313] r1 R1# show cdp neighbors
   Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge
@@ -1975,7 +1975,7 @@ Total steps: 313
        Received 5 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       220 packets output, 21102 bytes, 0 underruns
+       221 packets output, 20916 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
 
@@ -1993,11 +1993,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       255 packets input, 25714 bytes, 0 no buffer
+       255 packets input, 25462 bytes, 0 no buffer
        Received 4 broadcasts (12 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       167 packets output, 16730 bytes, 0 underruns
+       167 packets output, 16438 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
 
@@ -2061,7 +2061,7 @@ Total steps: 313
   data          None          None           None
   
   Cisco CISCO2911/K9 (revision 1.0) with 491520K/32768K bytes of memory.
-  Processor board ID FTX6309V4KW
+  Processor board ID FTX4911GQ8E
   4 Gigabit Ethernet interfaces
   DRAM configuration is 64 bits wide with parity enabled.
   255K bytes of non-volatile configuration memory.
@@ -2071,9 +2071,9 @@ Total steps: 313
   ------------------ show running-config ------------------
   Building configuration...
   
-  Current configuration : 1010 bytes
+  Current configuration : 1009 bytes
   !
-  ! Last configuration change at 16:42:42 UTC Tue Oct 27 2026 by console
+  ! Last configuration change at 20:55:22 UTC Sun Nov 1 2026 by console
   !
   service timestamps debug datetime msec
   service timestamps log datetime msec
@@ -2163,7 +2163,7 @@ Total steps: 313
        Received 5 broadcasts (5 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       220 packets output, 21102 bytes, 0 underruns
+       221 packets output, 20916 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        0 input drops, 0 output drops
   GigabitEthernet0/1 is up, line protocol is up
@@ -2179,11 +2179,11 @@ Total steps: 313
     Queueing strategy: fifo
     5 minute input rate 0 bits/sec, 0 packets/sec
     5 minute output rate 0 bits/sec, 0 packets/sec
-       255 packets input, 25714 bytes, 0 no buffer
+       255 packets input, 25462 bytes, 0 no buffer
        Received 4 broadcasts (12 multicasts)
        0 runts, 0 giants, 0 throttles
        0 input errors, 0 CRC, 0 frame, 0 overrun, 0 ignored
-       167 packets output, 16730 bytes, 0 underruns
+       167 packets output, 16438 bytes, 0 underruns
        0 output errors, 0 collisions, 0 interface resets
        1 input drops, 2 output drops
   GigabitEthernet0/2 is down, line protocol is down
@@ -2243,7 +2243,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:06
+      10.0.0.2        120           00:00:05
     Distance: (default is 120)
   
   ------------------ show processes cpu ------------------
@@ -2292,7 +2292,7 @@ Total steps: 313
   IP address          Client-ID/              Lease expiration        Type
                       Hardware address/
                       User name
-  192.168.1.10        0102.0000.0000.09       Oct 28 2026 04:42 PM    Automatic
+  192.168.1.10        0102.0000.0000.09       Nov 02 2026 08:55 PM    Automatic
   
   ------------------ show logging ------------------
   Syslog logging: enabled (0 messages dropped, 0 messages rate-limited, 0 flushes, 0 overruns, xml disabled, filtering disabled)
@@ -2317,27 +2317,27 @@ Total steps: 313
   
   Log Buffer (4096 bytes):
   
-  *Oct 27 16:42:32.111: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:42:32.112: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
-  *Oct 27 16:42:32.115: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:32.116: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:32.219: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:34.400: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:34.488: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:34.517: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
-  *Oct 27 16:42:34.603: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.214: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.253: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.264: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
-  *Oct 27 16:42:42.264: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
-  *Oct 27 16:42:42.266: %SYS-5-CONFIG_I: Configured from console by console
-  *Oct 27 16:42:42.272: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:42.272: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
-  *Oct 27 16:42:42.273: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:02.556: %LINK-3-UPDOWN: Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 20:55:02.557: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/0, changed state to up
+  *Nov  1 20:55:02.558: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:02.558: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:02.640: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:04.829: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:04.943: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:04.971: %OSPF-5-ADJCHG: Process 1, Nbr 2.2.2.2 on GigabitEthernet0/1 from Loading to Full, LoadingDone
+  *Nov  1 20:55:05.077: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.479: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.529: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.545: %LINK-5-CHANGED: Interface GigabitEthernet0/1, changed state to administratively down
+  *Nov  1 20:55:22.545: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down
+  *Nov  1 20:55:22.548: %SYS-5-CONFIG_I: Configured from console by console
+  *Nov  1 20:55:22.561: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:22.561: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up
+  *Nov  1 20:55:22.563: %SYS-5-CONFIG_I: Configured from console by console
 
 [257/313] r1 R1# show inventory
   NAME: "CISCO2911/K9 chassis", DESCR: "Cisco ISR 2911 Integrated Services Router"
-  PID: CISCO2911/K9        , VID: V01  , SN: FTX6309V4KW
+  PID: CISCO2911/K9        , VID: V01  , SN: FTX4911GQ8E
 
 [258/313] r1 R1# show environment
   Number of Critical alarms:  0
@@ -2432,7 +2432,7 @@ Total steps: 313
 [270/313] r1 R1# show running-config | exclude !
   Building configuration...
   
-  Current configuration : 1010 bytes
+  Current configuration : 1009 bytes
   service timestamps debug datetime msec
   service timestamps log datetime msec
   hostname R1
@@ -2589,7 +2589,7 @@ Total steps: 313
       10.0.0.0
     Routing Information Sources:
       Gateway         Distance      Last Update
-      10.0.0.2        120           00:00:06
+      10.0.0.2        120           00:00:05
     Distance: (default is 120)
 
 [301/313] r1 R1(config-router)# exit
@@ -2632,7 +2632,7 @@ Total steps: 313
     domain             Enable IP Domain Name System hostname translation
     domain-list        Define a list of default domain names
     domain-lookup      Enable IP Domain Name System hostname translation
-    domain-name        Define the default domain name
+    domain-name        Remove the default domain name
     finger             Enable finger service
     flow-cache         How long an active flow stays in the cache
     flow-export        Address of the NetFlow collector
@@ -2643,7 +2643,7 @@ Total steps: 313
     inspect            Limit the established sessions of an inspection rule
     local              IP local address pool
     multicast-routing  Enable IP multicast routing
-    name-server        Specify address of name server to use
+    name-server        Remove a name server
     nat                Wipe NAT configuration
     pim                Configure static PIM RP address
     prefix-list        Build a prefix list
@@ -2669,7 +2669,7 @@ Total steps: 313
     dynamic-map  Define a dynamic crypto map
     gdoi         Define a GDOI GET-VPN group
     identity     Identity of the peers allowed to use a crypto map
-    ikev2        Define IKEv2 proposal
+    ikev2        Global IKEv2 DPD interval / retry
     ipsec        Configure IPSec policy
     isakmp       Enable the default IKE policies
     key          Generate RSA key
@@ -2681,26 +2681,26 @@ Total steps: 313
     aaa               Disable accounting update records
     access-list       Remove an access list
     alias             Remove a command alias
-    arp               Add static ARP entry
+    arp               Remove ARP entry
     banner            Remove a banner
-    boot              Specify system image to load
+    boot              Remove a system image from the boot list
     cdp               Enable CDP globally
     class-map         Remove a class map
     clock             Remove hardware calendar is a valid time source
     crypto            Remove every configured peer public key
     enable            Remove the privileged level secret
     event             Register an EEM applet
-    hostname          Set system hostname
+    hostname          Reset hostname
     interface         Remove a virtual interface
     ip                Disable IP routing
     ipv6              Remove the IPv6 prefix pool
     kerberos          Remove the Kerberos realm of this router
-    key               Define a key chain
+    key               Remove a key chain
     l2                Remove the Layer 2 virtual forwarding instance
-    line              Enter line configuration
+    line              Remove line configuration
     lldp              Enable LLDP globally
     logging           Count every log message and timestamp last occurrence
-    login             Set the login blocking period
+    login             Remove the login blocking period
     mpls              Disable dynamic MPLS forwarding on the whole router
     ntp               Authenticate time sources
     object-group      Remove a network object group

@@ -687,7 +687,9 @@ export class Firewall extends Equipment {
       leaveCluster: (iface, ip, mask) => this.leaveCluster(iface, ip, mask),
       setDevicePriority: (priority) => this.setDevicePriority(priority),
       authenticateAdmin: (user, password, source) =>
-        this.management.login(user, password, source),
+        this.adminSessions.list().length < this.adminLoginMax
+        && (this.adminConcurrent || !this.adminSessions.list().some(s => s.username === user))
+        && this.management.login(user, password, source),
       adminAcceptsPublicKey: (user, material, source) =>
         this.management.acceptsPublicKey(user, material, source),
       knownAdmin: (user) => this.access.getAdmin(user) !== undefined,
@@ -1324,6 +1326,16 @@ export class Firewall extends Equipment {
 
   private readonly permanentMacs = new Map<string, MACAddress>();
   private readonly factoryMacs = new Map<string, string>();
+
+  setInterfaceMacOverride(name: string, mac: string): void {
+    const port = this.getPort(name);
+    if (port === undefined) return;
+    this.rememberFactoryMac(name, port.getMAC());
+    const cleared = mac === '00:00:00:00:00:00';
+    const target = new MACAddress(cleared ? this.factoryMacs.get(name)! : mac);
+    this.permanentMacs.set(name, target);
+    if (this.haConfiguration.mode === 'standalone') port.setMAC(target);
+  }
 
   private rememberFactoryMac(name: string, mac: MACAddress): void {
     if (!this.factoryMacs.has(name)) this.factoryMacs.set(name, mac.toString());
@@ -2083,6 +2095,21 @@ export class Firewall extends Equipment {
     this.proxyArp.clear(proxyOwnerKey('ippool', name));
   }
 
+  private readonly staticArpOwners = new Map<string, string>();
+
+  bindStaticArp(owner: string, address: string, mac: string, iface: string): void {
+    this.unbindStaticArp(owner);
+    this.arp.setStatic(address, new MACAddress(mac), iface);
+    this.staticArpOwners.set(owner, address);
+  }
+
+  unbindStaticArp(owner: string): void {
+    const held = this.staticArpOwners.get(owner);
+    if (held === undefined) return;
+    this.arp.removeStatic(held);
+    this.staticArpOwners.delete(owner);
+  }
+
   setProxyArpEntries(owner: string, entries: readonly ProxyArpEntry[]): void {
     this.proxyArp.set(owner, entries);
   }
@@ -2620,6 +2647,13 @@ export class Firewall extends Equipment {
   revisionOnLogoutEnabled(): boolean { return this.revisionOnLogout; }
 
   bindConfigSnapshot(render: () => string): void { this.configSnapshot = render; }
+
+  private adminLoginMax = 100;
+  private adminConcurrent = true;
+
+  setAdminConcurrent(allowed: boolean): void { this.adminConcurrent = allowed; }
+
+  setAdminLoginMax(limit: number): void { this.adminLoginMax = limit; }
 
   getAdminSessions(): AdminSessionTable { return this.adminSessions; }
 

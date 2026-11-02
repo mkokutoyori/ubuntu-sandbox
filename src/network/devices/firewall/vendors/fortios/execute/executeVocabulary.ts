@@ -38,6 +38,8 @@ export const FORTI_EXECUTE_COMMANDS: readonly FortiExecuteCommand[] = Object.fre
       { keyword: 'lastlog', description: 'Read the result of last batch commands.' },
       { keyword: 'status', description: 'Batch mode status.' },
     ] },
+  { name: 'api-user', help: 'Generate keys for API users.',
+    options: [{ keyword: 'generate-key', description: 'Generate key for API users.', argument: '<name>' }] },
   { name: 'cfg', help: 'Save or reload the configuration in manual mode.',
     options: [
       { keyword: 'reload', description: 'Reboot to reload the configs.' },

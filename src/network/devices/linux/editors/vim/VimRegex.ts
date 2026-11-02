@@ -17,6 +17,7 @@ export interface PatternContext {
   readonly visual: VisualArea | null;
   readonly lastSubstitute?: string | null;
   readonly words?: WordClasses;
+  readonly stringSubject?: boolean;
 }
 
 export interface PatternLayout {
@@ -510,6 +511,14 @@ class Translator {
     return token.magic && '*+=?@{'.includes(token.ch);
   }
 
+  private startOfLine(): string {
+    return this.context?.stringSubject === true ? '(?<![^])' : START_OF_LINE;
+  }
+
+  private endOfLine(): string {
+    return this.context?.stringSubject === true ? '(?![^])' : END_OF_LINE;
+  }
+
   private composing(atom: Atom): Atom {
     if (!atom.unit || atom.plain === true || atom.group === true) return atom;
     if (atom.literal === undefined) return { ...atom, source: `(?:${atom.source}${MARKS}*(?!${MARKS}))` };
@@ -601,8 +610,8 @@ class Translator {
       return this.literal(token.ch);
     }
     switch (token.ch) {
-      case '^': this.skip(); return { source: START_OF_LINE, unit: false };
-      case '$': this.skip(); return { source: END_OF_LINE, unit: false };
+      case '^': this.skip(); return { source: this.startOfLine(), unit: false };
+      case '$': this.skip(); return { source: this.endOfLine(), unit: false };
       case '<': this.skip(); return { source: `(?:${this.wordClassBodies().map((body) => `(?<![${body}])(?=[${body}])`).join('|')})`, unit: false };
       case '>': this.skip(); return { source: `(?:${this.wordClassBodies().map((body) => `(?<=[${body}])(?![${body}])`).join('|')})`, unit: false };
       case '.': this.skip(); return { source: '[^\\n]', unit: true };
@@ -677,8 +686,8 @@ class Translator {
     const next = String.fromCodePoint(text.codePointAt(this.position)!);
     this.position += next.length;
     this.current = null;
-    if (next === '^') return { source: START_OF_LINE, unit: false };
-    if (next === '$') return { source: END_OF_LINE, unit: false };
+    if (next === '^') return { source: this.startOfLine(), unit: false };
+    if (next === '$') return { source: this.endOfLine(), unit: false };
     this.matchesNewline = true;
     if (next === '.') return { source: ANYTHING, unit: true };
     if (next === '[') return this.collection(true);

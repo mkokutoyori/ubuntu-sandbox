@@ -11,6 +11,7 @@ import type {
   ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, ARecordData, CnameRecordData, DsRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
+import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 import { DnsCache, type DnsCacheLookup } from '@/network/dns/resolver/DnsCache';
 import type { EdnsSupportCache } from '@/network/dns/resolver/EdnsSupportCache';
 import { answerSpecialUseName, classifySpecialUseName } from '@/network/dns/resolver/SpecialUseNames';
@@ -54,6 +55,7 @@ export interface RecursiveResolverEdnsOptions {
 }
 
 export interface RecursiveResolverOptions {
+  readonly observer?: DnsPacketObserver;
   readonly edns?: RecursiveResolverEdnsOptions;
   readonly timeoutMs?: number;
   readonly maxReferrals?: number;
@@ -114,6 +116,7 @@ export class RecursiveResolver {
   private validatorInstance: DnsValidator | null = null;
   private readonly dnssecOptions: RecursiveResolverDnssecOptions | null;
   private readonly ednsOptions: RecursiveResolverEdnsOptions | null;
+  private readonly observer: DnsPacketObserver | undefined;
   private readonly servfailTtlSeconds: number;
   private readonly resolveSpecialUseNamesUpstream: boolean;
   private readonly refuseTestNames: boolean;
@@ -130,6 +133,7 @@ export class RecursiveResolver {
     this.forwardRecursively = options.forwardRecursively ?? false;
     this.dnssecOptions = options.dnssec ?? null;
     this.ednsOptions = options.edns ?? null;
+    this.observer = options.observer;
     this.servfailTtlSeconds = options.servfailTtlSeconds ?? 0;
     this.resolveSpecialUseNamesUpstream = options.resolveSpecialUseNamesUpstream ?? false;
     this.refuseTestNames = options.refuseTestNames ?? false;
@@ -358,12 +362,12 @@ export class RecursiveResolver {
     const server = serverIP.toString();
     const probing = edns !== null && this.validator === null && edns.probes() && !edns.support.isUnsupported(server);
     const response = await queryAuthoritativeServer(this.host, serverIP, this.buildQuery(qname, qtype, probing), {
-      timeoutMs: this.timeoutMs,
+      timeoutMs: this.timeoutMs, observer: this.observer,
     });
     if (!probing || response === null || response.flags.rcode !== DnsRcode.FORMERR) return response;
     edns.support.markUnsupported(server);
     return queryAuthoritativeServer(this.host, serverIP, this.buildQuery(qname, qtype, false), {
-      timeoutMs: this.timeoutMs,
+      timeoutMs: this.timeoutMs, observer: this.observer,
     });
   }
 
