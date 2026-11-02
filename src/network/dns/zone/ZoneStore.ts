@@ -32,6 +32,16 @@ export interface ZoneStoreAnswerOptions {
 
 export class ZoneStore {
   private readonly zonesByOrigin = new Map<string, Zone>();
+  private readonly pausedOrigins = new Set<string>();
+
+  setPaused(origin: string, paused: boolean): void {
+    if (paused) this.pausedOrigins.add(normalize(origin));
+    else this.pausedOrigins.delete(normalize(origin));
+  }
+
+  isPaused(origin: string): boolean {
+    return this.pausedOrigins.has(normalize(origin));
+  }
 
   addZone(zone: Zone): void {
     if (this.zonesByOrigin.has(zone.origin)) {
@@ -58,10 +68,10 @@ export class ZoneStore {
     let candidate: string | null = normalize(qname);
     while (candidate !== null) {
       const zone = this.zonesByOrigin.get(candidate);
-      if (zone) return zone;
+      if (zone && !this.pausedOrigins.has(candidate)) return zone;
       candidate = parentOf(candidate);
     }
-    return this.zonesByOrigin.get('') ?? null;
+    return this.pausedOrigins.has('') ? null : this.zonesByOrigin.get('') ?? null;
   }
 
   answer(question: DnsQuestion, options: ZoneStoreAnswerOptions = {}): ZoneStoreAnswer {

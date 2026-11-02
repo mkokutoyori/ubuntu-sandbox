@@ -299,7 +299,53 @@ async function recordUdld(): Promise<string> {
   return pc.executeCommand('cat all.cap');
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient, udld: recordUdld };
+async function recordVrrp(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 12');
+  await new Promise((r) => setTimeout(r, 30));
+  const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
+    for (const line of lines) await router.executeCommand(line);
+  };
+  await configure(r1, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'vrrp 1 ip 10.9.0.254', 'vrrp 1 priority 120', 'vrrp 1 authentication text abcdefgh', 'no shutdown', 'exit', 'end']);
+  await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.3 255.255.255.0', 'vrrp 1 ip 10.9.0.254', 'vrrp 1 authentication text abcdefgh', 'vrrp 2 ip 10.9.0.253', 'vrrp 2 priority 90', 'vrrp 2 timers advertise 3', 'no shutdown', 'exit', 'end']);
+  await clock.advance(20_000);
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+async function recordIgmp(version: 1 | 2): Promise<string> {
+  const clock = installVirtualClock();
+  const observer = new LinuxPC('PC1', 0, 0);
+  const member = new LinuxPC('PC2', 0, 0);
+  const hub = new Hub('H1');
+  const router = new CiscoRouter('R1');
+  new Cable('c1').connect(observer.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(member.getPort('eth0')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(router.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+  await observer.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  await member.executeCommand('ifconfig eth0 10.9.0.3 netmask 255.255.255.0');
+  const writing = observer.executeCommand('sudo tcpdump -w all.cap -c 12');
+  await new Promise((r) => setTimeout(r, 30));
+  for (const line of ['enable', 'configure terminal', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await router.executeCommand(line);
+  router.getIgmpAgent().enableInterface('GigabitEthernet0/0', version);
+  member.joinMulticastGroup('eth0', '239.1.1.1');
+  member.joinMulticastGroup('eth0', '239.2.2.2');
+  await clock.advance(20_000);
+  member.leaveMulticastGroup('eth0', '239.2.2.2');
+  await clock.advance(70_000);
+  await writing;
+  return observer.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient, udld: recordUdld, vrrp: recordVrrp, igmp: () => recordIgmp(2), igmpv1: () => recordIgmp(1) };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

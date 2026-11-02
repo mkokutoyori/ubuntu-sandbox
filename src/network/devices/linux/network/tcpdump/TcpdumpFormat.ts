@@ -11,6 +11,9 @@ import { stpText } from './TcpdumpStp';
 import { dtpText } from './TcpdumpDtp';
 import { vtpText } from './TcpdumpVtp';
 import { udldText } from './TcpdumpUdld';
+import { vrrpText } from './TcpdumpVrrp';
+import { igmpText } from './TcpdumpIgmp';
+import { ipOptionsText, type IpOptionsText } from './TcpdumpIpOptions';
 import { ieee8023, llcDescription } from './TcpdumpLlc';
 import { lldpText } from './TcpdumpLldp';
 import { ospfText } from './TcpdumpOspf';
@@ -311,6 +314,16 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
     return eigrpText(Array.from(frame.raw.slice(start, start + length)), length, opt.verbose, (address) => state.host(address));
   }
+  if (frame.l3 === 'ipv4' && frame.ipProtocol === IGMP_PROTOCOL && (frame.ipFragmentOffset ?? 0) === 0) {
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+    const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
+    return igmpText(Array.from(frame.raw.slice(start)), length, opt.verbose, opt.quiet, (address) => state.host(address));
+  }
+  if (frame.l3 === 'ipv4' && frame.ipProtocol === VRRP_PROTOCOL && (frame.ipFragmentOffset ?? 0) === 0) {
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+    const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
+    return vrrpText(Array.from(frame.raw.slice(start)), length, frame.ttl ?? 0, opt.verbose, (address) => state.host(address));
+  }
   if (frame.l4 === 'icmp') {
     let phrase: string;
     if (frame.icmpType === 'destination-unreachable') {
@@ -440,7 +453,9 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
  */
 const OSPF_PROTOCOL = 89;
 const EIGRP_PROTOCOL = 88;
-const TRUNCATION_MARKER = /\[\|(ospf2|stp|vtp|udld)\]/;
+const VRRP_PROTOCOL = 112;
+const IGMP_PROTOCOL = 2;
+const TRUNCATION_MARKER = /\[\|(ospf2|stp|vtp|udld)\]|\[remaining caplen\(\d+\) < header length\(\d+\)\] \[\|ip\]/;
 
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
   0: 'Options', [IP_PROTO_ICMP]: 'ICMP', 2: 'IGMP', 4: 'IPIP', [IP_PROTO_TCP]: 'TCP', 8: 'EGP', 9: 'IGRP', [IP_PROTO_UDP]: 'UDP',
@@ -499,17 +514,34 @@ function tosToken(frame: CaptureFrame): string {
   return `tos 0x${tos.toString(16)}${ecn.capable ? `,${ecn}` : ''}`;
 }
 
+function ipOptionsOf(frame: CaptureFrame, state: TcpdumpRenderState): IpOptionsText | null {
+  const headerBytes = frame.ipHeaderLen ?? 20;
+  if (headerBytes <= 20) return null;
+  const area = Array.from(frame.raw.slice(frame.rawLinkOffset + 20, frame.rawLinkOffset + headerBytes));
+  return ipOptionsText(area, headerBytes - 20, (address) => state.host(address));
+}
+
+function ipHeaderCut(frame: CaptureFrame, options: IpOptionsText | null, verbose: number): string | null {
+  const headerBytes = frame.ipHeaderLen ?? 20;
+  const available = frame.raw.length - frame.rawLinkOffset;
+  if (available >= headerBytes) return null;
+  if (verbose > 0 && options?.truncated) return ' [|ip]';
+  return ` [remaining caplen(${available}) < header length(${headerBytes})] [|ip]`;
+}
+
 function ipLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   const trunc = truncationMarker(frame, opt);
   const withPort = !trunc && (frame.l4 === 'tcp' || frame.l4 === 'udp');
   const src = endpoint(state, frame.srcIp, withPort ? frame.srcPort : undefined, transportOf(frame.l4));
   const dst = endpoint(state, frame.dstIp, withPort ? frame.dstPort : undefined, transportOf(frame.l4));
   const suppressed = opt.ultraQuiet && (frame.ipFragmentOffset ?? 0) > 0;
-  const detail = suppressed ? '' : trunc ?? l4Detail(frame, opt, state);
+  const options = ipOptionsOf(frame, state);
+  const cut = ipHeaderCut(frame, options, opt.verbose);
+  const detail = suppressed ? '' : cut ?? trunc ?? l4Detail(frame, opt, state);
   if (opt.verbose > 0) {
     const offset = (frame.ipFragmentOffset ?? 0) * 8;
     const header = `${opt.linkLevel ? '' : 'IP '}(${tosToken(frame)}, ttl ${frame.ttl ?? 0}, id ${frame.ipId ?? 0}, offset ${offset}, flags [${ipFlagsToken(frame)}], `
-      + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${ipChecksumSuffix(frame, opt)})`;
+      + `proto ${ipProtoName(frame)} (${frame.ipProtocol ?? 0}), length ${frame.ipTotalLength ?? frame.length}${options === null ? '' : `, options (${options.text})`}${ipChecksumSuffix(frame, opt)})`;
     return suppressed ? `${header}\n    ` : `${header}\n    ${src} > ${dst}: ${detail}${encapsulatedLines(frame, opt, state)}`;
   }
   return suppressed ? `${opt.linkLevel ? '' : 'IP '}` : `${opt.linkLevel ? '' : 'IP '}${src} > ${dst}: ${detail}`;

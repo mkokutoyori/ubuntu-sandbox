@@ -4,6 +4,7 @@
  * (init/backup/master), the IP-protocol-112 wire format, and the
  * master-down-interval expiry (3×advert + skew).
  */
+import { vrrpWireLength } from './VrrpWire';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import {
@@ -221,7 +222,7 @@ export class VrrpAgent extends FhrpAgentBase<VrrpGroupRuntime> {
     this.sendGuarded(g, {
       destination: new IPAddress(VRRP_MULTICAST_IP), source: srcIp,
       protocol: IP_PROTO_VRRP, ttl: 255,
-      payload, payloadBytes: 8 + (g.vip ? 4 : 0),
+      payload, payloadBytes: vrrpWireLength(payload),
       tos: 0xc0, flags: 0,
     });
     const c = this.stats(g);

@@ -378,7 +378,7 @@ export class IgmpAgent {
     if (!port || !port.getIsUp() || !port.isConnected()) return;
     const srcIp = port.getIPAddress();
     if (!srcIp) return;
-    this.sendIgmp(rt, srcIp, new IPAddress(destIp), igmpQuery(group, maxRespDs));
+    this.sendIgmp(rt, srcIp, new IPAddress(destIp), igmpQuery(group, rt.version === 1 ? 0 : maxRespDs));
   }
 
   /** Unsolicited Membership Report for a group this router itself joined. */

@@ -44,6 +44,8 @@
  * the STP labs, which fall with it). DtpWire.ts now writes the 802.3 + LLC/SNAP Cisco frame (pid 0x2004) and the TLVs as Wireshark's packet-dtp.c documents them: version 1, Domain (NUL-terminated), Trunk Status (operating bit 0x80,
  * administrative 1 on / 2 off / 3 desirable / 4 auto), Trunk Type (operating type in the top three bits: 1 native, 2 ISL, 5 802.1Q; administrative type 0 negotiated / 2 ISL / 5 802.1Q) and Sender ID; TcpdumpDtp.ts ports print-dtp.c.
  * The Domain TLV now carries the switch's VTP domain (DtpAgent kept a second, never-written domain; it reads the VTP one through the host). 56 of the 440 cases fall without the change (the dtp lab and the STP labs that hold a DTP frame).
+ * Correction to the fifteenth lab: a real capture (tcpdump's tests/DTP.pcap, dtp-wire-real-capture.test.ts) shows the Trunk Type byte of a dynamic port that is not trunking as 0x40 (operating type ISL), where the first encoder wrote
+ * NATIVE; the "dtp" lab was re-recorded.
  * Sixteenth and seventeenth labs, "vtp" and "vtpclient": a PC cabled to a Cisco switch trunk, domain LAB, one as a v1 server with a password, pruning and VLANs 10 and 20, the other as a v2 client. Measured before the change: the four VTP
  * messages were zero bytes under the made-up ethertype 0x2003. VtpWire.ts now writes the 802.3 + LLC/SNAP Cisco frame (pid 0x2003) and the v1/v2 messages as Wireshark's packet-vtp.c, tcpdump's print-vtp.c and Yersinia's vtp.h lay them out
  * (three readers that agree): header, 32-byte zero-padded domain, summary (revision, updater, 12 ASCII timestamp digits YYMMDDHHMMSS, 16-byte digest), subset (revision, VLAN info records with names padded to four bytes), request (a two-byte start
@@ -55,6 +57,18 @@
  * now writes the LLC/SNAP Cisco frame (pid 0x0111) and the PDU as a real capture shows it (tcpdump's tests/UDLD.pcap, checked byte for byte in udld-wire-real-capture.test.ts): version and opcode, flags (Recommended Timeout on a probe),
  * the internet checksum, the Device-ID, Port-ID, Echo (a count, then a length-prefixed device and port per neighbour), Message Interval, Timeout Interval, Device Name and Sequence Number TLVs; UdldAgent keeps the per-port sequence the wire
  * needs. 28 of the 29 cases of the lab fall without the change; the one that passes either way is the per-lab check that the recorded capture loaded at all (witness).
+ * Nineteenth lab, "vrrp": two Cisco routers and a PC on a hub, virtual router 1 (priority 120, simple password abcdefgh on one, the other a backup) and virtual router 2 (priority 90, advertisement interval 3). Measured before the change: the
+ * advertisements were IPv4 packets of protocol 112 with a payload of zero bytes and a length of 12 (eight header bytes and one address: the eight authentication data bytes RFC 2338 section 5.3.10 puts in every VRRPv2 message were
+ * missing). VrrpWire.ts writes the real message and its checksum, checked byte for byte against tcpdump's tests/vrrp.pcap in vrrp-wire-real-capture.test.ts, and the IP length now comes from it (vrrpWireLength). 28 of the 29 cases of
+ * the lab fall without the change; the one that passes either way is the per-lab check that the recorded capture loaded (witness).
+ * Twentieth to twenty-second labs, "igmp", "igmpv1" and "ipopts". "igmp"/"igmpv1": a router querier (v2, then v1), a member that joins two groups and leaves one, an observer on a hub. Measured before the change: the IGMP messages were
+ * zero bytes of a made-up length under protocol 2 and the real tool printed no message. IgmpWire.ts writes the 8-byte message and its checksum, checked byte for byte against tcpdump's tests/IGMP_V1.pcap and IGMP_V2.pcap in
+ * igmp-wire-real-capture.test.ts; TcpdumpIgmp.ts ports print-igmp.c (v3 queries and reports included, without dvmrp, pimv1 and mtrace). A v1 querier now writes a zero Max Response Time, as RFC 2236 says a v1 query is recognised by (the
+ * agent wrote the v2 value on every interface). "ipopts": frames written by the recorder (like "stpcraft") that carry every IPv4 option shape print-ip.c reads: Router Alert with and without a value, Record Route (partly filled, full, bad
+ * length, bad pointer), loose and strict source routes, Timestamp (TSONLY, TS+ADDR, PRESPEC, overflow, bad type, bad length), security, traceroute, NOP and EOL padding, an unknown code, a length below two and above the area, and two
+ * option areas cut short by the capture so that `[truncated-option]` and `[remaining caplen(N) < header length(M)] [|ip]` appear; TcpdumpIpOptions.ts ports ip_optprint. The `options (...)` text was missing from every verbose IP
+ * header before; the dump that follows `[remaining caplen ...] [|ip]` covers the whole frame, the one that follows `[truncated-option]` starts at the IP header. 28 of the 29 cases of each of the three labs fall without the change
+ * (the 29th is the per-lab loaded check, a witness).
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.

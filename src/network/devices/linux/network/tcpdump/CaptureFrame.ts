@@ -39,6 +39,10 @@ import { ETHERTYPE_VTP, type VtpFrame } from '@/network/vtp/types';
 import { ETHERTYPE_STP, PVST_PLUS_MAC, type StpBpdu } from '@/network/stp/types';
 import { ospfPacketBytes } from '@/network/ospf/OspfWire';
 import { eigrpPacketBytes } from '@/network/eigrp/EigrpPacketBytes';
+import { igmpPayloadBytes } from '@/network/igmp/IgmpWire';
+import type { IgmpPacket } from '@/network/igmp/types';
+import { vrrpPayloadBytes } from '@/network/vrrp/VrrpWire';
+import type { VrrpPacket } from '@/network/vrrp/types';
 import type { EigrpPacket } from '@/network/eigrp/packets';
 import type { OSPFPacket } from '@/network/ospf/types';
 import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
@@ -353,6 +357,8 @@ function synthL4Bytes(pkt: IPv4Packet): number[] {
   if (payload?.type === 'udplite') return synthUdpLiteBytes(pkt.payload as UDPLitePacket);
   if (payload?.type === 'ospf') return ospfPacketBytes(pkt.payload as OSPFPacket) ?? [];
   if (payload?.type === 'eigrp') return eigrpPacketBytes(pkt.payload as EigrpPacket);
+  if (payload?.type === 'vrrp') return vrrpPayloadBytes(pkt.payload as VrrpPacket);
+  if (payload?.type === 'igmp') return igmpPayloadBytes(pkt.payload as IgmpPacket);
   return [];
 }
 
