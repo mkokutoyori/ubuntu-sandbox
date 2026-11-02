@@ -801,6 +801,8 @@ export abstract class EndHost extends Equipment {
   }
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
+  protected hopLimitTowards(_destination: IPv6Address): number { return this.defaultHopLimit; }
+  protected adoptAdvertisedHopLimit(_portName: string, _hopLimit: number): void {}
   protected get udpDiscoversPathMtu(): boolean { return false; }
   protected get tcpEcnPolicy(): TcpEcnPolicy { return 'off'; }
   protected get tcpEcnFallsBack(): boolean { return true; }
@@ -4153,7 +4155,7 @@ export abstract class EndHost extends Equipment {
       counters: this.protocolCounters,
       socketTable: this.socketTable,
       defaultTtl: () => this.defaultTTL,
-      defaultHopLimit: () => this.defaultHopLimit,
+      hopLimitTowards: (destination) => this.hopLimitTowards(destination),
       isLocalAddress: (address) => this.isLocalAddress(address),
       isLocalAddress6: (address) => this.isLocalAddress6(address),
       hasInvalidSource: (packet) => this.hasInvalidSource(packet),
@@ -4503,7 +4505,7 @@ export abstract class EndHost extends Equipment {
       checksum: 0, payload,
     };
     const ipPkt = createIPv6Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+      srcIP, destinationIP, IP_PROTO_UDP, this.hopLimitTowards(destinationIP),
       stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length);
     if (this.firewallFilter6(iface, ipPkt, 'out') !== 'accept') return false;
     this.sendFrame(iface, {
@@ -4524,7 +4526,7 @@ export abstract class EndHost extends Equipment {
       type: 'udp', sourcePort, destinationPort,
       length: 8 + udpPayloadLength(payload, payloadBytes), checksum: 0, payload,
     };
-    const hopLimit = options.hopLimit ?? this.defaultHopLimit;
+    const hopLimit = options.hopLimit ?? this.hopLimitTowards(destinationIP);
     const marked = (packet: IPv6Packet): IPv6Packet => ({
       ...packet,
       ...(options.trafficClass === undefined ? {} : { trafficClass: options.trafficClass }),
@@ -4703,7 +4705,7 @@ export abstract class EndHost extends Equipment {
     if (!mayGenerateICMPv6Error(offendingPkt, icmpType)) return;
     if (this.isLocalAddress6(offendingPkt.sourceIP)) {
       const looped = createIPv6Packet(
-        errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit,
+        errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.hopLimitTowards(offendingPkt.sourceIP),
         { type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra }, 48,
       );
       if (this.loopLocal(looped).delivery === 'delivered') this.handleICMPv6('lo', looped);
@@ -4718,7 +4720,7 @@ export abstract class EndHost extends Equipment {
       type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra,
     };
     const errorPkt = createIPv6Packet(
-      srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit, icmpError, 48,
+      srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.hopLimitTowards(offendingPkt.sourceIP), icmpError, 48,
     );
 
     const route = this.resolveIPv6Route(offendingPkt.sourceIP);
@@ -6732,7 +6734,7 @@ export abstract class EndHost extends Equipment {
       source,
       request.sourceIP,
       IP_PROTO_ICMPV6,
-      this.defaultHopLimit,
+      this.hopLimitTowards(request.sourceIP),
       createICMPv6EchoReply(echo.id || 0, echo.sequence || 0, dataSize),
       ICMP_ECHO_HEADER_BYTES + dataSize,
       { trafficClass: this.echoReplyTrafficClass(request) },
@@ -6966,6 +6968,7 @@ export abstract class EndHost extends Equipment {
     if (acceptance.accepted && acceptance.defaultRouter) {
       this.learnDefaultRouter(router, ra.routerLifetime, advertisedPreference);
     }
+    if (acceptance.accepted && ra.curHopLimit !== 0) this.adoptAdvertisedHopLimit(portName, ra.curHopLimit);
     if (acceptance.accepted && acceptance.linkMtu) this.applyAdvertisedMtu(port, ra);
     for (const opt of acceptance.accepted && acceptance.routeInformation !== null ? ra.options : []) {
       if (opt.optionType !== 'route-info') continue;
@@ -7214,7 +7217,7 @@ export abstract class EndHost extends Equipment {
     const id = opts?.ident ?? this.allocateEchoIdent();
     const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
     const packet = createIPv6Packet(
-      source, target, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.defaultHopLimit,
+      source, target, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.hopLimitTowards(target),
       createICMPv6EchoRequest(id, seq, dataSize), ICMP_ECHO_HEADER_BYTES + dataSize,
       { trafficClass: opts?.trafficClass, flowLabel: opts?.flowLabel },
     );

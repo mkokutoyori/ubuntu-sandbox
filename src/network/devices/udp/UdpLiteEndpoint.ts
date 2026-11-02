@@ -59,7 +59,7 @@ export interface UdpLiteHost {
   readonly counters: ProtocolCounters;
   readonly socketTable: SocketTable;
   defaultTtl(): number;
-  defaultHopLimit(): number;
+  hopLimitTowards(destination: IPv6Address): number;
   isLocalAddress(address: IPAddress): boolean;
   isLocalAddress6(address: IPv6Address): boolean;
   hasInvalidSource(packet: IPv4Packet): boolean;
@@ -162,10 +162,10 @@ export class UdpLiteEndpoint {
     const packetFrom = (source: IPv6Address, hopLimit: number): IPv6Packet => createIPv6Packet(
       source, destination, IP_PROTO_UDPLITE, hopLimit,
       stampUdpLiteChecksum(base, length, source.toString(), destination.toString()), length);
-    const hopLimit = request.ttl?.value ?? this.host.defaultHopLimit();
+    const hopLimit = request.ttl?.value ?? this.host.hopLimitTowards(destination);
 
     if (this.host.isLocalAddress6(destination)) {
-      const looped = packetFrom(destination, this.host.defaultHopLimit());
+      const looped = packetFrom(destination, this.host.hopLimitTowards(destination));
       this.host.countLoopbackDatagram(looped);
       this.receive6('lo', looped);
       return true;

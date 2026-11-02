@@ -464,6 +464,13 @@ export abstract class LinuxMachine extends EndHost
   getKernelIpFacts(): KernelIpFacts { return this.ipv4Settings.kernelIpFacts(this.ipForwardEnabled); }
   protected override dhcpIpEmission(): DhcpIpEmission { return ISC_DHCP_EMISSION; }
   protected override get defaultHopLimit(): number { return 64; }
+  protected override hopLimitTowards(destination: IPv6Address): number {
+    const route = this.resolveIPv6Route(destination);
+    return this.ipv6Conf.hopLimit(route === null ? 'default' : route.port.getName());
+  }
+  protected override adoptAdvertisedHopLimit(portName: string, hopLimit: number): void {
+    this.ipv6Conf.adoptAdvertisedHopLimit(portName, hopLimit);
+  }
   protected override get udpDiscoversPathMtu(): boolean { return true; }
   protected override get tcpEcnPolicy(): TcpEcnPolicy { return this.ipv4Settings.ecnPolicy; }
   protected override get tcpEcnFallsBack(): boolean { return this.ipv4Settings.ecnFallsBack; }
