@@ -26,6 +26,10 @@
  * The capture now holds an 802.3 frame (length field, LLC/SNAP `AA AA 03 00 00 0C 20 00`) and the CDPv2 TLVs (src/network/cdp/CdpWire.ts: Device-ID, Addresses, Port-ID, Capabilities, Version, Platform, VTP domain, Native VLAN, Duplex,
  * Internet checksum); TcpdumpCdp.ts ports print-cdp.c, quirks included (without -v every TLV but the Device-ID is hex-dumped), and the -e line carries the 802.3 / LLC SNAP text of print-llc.c for this one frame type.
  * 28 of the 145 cases fall without the change (the lab's cases that print a CDP line).
+ * Sixth lab, "lldp": a PC cabled to a Cisco switch with `lldp run` (STP, CDP and DTP switched off: their frames are still zero bytes, see TODO.md). Measured before the change: the LLDP frame carried no bytes after the
+ * Ethernet header. The capture now holds the 802.1AB TLVs (src/network/lldp/LldpWire.ts: chassis, port, TTL, port description, system name and description, capabilities, management addresses, the 802.1 PVID and VLAN name,
+ * the 802.3 MAC/PHY and maximum frame size) and TcpdumpLldp.ts ports print-lldp.c for them. The MAC/PHY PMD capability and MAU type are written as 0 (the simulator does not model them).
+ * 28 of the 174 cases fall without the change.
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.

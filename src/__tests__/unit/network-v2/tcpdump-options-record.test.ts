@@ -12,6 +12,7 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Hub } from '@/network/devices/Hub';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { installVirtualClock } from '../../support/ntpTime';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
@@ -186,7 +187,22 @@ async function recordCdp(): Promise<string> {
   return pc.executeCommand('cat all.cap');
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp };
+async function recordLldp(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1');
+  new Cable('c1').connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 10');
+  await new Promise((r) => setTimeout(r, 30));
+  for (const line of ['enable', 'configure terminal', 'no cdp run', 'no spanning-tree vlan 1', 'lldp run', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit', 'interface Vlan1', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await sw.executeCommand(line);
+  await clock.advance(70_000);
+  await pc.executeCommand('ping -c 1 10.9.0.1');
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

@@ -7,6 +7,7 @@ import {
 import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
 import { cdpText } from './TcpdumpCdp';
+import { lldpText } from './TcpdumpLldp';
 import { ospfText } from './TcpdumpOspf';
 import { ripText } from './TcpdumpRip';
 import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
@@ -544,6 +545,7 @@ function ip6VerboseHeader(frame: CaptureFrame): string {
 function etherTypeOf(frame: CaptureFrame): { name: string; hex: string; value: number } {
   if (frame.l3 === 'arp') return { name: 'ARP', hex: '0x0806', value: 0x0806 };
   if (frame.l3 === 'ipv6') return { name: 'IPv6', hex: '0x86dd', value: 0x86dd };
+  if (frame.l3 === 'lldp') return { name: 'LLDP', hex: '0x88cc', value: 0x88cc };
   return { name: 'IPv4', hex: '0x0800', value: 0x0800 };
 }
 
@@ -660,6 +662,8 @@ export function formatFrame(
     body = `${link}${ip6Line(frame, opt, state)}`;
   } else if (frame.l3 === 'cdp') {
     body = cdpLine(frame, opt, state);
+  } else if (frame.l3 === 'lldp') {
+    body = `${link}${lldpText(Array.from(frame.raw.slice(frame.rawLinkOffset)), opt.verbose, (address) => state.host(address), (mac) => state.ether(mac))}`;
   } else {
     body = opt.linkLevel ? `${state.ether(frame.srcMac)} > ${state.ether(frame.dstMac)}, ${opt.quiet ? 'Unknown Ethertype' : 'ethertype Unknown'} (0x${frame.etherType.toString(16)}), length ${frame.length}` : `unknown ethertype 0x${frame.etherType.toString(16)}`;
   }
