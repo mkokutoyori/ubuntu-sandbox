@@ -271,16 +271,14 @@ a la reception, la cible a l'arrivee puis dans la reponse : `ip_options_compile`
    Timestamp` sans les construire (entree suivante) : le rendu IOS n'est pas
    attestable.
 
-### [ip] le `ping` etendu collecte `Record` / `Loose` / `Strict` sans les construire
-`ExtendedPingParams.routeOptions` porte la reponse au prompt IOS
-`Loose, Strict, Record, Timestamp, Verbose[none]:` et la SESSION la
-rend ; aucune option n'est posee dans le paquet. Depuis ce lot le
-mecanisme existe (`buildRecordRouteOption`, `buildSourceRouteOption`),
-donc l'obstacle n'est plus le plan de donnees : c'est le RENDU. IOS
-imprime la route collectee sous le resultat du ping, et ni la largeur
-des colonnes ni le libelle exact ne sont attestables depuis ce reseau
-(le §8 du CLAUDE.md : quand la source est injoignable, on le dit et on
-n'implante pas). A rouvrir avec une capture de `ping` etendu reel.
+### [ip] le `ping` etendu : `Record` est pose dans le paquet, le rendu de la route et Loose / Strict / Timestamp / Verbose restent
+La reponse `Record` au prompt `Loose, Strict, Record, Timestamp, Verbose[none]:` pose une option Record Route (9 emplacements) dans chaque echo request, sur le
+routeur et sur le commutateur de niveau 3 (`ExtendedPingParams.routeOptions` → `routeOptionsOf` → `executePingSequence`, sonde `probe-cisco-ping-etendu-record`).
+Ce qui reste, et que la session dit toujours (`% Reply data and IP header options were not verified on this run.`) : (1) le RENDU de la route collectee sous le
+resultat du ping, dont ni la largeur des colonnes ni le libelle ne sont attestables depuis ce reseau (le §8 du CLAUDE.md : quand la source est injoignable, on le
+dit et on n'implante pas) ; (2) `Loose` et `Strict`, dont les sous-questions d'IOS (adresses du chemin) ne sont pas attestees non plus ; (3) `Timestamp` et `Verbose`.
+La taille du datagramme garde la charge ICMP constante : l'en-tete passe a 60 octets, la longueur totale a 140 pour `Datagram size [100]`, comme le ping Linux avec `-R`.
+A rouvrir avec une capture de `ping` etendu reel.
 
 ### [ip] le pare-feu n'honore pas le routage par la source, et l'ouvrir le rendrait PLUS permissif
 Le commutateur de niveau 3 est FERME (`probe-options-ipv4-commutateur-l3
@@ -4227,7 +4225,7 @@ l'entete et ne dimensionne pas les sondes (IPv4 comme IPv6).
 
 ### [radvd] RDNSS et DNSSL sont appliques a `/etc/resolv.conf` sans demon utilisateur
 
-L'hote lit les options RDNSS (RFC 8106 §5.1) et DNSSL (§5.2) d'une annonce et les ecrit dans `/etc/resolv.conf` pour la duree de vie de l'option (0 retire, 0xffffffff n'expire pas), un serveur de portee liaison portant sa zone (`fe80::1%eth0`) : sonde `probe-ipv6-hote-dns-annonce`. Le noyau ne fait que remettre ces options a l'espace utilisateur ; sur Ubuntu c'est systemd-networkd ou NetworkManager qui les consomme, et le simulateur n'a pas ce demon : l'application est faite par la machine elle-meme, sans bouton `UseDNS` ni `IPv6AcceptRA` propre a un fichier `.network`. `ResolvedService` (liens, `resolvectl status`) ne voit pas ces serveurs : seul le fichier les porte, comme pour les baux DHCP. Les ecrivains de `/etc/resolv.conf` restent plusieurs (bail DHCPv4 qui reecrit tout le fichier, networkd, liberation de bail qui le vide) ; DHCPv6 et RA partagent maintenant la fusion de `ResolvConfEdit`, reste a y ramener le bail DHCPv4 et networkd.
+L'hote lit les options RDNSS (RFC 8106 §5.1) et DNSSL (§5.2) d'une annonce et les ecrit dans `/etc/resolv.conf` pour la duree de vie de l'option (0 retire, 0xffffffff n'expire pas), un serveur de portee liaison portant sa zone (`fe80::1%eth0`) : sonde `probe-ipv6-hote-dns-annonce`. Le noyau ne fait que remettre ces options a l'espace utilisateur ; sur Ubuntu c'est systemd-networkd ou NetworkManager qui les consomme, et le simulateur n'a pas ce demon : l'application est faite par la machine elle-meme, sans bouton `UseDNS` ni `IPv6AcceptRA` propre a un fichier `.network`. `ResolvedService` (liens, `resolvectl status`) ne voit pas ces serveurs : seul le fichier les porte, comme pour les baux DHCP. Le bail DHCPv4, DHCPv6 et RA partagent la fusion de `ResolvConfEdit` (le bail DHCPv4 retire seulement ce qu'il a pose, sonde `probe-dhcp-resolv-conf-fusion`) ; networkd (`LinuxNetworkConfigManager.writeResolvConf`) reprend aussi seulement ce qu'il avait pose (sonde `probe-networkd-resolv-conf-fusion`) ; il n'y a plus d'ecrivain qui possede le fichier, mais NetworkManager et `resolvconf`/`systemd-resolved` en mode stub ne sont pas modelises comme ecrivains.
 
 ## Chargement de l'application
 

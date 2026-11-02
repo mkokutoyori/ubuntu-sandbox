@@ -1,6 +1,6 @@
 import {
   EthernetFrame, MACAddress, IPAddress, SubnetMask,
-  ARPPacket, ICMPPacket, IPv4Packet, UDPPacket,
+  ARPPacket, ICMPPacket, IPv4Packet, type IPv4Option, UDPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
   createIPv4Packet,
 } from '../core/types';
@@ -30,6 +30,7 @@ export interface EchoHooks {
   df?: boolean;
   tos?: number;
   sizeBytes?: number;
+  ipOptions?: readonly IPv4Option[];
   shouldStop?: () => boolean;
 }
 import { DHCPPacket, DHCP_WIRE_BYTES } from '../dhcp/DHCPPacket';
@@ -803,7 +804,8 @@ export class SwitchSvi {
       type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize,
     };
     const ipPkt = createIPv4Packet(
-      selfIp, target, IP_PROTO_ICMP, ttl, icmp, 8 + dataSize);
+      selfIp, target, IP_PROTO_ICMP, ttl, icmp, 8 + dataSize,
+      hooks?.ipOptions === undefined ? {} : { ipOptions: [...hooks.ipOptions] });
     if (hooks?.tos) ipPkt.tos = hooks.tos;
     if (hooks?.df) ipPkt.flags |= IPV4_FLAG_DF;
     this.pendingReply = null;
