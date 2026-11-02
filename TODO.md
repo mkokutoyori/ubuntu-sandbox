@@ -116,31 +116,24 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
-### [ntp] seuils de panique des agents ntpd, glissement de chronyd par mise a jour, `clock datetime` Huawei
+### [ntp] seuils de panique des agents ntpd et `clock datetime` Huawei
 **Mesure** (lab NTP, horloges decalees apres synchronisation) : l'agent lit
-desormais l'horloge de la machine et la discipline. Restent trois ecarts
-connus, tous mesures sur le laboratoire :
+l'horloge de la machine et la discipline ; chronyd glisse en continu a
+`maxslewrate` et oublie ses echantillons sur un saut externe. Restent deux
+ecarts connus, tous deux mesures sur le laboratoire :
 1. Les agents Cisco et Huawei gardent le seuil de panique de ntpd (1000 s) et
    W32Time celui de `MaxPosPhaseCorrection` (54000 s) : une machine decalee
    de plusieurs annees reste non synchronisee, avec `loopfilter state is
    'PANIC'`. Que IOS et VRP appliquent le seuil de ntpd n'est pas atteste
    depuis ce reseau (`cisco.com` et `support.huawei.com` sont bloques).
-2. chronyd corrige un decalage par glissement a `maxslewrate` (83333 ppm par
-   defaut) CONTINUEMENT ; l'agent applique `debit x temps ecoule` a chaque
-   mise a jour. Sur 1 h le total est le meme, la courbe est en marches. Et
-   sur un saut d'horloge externe chronyd detecte le saut et REMET A ZERO ses
-   sources (`LCL_NotifyExternalTimeStep`, changement `LCL_ChangeUnknownStep`),
-   alors que l'agent re-exprime les mesures deja prises dans la nouvelle
-   horloge : meme resultat a terme, delai de reconvergence different.
-3. `clock datetime HH:MM:SS YYYY-MM-DD` est interprete comme de l'UTC
+2. `clock datetime HH:MM:SS YYYY-MM-DD` est interprete comme de l'UTC
    (`vrpDatetimeToEpochMs`), alors que VRP lit l'heure dans le fuseau
    configure (le mot-cle `utc` existe pour l'UTC). Non corrige faute de
    documentation joignable ; une sonde existante (`probe-horloge-suit-son-equipement`)
    pose le comportement actuel en contrat.
-**Pourquoi ce n'est pas ferme** : (1) et (3) demandent une source que ce
-reseau ne joint pas ; (2) demande de passer le glissement du pas de mise a
-jour a un taux continu sur l'ordonnanceur, et de decider quoi faire des
-echantillons au saut externe.
+**Pourquoi ce n'est pas ferme** : les deux demandent une source que ce
+reseau ne joint pas, et la regle est de ne pas implementer plutot que de
+deviner.
 
 ### [windows] `quser` est inconnu ; libelles d'erreur de `tzutil` et `eventcreate` non attestes
 **Mesure** : `quser` repond « not recognized » sur une machine Windows simulee. `tzutil /g|/l|/s` et
@@ -4227,3 +4220,28 @@ l'entete et ne dimensionne pas les sondes (IPv4 comme IPv6).
 ### [radvd] RDNSS et DNSSL sont appliques a `/etc/resolv.conf` sans demon utilisateur
 
 L'hote lit les options RDNSS (RFC 8106 §5.1) et DNSSL (§5.2) d'une annonce et les ecrit dans `/etc/resolv.conf` pour la duree de vie de l'option (0 retire, 0xffffffff n'expire pas), un serveur de portee liaison portant sa zone (`fe80::1%eth0`) : sonde `probe-ipv6-hote-dns-annonce`. Le noyau ne fait que remettre ces options a l'espace utilisateur ; sur Ubuntu c'est systemd-networkd ou NetworkManager qui les consomme, et le simulateur n'a pas ce demon : l'application est faite par la machine elle-meme, sans bouton `UseDNS` ni `IPv6AcceptRA` propre a un fichier `.network`. `ResolvedService` (liens, `resolvectl status`) ne voit pas ces serveurs : seul le fichier les porte, comme pour les baux DHCP. Le bail DHCPv4, DHCPv6 et RA partagent la fusion de `ResolvConfEdit` (le bail DHCPv4 retire seulement ce qu'il a pose, sonde `probe-dhcp-resolv-conf-fusion`) ; networkd (`LinuxNetworkConfigManager.writeResolvConf`) reprend aussi seulement ce qu'il avait pose (sonde `probe-networkd-resolv-conf-fusion`) ; il n'y a plus d'ecrivain qui possede le fichier, mais NetworkManager et `resolvconf`/`systemd-resolved` en mode stub ne sont pas modelises comme ecrivains.
+
+## Chargement de l'application
+
+### [chargement] ouvrir le premier terminal charge toutes les plateformes
+Le premier ecran ne demande plus aucun module du simulateur (entree de
+production : 713 Ko, 222 Ko compresses, contre un bloc unique de 16,3 Mo)
+et une plateforme d'equipement arrive au survol, au focus, au glisser ou au
+clic de sa ligne de palette. Mais `TerminalManager` et les sessions
+(`sessionFactory.ts`, `CiscoTerminalSession.ts`, `HuaweiTerminalSession.ts`,
+`WindowsTerminalSession.ts`, `AsaTerminalSession.ts`,
+`FortiTerminalSession.ts`) importent les classes d'equipement par le
+barillet `@/network`, qui enregistre les sept plateformes.
+**Mesure** (build de production, Chromium, `prodsmoke` : un Linux PC pose,
+puis double-clic) : poser le Linux PC demande 20 modules ; ouvrir son
+terminal en demande 17 de plus, dont `TerminalManager` et `TerminalModal`
+mais aussi `ciscoPlatform`, `windowsPlatform`, `huaweiPlatform`,
+`genericPlatform`, `asaPlatform`, `fortigatePlatform`, `Switch` et
+`Firewall` — environ 0,3 s de plus en local, davantage sur un lien lent.
+**Ce qui manque** : que les sessions importent `Equipment` et les types
+d'equipement en `import type`, et que la fabrique de session choisisse sa
+classe de session par type d'equipement apres `loadDevicePlatform(type)`,
+de sorte qu'un terminal Linux ne tire que la plateforme Linux. Non fait
+ici : `sessionFactory` et chaque session ont des appelants dans
+`src/terminal/` et 276 fichiers de tests les importent ; c'est un
+changement propre, a mesurer a part.

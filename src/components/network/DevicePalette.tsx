@@ -2,9 +2,10 @@
  * DevicePalette - Sidebar with draggable device types
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
-import { DEVICE_CATEGORIES, isFullyImplemented } from '@/network';
+import { DEVICE_CATEGORIES, isFullyImplemented } from '@/network/core/deviceCatalog';
+import { loadDevicePlatform } from '@/network/devices/platformLoaders';
 import { DeviceIcon } from './DeviceIcon';
 import { useNetworkStore } from '@/store/networkStore';
 import { cn } from '@/lib/utils';
@@ -21,23 +22,31 @@ export function DevicePalette() {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(
     DEVICE_CATEGORIES.map(c => c.id)
   );
-  const addDevice = useNetworkStore(s => s.addDevice);
+  const requestDevice = useNetworkStore(s => s.requestDevice);
   const getDevices = useNetworkStore(s => s.getDevices);
   const selectDevice = useNetworkStore(s => s.selectDevice);
 
   // Keyboard/click equivalent of dragging a device onto the canvas — the
   // only way to add a device used to be HTML5 drag-and-drop, which is
   // unreachable without a pointer (rapport 09 audit).
+  const devicesBeingLoaded = useRef(0);
   const addDeviceViaKeyboard = (type: (typeof DEVICE_CATEGORIES)[number]['devices'][number]['type']) => {
-    const count = getDevices().length;
+    const count = getDevices().length + devicesBeingLoaded.current;
     const col = count % ADD_GRID_COLS;
     const row = Math.floor(count / ADD_GRID_COLS);
-    const device = addDevice(
+    devicesBeingLoaded.current++;
+    requestDevice(
       type,
       ADD_GRID_ORIGIN.x + col * ADD_GRID_STEP,
       ADD_GRID_ORIGIN.y + row * ADD_GRID_STEP,
+      (device) => {
+        devicesBeingLoaded.current--;
+        selectDevice(device.id);
+      },
+      () => {
+        devicesBeingLoaded.current--;
+      },
     );
-    selectDevice(device.id);
   };
 
   const toggleCategory = (id: string) => {
@@ -82,7 +91,10 @@ export function DevicePalette() {
                     key={device.type}
                     type="button"
                     draggable
+                    onPointerEnter={() => { void loadDevicePlatform(device.type); }}
+                    onFocus={() => { void loadDevicePlatform(device.type); }}
                     onDragStart={(e) => {
+                      void loadDevicePlatform(device.type);
                       e.dataTransfer.setData('deviceType', device.type);
                       e.dataTransfer.effectAllowed = 'copy';
                     }}

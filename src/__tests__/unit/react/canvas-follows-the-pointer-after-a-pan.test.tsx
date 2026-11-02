@@ -34,6 +34,7 @@
  * `clearAll` ne rend ni le zoom ni le deplacement : chaque cas repart
  * d'un cadrage neutre, faute de quoi le zoom d'un cas fausse le suivant.
  */
+import '@/network/devices/platforms/allPlatforms';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { useNetworkStore } from '@/store/networkStore';

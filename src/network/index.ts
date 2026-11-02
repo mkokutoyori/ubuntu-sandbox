@@ -57,3 +57,4 @@ export type { IRouterShell } from './devices/shells/IRouterShell';
 export { CiscoIOSShell } from './devices/shells/CiscoIOSShell';
 export { HuaweiVRPShell } from './devices/shells/HuaweiVRPShell';
 export { createDevice, resetDeviceCounters, reserveDeviceName, hasTerminalSupport, isFullyImplemented } from './devices/DeviceFactory';
+export { loadDevicePlatform, loadDevicePlatforms, loadAllDevicePlatforms } from './devices/platformLoaders';

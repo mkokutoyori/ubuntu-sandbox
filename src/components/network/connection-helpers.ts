@@ -3,7 +3,7 @@
  * Extracted from components for testability.
  */
 
-import type { ConnectionType } from '@/network';
+import type { ConnectionType } from '@/network/core/types';
 
 /**
  * Returns a human-readable label for a connection type.

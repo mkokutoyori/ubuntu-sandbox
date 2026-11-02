@@ -8,13 +8,14 @@
  */
 
 import { create } from 'zustand';
-import {
-  Equipment, Cable, Port,
-  DeviceType, ConnectionType,
-  createDevice, resetDeviceCounters,
-  generateId, resetCounters,
-  Logger,
-} from '@/network';
+import type { Equipment } from '@/network/equipment/Equipment';
+import type { Port } from '@/network/hardware/Port';
+import { Cable } from '@/network/hardware/Cable';
+import { generateId, resetCounters, type DeviceType, type ConnectionType } from '@/network/core/types';
+import { createDevice, resetDeviceCounters } from '@/network/devices/deviceFactoryCore';
+import { isDevicePlatformLoaded } from '@/network/devices/deviceBuilders';
+import { loadDevicePlatform } from '@/network/devices/platformLoaders';
+import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 
 /**
@@ -146,6 +147,8 @@ interface NetworkState {
 
   // Device actions
   addDevice: (type: DeviceType, x: number, y: number) => NetworkDeviceUI;
+  addDeviceAsync: (type: DeviceType, x: number, y: number) => Promise<NetworkDeviceUI>;
+  requestDevice: (type: DeviceType, x: number, y: number, onAdded?: (device: NetworkDeviceUI) => void, onFailed?: (error: unknown) => void) => void;
   removeDevice: (id: string) => void;
   updateDevice: (id: string, updates: { name?: string; hostname?: string; isPoweredOn?: boolean; x?: number; y?: number }) => void;
   moveDevice: (id: string, x: number, y: number) => void;
@@ -490,6 +493,29 @@ export const useNetworkStore = create<NetworkState>((set, get) => ({
     doAddDevice(device, set);
     pushHistory(set, { kind: 'addDevice', device });
     return deviceToUI(device);
+  },
+
+  addDeviceAsync: async (type, x, y) => {
+    await loadDevicePlatform(type);
+    return get().addDevice(type, x, y);
+  },
+
+  requestDevice: (type, x, y, onAdded, onFailed) => {
+    if (isDevicePlatformLoaded(type)) {
+      const device = get().addDevice(type, x, y);
+      onAdded?.(device);
+      return;
+    }
+    loadDevicePlatform(type).then(
+      () => {
+        const device = get().addDevice(type, x, y);
+        onAdded?.(device);
+      },
+      (error: unknown) => {
+        Logger.error('store', 'device-platform-load-failed', `Cannot load the ${type} platform: ${error instanceof Error ? error.message : String(error)}`, { type });
+        onFailed?.(error);
+      },
+    );
   },
 
   removeDevice: (id) => {

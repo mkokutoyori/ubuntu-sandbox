@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
-import type { Equipment } from '@/network';
+import type { Equipment } from '@/network/equipment/Equipment';
 import type { Port } from '@/network/hardware/Port';
 import type { Connection } from '@/store/networkStore';
 

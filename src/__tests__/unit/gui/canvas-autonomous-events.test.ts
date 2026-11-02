@@ -13,6 +13,7 @@
  * bump, so an autonomous event is visible with NO store action, and NO
  * `getDevices()` call, happening in between.
  */
+import '@/network/devices/platforms/allPlatforms';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
 import { Logger } from '@/network/core/Logger';

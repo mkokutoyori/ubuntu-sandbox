@@ -7,6 +7,7 @@
  * e.g. a configured IP, was never destroyed, only detached from the
  * store/registry) rather than recreating a blank one.
  */
+import '@/network/devices/platforms/allPlatforms';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
 import { IPAddress, SubnetMask } from '@/network/core/types';

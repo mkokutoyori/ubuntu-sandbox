@@ -148,7 +148,7 @@ export function disciplinerHorloge(
   if (reglages.stepLimitCountsUpdates === true) {
     const stepAllowed = limite < 0 || etat.updatesApplied < limite;
     if (stepAllowed && ecart > seuilSaut) return { quoi: 'step', nouvelOffset: offsetMesureMs };
-    return { quoi: 'slew', nouvelOffset: glisser(etat, offsetMesureMs, ecoulementMs, reglages.slewRatePpm ?? PPM_MAX) };
+    return { quoi: 'slew', nouvelOffset: offsetMesureMs };
   }
 
   // Sous le seuil, le glissement suffit — et c'est le regime normal.

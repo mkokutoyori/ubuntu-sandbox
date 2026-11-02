@@ -21,6 +21,7 @@
  * temoin (un deplacement RECALCULE) et le cas du zoom et du cable de plus
  * prouvent que le cache ne se contente pas de ne jamais rien recalculer.
  */
+import '@/network/devices/platforms/allPlatforms';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import * as logic from '@/components/network/connection-line-logic';

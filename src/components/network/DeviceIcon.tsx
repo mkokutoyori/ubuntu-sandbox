@@ -3,7 +3,7 @@
  */
 
 import { Monitor, Database } from 'lucide-react';
-import type { DeviceType } from '@/network';
+import type { DeviceType } from '@/network/core/types';
 import { cn } from '@/lib/utils';
 import { DEVICE_VISUALS, type DeviceVisual } from './device-visuals';
 import { DEVICE_GLYPHS } from './device-glyphs';
