@@ -119,7 +119,7 @@ import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { IcmpUnreachableRateLimit } from './router/IcmpUnreachableRateLimit';
 import { IcmpErrorTokenBucket, type TokenBucketSetting } from './router/IcmpErrorTokenBucket';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
-import { collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
+import { awaitQuotedIcmpError, collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
 import type { HostIcmpUnreachablePayload } from './host/events';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { evaluateIpv6Acl, formatIpv6AclLogMessage } from './router/Ipv6AclEngine';
@@ -6717,25 +6717,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async udpTraceProbe(
     destinationPort: number, timeoutMs: number, send: () => void,
   ): Promise<TraceProbeOutcome> {
-    const sentAt = PathClock.now();
-    const answer = waitForEvent(
-      this.getBus(),
-      'host.icmp.unreachable',
-      (pl) => pl.deviceId === this.id && pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === destinationPort,
-      { timeoutMs, scheduler: this.getRouterScheduler() },
-    );
-    answer.catch(() => {});
-    send();
-    try {
-      const reply = await answer;
-      const outcome: TraceProbeOutcome = { timeout: false, reached: false, rttMs: PathClock.now() - sentAt, ip: reply.fromIp };
-      if (reply.code === 'ttl-exceeded') return outcome;
-      if (reply.code === 'port-unreachable') return { ...outcome, reached: true };
-      return { ...outcome, unreachable: true, code: reply.code };
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
-      throw err;
-    }
+    const answer = await awaitQuotedIcmpError(
+      { bus: this.getBus(), scheduler: this.getRouterScheduler(), deviceId: this.id }, timeoutMs,
+      (pl) => pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === destinationPort, send);
+    if (answer === null) return { timeout: true, reached: false };
+    const { payload: reply, rttMs } = answer;
+    const outcome: TraceProbeOutcome = { timeout: false, reached: false, rttMs, ip: reply.fromIp };
+    if (reply.code === 'ttl-exceeded') return outcome;
+    if (reply.code === 'port-unreachable') return { ...outcome, reached: true };
+    return { ...outcome, unreachable: true, code: reply.code };
   }
 
   /** @internal Resolve ARP for ping, returns MAC or null on timeout */

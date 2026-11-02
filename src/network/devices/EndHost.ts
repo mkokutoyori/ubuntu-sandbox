@@ -23,7 +23,7 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
-import { collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
+import { awaitQuotedIcmpError, collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
@@ -5876,22 +5876,7 @@ export abstract class EndHost extends Equipment {
     quotesProbe: (pl: HostIcmpUnreachablePayload) => boolean,
     send: () => void,
   ): Promise<{ payload: HostIcmpUnreachablePayload; rttMs: number } | null> {
-    const sentAt = PathClock.now();
-    const answer = waitForEvent(
-      this.getBus(),
-      'host.icmp.unreachable',
-      (pl) => pl.deviceId === this.id && quotesProbe(pl),
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
-    answer.catch(() => {});
-    send();
-    try {
-      const payload = await answer;
-      return { payload, rttMs: PathClock.now() - sentAt };
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return null;
-      throw err;
-    }
+    return awaitQuotedIcmpError({ bus: this.getBus(), scheduler: this.getScheduler(), deviceId: this.id }, timeoutMs, quotesProbe, send);
   }
 
   public async udpErrorProbe(
