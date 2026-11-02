@@ -280,7 +280,26 @@ const VTP_TRUNK = ['interface FastEthernet0/1', 'switchport trunk encapsulation 
 const recordVtp = () => recordStp(['vtp domain LAB', 'vtp password secret', 'vtp pruning', 'vlan 10', 'name Sales', 'exit', 'vlan 20', 'name Engineering', 'exit', ...VTP_TRUNK], 70_000);
 const recordVtpClient = () => recordStp(['vtp version 2', 'vtp mode client', 'vtp domain LAB', ...VTP_TRUNK], 70_000);
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient };
+async function recordUdld(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW1');
+  const sw2 = new CiscoSwitch('switch-cisco', 'SW2');
+  new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(sw1.getPort('FastEthernet0/1')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(sw2.getPort('FastEthernet0/1')!, hub.getPort('eth2')!);
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 24');
+  await new Promise((r) => setTimeout(r, 30));
+  const setup = ['enable', 'configure terminal', 'no cdp run', 'no lldp run', 'no spanning-tree vlan 1', 'udld enable', 'udld message time 7', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit', 'end'];
+  for (const line of setup) await sw1.executeCommand(line);
+  for (const line of [...setup.slice(0, -1), 'udld aggressive', 'end']) await sw2.executeCommand(line);
+  await clock.advance(40_000);
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient, udld: recordUdld };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

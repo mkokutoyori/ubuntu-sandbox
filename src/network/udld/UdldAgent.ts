@@ -29,6 +29,7 @@ export interface UdldHost {
 export class UdldAgent extends ReactiveAgentBase {
   private config: UdldConfig = createDefaultUdldConfig();
   private readonly neighbors = new Map<string, UdldNeighborEntry>();
+  private readonly sequences = new Map<string, number>();
 
   constructor(
     private readonly host: UdldHost,
@@ -213,6 +214,12 @@ export class UdldAgent extends ReactiveAgentBase {
     }
   }
 
+  private nextSequence(portName: string): number {
+    const next = (this.sequences.get(portName) ?? 0) + 1;
+    this.sequences.set(portName, next);
+    return next;
+  }
+
   private kickEcho(portName: string): void {
     this.transmit(portName, 'echo');
   }
@@ -234,6 +241,7 @@ export class UdldAgent extends ReactiveAgentBase {
       helloIntervalSec: this.config.helloIntervalSec,
       messageInterval: this.config.helloIntervalSec,
       timeoutInterval: this.config.messageTimeoutSec,
+      sequence: this.nextSequence(portName),
       echo,
     };
     this.host.sendOnLink({
@@ -262,6 +270,7 @@ export class UdldAgent extends ReactiveAgentBase {
       helloIntervalSec: this.config.helloIntervalSec,
       messageInterval: this.config.helloIntervalSec,
       timeoutInterval: this.config.messageTimeoutSec,
+      sequence: this.nextSequence(portName),
       echo: [],
     };
     this.host.sendOnLink({

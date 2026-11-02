@@ -51,6 +51,10 @@
  * simulator cannot lay out honestly stay unencoded: v3 (no reachable dissector), the primary-server claim and the MST database. tcpdump 4.99.4 itself reads a four-byte start value in a request and prints `[|vtp]` after the domain on the
  * two-byte one all three readers describe; the replay reproduces that, and the full-frame dump that follows a longjmp truncation. All 56 cases of the two labs fall without the change; the other 442 pass either way (the fifteen older labs, which
  * are the witness that the replay itself is sound).
+ * Eighteenth lab, "udld": two Cisco switches and a PC on a hub, `udld enable` on both (aggressive on one), message time 7. Measured before the change: the probes and echoes were zero bytes under the made-up ethertype 0x0111. UdldWire.ts
+ * now writes the LLC/SNAP Cisco frame (pid 0x0111) and the PDU as a real capture shows it (tcpdump's tests/UDLD.pcap, checked byte for byte in udld-wire-real-capture.test.ts): version and opcode, flags (Recommended Timeout on a probe),
+ * the internet checksum, the Device-ID, Port-ID, Echo (a count, then a length-prefixed device and port per neighbour), Message Interval, Timeout Interval, Device Name and Sequence Number TLVs; UdldAgent keeps the per-port sequence the wire
+ * needs. 28 of the 29 cases of the lab fall without the change; the one that passes either way is the per-lab check that the recorded capture loaded at all (witness).
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.

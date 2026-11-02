@@ -1,3 +1,4 @@
+import { internetChecksum } from '@/network/layers/transport/L4Checksum';
 import { lsaBodyBytes } from './checksum';
 import type {
   LSA, LSAHeader, OSPFDDPacket, OSPFHelloPacket, OSPFLSAckPacket, OSPFLSRequestPacket, OSPFLSUpdatePacket, OSPFPacket,
@@ -28,13 +29,6 @@ function ipv4(text: string): number[] {
   const parts = text.split('.').map((part) => parseInt(part, 10) & 0xff);
   while (parts.length < 4) parts.push(0);
   return parts.slice(0, 4);
-}
-
-function internetChecksum(bytes: readonly number[]): number {
-  let sum = 0;
-  for (let i = 0; i < bytes.length; i += 2) sum += (bytes[i] << 8) | (i + 1 < bytes.length ? bytes[i + 1] : 0);
-  while (sum > 0xffff) sum = (sum & 0xffff) + (sum >>> 16);
-  return (~sum) & 0xffff;
 }
 
 function fletcherChecksum(afterAge: readonly number[]): number {

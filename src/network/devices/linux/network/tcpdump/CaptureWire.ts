@@ -1,4 +1,4 @@
-import { onesComplement, pushBytesAsWords, pushPseudoHeader } from '@/network/layers/transport/L4Checksum';
+import { internetChecksum, onesComplement, pushBytesAsWords, pushPseudoHeader } from '@/network/layers/transport/L4Checksum';
 import type { TcpOption } from '@/network/tcp/types';
 
 const TCP_HEADER_BYTES = 20;
@@ -14,12 +14,6 @@ export function u16(value: number): number[] {
 
 export function u32(value: number): number[] {
   return [(value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff];
-}
-
-export function internetChecksum(bytes: readonly number[]): number {
-  const words: number[] = [];
-  pushBytesAsWords(words, bytes as number[]);
-  return onesComplement(words);
 }
 
 export function transportChecksum(

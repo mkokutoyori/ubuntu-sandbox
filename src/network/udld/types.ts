@@ -35,6 +35,7 @@ export interface UdldPacket extends NetworkPdu {
   helloIntervalSec: number;
   messageInterval: number;
   timeoutInterval: number;
+  sequence: number;
   echo: UdldEchoEntry[];
 }
 

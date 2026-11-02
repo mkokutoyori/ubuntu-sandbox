@@ -4,7 +4,7 @@ const STP_LLC_BYTES = 3;
 const SNAP_LLC_BYTES = 8;
 const STP_SAP = 0x42;
 const SNAP_SAP = 0xaa;
-const CISCO_PID_NAMES: Readonly<Record<number, string>> = { 0x2000: 'CDP', 0x2003: 'VTP', 0x2004: 'DTP', 0x010b: 'PVST' };
+const CISCO_PID_NAMES: Readonly<Record<number, string>> = { 0x2000: 'CDP', 0x2003: 'VTP', 0x2004: 'DTP', 0x0111: 'UDLD', 0x010b: 'PVST' };
 const OUI_CISCO = 0x00000c;
 
 export interface Ieee8023Payload {
