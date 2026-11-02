@@ -139,3 +139,15 @@ test('streams an injected TCP segment and prints the summary on -c 1', async ({ 
   await waitForText(page, '10.0.0.1.4444 > 10.0.0.2.http');
   await waitForText(page, '1 packet captured');
 });
+
+test('sudo tcpdump -w … & gives the prompt back at once and the capture ends when traffic arrives', async ({ page }) => {
+  const { pc1, pc2 } = await lan(page);
+  await openTerminal(page, pc1);
+  await typeCmd(page, 'sudo tcpdump -w /tmp/bg.cap -c 1 icmp &');
+  await waitForText(page, '[1] ', 3_000);
+  await typeCmd(page, 'echo prompt-is-back');
+  await waitForText(page, 'prompt-is-back', 3_000);
+  await runOn(page, pc2, 'ping -c 1 10.0.0.1');
+  await typeCmd(page, 'tcpdump -nn -r /tmp/bg.cap');
+  await waitForText(page, 'ICMP echo request', 8_000);
+});
