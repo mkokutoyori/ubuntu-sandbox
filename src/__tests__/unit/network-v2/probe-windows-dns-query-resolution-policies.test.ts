@@ -259,6 +259,68 @@ describe('the cmdlets of the examples', () => {
     expect(await cmd(`(${GET} -Name P).Criteria.Criteria -join "|"`)).toBe('EQ,a.corp.test|EQ,TXT');
   });
 
+  it('carry a disabled policy, a recursion policy with its scope and a zone policy through the pipeline', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name Off -Action DENY -QType "EQ,ANY" -Disable`);
+    await cmd(`${ADD} -Name Split -Action ALLOW -ApplyOnRecursion -RecursionScope "." -Fqdn "EQ,*.ext.test"`);
+    await cmd(`${ADD} -Name Zoned -ZoneName corp.test -Action ALLOW -ZoneScope "corp.test" -QType "EQ,MX"`);
+    await cmd(`$all = @(${GET}) + @(${GET} -ZoneName corp.test); ${REMOVE} -Name Off -Force; ${REMOVE} -Name Split -Force; ${REMOVE} -Name Zoned -ZoneName corp.test -Force; $all | ${ADD}`);
+    expect(await cmd(`(${GET} -Name Off).IsEnabled`)).toBe('False');
+    expect(await cmd(`(${GET} -Name Split).AppliesOn`)).toBe('Recursion');
+    expect(await cmd(`(${GET} -Name Split).Content | ForEach-Object { $_.ScopeName + " " + $_.Weight }`)).toBe('. 1');
+    expect(await cmd(`(${GET} -ZoneName corp.test -Name Zoned).Level`)).toBe('Zone');
+    expect(await cmd(`(${GET} -ZoneName corp.test -Name Zoned).Content | ForEach-Object { $_.ScopeName + " " + $_.Weight }`)).toBe('corp.test 1');
+  });
+
+  it('refuse a call with no name, and read a policy by position whatever the case of its name', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name Taken -Action DENY -QType "EQ,ANY"`);
+    await cmd(`${ADD} -Name Other -Action DENY -QType "EQ,TXT"`);
+    expect(await cmd(`${ADD} -Action DENY -QType "EQ,TXT"`)).toContain('missing mandatory parameters: Name');
+    expect(await cmd(`(${GET} taken).Name`)).toBe('Taken');
+    expect(await cmd(`(${GET} -Name TAKEN).Name`)).toBe('Taken');
+  });
+
+  it('apply to a policy what was changed on the object that is piped to Set', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name A -Action DENY -QType "EQ,ANY"`);
+    await cmd(`${ADD} -Name B -Action DENY -QType "EQ,TXT"`);
+    expect(await cmd(`$policy = ${GET} -Name B; $policy.Condition = "Or"; $policy.ProcessingOrder = 1; $policy | ${SET}`)).toBe('');
+    expect(await cmd(`(${GET}).Name -join ","`)).toBe('B,A');
+    expect(await cmd(`(${GET} -Name B).Condition`)).toBe('Or');
+  });
+
+  it('update the zone-level policy that is piped to Set and not the server-level one of the same name', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name Same -ZoneName corp.test -Action DENY -QType "EQ,MX"`);
+    await cmd(`${ADD} -Name Same -Action DENY -QType "EQ,MX"`);
+    expect(await cmd(`${GET} -ZoneName corp.test -Name Same | ${SET} -QType "EQ,TXT"`)).toBe('');
+    expect(await cmd(`(${GET} -ZoneName corp.test -Name Same).Criteria.Criteria`)).toBe('EQ,TXT');
+    expect(await cmd(`(${GET} -Name Same).Criteria.Criteria`)).toBe('EQ,MX');
+  });
+
+  it('change the weight of the scope of a zone policy with Set', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name AllowLan -ZoneName corp.test -Action ALLOW -ZoneScope "corp.test,3" -ClientSubnet "EQ,Lan"`);
+    expect(await cmd(`${SET} -ZoneName corp.test -Name AllowLan -ZoneScope "corp.test,5"`)).toBe('');
+    expect(await cmd(`(${GET} -ZoneName corp.test -Name AllowLan).Content | ForEach-Object { $_.ScopeName + " " + $_.Weight }`)).toBe('corp.test 5');
+  });
+
+  it('return the policy -PassThru under the name it was given, whatever the case it is called by', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name Taken -Action DENY -QType "EQ,ANY"`);
+    expect(await cmd(`(${SET} -Name taken -QType "EQ,TXT" -PassThru).Name`)).toBe('Taken');
+    expect(await cmd(`(${REMOVE} -Name TAKEN -Force -PassThru).Name`)).toBe('Taken');
+  });
+
+  it('refuse a condition that is neither AND nor OR and keep the policy as it was', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name Taken -Action DENY -QType "EQ,ANY"`);
+    expect(await cmd(`${SET} -Name Taken -Condition XOR -QType "EQ,TXT"`)).toContain("parameter 'Condition'");
+    expect(await cmd(`(${GET} -Name Taken).Condition`)).toBe('And');
+    expect(await cmd(`(${GET} -Name Taken).Criteria.Criteria`)).toBe('EQ,ANY');
+  });
+
   it('create a policy disabled with -Disable', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name Off -Action DENY -QType "EQ,ANY" -Disable`);
@@ -299,6 +361,7 @@ describe('the refusals', () => {
     ['a policy that is not held, to disable', `${DISABLE} -Level Server -Name Nope -Force`, DISABLE, MISSING],
     ['a criterion that is not valid, to set', `${SET} -Name Taken -QType "EQ,NOPE"`, SET, INVALID_QTYPE],
     ['a processing order beyond the last one, to set', `${SET} -Name Taken -ProcessingOrder 7`, SET, INVALID_ORDER],
+    ['an ECS criterion, to set', `${SET} -Name Taken -ECS "EQ,10.0.0.0/8"`, SET, INVALID_SETTINGS],
     ['the policies of a zone that the server does not host', `${GET} -ZoneName nowhere.test`, GET, ZONE_MISSING],
   ])('refuse %s with the text of the Win32 error and change nothing', async (_label, command, cmdlet, message) => {
     const { cmd } = await governed();
@@ -339,6 +402,19 @@ describe('Enable-DnsServerPolicy and Disable-DnsServerPolicy', () => {
     expect(await cmd(`(${GET}).IsEnabled`)).toBe('True');
     await cmd(`${ENABLE} -Level Zone -Name Z -ZoneName corp.test -Force`);
     expect(await cmd(`(${GET} -ZoneName corp.test).IsEnabled`)).toBe('True');
+  });
+
+  it('bind the positions of the pages: level, name, zone', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name Same -ZoneName corp.test -Action DENY -QType "EQ,ANY"`);
+    await cmd(`${ADD} -Name Same -Action DENY -QType "EQ,ANY"`);
+    expect(await cmd(`${DISABLE} Zone Same corp.test -Force`)).toBe('');
+    expect(await cmd(`(${GET} -ZoneName corp.test).IsEnabled`)).toBe('False');
+    expect(await cmd(`(${GET}).IsEnabled`)).toBe('True');
+    expect(await cmd(`${ENABLE} Zone Same corp.test -Force`)).toBe('');
+    expect(await cmd(`${DISABLE} Server Same -Force`)).toBe('');
+    expect(await cmd(`(${GET} -ZoneName corp.test).IsEnabled`)).toBe('True');
+    expect(await cmd(`(${GET}).IsEnabled`)).toBe('False');
   });
 
   it('ask before they act, and name the zone of a zone-level call', async () => {
