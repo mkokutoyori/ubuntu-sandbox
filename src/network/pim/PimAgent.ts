@@ -1,3 +1,4 @@
+import { pimWireLength } from './PimWire';
 import type { IEventBus } from '@/events/EventBus';
 import { getDefaultScheduler, type IScheduler, type TimerHandle } from '@/events/Scheduler';
 import {
@@ -26,6 +27,10 @@ export interface PimHost {
   getPorts(): import('../hardware/Port').Port[];
   sendFrame(portName: string, frame: EthernetFrame): void;
   sendIpv4Packet(request: Ipv4SendRequest): boolean;
+}
+
+function bootstrapListsRp(body: PimBootstrapBody, rpAddress: string): boolean {
+  return body.groups.some((group) => group.rps.some((rp) => rp.rpAddress === rpAddress));
 }
 
 export class PimAgent {
@@ -271,7 +276,7 @@ export class PimAgent {
     if (this.config.currentBsr?.address !== advertised.address) return;
     this.applyBootstrapRps(body);
     this.relayBootstrap(inPort, body);
-    if (this.config.rpCandidate) this.advertiseCandidateRp();
+    if (this.config.rpCandidate && !bootstrapListsRp(body, this.config.rpCandidate.address)) this.advertiseCandidateRp();
   }
 
   private applyBootstrapRps(body: PimBootstrapBody): void {
@@ -327,8 +332,10 @@ export class PimAgent {
     // Only the elected BSR collects Candidate-RP-Advertisements.
     if (!this.isSelfBsr()) return;
     const now = this.nowMs();
+    let changed = false;
     for (const g of body.groups) {
       const key = `${body.rpAddress}|${g.groupRangeAddress}/${g.groupRangeMaskBits}`;
+      if (this.config.candidateRps.get(key)?.rp.priority !== body.priority) changed = true;
       this.config.candidateRps.set(key, {
         rp: {
           rpAddress: body.rpAddress,
@@ -340,7 +347,7 @@ export class PimAgent {
         expiresMs: now + body.holdtimeSec * 1000,
       });
     }
-    this.originateBootstrap();
+    if (changed) this.originateBootstrap();
   }
 
   /** Build and flood this router's own Bootstrap message. */
@@ -555,11 +562,16 @@ export class PimAgent {
     const rp = m.rpAddress ?? this.resolveRpForGroup(m.groupAddress);
     if (!rp) return;
     m.rpAddress = rp;
+    if (this.isLocalAddress(rp)) return;
     const upstream = this.findUpstreamForRp(rp);
     if (!upstream) return;
     m.incomingInterface = upstream.iface;
     m.upstreamNeighborIp = upstream.neighborIp;
     this.sendJoin(m);
+  }
+
+  private isLocalAddress(address: string): boolean {
+    return this.host.getPorts().some((port) => port.getIPAddress()?.toString() === address);
   }
 
   private findUpstreamForRp(rpIp: string): { iface: string; neighborIp: string } | null {
@@ -602,6 +614,7 @@ export class PimAgent {
         prunedSources: [],
         joinStarG: true,
         pruneStarG: false,
+        rpAddress: m.rpAddress ?? undefined,
       }],
     };
     this.transmitJoinPrune(m.incomingInterface, body);
@@ -621,22 +634,22 @@ export class PimAgent {
         prunedSources: [],
         joinStarG: false,
         pruneStarG: true,
+        rpAddress: m.rpAddress ?? undefined,
       }],
     };
     this.transmitJoinPrune(m.incomingInterface, body);
   }
 
   private transmitJoinPrune(iface: string, body: PimJoinPruneBody): void {
-    this.transmit(iface, 'join-prune', 32 + body.groups.length * 16, (p) => { p.joinPrune = body; });
+    this.transmit(iface, 'join-prune', (p) => { p.joinPrune = body; });
   }
 
   private transmitBootstrap(iface: string, body: PimBootstrapBody): void {
-    this.transmit(iface, 'bootstrap', 24 + body.groups.length * 16, (p) => { p.bootstrap = body; });
+    this.transmit(iface, 'bootstrap', (p) => { p.bootstrap = body; });
   }
 
   private transmitCandidateRp(iface: string, body: PimCandidateRpBody): void {
-    this.transmit(iface, 'candidate-rp-advertisement', 16 + body.groups.length * 8,
-      (p) => { p.candidateRp = body; });
+    this.transmit(iface, 'candidate-rp-advertisement', (p) => { p.candidateRp = body; });
   }
 
   /**
@@ -645,7 +658,7 @@ export class PimAgent {
    * drift from the ones already on the wire.
    */
   private transmit(
-    iface: string, messageType: PimMessageType, bodyBytes: number,
+    iface: string, messageType: PimMessageType,
     fill: (payload: PimPacket) => void,
   ): void {
     const port = this.host.getPort(iface);
@@ -662,7 +675,7 @@ export class PimAgent {
       destination: new IPAddress(PIM_ALL_ROUTERS), source: srcIp,
       iface,
       protocol: IP_PROTO_PIM, ttl: 1,
-      payload, payloadBytes: bodyBytes,
+      payload, payloadBytes: pimWireLength(payload),
       tos: 0xc0, flags: 0,
     })) return;
     this.getBus().publish({
@@ -787,7 +800,7 @@ export class PimAgent {
       destination: new IPAddress(PIM_ALL_ROUTERS), source: srcIp,
       iface: rt.iface,
       protocol: IP_PROTO_PIM, ttl: 1,
-      payload, payloadBytes: 8 + opts.length * 8,
+      payload, payloadBytes: pimWireLength(payload),
       tos: 0xc0, flags: 0,
     })) return;
     rt.lastHelloSentMs = this.nowMs();

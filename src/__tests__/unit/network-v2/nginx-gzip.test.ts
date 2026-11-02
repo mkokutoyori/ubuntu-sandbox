@@ -17,6 +17,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxServer } from '@/network/devices/LinuxServer';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
 import { machine, sh } from './_httpsLab';
@@ -320,7 +321,7 @@ describe('journal d\'accès : $body_bytes_sent est la taille COMPRESSÉE', () =>
     const sent = Number(/" 200 (\d+) /.exec(line)?.[1]);
     expect(compressed(a)).toBe(true);
     expect(sent).toBeLessThan(original);
-    expect(sent).toBe(a.body.length);
+    expect(sent).toBe(fileTextToBytes(a.body).length);
   });
 });
 

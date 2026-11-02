@@ -199,8 +199,8 @@ import {
 } from './DnsRecursionScopeCmdlets';
 import { AddDnsServerZoneScopeCmdlet, GetDnsServerZoneScopeCmdlet, RemoveDnsServerZoneScopeCmdlet } from './DnsZoneScopeCmdlets';
 import {
-  ExportDnsServerZoneCmdlet, ResumeDnsServerZoneCmdlet, RestoreDnsServerPrimaryZoneCmdlet, RestoreDnsServerSecondaryZoneCmdlet, SuspendDnsServerZoneCmdlet,
-  SyncDnsServerZoneCmdlet,
+  ExportDnsServerZoneCmdlet, ResumeDnsServerZoneCmdlet, RestoreDnsServerPrimaryZoneCmdlet, RestoreDnsServerSecondaryZoneCmdlet,
+  SetDnsServerResourceRecordAgingCmdlet, SuspendDnsServerZoneCmdlet, SyncDnsServerZoneCmdlet,
 } from './DnsZoneLifecycleCmdlets';
 import {
   AddDnsServerZoneTransferPolicyCmdlet, GetDnsServerZoneTransferPolicyCmdlet, RemoveDnsServerZoneTransferPolicyCmdlet, SetDnsServerZoneTransferPolicyCmdlet,
@@ -218,7 +218,7 @@ import {
   SetDnsServerForwarderCmdlet, GetDnsServerForwarderCmdlet, AddDnsServerForwarderCmdlet, RemoveDnsServerForwarderCmdlet,
   AddDnsServerSecondaryZoneCmdlet, AddDnsServerConditionalForwarderZoneCmdlet, SetDnsServerConditionalForwarderZoneCmdlet,
   SetDnsServerSecondaryZoneCmdlet, RemoveDnsServerZoneCmdlet, StartDnsServerZoneTransferCmdlet,
-  AddDnsServerZoneDelegationCmdlet, GetDnsServerZoneDelegationCmdlet, RemoveDnsServerZoneDelegationCmdlet,
+  AddDnsServerZoneDelegationCmdlet, GetDnsServerZoneDelegationCmdlet, RemoveDnsServerZoneDelegationCmdlet, SetDnsServerZoneDelegationCmdlet,
   SetDnsServerResourceRecordCmdlet, SetDnsServerRecursionCmdlet, GetDnsServerRecursionCmdlet,
   ClearDnsServerCacheCmdlet, ShowDnsServerCacheCmdlet,
   SetDnsServerZoneAgingCmdlet, GetDnsServerZoneAgingCmdlet, SetDnsServerScavengingCmdlet, GetDnsServerScavengingCmdlet, StartDnsServerScavengingCmdlet,
@@ -885,6 +885,7 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Add-DnsServerZoneDelegation', new AddDnsServerZoneDelegationCmdlet()));
   registry.register(remotable('Get-DnsServerZoneDelegation', new GetDnsServerZoneDelegationCmdlet()));
   registry.register(remotable('Remove-DnsServerZoneDelegation', new RemoveDnsServerZoneDelegationCmdlet()));
+  registry.register(remotable('Set-DnsServerZoneDelegation', new SetDnsServerZoneDelegationCmdlet()));
   registry.register(remotable('Start-DnsServerZoneTransfer', new StartDnsServerZoneTransferCmdlet()));
   registry.register(remotable('Set-DnsServerResourceRecord', new SetDnsServerResourceRecordCmdlet()));
   registry.register(remotable('Set-DnsServerRecursion', new SetDnsServerRecursionCmdlet()));
@@ -936,6 +937,7 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Resume-DnsServerZone', new ResumeDnsServerZoneCmdlet()));
   registry.register(remotable('Sync-DnsServerZone', new SyncDnsServerZoneCmdlet()));
   registry.register(remotable('Export-DnsServerZone', new ExportDnsServerZoneCmdlet()));
+  registry.register(remotable('Set-DnsServerResourceRecordAging', new SetDnsServerResourceRecordAgingCmdlet()));
   registry.register(remotable('Restore-DnsServerPrimaryZone', new RestoreDnsServerPrimaryZoneCmdlet()));
   registry.register(remotable('Restore-DnsServerSecondaryZone', new RestoreDnsServerSecondaryZoneCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));

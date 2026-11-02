@@ -275,6 +275,7 @@ import type { SshClientHandle, SshClientPlacement } from './network/SshClientPro
 import type { TcpStack } from '../../tcp/TcpStack';
 import { md5, sha1, sha256 } from '@/crypto/hash';
 import { bytesToHex, fileTextToBytes } from '@/crypto/encoding';
+import { describePcapFile } from '@/network/capture/pcap/PcapFileMagic';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
 import { renderW } from './network/wFormatter';
@@ -9465,6 +9466,8 @@ export class LinuxCommandExecutor {
     if (content.length === 0) return `${target}: empty`;
     const archive = describeArchiveContent(content);
     if (archive) return `${target}: ${archive}`;
+    const capture = describePcapFile(fileTextToBytes(content));
+    if (capture) return `${target}: ${capture}`;
     if (content.startsWith('#!')) {
       const interp = content.slice(2, content.indexOf('\n') > 0
         ? content.indexOf('\n') : undefined).trim();

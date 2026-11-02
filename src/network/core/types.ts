@@ -1125,6 +1125,14 @@ const ICMP_TYPE_NUMBER: Readonly<Record<ICMPType, number>> = {
   'timestamp-reply': 14,
 };
 
+const ICMP_TYPE_BY_NUMBER: ReadonlyMap<number, ICMPType> = new Map(
+  (Object.entries(ICMP_TYPE_NUMBER) as Array<[ICMPType, number]>).map(([name, number]) => [number, name]),
+);
+
+export function icmpTypeOfNumber(number: number): ICMPType | null {
+  return ICMP_TYPE_BY_NUMBER.get(number) ?? null;
+}
+
 /** The number the type carries on the wire (RFC 792). */
 export function icmpTypeNumber(icmpType: ICMPType): number {
   return ICMP_TYPE_NUMBER[icmpType];
@@ -1416,6 +1424,14 @@ const ICMPV6_TYPE_NUMBER: Readonly<Record<ICMPv6Type, number>> = {
   'time-exceeded': ICMPV6_TIME_EXCEEDED,
   'parameter-problem': ICMPV6_PARAMETER_PROBLEM,
 };
+
+const ICMPV6_TYPE_BY_NUMBER: ReadonlyMap<number, ICMPv6Type> = new Map(
+  (Object.entries(ICMPV6_TYPE_NUMBER) as Array<[ICMPv6Type, number]>).map(([name, number]) => [number, name]),
+);
+
+export function icmpv6TypeOfNumber(number: number): ICMPv6Type | null {
+  return ICMPV6_TYPE_BY_NUMBER.get(number) ?? null;
+}
 
 /** The number the type carries on the wire (RFC 4443). */
 export function icmpv6TypeNumber(icmpType: ICMPv6Type): number {

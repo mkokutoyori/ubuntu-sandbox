@@ -32,6 +32,7 @@ describe('a paused zone', () => {
     expect(store.isPaused('corp.test')).toBe(false);
     store.setPaused('CORP.Test', true);
     expect(store.isPaused('corp.test')).toBe(true);
+    expect(store.isPaused('CORP.TEST')).toBe(true);
     expect(store.isPaused('other.test')).toBe(false);
   });
 

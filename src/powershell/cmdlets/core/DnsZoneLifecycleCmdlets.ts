@@ -102,6 +102,29 @@ export class SyncDnsServerZoneCmdlet implements ICmdlet {
   }
 }
 
+export class SetDnsServerResourceRecordAgingCmdlet implements ICmdlet {
+  readonly name = 'set-dnsserverresourcerecordaging';
+  readonly displayName = 'Set-DnsServerResourceRecordAging';
+  readonly aliases = [] as const;
+  readonly parameters = ['ZoneName', 'NodeName', 'Recurse', 'Force', ...COMMON_PARAMETERS, 'WhatIf', 'Confirm'] as const;
+  readonly switchParameters = ['Recurse', 'Force', 'AsJob'] as const;
+  readonly supportsShouldProcess = true as const;
+
+  whatIfTarget(ctx: CmdletContext): string {
+    return psValueToString(ctx.named['zonename'] ?? ctx.positional[0] ?? '');
+  }
+
+  execute(ctx: CmdletContext): PSValue {
+    const dns = requireDns(ctx, this.displayName);
+    const zone = psValueToString(ctx.named['zonename'] ?? ctx.positional[0] ?? '');
+    if (zone === '') return missing(ctx, this.displayName, 'ZoneName');
+    const node = ctx.named['nodename'] ?? ctx.positional[1];
+    if (!isSwitchOn(ctx.named['force']) && !mayProceed(ctx, this.displayName, 'High')) return null;
+    const result = dns.ageRecords(zone, node === undefined ? null : psValueToString(node), isSwitchOn(ctx.named['recurse']));
+    return result.ok ? null : failed(ctx, this.displayName, result);
+  }
+}
+
 export class ExportDnsServerZoneCmdlet implements ICmdlet {
   readonly name = 'export-dnsserverzone';
   readonly displayName = 'Export-DnsServerZone';

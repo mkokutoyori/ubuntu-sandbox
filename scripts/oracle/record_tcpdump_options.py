@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Record tcpdump 4.99.4 printing the capture files of the simulator's two labs.
+"""Record tcpdump 4.99.4 printing the capture files of the simulator's labs.
 
 usage: record_tcpdump_options.py TOOLS_ROOT CAPTURE_DIR out.json [LAB,LAB...]
 
 With a lab list, only those labs are recorded and merged into the existing out.json; the other labs are kept as they are.
 
-CAPTURE_DIR holds base.json and dns.json, written by tcpdump-options-record.test.ts (TCPDUMP_RECORD_DIR=CAPTURE_DIR). Each frame of a
-capture file carries the bytes it put on the wire; they are written here into a classic pcap file and printed by the real tcpdump with
-every option set below, in UTC and with the user lookup disabled (-Z root). The fixture stores the capture file itself beside the
-outputs, so the replay test feeds the same frames to the simulator's tcpdump and compares the whole text.
+CAPTURE_DIR holds <lab>.pcap, the savefiles `tcpdump -w` wrote inside the simulator (tcpdump-options-record.test.ts with
+TCPDUMP_RECORD_DIR=CAPTURE_DIR); stpcraft and ipopts are built here, byte by byte, because the simulator never emits those frames (ipopts takes
+the link header of the first IPv4 frame of igmp.pcap). The real tcpdump prints each savefile with every option set below, in UTC and with
+the user lookup disabled (-Z root). The fixture stores the savefile itself (base64) beside the outputs, so the replay test feeds the same
+bytes to the simulator's tcpdump and compares the whole text.
 """
-import json, os, struct, subprocess, sys, tempfile
+import base64, json, os, struct, subprocess, sys, tempfile
 from datetime import datetime
 
 OPTION_SETS = [
@@ -19,7 +20,7 @@ OPTION_SETS = [
     "-qq -nn", "-q -nn -v", "-nn -c 5 -s 60", "-nn -e -q", "-nn -N", "-nn -O", "-nn -vv", "-nn -t", "-nn -tttt -S", "-qq -nn -v", "-nn -e -q -v", "-nn -v -vv",
 ]
 EXTRA_OPTION_SETS = {"stpcraft": ["-nn -vv -s 60", "-nn -vv -s 70", "-nn -s 100 -x", "-nn -e -vv -s 45", "-nn -vv -s 30 -A"]}
-LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp", "dtp", "vtp", "vtpclient", "udld", "vrrp", "igmp", "igmpv1", "ipopts"]
+LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp", "dtp", "vtp", "vtpclient", "udld", "vrrp", "igmp", "igmpv1", "ipopts", "hsrp", "pim"]
 
 def stp_bridge(priority, last):
     return struct.pack(">H", priority) + bytes([2, 0, 0, 0, 0, last])
@@ -122,22 +123,36 @@ def run(root, path, options):
     command = [os.path.join(root, "usr/bin/tcpdump"), "-Z", "root"] + options.split() + ["-r", path]
     return subprocess.run(command, env=env, capture_output=True, text=True).stdout
 
+def savefile_records(data):
+    at, records = 24, []
+    while at + 16 <= len(data):
+        seconds, micros, captured, whole = struct.unpack("<IIII", data[at:at + 16])
+        records.append(data[at + 16:at + 16 + captured])
+        at += 16 + captured
+    return records
+
+def first_ipv4_template(path):
+    raw = next(record for record in savefile_records(open(path, "rb").read()) if record[12:14] == b"\x08\x00")
+    return {"frames": [{"l3": "ipv4", "raw": list(raw)}]}
+
+def savefile_of(directory, lab):
+    if lab == "stpcraft":
+        return pcap(craft_stp_capture({})["frames"])
+    if lab == "ipopts":
+        return pcap(craft_ipopts_capture(first_ipv4_template(os.path.join(directory, "igmp.pcap")))["frames"])
+    return open(os.path.join(directory, lab + ".pcap"), "rb").read()
+
 def main():
     root, directory, target = sys.argv[1:4]
     chosen = sys.argv[4].split(",") if len(sys.argv) > 4 else LABS
     fixture = json.load(open(target)) if len(sys.argv) > 4 and os.path.exists(target) else {"tcpdump": "4.99.4", "libpcap": "1.10.4", "labs": {}}
     for lab in chosen:
-        if lab == "stpcraft":
-            capture = craft_stp_capture(json.load(open(os.path.join(directory, "stp.json"))))
-        elif lab == "ipopts":
-            capture = craft_ipopts_capture(json.load(open(os.path.join(directory, "igmp.json"))))
-        else:
-            capture = json.load(open(os.path.join(directory, lab + ".json")))
+        savefile = savefile_of(directory, lab)
         with tempfile.TemporaryDirectory() as scratch:
             path = os.path.join(scratch, "capture.pcap")
-            open(path, "wb").write(pcap(capture["frames"]))
+            open(path, "wb").write(savefile)
             outputs = {options: run(root, path, options) for options in OPTION_SETS + EXTRA_OPTION_SETS.get(lab, [])}
-        fixture["labs"][lab] = {"capture": capture, "outputs": outputs}
+        fixture["labs"][lab] = {"pcap": base64.b64encode(savefile).decode(), "outputs": outputs}
     json.dump(fixture, open(target, "w"), separators=(",", ":"))
 
 main()

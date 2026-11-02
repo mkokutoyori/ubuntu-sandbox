@@ -4,6 +4,7 @@ import { parseCurlArgs, remoteNameFor, CURL_USER_AGENT, type CurlOptions } from 
 import { parseCurlUrl, performCurlRequest, isRedirect, resolveLocation, type CurlOutcome, type CurlSuccess } from './CurlTransfer';
 import { applyWriteOut, type WriteOutFacts, type WriteOutResult } from './CurlWriteOut';
 import type { CurlHost } from './CurlHost';
+import { fileTextOfWireString } from '@/crypto/encoding';
 
 export interface CurlRun {
   readonly output: string;
@@ -218,7 +219,7 @@ async function runOneUrl(host: CurlHost, opts: CurlOptions, raw: string, urlNum:
       const payload = (opts.head || opts.include ? headerBlock(outcome) + '\n' : '') +
         (opts.head ? '' : outcome.body);
       if (target && target !== '-') {
-        if (host.writeFile(target, payload)) {
+        if (host.writeFile(target, fileTextOfWireString(payload))) {
           stdoutParts.push('');
         } else {
           pushError(`curl: (23) Failure writing output to destination, passed ${payload.length} bytes`);

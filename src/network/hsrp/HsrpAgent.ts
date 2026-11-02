@@ -4,6 +4,8 @@
  * two-tier election, UDP/1985 wire format, interface tracking with
  * priority decrement, and the v1/v2 multicast destinations.
  */
+import { stampUdpChecksum } from '../layers/transport/UdpChecksum';
+import { HSRP_MESSAGE_BYTES } from './HsrpWire';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import {
@@ -242,16 +244,16 @@ export class HsrpAgent extends FhrpAgentBase<HsrpGroupRuntime> {
       authText: g.authText, vip: g.vip ?? '0.0.0.0',
       senderIp: srcIp.toString(),
     };
-    const udp: UDPPacket = {
-      type: 'udp', sourcePort: UDP_PORT_HSRP, destinationPort: UDP_PORT_HSRP,
-      length: 8 + 20, checksum: 0, payload,
-    };
     const dstIp = new IPAddress(g.version === 2 ? HSRP_MULTICAST_V2 : HSRP_MULTICAST_V1);
+    const udp: UDPPacket = stampUdpChecksum({
+      type: 'udp', sourcePort: UDP_PORT_HSRP, destinationPort: UDP_PORT_HSRP,
+      length: 8 + HSRP_MESSAGE_BYTES, checksum: 0, payload,
+    }, srcIp.toString(), dstIp.toString());
     const request = {
       destination: dstIp, source: srcIp,
       protocol: IP_PROTO_UDP, ttl: 1,
       payload: udp, payloadBytes: udp.length,
-      flags: 0,
+      tos: 0xc0, flags: 0,
     };
     // A resign is edge-triggered (once per active→non-active transition)
     // and often fires inside the synchronous receive cascade where the

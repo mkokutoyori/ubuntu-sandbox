@@ -1816,6 +1816,19 @@ export class WindowsDnsServerRole {
     return { ok: true, message: '' };
   }
 
+  ageRecords(zoneName: string, nodeName: string | null, recurse: boolean): DnsOpResult {
+    const zone = this.store.getZone(zoneName);
+    if (zone === null) return { ok: false, message: zoneMissing(zoneName) };
+    if (!this.agingOf(zone.origin).enabled) return { ok: true, message: '' };
+    const given = nodeName === null || nodeName === '' ? '@' : normalizeDnsName(nodeName);
+    const node = given === '@' || isUnder(given, zone.origin) ? (given === '@' ? zone.origin : given) : this.fqdn(given, zone);
+    for (const rr of zone.allRecords()) {
+      const owner = normalizeDnsName(rr.name);
+      if (rr.data.type !== RRType.SOA && (recurse ? isUnder(owner, node) : owner === node)) this.stamp(zone, rr);
+    }
+    return { ok: true, message: '' };
+  }
+
   syncZones(name: string | null): DnsOpResult {
     const origins = name === null ? [...this.settings.keys()] : [normalizeDnsName(name)];
     for (const origin of origins) {

@@ -32,7 +32,7 @@ import { loadCurlClientCredential } from './CurlClientCertificate';
 import { parseGroupList } from '@/network/tls/legacy/sslConf';
 import { encodeRequest } from '../http1/Http1Wire';
 import { ACCEPT_ENCODING_VALUE, decodeContentCodings } from '../ContentCodings';
-import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
+import { binaryStringToBytes, bytesToBinaryString, wireStringOfFileText } from '@/crypto/encoding';
 
 
 function opensslSuiteName(name: string): string {
@@ -194,8 +194,13 @@ export function resolvedOverride(opts: CurlOptions, url: CurlUrl): string | null
   return entry ? entry.address : null;
 }
 
+function readAsWireString(host: CurlHost, path: string): string | null {
+  const text = host.readFile(path);
+  return text === null ? null : wireStringOfFileText(text);
+}
+
 function bodyFor(opts: CurlOptions, host: CurlHost): string | null {
-  if (opts.uploadFile !== null) return host.readFile(opts.uploadFile);
+  if (opts.uploadFile !== null) return readAsWireString(host, opts.uploadFile);
   if (opts.data.length === 0) return null;
   return opts.data.join('&');
 }
@@ -463,7 +468,7 @@ async function performHttpRequest(
   let formContentType: string | undefined;
   let corpsForm: string | null = null;
   if (opts.form.length > 0) {
-    const forme = buildMultipart(opts.form, (p) => host.readFile(p));
+    const forme = buildMultipart(opts.form, (p) => readAsWireString(host, p));
     if (forme.ok === false) {
       return {
         ok: false, code: forme.code, message: forme.message,

@@ -7,7 +7,7 @@ import {
   type TcpdumpOptions,
 } from './TcpdumpCli';
 import {
-  TcpdumpRenderState, banner, footer, formatFrame, linkTypeDescription, type CookedInterfaces,
+  TcpdumpRenderState, banner, cookedInterfacesOf, footer, formatFrame, linkTypeDescription,
 } from './TcpdumpFormat';
 import {
   deserializeCaptureFile, type CaptureFileHeader, type CapturedInterface,
@@ -157,16 +157,6 @@ function interfaceTable(deps: TcpdumpDeps): CapturedInterface[] {
   }));
 }
 
-function cookedFor(linkType: string, interfaces: readonly CapturedInterface[]): CookedInterfaces | null {
-  if (linkType !== 'LINUX_SLL' && linkType !== 'LINUX_SLL2') return null;
-  const byName = new Map(interfaces.map((i) => [i.name, i]));
-  return {
-    version: linkType === 'LINUX_SLL' ? 1 : 2,
-    index: (name) => byName.get(name)?.index ?? 0,
-    mac: (name) => byName.get(name)?.mac ?? null,
-  };
-}
-
 function ipv4Number(text: string): number {
   return text.split('.').reduce((acc, part) => acc * 256 + Number(part), 0);
 }
@@ -192,7 +182,7 @@ function renderStateFor(
   const namer = opt.numeric || deps.names === undefined
     ? null
     : new CaptureNamer(deps.names, { stripDomain: opt.stripDomain, isLocal });
-  return { state: new TcpdumpRenderState(namer, cookedFor(linkType, interfaces)), namer };
+  return { state: new TcpdumpRenderState(namer, cookedInterfacesOf(linkType, interfaces)), namer };
 }
 
 function filterTokensOf(opt: TcpdumpOptions, deps: TcpdumpDeps): string[] | string {
@@ -262,7 +252,7 @@ async function runCapture(
   const writerUser = opt.dropUser ?? undefined;
 
   const interfaces = interfaceTable(deps);
-  const fileHeader: CaptureFileHeader = { linkType, snaplen: opt.snaplen, interfaces };
+  const fileHeader: CaptureFileHeader = { linkType, snaplen: opt.snaplen, interfaces, nanosecond: opt.nanoPrecision };
   const writer = opt.writeFile === null ? null : new CaptureFileWriter(
     opt.writeFile,
     { sizeLimitMegabytes: opt.fileSizeLimit, rotateSeconds: opt.rotateSeconds, fileCount: opt.fileCount },
@@ -352,6 +342,22 @@ function readFileList(opt: TcpdumpOptions, deps: TcpdumpDeps, transcript: Transc
   return readCaptureFiles(opt, deps, transcript, files);
 }
 
+const UNPRINTABLE_LINK_TYPES_FIRST_ASSIGNED = 104;
+const UNPRINTABLE_LINK_TYPES_LAST_ASSIGNED = 289;
+
+function readBanner(path: string, header: { linkType: string; snaplen: number; linkTypeKnown: boolean }): string {
+  const named = header.linkTypeKnown ? ` (${linkTypeDescription(header.linkType)})` : '';
+  return `reading from file ${path}, link-type ${header.linkType}${named}, snapshot length ${header.snaplen}`;
+}
+
+function unsupportedLinkTypeMessage(header: { linkType: string; linkTypeNumber: number; linkTypeKnown: boolean }): string {
+  const outsideRange = header.linkTypeNumber < UNPRINTABLE_LINK_TYPES_FIRST_ASSIGNED || header.linkTypeNumber > UNPRINTABLE_LINK_TYPES_LAST_ASSIGNED;
+  if (!header.linkTypeKnown && outsideRange) {
+    return `tcpdump: unknown data link type ${header.linkTypeNumber} (min ${UNPRINTABLE_LINK_TYPES_FIRST_ASSIGNED}, max ${UNPRINTABLE_LINK_TYPES_LAST_ASSIGNED})`;
+  }
+  return `tcpdump: ${header.linkType}: this simulator has no ${header.linkTypeKnown ? linkTypeDescription(header.linkType) : header.linkType} link-layer printer`;
+}
+
 async function readCaptureFiles(
   opt: TcpdumpOptions, deps: TcpdumpDeps, transcript: Transcript, files: readonly string[],
 ): Promise<TcpdumpResult> {
@@ -362,25 +368,34 @@ async function readCaptureFiles(
       transcript.err(`tcpdump: ${path}: No such file or directory`);
       return transcript.result(1);
     }
-    const file = deserializeCaptureFile(content);
-    if (file === null) {
-      transcript.err('tcpdump: unknown file format');
+    const read = deserializeCaptureFile(content, { interfaces: interfaceTable(deps) });
+    if (read.kind === 'unreadable') {
+      transcript.err(`tcpdump: ${read.message}`);
       return transcript.result(1);
     }
+    const { file } = read;
     const { linkType, snaplen, interfaces } = file.header;
     const effective: TcpdumpOptions = { ...opt, linkType, snaplen };
     const filter = await compileCaptureFilter(effective, deps);
     if (filter.ok === false) { transcript.err(filter.message); return transcript.result(1); }
-    transcript.err(`reading from file ${path}, link-type ${linkType} (${linkTypeDescription(linkType)}), snapshot length ${snaplen}`);
+    transcript.err(readBanner(path, file.header));
+    if (linkType === 'LINUX_SLL2') transcript.err('Warning: interface names might be incorrect');
+    if (!PRINTED_LINK_TYPES.has(linkType)) {
+      transcript.err(unsupportedLinkTypeMessage(file.header));
+      return transcript.result(1);
+    }
     const { state, namer } = renderStateFor(effective, deps, linkType, interfaces);
     for (const frame of file.frames) {
       if (opt.count !== null && printed >= opt.count) break;
-      if (opt.direction !== 'inout' && frame.direction !== opt.direction) continue;
       if (!filter.predicate(frame)) continue;
       printed++;
       if (opt.countOnly) continue;
       await namer?.prepare(frame);
       transcript.out(formatFrame(frame, effective, state));
+    }
+    if (file.failure !== null && (opt.count === null || printed < opt.count)) {
+      transcript.err(`tcpdump: pcap_loop: ${file.failure}`);
+      return transcript.result(1);
     }
   }
   if (opt.countOnly) transcript.out(`${printed} packet${printed === 1 ? '' : 's'}`);

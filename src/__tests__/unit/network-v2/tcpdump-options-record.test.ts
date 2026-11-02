@@ -1,11 +1,14 @@
 /**
- * Records the two capture labs of tcpdump-options-oracle.test.ts (CE-less LAN with ICMP, TCP, UDP, IPv6, NDP, fragments, HTTP, FTP,
- * SMTP, SSH; and a BIND lab answering A, MX, AAAA, SOA, NS, ANY, NXDOMAIN, a truncated answer and DNS over TCP).
- * It does nothing unless TCPDUMP_RECORD_DIR is set; scripts/oracle/record_tcpdump_options.py then feeds the written capture files to the
- * real tcpdump 4.99.4 and writes src/__tests__/support/oracle/tcpdump-options-4.99.4.json.
+ * Records the capture labs of tcpdump-options-oracle.test.ts (CE-less LAN with ICMP, TCP, UDP, IPv6, NDP, fragments, HTTP, FTP,
+ * SMTP, SSH; a BIND lab answering A, MX, AAAA, SOA, NS, ANY, NXDOMAIN, a truncated answer and DNS over TCP; and the routing,
+ * first-hop redundancy, multicast and spanning-tree labs).
+ * It does nothing unless TCPDUMP_RECORD_DIR is set; it writes the savefiles `tcpdump -w` produced (<lab>.pcap) and
+ * scripts/oracle/record_tcpdump_options.py then feeds them to the real tcpdump 4.99.4 and writes
+ * src/__tests__/support/oracle/tcpdump-options-4.99.4.json.
  */
 import { it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { fileTextToBytes } from '@/crypto/encoding';
 import { IPAddress, SubnetMask } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -56,8 +59,8 @@ function namedConf(): string {
   ].join('\n');
 }
 
-function vfsOf(server: LinuxServer): VirtualFileSystem {
-  return (server as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
+function vfsOf(host: LinuxPC | LinuxServer): VirtualFileSystem {
+  return (host as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
 }
 function writeRoot(server: LinuxServer, path: string, content: string): void {
   vfsOf(server).writeFile(path, content, 0, 0, 0o022);
@@ -77,7 +80,7 @@ async function buildDnsLab(): Promise<{ pc: LinuxPC; srv: LinuxServer }> {
 
 
 
-async function recordBase(): Promise<string> {
+async function recordBase(): Promise<Uint8Array> {
   const pc1 = new LinuxPC('PC1', 0, 0);
   const pc2 = new LinuxPC('PC2', 100, 0);
   new Cable('c1').connect(pc1.getPort('eth0')!, pc2.getPort('eth0')!);
@@ -85,7 +88,7 @@ async function recordBase(): Promise<string> {
   await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
   await pc1.executeCommand('sudo ip -6 addr add 2001:db8::1/64 dev eth0');
   await pc2.executeCommand('sudo ip -6 addr add 2001:db8::2/64 dev eth0');
-  const writing = pc1.executeCommand('sudo tcpdump -w all.cap -c 400');
+  const writing = pc1.executeCommand('sudo timeout 600 tcpdump -w /tmp/all.cap');
   await new Promise((r) => setTimeout(r, 30));
   const steps = [
     'ping -c 2 10.0.0.2', 'ping -c 1 -s 3000 10.0.0.2', 'ping -6 -c 2 2001:db8::2', 'ping -6 -c 1 -s 2000 2001:db8::2',
@@ -94,24 +97,25 @@ async function recordBase(): Promise<string> {
     'nc -6 -z 2001:db8::2 9004', 'ping -c 1 -R 10.0.0.2', 'ping -c 1 -Q 0x10 10.0.0.2', 'ntpdate -q 10.0.0.2', 'ssh -o BatchMode=yes -o ConnectTimeout=1 root@10.0.0.2 true', 'curl -s -m 2 http://10.0.0.2:9000/', 'ping -c 1 -t 1 10.0.0.2', 'ping -c 1 -M do -s 1472 10.0.0.2',
   ];
   await pc2.executeCommand('nc -l -p 9000 &');
-  await pc1.executeCommand('echo hello | nc 10.0.0.2 9000');
+  await pc1.executeCommand('echo hello | nc -N 10.0.0.2 9000');
   for (const step of steps) await pc1.executeCommand(step);
   await pc2.executeCommand('nc -6 -l -p 9100 &');
-  await pc1.executeCommand('echo hello6 | nc -6 2001:db8::2 9100');
+  await pc1.executeCommand('echo hello6 | nc -N -6 2001:db8::2 9100');
   for (const port of [80, 21, 25, 22, 23, 8080]) await pc2.executeCommand(`sudo nc -l -p ${port} &`);
-  await pc1.executeCommand("printf 'GET /index.html HTTP/1.1\\r\\nHost: pc2\\r\\nUser-Agent: x\\r\\n\\r\\n' | nc 10.0.0.2 80");
-  await pc1.executeCommand("printf 'USER anonymous\\r\\nPASS x\\r\\n' | nc 10.0.0.2 21");
-  await pc1.executeCommand("printf 'EHLO pc1\\r\\nMAIL FROM:<a@b>\\r\\n' | nc 10.0.0.2 25");
-  await pc1.executeCommand("printf 'SSH-2.0-OpenSSH_9.6\\r\\n' | nc 10.0.0.2 22");
-  await pc1.executeCommand("printf 'hello telnet\\r\\n' | nc 10.0.0.2 23");
-  await pc1.executeCommand("printf 'POST /x HTTP/1.0\\r\\nContent-Length: 3\\r\\n\\r\\nabc' | nc 10.0.0.2 8080");
+  await pc1.executeCommand("printf 'GET /index.html HTTP/1.1\\r\\nHost: pc2\\r\\nUser-Agent: x\\r\\n\\r\\n' | nc -N 10.0.0.2 80");
+  await pc1.executeCommand("printf 'USER anonymous\\r\\nPASS x\\r\\n' | nc -N 10.0.0.2 21");
+  await pc1.executeCommand("printf 'EHLO pc1\\r\\nMAIL FROM:<a@b>\\r\\n' | nc -N 10.0.0.2 25");
+  await pc1.executeCommand("printf 'SSH-2.0-OpenSSH_9.6\\r\\n' | nc -N 10.0.0.2 22");
+  await pc1.executeCommand("printf 'hello telnet\\r\\n' | nc -N 10.0.0.2 23");
+  await pc1.executeCommand("printf 'POST /x HTTP/1.0\\r\\nContent-Length: 3\\r\\n\\r\\nabc' | nc -N 10.0.0.2 8080");
+  await pc1.executeCommand('sudo pkill -INT tcpdump');
   await writing;
-  return pc1.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc1).readFile('/tmp/all.cap')!);
 }
 
-async function recordDns(): Promise<string> {
+async function recordDns(): Promise<Uint8Array> {
   const { pc } = await buildDnsLab();
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 60');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 60');
   await new Promise((r) => setTimeout(r, 30));
   for (const step of [
     'dig @10.0.1.10 www.example.com A', 'dig @10.0.1.10 example.com MX', 'dig @10.0.1.10 www6.example.com AAAA',
@@ -121,10 +125,10 @@ async function recordDns(): Promise<string> {
   ]) await pc.executeCommand(step);
   for (let i = 0; i < 12; i++) await pc.executeCommand('dig @10.0.1.10 www.example.com A');
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordRip(): Promise<string> {
+async function recordRip(): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const r1 = new CiscoRouter('R1');
@@ -132,7 +136,7 @@ async function recordRip(): Promise<string> {
   new Cable('c1').connect(pc.getPort('eth0')!, r1.getPort('GigabitEthernet0/0')!);
   new Cable('c2').connect(r1.getPort('GigabitEthernet0/1')!, r2.getPort('GigabitEthernet0/0')!);
   await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 100');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 100');
   await new Promise((r) => setTimeout(r, 30));
   const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
     for (const line of lines) await router.executeCommand(line);
@@ -144,10 +148,10 @@ async function recordRip(): Promise<string> {
   await clock.advance(65_000);
   await pc.executeCommand('ping -c 1 10.9.0.1');
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordOspf(): Promise<string> {
+async function recordOspf(): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const hub = new Hub('H1');
@@ -157,7 +161,7 @@ async function recordOspf(): Promise<string> {
   new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
   new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
   await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 300');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 300');
   await new Promise((r) => setTimeout(r, 30));
   const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
     for (const line of lines) await router.executeCommand(line);
@@ -169,59 +173,59 @@ async function recordOspf(): Promise<string> {
   await clock.advance(45_000);
   await pc.executeCommand('ping -c 1 10.9.0.1');
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordCdp(): Promise<string> {
+async function recordCdp(): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const router = new CiscoRouter('R1');
   new Cable('c1').connect(pc.getPort('eth0')!, router.getPort('GigabitEthernet0/0')!);
   await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 12');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 12');
   await new Promise((r) => setTimeout(r, 30));
   for (const line of ['enable', 'configure terminal', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await router.executeCommand(line);
   await clock.advance(130_000);
   await pc.executeCommand('ping -c 1 10.9.0.1');
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordLldp(): Promise<string> {
+async function recordLldp(): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const sw = new CiscoSwitch('switch-cisco', 'SW1');
   new Cable('c1').connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 10');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 10');
   await new Promise((r) => setTimeout(r, 30));
   for (const line of ['enable', 'configure terminal', 'no cdp run', 'no spanning-tree vlan 1', 'lldp run', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit', 'interface Vlan1', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await sw.executeCommand(line);
   await clock.advance(70_000);
   await pc.executeCommand('ping -c 1 10.9.0.1');
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordStp(setup: readonly string[], advanceMs: number): Promise<string> {
+async function recordStp(setup: readonly string[], advanceMs: number): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const sw = new CiscoSwitch('switch-cisco', 'SW1');
   new Cable('c1').connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
   await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 12');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 12');
   await new Promise((r) => setTimeout(r, 30));
   for (const line of ['enable', 'configure terminal', 'no cdp run', 'no lldp run', ...setup, 'interface Vlan1', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await sw.executeCommand(line);
   await clock.advance(advanceMs);
   await pc.executeCommand('ping -c 1 10.9.0.1');
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
 const recordStpClassic = () => recordStp(['interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'], 40_000);
 const recordStpRapid = () => recordStp(['spanning-tree mode rapid-pvst', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'], 40_000);
 const recordStpTrunk = () => recordStp(['vlan 10', 'exit', 'interface FastEthernet0/1', 'switchport trunk encapsulation dot1q', 'switchport mode trunk', 'switchport nonegotiate', 'exit'], 40_000);
 
-async function recordStpPair(mode: string, frames: number): Promise<string> {
+async function recordStpPair(mode: string, frames: number): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const hub = new Hub('H1');
@@ -232,7 +236,7 @@ async function recordStpPair(mode: string, frames: number): Promise<string> {
   new Cable('c2').connect(sw1.getPort('FastEthernet0/1')!, hub.getPort('eth1')!);
   new Cable('c3').connect(sw2.getPort('FastEthernet0/1')!, hub.getPort('eth2')!);
   new Cable('c4').connect(sw2.getPort('FastEthernet0/2')!, edge.getPort('eth0')!);
-  const writing = pc.executeCommand(`sudo tcpdump -w all.cap -c ${frames}`);
+  const writing = pc.executeCommand(`sudo tcpdump -w /tmp/all.cap -c ${frames}`);
   await new Promise((r) => setTimeout(r, 30));
   const common = ['enable', 'configure terminal', 'no cdp run', 'no lldp run', `spanning-tree mode ${mode}`, 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'];
   for (const line of [...common, 'spanning-tree vlan 1 priority 4096', 'end']) await sw1.executeCommand(line);
@@ -241,14 +245,14 @@ async function recordStpPair(mode: string, frames: number): Promise<string> {
   for (const line of ['configure terminal', 'interface FastEthernet0/2', 'shutdown', 'no shutdown', 'end']) await sw2.executeCommand(line);
   await clock.advance(40_000);
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordMstp(): Promise<string> {
+async function recordMstp(): Promise<Uint8Array> {
   return recordStp(['spanning-tree mode mst', 'spanning-tree mst configuration', 'name REGION1', 'revision 7', 'instance 1 vlan 10,20', 'exit', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'], 40_000);
 }
 
-async function recordEigrp(): Promise<string> {
+async function recordEigrp(): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const hub = new Hub('H1');
@@ -258,7 +262,7 @@ async function recordEigrp(): Promise<string> {
   new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
   new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
   await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 60');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 60');
   await new Promise((r) => setTimeout(r, 30));
   const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
     for (const line of lines) await router.executeCommand(line);
@@ -271,7 +275,7 @@ async function recordEigrp(): Promise<string> {
   await clock.advance(45_000);
   await pc.executeCommand('ping -c 1 10.9.0.1');
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
 const recordDtp = () => recordStp(['vtp domain LAB', 'interface FastEthernet0/1', 'switchport trunk encapsulation dot1q', 'switchport mode dynamic desirable', 'exit'], 70_000);
@@ -280,7 +284,7 @@ const VTP_TRUNK = ['interface FastEthernet0/1', 'switchport trunk encapsulation 
 const recordVtp = () => recordStp(['vtp domain LAB', 'vtp password secret', 'vtp pruning', 'vlan 10', 'name Sales', 'exit', 'vlan 20', 'name Engineering', 'exit', ...VTP_TRUNK], 70_000);
 const recordVtpClient = () => recordStp(['vtp version 2', 'vtp mode client', 'vtp domain LAB', ...VTP_TRUNK], 70_000);
 
-async function recordUdld(): Promise<string> {
+async function recordUdld(): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const hub = new Hub('H1');
@@ -289,17 +293,17 @@ async function recordUdld(): Promise<string> {
   new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
   new Cable('c2').connect(sw1.getPort('FastEthernet0/1')!, hub.getPort('eth1')!);
   new Cable('c3').connect(sw2.getPort('FastEthernet0/1')!, hub.getPort('eth2')!);
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 24');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 24');
   await new Promise((r) => setTimeout(r, 30));
   const setup = ['enable', 'configure terminal', 'no cdp run', 'no lldp run', 'no spanning-tree vlan 1', 'udld enable', 'udld message time 7', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit', 'end'];
   for (const line of setup) await sw1.executeCommand(line);
   for (const line of [...setup.slice(0, -1), 'udld aggressive', 'end']) await sw2.executeCommand(line);
   await clock.advance(40_000);
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordVrrp(): Promise<string> {
+async function recordVrrp(): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const pc = new LinuxPC('PC1', 0, 0);
   const hub = new Hub('H1');
@@ -309,7 +313,7 @@ async function recordVrrp(): Promise<string> {
   new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
   new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
   await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
-  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 12');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 12');
   await new Promise((r) => setTimeout(r, 30));
   const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
     for (const line of lines) await router.executeCommand(line);
@@ -318,10 +322,10 @@ async function recordVrrp(): Promise<string> {
   await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.3 255.255.255.0', 'vrrp 1 ip 10.9.0.254', 'vrrp 1 authentication text abcdefgh', 'vrrp 2 ip 10.9.0.253', 'vrrp 2 priority 90', 'vrrp 2 timers advertise 3', 'no shutdown', 'exit', 'end']);
   await clock.advance(20_000);
   await writing;
-  return pc.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
 }
 
-async function recordIgmp(version: 1 | 2): Promise<string> {
+async function recordIgmp(version: 1 | 2): Promise<Uint8Array> {
   const clock = installVirtualClock();
   const observer = new LinuxPC('PC1', 0, 0);
   const member = new LinuxPC('PC2', 0, 0);
@@ -332,7 +336,7 @@ async function recordIgmp(version: 1 | 2): Promise<string> {
   new Cable('c3').connect(router.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
   await observer.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
   await member.executeCommand('ifconfig eth0 10.9.0.3 netmask 255.255.255.0');
-  const writing = observer.executeCommand('sudo tcpdump -w all.cap -c 12');
+  const writing = observer.executeCommand('sudo tcpdump -w /tmp/all.cap -c 12');
   await new Promise((r) => setTimeout(r, 30));
   for (const line of ['enable', 'configure terminal', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await router.executeCommand(line);
   router.getIgmpAgent().enableInterface('GigabitEthernet0/0', version);
@@ -342,13 +346,65 @@ async function recordIgmp(version: 1 | 2): Promise<string> {
   member.leaveMulticastGroup('eth0', '239.2.2.2');
   await clock.advance(70_000);
   await writing;
-  return observer.executeCommand('cat all.cap');
+  return fileTextToBytes(vfsOf(observer).readFile('/tmp/all.cap')!);
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient, udld: recordUdld, vrrp: recordVrrp, igmp: () => recordIgmp(2), igmpv1: () => recordIgmp(1) };
+async function recordHsrp(): Promise<Uint8Array> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w /tmp/all.cap -c 14');
+  await new Promise((r) => setTimeout(r, 30));
+  const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
+    for (const line of lines) await router.executeCommand(line);
+  };
+  await configure(r1, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'standby 1 ip 10.9.0.254', 'standby 1 priority 120', 'standby 1 preempt', 'no shutdown', 'exit', 'end']);
+  await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.3 255.255.255.0', 'standby 1 ip 10.9.0.254', 'standby 2 ip 10.9.0.253', 'standby 2 priority 90', 'no shutdown', 'exit', 'end']);
+  await clock.advance(30_000);
+  await configure(r1, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+  await clock.advance(30_000);
+  await writing;
+  return fileTextToBytes(vfsOf(pc).readFile('/tmp/all.cap')!);
+}
+
+async function recordPim(): Promise<Uint8Array> {
+  const clock = installVirtualClock();
+  const observer = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('c1').connect(observer.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+  await observer.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = observer.executeCommand('sudo tcpdump -w /tmp/all.cap -c 24');
+  await new Promise((r) => setTimeout(r, 30));
+  const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
+    for (const line of lines) await router.executeCommand(line);
+  };
+  await configure(r1, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'ip pim sparse-mode', 'no shutdown', 'exit',
+    'interface GigabitEthernet0/1', 'ip address 192.168.1.1 255.255.255.0', 'ip pim sparse-mode', 'no shutdown', 'exit', 'ip pim bsr-candidate GigabitEthernet0/0 30 100', 'end']);
+  await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.3 255.255.255.0', 'ip pim sparse-mode', 'no shutdown', 'exit',
+    'ip pim rp-candidate GigabitEthernet0/0 priority 10', 'end']);
+  await clock.advance(5_000);
+  r1.getPimAgent().joinGroup('239.1.1.1', 'GigabitEthernet0/1');
+  await clock.advance(70_000);
+  r1.getPimAgent().leaveGroup('239.1.1.1', 'GigabitEthernet0/1');
+  await clock.advance(5_000);
+  await writing;
+  return fileTextToBytes(vfsOf(observer).readFile('/tmp/all.cap')!);
+}
+
+const RECORDERS: Record<string, () => Promise<Uint8Array>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient, udld: recordUdld, vrrp: recordVrrp, igmp: () => recordIgmp(2), igmpv1: () => recordIgmp(1), hsrp: recordHsrp, pim: recordPim };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {
   mkdirSync(RECORD_DIR as string, { recursive: true });
-  for (const lab of RECORD_LABS) writeFileSync(`${RECORD_DIR}/${lab}.json`, await RECORDERS[lab]());
+  for (const lab of RECORD_LABS) writeFileSync(`${RECORD_DIR}/${lab}.pcap`, await RECORDERS[lab]());
 }, 480000);

@@ -13,12 +13,14 @@ import { vtpText } from './TcpdumpVtp';
 import { udldText } from './TcpdumpUdld';
 import { vrrpText } from './TcpdumpVrrp';
 import { igmpText } from './TcpdumpIgmp';
+import { pimText } from './TcpdumpPim';
 import { ipOptionsText, type IpOptionsText } from './TcpdumpIpOptions';
 import { ieee8023, llcDescription } from './TcpdumpLlc';
 import { lldpText } from './TcpdumpLldp';
 import { ospfText } from './TcpdumpOspf';
 import { eigrpText } from './TcpdumpEigrp';
 import { ripText } from './TcpdumpRip';
+import { hsrpText } from './TcpdumpHsrp';
 import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
 import { icmp6Text } from './TcpdumpIcmp6';
 import { domainText } from './TcpdumpDomain';
@@ -29,6 +31,7 @@ import {
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, IP_PROTO_TCP, IP_PROTO_UDP,
 } from '@/network/core/types';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { linkTypeDescriptionOf, linkTypeNumber } from '@/network/capture/pcap/PcapFile';
 
 export interface AddressNames {
   host(ip: string): string;
@@ -109,15 +112,9 @@ function relativeSeqAck(
     : { seq: (seq - entry.seq) >>> 0, ack: (ack - entry.ack) >>> 0, reverse: rev, sequence: entry.seq, acknowledgement: entry.ack };
 }
 
-const LINK_TYPE_DESCRIPTIONS: Readonly<Record<string, string>> = {
-  EN10MB: 'Ethernet',
-  DOCSIS: 'DOCSIS',
-  LINUX_SLL: 'Linux cooked v1',
-  LINUX_SLL2: 'Linux cooked v2',
-};
-
 export function linkTypeDescription(linkType: string): string {
-  return LINK_TYPE_DESCRIPTIONS[linkType] ?? linkType;
+  const number = linkTypeNumber(linkType);
+  return (number === null ? null : linkTypeDescriptionOf(number)) ?? linkType;
 }
 
 export function banner(opt: TcpdumpOptions): string[] {
@@ -144,22 +141,29 @@ function microsOf(frame: CaptureFrame): number {
   return frame.atMicros ?? frame.at.getTime() * 1000;
 }
 
-function fraction(micros: number, nano: boolean): string {
+function fraction(micros: number, subMicroNanos: number, nano: boolean): string {
   const us = String(micros % 1_000_000).padStart(6, '0');
-  return nano ? `${us}000` : us;
+  return nano ? `${us}${String(subMicroNanos).padStart(3, '0')}` : us;
 }
 
 function clockOf(frame: CaptureFrame, nano: boolean): string {
-  return frame.at.toTimeString().slice(0, 8) + '.' + fraction(microsOf(frame), nano);
+  return frame.at.toTimeString().slice(0, 8) + '.' + fraction(microsOf(frame), frame.atSubMicroNanos ?? 0, nano);
 }
 
-function elapsed(signedMicros: number, nano: boolean): string {
-  const deltaMicros = Math.abs(signedMicros);
-  const whole = Math.floor(deltaMicros / 1_000_000);
+function deltaNanos(frame: CaptureFrame, reference: CaptureFrame, nano: boolean): number {
+  const micros = microsOf(frame) - microsOf(reference);
+  return micros * 1000 + (nano ? (frame.atSubMicroNanos ?? 0) - (reference.atSubMicroNanos ?? 0) : 0);
+}
+
+function elapsed(signedNanos: number, nano: boolean): string {
+  const delta = Math.abs(signedNanos);
+  const whole = Math.floor(delta / 1_000_000_000);
+  const remainder = delta % 1_000_000_000;
   const hh = String(Math.floor(whole / 3600) % 24).padStart(2, '0');
   const mm = String(Math.floor((whole % 3600) / 60)).padStart(2, '0');
   const ss = String(whole % 60).padStart(2, '0');
-  return `${signedMicros < 0 ? '-' : ' '}${hh}:${mm}:${ss}.${fraction(deltaMicros, nano)} `;
+  const digits = nano ? String(remainder).padStart(9, '0') : String(Math.floor(remainder / 1000)).padStart(6, '0');
+  return `${signedNanos < 0 ? '-' : ' '}${hh}:${mm}:${ss}.${digits} `;
 }
 
 function timestamp(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
@@ -168,14 +172,14 @@ function timestamp(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRende
     case 'none':
       return '';
     case 'epoch':
-      return `${Math.floor(microsOf(frame) / 1_000_000)}.${fraction(microsOf(frame), nano)} `;
+      return `${Math.floor(microsOf(frame) / 1_000_000)}.${fraction(microsOf(frame), frame.atSubMicroNanos ?? 0, nano)} `;
     case 'delta': {
       const reference = state.prev ?? frame;
-      return elapsed(microsOf(frame) - microsOf(reference), nano);
+      return elapsed(deltaNanos(frame, reference, nano), nano);
     }
     case 'since-first': {
       const reference = state.first ?? frame;
-      return elapsed(microsOf(frame) - microsOf(reference), nano);
+      return elapsed(deltaNanos(frame, reference, nano), nano);
     }
     case 'datetime': {
       const d = frame.at;
@@ -300,6 +304,7 @@ function clockOfDay(milliseconds: number): string {
 const IPV6_FRAGMENT_HEADER_BYTES = 8;
 const DNS_PORT = 53;
 const RIP_PORT = 520;
+const HSRP_PORT = 1985;
 const MDNS_PORT = 5353;
 const UDP_HEADER_BYTES = 8;
 
@@ -313,6 +318,11 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
     const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
     return eigrpText(Array.from(frame.raw.slice(start, start + length)), length, opt.verbose, (address) => state.host(address));
+  }
+  if (frame.l3 === 'ipv4' && frame.ipProtocol === PIM_PROTOCOL && (frame.ipFragmentOffset ?? 0) === 0) {
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+    const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
+    return pimText(Array.from(frame.raw.slice(start)), length, opt.verbose, (address) => state.host(address));
   }
   if (frame.l3 === 'ipv4' && frame.ipProtocol === IGMP_PROTOCOL && (frame.ipFragmentOffset ?? 0) === 0) {
     const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
@@ -388,6 +398,10 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
       const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
       return `${cksum}${ripText(frame.appPayload, frame.payloadLength ?? 0, opt.verbose)}`;
     }
+    if (!opt.quiet && frame.appPayload && (frame.srcPort === HSRP_PORT || frame.dstPort === HSRP_PORT) && frame.appPayload.length > 0) {
+      const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
+      return `${cksum}${hsrpText(frame.appPayload, frame.payloadLength ?? 0, opt.verbose, (address) => state.host(address))}`;
+    }
     const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
     return `${cksum}UDP, length ${frame.payloadLength ?? 0}`;
   }
@@ -455,6 +469,7 @@ const OSPF_PROTOCOL = 89;
 const EIGRP_PROTOCOL = 88;
 const VRRP_PROTOCOL = 112;
 const IGMP_PROTOCOL = 2;
+const PIM_PROTOCOL = 103;
 const TRUNCATION_MARKER = /\[\|(ospf2|stp|vtp|udld)\]|\[remaining caplen\(\d+\) < header length\(\d+\)\] \[\|ip\]/;
 
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
@@ -644,8 +659,8 @@ function ethPrefix(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRende
   return `${addresses}, ${etherTypeText(type.name, type.hex, opt.quiet)}, length ${frame.length}: `;
 }
 
-const SLL_HEADER_LENGTH = 16;
-const SLL2_HEADER_LENGTH = 20;
+export const SLL_HEADER_LENGTH = 16;
+export const SLL2_HEADER_LENGTH = 20;
 const SLL_PACKET_TYPE = { host: 0, broadcast: 1, multicast: 2, otherHost: 3, outgoing: 4 } as const;
 const SLL_PACKET_TYPE_TEXT = ['In', 'B', 'M', 'P', 'Out'];
 
@@ -670,10 +685,30 @@ function cookedPrefix(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRe
   }
   const head = `${padToWidth(frame.iface, 5)} ${padToWidth(packetType, 3)} `;
   if (!opt.linkLevel) return head;
-  return `${head}ifindex ${cooked.index(frame.iface)} ${state.ether(frame.srcMac)} ${detail}`;
+  return `${head}ifindex ${frame.ifindex ?? cooked.index(frame.iface)} ${state.ether(frame.srcMac)} ${detail}`;
 }
 
-function cookedLength(frame: CaptureFrame, cooked: CookedInterfaces): number {
+export function cookedInterfacesOf(
+  linkType: string, interfaces: ReadonlyArray<{ name: string; index: number; mac: string | null }>,
+): CookedInterfaces | null {
+  if (linkType !== 'LINUX_SLL' && linkType !== 'LINUX_SLL2') return null;
+  const byName = new Map(interfaces.map((i) => [i.name, i]));
+  return {
+    version: linkType === 'LINUX_SLL' ? 1 : 2,
+    index: (name) => byName.get(name)?.index ?? 0,
+    mac: (name) => byName.get(name)?.mac ?? null,
+  };
+}
+
+export function cookedRecordBytes(frame: CaptureFrame, cooked: CookedInterfaces): number[] {
+  return [
+    ...cookedHeader(frame, cooked),
+    ...frame.raw.slice(frame.rawLinkOffset - vlanTagLength(frame), frame.rawLinkOffset),
+    ...frame.raw.slice(frame.rawLinkOffset),
+  ];
+}
+
+export function cookedLength(frame: CaptureFrame, cooked: CookedInterfaces): number {
   const header = cooked.version === 1 ? SLL_HEADER_LENGTH : SLL2_HEADER_LENGTH;
   return frame.length - frame.rawLinkOffset + header + vlanTagLength(frame);
 }
@@ -689,7 +724,7 @@ function cookedHeader(frame: CaptureFrame, cooked: CookedInterfaces): number[] {
   if (cooked.version === 1) {
     return [0, packetType, 0, 1, 0, 6, ...mac, 0, 0, type >> 8, type & 0xff];
   }
-  const index = cooked.index(frame.iface);
+  const index = frame.ifindex ?? cooked.index(frame.iface);
   return [
     type >> 8, type & 0xff, 0, 0,
     (index >>> 24) & 0xff, (index >>> 16) & 0xff, (index >>> 8) & 0xff, index & 0xff,

@@ -2,8 +2,8 @@
  * tcpdump -nn, -tttt, -vvv, -XX and -A/-AA (alone and combined, with -X, -x, -e, -q, -S and -ttt/-tt), against the real tcpdump 4.99.4 /
  * libpcap 1.10.4 (Ubuntu 24.04).
  *
- * scripts/oracle/record_tcpdump_options.py writes the frames of two simulator labs into pcap files (the bytes each frame carries are
- * the ones the simulator puts on the wire) and records what the real binary prints for every option set. Lab "base": a LAN with
+ * scripts/oracle/record_tcpdump_options.py feeds the real binary the savefiles `tcpdump -w` wrote inside the simulator (the fixture stores each one,
+ * base64, beside what the tool printed for every option set; the labs below are all savefiles, replayed through the same reader a user's file goes through). Lab "base": a LAN with
  * ICMP echo and errors, fragmented echoes, IPv4 and IPv6 TCP and UDP, ARP, NDP, traceroute, HTTP, FTP, SMTP and SSH payloads.
  * Lab "dns": a BIND server answering A, MX, AAAA, SOA, NS, ANY, NXDOMAIN, a truncated answer and DNS over TCP. The replay writes the
  * same capture file into a simulated host and runs `tcpdump <options> -r`; the whole text is compared, only the clock's date and
@@ -69,6 +69,17 @@
  * option areas cut short by the capture so that `[truncated-option]` and `[remaining caplen(N) < header length(M)] [|ip]` appear; TcpdumpIpOptions.ts ports ip_optprint. The `options (...)` text was missing from every verbose IP
  * header before; the dump that follows `[remaining caplen ...] [|ip]` covers the whole frame, the one that follows `[truncated-option]` starts at the IP header. 28 of the 29 cases of each of the three labs fall without the change
  * (the 29th is the per-lab loaded check, a witness).
+ * Twenty-third lab, "hsrp": two Cisco routers and a PC on a hub, group 1 (priority 120 with preempt on one) and group 2 (priority 90), then the active router shut down. Measured before the change: the UDP datagram to 224.0.0.2:1985 had a zero
+ * payload, no checksum and a TOS of 0 where a real router writes 0xc0. HsrpWire.ts writes the 20-byte version 1 message (wire version 0, opcode, state 0/1/2/4/8/16, hello and hold times, priority, group, eight bytes of authentication text,
+ * the virtual address), checked byte for byte against tcpdump's tests/HSRP_coup.pcap, HSRP_election.pcap and HSRP_failover.pcap in hsrp-wire-real-capture.test.ts; HSRP is Cisco's, RFC 2281 only informs, so those captures are the authority.
+ * The agent now stamps the UDP checksum (the shared stampUdpChecksum, as the RIP datagrams do) and sets TOS 0xc0. HSRPv2 (224.0.0.102, TLVs) has no reachable layout and stays unencoded. 21 of the 29 cases fall without the change; the 8
+ * that pass either way are the seven quiet option sets (-q and -qq print `UDP, length 20` whatever the payload, in both tools: -q -nn, -qq -nn, -q -nn -v, -qq -nn -v, -nn -e -q, -nn -e -q -v, -A -nn -q) and the per-lab loaded check (witness).
+ * Twenty-fourth lab, "pim": two Cisco routers and a PC on a hub, R1 the Bootstrap Router, R2 the Candidate RP, then a (*,G) joined on R1's receiver interface and left. Measured before the change: every PIM message was an IPv4 packet of
+ * protocol 103 with a payload of zero bytes and the real tool printed `PIMv2, length N`. PimWire.ts writes the version-2 messages (Hello options, Join / Prune with encoded group and source addresses, Bootstrap, Candidate-RP-Advertisement) and
+ * the internet checksum, checked byte for byte against tcpdump's tests/PIMv2_hellos.pcap, PIM-SM_join_prune.pcap and PIMv2_bootstrap.pcap in pim-wire-real-capture.test.ts; TcpdumpPim.ts ports print-pim.c (Register and its encapsulated packet
+ * excepted). Two defects found by the first recording of the lab and fixed: the BSR re-originated its Bootstrap on every Candidate-RP-Advertisement and the candidate re-advertised on every Bootstrap (65 messages in five simulated
+ * seconds, cut only by the sender's re-entrancy guard), and the rendezvous point chose its neighbour as upstream towards itself, so the two routers answered each other's (*,G) Join (probe-pim-pas-de-tempete.test.ts). A (*,G) Join now
+ * carries the RP as its S, W, R source (PimJoinPruneGroup.rpAddress). 28 of the 29 cases fall without the change (the 29th is the per-lab loaded check, a witness).
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.
@@ -76,9 +87,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { base64ToBytes, bytesToFileText } from '@/crypto/encoding';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
-interface Lab { capture: unknown; outputs: Record<string, string> }
+interface Lab { pcap: string; outputs: Record<string, string> }
 const fixture = JSON.parse(readFileSync(new URL('../../support/oracle/tcpdump-options-4.99.4.json', import.meta.url), 'utf8')) as { labs: Record<string, Lab> };
 
 function normalised(text: string): string {
@@ -86,10 +98,10 @@ function normalised(text: string): string {
     .map(line => line.replace(/^(\d{4}-\d\d-\d\d )?\d\d:\d\d:\d\d(?=\.\d)/, 'T')).join('\n').replace(/\n+$/, '');
 }
 
-async function replay(capture: unknown, options: string): Promise<string> {
+async function replay(lab: Lab, options: string): Promise<string> {
   const pc = new LinuxPC('PC1', 0, 0);
   const vfs = (pc as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
-  vfs.writeFile('/tmp/replay.cap', JSON.stringify(capture), 0, 0, 0o022);
+  vfs.writeFile('/tmp/replay.cap', bytesToFileText(base64ToBytes(lab.pcap)), 0, 0, 0o022);
   return pc.executeCommand(`sudo tcpdump ${options} -r /tmp/replay.cap`);
 }
 
@@ -97,12 +109,12 @@ for (const [name, lab] of Object.entries(fixture.labs)) {
   describe(`tcpdump options against the real tool: lab ${name}`, () => {
     it('WITNESS: one timestamped line per packet, as the real tool prints', async () => {
       const packets = (text: string): number => text.split('\n').filter(line => /^(\d{4}-\d\d-\d\d )?\d\d:\d\d:\d\d\.\d/.test(line)).length;
-      expect(packets(await replay(lab.capture, '-nn'))).toBe(packets(lab.outputs['-nn']));
+      expect(packets(await replay(lab, '-nn'))).toBe(packets(lab.outputs['-nn']));
     });
 
     for (const options of Object.keys(lab.outputs)) {
       it(options, async () => {
-        expect(normalised(await replay(lab.capture, options))).toBe(normalised(lab.outputs[options]));
+        expect(normalised(await replay(lab, options))).toBe(normalised(lab.outputs[options]));
       });
     }
   });

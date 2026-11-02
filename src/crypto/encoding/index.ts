@@ -90,6 +90,14 @@ export function binaryStringToBytes(text: string): Uint8Array {
   return bytes;
 }
 
+export function wireStringOfFileText(fileText: string): string {
+  return bytesToBinaryString(fileTextToBytes(fileText));
+}
+
+export function fileTextOfWireString(wireString: string): string {
+  return bytesToFileText(binaryStringToBytes(wireString));
+}
+
 /** Render bytes as a lowercase, zero-padded hexadecimal string. */
 export function bytesToHex(bytes: Uint8Array): string {
   let out = '';
