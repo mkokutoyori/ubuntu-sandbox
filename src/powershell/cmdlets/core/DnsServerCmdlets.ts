@@ -55,7 +55,7 @@ export function isSwitchOn(value: PSValue | undefined): boolean {
   return value === true || value === 1 || (typeof value === 'string' && ['true', '1'].includes(value.toLowerCase()));
 }
 
-function choice<T extends string>(
+export function choice<T extends string>(
   ctx: CmdletContext, cmdletName: string, parameter: string, key: string, allowed: readonly T[],
 ): T | undefined | null {
   const raw = ctx.named[key];

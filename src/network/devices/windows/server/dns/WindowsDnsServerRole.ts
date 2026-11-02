@@ -70,8 +70,13 @@ import {
   countValidation, type MasterRefusal, type UpdateFacts,
 } from './DnsStatisticsObservers';
 import { IPAddress } from '@/network/core/types';
+import { ClientSubnetStore, type ClientSubnetAction, type ClientSubnetView } from './DnsClientSubnets';
 
 export interface DnsOpResult { ok: boolean; message: string }
+
+function refusalToResult(refusal: string | null): DnsOpResult {
+  return refusal === null ? { ok: true, message: '' } : { ok: false, message: refusal };
+}
 
 export interface DnsZoneStatisticsResult extends DnsOpResult { zones: ZoneStatisticsSnapshot[] }
 
@@ -362,6 +367,7 @@ export class WindowsDnsServerRole {
   private readonly ednsSupport: EdnsSupportCache;
   private readonly settings = new Map<string, ZoneSettings>();
   private readonly conditional = new Map<string, ConditionalForwarder>();
+  private readonly clientSubnets = new ClientSubnetStore();
   private readonly secondaries: SecondaryZoneRefresher;
   private readonly keyring = new TsigKeyring();
   private readonly trustAnchors: ResourceRecord<DsRecordData>[] = [];
@@ -1146,6 +1152,20 @@ export class WindowsDnsServerRole {
 
   clearStatistics(): void { this.statistics.clear(); }
 
+  getClientSubnets(): ClientSubnetView[] { return this.clientSubnets.list(); }
+
+  addClientSubnet(name: string, ipv4: readonly string[], ipv6: readonly string[]): DnsOpResult {
+    return refusalToResult(this.clientSubnets.create(name, ipv4, ipv6));
+  }
+
+  changeClientSubnet(name: string, action: ClientSubnetAction, ipv4: readonly string[], ipv6: readonly string[]): DnsOpResult {
+    return refusalToResult(this.clientSubnets.change(name, action, ipv4, ipv6));
+  }
+
+  removeClientSubnet(name: string): DnsOpResult {
+    return refusalToResult(this.clientSubnets.remove(name));
+  }
+
   getZoneStatistics(names: readonly string[], clear: boolean): DnsZoneStatisticsResult {
     const keys = names.map(name => normalizeDnsName(name));
     const missing = names.find((_name, index) => !this.settings.has(keys[index]));
@@ -1168,13 +1188,11 @@ export class WindowsDnsServerRole {
   }
 
   setDiagnostics(changes: DnsDiagnosticsChanges): DnsOpResult {
-    const refusal = writeDiagnostics(this.parameters, changes);
-    return refusal === null ? { ok: true, message: '' } : { ok: false, message: refusal };
+    return refusalToResult(writeDiagnostics(this.parameters, changes));
   }
 
   setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult {
-    const problem = writeServerSettings(this.parameters, this.identityOf(), changes);
-    return problem === null ? { ok: true, message: '' } : { ok: false, message: problem };
+    return refusalToResult(writeServerSettings(this.parameters, this.identityOf(), changes));
   }
 
   getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }
