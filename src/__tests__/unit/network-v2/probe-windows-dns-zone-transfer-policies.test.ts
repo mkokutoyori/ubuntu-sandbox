@@ -12,14 +12,15 @@
  * ServerInterfaceIP, TimeOfDay and TransportProtocol, the actions DENY and IGNORE, "server level policies apply on every zone transfer
  * query that occurs on the DNS server", "zone level policies apply only on the queries on a zone hosted on the DNS server", "if you
  * remove a zone, that removal deletes the associated zone level policies", the object printed with AppliesOn ZoneTransfer), [MS-DNSP]
- * 3.1.8.3 (a zone transfer policy takes DENY or IGNORE, never ALLOW) and the policy evaluation of the policy page (a DENY answers
+ * 3.1.8.3 (a zone transfer policy takes DENY or IGNORE, never ALLOW), CreatePolicy (a name is unique at its level, 9971, whatever the
+ * type of the policies that hold it) and the policy evaluation of the policy page (a DENY answers
  * REFUSED, an IGNORE drops the query, the first policy in the order of precedence that matches decides). Not sourced, said here: that
  * the policies are evaluated before the zone's own transfer setting (they only restrict, so the outcome is the same, only the answer to
  * a transfer that both would stop differs), that a policy that denies counts as a refusal for security reasons in the master
- * statistics, that a zone transfer policy and a query resolution policy of the same name may exist together, and that the criteria
- * a query policy takes and a zone transfer policy does not (-Fqdn, -QType) are refused by the parameter binder, as the real cmdlet does.
+ * statistics, and that the criteria a query policy takes and a zone transfer policy does not (-Fqdn, -QType) are refused by the
+ * parameter binder, as the real cmdlet does.
  *
- * Discrimination (the probe run on the tree before the change): 27 of 30 cases fall, the ones that need the cmdlets and the ones that
+ * Discrimination (the probe run on the tree before the change): 32 of 35 cases fall, the ones that need the cmdlets and the ones that
  * need a policy to decide. The three that pass on both sides are the WITNESSes: the lab transfers to any client when the zone allows
  * it, refuses a client the zone does not name, and a secondary pulls the zone from it, as it always did.
  */
@@ -102,6 +103,28 @@ describe('the cmdlets of the examples', () => {
     expect(await cmd(`${GET} -ZoneName nope.test`)).toContain(`${GET} : Zone "nope.test" does not exist on this server.`);
   });
 
+  it('share the names of their level with the query resolution policies: a name that is taken is refused whatever the family (9971)', async () => {
+    const { cmd } = await governed();
+    await cmd('Add-DnsServerQueryResolutionPolicy -Name Same -Action DENY -ClientSubnet "EQ,Lan"');
+    expect(await cmd(`${ADD} -Name same -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD} : ${EXISTS}`);
+    expect(await cmd(`${ADD} -Name Same -Action DENY -ClientSubnet "EQ,Lan" -ZoneName corp.test`)).toBe('');
+    expect(await cmd('(Get-DnsServerQueryResolutionPolicy).Name -join ","')).toBe('Same');
+    expect(await cmd(`(${GET}).Count`)).toBe('0');
+  });
+
+  it('read the zone of a policy by position, and take an empty zone name for the server level', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD} -Name Server1 -Action DENY -ClientSubnet "EQ,Lan"`);
+    await cmd(`${ADD} -Name Z -Action DENY -ClientSubnet "EQ,Lan" -ZoneName corp.test`);
+    expect(await cmd(`(${GET} -ZoneName "").Name -join ","`)).toBe('Server1');
+    expect(await cmd(`${ADD} -Name Empty -Action DENY -ClientSubnet "EQ,Lan" -ZoneName ""`)).toBe('');
+    expect(await cmd(`(${GET}).Name -join ","`)).toBe('Server1,Empty');
+    expect(await cmd(`${REMOVE} -Name Empty -ZoneName "" -Force`)).toBe('');
+    expect(await cmd(`${REMOVE} Z corp.test -Force`)).toBe('');
+    expect(await cmd(`(${GET} -ZoneName corp.test).Count`)).toBe('0');
+    expect(await cmd(`(${GET}).Name -join ","`)).toBe('Server1');
+  });
+
   it('keep their own list: a query resolution policy is not a zone transfer policy', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name T -Action DENY -ClientSubnet "EQ,Lan"`);
@@ -146,6 +169,16 @@ describe('the cmdlets of the examples', () => {
     expect(await cmd(`(${GET}).Name -join ","`)).toBe('P');
   });
 
+  it('ask for the name that is missing and refuse the parameters of a query policy on every cmdlet', async () => {
+    const { cmd } = await governed();
+    expect(await cmd(`${ADD} -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD} : Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${SET} -ClientSubnet "EQ,Lan"`)).toContain(`${SET} : Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${REMOVE} -Force`)).toContain(`${REMOVE} : Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${GET} -Fqdn "EQ,x"`)).toContain("A parameter cannot be found that matches parameter name 'Fqdn'.");
+    expect(await cmd(`${REMOVE} -Name P -QType "EQ,A" -Force`)).toContain("A parameter cannot be found that matches parameter name 'QType'.");
+    expect(await cmd(`${ADD} -Name P -Action DENY -ClientSubnet "EQ,Lan" -ApplyOnRecursion`)).toContain("A parameter cannot be found that matches parameter name 'ApplyOnRecursion'.");
+  });
+
   it('set the condition, the order and the criteria of a policy, whatever the level', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name A -Action DENY -ClientSubnet "EQ,Lan"`);
@@ -164,7 +197,7 @@ describe('the cmdlets of the examples', () => {
     expect(await cmd(`${REMOVE} -Name P`)).toContain(`${REMOVE} : ${NON_INTERACTIVE}`);
     expect(await cmd(`${REMOVE} -Name P -WhatIf`)).toContain(`What if: Performing the operation "${REMOVE}" on target "P".`);
     expect(await cmd(`(${GET}).Name -join ","`)).toBe('P');
-    expect(await cmd(`${REMOVE} -Name P -Force -PassThru | ForEach-Object { $_.Name }`)).toBe('P');
+    expect(await cmd(`${REMOVE} -Name p -Force -PassThru | ForEach-Object { $_.Name }`)).toBe('P');
     expect(await cmd(`${GET}`)).toBe('');
     expect(await cmd(`${REMOVE} -Name P -Force`)).toContain(`${REMOVE} : ${MISSING}`);
   });
@@ -242,6 +275,22 @@ describe('a zone transfer', () => {
     expect(await transfer(clientA)).toBe('transferred');
     await cmd(`${ADD} -Name ThisInterface -Action DENY -ServerInterfaceIP "EQ,${SERVER}"`);
     expect(await transfer(clientA)).toBe('refused');
+  });
+
+  it('meets the time of day criterion on the minute of the query', async () => {
+    const { cmd, clientA } = await transferring();
+    await cmd(`${ADD} -Name Never -Action DENY -TimeOfDay "NE,00:00-23:59"`);
+    expect(await transfer(clientA)).toBe('transferred');
+    await cmd(`${ADD} -Name Always -Action DENY -TimeOfDay "EQ,00:00-23:59"`);
+    expect(await transfer(clientA)).toBe('refused');
+  });
+
+  it('is decided for a UDP query as for a TCP one: an IGNORE policy drops what would have been refused', async () => {
+    const { cmd, ask, clientA } = await transferring();
+    expect(outcomeOf(await ask(clientA, 'corp.test', RRType.AXFR))).toBe('refused');
+    await cmd(`${ADD} -Name QuietDatagrams -Action IGNORE -TransportProtocol "EQ,UDP"`);
+    expect(outcomeOf(await ask(clientA, 'corp.test', RRType.AXFR))).toBe('dropped');
+    expect(await transfer(clientA)).toBe('transferred');
   });
 
   it('meets the transport criterion on the transport of the query', async () => {
