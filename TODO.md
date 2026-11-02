@@ -271,16 +271,14 @@ a la reception, la cible a l'arrivee puis dans la reponse : `ip_options_compile`
    Timestamp` sans les construire (entree suivante) : le rendu IOS n'est pas
    attestable.
 
-### [ip] le `ping` etendu collecte `Record` / `Loose` / `Strict` sans les construire
-`ExtendedPingParams.routeOptions` porte la reponse au prompt IOS
-`Loose, Strict, Record, Timestamp, Verbose[none]:` et la SESSION la
-rend ; aucune option n'est posee dans le paquet. Depuis ce lot le
-mecanisme existe (`buildRecordRouteOption`, `buildSourceRouteOption`),
-donc l'obstacle n'est plus le plan de donnees : c'est le RENDU. IOS
-imprime la route collectee sous le resultat du ping, et ni la largeur
-des colonnes ni le libelle exact ne sont attestables depuis ce reseau
-(le §8 du CLAUDE.md : quand la source est injoignable, on le dit et on
-n'implante pas). A rouvrir avec une capture de `ping` etendu reel.
+### [ip] le `ping` etendu : `Record` est pose dans le paquet, le rendu de la route et Loose / Strict / Timestamp / Verbose restent
+La reponse `Record` au prompt `Loose, Strict, Record, Timestamp, Verbose[none]:` pose une option Record Route (9 emplacements) dans chaque echo request, sur le
+routeur et sur le commutateur de niveau 3 (`ExtendedPingParams.routeOptions` → `routeOptionsOf` → `executePingSequence`, sonde `probe-cisco-ping-etendu-record`).
+Ce qui reste, et que la session dit toujours (`% Reply data and IP header options were not verified on this run.`) : (1) le RENDU de la route collectee sous le
+resultat du ping, dont ni la largeur des colonnes ni le libelle ne sont attestables depuis ce reseau (le §8 du CLAUDE.md : quand la source est injoignable, on le
+dit et on n'implante pas) ; (2) `Loose` et `Strict`, dont les sous-questions d'IOS (adresses du chemin) ne sont pas attestees non plus ; (3) `Timestamp` et `Verbose`.
+La taille du datagramme garde la charge ICMP constante : l'en-tete passe a 60 octets, la longueur totale a 140 pour `Datagram size [100]`, comme le ping Linux avec `-R`.
+A rouvrir avec une capture de `ping` etendu reel.
 
 ### [ip] le pare-feu n'honore pas le routage par la source, et l'ouvrir le rendrait PLUS permissif
 Le commutateur de niveau 3 est FERME (`probe-options-ipv4-commutateur-l3

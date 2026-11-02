@@ -19,7 +19,7 @@ import { IPAddress } from '@/network/core/types';
 import {
   formatCiscoPingSummary, ciscoPingMark, answerOr, isYes,
   sweepSizes, EXTENDED_PING_PROMPTS as EP, defaultExtendedPingParams, estUneAdresseLitterale,
-  resolveTargetFamily,
+  resolveTargetFamily, routeOptionsOf,
   type CiscoPingRow, type ExtendedPingParams,
 } from '@/network/devices/shells/cisco/ciscoPing';
 import type { CliLineKind, CliShellSession } from '@/network/devices/shells/vty/CliShellSession';
@@ -940,7 +940,8 @@ export class CiscoTerminalSession extends CLITerminalSession {
     let sourceIP = p.sourceIP;
     if (sourceIP) sourceIP = this.resolvePingSource(dev, sourceIP) ?? sourceIP;
 
-    if (p.validateReply || p.routeOptions.toLowerCase() !== 'none') {
+    const routeOptions = routeOptionsOf(p.routeOptions);
+    if (p.validateReply || routeOptions.notApplied.length > 0) {
       // Dit franchement, plutôt qu'un transcript qui laisserait croire à
       // des contrôles qui n'ont pas eu lieu.
       this.addLine('% Reply data and IP header options were not verified on this run.');
@@ -964,7 +965,7 @@ export class CiscoTerminalSession extends CLITerminalSession {
     for (const size of sizes) {
       const rows = await dev.executePingSequence(
         new IPAddress(p.target), p.count, p.timeoutMs, sourceIP ?? undefined,
-        { df: p.df, tos: p.tos, sizeBytes: size },
+        { df: p.df, tos: p.tos, sizeBytes: size, ipOptions: routeOptions.ipOptions },
       );
       all.push(...(rows.length ? rows : Array.from({ length: p.count }, (_, i) => ({
         success: false, rttMs: 0, ttl: 0, seq: i + 1, fromIP: '', error: 'timeout' as const,

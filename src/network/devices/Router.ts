@@ -140,7 +140,7 @@ export interface TracerouteHop {
   unreachable?: boolean; probes: TracerouteProbe[];
 }
 import {
-  EthernetFrame, IPv4Packet, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
+  EthernetFrame, IPv4Packet, type IPv4Option, ESPPacket, AHPacket, MACAddress, IPAddress, SubnetMask,
   ARPPacket, ICMPPacket, UDPPacket, RIPPacket,
   ETHERTYPE_ARP, ETHERTYPE_IPV4, ETHERTYPE_IPV6,
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IP_PROTO_ESP, IP_PROTO_AH, IP_PROTO_OSPF,
@@ -6338,6 +6338,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       df?: boolean;
       tos?: number;
       sizeBytes?: number;
+      ipOptions?: readonly IPv4Option[];
       shouldStop?: () => boolean;
       vrf?: string;
     },
@@ -6417,7 +6418,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       try {
         row = await this._sendPing(
           route.iface, outPort, myIP, targetIP, nextHopMAC, seq, timeoutMs,
-          { df: hooks?.df, tos: hooks?.tos, sizeBytes: hooks?.sizeBytes },
+          { df: hooks?.df, tos: hooks?.tos, sizeBytes: hooks?.sizeBytes, ipOptions: hooks?.ipOptions },
         );
       } catch (err) {
         // A probe that ended because a router answered with an ICMP error
@@ -6436,7 +6437,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async pingOverVpn(
     targetIP: IPAddress, vrf: string | null, vpn: { label: import('../mpls/MplsLabel').MplsLabel; bgpNextHop: IPAddress },
     count: number, timeoutMs: number, sourceIPStr: string | undefined,
-    hooks: { onResult?: (row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void; df?: boolean; tos?: number; sizeBytes?: number; shouldStop?: () => boolean } | undefined,
+    hooks: { onResult?: (row: { success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }) => void; df?: boolean; tos?: number; sizeBytes?: number; ipOptions?: readonly IPv4Option[]; shouldStop?: () => boolean } | undefined,
   ): Promise<Array<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string; error?: string }>> {
     const source = sourceIPStr === undefined
       ? (vrf === null ? null : this.vrfMemberAddresses(vrf)[0]?.[1] ?? null)
@@ -6450,7 +6451,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       } else {
         try {
           row = await this._sendPing('', undefined as never, source, targetIP, MACAddress.broadcast(), seq, timeoutMs, {
-            df: hooks?.df, tos: hooks?.tos, sizeBytes: hooks?.sizeBytes,
+            df: hooks?.df, tos: hooks?.tos, sizeBytes: hooks?.sizeBytes, ipOptions: hooks?.ipOptions,
             via: (packet) => this.forwardOverVpn('', packet, vpn),
           });
         } catch (err) {
@@ -6758,7 +6759,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async _sendPing(
     iface: string, port: Port, myIP: IPAddress, targetIP: IPAddress,
     dstMAC: MACAddress, seq: number, timeoutMs: number,
-    opts?: { df?: boolean; tos?: number; sizeBytes?: number; via?: (packet: IPv4Packet) => void },
+    opts?: { df?: boolean; tos?: number; sizeBytes?: number; ipOptions?: readonly IPv4Option[]; via?: (packet: IPv4Packet) => void },
   ): Promise<{ success: boolean; rttMs: number; ttl: number; seq: number; fromIP: string }> {
     // Line protocol down — the probe fails immediately instead of burning a
     // full timeout waiting for a reply the severed link can never carry
@@ -6783,7 +6784,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       id, sequence: seq, dataSize,
     };
     const icmpSize = 8 + dataSize;
-    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize);
+    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, this.defaultTTL, icmp, icmpSize,
+      opts?.ipOptions === undefined ? {} : { ipOptions: [...opts.ipOptions] });
     if (opts?.tos) ipPkt.tos = opts.tos;
     if (opts?.df) ipPkt.flags |= IPV4_FLAG_DF;
 
