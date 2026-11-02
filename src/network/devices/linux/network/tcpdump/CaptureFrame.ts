@@ -51,6 +51,7 @@ import type { EigrpPacket } from '@/network/eigrp/packets';
 import type { OSPFPacket } from '@/network/ospf/types';
 import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
 import { isUndecodedPayload } from '@/network/core/UndecodedPayload';
+import { internetChecksum } from '@/network/layers/transport/L4Checksum';
 import { decodeEthernetBytes, decodeLinkControl } from '@/network/capture/wire/WireDecoder';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
@@ -987,6 +988,12 @@ export function decodeCapturedBytes(
   }
   base.raw = Array.from(bytes);
   base.length = wireLength;
+  if (base.l3 === 'ipv4' && base.ipHeaderLen !== undefined) {
+    const headerHeld = base.raw.length - base.rawLinkOffset >= base.ipHeaderLen;
+    base.ipChecksumOk = headerHeld
+      ? internetChecksum(base.raw.slice(base.rawLinkOffset, base.rawLinkOffset + base.ipHeaderLen)) === 0
+      : undefined;
+  }
   if (base.l3 === 'ipv4') reconcileTransportChecksums(base, base.ipHeaderLen ?? 20);
   else if (base.l3 === 'ipv6' && base.fragment6 === undefined) reconcileTransportChecksums(base, 40);
   return base;

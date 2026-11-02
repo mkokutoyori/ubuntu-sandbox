@@ -88,7 +88,7 @@ async function recordBase(): Promise<Uint8Array> {
   await pc2.executeCommand('ifconfig eth0 10.0.0.2 netmask 255.255.255.0');
   await pc1.executeCommand('sudo ip -6 addr add 2001:db8::1/64 dev eth0');
   await pc2.executeCommand('sudo ip -6 addr add 2001:db8::2/64 dev eth0');
-  const writing = pc1.executeCommand('sudo tcpdump -w /tmp/all.cap -c 400');
+  const writing = pc1.executeCommand('sudo timeout 600 tcpdump -w /tmp/all.cap');
   await new Promise((r) => setTimeout(r, 30));
   const steps = [
     'ping -c 2 10.0.0.2', 'ping -c 1 -s 3000 10.0.0.2', 'ping -6 -c 2 2001:db8::2', 'ping -6 -c 1 -s 2000 2001:db8::2',
@@ -97,17 +97,18 @@ async function recordBase(): Promise<Uint8Array> {
     'nc -6 -z 2001:db8::2 9004', 'ping -c 1 -R 10.0.0.2', 'ping -c 1 -Q 0x10 10.0.0.2', 'ntpdate -q 10.0.0.2', 'ssh -o BatchMode=yes -o ConnectTimeout=1 root@10.0.0.2 true', 'curl -s -m 2 http://10.0.0.2:9000/', 'ping -c 1 -t 1 10.0.0.2', 'ping -c 1 -M do -s 1472 10.0.0.2',
   ];
   await pc2.executeCommand('nc -l -p 9000 &');
-  await pc1.executeCommand('echo hello | nc 10.0.0.2 9000');
+  await pc1.executeCommand('echo hello | nc -N 10.0.0.2 9000');
   for (const step of steps) await pc1.executeCommand(step);
   await pc2.executeCommand('nc -6 -l -p 9100 &');
-  await pc1.executeCommand('echo hello6 | nc -6 2001:db8::2 9100');
+  await pc1.executeCommand('echo hello6 | nc -N -6 2001:db8::2 9100');
   for (const port of [80, 21, 25, 22, 23, 8080]) await pc2.executeCommand(`sudo nc -l -p ${port} &`);
-  await pc1.executeCommand("printf 'GET /index.html HTTP/1.1\\r\\nHost: pc2\\r\\nUser-Agent: x\\r\\n\\r\\n' | nc 10.0.0.2 80");
-  await pc1.executeCommand("printf 'USER anonymous\\r\\nPASS x\\r\\n' | nc 10.0.0.2 21");
-  await pc1.executeCommand("printf 'EHLO pc1\\r\\nMAIL FROM:<a@b>\\r\\n' | nc 10.0.0.2 25");
-  await pc1.executeCommand("printf 'SSH-2.0-OpenSSH_9.6\\r\\n' | nc 10.0.0.2 22");
-  await pc1.executeCommand("printf 'hello telnet\\r\\n' | nc 10.0.0.2 23");
-  await pc1.executeCommand("printf 'POST /x HTTP/1.0\\r\\nContent-Length: 3\\r\\n\\r\\nabc' | nc 10.0.0.2 8080");
+  await pc1.executeCommand("printf 'GET /index.html HTTP/1.1\\r\\nHost: pc2\\r\\nUser-Agent: x\\r\\n\\r\\n' | nc -N 10.0.0.2 80");
+  await pc1.executeCommand("printf 'USER anonymous\\r\\nPASS x\\r\\n' | nc -N 10.0.0.2 21");
+  await pc1.executeCommand("printf 'EHLO pc1\\r\\nMAIL FROM:<a@b>\\r\\n' | nc -N 10.0.0.2 25");
+  await pc1.executeCommand("printf 'SSH-2.0-OpenSSH_9.6\\r\\n' | nc -N 10.0.0.2 22");
+  await pc1.executeCommand("printf 'hello telnet\\r\\n' | nc -N 10.0.0.2 23");
+  await pc1.executeCommand("printf 'POST /x HTTP/1.0\\r\\nContent-Length: 3\\r\\n\\r\\nabc' | nc -N 10.0.0.2 8080");
+  await pc1.executeCommand('sudo pkill -INT tcpdump');
   await writing;
   return fileTextToBytes(vfsOf(pc1).readFile('/tmp/all.cap')!);
 }

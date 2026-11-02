@@ -450,25 +450,6 @@ contrat, `curl -d @fichier` (l'arobase n'est pas lue), et `wget` : `wget -O /tmp
 **Pourquoi ce n'est pas ferme** : fusionner les deux adaptateurs change les messages que les suites SFTP/SCP
 affirment ; `wget` et FortiOS demandent leur propre sonde.
 
-### [tcpdump] le fixture des options garde ses laboratoires en JSON, relus par un lecteur de compatibilite
-`tcpdump -w` ecrit un vrai savefile libpcap ; `tcpdump -r` lit un savefile ou, en lecture seule, l'ancien
-document `ubuntu-sandbox-capture-v1` (`legacyJsonCapture`), parce que les 24 laboratoires de
-`tcpdump-options-4.99.4.json` y sont encore enregistres en trames JSON. `record_tcpdump_options.py` ecrit
-desormais des entrees `pcap` (octets du savefile) et `tcpdump-options-oracle` rejoue les deux formes ; aucun
-laboratoire n'a ete reenregistre dans ce lot. **Mesure** : sur les 13 laboratoires enregistres a la main pendant
-ce travail (rip, ospf, cdp, lldp, stp, rstp, pvst, mstp, stppair, rstppair, dns, base, stpcraft), les 382 cas passaient
-rejoues depuis un savefile reel une fois STP/CDP/LLDP classes depuis les octets (`decodeLinkControl`) ; les
-onze laboratoires ajoutes depuis (eigrp, dtp, vtp, vtpclient, udld, vrrp, igmp, igmpv1, ipopts, hsrp, pim)
-n'ont pas ete rejoues depuis un savefile : leurs imprimeurs lisent des champs de trame JSON que la relecture
-d'octets ne remplit peut-etre pas. **Pourquoi ce n'est pas ferme** : il faut les enregistrer (`TCPDUMP_RECORD_DIR`
-puis le script) et lire les ecarts un a un ; le laboratoire `base` ne s'enregistre plus (entree suivante).
-
-### [tcpdump] l'enregistrement de la capture du laboratoire de base ne se termine pas
-**Mesure** : `TCPDUMP_RECORD_DIR=... vitest run tcpdump-options-record.test.ts` s'arrete sur le delai de
-480 s a l'enregistrement du laboratoire `base`, sur cet arbre comme sur `c956b5f9d` (avant le travail pcap) :
-le defaut est anterieur. Le fixture `tcpdump-options-4.99.4.json` garde donc les fichiers enregistres par
-la version precedente du simulateur, convertis au format pcap reel.
-
 ### [dhcp] `dhclient -t N` est accepte, et aucun delai ne le lit
 La duree passee a `-t` (et le `-w` qui la porte a 60) traverse
 `Dhclient.ts` jusqu'a `DHCPClient.requestLease` et n'est lue par personne.

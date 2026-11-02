@@ -2,8 +2,8 @@
  * tcpdump -nn, -tttt, -vvv, -XX and -A/-AA (alone and combined, with -X, -x, -e, -q, -S and -ttt/-tt), against the real tcpdump 4.99.4 /
  * libpcap 1.10.4 (Ubuntu 24.04).
  *
- * scripts/oracle/record_tcpdump_options.py writes the frames of two simulator labs into pcap files (the bytes each frame carries are
- * the ones the simulator puts on the wire) and records what the real binary prints for every option set. Lab "base": a LAN with
+ * scripts/oracle/record_tcpdump_options.py feeds the real binary the savefiles `tcpdump -w` wrote inside the simulator (the fixture stores each one,
+ * base64, beside what the tool printed for every option set; the labs below are all savefiles, replayed through the same reader a user's file goes through). Lab "base": a LAN with
  * ICMP echo and errors, fragmented echoes, IPv4 and IPv6 TCP and UDP, ARP, NDP, traceroute, HTTP, FTP, SMTP and SSH payloads.
  * Lab "dns": a BIND server answering A, MX, AAAA, SOA, NS, ANY, NXDOMAIN, a truncated answer and DNS over TCP. The replay writes the
  * same capture file into a simulated host and runs `tcpdump <options> -r`; the whole text is compared, only the clock's date and
@@ -90,7 +90,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { base64ToBytes, bytesToFileText } from '@/crypto/encoding';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
-interface Lab { capture?: unknown; pcap?: string; outputs: Record<string, string> }
+interface Lab { pcap: string; outputs: Record<string, string> }
 const fixture = JSON.parse(readFileSync(new URL('../../support/oracle/tcpdump-options-4.99.4.json', import.meta.url), 'utf8')) as { labs: Record<string, Lab> };
 
 function normalised(text: string): string {
@@ -98,14 +98,10 @@ function normalised(text: string): string {
     .map(line => line.replace(/^(\d{4}-\d\d-\d\d )?\d\d:\d\d:\d\d(?=\.\d)/, 'T')).join('\n').replace(/\n+$/, '');
 }
 
-function savefileText(lab: Lab): string {
-  return lab.pcap === undefined ? JSON.stringify(lab.capture) : bytesToFileText(base64ToBytes(lab.pcap));
-}
-
 async function replay(lab: Lab, options: string): Promise<string> {
   const pc = new LinuxPC('PC1', 0, 0);
   const vfs = (pc as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
-  vfs.writeFile('/tmp/replay.cap', savefileText(lab), 0, 0, 0o022);
+  vfs.writeFile('/tmp/replay.cap', bytesToFileText(base64ToBytes(lab.pcap)), 0, 0, 0o022);
   return pc.executeCommand(`sudo tcpdump ${options} -r /tmp/replay.cap`);
 }
 

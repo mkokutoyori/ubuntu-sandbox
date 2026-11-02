@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record tcpdump 4.99.4 printing the capture files of the simulator's two labs.
+"""Record tcpdump 4.99.4 printing the capture files of the simulator's labs.
 
 usage: record_tcpdump_options.py TOOLS_ROOT CAPTURE_DIR out.json [LAB,LAB...]
 
@@ -9,8 +9,7 @@ CAPTURE_DIR holds <lab>.pcap, the savefiles `tcpdump -w` wrote inside the simula
 TCPDUMP_RECORD_DIR=CAPTURE_DIR); stpcraft and ipopts are built here, byte by byte, because the simulator never emits those frames (ipopts takes
 the link header of the first IPv4 frame of igmp.pcap). The real tcpdump prints each savefile with every option set below, in UTC and with
 the user lookup disabled (-Z root). The fixture stores the savefile itself (base64) beside the outputs, so the replay test feeds the same
-bytes to the simulator's tcpdump and compares the whole text. Labs recorded before the savefile was a real one keep their `capture` entry
-(frames as JSON) until they are recorded again; the replay test reads both.
+bytes to the simulator's tcpdump and compares the whole text.
 """
 import base64, json, os, struct, subprocess, sys, tempfile
 from datetime import datetime

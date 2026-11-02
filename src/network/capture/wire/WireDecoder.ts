@@ -10,6 +10,12 @@ import type { IPv6FragmentData, IPv6FragmentHeader } from '@/network/layers/inte
 import { DHCPPacket } from '@/network/dhcp/DHCPPacket';
 import { CDP_SNAP_HEADER } from '@/network/cdp/CdpWire';
 import { ETHERTYPE_CDP } from '@/network/cdp/types';
+import { DTP_SNAP_HEADER } from '@/network/dtp/DtpWire';
+import { ETHERTYPE_DTP } from '@/network/dtp/types';
+import { UDLD_SNAP_HEADER } from '@/network/udld/UdldWire';
+import { ETHERTYPE_UDLD } from '@/network/udld/types';
+import { VTP_SNAP_HEADER } from '@/network/vtp/VtpWire';
+import { ETHERTYPE_VTP } from '@/network/vtp/types';
 import { ETHERTYPE_LLDP } from '@/network/lldp/types';
 import { PVST_SNAP_HEADER, STP_LLC_HEADER } from '@/network/stp/StpWire';
 import { ETHERTYPE_STP } from '@/network/stp/types';
@@ -100,13 +106,27 @@ export function decodeEthernetBytes(bytes: Uint8Array): EthernetFrame | null {
   return frame;
 }
 
-export type LinkControlProtocol = 'stp' | 'cdp' | 'lldp';
+export type LinkControlProtocol = 'stp' | 'cdp' | 'lldp' | 'dtp' | 'vtp' | 'udld';
 
 export interface LinkControlFrame {
   readonly protocol: LinkControlProtocol;
   readonly etherType: number;
   readonly payloadAt: number;
 }
+
+interface SnapProtocol {
+  readonly header: readonly number[];
+  readonly protocol: LinkControlProtocol;
+  readonly etherType: number;
+}
+
+const SNAP_PROTOCOLS: readonly SnapProtocol[] = [
+  { header: CDP_SNAP_HEADER, protocol: 'cdp', etherType: ETHERTYPE_CDP },
+  { header: DTP_SNAP_HEADER, protocol: 'dtp', etherType: ETHERTYPE_DTP },
+  { header: VTP_SNAP_HEADER, protocol: 'vtp', etherType: ETHERTYPE_VTP },
+  { header: UDLD_SNAP_HEADER, protocol: 'udld', etherType: ETHERTYPE_UDLD },
+  { header: PVST_SNAP_HEADER, protocol: 'stp', etherType: ETHERTYPE_STP },
+];
 
 function startsWith(bytes: Uint8Array, at: number, prefix: readonly number[]): boolean {
   return at + prefix.length <= bytes.length && prefix.every((value, index) => bytes[at + index] === value);
@@ -119,9 +139,8 @@ export function decodeLinkControl(bytes: Uint8Array): LinkControlFrame | null {
   if (etherType === ETHERTYPE_LLDP) return { protocol: 'lldp', etherType, payloadAt: at };
   if (etherType >= ETHERNET_II_MINIMUM_TYPE) return null;
   if (startsWith(bytes, at, STP_LLC_HEADER)) return { protocol: 'stp', etherType: ETHERTYPE_STP, payloadAt: at + STP_LLC_HEADER.length };
-  if (startsWith(bytes, at, CDP_SNAP_HEADER)) return { protocol: 'cdp', etherType: ETHERTYPE_CDP, payloadAt: at + CDP_SNAP_HEADER.length };
-  if (startsWith(bytes, at, PVST_SNAP_HEADER)) return { protocol: 'stp', etherType: ETHERTYPE_STP, payloadAt: at + PVST_SNAP_HEADER.length };
-  return null;
+  const snap = SNAP_PROTOCOLS.find((candidate) => startsWith(bytes, at, candidate.header));
+  return snap === undefined ? null : { protocol: snap.protocol, etherType: snap.etherType, payloadAt: at + snap.header.length };
 }
 
 function decodeNetworkLayer(etherType: number, body: Uint8Array): unknown {
@@ -152,12 +171,13 @@ function decodeIpv4(body: Uint8Array): IPv4Packet | ReturnType<typeof undecodedP
   const ihl = body[0] & 0x0f;
   const headerBytes = ihl * 4;
   const totalLength = u16(body, 2);
-  if (ihl < 5 || headerBytes > body.length || totalLength < headerBytes) return undecodedPayload(body.slice());
+  if (ihl < 5 || totalLength < headerBytes) return undecodedPayload(body.slice());
+  const cutInOptions = headerBytes > body.length;
   const flagsAndOffset = u16(body, 6);
   const flags = flagsAndOffset >> 13;
   const fragmentOffset = flagsAndOffset & 0x1fff;
   const protocol = body[9];
-  const upper = body.subarray(headerBytes, Math.min(totalLength, body.length));
+  const upper = cutInOptions ? new Uint8Array(0) : body.subarray(headerBytes, Math.min(totalLength, body.length));
   const packet: IPv4Packet = {
     type: 'ipv4',
     version: 4,
@@ -178,6 +198,7 @@ function decodeIpv4(body: Uint8Array): IPv4Packet | ReturnType<typeof undecodedP
     const options = decodeIPv4Options(Array.from(body.subarray(IPV4_HEADER_BYTES, headerBytes)));
     if (options.length > 0) packet.options = options;
   }
+  if (cutInOptions) return packet;
   if (fragmentOffset > 0) {
     const placeholder: IPv4FragmentData = { type: 'ipv4-fragment-data', length: totalLength - headerBytes };
     packet.payload = placeholder;
