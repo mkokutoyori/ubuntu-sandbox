@@ -116,31 +116,24 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
-### [ntp] seuils de panique des agents ntpd, glissement de chronyd par mise a jour, `clock datetime` Huawei
+### [ntp] seuils de panique des agents ntpd et `clock datetime` Huawei
 **Mesure** (lab NTP, horloges decalees apres synchronisation) : l'agent lit
-desormais l'horloge de la machine et la discipline. Restent trois ecarts
-connus, tous mesures sur le laboratoire :
+l'horloge de la machine et la discipline ; chronyd glisse en continu a
+`maxslewrate` et oublie ses echantillons sur un saut externe. Restent deux
+ecarts connus, tous deux mesures sur le laboratoire :
 1. Les agents Cisco et Huawei gardent le seuil de panique de ntpd (1000 s) et
    W32Time celui de `MaxPosPhaseCorrection` (54000 s) : une machine decalee
    de plusieurs annees reste non synchronisee, avec `loopfilter state is
    'PANIC'`. Que IOS et VRP appliquent le seuil de ntpd n'est pas atteste
    depuis ce reseau (`cisco.com` et `support.huawei.com` sont bloques).
-2. chronyd corrige un decalage par glissement a `maxslewrate` (83333 ppm par
-   defaut) CONTINUEMENT ; l'agent applique `debit x temps ecoule` a chaque
-   mise a jour. Sur 1 h le total est le meme, la courbe est en marches. Et
-   sur un saut d'horloge externe chronyd detecte le saut et REMET A ZERO ses
-   sources (`LCL_NotifyExternalTimeStep`, changement `LCL_ChangeUnknownStep`),
-   alors que l'agent re-exprime les mesures deja prises dans la nouvelle
-   horloge : meme resultat a terme, delai de reconvergence different.
-3. `clock datetime HH:MM:SS YYYY-MM-DD` est interprete comme de l'UTC
+2. `clock datetime HH:MM:SS YYYY-MM-DD` est interprete comme de l'UTC
    (`vrpDatetimeToEpochMs`), alors que VRP lit l'heure dans le fuseau
    configure (le mot-cle `utc` existe pour l'UTC). Non corrige faute de
    documentation joignable ; une sonde existante (`probe-horloge-suit-son-equipement`)
    pose le comportement actuel en contrat.
-**Pourquoi ce n'est pas ferme** : (1) et (3) demandent une source que ce
-reseau ne joint pas ; (2) demande de passer le glissement du pas de mise a
-jour a un taux continu sur l'ordonnanceur, et de decider quoi faire des
-echantillons au saut externe.
+**Pourquoi ce n'est pas ferme** : les deux demandent une source que ce
+reseau ne joint pas, et la regle est de ne pas implementer plutot que de
+deviner.
 
 ### [windows] `quser` est inconnu ; libelles d'erreur de `tzutil` et `eventcreate` non attestes
 **Mesure** : `quser` repond « not recognized » sur une machine Windows simulee. `tzutil /g|/l|/s` et
