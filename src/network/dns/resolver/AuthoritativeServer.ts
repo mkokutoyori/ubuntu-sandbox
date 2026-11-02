@@ -29,10 +29,12 @@ export class AuthoritativeServer {
     return this.respond(query).message;
   }
 
+  refuse(query: DnsMessage): DnsMessage {
+    return this.errorResponse(query, this.baseFlags(query), DnsRcode.REFUSED);
+  }
+
   respond(query: DnsMessage): AuthoritativeResponse {
-    const baseFlags: BaseFlags = {
-      qr: true, rd: query.flags.rd, ra: this.policy.recursionAvailable?.() ?? false, ad: false, cd: false,
-    };
+    const baseFlags = this.baseFlags(query);
 
     if (query.flags.opcode !== DnsOpcode.QUERY) {
       return this.unplaced(this.errorResponse(query, baseFlags, DnsRcode.NOTIMP));
@@ -86,6 +88,10 @@ export class AuthoritativeServer {
       },
       imputedName: result.imputedName,
     };
+  }
+
+  private baseFlags(query: DnsMessage): BaseFlags {
+    return { qr: true, rd: query.flags.rd, ra: this.policy.recursionAvailable?.() ?? false, ad: false, cd: false };
   }
 
   private unplaced(message: DnsMessage): AuthoritativeResponse {

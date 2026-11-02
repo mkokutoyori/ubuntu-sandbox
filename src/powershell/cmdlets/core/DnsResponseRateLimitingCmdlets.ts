@@ -6,9 +6,7 @@ import type { RateLimits } from '@/network/dns/rrl/ResponseRateLimiter';
 import { RESPONSE_RATE_LIMITING_MODES } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
 import { mayProceed } from '../confirmation';
 import { choice, failed, isSwitchOn, requireDns } from './DnsServerCmdlets';
-import { countSetting } from './DnsServerSettingsCmdlets';
-
-const UINT32_MAXIMUM = 4294967295;
+import { UINT32_MAXIMUM, countSetting } from './DnsServerSettingsCmdlets';
 
 const COMMON_PARAMETERS = ['ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
 

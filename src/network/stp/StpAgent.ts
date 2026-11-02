@@ -1201,6 +1201,15 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
     }
   }
 
+  private senderPortState(inst: StpVlanInstance, portName: string): Pick<StpBpdu, 'senderRole' | 'senderLearning' | 'senderForwarding'> {
+    const state = inst.getForwardState(portName);
+    return {
+      senderRole: inst.getPortRole(portName),
+      senderLearning: state === 'learning' || state === 'forwarding',
+      senderForwarding: state === 'forwarding',
+    };
+  }
+
   private sendBpdu(portName: string, key = 1): void {
     // Le SEUL point d'emission : gardez-le ici et les dix appelants sont
     // couverts, y compris ceux qui n'ont pas de boucle a border.
@@ -1224,6 +1233,7 @@ export class StpAgent extends ReactiveAgentBase implements StpInstanceAgent {
         && inst.getPortRole(portName) === 'designated'
         && inst.getForwardState(portName) !== 'forwarding',
       agreement: this.pendingAgreement.delete(adKey),
+      ...(rapid ? this.senderPortState(inst, portName) : {}),
       rootBridge: inst.getRootBridge(),
       rootPathCost: inst.getRootPathCost(),
       senderBridge: this.ownBridgeId(key),

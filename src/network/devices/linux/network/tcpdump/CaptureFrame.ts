@@ -25,8 +25,12 @@ import {
   type RIPPacket,
 } from '@/network/core/types';
 import { ipv6FirstFragmentView, ipv6FragmentOf } from '@/network/layers/internet/Ipv6Fragmentation';
+import { lldpPayloadBytes } from '@/network/lldp/LldpWire';
+import { ETHERTYPE_LLDP, type LldpFrame } from '@/network/lldp/types';
 import { cdpPayloadBytes, CDP_SNAP_HEADER } from '@/network/cdp/CdpWire';
 import { ETHERTYPE_CDP, type CdpFrame } from '@/network/cdp/types';
+import { PVST_SNAP_HEADER, STP_LLC_HEADER, pvstTrailerBytes, stpPayloadBytes } from '@/network/stp/StpWire';
+import { ETHERTYPE_STP, PVST_PLUS_MAC, type StpBpdu } from '@/network/stp/types';
 import { ospfPacketBytes } from '@/network/ospf/OspfWire';
 import type { OSPFPacket } from '@/network/ospf/types';
 import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
@@ -45,7 +49,7 @@ import { decodeBootp, type BootpInfo } from './TcpdumpBootp';
 import { icmpWireBytes, icmpv6WireBytes, tcpWireBytes, transportChecksum, udpWireBytes, u16, u32, WIRE_PROTOCOLS } from './CaptureWire';
 
 export type CaptureDirection = 'in' | 'out';
-export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'cdp' | 'other';
+export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'cdp' | 'lldp' | 'stp' | 'other';
 export type CaptureL4 = 'icmp' | 'icmp6' | 'tcp' | 'udp' | 'other' | 'none';
 
 export interface CaptureTcpFlags {
@@ -605,12 +609,39 @@ function decodeEthernetFrameBytes(
     return base;
   }
 
+  if (frame.etherType === ETHERTYPE_LLDP && (frame.payload as { type?: string } | undefined)?.type === 'lldp') {
+    const built = withEthernet(frame, lldpPayloadBytes(frame.payload as LldpFrame));
+    base.l3 = 'lldp';
+    base.raw = built.raw;
+    base.rawLinkOffset = built.offset;
+    base.length = Math.max(base.raw.length, 60);
+    return base;
+  }
+
   if (frame.etherType === ETHERTYPE_CDP && (frame.payload as { type?: string } | undefined)?.type === 'cdp') {
     const snap = [...CDP_SNAP_HEADER, ...cdpPayloadBytes(frame.payload as CdpFrame)];
     const eth = [...macBytes(frame.dstMAC.toString()), ...macBytes(frame.srcMAC.toString()), ...u16(snap.length)];
     base.l3 = 'cdp';
     base.raw = [...eth, ...snap];
     base.rawLinkOffset = eth.length + CDP_SNAP_HEADER.length;
+    base.length = Math.max(base.raw.length, 60);
+    return base;
+  }
+
+  if (frame.etherType === ETHERTYPE_STP && (frame.payload as { type?: string } | undefined)?.type === 'stp') {
+    const bpdu = frame.payload as StpBpdu;
+    const pvst = frame.dstMAC.toString().toLowerCase() === PVST_PLUS_MAC;
+    const llc = pvst ? PVST_SNAP_HEADER : STP_LLC_HEADER;
+    const body = [...llc, ...stpPayloadBytes(bpdu), ...(pvst && bpdu.vlan !== undefined ? pvstTrailerBytes(bpdu.vlan) : [])];
+    const eth = [...macBytes(frame.dstMAC.toString()), ...macBytes(frame.srcMAC.toString())];
+    if (tag) {
+      const tci = ((tag.pcp & 0x7) << 13) | ((tag.dei & 0x1) << 12) | (tag.vid & 0xfff);
+      eth.push(...u16(tag.tpid), ...u16(tci));
+    }
+    eth.push(...u16(body.length));
+    base.l3 = 'stp';
+    base.raw = [...eth, ...body];
+    base.rawLinkOffset = eth.length + llc.length;
     base.length = Math.max(base.raw.length, 60);
     return base;
   }

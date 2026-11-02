@@ -12,6 +12,7 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { Cable } from '@/network/hardware/Cable';
 import { CiscoRouter } from '@/network/devices/CiscoRouter';
 import { Hub } from '@/network/devices/Hub';
+import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { installVirtualClock } from '../../support/ntpTime';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
@@ -186,7 +187,68 @@ async function recordCdp(): Promise<string> {
   return pc.executeCommand('cat all.cap');
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp };
+async function recordLldp(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1');
+  new Cable('c1').connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 10');
+  await new Promise((r) => setTimeout(r, 30));
+  for (const line of ['enable', 'configure terminal', 'no cdp run', 'no spanning-tree vlan 1', 'lldp run', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit', 'interface Vlan1', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await sw.executeCommand(line);
+  await clock.advance(70_000);
+  await pc.executeCommand('ping -c 1 10.9.0.1');
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+async function recordStp(setup: readonly string[], advanceMs: number): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const sw = new CiscoSwitch('switch-cisco', 'SW1');
+  new Cable('c1').connect(pc.getPort('eth0')!, sw.getPort('FastEthernet0/1')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 12');
+  await new Promise((r) => setTimeout(r, 30));
+  for (const line of ['enable', 'configure terminal', 'no cdp run', 'no lldp run', ...setup, 'interface Vlan1', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit', 'end']) await sw.executeCommand(line);
+  await clock.advance(advanceMs);
+  await pc.executeCommand('ping -c 1 10.9.0.1');
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const recordStpClassic = () => recordStp(['interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'], 40_000);
+const recordStpRapid = () => recordStp(['spanning-tree mode rapid-pvst', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'], 40_000);
+const recordStpTrunk = () => recordStp(['vlan 10', 'exit', 'interface FastEthernet0/1', 'switchport trunk encapsulation dot1q', 'switchport mode trunk', 'switchport nonegotiate', 'exit'], 40_000);
+
+async function recordStpPair(mode: string, frames: number): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const sw1 = new CiscoSwitch('switch-cisco', 'SW1');
+  const sw2 = new CiscoSwitch('switch-cisco', 'SW2');
+  const edge = new LinuxPC('PC2', 0, 0);
+  new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(sw1.getPort('FastEthernet0/1')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(sw2.getPort('FastEthernet0/1')!, hub.getPort('eth2')!);
+  new Cable('c4').connect(sw2.getPort('FastEthernet0/2')!, edge.getPort('eth0')!);
+  const writing = pc.executeCommand(`sudo tcpdump -w all.cap -c ${frames}`);
+  await new Promise((r) => setTimeout(r, 30));
+  const common = ['enable', 'configure terminal', 'no cdp run', 'no lldp run', `spanning-tree mode ${mode}`, 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'];
+  for (const line of [...common, 'spanning-tree vlan 1 priority 4096', 'end']) await sw1.executeCommand(line);
+  for (const line of [...common, 'interface FastEthernet0/2', 'switchport mode access', 'exit', 'end']) await sw2.executeCommand(line);
+  await clock.advance(40_000);
+  for (const line of ['configure terminal', 'interface FastEthernet0/2', 'shutdown', 'no shutdown', 'end']) await sw2.executeCommand(line);
+  await clock.advance(40_000);
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+async function recordMstp(): Promise<string> {
+  return recordStp(['spanning-tree mode mst', 'spanning-tree mst configuration', 'name REGION1', 'revision 7', 'instance 1 vlan 10,20', 'exit', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'], 40_000);
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40) };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

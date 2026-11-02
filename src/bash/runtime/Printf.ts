@@ -138,7 +138,7 @@ function roundHalfEven(digits: string, keep: number): { text: string; carry: boo
   return incremented.length > head.length ? { text: incremented.slice(1), carry: true } : { text: incremented, carry: false };
 }
 
-function fixed(value: number, precision: number): string {
+export function fixed(value: number, precision: number): string {
   const magnitude = Math.abs(value);
   if (magnitude >= 1e21) return BigInt(Math.round(magnitude)).toString() + (precision > 0 ? `.${'0'.repeat(precision)}` : '');
   const exact = magnitude.toFixed(Math.min(100, precision + 40));
