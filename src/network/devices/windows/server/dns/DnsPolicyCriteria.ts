@@ -2,8 +2,13 @@ import { IPAddress, IPv6Address } from '@/network/core/types';
 import { isValidIPv6 } from '@/network/core/ip';
 import { validateDnsName } from '@/network/dns/wire/ResourceRecord';
 import { isWithinDomain, normalizeDnsName } from '@/network/dns/wire/DnsName';
+import { rrTypeNumber } from '@/network/dns/wire/RRTypeNames';
 
 export type PolicyCondition = 'AND' | 'OR';
+
+export type TransportProtocol = 'TCP' | 'UDP';
+
+export type InternetProtocol = 'IPv4' | 'IPv6';
 
 export const POLICY_CONDITIONS: readonly PolicyCondition[] = ['AND', 'OR'];
 
@@ -16,7 +21,7 @@ const EQUAL = 'EQ';
 const DIFFERENT = 'NE';
 
 export function parseCriterion(text: string): CriterionExpression | null {
-  const tokens = text.split(',').map(token => token.trim());
+  const tokens = text.split(/[,;]/).map(token => token.trim());
   while (tokens.length > 0 && tokens[tokens.length - 1] === '') tokens.pop();
   const equal: string[] = [];
   const different: string[] = [];
@@ -86,4 +91,64 @@ export function addressCriterionMatches(value: string, address: IPAddress | IPv6
   return address instanceof IPAddress
     ? IPAddress.isValid(value) && new IPAddress(value).equals(address)
     : isValidIPv6(value) && new IPv6Address(value).equals(address);
+}
+
+export const TRANSPORT_PROTOCOLS: readonly TransportProtocol[] = ['TCP', 'UDP'];
+
+export const INTERNET_PROTOCOLS: readonly InternetProtocol[] = ['IPv4', 'IPv6'];
+
+export function isValidCriterionQueryType(value: string): boolean {
+  return rrTypeNumber(value) !== null;
+}
+
+export function queryTypeCriterionMatches(value: string, queryType: number): boolean {
+  return rrTypeNumber(value) === queryType;
+}
+
+export function isValidCriterionTransport(value: string): boolean {
+  return TRANSPORT_PROTOCOLS.includes(value.toUpperCase() as TransportProtocol);
+}
+
+export function transportCriterionMatches(value: string, transport: TransportProtocol): boolean {
+  return value.toUpperCase() === transport;
+}
+
+export function isValidCriterionInternetProtocol(value: string): boolean {
+  return INTERNET_PROTOCOLS.some(protocol => protocol.toLowerCase() === value.toLowerCase());
+}
+
+export function internetProtocolCriterionMatches(value: string, protocol: InternetProtocol): boolean {
+  return value.toLowerCase() === protocol.toLowerCase();
+}
+
+export interface TimeRange {
+  readonly startMinute: number;
+  readonly endMinute: number;
+}
+
+const TIME_RANGE = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/;
+const MINUTES_PER_HOUR = 60;
+const HOURS_PER_DAY = 24;
+
+export function parseTimeRange(value: string): TimeRange | null {
+  const found = TIME_RANGE.exec(value);
+  if (found === null) return null;
+  const [startHour, startMinute, endHour, endMinute] = found.slice(1).map(Number);
+  const inDay = [startHour, endHour].every(hour => hour < HOURS_PER_DAY) && [startMinute, endMinute].every(minute => minute < MINUTES_PER_HOUR);
+  if (!inDay) return null;
+  const range = { startMinute: startHour * MINUTES_PER_HOUR + startMinute, endMinute: endHour * MINUTES_PER_HOUR + endMinute };
+  return range.startMinute <= range.endMinute ? range : null;
+}
+
+export function minuteOfDay(wall: Date): number {
+  return wall.getHours() * MINUTES_PER_HOUR + wall.getMinutes();
+}
+
+export function isValidCriterionTimeRange(value: string): boolean {
+  return parseTimeRange(value) !== null;
+}
+
+export function timeRangeCriterionMatches(value: string, minuteOfDay: number): boolean {
+  const range = parseTimeRange(value);
+  return range !== null && range.startMinute <= minuteOfDay && minuteOfDay <= range.endMinute;
 }

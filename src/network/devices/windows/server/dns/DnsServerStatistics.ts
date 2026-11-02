@@ -1,4 +1,4 @@
-import { RRType } from '@/network/dns/wire/RRType';
+import { rrTypeNumber } from '@/network/dns/wire/RRTypeNames';
 import type { RateVerdict } from '@/network/dns/rrl/ResponseRateLimiter';
 
 const COUNTER_MODULUS = 0x100000000;
@@ -134,13 +134,14 @@ export const ZONE_TRANSFER_KINDS = ['AXFR', 'IXFR'] as const;
 
 export type ZoneTransferKind = (typeof ZONE_TRANSFER_KINDS)[number];
 
-const ZONE_RECORD_TYPE_CODES: ReadonlyMap<number, ZoneRecordType> = new Map<number, ZoneRecordType>([
-  [RRType.A, 'A'], [RRType.AAAA, 'AAAA'], [RRType.PTR, 'PTR'], [RRType.CNAME, 'CNAME'], [RRType.MX, 'MX'],
-  [18, 'AFSDB'], [34, 'ATMA'], [RRType.DHCID, 'DHCID'], [39, 'DNAME'], [13, 'HINFO'], [20, 'ISDN'], [8, 'MG'], [7, 'MB'],
-  [14, 'MINFO'], [35, 'NAPTR'], [30, 'NXT'], [25, 'KEY'], [9, 'MR'], [17, 'RP'], [21, 'RT'], [RRType.SRV, 'SRV'], [24, 'SIG'],
-  [RRType.TXT, 'TEXT'], [11, 'WKS'], [19, 'X25'], [RRType.DNSKEY, 'DNSKEY'], [RRType.DS, 'DS'], [RRType.NS, 'NS'],
-  [RRType.SOA, 'SOA'], [52, 'TLSA'], [RRType.ANY, 'ALL'],
-]);
+const ZONE_RECORD_TYPE_MNEMONICS: Readonly<Partial<Record<ZoneRecordType, string>>> = { TEXT: 'TXT', ALL: 'ANY' };
+
+const ZONE_RECORD_TYPE_CODES: ReadonlyMap<number, ZoneRecordType> = new Map(
+  ZONE_RECORD_TYPES.flatMap(type => {
+    const code = type === 'OTHERS' ? null : rrTypeNumber(ZONE_RECORD_TYPE_MNEMONICS[type] ?? type);
+    return code === null ? [] : [[code, type] as const];
+  }),
+);
 
 export function zoneRecordType(qtype: number): ZoneRecordType {
   return ZONE_RECORD_TYPE_CODES.get(qtype) ?? 'OTHERS';

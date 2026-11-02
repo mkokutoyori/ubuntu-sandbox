@@ -1,5 +1,4 @@
-import { IPAddress } from '@/network/core/types';
-import type { IPv6Address } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
@@ -11,12 +10,19 @@ import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserve
 
 export const DNS_TCP_IDLE_TIMEOUT_MS = 10000;
 
+export type DnsStreamReply = DnsMessage | readonly DnsMessage[] | null;
+
 export type DnsStreamHandler = (
   query: DnsMessage,
   sourceIP?: IPAddress | IPv6Address,
   sourcePort?: number,
   raw?: Uint8Array,
-) => DnsMessage | readonly DnsMessage[] | Promise<DnsMessage | readonly DnsMessage[]>;
+  destinationIP?: IPAddress | IPv6Address,
+) => DnsStreamReply | Promise<DnsStreamReply>;
+
+function addressOf(text: string): IPAddress | IPv6Address | undefined {
+  return IPAddress.tryParse(text) ?? IPv6Address.tryParse(text) ?? undefined;
+}
 
 export function bindDnsTcpServer(
   host: EndHost,
@@ -57,16 +63,15 @@ export function bindDnsTcpServer(
           }
           const exchange = {};
           options.observer?.({ direction: 'receive', transport: 'tcp', remote: socket.remoteIp, message: query, exchange });
-          const send = (response: DnsMessage | readonly DnsMessage[]): void => {
+          const send = (response: DnsStreamReply): void => {
+            if (response === null) return;
             const messages = Array.isArray(response) ? response : [response as DnsMessage];
             for (const message of messages) {
               options.observer?.({ direction: 'send', transport: 'tcp', remote: socket.remoteIp, message, exchange });
               socket.send(frameDnsMessage(encodeDnsMessage(message)));
             }
           };
-          const result = handler(
-            query, IPAddress.tryParse(socket.remoteIp) ?? undefined, socket.remotePort, raw,
-          );
+          const result = handler(query, addressOf(socket.remoteIp), socket.remotePort, raw, addressOf(socket.localIp));
           if (result instanceof Promise) void result.then(send);
           else send(result);
         }

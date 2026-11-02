@@ -23,7 +23,7 @@ import { IANA_ROOT_HINTS, renderRootHintsFile, type RootHint } from '@/network/d
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
 import { bindDnsUdpServer, unbindDnsUdpServer, truncateForUdp, type DnsDatagramHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { ResponseRateLimiter, type RateVerdict } from '@/network/dns/rrl/ResponseRateLimiter';
-import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
+import { bindDnsTcpServer, unbindDnsTcpServer, type DnsStreamHandler } from '@/network/dns/transport/DnsTcpTransport';
 import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
 import {
   evaluateUpdate, updateResponse, parseOrFormerr, DnsUpdateRcode,
@@ -72,13 +72,17 @@ import {
   countValidation, countRateVerdict, type MasterRefusal, type UpdateFacts,
 } from './DnsStatisticsObservers';
 import { IPAddress, IPv6Address } from '@/network/core/types';
+import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { ClientSubnetStore, type ClientSubnetAction, type ClientSubnetView } from './DnsClientSubnets';
 import {
   DEFAULT_RESPONSE_RATE_LIMITING, planResponseRateLimiting,
   type ResponseRateLimitingChanges, type ResponseRateLimitingSettings,
 } from './DnsResponseRateLimiting';
-import { DnsPolicyStore, type PolicyCriteriaText, type PolicyView } from './DnsPolicies';
-import type { PolicyCondition } from './DnsPolicyCriteria';
+import {
+  DnsPolicyStore, type NewPolicy, type PolicyAction, type PolicyChanges, type PolicyFacts, type PolicyKind, type PolicyScope,
+  type PolicyView,
+} from './DnsPolicies';
+import { minuteOfDay } from './DnsPolicyCriteria';
 import { RATE_ANALYTIC_EVENTS, type DnsAnalyticSink } from './DnsAnalyticLog';
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -365,17 +369,32 @@ interface ForwarderEntry { address: string; resolver: RecursiveResolver; average
 interface ResolutionAttempt { resolver: RecursiveResolver; report?: (elapsedMs: number, succeeded: boolean) => void }
 
 interface Served {
-  readonly reply: DnsMessage | DnsMessage[] | Promise<DnsMessage>;
+  readonly reply: DnsMessage | DnsMessage[] | Promise<DnsMessage> | null;
   readonly imputedName?: string;
 }
 
-interface UdpRequestor {
+interface Peer {
   readonly source?: IPAddress | IPv6Address;
-  readonly port?: number;
   readonly destination?: IPAddress | IPv6Address;
 }
 
+interface UdpRequestor extends Peer {
+  readonly port?: number;
+}
+
+export interface DnsPolicyListResult extends DnsOpResult { policies: PolicyView[] }
+
+function zoneMissing(name: string): string {
+  return `Zone "${name}" does not exist on this server.`;
+}
+
 const RATE_ERROR_CODES: ReadonlySet<number> = new Set([DnsRcode.FORMERR, DnsRcode.SERVFAIL, DnsRcode.REFUSED]);
+
+const RRL_EXCEPTION_SCOPE: PolicyScope = { zone: null, kinds: ['RrlException'] };
+
+const ENABLEABLE_POLICY_KINDS: readonly PolicyKind[] = ['QueryProcessing', 'Recursion', 'ZoneTransfer'];
+
+const DEFAULT_RECURSION_SCOPE = '.';
 
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
@@ -394,7 +413,9 @@ export class WindowsDnsServerRole {
   private readonly policies = new DnsPolicyStore({
     clientSubnetExists: name => this.clientSubnets.find(name) !== null,
     clientSubnetContains: (name, address) => this.clientSubnets.contains(name, address),
+    scopeExists: (kind, zone, scope) => this.scopeExists(kind, zone, scope),
   });
+  private readonly timeZone: () => string;
   private readonly rateLimiter: ResponseRateLimiter;
   private responseRateLimiting: ResponseRateLimitingSettings = { ...DEFAULT_RESPONSE_RATE_LIMITING };
   private readonly analytic: DnsAnalyticSink | null;
@@ -449,6 +470,7 @@ export class WindowsDnsServerRole {
 
   constructor(private readonly host: EndHost, environment: DnsRoleEnvironment = {}) {
     this.now = environment.now ?? (() => simulationNowMs());
+    this.timeZone = environment.timeZone ?? (() => 'UTC');
     this.statistics = new DnsServerStatistics({ now: this.now, uptimeMs: () => host.getUptimeMs() });
     this.rateLimiter = new ResponseRateLimiter(this.now);
     this.analytic = environment.analytic ?? null;
@@ -459,7 +481,7 @@ export class WindowsDnsServerRole {
       settings: () => readDebugLogSettings(this.parameters),
       files: environment.logFiles ?? null,
       now: this.now,
-      timeZone: environment.timeZone ?? (() => 'UTC'),
+      timeZone: this.timeZone,
       threadId: threadIdFor(host.getHostname()),
     });
     this.directoryAvailable = environment.directoryAvailable ?? (() => false);
@@ -523,19 +545,19 @@ export class WindowsDnsServerRole {
   }
 
   private readonly handleUdp: DnsDatagramHandler = (query, source, port, raw, destination) => {
-    const served = this.answer(query, 'udp', source, raw);
+    const served = this.answer(query, 'udp', { source, destination }, raw);
+    if (served.reply === null) return null;
     const reply = datagramReply(served.reply);
     if (served.imputedName === undefined || reply instanceof Promise) return reply;
     return this.limitRate(query, reply, served.imputedName, { source, port, destination });
   };
 
-  private readonly handleTcp = (
-    query: DnsMessage, source?: unknown, _port?: number, raw?: Uint8Array,
-  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> => this.answer(query, 'tcp', source, raw).reply;
+  private readonly handleTcp: DnsStreamHandler = (query, source, _port, raw, destination) =>
+    this.answer(query, 'tcp', { source, destination }, raw).reply;
 
-  private answer(query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array): Served {
-    const served = this.respond(query, transport, source, raw);
-    if (Array.isArray(served.reply)) return served;
+  private answer(query: DnsMessage, transport: 'udp' | 'tcp', peer: Peer, raw?: Uint8Array): Served {
+    const served = this.respond(query, transport, peer, raw);
+    if (served.reply === null || Array.isArray(served.reply)) return served;
     const finish = (message: DnsMessage): DnsMessage => {
       this.countZoneQuery(query, message);
       return this.limitAddressRecords(message);
@@ -546,8 +568,7 @@ export class WindowsDnsServerRole {
   private limitRate(query: DnsMessage, response: DnsMessage, imputedName: string, requestor: UdpRequestor): DnsMessage | null {
     const settings = this.responseRateLimiting;
     if (settings.mode === 'Disable' || requestor.source === undefined || query.flags.opcode !== DnsOpcode.QUERY) return response;
-    const queryName = query.questions[0] === undefined ? null : normalizeDnsName(query.questions[0].qname);
-    if (this.policies.matches({ queryName, source: requestor.source, destination: requestor.destination })) return response;
+    if (this.policies.decide(null, 'RrlException', this.policyFacts(query, 'udp', requestor)) !== null) return response;
     const verdict = this.rateLimiter.judge({ source: requestor.source, imputedName, error: RATE_ERROR_CODES.has(response.flags.rcode) }, settings);
     if (settings.mode === 'LogOnly') {
       this.logRateVerdict(verdict, query, response, requestor);
@@ -607,13 +628,14 @@ export class WindowsDnsServerRole {
     return answers.length === message.answers.length ? message : { ...message, answers };
   }
 
-  private respond(
-    query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
-  ): Served {
-    const sourceAddress = source instanceof IPAddress ? source.toString() : null;
+  private respond(query: DnsMessage, transport: 'udp' | 'tcp', peer: Peer, raw?: Uint8Array): Served {
+    const sourceAddress = peer.source instanceof IPAddress ? peer.source.toString() : null;
     if (isNotify(query)) return { reply: this.handleNotify(query, sourceAddress) };
     if (isUpdateMessage(query)) return { reply: this.handleUpdate(query, raw) };
     if (isTransferQuery(query)) return { reply: this.handleTransfer(query, transport, sourceAddress) };
+    const facts = this.policyFacts(query, transport, peer);
+    const governed = this.governedByQueryPolicy(query, facts);
+    if (governed !== null) return governed;
     const { message: response, imputedName } = this.authoritative.respond(query);
     const globalName = this.answerFromGlobalNames(query, response);
     const question = query.questions[0];
@@ -623,11 +645,50 @@ export class WindowsDnsServerRole {
     if (unloaded !== null) {
       return { reply: { ...response, flags: { ...response.flags, rcode: DnsRcode.SERVFAIL } }, imputedName: unloaded };
     }
-    if (outsideAuthority && question && query.flags.rd && this.parameters.recursionEnabled()) {
-      const resolvers = this.resolversFor(question.qname);
-      if (resolvers.length > 0) return { reply: this.recurse(query, resolvers) };
+    if (outsideAuthority && question && query.flags.rd) {
+      const governedRecursion = this.governedByRecursionPolicy(query, facts);
+      if (governedRecursion !== null) return governedRecursion;
+      if (this.parameters.recursionEnabled()) {
+        const resolvers = this.resolversFor(question.qname);
+        if (resolvers.length > 0) return { reply: this.recurse(query, resolvers) };
+      }
     }
     return { reply: response, imputedName };
+  }
+
+  private policyFacts(query: DnsMessage, transport: 'udp' | 'tcp', peer: Peer): PolicyFacts {
+    const question = query.questions[0];
+    const wall = ZonedDate.in(this.now(), this.timeZone());
+    const address = peer.source ?? peer.destination;
+    return {
+      queryName: question === undefined ? null : normalizeDnsName(question.qname),
+      queryType: question === undefined ? null : question.qtype,
+      transport: transport === 'tcp' ? 'TCP' : 'UDP',
+      internetProtocol: address === undefined ? null : address instanceof IPv6Address ? 'IPv6' : 'IPv4',
+      minuteOfDay: minuteOfDay(wall),
+      source: peer.source,
+      destination: peer.destination,
+    };
+  }
+
+  private governedByQueryPolicy(query: DnsMessage, facts: PolicyFacts): Served | null {
+    if (query.flags.opcode !== DnsOpcode.QUERY || query.questions.length !== 1) return null;
+    const zone = this.store.findZone(query.questions[0].qname);
+    const decision = this.policies.decide(null, 'QueryProcessing', facts)
+      ?? (zone === null ? null : this.policies.decide(zone.origin, 'QueryProcessing', facts));
+    return decision === null ? null : this.servedByPolicy(query, decision.action);
+  }
+
+  private governedByRecursionPolicy(query: DnsMessage, facts: PolicyFacts): Served | null {
+    const question = query.questions[0];
+    if (this.cache.lookup(question.qname, question.qtype).kind !== 'miss') return null;
+    const decision = this.policies.decide(null, 'Recursion', facts);
+    return decision === null ? null : this.servedByPolicy(query, decision.action);
+  }
+
+  private servedByPolicy(query: DnsMessage, action: PolicyAction): Served | null {
+    if (action === 'ALLOW') return null;
+    return action === 'DENY' ? { reply: this.authoritative.refuse(query), imputedName: '' } : { reply: null };
   }
 
   private unloadedSecondaryFor(qname: string): string | null {
@@ -1246,7 +1307,7 @@ export class WindowsDnsServerRole {
   getZoneStatistics(names: readonly string[], clear: boolean): DnsZoneStatisticsResult {
     const keys = names.map(name => normalizeDnsName(name));
     const missing = names.find((_name, index) => !this.settings.has(keys[index]));
-    if (missing !== undefined) return { ok: false, message: `Zone "${missing}" does not exist on this server.`, zones: [] };
+    if (missing !== undefined) return { ok: false, message: zoneMissing(missing), zones: [] };
     for (const key of keys) this.statistics.trackZone(key);
     const zones = keys.map(key => this.statistics.zoneSnapshot(key) as ZoneStatisticsSnapshot);
     if (clear) for (const key of keys) this.statistics.clearZone(key);
@@ -1281,18 +1342,53 @@ export class WindowsDnsServerRole {
     return refusalToResult(null);
   }
 
-  getRateLimitingExceptionLists(): PolicyView[] { return this.policies.list(); }
+  getRateLimitingExceptionLists(): PolicyView[] { return this.policies.list(RRL_EXCEPTION_SCOPE); }
 
-  addRateLimitingExceptionList(name: string, condition: PolicyCondition, criteria: PolicyCriteriaText): DnsOpResult {
-    return refusalToResult(this.policies.create(name, condition, criteria));
+  addRateLimitingExceptionList(spec: NewPolicy): DnsOpResult {
+    return refusalToResult(this.policies.create(RRL_EXCEPTION_SCOPE, spec));
   }
 
-  changeRateLimitingExceptionList(name: string, condition: PolicyCondition | undefined, criteria: PolicyCriteriaText): DnsOpResult {
-    return refusalToResult(this.policies.change(name, condition, criteria));
+  changeRateLimitingExceptionList(name: string, changes: PolicyChanges): DnsOpResult {
+    return refusalToResult(this.policies.change(RRL_EXCEPTION_SCOPE, name, changes));
   }
 
   removeRateLimitingExceptionList(name: string): DnsOpResult {
-    return refusalToResult(this.policies.remove(name));
+    return refusalToResult(this.policies.remove(RRL_EXCEPTION_SCOPE, name));
+  }
+
+  getQueryResolutionPolicies(zone: string | null): DnsPolicyListResult {
+    const scope = this.queryPolicyScope(zone);
+    return typeof scope === 'string' ? { ok: false, message: scope, policies: [] } : { ok: true, message: '', policies: this.policies.list(scope) };
+  }
+
+  addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult {
+    const scope = this.queryPolicyScope(zone);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.create(scope, spec));
+  }
+
+  changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult {
+    const scope = this.queryPolicyScope(zone);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.change(scope, name, changes));
+  }
+
+  removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult {
+    const scope = this.queryPolicyScope(zone);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.remove(scope, name));
+  }
+
+  setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult {
+    const scope = this.queryPolicyScope(zone, ENABLEABLE_POLICY_KINDS);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.setEnabled(scope, name, enabled));
+  }
+
+  private queryPolicyScope(zone: string | null, kinds: readonly PolicyKind[] = ['QueryProcessing', 'Recursion']): PolicyScope | string {
+    if (zone === null) return { zone: null, kinds };
+    const origin = normalizeDnsName(zone);
+    return this.settings.has(origin) ? { zone: origin, kinds: kinds.filter(kind => kind !== 'Recursion') } : zoneMissing(zone);
+  }
+
+  private scopeExists(kind: PolicyKind, zone: string | null, scope: string): boolean {
+    return kind === 'Recursion' ? scope === DEFAULT_RECURSION_SCOPE : zone !== null && normalizeDnsName(scope) === zone;
   }
 
   getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }
@@ -1453,7 +1549,7 @@ export class WindowsDnsServerRole {
   renameZoneFile(name: string, zoneFile: string): DnsOpResult {
     const origin = normalizeDnsName(name);
     const settings = this.settings.get(origin);
-    if (!settings) return { ok: false, message: `Zone "${name}" does not exist on this server.` };
+    if (!settings) return { ok: false, message: zoneMissing(name) };
     if (settings.dsIntegrated) return { ok: false, message: `Zone "${name}" is directory-integrated and has no zone file.` };
     const previous = settings.zoneFile;
     settings.zoneFile = zoneFile;
@@ -1522,6 +1618,7 @@ export class WindowsDnsServerRole {
     this.store.removeZone(origin);
     this.aging.delete(origin);
     this.settings.delete(origin);
+    this.policies.removeZone(origin);
     this.statistics.forgetZone(origin);
     this.zoneDynamicUpdate.delete(origin);
     this.secondaries.discard(origin);
@@ -1642,7 +1739,7 @@ export class WindowsDnsServerRole {
       return { error: { ok: false, message: `${cmdletName} : Zone "${zoneName}" is a secondary zone and is read-only.` } };
     }
     const zone = this.store.getZone(zoneName);
-    if (!zone) return { error: { ok: false, message: `${cmdletName} : Zone "${zoneName}" does not exist on this server.` } };
+    if (!zone) return { error: { ok: false, message: `${cmdletName} : ${zoneMissing(zoneName)}` } };
     return zone;
   }
 
@@ -1760,7 +1857,7 @@ export class WindowsDnsServerRole {
 
   applyDynamicARecord(zoneName: string, fqdnName: string, ipv4: string, ttl = 3600): DnsOpResult {
     const zone = this.store.getZone(zoneName);
-    if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
+    if (!zone) return { ok: false, message: zoneMissing(zoneName) };
     for (const rr of zone.getRRSet(fqdnName, RRType.A) ?? []) this.deleteRecord(zone, rr);
     const dynamic = makeARecord(fqdnName, ttl, ipv4);
     zone.addRecord(dynamic);
@@ -1809,7 +1906,7 @@ export class WindowsDnsServerRole {
 
   removeDynamicRecord(zoneName: string, fqdnName: string, type: string): DnsOpResult {
     const zone = this.store.getZone(zoneName);
-    if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
+    if (!zone) return { ok: false, message: zoneMissing(zoneName) };
     const rrType = RRType[type.toUpperCase() as keyof typeof RRType];
     if (rrType === undefined) return { ok: false, message: `Unknown record type "${type}".` };
     const existing = zone.getRRSet(fqdnName, rrType) ?? [];
@@ -1844,7 +1941,7 @@ export class WindowsDnsServerRole {
 
   writeDhcid(zoneName: string, fqdnName: string, data: DhcidRecordData, ttl = 3600): DnsOpResult {
     const zone = this.store.getZone(zoneName);
-    if (!zone) return { ok: false, message: `Zone "${zoneName}" does not exist on this server.` };
+    if (!zone) return { ok: false, message: zoneMissing(zoneName) };
     for (const rr of zone.getRRSet(fqdnName, RRType.DHCID) ?? []) this.deleteRecord(zone, rr);
     const dhcid = makeDhcidRecord(fqdnName, ttl, {
       identifierType: data.identifierType, digestType: data.digestType, digest: data.digest,
