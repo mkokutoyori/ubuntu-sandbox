@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Record tcpdump 4.99.4 printing the capture files of the simulator's two labs.
 
-usage: record_tcpdump_options.py TOOLS_ROOT CAPTURE_DIR out.json
+usage: record_tcpdump_options.py TOOLS_ROOT CAPTURE_DIR out.json [LAB,LAB...]
+
+With a lab list, only those labs are recorded and merged into the existing out.json; the other labs are kept as they are.
 
 CAPTURE_DIR holds base.json and dns.json, written by tcpdump-options-record.test.ts (TCPDUMP_RECORD_DIR=CAPTURE_DIR). Each frame of a
 capture file carries the bytes it put on the wire; they are written here into a classic pcap file and printed by the real tcpdump with
@@ -17,7 +19,7 @@ OPTION_SETS = [
     "-qq -nn", "-q -nn -v", "-nn -c 5 -s 60", "-nn -e -q", "-nn -N", "-nn -O", "-nn -vv", "-nn -t", "-nn -tttt -S", "-qq -nn -v", "-nn -e -q -v", "-nn -v -vv",
 ]
 EXTRA_OPTION_SETS = {"stpcraft": ["-nn -vv -s 60", "-nn -vv -s 70", "-nn -s 100 -x", "-nn -e -vv -s 45", "-nn -vv -s 30 -A"]}
-LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp"]
+LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp", "dtp", "vtp", "vtpclient", "udld"]
 
 def stp_bridge(priority, last):
     return struct.pack(">H", priority) + bytes([2, 0, 0, 0, 0, last])
@@ -80,8 +82,9 @@ def run(root, path, options):
 
 def main():
     root, directory, target = sys.argv[1:4]
-    fixture = {"tcpdump": "4.99.4", "libpcap": "1.10.4", "labs": {}}
-    for lab in LABS:
+    chosen = sys.argv[4].split(",") if len(sys.argv) > 4 else LABS
+    fixture = json.load(open(target)) if len(sys.argv) > 4 and os.path.exists(target) else {"tcpdump": "4.99.4", "libpcap": "1.10.4", "labs": {}}
+    for lab in chosen:
         capture = craft_stp_capture(json.load(open(os.path.join(directory, "stp.json")))) if lab == "stpcraft" else json.load(open(os.path.join(directory, lab + ".json")))
         with tempfile.TemporaryDirectory() as scratch:
             path = os.path.join(scratch, "capture.pcap")

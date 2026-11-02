@@ -14,6 +14,7 @@
  *   user, privileged, config, config-if, config-vlan
  */
 
+import { vlanSaid } from '@/network/vtp/VtpWire';
 import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { CiscoShellBase } from './CiscoShellBase';
@@ -4431,7 +4432,7 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       '---- ----- ---------- ----- ------ ------ -------- ---- -------- ------ ------',
     ];
     for (const v of vlans) {
-      const said = String(100000 + v);
+      const said = String(vlanSaid(v));
       detail.push(`${padToWidth(String(v), 5)}enet  ${padToWidth(said, 11)}1500  -      -      -        -    -        0      0`);
     }
     detail.push(

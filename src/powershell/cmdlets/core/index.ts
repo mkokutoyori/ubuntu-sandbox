@@ -197,6 +197,10 @@ import { EnableDnsServerPolicyCmdlet, DisableDnsServerPolicyCmdlet } from './Dns
 import {
   AddDnsServerRecursionScopeCmdlet, GetDnsServerRecursionScopeCmdlet, RemoveDnsServerRecursionScopeCmdlet, SetDnsServerRecursionScopeCmdlet,
 } from './DnsRecursionScopeCmdlets';
+import { AddDnsServerZoneScopeCmdlet, GetDnsServerZoneScopeCmdlet, RemoveDnsServerZoneScopeCmdlet } from './DnsZoneScopeCmdlets';
+import {
+  AddDnsServerZoneTransferPolicyCmdlet, GetDnsServerZoneTransferPolicyCmdlet, RemoveDnsServerZoneTransferPolicyCmdlet, SetDnsServerZoneTransferPolicyCmdlet,
+} from './DnsZoneTransferPolicyCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -917,6 +921,13 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Get-DnsServerRecursionScope', new GetDnsServerRecursionScopeCmdlet()));
   registry.register(remotable('Set-DnsServerRecursionScope', new SetDnsServerRecursionScopeCmdlet()));
   registry.register(remotable('Remove-DnsServerRecursionScope', new RemoveDnsServerRecursionScopeCmdlet()));
+  registry.register(remotable('Add-DnsServerZoneScope', new AddDnsServerZoneScopeCmdlet()));
+  registry.register(remotable('Get-DnsServerZoneScope', new GetDnsServerZoneScopeCmdlet()));
+  registry.register(remotable('Remove-DnsServerZoneScope', new RemoveDnsServerZoneScopeCmdlet()));
+  registry.register(remotable('Add-DnsServerZoneTransferPolicy', new AddDnsServerZoneTransferPolicyCmdlet()));
+  registry.register(remotable('Get-DnsServerZoneTransferPolicy', new GetDnsServerZoneTransferPolicyCmdlet()));
+  registry.register(remotable('Set-DnsServerZoneTransferPolicy', new SetDnsServerZoneTransferPolicyCmdlet()));
+  registry.register(remotable('Remove-DnsServerZoneTransferPolicy', new RemoveDnsServerZoneTransferPolicyCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));

@@ -8,6 +8,9 @@ import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
 import { cdpText } from './TcpdumpCdp';
 import { stpText } from './TcpdumpStp';
+import { dtpText } from './TcpdumpDtp';
+import { vtpText } from './TcpdumpVtp';
+import { udldText } from './TcpdumpUdld';
 import { ieee8023, llcDescription } from './TcpdumpLlc';
 import { lldpText } from './TcpdumpLldp';
 import { ospfText } from './TcpdumpOspf';
@@ -437,7 +440,7 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
  */
 const OSPF_PROTOCOL = 89;
 const EIGRP_PROTOCOL = 88;
-const TRUNCATION_MARKER = /\[\|(ospf2|stp)\]/;
+const TRUNCATION_MARKER = /\[\|(ospf2|stp|vtp|udld)\]/;
 
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {
   0: 'Options', [IP_PROTO_ICMP]: 'ICMP', 2: 'IGMP', 4: 'IPIP', [IP_PROTO_TCP]: 'TCP', 8: 'EGP', 9: 'IGRP', [IP_PROTO_UDP]: 'UDP',
@@ -575,6 +578,24 @@ function cdpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderS
   return opt.linkLevel ? `${ieee8023Prefix(frame, opt, state, lengthField, payload.length)}${text}` : text;
 }
 
+function dtpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+  const { lengthField, declaredBytes, payload } = ieee8023(frame);
+  const text = dtpText(payload, declaredBytes, opt.verbose, (mac) => state.ether(mac));
+  return opt.linkLevel ? `${ieee8023Prefix(frame, opt, state, lengthField, declaredBytes)}${text}` : text;
+}
+
+function vtpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+  const { lengthField, declaredBytes } = ieee8023(frame);
+  const text = vtpText(Array.from(frame.raw.slice(frame.rawLinkOffset)), declaredBytes, opt.verbose, (address) => state.host(address));
+  return opt.linkLevel ? `${ieee8023Prefix(frame, opt, state, lengthField, declaredBytes)}${text}` : text;
+}
+
+function udldLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+  const { lengthField, declaredBytes } = ieee8023(frame);
+  const text = udldText(Array.from(frame.raw.slice(frame.rawLinkOffset)), declaredBytes, opt.verbose);
+  return opt.linkLevel ? `${ieee8023Prefix(frame, opt, state, lengthField, declaredBytes)}${text}` : text;
+}
+
 function stpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   const { lengthField, declaredBytes, payload } = ieee8023(frame);
   const text = stpText(payload, declaredBytes, opt.verbose);
@@ -691,6 +712,12 @@ export function formatFrame(
     body = cdpLine(frame, opt, state);
   } else if (frame.l3 === 'stp') {
     body = stpLine(frame, opt, state);
+  } else if (frame.l3 === 'dtp') {
+    body = dtpLine(frame, opt, state);
+  } else if (frame.l3 === 'vtp') {
+    body = vtpLine(frame, opt, state);
+  } else if (frame.l3 === 'udld') {
+    body = udldLine(frame, opt, state);
   } else if (frame.l3 === 'lldp') {
     body = `${link}${lldpText(Array.from(frame.raw.slice(frame.rawLinkOffset)), opt.verbose, (address) => state.host(address), (mac) => state.ether(mac))}`;
   } else {

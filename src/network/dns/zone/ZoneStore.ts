@@ -27,6 +27,7 @@ export interface ZoneStoreAnswerOptions {
   readonly blocked?: (zoneOrigin: string, qname: string) => boolean;
   readonly rotate?: boolean;
   readonly apexNs?: boolean;
+  readonly zone?: Zone;
 }
 
 export class ZoneStore {
@@ -64,7 +65,7 @@ export class ZoneStore {
   }
 
   answer(question: DnsQuestion, options: ZoneStoreAnswerOptions = {}): ZoneStoreAnswer {
-    const zone = this.findZone(question.qname);
+    const zone = options.zone ?? this.findZone(question.qname);
     if (!zone) {
       return { aa: false, rcode: DnsRcode.REFUSED, answers: [], authority: [], additional: [], imputedName: '' };
     }

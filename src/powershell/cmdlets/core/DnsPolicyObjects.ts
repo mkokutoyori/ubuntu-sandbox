@@ -112,3 +112,33 @@ export function policyFromRecord(record: Record<string, PSValue>): PolicyRecord 
     })),
   };
 }
+
+export function positional(ctx: CmdletContext, key: string, position: number): string | undefined {
+  const given = ctx.named[key] ?? ctx.positional[position];
+  return given === undefined || given === null ? undefined : psValueToString(given);
+}
+
+export function zoneArgument(ctx: CmdletContext, position?: number): string | null {
+  const given = ctx.named['zonename'] ?? (position === undefined ? undefined : ctx.positional[position]);
+  return given === undefined || given === null || psValueToString(given) === '' ? null : psValueToString(given);
+}
+
+export function nameArgument(ctx: CmdletContext, position?: number): string {
+  return psValueToString(ctx.named['name'] ?? (position === undefined ? undefined : ctx.positional[position]) ?? '');
+}
+
+export function policyName(ctx: CmdletContext, record: PolicyRecord | null, position?: number): string {
+  const given = nameArgument(ctx, position);
+  return given !== '' ? given : record?.name ?? '';
+}
+
+export function inputObject(ctx: CmdletContext): PolicyRecord | null {
+  const given = ctx.named['inputobject'];
+  return given === undefined || given === null || typeof given !== 'object' || Array.isArray(given)
+    ? null
+    : policyFromRecord(given as Record<string, PSValue>);
+}
+
+export function mergedCriteria(named: PolicyCriteriaText, record: PolicyRecord | null): PolicyCriteriaText {
+  return { ...(record?.criteria ?? {}), ...named };
+}

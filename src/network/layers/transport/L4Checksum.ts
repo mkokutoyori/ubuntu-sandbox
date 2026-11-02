@@ -58,3 +58,9 @@ export function onesComplement(words: number[]): number {
   }
   return (~sum) & 0xffff;
 }
+
+export function internetChecksum(bytes: readonly number[]): number {
+  const words: number[] = [];
+  pushBytesAsWords(words, bytes as number[]);
+  return onesComplement(words);
+}

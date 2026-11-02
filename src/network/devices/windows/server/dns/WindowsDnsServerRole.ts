@@ -87,6 +87,7 @@ import {
   DEFAULT_RECURSION_SCOPE, DnsRecursionScopes, isDefaultRecursionScope, type RecursionScopeChanges, type RecursionScopeView,
 } from './DnsRecursionScopes';
 import { RATE_ANALYTIC_EVENTS, type DnsAnalyticSink } from './DnsAnalyticLog';
+import { DnsZoneScopes, ZONE_SCOPE_REFUSALS, zoneScopeFilePath, type ZoneScopeView } from './DnsZoneScopes';
 
 export interface DnsOpResult { ok: boolean; message: string }
 
@@ -142,7 +143,7 @@ export interface DnsScavengingInfo {
   lastScavengeMs: number | null;
 }
 
-export interface DnsRecordOptions { age?: boolean; allowUpdateAny?: boolean }
+export interface DnsRecordOptions { age?: boolean; allowUpdateAny?: boolean; scope?: string }
 
 export interface DnsRecordInfo {
   name: string;
@@ -396,6 +397,8 @@ class ForwarderPool {
 
 interface RecursionGovernance { readonly served: Served | null; readonly scope: string }
 
+interface QueryGovernance { readonly served: Served | null; readonly records: Zone | null }
+
 interface ResolutionAttempt { resolver: RecursiveResolver; report?: (elapsedMs: number, succeeded: boolean) => void }
 
 interface Served {
@@ -414,6 +417,12 @@ interface UdpRequestor extends Peer {
 
 export interface DnsPolicyListResult extends DnsOpResult { policies: PolicyView[] }
 
+export interface DnsZoneScopeListResult extends DnsOpResult { scopes: ZoneScopeView[] }
+
+function isReverseLookupZone(origin: string): boolean {
+  return origin.endsWith('.arpa');
+}
+
 function zoneMissing(name: string): string {
   return `Zone "${name}" does not exist on this server.`;
 }
@@ -423,6 +432,10 @@ const RATE_ERROR_CODES: ReadonlySet<number> = new Set([DnsRcode.FORMERR, DnsRcod
 const RRL_EXCEPTION_SCOPE: PolicyScope = { zone: null, kinds: ['RrlException'] };
 
 const ENABLEABLE_POLICY_KINDS: readonly PolicyKind[] = ['QueryProcessing', 'Recursion', 'ZoneTransfer'];
+
+const QUERY_POLICY_KINDS: readonly PolicyKind[] = ['QueryProcessing', 'Recursion'];
+
+const TRANSFER_POLICY_KINDS: readonly PolicyKind[] = ['ZoneTransfer'];
 
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
@@ -438,6 +451,7 @@ export class WindowsDnsServerRole {
   private readonly settings = new Map<string, ZoneSettings>();
   private readonly conditional = new Map<string, ConditionalForwarder>();
   private readonly clientSubnets = new ClientSubnetStore();
+  private readonly zoneScopes = new DnsZoneScopes();
   private readonly policies = new DnsPolicyStore({
     clientSubnetExists: name => this.clientSubnets.find(name) !== null,
     clientSubnetContains: (name, address) => this.clientSubnets.contains(name, address),
@@ -661,11 +675,11 @@ export class WindowsDnsServerRole {
     const sourceAddress = peer.source instanceof IPAddress ? peer.source.toString() : null;
     if (isNotify(query)) return { reply: this.handleNotify(query, sourceAddress) };
     if (isUpdateMessage(query)) return { reply: this.handleUpdate(query, raw) };
-    if (isTransferQuery(query)) return { reply: this.handleTransfer(query, transport, sourceAddress) };
     const facts = this.policyFacts(query, transport, peer);
-    const governed = this.governedByQueryPolicy(query, facts);
-    if (governed !== null) return governed;
-    const { message: response, imputedName } = this.authoritative.respond(query);
+    if (isTransferQuery(query)) return { reply: this.handleTransfer(query, transport, sourceAddress, facts) };
+    const governance = this.governedByQueryPolicy(query, facts);
+    if (governance.served !== null) return governance.served;
+    const { message: response, imputedName } = this.authoritative.respond(query, governance.records ?? undefined);
     const globalName = this.answerFromGlobalNames(query, response);
     const question = query.questions[0];
     if (globalName !== null) return { reply: globalName, imputedName: normalizeDnsName(question.qname) };
@@ -700,12 +714,22 @@ export class WindowsDnsServerRole {
     };
   }
 
-  private governedByQueryPolicy(query: DnsMessage, facts: PolicyFacts): Served | null {
-    if (query.flags.opcode !== DnsOpcode.QUERY || query.questions.length !== 1) return null;
+  private governedByQueryPolicy(query: DnsMessage, facts: PolicyFacts): QueryGovernance {
+    const ungoverned: QueryGovernance = { served: null, records: null };
+    if (query.flags.opcode !== DnsOpcode.QUERY || query.questions.length !== 1) return ungoverned;
     const zone = this.store.findZone(query.questions[0].qname);
     const decision = this.policies.decide(null, 'QueryProcessing', facts)
       ?? (zone === null ? null : this.policies.decide(zone.origin, 'QueryProcessing', facts));
-    return decision === null ? null : this.servedByPolicy(query, decision.action);
+    if (decision === null) return ungoverned;
+    if (decision.action !== 'ALLOW' || zone === null) return { served: this.servedByPolicy(query, decision.action), records: null };
+    const chosen = this.policies.nextScope(zone.origin, 'QueryProcessing', decision.name);
+    return { served: null, records: chosen === null ? null : this.recordsOfScope(zone, chosen) };
+  }
+
+  private recordsOfScope(zone: Zone, scope: string): Zone | null {
+    const records = this.zoneScopes.recordsOf(zone.origin, scope);
+    records?.updateSoa(zone.soa);
+    return records;
   }
 
   private governedByRecursionPolicy(query: DnsMessage, facts: PolicyFacts): RecursionGovernance {
@@ -776,10 +800,12 @@ export class WindowsDnsServerRole {
     return [...entries].sort((a, b) => a.failures - b.failures || (a.averageMs ?? Infinity) - (b.averageMs ?? Infinity));
   }
 
-  private handleTransfer(query: DnsMessage, transport: 'udp' | 'tcp', source: string | null): DnsMessage | DnsMessage[] {
+  private handleTransfer(query: DnsMessage, transport: 'udp' | 'tcp', source: string | null, facts: PolicyFacts): DnsMessage | DnsMessage[] | null {
     const qname = normalizeDnsName(query.questions[0].qname);
     const kind: ZoneTransferKind = query.questions[0].qtype === RRType.IXFR ? 'IXFR' : 'AXFR';
     this.countTransferRequest(qname, kind, transport);
+    const decision = this.policies.decide(null, 'ZoneTransfer', facts) ?? (this.store.getZone(qname) === null ? null : this.policies.decide(qname, 'ZoneTransfer', facts));
+    if (decision !== null) return decision.action === 'DENY' ? this.refuseTransferRequest(query, 'RefuseSecurity') : null;
     if (transport === 'udp') return this.refuseTransferRequest(query, null);
     const settings = this.settings.get(qname);
     const zone = this.store.getZone(qname);
@@ -998,22 +1024,22 @@ export class WindowsDnsServerRole {
 
   private deleteRecord(zone: Zone, rr: ResourceRecord<ResourceRecordData>): void {
     zone.removeRecord(rr);
-    const key = recordKey(rr);
+    const key = this.bookkeepingKey(zone, rr);
     this.timestamps.delete(key);
     this.owners.delete(key);
     this.updatableByAny.delete(key);
   }
 
-  private stamp(rr: ResourceRecord<ResourceRecordData>): void {
-    this.timestamps.set(recordKey(rr), this.now());
+  private stamp(zone: Zone, rr: ResourceRecord<ResourceRecordData>): void {
+    this.timestamps.set(this.bookkeepingKey(zone, rr), this.now());
   }
 
   private claimDynamic(zone: Zone, rr: ResourceRecord<ResourceRecordData>, owner: string | null): void {
-    const key = recordKey(rr);
+    const key = this.bookkeepingKey(zone, rr);
     if (owner !== null) this.owners.set(key, owner);
     const noRefreshMs = (this.aging.get(zone.origin)?.noRefreshSeconds ?? this.scavengeNoRefreshSeconds) * 1000;
     const stamped = this.timestamps.get(key);
-    if (stamped === undefined || this.now() >= stamped + noRefreshMs) this.stamp(rr);
+    if (stamped === undefined || this.now() >= stamped + noRefreshMs) this.stamp(zone, rr);
   }
 
   private zoneChanged(zone: Zone): void {
@@ -1293,13 +1319,17 @@ export class WindowsDnsServerRole {
     if (!aging?.enabled || !zone || aging.availableAtMs === null || at < aging.availableAtMs) return 0;
     if (aging.scavengeServers.length > 0 && !aging.scavengeServers.some(a => this.localAddresses().includes(a))) return 0;
     const lifetimeMs = (aging.noRefreshSeconds + aging.refreshSeconds) * 1000;
-    const stale = zone.allRecords().filter(rr => {
-      const stamped = this.timestamps.get(recordKey(rr));
-      return stamped !== undefined && at >= stamped + lifetimeMs;
-    });
-    for (const rr of stale) this.deleteRecord(zone, rr);
-    if (stale.length > 0) this.zoneChanged(zone);
-    return stale.length;
+    let removed = 0;
+    for (const records of [zone, ...this.zoneScopes.recordsOfAll(origin)]) {
+      const stale = records.allRecords().filter(rr => {
+        const stamped = this.timestamps.get(this.bookkeepingKey(records, rr));
+        return stamped !== undefined && at >= stamped + lifetimeMs;
+      });
+      for (const rr of stale) this.deleteRecord(records, rr);
+      if (stale.length > 0) this.recordsChanged(records);
+      removed += stale.length;
+    }
+    return removed;
   }
 
   setRecursion(enabled: boolean): DnsOpResult {
@@ -1386,22 +1416,54 @@ export class WindowsDnsServerRole {
   }
 
   getQueryResolutionPolicies(zone: string | null): DnsPolicyListResult {
-    const scope = this.queryPolicyScope(zone);
-    return typeof scope === 'string' ? { ok: false, message: scope, policies: [] } : { ok: true, message: '', policies: this.policies.list(scope) };
+    return this.listPolicies(zone, QUERY_POLICY_KINDS);
   }
 
   addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult {
-    const scope = this.queryPolicyScope(zone);
-    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.create(scope, spec));
+    return this.createPolicy(zone, spec, QUERY_POLICY_KINDS);
   }
 
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult {
-    const scope = this.queryPolicyScope(zone);
-    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.change(scope, name, changes));
+    return this.changePolicy(zone, name, changes, QUERY_POLICY_KINDS);
   }
 
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult {
-    const scope = this.queryPolicyScope(zone);
+    return this.deletePolicy(zone, name, QUERY_POLICY_KINDS);
+  }
+
+  getZoneTransferPolicies(zone: string | null): DnsPolicyListResult {
+    return this.listPolicies(zone, TRANSFER_POLICY_KINDS);
+  }
+
+  addZoneTransferPolicy(zone: string | null, spec: NewPolicy): DnsOpResult {
+    return this.createPolicy(zone, spec, TRANSFER_POLICY_KINDS);
+  }
+
+  changeZoneTransferPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult {
+    return this.changePolicy(zone, name, changes, TRANSFER_POLICY_KINDS);
+  }
+
+  removeZoneTransferPolicy(zone: string | null, name: string): DnsOpResult {
+    return this.deletePolicy(zone, name, TRANSFER_POLICY_KINDS);
+  }
+
+  private listPolicies(zone: string | null, kinds: readonly PolicyKind[]): DnsPolicyListResult {
+    const scope = this.queryPolicyScope(zone, kinds);
+    return typeof scope === 'string' ? { ok: false, message: scope, policies: [] } : { ok: true, message: '', policies: this.policies.list(scope) };
+  }
+
+  private createPolicy(zone: string | null, spec: NewPolicy, kinds: readonly PolicyKind[]): DnsOpResult {
+    const scope = this.queryPolicyScope(zone, kinds);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.create(scope, spec));
+  }
+
+  private changePolicy(zone: string | null, name: string, changes: PolicyChanges, kinds: readonly PolicyKind[]): DnsOpResult {
+    const scope = this.queryPolicyScope(zone, kinds);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.change(scope, name, changes));
+  }
+
+  private deletePolicy(zone: string | null, name: string, kinds: readonly PolicyKind[]): DnsOpResult {
+    const scope = this.queryPolicyScope(zone, kinds);
     return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.remove(scope, name));
   }
 
@@ -1410,7 +1472,7 @@ export class WindowsDnsServerRole {
     return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.setEnabled(scope, name, enabled));
   }
 
-  private queryPolicyScope(zone: string | null, kinds: readonly PolicyKind[] = ['QueryProcessing', 'Recursion']): PolicyScope | string {
+  private queryPolicyScope(zone: string | null, kinds: readonly PolicyKind[]): PolicyScope | string {
     if (zone === null) return { zone: null, kinds };
     const origin = normalizeDnsName(zone);
     return this.settings.has(origin) ? { zone: origin, kinds: kinds.filter(kind => kind !== 'Recursion') } : zoneMissing(zone);
@@ -1419,7 +1481,58 @@ export class WindowsDnsServerRole {
   private scopeExists(kind: PolicyKind, zone: string | null, scope: string): boolean {
     return kind === 'Recursion'
       ? isDefaultRecursionScope(scope) || this.recursionScopes.find(scope) !== null
-      : zone !== null && normalizeDnsName(scope) === zone;
+      : zone !== null && (this.zoneScopes.isDefault(zone, scope) || this.zoneScopes.find(zone, scope) !== null);
+  }
+
+  getZoneScopes(zoneName: string): DnsZoneScopeListResult {
+    const zone = this.store.getZone(zoneName);
+    if (!zone) return { ok: false, message: zoneMissing(zoneName), scopes: [] };
+    const defaultScope: ZoneScopeView = { name: zone.origin, fileName: this.settings.get(zone.origin)?.zoneFile ?? '' };
+    return { ok: true, message: '', scopes: [defaultScope, ...this.zoneScopes.list(zone.origin)] };
+  }
+
+  addZoneScope(zoneName: string, name: string, loadExisting: boolean): DnsOpResult {
+    const zone = this.store.getZone(zoneName);
+    if (!zone) return { ok: false, message: zoneMissing(zoneName) };
+    if (isReverseLookupZone(zone.origin)) return { ok: false, message: `Zone "${zoneName}" is a reverse lookup zone and cannot have zone scopes.` };
+    if (zoneNameProblem(normalizeDnsName(name)) !== null) return { ok: false, message: ZONE_SCOPE_REFUSALS.invalidName };
+    const refusal = this.zoneScopes.create(zone.origin, name, () => this.scopeRecords(zone, name, loadExisting));
+    if (refusal === null) this.persistScope(this.zoneScopes.recordsOf(zone.origin, name)!, name);
+    return refusalToResult(refusal);
+  }
+
+  removeZoneScope(zoneName: string, name: string): DnsOpResult {
+    const zone = this.store.getZone(zoneName);
+    if (!zone) return { ok: false, message: zoneMissing(zoneName) };
+    return refusalToResult(this.zoneScopes.remove(zone.origin, name, scope => this.policies.referencesScope('QueryProcessing', zone.origin, scope)));
+  }
+
+  private scopeRecords(zone: Zone, name: string, loadExisting: boolean): Zone | string {
+    if (!loadExisting) return new Zone(zone.origin, zone.soa);
+    const text = this.zoneFiles?.read(zoneScopeFilePath(zone.origin, name)) ?? null;
+    if (text === null) return `The zone file "${zoneScopeFilePath(zone.origin, name)}" does not exist in C:\\Windows\\System32\\dns.`;
+    try {
+      return parseZoneFile(text, zone.origin);
+    } catch (e) {
+      if (e instanceof ZoneFileError || e instanceof ZoneError) return `The zone file "${zoneScopeFilePath(zone.origin, name)}" is invalid: ${e.message}`;
+      throw e;
+    }
+  }
+
+  private persistScope(records: Zone, name: string): void {
+    const settings = this.settings.get(records.origin);
+    if (settings && !settings.dsIntegrated && this.zoneFiles) this.zoneFiles.write(zoneScopeFilePath(records.origin, name), renderZoneFile(records));
+  }
+
+  private bookkeepingKey(zone: Zone, rr: ResourceRecord<ResourceRecordData>): string {
+    const scope = this.zoneScopes.nameOf(zone);
+    return scope === null ? recordKey(rr) : `scope:${scope}|${recordKey(rr)}`;
+  }
+
+  private recordsChanged(zone: Zone): void {
+    const scope = this.zoneScopes.nameOf(zone);
+    if (scope === null) this.zoneChanged(zone);
+    else this.persistScope(zone, scope);
   }
 
   getRecursionScopes(): RecursionScopeView[] {
@@ -1674,6 +1787,7 @@ export class WindowsDnsServerRole {
     this.aging.delete(origin);
     this.settings.delete(origin);
     this.policies.removeZone(origin);
+    this.zoneScopes.dropZone(origin);
     this.statistics.forgetZone(origin);
     this.zoneDynamicUpdate.delete(origin);
     this.secondaries.discard(origin);
@@ -1706,7 +1820,7 @@ export class WindowsDnsServerRole {
     return {
       name, type: settings.type, recordCount: zone?.allRecords().length ?? 0,
       dynamicUpdate: this.dynamicUpdateMode(name), zoneFile: settings.zoneFile, isDsIntegrated: settings.dsIntegrated,
-      isReverse: name.endsWith('.arpa'), isLoaded: zone !== null, serial: zone?.soa.data.serial ?? null,
+      isReverse: isReverseLookupZone(name), isLoaded: zone !== null, serial: zone?.soa.data.serial ?? null,
       secureSecondaries: settings.transfer, secondaryServers: [...settings.secondaryServers],
       notify: settings.notify, notifyServers: [...settings.notifyServers],
       masterServers: [...settings.masters], lastZoneTransfer: settings.lastTransferMs,
@@ -1787,7 +1901,7 @@ export class WindowsDnsServerRole {
     return this.keyring.list().map(k => ({ name: k.name, algorithm: k.algorithm }));
   }
 
-  private zoneFor(zoneName: string, cmdletName: string): Zone | { error: DnsOpResult } {
+  private zoneFor(zoneName: string, cmdletName: string, scope?: string): Zone | { error: DnsOpResult } {
     const key = normalizeDnsName(zoneName);
     const settings = this.settings.get(key);
     if (settings?.type === 'Secondary') {
@@ -1795,7 +1909,8 @@ export class WindowsDnsServerRole {
     }
     const zone = this.store.getZone(zoneName);
     if (!zone) return { error: { ok: false, message: `${cmdletName} : ${zoneMissing(zoneName)}` } };
-    return zone;
+    if (scope === undefined || this.zoneScopes.isDefault(zone.origin, scope)) return zone;
+    return this.recordsOfScope(zone, scope) ?? { error: { ok: false, message: ZONE_SCOPE_REFUSALS.absent } };
   }
 
   private fqdn(recordName: string, zone: Zone): string {
@@ -1806,7 +1921,7 @@ export class WindowsDnsServerRole {
     zoneName: string, recordName: string, spec: DnsRecordSpec, ttl = 3600,
     cmdletName = 'Add-DnsServerResourceRecord', createPtr = false, options: DnsRecordOptions = {},
   ): DnsOpResult {
-    const zone = this.zoneFor(zoneName, cmdletName);
+    const zone = this.zoneFor(zoneName, cmdletName, options.scope);
     if ('error' in zone) return zone.error;
     try {
       const fqdn = this.fqdn(recordName, zone);
@@ -1820,10 +1935,10 @@ export class WindowsDnsServerRole {
         if (!reverse) return { ok: false, message: `No writable reverse lookup zone is authoritative for "${ptrQName(address)}".` };
       }
       zone.addRecord(record);
-      if (options.age) this.stamp(record);
-      if (options.allowUpdateAny) this.updatableByAny.add(recordKey(record));
+      if (options.age) this.stamp(zone, record);
+      if (options.allowUpdateAny) this.updatableByAny.add(this.bookkeepingKey(zone, record));
       if (reverse) this.writePtr(reverse, ttl, fqdn);
-      this.zoneChanged(zone);
+      this.recordsChanged(zone);
       return { ok: true, message: '' };
     } catch (e) { return { ok: false, message: (e as Error).message }; }
   }
@@ -1858,8 +1973,8 @@ export class WindowsDnsServerRole {
     }, ttl, 'Add-DnsServerResourceRecord -Srv');
   }
 
-  removeRecord(zoneName: string, recordName: string, type: string, data?: Record<string, string | number>): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Remove-DnsServerResourceRecord');
+  removeRecord(zoneName: string, recordName: string, type: string, data?: Record<string, string | number>, scope?: string): DnsOpResult {
+    const zone = this.zoneFor(zoneName, 'Remove-DnsServerResourceRecord', scope);
     if ('error' in zone) return zone.error;
     const rrType = RRType[type.toUpperCase() as keyof typeof RRType];
     if (rrType === undefined) return { ok: false, message: `Unknown record type "${type}".` };
@@ -1868,14 +1983,14 @@ export class WindowsDnsServerRole {
       .filter(rr => data === undefined || sameFields(recordFields(rr), data));
     if (existing.length === 0) return { ok: false, message: `Cannot find "${fqdn}" of type ${type} in zone "${zoneName}".` };
     for (const rr of [...existing]) this.deleteRecord(zone, rr);
-    this.zoneChanged(zone);
+    this.recordsChanged(zone);
     return { ok: true, message: '' };
   }
 
   replaceRecord(
-    zoneName: string, recordName: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number,
+    zoneName: string, recordName: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number, scope?: string,
   ): DnsOpResult {
-    const zone = this.zoneFor(zoneName, 'Set-DnsServerResourceRecord');
+    const zone = this.zoneFor(zoneName, 'Set-DnsServerResourceRecord', scope);
     if ('error' in zone) return zone.error;
     const rrType = RRType[previous.type.toUpperCase() as keyof typeof RRType];
     const fqdn = this.fqdn(recordName, zone);
@@ -1893,20 +2008,22 @@ export class WindowsDnsServerRole {
       zone.addRecord(old);
       return { ok: false, message: (e as Error).message };
     }
-    this.zoneChanged(zone);
+    this.recordsChanged(zone);
     return { ok: true, message: '' };
   }
 
-  getRecords(zoneName: string, recordName?: string, type?: string): DnsRecordInfo[] | null {
-    const zone = this.store.getZone(zoneName);
-    if (!zone) return null;
+  getRecords(zoneName: string, recordName?: string, type?: string, scope?: string): DnsRecordInfo[] | null {
+    const found = this.store.getZone(zoneName);
+    if (!found) return null;
+    const zone = scope === undefined || this.zoneScopes.isDefault(found.origin, scope) ? found : this.recordsOfScope(found, scope);
+    if (zone === null) return null;
     const wanted = type ? RRType[type.toUpperCase() as keyof typeof RRType] : undefined;
-    const all = zone.allRecords();
+    const all = zone.allRecords().filter(rr => zone === found || rr.data.type !== RRType.SOA);
     const named = recordName ? all.filter(rr => rr.name.toLowerCase() === this.fqdn(recordName, zone).toLowerCase()) : all;
     const filtered = wanted === undefined ? named : named.filter(rr => rr.data.type === wanted);
     return filtered.map(rr => ({
       name: rr.name, type: RR_TYPE_NAME.get(rr.data.type) ?? String(rr.data.type), ttl: rr.ttl,
-      text: formatRecordData(rr), data: recordFields(rr), timestampMs: this.timestamps.get(recordKey(rr)) ?? null,
+      text: formatRecordData(rr), data: recordFields(rr), timestampMs: this.timestamps.get(this.bookkeepingKey(zone, rr)) ?? null,
     }));
   }
 

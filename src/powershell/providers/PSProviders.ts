@@ -995,7 +995,7 @@ import type { ServerStatisticsSnapshot } from '@/network/devices/windows/server/
 import type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/windows/server/dns/DnsClientSubnets';
 import type { ResponseRateLimitingChanges, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
 import type { NewPolicy, PolicyChanges, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
-import type { DnsPolicyListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
+import type { DnsPolicyListResult, DnsZoneScopeListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 import type { RecursionScopeChanges, RecursionScopeView } from '@/network/devices/windows/server/dns/DnsRecursionScopes';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
@@ -1019,6 +1019,8 @@ export type { NewPolicy, PolicyAction, PolicyChanges, PolicyContentEntry, Policy
 export type { PolicyCondition } from '@/network/devices/windows/server/dns/DnsPolicyCriteria';
 export type { DnsPolicyListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 export type { RecursionScopeChanges, RecursionScopeView } from '@/network/devices/windows/server/dns/DnsRecursionScopes';
+export type { ZoneScopeView } from '@/network/devices/windows/server/dns/DnsZoneScopes';
+export type { DnsZoneScopeListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1041,9 +1043,12 @@ export interface IDnsServerProvider {
   addMxRecord(zone: string, name: string, preference: number, mailExchange: string, ttl?: number): DnsOpResult;
   addPtrRecord(zone: string, name: string, ptrDomainName: string, ttl?: number): DnsOpResult;
   addSrvRecord(zone: string, name: string, target: { priority: number; weight: number; port: number; target: string }, ttl?: number): DnsOpResult;
-  removeRecord(zone: string, name: string, type: string, data?: Record<string, string | number>): DnsOpResult;
-  replaceRecord(zone: string, name: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number): DnsOpResult;
-  getRecords(zone: string, name?: string, type?: string): DnsRecordInfo[] | null;
+  removeRecord(zone: string, name: string, type: string, data?: Record<string, string | number>, scope?: string): DnsOpResult;
+  replaceRecord(zone: string, name: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number, scope?: string): DnsOpResult;
+  getRecords(zone: string, name?: string, type?: string, scope?: string): DnsRecordInfo[] | null;
+  getZoneScopes(zone: string): DnsZoneScopeListResult;
+  addZoneScope(zone: string, name: string, loadExisting: boolean): DnsOpResult;
+  removeZoneScope(zone: string, name: string): DnsOpResult;
 
   setForwarders(addresses: string[]): DnsOpResult;
   addForwarders(addresses: string[]): DnsOpResult;
@@ -1093,6 +1098,10 @@ export interface IDnsServerProvider {
   addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult;
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult;
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult;
+  getZoneTransferPolicies(zone: string | null): DnsPolicyListResult;
+  addZoneTransferPolicy(zone: string | null, spec: NewPolicy): DnsOpResult;
+  changeZoneTransferPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult;
+  removeZoneTransferPolicy(zone: string | null, name: string): DnsOpResult;
   setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult;
   getRecursionScopes(): RecursionScopeView[];
   addRecursionScope(name: string, forwarders: readonly string[], enableRecursion: boolean): DnsOpResult;

@@ -21,6 +21,7 @@ export interface DtpHost {
   getPorts(): import('../hardware/Port').Port[];
   sendOnLink(request: LinkSendRequest): boolean;
   onOperationalModeChanged(portName: string, mode: DtpOperationalMode): void;
+  vtpDomain(): string;
 }
 
 export class DtpAgent extends ReactiveAgentBase {
@@ -55,10 +56,6 @@ export class DtpAgent extends ReactiveAgentBase {
       this.stopTimers();
       this.armTimers();
     }
-  }
-
-  setDomain(name: string): void {
-    this.config.domain = name.slice(0, 32);
   }
 
   getPortState(portName: string): DtpPortState {
@@ -117,7 +114,8 @@ export class DtpAgent extends ReactiveAgentBase {
     if (s.adminMode === 'nonegotiate') return;
     const payload = frame.payload as DtpFrame | undefined;
     if (!payload || payload.type !== 'dtp') return;
-    if (this.config.domain && payload.domain && payload.domain !== this.config.domain) return;
+    const domain = this.host.vtpDomain();
+    if (domain && payload.domain && payload.domain !== domain) return;
     const oldOp = s.operationalMode;
     s.peerAdminMode = payload.adminMode;
     s.peerMac = payload.neighborMac;
@@ -157,7 +155,7 @@ export class DtpAgent extends ReactiveAgentBase {
     if (!shouldEmitDtp(s.adminMode) || s.adminMode === 'nonegotiate') return;
     const payload: DtpFrame = {
       type: 'dtp',
-      domain: this.config.domain,
+      domain: this.host.vtpDomain(),
       adminMode: s.adminMode,
       operationalMode: s.operationalMode,
       trunkEncapsulation: s.trunkEncapsulation,
