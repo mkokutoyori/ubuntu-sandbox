@@ -44,6 +44,8 @@
  * the STP labs, which fall with it). DtpWire.ts now writes the 802.3 + LLC/SNAP Cisco frame (pid 0x2004) and the TLVs as Wireshark's packet-dtp.c documents them: version 1, Domain (NUL-terminated), Trunk Status (operating bit 0x80,
  * administrative 1 on / 2 off / 3 desirable / 4 auto), Trunk Type (operating type in the top three bits: 1 native, 2 ISL, 5 802.1Q; administrative type 0 negotiated / 2 ISL / 5 802.1Q) and Sender ID; TcpdumpDtp.ts ports print-dtp.c.
  * The Domain TLV now carries the switch's VTP domain (DtpAgent kept a second, never-written domain; it reads the VTP one through the host). 56 of the 440 cases fall without the change (the dtp lab and the STP labs that hold a DTP frame).
+ * Correction to the fifteenth lab: a real capture (tcpdump's tests/DTP.pcap, dtp-wire-real-capture.test.ts) shows the Trunk Type byte of a dynamic port that is not trunking as 0x40 (operating type ISL), where the first encoder wrote
+ * NATIVE; the "dtp" lab was re-recorded.
  * Sixteenth and seventeenth labs, "vtp" and "vtpclient": a PC cabled to a Cisco switch trunk, domain LAB, one as a v1 server with a password, pruning and VLANs 10 and 20, the other as a v2 client. Measured before the change: the four VTP
  * messages were zero bytes under the made-up ethertype 0x2003. VtpWire.ts now writes the 802.3 + LLC/SNAP Cisco frame (pid 0x2003) and the v1/v2 messages as Wireshark's packet-vtp.c, tcpdump's print-vtp.c and Yersinia's vtp.h lay them out
  * (three readers that agree): header, 32-byte zero-padded domain, summary (revision, updater, 12 ASCII timestamp digits YYMMDDHHMMSS, 16-byte digest), subset (revision, VLAN info records with names padded to four bytes), request (a two-byte start

@@ -27,8 +27,8 @@ function tlv(type: number, value: readonly number[]): number[] {
 }
 
 function operatingType(frame: DtpFrame): number {
-  if (frame.operationalMode === 'access') return OPERATING_TYPE_NATIVE;
-  return frame.trunkEncapsulation === 'isl' ? OPERATING_TYPE_ISL : OPERATING_TYPE_DOT1Q;
+  if (frame.operationalMode !== 'trunk' && frame.adminMode === 'access') return OPERATING_TYPE_NATIVE;
+  return frame.trunkEncapsulation === 'dot1q' || (frame.operationalMode === 'trunk' && frame.trunkEncapsulation !== 'isl') ? OPERATING_TYPE_DOT1Q : OPERATING_TYPE_ISL;
 }
 
 export function dtpPayloadBytes(frame: DtpFrame): number[] {
