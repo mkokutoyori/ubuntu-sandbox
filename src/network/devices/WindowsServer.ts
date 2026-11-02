@@ -245,8 +245,9 @@ export class WindowsServer extends WindowsPC {
         return file.ok ? file.content ?? '' : null;
       },
       write: (fileName, text) => {
-        this.getFileSystem().mkdirp(directory);
-        this.getFileSystem().createFile(`${directory}\\${fileName}`, text);
+        const path = `${directory}\\${fileName}`;
+        this.getFileSystem().mkdirp(path.slice(0, path.lastIndexOf('\\')));
+        this.getFileSystem().createFile(path, text);
       },
       remove: (fileName) => { this.getFileSystem().deleteFile(`${directory}\\${fileName}`); },
     };
