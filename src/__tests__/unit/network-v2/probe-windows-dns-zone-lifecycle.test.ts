@@ -21,7 +21,7 @@
  * server, that restoring an Active Directory integrated zone reloads nothing (the directory is the server's own store here), and the
  * wording of the refusal to restore a zone that is not a primary or a secondary one.
  *
- * Discrimination (the probe run on the tree before the change): 27 of 29 cases fall, the ones that need the cmdlets and the ones that
+ * Discrimination (the probe run on the tree before the change): 29 of 31 cases fall, the ones that need the cmdlets and the ones that
  * need a zone to be paused. The two that pass on both sides are named: the WITNESS (the zone answers while it runs) and the CONTROL (a
  * secondary zone that has not transferred is still reported as paused).
  */
@@ -154,6 +154,27 @@ describe('Suspend-DnsServerZone and Resume-DnsServerZone', () => {
     expect(await cmd('(Get-DnsServerZone -Name ext.test).IsPaused')).toBe('True');
     expect(await verdict(clientA, 'host.ext.test')).not.toBe('answered');
     await cmd(`${RESUME} -Name ext.test -Force`);
+    expect(await verdict(clientA, 'host.ext.test')).toBe('answered');
+  });
+
+  it('count the transfer of a suspended zone as a query for a zone that is not there, not as a refusal for security', async () => {
+    const { cmd, clientA } = await governed();
+    const count = (member: string) => cmd(`(Get-DnsServerStatistics).MasterStatistics.${member}`);
+    expect(await refusedAxfr(clientA)).toBe(true);
+    expect([await count('RefuseSecurity'), await count('RefuseNotAuth')]).toEqual(['1', '0']);
+    await cmd(`${SUSPEND} -Name corp.test -Force`);
+    expect(await refusedAxfr(clientA)).toBe(true);
+    expect([await count('RefuseSecurity'), await count('RefuseNotAuth')]).toEqual(['1', '1']);
+  });
+
+  it('go with a conditional forwarder zone too: a forwarder zone that is added again is not suspended', async () => {
+    const { cmd, verdict, clientA } = await governed();
+    await cmd('Add-DnsServerConditionalForwarderZone -Name ext.test -MasterServers 10.0.1.30');
+    await cmd(`${SUSPEND} -Name ext.test -Force`);
+    expect(await cmd('(Get-DnsServerZone -Name ext.test).IsPaused')).toBe('True');
+    await cmd('Remove-DnsServerZone -Name ext.test -Force');
+    await cmd('Add-DnsServerConditionalForwarderZone -Name ext.test -MasterServers 10.0.1.30');
+    expect(await cmd('(Get-DnsServerZone -Name ext.test).IsPaused')).toBe('False');
     expect(await verdict(clientA, 'host.ext.test')).toBe('answered');
   });
 
