@@ -98,4 +98,32 @@ test.describe('radvd : un routeur Linux annonce un préfixe, l\'hôte se configu
     await openTerminal(page, host);
     expect(await output(page, 'ip -6 route show', 800)).not.toMatch(/^default/m);
   });
+
+  test('MTU, saut limite, temps de joignabilité, RDNSS et DNSSL d\'une annonce sont appliqués par l\'hôte', async ({ page }) => {
+    test.slow();
+    const router = await addDevice(page, 'linux-server', 360, 260);
+    const host = await addDevice(page, 'linux-pc', 120, 260);
+    await cable(page, router, 0, host, 0);
+
+    await openTerminal(page, router);
+    await typeCmd(page, 'sudo apt install -y radvd', 3000);
+    await typeCmd(page, 'sudo sysctl -w net.ipv6.conf.all.forwarding=1');
+    const conf = [
+      'interface eth0 {', ' AdvSendAdvert on;', ' AdvLinkMTU 1400;', ' AdvCurHopLimit 32;', ' AdvReachableTime 20000;', ' AdvRetransTimer 3000;',
+      ' prefix 2001:db8:77::/64 { };', ' RDNSS 2001:db8::53 { AdvRDNSSLifetime 600; };', ' DNSSL example.com lab.local { AdvDNSSLLifetime 600; };', '};',
+    ].join('\\n');
+    await typeCmd(page, `sudo sh -c 'printf "${conf}\\n" > /etc/radvd.conf'`);
+    expect(await output(page, 'sudo radvd -c')).toContain('syntax ok');
+    await typeCmd(page, 'sudo systemctl start radvd', 1500);
+    await closeTerminal(page);
+
+    await openTerminal(page, host);
+    expect(await output(page, 'cat /proc/sys/net/ipv6/conf/eth0/mtu', 600)).toContain('1400');
+    expect(await output(page, 'sysctl -n net.ipv6.conf.eth0.hop_limit', 600)).toContain('32');
+    expect(await output(page, 'cat /proc/sys/net/ipv6/neigh/eth0/base_reachable_time_ms', 600)).toContain('20000');
+    expect(await output(page, 'cat /proc/sys/net/ipv6/neigh/eth0/retrans_time_ms', 600)).toContain('3000');
+    const resolver = await output(page, 'cat /etc/resolv.conf', 600);
+    expect(resolver).toContain('nameserver 2001:db8::53');
+    expect(resolver).toContain('search example.com lab.local');
+  });
 });

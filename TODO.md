@@ -3868,7 +3868,7 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 Mesure (tcpdump 4.99.4 reel rejoue sur les captures du simulateur, laboratoires `rip`, `ospf`, `cdp` et `lldp` de `tcpdump-options-oracle.test.ts`) : RIPv1/v2 et OSPFv2 (Hello, DD, LS-Request, LS-Update
 avec LSA routeur / reseau / externe, LS-Ack) sont ecrits en octets reels (RFC 2453, RFC 2328, somme Fletcher des LSA selon la RFC 905) et imprimes comme `print-rip.c` et `print-ospf.c` ; CDP l'est aussi (cadre 802.3 + LLC/SNAP, TLV du CDPv2, `print-cdp.c`), pour les TLV que le moteur porte (pas les prefixes, la VoIP VLAN, la puissance, le MTU, le nom de systeme) ; LLDP aussi (TLV 802.1AB, 802.1 PVID / nom de VLAN, 802.3 MAC/PHY et taille de trame maximale ; la capacite PMD et le type MAU sont ecrits a 0, le moteur ne les modelise pas).
 STP l'est aussi (`stp/StpWire.ts` : BPDU de configuration, TCN, RSTP version 2, MSTP version 3, PVST+ SNAP `0x010b` avec le TLV de VLAN d'origine ; `print-stp.c` porte, SPB compris ; labos `stp`, `rstp`, `pvst`, `mstp`, `stppair`, `rstppair` et `stpcraft`). Limites mesurees du lot STP : le BPDU MSTP ne porte aucun enregistrement MSTI (le moteur n'en echange pas), son cout interne et son nombre de sauts valent 0 et 20 en dur, et le BPDU PVST+ du VLAN natif part sur l'adresse IEEE comme dans le moteur (un vrai IOS envoie aussi la copie SNAP pour le VLAN 1).
-Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported`), et, non mesures faute de laboratoire, DTP (0x2004, le vrai outil l'imprime `ethertype Unknown (0x2004)` avec son dump hexadecimal), VTP, PAgP, UDLD (trames Cisco d'ethertype logique a zero octet), BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
+Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported` ; l'encodeur attend le RTP que le moteur ne modelise pas : un Update porte un numero de sequence, un acquittement, les drapeaux Init / End-of-Table, et le Hello d'acquittement ; ecrire ces champs a zero mentirait sur tous les paquets fiables), et DTP (le simulateur l'emet sous l'ethertype 0x2004 au lieu du LLC/SNAP Cisco, le vrai outil l'imprime `ethertype Unknown (0x2004)` avec son dump hexadecimal), VTP, PAgP, UDLD : protocoles proprietaires de Cisco dont les valeurs d'octets (octet d'etat de DTP, types de TLV de VTP et d'UDLD) ne sont atteignables ni par une RFC ni par la documentation du constructeur depuis cet environnement ; `print-dtp.c`, `print-vtp.c` et `print-udld.c` ne donnent que des noms, pas la valeur que le commutateur ecrit. Regle 8 : ne pas deviner, donc rien n'est encode tant qu'une capture ou la documentation Cisco n'est pas disponible. Puis BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
 adresses y sont hachees, `checksum.ts`), HSRP, VRRP, PIM, IGMP. Limites connues du lot fait : le MD5 de RIP (RFC 4822) et d'OSPF (RFC 2328 D.4.3) n'est pas calcule par les moteurs, qui
 portent un condense propre : RIP l'ecrit comme un mot de passe, OSPF place les octets du condense du moteur (ou des zeros) apres le paquet ; les LSA opaques (RFC 5250), le LLS (RFC 5613)
 et les LSA de type 6 ne sont pas encodes. Pour chaque protocole restant : l'encodeur a cote du moteur (comme `ospf/OspfWire.ts`), le port de l'imprimeur (`print-eigrp.c`,
@@ -4215,25 +4215,19 @@ Ce qu'il manque, commande par commande : `UPGRADE CATALOG` et `TRANSPORT TABLESP
 directory` ici), l'erreur d'un fichier de `SPOOL LOG` non inscriptible (le message du systeme de fichiers), `msglog=`,
 `debug`, `trace=` et `using`. A rouvrir quand `docs.oracle.com` est autorise.
 
-### [traceroute] `tracert -R` lu et ignore, et deux doublons du routeur qui restent
+### [traceroute] `tracert -R` lu et ignore, et le code d'echec du routeur qui reste un nom
 
 `traceroute -6` et `traceroute6` existent sur un hote Linux (sondes UDP, `-I` ICMPv6, `-T` TCP, `-P`/`-M raw` avec le Parameter Problem de la cible imprime
 `!<4-1>`, `-l`, `-s`, `-i`, `-r`, annotations lues dans traceroute.c 2.1.0 ; sonde `probe-traceroute-ipv6`). `tracepath -6` (sonde `probe-tracepath-ipv6`),
 `mtr -6` (sonde `probe-mtr-ipv6`) et `tracert -6` de Windows (sonde `probe-tracert-ipv6`, mais `-R` reste lu et ignore) sont faits. La boucle de sauts est
-unique (`host/traceHops.collectTraceHops`, appelee par `EndHost` et par `Router.executeTraceroute` / `executeTraceroute6`). Reste ouvert, deux doublons dans
-`Router` : `udpTraceProbe` refait `EndHost.awaitQuotedIcmpError` + `awaitTraceError` (attente de `host.icmp.unreachable` citant la sonde), et
-l'attente d'un echo-reply / echo-failed par sonde ICMP refait `sendPing`/`sendPing6` ; le routeur y met `code` (nom) la ou l'hote met `icmpCode` (numero), et
+unique (`host/traceHops.collectTraceHops`, appelee par `EndHost` et par `Router.executeTraceroute` / `executeTraceroute6`). Ferme : l'attente d'un `host.icmp.unreachable` qui cite la sonde est unique (`host/traceHops.awaitQuotedIcmpError`, appelee par `EndHost` et par `Router.udpTraceProbe`). L'attente d'un echo-reply / echo-failed par sonde l'est aussi (`host/echoWait.armEchoWait`, appelee par `EndHost` et par `Router._sendPing` / le ping IPv6 du routeur ; les deux sondes de `executeTraceroute` filtrent l'echec sans `toIp` et gardent leur copie). Reste ouvert : le routeur met `code` (nom) la ou l'hote met `icmpCode` (numero), et
 `iosUnreachableMark` lit le nom. Les unifier demande de porter le rendu IOS sur le numero. Le pointeur d'un Parameter Problem vaut toujours 6 (le champ Next
 Header de l'en-tete fixe), le simulateur ne portant pas d'en-tetes d'extension autres que le fragment. La taille de paquet `packetlen` est imprimee dans
 l'entete et ne dimensionne pas les sondes (IPv4 comme IPv6).
 
-### [radvd] la reception ignore les options RDNSS, DNSSL et MTU et le saut limite d'une annonce
+### [radvd] RDNSS et DNSSL sont appliques a `/etc/resolv.conf` sans demon utilisateur
 
-Mesure : l'hote lit le prefixe (A/L, durees de vie, echeance de la route), la duree de vie et la preference du routeur par defaut et les options Route
-Information (RFC 4191, bornes `accept_ra_rt_info_{min,max}_plen`) : sonde `probe-ipv6-hote-options-annonce`. Ce que `EndHost.handleRouterAdvertisement` ne lit
-toujours pas : le saut limite courant (`/proc/sys/net/ipv6/conf/<if>/hop_limit`), le temps de joignabilite, l'option MTU (`mtu6`, `accept_ra_mtu`), et les options
-RDNSS (RFC 8106) et DNSSL, que le noyau remet a l'espace utilisateur (systemd-networkd puis `resolvectl`) : un hote n'obtient donc ni serveur de noms ni domaine de
-recherche d'une annonce de radvd. A refermer cote hote, pas dans radvd : `ResolvedService` porte deja les serveurs par lien.
+L'hote lit les options RDNSS (RFC 8106 §5.1) et DNSSL (§5.2) d'une annonce et les ecrit dans `/etc/resolv.conf` pour la duree de vie de l'option (0 retire, 0xffffffff n'expire pas), un serveur de portee liaison portant sa zone (`fe80::1%eth0`) : sonde `probe-ipv6-hote-dns-annonce`. Le noyau ne fait que remettre ces options a l'espace utilisateur ; sur Ubuntu c'est systemd-networkd ou NetworkManager qui les consomme, et le simulateur n'a pas ce demon : l'application est faite par la machine elle-meme, sans bouton `UseDNS` ni `IPv6AcceptRA` propre a un fichier `.network`. `ResolvedService` (liens, `resolvectl status`) ne voit pas ces serveurs : seul le fichier les porte, comme pour les baux DHCP. Les ecrivains de `/etc/resolv.conf` restent plusieurs (bail DHCPv4 qui reecrit tout le fichier, networkd, liberation de bail qui le vide) ; DHCPv6 et RA partagent maintenant la fusion de `ResolvConfEdit`, reste a y ramener le bail DHCPv4 et networkd.
 
 ## Chargement de l'application
 

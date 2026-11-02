@@ -78,3 +78,14 @@ export async function lab() {
   const statistic = (member: string) => run(server, `(Get-DnsServerStatistics).RRLStatistics.${member}`);
   return { server, master, clientA, clientB, clientC, ask, flood, askOverTcp, rrl, statistic };
 }
+
+export async function policyLab() {
+  const context = await lab();
+  const { server, ask } = context;
+  const cmd = (line: string) => run(server, line);
+  const verdict = async (from: LinuxPC, qname: string, qtype: number = RRType.A): Promise<Verdict> => verdictOf(await ask(from, qname, qtype));
+  const verdictOverTcp = async (qname: string): Promise<Verdict> => verdictOf(await context.askOverTcp(qname));
+  await cmd('Add-DnsServerClientSubnet -Name Lan -IPv4Subnet 10.0.1.0/24');
+  await cmd('Add-DnsServerClientSubnet -Name Remote -IPv4Subnet 10.0.2.0/24');
+  return { ...context, cmd, verdict, verdictOverTcp };
+}

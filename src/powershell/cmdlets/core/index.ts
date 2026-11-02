@@ -194,6 +194,9 @@ import {
   SetDnsServerQueryResolutionPolicyCmdlet, RemoveDnsServerQueryResolutionPolicyCmdlet,
 } from './DnsQueryResolutionPolicyCmdlets';
 import { EnableDnsServerPolicyCmdlet, DisableDnsServerPolicyCmdlet } from './DnsPolicyStateCmdlets';
+import {
+  AddDnsServerRecursionScopeCmdlet, GetDnsServerRecursionScopeCmdlet, RemoveDnsServerRecursionScopeCmdlet, SetDnsServerRecursionScopeCmdlet,
+} from './DnsRecursionScopeCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -910,6 +913,10 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Remove-DnsServerQueryResolutionPolicy', new RemoveDnsServerQueryResolutionPolicyCmdlet()));
   registry.register(remotable('Enable-DnsServerPolicy', new EnableDnsServerPolicyCmdlet()));
   registry.register(remotable('Disable-DnsServerPolicy', new DisableDnsServerPolicyCmdlet()));
+  registry.register(remotable('Add-DnsServerRecursionScope', new AddDnsServerRecursionScopeCmdlet()));
+  registry.register(remotable('Get-DnsServerRecursionScope', new GetDnsServerRecursionScopeCmdlet()));
+  registry.register(remotable('Set-DnsServerRecursionScope', new SetDnsServerRecursionScopeCmdlet()));
+  registry.register(remotable('Remove-DnsServerRecursionScope', new RemoveDnsServerRecursionScopeCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));

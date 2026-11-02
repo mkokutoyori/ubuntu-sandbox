@@ -83,6 +83,9 @@ import {
   type PolicyView,
 } from './DnsPolicies';
 import { minuteOfDay } from './DnsPolicyCriteria';
+import {
+  DEFAULT_RECURSION_SCOPE, DnsRecursionScopes, isDefaultRecursionScope, type RecursionScopeChanges, type RecursionScopeView,
+} from './DnsRecursionScopes';
 import { RATE_ANALYTIC_EVENTS, type DnsAnalyticSink } from './DnsAnalyticLog';
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -366,6 +369,33 @@ interface ConditionalForwarder { masters: string[]; timeoutSeconds: number; useR
 
 interface ForwarderEntry { address: string; resolver: RecursiveResolver; averageMs: number | null; failures: number }
 
+class ForwarderPool {
+  private entries: ForwarderEntry[] = [];
+  private entriesTimeout = 0;
+
+  constructor(private readonly resolverFor: (address: IPAddress, timeoutSeconds: number) => RecursiveResolver) {}
+
+  of(configured: readonly string[], timeoutSeconds: number): ForwarderEntry[] {
+    if (timeoutSeconds !== this.entriesTimeout) {
+      this.entries = [];
+      this.entriesTimeout = timeoutSeconds;
+    }
+    if (configured.length === this.entries.length && configured.every((address, index) => address === this.entries[index].address)) {
+      return this.entries;
+    }
+    const parsed = parseAddresses(configured);
+    if (typeof parsed === 'string') {
+      this.entries = [];
+      return this.entries;
+    }
+    this.entries = configured.map((address, index) => this.entries.find(entry => entry.address === address)
+      ?? { address, resolver: this.resolverFor(parsed[index], timeoutSeconds), averageMs: null, failures: 0 });
+    return this.entries;
+  }
+}
+
+interface RecursionGovernance { readonly served: Served | null; readonly scope: string }
+
 interface ResolutionAttempt { resolver: RecursiveResolver; report?: (elapsedMs: number, succeeded: boolean) => void }
 
 interface Served {
@@ -393,8 +423,6 @@ const RATE_ERROR_CODES: ReadonlySet<number> = new Set([DnsRcode.FORMERR, DnsRcod
 const RRL_EXCEPTION_SCOPE: PolicyScope = { zone: null, kinds: ['RrlException'] };
 
 const ENABLEABLE_POLICY_KINDS: readonly PolicyKind[] = ['QueryProcessing', 'Recursion', 'ZoneTransfer'];
-
-const DEFAULT_RECURSION_SCOPE = '.';
 
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
@@ -424,8 +452,9 @@ export class WindowsDnsServerRole {
   private readonly trustAnchors: ResourceRecord<DsRecordData>[] = [];
   private readonly trustAnchorKeys = new Map<string, { name: string; cryptoAlgorithm: string; base64: string }>();
   private readonly zoneDynamicUpdate = new Map<string, DnsDynamicUpdateMode>();
-  private forwarderEntries: ForwarderEntry[] = [];
-  private forwarderEntriesTimeout = 0;
+  private readonly defaultForwarders = new ForwarderPool((address, timeoutSeconds) => this.forwardingResolver([address], timeoutSeconds));
+  private readonly scopeForwarders = new Map<string, ForwarderPool>();
+  private readonly recursionScopes = new DnsRecursionScopes();
   private readonly parameters: DnsServerParameters;
   private readonly aging = new Map<string, ZoneAging>();
   private readonly timestamps = new Map<string, number>();
@@ -646,10 +675,10 @@ export class WindowsDnsServerRole {
       return { reply: { ...response, flags: { ...response.flags, rcode: DnsRcode.SERVFAIL } }, imputedName: unloaded };
     }
     if (outsideAuthority && question && query.flags.rd) {
-      const governedRecursion = this.governedByRecursionPolicy(query, facts);
-      if (governedRecursion !== null) return governedRecursion;
-      if (this.parameters.recursionEnabled()) {
-        const resolvers = this.resolversFor(question.qname);
+      const governance = this.governedByRecursionPolicy(query, facts);
+      if (governance.served !== null) return governance.served;
+      if (this.recursionEnabledIn(governance.scope)) {
+        const resolvers = this.resolversFor(question.qname, governance.scope);
         if (resolvers.length > 0) return { reply: this.recurse(query, resolvers) };
       }
     }
@@ -679,11 +708,18 @@ export class WindowsDnsServerRole {
     return decision === null ? null : this.servedByPolicy(query, decision.action);
   }
 
-  private governedByRecursionPolicy(query: DnsMessage, facts: PolicyFacts): Served | null {
+  private governedByRecursionPolicy(query: DnsMessage, facts: PolicyFacts): RecursionGovernance {
     const question = query.questions[0];
-    if (this.cache.lookup(question.qname, question.qtype).kind !== 'miss') return null;
+    const ungoverned: RecursionGovernance = { served: null, scope: DEFAULT_RECURSION_SCOPE };
+    if (this.cache.lookup(question.qname, question.qtype).kind !== 'miss') return ungoverned;
     const decision = this.policies.decide(null, 'Recursion', facts);
-    return decision === null ? null : this.servedByPolicy(query, decision.action);
+    if (decision === null) return ungoverned;
+    if (decision.action !== 'ALLOW') return { served: this.servedByPolicy(query, decision.action), scope: DEFAULT_RECURSION_SCOPE };
+    return { served: null, scope: this.policies.nextScope(null, 'Recursion', decision.name) ?? DEFAULT_RECURSION_SCOPE };
+  }
+
+  private recursionEnabledIn(scopeName: string): boolean {
+    return isDefaultRecursionScope(scopeName) ? this.parameters.recursionEnabled() : this.recursionScopes.find(scopeName)?.enableRecursion ?? false;
   }
 
   private servedByPolicy(query: DnsMessage, action: PolicyAction): Served | null {
@@ -699,14 +735,16 @@ export class WindowsDnsServerRole {
     return null;
   }
 
-  private resolversFor(qname: string): ResolutionAttempt[] {
+  private resolversFor(qname: string, scopeName = DEFAULT_RECURSION_SCOPE): ResolutionAttempt[] {
     const name = normalizeDnsName(qname);
     let best: string | null = null;
     for (const zone of this.conditional.keys()) {
       if (isUnder(name, zone) && (best === null || zone.length > best.length)) best = zone;
     }
     if (best !== null) return [{ resolver: this.conditional.get(best)!.resolver }];
-    const attempts: ResolutionAttempt[] = this.orderedForwarders().map(entry => ({
+    const scope = isDefaultRecursionScope(scopeName) ? null : this.recursionScopes.find(scopeName);
+    const entries = this.ordered(scope === null ? this.forwarders() : this.scopeEntries(scope));
+    const attempts: ResolutionAttempt[] = entries.map(entry => ({
       resolver: entry.resolver,
       report: (elapsedMs, succeeded) => {
         if (succeeded) {
@@ -717,34 +755,25 @@ export class WindowsDnsServerRole {
         }
       },
     }));
-    if (this.parameters.usesRootHints() && this.rootResolver) attempts.push({ resolver: this.rootResolver });
+    const rootHints = scope === null ? this.parameters.usesRootHints() : entries.length === 0;
+    if (rootHints && this.rootResolver) attempts.push({ resolver: this.rootResolver });
     return attempts;
   }
 
   private forwarders(): ForwarderEntry[] {
-    const configured = this.parameters.forwarders();
-    const timeoutSeconds = this.parameters.forwardingTimeoutSeconds();
-    if (timeoutSeconds !== this.forwarderEntriesTimeout) {
-      this.forwarderEntries = [];
-      this.forwarderEntriesTimeout = timeoutSeconds;
-    }
-    if (configured.length === this.forwarderEntries.length && configured.every((address, index) => address === this.forwarderEntries[index].address)) {
-      return this.forwarderEntries;
-    }
-    const parsed = parseAddresses(configured);
-    if (typeof parsed === 'string') {
-      this.forwarderEntries = [];
-      return this.forwarderEntries;
-    }
-    this.forwarderEntries = configured.map((address, index) => this.forwarderEntries.find(entry => entry.address === address)
-      ?? { address, resolver: this.forwardingResolver([parsed[index]], timeoutSeconds), averageMs: null, failures: 0 });
-    return this.forwarderEntries;
+    return this.defaultForwarders.of(this.parameters.forwarders(), this.parameters.forwardingTimeoutSeconds());
   }
 
-  private orderedForwarders(): ForwarderEntry[] {
-    if (!this.parameters.reorderingEnabled()) return this.forwarders();
-    return [...this.forwarders()].sort((a, b) =>
-      a.failures - b.failures || (a.averageMs ?? Infinity) - (b.averageMs ?? Infinity));
+  private scopeEntries(scope: RecursionScopeView): ForwarderEntry[] {
+    const key = scope.name.trim().toLowerCase();
+    const pool = this.scopeForwarders.get(key) ?? new ForwarderPool((address, timeoutSeconds) => this.forwardingResolver([address], timeoutSeconds));
+    this.scopeForwarders.set(key, pool);
+    return pool.of(scope.forwarders, this.parameters.forwardingTimeoutSeconds());
+  }
+
+  private ordered(entries: ForwarderEntry[]): ForwarderEntry[] {
+    if (!this.parameters.reorderingEnabled()) return entries;
+    return [...entries].sort((a, b) => a.failures - b.failures || (a.averageMs ?? Infinity) - (b.averageMs ?? Infinity));
   }
 
   private handleTransfer(query: DnsMessage, transport: 'udp' | 'tcp', source: string | null): DnsMessage | DnsMessage[] {
@@ -1388,7 +1417,33 @@ export class WindowsDnsServerRole {
   }
 
   private scopeExists(kind: PolicyKind, zone: string | null, scope: string): boolean {
-    return kind === 'Recursion' ? scope === DEFAULT_RECURSION_SCOPE : zone !== null && normalizeDnsName(scope) === zone;
+    return kind === 'Recursion'
+      ? isDefaultRecursionScope(scope) || this.recursionScopes.find(scope) !== null
+      : zone !== null && normalizeDnsName(scope) === zone;
+  }
+
+  getRecursionScopes(): RecursionScopeView[] {
+    return [{ name: DEFAULT_RECURSION_SCOPE, forwarders: this.getForwarders(), enableRecursion: this.parameters.recursionEnabled() }, ...this.recursionScopes.list()];
+  }
+
+  addRecursionScope(name: string, forwarders: readonly string[], enableRecursion: boolean): DnsOpResult {
+    const parsed = parseAddresses(forwarders);
+    if (typeof parsed === 'string') return { ok: false, message: parsed };
+    return refusalToResult(this.recursionScopes.create(name, forwarders, enableRecursion));
+  }
+
+  changeRecursionScope(name: string, changes: RecursionScopeChanges): DnsOpResult {
+    if (!isDefaultRecursionScope(name)) {
+      const parsed = changes.forwarders === undefined ? [] : parseAddresses(changes.forwarders);
+      return typeof parsed === 'string' ? { ok: false, message: parsed } : refusalToResult(this.recursionScopes.change(name, changes));
+    }
+    const forwarded = changes.forwarders === undefined ? { ok: true, message: '' } : this.setForwarders(changes.forwarders);
+    if (!forwarded.ok) return forwarded;
+    return changes.enableRecursion === undefined ? forwarded : this.setRecursion(changes.enableRecursion);
+  }
+
+  removeRecursionScope(name: string): DnsOpResult {
+    return refusalToResult(this.recursionScopes.remove(name, scope => this.policies.referencesScope('Recursion', null, scope)));
   }
 
   getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }

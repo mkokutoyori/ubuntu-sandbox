@@ -23,7 +23,8 @@ import { yieldWhenSliceIsSpent } from '@/events/CooperativeYield';
 import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/SystemClock';
 
 import { PathClock } from '../core/time/PathClock';
-import { collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
+import { awaitQuotedIcmpError, collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
+import { armEchoWait, type EchoOutcome } from './host/echoWait';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
@@ -73,9 +74,10 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
   NeighborCache,
-  NDP_RETRANS_TIMER_MS,
   NDP_MAX_MULTICAST_SOLICIT,
+  DEFAULT_NEIGHBOR_PARAMETERS,
   type NeighborCacheEntry,
+  type NeighborParameters,
 } from './host/NeighborCache';
 import {
   HostSignalStore,
@@ -95,7 +97,7 @@ import {
   nextIPv6FragmentId, createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
   // IPv6 types
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
-  NDPRouterAdvertisement, NDPOptionPrefixInfo,
+  NDPRouterAdvertisement, NDPOptionPrefixInfo, NDPOptionMTU,
   createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement,
   createICMPv6EchoRequest, createICMPv6EchoReply, createRouterSolicitation, icmpv6TypeNumber,
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST, addressTextWithoutScope,
@@ -292,10 +294,6 @@ type Origination =
   | { readonly outcome: 'lost'; readonly packet: IPv4Packet }
   | { readonly outcome: 'looped'; readonly packet: IPv4Packet }
   | { readonly outcome: 'routed'; readonly packet: IPv4Packet; readonly route: OriginRoute };
-
-type EchoOutcome =
-  | { kind: 'reply'; r: HostIcmpEchoReplyPayload }
-  | { kind: 'failed'; r: HostIcmpEchoFailedPayload };
 
 interface EchoSettlement {
   readonly id: number;
@@ -594,12 +592,13 @@ export interface RouterAdvertisementAcceptance {
   readonly prefixInformation: boolean;
   readonly autoconfigure: boolean;
   readonly routerPreference: boolean;
+  readonly linkMtu: boolean;
   readonly routeInformation: { readonly minPrefixLength: number; readonly maxPrefixLength: number } | null;
 }
 
 const ACCEPT_EVERY_ROUTER_ADVERTISEMENT: RouterAdvertisementAcceptance = {
   accepted: true, defaultRouter: true, prefixInformation: true, autoconfigure: true,
-  routerPreference: true, routeInformation: { minPrefixLength: 0, maxPrefixLength: 128 },
+  routerPreference: true, linkMtu: true, routeInformation: { minPrefixLength: 0, maxPrefixLength: 128 },
 };
 
 const RA_DEFAULT_ROUTE_METRIC = 1024;
@@ -706,6 +705,7 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv6 State (RFC 4861, RFC 8200) ─────────────────────────────
   protected readonly neighborCache = new NeighborCache(() => this.getScheduler(), {
+    parameters: (iface) => this.neighborParameters(iface),
     onLearned: (ip, entry) => this.emitNdpLearned({
       ip, mac: entry.mac.toString(), iface: entry.iface,
     }),
@@ -800,6 +800,9 @@ export abstract class EndHost extends Equipment {
   }
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
+  protected hopLimitTowards(_destination: IPv6Address): number { return this.defaultHopLimit; }
+  protected neighborParameters(_iface: string): NeighborParameters { return DEFAULT_NEIGHBOR_PARAMETERS; }
+  protected adoptAdvertisedLinkParameters(_portName: string, _advertisement: NDPRouterAdvertisement): void {}
   protected get udpDiscoversPathMtu(): boolean { return false; }
   protected get tcpEcnPolicy(): TcpEcnPolicy { return 'off'; }
   protected get tcpEcnFallsBack(): boolean { return true; }
@@ -4152,7 +4155,7 @@ export abstract class EndHost extends Equipment {
       counters: this.protocolCounters,
       socketTable: this.socketTable,
       defaultTtl: () => this.defaultTTL,
-      defaultHopLimit: () => this.defaultHopLimit,
+      hopLimitTowards: (destination) => this.hopLimitTowards(destination),
       isLocalAddress: (address) => this.isLocalAddress(address),
       isLocalAddress6: (address) => this.isLocalAddress6(address),
       hasInvalidSource: (packet) => this.hasInvalidSource(packet),
@@ -4502,7 +4505,7 @@ export abstract class EndHost extends Equipment {
       checksum: 0, payload,
     };
     const ipPkt = createIPv6Packet(
-      srcIP, destinationIP, IP_PROTO_UDP, this.defaultHopLimit,
+      srcIP, destinationIP, IP_PROTO_UDP, this.hopLimitTowards(destinationIP),
       stampUdpChecksum(udp, srcIP.toString(), destinationIP.toString()), udp.length);
     if (this.firewallFilter6(iface, ipPkt, 'out') !== 'accept') return false;
     this.sendFrame(iface, {
@@ -4523,7 +4526,7 @@ export abstract class EndHost extends Equipment {
       type: 'udp', sourcePort, destinationPort,
       length: 8 + udpPayloadLength(payload, payloadBytes), checksum: 0, payload,
     };
-    const hopLimit = options.hopLimit ?? this.defaultHopLimit;
+    const hopLimit = options.hopLimit ?? this.hopLimitTowards(destinationIP);
     const marked = (packet: IPv6Packet): IPv6Packet => ({
       ...packet,
       ...(options.trafficClass === undefined ? {} : { trafficClass: options.trafficClass }),
@@ -4702,7 +4705,7 @@ export abstract class EndHost extends Equipment {
     if (!mayGenerateICMPv6Error(offendingPkt, icmpType)) return;
     if (this.isLocalAddress6(offendingPkt.sourceIP)) {
       const looped = createIPv6Packet(
-        errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit,
+        errorSource ?? offendingPkt.destinationIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.hopLimitTowards(offendingPkt.sourceIP),
         { type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra }, 48,
       );
       if (this.loopLocal(looped).delivery === 'delivered') this.handleICMPv6('lo', looped);
@@ -4717,7 +4720,7 @@ export abstract class EndHost extends Equipment {
       type: 'icmpv6', icmpType, code, invokingPacket: offendingPkt, ...extra,
     };
     const errorPkt = createIPv6Packet(
-      srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.defaultHopLimit, icmpError, 48,
+      srcIP, offendingPkt.sourceIP, IP_PROTO_ICMPV6, this.hopLimitTowards(offendingPkt.sourceIP), icmpError, 48,
     );
 
     const route = this.resolveIPv6Route(offendingPkt.sourceIP);
@@ -4938,24 +4941,7 @@ export abstract class EndHost extends Equipment {
   private armEchoWait(
     probe: { id: number; seq: number; target: string; anySource: boolean }, timeoutMs: number,
   ): () => Promise<EchoOutcome> {
-    const replied = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-reply',
-      (p) => p.deviceId === this.id && p.id === probe.id && p.seq === probe.seq
-        && (probe.anySource || p.fromIp === probe.target),
-      { timeoutMs, scheduler: this.getScheduler() },
-    ).then((r) => ({ kind: 'reply' as const, r }));
-    const failed = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-failed',
-      (p) => p.deviceId === this.id
-        && (p.id === -1 || (p.id === probe.id && p.seq === probe.seq))
-        && (p.toIp === probe.target || p.toIp === ''),
-      { timeoutMs, scheduler: this.getScheduler() },
-    ).then((r) => ({ kind: 'failed' as const, r }));
-    replied.catch(() => {});
-    failed.catch(() => {});
-    return () => Promise.race([replied, failed]);
+    return armEchoWait({ bus: this.getBus(), scheduler: this.getScheduler(), deviceId: this.id }, probe, timeoutMs);
   }
 
   // ─── Send Ping (ICMP Echo Request via IPv4) ───────────────────
@@ -5870,22 +5856,7 @@ export abstract class EndHost extends Equipment {
     quotesProbe: (pl: HostIcmpUnreachablePayload) => boolean,
     send: () => void,
   ): Promise<{ payload: HostIcmpUnreachablePayload; rttMs: number } | null> {
-    const sentAt = PathClock.now();
-    const answer = waitForEvent(
-      this.getBus(),
-      'host.icmp.unreachable',
-      (pl) => pl.deviceId === this.id && quotesProbe(pl),
-      { timeoutMs, scheduler: this.getScheduler() },
-    );
-    answer.catch(() => {});
-    send();
-    try {
-      const payload = await answer;
-      return { payload, rttMs: PathClock.now() - sentAt };
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return null;
-      throw err;
-    }
+    return awaitQuotedIcmpError({ bus: this.getBus(), scheduler: this.getScheduler(), deviceId: this.id }, timeoutMs, quotesProbe, send);
   }
 
   public async udpErrorProbe(
@@ -6731,7 +6702,7 @@ export abstract class EndHost extends Equipment {
       source,
       request.sourceIP,
       IP_PROTO_ICMPV6,
-      this.defaultHopLimit,
+      this.hopLimitTowards(request.sourceIP),
       createICMPv6EchoReply(echo.id || 0, echo.sequence || 0, dataSize),
       ICMP_ECHO_HEADER_BYTES + dataSize,
       { trafficClass: this.echoReplyTrafficClass(request) },
@@ -6932,6 +6903,12 @@ export abstract class EndHost extends Equipment {
     return ACCEPT_EVERY_ROUTER_ADVERTISEMENT;
   }
 
+  private applyAdvertisedMtu(port: Port, ra: NDPRouterAdvertisement): void {
+    const option = ra.options.find((o): o is NDPOptionMTU => o.optionType === 'mtu');
+    if (option === undefined || option.mtu < MTU.MIN_IPV6 || option.mtu > port.getMTU()) return;
+    port.setIPv6MTU(option.mtu);
+  }
+
   private validRoutePreference(value: number | undefined): number {
     return value === -1 || value === 1 ? value : 0;
   }
@@ -6959,6 +6936,8 @@ export abstract class EndHost extends Equipment {
     if (acceptance.accepted && acceptance.defaultRouter) {
       this.learnDefaultRouter(router, ra.routerLifetime, advertisedPreference);
     }
+    if (acceptance.accepted) this.adoptAdvertisedLinkParameters(portName, ra);
+    if (acceptance.accepted && acceptance.linkMtu) this.applyAdvertisedMtu(port, ra);
     for (const opt of acceptance.accepted && acceptance.routeInformation !== null ? ra.options : []) {
       if (opt.optionType !== 'route-info') continue;
       const { minPrefixLength, maxPrefixLength } = acceptance.routeInformation!;
@@ -7062,7 +7041,7 @@ export abstract class EndHost extends Equipment {
     const targetIpStr = targetIP.toString();
     const attempts = Math.min(
       NDP_MAX_MULTICAST_SOLICIT,
-      Math.max(1, Math.round(timeoutMs / NDP_RETRANS_TIMER_MS)),
+      Math.max(1, Math.round(timeoutMs / this.neighborParameters(portName).retransTimerMs)),
     );
     const perAttemptMs = Math.max(1, Math.floor(timeoutMs / attempts));
 
@@ -7206,7 +7185,7 @@ export abstract class EndHost extends Equipment {
     const id = opts?.ident ?? this.allocateEchoIdent();
     const dataSize = opts?.dataSize ?? ECHO_DATA_BYTES;
     const packet = createIPv6Packet(
-      source, target, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.defaultHopLimit,
+      source, target, IP_PROTO_ICMPV6, opts?.hopLimit ?? this.hopLimitTowards(target),
       createICMPv6EchoRequest(id, seq, dataSize), ICMP_ECHO_HEADER_BYTES + dataSize,
       { trafficClass: opts?.trafficClass, flowLabel: opts?.flowLabel },
     );

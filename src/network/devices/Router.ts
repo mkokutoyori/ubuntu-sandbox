@@ -119,7 +119,8 @@ import { CiscoFileSystem } from './shells/cisco/CiscoFileSystem';
 import { IcmpUnreachableRateLimit } from './router/IcmpUnreachableRateLimit';
 import { IcmpErrorTokenBucket, type TokenBucketSetting } from './router/IcmpErrorTokenBucket';
 import { icmpUnreachablePayload, icmpv6UnreachablePayload } from './host/icmpUnreachablePayload';
-import { collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
+import { awaitQuotedIcmpError, collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
+import { armEchoWait } from './host/echoWait';
 import type { HostIcmpUnreachablePayload } from './host/events';
 import { buildUdpOverIpv4 } from '../layers/transport/UdpEgress';
 import { evaluateIpv6Acl, formatIpv6AclLogMessage } from './router/Ipv6AclEngine';
@@ -6506,20 +6507,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       this.pingIdCounter++;
       const id = this.pingIdCounter;
       const sentAt = PathClock.now();
-      const reply = waitForEvent(
-        this.getBus(), 'host.icmp.echo-reply',
-        (p) => p.deviceId === this.id && p.fromIp === targetStr && p.id === id && p.seq === seq,
-        { timeoutMs, scheduler: this.getRouterScheduler() },
-      );
-      const failed = waitForEvent(
-        this.getBus(), 'host.icmp.echo-failed',
-        (p) => p.deviceId === this.id && (p.id === -1 || (p.id === id && p.seq === seq)),
-        { timeoutMs, scheduler: this.getRouterScheduler() },
-      );
-      const replyOutcome = reply.then((r) => ({ kind: 'reply' as const, r }));
-      const failedOutcome = failed.then((r) => ({ kind: 'failed' as const, r }));
-      replyOutcome.catch(() => {});
-      failedOutcome.catch(() => {});
+      const outcome = armEchoWait(
+        { bus: this.getBus(), scheduler: this.getRouterScheduler(), deviceId: this.id },
+        { id, seq, target: targetStr, anySource: false }, timeoutMs);
 
       this.ipv6Engine.sendEchoRequest(egress, targetIP, id, seq, dataSize);
       this.emitIcmpEchoSent({
@@ -6528,7 +6518,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       });
 
       try {
-        const winner = await Promise.race([replyOutcome, failedOutcome]);
+        const winner = await outcome();
         if (winner.kind === 'failed') {
           rows.push({
             success: false, rttMs: 0, ttl: 0, seq, fromIP: winner.r.fromIp,
@@ -6717,25 +6707,15 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   private async udpTraceProbe(
     destinationPort: number, timeoutMs: number, send: () => void,
   ): Promise<TraceProbeOutcome> {
-    const sentAt = PathClock.now();
-    const answer = waitForEvent(
-      this.getBus(),
-      'host.icmp.unreachable',
-      (pl) => pl.deviceId === this.id && pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === destinationPort,
-      { timeoutMs, scheduler: this.getRouterScheduler() },
-    );
-    answer.catch(() => {});
-    send();
-    try {
-      const reply = await answer;
-      const outcome: TraceProbeOutcome = { timeout: false, reached: false, rttMs: PathClock.now() - sentAt, ip: reply.fromIp };
-      if (reply.code === 'ttl-exceeded') return outcome;
-      if (reply.code === 'port-unreachable') return { ...outcome, reached: true };
-      return { ...outcome, unreachable: true, code: reply.code };
-    } catch (err) {
-      if (err instanceof WaitForEventTimeoutError) return { timeout: true, reached: false };
-      throw err;
-    }
+    const answer = await awaitQuotedIcmpError(
+      { bus: this.getBus(), scheduler: this.getRouterScheduler(), deviceId: this.id }, timeoutMs,
+      (pl) => pl.origProtocol === IP_PROTO_UDP && pl.origDestPort === destinationPort, send);
+    if (answer === null) return { timeout: true, reached: false };
+    const { payload: reply, rttMs } = answer;
+    const outcome: TraceProbeOutcome = { timeout: false, reached: false, rttMs, ip: reply.fromIp };
+    if (reply.code === 'ttl-exceeded') return outcome;
+    if (reply.code === 'port-unreachable') return { ...outcome, reached: true };
+    return { ...outcome, unreachable: true, code: reply.code };
   }
 
   /** @internal Resolve ARP for ping, returns MAC or null on timeout */
@@ -6793,21 +6773,9 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     const targetIpStr = targetIP.toString();
     const sentAt = PathClock.now();
 
-    // Phase 5.8: settle via the reactive bus instead of pendingPings.
-    const replyPromise = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-reply',
-      (p) => p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq,
-      { timeoutMs, scheduler: this.getRouterScheduler() },
-    );
-    const failedPromise = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-failed',
-      (p) => p.deviceId === this.id
-        && (p.id === -1 || (p.id === id && p.seq === seq))
-        && (p.toIp === targetIpStr || p.toIp === ''),
-      { timeoutMs, scheduler: this.getRouterScheduler() },
-    );
+    const outcome = armEchoWait(
+      { bus: this.getBus(), scheduler: this.getRouterScheduler(), deviceId: this.id },
+      { id, seq, target: targetIpStr, anySource: false }, timeoutMs);
 
     const dataSize = echoDataBytesForDatagram(opts?.sizeBytes ?? CISCO_ECHO_DATAGRAM_BYTES);
     const icmp: ICMPPacket = {
@@ -6858,14 +6826,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
       });
     }
 
-    const replyOutcome = replyPromise.then((r) => ({ kind: 'reply' as const, r }));
-    const failedOutcome = failedPromise.then((r) => ({ kind: 'failed' as const, r }));
-    // Observe the race loser's eventual timeout rejection.
-    replyOutcome.catch(() => {});
-    failedOutcome.catch(() => {});
-
     try {
-      const winner = await Promise.race([replyOutcome, failedOutcome]);
+      const winner = await outcome();
       if (winner.kind === 'failed') {
         const err = new Error(winner.r.reason) as Error & { pingCause?: string };
         // IOS marks the probe by the ICMP type that answered it: a

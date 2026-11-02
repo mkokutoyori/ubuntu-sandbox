@@ -1,4 +1,7 @@
 import { PathClock } from '../../core/time/PathClock';
+import type { IEventBus } from '@/events/EventBus';
+import type { IScheduler } from '@/events/Scheduler';
+import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import type { IcmpExtensionObject } from '../../icmp/IcmpExtensions';
 import type { TracerouteHopResult, TracerouteProbeResult } from '../EndHost';
 import type { HostIcmpUnreachablePayload } from './events';
@@ -77,4 +80,34 @@ export async function collectTraceHops(
   }
 
   return hops;
+}
+
+export interface QuotedIcmpErrorWaiter {
+  readonly bus: IEventBus;
+  readonly scheduler: IScheduler;
+  readonly deviceId: string;
+}
+
+export async function awaitQuotedIcmpError(
+  waiter: QuotedIcmpErrorWaiter,
+  timeoutMs: number,
+  quotesProbe: (payload: HostIcmpUnreachablePayload) => boolean,
+  send: () => void,
+): Promise<{ payload: HostIcmpUnreachablePayload; rttMs: number } | null> {
+  const sentAt = PathClock.now();
+  const answer = waitForEvent(
+    waiter.bus,
+    'host.icmp.unreachable',
+    (payload) => payload.deviceId === waiter.deviceId && quotesProbe(payload),
+    { timeoutMs, scheduler: waiter.scheduler },
+  );
+  answer.catch(() => {});
+  send();
+  try {
+    const payload = await answer;
+    return { payload, rttMs: PathClock.now() - sentAt };
+  } catch (error) {
+    if (error instanceof WaitForEventTimeoutError) return null;
+    throw error;
+  }
 }

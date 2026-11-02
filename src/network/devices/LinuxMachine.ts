@@ -93,7 +93,13 @@ import {
   LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LinuxVmSettings, LINUX_VM_KNOBS, LinuxFsSettings, LINUX_FS_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, KernelStringStore, LINUX_CORE_STRING_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
+import { MTU } from '../core/constants';
 import { IPV6_DEVICE_CONF_KNOBS, Ipv6DeviceConf } from './linux/Ipv6DeviceConf';
+import { IPV6_NEIGHBOR_CONF_KNOBS, Ipv6NeighborConf } from './linux/Ipv6NeighborConf';
+import { addNameserver, addSearchDomain, removeNameserver, removeSearchDomain } from './linux/ResolvConfEdit';
+import type { TimerHandle } from '@/events/Scheduler';
+import type { NeighborParameters } from './host/NeighborCache';
+import type { NDPRouterAdvertisement } from '../core/types';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
@@ -353,6 +359,7 @@ export abstract class LinuxMachine extends EndHost
       prefixInformation: conf.readsPrefixInformation(portName),
       autoconfigure: conf.autoconfigures(portName),
       routerPreference: conf.readsRouterPreference(portName),
+      linkMtu: conf.appliesAdvertisedMtu(portName),
       routeInformation: conf.routeInformationBounds(portName),
     };
   }
@@ -370,6 +377,24 @@ export abstract class LinuxMachine extends EndHost
           if (written && knob.name === 'disable_ipv6') this.applyIpv6Prohibitions();
           return written;
         });
+    }
+    const port = this.ports.get(scope);
+    if (port === undefined) return;
+    this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv6/conf/${scope}/mtu`,
+      () => `${port.getIPv6MTU()}\n`,
+      (text) => {
+        const value = Number(text.trim());
+        if (!Number.isInteger(value) || value < MTU.MIN_IPV6 || value > port.getMTU()) return false;
+        port.setIPv6MTU(value);
+        return true;
+      });
+  }
+  private registerIpv6NeighborScope(scope: string): void {
+    this.executor.vfs.mkdirp(`/proc/sys/net/ipv6/neigh/${scope}`, 0o755, 0, 0);
+    for (const knob of IPV6_NEIGHBOR_CONF_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv6/neigh/${scope}/${knob.name}`,
+        () => `${this.ipv6NeighborConf.get(scope, knob.name)}\n`,
+        (text) => Number(text.trim()) > 0 && this.ipv6NeighborConf.write(scope, knob.name, text));
     }
   }
   private applyIpv6Prohibitions(): void {
@@ -427,6 +452,7 @@ export abstract class LinuxMachine extends EndHost
       this.registerIpv6ConfScope(port.getName());
       this.applyIpv6Prohibitions();
     }
+    if (this.ipv6NeighborStore?.addInterface(port.getName())) this.registerIpv6NeighborScope(port.getName());
     this.attachAddrconf(port);
   }
   private addrconfDraws = 0;
@@ -452,6 +478,54 @@ export abstract class LinuxMachine extends EndHost
   getKernelIpFacts(): KernelIpFacts { return this.ipv4Settings.kernelIpFacts(this.ipForwardEnabled); }
   protected override dhcpIpEmission(): DhcpIpEmission { return ISC_DHCP_EMISSION; }
   protected override get defaultHopLimit(): number { return 64; }
+  protected override hopLimitTowards(destination: IPv6Address): number {
+    const route = this.resolveIPv6Route(destination);
+    return this.ipv6Conf.hopLimit(route === null ? 'default' : route.port.getName());
+  }
+  protected override adoptAdvertisedLinkParameters(portName: string, advertisement: NDPRouterAdvertisement): void {
+    this.ipv6Conf.adoptAdvertisedHopLimit(portName, advertisement.curHopLimit);
+    this.ipv6NeighborConf.adoptAdvertised(portName, advertisement.reachableTime, advertisement.retransTimer);
+    for (const option of advertisement.options) {
+      if (option.optionType === 'rdnss') {
+        for (const address of option.addresses) {
+          const text = address.isLinkLocal() ? `${address.toString()}%${portName}` : address.toString();
+          this.adoptResolverEntry(`rdnss:${portName}:${text}`, option.lifetime, (file) => addNameserver(file, text), (file) => removeNameserver(file, text));
+        }
+      } else if (option.optionType === 'dnssl') {
+        for (const domain of option.domains) {
+          this.adoptResolverEntry(`dnssl:${portName}:${domain}`, option.lifetime, (file) => addSearchDomain(file, domain), (file) => removeSearchDomain(file, domain));
+        }
+      }
+    }
+  }
+  private readonly resolverEntryTimers = new Map<string, TimerHandle>();
+  private adoptResolverEntry(key: string, lifetimeSec: number, add: (file: string) => string, remove: (file: string) => string): void {
+    const scheduler = this.getScheduler();
+    const armed = this.resolverEntryTimers.get(key);
+    if (armed !== undefined) scheduler.clear(armed);
+    this.resolverEntryTimers.delete(key);
+    const edit = (change: (file: string) => string): void => {
+      this.executor.vfs.writeFile('/etc/resolv.conf', change(this.executor.readFile('/etc/resolv.conf') ?? ''), 0, 0, 0o022);
+    };
+    if (lifetimeSec === 0) {
+      edit(remove);
+      return;
+    }
+    edit(add);
+    if (lifetimeSec === 0xffffffff) return;
+    this.resolverEntryTimers.set(key, scheduler.setTimeout(() => {
+      this.resolverEntryTimers.delete(key);
+      edit(remove);
+    }, lifetimeSec * 1000));
+  }
+  protected override neighborParameters(iface: string): NeighborParameters {
+    return this.ipv6NeighborConf.parameters(iface);
+  }
+  private ipv6NeighborStore: Ipv6NeighborConf | null = null;
+  private get ipv6NeighborConf(): Ipv6NeighborConf {
+    this.ipv6NeighborStore ??= new Ipv6NeighborConf([...this.ports.keys()]);
+    return this.ipv6NeighborStore;
+  }
   protected override get udpDiscoversPathMtu(): boolean { return true; }
   protected override get tcpEcnPolicy(): TcpEcnPolicy { return this.ipv4Settings.ecnPolicy; }
   protected override get tcpEcnFallsBack(): boolean { return this.ipv4Settings.ecnFallsBack; }
@@ -580,6 +654,7 @@ export abstract class LinuxMachine extends EndHost
       });
     for (const scope of this.deviceConf.scopes()) this.registerDeviceConfScope(scope);
     for (const scope of this.ipv6Conf.scopes()) this.registerIpv6ConfScope(scope);
+    for (const scope of this.ipv6NeighborConf.scopes()) if (scope !== 'all') this.registerIpv6NeighborScope(scope);
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,
@@ -3441,16 +3516,10 @@ export abstract class LinuxMachine extends EndHost
   ): void {
     void iface;
     if (dnsServers.length === 0) return;
-    const existant = (this.executor.readFile('/etc/resolv.conf') ?? '')
-      .split('\n').filter((l) => l.trim() !== '');
-    const lignes = [...existant];
-    if (domainName && !lignes.some((l) => l.trim() === `search ${domainName}`)) {
-      lignes.unshift(`search ${domainName}`);
-    }
-    for (const ip of dnsServers) {
-      if (!lignes.some((l) => l.trim() === `nameserver ${ip}`)) lignes.push(`nameserver ${ip}`);
-    }
-    this.executor.vfs.writeFile('/etc/resolv.conf', lignes.join('\n') + '\n', 0, 0, 0o022);
+    let text = this.executor.readFile('/etc/resolv.conf') ?? '';
+    if (domainName) text = addSearchDomain(text, domainName);
+    for (const ip of dnsServers) text = addNameserver(text, ip);
+    this.executor.vfs.writeFile('/etc/resolv.conf', text, 0, 0, 0o022);
     if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
   }
 

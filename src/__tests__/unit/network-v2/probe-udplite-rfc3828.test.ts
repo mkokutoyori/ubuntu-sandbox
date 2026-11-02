@@ -636,7 +636,7 @@ describe('the same rules hold over IPv6 (RFC 3828 §3.2: the pseudo-header is th
     const replies: string[] = [];
     const endpoint = new UdpLiteEndpoint({
       id: 'stub', name: 'stub', counters, socketTable: new SocketTable(),
-      defaultTtl: () => 64, defaultHopLimit: () => 64,
+      defaultTtl: () => 64, hopLimitTowards: () => 64,
       isLocalAddress: () => false, isLocalAddress6: () => false, hasInvalidSource: () => false,
       emitIpv4: () => false, emitIpv4ToGroup: () => false, emitIpv6: () => false, emitIpv6ToGroup: () => false,
       replyPortUnreachable: () => { replies.push('v4'); },

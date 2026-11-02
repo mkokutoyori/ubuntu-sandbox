@@ -5,7 +5,7 @@
  * combined with the condition of the list (AND by default, or OR) and EQ with NE combined the same way inside one criterion;
  * any list that holds is enough. A list is a server-level DNS policy: its name is unique whatever the case, a criterion
  * that is malformed or names no client subnet record, no name or no address is refused under the text of the Win32 error
- * and creates nothing, a list with no criterion has no valid settings, Set replaces the criteria it is given and keeps the
+ * and creates nothing, a list with no criterion is missing criteria (9983), Set replaces the criteria it is given and keeps the
  * others, and a client subnet record that a list names, under EQ or under NE, cannot be removed until the list is.
  *
  * Measured first (a Windows DNS server holding corp.test, three UDP clients, RRL enabled): none of the four cmdlets existed
@@ -17,8 +17,9 @@
  * 3.1.8.2 (the criteria and their grammar, the wildcard meaning "anything in contoso.com, including contoso.com"), 3.1.8.3
  * and 3.1.4.1 (CreatePolicy, UpdatePolicy, DeletePolicy, DeleteClientSubnetRecord and their errors), DNS_RPC_POLICY_TYPE
  * (DnsPolicyRRLExceptionList: queries exempted by name, source subnet or server interface) and the Win32 error table (9971,
- * 9972, 9974, 9975, 9990, 9993, 9994 and their texts). Not sourced, said here: that a list with no criterion is refused with
- * the text of 9974, that a client subnet criterion naming a record that does not exist is the invalid criterion of 9990, that
+ * 9972, 9974, 9975, 9983, 9990, 9993, 9994 and their texts). Not sourced, said here: that a list with no criterion is refused
+ * with the text of 9983 (the name and the text exist in the Windows message table, which code the server returns for it is
+ * inferred from the text), that a client subnet criterion naming a record that does not exist is the invalid criterion of 9990, that
  * an interface value is valid when it is an address, that the criteria are shown with comparators in capitals, EQ before NE
  * and no blanks, that Condition shows as And or Or as the provider class says, that Name is required, that a query a list
  * exempts is neither counted by RRLStatistics nor recorded by LogOnly, and that a criterion that cannot be decided (no
@@ -41,7 +42,7 @@ const REMOVE = 'Remove-DnsServerResponseRateLimitingExceptionlist';
 
 const EXISTS = 'A policy with the same name already exists on this level (server level or zone level) on the DNS server.';
 const MISSING = 'No policy with this name exists on this level (server level or zone level) on the DNS server.';
-const INVALID_SETTINGS = 'At least one of the settings of this policy is invalid.';
+const MISSING_CRITERIA = 'The policy is missing criteria.';
 const SUBNET_ACCESSED = 'The client subnet cannot be deleted while it is being accessed by a policy.';
 const INVALID_SUBNET = 'The criterion client subnet provided in the policy is invalid.';
 const INVALID_INTERFACE = 'The criterion interface provided in the policy is invalid.';
@@ -167,7 +168,7 @@ describe('the exception list cmdlets', () => {
 
   it.each([
     ['a name that is taken, whatever its case', (name: string) => `${ADD} -Name ${name.toUpperCase()} -Fqdn "EQ,b.test"`, EXISTS],
-    ['a list with no criterion', () => `${ADD} -Name Empty`, INVALID_SETTINGS],
+    ['a list with no criterion', () => `${ADD} -Name Empty`, MISSING_CRITERIA],
     ['a client subnet that is no criterion', () => `${ADD} -Name Bad -ClientSubnet "TrustedNet"`, INVALID_SUBNET],
     ['a client subnet record that does not exist', () => `${ADD} -Name Bad -ClientSubnet "EQ,Atlantis"`, INVALID_SUBNET],
     ['an FQDN that is no criterion', () => `${ADD} -Name Bad -Fqdn "*.contoso.com"`, INVALID_FQDN],
