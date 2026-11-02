@@ -1049,6 +1049,11 @@ export interface IDnsServerProvider {
   getZoneScopes(zone: string): DnsZoneScopeListResult;
   addZoneScope(zone: string, name: string, loadExisting: boolean): DnsOpResult;
   removeZoneScope(zone: string, name: string): DnsOpResult;
+  setZonePaused(name: string, paused: boolean): DnsOpResult;
+  syncZones(name: string | null): DnsOpResult;
+  exportZone(name: string, fileName: string): DnsOpResult;
+  restorePrimaryZone(name: string): DnsOpResult;
+  restoreSecondaryZone(name: string): DnsOpResult;
 
   setForwarders(addresses: string[]): DnsOpResult;
   addForwarders(addresses: string[]): DnsOpResult;
