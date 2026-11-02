@@ -3572,11 +3572,11 @@ export class LinuxCommandExecutor {
   private async handleBackgroundIfTrailingAsync(input: string): Promise<string | null> {
     const started = this.startBackgroundJob(input);
     if (started === null) return null;
-    await started.settled;
+    if (!started.waitsForTraffic) await started.settled;
     return started.announcement;
   }
 
-  private startBackgroundJob(input: string): { announcement: string; settled: Promise<unknown> } | null {
+  private startBackgroundJob(input: string): { announcement: string; settled: Promise<unknown>; waitsForTraffic: boolean } | null {
     if (!endsWithUnquotedAmp(input)) return null;
     let cmdLine = input.replace(/\s*&\s*$/, '').trim();
     if (!cmdLine || !isSingleSimpleCommand(cmdLine)) return null;
@@ -3591,13 +3591,13 @@ export class LinuxCommandExecutor {
     // §F5.8 — la table des processus de cet utilisateur est pleine : le
     // `fork()` échoue et le job n'existe jamais.
     const refusal = this.forkRefusal();
-    if (refusal) return { announcement: refusal, settled: Promise.resolve() };
+    if (refusal) return { announcement: refusal, settled: Promise.resolve(), waitsForTraffic: false };
     const spawned = this.spawnBackgroundJob(cmdLine, nohup);
     if (!spawned) return null;
     const lines: string[] = [];
     if (nohup) lines.push(`nohup: ignoring input and appending output to 'nohup.out'`);
     lines.push(`[${spawned.jobId}] ${spawned.pid}`);
-    return { announcement: lines.join('\n'), settled: spawned.settled };
+    return { announcement: lines.join('\n'), settled: spawned.settled, waitsForTraffic: waitsForTraffic(cmdLine) };
   }
 
   /**
@@ -9504,9 +9504,18 @@ function stripTrailingAmp(command: string): string {
  *  real daemon — there's no literal duration to parse, unlike `sleep N`. */
 const PERSISTENT_LISTENER_DURATION_MS = 100 * 365 * 86_400_000;
 
-function isBackgroundListener(cmdLine: string): boolean {
+function backgroundArgv(cmdLine: string): string[] {
   const typed = simpleTokenize(cmdLine);
-  const argv = typed[0] === 'sudo' ? parseSudoLead(typed.slice(1)).rest : typed;
+  return typed[0] === 'sudo' ? parseSudoLead(typed.slice(1)).rest : typed;
+}
+
+function waitsForTraffic(cmdLine: string): boolean {
+  const argv = backgroundArgv(cmdLine);
+  return argv.length > 0 && basenameOf(argv[0]) === 'tcpdump';
+}
+
+function isBackgroundListener(cmdLine: string): boolean {
+  const argv = backgroundArgv(cmdLine);
   if (argv.length === 0) return false;
   const head = basenameOf(argv[0]);
   if (head === 'tail') return argv.slice(1).some((a) => /^-[A-Za-z]*[fF]/.test(a) || a.startsWith('--follow'));
