@@ -1307,6 +1307,7 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   removeZoneScope(zone: string, name: string): DnsOpResult { return this.role().removeZoneScope(zone, name); }
   setZonePaused(name: string, paused: boolean): DnsOpResult { return this.role().setZonePaused(name, paused); }
   syncZones(name: string | null): DnsOpResult { return this.role().syncZones(name); }
+  ageRecords(zone: string, node: string | null, recurse: boolean): DnsOpResult { return this.role().ageRecords(zone, node, recurse); }
   exportZone(name: string, fileName: string): DnsOpResult { return this.role().exportZone(name, fileName); }
   restorePrimaryZone(name: string): DnsOpResult { return this.role().restorePrimaryZone(name); }
   restoreSecondaryZone(name: string): DnsOpResult { return this.role().restoreSecondaryZone(name); }
