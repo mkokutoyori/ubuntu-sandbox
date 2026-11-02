@@ -25,8 +25,10 @@ import { DirectoryStore } from './windows/server/ad/DirectoryStore';
 import { AD_NULL_GUID } from './windows/server/ad/AdTypes';
 import type { SharePermission } from './windows/server/smb/SmbTypes';
 import { WindowsDnsServerRole, type DnsZoneFileSink } from './windows/server/dns/WindowsDnsServerRole';
+import type { DnsLogFileSink } from './windows/server/dns/DnsDebugLog';
 import type { DnsServerIdentity } from './windows/server/dns/DnsServerSettings';
 import { RegistryDnsParameterStore } from './windows/server/dns/DnsServerParameters';
+import { DNS_ANALYTICAL_LOG, DNS_SERVER_EVENT_SOURCE } from './windows/server/dns/DnsAnalyticLog';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
@@ -250,6 +252,20 @@ export class WindowsServer extends WindowsPC {
     };
   }
 
+  private dnsLogFileSink(): DnsLogFileSink {
+    return {
+      size: (path) => {
+        const file = this.getFileSystem().readFile(path);
+        return file.ok ? (file.content ?? '').length : null;
+      },
+      append: (path, text) => { this.getFileSystem().appendFile(path, text); },
+      replace: (path, text) => {
+        this.getFileSystem().deleteFile(path);
+        this.getFileSystem().createFile(path, text);
+      },
+    };
+  }
+
   getDnsServerRole(): WindowsDnsServerRole | null {
     if (!this.roleManager.isInstalled('DNS')) {
       if (this.dnsServerRoleInstance) { this.dnsServerRoleInstance.stop(); this.dnsServerRoleInstance = null; }
@@ -259,10 +275,16 @@ export class WindowsServer extends WindowsPC {
       this.dnsServerRoleInstance = new WindowsDnsServerRole(this, {
         parameters: new RegistryDnsParameterStore(this.registry),
         now: () => this.simulatedDate().getTime(),
+        timeZone: () => this.identity.timezone,
         zoneFiles: this.dnsZoneFileSink(),
+        logFiles: this.dnsLogFileSink(),
         directoryAvailable: () => this.getDirectoryStore() !== null,
         identity: () => this.dnsServerIdentity(),
+        analytic: event => {
+          this.eventLog.writeEventLog(DNS_ANALYTICAL_LOG, DNS_SERVER_EVENT_SOURCE, event.id, 'Information', event.name, { ...event.fields });
+        },
       });
+      this.eventLog.newEventLog(DNS_ANALYTICAL_LOG, DNS_SERVER_EVENT_SOURCE, false);
       this.reconcileListeners();
     }
     return this.dnsServerRoleInstance;

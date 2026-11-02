@@ -9,6 +9,14 @@ export interface RipInterfaceSettings {
   readonly name: string;
   readonly sendVersion: 1 | 2;
   readonly receiveVersion: 1 | 2;
+  readonly authMode?: 'text' | 'md5';
+  readonly authString?: string;
+  readonly authKeychain?: string;
+}
+
+export interface KeyChainPatch {
+  readonly name: string;
+  readonly keys: ReadonlyArray<{ readonly id: number; readonly key: string }>;
 }
 
 export interface RipConfiguration {
@@ -53,9 +61,44 @@ export interface BgpNeighbour {
   readonly ip: string;
   readonly remoteAs: number;
   readonly weight?: number;
+  readonly shutdown?: boolean;
+  readonly prefixListIn?: string;
+  readonly prefixListOut?: string;
+  readonly routeMapIn?: string;
+  readonly routeMapOut?: string;
+}
+
+export interface AsPathListPatch {
+  readonly name: string;
+  readonly rules: ReadonlyArray<{ readonly id: number; readonly action: 'permit' | 'deny'; readonly regexp: string }>;
+}
+
+export interface CommunityListPatch {
+  readonly name: string;
+  readonly kind: 'standard' | 'expanded';
+  readonly rules: ReadonlyArray<{ readonly id: number; readonly action: 'permit' | 'deny'; readonly communities: readonly string[]; readonly regexp: string }>;
+}
+
+export interface RouteMapRulePatch {
+  readonly id: number;
+  readonly action: 'permit' | 'deny';
+  readonly matchPrefixList?: string;
+  readonly matchAsPath?: string;
+  readonly matchCommunity?: string;
+  readonly setCommunity?: readonly string[];
+  readonly setCommunityAdditive?: boolean;
+  readonly setLocalPreference?: number;
+  readonly setMetric?: number;
+  readonly setWeight?: number;
+}
+
+export interface RouteMapPatch {
+  readonly name: string;
+  readonly rules: readonly RouteMapRulePatch[];
 }
 
 export interface BgpConfiguration {
+  readonly defaultLocalPreference?: number;
   readonly enabled: boolean;
   readonly asn: number;
   readonly routerId: string;

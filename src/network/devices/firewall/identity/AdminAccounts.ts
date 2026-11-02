@@ -27,6 +27,22 @@ export interface ApiPrincipal {
   readonly profile: string;
 }
 
+const API_KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+export const API_KEY_LENGTH = 30;
+
+export function generateApiKey(random: (count: number) => Uint8Array = randomBytes): string {
+  let key = '';
+  for (const byte of random(API_KEY_LENGTH)) key += API_KEY_ALPHABET[byte % API_KEY_ALPHABET.length];
+  return key;
+}
+
+function randomBytes(count: number): Uint8Array {
+  const out = new Uint8Array(count);
+  if (typeof globalThis.crypto?.getRandomValues === 'function') return globalThis.crypto.getRandomValues(out);
+  for (let at = 0; at < count; at += 1) out[at] = Math.floor(Math.random() * 256);
+  return out;
+}
+
 export function authenticateApiKey(
   users: ReadonlyMap<string, ApiUserDraft>, key: string, source: string,
 ): ApiPrincipal | null {

@@ -58,7 +58,7 @@ function parseRemoteOutput(output: string, computer: string): PSValue[] | string
 
 export function remotable(displayName: string, cmdlet: ICmdlet, parameter = 'ComputerName'): ICmdlet {
   const key = parameter.toLowerCase();
-  return {
+  const wrapped: ICmdlet = {
     ...cmdlet,
     execute(ctx: CmdletContext): PSValue {
       const raw = ctx.named[key];
@@ -87,4 +87,6 @@ export function remotable(displayName: string, cmdlet: ICmdlet, parameter = 'Com
       return results.length === 1 ? results[0] : results;
     },
   };
+  if (cmdlet.whatIfTarget !== undefined) wrapped.whatIfTarget = cmdlet.whatIfTarget.bind(cmdlet);
+  return wrapped;
 }

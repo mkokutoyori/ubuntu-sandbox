@@ -20,11 +20,14 @@ import {
   type AccessList, type PrefixList,
 } from './AccessList';
 import { IpPrefixListStore } from '../../router/policy/IpPrefixList';
+import { RoutePolicyStore } from '../../router/policy/RoutePolicy';
+import { AsPathListStore } from '../../router/policy/AsPathList';
+import { CommunityListStore } from '../../router/policy/CommunityList';
 import type { IEventBus } from '../../../../events/EventBus';
 import type { TcpSocket, TcpStack } from '../../../tcp/TcpStack';
 import {
   OSPF_DEFAULTS, RIP_DEFAULTS,
-  type BgpConfiguration, type OspfConfiguration, type RipConfiguration,
+  type BgpConfiguration, type OspfConfiguration, type RipConfiguration, type RouteMapPatch, type AsPathListPatch, type CommunityListPatch, type KeyChainPatch,
 } from './DynamicRoutingTypes';
 import { FirewallBgp } from './FirewallBgp';
 import type { FirewallRoute } from '../l3/RouteTable';
@@ -92,6 +95,10 @@ export class FirewallRouting {
   private rip: RIPEngine | null = null;
   private readonly accessLists = new AccessListStore();
   private readonly prefixLists = new IpPrefixListStore();
+  private readonly routePolicies = new RoutePolicyStore();
+  private readonly asPathLists = new AsPathListStore();
+  private readonly keyChains = new Map<string, KeyChainPatch>();
+  private readonly communityLists = new CommunityListStore();
   private ospf: OSPFEngine | null = null;
   private ripConfig: RipConfiguration = RIP_DEFAULTS;
   private ospfConfig: OspfConfiguration = OSPF_DEFAULTS;
@@ -108,6 +115,10 @@ export class FirewallRouting {
       },
       removeRoutes: () => { deps.removeRoutes('bgp'); },
       listen: deps.listenBgp,
+      prefixLists: () => this.prefixLists,
+      routePolicies: () => this.routePolicies,
+      asPathLists: () => this.asPathLists,
+      communityLists: () => this.communityLists,
     });
   }
 
@@ -181,6 +192,53 @@ export class FirewallRouting {
   getAccessLists(): AccessListStore { return this.accessLists; }
 
   getPrefixLists(): IpPrefixListStore { return this.prefixLists; }
+
+  getRoutePolicies(): RoutePolicyStore { return this.routePolicies; }
+
+  applyRouteMap(patch: RouteMapPatch): void {
+    this.routePolicies.remove(patch.name);
+    const policy = this.routePolicies.upsert(patch.name);
+    for (const rule of patch.rules) {
+      const node = policy.upsertNode(rule.id, rule.action);
+      if (rule.matchPrefixList !== undefined) node.ifMatch({ ipPrefix: rule.matchPrefixList });
+      if (rule.matchAsPath !== undefined) node.ifMatch({ asPath: rule.matchAsPath });
+      if (rule.matchCommunity !== undefined) node.ifMatch({ community: rule.matchCommunity });
+      node.applySet({
+        ...(rule.setLocalPreference !== undefined ? { localPreference: rule.setLocalPreference } : {}),
+        ...(rule.setMetric !== undefined ? { cost: rule.setMetric } : {}),
+        ...(rule.setWeight !== undefined ? { weight: rule.setWeight } : {}),
+        ...(rule.setCommunity !== undefined && rule.setCommunity.length > 0 ? { communities: rule.setCommunity, communityAdditive: rule.setCommunityAdditive === true } : {}),
+      });
+    }
+  }
+
+  applyAsPathList(patch: AsPathListPatch): void {
+    this.asPathLists.upsert(patch.name).replace(patch.rules);
+  }
+
+  applyCommunityList(patch: CommunityListPatch): void {
+    this.communityLists.upsert(patch.name).replace(patch.rules.map(rule => ({ ...rule, kind: patch.kind })));
+  }
+
+  removeCommunityList(name: string): void {
+    this.communityLists.remove(name);
+  }
+
+  applyKeyChain(patch: KeyChainPatch): void {
+    this.keyChains.set(patch.name, patch);
+  }
+
+  removeKeyChain(name: string): void {
+    this.keyChains.delete(name);
+  }
+
+  removeAsPathList(name: string): void {
+    this.asPathLists.remove(name);
+  }
+
+  removeRouteMap(name: string): void {
+    this.routePolicies.remove(name);
+  }
 
   applyAccessList(list: AccessList): void {
     this.accessLists.upsert(list);
@@ -424,6 +482,13 @@ export class FirewallRouting {
         const declared = this.ripConfig.interfaces.find(entry => entry.name === name);
         if (!declared) return null;
         return { send: declared.sendVersion, receive: declared.receiveVersion };
+      },
+      getInterfaceAuth: (name: string) => {
+        const declared = this.ripConfig.interfaces.find(entry => entry.name === name);
+        if (declared?.authMode === 'text') return { mode: 'text' as const, keyId: 0, key: declared.authString ?? '' };
+        if (declared?.authMode !== 'md5') return null;
+        const lowest = [...(this.keyChains.get(declared.authKeychain ?? '')?.keys ?? [])].sort((a, b) => a.id - b.id)[0];
+        return { mode: 'md5' as const, keyId: lowest?.id ?? 0, key: lowest?.key ?? '' };
       },
       getPortIP: (name: string) => this.portOf(name)
         ? new IPAddress(this.portOf(name)!.ip) : null,

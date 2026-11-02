@@ -753,6 +753,17 @@ Pas de liste de tampons ni de pile de tampons dans `NanoEngine` : `linesArr`, la
 les verrous et la position memorisee sont ceux d'un seul fichier. **Report** : sortir l'etat d'un
 fichier dans un objet tampon (`openfile` de nano) que le moteur parcourt en cercle.
 
+### [fortigate] couverture de la reference CLI (FortiOS 7.4.12, `official_docs/forti-cli-ref-7412.txt`)
+Mesure (chemins `config ...` du sommaire de la reference confrontes a `FortiConfigTree.spec`) : 93 tables sur 1034 documentees existaient ; `firewall vipgrp`, `system arp-table` et `system proxy-arp` s'y ajoutent (`probe-fortigate-vipgrp`, `probe-fortigate-arp-table-et-proxy-arp`). Les plus grands
+absents : `system` (135), `firewall` (69), `wireless-controller` (49), `switch-controller` (47), `log` (42), `vpn` (19), `router` (18), `user` (16), `webfilter`
+(10), `web-proxy` (9), `dlp` (8), `emailfilter` (8). Regle 6 : une table n'entre que si le moteur honore ses criteres. Candidats dont un consommateur existe deja (le moteur `bgp/` porte desormais les crochets `inboundAllows`/`outboundAllows` par voisin, alimentes par `prefix-list-in`/`prefix-list-out` ; `router route-map` existe desormais avec match-ip-address / set-local-preference / set-metric / set-weight ; restent ses autres criteres ; `router aspath-list` existe aussi) :
+`router community-list` / `community-list` / `key-chain` (le BGP FortiGate ne porte aujourd'hui que `as`, `router-id`, `remote-as`, `weight` ; le
+moteur `bgp/` et `router/policy/RoutePolicy` sont a brancher), `shaping-policy` / `shaping-profile`, `ippool6`, `vip6`, `vpn ipsec concentrator`,
+`user peer`. Chaque table demande de lire sa section dans la reference, de brancher l'evaluateur, et un probe.
+`execute api-user generate-key <name>` existe (syntaxe de la reference 7.4.12 p.3733 ; 7.6.7 p.3882 y ajoute `<expiry>` reserve a l'utilisateur « Fortinet Support Tool »,
+non porte) ; le LIBELLE de sortie « New API key: <cle> » n'est pas dans la reference (community.fortinet.com et docs.fortinet.com sont injoignables d'ici) : a
+verifier des qu'une capture existe.
+
 ### [fortigate] ce que `?` et la tabulation ne couvrent pas encore
 Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;
 `probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de `diagnose`

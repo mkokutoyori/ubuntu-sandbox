@@ -40,7 +40,7 @@ export function failed(ctx: CmdletContext, cmdletName: string, res: DnsOpResult)
   return null;
 }
 
-function missing(ctx: CmdletContext, cmdletName: string, parameters: string): null {
+export function missing(ctx: CmdletContext, cmdletName: string, parameters: string): null {
   ctx.emitError(`${cmdletName} : Cannot process command because of one or more missing mandatory parameters: ${parameters}.`);
   return null;
 }
@@ -55,10 +55,10 @@ export function isSwitchOn(value: PSValue | undefined): boolean {
   return value === true || value === 1 || (typeof value === 'string' && ['true', '1'].includes(value.toLowerCase()));
 }
 
-function choice<T extends string>(
-  ctx: CmdletContext, cmdletName: string, parameter: string, key: string, allowed: readonly T[],
+export function choice<T extends string>(
+  ctx: CmdletContext, cmdletName: string, parameter: string, key: string, allowed: readonly T[], position?: number,
 ): T | undefined | null {
-  const raw = ctx.named[key];
+  const raw = ctx.named[key] ?? (position === undefined ? undefined : ctx.positional[position]);
   if (raw === undefined) return undefined;
   const wanted = psValueToString(raw);
   const found = allowed.find(value => value.toLowerCase() === wanted.toLowerCase());

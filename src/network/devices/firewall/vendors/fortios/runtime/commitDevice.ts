@@ -33,6 +33,7 @@ export function buildCommitDevice(
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
+        if (patch.macOverride !== undefined) fw.setInterfaceMacOverride(name, patch.macOverride);
         if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
         if (patch.deviceIdentification !== undefined) {
           fw.getDeviceInventory().setIdentification(name, patch.deviceIdentification);
@@ -256,6 +257,8 @@ export function buildCommitDevice(
         if (settings.adminTimeoutMin !== undefined) {
           fw.setAdminIdleTimeout(settings.adminTimeoutMin);
         }
+        if (settings.adminLoginMax !== undefined) fw.setAdminLoginMax(settings.adminLoginMax);
+        if (settings.adminConcurrent !== undefined) fw.setAdminConcurrent(settings.adminConcurrent);
         if (settings.adminLockoutThreshold !== undefined
           && settings.adminLockoutDurationSec !== undefined) {
           fw.setAdminLockout(
@@ -386,6 +389,30 @@ export function buildCommitDevice(
       },
       applyPrefixList(list) {
         fw.getRouting().applyPrefixList(list);
+      },
+      applyRouteMap(patch) {
+        fw.getRouting().applyRouteMap(patch);
+      },
+      applyAsPathList(patch) {
+        fw.getRouting().applyAsPathList(patch);
+      },
+      applyCommunityList(patch) {
+        fw.getRouting().applyCommunityList(patch);
+      },
+      removeCommunityList(name) {
+        fw.getRouting().removeCommunityList(name);
+      },
+      applyKeyChain(patch) {
+        fw.getRouting().applyKeyChain(patch);
+      },
+      removeKeyChain(name) {
+        fw.getRouting().removeKeyChain(name);
+      },
+      removeAsPathList(name) {
+        fw.getRouting().removeAsPathList(name);
+      },
+      removeRouteMap(name) {
+        fw.getRouting().removeRouteMap(name);
       },
       removePrefixList(name) {
         fw.getRouting().removePrefixList(name);
@@ -559,6 +586,20 @@ export function buildCommitDevice(
       },
       applyFqdnVip(vip) {
         return applyFqdnVipToFirewall(fw, vip);
+      },
+      applyStaticArp(id, entry) {
+        fw.bindStaticArp(id, entry.ip, entry.mac, entry.interface);
+      },
+      removeStaticArp(id) {
+        fw.unbindStaticArp(id);
+      },
+      applyProxyArp(id, entry) {
+        fw.setProxyArpEntries(proxyOwnerKey('proxy-arp', id), [{
+          from: entry.ip, to: entry.endIp === '0.0.0.0' ? entry.ip : entry.endIp, iface: entry.interface,
+        }]);
+      },
+      removeProxyArp(id) {
+        fw.clearProxyArpEntries(proxyOwnerKey('proxy-arp', id));
       },
       applyVip(vip) {
         applyVipToFirewall(fw, vip);

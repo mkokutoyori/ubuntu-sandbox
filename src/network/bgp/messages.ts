@@ -145,6 +145,7 @@ export interface BgpPathAttributes {
   readonly nextHop: string;              // §5.1.3 NEXT_HOP
   readonly med?: number;                 // §5.1.4 MULTI_EXIT_DISC
   readonly localPref?: number;           // §5.1.5 LOCAL_PREF (iBGP)
+  readonly communities?: readonly string[];
 }
 
 /**

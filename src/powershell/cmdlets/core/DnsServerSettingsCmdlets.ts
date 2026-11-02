@@ -43,10 +43,14 @@ function spanSetting(ctx: CmdletContext, cmdletName: string, key: string, parame
   return refuseRange(ctx, cmdletName, parameter, psValueToString(raw), seconds, minimum, MAX_CACHE_TTL_SECONDS, asSpan) ? null : seconds;
 }
 
-function countSetting(ctx: CmdletContext, cmdletName: string, key: string, parameter: string, maximum: number): number | undefined | null {
+export function countSetting(ctx: CmdletContext, cmdletName: string, key: string, parameter: string, maximum: number): number | undefined | null {
   const raw = ctx.named[key];
   if (raw === undefined) return undefined;
   const value = Number(psValueToString(raw));
+  if (Number.isNaN(value)) {
+    ctx.emitError(`${cmdletName} : Cannot process argument transformation on parameter '${parameter}'. Cannot convert value "${psValueToString(raw)}" to type "System.UInt32". Error: "Input string was not in a correct format."`);
+    return null;
+  }
   return refuseRange(ctx, cmdletName, parameter, psValueToString(raw), value, 0, maximum) ? null : value;
 }
 

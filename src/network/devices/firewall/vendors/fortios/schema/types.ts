@@ -119,6 +119,7 @@ export interface FortiInterfacePatch {
   readonly vlanId?: number;
   readonly mtu?: number;
   readonly deviceIdentification?: boolean;
+  readonly macOverride?: string;
   readonly aggregate?: {
     readonly members: readonly string[];
     readonly lacpMode: 'static' | 'active' | 'passive';
@@ -262,6 +263,8 @@ export interface FortiGlobalSettings {
   readonly adminTimeoutMin?: number;
   readonly adminLockoutThreshold?: number;
   readonly adminLockoutDurationSec?: number;
+  readonly adminLoginMax?: number;
+  readonly adminConcurrent?: boolean;
   readonly preLoginBanner?: boolean;
   readonly postLoginBanner?: boolean;
   readonly lldpTransmission?: boolean;
@@ -383,6 +386,10 @@ export interface FortiCommitDevice {
   onPolicyChanged(policyId: string, policyMode: string): void;
   applyIpPool(pool: FortiIpPoolPatch): void;
   removeIpPool(name: string): void;
+  applyStaticArp(id: string, entry: { readonly interface: string; readonly ip: string; readonly mac: string }): void;
+  removeStaticArp(id: string): void;
+  applyProxyArp(id: string, entry: { readonly interface: string; readonly ip: string; readonly endIp: string }): void;
+  removeProxyArp(id: string): void;
   applyVip(vip: FortiVipPatch): void;
   applyFqdnVip(vip: FortiFqdnVipPatch): string | void;
   removeVip(name: string): void;
@@ -434,6 +441,14 @@ export interface FortiCommitDevice {
   applyAccessList(list: AccessList): void;
   removeAccessList(name: string): void;
   applyPrefixList(list: PrefixList): void;
+  applyRouteMap(patch: import('../../../routing/DynamicRoutingTypes').RouteMapPatch): void;
+  removeRouteMap(name: string): void;
+  applyAsPathList(patch: import('../../../routing/DynamicRoutingTypes').AsPathListPatch): void;
+  removeAsPathList(name: string): void;
+  applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
+  removeKeyChain(name: string): void;
+  applyCommunityList(patch: import('../../../routing/DynamicRoutingTypes').CommunityListPatch): void;
+  removeCommunityList(name: string): void;
   removePrefixList(name: string): void;
   maxVirtualDomains(): number;
   applyVdom(name: string): void;

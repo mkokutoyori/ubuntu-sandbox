@@ -187,6 +187,13 @@ const RIP_INTERFACE: FortiTableSpec = {
       { keyword: '1', description: 'RIPv1.' },
       { keyword: '2', description: 'RIPv2.' },
     ], '2'),
+    choice('auth-mode', 'Authentication mode.', [
+      { keyword: 'none', description: 'None.' },
+      { keyword: 'text', description: 'Clear text authentication.' },
+      { keyword: 'md5', description: 'Meticulous MD5 mode.' },
+    ], 'none'),
+    { ...text('auth-string', 'RIP authentication string (password).'), secret: true },
+    reference('auth-keychain', 'Authentication key-chain name.', ['router key-chain']),
   ],
 };
 
@@ -223,6 +230,10 @@ export const ROUTER_RIP: FortiTableSpec = {
         name: entry.key,
         sendVersion: entry.effective('send-version')[0] === '1' ? 1 : 2,
         receiveVersion: entry.effective('receive-version')[0] === '1' ? 1 : 2,
+        authMode: entry.effective('auth-mode')[0] === 'text' ? 'text' as const
+          : entry.effective('auth-mode')[0] === 'md5' ? 'md5' as const : undefined,
+        authString: entry.effective('auth-string')[0],
+        authKeychain: entry.effective('auth-keychain')[0] || undefined,
       })),
     });
   },
@@ -387,6 +398,11 @@ const BGP_NEIGHBOR: FortiTableSpec = {
     count('remote-as', 'Autonomous system of the neighbor.', 1, AS_NUMBER_MAX, 0),
     count('weight', 'Weight applied to routes learned from this neighbor.',
       0, 65535, 0),
+    enable('shutdown', 'Enable/disable shutdown this neighbor.'),
+    reference('prefix-list-in', 'Inbound filter for updates from this neighbor.', ['router prefix-list']),
+    reference('prefix-list-out', 'Outbound filter for updates to this neighbor.', ['router prefix-list']),
+    reference('route-map-in', 'Inbound route map filter.', ['router route-map']),
+    reference('route-map-out', 'Outbound route map filter.', ['router route-map']),
   ],
 };
 
@@ -415,6 +431,7 @@ export const ROUTER_BGP: FortiTableSpec = {
   attributes: [
     count('as', 'Local autonomous system number.', 0, AS_NUMBER_MAX, 0),
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
+    count('default-local-preference', 'Default local preference.', 0, 4294967295, 100),
   ],
   children: [BGP_NEIGHBOR, BGP_NETWORK],
   onCommit(object, context) {
@@ -434,10 +451,16 @@ export const ROUTER_BGP: FortiTableSpec = {
       enabled: asn > 0,
       asn,
       routerId: object.effective('router-id')[0] ?? '0.0.0.0',
+      defaultLocalPreference: Number.parseInt(object.effective('default-local-preference')[0] ?? '100', 10),
       neighbours: neighbours.map(entry => ({
         ip: entry.key,
         remoteAs: Number.parseInt(entry.effective('remote-as')[0] ?? '0', 10),
         weight: Number.parseInt(entry.effective('weight')[0] ?? '0', 10),
+        shutdown: entry.effective('shutdown')[0] === 'enable',
+        prefixListIn: entry.effective('prefix-list-in')[0] || undefined,
+        prefixListOut: entry.effective('prefix-list-out')[0] || undefined,
+        routeMapIn: entry.effective('route-map-in')[0] || undefined,
+        routeMapOut: entry.effective('route-map-out')[0] || undefined,
       })),
       networks: object.childEntries('network').map(entry => ({
         id: entry.key,
@@ -449,7 +472,223 @@ export const ROUTER_BGP: FortiTableSpec = {
   },
 };
 
+const ROUTE_MAP_RULE: FortiTableSpec = {
+  path: ['router', 'route-map', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Rule.',
+  attributes: [
+    { ...word('id', 'Rule ID.'), readOnly: true },
+    choice('action', 'Action.', [
+      { keyword: 'permit', description: 'Permit.' },
+      { keyword: 'deny', description: 'Deny.' },
+    ], 'permit'),
+    reference('match-as-path', 'Match BGP AS path list.', ['router aspath-list']),
+    reference('match-community', 'Match BGP community list.', ['router community-list']),
+    {
+      name: 'set-community', help: 'BGP community attribute.', quoted: true, multiValue: true,
+      parts: [{ name: 'set-community', type: 'WORD', description: 'Community.' }],
+    },
+    enable('set-community-additive', 'Enable/disable adding set-community to existing community.'),
+    reference('match-ip-address', 'Match IP address permitted by access-list or prefix-list.', ['router prefix-list']),
+    count('set-local-preference', 'BGP local preference path attribute.', 0, 4294967295, 0),
+    count('set-metric', 'Metric value.', 0, 4294967295, 0),
+    count('set-weight', 'BGP weight for routing table.', 0, 4294967295, 0),
+  ],
+};
+
+const ASPATH_LIST_RULE: FortiTableSpec = {
+  path: ['router', 'aspath-list', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'AS path list rule.',
+  attributes: [
+    { ...word('id', 'ID.'), readOnly: true },
+    choice('action', 'Permit or deny route-based operations, based on the route\'s AS_PATH attribute.', [
+      { keyword: 'deny', description: 'Deny route-based operations.' },
+      { keyword: 'permit', description: 'Permit route-based operations.' },
+    ], 'deny'),
+    text('regexp', 'Regular-expression to match the Border Gateway Protocol (BGP) AS paths.'),
+  ],
+};
+
+export const ROUTER_ASPATH_LIST: FortiTableSpec = {
+  path: ['router', 'aspath-list'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 239,
+  help: 'Configure Autonomous System (AS) path lists.',
+  attributes: [
+    { ...word('name', 'AS path list name.'), readOnly: true },
+  ],
+  children: [ASPATH_LIST_RULE],
+  onCommit(object, context) {
+    context.device.applyAsPathList({
+      name: object.key,
+      rules: object.childEntries('rule').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'permit' ? 'permit' as const : 'deny' as const,
+        regexp: entry.effective('regexp')[0] ?? '',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeAsPathList(key);
+  },
+};
+
+const COMMUNITY_LIST_RULE: FortiTableSpec = {
+  path: ['router', 'community-list', 'rule'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Community list rule.',
+  attributes: [
+    { ...word('id', 'ID.'), readOnly: true },
+    choice('action', 'Permit or deny route-based operations, based on the route\'s COMMUNITY attribute.', [
+      { keyword: 'deny', description: 'Deny route-based operations.' },
+      { keyword: 'permit', description: 'Permit or allow route-based operations.' },
+    ], 'deny'),
+    text('match', 'Community specifications for matching a reserved community.'),
+    text('regexp', 'Ordered list of COMMUNITY attributes as a regular expression.'),
+  ],
+};
+
+export const ROUTER_COMMUNITY_LIST: FortiTableSpec = {
+  path: ['router', 'community-list'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 243,
+  help: 'Configure community lists.',
+  attributes: [
+    { ...word('name', 'Community list name.'), readOnly: true },
+    choice('type', 'Community list type (standard or expanded).', [
+      { keyword: 'standard', description: 'Standard community list type.' },
+      { keyword: 'expanded', description: 'Expanded community list type.' },
+    ], 'standard'),
+  ],
+  children: [COMMUNITY_LIST_RULE],
+  onCommit(object, context) {
+    context.device.applyCommunityList({
+      name: object.key,
+      kind: object.effective('type')[0] === 'expanded' ? 'expanded' : 'standard',
+      rules: object.childEntries('rule').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'permit' ? 'permit' as const : 'deny' as const,
+        communities: (entry.effective('match')[0] ?? '').split(/\s+/).filter(word => word !== ''),
+        regexp: entry.effective('regexp')[0] ?? '',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeCommunityList(key);
+  },
+};
+
+const KEY_CHAIN_KEY: FortiTableSpec = {
+  path: ['router', 'key-chain', 'key'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Configuration method to edit key settings.',
+  attributes: [
+    { ...word('id', 'Key ID (0 - 2147483647).'), readOnly: true },
+    {
+      ...choice('algorithm', 'Cryptographic algorithm.', [
+        { keyword: 'md5', description: 'MD5.' },
+      ], 'md5'),
+    },
+    { ...text('key-string', 'Password for the key (maximum = 64 characters).'), secret: true },
+  ],
+};
+
+export const ROUTER_KEY_CHAIN: FortiTableSpec = {
+  path: ['router', 'key-chain'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 244,
+  help: 'Configure key-chain.',
+  attributes: [
+    { ...word('name', 'Key-chain name.'), readOnly: true },
+  ],
+  children: [KEY_CHAIN_KEY],
+  onCommit(object, context) {
+    context.device.applyKeyChain({
+      name: object.key,
+      keys: object.childEntries('key').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        key: entry.effective('key-string')[0] ?? '',
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeKeyChain(key);
+  },
+};
+
+export const ROUTER_ROUTE_MAP: FortiTableSpec = {
+  path: ['router', 'route-map'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 238,
+  help: 'Configure route maps.',
+  attributes: [
+    { ...word('name', 'Name.'), readOnly: true },
+    text('comments', 'Optional comments.'),
+  ],
+  children: [ROUTE_MAP_RULE],
+  onCommit(object, context) {
+    context.device.applyRouteMap({
+      name: object.key,
+      rules: object.childEntries('rule').map(entry => ({
+        id: Number.parseInt(entry.key, 10),
+        action: entry.effective('action')[0] === 'deny' ? 'deny' as const : 'permit' as const,
+        matchPrefixList: entry.effective('match-ip-address')[0] || undefined,
+        matchAsPath: entry.effective('match-as-path')[0] || undefined,
+        matchCommunity: entry.effective('match-community')[0] || undefined,
+        setCommunity: entry.isExplicit('set-community') ? [...entry.effective('set-community')] : undefined,
+        setCommunityAdditive: entry.effective('set-community-additive')[0] === 'enable',
+        setLocalPreference: entry.isExplicit('set-local-preference')
+          ? Number.parseInt(entry.effective('set-local-preference')[0] ?? '0', 10) : undefined,
+        setMetric: entry.isExplicit('set-metric')
+          ? Number.parseInt(entry.effective('set-metric')[0] ?? '0', 10) : undefined,
+        setWeight: entry.isExplicit('set-weight')
+          ? Number.parseInt(entry.effective('set-weight')[0] ?? '0', 10) : undefined,
+      })),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeRouteMap(key);
+  },
+};
+
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
   Object.freeze([
-    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
+    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_COMMUNITY_LIST, ROUTER_KEY_CHAIN, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
   ]);
