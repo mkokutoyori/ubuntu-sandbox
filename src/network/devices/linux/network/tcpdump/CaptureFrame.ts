@@ -50,6 +50,8 @@ import type { VrrpPacket } from '@/network/vrrp/types';
 import type { EigrpPacket } from '@/network/eigrp/packets';
 import type { OSPFPacket } from '@/network/ospf/types';
 import { isIPv4FragmentData } from '@/network/core/Ipv4Fragmentation';
+import { isUndecodedPayload } from '@/network/core/UndecodedPayload';
+import { decodeEthernetBytes, decodeLinkControl } from '@/network/capture/wire/WireDecoder';
 import type { Dot1QTag, TaggedEthernetFrame } from '../../../Switch';
 import type { TcpSegment, TcpOption } from '@/network/tcp/types';
 import { computeTcpChecksum, tcpFlagBits } from '@/network/tcp/types';
@@ -89,6 +91,7 @@ export interface Fragment6Info {
 export interface CaptureFrame {
   at: Date;
   atMicros?: number;
+  atSubMicroNanos?: number;
   iface: string;
   direction: CaptureDirection;
   linkType: string;
@@ -148,6 +151,8 @@ export interface CaptureFrame {
   arpTargetMac?: string;
   raw: number[];
   rawLinkOffset: number;
+  ifindex?: number;
+  truncatedLink?: boolean;
   appPayload?: number[];
   vlanId?: number;
   vlanPriority?: number;
@@ -273,6 +278,7 @@ function ripWireBytes(rip: RIPPacket): number[] {
 function appPayloadBytes(payload: unknown): number[] | undefined {
   if ((payload as { type?: string } | null)?.type === 'rip') return ripWireBytes(payload as RIPPacket);
   if ((payload as { type?: string } | null)?.type === 'hsrp' && hsrpIsEncodable(payload as HsrpPacket)) return hsrpPayloadBytes(payload as HsrpPacket);
+  if (payload instanceof DHCPPacket) return Array.from(payload.serialize());
   if (typeof payload === 'string') return Array.from(new TextEncoder().encode(payload));
   if (payload instanceof Uint8Array) return Array.from(payload);
   if (Array.isArray(payload) && payload.every((b) => typeof b === 'number')) {
@@ -349,6 +355,7 @@ function synthUdpLiteBytes(udp: UDPLitePacket): number[] {
 }
 
 function synthL4Bytes(pkt: IPv4Packet): number[] {
+  if (isUndecodedPayload(pkt.payload)) return Array.from(pkt.payload.bytes);
   const payload = pkt.payload as { type?: string };
   const source = pkt.sourceIP.toString();
   const destination = pkt.destinationIP.toString();
@@ -469,6 +476,7 @@ function synthIcmpv6Bytes(icmp: ICMPv6Packet, sourceIp: string, destinationIp: s
 }
 
 function synthL4BytesV6(pkt: IPv6Packet): number[] {
+  if (isUndecodedPayload(pkt.payload)) return Array.from(pkt.payload.bytes);
   const payload = pkt.payload as { type?: string };
   const source = addressText(pkt.sourceIP);
   const destination = addressText(pkt.destinationIP);
@@ -574,7 +582,8 @@ function decodeEthernetFrameBytes(
     vlanDei: tag?.dei,
   };
 
-  if (frame.etherType === ETHERTYPE_ARP) {
+  const undecoded = isUndecodedPayload(frame.payload);
+  if (frame.etherType === ETHERTYPE_ARP && !undecoded) {
     const arp = frame.payload as ARPPacket;
     base.l3 = 'arp';
     base.arpOp = arp.operation === 'reply' ? 'reply' : 'request';
@@ -588,7 +597,7 @@ function decodeEthernetFrameBytes(
     return base;
   }
 
-  if (frame.etherType === ETHERTYPE_IPV4) {
+  if (frame.etherType === ETHERTYPE_IPV4 && !undecoded) {
     const ip = frame.payload as IPv4Packet;
     base.l3 = 'ipv4';
     base.srcIp = ip.sourceIP.toString();
@@ -611,7 +620,7 @@ function decodeEthernetFrameBytes(
     return base;
   }
 
-  if (frame.etherType === ETHERTYPE_IPV6) {
+  if (frame.etherType === ETHERTYPE_IPV6 && !undecoded) {
     const ip6 = frame.payload as IPv6Packet;
     base.l3 = 'ipv6';
     base.srcIp = addressText(ip6.sourceIP);
@@ -697,7 +706,7 @@ function decodeEthernetFrameBytes(
     return base;
   }
 
-  const built = withEthernet(frame, []);
+  const built = withEthernet(frame, undecoded ? Array.from((frame.payload as { bytes: Uint8Array }).bytes) : []);
   base.raw = built.raw;
   base.rawLinkOffset = built.offset;
   return base;
@@ -778,6 +787,11 @@ function decodeIcmpOrig(orig: IPv4Packet, outer: CaptureFrame): IcmpOrigInfo {
 }
 
 function decodeIpv4Payload(base: CaptureFrame, ip: IPv4Packet): void {
+  if (isUndecodedPayload(ip.payload)) {
+    base.l4 = 'other';
+    base.payloadLength = Math.max(0, ip.totalLength - (ip.ihl ?? 5) * 4);
+    return;
+  }
   // `print-ip.c:470` : seul le fragment de decalage NUL porte l'en-tete
   // de transport. Le decoder sur les suivants fabriquait un en-tete TCP
   // de zeros — ports 0, sequence 0, somme 0 — c'est-a-dire la
@@ -893,6 +907,11 @@ function decodeIcmpOrig6(orig: IPv6Packet): IcmpOrigInfo {
 }
 
 function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
+  if (isUndecodedPayload(ip6.payload)) {
+    base.l4 = 'other';
+    base.payloadLength = ip6.payloadLength;
+    return;
+  }
   if (ip6.nextHeader === IP_PROTO_ICMPV6) {
     const icmp = ip6.payload as ICMPv6Packet;
     base.l4 = 'icmp6';
@@ -948,6 +967,30 @@ function decodeIpv6Payload(base: CaptureFrame, ip6: IPv6Packet): void {
 }
 
 const LOOPBACK_MAC = new MACAddress('00:00:00:00:00:00');
+
+export function decodeCapturedBytes(
+  bytes: Uint8Array,
+  wireLength: number,
+  iface: string,
+  direction: CaptureDirection,
+  at: Date,
+  atMicros?: number,
+): CaptureFrame | null {
+  const frame = decodeEthernetBytes(bytes);
+  if (frame === null) return null;
+  const base = decodeEthernetFrame(frame, iface, direction, at, atMicros);
+  const control = decodeLinkControl(bytes);
+  if (control !== null) {
+    base.l3 = control.protocol;
+    base.etherType = control.etherType;
+    base.rawLinkOffset = control.payloadAt;
+  }
+  base.raw = Array.from(bytes);
+  base.length = wireLength;
+  if (base.l3 === 'ipv4') reconcileTransportChecksums(base, base.ipHeaderLen ?? 20);
+  else if (base.l3 === 'ipv6' && base.fragment6 === undefined) reconcileTransportChecksums(base, 40);
+  return base;
+}
 
 export function makeTcpFrame(
   pkt: {

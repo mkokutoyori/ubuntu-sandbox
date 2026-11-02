@@ -400,6 +400,91 @@ commutateur une commande que son materiel n'a pas.
 
 ## Postes Linux
 
+### [tcpdump] un instantane coupe dans les en-tetes est imprime autrement
+**Mesure** : `tcpdump-savefile-oracle` rejoue 24 cas ou le fichier (ou `-s`) coupe le paquet au milieu
+d'un en-tete (`lab-snapshot-14` a `-128`, `snapshot-shorter-than-the-ip-header`) ; le simulateur imprime
+`[|tcp]`, `[|icmp6]`, `[|arp]` ou la longueur d'un echo ICMPv6 coupe autrement que tcpdump 4.99.4, sur un
+fichier comme sur une capture vivante avec `-s`. Les cas sont ignores (`PRINTS_TRUNCATED_PACKETS_DIFFERENTLY`).
+**Pourquoi ce n'est pas ferme** : chaque imprimeur de protocole doit connaitre la limite de ce qui est
+capture, ce que la trame decodee ne porte pas aujourd'hui (`CaptureFrame.truncatedLink` ne sert que la liaison).
+
+### [pcap] pcapng, et les types de liaison que le simulateur n'imprime pas
+`decodePcap` ne lit que les savefiles classiques (magics 0xa1b2c3d4, 0xa1b23c4d, 0xa1b2cd34) : un fichier
+pcapng (magic 0x0a0d0d0a, ce qu'ecrivent Wireshark et `dumpcap`) repond `unknown file format`, la ou
+libpcap 1.10.4 le lit. Et les types de liaison RAW (101), NULL (0) et LOOP (108) sont lus puis refuses avec le
+message de libpcap pour un type sans imprimeur : le simulateur ne sait imprimer que Ethernet et Linux cooked
+v1/v2. **Pourquoi ce n'est pas ferme** : pcapng est un autre format (blocs, options, interfaces multiples)
+et chaque type de liaison demande son imprimeur d'en-tete.
+
+### [capture] ce que la trame du simulateur ne porte pas en octets
+La trame est un objet, les octets de `CaptureFrame.raw` sont synthetises : une option TCP inconnue est perdue
+a l'ecriture, les fragments IP portent un marqueur (`ipv4-fragment-data`) et non leurs octets, la citation
+d'un message ICMP d'erreur est reconstruite et non copiee, et une charge utile `string` est encodee en UTF-8
+la ou un client reel enverrait ses octets. **Pourquoi ce n'est pas ferme** : il faut des charges
+utiles en octets de bout en bout, ce que seuls TCP et UDP portent deja.
+
+### [vfs] la taille d'un fichier compte des unites UTF-16 du texte, pas des octets
+**Mesure** : `printf 'é' > /tmp/x` puis `ls -l` et `stat -c %s` disent 1, `wc -c` dit 2 (l'octet reel). Un
+fichier est range comme texte (UTF-8 quand c'est valide, une unite d'echappement par octet sinon) et l'inode
+retient `content.length`. Un fichier binaire plein d'octets non UTF-8 compte juste ; un fichier avec des
+paires UTF-8 valides compte en moins. **Pourquoi ce n'est pas ferme** : la taille est lue par de nombreux
+sites (`ls`, `stat`, `du`, SFTP, SCP) et doit venir d'un seul calcul sur les octets.
+**Essai mesure et retire** : compter l'inode en octets (`fileTextToBytes(...).length`), ranger le conteneur gzip
+de `ArchiveCommands` et `rsyslog/engine/Latin1.ts` en texte de fichier, fait passer
+`probe-gzip-ecrit-du-vrai-gzip` (35 octets) et rend rouges 11 fichiers qui sont verts sur la base :
+`lastlog-binary-store`, `utmpx-records`, `scenario-session-02-last-lastb`, `scenario-session-06-binary-logs`,
+`linux-rsyslog-crypto`, `linux-rsyslog-impstats-push`, `linux-rsyslog-omfile`, `rsyslog-crypto-omfile`,
+`rsyslog-crypto-queue`, plus `nginx-gzip` et `tftp` (deux tests qui posaient l'ancienne convention, corriges
+dans ce lot). Ces producteurs rangent des CHAINES BINAIRES (un caractere par octet) dans le VFS : conteneurs
+gzip de `gzip`/`tar -z`/logrotate, journaux et files d'attente rsyslog, `wtmp`/`utmp`/`lastlog`. Tant qu'ils
+ne sont pas migres vers `bytesToFileText`, la taille en octets les gonfle, et un `scp` d'un `.gz` fait par
+`gzip` arrive altere. Le lecteur gzip (`gzipBytesOf`) accepte les deux formes en attendant.
+
+### [transfert] ce que la conversion fichier -> octets ne couvre pas encore
+Les deux adaptateurs de `ISftpFileSystem` pour Linux (`LinuxSftpFSAdapter` cote serveur, `VfsSftpFileSystem`
+cote local de `scp`/`sftp`) sont deux ecritures du meme contrat, avec des messages d'erreur differents ; seule
+leur conversion est maintenant commune (`wireStringOfFileText`). Restent : les appelants TFTP de FortiOS
+(`FortiShell`), que cette conversion n'a pas touches, le systeme de fichiers Windows derriere le meme
+contrat, `curl -d @fichier` (l'arobase n'est pas lue), et `wget` : `wget -O /tmp/f http://10.0.1.10/` repond
+`Connection refused` sur un nginx qui repond a `curl`, et sort avec le code 0.
+**Pourquoi ce n'est pas ferme** : fusionner les deux adaptateurs change les messages que les suites SFTP/SCP
+affirment ; `wget` et FortiOS demandent leur propre sonde.
+
+### [tcpdump] le fixture des options garde ses laboratoires en JSON, relus par un lecteur de compatibilite
+`tcpdump -w` ecrit un vrai savefile libpcap ; `tcpdump -r` lit un savefile ou, en lecture seule, l'ancien
+document `ubuntu-sandbox-capture-v1` (`legacyJsonCapture`), parce que les 24 laboratoires de
+`tcpdump-options-4.99.4.json` y sont encore enregistres en trames JSON. `record_tcpdump_options.py` ecrit
+desormais des entrees `pcap` (octets du savefile) et `tcpdump-options-oracle` rejoue les deux formes ; aucun
+laboratoire n'a ete reenregistre dans ce lot. **Mesure** : sur les 13 laboratoires enregistres a la main pendant
+ce travail (rip, ospf, cdp, lldp, stp, rstp, pvst, mstp, stppair, rstppair, dns, base, stpcraft), les 382 cas passaient
+rejoues depuis un savefile reel une fois STP/CDP/LLDP classes depuis les octets (`decodeLinkControl`) ; les
+onze laboratoires ajoutes depuis (eigrp, dtp, vtp, vtpclient, udld, vrrp, igmp, igmpv1, ipopts, hsrp, pim)
+n'ont pas ete rejoues depuis un savefile : leurs imprimeurs lisent des champs de trame JSON que la relecture
+d'octets ne remplit peut-etre pas. **Pourquoi ce n'est pas ferme** : il faut les enregistrer (`TCPDUMP_RECORD_DIR`
+puis le script) et lire les ecarts un a un ; le laboratoire `base` ne s'enregistre plus (entree suivante).
+
+### [tcpdump] l'enregistrement de la capture du laboratoire de base ne se termine pas
+**Mesure** : `TCPDUMP_RECORD_DIR=... vitest run tcpdump-options-record.test.ts` s'arrete sur le delai de
+480 s a l'enregistrement du laboratoire `base`, sur cet arbre comme sur `c956b5f9d` (avant le travail pcap) :
+le defaut est anterieur. Le fixture `tcpdump-options-4.99.4.json` garde donc les fichiers enregistres par
+la version precedente du simulateur, convertis au format pcap reel.
+
+### [dhcp] `dhclient -t N` est accepte, et aucun delai ne le lit
+La duree passee a `-t` (et le `-w` qui la porte a 60) traverse
+`Dhclient.ts` jusqu'a `DHCPClient.requestLease` et n'est lue par personne.
+Elle ne l'a jamais ete comme un DELAI : son seul lecteur, jusqu'au
+correctif de l'auto-attribution de lien-local, etait la condition qui
+DESACTIVAIT l'APIPA — une valeur qui servait a autre chose que ce
+qu'elle nomme. **Mesure** : `dhclient -t 1 eth0` sans serveur rend le
+meme texte et le meme etat que `dhclient eth0`, immediatement.
+**Pourquoi ce n'est pas ferme ici** : la livraison des trames est
+SYNCHRONE dans ce simulateur — un DISCOVER est repondu dans le meme tour
+ou jamais — donc un delai n'a rien a mesurer et l'implementer poserait
+une valeur decorative, exactement ce que ce depot refuse. L'option reste
+acceptee parce qu'un vrai `dhclient` l'accepte, et la refuser ferait
+diverger la CLI. Elle redeviendra implementable le jour ou `Cable`
+portera une latence.
+
 ### [sysctl] `/etc/sysctl.conf` n'est pas livre, et les projections de `/proc/sys` sont en lecture seule
 Depuis le lot « `sysctl` lit `/proc/sys` », un reste MESURE (le fichier `/etc/sysctl.conf` est livre, copie de celui d'une Ubuntu 24.04 reelle).
 

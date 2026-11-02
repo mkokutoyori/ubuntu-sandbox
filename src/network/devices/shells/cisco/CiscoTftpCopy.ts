@@ -23,6 +23,7 @@
  * une ligne.
  */
 import { TftpClientSession } from '@/network/tftp/TftpSession';
+import { fileTextOfWireString, wireStringOfFileText } from '@/crypto/encoding';
 import type { TftpEndpoint } from '@/network/tftp/types';
 import { IPAddress } from '@/network/core/types';
 
@@ -87,13 +88,14 @@ export async function tftpPut(
   try { adresse = new IPAddress(url.host); }
   catch { return erreurTftp(url, 'Unknown host'); }
 
+  const wire = wireStringOfFileText(contenu);
   const client = new TftpClientSession(endpoint, adresse, undefined, COPY_TIMEOUT_MS, COPY_MAX_RETRIES);
-  const res = await client.put(url.file, contenu);
+  const res = await client.put(url.file, wire);
   if (!res.ok) return erreurTftp(url, res.error ?? 'Timed out');
   return `Address or name of remote host [${url.host}]?\n`
     + `Destination filename [${url.file}]?\n`
-    + `${traceTransfert(contenu.length)}\n`
-    + `${contenu.length} bytes copied`;
+    + `${traceTransfert(wire.length)}\n`
+    + `${wire.length} bytes copied`;
 }
 
 export async function tftpGet(
@@ -110,7 +112,7 @@ export async function tftpGet(
     return { erreur: erreurTftp(url, res.error ?? 'Timed out') };
   }
   return {
-    texte: res.content,
+    texte: fileTextOfWireString(res.content),
     trace: `Accessing tftp://${url.host}/${url.file}...\n`
       + `${traceTransfert(res.content.length)}\n`,
   };

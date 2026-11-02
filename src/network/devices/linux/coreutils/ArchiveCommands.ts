@@ -110,9 +110,18 @@ function gzipHeaderName(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes.subarray(at, end));
 }
 
+const GZIP_MAGIC_AS_BINARY_STRING = bytesToBinaryString(Uint8Array.of(0x1f, 0x8b));
+const GZIP_MAGIC_AS_FILE_TEXT = bytesToFileText(Uint8Array.of(0x1f, 0x8b));
+
+function gzipBytesOf(raw: string): Uint8Array | null {
+  if (raw.startsWith(GZIP_MAGIC_AS_BINARY_STRING)) return binaryStringToBytes(raw);
+  if (raw.startsWith(GZIP_MAGIC_AS_FILE_TEXT)) return fileTextToBytes(raw);
+  return null;
+}
+
 function unpackRealGzip(raw: string): GzipBody | null {
-  const bytes = binaryStringToBytes(raw);
-  if (!isGzip(bytes)) return null;
+  const bytes = gzipBytesOf(raw);
+  if (bytes === null || !isGzip(bytes)) return null;
   try {
     const mtime = (bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24)) >>> 0;
     const decoded = gzipDecompressTolerant(bytes);

@@ -87,9 +87,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LinuxPC } from '@/network/devices/LinuxPC';
+import { base64ToBytes, bytesToFileText } from '@/crypto/encoding';
 import type { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
 
-interface Lab { capture: unknown; outputs: Record<string, string> }
+interface Lab { capture?: unknown; pcap?: string; outputs: Record<string, string> }
 const fixture = JSON.parse(readFileSync(new URL('../../support/oracle/tcpdump-options-4.99.4.json', import.meta.url), 'utf8')) as { labs: Record<string, Lab> };
 
 function normalised(text: string): string {
@@ -97,10 +98,14 @@ function normalised(text: string): string {
     .map(line => line.replace(/^(\d{4}-\d\d-\d\d )?\d\d:\d\d:\d\d(?=\.\d)/, 'T')).join('\n').replace(/\n+$/, '');
 }
 
-async function replay(capture: unknown, options: string): Promise<string> {
+function savefileText(lab: Lab): string {
+  return lab.pcap === undefined ? JSON.stringify(lab.capture) : bytesToFileText(base64ToBytes(lab.pcap));
+}
+
+async function replay(lab: Lab, options: string): Promise<string> {
   const pc = new LinuxPC('PC1', 0, 0);
   const vfs = (pc as unknown as { executor: { vfs: VirtualFileSystem } }).executor.vfs;
-  vfs.writeFile('/tmp/replay.cap', JSON.stringify(capture), 0, 0, 0o022);
+  vfs.writeFile('/tmp/replay.cap', savefileText(lab), 0, 0, 0o022);
   return pc.executeCommand(`sudo tcpdump ${options} -r /tmp/replay.cap`);
 }
 
@@ -108,12 +113,12 @@ for (const [name, lab] of Object.entries(fixture.labs)) {
   describe(`tcpdump options against the real tool: lab ${name}`, () => {
     it('WITNESS: one timestamped line per packet, as the real tool prints', async () => {
       const packets = (text: string): number => text.split('\n').filter(line => /^(\d{4}-\d\d-\d\d )?\d\d:\d\d:\d\d\.\d/.test(line)).length;
-      expect(packets(await replay(lab.capture, '-nn'))).toBe(packets(lab.outputs['-nn']));
+      expect(packets(await replay(lab, '-nn'))).toBe(packets(lab.outputs['-nn']));
     });
 
     for (const options of Object.keys(lab.outputs)) {
       it(options, async () => {
-        expect(normalised(await replay(lab.capture, options))).toBe(normalised(lab.outputs[options]));
+        expect(normalised(await replay(lab, options))).toBe(normalised(lab.outputs[options]));
       });
     }
   });

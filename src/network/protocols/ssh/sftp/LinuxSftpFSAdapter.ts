@@ -13,6 +13,7 @@ import type {
   INode,
   VirtualFileSystem,
 } from '@/network/devices/linux/VirtualFileSystem';
+import { fileTextOfWireString, wireStringOfFileText } from '@/crypto/encoding';
 import { type Result, err, ok } from '../Result';
 import type {
   EntryType,
@@ -60,7 +61,7 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
     if (content === null) {
       return err({ kind: 'IO_ERROR', message: `${path}: cannot read` });
     }
-    return ok(content);
+    return ok(wireStringOfFileText(content));
   }
 
   listDirectory(path: string): Result<readonly SftpDirEntry[]> {
@@ -85,7 +86,7 @@ export class LinuxSftpFSAdapter implements ISftpFileSystem {
   writeFile(path: string, content: string): Result<void> {
     const success = this.vfs.writeFile(
       path,
-      content,
+      fileTextOfWireString(content),
       this.defaultUid,
       this.defaultGid,
       DEFAULT_UMASK,

@@ -12,6 +12,7 @@ import type {
   ISftpFileSystem, SftpDirEntry, SftpFileAttrs, EntryType,
 } from './ISftpFileSystem';
 import { ok, err, type Result, type SshError } from '../Result';
+import { fileTextOfWireString, wireStringOfFileText } from '@/crypto/encoding';
 
 interface VfsLike {
   normalizePath(path: string, cwd?: string): string;
@@ -62,7 +63,7 @@ export class VfsSftpFileSystem implements ISftpFileSystem {
     const data = this.vfs.readFile(path);
     return data === null
       ? err({ kind: 'IO_ERROR', message: `${path}: No such file or directory` } as SshError)
-      : ok(data);
+      : ok(wireStringOfFileText(data));
   }
 
   listDirectory(path: string): Result<readonly SftpDirEntry[]> {
@@ -99,7 +100,7 @@ export class VfsSftpFileSystem implements ISftpFileSystem {
 
   writeFile(path: string, content: string): Result<void> {
     try {
-      this.vfs.writeFile(path, content, this.defaults.uid, this.defaults.gid, this.defaults.umask);
+      this.vfs.writeFile(path, fileTextOfWireString(content), this.defaults.uid, this.defaults.gid, this.defaults.umask);
       return ok(undefined);
     } catch (e) {
       return err({ kind: 'IO_ERROR', message: e instanceof Error ? e.message : 'write failed' } as SshError);

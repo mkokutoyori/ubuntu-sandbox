@@ -24,7 +24,7 @@ import {
   apacheNotFoundPage, apacheForbiddenPage, apacheBadRequestPage, apacheMisdirectedPage,
 } from './ApacheFiles';
 import { APACHE_LISTEN_BACKLOG } from '../../ports/ListenBacklogs';
-import { binaryStringToBytes as bytes } from '@/crypto/encoding';
+import { binaryStringToBytes as bytes, wireStringOfFileText } from '@/crypto/encoding';
 
 /**
  * apache2 (docs/PRD-Manquements.md §M4a) — the server that was missing.
@@ -422,7 +422,7 @@ export class LinuxApacheService implements ServiceSocketServer, ApacheControl {
     }
 
     const body = this.host.fs.read(path) ?? '';
-    return this.log(req, this.response(200, 'OK', body, contentTypeForPath(path)), vhost);
+    return this.log(req, this.response(200, 'OK', wireStringOfFileText(body), contentTypeForPath(path)), vhost);
   }
 
   private response(code: number, reason: string, body: string, type = 'text/html'): HttpMessage {

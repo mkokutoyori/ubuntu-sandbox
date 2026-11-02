@@ -4,6 +4,7 @@
  * transfer, no control channel, no authentication.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { fileTextOfWireString } from '@/crypto/encoding';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
@@ -146,7 +147,7 @@ describe('TFTP RRQ/WRQ end-to-end transfer', () => {
     const { client, vfs } = buildTopology();
     const content = 'binary-safe\x00\x01\x02\xff';
     await client.put('bin.dat', content);
-    expect(vfs.readFile('/srv/tftp/bin.dat')).toBe(content);
+    expect(vfs.readFile('/srv/tftp/bin.dat')).toBe(fileTextOfWireString(content));
     const result = await client.get('bin.dat');
     expect(result.content).toBe(content);
   });

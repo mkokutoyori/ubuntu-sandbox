@@ -1,5 +1,5 @@
 import type { CaptureFrame } from './CaptureFrame';
-import { serializeCaptureFile, type CaptureFileHeader } from './CaptureFileFormat';
+import { CaptureFileBuffer, type CaptureFileHeader } from './CaptureFileFormat';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 const PCAP_FILE_HEADER_BYTES = 24;
@@ -59,7 +59,7 @@ function suffixWidth(fileCount: number | null): number {
 }
 
 export class CaptureFileWriter {
-  private frames: CaptureFrame[] = [];
+  private buffer: CaptureFileBuffer;
   private currentName: string;
   private sizeBytes = PCAP_FILE_HEADER_BYTES;
   private sizeCount = 0;
@@ -74,6 +74,7 @@ export class CaptureFileWriter {
     private readonly write: (path: string, content: string) => boolean,
     private readonly now: () => Date,
   ) {
+    this.buffer = new CaptureFileBuffer(header);
     this.width = suffixWidth(policy.fileCount);
     this.openedAt = now();
     this.currentName = this.nameFor(0, this.policy.sizeLimitMegabytes !== null ? this.width : 0);
@@ -90,7 +91,7 @@ export class CaptureFileWriter {
   add(frame: CaptureFrame): WriteOutcome {
     const rotation = this.rotateIfDue();
     if (rotation !== 'written') return rotation;
-    this.frames.push(frame);
+    this.buffer.append(frame);
     this.sizeBytes += PCAP_RECORD_HEADER_BYTES + Math.min(frame.length, this.header.snaplen);
     return this.flush() ? 'written' : 'write-failed';
   }
@@ -121,7 +122,7 @@ export class CaptureFileWriter {
 
   private startFile(name: string): WriteOutcome {
     this.currentName = name;
-    this.frames = [];
+    this.buffer = new CaptureFileBuffer(this.header);
     this.sizeBytes = PCAP_FILE_HEADER_BYTES;
     return this.flush() ? 'written' : 'write-failed';
   }
@@ -135,6 +136,6 @@ export class CaptureFileWriter {
   }
 
   private flush(): boolean {
-    return this.write(this.currentName, serializeCaptureFile(this.frames, this.header));
+    return this.write(this.currentName, this.buffer.content());
   }
 }
