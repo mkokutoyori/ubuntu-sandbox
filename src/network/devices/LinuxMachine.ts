@@ -3493,15 +3493,28 @@ export abstract class LinuxMachine extends EndHost
     if (!wasOn) this.executor.bootKernelHostname();
   }
 
+  private readonly dhcpResolverEntries = new Map<string, { servers: readonly string[]; domain: string | null }>();
+
+  private withdrawDhcpResolverEntries(iface: string, text: string): string {
+    const previous = this.dhcpResolverEntries.get(iface);
+    this.dhcpResolverEntries.delete(iface);
+    if (previous === undefined) return text;
+    let kept = text;
+    for (const server of previous.servers) kept = removeNameserver(kept, server);
+    return previous.domain === null ? kept : removeSearchDomain(kept, previous.domain);
+  }
+
   protected override onDhcpLeaseConfigured(iface: string): void {
     const lease = this.dhcpClient.getState(iface)?.lease;
     this.publishDhcpTimeSources(iface, lease?.ntpServers ?? []);
     const dns = lease?.dnsServers ?? [];
     if (dns.length === 0) return;
-    const lines: string[] = [];
-    if (lease?.domainName) lines.push(`search ${lease.domainName}`);
-    for (const ip of dns) lines.push(`nameserver ${ip}`);
-    this.executor.vfs.writeFile('/etc/resolv.conf', lines.join('\n') + '\n', 0, 0, 0o022);
+    const domain = lease?.domainName || null;
+    let text = this.withdrawDhcpResolverEntries(iface, this.executor.readFile('/etc/resolv.conf') ?? '');
+    if (domain !== null) text = addSearchDomain(text, domain);
+    for (const ip of dns) text = addNameserver(text, ip);
+    this.dhcpResolverEntries.set(iface, { servers: [...dns], domain });
+    this.executor.vfs.writeFile('/etc/resolv.conf', text, 0, 0, 0o022);
     if (dns[0]) this.dnsResolverIP = dns[0];
   }
 
@@ -3536,8 +3549,9 @@ export abstract class LinuxMachine extends EndHost
 
   protected override onDhcpLeaseReleased(iface: string): void {
     this.publishDhcpTimeSources(iface, []);
-    this.executor.vfs.writeFile('/etc/resolv.conf', '', 0, 0, 0o022);
-    this.dnsResolverIP = '';
+    const text = this.withdrawDhcpResolverEntries(iface, this.executor.readFile('/etc/resolv.conf') ?? '');
+    this.executor.vfs.writeFile('/etc/resolv.conf', text, 0, 0, 0o022);
+    this.dnsResolverIP = /^nameserver\s+(\S+)/m.exec(text)?.[1] ?? '';
   }
 
   override destinationPolicy(): DestinationPolicy {
