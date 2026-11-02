@@ -13,8 +13,8 @@ import { useCableRoutes } from './useCableRoutes';
 import { NETWORK_CANVAS_ID, screenToWorld } from './canvas-geometry';
 import { PacketAnimation, PacketLegend } from './PacketAnimation';
 import { useActivePackets } from '@/react/hooks/useActivePackets';
-import { Equipment } from '@/network';
-import type { DeviceType } from '@/network';
+import type { Equipment } from '@/network/equipment/Equipment';
+import type { DeviceType } from '@/network/core/types';
 type BaseDevice = Equipment;
 import { cn } from '@/lib/utils';
 
@@ -38,7 +38,7 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     panY,
     setZoom,
     setPan,
-    addDevice,
+    requestDevice,
     clearSelection,
     clearAll,
     isConnecting,
@@ -190,8 +190,8 @@ export function NetworkCanvas({ onOpenTerminal }: NetworkCanvasProps) {
     if (!deviceType || !canvasRef.current) return;
 
     const { x, y } = screenToWorld(e.clientX, e.clientY, canvasRef.current.getBoundingClientRect(), { panX, panY, zoom });
-    addDevice(deviceType, x, y);
-  }, [zoom, panX, panY, addDevice]);
+    requestDevice(deviceType, x, y);
+  }, [zoom, panX, panY, requestDevice]);
 
   // HTML5 DnD spec: a drop is only accepted if BOTH `dragenter` and
   // `dragover` call preventDefault on the would-be target. The previous

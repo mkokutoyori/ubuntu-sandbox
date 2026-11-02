@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Equipment } from '@/network';
+import type { Equipment } from '@/network/equipment/Equipment';
 
 export interface MacTableRow {
   mac: string;

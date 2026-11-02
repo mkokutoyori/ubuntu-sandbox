@@ -116,31 +116,24 @@ un port etroit (`TcpStack.nowMs` est celui que Kerberos a pris) ; TLS,
 DNSSEC et PKI construisent leurs sessions loin de la machine (configuration
 passee de proche en proche) et demandent le meme port.
 
-### [ntp] seuils de panique des agents ntpd, glissement de chronyd par mise a jour, `clock datetime` Huawei
+### [ntp] seuils de panique des agents ntpd et `clock datetime` Huawei
 **Mesure** (lab NTP, horloges decalees apres synchronisation) : l'agent lit
-desormais l'horloge de la machine et la discipline. Restent trois ecarts
-connus, tous mesures sur le laboratoire :
+l'horloge de la machine et la discipline ; chronyd glisse en continu a
+`maxslewrate` et oublie ses echantillons sur un saut externe. Restent deux
+ecarts connus, tous deux mesures sur le laboratoire :
 1. Les agents Cisco et Huawei gardent le seuil de panique de ntpd (1000 s) et
    W32Time celui de `MaxPosPhaseCorrection` (54000 s) : une machine decalee
    de plusieurs annees reste non synchronisee, avec `loopfilter state is
    'PANIC'`. Que IOS et VRP appliquent le seuil de ntpd n'est pas atteste
    depuis ce reseau (`cisco.com` et `support.huawei.com` sont bloques).
-2. chronyd corrige un decalage par glissement a `maxslewrate` (83333 ppm par
-   defaut) CONTINUEMENT ; l'agent applique `debit x temps ecoule` a chaque
-   mise a jour. Sur 1 h le total est le meme, la courbe est en marches. Et
-   sur un saut d'horloge externe chronyd detecte le saut et REMET A ZERO ses
-   sources (`LCL_NotifyExternalTimeStep`, changement `LCL_ChangeUnknownStep`),
-   alors que l'agent re-exprime les mesures deja prises dans la nouvelle
-   horloge : meme resultat a terme, delai de reconvergence different.
-3. `clock datetime HH:MM:SS YYYY-MM-DD` est interprete comme de l'UTC
+2. `clock datetime HH:MM:SS YYYY-MM-DD` est interprete comme de l'UTC
    (`vrpDatetimeToEpochMs`), alors que VRP lit l'heure dans le fuseau
    configure (le mot-cle `utc` existe pour l'UTC). Non corrige faute de
    documentation joignable ; une sonde existante (`probe-horloge-suit-son-equipement`)
    pose le comportement actuel en contrat.
-**Pourquoi ce n'est pas ferme** : (1) et (3) demandent une source que ce
-reseau ne joint pas ; (2) demande de passer le glissement du pas de mise a
-jour a un taux continu sur l'ordonnanceur, et de decider quoi faire des
-echantillons au saut externe.
+**Pourquoi ce n'est pas ferme** : les deux demandent une source que ce
+reseau ne joint pas, et la regle est de ne pas implementer plutot que de
+deviner.
 
 ### [windows] `quser` est inconnu ; libelles d'erreur de `tzutil` et `eventcreate` non attestes
 **Mesure** : `quser` repond « not recognized » sur une machine Windows simulee. `tzutil /g|/l|/s` et
@@ -3866,7 +3859,8 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 Mesure (tcpdump 4.99.4 reel rejoue sur les captures du simulateur, laboratoires `rip`, `ospf`, `cdp` et `lldp` de `tcpdump-options-oracle.test.ts`) : RIPv1/v2 et OSPFv2 (Hello, DD, LS-Request, LS-Update
 avec LSA routeur / reseau / externe, LS-Ack) sont ecrits en octets reels (RFC 2453, RFC 2328, somme Fletcher des LSA selon la RFC 905) et imprimes comme `print-rip.c` et `print-ospf.c` ; CDP l'est aussi (cadre 802.3 + LLC/SNAP, TLV du CDPv2, `print-cdp.c`), pour les TLV que le moteur porte (pas les prefixes, la VoIP VLAN, la puissance, le MTU, le nom de systeme) ; LLDP aussi (TLV 802.1AB, 802.1 PVID / nom de VLAN, 802.3 MAC/PHY et taille de trame maximale ; la capacite PMD et le type MAU sont ecrits a 0, le moteur ne les modelise pas).
 STP l'est aussi (`stp/StpWire.ts` : BPDU de configuration, TCN, RSTP version 2, MSTP version 3, PVST+ SNAP `0x010b` avec le TLV de VLAN d'origine ; `print-stp.c` porte, SPB compris ; labos `stp`, `rstp`, `pvst`, `mstp`, `stppair`, `rstppair` et `stpcraft`). Limites mesurees du lot STP : le BPDU MSTP ne porte aucun enregistrement MSTI (le moteur n'en echange pas), son cout interne et son nombre de sauts valent 0 et 20 en dur, et le BPDU PVST+ du VLAN natif part sur l'adresse IEEE comme dans le moteur (un vrai IOS envoie aussi la copie SNAP pour le VLAN 1).
-Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported` ; l'encodeur attend le RTP que le moteur ne modelise pas : un Update porte un numero de sequence, un acquittement, les drapeaux Init / End-of-Table, et le Hello d'acquittement ; ecrire ces champs a zero mentirait sur tous les paquets fiables), et DTP (le simulateur l'emet sous l'ethertype 0x2004 au lieu du LLC/SNAP Cisco, le vrai outil l'imprime `ethertype Unknown (0x2004)` avec son dump hexadecimal), VTP, PAgP, UDLD : protocoles proprietaires de Cisco dont les valeurs d'octets (octet d'etat de DTP, types de TLV de VTP et d'UDLD) ne sont atteignables ni par une RFC ni par la documentation du constructeur depuis cet environnement ; `print-dtp.c`, `print-vtp.c` et `print-udld.c` ne donnent que des noms, pas la valeur que le commutateur ecrit. Regle 8 : ne pas deviner, donc rien n'est encode tant qu'une capture ou la documentation Cisco n'est pas disponible. Puis BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
+EIGRP l'est aussi (`eigrp/EigrpPacketBytes.ts`, `print-eigrp.c`, laboratoire `eigrp` : Hello, Update interne et externe, Hello d'acquittement ; le moteur porte maintenant un numero de sequence par Update, le drapeau Init du premier Update vers un voisin et l'acquittement ; les valeurs d'octets sont celles de la RFC 7868 §5 et §6 telles que le vrai tcpdump les decode, les versions logicielles 12.4 / 1.2 sont celles des captures usuelles d'IOS, pas lues sur une machine). Limites mesurees : le TLV d'authentification porte le condense du moteur et non un MD5 (RFC 7868 §6.2), les bits du TLV Stub et le drapeau End-of-Table ne sont pas atteste, Query / Reply / SIA n'existent toujours pas (pas d'etat Active), l'acquittement est immediat (pas de retransmission ni de Next Multicast Sequence).
+Restent a zero, avec le meme constat contre le vrai outil : DTP (le simulateur l'emet sous l'ethertype 0x2004 au lieu du LLC/SNAP Cisco, le vrai outil l'imprime `ethertype Unknown (0x2004)` avec son dump hexadecimal), VTP, PAgP, UDLD : protocoles proprietaires de Cisco dont les valeurs d'octets (octet d'etat de DTP, types de TLV de VTP et d'UDLD) ne sont atteignables ni par une RFC ni par la documentation du constructeur depuis cet environnement ; `print-dtp.c`, `print-vtp.c` et `print-udld.c` ne donnent que des noms, pas la valeur que le commutateur ecrit. Regle 8 : ne pas deviner, donc rien n'est encode tant qu'une capture ou la documentation Cisco n'est pas disponible. Puis BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
 adresses y sont hachees, `checksum.ts`), HSRP, VRRP, PIM, IGMP. Limites connues du lot fait : le MD5 de RIP (RFC 4822) et d'OSPF (RFC 2328 D.4.3) n'est pas calcule par les moteurs, qui
 portent un condense propre : RIP l'ecrit comme un mot de passe, OSPF place les octets du condense du moteur (ou des zeros) apres le paquet ; les LSA opaques (RFC 5250), le LLS (RFC 5613)
 et les LSA de type 6 ne sont pas encodes. Pour chaque protocole restant : l'encodeur a cote du moteur (comme `ospf/OspfWire.ts`), le port de l'imprimeur (`print-eigrp.c`,
@@ -4226,3 +4220,28 @@ l'entete et ne dimensionne pas les sondes (IPv4 comme IPv6).
 ### [radvd] RDNSS et DNSSL sont appliques a `/etc/resolv.conf` sans demon utilisateur
 
 L'hote lit les options RDNSS (RFC 8106 §5.1) et DNSSL (§5.2) d'une annonce et les ecrit dans `/etc/resolv.conf` pour la duree de vie de l'option (0 retire, 0xffffffff n'expire pas), un serveur de portee liaison portant sa zone (`fe80::1%eth0`) : sonde `probe-ipv6-hote-dns-annonce`. Le noyau ne fait que remettre ces options a l'espace utilisateur ; sur Ubuntu c'est systemd-networkd ou NetworkManager qui les consomme, et le simulateur n'a pas ce demon : l'application est faite par la machine elle-meme, sans bouton `UseDNS` ni `IPv6AcceptRA` propre a un fichier `.network`. `ResolvedService` (liens, `resolvectl status`) ne voit pas ces serveurs : seul le fichier les porte, comme pour les baux DHCP. Le bail DHCPv4, DHCPv6 et RA partagent la fusion de `ResolvConfEdit` (le bail DHCPv4 retire seulement ce qu'il a pose, sonde `probe-dhcp-resolv-conf-fusion`) ; networkd (`LinuxNetworkConfigManager.writeResolvConf`) reprend aussi seulement ce qu'il avait pose (sonde `probe-networkd-resolv-conf-fusion`) ; il n'y a plus d'ecrivain qui possede le fichier, mais NetworkManager et `resolvconf`/`systemd-resolved` en mode stub ne sont pas modelises comme ecrivains.
+
+## Chargement de l'application
+
+### [chargement] ouvrir le premier terminal charge toutes les plateformes
+Le premier ecran ne demande plus aucun module du simulateur (entree de
+production : 713 Ko, 222 Ko compresses, contre un bloc unique de 16,3 Mo)
+et une plateforme d'equipement arrive au survol, au focus, au glisser ou au
+clic de sa ligne de palette. Mais `TerminalManager` et les sessions
+(`sessionFactory.ts`, `CiscoTerminalSession.ts`, `HuaweiTerminalSession.ts`,
+`WindowsTerminalSession.ts`, `AsaTerminalSession.ts`,
+`FortiTerminalSession.ts`) importent les classes d'equipement par le
+barillet `@/network`, qui enregistre les sept plateformes.
+**Mesure** (build de production, Chromium, `prodsmoke` : un Linux PC pose,
+puis double-clic) : poser le Linux PC demande 20 modules ; ouvrir son
+terminal en demande 17 de plus, dont `TerminalManager` et `TerminalModal`
+mais aussi `ciscoPlatform`, `windowsPlatform`, `huaweiPlatform`,
+`genericPlatform`, `asaPlatform`, `fortigatePlatform`, `Switch` et
+`Firewall` — environ 0,3 s de plus en local, davantage sur un lien lent.
+**Ce qui manque** : que les sessions importent `Equipment` et les types
+d'equipement en `import type`, et que la fabrique de session choisisse sa
+classe de session par type d'equipement apres `loadDevicePlatform(type)`,
+de sorte qu'un terminal Linux ne tire que la plateforme Linux. Non fait
+ici : `sessionFactory` et chaque session ont des appelants dans
+`src/terminal/` et 276 fichiers de tests les importent ; c'est un
+changement propre, a mesurer a part.

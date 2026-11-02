@@ -11,6 +11,7 @@ import { stpText } from './TcpdumpStp';
 import { ieee8023, llcDescription } from './TcpdumpLlc';
 import { lldpText } from './TcpdumpLldp';
 import { ospfText } from './TcpdumpOspf';
+import { eigrpText } from './TcpdumpEigrp';
 import { ripText } from './TcpdumpRip';
 import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
 import { icmp6Text } from './TcpdumpIcmp6';
@@ -302,6 +303,11 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
     return ospfText(Array.from(frame.raw.slice(start, start + length)), length, opt.verbose, (address) => state.host(address));
   }
+  if (frame.l3 === 'ipv4' && frame.ipProtocol === EIGRP_PROTOCOL && (frame.ipFragmentOffset ?? 0) === 0) {
+    const start = frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
+    const length = (frame.ipTotalLength ?? 0) - (frame.ipHeaderLen ?? 20);
+    return eigrpText(Array.from(frame.raw.slice(start, start + length)), length, opt.verbose, (address) => state.host(address));
+  }
   if (frame.l4 === 'icmp') {
     let phrase: string;
     if (frame.icmpType === 'destination-unreachable') {
@@ -430,6 +436,7 @@ function truncationMarker(frame: CaptureFrame, opt: TcpdumpOptions): string | nu
  * `proto TCP (6)` bien que son en-tete de transport soit ailleurs.
  */
 const OSPF_PROTOCOL = 89;
+const EIGRP_PROTOCOL = 88;
 const TRUNCATION_MARKER = /\[\|(ospf2|stp)\]/;
 
 const IP_PROTO_NAMES: Readonly<Record<number, string>> = {

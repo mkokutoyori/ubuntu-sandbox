@@ -1,5 +1,5 @@
-import { DEVICE_CATALOG } from '@/network';
-import type { DeviceType } from '@/network';
+import { DEVICE_CATALOG } from '@/network/core/deviceCatalog';
+import type { DeviceType } from '@/network/core/types';
 import {
   FRENCH_DEVICE_DESCRIPTIONS, FRENCH_DEVICE_LABELS, LOCALES, MESSAGES, type Locale, type MessageKey,
 } from './messages';

@@ -4,11 +4,12 @@
 
 import { useLocale } from '@/i18n/useLocale';
 import { useState } from 'react';
-import { useMacTable, useConnectionPerf } from '@/react/hooks';
+import { useMacTable } from '@/react/hooks/useMacTable';
+import { useConnectionPerf } from '@/react/hooks/useConnectionPerf';
 import { X, Power, Wifi, Settings, Network, ChevronDown, ChevronRight, Trash2, Cable, Activity } from 'lucide-react';
 import { useNetworkStore, isConnectionActive } from '@/store/networkStore';
 import { DeviceIcon } from './DeviceIcon';
-import { isFullyImplemented } from '@/network';
+import { isFullyImplemented } from '@/network/core/deviceCatalog';
 import { getConnectionDetails } from './properties-panel-logic';
 import { LiveDeviceStats } from './devtools/LiveDeviceStats';
 import { cn } from '@/lib/utils';

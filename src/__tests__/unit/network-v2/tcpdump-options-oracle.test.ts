@@ -35,6 +35,11 @@
  * unknown versions and types, half-even %.2f timers, and capture records cut short so that `[|stp]` appears). Measured before the change: every BPDU carried zero bytes under ethertype 0x4242 and the real tool printed an unknown
  * ethertype. src/network/stp/StpWire.ts writes the 802.3 + LLC frame; TcpdumpStp.ts ports print-stp.c; TcpdumpLlc.ts carries the LLC/SNAP text shared with CDP; unknown ethertypes now print the header and the default dump of
  * print-ether.c. 208 new cases, 201 fall without the change; the 7 that pass either way are the labs' WITNESS cases. The DTP frames that the switches still send are zero bytes and print as `ethertype Unknown (0x2004)` in both tools.
+ * Fourteenth lab, "eigrp": a PC, two Cisco routers and a hub, EIGRP AS 100 with a connected network redistributed. Measured before the change: every EIGRP packet carried zero bytes and an IP length of 84, the real tool printed
+ * `EIGRP version 0 packet not supported`. The engine now models the reliable transport it needs to write the header (a sequence number per Update, the Init flag on the first Update to a neighbour, the acknowledgement
+ * Hello with ack = the sequence and no TLV) and src/network/eigrp/EigrpPacketBytes.ts writes RFC 7868 bytes (header with Internet checksum, Parameters, Software Version 12.4 / 1.2, IP Internal and External route TLVs
+ * with delay = tens of microseconds x 256, bandwidth = 10^7/kbps x 256, MTU 1500, reliability 255, load 1); TcpdumpEigrp.ts ports print-eigrp.c for the TLVs it decodes. 28 of the 29 cases fall without the change, the
+ * 29th is the lab's WITNESS. Not covered: the MD5 Authentication TLV (the engine's digest is not an MD5), the Stub TLV flag bits, and the AppleTalk / IPX TLVs the simulator never writes.
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.

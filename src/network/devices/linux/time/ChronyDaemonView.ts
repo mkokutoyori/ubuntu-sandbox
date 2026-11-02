@@ -294,7 +294,7 @@ export class ChronyDaemonView {
         referenceName: peer.serverIp,
         stratum: this.agent.getStratum(),
         referenceTime: reference.referenceTime(),
-        currentCorrection: -report.estimatedOffset,
+        currentCorrection: this.agent.getOutstandingSlewMs() / 1000,
         lastOffset: reference.lastOffset(),
         rmsOffset: reference.rmsOffset(),
         frequencyPpm: reference.frequency() * 1e6,

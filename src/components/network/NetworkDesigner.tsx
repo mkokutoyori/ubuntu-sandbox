@@ -11,7 +11,7 @@
  * mount/unmount and are consistent across all tile views.
  */
 
-import { useState, useCallback, useMemo, useEffect, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useState, useCallback, useMemo, useEffect, useSyncExternalStore } from 'react';
 import { DevicePalette } from './DevicePalette';
 import { NetworkCanvas } from './NetworkCanvas';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -19,27 +19,30 @@ import { Toolbar } from './Toolbar';
 import { HelpDialog } from './HelpDialog';
 import { SettingsDialog } from '@/components/settings';
 import { SaveTopologyDialog } from './SaveTopologyDialog';
+import { useIdlePlatformPreload } from './useIdlePlatformPreload';
 import { ExportImageDialog } from './ExportImageDialog';
 import { OpenTopologyDialog } from './OpenTopologyDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { MessageDialog } from './MessageDialog';
-import { TerminalModal } from './TerminalModal';
 import { TerminalTaskbar } from './MinimizedTerminals';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
-import { Equipment } from '@/network';
+import type { Equipment } from '@/network/equipment/Equipment';
 import { useNetworkStore } from '@/store/networkStore';
-import { exportTopology, importTopology, downloadTopologyJSON, openTopologyFile } from '@/store/topologySerializer';
 import { getLocale, translate } from '@/i18n';
 import { useLocale } from '@/i18n/useLocale';
 import { saveTopologyToBrowser, loadTopologyFromBrowser } from '@/store/localStorageTopology';
 import { cn } from '@/lib/utils';
-import { getTerminalManager } from '@/terminal/sessions';
+import { lazyTerminalManager } from '@/terminal/lazyTerminalManager';
+
+const TerminalModal = lazy(() => import('./TerminalModal').then((module) => ({ default: module.TerminalModal })));
+const loadTopologySerializer = () => import('@/store/topologySerializer');
 
 /** Available tiling layout modes */
 export type TileLayout = 'stack' | 'split-h' | 'split-v' | 'grid' | 'master-stack';
 
 export function NetworkDesigner() {
   const { t } = useLocale();
+  useIdlePlatformPreload();
   const [projectName, setProjectName] = useState('My Network');
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -78,7 +81,7 @@ export function NetworkDesigner() {
   const canRedo = useNetworkStore(s => s.historyFuture.length > 0);
 
   // Subscribe to TerminalManager for reactive updates
-  const manager = getTerminalManager();
+  const manager = lazyTerminalManager;
   useSyncExternalStore(manager.subscribe, manager.getVersion);
 
   // Derive session list from manager
@@ -90,7 +93,8 @@ export function NetworkDesigner() {
   // Export/Import both hand back a file that only captures configurable
   // device state, not live sessions/protocol state — surfaced up front
   // via a confirm dialog rather than silently, per rapport 09 item #55.
-  const runExport = useCallback(() => {
+  const runExport = useCallback(async () => {
+    const { exportTopology, downloadTopologyJSON } = await loadTopologySerializer();
     const topology = exportTopology(projectName, deviceInstances, connections);
     downloadTopologyJSON(topology);
   }, [projectName, deviceInstances, connections]);
@@ -100,6 +104,7 @@ export function NetworkDesigner() {
 
   const runImport = useCallback(async () => {
     try {
+      const { openTopologyFile, importTopology } = await loadTopologySerializer();
       const data = await openTopologyFile();
       const result = await importTopology(data);
       replaceTopology(result.deviceInstances, result.connections);
@@ -126,8 +131,9 @@ export function NetworkDesigner() {
   // ── Save / Open via localStorage — dialogs, not window.prompt ──
   const handleSave = useCallback(() => setSaveDialogOpen(true), []);
 
-  const handleSaveTopology = useCallback((name: string) => {
+  const handleSaveTopology = useCallback(async (name: string) => {
     try {
+      const { exportTopology } = await loadTopologySerializer();
       const topology = exportTopology(name, deviceInstances, connections);
       saveTopologyToBrowser(name, topology);
       setProjectName(name);
@@ -145,6 +151,7 @@ export function NetworkDesigner() {
       return;
     }
     try {
+      const { importTopology } = await loadTopologySerializer();
       const result = await importTopology(topology);
       replaceTopology(result.deviceInstances, result.connections);
       setProjectName(result.projectName);
@@ -178,10 +185,10 @@ export function NetworkDesigner() {
     });
   }, [deviceInstances]);
 
-  const handleOpenTerminal = useCallback((device: Equipment, line?: 'console' | 'vty') => {
+  const handleOpenTerminal = useCallback(async (device: Equipment, line?: 'console' | 'vty') => {
     if (!device.getIsPoweredOn()) return;
 
-    const sessionId = manager.openTerminal(device, line);
+    const sessionId = await manager.openTerminal(device, line);
     if (sessionId) {
       // Opening a terminal should surface it, even if the user was
       // peeking at the desktop.
@@ -334,13 +341,15 @@ export function NetworkDesigner() {
       if (!session) return null;
       return (
         <div key={sessionId} className="min-h-0 min-w-0 w-full h-full">
-          <TerminalModal
-            session={session}
-            onClose={() => handleCloseTerminal(sessionId)}
-            onMinimize={() => handleMinimizeTerminal(sessionId)}
-            onNewVtyWindow={() => handleOpenTerminal(session.device, 'vty')}
-            embedded
-          />
+          <Suspense fallback={null}>
+            <TerminalModal
+              session={session}
+              onClose={() => handleCloseTerminal(sessionId)}
+              onMinimize={() => handleMinimizeTerminal(sessionId)}
+              onNewVtyWindow={() => handleOpenTerminal(session.device, 'vty')}
+              embedded
+            />
+          </Suspense>
         </div>
       );
     };

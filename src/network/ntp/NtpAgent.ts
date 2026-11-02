@@ -73,6 +73,8 @@ export interface NtpHost {
 }
 
 const SMOOTH_REFERENCE_ID = '83.77.79.79';
+const SLEW_TICK_MS = 1000;
+const EXTERNAL_STEP_DETECTION_MS = 10_000;
 
 interface UdpPorts { readonly source: number; readonly destination: number }
 
@@ -146,6 +148,8 @@ export class NtpAgent {
 
   private readonly clock: SystemClock;
   private disciplineIsStepping = false;
+  private outstandingSlewMs = 0;
+  private slewTimer: TimerHandle | null = null;
 
   start(): void {
     if (this.running) return;
@@ -410,17 +414,60 @@ export class NtpAgent {
       else this.smoothing.adjust(cooked, -delta / 1000, 0, this.reference.skew());
     }
     if (delta !== 0) for (const a of this.config.associations.values()) a.statistics.correctOffset(delta / 1000);
-    this.disciplineIsStepping = true;
-    try {
-      this.clock.step(delta);
-    } finally {
-      this.disciplineIsStepping = false;
-    }
+    if (kind === 'slew' && this.profile.pollModel === 'chrony') this.accrueSlew(delta);
+    else this.stepHostClock(delta + this.takeOutstandingSlew());
     this.config.offsetMs = offsetMs;
     if (kind === 'step' || this.profile.pollModel === 'chrony') this.shiftStoredOffsets(delta);
   }
 
+  private stepHostClock(deltaMs: number): void {
+    this.disciplineIsStepping = true;
+    try {
+      this.clock.step(deltaMs);
+    } finally {
+      this.disciplineIsStepping = false;
+    }
+  }
+
+  private takeOutstandingSlew(): number {
+    const outstanding = this.outstandingSlewMs;
+    this.outstandingSlewMs = 0;
+    return outstanding;
+  }
+
+  private accrueSlew(deltaMs: number): void {
+    this.outstandingSlewMs += deltaMs;
+    this.armSlewTick();
+  }
+
+  private armSlewTick(): void {
+    if (this.slewTimer !== null || this.outstandingSlewMs === 0) return;
+    const scheduler = this.getScheduler();
+    this.slewTimer = scheduler.setTimeout(() => {
+      this.slewTimer = null;
+      this.slewTick();
+    }, SLEW_TICK_MS);
+  }
+
+  private slewTick(): void {
+    const limit = ((this.reglagesDiscipline.slewRatePpm ?? PPM_MAX) / 1e6) * SLEW_TICK_MS;
+    const applied = Math.abs(this.outstandingSlewMs) <= limit ? this.outstandingSlewMs : Math.sign(this.outstandingSlewMs) * limit;
+    this.outstandingSlewMs -= applied;
+    this.stepHostClock(applied);
+    this.armSlewTick();
+  }
+
+  getOutstandingSlewMs(): number { return this.outstandingSlewMs; }
+
   private operatorSteppedClock(deltaMs: number): void {
+    if (this.profile.pollModel === 'chrony') {
+      if (Math.abs(deltaMs) <= EXTERNAL_STEP_DETECTION_MS) return;
+      const outstanding = this.takeOutstandingSlew();
+      if (outstanding !== 0) this.stepHostClock(outstanding);
+      if (this.smoothing !== null) this.smoothing.stepped(this.now() / 1000, 0);
+      this.resetSources();
+      return;
+    }
     if (this.smoothing !== null) this.smoothing.stepped((this.now() - deltaMs) / 1000, -deltaMs / 1000);
     for (const a of this.config.associations.values()) a.statistics.correctOffset(deltaMs / 1000);
     this.shiftStoredOffsets(deltaMs);
@@ -656,7 +703,7 @@ export class NtpAgent {
   isSynced(): boolean { return this.config.localStratum < NTP_MAX_STRATUM && this.config.system.leap !== 3; }
 
   now(): number {
-    return this.clock.now();
+    return this.clock.now() + this.outstandingSlewMs;
   }
 
   referenceTimeMs(): number {

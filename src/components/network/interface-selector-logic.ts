@@ -3,7 +3,7 @@
  * Builds structured interface lists with availability and grouping.
  */
 
-import type { ConnectionType } from '@/network';
+import type { ConnectionType } from '@/network/core/types';
 import type { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 
 /**

@@ -1,5 +1,5 @@
-import { DEVICE_CATALOG } from '@/network';
-import type { ConnectionType, DeviceType } from '@/network';
+import { DEVICE_CATALOG } from '@/network/core/deviceCatalog';
+import type { ConnectionType, DeviceType } from '@/network/core/types';
 import { deviceTypeLabel, translate, type Locale } from '@/i18n';
 import { DEVICE_VISUALS, type DeviceVisual } from '@/components/network/device-visuals';
 import { glyphSvgBody } from '@/components/network/device-glyphs';

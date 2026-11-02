@@ -154,7 +154,7 @@ Related invariants the help/completion campaign established: **an announced rang
 Each of these is measured and deliberate; a lab that assumes otherwise fails silently.
 
 - **Cisco/Huawei GRE has no data plane.** `tunnel source`/`destination` populate display and OSPF-matching metadata only; nothing is encapsulated or forwarded. OSPF over such a tunnel is seeded out-of-band. Linux `ip tunnel` GRE *is* real.
-- **EIGRP has no Active state, no Query/Reply, no RTP and no timers.** Convergence is triggered by CLI commands and link events. Query/SIA counters are permanently zero and that is the true count.
+- **EIGRP has no Active state, no Query/Reply, no retransmission and no timers.** Convergence is triggered by CLI commands and link events. Query/SIA counters are permanently zero and that is the true count. Each Update carries a sequence number, the first one to a neighbour the Init flag, and the receiver answers with an immediate acknowledgement Hello; there is no retransmit queue, no Next Multicast Sequence and no End-of-Table.
 - **OSPF convergence completes before the triggering command returns** (`autoConverge` pumps the whole reachable domain synchronously). Do not expect to observe ExStart/Exchange/Loading.
 - **`Router` has a RIB but no FIB and no recursive next-hop resolution.** A static route whose next hop is off-link, or loopback-to-loopback iBGP, is accepted and never forwards.
 - **Oracle PDBs share one schema namespace** — `ALTER SESSION SET CONTAINER` swaps a label only.

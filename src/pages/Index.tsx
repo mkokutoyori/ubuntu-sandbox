@@ -1,4 +1,4 @@
-import { NetworkDesigner } from '@/components/network';
+import { NetworkDesigner } from '@/components/network/NetworkDesigner';
 
 const Index = () => {
   return <NetworkDesigner />;

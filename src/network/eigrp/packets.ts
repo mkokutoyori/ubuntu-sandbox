@@ -33,6 +33,8 @@ export const EIGRP_VERSION = 2;
  * advertiser: minimum bandwidth and cumulative delay along ITS path.
  * The receiver folds in the ingress link before computing distances.
  */
+export type EigrpExternalProtocol = 'connected' | 'static' | 'rip' | 'ospf' | 'bgp';
+
 export interface EigrpRouteTlv {
   /** Network address, dotted quad. */
   readonly network: string;
@@ -44,6 +46,9 @@ export interface EigrpRouteTlv {
   readonly delayUsec: number;
   /** External TLV (§6.6.3, redistributed) — AD 170 at the receiver. */
   readonly external: boolean;
+  readonly hopCount?: number;
+  readonly originRouter?: string;
+  readonly externalProtocol?: EigrpExternalProtocol;
 }
 
 export interface EigrpAuthTlv {
@@ -65,6 +70,8 @@ export interface EigrpHelloPacket {
   readonly type: 'eigrp';
   readonly opcode: 'hello';
   readonly asn: number;
+  readonly acknowledge?: number;
+  readonly ackOnly?: boolean;
   readonly kValues: EigrpKValues;
   readonly holdTimeSec: number;
   readonly routerId?: string;
@@ -77,6 +84,8 @@ export interface EigrpUpdatePacket {
   readonly type: 'eigrp';
   readonly opcode: 'update';
   readonly asn: number;
+  readonly sequence?: number;
+  readonly init?: boolean;
   readonly routes: readonly EigrpRouteTlv[];
   readonly auth?: EigrpAuthTlv;
 }

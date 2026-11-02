@@ -1,8 +1,8 @@
-PALETTE: ["Add Linux PC to canvas","Add Windows PC to canvas","Add Mac to canvas (limited simulation)","Add Linux Server to canvas","Add Windows Server to canvas","Add Cisco Switch to canvas","Add Huawei Switch to canvas","Add Hub to canvas","Add Cisco Router to canvas","Add Huawei Router to canvas","Add Cisco ASA to canvas (limited simulation)","Add FortiGate to canvas (limited simulation)","Add Palo Alto to canvas (limited simulation)"]
+PALETTE: ["Add Linux PC to canvas","Add Windows PC to canvas","Add Mac to canvas (limited simulation)","Add Linux Server to canvas","Add Windows Server to canvas","Add Cisco Switch to canvas","Add Huawei Switch to canvas","Add Hub to canvas","Add Cisco Router to canvas","Add Huawei Router to canvas","Add Cisco ASA to canvas (limited simulation)","Add FortiGate to canvas","Add Palo Alto to canvas (limited simulation)"]
 
 BOUTON PARE-FEU TROUVE: 1
 
-DEVICE-ID: 1786959687169-1
+DEVICE-ID: 1793616383226-1
 
 ECRAN APRES OUVERTURE:
 Clear All
@@ -11,9 +11,13 @@ Redo
 Save
 Open
 Export
+Image
 Import
 Reset
-Logs
+Language
+English
+Français
+Settings
 Help
 Equipment
 
@@ -94,9 +98,8 @@ FG
 
 FortiGate
 
-Fortinet firewall
+Fortinet FortiOS firewall
 
-LIMITED
 PA
 
 Palo Alto
@@ -152,9 +155,13 @@ Redo
 Save
 Open
 Export
+Image
 Import
 Reset
-Logs
+Language
+English
+Français
+Settings
 Help
 Equipment
 
@@ -235,9 +242,8 @@ FG
 
 FortiGate
 
-Fortinet firewall
+Fortinet FortiOS firewall
 
-LIMITED
 PA
 
 Palo Alto
@@ -300,9 +306,13 @@ Redo
 Save
 Open
 Export
+Image
 Import
 Reset
-Logs
+Language
+English
+Français
+Settings
 Help
 Equipment
 
@@ -383,9 +393,8 @@ FG
 
 FortiGate
 
-Fortinet firewall
+Fortinet FortiOS firewall
 
-LIMITED
 PA
 
 Palo Alto
