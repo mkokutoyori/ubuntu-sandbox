@@ -1356,6 +1356,10 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult { return this.role().addQueryResolutionPolicy(zone, spec); }
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult { return this.role().changeQueryResolutionPolicy(zone, name, changes); }
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult { return this.role().removeQueryResolutionPolicy(zone, name); }
+  getZoneTransferPolicies(zone: string | null): DnsPolicyListResult { return this.role().getZoneTransferPolicies(zone); }
+  addZoneTransferPolicy(zone: string | null, spec: NewPolicy): DnsOpResult { return this.role().addZoneTransferPolicy(zone, spec); }
+  changeZoneTransferPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult { return this.role().changeZoneTransferPolicy(zone, name, changes); }
+  removeZoneTransferPolicy(zone: string | null, name: string): DnsOpResult { return this.role().removeZoneTransferPolicy(zone, name); }
   setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult { return this.role().setPolicyEnabled(zone, name, enabled); }
   getRecursionScopes(): RecursionScopeView[] { return this.role().getRecursionScopes(); }
   addRecursionScope(name: string, forwarders: readonly string[], enableRecursion: boolean): DnsOpResult { return this.role().addRecursionScope(name, forwarders, enableRecursion); }

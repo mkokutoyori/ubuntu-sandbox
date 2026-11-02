@@ -1098,6 +1098,10 @@ export interface IDnsServerProvider {
   addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult;
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult;
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult;
+  getZoneTransferPolicies(zone: string | null): DnsPolicyListResult;
+  addZoneTransferPolicy(zone: string | null, spec: NewPolicy): DnsOpResult;
+  changeZoneTransferPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult;
+  removeZoneTransferPolicy(zone: string | null, name: string): DnsOpResult;
   setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult;
   getRecursionScopes(): RecursionScopeView[];
   addRecursionScope(name: string, forwarders: readonly string[], enableRecursion: boolean): DnsOpResult;

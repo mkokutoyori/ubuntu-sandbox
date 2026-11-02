@@ -433,6 +433,10 @@ const RRL_EXCEPTION_SCOPE: PolicyScope = { zone: null, kinds: ['RrlException'] }
 
 const ENABLEABLE_POLICY_KINDS: readonly PolicyKind[] = ['QueryProcessing', 'Recursion', 'ZoneTransfer'];
 
+const QUERY_POLICY_KINDS: readonly PolicyKind[] = ['QueryProcessing', 'Recursion'];
+
+const TRANSFER_POLICY_KINDS: readonly PolicyKind[] = ['ZoneTransfer'];
+
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
   private readonly authoritative = new AuthoritativeServer(this.store, {
@@ -671,8 +675,8 @@ export class WindowsDnsServerRole {
     const sourceAddress = peer.source instanceof IPAddress ? peer.source.toString() : null;
     if (isNotify(query)) return { reply: this.handleNotify(query, sourceAddress) };
     if (isUpdateMessage(query)) return { reply: this.handleUpdate(query, raw) };
-    if (isTransferQuery(query)) return { reply: this.handleTransfer(query, transport, sourceAddress) };
     const facts = this.policyFacts(query, transport, peer);
+    if (isTransferQuery(query)) return { reply: this.handleTransfer(query, transport, sourceAddress, facts) };
     const governance = this.governedByQueryPolicy(query, facts);
     if (governance.served !== null) return governance.served;
     const { message: response, imputedName } = this.authoritative.respond(query, governance.records ?? undefined);
@@ -796,10 +800,12 @@ export class WindowsDnsServerRole {
     return [...entries].sort((a, b) => a.failures - b.failures || (a.averageMs ?? Infinity) - (b.averageMs ?? Infinity));
   }
 
-  private handleTransfer(query: DnsMessage, transport: 'udp' | 'tcp', source: string | null): DnsMessage | DnsMessage[] {
+  private handleTransfer(query: DnsMessage, transport: 'udp' | 'tcp', source: string | null, facts: PolicyFacts): DnsMessage | DnsMessage[] | null {
     const qname = normalizeDnsName(query.questions[0].qname);
     const kind: ZoneTransferKind = query.questions[0].qtype === RRType.IXFR ? 'IXFR' : 'AXFR';
     this.countTransferRequest(qname, kind, transport);
+    const decision = this.policies.decide(null, 'ZoneTransfer', facts) ?? (this.store.getZone(qname) === null ? null : this.policies.decide(qname, 'ZoneTransfer', facts));
+    if (decision !== null) return decision.action === 'DENY' ? this.refuseTransferRequest(query, 'RefuseSecurity') : null;
     if (transport === 'udp') return this.refuseTransferRequest(query, null);
     const settings = this.settings.get(qname);
     const zone = this.store.getZone(qname);
@@ -1410,22 +1416,54 @@ export class WindowsDnsServerRole {
   }
 
   getQueryResolutionPolicies(zone: string | null): DnsPolicyListResult {
-    const scope = this.queryPolicyScope(zone);
-    return typeof scope === 'string' ? { ok: false, message: scope, policies: [] } : { ok: true, message: '', policies: this.policies.list(scope) };
+    return this.listPolicies(zone, QUERY_POLICY_KINDS);
   }
 
   addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult {
-    const scope = this.queryPolicyScope(zone);
-    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.create(scope, spec));
+    return this.createPolicy(zone, spec, QUERY_POLICY_KINDS);
   }
 
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult {
-    const scope = this.queryPolicyScope(zone);
-    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.change(scope, name, changes));
+    return this.changePolicy(zone, name, changes, QUERY_POLICY_KINDS);
   }
 
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult {
-    const scope = this.queryPolicyScope(zone);
+    return this.deletePolicy(zone, name, QUERY_POLICY_KINDS);
+  }
+
+  getZoneTransferPolicies(zone: string | null): DnsPolicyListResult {
+    return this.listPolicies(zone, TRANSFER_POLICY_KINDS);
+  }
+
+  addZoneTransferPolicy(zone: string | null, spec: NewPolicy): DnsOpResult {
+    return this.createPolicy(zone, spec, TRANSFER_POLICY_KINDS);
+  }
+
+  changeZoneTransferPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult {
+    return this.changePolicy(zone, name, changes, TRANSFER_POLICY_KINDS);
+  }
+
+  removeZoneTransferPolicy(zone: string | null, name: string): DnsOpResult {
+    return this.deletePolicy(zone, name, TRANSFER_POLICY_KINDS);
+  }
+
+  private listPolicies(zone: string | null, kinds: readonly PolicyKind[]): DnsPolicyListResult {
+    const scope = this.queryPolicyScope(zone, kinds);
+    return typeof scope === 'string' ? { ok: false, message: scope, policies: [] } : { ok: true, message: '', policies: this.policies.list(scope) };
+  }
+
+  private createPolicy(zone: string | null, spec: NewPolicy, kinds: readonly PolicyKind[]): DnsOpResult {
+    const scope = this.queryPolicyScope(zone, kinds);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.create(scope, spec));
+  }
+
+  private changePolicy(zone: string | null, name: string, changes: PolicyChanges, kinds: readonly PolicyKind[]): DnsOpResult {
+    const scope = this.queryPolicyScope(zone, kinds);
+    return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.change(scope, name, changes));
+  }
+
+  private deletePolicy(zone: string | null, name: string, kinds: readonly PolicyKind[]): DnsOpResult {
+    const scope = this.queryPolicyScope(zone, kinds);
     return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.remove(scope, name));
   }
 
@@ -1434,7 +1472,7 @@ export class WindowsDnsServerRole {
     return typeof scope === 'string' ? { ok: false, message: scope } : refusalToResult(this.policies.setEnabled(scope, name, enabled));
   }
 
-  private queryPolicyScope(zone: string | null, kinds: readonly PolicyKind[] = ['QueryProcessing', 'Recursion']): PolicyScope | string {
+  private queryPolicyScope(zone: string | null, kinds: readonly PolicyKind[]): PolicyScope | string {
     if (zone === null) return { zone: null, kinds };
     const origin = normalizeDnsName(zone);
     return this.settings.has(origin) ? { zone: origin, kinds: kinds.filter(kind => kind !== 'Recursion') } : zoneMissing(zone);

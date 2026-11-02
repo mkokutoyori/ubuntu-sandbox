@@ -1,7 +1,7 @@
 import type { ICmdlet } from '../ICmdlet';
 import type { CmdletContext } from '../CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
-import type { IDnsServerProvider, NewPolicy, PolicyContentEntry, PolicyCriteriaText, PolicyView } from '@/powershell/providers/PSProviders';
+import type { IDnsServerProvider, NewPolicy, PolicyContentEntry, PolicyView } from '@/powershell/providers/PSProviders';
 import { POLICY_ACTIONS, POLICY_REFUSALS } from '@/network/devices/windows/server/dns/DnsPolicies';
 import { POLICY_CONDITIONS } from '@/network/devices/windows/server/dns/DnsPolicyCriteria';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
@@ -9,38 +9,13 @@ import { mayProceed } from '../confirmation';
 import { choice, failed, isSwitchOn, missing, requireDns } from './DnsServerCmdlets';
 import { UINT32_MAXIMUM, countSetting } from './DnsServerSettingsCmdlets';
 import {
-  POLICY_CRITERIA_PARAMETERS, contentFromText, criteriaFromNamed, policyFromRecord, policyObject, type PolicyRecord,
+  POLICY_CRITERIA_PARAMETERS, contentFromText, criteriaFromNamed, inputObject, mergedCriteria, nameArgument, policyName, policyObject, positional,
+  zoneArgument,
 } from './DnsPolicyObjects';
 
 const COMMON_PARAMETERS = ['ComputerName', 'CimSession', 'ThrottleLimit', 'AsJob'] as const;
 
 const CRITERIA_PARAMETERS = POLICY_CRITERIA_PARAMETERS.map(entry => entry.parameter);
-
-function positional(ctx: CmdletContext, key: string, position: number): string | undefined {
-  const given = ctx.named[key] ?? ctx.positional[position];
-  return given === undefined || given === null ? undefined : psValueToString(given);
-}
-
-function zoneArgument(ctx: CmdletContext, position?: number): string | null {
-  const given = ctx.named['zonename'] ?? (position === undefined ? undefined : ctx.positional[position]);
-  return given === undefined || given === null || psValueToString(given) === '' ? null : psValueToString(given);
-}
-
-function nameArgument(ctx: CmdletContext, position?: number): string {
-  return psValueToString(ctx.named['name'] ?? (position === undefined ? undefined : ctx.positional[position]) ?? '');
-}
-
-function policyName(ctx: CmdletContext, record: PolicyRecord | null, position?: number): string {
-  const given = nameArgument(ctx, position);
-  return given !== '' ? given : record?.name ?? '';
-}
-
-function inputObject(ctx: CmdletContext): PolicyRecord | null {
-  const given = ctx.named['inputobject'];
-  return given === undefined || given === null || typeof given !== 'object' || Array.isArray(given)
-    ? null
-    : policyFromRecord(given as Record<string, PSValue>);
-}
 
 function contentArgument(ctx: CmdletContext, key: string): PolicyContentEntry[] | undefined {
   const given = ctx.named[key];
@@ -55,10 +30,6 @@ function refuseEcs(ctx: CmdletContext, cmdletName: string): boolean {
   if (ctx.named['ecs'] === undefined) return false;
   failed(ctx, cmdletName, { ok: false, message: POLICY_REFUSALS.invalidSettings });
   return true;
-}
-
-function mergedCriteria(named: PolicyCriteriaText, record: PolicyRecord | null): PolicyCriteriaText {
-  return { ...(record?.criteria ?? {}), ...named };
 }
 
 export class AddDnsServerQueryResolutionPolicyCmdlet implements ICmdlet {
