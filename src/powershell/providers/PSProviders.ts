@@ -993,6 +993,7 @@ import type { DnsServerSettingEntry, DnsServerSettingValue } from '@/network/dev
 import type { DnsDiagnosticsChanges, DnsDiagnosticsEntry } from '@/network/devices/windows/server/dns/DnsServerDiagnostics';
 import type { ServerStatisticsSnapshot } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 import type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/windows/server/dns/DnsClientSubnets';
+import type { ResponseRateLimitingChanges, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
@@ -1010,6 +1011,7 @@ export type { DnsServerSettingEntry, DnsServerSettingValue } from '@/network/dev
 export type { DnsDiagnosticsChanges, DnsDiagnosticsEntry, DnsDiagnosticsValue } from '@/network/devices/windows/server/dns/DnsServerDiagnostics';
 export type { ServerStatisticsSnapshot, ZoneStatisticsSnapshot, StatisticsTimes } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 export type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/windows/server/dns/DnsClientSubnets';
+export type { ResponseRateLimitingChanges, ResponseRateLimitingMode, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1074,6 +1076,8 @@ export interface IDnsServerProvider {
   addClientSubnet(name: string, ipv4: readonly string[], ipv6: readonly string[]): DnsOpResult;
   changeClientSubnet(name: string, action: ClientSubnetAction, ipv4: readonly string[], ipv6: readonly string[]): DnsOpResult;
   removeClientSubnet(name: string): DnsOpResult;
+  getResponseRateLimiting(): ResponseRateLimitingSettings;
+  setResponseRateLimiting(changes: ResponseRateLimitingChanges): DnsOpResult;
   getGlobalNames(): DnsGlobalNames;
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult;
   getGlobalQueryBlock(): GlobalQueryBlock;

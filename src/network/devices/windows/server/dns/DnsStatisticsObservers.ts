@@ -6,6 +6,7 @@ import { TsigErrorCode } from '@/network/dns/tsig/Tsig';
 import { serialGreaterThan } from '@/network/dns/zone/SerialNumber';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
+import type { RateVerdict } from '@/network/dns/rrl/ResponseRateLimiter';
 import type { TsigRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { DnsPacketEvent } from '@/network/dns/transport/DnsPacketObserver';
 import { normalizeDnsName } from '@/network/dns/wire/DnsName';
@@ -44,6 +45,13 @@ const UPDATE_REJECTION_COUNTERS: ReadonlyMap<number, StatisticsCounter<'UpdateSt
   [DnsUpdateRcode.NOTAUTH, 'NotAuthoritative'],
   [DnsUpdateRcode.NOTZONE, 'NotZone'],
 ]);
+
+const RATE_VERDICT_COUNTERS: Readonly<Record<RateVerdict, StatisticsCounter<'RRLStatistics'>>> = {
+  send: 'TotalResponsesSent',
+  drop: 'TotalResponsesDropped',
+  leak: 'TotalResponsesLeaked',
+  truncate: 'TotalResponsesTruncated',
+};
 
 export type MasterRefusal = 'RefuseNotAuth' | 'RefuseSecurity' | 'RefuseShutdown';
 
@@ -272,4 +280,9 @@ export function countValidation(
   if (result.fromCache) return;
   if (result.security === 'secure') statistics.add('DnssecStatistics', 'SuccessfulValidations');
   if (result.security === 'bogus') statistics.add('DnssecStatistics', 'FailedValidations');
+}
+
+export function countRateVerdict(statistics: DnsServerStatistics, verdict: RateVerdict, zone: string | null): void {
+  statistics.add('RRLStatistics', RATE_VERDICT_COUNTERS[verdict]);
+  if (zone !== null) statistics.zoneRate(zone, verdict);
 }

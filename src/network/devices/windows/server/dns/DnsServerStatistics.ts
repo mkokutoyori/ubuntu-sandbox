@@ -1,4 +1,5 @@
 import { RRType } from '@/network/dns/wire/RRType';
+import type { RateVerdict } from '@/network/dns/rrl/ResponseRateLimiter';
 
 const COUNTER_MODULUS = 0x100000000;
 const MILLISECONDS_PER_SECOND = 1000;
@@ -113,6 +114,9 @@ export const SERVER_STATISTICS = {
   CacheStatistics: [
     'SuccessfulFreePasses', 'FailedFreePasses', 'PassesWithNoFrees', 'PassesRequiringAggressiveFree',
   ],
+  RRLStatistics: [
+    'TotalResponsesSent', 'TotalResponsesDropped', 'TotalResponsesLeaked', 'TotalResponsesTruncated',
+  ],
 } as const;
 
 export type StatisticsGroup = keyof typeof SERVER_STATISTICS;
@@ -176,6 +180,17 @@ export interface ZoneUpdateCounters {
   rejected: number;
 }
 
+export interface ZoneRateCounters {
+  sent: number;
+  dropped: number;
+  leaked: number;
+  truncated: number;
+}
+
+const ZONE_RATE_FIELDS: Readonly<Record<RateVerdict, keyof ZoneRateCounters>> = {
+  send: 'sent', drop: 'dropped', leak: 'leaked', truncate: 'truncated',
+};
+
 export type ZoneQueryOutcome = 'answered' | 'nameError' | 'failure';
 
 export interface ZoneStatisticsSnapshot {
@@ -184,6 +199,7 @@ export interface ZoneStatisticsSnapshot {
   readonly queries: ReadonlyArray<{ readonly recordType: ZoneRecordType } & Readonly<ZoneQueryCounters>>;
   readonly transfers: ReadonlyArray<{ readonly kind: ZoneTransferKind } & Readonly<ZoneTransferCounters>>;
   readonly update: Readonly<ZoneUpdateCounters>;
+  readonly rate: Readonly<ZoneRateCounters>;
 }
 
 export interface ServerStatisticsSnapshot {
@@ -196,6 +212,7 @@ interface ZoneRecord {
   readonly queries: Map<ZoneRecordType, ZoneQueryCounters>;
   readonly transfers: Map<ZoneTransferKind, ZoneTransferCounters>;
   update: ZoneUpdateCounters;
+  rate: ZoneRateCounters;
 }
 
 function freshQueryCounters(): ZoneQueryCounters {
@@ -212,6 +229,7 @@ function freshZone(startedAtMs: number): ZoneRecord {
     queries: new Map(ZONE_RECORD_TYPES.map(type => [type, freshQueryCounters()])),
     transfers: new Map(ZONE_TRANSFER_KINDS.map(kind => [kind, freshTransferCounters()])),
     update: { received: 0, rejected: 0 },
+    rate: { sent: 0, dropped: 0, leaked: 0, truncated: 0 },
   };
 }
 
@@ -333,6 +351,10 @@ export class DnsServerStatistics {
     if (rejected) update.rejected += 1;
   }
 
+  zoneRate(name: string, verdict: RateVerdict): void {
+    this.zoneRecord(name).rate[ZONE_RATE_FIELDS[verdict]] += 1;
+  }
+
   zoneSnapshot(name: string): ZoneStatisticsSnapshot | null {
     const record = this.zones.get(name);
     if (record === undefined) return null;
@@ -342,6 +364,7 @@ export class DnsServerStatistics {
       queries: ZONE_RECORD_TYPES.map(recordType => ({ recordType, ...(record.queries.get(recordType) as ZoneQueryCounters) })),
       transfers: ZONE_TRANSFER_KINDS.map(kind => ({ kind, ...(record.transfers.get(kind) as ZoneTransferCounters) })),
       update: { ...record.update },
+      rate: { ...record.rate },
     };
   }
 

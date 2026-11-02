@@ -17,31 +17,40 @@ export interface AuthoritativePolicy {
   readonly recursionAvailable?: () => boolean;
 }
 
+export interface AuthoritativeResponse {
+  readonly message: DnsMessage;
+  readonly imputedName: string;
+}
+
 export class AuthoritativeServer {
   constructor(private readonly zones: ZoneStore, private readonly policy: AuthoritativePolicy = {}) {}
 
   answer(query: DnsMessage): DnsMessage {
+    return this.respond(query).message;
+  }
+
+  respond(query: DnsMessage): AuthoritativeResponse {
     const baseFlags: BaseFlags = {
       qr: true, rd: query.flags.rd, ra: this.policy.recursionAvailable?.() ?? false, ad: false, cd: false,
     };
 
     if (query.flags.opcode !== DnsOpcode.QUERY) {
-      return this.errorResponse(query, baseFlags, DnsRcode.NOTIMP);
+      return this.unplaced(this.errorResponse(query, baseFlags, DnsRcode.NOTIMP));
     }
     if (query.questions.length !== 1) {
-      return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
+      return this.unplaced(this.errorResponse(query, baseFlags, DnsRcode.FORMERR));
     }
 
     const opts = findOpts(query);
     if (opts.length > 1 || opts.some((opt) => opt.name !== '')) {
-      return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
+      return this.unplaced(this.errorResponse(query, baseFlags, DnsRcode.FORMERR));
     }
     if (opts.length > 0 && this.policy.acceptsEdns?.() === false) {
-      return this.errorResponse(query, baseFlags, DnsRcode.FORMERR);
+      return this.unplaced(this.errorResponse(query, baseFlags, DnsRcode.FORMERR));
     }
     const queryOpt = findOpt(query);
     if (queryOpt && queryOpt.data.version > EDNS_VERSION) {
-      return {
+      return this.unplaced({
         id: query.id,
         flags: { ...baseFlags, opcode: DnsOpcode.QUERY, aa: false, tc: false, rcode: DnsRcode.NOERROR },
         questions: query.questions,
@@ -50,7 +59,7 @@ export class AuthoritativeServer {
         additionals: [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, {
           extendedRcodeHigh: EDNS_BADVERS_EXTENDED_RCODE_HIGH,
         })],
-      };
+      });
     }
 
     const question = query.questions[0];
@@ -67,13 +76,20 @@ export class AuthoritativeServer {
     }
 
     return {
-      id: query.id,
-      flags: { ...baseFlags, opcode: DnsOpcode.QUERY, aa: result.aa, tc: false, rcode: result.rcode },
-      questions: [question],
-      answers: result.answers,
-      authorities: result.authority,
-      additionals,
+      message: {
+        id: query.id,
+        flags: { ...baseFlags, opcode: DnsOpcode.QUERY, aa: result.aa, tc: false, rcode: result.rcode },
+        questions: [question],
+        answers: result.answers,
+        authorities: result.authority,
+        additionals,
+      },
+      imputedName: result.imputedName,
     };
+  }
+
+  private unplaced(message: DnsMessage): AuthoritativeResponse {
+    return { message, imputedName: '' };
   }
 
   private errorResponse(query: DnsMessage, baseFlags: BaseFlags, rcode: number): DnsMessage {

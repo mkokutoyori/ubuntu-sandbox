@@ -45,6 +45,12 @@ function zoneObject(zone: ZoneStatisticsSnapshot): Record<string, PSValue> {
       DynamicUpdateReceived: zone.update.received,
       DynamicUpdateRejected: zone.update.rejected,
     },
+    ZoneRRLStatistics: {
+      TotalResponsesSent: zone.rate.sent,
+      TotalResponsesDropped: zone.rate.dropped,
+      TotalResponsesLeaked: zone.rate.leaked,
+      TotalResponsesTruncated: zone.rate.truncated,
+    },
   };
 }
 

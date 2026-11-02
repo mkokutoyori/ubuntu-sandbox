@@ -4,10 +4,13 @@
  * seconds since the server started and since the last clear, the same two measured from the machine restart, and the two
  * dates) and continues with the groups in the order of the provider classes; a zone object carries its name, its
  * collection start time, a row per record type with the four members of DnsServerZoneQueryStatistics, a row per transfer
- * type with the five members of DnsServerZoneTransferStatistics and the two of DnsServerZoneUpdateStatistics. Every number
+ * type with the five members of DnsServerZoneTransferStatistics, the two of DnsServerZoneUpdateStatistics and the four of
+ * DnsServerZoneRRLStatistics. Every number
  * of the stubs is different, so two members read from each other's field cannot give the same object. -Clear is passed to
  * the provider only when asked for, and a refused zone list is reported with the provider's message.
- * Discrimination (run on the tree before the change): every case falls, the cmdlet did not exist.
+ * Discrimination (run on the tree before the change): every case falls, the cmdlet did not exist. The four members of
+ * DnsServerZoneRRLStatistics came later: on the tree before that addition 1 of the 7 cases falls (the zone object); the
+ * other 6 pass either way as NON-REGRESSION.
  */
 import { describe, it, expect } from 'vitest';
 import type { CmdletContext } from '@/powershell/cmdlets/CmdletContext';
@@ -39,6 +42,7 @@ const ZONE: ZoneStatisticsSnapshot = {
     { kind: 'IXFR', requestReceived: 21, requestSent: 22, responseReceived: 23, successReceived: 24, successSent: 25 },
   ],
   update: { received: 31, rejected: 4 },
+  rate: { sent: 41, dropped: 42, leaked: 43, truncated: 44 },
 };
 
 function serverSnapshot(): ServerStatisticsSnapshot {
@@ -123,6 +127,7 @@ describe('the zone object', () => {
         { TransferType: 'IXFR', RequestReceived: 21, RequestSent: 22, ResponseReceived: 23, SuccessReceived: 24, SuccessSent: 25 },
       ],
       ZoneUpdateStatistics: { DynamicUpdateReceived: 31, DynamicUpdateRejected: 4 },
+      ZoneRRLStatistics: { TotalResponsesSent: 41, TotalResponsesDropped: 42, TotalResponsesLeaked: 43, TotalResponsesTruncated: 44 },
     }]);
   });
 

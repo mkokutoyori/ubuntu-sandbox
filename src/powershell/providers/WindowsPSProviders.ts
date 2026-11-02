@@ -97,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, ResponseRateLimitingChanges, ResponseRateLimitingSettings, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1343,6 +1343,8 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   addClientSubnet(name: string, ipv4: readonly string[], ipv6: readonly string[]): DnsOpResult { return this.role().addClientSubnet(name, ipv4, ipv6); }
   changeClientSubnet(name: string, action: ClientSubnetAction, ipv4: readonly string[], ipv6: readonly string[]): DnsOpResult { return this.role().changeClientSubnet(name, action, ipv4, ipv6); }
   removeClientSubnet(name: string): DnsOpResult { return this.role().removeClientSubnet(name); }
+  getResponseRateLimiting(): ResponseRateLimitingSettings { return this.role().getResponseRateLimiting(); }
+  setResponseRateLimiting(changes: ResponseRateLimitingChanges): DnsOpResult { return this.role().setResponseRateLimiting(changes); }
   getGlobalNames(): DnsGlobalNames { return this.role().getGlobalNames(); }
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult { return this.role().setGlobalNames(changes); }
   getGlobalQueryBlock(): GlobalQueryBlock { return this.role().getGlobalQueryBlock(); }

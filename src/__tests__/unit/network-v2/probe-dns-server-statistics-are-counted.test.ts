@@ -9,7 +9,7 @@
  * Measured first (a Windows DNS server holding corp.test, a UDP client, a second Windows server): neither cmdlet existed,
  * and nothing in the server counted anything.
  *
- * Authority: the Windows DNS PowerShell provider classes (DnsServerStatistics and its 20 member classes, with the meaning of
+ * Authority: the Windows DNS PowerShell provider classes (DnsServerStatistics and its 21 member classes, with the meaning of
  * every counter; DnsServerZoneStatistics, DnsServerZoneQueryStatistics, DnsServerZoneTransferStatistics,
  * DnsServerZoneUpdateStatistics), [MS-DNSP] DNSSRV_TIME_STATS (the time fields) and DNS_ZONE_STATS_TYPE (the 32 record
  * types), the Get-/Clear-DnsServerStatistics pages (parameter sets, -Clear on a zone, the confirmation of the clear).
@@ -55,7 +55,7 @@ const GROUPS = [
   'TimeStatistics', 'QueryStatistics', 'Query2Statistics', 'RecursionStatistics', 'DnssecStatistics', 'MasterStatistics',
   'SecondaryStatistics', 'WinsStatistics', 'UpdateStatistics', 'SecurityStatistics', 'DsStatistics', 'MemoryStatistics',
   'TimeoutStatistics', 'DatabaseStatistics', 'RecordStatistics', 'PacketStatistics', 'NetBiosStatistics', 'PrivateStatistics',
-  'ErrorStatistics', 'CacheStatistics',
+  'ErrorStatistics', 'CacheStatistics', 'RRLStatistics',
 ];
 
 beforeEach(() => { resetCounters(); resetDeviceCounters(); Logger.clear(); });
@@ -146,7 +146,7 @@ describe('the statistics surface', () => {
     expect(udp!.flags).toMatchObject({ qr: true, aa: true });
   });
 
-  it('shows the time statistics and the 19 counter groups, all at zero on a server nobody asked', async () => {
+  it('shows the time statistics and the 20 counter groups, all at zero on a server nobody asked', async () => {
     const { server } = await lab();
     const out = await run(server, 'Get-DnsServerStatistics | Format-List');
     const names = out.split(/\r?\n/).map((line) => /^(\w+)\s*:/.exec(line)?.[1]).filter((name): name is string => name !== undefined);

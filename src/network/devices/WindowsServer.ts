@@ -28,6 +28,7 @@ import { WindowsDnsServerRole, type DnsZoneFileSink } from './windows/server/dns
 import type { DnsLogFileSink } from './windows/server/dns/DnsDebugLog';
 import type { DnsServerIdentity } from './windows/server/dns/DnsServerSettings';
 import { RegistryDnsParameterStore } from './windows/server/dns/DnsServerParameters';
+import { DNS_ANALYTICAL_LOG, DNS_SERVER_EVENT_SOURCE } from './windows/server/dns/DnsAnalyticLog';
 import { WindowsDhcpServerRole } from './windows/server/dhcp/WindowsDhcpServerRole';
 import { WindowsNpsRole } from './windows/server/nps/WindowsNpsRole';
 import { WindowsIisRole } from './windows/server/iis/WindowsIisRole';
@@ -279,7 +280,11 @@ export class WindowsServer extends WindowsPC {
         logFiles: this.dnsLogFileSink(),
         directoryAvailable: () => this.getDirectoryStore() !== null,
         identity: () => this.dnsServerIdentity(),
+        analytic: event => {
+          this.eventLog.writeEventLog(DNS_ANALYTICAL_LOG, DNS_SERVER_EVENT_SOURCE, event.id, 'Information', event.name, { ...event.fields });
+        },
       });
+      this.eventLog.newEventLog(DNS_ANALYTICAL_LOG, DNS_SERVER_EVENT_SOURCE, false);
       this.reconcileListeners();
     }
     return this.dnsServerRoleInstance;

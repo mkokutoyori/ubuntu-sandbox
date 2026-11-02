@@ -21,7 +21,8 @@ import { DnsDebugLog, type DnsLogFileSink } from './DnsDebugLog';
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 import { IANA_ROOT_HINTS, renderRootHintsFile, type RootHint } from '@/network/dns/resolver/RootHints';
 import { DnsCache, type DnsCacheRecordView } from '@/network/dns/resolver/DnsCache';
-import { bindDnsUdpServer, unbindDnsUdpServer } from '@/network/dns/transport/DnsUdpTransport';
+import { bindDnsUdpServer, unbindDnsUdpServer, truncateForUdp, type DnsDatagramHandler } from '@/network/dns/transport/DnsUdpTransport';
+import { ResponseRateLimiter, type RateVerdict } from '@/network/dns/rrl/ResponseRateLimiter';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '@/network/dns/transport/DnsTcpTransport';
 import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
 import {
@@ -46,6 +47,7 @@ import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, datagramR
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { normalizeDnsName, relativeTo } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
 import {
@@ -67,10 +69,15 @@ import {
 } from './DnsServerStatistics';
 import {
   countServicePacket, countRecursionPacket, countSecondaryPacket, countNotifyPacket, countUpdate, countNotifyReceived,
-  countValidation, type MasterRefusal, type UpdateFacts,
+  countValidation, countRateVerdict, type MasterRefusal, type UpdateFacts,
 } from './DnsStatisticsObservers';
-import { IPAddress } from '@/network/core/types';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { ClientSubnetStore, type ClientSubnetAction, type ClientSubnetView } from './DnsClientSubnets';
+import {
+  DEFAULT_RESPONSE_RATE_LIMITING, planResponseRateLimiting,
+  type ResponseRateLimitingChanges, type ResponseRateLimitingSettings,
+} from './DnsResponseRateLimiting';
+import { RATE_ANALYTIC_EVENTS, type DnsAnalyticSink } from './DnsAnalyticLog';
 
 export interface DnsOpResult { ok: boolean; message: string }
 
@@ -157,6 +164,7 @@ export interface DnsRoleEnvironment {
   logFiles?: DnsLogFileSink;
   directoryAvailable?: () => boolean;
   identity?: () => DnsServerIdentity;
+  analytic?: DnsAnalyticSink;
 }
 
 export interface DnsPrimaryZoneOptions {
@@ -354,6 +362,19 @@ interface ForwarderEntry { address: string; resolver: RecursiveResolver; average
 
 interface ResolutionAttempt { resolver: RecursiveResolver; report?: (elapsedMs: number, succeeded: boolean) => void }
 
+interface Served {
+  readonly reply: DnsMessage | DnsMessage[] | Promise<DnsMessage>;
+  readonly imputedName?: string;
+}
+
+interface UdpRequestor {
+  readonly source?: IPAddress | IPv6Address;
+  readonly port?: number;
+  readonly destination?: IPAddress | IPv6Address;
+}
+
+const RATE_ERROR_CODES: ReadonlySet<number> = new Set([DnsRcode.FORMERR, DnsRcode.SERVFAIL, DnsRcode.REFUSED]);
+
 export class WindowsDnsServerRole {
   private readonly store = new ZoneStore();
   private readonly authoritative = new AuthoritativeServer(this.store, {
@@ -368,6 +389,9 @@ export class WindowsDnsServerRole {
   private readonly settings = new Map<string, ZoneSettings>();
   private readonly conditional = new Map<string, ConditionalForwarder>();
   private readonly clientSubnets = new ClientSubnetStore();
+  private readonly rateLimiter: ResponseRateLimiter;
+  private responseRateLimiting: ResponseRateLimitingSettings = { ...DEFAULT_RESPONSE_RATE_LIMITING };
+  private readonly analytic: DnsAnalyticSink | null;
   private readonly secondaries: SecondaryZoneRefresher;
   private readonly keyring = new TsigKeyring();
   private readonly trustAnchors: ResourceRecord<DsRecordData>[] = [];
@@ -420,6 +444,8 @@ export class WindowsDnsServerRole {
   constructor(private readonly host: EndHost, environment: DnsRoleEnvironment = {}) {
     this.now = environment.now ?? (() => simulationNowMs());
     this.statistics = new DnsServerStatistics({ now: this.now, uptimeMs: () => host.getUptimeMs() });
+    this.rateLimiter = new ResponseRateLimiter(this.now);
+    this.analytic = environment.analytic ?? null;
     this.zoneFiles = environment.zoneFiles ?? null;
     this.parameters = new DnsServerParameters(environment.parameters ?? new MemoryDnsParameterStore());
     this.debugLog = new DnsDebugLog({
@@ -454,6 +480,7 @@ export class WindowsDnsServerRole {
     if (this.running) return;
     const processName = identity.processName ?? 'dns';
     this.statistics.restart();
+    this.rateLimiter.reset();
     for (const name of this.settings.keys()) this.statistics.trackZone(name);
     bindDnsUdpServer(this.host, this.handleUdp, DNS_PORT, processName, undefined, undefined, { pid: identity.pid, service: identity.service }, this.serviceObserver);
     bindDnsTcpServer(this.host, this.handleTcp, DNS_PORT, { processName, pid: identity.pid, service: identity.service, observer: this.serviceObserver, onConnection: () => this.statistics.add('QueryStatistics', 'TcpClientConnections') });
@@ -489,24 +516,65 @@ export class WindowsDnsServerRole {
     }
   }
 
-  private readonly handleUdp = (
-    query: DnsMessage, source?: unknown, _port?: number, raw?: Uint8Array,
-  ): DnsMessage | Promise<DnsMessage> => datagramReply(this.answer(query, 'udp', source, raw));
+  private readonly handleUdp: DnsDatagramHandler = (query, source, port, raw, destination) => {
+    const served = this.answer(query, 'udp', source, raw);
+    const reply = datagramReply(served.reply);
+    if (served.imputedName === undefined || reply instanceof Promise) return reply;
+    return this.limitRate(query, reply, served.imputedName, { source, port, destination });
+  };
 
   private readonly handleTcp = (
     query: DnsMessage, source?: unknown, _port?: number, raw?: Uint8Array,
-  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> => this.answer(query, 'tcp', source, raw);
+  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> => this.answer(query, 'tcp', source, raw).reply;
 
-  private answer(
-    query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
-  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
-    const reply = this.respond(query, transport, source, raw);
-    if (Array.isArray(reply)) return reply;
+  private answer(query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array): Served {
+    const served = this.respond(query, transport, source, raw);
+    if (Array.isArray(served.reply)) return served;
     const finish = (message: DnsMessage): DnsMessage => {
       this.countZoneQuery(query, message);
       return this.limitAddressRecords(message);
     };
-    return reply instanceof Promise ? reply.then(finish) : finish(reply);
+    return { ...served, reply: served.reply instanceof Promise ? served.reply.then(finish) : finish(served.reply) };
+  }
+
+  private limitRate(query: DnsMessage, response: DnsMessage, imputedName: string, requestor: UdpRequestor): DnsMessage | null {
+    const settings = this.responseRateLimiting;
+    if (settings.mode === 'Disable' || requestor.source === undefined || query.flags.opcode !== DnsOpcode.QUERY) return response;
+    const verdict = this.rateLimiter.judge({ source: requestor.source, imputedName, error: RATE_ERROR_CODES.has(response.flags.rcode) }, settings);
+    if (settings.mode === 'LogOnly') {
+      this.logRateVerdict(verdict, query, response, requestor);
+      return response;
+    }
+    const question = query.questions[0];
+    const zone = question === undefined ? null : this.store.findZone(normalizeDnsName(question.qname));
+    countRateVerdict(this.statistics, verdict, zone?.origin ?? null);
+    switch (verdict) {
+      case 'drop': return null;
+      case 'truncate': return truncateForUdp(response, 0);
+      case 'send':
+      case 'leak': return response;
+    }
+  }
+
+  private logRateVerdict(verdict: RateVerdict, query: DnsMessage, response: DnsMessage, requestor: UdpRequestor): void {
+    if (verdict === 'send' || this.analytic === null) return;
+    const event = RATE_ANALYTIC_EVENTS[verdict];
+    const packet = encodeDnsMessage(response);
+    this.analytic({
+      id: event.id,
+      name: event.name,
+      fields: {
+        InterfaceIP: requestor.destination?.toString() ?? '',
+        Destination: requestor.source?.toString() ?? '',
+        QNAME: `${normalizeDnsName(query.questions[0]?.qname ?? '')}.`,
+        QTYPE: String(query.questions[0]?.qtype ?? 0),
+        XID: String(query.id),
+        RCODE: String(response.flags.rcode),
+        Port: String(requestor.port ?? 0),
+        BufferSize: String(packet.length),
+        PacketData: Array.from(packet, byte => byte.toString(16).padStart(2, '0')).join(''),
+      },
+    });
   }
 
   private countZoneQuery(query: DnsMessage, response: DnsMessage): void {
@@ -533,32 +601,33 @@ export class WindowsDnsServerRole {
 
   private respond(
     query: DnsMessage, transport: 'udp' | 'tcp', source: unknown, raw?: Uint8Array,
-  ): DnsMessage | DnsMessage[] | Promise<DnsMessage> {
+  ): Served {
     const sourceAddress = source instanceof IPAddress ? source.toString() : null;
-    if (isNotify(query)) return this.handleNotify(query, sourceAddress);
-    if (isUpdateMessage(query)) return this.handleUpdate(query, raw);
-    if (isTransferQuery(query)) return this.handleTransfer(query, transport, sourceAddress);
-    const response = this.authoritative.answer(query);
+    if (isNotify(query)) return { reply: this.handleNotify(query, sourceAddress) };
+    if (isUpdateMessage(query)) return { reply: this.handleUpdate(query, raw) };
+    if (isTransferQuery(query)) return { reply: this.handleTransfer(query, transport, sourceAddress) };
+    const { message: response, imputedName } = this.authoritative.respond(query);
     const globalName = this.answerFromGlobalNames(query, response);
-    if (globalName !== null) return globalName;
     const question = query.questions[0];
+    if (globalName !== null) return { reply: globalName, imputedName: normalizeDnsName(question.qname) };
     const outsideAuthority = !response.flags.aa && response.flags.rcode === DnsRcode.REFUSED;
-    if (outsideAuthority && question && this.hitsUnloadedSecondary(question.qname)) {
-      return { ...response, flags: { ...response.flags, rcode: DnsRcode.SERVFAIL } };
+    const unloaded = outsideAuthority && question ? this.unloadedSecondaryFor(question.qname) : null;
+    if (unloaded !== null) {
+      return { reply: { ...response, flags: { ...response.flags, rcode: DnsRcode.SERVFAIL } }, imputedName: unloaded };
     }
     if (outsideAuthority && question && query.flags.rd && this.parameters.recursionEnabled()) {
       const resolvers = this.resolversFor(question.qname);
-      if (resolvers.length > 0) return this.recurse(query, resolvers);
+      if (resolvers.length > 0) return { reply: this.recurse(query, resolvers) };
     }
-    return response;
+    return { reply: response, imputedName };
   }
 
-  private hitsUnloadedSecondary(qname: string): boolean {
+  private unloadedSecondaryFor(qname: string): string | null {
     const name = normalizeDnsName(qname);
     for (const [zone, settings] of this.settings) {
-      if (settings.type === 'Secondary' && !this.store.getZone(zone) && isUnder(name, zone)) return true;
+      if (settings.type === 'Secondary' && !this.store.getZone(zone) && isUnder(name, zone)) return zone;
     }
-    return false;
+    return null;
   }
 
   private resolversFor(qname: string): ResolutionAttempt[] {
@@ -1193,6 +1262,15 @@ export class WindowsDnsServerRole {
 
   setServerSettings(changes: ReadonlyMap<string, DnsServerSettingValue>): DnsOpResult {
     return refusalToResult(writeServerSettings(this.parameters, this.identityOf(), changes));
+  }
+
+  getResponseRateLimiting(): ResponseRateLimitingSettings { return { ...this.responseRateLimiting }; }
+
+  setResponseRateLimiting(changes: ResponseRateLimitingChanges): DnsOpResult {
+    const planned = planResponseRateLimiting(this.responseRateLimiting, changes);
+    if (typeof planned === 'string') return refusalToResult(planned);
+    this.responseRateLimiting = planned;
+    return refusalToResult(null);
   }
 
   getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }

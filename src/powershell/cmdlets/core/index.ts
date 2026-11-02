@@ -184,6 +184,7 @@ import { GetDnsServerStatisticsCmdlet, ClearDnsServerStatisticsCmdlet } from './
 import {
   AddDnsServerClientSubnetCmdlet, GetDnsServerClientSubnetCmdlet, SetDnsServerClientSubnetCmdlet, RemoveDnsServerClientSubnetCmdlet,
 } from './DnsClientSubnetCmdlets';
+import { GetDnsServerResponseRateLimitingCmdlet, SetDnsServerResponseRateLimitingCmdlet } from './DnsResponseRateLimitingCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -888,6 +889,8 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Get-DnsServerClientSubnet', new GetDnsServerClientSubnetCmdlet()));
   registry.register(remotable('Set-DnsServerClientSubnet', new SetDnsServerClientSubnetCmdlet()));
   registry.register(remotable('Remove-DnsServerClientSubnet', new RemoveDnsServerClientSubnetCmdlet()));
+  registry.register(remotable('Get-DnsServerResponseRateLimiting', new GetDnsServerResponseRateLimitingCmdlet()));
+  registry.register(remotable('Set-DnsServerResponseRateLimiting', new SetDnsServerResponseRateLimitingCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));

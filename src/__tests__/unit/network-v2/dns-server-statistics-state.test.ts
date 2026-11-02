@@ -1,10 +1,13 @@
 /*
- * Structure — the state behind Get-DnsServerStatistics: the 19 counter groups and their members in the order of the
- * Windows DNS PowerShell provider classes (DnsServerQueryStatistics … DnsServerCacheStatistics, 358 counters, uint32 so
+ * Structure — the state behind Get-DnsServerStatistics: the 20 counter groups and their members in the order of the
+ * Windows DNS PowerShell provider classes (DnsServerQueryStatistics … DnsServerRRLStatistics, 362 counters, uint32 so
  * they wrap at 2^32), the time statistics of [MS-DNSP] DNSSRV_TIME_STATS (seconds since the server started and since the
  * last clear, and the same two measured from the machine restart), what clearing and restarting reset, and the per-zone
  * statistics (the 32 record types of DNS_ZONE_STATS_TYPE, AXFR and IXFR transfers, updates). Discrimination (run on the
- * tree before the change): every case falls, the module did not exist.
+ * tree before the change): every case falls, the module did not exist. The group RRLStatistics and the rate counters of a
+ * zone came later: on the tree before that addition 10 of the 67 cases fall (the 20 groups, the members of RRLStatistics,
+ * and eight about the rate counters of a zone: its start, the four verdicts, the snapshot, the clearing of one zone and the
+ * survival of a clear of the server); the other 57 pass either way as NON-REGRESSION.
  */
 import { describe, it, expect } from 'vitest';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -22,14 +25,14 @@ class FakeClock implements StatisticsClock {
 const BOOT = 1_700_000_000_000;
 
 describe('the counter table', () => {
-  it('lists the 19 groups in the order of the provider classes', () => {
+  it('lists the 20 groups in the order of the provider classes', () => {
     expect(Object.keys(SERVER_STATISTICS)).toEqual([
       'QueryStatistics', 'Query2Statistics', 'RecursionStatistics', 'DnssecStatistics', 'MasterStatistics', 'SecondaryStatistics',
       'WinsStatistics', 'UpdateStatistics', 'SecurityStatistics', 'DsStatistics', 'MemoryStatistics', 'TimeoutStatistics',
       'DatabaseStatistics', 'RecordStatistics', 'PacketStatistics', 'NetBiosStatistics', 'PrivateStatistics', 'ErrorStatistics',
-      'CacheStatistics',
+      'CacheStatistics', 'RRLStatistics',
     ]);
-    expect(Object.values(SERVER_STATISTICS).reduce((total, counters) => total + counters.length, 0)).toBe(358);
+    expect(Object.values(SERVER_STATISTICS).reduce((total, counters) => total + counters.length, 0)).toBe(362);
   });
 
   it.each([
@@ -37,6 +40,7 @@ describe('the counter table', () => {
     ['DnssecStatistics', ['SuccessfulValidations', 'FailedValidations', 'RecursionFailures']],
     ['WinsStatistics', ['WinsLookups', 'WinsResponses', 'WinsReverseLookups', 'WinsReverseResponses']],
     ['CacheStatistics', ['SuccessfulFreePasses', 'FailedFreePasses', 'PassesWithNoFrees', 'PassesRequiringAggressiveFree']],
+    ['RRLStatistics', ['TotalResponsesSent', 'TotalResponsesDropped', 'TotalResponsesLeaked', 'TotalResponsesTruncated']],
   ] as const)('keeps the members of %s in the class order', (group, members) => {
     expect([...SERVER_STATISTICS[group]]).toEqual(members);
   });
@@ -197,6 +201,7 @@ describe('the zone statistics', () => {
     expect(zone.queries.every(query => query.received === 0 && query.responded === 0 && query.failure === 0 && query.nameError === 0)).toBe(true);
     expect(zone.transfers.map(transfer => transfer.kind)).toEqual(['AXFR', 'IXFR']);
     expect(zone.update).toEqual({ received: 0, rejected: 0 });
+    expect(zone.rate).toEqual({ sent: 0, dropped: 0, leaked: 0, truncated: 0 });
     expect(stats.zoneSnapshot('other.test')).toBeNull();
   });
 
@@ -227,26 +232,53 @@ describe('the zone statistics', () => {
     expect(stats.zoneSnapshot('other.test')!.update).toEqual({ received: 1, rejected: 1 });
   });
 
+  it.each([
+    ['send', { sent: 1, dropped: 0, leaked: 0, truncated: 0 }],
+    ['drop', { sent: 0, dropped: 1, leaked: 0, truncated: 0 }],
+    ['leak', { sent: 0, dropped: 0, leaked: 1, truncated: 0 }],
+    ['truncate', { sent: 0, dropped: 0, leaked: 0, truncated: 1 }],
+  ] as const)('counts a %s verdict of rate limiting in its own field of its own zone', (verdict, expected) => {
+    const stats = new DnsServerStatistics(new FakeClock(BOOT, BOOT));
+    stats.zoneRate('corp.test', verdict);
+    stats.trackZone('other.test');
+    expect(stats.zoneSnapshot('corp.test')!.rate).toEqual(expected);
+    expect(stats.zoneSnapshot('other.test')!.rate).toEqual({ sent: 0, dropped: 0, leaked: 0, truncated: 0 });
+  });
+
+  it('hands out a snapshot of the rate counters that later counts do not change', () => {
+    const stats = new DnsServerStatistics(new FakeClock(BOOT, BOOT));
+    stats.zoneRate('corp.test', 'send');
+    const before = stats.zoneSnapshot('corp.test')!;
+    stats.zoneRate('corp.test', 'send');
+    stats.zoneRate('corp.test', 'drop');
+    expect(before.rate).toEqual({ sent: 1, dropped: 0, leaked: 0, truncated: 0 });
+    expect(stats.zoneSnapshot('corp.test')!.rate).toEqual({ sent: 2, dropped: 1, leaked: 0, truncated: 0 });
+  });
+
   it('clears one zone at a new start time and forgets another', () => {
     const clock = new FakeClock(BOOT, BOOT);
     const stats = new DnsServerStatistics(clock);
     stats.zoneQuery('corp.test', 'A', 'answered');
     stats.zoneQuery('other.test', 'A', 'answered');
+    stats.zoneRate('corp.test', 'drop');
     clock.wallMs += 9_000;
     stats.clearZone('corp.test');
     stats.forgetZone('other.test');
     const zone = stats.zoneSnapshot('corp.test')!;
     expect(zone.startedAtMs).toBe(BOOT + 9_000);
     expect(zone.queries.every(query => query.received === 0)).toBe(true);
+    expect(zone.rate).toEqual({ sent: 0, dropped: 0, leaked: 0, truncated: 0 });
     expect(stats.hasZone('other.test')).toBe(false);
   });
 
   it('leaves the zone statistics alone when the server statistics are cleared', () => {
     const stats = new DnsServerStatistics(new FakeClock(BOOT, BOOT));
     stats.zoneQuery('corp.test', 'A', 'answered');
+    stats.zoneRate('corp.test', 'send');
     stats.add('QueryStatistics', 'UdpQueries');
     stats.clear();
     expect(stats.zoneSnapshot('corp.test')!.queries[0].received).toBe(1);
+    expect(stats.zoneSnapshot('corp.test')!.rate.sent).toBe(1);
     expect(stats.get('QueryStatistics', 'UdpQueries')).toBe(0);
   });
 });

@@ -16,7 +16,12 @@ export type DnsMessageHandler = (
   sourceIP?: IPAddress | IPv6Address,
   sourcePort?: number,
   raw?: Uint8Array,
+  destinationIP?: IPAddress | IPv6Address,
 ) => DnsMessage | Promise<DnsMessage>;
+
+export type DnsDatagramHandler = (
+  ...received: Parameters<DnsMessageHandler>
+) => DnsMessage | null | Promise<DnsMessage | null>;
 
 export function answersQuestion(query: DnsMessage, response: DnsMessage): boolean {
   if (response.id !== query.id) return false;
@@ -125,7 +130,7 @@ export function negotiatedUdpSize(query: DnsMessage): number {
 
 export function bindDnsUdpServer(
   host: EndHost,
-  handler: DnsMessageHandler,
+  handler: DnsDatagramHandler,
   port: number = DNS_PORT,
   processName: string = 'dns',
   address?: string,
@@ -138,7 +143,7 @@ export function bindDnsUdpServer(
     if (address === undefined) host.udpBind(port, listener, processName, owner);
     else host.udpBindAddress(address, port, listener, processName, boundDevice);
   };
-  bind(({ sourceIP, udp }) => {
+  bind(({ sourceIP, destinationIP, udp }) => {
     if (!(udp.payload instanceof Uint8Array)) return;
     let query: DnsMessage;
     try {
@@ -156,9 +161,9 @@ export function bindDnsUdpServer(
       observer?.({ direction: 'send', transport: 'udp', remote, message: response, exchange });
       host.sendUdpDatagramTo(sourceIP, udp.sourcePort, port, bytes, bytes.length);
     };
-    const result = handler(query, sourceIP, udp.sourcePort, udp.payload);
-    if (result instanceof Promise) void result.then(send);
-    else send(result);
+    const result = handler(query, sourceIP, udp.sourcePort, udp.payload, destinationIP);
+    if (result instanceof Promise) void result.then(reply => { if (reply !== null) send(reply); });
+    else if (result !== null) send(result);
   });
 }
 

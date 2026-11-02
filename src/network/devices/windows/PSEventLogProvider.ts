@@ -641,7 +641,7 @@ export class PSEventLogProvider {
     return '';
   }
 
-  newEventLog(logName: string, source: string): string {
+  newEventLog(logName: string, source: string, enabled = true): string {
     // Register source — in reality this creates a registry entry.
     // We just silently accept it (or create the log if missing).
     const key = logName.toLowerCase();
@@ -651,6 +651,7 @@ export class PSEventLogProvider {
         maxSizeKB: 1028,
         overflow: 'OverwriteAsNeeded',
         entries: [],
+        enabled,
       });
     }
     return '';

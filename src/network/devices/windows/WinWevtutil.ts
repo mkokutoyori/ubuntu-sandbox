@@ -229,9 +229,12 @@ function enumLogs(ctx: WinCommandContext): string {
 
 const SYSTEM_ISOLATED = new Map([['system', 'System'], ['security', 'Custom']]);
 
+const CHANNEL_TYPES: ReadonlyMap<string, string> = new Map([
+  ['operational', 'Operational'], ['analytic', 'Analytic'], ['analytical', 'Analytic'], ['debug', 'Debug'],
+]);
+
 function channelType(logName: string): string {
-  const leaf = logName.slice(logName.lastIndexOf('/') + 1).toLowerCase();
-  return ['operational', 'analytic', 'debug'].includes(leaf) ? leaf[0].toUpperCase() + leaf.slice(1) : 'Admin';
+  return CHANNEL_TYPES.get(logName.slice(logName.lastIndexOf('/') + 1).toLowerCase()) ?? 'Admin';
 }
 
 function isolationOf(logName: string, configured: string): string {

@@ -19,6 +19,7 @@ export interface ZoneStoreAnswer {
   readonly answers: readonly ResourceRecord<ResourceRecordData>[];
   readonly authority: readonly ResourceRecord<ResourceRecordData>[];
   readonly additional: readonly ResourceRecord<ResourceRecordData>[];
+  readonly imputedName: string;
 }
 
 export interface ZoneStoreAnswerOptions {
@@ -65,10 +66,11 @@ export class ZoneStore {
   answer(question: DnsQuestion, options: ZoneStoreAnswerOptions = {}): ZoneStoreAnswer {
     const zone = this.findZone(question.qname);
     if (!zone) {
-      return { aa: false, rcode: DnsRcode.REFUSED, answers: [], authority: [], additional: [] };
+      return { aa: false, rcode: DnsRcode.REFUSED, answers: [], authority: [], additional: [], imputedName: '' };
     }
 
     const dnssec = options.dnssec === true;
+    const queried = normalize(question.qname);
     zone.setRotating(options.rotate !== false);
     const result: ZoneLookupResult = options.blocked?.(zone.origin, question.qname) === true
       ? { kind: 'nxdomain' }
@@ -83,31 +85,32 @@ export class ZoneStore {
         return {
           aa: true, rcode: DnsRcode.NOERROR,
           answers: sign(result.records), authority: options.apexNs === true ? this.apexNs(zone) : [],
-          additional: this.collectGlue(zone, result.records),
+          additional: this.collectGlue(zone, result.records), imputedName: synthesizedFrom ?? queried,
         };
       case 'cname':
         return {
           aa: true, rcode: DnsRcode.NOERROR,
           answers: sign(result.finalRecords ? [...result.chain, ...result.finalRecords] : [...result.chain]),
           authority: options.apexNs === true ? this.apexNs(zone) : [], additional: [],
+          imputedName: synthesizedFrom ?? queried,
         };
       case 'nodata':
         return {
           aa: true, rcode: DnsRcode.NOERROR, answers: [],
           authority: sign(this.negativeAuthority(zone, question.qname, dnssec, 'nodata')),
-          additional: [],
+          additional: [], imputedName: queried,
         };
       case 'nxdomain':
         return {
           aa: true, rcode: DnsRcode.NXDOMAIN, answers: [],
           authority: sign(this.negativeAuthority(zone, question.qname, dnssec, 'nxdomain')),
-          additional: [],
+          additional: [], imputedName: zone.origin,
         };
       case 'delegation':
         return {
           aa: false, rcode: DnsRcode.NOERROR,
           answers: [], authority: [...result.nsRecords],
-          additional: this.collectGlue(zone, result.nsRecords),
+          additional: this.collectGlue(zone, result.nsRecords), imputedName: queried,
         };
     }
   }
