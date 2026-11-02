@@ -108,6 +108,7 @@ interface StoredPolicy {
   order: number;
   criteria: StoredCriteria;
   content: PolicyContentEntry[];
+  matches: number;
 }
 
 const CRITERION_REFUSALS: Record<PolicyCriterionType, string> = {
@@ -160,7 +161,7 @@ export class DnsPolicyStore {
     for (const policy of group) if (policy.order >= order) policy.order += 1;
     this.policies.push({
       name: spec.name, kind: spec.kind, zone: scope.zone, action: spec.action, condition: spec.condition,
-      enabled: spec.enabled, order, criteria, content: spec.content.map(entry => ({ ...entry })),
+      enabled: spec.enabled, order, criteria, content: spec.content.map(entry => ({ ...entry })), matches: 0,
     });
     return null;
   }
@@ -181,7 +182,10 @@ export class DnsPolicyStore {
     }
     policy.criteria = { ...policy.criteria, ...given };
     if (changes.condition !== undefined) policy.condition = changes.condition;
-    if (changes.content !== undefined) policy.content = changes.content.map(entry => ({ ...entry }));
+    if (changes.content !== undefined) {
+      policy.content = changes.content.map(entry => ({ ...entry }));
+      policy.matches = 0;
+    }
     if (order !== undefined) this.move(policy, order);
     return null;
   }
@@ -217,6 +221,23 @@ export class DnsPolicyStore {
       const expression = policy.criteria.clientSubnet;
       return expression !== undefined && [...expression.equal, ...expression.different].some(value => value.toLowerCase() === wanted);
     });
+  }
+
+  referencesScope(kind: PolicyKind, zone: string | null, scope: string): boolean {
+    return this.group(zone, kind).some(policy => policy.content.some(entry => sameName(entry.scope, scope)));
+  }
+
+  nextScope(zone: string | null, kind: PolicyKind, name: string): string | null {
+    const policy = this.group(zone, kind).find(candidate => sameName(candidate.name, name));
+    if (policy === undefined || policy.content.length === 0) return null;
+    const total = policy.content.reduce((sum, entry) => sum + entry.weight, 0);
+    let slot = policy.matches % total;
+    policy.matches += 1;
+    for (const entry of policy.content) {
+      if (slot < entry.weight) return entry.scope;
+      slot -= entry.weight;
+    }
+    return null;
   }
 
   decide(zone: string | null, kind: PolicyKind, facts: PolicyFacts): PolicyView | null {

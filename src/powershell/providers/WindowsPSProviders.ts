@@ -97,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, ResponseRateLimitingChanges, ResponseRateLimitingSettings, NewPolicy, PolicyChanges, PolicyView, DnsPolicyListResult, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, ResponseRateLimitingChanges, ResponseRateLimitingSettings, NewPolicy, PolicyChanges, PolicyView, DnsPolicyListResult, RecursionScopeChanges, RecursionScopeView, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1354,6 +1354,10 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult { return this.role().changeQueryResolutionPolicy(zone, name, changes); }
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult { return this.role().removeQueryResolutionPolicy(zone, name); }
   setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult { return this.role().setPolicyEnabled(zone, name, enabled); }
+  getRecursionScopes(): RecursionScopeView[] { return this.role().getRecursionScopes(); }
+  addRecursionScope(name: string, forwarders: readonly string[], enableRecursion: boolean): DnsOpResult { return this.role().addRecursionScope(name, forwarders, enableRecursion); }
+  changeRecursionScope(name: string, changes: RecursionScopeChanges): DnsOpResult { return this.role().changeRecursionScope(name, changes); }
+  removeRecursionScope(name: string): DnsOpResult { return this.role().removeRecursionScope(name); }
   getGlobalNames(): DnsGlobalNames { return this.role().getGlobalNames(); }
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult { return this.role().setGlobalNames(changes); }
   getGlobalQueryBlock(): GlobalQueryBlock { return this.role().getGlobalQueryBlock(); }
