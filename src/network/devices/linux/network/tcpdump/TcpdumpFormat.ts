@@ -19,6 +19,7 @@ import { lldpText } from './TcpdumpLldp';
 import { ospfText } from './TcpdumpOspf';
 import { eigrpText } from './TcpdumpEigrp';
 import { ripText } from './TcpdumpRip';
+import { hsrpText } from './TcpdumpHsrp';
 import { asciiPrintLines, hexAndAsciiLines, hexPrintLines } from './TcpdumpHex';
 import { icmp6Text } from './TcpdumpIcmp6';
 import { domainText } from './TcpdumpDomain';
@@ -300,6 +301,7 @@ function clockOfDay(milliseconds: number): string {
 const IPV6_FRAGMENT_HEADER_BYTES = 8;
 const DNS_PORT = 53;
 const RIP_PORT = 520;
+const HSRP_PORT = 1985;
 const MDNS_PORT = 5353;
 const UDP_HEADER_BYTES = 8;
 
@@ -387,6 +389,10 @@ function l4Detail(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRender
     if (!opt.quiet && frame.appPayload && (frame.srcPort === RIP_PORT || frame.dstPort === RIP_PORT)) {
       const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
       return `${cksum}${ripText(frame.appPayload, frame.payloadLength ?? 0, opt.verbose)}`;
+    }
+    if (!opt.quiet && frame.appPayload && (frame.srcPort === HSRP_PORT || frame.dstPort === HSRP_PORT) && frame.appPayload.length > 0) {
+      const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
+      return `${cksum}${hsrpText(frame.appPayload, frame.payloadLength ?? 0, opt.verbose, (address) => state.host(address))}`;
     }
     const cksum = opt.skipChecksumCheck ? '' : udpSumToken(frame, opt.verbose);
     return `${cksum}UDP, length ${frame.payloadLength ?? 0}`;

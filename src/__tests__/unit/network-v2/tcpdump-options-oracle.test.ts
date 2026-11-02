@@ -69,6 +69,11 @@
  * option areas cut short by the capture so that `[truncated-option]` and `[remaining caplen(N) < header length(M)] [|ip]` appear; TcpdumpIpOptions.ts ports ip_optprint. The `options (...)` text was missing from every verbose IP
  * header before; the dump that follows `[remaining caplen ...] [|ip]` covers the whole frame, the one that follows `[truncated-option]` starts at the IP header. 28 of the 29 cases of each of the three labs fall without the change
  * (the 29th is the per-lab loaded check, a witness).
+ * Twenty-third lab, "hsrp": two Cisco routers and a PC on a hub, group 1 (priority 120 with preempt on one) and group 2 (priority 90), then the active router shut down. Measured before the change: the UDP datagram to 224.0.0.2:1985 had a zero
+ * payload, no checksum and a TOS of 0 where a real router writes 0xc0. HsrpWire.ts writes the 20-byte version 1 message (wire version 0, opcode, state 0/1/2/4/8/16, hello and hold times, priority, group, eight bytes of authentication text,
+ * the virtual address), checked byte for byte against tcpdump's tests/HSRP_coup.pcap, HSRP_election.pcap and HSRP_failover.pcap in hsrp-wire-real-capture.test.ts; HSRP is Cisco's, RFC 2281 only informs, so those captures are the authority.
+ * The agent now stamps the UDP checksum (the shared stampUdpChecksum, as the RIP datagrams do) and sets TOS 0xc0. HSRPv2 (224.0.0.102, TLVs) has no reachable layout and stays unencoded. 28 of the 29 cases fall without the change
+ * (the 29th is the per-lab loaded check, a witness).
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.

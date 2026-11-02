@@ -345,7 +345,31 @@ async function recordIgmp(version: 1 | 2): Promise<string> {
   return observer.executeCommand('cat all.cap');
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient, udld: recordUdld, vrrp: recordVrrp, igmp: () => recordIgmp(2), igmpv1: () => recordIgmp(1) };
+async function recordHsrp(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 14');
+  await new Promise((r) => setTimeout(r, 30));
+  const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
+    for (const line of lines) await router.executeCommand(line);
+  };
+  await configure(r1, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'standby 1 ip 10.9.0.254', 'standby 1 priority 120', 'standby 1 preempt', 'no shutdown', 'exit', 'end']);
+  await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.3 255.255.255.0', 'standby 1 ip 10.9.0.254', 'standby 2 ip 10.9.0.253', 'standby 2 priority 90', 'no shutdown', 'exit', 'end']);
+  await clock.advance(30_000);
+  await configure(r1, ['configure terminal', 'interface GigabitEthernet0/0', 'shutdown', 'end']);
+  await clock.advance(30_000);
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient, udld: recordUdld, vrrp: recordVrrp, igmp: () => recordIgmp(2), igmpv1: () => recordIgmp(1), hsrp: recordHsrp };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

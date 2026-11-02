@@ -39,6 +39,8 @@ import { ETHERTYPE_VTP, type VtpFrame } from '@/network/vtp/types';
 import { ETHERTYPE_STP, PVST_PLUS_MAC, type StpBpdu } from '@/network/stp/types';
 import { ospfPacketBytes } from '@/network/ospf/OspfWire';
 import { eigrpPacketBytes } from '@/network/eigrp/EigrpPacketBytes';
+import { hsrpIsEncodable, hsrpPayloadBytes } from '@/network/hsrp/HsrpWire';
+import type { HsrpPacket } from '@/network/hsrp/types';
 import { igmpPayloadBytes } from '@/network/igmp/IgmpWire';
 import type { IgmpPacket } from '@/network/igmp/types';
 import { vrrpPayloadBytes } from '@/network/vrrp/VrrpWire';
@@ -268,6 +270,7 @@ function ripWireBytes(rip: RIPPacket): number[] {
 
 function appPayloadBytes(payload: unknown): number[] | undefined {
   if ((payload as { type?: string } | null)?.type === 'rip') return ripWireBytes(payload as RIPPacket);
+  if ((payload as { type?: string } | null)?.type === 'hsrp' && hsrpIsEncodable(payload as HsrpPacket)) return hsrpPayloadBytes(payload as HsrpPacket);
   if (typeof payload === 'string') return Array.from(new TextEncoder().encode(payload));
   if (payload instanceof Uint8Array) return Array.from(payload);
   if (Array.isArray(payload) && payload.every((b) => typeof b === 'number')) {
