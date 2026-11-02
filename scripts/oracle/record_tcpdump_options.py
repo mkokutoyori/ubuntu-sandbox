@@ -19,7 +19,7 @@ OPTION_SETS = [
     "-qq -nn", "-q -nn -v", "-nn -c 5 -s 60", "-nn -e -q", "-nn -N", "-nn -O", "-nn -vv", "-nn -t", "-nn -tttt -S", "-qq -nn -v", "-nn -e -q -v", "-nn -v -vv",
 ]
 EXTRA_OPTION_SETS = {"stpcraft": ["-nn -vv -s 60", "-nn -vv -s 70", "-nn -s 100 -x", "-nn -e -vv -s 45", "-nn -vv -s 30 -A"]}
-LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp", "dtp", "vtp", "vtpclient", "udld", "vrrp"]
+LABS = ["base", "dns", "rip", "ospf", "cdp", "lldp", "stp", "rstp", "pvst", "mstp", "stppair", "rstppair", "stpcraft", "eigrp", "dtp", "vtp", "vtpclient", "udld", "vrrp", "igmp", "igmpv1", "ipopts"]
 
 def stp_bridge(priority, last):
     return struct.pack(">H", priority) + bytes([2, 0, 0, 0, 0, last])
@@ -65,6 +65,48 @@ def craft_stp_capture(template):
         frames.append(frame)
     return dict(template, frames=frames)
 
+def ip_checksum(header):
+    total = sum((header[i] << 8) | header[i + 1] for i in range(0, len(header), 2))
+    while total >> 16:
+        total = (total & 0xffff) + (total >> 16)
+    return (~total) & 0xffff
+
+def ip_option_frame(second, template, options, cut=None):
+    padded = bytes(options) + bytes((-len(options)) % 4)
+    header_bytes = 20 + len(padded)
+    igmp_query = bytes([0x11, 100, 0xee, 0x9b, 0, 0, 0, 0])
+    header = bytearray(struct.pack(">BBHHHBBH4s4s", 0x40 | (header_bytes // 4), 0xc0, header_bytes + len(igmp_query), second, 0x4000, 1, 2, 0,
+                                   bytes([10, 9, 0, 1]), bytes([224, 0, 0, 1])) + padded)
+    header[10:12] = struct.pack(">H", ip_checksum(bytes(header)))
+    link = bytes(template["raw"][:14])
+    raw = link + bytes(header) + igmp_query
+    raw += bytes(max(0, 60 - len(raw)))
+    frame = dict(template, at="2026-11-02T09:00:%02d.000Z" % second, atMicros=1793610000000000 + second * 1000000, ipId=second,
+                 ipHeaderLen=header_bytes, ipTotalLength=header_bytes + len(igmp_query), ipChecksum=struct.unpack(">H", header[10:12])[0],
+                 ipChecksumOk=True, ipFlags=2, ttl=1, length=len(raw), raw=list(raw), rawLinkOffset=14)
+    if cut is not None:
+        whole = len(raw)
+        frame.update(raw=frame["raw"][:cut], truncated=True, length=whole)
+    return frame
+
+def craft_ipopts_capture(capture):
+    template = [frame for frame in capture["frames"] if frame["l3"] == "ipv4"][0]
+    a, b, c = [10, 0, 0, 1], [10, 0, 0, 2], [10, 0, 0, 3]
+    stamp = lambda n: [0, 0, 0, n]
+    cases = [
+        [148, 4, 0, 0], [148, 4, 0, 5], [148, 3, 0], [1, 1, 148, 4, 0, 0, 0],
+        [7, 15, 8] + a + [0] * 8, [7, 11, 12] + a + b, [7, 7, 4] + a, [7, 6, 4, 1, 2, 3], [7, 11, 5] + a + b, [7, 3, 4],
+        [131, 11, 4] + a + b, [137, 7, 4] + a, [131, 11, 8] + a + b,
+        [68, 12, 9, 0] + stamp(7) + [0, 0, 0, 0], [68, 12, 13, 0x30] + stamp(7) + stamp(9), [68, 20, 13, 1] + a + stamp(5) + b + stamp(0),
+        [68, 20, 5, 3] + a + stamp(0) + b + stamp(0), [68, 8, 5, 7, 0, 0, 0, 0], [68, 3, 5], [68, 12, 5, 0] + stamp(1) + stamp(2),
+        [130, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0], [82, 4, 0, 0], [0x99, 4, 1, 2], [7, 1, 0, 0], [7, 40, 4] + a,
+        [0, 1, 2, 3], [1, 1, 1, 0],
+    ]
+    frames = [ip_option_frame(index, template, options) for index, options in enumerate(cases)]
+    frames.append(ip_option_frame(len(cases), template, [7, 15, 8] + a + [0] * 8, cut=14 + 20 + 6))
+    frames.append(ip_option_frame(len(cases) + 1, template, [68, 12, 9, 0] + stamp(7) + [0, 0, 0, 0], cut=14 + 20 + 9))
+    return dict(capture, frames=frames)
+
 def pcap(frames):
     out = bytearray(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, 262144, 1))
     for frame in frames:
@@ -85,7 +127,12 @@ def main():
     chosen = sys.argv[4].split(",") if len(sys.argv) > 4 else LABS
     fixture = json.load(open(target)) if len(sys.argv) > 4 and os.path.exists(target) else {"tcpdump": "4.99.4", "libpcap": "1.10.4", "labs": {}}
     for lab in chosen:
-        capture = craft_stp_capture(json.load(open(os.path.join(directory, "stp.json")))) if lab == "stpcraft" else json.load(open(os.path.join(directory, lab + ".json")))
+        if lab == "stpcraft":
+            capture = craft_stp_capture(json.load(open(os.path.join(directory, "stp.json"))))
+        elif lab == "ipopts":
+            capture = craft_ipopts_capture(json.load(open(os.path.join(directory, "igmp.json"))))
+        else:
+            capture = json.load(open(os.path.join(directory, lab + ".json")))
         with tempfile.TemporaryDirectory() as scratch:
             path = os.path.join(scratch, "capture.pcap")
             open(path, "wb").write(pcap(capture["frames"]))

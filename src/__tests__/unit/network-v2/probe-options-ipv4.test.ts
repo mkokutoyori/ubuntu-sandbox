@@ -218,7 +218,7 @@ describe('the option area exists on the wire', () => {
   it('a capture emits exactly the option octets the header announces', () => {
     const packet = createIPv4Packet(
       new IPAddress('10.0.0.10'), new IPAddress('224.0.0.1'),
-      2, 1, { type: 'igmp' }, 8, { ipOptions: [routerAlertOption()] });
+      2, 1, igmpQuery('0.0.0.0', 100), 8, { ipOptions: [routerAlertOption()] });
     const frame: EthernetFrame = {
       srcMAC: new MACAddress('00:11:22:33:44:55'),
       dstMAC: new MACAddress('01:00:5e:00:00:01'),
