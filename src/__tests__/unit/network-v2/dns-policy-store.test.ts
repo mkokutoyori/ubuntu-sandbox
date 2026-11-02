@@ -2,7 +2,7 @@
  * Structure — the DNS policies a Windows DNS server holds, at server level and at zone level, as [MS-DNSP] 3.1.4.1 describes
  * CreatePolicy, UpdatePolicy and DeletePolicy and 3.1.8.3 validates them: a name is unique across a level whatever its case and
  * whatever the type of the policy (9971), a name that is not held is refused (9972), a combination of level, type, action and
- * content that the table of 3.1.8.3 does not list, or a policy with no criterion, has no valid settings (9974), a criterion
+ * content that the table of 3.1.8.3 does not list has no valid settings (9974), a policy with no criterion is missing criteria (9983), a scope given where none is wanted (9987) or missing where one is wanted (9986) is told apart, an order beyond the last on a change is invalid (9985), a criterion
  * that is malformed or names something that cannot be is refused under its own text (9990 to 9996), a weight of 0 or beyond
  * 0xFFFFFFFF is refused (9981) and so is a scope that does not exist (9959); the processing order is kept contiguous per
  * level and type (a new order that exists shifts the others, 0 appends, more than the highest is refused, a removal closes
@@ -113,19 +113,22 @@ describe('creating a policy', () => {
   });
 
   it.each([
-    ['a server level query processing policy that allows', { kind: 'QueryProcessing', action: 'ALLOW', content: [{ scope: '.', weight: 1 }] }, SERVER],
-    ['a server level query processing policy with content', { kind: 'QueryProcessing', action: 'DENY', content: [{ scope: '.', weight: 1 }] }, SERVER],
-    ['a recursion policy that allows no scope', { kind: 'Recursion', action: 'ALLOW', content: [] }, SERVER],
-    ['a recursion policy that denies and names a scope', { kind: 'Recursion', action: 'DENY', content: [{ scope: '.', weight: 1 }] }, SERVER],
-    ['a zone level policy that allows no scope', { kind: 'QueryProcessing', action: 'ALLOW', content: [] }, CONTOSO],
-    ['a zone level policy that ignores and names a scope', { kind: 'QueryProcessing', action: 'IGNORE', content: [{ scope: 'contoso.com', weight: 1 }] }, CONTOSO],
-    ['a zone level recursion policy', { kind: 'Recursion', action: 'DENY', content: [] }, { zone: 'contoso.com', kinds: ['Recursion'] }],
-    ['a zone level exception list', { kind: 'RrlException', action: 'DENY', content: [] }, { zone: 'contoso.com', kinds: ['RrlException'] }],
-    ['an exception list that ignores', { kind: 'RrlException', action: 'IGNORE', content: [] }, RRL],
-    ['a policy with no criterion', { criteria: {} }, SERVER],
-  ] as Array<[string, Partial<NewPolicy>, PolicyScope]>)('refuses %s as having no valid settings', (_label, overrides, scope) => {
+    ['a server level query processing policy that allows', { kind: 'QueryProcessing', action: 'ALLOW', content: [{ scope: '.', weight: 1 }] }, SERVER, POLICY_REFUSALS.invalidSettings],
+    ['a zone level recursion policy', { kind: 'Recursion', action: 'DENY', content: [] }, { zone: 'contoso.com', kinds: ['Recursion'] }, POLICY_REFUSALS.invalidSettings],
+    ['a zone level exception list', { kind: 'RrlException', action: 'DENY', content: [] }, { zone: 'contoso.com', kinds: ['RrlException'] }, POLICY_REFUSALS.invalidSettings],
+    ['an exception list that ignores', { kind: 'RrlException', action: 'IGNORE', content: [] }, RRL, POLICY_REFUSALS.invalidSettings],
+    ['a server level zone transfer policy that allows', { kind: 'ZoneTransfer', action: 'ALLOW', content: [{ scope: '.', weight: 1 }] }, { zone: null, kinds: ['ZoneTransfer'] }, POLICY_REFUSALS.invalidSettings],
+    ['a zone level zone transfer policy that allows', { kind: 'ZoneTransfer', action: 'ALLOW', content: [{ scope: 'contoso.com', weight: 1 }] }, { zone: 'contoso.com', kinds: ['ZoneTransfer'] }, POLICY_REFUSALS.invalidSettings],
+    ['a server level query processing policy with content', { kind: 'QueryProcessing', action: 'DENY', content: [{ scope: '.', weight: 1 }] }, SERVER, POLICY_REFUSALS.scopeNotAllowed],
+    ['a recursion policy that denies and names a scope', { kind: 'Recursion', action: 'DENY', content: [{ scope: '.', weight: 1 }] }, SERVER, POLICY_REFUSALS.scopeNotAllowed],
+    ['a zone level policy that ignores and names a scope', { kind: 'QueryProcessing', action: 'IGNORE', content: [{ scope: 'contoso.com', weight: 1 }] }, CONTOSO, POLICY_REFUSALS.scopeNotAllowed],
+    ['a recursion policy that allows no scope', { kind: 'Recursion', action: 'ALLOW', content: [] }, SERVER, POLICY_REFUSALS.scopeRequired],
+    ['a zone level policy that allows no scope', { kind: 'QueryProcessing', action: 'ALLOW', content: [] }, CONTOSO, POLICY_REFUSALS.scopeRequired],
+    ['a policy with no criterion', { criteria: {} }, SERVER, POLICY_REFUSALS.missingCriteria],
+    ['an exception list with no criterion', { kind: 'RrlException', action: 'DENY', criteria: {} }, RRL, POLICY_REFUSALS.missingCriteria],
+  ] as Array<[string, Partial<NewPolicy>, PolicyScope, string]>)('refuses %s under the text that names what is wrong', (_label, overrides, scope, refusal) => {
     const policies = store();
-    expect(policies.create(scope, policy('Bad', overrides))).toBe(POLICY_REFUSALS.invalidSettings);
+    expect(policies.create(scope, policy('Bad', overrides))).toBe(refusal);
     expect(policies.list(scope)).toEqual([]);
   });
 
@@ -157,6 +160,12 @@ describe('creating a policy', () => {
     ['a time of day beyond the day', { timeOfDay: 'EQ,10:00-24:00' }, POLICY_REFUSALS.timeOfDay],
     ['a time of day that ends before it starts', { timeOfDay: 'EQ,12:00-10:00' }, POLICY_REFUSALS.timeOfDay],
     ['an empty criterion', { fqdn: '' }, POLICY_REFUSALS.fqdn],
+    ['an FQDN list with one value that is not a name', { fqdn: 'EQ,a.test,a..b' }, POLICY_REFUSALS.fqdn],
+    ['an interface list with one value that is not an address', { serverInterface: 'EQ,10.0.0.3,eth0' }, POLICY_REFUSALS.serverInterface],
+    ['a query type list with one value that is no type', { queryType: 'EQ,A,NOPE' }, POLICY_REFUSALS.queryType],
+    ['a transport list with one value that is neither TCP nor UDP', { transportProtocol: 'EQ,TCP,SCTP' }, POLICY_REFUSALS.transportProtocol],
+    ['an internet protocol list with one value that is neither IPv4 nor IPv6', { internetProtocol: 'EQ,IPv4,IPX' }, POLICY_REFUSALS.internetProtocol],
+    ['a time of day list with one value that is no range', { timeOfDay: 'EQ,10:00-11:00,noon' }, POLICY_REFUSALS.timeOfDay],
   ])('refuses %s and creates nothing', (_label, criteria, refusal) => {
     const policies = store();
     expect(policies.create(SERVER, policy('Bad', { criteria }))).toBe(refusal);
@@ -250,7 +259,7 @@ describe('the processing order', () => {
 
   it('refuses a move beyond the highest order and changes nothing', () => {
     const policies = created('A', 'B');
-    expect(policies.change(SERVER, 'A', { processingOrder: 3, condition: 'OR' })).toBe(POLICY_REFUSALS.invalidSettings);
+    expect(policies.change(SERVER, 'A', { processingOrder: 3, condition: 'OR' })).toBe(POLICY_REFUSALS.invalidProcessingOrder);
     expect(order(policies)).toEqual(['A:1', 'B:2']);
     expect(policies.find(SERVER, 'A')?.condition).toBe('AND');
   });
@@ -298,8 +307,8 @@ describe('finding, changing and removing', () => {
     policies.create(CONTOSO, policy('D'));
     expect(policies.change(CONTOSO, 'Z', { content: [{ scope: 'NorthAmerica', weight: 3 }] })).toBeNull();
     expect(policies.find(CONTOSO, 'Z')?.content).toEqual([{ scope: 'NorthAmerica', weight: 3 }]);
-    expect(policies.change(CONTOSO, 'D', { content: [{ scope: 'Europe', weight: 1 }] })).toBe(POLICY_REFUSALS.invalidSettings);
-    expect(policies.change(CONTOSO, 'Z', { content: [] })).toBe(POLICY_REFUSALS.invalidSettings);
+    expect(policies.change(CONTOSO, 'D', { content: [{ scope: 'Europe', weight: 1 }] })).toBe(POLICY_REFUSALS.scopeNotAllowed);
+    expect(policies.change(CONTOSO, 'Z', { content: [] })).toBe(POLICY_REFUSALS.scopeRequired);
     expect(policies.change(CONTOSO, 'Z', { content: [{ scope: 'Europe', weight: 0 }] })).toBe(POLICY_REFUSALS.invalidWeight);
     expect(policies.change(CONTOSO, 'Z', { content: [{ scope: 'Atlantis', weight: 1 }] })).toBe(POLICY_REFUSALS.scopeMissing);
     expect(policies.find(CONTOSO, 'Z')?.content).toEqual([{ scope: 'NorthAmerica', weight: 3 }]);

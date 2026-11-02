@@ -26,6 +26,7 @@ import {
   resolveNetworkdPlans,
   type NetworkdLinkPlan,
 } from './net/NetworkdPlan';
+import { addNameserver, addSearchDomain, removeNameserver, removeSearchDomain } from './ResolvConfEdit';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const INTERFACES_PATH = '/etc/network/interfaces';
@@ -39,6 +40,8 @@ export interface DriftEntry {
   declared: string;
   runtime: string;
 }
+
+const NETWORKD_HEADER = ['# This file is managed by systemd-networkd.', '# Do not edit.'];
 
 export class LinuxNetworkConfigManager {
   constructor(
@@ -247,27 +250,39 @@ export class LinuxNetworkConfigManager {
     return applied;
   }
 
+  private resolverContribution: { servers: readonly string[]; domains: readonly string[] } = { servers: [], domains: [] };
+
   /**
    * Les serveurs déclarés d'abord, ceux du bail ensuite — l'ordre de
    * systemd. Écrit en clair plutôt que via un stub 127.0.0.53 : le
    * résolveur du simulateur lit ce fichier directement, et pointer vers
    * un stub inexistant casserait toute résolution (`PRD-networkd` §7).
+   * Le fichier n'appartient pas au démon : il y ajoute ses entrées, reprend
+   * celles qu'il avait posées à l'application précédente, et retire les
+   * serveurs d'un bail dont un lien refuse `UseDNS`.
    */
   private writeResolvConf(net: LinuxNetKernel, plans: readonly NetworkdLinkPlan[]): void {
     const servers: string[] = [];
     const domains: string[] = [];
+    const refused: string[] = [];
     for (const plan of plans) {
       for (const s of plan.dns) if (!servers.includes(s)) servers.push(s);
       for (const d of plan.domains) if (!domains.includes(d)) domains.push(d);
-      if (!plan.useDns) continue;
       const lease = net.getDhcpClient().getState(plan.iface)?.lease;
-      for (const s of lease?.dnsServers ?? []) if (!servers.includes(s)) servers.push(s);
+      for (const s of lease?.dnsServers ?? []) {
+        if (!plan.useDns) refused.push(s);
+        else if (!servers.includes(s)) servers.push(s);
+      }
     }
-    if (servers.length === 0 && domains.length === 0) return;
-    const lines = ['# This file is managed by systemd-networkd.', '# Do not edit.'];
-    if (domains.length) lines.push(`search ${domains.join(' ')}`);
-    for (const s of servers) lines.push(`nameserver ${s}`);
-    this.vfs.writeFile('/etc/resolv.conf', `${lines.join('\n')}\n`, 0, 0, 0o022);
+    if (servers.length === 0 && domains.length === 0 && refused.length === 0) return;
+    const previous = this.resolverContribution;
+    let text = (this.vfs.readFile('/etc/resolv.conf') ?? '').split('\n').filter((line) => !NETWORKD_HEADER.includes(line)).join('\n');
+    for (const s of [...previous.servers, ...refused]) text = removeNameserver(text, s);
+    for (const d of previous.domains) text = removeSearchDomain(text, d);
+    for (const d of domains) text = addSearchDomain(text, d);
+    for (const s of servers) text = addNameserver(text, s);
+    this.resolverContribution = { servers, domains };
+    this.vfs.writeFile('/etc/resolv.conf', `${NETWORKD_HEADER.join('\n')}\n${text}`, 0, 0, 0o022);
   }
 
   /** Crée les périphériques virtuels déclarés par `.netdev`. */

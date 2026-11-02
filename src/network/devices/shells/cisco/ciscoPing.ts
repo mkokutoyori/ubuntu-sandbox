@@ -8,6 +8,8 @@
  */
 
 import { displayIosAddress } from './iosIpv6Text';
+import { buildRecordRouteOption } from '@/network/layers/internet/Ipv4Options';
+import type { IPv4Option } from '@/network/core/types';
 
 /**
  * Why a probe ended. IOS prints one character per probe and the character
@@ -231,4 +233,22 @@ export function sweepSizes(sweep: { min: number; max: number; interval: number }
   const sizes: number[] = [];
   for (let s = sweep.min; s <= sweep.max; s += step) sizes.push(s);
   return sizes;
+}
+
+const RECORD_ROUTE_SLOTS = 9;
+
+export interface RouteOptionsAnswer {
+  readonly ipOptions: IPv4Option[];
+  readonly notApplied: string[];
+}
+
+export function routeOptionsOf(answer: string): RouteOptionsAnswer {
+  const words = answer.split(/[\s,]+/).filter((word) => word !== '' && word.toLowerCase() !== 'none');
+  const ipOptions: IPv4Option[] = [];
+  const notApplied: string[] = [];
+  for (const word of words) {
+    if (word[0].toLowerCase() === 'r' && ipOptions.length === 0) ipOptions.push(buildRecordRouteOption(RECORD_ROUTE_SLOTS));
+    else notApplied.push(word);
+  }
+  return { ipOptions, notApplied };
 }

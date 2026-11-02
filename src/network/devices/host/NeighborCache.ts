@@ -18,7 +18,18 @@ export const NDP_RETRANS_TIMER_MS = 1_000;
 export const NDP_MAX_UNICAST_SOLICIT = 3;
 export const NDP_MAX_MULTICAST_SOLICIT = 3;
 
+export interface NeighborParameters {
+  readonly reachableTimeMs: number;
+  readonly retransTimerMs: number;
+}
+
+export const DEFAULT_NEIGHBOR_PARAMETERS: NeighborParameters = {
+  reachableTimeMs: NDP_REACHABLE_TIME_MS,
+  retransTimerMs: NDP_RETRANS_TIMER_MS,
+};
+
 export interface NeighborCacheHooks {
+  parameters?: (iface: string) => NeighborParameters;
   sendUnicastSolicit?: (ip: string, entry: NeighborCacheEntry) => void;
   onLearned?: (ip: string, entry: NeighborCacheEntry) => void;
   onUnreachable?: (ip: string) => void;
@@ -45,7 +56,7 @@ export class NeighborCache implements Iterable<[string, NeighborCacheEntry]> {
     const entry = this.entries.get(ip);
     if (!entry) return undefined;
     if (entry.state === 'reachable'
-        && this.now() - entry.timestamp > NDP_REACHABLE_TIME_MS) {
+        && this.now() - entry.timestamp > this.parametersOf(entry).reachableTimeMs) {
       entry.state = 'stale';
     }
     return entry;
@@ -156,7 +167,11 @@ export class NeighborCache implements Iterable<[string, NeighborCacheEntry]> {
       return;
     }
     this.hooks.sendUnicastSolicit?.(ip, entry);
-    this.armTimer(ip, NDP_RETRANS_TIMER_MS, () => this.probe(ip, attempt + 1));
+    this.armTimer(ip, this.parametersOf(entry).retransTimerMs, () => this.probe(ip, attempt + 1));
+  }
+
+  private parametersOf(entry: NeighborCacheEntry): NeighborParameters {
+    return this.hooks.parameters?.(entry.iface) ?? DEFAULT_NEIGHBOR_PARAMETERS;
   }
 
   private setEntry(ip: string, entry: NeighborCacheEntry): void {
