@@ -30,6 +30,11 @@
  * Ethernet header. The capture now holds the 802.1AB TLVs (src/network/lldp/LldpWire.ts: chassis, port, TTL, port description, system name and description, capabilities, management addresses, the 802.1 PVID and VLAN name,
  * the 802.3 MAC/PHY and maximum frame size) and TcpdumpLldp.ts ports print-lldp.c for them. The MAC/PHY PMD capability and MAU type are written as 0 (the simulator does not model them).
  * 28 of the 174 cases fall without the change.
+ * Seventh to thirteenth labs (STP): "stp" (PC cabled to a Cisco switch, 802.1D), "rstp" (rapid-pvst), "pvst" (trunk with VLAN 10: PVST+ SNAP 0x010b frames behind an 802.1Q tag), "mstp" (region name, revision, digest),
+ * "stppair"/"rstppair" (two switches and a hub: root BPDUs, a topology change, the TCN and its acknowledgement) and "stpcraft" (frames written by the recorder, not by the simulator: SPB v4, MSTIs, invalid lengths,
+ * unknown versions and types, half-even %.2f timers, and capture records cut short so that `[|stp]` appears). Measured before the change: every BPDU carried zero bytes under ethertype 0x4242 and the real tool printed an unknown
+ * ethertype. src/network/stp/StpWire.ts writes the 802.3 + LLC frame; TcpdumpStp.ts ports print-stp.c; TcpdumpLlc.ts carries the LLC/SNAP text shared with CDP; unknown ethertypes now print the header and the default dump of
+ * print-ether.c. 208 new cases, 201 fall without the change; the 7 that pass either way are the labs' WITNESS cases. The DTP frames that the switches still send are zero bytes and print as `ethertype Unknown (0x2004)` in both tools.
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.
