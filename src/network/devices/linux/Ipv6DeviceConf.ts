@@ -7,6 +7,7 @@ export const IPV6_DEVICE_CONF_KNOBS: readonly DeviceConfKnob[] = [
   { name: 'accept_ra_defrtr', initial: 1 },
   { name: 'accept_ra_pinfo', initial: 1 },
   { name: 'accept_ra_rtr_pref', initial: 1 },
+  { name: 'accept_ra_mtu', initial: 1 },
   { name: 'accept_ra_rt_info_min_plen', initial: 0 },
   { name: 'accept_ra_rt_info_max_plen', initial: 0 },
   { name: 'autoconf', initial: 1 },
@@ -72,6 +73,10 @@ export class Ipv6DeviceConf extends DeviceConfScopes {
   acceptsRouterAdvertisements(iface: string): boolean {
     const mode = this.scoped(iface, 'accept_ra');
     return this.forwards(iface) ? mode === 2 : mode !== 0;
+  }
+
+  appliesAdvertisedMtu(iface: string): boolean {
+    return this.scoped(iface, 'accept_ra_mtu') !== 0;
   }
 
   learnsDefaultRouter(iface: string): boolean {

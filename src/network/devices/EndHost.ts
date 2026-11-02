@@ -95,7 +95,7 @@ import {
   nextIPv6FragmentId, createIPv4Packet, verifyIPv4Checksum, computeIPv4Checksum, ipv4HeaderBytesFor,
   // IPv6 types
   IPv6Address, IPv6Packet, ICMPv6Packet, NDPNeighborSolicitation, NDPNeighborAdvertisement,
-  NDPRouterAdvertisement, NDPOptionPrefixInfo,
+  NDPRouterAdvertisement, NDPOptionPrefixInfo, NDPOptionMTU,
   createIPv6Packet, createNeighborSolicitation, createNeighborAdvertisement,
   createICMPv6EchoRequest, createICMPv6EchoReply, createRouterSolicitation, icmpv6TypeNumber,
   IPV6_ALL_NODES_MULTICAST, IPV6_ALL_ROUTERS_MULTICAST, addressTextWithoutScope,
@@ -594,12 +594,13 @@ export interface RouterAdvertisementAcceptance {
   readonly prefixInformation: boolean;
   readonly autoconfigure: boolean;
   readonly routerPreference: boolean;
+  readonly linkMtu: boolean;
   readonly routeInformation: { readonly minPrefixLength: number; readonly maxPrefixLength: number } | null;
 }
 
 const ACCEPT_EVERY_ROUTER_ADVERTISEMENT: RouterAdvertisementAcceptance = {
   accepted: true, defaultRouter: true, prefixInformation: true, autoconfigure: true,
-  routerPreference: true, routeInformation: { minPrefixLength: 0, maxPrefixLength: 128 },
+  routerPreference: true, linkMtu: true, routeInformation: { minPrefixLength: 0, maxPrefixLength: 128 },
 };
 
 const RA_DEFAULT_ROUTE_METRIC = 1024;
@@ -6932,6 +6933,12 @@ export abstract class EndHost extends Equipment {
     return ACCEPT_EVERY_ROUTER_ADVERTISEMENT;
   }
 
+  private applyAdvertisedMtu(port: Port, ra: NDPRouterAdvertisement): void {
+    const option = ra.options.find((o): o is NDPOptionMTU => o.optionType === 'mtu');
+    if (option === undefined || option.mtu < MTU.MIN_IPV6 || option.mtu > port.getMTU()) return;
+    port.setIPv6MTU(option.mtu);
+  }
+
   private validRoutePreference(value: number | undefined): number {
     return value === -1 || value === 1 ? value : 0;
   }
@@ -6959,6 +6966,7 @@ export abstract class EndHost extends Equipment {
     if (acceptance.accepted && acceptance.defaultRouter) {
       this.learnDefaultRouter(router, ra.routerLifetime, advertisedPreference);
     }
+    if (acceptance.accepted && acceptance.linkMtu) this.applyAdvertisedMtu(port, ra);
     for (const opt of acceptance.accepted && acceptance.routeInformation !== null ? ra.options : []) {
       if (opt.optionType !== 'route-info') continue;
       const { minPrefixLength, maxPrefixLength } = acceptance.routeInformation!;

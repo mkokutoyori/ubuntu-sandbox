@@ -93,6 +93,7 @@ import {
   LinuxIpv4Settings, LinuxCoreSettings, LinuxKernelSettings, LINUX_KERNEL_KNOBS, LinuxVmSettings, LINUX_VM_KNOBS, LinuxFsSettings, LINUX_FS_KNOBS, LINUX_KERNEL_VECTOR_KNOBS, KernelStringStore, LINUX_CORE_STRING_KNOBS, LINUX_IPV4_KNOBS, LINUX_CORE_KNOBS, LINUX_IPV4_VECTOR_KNOBS, KernelVectorStore, type KernelIpFacts,
 } from './linux/LinuxIpv4Settings';
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
+import { MTU } from '../core/constants';
 import { IPV6_DEVICE_CONF_KNOBS, Ipv6DeviceConf } from './linux/Ipv6DeviceConf';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
@@ -353,6 +354,7 @@ export abstract class LinuxMachine extends EndHost
       prefixInformation: conf.readsPrefixInformation(portName),
       autoconfigure: conf.autoconfigures(portName),
       routerPreference: conf.readsRouterPreference(portName),
+      linkMtu: conf.appliesAdvertisedMtu(portName),
       routeInformation: conf.routeInformationBounds(portName),
     };
   }
@@ -371,6 +373,16 @@ export abstract class LinuxMachine extends EndHost
           return written;
         });
     }
+    const port = this.ports.get(scope);
+    if (port === undefined) return;
+    this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv6/conf/${scope}/mtu`,
+      () => `${port.getIPv6MTU()}\n`,
+      (text) => {
+        const value = Number(text.trim());
+        if (!Number.isInteger(value) || value < MTU.MIN_IPV6 || value > port.getMTU()) return false;
+        port.setIPv6MTU(value);
+        return true;
+      });
   }
   private applyIpv6Prohibitions(): void {
     for (const [name, port] of this.ports) {
