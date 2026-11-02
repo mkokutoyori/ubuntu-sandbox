@@ -210,7 +210,7 @@ describe('l\'option Router Alert et le TTL survivent a la descente', () => {
     for (const packet of vrrp) {
       expect(packet.ihl).toBe(5);
       expect(packet.ihl * 4).toBe(20);
-      expect(packet.totalLength - packet.ihl * 4).toBe(12);
+      expect(packet.totalLength - packet.ihl * 4).toBe(20);
     }
   });
 });

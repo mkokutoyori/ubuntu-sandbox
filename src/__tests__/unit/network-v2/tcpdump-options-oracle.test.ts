@@ -57,6 +57,10 @@
  * now writes the LLC/SNAP Cisco frame (pid 0x0111) and the PDU as a real capture shows it (tcpdump's tests/UDLD.pcap, checked byte for byte in udld-wire-real-capture.test.ts): version and opcode, flags (Recommended Timeout on a probe),
  * the internet checksum, the Device-ID, Port-ID, Echo (a count, then a length-prefixed device and port per neighbour), Message Interval, Timeout Interval, Device Name and Sequence Number TLVs; UdldAgent keeps the per-port sequence the wire
  * needs. 28 of the 29 cases of the lab fall without the change; the one that passes either way is the per-lab check that the recorded capture loaded at all (witness).
+ * Nineteenth lab, "vrrp": two Cisco routers and a PC on a hub, virtual router 1 (priority 120, simple password abcdefgh on one, the other a backup) and virtual router 2 (priority 90, advertisement interval 3). Measured before the change: the
+ * advertisements were IPv4 packets of protocol 112 with a payload of zero bytes and a length of 12 (eight header bytes and one address: the eight authentication data bytes RFC 2338 section 5.3.10 puts in every VRRPv2 message were
+ * missing). VrrpWire.ts writes the real message and its checksum, checked byte for byte against tcpdump's tests/vrrp.pcap in vrrp-wire-real-capture.test.ts, and the IP length now comes from it (vrrpWireLength). 28 of the 29 cases of
+ * the lab fall without the change; the one that passes either way is the per-lab check that the recorded capture loaded (witness).
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.
