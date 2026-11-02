@@ -24,6 +24,7 @@ import { millisecondsSinceUtcMidnight, simulationNowMs } from '@/network/core/Sy
 
 import { PathClock } from '../core/time/PathClock';
 import { awaitQuotedIcmpError, collectTraceHops, type TraceProbeOutcome } from './host/traceHops';
+import { armEchoWait, type EchoOutcome } from './host/echoWait';
 import { dhcpv6WireLength } from '../dhcpv6/Dhcpv6Codec';
 import { Equipment } from '../equipment/Equipment';
 import { buildEchoReply, ECHO_DATA_BYTES, ICMP_ECHO_HEADER_BYTES } from '../icmp/IcmpEcho';
@@ -293,10 +294,6 @@ type Origination =
   | { readonly outcome: 'lost'; readonly packet: IPv4Packet }
   | { readonly outcome: 'looped'; readonly packet: IPv4Packet }
   | { readonly outcome: 'routed'; readonly packet: IPv4Packet; readonly route: OriginRoute };
-
-type EchoOutcome =
-  | { kind: 'reply'; r: HostIcmpEchoReplyPayload }
-  | { kind: 'failed'; r: HostIcmpEchoFailedPayload };
 
 interface EchoSettlement {
   readonly id: number;
@@ -4944,24 +4941,7 @@ export abstract class EndHost extends Equipment {
   private armEchoWait(
     probe: { id: number; seq: number; target: string; anySource: boolean }, timeoutMs: number,
   ): () => Promise<EchoOutcome> {
-    const replied = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-reply',
-      (p) => p.deviceId === this.id && p.id === probe.id && p.seq === probe.seq
-        && (probe.anySource || p.fromIp === probe.target),
-      { timeoutMs, scheduler: this.getScheduler() },
-    ).then((r) => ({ kind: 'reply' as const, r }));
-    const failed = waitForEvent(
-      this.getBus(),
-      'host.icmp.echo-failed',
-      (p) => p.deviceId === this.id
-        && (p.id === -1 || (p.id === probe.id && p.seq === probe.seq))
-        && (p.toIp === probe.target || p.toIp === ''),
-      { timeoutMs, scheduler: this.getScheduler() },
-    ).then((r) => ({ kind: 'failed' as const, r }));
-    replied.catch(() => {});
-    failed.catch(() => {});
-    return () => Promise.race([replied, failed]);
+    return armEchoWait({ bus: this.getBus(), scheduler: this.getScheduler(), deviceId: this.id }, probe, timeoutMs);
   }
 
   // ─── Send Ping (ICMP Echo Request via IPv4) ───────────────────
