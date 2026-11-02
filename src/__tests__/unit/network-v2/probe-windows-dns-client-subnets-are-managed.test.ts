@@ -16,10 +16,13 @@
  * the record", written after the neighbouring texts; the default table of the objects (the sample shows two columns,
  * the objects here carry the three members of the provider class); REPLACE leaves the family it is not given alone,
  * as the page's second example shows, where the specification speaks of replacing every subnet of the record.
- * The refusal to remove a record a policy still uses (9975) arrives with the policies, which are what use records.
+ * The refusal to remove a record a policy still uses (9975) came with the policies, which are what use records (see
+ * probe-windows-dns-rrl-exception-lists).
  *
  * Discrimination (the probe run on the tree before the change): 31 of 32 cases fall. The one that passes either way is the
  * CONTROL "the lab runs a DNS server that answers its own cmdlets", the same server answering before the cmdlets exist.
+ * The case "asks for the confirmation before it looks for the record" was added later, when the confirmation stopped being
+ * reserved for a record that exists: on the tree before that change it is the one case of 33 that falls.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetCounters } from '@/network/core/types';
@@ -250,6 +253,12 @@ describe('Remove-DnsServerClientSubnet', () => {
   it('refuses a record that does not exist', async () => {
     const server = await lab();
     expect(await run(server, 'Remove-DnsServerClientSubnet -Name Nosuch -Force')).toContain('Remove-DnsServerClientSubnet : The client subnet does not exist on the DNS server.');
+  });
+
+  it('asks for the confirmation before it looks for the record', async () => {
+    const server = await lab();
+    expect(await run(server, 'Remove-DnsServerClientSubnet -Name Nosuch')).toContain('NonInteractive');
+    expect(await run(server, 'Remove-DnsServerClientSubnet -Name Nosuch -Confirm:$false')).toContain('The client subnet does not exist on the DNS server.');
   });
 });
 

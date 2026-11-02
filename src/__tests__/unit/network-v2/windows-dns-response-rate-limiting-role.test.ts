@@ -5,7 +5,9 @@
  * alone (an opcode other than QUERY), what LogOnly hands to the analytic sink it was given and what it does when it was
  * given none, and the service restart that forgets every allowance. Time is the role's own clock, set by hand.
  * Discrimination (run on the tree before the change): every case falls, the file cannot even be loaded, the module of
- * the settings did not exist and the role had neither the settings nor the limiter.
+ * the settings did not exist and the role had neither the settings nor the limiter. The exception lists came later: on the
+ * tree before them 5 of the 18 cases fall (the five about the lists, which are also what the file cannot load without) and
+ * the 13 others pass either way as NON-REGRESSION.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, IPv6Address, SubnetMask, resetCounters } from '@/network/core/types';
@@ -17,6 +19,8 @@ import { Logger } from '@/network/core/Logger';
 import { WindowsDnsServerRole } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 import type { DnsAnalyticEvent } from '@/network/devices/windows/server/dns/DnsAnalyticLog';
 import { DEFAULT_RESPONSE_RATE_LIMITING, RESPONSE_RATE_LIMITING_REFUSALS } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
+import { POLICY_REFUSALS } from '@/network/devices/windows/server/dns/DnsPolicies';
+import { CLIENT_SUBNET_REFUSALS } from '@/network/devices/windows/server/dns/DnsClientSubnets';
 import type { EndHost } from '@/network/devices/EndHost';
 import { queryDnsOverUdp, type DnsDatagramHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
@@ -70,7 +74,11 @@ function lab(options: { sink?: (event: DnsAnalyticEvent) => void } = {}) {
     for (let index = 0; index < count; index++) verdicts.push(await ask(client, over, qname, opcode));
     return verdicts;
   };
-  return { role, flood, advance: (milliseconds: number) => { at += milliseconds; } };
+  const send = async (client: number, message: DnsMessage): Promise<Verdict> => {
+    const reply = await queryDnsOverUdp(clients[client], new IPAddress(SERVER4), message, 53, 40);
+    return reply === null ? 'dropped' : reply.flags.tc ? 'truncated' : 'answered';
+  };
+  return { role, flood, send, advance: (milliseconds: number) => { at += milliseconds; } };
 }
 
 const FIVE: Verdict[] = ['answered', 'answered', 'answered', 'answered', 'answered'];
@@ -198,5 +206,58 @@ describe('the service restart', () => {
     expect(await flood(0, 4, 1)).toEqual(['dropped']);
     advance(1);
     expect(await flood(0, 4, 1)).toEqual(['answered']);
+  });
+});
+
+describe('the exception lists of the role', () => {
+  it('are held, changed and removed through the role, with the refusals of the policy store', () => {
+    const { role } = lab();
+    expect(role.addRateLimitingExceptionList('L', 'AND', { fqdn: 'EQ,a.test' })).toEqual({ ok: true, message: '' });
+    expect(role.addRateLimitingExceptionList('l', 'AND', { fqdn: 'EQ,b.test' })).toEqual({ ok: false, message: POLICY_REFUSALS.exists });
+    expect(role.changeRateLimitingExceptionList('L', 'OR', { serverInterface: 'EQ,10.0.0.3' })).toEqual({ ok: true, message: '' });
+    expect(role.getRateLimitingExceptionLists()).toEqual([
+      { name: 'L', condition: 'OR', fqdn: 'EQ,a.test', clientSubnet: null, serverInterface: 'EQ,10.0.0.3' },
+    ]);
+    expect(role.changeRateLimitingExceptionList('Nope', undefined, { fqdn: 'EQ,a.test' })).toEqual({ ok: false, message: POLICY_REFUSALS.missing });
+    expect(role.removeRateLimitingExceptionList('L')).toEqual({ ok: true, message: '' });
+    expect(role.removeRateLimitingExceptionList('L')).toEqual({ ok: false, message: POLICY_REFUSALS.missing });
+    expect(role.getRateLimitingExceptionLists()).toEqual([]);
+  });
+
+  it('keep a client subnet record from being removed while they name it', () => {
+    const { role } = lab();
+    role.addClientSubnet('Net', ['10.0.1.0/24'], []);
+    role.addRateLimitingExceptionList('L', 'AND', { clientSubnet: 'EQ,Net' });
+    expect(role.removeClientSubnet('Net')).toEqual({ ok: false, message: CLIENT_SUBNET_REFUSALS.referenced });
+    expect(role.getClientSubnets()).toHaveLength(1);
+    role.removeRateLimitingExceptionList('L');
+    expect(role.removeClientSubnet('Net')).toEqual({ ok: true, message: '' });
+  });
+
+  it('exempt the clients of an IPv6 client subnet record and not the others', async () => {
+    const { role, flood } = lab();
+    role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
+    role.addClientSubnet('Six', [], ['2001:db8::/64']);
+    role.addRateLimitingExceptionList('L', 'AND', { clientSubnet: 'EQ,Six' });
+    expect(await flood(0, 6, 8)).toEqual(Array.from({ length: 8 }, () => 'answered'));
+    expect(await flood(2, 6, 6)).toEqual([...FIVE, 'dropped']);
+  });
+
+  it('exempt the queries received on an IPv6 server interface and not those received on the IPv4 one', async () => {
+    const { role, flood } = lab();
+    role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
+    role.addRateLimitingExceptionList('L', 'AND', { serverInterface: 'EQ,2001:db8::53' });
+    expect(await flood(0, 6, 8)).toEqual(Array.from({ length: 8 }, () => 'answered'));
+    expect(await flood(0, 4, 6)).toEqual([...FIVE, 'dropped']);
+  });
+
+  it('do not exempt a message that carries no question under an FQDN criterion', async () => {
+    const { role, send } = lab();
+    role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
+    role.addRateLimitingExceptionList('L', 'AND', { fqdn: 'EQ,*' });
+    const withoutQuestion = { ...question('web.corp.test'), questions: [] };
+    const verdicts: Verdict[] = [];
+    for (let index = 0; index < 8; index++) verdicts.push(await send(0, withoutQuestion));
+    expect(verdicts).toEqual([...FIVE, 'dropped', 'dropped', 'dropped']);
   });
 });

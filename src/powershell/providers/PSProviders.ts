@@ -994,6 +994,8 @@ import type { DnsDiagnosticsChanges, DnsDiagnosticsEntry } from '@/network/devic
 import type { ServerStatisticsSnapshot } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 import type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/windows/server/dns/DnsClientSubnets';
 import type { ResponseRateLimitingChanges, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
+import type { PolicyCriteriaText, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
+import type { PolicyCondition } from '@/network/devices/windows/server/dns/DnsPolicyCriteria';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
@@ -1012,6 +1014,8 @@ export type { DnsDiagnosticsChanges, DnsDiagnosticsEntry, DnsDiagnosticsValue } 
 export type { ServerStatisticsSnapshot, ZoneStatisticsSnapshot, StatisticsTimes } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 export type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/windows/server/dns/DnsClientSubnets';
 export type { ResponseRateLimitingChanges, ResponseRateLimitingMode, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
+export type { PolicyCriteriaText, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
+export type { PolicyCondition } from '@/network/devices/windows/server/dns/DnsPolicyCriteria';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1078,6 +1082,10 @@ export interface IDnsServerProvider {
   removeClientSubnet(name: string): DnsOpResult;
   getResponseRateLimiting(): ResponseRateLimitingSettings;
   setResponseRateLimiting(changes: ResponseRateLimitingChanges): DnsOpResult;
+  getRateLimitingExceptionLists(): PolicyView[];
+  addRateLimitingExceptionList(name: string, condition: PolicyCondition, criteria: PolicyCriteriaText): DnsOpResult;
+  changeRateLimitingExceptionList(name: string, condition: PolicyCondition | undefined, criteria: PolicyCriteriaText): DnsOpResult;
+  removeRateLimitingExceptionList(name: string): DnsOpResult;
   getGlobalNames(): DnsGlobalNames;
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult;
   getGlobalQueryBlock(): GlobalQueryBlock;

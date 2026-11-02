@@ -77,6 +77,8 @@ import {
   DEFAULT_RESPONSE_RATE_LIMITING, planResponseRateLimiting,
   type ResponseRateLimitingChanges, type ResponseRateLimitingSettings,
 } from './DnsResponseRateLimiting';
+import { DnsPolicyStore, type PolicyCriteriaText, type PolicyView } from './DnsPolicies';
+import type { PolicyCondition } from './DnsPolicyCriteria';
 import { RATE_ANALYTIC_EVENTS, type DnsAnalyticSink } from './DnsAnalyticLog';
 
 export interface DnsOpResult { ok: boolean; message: string }
@@ -389,6 +391,10 @@ export class WindowsDnsServerRole {
   private readonly settings = new Map<string, ZoneSettings>();
   private readonly conditional = new Map<string, ConditionalForwarder>();
   private readonly clientSubnets = new ClientSubnetStore();
+  private readonly policies = new DnsPolicyStore({
+    clientSubnetExists: name => this.clientSubnets.find(name) !== null,
+    clientSubnetContains: (name, address) => this.clientSubnets.contains(name, address),
+  });
   private readonly rateLimiter: ResponseRateLimiter;
   private responseRateLimiting: ResponseRateLimitingSettings = { ...DEFAULT_RESPONSE_RATE_LIMITING };
   private readonly analytic: DnsAnalyticSink | null;
@@ -540,6 +546,8 @@ export class WindowsDnsServerRole {
   private limitRate(query: DnsMessage, response: DnsMessage, imputedName: string, requestor: UdpRequestor): DnsMessage | null {
     const settings = this.responseRateLimiting;
     if (settings.mode === 'Disable' || requestor.source === undefined || query.flags.opcode !== DnsOpcode.QUERY) return response;
+    const queryName = query.questions[0] === undefined ? null : normalizeDnsName(query.questions[0].qname);
+    if (this.policies.matches({ queryName, source: requestor.source, destination: requestor.destination })) return response;
     const verdict = this.rateLimiter.judge({ source: requestor.source, imputedName, error: RATE_ERROR_CODES.has(response.flags.rcode) }, settings);
     if (settings.mode === 'LogOnly') {
       this.logRateVerdict(verdict, query, response, requestor);
@@ -1232,7 +1240,7 @@ export class WindowsDnsServerRole {
   }
 
   removeClientSubnet(name: string): DnsOpResult {
-    return refusalToResult(this.clientSubnets.remove(name));
+    return refusalToResult(this.clientSubnets.remove(name, subnet => this.policies.referencesClientSubnet(subnet)));
   }
 
   getZoneStatistics(names: readonly string[], clear: boolean): DnsZoneStatisticsResult {
@@ -1271,6 +1279,20 @@ export class WindowsDnsServerRole {
     if (typeof planned === 'string') return refusalToResult(planned);
     this.responseRateLimiting = planned;
     return refusalToResult(null);
+  }
+
+  getRateLimitingExceptionLists(): PolicyView[] { return this.policies.list(); }
+
+  addRateLimitingExceptionList(name: string, condition: PolicyCondition, criteria: PolicyCriteriaText): DnsOpResult {
+    return refusalToResult(this.policies.create(name, condition, criteria));
+  }
+
+  changeRateLimitingExceptionList(name: string, condition: PolicyCondition | undefined, criteria: PolicyCriteriaText): DnsOpResult {
+    return refusalToResult(this.policies.change(name, condition, criteria));
+  }
+
+  removeRateLimitingExceptionList(name: string): DnsOpResult {
+    return refusalToResult(this.policies.remove(name));
   }
 
   getEdnsSettings(): DnsEdnsSettings { return this.parameters.ednsSettings(); }

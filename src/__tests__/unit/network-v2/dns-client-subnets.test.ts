@@ -6,9 +6,15 @@
  * left: refused) and ResetClientSubnetRecord (the record does not exist, or no subnet is given: refused). Names are
  * matched without regard to case, a subnet is known by its address and length however it was written, and every refusal
  * leaves the record as it was. Discrimination (run on the tree before the change): every case falls, the module did not
- * exist.
+ * exist. Added with the policies, which are what use a record: DeleteClientSubnetRecord refuses a record that a policy still
+ * uses (9975), after it has found the record, and a record says whether it contains an address, in either family, however
+ * its subnets were written. Of the 8 cases added, 6 fall on the tree before that change (the refusal and the five about the
+ * addresses: the method and the second argument did not exist); the two others pass either way as NON-REGRESSION (a record
+ * no policy uses is removed, a record that does not exist is reported before anything is asked), and so do the 34 earlier
+ * cases.
  */
 import { describe, it, expect } from 'vitest';
+import { IPAddress, IPv6Address } from '@/network/core/types';
 import { ClientSubnetStore, CLIENT_SUBNET_REFUSALS } from '@/network/devices/windows/server/dns/DnsClientSubnets';
 
 function storeWith(name: string, ipv4: string[], ipv6: string[] = []): ClientSubnetStore {
@@ -82,6 +88,70 @@ describe('removing a client subnet record', () => {
 
   it('refuses a record that does not exist', () => {
     expect(new ClientSubnetStore().remove('Asia')).toBe(CLIENT_SUBNET_REFUSALS.missing);
+  });
+
+  it('refuses a record that a policy still uses, and keeps it', () => {
+    const store = storeWith('Asia', ['10.0.0.0/8']);
+    const asked: string[] = [];
+    expect(store.remove('ASIA', name => { asked.push(name); return true; })).toBe(CLIENT_SUBNET_REFUSALS.referenced);
+    expect(asked).toEqual(['ASIA']);
+    expect(store.list()).toHaveLength(1);
+  });
+
+  it('removes a record that no policy uses', () => {
+    const store = storeWith('Asia', ['10.0.0.0/8']);
+    expect(store.remove('Asia', () => false)).toBeNull();
+    expect(store.list()).toEqual([]);
+  });
+
+  it('says a record does not exist before it asks whether a policy uses it', () => {
+    let asked = false;
+    expect(new ClientSubnetStore().remove('Asia', () => { asked = true; return true; })).toBe(CLIENT_SUBNET_REFUSALS.missing);
+    expect(asked).toBe(false);
+  });
+});
+
+describe('the addresses a client subnet record contains', () => {
+  const holdsAddress = (store: ClientSubnetStore, name: string, address: string) =>
+    store.contains(name, address.includes(':') ? new IPv6Address(address) : new IPAddress(address));
+
+  it('holds an IPv4 address inside one of its subnets, whatever the host bits of the subnet as written', () => {
+    const store = storeWith('NorthAmerica', ['172.21.33.0/16', '10.0.0.0/8']);
+    expect(holdsAddress(store, 'NorthAmerica', '172.21.1.1')).toBe(true);
+    expect(holdsAddress(store, 'NorthAmerica', '10.200.0.1')).toBe(true);
+    expect(holdsAddress(store, 'NorthAmerica', '172.22.0.1')).toBe(false);
+    expect(holdsAddress(store, 'NorthAmerica', '11.0.0.1')).toBe(false);
+  });
+
+  it('holds an IPv6 address inside one of its subnets', () => {
+    const store = storeWith('Europe', [], ['0db8::1/28', '2001:db8:aa::/48']);
+    expect(holdsAddress(store, 'Europe', '0db8:f::1')).toBe(true);
+    expect(holdsAddress(store, 'Europe', '0db8:1000::1')).toBe(false);
+    expect(holdsAddress(store, 'Europe', '2001:db8:aa:1::5')).toBe(true);
+    expect(holdsAddress(store, 'Europe', '2001:db8:ab::5')).toBe(false);
+  });
+
+  it('never holds an address of the family the record has no subnet in', () => {
+    const store = storeWith('Mixed', ['10.0.0.0/8'], ['0db8::1/28']);
+    const onlyFour = storeWith('Four', ['0.0.0.0/0']);
+    const onlySix = storeWith('Six', [], ['::/0']);
+    expect(holdsAddress(onlyFour, 'Four', '2001:db8::1')).toBe(false);
+    expect(holdsAddress(onlySix, 'Six', '10.0.0.1')).toBe(false);
+    expect(holdsAddress(store, 'Mixed', '10.9.9.9')).toBe(true);
+    expect(holdsAddress(store, 'Mixed', '0db8::2')).toBe(true);
+  });
+
+  it('answers whatever the case of the name and false for a record that does not exist', () => {
+    const store = storeWith('Asia', ['10.0.0.0/8']);
+    expect(holdsAddress(store, 'ASIA', '10.1.1.1')).toBe(true);
+    expect(holdsAddress(store, 'Europe', '10.1.1.1')).toBe(false);
+  });
+
+  it('follows the subnets as they change', () => {
+    const store = storeWith('Asia', ['10.0.0.0/8', '192.168.0.0/16']);
+    store.change('Asia', 'REMOVE', ['10.0.0.0/8'], []);
+    expect(holdsAddress(store, 'Asia', '10.1.1.1')).toBe(false);
+    expect(holdsAddress(store, 'Asia', '192.168.5.5')).toBe(true);
   });
 });
 

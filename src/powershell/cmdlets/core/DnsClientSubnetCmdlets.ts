@@ -111,7 +111,7 @@ export class RemoveDnsServerClientSubnetCmdlet implements ICmdlet {
     const name = nameArgument(ctx);
     if (name === '') return missing(ctx, this.displayName, 'Name');
     const held = dns.getClientSubnets().find(view => view.name.toLowerCase() === name.toLowerCase());
-    if (held !== undefined && !isSwitchOn(ctx.named['force']) && !mayProceed(ctx, this.displayName, 'High')) return null;
+    if (!isSwitchOn(ctx.named['force']) && !mayProceed(ctx, this.displayName, 'High')) return null;
     const result = dns.removeClientSubnet(name);
     if (!result.ok) return failed(ctx, this.displayName, result);
     return isSwitchOn(ctx.named['passthru']) && held !== undefined ? subnetObject(held) : null;

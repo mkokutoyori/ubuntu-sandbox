@@ -1,4 +1,4 @@
-import { IPAddress, IPv6Address } from '@/network/core/types';
+import { IPAddress, IPv6Address, SubnetMask } from '@/network/core/types';
 import { cidrPrefixLength } from '@/network/core/ip';
 
 export type ClientSubnetAction = 'ADD' | 'REMOVE' | 'REPLACE';
@@ -23,6 +23,7 @@ export const CLIENT_SUBNET_REFUSALS = {
   absentSubnet: 'The IP subnet specified does not exist in the client subnet.',
   presentSubnet: 'The IP subnet that is specified already exists in the client subnet.',
   lastAddress: 'Not allowed to remove all addresses.',
+  referenced: 'The client subnet cannot be deleted while it is being accessed by a policy.',
   invalid: 'The parameter is incorrect.',
 } as const;
 
@@ -65,8 +66,20 @@ export class ClientSubnetStore {
     return null;
   }
 
-  remove(name: string): string | null {
-    return this.records.delete(name.toLowerCase()) ? null : CLIENT_SUBNET_REFUSALS.missing;
+  contains(name: string, address: IPAddress | IPv6Address): boolean {
+    const record = this.records.get(name.toLowerCase());
+    if (record === undefined) return false;
+    return address instanceof IPAddress
+      ? record.ipv4.some(text => this.within(text, address))
+      : record.ipv6.some(text => this.within(text, address));
+  }
+
+  remove(name: string, isReferenced: (name: string) => boolean = () => false): string | null {
+    const key = name.toLowerCase();
+    if (!this.records.has(key)) return CLIENT_SUBNET_REFUSALS.missing;
+    if (isReferenced(name)) return CLIENT_SUBNET_REFUSALS.referenced;
+    this.records.delete(key);
+    return null;
   }
 
   change(name: string, action: ClientSubnetAction, ipv4: readonly string[], ipv6: readonly string[]): string | null {
@@ -104,6 +117,15 @@ export class ClientSubnetStore {
     if (ipv4.length > 0) record.ipv4 = ipv4;
     if (ipv6.length > 0) record.ipv6 = ipv6;
     return null;
+  }
+
+  private within(subnet: string, address: IPAddress | IPv6Address): boolean {
+    const length = cidrPrefixLength(subnet, address instanceof IPv6Address);
+    if (length === null) return false;
+    const base = subnet.slice(0, subnet.lastIndexOf('/'));
+    return address instanceof IPAddress
+      ? new IPAddress(base).isInSameSubnet(address, SubnetMask.fromCIDR(length))
+      : new IPv6Address(base).isInSameSubnet(address, length);
   }
 
   private overlap(held: readonly string[], given: readonly string[], v6: boolean): boolean {

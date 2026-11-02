@@ -56,9 +56,9 @@ export function isSwitchOn(value: PSValue | undefined): boolean {
 }
 
 export function choice<T extends string>(
-  ctx: CmdletContext, cmdletName: string, parameter: string, key: string, allowed: readonly T[],
+  ctx: CmdletContext, cmdletName: string, parameter: string, key: string, allowed: readonly T[], position?: number,
 ): T | undefined | null {
-  const raw = ctx.named[key];
+  const raw = ctx.named[key] ?? (position === undefined ? undefined : ctx.positional[position]);
   if (raw === undefined) return undefined;
   const wanted = psValueToString(raw);
   const found = allowed.find(value => value.toLowerCase() === wanted.toLowerCase());

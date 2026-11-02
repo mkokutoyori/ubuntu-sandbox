@@ -185,6 +185,10 @@ import {
   AddDnsServerClientSubnetCmdlet, GetDnsServerClientSubnetCmdlet, SetDnsServerClientSubnetCmdlet, RemoveDnsServerClientSubnetCmdlet,
 } from './DnsClientSubnetCmdlets';
 import { GetDnsServerResponseRateLimitingCmdlet, SetDnsServerResponseRateLimitingCmdlet } from './DnsResponseRateLimitingCmdlets';
+import {
+  AddDnsServerResponseRateLimitingExceptionlistCmdlet, GetDnsServerResponseRateLimitingExceptionlistCmdlet,
+  SetDnsServerResponseRateLimitingExceptionlistCmdlet, RemoveDnsServerResponseRateLimitingExceptionlistCmdlet,
+} from './DnsRateLimitingExceptionCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -891,6 +895,10 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Remove-DnsServerClientSubnet', new RemoveDnsServerClientSubnetCmdlet()));
   registry.register(remotable('Get-DnsServerResponseRateLimiting', new GetDnsServerResponseRateLimitingCmdlet()));
   registry.register(remotable('Set-DnsServerResponseRateLimiting', new SetDnsServerResponseRateLimitingCmdlet()));
+  registry.register(remotable('Add-DnsServerResponseRateLimitingExceptionlist', new AddDnsServerResponseRateLimitingExceptionlistCmdlet()));
+  registry.register(remotable('Get-DnsServerResponseRateLimitingExceptionlist', new GetDnsServerResponseRateLimitingExceptionlistCmdlet()));
+  registry.register(remotable('Set-DnsServerResponseRateLimitingExceptionlist', new SetDnsServerResponseRateLimitingExceptionlistCmdlet()));
+  registry.register(remotable('Remove-DnsServerResponseRateLimitingExceptionlist', new RemoveDnsServerResponseRateLimitingExceptionlistCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));
