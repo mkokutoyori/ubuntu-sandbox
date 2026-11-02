@@ -73,9 +73,10 @@ import { getDefaultScheduler, type IScheduler } from '@/events/Scheduler';
 import { waitForEvent, WaitForEventTimeoutError } from '@/events/waitForEvent';
 import {
   NeighborCache,
-  NDP_RETRANS_TIMER_MS,
   NDP_MAX_MULTICAST_SOLICIT,
+  DEFAULT_NEIGHBOR_PARAMETERS,
   type NeighborCacheEntry,
+  type NeighborParameters,
 } from './host/NeighborCache';
 import {
   HostSignalStore,
@@ -707,6 +708,7 @@ export abstract class EndHost extends Equipment {
 
   // ─── IPv6 State (RFC 4861, RFC 8200) ─────────────────────────────
   protected readonly neighborCache = new NeighborCache(() => this.getScheduler(), {
+    parameters: (iface) => this.neighborParameters(iface),
     onLearned: (ip, entry) => this.emitNdpLearned({
       ip, mac: entry.mac.toString(), iface: entry.iface,
     }),
@@ -802,7 +804,8 @@ export abstract class EndHost extends Equipment {
   /** Default Hop Limit for IPv6 (typically same as TTL) */
   protected get defaultHopLimit(): number { return this.defaultTTL; }
   protected hopLimitTowards(_destination: IPv6Address): number { return this.defaultHopLimit; }
-  protected adoptAdvertisedHopLimit(_portName: string, _hopLimit: number): void {}
+  protected neighborParameters(_iface: string): NeighborParameters { return DEFAULT_NEIGHBOR_PARAMETERS; }
+  protected adoptAdvertisedLinkParameters(_portName: string, _advertisement: NDPRouterAdvertisement): void {}
   protected get udpDiscoversPathMtu(): boolean { return false; }
   protected get tcpEcnPolicy(): TcpEcnPolicy { return 'off'; }
   protected get tcpEcnFallsBack(): boolean { return true; }
@@ -6968,7 +6971,7 @@ export abstract class EndHost extends Equipment {
     if (acceptance.accepted && acceptance.defaultRouter) {
       this.learnDefaultRouter(router, ra.routerLifetime, advertisedPreference);
     }
-    if (acceptance.accepted && ra.curHopLimit !== 0) this.adoptAdvertisedHopLimit(portName, ra.curHopLimit);
+    if (acceptance.accepted) this.adoptAdvertisedLinkParameters(portName, ra);
     if (acceptance.accepted && acceptance.linkMtu) this.applyAdvertisedMtu(port, ra);
     for (const opt of acceptance.accepted && acceptance.routeInformation !== null ? ra.options : []) {
       if (opt.optionType !== 'route-info') continue;
@@ -7073,7 +7076,7 @@ export abstract class EndHost extends Equipment {
     const targetIpStr = targetIP.toString();
     const attempts = Math.min(
       NDP_MAX_MULTICAST_SOLICIT,
-      Math.max(1, Math.round(timeoutMs / NDP_RETRANS_TIMER_MS)),
+      Math.max(1, Math.round(timeoutMs / this.neighborParameters(portName).retransTimerMs)),
     );
     const perAttemptMs = Math.max(1, Math.floor(timeoutMs / attempts));
 

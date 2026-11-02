@@ -95,6 +95,9 @@ import {
 import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import { MTU } from '../core/constants';
 import { IPV6_DEVICE_CONF_KNOBS, Ipv6DeviceConf } from './linux/Ipv6DeviceConf';
+import { IPV6_NEIGHBOR_CONF_KNOBS, Ipv6NeighborConf } from './linux/Ipv6NeighborConf';
+import type { NeighborParameters } from './host/NeighborCache';
+import type { NDPRouterAdvertisement } from '../core/types';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import type { RedirectPolicy } from '../layers/internet/IcmpRedirect';
 import { LinuxIpv6Settings, LINUX_IPV6_KNOBS } from './linux/LinuxIpv6Settings';
@@ -384,6 +387,14 @@ export abstract class LinuxMachine extends EndHost
         return true;
       });
   }
+  private registerIpv6NeighborScope(scope: string): void {
+    this.executor.vfs.mkdirp(`/proc/sys/net/ipv6/neigh/${scope}`, 0o755, 0, 0);
+    for (const knob of IPV6_NEIGHBOR_CONF_KNOBS) {
+      this.executor.vfs.registerWritableGeneratedFile(`/proc/sys/net/ipv6/neigh/${scope}/${knob.name}`,
+        () => `${this.ipv6NeighborConf.get(scope, knob.name)}\n`,
+        (text) => Number(text.trim()) > 0 && this.ipv6NeighborConf.write(scope, knob.name, text));
+    }
+  }
   private applyIpv6Prohibitions(): void {
     for (const [name, port] of this.ports) {
       const prohibited = this.ipv6Conf.disabled(name);
@@ -439,6 +450,7 @@ export abstract class LinuxMachine extends EndHost
       this.registerIpv6ConfScope(port.getName());
       this.applyIpv6Prohibitions();
     }
+    if (this.ipv6NeighborStore?.addInterface(port.getName())) this.registerIpv6NeighborScope(port.getName());
     this.attachAddrconf(port);
   }
   private addrconfDraws = 0;
@@ -468,8 +480,17 @@ export abstract class LinuxMachine extends EndHost
     const route = this.resolveIPv6Route(destination);
     return this.ipv6Conf.hopLimit(route === null ? 'default' : route.port.getName());
   }
-  protected override adoptAdvertisedHopLimit(portName: string, hopLimit: number): void {
-    this.ipv6Conf.adoptAdvertisedHopLimit(portName, hopLimit);
+  protected override adoptAdvertisedLinkParameters(portName: string, advertisement: NDPRouterAdvertisement): void {
+    this.ipv6Conf.adoptAdvertisedHopLimit(portName, advertisement.curHopLimit);
+    this.ipv6NeighborConf.adoptAdvertised(portName, advertisement.reachableTime, advertisement.retransTimer);
+  }
+  protected override neighborParameters(iface: string): NeighborParameters {
+    return this.ipv6NeighborConf.parameters(iface);
+  }
+  private ipv6NeighborStore: Ipv6NeighborConf | null = null;
+  private get ipv6NeighborConf(): Ipv6NeighborConf {
+    this.ipv6NeighborStore ??= new Ipv6NeighborConf([...this.ports.keys()]);
+    return this.ipv6NeighborStore;
   }
   protected override get udpDiscoversPathMtu(): boolean { return true; }
   protected override get tcpEcnPolicy(): TcpEcnPolicy { return this.ipv4Settings.ecnPolicy; }
@@ -599,6 +620,7 @@ export abstract class LinuxMachine extends EndHost
       });
     for (const scope of this.deviceConf.scopes()) this.registerDeviceConfScope(scope);
     for (const scope of this.ipv6Conf.scopes()) this.registerIpv6ConfScope(scope);
+    for (const scope of this.ipv6NeighborConf.scopes()) if (scope !== 'all') this.registerIpv6NeighborScope(scope);
     this.executor.setPortBindingPolicy(this.portBindingPolicy);
     this.executor.vfs.registerWritableGeneratedFile('/proc/sys/net/ipv4/ip_unprivileged_port_start',
       () => `${this.portBindingPolicy.unprivilegedPortStart}\n`,

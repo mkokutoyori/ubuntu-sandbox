@@ -4227,10 +4227,10 @@ l'attente d'un echo-reply / echo-failed par sonde ICMP refait `sendPing`/`sendPi
 Header de l'en-tete fixe), le simulateur ne portant pas d'en-tetes d'extension autres que le fragment. La taille de paquet `packetlen` est imprimee dans
 l'entete et ne dimensionne pas les sondes (IPv4 comme IPv6).
 
-### [radvd] la reception ignore les options RDNSS et DNSSL et le temps de joignabilite d'une annonce
+### [radvd] la reception ignore les options RDNSS et DNSSL d'une annonce
 
 Mesure : l'hote lit le prefixe (A/L, durees de vie, echeance de la route), la duree de vie et la preference du routeur par defaut et les options Route
-Information (RFC 4191, bornes `accept_ra_rt_info_{min,max}_plen`) : sonde `probe-ipv6-hote-options-annonce`. L'option MTU est lue (`accept_ra_mtu`, fenetre 1280 a la MTU du lien, `/proc/sys/net/ipv6/conf/<if>/mtu`, sonde `probe-ipv6-hote-mtu-annonce`). Le saut limite courant l'est aussi (`hop_limit`, `accept_ra_min_hop_limit`, lu par interface de sortie via `hopLimitTowards` ; sonde `probe-ipv6-hote-saut-limite-annonce` ; le saut limite de la route par defaut, `hoplimit` dans `ip -6 route`, et le multicast de portee superieure a la liaison gardent la valeur globale). Ce que `EndHost.handleRouterAdvertisement` ne lit
-toujours pas : le temps de joignabilite et les options
+Information (RFC 4191, bornes `accept_ra_rt_info_{min,max}_plen`) : sonde `probe-ipv6-hote-options-annonce`. L'option MTU est lue (`accept_ra_mtu`, fenetre 1280 a la MTU du lien, `/proc/sys/net/ipv6/conf/<if>/mtu`, sonde `probe-ipv6-hote-mtu-annonce`). Le saut limite courant l'est aussi (`hop_limit`, `accept_ra_min_hop_limit`, lu par interface de sortie via `hopLimitTowards` ; sonde `probe-ipv6-hote-saut-limite-annonce` ; le saut limite de la route par defaut, `hoplimit` dans `ip -6 route`, et le multicast de portee superieure a la liaison gardent la valeur globale). Le temps de joignabilite et le temporisateur de retransmission le sont (`/proc/sys/net/ipv6/neigh/<if>/base_reachable_time_ms` et `retrans_time_ms`, lus par `NeighborCache` ; sonde `probe-ipv6-hote-temps-de-joignabilite-annonce` ; le noyau tire en plus `reachable_time` au hasard dans [1/2, 3/2] de la base, ce que le simulateur ne fait pas, et le cache IPv4/ARP garde ses constantes et ses fichiers `net/ipv4/neigh` constants). Ce que `EndHost.handleRouterAdvertisement` ne lit
+toujours pas : les options
 RDNSS (RFC 8106) et DNSSL, que le noyau remet a l'espace utilisateur (systemd-networkd puis `resolvectl`) : un hote n'obtient donc ni serveur de noms ni domaine de
 recherche d'une annonce de radvd. A refermer cote hote, pas dans radvd : `ResolvedService` porte deja les serveurs par lien.
