@@ -40,6 +40,10 @@
  * Hello with ack = the sequence and no TLV) and src/network/eigrp/EigrpPacketBytes.ts writes RFC 7868 bytes (header with Internet checksum, Parameters, Software Version 12.4 / 1.2, IP Internal and External route TLVs
  * with delay = tens of microseconds x 256, bandwidth = 10^7/kbps x 256, MTU 1500, reliability 255, load 1); TcpdumpEigrp.ts ports print-eigrp.c for the TLVs it decodes. 28 of the 29 cases fall without the change, the
  * 29th is the lab's WITNESS. Not covered: the MD5 Authentication TLV (the engine's digest is not an MD5), the Stub TLV flag bits, and the AppleTalk / IPX TLVs the simulator never writes.
+ * Fifteenth lab, "dtp": a PC cabled to a Cisco switch whose port is `dynamic desirable` with VTP domain LAB. Measured before the change: the DTP frame was a block of zeros under the made-up ethertype 0x2004 (it also sat in
+ * the STP labs, which fall with it). DtpWire.ts now writes the 802.3 + LLC/SNAP Cisco frame (pid 0x2004) and the TLVs as Wireshark's packet-dtp.c documents them: version 1, Domain (NUL-terminated), Trunk Status (operating bit 0x80,
+ * administrative 1 on / 2 off / 3 desirable / 4 auto), Trunk Type (operating type in the top three bits: 1 native, 2 ISL, 5 802.1Q; administrative type 0 negotiated / 2 ISL / 5 802.1Q) and Sender ID; TcpdumpDtp.ts ports print-dtp.c.
+ * The Domain TLV now carries the switch's VTP domain (DtpAgent kept a second, never-written domain; it reads the VTP one through the host). 56 of the 440 cases fall without the change (the dtp lab and the STP labs that hold a DTP frame).
  * Second lot, same method (print-ether.c ether_type_print: with -q an Ethernet type is its bare name, `ARP, ` and not `ethertype ARP (0x0806), `; print-ip.c line 494: -qq prints nothing
  * after the protocol for a non-initial fragment, and under -v only the header and four spaces): 6 of the 12 new cases fall before (-qq -nn and -qq -nn -v in the base lab, -nn -e -q and -nn -e -q -v in both).
  * The other 6 pass either way and are measurements, not witnesses of a fix: -nn -c 5 -s 60, -nn -N, -nn -O, -nn -vv, -nn -t, -nn -tttt -S and -q -nn -v in both labs agree with the real tool already.

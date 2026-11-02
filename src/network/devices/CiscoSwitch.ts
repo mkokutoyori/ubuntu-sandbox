@@ -104,6 +104,7 @@ export class CiscoSwitch extends Switch {
     this.dtpAgent = new DtpAgent({
       ...hostBase,
       onOperationalModeChanged: (p, m) => this.applyDtpOperationalMode(p, m),
+      vtpDomain: () => this.vtpAgent?.getConfig().domain ?? '',
     }, () => this.getBus(), () => this.getScheduler());
     const firstPort = this.getPorts()[0];
     const baseMac = firstPort ? firstPort.getMAC().toString() : '00:00:00:00:00:00';

@@ -32,7 +32,6 @@ export interface DtpPortState {
 export interface DtpConfig {
   enabled: boolean;
   helloSec: number;
-  domain: string;
   ports: Map<string, DtpPortState>;
 }
 
@@ -40,7 +39,6 @@ export function createDefaultDtpConfig(): DtpConfig {
   return {
     enabled: true,
     helloSec: 30,
-    domain: '',
     ports: new Map(),
   };
 }

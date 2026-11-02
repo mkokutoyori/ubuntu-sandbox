@@ -8,6 +8,7 @@ import type { CaptureFrame, Fragment6Info } from './CaptureFrame';
 import type { TcpdumpOptions } from './TcpdumpCli';
 import { cdpText } from './TcpdumpCdp';
 import { stpText } from './TcpdumpStp';
+import { dtpText } from './TcpdumpDtp';
 import { ieee8023, llcDescription } from './TcpdumpLlc';
 import { lldpText } from './TcpdumpLldp';
 import { ospfText } from './TcpdumpOspf';
@@ -575,6 +576,12 @@ function cdpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderS
   return opt.linkLevel ? `${ieee8023Prefix(frame, opt, state, lengthField, payload.length)}${text}` : text;
 }
 
+function dtpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
+  const { lengthField, declaredBytes, payload } = ieee8023(frame);
+  const text = dtpText(payload, declaredBytes, opt.verbose, (mac) => state.ether(mac));
+  return opt.linkLevel ? `${ieee8023Prefix(frame, opt, state, lengthField, declaredBytes)}${text}` : text;
+}
+
 function stpLine(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState): string {
   const { lengthField, declaredBytes, payload } = ieee8023(frame);
   const text = stpText(payload, declaredBytes, opt.verbose);
@@ -691,6 +698,8 @@ export function formatFrame(
     body = cdpLine(frame, opt, state);
   } else if (frame.l3 === 'stp') {
     body = stpLine(frame, opt, state);
+  } else if (frame.l3 === 'dtp') {
+    body = dtpLine(frame, opt, state);
   } else if (frame.l3 === 'lldp') {
     body = `${link}${lldpText(Array.from(frame.raw.slice(frame.rawLinkOffset)), opt.verbose, (address) => state.host(address), (mac) => state.ether(mac))}`;
   } else {

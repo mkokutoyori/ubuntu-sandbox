@@ -6,6 +6,7 @@ const STP_SAP = 0x42;
 const SNAP_SAP = 0xaa;
 const PID_CDP = 0x2000;
 const PID_PVST = 0x010b;
+const PID_DTP = 0x2004;
 const OUI_CISCO = 0x00000c;
 
 export interface Ieee8023Payload {
@@ -35,7 +36,7 @@ export function llcDescription(frame: CaptureFrame, payloadLength: number): stri
   }
   const pid = (frame.raw[frame.rawLinkOffset - 2] << 8) | frame.raw[frame.rawLinkOffset - 1];
   const oui = (frame.raw[frame.rawLinkOffset - 5] << 16) | (frame.raw[frame.rawLinkOffset - 4] << 8) | frame.raw[frame.rawLinkOffset - 3];
-  const protocol = pid === PID_CDP ? 'CDP' : pid === PID_PVST ? 'PVST' : 'Unknown';
+  const protocol = pid === PID_CDP ? 'CDP' : pid === PID_PVST ? 'PVST' : pid === PID_DTP ? 'DTP' : 'Unknown';
   const owner = oui === OUI_CISCO ? 'Cisco' : 'Unknown';
   return `LLC, dsap SNAP (0x${SNAP_SAP.toString(16)}) Individual, ssap SNAP (0x${SNAP_SAP.toString(16)}) Command, ctrl 0x03: `
     + `oui ${owner} (0x${oui.toString(16).padStart(6, '0')}), pid ${protocol} (0x${pid.toString(16).padStart(4, '0')}), length ${payloadLength}: `;
