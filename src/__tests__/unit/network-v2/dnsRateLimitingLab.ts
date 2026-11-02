@@ -6,19 +6,18 @@ import { GenericSwitch } from '@/network/devices/GenericSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { RRType, DnsClass } from '@/network/dns/wire/RRType';
-import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { RRType } from '@/network/dns/wire/RRType';
 import { queryDnsOverUdp } from '@/network/dns/transport/DnsUdpTransport';
 import { queryDnsOverTcp } from '@/network/dns/transport/DnsTcpTransport';
-import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
+import { question, verdictOf, type Verdict } from './dnsRoleLab';
+
+export { question, verdictOf, type Verdict };
 
 export const SERVER = '10.0.1.10';
 export const MASTER = '10.0.1.30';
 export const WEB = ['web.corp.test'];
-
-export type Verdict = 'answered' | 'nxdomain' | 'refused' | 'formerr' | 'servfail' | 'truncated' | 'dropped';
 
 export function virtualClock(): { advance(milliseconds: number): void } {
   let clock: VirtualTimeScheduler;
@@ -37,25 +36,6 @@ export function virtualClock(): { advance(milliseconds: number): void } {
 
 export const run = async (machine: WindowsServer, line: string): Promise<string> =>
   (await PowerShellSubShell.create(machine).subShell.processLine(line)).output.join('\n');
-
-export function question(qname: string, qtype: number = RRType.A): DnsMessage {
-  return {
-    id: 0x7a7a,
-    flags: { qr: false, opcode: DnsOpcode.QUERY, aa: false, tc: false, rd: true, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR },
-    questions: [{ qname, qtype, qclass: DnsClass.IN }],
-    answers: [], authorities: [], additionals: [],
-  };
-}
-
-export function verdictOf(reply: DnsMessage | null): Verdict {
-  if (reply === null) return 'dropped';
-  if (reply.flags.tc) return 'truncated';
-  if (reply.flags.rcode === DnsRcode.NXDOMAIN) return 'nxdomain';
-  if (reply.flags.rcode === DnsRcode.REFUSED) return 'refused';
-  if (reply.flags.rcode === DnsRcode.FORMERR) return 'formerr';
-  if (reply.flags.rcode === DnsRcode.SERVFAIL) return 'servfail';
-  return 'answered';
-}
 
 export const times = (count: number, verdict: Verdict): Verdict[] => Array.from({ length: count }, () => verdict);
 

@@ -7,81 +7,45 @@
  * Discrimination (run on the tree before the change): every case falls, the file cannot even be loaded, the module of
  * the settings did not exist and the role had neither the settings nor the limiter. The exception lists came later: on the
  * tree before them 5 of the 18 cases fall (the five about the lists, which are also what the file cannot load without) and
- * the 13 others pass either way as NON-REGRESSION.
+ * the 13 others pass either way as NON-REGRESSION. The lists became server-level DNS policies (NewPolicy) with the query
+ * resolution policies: on the tree before that, the same 5 fall and the same 13 pass either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { IPAddress, IPv6Address, SubnetMask, resetCounters } from '@/network/core/types';
-import { LinuxPC } from '@/network/devices/LinuxPC';
-import { GenericSwitch } from '@/network/devices/GenericSwitch';
-import { Cable } from '@/network/hardware/Cable';
+import { resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
-import { WindowsDnsServerRole } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 import type { DnsAnalyticEvent } from '@/network/devices/windows/server/dns/DnsAnalyticLog';
 import { DEFAULT_RESPONSE_RATE_LIMITING, RESPONSE_RATE_LIMITING_REFUSALS } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
-import { POLICY_REFUSALS } from '@/network/devices/windows/server/dns/DnsPolicies';
+import { POLICY_REFUSALS, type NewPolicy, type PolicyCriteriaText } from '@/network/devices/windows/server/dns/DnsPolicies';
 import { CLIENT_SUBNET_REFUSALS } from '@/network/devices/windows/server/dns/DnsClientSubnets';
-import type { EndHost } from '@/network/devices/EndHost';
-import { queryDnsOverUdp, type DnsDatagramHandler } from '@/network/dns/transport/DnsUdpTransport';
-import { RRType, DnsClass } from '@/network/dns/wire/RRType';
+import type { DnsDatagramHandler } from '@/network/dns/transport/DnsUdpTransport';
+import { RRType } from '@/network/dns/wire/RRType';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-
-const SERVER4 = '10.0.1.10';
-const SERVER6 = '2001:db8::53';
+import { QUERY_ID, SERVER_V6, question, roleLab } from './dnsRoleLab';
 
 beforeEach(() => { resetCounters(); resetDeviceCounters(); Logger.reset(); });
 
 type Verdict = 'answered' | 'truncated' | 'dropped';
 
-function question(qname: string, opcode: number = DnsOpcode.QUERY): DnsMessage {
-  return {
-    id: 0x5151,
-    flags: { qr: false, opcode, aa: false, tc: false, rd: true, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR },
-    questions: [{ qname, qtype: RRType.A, qclass: DnsClass.IN }],
-    answers: [], authorities: [], additionals: [],
-  };
-}
+const classified = (reply: DnsMessage | null): Verdict => (reply === null ? 'dropped' : reply.flags.tc ? 'truncated' : 'answered');
 
 function lab(options: { sink?: (event: DnsAnalyticEvent) => void } = {}) {
-  let at = 1_700_000_000_000;
-  const server = new LinuxPC('linux-pc', 'DNSHOST');
-  const clients = [0, 1, 2].map(index => new LinuxPC('linux-pc', `CLIENT${index}`));
-  const sw = new GenericSwitch('switch-generic', 'SW1');
-  new Cable('c0').connect(server.getPorts()[0], sw.getPorts()[0]);
-  clients.forEach((client, index) => new Cable(`c${index + 1}`).connect(client.getPorts()[0], sw.getPorts()[index + 1]));
-  const mask = new SubnetMask('255.255.255.0');
-  server.getPorts()[0].configureIP(new IPAddress(SERVER4), mask);
-  server.configureIPv6Interface('eth0', new IPv6Address(SERVER6), 48);
-  const v4 = ['10.0.1.2', '10.0.1.3', '10.0.1.4'];
-  const v6 = ['2001:db8::10', '2001:db8::11', '2001:db8:0:100::10'];
-  clients.forEach((client, index) => {
-    client.getPorts()[0].configureIP(new IPAddress(v4[index]), mask);
-    client.configureIPv6Interface('eth0', new IPv6Address(v6[index]), 48);
-  });
-  const role = new WindowsDnsServerRole(server as unknown as EndHost, { now: () => at, analytic: options.sink });
-  role.addPrimaryZone('corp.test');
-  role.addARecord('corp.test', 'web', '10.0.9.1');
-  role.start();
-  const ask = async (client: number, over: 4 | 6, qname = 'web.corp.test', opcode: number = DnsOpcode.QUERY): Promise<Verdict> => {
-    const reply = await queryDnsOverUdp(
-      clients[client], over === 4 ? new IPAddress(SERVER4) : new IPv6Address(SERVER6), question(qname, opcode), 53, 40,
-    );
-    return reply === null ? 'dropped' : reply.flags.tc ? 'truncated' : 'answered';
-  };
-  const flood = async (client: number, over: 4 | 6, count: number, qname?: string, opcode?: number): Promise<Verdict[]> => {
+  const { role, ask, advance } = roleLab(options);
+  const flood = async (client: number, over: 4 | 6, count: number, qname = 'web.corp.test', opcode: number = DnsOpcode.QUERY): Promise<Verdict[]> => {
     const verdicts: Verdict[] = [];
-    for (let index = 0; index < count; index++) verdicts.push(await ask(client, over, qname, opcode));
+    for (let index = 0; index < count; index++) verdicts.push(classified(await ask(client, over, question(qname, RRType.A, opcode))));
     return verdicts;
   };
-  const send = async (client: number, message: DnsMessage): Promise<Verdict> => {
-    const reply = await queryDnsOverUdp(clients[client], new IPAddress(SERVER4), message, 53, 40);
-    return reply === null ? 'dropped' : reply.flags.tc ? 'truncated' : 'answered';
-  };
-  return { role, flood, send, advance: (milliseconds: number) => { at += milliseconds; } };
+  const send = async (client: number, message: DnsMessage): Promise<Verdict> => classified(await ask(client, 4, message));
+  return { role, flood, send, advance };
 }
 
 const FIVE: Verdict[] = ['answered', 'answered', 'answered', 'answered', 'answered'];
+
+function exceptionList(name: string, criteria: PolicyCriteriaText, condition: 'AND' | 'OR' = 'AND'): NewPolicy {
+  return { name, kind: 'RrlException', action: 'DENY', condition, enabled: true, criteria, content: [] };
+}
 
 describe('the settings the role holds', () => {
   it('start as DNS_RPC_RRL_PARAMS defaults with the mode off', () => {
@@ -163,7 +127,7 @@ describe('the mode LogOnly', () => {
       [282, 'RRL_TO_BE_TRUNCATED_RESPONSE'],
     ]);
     expect(events[0].fields).toMatchObject({
-      InterfaceIP: SERVER6, Destination: '2001:db8::10', QNAME: 'web.corp.test.', QTYPE: '1', XID: String(0x5151), RCODE: '0',
+      InterfaceIP: SERVER_V6, Destination: '2001:db8::10', QNAME: 'web.corp.test.', QTYPE: '1', XID: String(QUERY_ID), RCODE: '0',
     });
     expect(Object.keys(events[0].fields)).toEqual([
       'InterfaceIP', 'Destination', 'QNAME', 'QTYPE', 'XID', 'RCODE', 'Port', 'BufferSize', 'PacketData',
@@ -212,13 +176,17 @@ describe('the service restart', () => {
 describe('the exception lists of the role', () => {
   it('are held, changed and removed through the role, with the refusals of the policy store', () => {
     const { role } = lab();
-    expect(role.addRateLimitingExceptionList('L', 'AND', { fqdn: 'EQ,a.test' })).toEqual({ ok: true, message: '' });
-    expect(role.addRateLimitingExceptionList('l', 'AND', { fqdn: 'EQ,b.test' })).toEqual({ ok: false, message: POLICY_REFUSALS.exists });
-    expect(role.changeRateLimitingExceptionList('L', 'OR', { serverInterface: 'EQ,10.0.0.3' })).toEqual({ ok: true, message: '' });
-    expect(role.getRateLimitingExceptionLists()).toEqual([
-      { name: 'L', condition: 'OR', fqdn: 'EQ,a.test', clientSubnet: null, serverInterface: 'EQ,10.0.0.3' },
-    ]);
-    expect(role.changeRateLimitingExceptionList('Nope', undefined, { fqdn: 'EQ,a.test' })).toEqual({ ok: false, message: POLICY_REFUSALS.missing });
+    expect(role.addRateLimitingExceptionList(exceptionList('L', { fqdn: 'EQ,a.test' }))).toEqual({ ok: true, message: '' });
+    expect(role.addRateLimitingExceptionList(exceptionList('l', { fqdn: 'EQ,b.test' }))).toEqual({ ok: false, message: POLICY_REFUSALS.exists });
+    expect(role.changeRateLimitingExceptionList('L', { condition: 'OR', criteria: { serverInterface: 'EQ,10.0.0.3' } })).toEqual({ ok: true, message: '' });
+    expect(role.getRateLimitingExceptionLists()).toEqual([{
+      name: 'L', kind: 'RrlException', zone: null, action: 'DENY', condition: 'OR', enabled: true, processingOrder: 1, content: [],
+      criteria: {
+        clientSubnet: null, transportProtocol: null, internetProtocol: null, serverInterface: 'EQ,10.0.0.3', fqdn: 'EQ,a.test',
+        queryType: null, timeOfDay: null,
+      },
+    }]);
+    expect(role.changeRateLimitingExceptionList('Nope', { criteria: { fqdn: 'EQ,a.test' } })).toEqual({ ok: false, message: POLICY_REFUSALS.missing });
     expect(role.removeRateLimitingExceptionList('L')).toEqual({ ok: true, message: '' });
     expect(role.removeRateLimitingExceptionList('L')).toEqual({ ok: false, message: POLICY_REFUSALS.missing });
     expect(role.getRateLimitingExceptionLists()).toEqual([]);
@@ -227,7 +195,7 @@ describe('the exception lists of the role', () => {
   it('keep a client subnet record from being removed while they name it', () => {
     const { role } = lab();
     role.addClientSubnet('Net', ['10.0.1.0/24'], []);
-    role.addRateLimitingExceptionList('L', 'AND', { clientSubnet: 'EQ,Net' });
+    role.addRateLimitingExceptionList(exceptionList('L', { clientSubnet: 'EQ,Net' }));
     expect(role.removeClientSubnet('Net')).toEqual({ ok: false, message: CLIENT_SUBNET_REFUSALS.referenced });
     expect(role.getClientSubnets()).toHaveLength(1);
     role.removeRateLimitingExceptionList('L');
@@ -238,7 +206,7 @@ describe('the exception lists of the role', () => {
     const { role, flood } = lab();
     role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
     role.addClientSubnet('Six', [], ['2001:db8::/64']);
-    role.addRateLimitingExceptionList('L', 'AND', { clientSubnet: 'EQ,Six' });
+    role.addRateLimitingExceptionList(exceptionList('L', { clientSubnet: 'EQ,Six' }));
     expect(await flood(0, 6, 8)).toEqual(Array.from({ length: 8 }, () => 'answered'));
     expect(await flood(2, 6, 6)).toEqual([...FIVE, 'dropped']);
   });
@@ -246,7 +214,7 @@ describe('the exception lists of the role', () => {
   it('exempt the queries received on an IPv6 server interface and not those received on the IPv4 one', async () => {
     const { role, flood } = lab();
     role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
-    role.addRateLimitingExceptionList('L', 'AND', { serverInterface: 'EQ,2001:db8::53' });
+    role.addRateLimitingExceptionList(exceptionList('L', { serverInterface: 'EQ,2001:db8::53' }));
     expect(await flood(0, 6, 8)).toEqual(Array.from({ length: 8 }, () => 'answered'));
     expect(await flood(0, 4, 6)).toEqual([...FIVE, 'dropped']);
   });
@@ -254,7 +222,7 @@ describe('the exception lists of the role', () => {
   it('do not exempt a message that carries no question under an FQDN criterion', async () => {
     const { role, send } = lab();
     role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
-    role.addRateLimitingExceptionList('L', 'AND', { fqdn: 'EQ,*' });
+    role.addRateLimitingExceptionList(exceptionList('L', { fqdn: 'EQ,*' }));
     const withoutQuestion = { ...question('web.corp.test'), questions: [] };
     const verdicts: Verdict[] = [];
     for (let index = 0; index < 8; index++) verdicts.push(await send(0, withoutQuestion));

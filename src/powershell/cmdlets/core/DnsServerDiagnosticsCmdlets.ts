@@ -4,6 +4,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import type { DnsDiagnosticsChanges, DnsDiagnosticsEntry, DnsDiagnosticsValue } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { failed, isSwitchOn, requireDns, stringList } from './DnsServerCmdlets';
+import { UINT32_MAXIMUM } from './DnsServerSettingsCmdlets';
 
 const PARAMETER_PROPERTIES: ReadonlyArray<readonly [string, string]> = [
   ['Answers', 'Answers'],
@@ -41,8 +42,6 @@ const LEVEL_PARAMETERS: ReadonlyArray<readonly [string, 'LogLevel' | 'Operations
   ['OperationLogLevel1', 'OperationsLogLevel'],
   ['OperationLogLevel2', 'OperationsLogLevel2'],
 ];
-
-const UINT32_MAXIMUM = 0xFFFFFFFF;
 
 function propertyOf(entry: DnsDiagnosticsEntry): PSValue {
   if (!Array.isArray(entry.value)) return entry.value as PSValue;

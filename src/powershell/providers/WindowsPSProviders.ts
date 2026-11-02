@@ -97,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, ResponseRateLimitingChanges, ResponseRateLimitingSettings, PolicyCriteriaText, PolicyView, PolicyCondition, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, ResponseRateLimitingChanges, ResponseRateLimitingSettings, NewPolicy, PolicyChanges, PolicyView, DnsPolicyListResult, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1346,9 +1346,14 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   getResponseRateLimiting(): ResponseRateLimitingSettings { return this.role().getResponseRateLimiting(); }
   setResponseRateLimiting(changes: ResponseRateLimitingChanges): DnsOpResult { return this.role().setResponseRateLimiting(changes); }
   getRateLimitingExceptionLists(): PolicyView[] { return this.role().getRateLimitingExceptionLists(); }
-  addRateLimitingExceptionList(name: string, condition: PolicyCondition, criteria: PolicyCriteriaText): DnsOpResult { return this.role().addRateLimitingExceptionList(name, condition, criteria); }
-  changeRateLimitingExceptionList(name: string, condition: PolicyCondition | undefined, criteria: PolicyCriteriaText): DnsOpResult { return this.role().changeRateLimitingExceptionList(name, condition, criteria); }
+  addRateLimitingExceptionList(spec: NewPolicy): DnsOpResult { return this.role().addRateLimitingExceptionList(spec); }
+  changeRateLimitingExceptionList(name: string, changes: PolicyChanges): DnsOpResult { return this.role().changeRateLimitingExceptionList(name, changes); }
   removeRateLimitingExceptionList(name: string): DnsOpResult { return this.role().removeRateLimitingExceptionList(name); }
+  getQueryResolutionPolicies(zone: string | null): DnsPolicyListResult { return this.role().getQueryResolutionPolicies(zone); }
+  addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult { return this.role().addQueryResolutionPolicy(zone, spec); }
+  changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult { return this.role().changeQueryResolutionPolicy(zone, name, changes); }
+  removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult { return this.role().removeQueryResolutionPolicy(zone, name); }
+  setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult { return this.role().setPolicyEnabled(zone, name, enabled); }
   getGlobalNames(): DnsGlobalNames { return this.role().getGlobalNames(); }
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult { return this.role().setGlobalNames(changes); }
   getGlobalQueryBlock(): GlobalQueryBlock { return this.role().getGlobalQueryBlock(); }

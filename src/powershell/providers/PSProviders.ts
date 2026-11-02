@@ -994,8 +994,8 @@ import type { DnsDiagnosticsChanges, DnsDiagnosticsEntry } from '@/network/devic
 import type { ServerStatisticsSnapshot } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 import type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/windows/server/dns/DnsClientSubnets';
 import type { ResponseRateLimitingChanges, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
-import type { PolicyCriteriaText, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
-import type { PolicyCondition } from '@/network/devices/windows/server/dns/DnsPolicyCriteria';
+import type { NewPolicy, PolicyChanges, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
+import type { DnsPolicyListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
@@ -1014,8 +1014,9 @@ export type { DnsDiagnosticsChanges, DnsDiagnosticsEntry, DnsDiagnosticsValue } 
 export type { ServerStatisticsSnapshot, ZoneStatisticsSnapshot, StatisticsTimes } from '@/network/devices/windows/server/dns/DnsServerStatistics';
 export type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/windows/server/dns/DnsClientSubnets';
 export type { ResponseRateLimitingChanges, ResponseRateLimitingMode, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
-export type { PolicyCriteriaText, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
+export type { NewPolicy, PolicyAction, PolicyChanges, PolicyContentEntry, PolicyCriteriaText, PolicyCriterionType, PolicyKind, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
 export type { PolicyCondition } from '@/network/devices/windows/server/dns/DnsPolicyCriteria';
+export type { DnsPolicyListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1083,9 +1084,14 @@ export interface IDnsServerProvider {
   getResponseRateLimiting(): ResponseRateLimitingSettings;
   setResponseRateLimiting(changes: ResponseRateLimitingChanges): DnsOpResult;
   getRateLimitingExceptionLists(): PolicyView[];
-  addRateLimitingExceptionList(name: string, condition: PolicyCondition, criteria: PolicyCriteriaText): DnsOpResult;
-  changeRateLimitingExceptionList(name: string, condition: PolicyCondition | undefined, criteria: PolicyCriteriaText): DnsOpResult;
+  addRateLimitingExceptionList(spec: NewPolicy): DnsOpResult;
+  changeRateLimitingExceptionList(name: string, changes: PolicyChanges): DnsOpResult;
   removeRateLimitingExceptionList(name: string): DnsOpResult;
+  getQueryResolutionPolicies(zone: string | null): DnsPolicyListResult;
+  addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult;
+  changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult;
+  removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult;
+  setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult;
   getGlobalNames(): DnsGlobalNames;
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult;
   getGlobalQueryBlock(): GlobalQueryBlock;

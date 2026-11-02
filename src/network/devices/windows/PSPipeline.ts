@@ -904,6 +904,9 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('path') && lower.has('providerpath') && lower.has('provider')) {
     return ['Path'];
   }
+  if (lower.has('processingorder') && lower.has('isenabled') && lower.has('applieson') && lower.has('level')) {
+    return ['Name', 'ProcessingOrder', 'IsEnabled', 'Action'];
+  }
   if (lower.has('connectionspecificsuffix') && lower.has('registerthisconnectionsaddress')) {
     return ['InterfaceAlias', 'InterfaceIndex', 'ConnectionSpecificSuffix', 'ConnectionSpecificSuffixSearchList',
             'RegisterThisConnectionsAddress', 'UseSuffixWhenRegistering'];

@@ -189,6 +189,11 @@ import {
   AddDnsServerResponseRateLimitingExceptionlistCmdlet, GetDnsServerResponseRateLimitingExceptionlistCmdlet,
   SetDnsServerResponseRateLimitingExceptionlistCmdlet, RemoveDnsServerResponseRateLimitingExceptionlistCmdlet,
 } from './DnsRateLimitingExceptionCmdlets';
+import {
+  AddDnsServerQueryResolutionPolicyCmdlet, GetDnsServerQueryResolutionPolicyCmdlet,
+  SetDnsServerQueryResolutionPolicyCmdlet, RemoveDnsServerQueryResolutionPolicyCmdlet,
+} from './DnsQueryResolutionPolicyCmdlets';
+import { EnableDnsServerPolicyCmdlet, DisableDnsServerPolicyCmdlet } from './DnsPolicyStateCmdlets';
 import { remotable } from '../remoteDispatch';
 import { GetWindowsCapabilityCmdlet, AddWindowsCapabilityCmdlet, RemoveWindowsCapabilityCmdlet } from './CapabilityCmdlets';
 import {
@@ -899,6 +904,12 @@ export function registerDnsServerCmdlets(registry: CmdletRegistry): void {
   registry.register(remotable('Get-DnsServerResponseRateLimitingExceptionlist', new GetDnsServerResponseRateLimitingExceptionlistCmdlet()));
   registry.register(remotable('Set-DnsServerResponseRateLimitingExceptionlist', new SetDnsServerResponseRateLimitingExceptionlistCmdlet()));
   registry.register(remotable('Remove-DnsServerResponseRateLimitingExceptionlist', new RemoveDnsServerResponseRateLimitingExceptionlistCmdlet()));
+  registry.register(remotable('Add-DnsServerQueryResolutionPolicy', new AddDnsServerQueryResolutionPolicyCmdlet()));
+  registry.register(remotable('Get-DnsServerQueryResolutionPolicy', new GetDnsServerQueryResolutionPolicyCmdlet()));
+  registry.register(remotable('Set-DnsServerQueryResolutionPolicy', new SetDnsServerQueryResolutionPolicyCmdlet()));
+  registry.register(remotable('Remove-DnsServerQueryResolutionPolicy', new RemoveDnsServerQueryResolutionPolicyCmdlet()));
+  registry.register(remotable('Enable-DnsServerPolicy', new EnableDnsServerPolicyCmdlet()));
+  registry.register(remotable('Disable-DnsServerPolicy', new DisableDnsServerPolicyCmdlet()));
   registry.register(remotable('Get-DnsServerRootHint', new GetDnsServerRootHintCmdlet()));
   registry.register(remotable('Add-DnsServerRootHint', new AddDnsServerRootHintCmdlet()));
   registry.register(remotable('Set-DnsServerRootHint', new SetDnsServerRootHintCmdlet()));

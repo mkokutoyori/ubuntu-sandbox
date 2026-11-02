@@ -16,9 +16,9 @@ function exceptionListObject(view: PolicyView): Record<string, PSValue> {
   return {
     Name: view.name,
     Condition: view.condition === 'AND' ? 'And' : 'Or',
-    ClientSubnet: view.clientSubnet,
-    Fqdn: view.fqdn,
-    ServerInterfaceIP: view.serverInterface,
+    ClientSubnet: view.criteria.clientSubnet,
+    Fqdn: view.criteria.fqdn,
+    ServerInterfaceIP: view.criteria.serverInterface,
   };
 }
 
@@ -65,7 +65,9 @@ export class AddDnsServerResponseRateLimitingExceptionlistCmdlet implements ICmd
     if (name === '') return missing(ctx, this.displayName, 'Name');
     const condition = choice(ctx, this.displayName, 'Condition', 'condition', POLICY_CONDITIONS, 4);
     if (condition === null) return null;
-    const result = dns.addRateLimitingExceptionList(name, condition ?? 'AND', criteriaArguments(ctx));
+    const result = dns.addRateLimitingExceptionList({
+      name, kind: 'RrlException', action: 'DENY', condition: condition ?? 'AND', enabled: true, criteria: criteriaArguments(ctx), content: [],
+    });
     if (!result.ok) return failed(ctx, this.displayName, result);
     const created = byName(dns, name);
     return isSwitchOn(ctx.named['passthru']) && created !== undefined ? exceptionListObject(created) : null;
@@ -108,7 +110,7 @@ export class SetDnsServerResponseRateLimitingExceptionlistCmdlet implements ICmd
     if (name === '') return missing(ctx, this.displayName, 'Name');
     const condition = choice(ctx, this.displayName, 'Condition', 'condition', POLICY_CONDITIONS, 4);
     if (condition === null) return null;
-    const result = dns.changeRateLimitingExceptionList(name, condition, criteriaArguments(ctx));
+    const result = dns.changeRateLimitingExceptionList(name, { condition, criteria: criteriaArguments(ctx) });
     if (!result.ok) return failed(ctx, this.displayName, result);
     const changed = byName(dns, name);
     return isSwitchOn(ctx.named['passthru']) && changed !== undefined ? exceptionListObject(changed) : null;

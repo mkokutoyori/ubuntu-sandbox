@@ -43,6 +43,8 @@ function spanSetting(ctx: CmdletContext, cmdletName: string, key: string, parame
   return refuseRange(ctx, cmdletName, parameter, psValueToString(raw), seconds, minimum, MAX_CACHE_TTL_SECONDS, asSpan) ? null : seconds;
 }
 
+export const UINT32_MAXIMUM = 0xFFFFFFFF;
+
 export function countSetting(ctx: CmdletContext, cmdletName: string, key: string, parameter: string, maximum: number): number | undefined | null {
   const raw = ctx.named[key];
   if (raw === undefined) return undefined;
