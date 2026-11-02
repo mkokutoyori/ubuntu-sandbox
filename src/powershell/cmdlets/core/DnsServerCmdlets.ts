@@ -10,6 +10,7 @@ import { makeTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { RRType } from '@/network/dns/wire/RRType';
 import { normalizeDnsName, relativeTo } from '@/network/dns/wire/DnsName';
+import { ZONE_SCOPE_REFUSALS } from '@/network/devices/windows/server/dns/DnsZoneScopes';
 import {
   DNS_TRANSFER_POLICIES, DNS_NOTIFY_POLICIES, formatRecordFields,
   type DnsTransferPolicy, type DnsNotifyPolicy, type DnsDynamicUpdateMode,
@@ -25,8 +26,21 @@ export function requireDns(ctx: CmdletContext, cmdletName: string): IDnsServerPr
 const DYNAMIC_UPDATE_MODES: readonly DnsDynamicUpdateMode[] = ['None', 'NonsecureAndSecure', 'Secure'];
 const REPLICATION_SCOPES = ['Domain', 'Forest', 'Legacy'] as const;
 
-function recordOptions(ctx: CmdletContext): { age?: boolean; allowUpdateAny?: boolean } {
-  return { age: isSwitchOn(ctx.named['agerecord']), allowUpdateAny: isSwitchOn(ctx.named['allowupdateany']) };
+function scopeOf(ctx: CmdletContext): string | undefined {
+  const given = ctx.named['zonescope'];
+  return given === undefined ? undefined : psValueToString(given);
+}
+
+function recordOptions(ctx: CmdletContext): { age?: boolean; allowUpdateAny?: boolean; scope?: string } {
+  return { age: isSwitchOn(ctx.named['agerecord']), allowUpdateAny: isSwitchOn(ctx.named['allowupdateany']), scope: scopeOf(ctx) };
+}
+
+function scopeIsAbsent(dns: IDnsServerProvider, zone: string, scope: string | undefined): boolean {
+  return scope !== undefined && dns.getZone(zone) !== null;
+}
+
+function absentTarget(dns: IDnsServerProvider, zone: string, scope: string | undefined): string {
+  return scopeIsAbsent(dns, zone, scope) ? ZONE_SCOPE_REFUSALS.absent : `Zone "${zone}" does not exist on this server.`;
 }
 
 function withPassThru(ctx: CmdletContext, dns: IDnsServerProvider, before: ReadonlySet<string>, name: string): PSValue {
@@ -358,8 +372,8 @@ function delegationArguments(ctx: CmdletContext): DelegationArguments {
   return { zone, child: belowZone(child, zone) ?? trimDot(child), nameServer: trimDot(nameServer), addresses: stringList(ctx.named['ipaddress'] ?? ctx.positional[3]) };
 }
 
-function delegationsOf(dns: IDnsServerProvider, zone: string, child?: string): Record<string, PSValue>[] | null {
-  const records = dns.getRecords(zone);
+function delegationsOf(dns: IDnsServerProvider, zone: string, child?: string, scope?: string): Record<string, PSValue>[] | null {
+  const records = dns.getRecords(zone, undefined, undefined, scope);
   if (!records) return null;
   const wanted = child === undefined || child === '' ? null : belowZone(child, zone) ?? trimDot(child).toLowerCase();
   const gluedBy = (host: string) => records.filter(record => (record.type === 'A' || record.type === 'AAAA')
@@ -378,7 +392,7 @@ function delegationsOf(dns: IDnsServerProvider, zone: string, child?: string): R
 export class AddDnsServerZoneDelegationCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverzonedelegation';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'NameServer', 'IPAddress', 'PassThru', 'ComputerName'] as const;
+  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'NameServer', 'IPAddress', 'PassThru', 'ComputerName', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerZoneDelegation');
@@ -386,34 +400,35 @@ export class AddDnsServerZoneDelegationCmdlet implements ICmdlet {
     if (!zone || !child || !nameServer || addresses.length === 0) {
       return missing(ctx, 'Add-DnsServerZoneDelegation', 'Name ChildZoneName NameServer IPAddress');
     }
-    const delegated = dns.addRecord(zone, child, { type: 'NS', data: { NameServer: nameServer } }, undefined, false, {});
+    const scope = scopeOf(ctx);
+    const delegated = dns.addRecord(zone, child, { type: 'NS', data: { NameServer: nameServer } }, undefined, false, { scope });
     if (!delegated.ok) return failed(ctx, 'Add-DnsServerZoneDelegation', delegated);
     const owner = belowZone(nameServer, zone);
     if (owner !== null) {
       for (const address of addresses) {
         const type = address.includes(':') ? 'AAAA' : 'A';
         const field = type === 'A' ? 'IPv4Address' : 'IPv6Address';
-        const glued = dns.getRecords(zone, owner, type)?.some(record => psValueToString(record.data[field] ?? '') === address);
+        const glued = dns.getRecords(zone, owner, type, scope)?.some(record => psValueToString(record.data[field] ?? '') === address);
         if (glued) continue;
-        const added = dns.addRecord(zone, owner, { type, data: { [field]: address } }, undefined, false, {});
+        const added = dns.addRecord(zone, owner, { type, data: { [field]: address } }, undefined, false, { scope });
         if (!added.ok) return failed(ctx, 'Add-DnsServerZoneDelegation', added);
       }
     }
-    return isSwitchOn(ctx.named['passthru']) ? delegationsOf(dns, zone, child) : null;
+    return isSwitchOn(ctx.named['passthru']) ? delegationsOf(dns, zone, child, scope) : null;
   }
 }
 
 export class GetDnsServerZoneDelegationCmdlet implements ICmdlet {
   readonly name = 'get-dnsserverzonedelegation';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'ComputerName'] as const;
+  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'ComputerName', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerZoneDelegation');
     const zone = psValueToString(ctx.named['name'] ?? ctx.named['zonename'] ?? ctx.positional[0] ?? '');
     if (!zone) return missing(ctx, 'Get-DnsServerZoneDelegation', 'Name');
-    const found = delegationsOf(dns, zone, ctx.named['childzonename'] !== undefined ? psValueToString(ctx.named['childzonename']) : undefined);
-    if (!found) { ctx.emitError(`Get-DnsServerZoneDelegation : Zone "${zone}" does not exist on this server.`); return null; }
+    const found = delegationsOf(dns, zone, ctx.named['childzonename'] !== undefined ? psValueToString(ctx.named['childzonename']) : undefined, scopeOf(ctx));
+    if (!found) { ctx.emitError(`Get-DnsServerZoneDelegation : ${absentTarget(dns, zone, scopeOf(ctx))}`); return null; }
     return found;
   }
 }
@@ -421,7 +436,7 @@ export class GetDnsServerZoneDelegationCmdlet implements ICmdlet {
 export class RemoveDnsServerZoneDelegationCmdlet implements ICmdlet {
   readonly name = 'remove-dnsserverzonedelegation';
   readonly aliases = [] as const;
-  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'NameServer', 'Force', 'Confirm', 'PassThru', 'ComputerName'] as const;
+  readonly parameters = ['Name', 'ZoneName', 'ChildZoneName', 'NameServer', 'Force', 'Confirm', 'PassThru', 'ComputerName', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Remove-DnsServerZoneDelegation');
@@ -430,8 +445,9 @@ export class RemoveDnsServerZoneDelegationCmdlet implements ICmdlet {
     if (!zone || !child) return missing(ctx, 'Remove-DnsServerZoneDelegation', 'Name ChildZoneName');
     const nameServer = ctx.named['nameserver'] ?? ctx.positional[2];
     const label = belowZone(child, zone) ?? trimDot(child);
-    const present = delegationsOf(dns, zone, child);
-    if (!present) { ctx.emitError(`Remove-DnsServerZoneDelegation : Zone "${zone}" does not exist on this server.`); return null; }
+    const scope = scopeOf(ctx);
+    const present = delegationsOf(dns, zone, child, scope);
+    if (!present) { ctx.emitError(`Remove-DnsServerZoneDelegation : ${absentTarget(dns, zone, scope)}`); return null; }
     const targets = nameServer === undefined ? present
       : present.filter(entry => psValueToString((entry.NameServer as Record<string, PSValue>).RecordData
         ? ((entry.NameServer as Record<string, PSValue>).RecordData as Record<string, PSValue>).NameServer : '').toLowerCase()
@@ -443,13 +459,13 @@ export class RemoveDnsServerZoneDelegationCmdlet implements ICmdlet {
     for (const entry of targets) {
       const record = (entry.NameServer as Record<string, PSValue>).RecordData as Record<string, PSValue>;
       const server = psValueToString(record.NameServer ?? '');
-      const removed = dns.removeRecord(zone, label, 'NS', { NameServer: server });
+      const removed = dns.removeRecord(zone, label, 'NS', { NameServer: server }, scope);
       if (!removed.ok) return failed(ctx, 'Remove-DnsServerZoneDelegation', removed);
       const host = belowZone(server, zone);
-      const stillNamed = dns.getRecords(zone)?.some(other => other.type === 'NS' && psValueToString(other.data.NameServer ?? '').toLowerCase() === server.toLowerCase());
+      const stillNamed = dns.getRecords(zone, undefined, undefined, scope)?.some(other => other.type === 'NS' && psValueToString(other.data.NameServer ?? '').toLowerCase() === server.toLowerCase());
       if (host !== null && !stillNamed) {
         for (const type of ['A', 'AAAA']) {
-          for (const glue of dns.getRecords(zone, host, type) ?? []) dns.removeRecord(zone, host, type, glue.data);
+          for (const glue of dns.getRecords(zone, host, type, scope) ?? []) dns.removeRecord(zone, host, type, glue.data, scope);
         }
       }
     }
@@ -553,7 +569,7 @@ export class RemoveDnsServerTrustAnchorCmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordACmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecorda';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'IPv4Address', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'IPv4Address', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordA');
@@ -569,7 +585,7 @@ export class AddDnsServerResourceRecordACmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordAAAACmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordaaaa';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'IPv6Address', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'IPv6Address', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordAAAA');
@@ -585,7 +601,7 @@ export class AddDnsServerResourceRecordAAAACmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordCNameCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordcname';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'HostNameAlias', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'HostNameAlias', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordCName');
@@ -601,7 +617,7 @@ export class AddDnsServerResourceRecordCNameCmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordMXCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordmx';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'MailExchange', 'Preference', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'MailExchange', 'Preference', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordMX');
@@ -618,7 +634,7 @@ export class AddDnsServerResourceRecordMXCmdlet implements ICmdlet {
 export class AddDnsServerResourceRecordPtrCmdlet implements ICmdlet {
   readonly name = 'add-dnsserverresourcerecordptr';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'PtrDomainName', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'PtrDomainName', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecordPtr');
@@ -650,7 +666,7 @@ export class AddDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly aliases = [] as const;
   readonly parameters = ['ZoneName', 'Name', 'A', 'AAAA', 'CName', 'Ptr', 'NS', 'Txt', 'Mx', 'Srv', 'IPv4Address', 'IPv6Address',
     'HostNameAlias', 'PtrDomainName', 'NameServer', 'DescriptiveText', 'MailExchange', 'Preference',
-    'Priority', 'Weight', 'Port', 'DomainName', 'DomainNameTarget', 'TimeToLive',, 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr'] as const;
+    'Priority', 'Weight', 'Port', 'DomainName', 'DomainNameTarget', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'CreatePtr', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Add-DnsServerResourceRecord');
@@ -710,7 +726,7 @@ const SINGLE_FIELD: Record<string, string> = {
 export class RemoveDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly name = 'remove-dnsserverresourcerecord';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'RRType', 'RecordData', 'InputObject', 'Force', 'Confirm', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'RRType', 'RecordData', 'InputObject', 'Force', 'Confirm', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'ZoneScope'] as const;
   readonly pipelineByValue = 'InputObject';
 
   execute(ctx: CmdletContext): PSValue {
@@ -721,7 +737,7 @@ export class RemoveDnsServerResourceRecordCmdlet implements ICmdlet {
       const spec = specOf(input);
       const host = hostOf(input);
       if (!zone || !spec || !host) return missing(ctx, 'Remove-DnsServerResourceRecord', 'ZoneName InputObject');
-      const res = dns.removeRecord(zone, host, spec.type, spec.data);
+      const res = dns.removeRecord(zone, host, spec.type, spec.data, scopeOf(ctx));
       return res.ok ? null : failed(ctx, 'Remove-DnsServerResourceRecord', res);
     }
     const name = nameOf(ctx);
@@ -736,7 +752,7 @@ export class RemoveDnsServerResourceRecordCmdlet implements ICmdlet {
       }
       data = { [field]: psValueToString(ctx.named['recorddata']) };
     }
-    const res = dns.removeRecord(zone, name, type, data);
+    const res = dns.removeRecord(zone, name, type, data, scopeOf(ctx));
     return res.ok ? null : failed(ctx, 'Remove-DnsServerResourceRecord', res);
   }
 }
@@ -744,7 +760,7 @@ export class RemoveDnsServerResourceRecordCmdlet implements ICmdlet {
 export class SetDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly name = 'set-dnsserverresourcerecord';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'OldInputObject', 'NewInputObject', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
+  readonly parameters = ['ZoneName', 'OldInputObject', 'NewInputObject', 'TimeToLive', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Set-DnsServerResourceRecord');
@@ -757,7 +773,7 @@ export class SetDnsServerResourceRecordCmdlet implements ICmdlet {
       ctx.emitError('Set-DnsServerResourceRecord : the new record must have the same type as the old one.');
       return null;
     }
-    const res = dns.replaceRecord(zone, host, previous, next, ttlOf(ctx));
+    const res = dns.replaceRecord(zone, host, previous, next, ttlOf(ctx), scopeOf(ctx));
     return res.ok ? null : failed(ctx, 'Set-DnsServerResourceRecord', res);
   }
 }
@@ -765,7 +781,7 @@ export class SetDnsServerResourceRecordCmdlet implements ICmdlet {
 export class GetDnsServerResourceRecordCmdlet implements ICmdlet {
   readonly name = 'get-dnsserverresourcerecord';
   readonly aliases = [] as const;
-  readonly parameters = ['ZoneName', 'Name', 'RRType', 'ComputerName', 'AgeRecord', 'AllowUpdateAny'] as const;
+  readonly parameters = ['ZoneName', 'Name', 'RRType', 'ComputerName', 'AgeRecord', 'AllowUpdateAny', 'ZoneScope'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const dns = requireDns(ctx, 'Get-DnsServerResourceRecord');
@@ -773,8 +789,8 @@ export class GetDnsServerResourceRecordCmdlet implements ICmdlet {
     if (!zone) return missing(ctx, 'Get-DnsServerResourceRecord', 'ZoneName');
     const name = ctx.named['name'] !== undefined ? psValueToString(ctx.named['name']) : undefined;
     const type = ctx.named['rrtype'] !== undefined ? psValueToString(ctx.named['rrtype']) : undefined;
-    const records = dns.getRecords(zone, name, type);
-    if (!records) { ctx.emitError(`Get-DnsServerResourceRecord : Cannot find zone "${zone}" on this server.`); return null; }
+    const records = dns.getRecords(zone, name, type, scopeOf(ctx));
+    if (!records) { ctx.emitError(`Get-DnsServerResourceRecord : ${scopeIsAbsent(dns, zone, scopeOf(ctx)) ? ZONE_SCOPE_REFUSALS.absent : `Cannot find zone "${zone}" on this server.`}`); return null; }
     return records.map(record => recordToPSObject(record, zone));
   }
 }

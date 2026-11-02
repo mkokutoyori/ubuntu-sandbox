@@ -904,6 +904,9 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('path') && lower.has('providerpath') && lower.has('provider')) {
     return ['Path'];
   }
+  if (lower.has('zonescope') && lower.has('filename') && lower.has('zonename')) {
+    return ['ZoneScope', 'FileName'];
+  }
   if (lower.has('processingorder') && lower.has('isenabled') && lower.has('applieson') && lower.has('level')) {
     return ['Name', 'ProcessingOrder', 'IsEnabled', 'Action'];
   }

@@ -97,7 +97,7 @@ import type {
   IPrintProvider, PrintOpResult, PrintJobInfo,
   ILicensingProvider, LicenseStateInfo,
   IDnsServerProvider, DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsDynamicUpdateMode, DnsRecordSpec, DnsForwarderInfo,
-  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, ResponseRateLimitingChanges, ResponseRateLimitingSettings, NewPolicy, PolicyChanges, PolicyView, DnsPolicyListResult, RecursionScopeChanges, RecursionScopeView, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
+  DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsCacheEntryInfo, DnsCacheSettings, DnsEdnsSettings, DnsGlobalNames, DnsServerSettingEntry, DnsServerSettingValue, DnsDiagnosticsChanges, DnsDiagnosticsEntry, ServerStatisticsSnapshot, DnsZoneStatisticsResult, ClientSubnetAction, ClientSubnetView, ResponseRateLimitingChanges, ResponseRateLimitingSettings, NewPolicy, PolicyChanges, PolicyView, DnsPolicyListResult, DnsZoneScopeListResult, RecursionScopeChanges, RecursionScopeView, GlobalQueryBlock, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
   IDhcpServerProvider, DhcpOpResult, DhcpScopeInfo, DhcpLeaseInfo,
   INpsProvider, NpsOpResult, NasClientInfo, NetworkPolicyInfo,
   ConnectionRequestPolicyConditionsInfo, ConnectionRequestPolicyInfo,
@@ -1297,11 +1297,14 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   addSrvRecord(zone: string, name: string, target: { priority: number; weight: number; port: number; target: string }, ttl?: number): DnsOpResult {
     return this.role().addSrvRecord(zone, name, target, ttl);
   }
-  removeRecord(zone: string, name: string, type: string, data?: Record<string, string | number>): DnsOpResult { return this.role().removeRecord(zone, name, type, data); }
-  replaceRecord(zone: string, name: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number): DnsOpResult {
-    return this.role().replaceRecord(zone, name, previous, next, ttl);
+  removeRecord(zone: string, name: string, type: string, data?: Record<string, string | number>, scope?: string): DnsOpResult { return this.role().removeRecord(zone, name, type, data, scope); }
+  replaceRecord(zone: string, name: string, previous: DnsRecordSpec, next: DnsRecordSpec, ttl?: number, scope?: string): DnsOpResult {
+    return this.role().replaceRecord(zone, name, previous, next, ttl, scope);
   }
-  getRecords(zone: string, name?: string, type?: string): DnsRecordInfo[] | null { return this.role().getRecords(zone, name, type); }
+  getRecords(zone: string, name?: string, type?: string, scope?: string): DnsRecordInfo[] | null { return this.role().getRecords(zone, name, type, scope); }
+  getZoneScopes(zone: string): DnsZoneScopeListResult { return this.role().getZoneScopes(zone); }
+  addZoneScope(zone: string, name: string, loadExisting: boolean): DnsOpResult { return this.role().addZoneScope(zone, name, loadExisting); }
+  removeZoneScope(zone: string, name: string): DnsOpResult { return this.role().removeZoneScope(zone, name); }
 
   setForwarders(addresses: string[]): DnsOpResult { return this.role().setForwarders(addresses); }
   addForwarders(addresses: string[]): DnsOpResult { return this.role().addForwarders(addresses); }
@@ -1353,6 +1356,10 @@ class WindowsDnsServerAdapter implements IDnsServerProvider {
   addQueryResolutionPolicy(zone: string | null, spec: NewPolicy): DnsOpResult { return this.role().addQueryResolutionPolicy(zone, spec); }
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult { return this.role().changeQueryResolutionPolicy(zone, name, changes); }
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult { return this.role().removeQueryResolutionPolicy(zone, name); }
+  getZoneTransferPolicies(zone: string | null): DnsPolicyListResult { return this.role().getZoneTransferPolicies(zone); }
+  addZoneTransferPolicy(zone: string | null, spec: NewPolicy): DnsOpResult { return this.role().addZoneTransferPolicy(zone, spec); }
+  changeZoneTransferPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult { return this.role().changeZoneTransferPolicy(zone, name, changes); }
+  removeZoneTransferPolicy(zone: string | null, name: string): DnsOpResult { return this.role().removeZoneTransferPolicy(zone, name); }
   setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult { return this.role().setPolicyEnabled(zone, name, enabled); }
   getRecursionScopes(): RecursionScopeView[] { return this.role().getRecursionScopes(); }
   addRecursionScope(name: string, forwarders: readonly string[], enableRecursion: boolean): DnsOpResult { return this.role().addRecursionScope(name, forwarders, enableRecursion); }

@@ -6,6 +6,7 @@ import {
   findOpt, findOpts, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE, EDNS_VERSION, EDNS_BADVERS_EXTENDED_RCODE_HIGH,
 } from '@/network/dns/wire/EdnsOptRecord';
 import type { ZoneStore } from '@/network/dns/zone/ZoneStore';
+import type { Zone } from '@/network/dns/zone/Zone';
 
 type BaseFlags = Pick<DnsHeaderFlags, 'qr' | 'rd' | 'ra' | 'ad' | 'cd'>;
 
@@ -33,7 +34,7 @@ export class AuthoritativeServer {
     return this.errorResponse(query, this.baseFlags(query), DnsRcode.REFUSED);
   }
 
-  respond(query: DnsMessage): AuthoritativeResponse {
+  respond(query: DnsMessage, records?: Zone): AuthoritativeResponse {
     const baseFlags = this.baseFlags(query);
 
     if (query.flags.opcode !== DnsOpcode.QUERY) {
@@ -71,6 +72,7 @@ export class AuthoritativeServer {
       blocked: this.policy.blocks,
       rotate: this.policy.rotates?.(),
       apexNs: this.policy.writesApexNs?.(),
+      zone: records,
     });
     const additionals: ResourceRecord<ResourceRecordData>[] = [...result.additional];
     if (queryOpt) {
