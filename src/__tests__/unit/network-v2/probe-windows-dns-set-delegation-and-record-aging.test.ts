@@ -15,7 +15,7 @@
  * stamped; that a NodeName under the zone may be given by its full name; that the glue replaced is the one of the name server whatever the
  * delegation that names it; that a name server outside the zone, which has no address in it, is refused; and the wording of the refusals.
  *
- * Discrimination (the probe run on the tree before the change): 17 of 18 cases fall, the ones that need the cmdlets; the one that passes on
+ * Discrimination (the probe run on the tree before the change): 19 of 20 cases fall, the ones that need the cmdlets; the one that passes on
  * both sides is the WITNESS (a static record has no time stamp, whatever the aging of the zone).
  */
 import { describe, it, expect } from 'vitest';
@@ -75,6 +75,13 @@ describe('Set-DnsServerResourceRecordAging', () => {
     await cmd(`${AGING} -ZoneName corp.test -NodeName a.three.two.corp.test -Force`);
     expect(await stampOf(cmd, 'corp.test', 'a.three.two')).not.toBe('');
     expect(await stampOf(cmd, 'corp.test', 'b.three.two')).toBe('');
+  });
+
+  it('finds the records of a node whatever the case of the names they were written with', async () => {
+    const { cmd } = await agingLab();
+    await cmd('Add-DnsServerResourceRecordA -ZoneName corp.test -Name Mixed.Case -IPv4Address 10.0.6.1');
+    await cmd(`${AGING} -ZoneName corp.test -NodeName MIXED.case -Force`);
+    expect(await stampOf(cmd, 'corp.test', 'Mixed.Case')).not.toBe('');
   });
 
   it('ages the apex alone when no node is given, and never the SOA', async () => {
@@ -151,10 +158,17 @@ describe('Set-DnsServerZoneDelegation', () => {
     expect(await cmd(`(${GET_DELEGATION} -Name corp.test).ChildZoneName`)).toBe('west01.corp.test');
   });
 
-  it('takes the delegation from the object that Get printed, its addresses being the ones that are given', async () => {
+  it('takes the delegation and its new addresses from the object that Get printed and that was changed', async () => {
     const { cmd } = await delegated();
-    expect(await cmd(`$d = ${GET_DELEGATION} -Name corp.test -ChildZoneName west01; ${SET_DELEGATION} -InputObject $d -IPAddress 10.8.8.8`)).toBe('');
+    expect(await cmd(`$d = ${GET_DELEGATION} -Name corp.test -ChildZoneName west01; $d.IPAddress[0].RecordData.IPv4Address = "10.8.8.8"; ${SET_DELEGATION} -InputObject $d`)).toBe('');
     expect(await glueOf(cmd, 'wserver.west01')).toBe('10.8.8.8');
+  });
+
+  it('reads the addresses of an IPv6 glue from the object as well', async () => {
+    const { cmd } = await governed();
+    await cmd(`${ADD_DELEGATION} -Name corp.test -ChildZoneName six -NameServer ns.six.corp.test -IPAddress 2001:db8::53`);
+    expect(await cmd(`$d = ${GET_DELEGATION} -Name corp.test -ChildZoneName six; $d.IPAddress[0].RecordData.IPv6Address = "2001:db8::54"; ${SET_DELEGATION} -InputObject $d`)).toBe('');
+    expect(await glueOf(cmd, 'ns.six')).toBe('2001:db8::54');
   });
 
   it('takes the arguments by position: zone, child zone, name server, addresses', async () => {
