@@ -5,7 +5,7 @@ export const VTP_MULTICAST_MAC = '01:00:0c:cc:cc:cc';
 
 /** Real Summary Advertisement's Management Domain field: a fixed 32-byte,
  *  zero-padded slot (Wireshark's `packet-vtp.c` dissector). */
-const VTP_DOMAIN_FIELD_BYTES = 32;
+export const VTP_DOMAIN_FIELD_BYTES = 32;
 
 function domainField(domain: string): Uint8Array {
   const field = new Uint8Array(VTP_DOMAIN_FIELD_BYTES);

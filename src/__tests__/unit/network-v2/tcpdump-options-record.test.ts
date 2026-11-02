@@ -276,7 +276,11 @@ async function recordEigrp(): Promise<string> {
 
 const recordDtp = () => recordStp(['vtp domain LAB', 'interface FastEthernet0/1', 'switchport trunk encapsulation dot1q', 'switchport mode dynamic desirable', 'exit'], 70_000);
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp };
+const VTP_TRUNK = ['interface FastEthernet0/1', 'switchport trunk encapsulation dot1q', 'switchport mode trunk', 'switchport nonegotiate', 'exit'];
+const recordVtp = () => recordStp(['vtp domain LAB', 'vtp password secret', 'vtp pruning', 'vlan 10', 'name Sales', 'exit', 'vlan 20', 'name Engineering', 'exit', ...VTP_TRUNK], 70_000);
+const recordVtpClient = () => recordStp(['vtp version 2', 'vtp mode client', 'vtp domain LAB', ...VTP_TRUNK], 70_000);
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp, dtp: recordDtp, vtp: recordVtp, vtpclient: recordVtpClient };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

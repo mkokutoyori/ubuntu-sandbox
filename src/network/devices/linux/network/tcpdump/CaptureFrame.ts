@@ -32,6 +32,8 @@ import { ETHERTYPE_CDP, type CdpFrame } from '@/network/cdp/types';
 import { PVST_SNAP_HEADER, STP_LLC_HEADER, pvstTrailerBytes, stpPayloadBytes } from '@/network/stp/StpWire';
 import { DTP_SNAP_HEADER, dtpPayloadBytes } from '@/network/dtp/DtpWire';
 import { ETHERTYPE_DTP, type DtpFrame } from '@/network/dtp/types';
+import { VTP_SNAP_HEADER, vtpIsEncodable, vtpPayloadBytes } from '@/network/vtp/VtpWire';
+import { ETHERTYPE_VTP, type VtpFrame } from '@/network/vtp/types';
 import { ETHERTYPE_STP, PVST_PLUS_MAC, type StpBpdu } from '@/network/stp/types';
 import { ospfPacketBytes } from '@/network/ospf/OspfWire';
 import { eigrpPacketBytes } from '@/network/eigrp/EigrpPacketBytes';
@@ -53,7 +55,7 @@ import { decodeBootp, type BootpInfo } from './TcpdumpBootp';
 import { icmpWireBytes, icmpv6WireBytes, tcpWireBytes, transportChecksum, udpWireBytes, u16, u32, WIRE_PROTOCOLS } from './CaptureWire';
 
 export type CaptureDirection = 'in' | 'out';
-export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'cdp' | 'lldp' | 'stp' | 'dtp' | 'other';
+export type CaptureL3 = 'arp' | 'ipv4' | 'ipv6' | 'cdp' | 'lldp' | 'stp' | 'dtp' | 'vtp' | 'other';
 export type CaptureL4 = 'icmp' | 'icmp6' | 'tcp' | 'udp' | 'other' | 'none';
 
 export interface CaptureTcpFlags {
@@ -639,6 +641,16 @@ function decodeEthernetFrameBytes(
     base.l3 = 'dtp';
     base.raw = [...eth, ...snap];
     base.rawLinkOffset = eth.length + DTP_SNAP_HEADER.length;
+    base.length = Math.max(base.raw.length, 60);
+    return base;
+  }
+
+  if (frame.etherType === ETHERTYPE_VTP && (frame.payload as { type?: string } | undefined)?.type === 'vtp' && vtpIsEncodable(frame.payload as VtpFrame)) {
+    const snap = [...VTP_SNAP_HEADER, ...vtpPayloadBytes(frame.payload as VtpFrame)];
+    const eth = [...macBytes(frame.dstMAC.toString()), ...macBytes(frame.srcMAC.toString()), ...u16(snap.length)];
+    base.l3 = 'vtp';
+    base.raw = [...eth, ...snap];
+    base.rawLinkOffset = eth.length + VTP_SNAP_HEADER.length;
     base.length = Math.max(base.raw.length, 60);
     return base;
   }
