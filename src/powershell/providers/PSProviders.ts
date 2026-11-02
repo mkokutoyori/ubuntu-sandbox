@@ -1051,6 +1051,7 @@ export interface IDnsServerProvider {
   removeZoneScope(zone: string, name: string): DnsOpResult;
   setZonePaused(name: string, paused: boolean): DnsOpResult;
   syncZones(name: string | null): DnsOpResult;
+  ageRecords(zone: string, node: string | null, recurse: boolean): DnsOpResult;
   exportZone(name: string, fileName: string): DnsOpResult;
   restorePrimaryZone(name: string): DnsOpResult;
   restoreSecondaryZone(name: string): DnsOpResult;
