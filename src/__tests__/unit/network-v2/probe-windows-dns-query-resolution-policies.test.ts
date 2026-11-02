@@ -33,8 +33,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { RRType } from '@/network/dns/wire/RRType';
-import type { LinuxPC } from '@/network/devices/LinuxPC';
-import { lab, run, verdictOf, virtualClock, type Verdict } from './dnsRateLimitingLab';
+import { policyLab as governed, run, virtualClock } from './dnsRateLimitingLab';
 
 virtualClock();
 
@@ -63,17 +62,6 @@ const INVALID_QTYPE = 'The criterion query type provided in the policy is invali
 const INVALID_TIME = 'The criterion time of day provided in the policy is invalid.';
 const ZONE_MISSING = 'Zone "nowhere.test" does not exist on this server.';
 const NON_INTERACTIVE = 'Windows PowerShell is in NonInteractive mode.';
-
-async function governed() {
-  const context = await lab();
-  const { server, ask } = context;
-  const cmd = (line: string) => run(server, line);
-  const verdict = async (from: LinuxPC, qname: string, qtype: number = RRType.A): Promise<Verdict> => verdictOf(await ask(from, qname, qtype));
-  const verdictOverTcp = async (qname: string): Promise<Verdict> => verdictOf(await context.askOverTcp(qname));
-  await cmd('Add-DnsServerClientSubnet -Name Lan -IPv4Subnet 10.0.1.0/24');
-  await cmd('Add-DnsServerClientSubnet -Name Remote -IPv4Subnet 10.0.2.0/24');
-  return { ...context, cmd, verdict, verdictOverTcp };
-}
 
 function members(values: Record<string, string | number>): string {
   const all: Record<string, string | number> = {

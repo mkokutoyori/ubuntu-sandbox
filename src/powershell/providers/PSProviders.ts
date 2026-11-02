@@ -996,6 +996,7 @@ import type { ClientSubnetAction, ClientSubnetView } from '@/network/devices/win
 import type { ResponseRateLimitingChanges, ResponseRateLimitingSettings } from '@/network/devices/windows/server/dns/DnsResponseRateLimiting';
 import type { NewPolicy, PolicyChanges, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
 import type { DnsPolicyListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
+import type { RecursionScopeChanges, RecursionScopeView } from '@/network/devices/windows/server/dns/DnsRecursionScopes';
 import type {
   DnsOpResult, DnsZoneInfo, DnsRecordInfo, DnsRecordSpec, DnsForwarderInfo, DnsDynamicUpdateMode,
   DnsPrimaryZoneOptions, DnsPrimaryZoneChanges, DnsTransferPolicy, DnsRootHintInfo, DnsNotifyPolicy, DnsRecordOptions, DnsZoneAgingInfo, DnsScavengingInfo,
@@ -1017,6 +1018,7 @@ export type { ResponseRateLimitingChanges, ResponseRateLimitingMode, ResponseRat
 export type { NewPolicy, PolicyAction, PolicyChanges, PolicyContentEntry, PolicyCriteriaText, PolicyCriterionType, PolicyKind, PolicyView } from '@/network/devices/windows/server/dns/DnsPolicies';
 export type { PolicyCondition } from '@/network/devices/windows/server/dns/DnsPolicyCriteria';
 export type { DnsPolicyListResult } from '@/network/devices/windows/server/dns/WindowsDnsServerRole';
+export type { RecursionScopeChanges, RecursionScopeView } from '@/network/devices/windows/server/dns/DnsRecursionScopes';
 
 export interface IDnsServerProvider {
   addPrimaryZone(name: string, options?: DnsPrimaryZoneOptions): DnsOpResult;
@@ -1092,6 +1094,10 @@ export interface IDnsServerProvider {
   changeQueryResolutionPolicy(zone: string | null, name: string, changes: PolicyChanges): DnsOpResult;
   removeQueryResolutionPolicy(zone: string | null, name: string): DnsOpResult;
   setPolicyEnabled(zone: string | null, name: string | null, enabled: boolean): DnsOpResult;
+  getRecursionScopes(): RecursionScopeView[];
+  addRecursionScope(name: string, forwarders: readonly string[], enableRecursion: boolean): DnsOpResult;
+  changeRecursionScope(name: string, changes: RecursionScopeChanges): DnsOpResult;
+  removeRecursionScope(name: string): DnsOpResult;
   getGlobalNames(): DnsGlobalNames;
   setGlobalNames(changes: Partial<DnsGlobalNames>): DnsOpResult;
   getGlobalQueryBlock(): GlobalQueryBlock;
