@@ -96,6 +96,8 @@ import { IPV4_DEVICE_CONF_KNOBS, Ipv4DeviceConf } from './linux/Ipv4DeviceConf';
 import { MTU } from '../core/constants';
 import { IPV6_DEVICE_CONF_KNOBS, Ipv6DeviceConf } from './linux/Ipv6DeviceConf';
 import { IPV6_NEIGHBOR_CONF_KNOBS, Ipv6NeighborConf } from './linux/Ipv6NeighborConf';
+import { addNameserver, addSearchDomain, removeNameserver, removeSearchDomain } from './linux/ResolvConfEdit';
+import type { TimerHandle } from '@/events/Scheduler';
 import type { NeighborParameters } from './host/NeighborCache';
 import type { NDPRouterAdvertisement } from '../core/types';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
@@ -483,6 +485,38 @@ export abstract class LinuxMachine extends EndHost
   protected override adoptAdvertisedLinkParameters(portName: string, advertisement: NDPRouterAdvertisement): void {
     this.ipv6Conf.adoptAdvertisedHopLimit(portName, advertisement.curHopLimit);
     this.ipv6NeighborConf.adoptAdvertised(portName, advertisement.reachableTime, advertisement.retransTimer);
+    for (const option of advertisement.options) {
+      if (option.optionType === 'rdnss') {
+        for (const address of option.addresses) {
+          const text = address.isLinkLocal() ? `${address.toString()}%${portName}` : address.toString();
+          this.adoptResolverEntry(`rdnss:${portName}:${text}`, option.lifetime, (file) => addNameserver(file, text), (file) => removeNameserver(file, text));
+        }
+      } else if (option.optionType === 'dnssl') {
+        for (const domain of option.domains) {
+          this.adoptResolverEntry(`dnssl:${portName}:${domain}`, option.lifetime, (file) => addSearchDomain(file, domain), (file) => removeSearchDomain(file, domain));
+        }
+      }
+    }
+  }
+  private readonly resolverEntryTimers = new Map<string, TimerHandle>();
+  private adoptResolverEntry(key: string, lifetimeSec: number, add: (file: string) => string, remove: (file: string) => string): void {
+    const scheduler = this.getScheduler();
+    const armed = this.resolverEntryTimers.get(key);
+    if (armed !== undefined) scheduler.clear(armed);
+    this.resolverEntryTimers.delete(key);
+    const edit = (change: (file: string) => string): void => {
+      this.executor.vfs.writeFile('/etc/resolv.conf', change(this.executor.readFile('/etc/resolv.conf') ?? ''), 0, 0, 0o022);
+    };
+    if (lifetimeSec === 0) {
+      edit(remove);
+      return;
+    }
+    edit(add);
+    if (lifetimeSec === 0xffffffff) return;
+    this.resolverEntryTimers.set(key, scheduler.setTimeout(() => {
+      this.resolverEntryTimers.delete(key);
+      edit(remove);
+    }, lifetimeSec * 1000));
   }
   protected override neighborParameters(iface: string): NeighborParameters {
     return this.ipv6NeighborConf.parameters(iface);
@@ -3482,16 +3516,10 @@ export abstract class LinuxMachine extends EndHost
   ): void {
     void iface;
     if (dnsServers.length === 0) return;
-    const existant = (this.executor.readFile('/etc/resolv.conf') ?? '')
-      .split('\n').filter((l) => l.trim() !== '');
-    const lignes = [...existant];
-    if (domainName && !lignes.some((l) => l.trim() === `search ${domainName}`)) {
-      lignes.unshift(`search ${domainName}`);
-    }
-    for (const ip of dnsServers) {
-      if (!lignes.some((l) => l.trim() === `nameserver ${ip}`)) lignes.push(`nameserver ${ip}`);
-    }
-    this.executor.vfs.writeFile('/etc/resolv.conf', lignes.join('\n') + '\n', 0, 0, 0o022);
+    let text = this.executor.readFile('/etc/resolv.conf') ?? '';
+    if (domainName) text = addSearchDomain(text, domainName);
+    for (const ip of dnsServers) text = addNameserver(text, ip);
+    this.executor.vfs.writeFile('/etc/resolv.conf', text, 0, 0, 0o022);
     if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
   }
 
