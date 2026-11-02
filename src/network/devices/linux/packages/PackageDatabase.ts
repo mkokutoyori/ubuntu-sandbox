@@ -154,6 +154,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     summary: 'GNU version of the tar archiving utility', },
   { name: 'tcpdump', version: '4.99.1-3build2', arch: 'amd64',
     summary: 'command-line network traffic analyzer', },
+  { name: 'tcpreplay', version: '4.4.4-1', arch: 'amd64',
+    summary: 'Tool to replay saved tcpdump files at arbitrary speeds', programFiles: ['/usr/bin/tcpreplay'] },
   { name: 'traceroute', version: '1:2.1.0-2', arch: 'amd64',
     summary: 'Traces the route taken by packets over an IPv4/IPv6 network', },
   { name: 'tree', version: '2.0.2-1', arch: 'amd64',

@@ -271,7 +271,12 @@ import { TcpSocketStateProjection } from '@/network/tcp/TcpSocketStateProjection
 import { TcpdumpCaptureProjection } from './linux/network/TcpdumpCaptureProjection';
 import { MasqueradeFlowProjection } from './linux/MasqueradeFlowProjection';
 import { LogindStateSync } from './linux/network/LogindStateSync';
-import type { TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
+import { runTcpdump, type TcpdumpDeps } from './linux/network/tcpdump/TcpdumpRunner';
+import type { TcpreplayDeps } from './linux/network/tcpreplay/TcpreplayRunner';
+import { formatLocalTime } from './linux/system/SystemInfo';
+import { decodeEthernetBytes } from '@/network/capture/wire/WireDecoder';
+import { attachWireImage } from '@/network/core/WireImage';
+import { bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import { nssCaptureNames } from './linux/network/tcpdump/NssCaptureNames';
 import { splitShellWords } from '@/bash/runtime/ShellWords';
 import { LINUX_ICMP_ERROR_QUOTE, isICMPErrorMessage, isICMPv6ErrorMessage, type IcmpErrorQuote } from '../core/IcmpErrors';
@@ -4791,6 +4796,9 @@ export abstract class LinuxMachine extends EndHost
       buildTcpdumpDeps: (): TcpdumpDeps => {
         return this.buildTcpdumpDeps();
       },
+      buildTcpreplayDeps: (stdin?: string): TcpreplayDeps => {
+        return this.buildTcpreplayDeps(stdin);
+      },
       configureInterface: (name: string, ip: IPAddress, mask: SubnetMask): boolean => {
         return this.configureInterface(name, ip, mask);
       },
@@ -6190,6 +6198,91 @@ export abstract class LinuxMachine extends EndHost
         return this.ports.get(name)?.getMAC()?.toString() ?? null;
       },
       names: nssCaptureNames(this.executor.nss),
+    };
+  }
+
+  buildTcpreplayDeps(stdin?: string): TcpreplayDeps {
+    const tcpdump = this.buildTcpdumpDeps();
+    const pid = this.executor.currentPid();
+    const cwd = this.executor.getCwd();
+    const actor = this.executor.pathActorOf(this.executor.userMgr.currentUser)
+      ?? { uid: this.executor.userMgr.currentUid, gid: this.executor.userMgr.currentGid };
+    const vfs = this.executor.vfs;
+    const target = (path: string) => vfs.path(path, cwd, actor);
+    const horizonFraction = (): number => PathClock.horizon() - Math.floor(PathClock.horizon());
+    return {
+      userIsRoot: this.executor.userMgr.currentUid === 0,
+      capturePermitted: tcpdump.capturePermitted,
+      processId: (): number => pid,
+      devices: () => tcpdump.interfaceNames().map((name) => ({
+        name,
+        up: tcpdump.interfaceUp(name),
+        carrier: tcpdump.interfaceCarrier?.(name) ?? tcpdump.interfaceUp(name),
+      })),
+      interfaceFacts: (name: string) => {
+        if (name === 'lo') return { up: true, loopback: true };
+        const port = this.ports.get(name);
+        return port === undefined ? null : { up: port.getIsUp(), loopback: false };
+      },
+      transmit: (device: string, frame: Uint8Array): number | null => {
+        const port = this.ports.get(device);
+        if (port === undefined) return null;
+        const decoded = decodeEthernetBytes(frame);
+        if (decoded === null) return 22;
+        const tagged = decoded.dot1q !== undefined ? 4 : 0;
+        if (frame.length > port.getMTU() + 14 + tagged) return 90;
+        attachWireImage(decoded, frame);
+        port.sendFrame(decoded);
+        return null;
+      },
+      nowMicros: (): number => Math.round((this.executor.simulatedDate().getTime() + horizonFraction()) * 1000),
+      sleepMicros: (micros: number): void => PathClock.wait(micros / 1000),
+      formatTime: (micros: number): string => {
+        const wall = formatLocalTime('%Y-%m-%d %H:%M:%S', Math.floor(micros / 1000), this.executor.identity.timezone);
+        return `${wall}.${String(micros % 1_000_000).padStart(6, '0')}`;
+      },
+      stat: (path: string) => {
+        const entry = target(path);
+        if (!entry.exists()) return { error: 'No such file or directory' };
+        if (entry.isDirectory()) return { kind: 'directory' };
+        return { kind: entry.isFile() ? 'file' : 'other' };
+      },
+      readFile: (path: string) => {
+        const entry = target(path);
+        if (!entry.exists()) return { error: 'No such file or directory' };
+        if (!entry.canRead()) return { error: 'Permission denied' };
+        const content = vfs.readFile(entry.value);
+        return content === null ? { error: 'Is a directory' } : fileTextToBytes(content);
+      },
+      writeFile: (path: string, content: string): void => {
+        vfs.writeFile(vfs.normalizePath(path, cwd), content, actor.uid, actor.gid, this.executor.getUmask());
+      },
+      savedAtText: (): string => formatLocalTime('%a %b %e %H:%M:%S %Y', this.executor.simulatedDate().getTime(), this.executor.identity.timezone),
+      walk: (directory: string): string[] => {
+        const base = directory.endsWith('/') ? directory : `${directory}/`;
+        const files: string[] = [];
+        const visit = (path: string, absolute: string): void => {
+          for (const entry of [...(vfs.listDirectory(absolute) ?? [])].filter((listed) => listed.name !== '.' && listed.name !== '..').sort((a, b) => a.name.localeCompare(b.name))) {
+            const child = `${path}${entry.name}`;
+            const childPath = target(child);
+            if (childPath.isDirectory()) visit(`${child}/`, childPath.value);
+            else if (childPath.isFile()) files.push(child);
+          }
+        };
+        visit(base, target(directory).value);
+        return files;
+      },
+      standardInput: () => (stdin === undefined ? null : { bytes: fileTextToBytes(stdin), text: stdin }),
+      decode: async (capture: Uint8Array, argv: string[]) => {
+        const result = await runTcpdump(argv, {
+          ...tcpdump,
+          readFile: (path: string): string | null => (path === '-' ? bytesToFileText(capture) : tcpdump.readFile(path)),
+        });
+        return { stdout: result.stdout, stderr: result.stderr, chunks: result.transcript.map((entry) => ({ fd: entry.fd, text: `${entry.text}\n` })) };
+      },
+      yieldControl: (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0)),
+      onCancelRequested: (listener: () => void): (() => void) => this.onProcessExit(pid, () => listener()),
+      runsSupervised: (): boolean => this.executor.isSupervised(pid),
     };
   }
 

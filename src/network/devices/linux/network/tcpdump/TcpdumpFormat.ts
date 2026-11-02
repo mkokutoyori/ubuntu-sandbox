@@ -141,13 +141,15 @@ function microsOf(frame: CaptureFrame): number {
   return frame.atMicros ?? frame.at.getTime() * 1000;
 }
 
-function fraction(micros: number, subMicroNanos: number, nano: boolean): string {
-  const us = String(micros % 1_000_000).padStart(6, '0');
-  return nano ? `${us}${String(subMicroNanos).padStart(3, '0')}` : us;
+function fraction(frame: CaptureFrame, nano: boolean): string {
+  const us = frame.subsecondMicros !== undefined
+    ? String(frame.subsecondMicros).padStart(6, '0')
+    : String(microsOf(frame) % 1_000_000).padStart(6, '0');
+  return nano ? `${us}${String(frame.atSubMicroNanos ?? 0).padStart(3, '0')}` : us;
 }
 
 function clockOf(frame: CaptureFrame, nano: boolean): string {
-  return frame.at.toTimeString().slice(0, 8) + '.' + fraction(microsOf(frame), frame.atSubMicroNanos ?? 0, nano);
+  return frame.at.toTimeString().slice(0, 8) + '.' + fraction(frame, nano);
 }
 
 function deltaNanos(frame: CaptureFrame, reference: CaptureFrame, nano: boolean): number {
@@ -172,7 +174,7 @@ function timestamp(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRende
     case 'none':
       return '';
     case 'epoch':
-      return `${Math.floor(microsOf(frame) / 1_000_000)}.${fraction(microsOf(frame), frame.atSubMicroNanos ?? 0, nano)} `;
+      return `${Math.floor(microsOf(frame) / 1_000_000)}.${fraction(frame, nano)} `;
     case 'delta': {
       const reference = state.prev ?? frame;
       return elapsed(deltaNanos(frame, reference, nano), nano);

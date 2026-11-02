@@ -438,6 +438,7 @@ export interface CaptureDevice {
 }
 
 interface ListedDevice {
+  name: string;
   label: string;
   up: boolean;
   running: boolean;
@@ -448,6 +449,7 @@ interface ListedDevice {
 
 function listedDeviceOf(device: CaptureDevice): ListedDevice {
   return {
+    name: device.name,
     label: device.name,
     up: device.up,
     running: device.up && device.carrier,
@@ -476,20 +478,29 @@ function listedFlags(device: ListedDevice): string {
   return device.connection === null ? text : `${text}, ${device.connection}`;
 }
 
-export function listInterfacesText(devices: readonly CaptureDevice[]): string {
+function orderedListedDevices(devices: readonly CaptureDevice[]): ListedDevice[] {
   const listed: ListedDevice[] = [
     ...devices.filter((d) => d.name !== 'lo').map(listedDeviceOf),
     {
+      name: 'any',
       label: 'any (Pseudo-device that captures on all interfaces)',
       up: true, running: true, loopback: false, any: true, connection: null,
     },
-    { label: 'lo', up: true, running: true, loopback: true, any: false, connection: null },
+    { name: 'lo', label: 'lo', up: true, running: true, loopback: true, any: false, connection: null },
   ];
-  const ordered = listed
+  return listed
     .map((device, position) => ({ device, position }))
-    .sort((a, b) => figureOfMerit(a.device) - figureOfMerit(b.device) || a.position - b.position);
-  return ordered
-    .map(({ device }, idx) => `${idx + 1}.${device.label} [${listedFlags(device)}]`)
+    .sort((a, b) => figureOfMerit(a.device) - figureOfMerit(b.device) || a.position - b.position)
+    .map(({ device }) => device);
+}
+
+export function captureDeviceOrder(devices: readonly CaptureDevice[]): ReadonlyArray<{ name: string; loopback: boolean }> {
+  return orderedListedDevices(devices).map(({ name, loopback }) => ({ name, loopback }));
+}
+
+export function listInterfacesText(devices: readonly CaptureDevice[]): string {
+  return orderedListedDevices(devices)
+    .map((device, idx) => `${idx + 1}.${device.label} [${listedFlags(device)}]`)
     .join('\n');
 }
 

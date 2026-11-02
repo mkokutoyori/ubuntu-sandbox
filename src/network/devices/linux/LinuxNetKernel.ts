@@ -27,6 +27,7 @@ import type { DHCPClient } from '../../dhcp/DHCPClient';
 import type { DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 import type { TcpStack } from '../../tcp/TcpStack';
 import type { TcpdumpDeps } from './network/tcpdump/TcpdumpRunner';
+import type { TcpreplayDeps } from './network/tcpreplay/TcpreplayRunner';
 import type { IScheduler } from '@/events/Scheduler';
 import type { SnmpClientSession } from '@/network/snmp/SnmpClientSession';
 
@@ -68,6 +69,8 @@ export interface LinuxNetKernel {
   getIfIndex(name: string): number;
 
   buildTcpdumpDeps(): TcpdumpDeps;
+
+  buildTcpreplayDeps(stdin?: string): TcpreplayDeps;
 
   /** Configure IPv4 address + mask on an interface. */
   configureInterface(name: string, ip: IPAddress, mask: SubnetMask): boolean;

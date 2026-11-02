@@ -1,3 +1,4 @@
+import { wireImageOf } from '@/network/core/WireImage';
 import {
   ETHERTYPE_ARP,
   ETHERTYPE_IPV4,
@@ -93,6 +94,7 @@ export interface CaptureFrame {
   at: Date;
   atMicros?: number;
   atSubMicroNanos?: number;
+  subsecondMicros?: number;
   iface: string;
   direction: CaptureDirection;
   linkType: string;
@@ -743,6 +745,11 @@ export function decodeEthernetFrame(
   at: Date,
   atMicros?: number,
 ): CaptureFrame {
+  const image = wireImageOf(frame);
+  if (image !== undefined) {
+    const captured = decodeCapturedBytes(image, image.length, iface, direction, at, atMicros);
+    if (captured !== null) return captured;
+  }
   const base = decodeEthernetFrameBytes(frame, iface, direction, at, atMicros);
   if (base.l3 === 'ipv6' && base.fragment6 === undefined) {
     const carried = base.raw.length - base.rawLinkOffset;

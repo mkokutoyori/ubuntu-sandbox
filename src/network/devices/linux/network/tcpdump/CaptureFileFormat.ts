@@ -101,19 +101,25 @@ interface Instant {
   at: Date;
   atMicros: number;
   atSubMicroNanos: number;
+  subsecondMicros?: number;
 }
 
 function instantOf(record: PcapRecord, nanosecond: boolean): Instant {
   const microsecond = Math.floor(nanosecond ? record.subsecond / 1000 : record.subsecond);
+  const beyondSecond = microsecond >= 1_000_000;
   return {
-    at: new Date(record.seconds * 1000 + Math.floor(microsecond / 1000)),
-    atMicros: record.seconds * 1_000_000 + microsecond,
+    at: new Date(record.seconds * 1000 + (beyondSecond ? 0 : Math.floor(microsecond / 1000))),
+    atMicros: record.seconds * 1_000_000 + (beyondSecond ? 0 : microsecond),
     atSubMicroNanos: nanosecond ? record.subsecond % 1000 : 0,
+    ...(beyondSecond ? { subsecondMicros: microsecond } : {}),
   };
 }
 
 function stamped(frame: CaptureFrame | null, instant: Instant): CaptureFrame | null {
-  if (frame !== null) frame.atSubMicroNanos = instant.atSubMicroNanos;
+  if (frame !== null) {
+    frame.atSubMicroNanos = instant.atSubMicroNanos;
+    if (instant.subsecondMicros !== undefined) frame.subsecondMicros = instant.subsecondMicros;
+  }
   return frame;
 }
 
