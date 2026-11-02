@@ -248,7 +248,33 @@ async function recordMstp(): Promise<string> {
   return recordStp(['spanning-tree mode mst', 'spanning-tree mst configuration', 'name REGION1', 'revision 7', 'instance 1 vlan 10,20', 'exit', 'interface FastEthernet0/1', 'switchport mode access', 'switchport nonegotiate', 'exit'], 40_000);
 }
 
-const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40) };
+async function recordEigrp(): Promise<string> {
+  const clock = installVirtualClock();
+  const pc = new LinuxPC('PC1', 0, 0);
+  const hub = new Hub('H1');
+  const r1 = new CiscoRouter('R1');
+  const r2 = new CiscoRouter('R2');
+  new Cable('c1').connect(pc.getPort('eth0')!, hub.getPort('eth0')!);
+  new Cable('c2').connect(r1.getPort('GigabitEthernet0/0')!, hub.getPort('eth1')!);
+  new Cable('c3').connect(r2.getPort('GigabitEthernet0/0')!, hub.getPort('eth2')!);
+  await pc.executeCommand('ifconfig eth0 10.9.0.2 netmask 255.255.255.0');
+  const writing = pc.executeCommand('sudo tcpdump -w all.cap -c 60');
+  await new Promise((r) => setTimeout(r, 30));
+  const configure = async (router: CiscoRouter, lines: string[]): Promise<void> => {
+    for (const line of lines) await router.executeCommand(line);
+  };
+  await configure(r1, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.1 255.255.255.0', 'no shutdown', 'exit',
+    'interface Loopback1', 'ip address 172.16.1.1 255.255.255.0', 'exit', 'router eigrp 100', 'network 10.9.0.0 0.0.255.255', 'network 172.16.1.0 0.0.0.255', 'exit', 'end']);
+  await configure(r2, ['enable', 'configure terminal', 'no cdp run', 'interface GigabitEthernet0/0', 'ip address 10.9.0.3 255.255.255.0', 'no shutdown', 'exit',
+    'interface Loopback1', 'ip address 172.16.3.1 255.255.255.0', 'exit', 'interface Loopback2', 'ip address 172.17.3.1 255.255.255.0', 'exit',
+    'router eigrp 100', 'network 10.9.0.0 0.0.255.255', 'network 172.16.3.0 0.0.0.255', 'redistribute connected', 'exit', 'end']);
+  await clock.advance(45_000);
+  await pc.executeCommand('ping -c 1 10.9.0.1');
+  await writing;
+  return pc.executeCommand('cat all.cap');
+}
+
+const RECORDERS: Record<string, () => Promise<string>> = { base: recordBase, dns: recordDns, rip: recordRip, ospf: recordOspf, cdp: recordCdp, lldp: recordLldp, stp: recordStpClassic, rstp: recordStpRapid, pvst: recordStpTrunk, mstp: recordMstp, stppair: () => recordStpPair('pvst', 40), rstppair: () => recordStpPair('rapid-pvst', 40), eigrp: recordEigrp };
 const RECORD_LABS = (process.env.TCPDUMP_RECORD_LABS ?? Object.keys(RECORDERS).join(',')).split(',');
 
 it.skipIf(RECORD_DIR === undefined)('records the capture files', async () => {

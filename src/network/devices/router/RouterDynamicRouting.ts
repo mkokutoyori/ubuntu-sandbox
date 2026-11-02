@@ -22,6 +22,7 @@ import {
   tryIpToUint32, ipToUint32, prefixLengthToMaskUint32,
 } from '../../core/ip';
 import { EIGRPEngine } from '../../eigrp/EIGRPEngine';
+import { eigrpWireLength } from '../../eigrp/EigrpPacketBytes';
 import {
   EIGRP_MULTICAST_IP, isEigrpPacket, type EigrpPacket,
 } from '../../eigrp/packets';
@@ -191,7 +192,7 @@ export class RouterDynamicRouting {
     const myIP = port.getIPAddress();
     if (!myIP) return;
     const ipPkt = createIPv4Packet(
-      myIP, new IPAddress(destIp), IP_PROTO_EIGRP, 1, packet, 64);
+      myIP, new IPAddress(destIp), IP_PROTO_EIGRP, 1, packet, eigrpWireLength(packet));
     const dstMAC = isMulticastIpv4(destIp)
       ? new MACAddress(ipv4MulticastToMac(destIp))
       : (this.ctx.getArpEntry(destIp)?.mac ?? MACAddress.broadcast());

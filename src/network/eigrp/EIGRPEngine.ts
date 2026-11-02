@@ -56,7 +56,7 @@ import {
 import {
   EIGRP_MULTICAST_IP, EIGRP_DEFAULT_HOLD_SEC, EIGRP_DEFAULT_HELLO_SEC,
   type EigrpWire, type EigrpPacket, type EigrpHelloPacket,
-  type EigrpUpdatePacket, type EigrpRouteTlv, type EigrpAuthTlv,
+  type EigrpUpdatePacket, type EigrpRouteTlv, type EigrpAuthTlv, type EigrpExternalProtocol,
   type EigrpStubTlv,
 } from './packets';
 import { md5Hex } from '@/crypto/hash/md5';
@@ -93,6 +93,7 @@ export interface EigrpOriginatedPrefix {
   /** Delay (µs) of the originating interface. */
   delayUsec?: number;
   external?: boolean;
+  externalProtocol?: EigrpExternalProtocol;
 }
 
 /** EIGRP administrative distances (internal / redistributed-external). */
@@ -349,7 +350,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
           network: c.network, mask: c.mask,
           iface: c.iface,
           bandwidthKbps: c.bandwidthKbps, delayUsec: c.delayUsec,
-          external: true,
+          external: true, externalProtocol: 'connected',
         });
       }
     }
@@ -363,7 +364,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       const key = `${r.network}/${r.mask}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ network: r.network, mask: r.mask, external: true });
+      out.push({ network: r.network, mask: r.mask, external: true, externalProtocol: src });
     }
     return out;
   }
@@ -780,7 +781,11 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
         + `not on common subnet for ${iface}`);
       return;
     }
-    if (packet.opcode === 'hello') {
+    if (packet.opcode === 'hello' && packet.ackOnly === true) {
+      this.traffic.ackRcvd++;
+      const sender = this.wireNeighbors.get(`${srcIp}%${iface}`);
+      if (sender) this.rearmHoldTimer(sender);
+    } else if (packet.opcode === 'hello') {
       this.traffic.helloRcvd++;
       this.onHello(iface, srcIp, packet, multicast);
     } else {
@@ -878,7 +883,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
       this.wire!.send(iface, srcIp, this.helloPacket(iface));
       this.traffic.helloSent++;
       this.countOnInterface(iface, 'hello', srcIp);
-      this.wire!.send(iface, srcIp, this.buildUpdate(iface));
+      this.wire!.send(iface, srcIp, this.buildUpdate(iface, known === undefined));
       this.traffic.updateSent++;
       this.countOnInterface(iface, 'update', srcIp);
     }
@@ -891,6 +896,10 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     known.advertised = [...update.routes];
     // Any packet from a neighbour proves it is alive, not just a Hello.
     this.rearmHoldTimer(known);
+    if (update.sequence !== undefined && update.sequence !== 0) {
+      this.wire!.send(iface, srcIp, { ...this.helloPacket(iface), acknowledge: update.sequence, ackOnly: true });
+      this.traffic.ackSent++;
+    }
   }
 
   /**
@@ -900,7 +909,9 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
    * (§5.3.2): a prefix whose best path was learned on `egressIface` is
    * never advertised back out of it.
    */
-  private buildUpdate(egressIface: string): EigrpUpdatePacket {
+  private rtpSequence = 0;
+
+  private buildUpdate(egressIface: string, init = false): EigrpUpdatePacket {
     const routes: EigrpRouteTlv[] = [];
     const advertised = new Set<string>();
     for (const pre of this.originatedPrefixes()) {
@@ -910,6 +921,8 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
         bandwidthKbps: pre.bandwidthKbps ?? EIGRP_FALLBACK_BANDWIDTH_KBPS,
         delayUsec: pre.delayUsec ?? EIGRP_FALLBACK_DELAY_USEC,
         external: pre.external === true,
+        hopCount: 0,
+        ...(pre.external === true ? { originRouter: this.effectiveRouterId(), externalProtocol: pre.externalProtocol } : {}),
       };
       routes.push(tlv);
       advertised.add(`${tlv.network}/${tlv.prefixLength}`);
@@ -923,6 +936,7 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
     }
     return {
       type: 'eigrp', opcode: 'update', asn: this.config.asn, routes,
+      sequence: ++this.rtpSequence, init,
       auth: this.authFor(egressIface),
     };
   }
@@ -972,6 +986,9 @@ export class EIGRPEngine extends AbstractRoutingProtocolEngine<EIGRPConfig> {
               network: tlv.network, prefixLength: tlv.prefixLength,
               bandwidthKbps: accBw, delayUsec: accDelay,
               external: tlv.external,
+              hopCount: (tlv.hopCount ?? 0) + 1,
+              ...(tlv.originRouter === undefined ? {} : { originRouter: tlv.originRouter }),
+              ...(tlv.externalProtocol === undefined ? {} : { externalProtocol: tlv.externalProtocol }),
             },
           });
         }
