@@ -81,11 +81,11 @@ export function choice<T extends string>(
   return null;
 }
 
-function zoneToPSObject(z: DnsZoneInfo): Record<string, PSValue> {
+export function zoneToPSObject(z: DnsZoneInfo): Record<string, PSValue> {
   return {
     ZoneName: z.name, ZoneType: z.type, DynamicUpdate: z.dynamicUpdate,
     ReplicationScope: z.isDsIntegrated ? 'Domain' : 'None', IsDsIntegrated: z.isDsIntegrated,
-    IsReverseLookupZone: z.isReverse, IsAutoCreated: false, IsPaused: !z.isLoaded && z.type === 'Secondary',
+    IsReverseLookupZone: z.isReverse, IsAutoCreated: false, IsPaused: z.isPaused,
     IsReadOnly: z.type === 'Secondary', IsSigned: false, ZoneFile: z.zoneFile || null,
     MasterServers: z.masterServers, SecureSecondaries: z.secureSecondaries,
     SecondaryServers: z.secondaryServers, Notify: z.notify, NotifyServers: z.notifyServers,

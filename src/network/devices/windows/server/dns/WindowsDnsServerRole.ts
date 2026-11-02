@@ -108,6 +108,7 @@ export const DNS_TRANSFER_POLICIES: readonly DnsTransferPolicy[] =
 export const DNS_NOTIFY_POLICIES: readonly DnsNotifyPolicy[] = ['NoNotify', 'Notify', 'NotifyServers'];
 
 export interface DnsZoneInfo {
+  isPaused: boolean;
   name: string;
   type: DnsZoneType;
   recordCount: number;
@@ -452,6 +453,7 @@ export class WindowsDnsServerRole {
   private readonly conditional = new Map<string, ConditionalForwarder>();
   private readonly clientSubnets = new ClientSubnetStore();
   private readonly zoneScopes = new DnsZoneScopes();
+  private readonly pausedForwarders = new Set<string>();
   private readonly policies = new DnsPolicyStore({
     clientSubnetExists: name => this.clientSubnets.find(name) !== null,
     clientSubnetContains: (name, address) => this.clientSubnets.contains(name, address),
@@ -763,6 +765,7 @@ export class WindowsDnsServerRole {
     const name = normalizeDnsName(qname);
     let best: string | null = null;
     for (const zone of this.conditional.keys()) {
+      if (this.pausedForwarders.has(zone)) continue;
       if (isUnder(name, zone) && (best === null || zone.length > best.length)) best = zone;
     }
     if (best !== null) return [{ resolver: this.conditional.get(best)!.resolver }];
@@ -833,7 +836,7 @@ export class WindowsDnsServerRole {
   }
 
   private transferRefusal(settings: ZoneSettings | undefined, zone: Zone | null, source: string | null): MasterRefusal | null {
-    if (!settings || !zone) return 'RefuseNotAuth';
+    if (!settings || !zone || this.store.isPaused(zone.origin)) return 'RefuseNotAuth';
     if (settings.transfer === 'NoTransfer') return 'RefuseShutdown';
     if (source === null) return 'RefuseSecurity';
     switch (settings.transfer) {
@@ -908,7 +911,7 @@ export class WindowsDnsServerRole {
     }
 
     const zone = this.store.getZone(request.zone);
-    if (!zone) return reply(DnsUpdateRcode.NOTAUTH);
+    if (!zone || this.store.isPaused(zone.origin)) return reply(DnsUpdateRcode.NOTAUTH);
 
     const verdict = evaluateUpdate(zone, request);
     if (verdict.rcode !== DnsRcode.NOERROR) return reply(verdict.rcode);
@@ -1155,6 +1158,10 @@ export class WindowsDnsServerRole {
   private rootHintsChanged(): void {
     const parsed = parseAddresses([...new Set(this.rootHints.map(h => h.address))]);
     this.rootResolver = typeof parsed !== 'string' && parsed.length > 0 ? this.resolverOver(parsed) : null;
+    this.persistRootHints();
+  }
+
+  private persistRootHints(): void {
     this.zoneFiles?.write('cache.dns', renderRootHintsFile(this.rootHints));
   }
 
@@ -1777,6 +1784,7 @@ export class WindowsDnsServerRole {
     const forwarder = this.conditional.get(origin);
     if (forwarder) {
       this.conditional.delete(origin);
+      this.pausedForwarders.delete(origin);
       this.zoneFiles?.remove(forwarder.zoneFile);
       return { ok: true, message: '' };
     }
@@ -1788,11 +1796,68 @@ export class WindowsDnsServerRole {
     this.settings.delete(origin);
     this.policies.removeZone(origin);
     this.zoneScopes.dropZone(origin);
+    this.store.setPaused(origin, false);
     this.statistics.forgetZone(origin);
     this.zoneDynamicUpdate.delete(origin);
     this.secondaries.discard(origin);
     if (!settings.dsIntegrated) this.zoneFiles?.remove(settings.zoneFile);
     return { ok: true, message: '' };
+  }
+
+  setZonePaused(name: string, paused: boolean): DnsOpResult {
+    const origin = normalizeDnsName(name);
+    if (this.conditional.has(origin)) {
+      if (paused) this.pausedForwarders.add(origin);
+      else this.pausedForwarders.delete(origin);
+      return { ok: true, message: '' };
+    }
+    if (!this.settings.has(origin)) return { ok: false, message: zoneMissing(name) };
+    this.store.setPaused(origin, paused);
+    return { ok: true, message: '' };
+  }
+
+  syncZones(name: string | null): DnsOpResult {
+    const origins = name === null ? [...this.settings.keys()] : [normalizeDnsName(name)];
+    for (const origin of origins) {
+      if (!this.settings.has(origin) && !this.conditional.has(origin)) return { ok: false, message: zoneMissing(name ?? origin) };
+    }
+    for (const origin of origins) {
+      const zone = this.store.getZone(origin);
+      if (zone === null) continue;
+      this.persist(zone);
+      for (const scope of this.zoneScopes.list(origin)) this.persistScope(this.zoneScopes.recordsOf(origin, scope.name)!, scope.name);
+    }
+    this.persistRootHints();
+    return { ok: true, message: '' };
+  }
+
+  exportZone(name: string, fileName: string): DnsOpResult {
+    const zone = this.store.getZone(name);
+    if (zone === null) return { ok: false, message: zoneMissing(name) };
+    if (this.zoneFiles === null) return { ok: false, message: 'The DNS directory is not available on this server.' };
+    if (this.zoneFiles.read(fileName) !== null) return { ok: false, message: 'Cannot create a file when that file already exists.' };
+    this.zoneFiles.write(fileName, renderZoneFile(zone));
+    return { ok: true, message: '' };
+  }
+
+  restorePrimaryZone(name: string): DnsOpResult {
+    const origin = normalizeDnsName(name);
+    const settings = this.settings.get(origin);
+    if (settings === undefined) return { ok: false, message: zoneMissing(name) };
+    if (settings.type !== 'Primary') return { ok: false, message: `Zone "${name}" is not a primary zone.` };
+    if (settings.dsIntegrated) return { ok: true, message: '' };
+    const loaded = this.zoneFromFile(origin, settings.zoneFile);
+    if (typeof loaded === 'string') return { ok: false, message: loaded };
+    this.store.removeZone(origin);
+    this.store.addZone(loaded);
+    return { ok: true, message: '' };
+  }
+
+  restoreSecondaryZone(name: string): DnsOpResult {
+    const settings = this.settings.get(normalizeDnsName(name));
+    if (settings === undefined) return { ok: false, message: zoneMissing(name) };
+    if (settings.type !== 'Secondary') return { ok: false, message: `Zone "${name}" is not a secondary zone.` };
+    return this.startZoneTransfer(name);
   }
 
   getZone(name: string): DnsZoneInfo | null {
@@ -1809,7 +1874,7 @@ export class WindowsDnsServerRole {
     if (forwarder) {
       return {
         name, type: 'Forwarder', recordCount: 0, dynamicUpdate: 'None', zoneFile: forwarder.zoneFile, isDsIntegrated: false, isReverse: false,
-        isLoaded: true, serial: null, secureSecondaries: 'NoTransfer', secondaryServers: [],
+        isLoaded: true, isPaused: this.pausedForwarders.has(name), serial: null, secureSecondaries: 'NoTransfer', secondaryServers: [],
         notify: 'NoNotify', notifyServers: [], masterServers: [...forwarder.masters],
         lastZoneTransfer: null, isExpired: false,
       };
@@ -1821,6 +1886,7 @@ export class WindowsDnsServerRole {
       name, type: settings.type, recordCount: zone?.allRecords().length ?? 0,
       dynamicUpdate: this.dynamicUpdateMode(name), zoneFile: settings.zoneFile, isDsIntegrated: settings.dsIntegrated,
       isReverse: isReverseLookupZone(name), isLoaded: zone !== null, serial: zone?.soa.data.serial ?? null,
+      isPaused: this.store.isPaused(name) || (settings.type === 'Secondary' && zone === null),
       secureSecondaries: settings.transfer, secondaryServers: [...settings.secondaryServers],
       notify: settings.notify, notifyServers: [...settings.notifyServers],
       masterServers: [...settings.masters], lastZoneTransfer: settings.lastTransferMs,
