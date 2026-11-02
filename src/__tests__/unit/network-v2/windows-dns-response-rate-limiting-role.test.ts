@@ -219,6 +219,15 @@ describe('the exception lists of the role', () => {
     expect(await flood(0, 4, 6)).toEqual([...FIVE, 'dropped']);
   });
 
+  it('exempt the queries of the transport their criterion names and no other', async () => {
+    const { role, flood } = lab();
+    role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
+    role.addRateLimitingExceptionList(exceptionList('L', { transportProtocol: 'EQ,TCP' }));
+    expect(await flood(0, 4, 6)).toEqual([...FIVE, 'dropped']);
+    role.changeRateLimitingExceptionList('L', { criteria: { transportProtocol: 'EQ,UDP' } });
+    expect(await flood(1, 4, 8)).toEqual(Array.from({ length: 8 }, () => 'answered'));
+  });
+
   it('do not exempt a message that carries no question under an FQDN criterion', async () => {
     const { role, send } = lab();
     role.setResponseRateLimiting({ mode: 'Enable', leakRate: 0, truncateRate: 0 });
