@@ -107,6 +107,14 @@ export function deviceDefinition(type: DeviceType): DeviceDefinition {
   return DEVICE_CATALOG[type];
 }
 
+export function hasTerminalSupport(type: DeviceType): boolean {
+  return DEVICE_CATALOG[type]?.hasTerminal ?? false;
+}
+
+export function isFullyImplemented(type: DeviceType): boolean {
+  return DEVICE_CATALOG[type]?.fullyImplemented ?? false;
+}
+
 export interface DeviceCategory {
   id: string;
   name: string;

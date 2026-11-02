@@ -8,6 +8,7 @@
  * device or connection without a mouse, and zero ARIA roles/labels
  * anywhere in the canvas components.
  */
+import '@/network/devices/platforms/allPlatforms';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { useNetworkStore } from '@/store/networkStore';

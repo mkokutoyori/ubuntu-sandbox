@@ -10,7 +10,7 @@ interface SaveTopologyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultName: string;
-  onSave: (name: string) => void;
+  onSave: (name: string) => void | Promise<void>;
 }
 
 /** Replaces the `window.prompt('Save topology as:', ...)` flow (rapport
@@ -24,6 +24,15 @@ export function SaveTopologyDialog({ open, onOpenChange, defaultName, onSave }: 
     if (open) setName(defaultName);
   }, [open, defaultName]);
 
+  const saveThenClose = (topologyName: string) => {
+    const saving = onSave(topologyName);
+    if (saving instanceof Promise) {
+      void saving.then(() => onOpenChange(false));
+      return;
+    }
+    onOpenChange(false);
+  };
+
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -31,8 +40,7 @@ export function SaveTopologyDialog({ open, onOpenChange, defaultName, onSave }: 
       setPendingOverwrite(trimmed);
       return;
     }
-    onSave(trimmed);
-    onOpenChange(false);
+    saveThenClose(trimmed);
   };
 
   return (
@@ -65,9 +73,9 @@ export function SaveTopologyDialog({ open, onOpenChange, defaultName, onSave }: 
         confirmLabel={t('save.overwrite')}
         destructive
         onConfirm={() => {
-          if (pendingOverwrite) onSave(pendingOverwrite);
+          if (pendingOverwrite) saveThenClose(pendingOverwrite);
+          else onOpenChange(false);
           setPendingOverwrite(null);
-          onOpenChange(false);
         }}
       />
     </>

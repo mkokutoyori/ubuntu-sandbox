@@ -9,6 +9,7 @@
  * surface on the next call.
  */
 
+import '@/network/devices/platforms/allPlatforms';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
 import { IPAddress, SubnetMask } from '@/network/core/types';

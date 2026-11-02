@@ -9,7 +9,7 @@
 import { useLocale } from '@/i18n/useLocale';
 import { useState, useEffect, useRef } from 'react';
 import { Network, Radio, Terminal, X, Check, Cable } from 'lucide-react';
-import type { ConnectionType } from '@/network';
+import type { ConnectionType } from '@/network/core/types';
 import { Connection, NetworkInterfaceConfig } from '@/store/networkStore';
 import { buildInterfaceList, groupInterfacesByType, InterfaceListItem } from './interface-selector-logic';
 import { getConnectionLabel } from './connection-helpers';

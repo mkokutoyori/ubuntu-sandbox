@@ -13,14 +13,15 @@
 
 import { useLocale } from '@/i18n/useLocale';
 import { useMemo } from 'react';
+import { useDevice } from '@/react/hooks/useDevices';
 import {
-  useDevice,
   useArpTable, useNdpTable, useHostRoutingTable,
   useTcpListeners, useTcpConnections, useHostStats,
-  useOspfNeighbors, useOspfRuntime,
-  useIPSecStats, useNatStats,
-  useDhcpClientStats, useDhcpServerStats,
-} from '@/react/hooks';
+} from '@/react/hooks/useHostObservables';
+import { useOspfNeighbors, useOspfRuntime } from '@/react/hooks/useOspf';
+import { useIPSecStats } from '@/react/hooks/useIPSec';
+import { useNatStats } from '@/react/hooks/useNat';
+import { useDhcpClientStats, useDhcpServerStats } from '@/react/hooks/useDhcp';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 interface LiveDeviceStatsProps {

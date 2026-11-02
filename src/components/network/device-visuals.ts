@@ -1,4 +1,4 @@
-import type { DeviceType } from '@/network';
+import type { DeviceType } from '@/network/core/types';
 
 export type DeviceGlyph =
   'monitor' | 'laptop' | 'server' | 'router' | 'switch' | 'shield' | 'wifi' | 'cloud' | 'hub';

@@ -3,7 +3,7 @@
  * Extracted from the React component for testability.
  */
 
-import type { ConnectionType } from '@/network';
+import type { ConnectionType } from '@/network/core/types';
 import { ClearanceField } from './cable-clearance';
 import {
   DEVICE_COST, refineCorridors, trialCost, trialField,

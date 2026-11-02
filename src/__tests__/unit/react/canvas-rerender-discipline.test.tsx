@@ -12,6 +12,7 @@
  *    re-rendered every connection line even when its own props hadn't
  *    changed.
  */
+import '@/network/devices/platforms/allPlatforms';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { Profiler, useState } from 'react';

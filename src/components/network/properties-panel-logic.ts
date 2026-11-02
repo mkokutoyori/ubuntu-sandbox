@@ -2,7 +2,7 @@
  * Pure logic functions for the PropertiesPanel connection details.
  */
 
-import type { ConnectionType } from '@/network';
+import type { ConnectionType } from '@/network/core/types';
 import { isConnectionActive, type Connection } from '@/store/networkStore';
 
 export interface ConnectionDetails {

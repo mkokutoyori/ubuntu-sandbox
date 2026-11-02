@@ -4234,3 +4234,28 @@ Information (RFC 4191, bornes `accept_ra_rt_info_{min,max}_plen`) : sonde `probe
 toujours pas : le saut limite courant (`/proc/sys/net/ipv6/conf/<if>/hop_limit`), le temps de joignabilite, l'option MTU (`mtu6`, `accept_ra_mtu`), et les options
 RDNSS (RFC 8106) et DNSSL, que le noyau remet a l'espace utilisateur (systemd-networkd puis `resolvectl`) : un hote n'obtient donc ni serveur de noms ni domaine de
 recherche d'une annonce de radvd. A refermer cote hote, pas dans radvd : `ResolvedService` porte deja les serveurs par lien.
+
+## Chargement de l'application
+
+### [chargement] ouvrir le premier terminal charge toutes les plateformes
+Le premier ecran ne demande plus aucun module du simulateur (entree de
+production : 713 Ko, 222 Ko compresses, contre un bloc unique de 16,3 Mo)
+et une plateforme d'equipement arrive au survol, au focus, au glisser ou au
+clic de sa ligne de palette. Mais `TerminalManager` et les sessions
+(`sessionFactory.ts`, `CiscoTerminalSession.ts`, `HuaweiTerminalSession.ts`,
+`WindowsTerminalSession.ts`, `AsaTerminalSession.ts`,
+`FortiTerminalSession.ts`) importent les classes d'equipement par le
+barillet `@/network`, qui enregistre les sept plateformes.
+**Mesure** (build de production, Chromium, `prodsmoke` : un Linux PC pose,
+puis double-clic) : poser le Linux PC demande 20 modules ; ouvrir son
+terminal en demande 17 de plus, dont `TerminalManager` et `TerminalModal`
+mais aussi `ciscoPlatform`, `windowsPlatform`, `huaweiPlatform`,
+`genericPlatform`, `asaPlatform`, `fortigatePlatform`, `Switch` et
+`Firewall` — environ 0,3 s de plus en local, davantage sur un lien lent.
+**Ce qui manque** : que les sessions importent `Equipment` et les types
+d'equipement en `import type`, et que la fabrique de session choisisse sa
+classe de session par type d'equipement apres `loadDevicePlatform(type)`,
+de sorte qu'un terminal Linux ne tire que la plateforme Linux. Non fait
+ici : `sessionFactory` et chaque session ont des appelants dans
+`src/terminal/` et 276 fichiers de tests les importent ; c'est un
+changement propre, a mesurer a part.
