@@ -3867,11 +3867,12 @@ faute de trafic dans le labo, donc non garantis : le protocole telnet (`print-te
 
 Mesure (tcpdump 4.99.4 reel rejoue sur les captures du simulateur, laboratoires `rip`, `ospf`, `cdp` et `lldp` de `tcpdump-options-oracle.test.ts`) : RIPv1/v2 et OSPFv2 (Hello, DD, LS-Request, LS-Update
 avec LSA routeur / reseau / externe, LS-Ack) sont ecrits en octets reels (RFC 2453, RFC 2328, somme Fletcher des LSA selon la RFC 905) et imprimes comme `print-rip.c` et `print-ospf.c` ; CDP l'est aussi (cadre 802.3 + LLC/SNAP, TLV du CDPv2, `print-cdp.c`), pour les TLV que le moteur porte (pas les prefixes, la VoIP VLAN, la puissance, le MTU, le nom de systeme) ; LLDP aussi (TLV 802.1AB, 802.1 PVID / nom de VLAN, 802.3 MAC/PHY et taille de trame maximale ; la capacite PMD et le type MAU sont ecrits a 0, le moteur ne les modelise pas).
-Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported`), et, non mesures faute de laboratoire, STP (BPDU 802.3 + LLC, ethertype 0x4242 a zero octet), DTP (0x2004), VTP, PAgP, UDLD (trames Cisco d'ethertype logique a zero octet), BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
+STP l'est aussi (`stp/StpWire.ts` : BPDU de configuration, TCN, RSTP version 2, MSTP version 3, PVST+ SNAP `0x010b` avec le TLV de VLAN d'origine ; `print-stp.c` porte, SPB compris ; labos `stp`, `rstp`, `pvst`, `mstp`, `stppair`, `rstppair` et `stpcraft`). Limites mesurees du lot STP : le BPDU MSTP ne porte aucun enregistrement MSTI (le moteur n'en echange pas), son cout interne et son nombre de sauts valent 0 et 20 en dur, et le BPDU PVST+ du VLAN natif part sur l'adresse IEEE comme dans le moteur (un vrai IOS envoie aussi la copie SNAP pour le VLAN 1).
+Restent a zero, avec le meme constat contre le vrai outil : EIGRP (`EIGRP version 0 packet not supported`), et, non mesures faute de laboratoire, DTP (0x2004, le vrai outil l'imprime `ethertype Unknown (0x2004)` avec son dump hexadecimal), VTP, PAgP, UDLD (trames Cisco d'ethertype logique a zero octet), BGP (RFC 4271), OSPFv3 (le moteur n'en tient pas le format : les
 adresses y sont hachees, `checksum.ts`), HSRP, VRRP, PIM, IGMP. Limites connues du lot fait : le MD5 de RIP (RFC 4822) et d'OSPF (RFC 2328 D.4.3) n'est pas calcule par les moteurs, qui
 portent un condense propre : RIP l'ecrit comme un mot de passe, OSPF place les octets du condense du moteur (ou des zeros) apres le paquet ; les LSA opaques (RFC 5250), le LLS (RFC 5613)
 et les LSA de type 6 ne sont pas encodes. Pour chaque protocole restant : l'encodeur a cote du moteur (comme `ospf/OspfWire.ts`), le port de l'imprimeur (`print-eigrp.c`,
-`print-cdp.c`, `print-lldp.c`, `print-stp.c`, `print-bgp.c`), puis un laboratoire dans l'oracle.
+`print-cdp.c`, `print-lldp.c`, `print-bgp.c`), puis un laboratoire dans l'oracle.
 
 ### [curl-writeout] ce que curl -w ne reproduit pas encore (mesure contre curl 8.5.0, voir curl-writeout-oracle.test.ts)
 

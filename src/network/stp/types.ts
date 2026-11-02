@@ -42,6 +42,9 @@ export interface StpBpdu {
   flags: number;
   proposal?: boolean;
   agreement?: boolean;
+  senderRole?: StpPortRole;
+  senderLearning?: boolean;
+  senderForwarding?: boolean;
   rootBridge: BridgeId;
   rootPathCost: number;
   senderBridge: BridgeId;
