@@ -43,6 +43,7 @@ import { buildNamedConfig } from './NamedConfig';
 import { NamedConfigError } from './NamedConfigError';
 import { Bind9Logging } from './Bind9Logging';
 import { RndcChannel } from './RndcChannel';
+import { renderViewDump } from './NamedCacheDump';
 import { RndcServer } from './RndcServer';
 import type { Zone } from '@/network/dns/zone/Zone';
 import type { ResourceRecord, ResourceRecordData, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
@@ -140,16 +141,30 @@ export class Bind9Service {
     this.dnssecValidationEnabled = enabled;
   }
 
-  /** `rndc dumpdb [-all]` — dumps every loaded zone's records, real `named_dump.db`-style, via the existing Bind9Files API. */
-  dumpDatabase(): OperationResult {
+  dumpDatabase(options: readonly string[] = []): OperationResult {
     if (!this.running || !this.store) return { ok: false, error: 'not running' };
-    const lines: string[] = [';', `; Dumped at ${simulationDate().toUTCString()}`, ';'];
-    for (const zone of this.store.listZones()) {
-      lines.push(`; Zone dump of '${zone.origin || '.'}'`);
-      for (const rr of zone.allRecords()) lines.push(formatRecordLine(rr));
-      lines.push('');
+    const wanted = new Set(options.filter((word) => word.startsWith('-')));
+    const wholeView = wanted.size === 0 || wanted.has('-all') || wanted.has('-cache') || wanted.has('-expired');
+    const sections = {
+      cache: wholeView,
+      addressDatabase: wholeView || wanted.has('-adb'),
+      badCache: wholeView || wanted.has('-bad'),
+      servfailCache: wholeView || wanted.has('-fail'),
+    };
+    const lines: string[] = [];
+    if (sections.cache || sections.addressDatabase || sections.badCache || sections.servfailCache) {
+      const now = simulationDate();
+      lines.push(...renderViewDump('_default', this.cache.snapshot(), sections, now), ...renderViewDump('_bind', null, sections, now), '; Dump complete');
     }
-    this.files.append('/var/cache/bind/named_dump.db', lines.join('\n') + '\n');
+    if (wanted.has('-zones') || wanted.has('-all')) {
+      lines.push(';', `; Dumped at ${simulationDate().toUTCString()}`, ';');
+      for (const zone of this.store.listZones()) {
+        lines.push(`; Zone dump of '${zone.origin || '.'}'`);
+        for (const rr of zone.allRecords()) lines.push(formatRecordLine(rr));
+        lines.push('');
+      }
+    }
+    this.files.write('/var/cache/bind/named_dump.db', lines.join('\n') + '\n');
     return { ok: true };
   }
 

@@ -48,8 +48,9 @@ interface PendingQuery {
   soa?: ResourceRecord<SoaRecordData>;
 }
 
-function addressesOf(records: readonly ResourceRecord<ResourceRecordData>[]): string[] {
+function addressesOf(records: readonly ResourceRecord<ResourceRecordData>[], qtype: number): string[] {
   return records.flatMap(record => {
+    if (record.data.type !== qtype) return [];
     const legacy = resourceRecordToLegacyRecord(record);
     return legacy === null ? [] : [legacy.value];
   });
@@ -110,7 +111,7 @@ export class FirewallDnsClient {
 
   resolve(fqdn: string, family: DnsAddressFamily = 'ipv4'): readonly string[] {
     const cached = this.cache.lookup(fqdn, QUERY_TYPE[family].code);
-    if (cached.kind === 'hit') return addressesOf(cached.records);
+    if (cached.kind === 'hit') return addressesOf(cached.records, QUERY_TYPE[family].code);
     if (cached.kind === 'negative' || cached.kind === 'servfail') return [];
     return this.query(fqdn, family);
   }
@@ -130,7 +131,7 @@ export class FirewallDnsClient {
 
       if (collected.records.length > 0) {
         this.cache.storePositive(collected.records, fqdn);
-        return addressesOf(collected.records);
+        return addressesOf(collected.records, type.code);
       }
       if (collected.rcode !== undefined && collected.soa !== undefined) {
         this.cache.storeNegative(fqdn, type.code, collected.rcode, collected.soa);

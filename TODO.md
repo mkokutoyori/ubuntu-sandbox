@@ -90,6 +90,27 @@ eux echouera.
 
 ## Pile TCP/IP
 
+### [dns] le poste Linux ne tient aucun cache de resolution : dig, getent, ping et curl ne passent pas par le stub de systemd-resolved
+Mesure sur PC-CONSEILLER du lab `dns-agence-bancaire` (sonde `zz` jetable, trames UDP/53 comptees au port) : `getent hosts web.banquehorizon.com` emet 2 questions
+(A et AAAA) A CHAQUE appel, `ping -c 1` 3, `curl` 1 ; `resolvectl statistics` reste a `Current Cache Size: 0`, `Cache Hits: 0` ; `resolvectl status` n'a pas de section `Link 2 (eth0)` ;
+`resolvectl query www.banquehorizon.com` repond `Name or service not known` sans emettre une seule question (le service n'a aucun serveur : le bail DHCP n'est pas transmis a
+`ResolvedService`). Le cache des SERVEURS (DC1, DNS-RES) et celui du poste Windows fonctionnent (sonde `dns-agence-bancaire-cache`).
+Pourquoi ce n'est pas ferme : `/etc/resolv.conf` porte les serveurs amont en clair (`LinuxNetworkConfigManager.writeResolvConf`, `PRD-networkd` §7) parce que le resolveur du
+simulateur lit ce fichier ; le pointer vers `127.0.0.53` fait passer tout `dig` et toute la libc par `ResolvedService`, qui tient SA table `answers` a cote d'un `DnsCache` (deux
+magasins pour un seul fait, regle 2 : a fermer ensemble, en gardant le `DnsCache` qui suit deja les CNAME, le cache negatif et les delegations).
+
+### [dns] `rndc dumpdb -cache` et le resolveur BIND : ce que BIND 9.18 fait en plus et que le simulateur ne fait pas
+Le fichier est ecrit dans la mise en page de `masterdump` (colonnes 24/32/40, confiance `; authanswer` / `; glue` / `; answer`, SOA sur plusieurs lignes, entrees negatives, ordre canonique) et compare
+a un vrai BIND (`bind-cache-dump-oracle`). Restent, mesures : la base d'adresses (ADB) est ecrite sans ses entrees (srtt, compteurs edns/plain, cookie) et le cache SERVFAIL sans les siennes ; la
+racine n'est pas amorcee (`. NS` `authanswer` absent, et sa requete d'amorcage) ; BIND 9.18 minimise le nom des questions (`_tcp.banquehorizon.com` NS, `arpa.`...), pas le simulateur ; les serveurs
+faisant autorite du simulateur n'envoient pas le NS de la zone dans la section authority d'une reponse positive, donc le resolveur garde les NS en `glue` la ou BIND a `authauthority` ; la section
+additional d'une reponse faisant autorite n'est pas conservee (`; additional`) ; le plafond `max-ncache-ttl` (10800 s) du cache negatif n'est pas applique. Les blocs concernes sont ecartes de la
+comparaison, nommes dans l'en-tete du test.
+
+### [windows] `ipconfig /displaydns` : seule l'entree `Name does not exist.` est rendue comme Windows
+Un NXDOMAIN retenu par le client s'affiche `Name does not exist.` sous le nom (Microsoft Learn, « Troubleshooting DNS clients »). L'entree NODATA (`Status: NoRecords`) garde la mise en page
+d'un enregistrement faute d'un libelle atteste : la page Microsoft n'a pas pu etre lue en entier depuis cet environnement.
+
 ### [horloge] des piles de protocole lisent l'heure globale, pas celle de leur machine
 **Mesure** : les lecteurs bruts `Date.now()` / `new Date()` ont ete remplaces
 par `simulationNowMs()` / `simulationDate()` (une seule lecture : l'heure de

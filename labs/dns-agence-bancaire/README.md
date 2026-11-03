@@ -2,7 +2,7 @@
 
 Un lab pour **s'entraîner sur le protocole DNS** avec deux éditeurs côte à côte (**Windows Server** et **BIND9**), un petit arbre DNS complet qui permet la **récursion** (racine → `com` → domaine de la banque), un réseau d'agence avec **DHCP**, et un **site web avancé** servi en HTTPS par nginx.
 
-Tout le lab a été construit en tapant de vraies commandes (PowerShell, bash, IOS) dans les terminaux du simulateur, exporté en JSON, puis **réimporté dans un canevas vierge** : les mêmes 18 vérifications passent sur le lab neuf et sur le lab réimporté (voir `src/labs/dnsAgenceBancaire/checks.ts`).
+Tout le lab a été construit en tapant de vraies commandes (PowerShell, bash, IOS) dans les terminaux du simulateur, exporté en JSON, puis **réimporté dans un canevas vierge** : les mêmes 24 vérifications passent sur le lab neuf et sur le lab réimporté (voir `src/labs/dnsAgenceBancaire/checks.ts`).
 
 ## Ce que le lab enseigne
 
@@ -111,9 +111,15 @@ ipconfig /all
 Resolve-DnsName www.banquehorizon.com
 ```
 ```
-Name      : www.banquehorizon.com
+Name     : www.banquehorizon.com
+Type     : CNAME
+TTL      : 3600
+Section  : Answer
+NameHost : web.banquehorizon.com
+
+Name      : web.banquehorizon.com
 Type      : A
-TTL       : 300
+TTL       : 3600
 Section   : Answer
 IPAddress : 203.0.113.20
 ```
@@ -130,7 +136,7 @@ dig www.banquehorizon.com +short
 curl -sk https://www.banquehorizon.com/ | head -12
 ```
 
-Les 18 vérifications complètes (une par leçon) sont dans `src/labs/dnsAgenceBancaire/checks.ts` ; le test `src/__tests__/unit/labs/dns-agence-bancaire.test.ts` les exécute sur le lab neuf et sur ce fichier réimporté.
+Les 24 vérifications complètes (une par leçon) sont dans `src/labs/dnsAgenceBancaire/checks.ts` ; le test `src/__tests__/unit/labs/dns-agence-bancaire.test.ts` les exécute sur le lab neuf et sur ce fichier réimporté.
 
 ---
 
@@ -230,7 +236,81 @@ www.banquehorizon.com CNAME            3600 web.banquehorizon.com
 web.banquehorizon.com A                3600 203.0.113.20
 ```
 
-Sur **DNS-RES** : `sudo rndc flush` vide le cache du résolveur BIND.
+Sur **DNS-RES**, `sudo rndc dumpdb -cache` écrit le cache du résolveur BIND dans `/var/cache/bind/named_dump.db` (`sudo rndc flush` le vide) :
+
+```bash
+sudo rndc dumpdb -cache; sudo cat /var/cache/bind/named_dump.db
+```
+```
+;
+; Start view _default
+;
+;
+; Cache dump of view '_default' (cache _default)
+;
+; using a 0 second stale ttl
+$DATE 20261103142107
+; glue
+com.			86390	IN NS	a.nic.com.
+; glue
+banquehorizon.com.	3590	NS	ns1.banquehorizon.com.
+			3590	NS	ns2.banquehorizon.com.
+; glue
+ns1.banquehorizon.com.	3590	A	203.0.113.10
+; authanswer
+web.banquehorizon.com.	3590	A	203.0.113.20
+; authanswer
+www.banquehorizon.com.	3590	CNAME	web.banquehorizon.com.
+...
+```
+
+Chaque bloc commence par le **niveau de confiance** de BIND : `authanswer` (réponse d'un serveur faisant autorité), `glue` (adresses et délégations apprises d'une référence), `answer` (réponse négative), `additional`. Le nom du propriétaire n'est écrit qu'une fois par nœud, le TTL est ce qu'il **reste** et la classe `IN` n'apparaît que sur le premier enregistrement. Les noms sont rangés dans l'ordre canonique du DNS (`com.` avant `banquehorizon.com.`).
+
+### Le cache répond : une seule question descend l'arbre
+
+Le cache n'est utile que s'il évite de refaire le chemin. Sur **PC-GUICHET1**, posez deux fois la même question à dix secondes d'intervalle :
+
+```powershell
+Resolve-DnsName www.banquehorizon.com
+Start-Sleep -Seconds 10
+Resolve-DnsName www.banquehorizon.com
+```
+```
+Name     : www.banquehorizon.com
+Type     : CNAME
+TTL      : 3590
+Section  : Answer
+NameHost : web.banquehorizon.com
+
+Name      : web.banquehorizon.com
+Type      : A
+TTL       : 3590
+Section   : Answer
+IPAddress : 203.0.113.20
+```
+
+La seconde réponse porte les TTL du cache (3590 et non 3600) : **aucun paquet** n'a quitté le poste. Un autre poste (PC-GUICHET2) qui demande le même nom est servi par le cache de DC1 sans que DNS-RES soit interrogé, et ROOT-NS et TLD-NS ne reçoivent plus rien dès que la délégation de `banquehorizon.com` est connue (`ebanking`, `agences`, `api` ne vont plus que chez NS1-BANK).
+
+Un nom qui n'existe pas se retient aussi (cache **négatif**, RFC 2308) : le serveur joint le SOA de la zone à sa réponse, et c'est lui qui fixe la durée de conservation.
+
+```powershell
+Resolve-DnsName nexiste.banquehorizon.com
+Get-DnsClientCache | Where-Object Status -eq NotExist
+```
+```
+Entry      : nexiste.banquehorizon.com
+Name       : nexiste.banquehorizon.com
+Type       :
+Status     : NotExist
+Section    : Authority
+TimeToLive : 900
+DataLength : 0
+Data       :
+```
+
+Le poste Windows plafonne le cache négatif à 900 secondes (`MaxNegativeCacheTtl`), même si le SOA en annonce 3600. Sur **PC-CONSEILLER**, `dig @10.20.20.53 nexiste.banquehorizon.com` montre le SOA dans la section `AUTHORITY`.
+
+**À savoir** : sur PC-CONSEILLER, `dig`, `getent hosts`, `ping` et `curl` lisent `/etc/resolv.conf` et interrogent directement DC1 ; le poste Linux ne tient pas de cache de résolution (le stub `systemd-resolved` existe mais n'est pas dans le chemin, voir `TODO.md`). Le cache se constate donc sur DC1 et sur DNS-RES, pas sur ce poste.
 
 ## 4. Les types d'enregistrements
 

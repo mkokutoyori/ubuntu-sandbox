@@ -61,12 +61,12 @@ import { UDP_PORT_NTP } from '../ntp/types';
 import { W32TimeService } from './windows/W32TimeService';
 import { runW32tm } from './windows/WinW32tm';
 import { simulatedWait } from '../core/SimulatedWait';
-import { DnsCache } from '../dns/resolver/DnsCache';
+import { DEFAULT_CACHE_LIMITS, DnsCache, type DnsCacheLimits } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
 import { WindowsDnsClientSettings } from './windows/dnsClientSettings';
 import { devolvedSuffixes, nrptRuleFor } from './windows/dnsClient';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
-import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
+import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord, SoaRecordData } from '../dns/wire/ResourceRecord';
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
@@ -370,6 +370,14 @@ function seededFirewallRules(): Map<string, NetFirewallRuleEntry> {
 const STATUS_CONTROL_C_EXIT = -1073741510;
 const EXIT_PSSESSION = /^\s*exit-pssession\s*$/i;
 
+const WINDOWS_CLIENT_MAX_CACHE_TTL_SECONDS = 86400;
+const WINDOWS_CLIENT_MAX_NEGATIVE_CACHE_TTL_SECONDS = 900;
+const WINDOWS_CLIENT_CACHE_LIMITS: DnsCacheLimits = {
+  ...DEFAULT_CACHE_LIMITS,
+  maxTtlSeconds: WINDOWS_CLIENT_MAX_CACHE_TTL_SECONDS,
+  maxNegativeTtlSeconds: WINDOWS_CLIENT_MAX_NEGATIVE_CACHE_TTL_SECONDS,
+};
+
 export class WindowsPC extends EndHost implements UserAccountHost {
   protected readonly defaultTTL = 128;
 
@@ -409,7 +417,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private dhcpClassIds: Map<string, string> = new Map();
   /** Per-interface DHCPv6 class id, set via `ipconfig /setclassid6`. */
   private dhcpClassIds6: Map<string, string> = new Map();
-  readonly dnsCache = new DnsCache(() => this.getSystemClockMs());
+  readonly dnsCache = new DnsCache(() => this.getSystemClockMs(), () => WINDOWS_CLIENT_CACHE_LIMITS);
   /** DHCP client trace flag */
   private dhcpTraceEnabled: boolean = false;
   /** Primary DNS suffix (set via netsh dnsclient set global) */
@@ -1340,6 +1348,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const hit = this.dnsCache.lookup(qname, qtype);
     if (hit.kind !== 'hit') return null;
     for (const rr of hit.records) {
+      if (rr.data.type !== qtype) continue;
       const legacy = resourceRecordToLegacyRecord(rr);
       if (legacy) return legacy.value;
     }
@@ -3443,16 +3452,36 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       if (cached) return cached;
     }
     if (this.isMdnsName(name)) return null;
+    const settled = new Set<string>();
     for (const { server, qname } of this.dnsResolutionAttempts(name)) {
+      if (settled.has(qname) || this.dnsCache.lookup(qname, wanted).kind !== 'miss') continue;
       const response = await this.queryDnsServer(server, qname, type);
-      const records = response?.answers.filter((rr) => rr.data.type === wanted) ?? [];
-      if (records.length > 0) {
-        this.dnsCache.storePositive(response!.answers, qname);
-        const data = records[0].data as ARecordData | AaaaRecordData;
-        return data.address.toString();
-      }
+      const outcome = this.absorbDnsResponse(response, qname, wanted);
+      if (outcome === 'final') settled.add(qname);
+      if (outcome !== 'answered') continue;
+      const records = response!.answers.filter((rr) => rr.data.type === wanted);
+      return (records[0].data as ARecordData | AaaaRecordData).address.toString();
     }
     return null;
+  }
+
+  private absorbDnsResponse(response: DnsMessage | null, qname: string, qtype: number): 'answered' | 'final' | 'retry' {
+    if (response?.answers.some((rr) => rr.data.type === qtype)) {
+      this.dnsCache.storePositive(response.answers, qname);
+      return 'answered';
+    }
+    const rcode = response?.flags.rcode;
+    if (response === null || (rcode !== DnsRcode.NOERROR && rcode !== DnsRcode.NXDOMAIN)) return 'retry';
+    const soa = response.authorities.find((rr): rr is ResourceRecord<SoaRecordData> => rr.data.type === RRType.SOA);
+    if (soa !== undefined && response.answers.length === 0) this.dnsCache.storeNegative(qname, qtype, rcode, soa);
+    return 'final';
+  }
+
+  private knownMissing(qname: string, qtype: number): boolean {
+    const known = this.dnsCache.lookup(qname, qtype);
+    if (known.kind === 'negative') this.dnsFailures.note(known.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'NODATA');
+    if (known.kind === 'servfail') this.dnsFailures.note('SERVFAIL');
+    return known.kind === 'negative' || known.kind === 'servfail';
   }
 
   async resolveHostname6(name: string): Promise<IPv6Address | null> {
@@ -3505,13 +3534,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
     if (options.cacheOnly) return [];
     if (!this.isMdnsName(name) && !linkOnly) {
+      const settled = new Set<string>();
       for (const { server, qname } of this.dnsResolutionAttempts(name)) {
-        const response = this.queryDnsServerAwaiting(server, qname, 'A');
-        const aRecords = response?.answers.filter((rr) => rr.data.type === RRType.A) ?? [];
-        if (aRecords.length > 0) {
-          this.dnsCache.storePositive(response!.answers, qname);
-          return aRecords.map((rr) => (rr.data as ARecordData).address.toString());
+        if (settled.has(qname)) continue;
+        if (this.knownMissing(qname, RRType.A)) {
+          settled.add(qname);
+          continue;
         }
+        const response = this.queryDnsServerAwaiting(server, qname, 'A');
+        const outcome = this.absorbDnsResponse(response, qname, RRType.A);
+        if (outcome === 'answered') {
+          return response!.answers.filter((rr) => rr.data.type === RRType.A).map((rr) => (rr.data as ARecordData).address.toString());
+        }
+        if (outcome === 'final') settled.add(qname);
         this.dnsFailures.noteUnanswered(response);
       }
     }
@@ -3521,12 +3556,21 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return linkLocal;
   }
 
+  cachedAnswerRecords(name: string): readonly ResourceRecord[] {
+    for (const qname of this.dnsSearchCandidates(name)) {
+      const cached = this.dnsCache.lookup(qname, RRType.A);
+      if (cached.kind === 'hit') return cached.records;
+    }
+    return [];
+  }
+
   resolveDnsViaServerSync(name: string, server: string): string[] {
     return this.resolveDnsViaServerWithTtlSync(name, server).map(r => r.ip);
   }
 
   resolveDnsViaServerWithTtlSync(name: string, server: string): Array<{ ip: string; ttl: number }> {
-    return this.lookupDnsRecordsSync(name, 'A', server)
+    return (this.lookupDnsRecordsSync(name, 'A', server) ?? [])
+      .filter((rr) => rr.data.type === RRType.A)
       .map((rr) => ({ ip: (rr.data as ARecordData).address.toString(), ttl: rr.ttl }));
   }
 
@@ -3534,13 +3578,26 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const wanted = rrTypeFromName(qtype);
     if (wanted === null) return null;
     this.dnsFailures.reset();
+    const settled = new Set<string>();
     for (const attempt of this.typedDnsAttempts(name, server)) {
+      if (settled.has(attempt.qname)) continue;
+      if (server === undefined && wanted !== RRType.ANY) {
+        const cached = this.dnsCache.lookup(attempt.qname, wanted);
+        if (cached.kind === 'hit') return cached.records;
+        if (this.knownMissing(attempt.qname, wanted)) {
+          settled.add(attempt.qname);
+          continue;
+        }
+      }
       const response = this.queryDnsServerAwaiting(attempt.server, attempt.qname, qtype);
       const answers = response?.answers ?? [];
-      const matching = wanted === RRType.ANY ? answers : answers.filter((rr) => rr.data.type === wanted);
-      if (matching.length > 0) {
+      const asked = wanted === RRType.ANY ? answers : answers.filter((rr) => rr.data.type === wanted);
+      if (asked.length > 0) {
         if (server === undefined) this.dnsCache.storePositive(response!.answers, attempt.qname);
-        return matching;
+        return wanted === RRType.ANY ? answers : answers.filter((rr) => rr.data.type === wanted || rr.data.type === RRType.CNAME);
+      }
+      if (server === undefined && wanted !== RRType.ANY && this.absorbDnsResponse(response, attempt.qname, wanted) === 'final') {
+        settled.add(attempt.qname);
       }
       this.dnsFailures.noteUnanswered(response);
     }

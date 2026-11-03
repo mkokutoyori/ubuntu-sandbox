@@ -4,6 +4,21 @@ import { findOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResolutionResult } from '@/network/dns/resolver/RecursiveResolver';
 
+const SIGNING_TYPES: ReadonlySet<number> = new Set([RRType.RRSIG, RRType.NSEC]);
+
+function queryType(query: DnsMessage): number {
+  return query.questions[0].qtype;
+}
+
+function answersNothing(answers: DnsMessage['answers'], qtype: number): boolean {
+  return qtype === RRType.CNAME ? answers.length === 0 : answers.every((rr) => rr.data.type === RRType.CNAME);
+}
+
+function negativeAuthorities(result: ResolutionResult, negative: boolean, wantsDnssec: boolean): DnsMessage['authorities'] {
+  if (!negative) return [];
+  return (result.authorities ?? []).filter((rr) => rr.data.type === RRType.SOA || (wantsDnssec && SIGNING_TYPES.has(rr.data.type)));
+}
+
 export function recursiveResolveOptions(query: DnsMessage): { checkingDisabled: boolean } {
   return { checkingDisabled: query.flags.cd };
 }
@@ -26,7 +41,7 @@ export function buildRecursiveResponse(query: DnsMessage, result: ResolutionResu
     },
     questions: [query.questions[0]],
     answers,
-    authorities: [],
+    authorities: negativeAuthorities(result, answersNothing(answers, queryType(query)) && result.status !== 'SERVFAIL', wantsDnssec),
     additionals: wantsDnssec ? [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: true })] : [],
   };
 }
