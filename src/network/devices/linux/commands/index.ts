@@ -66,6 +66,7 @@ import { ncCommand } from './net/Nc';
 import { tcCommand } from './net/Tc';
 import { radtestCommand } from './net/Radtest';
 import { tcpdumpCommand } from './net/Tcpdump';
+import { tcpreplayCommand } from './net/Tcpreplay';
 import { arpingCommand } from './net/Arping';
 import { netplanCommand } from './net/Netplan';
 import { resolvectlCommand } from './net/Resolvectl';
@@ -226,6 +227,7 @@ export {
   tcCommand,
   radtestCommand,
   tcpdumpCommand,
+  tcpreplayCommand,
   arpingCommand,
   netplanCommand,
   networkctlCommand,
@@ -405,6 +407,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   tcCommand,
   radtestCommand,
   tcpdumpCommand,
+  tcpreplayCommand,
   arpingCommand,
   netplanCommand,
   networkctlCommand,

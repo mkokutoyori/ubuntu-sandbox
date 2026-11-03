@@ -407,6 +407,8 @@ d'un en-tete (`lab-snapshot-14` a `-128`, `snapshot-shorter-than-the-ip-header`)
 fichier comme sur une capture vivante avec `-s`. Les cas sont ignores (`PRINTS_TRUNCATED_PACKETS_DIFFERENTLY`).
 **Pourquoi ce n'est pas ferme** : chaque imprimeur de protocole doit connaitre la limite de ce qui est
 capture, ce que la trame decodee ne porte pas aujourd'hui (`CaptureFrame.truncatedLink` ne sert que la liaison).
+`tcpreplay -v` sur un fichier a instantane coupe (`verbose-loop` de `tcpreplay-oracle`, attendu en echec) imprime
+`[|icmp]` / `[|udp]` chez l'outil reel et la longueur chez nous : meme defaut, meme fermeture.
 
 ### [pcap] pcapng, et les types de liaison que le simulateur n'imprime pas
 `decodePcap` ne lit que les savefiles classiques (magics 0xa1b2c3d4, 0xa1b23c4d, 0xa1b2cd34) : un fichier
@@ -421,7 +423,48 @@ La trame est un objet, les octets de `CaptureFrame.raw` sont synthetises : une o
 a l'ecriture, les fragments IP portent un marqueur (`ipv4-fragment-data`) et non leurs octets, la citation
 d'un message ICMP d'erreur est reconstruite et non copiee, et une charge utile `string` est encodee en UTF-8
 la ou un client reel enverrait ses octets. **Pourquoi ce n'est pas ferme** : il faut des charges
-utiles en octets de bout en bout, ce que seuls TCP et UDP portent deja.
+utiles en octets de bout en bout, ce que seuls TCP et UDP portent deja. Exception posee par `tcpreplay` : une
+trame injectee depuis un fichier garde ses octets d'origine (`core/WireImage.ts`), que la vue de capture lit a la
+place de la reconstruction ; le paquet structure que la pile voit reste, lui, sans les octets.
+
+### [tcpreplay] ce que le port de tcpreplay 4.4.4 ne couvre pas, et les ecarts acceptes
+Le port suit `tcpreplay.c`, `tcpreplay_api.c`, `replay.c`, `send_packets.c`, `common/{flows,utils,sendpacket,interface,cache,get}.c`
+et libopts (deux passes, groupes de drapeaux, abreviations, controle de coherence dans l'ordre de la table) ; 143 lignes de commande
+enregistrees chez l'outil reel (`tcpreplay-oracle`), plus 3718 vecteurs de l'arithmetique de `--unique-ip` compilee depuis la source
+(`tcpreplay-unique-ip-arithmetic`). Mesure et non ferme :
+- Les freres ne sont pas livres : `tcpprep`, `tcprewrite`, `tcpbridge`, `tcpcapinfo`, `tcpliveplay` et `tcpreplay-edit` (donc ni
+  `--mac`, ni `--seed`, ni la reecriture de paquets). `-c` lit un fichier de cache `tcpprep` version 04 et route comme l'outil, mais
+  rien dans le simulateur n'en fabrique un.
+- `-d` : seuls les deux sites de niveau 1 qui s'executent sur le chemin nominal impriment (`sendpacket_open_pf`, `our_safe_pcap_next`) ;
+  les traces des niveaux 2 a 5 ne sont pas portees. Le niveau 5 ecrit aussi un fichier de debogage tcpdump que le port ne cree pas.
+- Un rejeu fini est synchrone : `timeout N tcpreplay ...` ne le coupe pas en route et `SIGUSR1`/`SIGCONT` (suspension) n'existent pas.
+  Une boucle infinie (`-l 0` sans `-L` ni `--duration`) s'arrete sur `Ctrl+C`/`kill` comme l'outil (` User interrupt...`,
+  `sendpacket_abort`, puis les statistiques), ou, sans terminal qui la supervise, apres 200 ms reelles.
+- `-i lo` : les trames sont comptees envoyees mais ne rentrent pas dans la pile de l'hote (la ou `PF_PACKET` sur `lo` les lui rend).
+- `-o` ne lit que l'entree redirigee ou en tube ; il n'y a pas de lecture interactive sur le clavier pour une commande du registre.
+- `--more-help` n'imprime pas les trois lignes d'en-tete du pager (`::::::::::::::`, nom du fichier temporaire).
+- `-v` : l'outil reel lit la sortie de son fils `tcpdump` avec un seul `poll()` et perd ou coupe la ligne du dernier paquet (la premiere
+  mesure en avait quatre, les suivantes trois et demie) ; le simulateur imprime toutes les lignes. `-A` decoupe sur l'espace ET le tiret
+  comme `OPT_DELIM`, donc `-A '-nn -e'` donne `-nn -e -n -l -r -`.
+- Un repertoire est parcouru dans l'ordre du nom ; `fts` donne l'ordre de `readdir`, propre au systeme de fichiers. Un fichier qui
+  n'est pas une capture, ouvert avant une capture valide, est silencieux (le code de retour du dernier fichier ecrase l'erreur) :
+  reproduit tel quel, `directory-with-text` le mesure.
+- `--dualfile` avec `--unique-ip` et un paquet que l'edition refuse (ARP) : `send_dual_packets` fait `continue` avant de relire un paquet et
+  l'outil reel ne rend jamais la main (mesure : 120 s de delai sans fin). Le simulateur passe au paquet suivant et compte l'echec.
+- `--pktlen` envoie `len` octets d'un paquet de `caplen` coupe : l'outil reel envoie des octets de tas non initialises, le simulateur des zeros.
+- Une trame au `DLT_JUNIPER_ETHER` sans le nombre magique `MGC` n'imprime pas l'avertissement de `get_l2len_protocol`.
+- Le temps est celui du simulateur : un rejeu `-t` mesure le debit de la liaison (la serialisation de chaque trame sur le cable, comme
+  `Cable.transitDelayMs`), pas le processeur de l'hote ; les pauses (`-x`, `-p`, `-M`, `--maxsleep`, `--duration`, `--loopdelay-ms`)
+  font avancer l'horloge commune (`PathClock.wait`) et le test les compare au centieme de seconde. Le sommeil `nano` est tronque a la microseconde.
+- Les fichiers de preselection : seuls `/usr/bin/.tcpreplayrc` et `--load-opts` sont lus (lignes `nom`, `nom valeur`, `nom = valeur`,
+  `nom: valeur`, guillemets retires, `#` en commentaire, noms inconnus ignores comme l'outil) ; les sections et valeurs imbriquees de
+  libopts ne le sont pas. Le numero de version du paquet (`4.4.4-1`) est la version amont de l'outil mesure, pas une revision Ubuntu attestee.
+
+### [veth] `ip link add A type veth peer name B` numerote A avant B, le noyau numerote B avant A
+**Mesure** : `unshare -n` puis `ip link add veth0 type veth peer name veth1; ip -o link` repond `2: veth1@veth0` puis `3: veth0@veth1` (le
+pair est enregistre le premier) ; le simulateur repond `veth0` (6) puis `veth1` (7), sans le suffixe `@pair`. Vu par `tcpreplay --listnics`
+(l'ordre de `pcap_findalldevs` suit l'indice) et par les alias `%N` ; `tcpreplay-oracle` ne compare donc que l'ensemble des noms `veth*`.
+**Pourquoi ce n'est pas ferme** : plusieurs suites epinglent les indices et les lignes de `ip link` d'une paire.
 
 ### [vfs] la taille d'un fichier compte des unites UTF-16 du texte, pas des octets
 **Mesure** : `printf 'é' > /tmp/x` puis `ls -l` et `stat -c %s` disent 1, `wc -c` dit 2 (l'octet reel). Un

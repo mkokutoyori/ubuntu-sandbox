@@ -49,7 +49,8 @@ function micros(frame: CaptureFrame): number {
 
 function recordOf(frame: CaptureFrame, header: CaptureFileHeader, cooked: CookedInterfaces | null): PcapWriteRecord {
   const microsecond = micros(frame);
-  const subsecond = header.nanosecond === true ? (microsecond % 1_000_000) * 1000 + (frame.atSubMicroNanos ?? 0) : microsecond % 1_000_000;
+  const wholeMicros = frame.subsecondMicros ?? microsecond % 1_000_000;
+  const subsecond = header.nanosecond === true ? wholeMicros * 1000 + (frame.atSubMicroNanos ?? 0) : wholeMicros;
   const bytes = cooked === null ? frame.raw : cookedRecordBytes(frame, cooked);
   const originalLength = cooked === null ? frame.length : cookedLength(frame, cooked);
   const padded = bytes.length >= originalLength ? bytes : [...bytes, ...new Array<number>(originalLength - bytes.length).fill(0)];
@@ -101,19 +102,25 @@ interface Instant {
   at: Date;
   atMicros: number;
   atSubMicroNanos: number;
+  subsecondMicros?: number;
 }
 
 function instantOf(record: PcapRecord, nanosecond: boolean): Instant {
   const microsecond = Math.floor(nanosecond ? record.subsecond / 1000 : record.subsecond);
+  const beyondSecond = microsecond >= 1_000_000;
   return {
-    at: new Date(record.seconds * 1000 + Math.floor(microsecond / 1000)),
-    atMicros: record.seconds * 1_000_000 + microsecond,
+    at: new Date(record.seconds * 1000 + (beyondSecond ? 0 : Math.floor(microsecond / 1000))),
+    atMicros: record.seconds * 1_000_000 + (beyondSecond ? 0 : microsecond),
     atSubMicroNanos: nanosecond ? record.subsecond % 1000 : 0,
+    ...(beyondSecond ? { subsecondMicros: microsecond } : {}),
   };
 }
 
 function stamped(frame: CaptureFrame | null, instant: Instant): CaptureFrame | null {
-  if (frame !== null) frame.atSubMicroNanos = instant.atSubMicroNanos;
+  if (frame !== null) {
+    frame.atSubMicroNanos = instant.atSubMicroNanos;
+    if (instant.subsecondMicros !== undefined) frame.subsecondMicros = instant.subsecondMicros;
+  }
   return frame;
 }
 

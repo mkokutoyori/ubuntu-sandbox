@@ -32,7 +32,7 @@ export interface TcpdumpDeps {
   runsDetached?(): boolean;
   readFile(path: string): string | null;
   writeFile(path: string, content: string, asUser?: string): boolean;
-  dirWritable(path: string, asUser?: string): boolean;
+  writeRefusal(path: string, asUser?: string): string | null;
   userExists?(name: string): boolean;
   names?: CaptureNames;
   stream?: { line(text: string): void };
@@ -85,13 +85,17 @@ class Transcript {
   }
 
   result(exitCode: number): TcpdumpResult {
-    const joined = (fd: 1 | 2) => this.entries.filter((e) => e.fd === fd).map((e) => e.text).join('\n');
+    const joined = (fd: 1 | 2) => withFinalTerminator(this.entries.filter((e) => e.fd === fd).map((e) => e.text).join('\n'));
     return { stdout: joined(1), stderr: joined(2), exitCode, transcript: this.entries };
   }
 }
 
+function withFinalTerminator(text: string): string {
+  return text.endsWith('\n') ? `${text}\n` : text;
+}
+
 export function interleaveTcpdumpStreams(result: TcpdumpResult): string {
-  return result.transcript.filter((e) => e.text.length > 0 || e.blank).map((e) => e.text).join('\n');
+  return withFinalTerminator(result.transcript.filter((e) => e.text.length > 0 || e.blank).map((e) => e.text).join('\n'));
 }
 
 export async function runTcpdump(tokens: string[], deps: TcpdumpDeps): Promise<TcpdumpResult> {
@@ -260,10 +264,7 @@ async function runCapture(
     (path, content) => deps.writeFile(path, content, writerUser),
     () => deps.now(),
   );
-  if (writer !== null && (!deps.dirWritable(writer.fileName, writerUser) || !writer.open())) {
-    transcript.err(`tcpdump: ${writer.fileName}: Permission denied`);
-    return transcript.result(1);
-  }
+  if (writer !== null && refusesToOpen(writer, writerUser, deps, transcript)) return transcript.result(1);
 
   const printsPackets = !opt.countOnly && (writer === null || opt.printWhileWriting);
   const ownMac = opt.noPromiscuous && opt.iface !== 'any' ? deps.interfaceMac?.(opt.iface) ?? null : null;
@@ -332,6 +333,13 @@ async function runCapture(
   return transcript.result(0);
 }
 
+function refusesToOpen(writer: CaptureFileWriter, user: string | undefined, deps: TcpdumpDeps, transcript: Transcript): boolean {
+  const refusal = deps.writeRefusal(writer.fileName, user) ?? (writer.open() ? null : 'Permission denied');
+  if (refusal === null) return false;
+  transcript.err(`tcpdump: ${writer.fileName}: ${refusal}`);
+  return true;
+}
+
 function readFileList(opt: TcpdumpOptions, deps: TcpdumpDeps, transcript: Transcript): Promise<TcpdumpResult> {
   const list = deps.readFile(opt.fileListFile!);
   if (list === null) {
@@ -362,6 +370,8 @@ async function readCaptureFiles(
   opt: TcpdumpOptions, deps: TcpdumpDeps, transcript: Transcript, files: readonly string[],
 ): Promise<TcpdumpResult> {
   let printed = 0;
+  let writer: CaptureFileWriter | null = null;
+  let limitReached = false;
   for (const path of files) {
     const content = deps.readFile(path);
     if (content === null) {
@@ -376,28 +386,46 @@ async function readCaptureFiles(
     const { file } = read;
     const { linkType, snaplen, interfaces } = file.header;
     const effective: TcpdumpOptions = { ...opt, linkType, snaplen };
-    const filter = await compileCaptureFilter(effective, deps);
-    if (filter.ok === false) { transcript.err(filter.message); return transcript.result(1); }
     transcript.err(readBanner(path, file.header));
     if (linkType === 'LINUX_SLL2') transcript.err('Warning: interface names might be incorrect');
+    const filter = await compileCaptureFilter(effective, deps);
+    if (filter.ok === false) { transcript.err(filter.message); return transcript.result(1); }
     if (!PRINTED_LINK_TYPES.has(linkType)) {
       transcript.err(unsupportedLinkTypeMessage(file.header));
       return transcript.result(1);
     }
+    if (writer === null && opt.writeFile !== null) {
+      const user = opt.dropUser ?? undefined;
+      writer = new CaptureFileWriter(
+        opt.writeFile,
+        { sizeLimitMegabytes: opt.fileSizeLimit, rotateSeconds: opt.rotateSeconds, fileCount: opt.fileCount },
+        { linkType, snaplen, interfaces, nanosecond: opt.nanoPrecision },
+        (target, text) => deps.writeFile(target, text, user),
+        () => deps.now(),
+      );
+      if (refusesToOpen(writer, user, deps, transcript)) return transcript.result(1);
+    }
+    const printsPackets = !opt.countOnly && (writer === null || opt.printWhileWriting);
     const { state, namer } = renderStateFor(effective, deps, linkType, interfaces);
     for (const frame of file.frames) {
       if (opt.count !== null && printed >= opt.count) break;
       if (!filter.predicate(frame)) continue;
       printed++;
-      if (opt.countOnly) continue;
+      if (writer !== null && writer.add(frame) === 'limit-reached') {
+        limitReached = true;
+        break;
+      }
+      if (!printsPackets) continue;
       await namer?.prepare(frame);
       transcript.out(formatFrame(frame, effective, state));
     }
+    if (limitReached) break;
     if (file.failure !== null && (opt.count === null || printed < opt.count)) {
       transcript.err(`tcpdump: pcap_loop: ${file.failure}`);
       return transcript.result(1);
     }
   }
+  if (limitReached) transcript.err(`Maximum file limit reached: ${opt.fileCount ?? 0}`);
   if (opt.countOnly) transcript.out(`${printed} packet${printed === 1 ? '' : 's'}`);
   return transcript.result(0);
 }

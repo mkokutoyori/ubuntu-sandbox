@@ -77,6 +77,8 @@ describe('tcpdump capture files (tcpdump 4.99.1 / libpcap 1.10.1)', () => {
     await writing;
 
     const output = await pc1.executeCommand('sudo tcpdump -r echo.cap host');
-    expect(output).toBe('tcpdump: can\'t parse filter expression: syntax error');
+    expect(output).toBe(
+      'reading from file echo.cap, link-type EN10MB (Ethernet), snapshot length 262144\ntcpdump: can\'t parse filter expression: syntax error',
+    );
   });
 });
