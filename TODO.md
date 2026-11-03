@@ -113,12 +113,12 @@ simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien 
 `+cookie`, `+subnet` et les autres options sont acceptes et ignores.
 
 ### [dns] `rndc dumpdb -cache` et le resolveur BIND : ce que BIND 9.18 fait en plus et que le simulateur ne fait pas
-Le fichier est ecrit dans la mise en page de `masterdump` (colonnes 24/32/40, confiance `; authanswer` / `; glue` / `; answer`, SOA sur plusieurs lignes, entrees negatives, ordre canonique) et compare
-a un vrai BIND (`bind-cache-dump-oracle`). Restent, mesures : la base d'adresses (ADB) est ecrite sans ses entrees (srtt, compteurs edns/plain, cookie) et le cache SERVFAIL sans les siennes ; la
-racine n'est pas amorcee (`. NS` `authanswer` absent, et sa requete d'amorcage) ; BIND 9.18 minimise le nom des questions (`_tcp.banquehorizon.com` NS, `arpa.`...), pas le simulateur ; les serveurs
-faisant autorite du simulateur n'envoient pas le NS de la zone dans la section authority d'une reponse positive, donc le resolveur garde les NS en `glue` la ou BIND a `authauthority` ; la section
-additional d'une reponse faisant autorite n'est pas conservee (`; additional`) ; le plafond `max-ncache-ttl` (10800 s) du cache negatif n'est pas applique. Les blocs concernes sont ecartes de la
-comparaison, nommes dans l'en-tete du test.
+Le fichier est ecrit dans la mise en page de `masterdump` (confiances `authanswer`, `authauthority`, `glue`, `answer`, `additional`, SOA sur plusieurs lignes, entrees negatives plafonnees par
+`max-ncache-ttl`, TTL positifs plafonnes par `max-cache-ttl`, amorcage `. NS`, lignes du cache SERVFAIL) et rejoue contre un vrai BIND (`bind-cache-dump-oracle`, `bind-minimal-responses-oracle`). Restent,
+mesures : la base d'adresses (ADB) est ecrite sans ses entrees (srtt, compteurs edns/plain, cookie : des mesures du fil que le simulateur ne tient pas) ; BIND 9.18 minimise le nom des questions
+(`_tcp.banquehorizon.com` NS, `arpa.`... : les entrees `\-NS` du vrai cache), pas le simulateur, ce qui change aussi les questions vues sur le fil par la racine et le TLD ; la reponse recursive que le
+resolveur BIND rend a son client ne porte ni la section authority (NS de la zone), ni les adresses de ces serveurs en additional, ni l'OPT de la question EDNS, alors que le vrai `named` les ajoute
+depuis son cache (`dig @resolveur www.banquehorizon.com` : AUTHORITY: 2, ADDITIONAL: 3 avec l'OPT sur le vrai, 0 et 0 ici ; `. NS` : une reponse sans additional sur le vrai comme ici).
 
 ### [windows] `ipconfig /displaydns` : seule l'entree `Name does not exist.` est rendue comme Windows
 Un NXDOMAIN retenu par le client s'affiche `Name does not exist.` sous le nom (Microsoft Learn, « Troubleshooting DNS clients »). L'entree NODATA (`Status: NoRecords`) garde la mise en page

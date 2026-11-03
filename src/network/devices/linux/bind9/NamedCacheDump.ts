@@ -163,6 +163,10 @@ const ADDRESS_DATABASE = [
 const BAD_CACHE = [';', '; Bad cache', ';'];
 const SERVFAIL_CACHE = [';', '; SERVFAIL cache', ';'];
 
+function servfailLines(snapshot: DnsCacheSnapshot | null): string[] {
+  return (snapshot?.servfails ?? []).map((entry) => `; ${normalizeDnsName(entry.name)}/${rrTypeName(entry.type)} [ttl ${Math.round(entry.remainingMs)}]`);
+}
+
 export interface DumpSections {
   readonly cache: boolean;
   readonly addressDatabase: boolean;
@@ -178,6 +182,6 @@ export function renderViewDump(name: string, snapshot: DnsCacheSnapshot | null, 
   }
   if (sections.addressDatabase) lines.push(...ADDRESS_DATABASE);
   if (sections.badCache) lines.push(...BAD_CACHE);
-  if (sections.servfailCache) lines.push(...SERVFAIL_CACHE);
+  if (sections.servfailCache) lines.push(...SERVFAIL_CACHE, ...servfailLines(snapshot));
   return lines;
 }

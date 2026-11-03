@@ -250,9 +250,11 @@ sudo rndc dumpdb -cache; sudo cat /var/cache/bind/named_dump.db
 ;
 ; using a 0 second stale ttl
 $DATE 20261103142107
+; authanswer
+.			86390	IN NS	a.root-servers.net.
 ; glue
-com.			86390	IN NS	a.nic.com.
-; glue
+com.			86390	NS	a.nic.com.
+; authauthority
 banquehorizon.com.	3590	NS	ns1.banquehorizon.com.
 			3590	NS	ns2.banquehorizon.com.
 ; glue
@@ -264,7 +266,7 @@ www.banquehorizon.com.	3590	CNAME	web.banquehorizon.com.
 ...
 ```
 
-Chaque bloc commence par le **niveau de confiance** de BIND : `authanswer` (réponse d'un serveur faisant autorité), `glue` (adresses et délégations apprises d'une référence), `answer` (réponse négative), `additional`. Le nom du propriétaire n'est écrit qu'une fois par nœud, le TTL est ce qu'il **reste** et la classe `IN` n'apparaît que sur le premier enregistrement. Les noms sont rangés dans l'ordre canonique du DNS (`com.` avant `banquehorizon.com.`).
+Chaque bloc commence par le **niveau de confiance** de BIND : `authanswer` (réponse d'un serveur faisant autorité), `authauthority` (les serveurs d'une zone, annoncés par la zone elle-même dans la section authority), `glue` (adresses et délégations apprises d'une référence), `answer` (réponse négative), `additional` (adresses vues dans la section additionnelle, qui cèdent devant la glue). La première ligne, `. NS`, est la réponse à la question d'amorçage que le résolveur pose à la racine avant sa toute première question. Le nom du propriétaire n'est écrit qu'une fois par nœud, le TTL est ce qu'il **reste** et la classe `IN` n'apparaît que sur le premier enregistrement. Les noms sont rangés dans l'ordre canonique du DNS (`com.` avant `banquehorizon.com.`).
 
 ### Le cache répond : une seule question descend l'arbre
 

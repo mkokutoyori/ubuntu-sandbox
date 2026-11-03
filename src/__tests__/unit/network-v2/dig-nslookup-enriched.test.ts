@@ -77,7 +77,7 @@ describe('dig — enriched header and flags', () => {
 
     expect(out).toContain('status: NOERROR');
     expect(out).toMatch(/flags: qr aa rd;/);
-    expect(out).toContain('QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1');
+    expect(out).toContain('QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2');
     expect(out).toContain('www.example.com.\t3600\tIN\tA\t10.0.1.80');
   }, 20000);
 

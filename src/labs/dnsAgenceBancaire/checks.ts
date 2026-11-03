@@ -122,9 +122,9 @@ export const LAB_CHECKS: readonly LabCheck[] = [
     expects: [
       /Cache dump of view '_default'/,
       /; authanswer\nwww\.banquehorizon\.com\.\t\d+\tCNAME\tweb\.banquehorizon\.com\./,
-      /; glue\nbanquehorizon\.com\.\t\d+\tNS\tns1\.banquehorizon\.com\./,
+      /; authauthority\nbanquehorizon\.com\.\t\d+\tNS\tns1\.banquehorizon\.com\./,
     ],
-    lesson: 'rndc dumpdb -cache ecrit le cache du resolveur BIND : les reponses (authanswer) et les delegations apprises (glue) avec leur TTL restant.',
+    lesson: 'rndc dumpdb -cache ecrit le cache du resolveur BIND : les reponses (authanswer), les serveurs de la zone annonces par la zone elle-meme (authauthority) et les delegations apprises (glue) avec leur TTL restant.',
   },
   {
     id: 'resolver-ttl-decays', device: 'PC-CONSEILLER', shell: 'bash', command: 'sleep 2; dig @10.20.20.53 www.banquehorizon.com +noall +answer',

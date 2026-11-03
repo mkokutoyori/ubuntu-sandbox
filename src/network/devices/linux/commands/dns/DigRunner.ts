@@ -349,7 +349,7 @@ async function resolveNsAddress(
   );
   if (glued) return glued.data.address.toString();
 
-  const response = await query(referenceServer, nsName, 'A', timeoutMs, { recursionDesired: false });
+  const response = await query(referenceServer, nsName, 'A', timeoutMs, { recursionDesired: true });
   const a = response?.answers.find((rr): rr is ResourceRecord<ARecordData> => rr.data.type === RRType.A);
   return a ? a.data.address.toString() : null;
 }

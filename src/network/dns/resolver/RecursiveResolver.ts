@@ -66,6 +66,8 @@ export interface RecursiveResolverOptions {
   readonly servfailTtlSeconds?: number;
   readonly resolveSpecialUseNamesUpstream?: boolean;
   readonly refuseTestNames?: boolean;
+  readonly retainsAuthorityData?: boolean;
+  readonly primesRoot?: boolean;
 }
 
 interface IterationOutcome {
@@ -116,6 +118,8 @@ export class RecursiveResolver {
   private readonly servfailTtlSeconds: number;
   private readonly resolveSpecialUseNamesUpstream: boolean;
   private readonly refuseTestNames: boolean;
+  private readonly retainsAuthorityData: boolean;
+  private readonly primesRoot: boolean;
 
   constructor(
     private readonly host: EndHost,
@@ -133,6 +137,8 @@ export class RecursiveResolver {
     this.servfailTtlSeconds = options.servfailTtlSeconds ?? 0;
     this.resolveSpecialUseNamesUpstream = options.resolveSpecialUseNamesUpstream ?? false;
     this.refuseTestNames = options.refuseTestNames ?? false;
+    this.retainsAuthorityData = options.retainsAuthorityData ?? false;
+    this.primesRoot = options.primesRoot ?? false;
   }
 
   private nowSeconds(): number {
@@ -219,7 +225,29 @@ export class RecursiveResolver {
       if (outcome.status !== 'SERVFAIL') return outcome;
       this.cache.forgetDelegation(known.zone);
     }
+    if (!raw) await this.primeRoot();
     return this.followDelegations(this.rootHints, '', qname, qtype, depth, raw);
+  }
+
+  private async primeRoot(): Promise<void> {
+    if (!this.primesRoot || this.cache.lookup('.', RRType.NS).kind === 'hit') return;
+    const response = await this.queryFirstReachable(this.rootHints, '.', RRType.NS);
+    if (response === null || response.flags.rcode !== DnsRcode.NOERROR) return;
+    const nameServers = response.answers.filter((rr) => rr.data.type === RRType.NS && normalizeName(rr.name) === '');
+    this.cache.storeReply('.', RRType.NS, { rcode: DnsRcode.NOERROR, answers: nameServers, authorities: [] });
+  }
+
+  private retainAuthorityData(response: DnsMessage, zoneCut: string, qname: string): void {
+    const target = normalizeName(qname);
+    const nameServers = response.authorities.filter((rr) => {
+      const owner = normalizeName(rr.name);
+      return rr.data.type === RRType.NS && isWithinDomain(owner, zoneCut) && isWithinDomain(target, owner);
+    });
+    if (nameServers.length > 0) this.cache.storePositive(nameServers, undefined, undefined, 'authauthority');
+    const addresses = response.additionals.filter(
+      (rr) => (rr.data.type === RRType.A || rr.data.type === RRType.AAAA) && isWithinDomain(normalizeName(rr.name), zoneCut),
+    );
+    if (addresses.length > 0) this.cache.storePositive(addresses, undefined, undefined, 'additional');
   }
 
   private async followDelegations(
@@ -242,6 +270,7 @@ export class RecursiveResolver {
 
       if (response.answers.length > 0) {
         if (owned.length === 0) return servfail();
+        if (!raw && this.retainsAuthorityData && response.flags.aa) this.retainAuthorityData(response, zoneCut, qname);
         return this.acceptAnswers(qtype, owned, response.authorities, depth, raw);
       }
 

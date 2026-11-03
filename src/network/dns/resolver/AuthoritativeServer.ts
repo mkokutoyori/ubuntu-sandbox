@@ -5,7 +5,7 @@ import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/Reso
 import {
   findOpt, findOpts, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE, EDNS_VERSION, EDNS_BADVERS_EXTENDED_RCODE_HIGH,
 } from '@/network/dns/wire/EdnsOptRecord';
-import type { ZoneStore } from '@/network/dns/zone/ZoneStore';
+import type { PositiveTrim, ZoneStore } from '@/network/dns/zone/ZoneStore';
 import type { Zone } from '@/network/dns/zone/Zone';
 
 type BaseFlags = Pick<DnsHeaderFlags, 'qr' | 'rd' | 'ra' | 'ad' | 'cd'>;
@@ -15,6 +15,8 @@ export interface AuthoritativePolicy {
   readonly acceptsEdns?: () => boolean;
   readonly rotates?: () => boolean;
   readonly writesApexNs?: () => boolean;
+  readonly trimsPositiveAnswers?: (recursionDesired: boolean) => PositiveTrim;
+  readonly ednsPayloadSize?: () => number;
   readonly recursionAvailable?: () => boolean;
 }
 
@@ -59,7 +61,7 @@ export class AuthoritativeServer {
         questions: query.questions,
         answers: [],
         authorities: [],
-        additionals: [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, {
+        additionals: [makeOptRecord(this.advertisedPayloadSize(), {
           extendedRcodeHigh: EDNS_BADVERS_EXTENDED_RCODE_HIGH,
         })],
       });
@@ -72,11 +74,12 @@ export class AuthoritativeServer {
       blocked: this.policy.blocks,
       rotate: this.policy.rotates?.(),
       apexNs: this.policy.writesApexNs?.(),
+      trim: this.policy.trimsPositiveAnswers?.(query.flags.rd),
       zone: records,
     });
     const additionals: ResourceRecord<ResourceRecordData>[] = [...result.additional];
     if (queryOpt) {
-      additionals.push(makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: wantDnssec }));
+      additionals.push(makeOptRecord(this.advertisedPayloadSize(), { dnssecOk: wantDnssec }));
     }
 
     return {
@@ -90,6 +93,10 @@ export class AuthoritativeServer {
       },
       imputedName: result.imputedName,
     };
+  }
+
+  private advertisedPayloadSize(): number {
+    return this.policy.ednsPayloadSize?.() ?? DEFAULT_EDNS_PAYLOAD_SIZE;
   }
 
   private baseFlags(query: DnsMessage): BaseFlags {

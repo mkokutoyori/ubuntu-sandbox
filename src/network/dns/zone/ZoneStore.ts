@@ -22,11 +22,14 @@ export interface ZoneStoreAnswer {
   readonly imputedName: string;
 }
 
+export type PositiveTrim = 'none' | 'authority' | 'authority-and-additional';
+
 export interface ZoneStoreAnswerOptions {
   readonly dnssec?: boolean;
   readonly blocked?: (zoneOrigin: string, qname: string) => boolean;
   readonly rotate?: boolean;
   readonly apexNs?: boolean;
+  readonly trim?: PositiveTrim;
   readonly zone?: Zone;
 }
 
@@ -88,23 +91,31 @@ export class ZoneStore {
       : zone.lookup(question.qname, question.qtype);
     const synthesizedFrom = result.kind === 'answer' || result.kind === 'cname'
       ? result.synthesizedFrom : undefined;
+    const trim = options.trim ?? 'none';
+    const apexOwed = options.apexNs === true && trim === 'none';
     const sign = (records: readonly ResourceRecord<ResourceRecordData>[]) =>
       dnssec ? this.withSignatures(zone, records, synthesizedFrom) : [...records];
 
     switch (result.kind) {
-      case 'answer':
+      case 'answer': {
+        const nameServers = result.records.filter((rr) => rr.data.type === RRType.NS);
+        const apex = apexOwed && nameServers.length === 0 ? this.apexNs(zone) : [];
         return {
           aa: true, rcode: DnsRcode.NOERROR,
-          answers: sign(result.records), authority: options.apexNs === true ? this.apexNs(zone) : [],
-          additional: this.collectGlue(zone, result.records), imputedName: synthesizedFrom ?? queried,
+          answers: sign(result.records), authority: apex,
+          additional: this.collectGlue(zone, trim === 'authority-and-additional' ? nameServers : [...result.records, ...apex]),
+          imputedName: synthesizedFrom ?? queried,
         };
-      case 'cname':
+      }
+      case 'cname': {
+        const apex = apexOwed ? this.apexNs(zone) : [];
         return {
           aa: true, rcode: DnsRcode.NOERROR,
           answers: sign(result.finalRecords ? [...result.chain, ...result.finalRecords] : [...result.chain]),
-          authority: options.apexNs === true ? this.apexNs(zone) : [], additional: [],
+          authority: apex, additional: this.collectGlue(zone, apex),
           imputedName: synthesizedFrom ?? queried,
         };
+      }
       case 'nodata':
         return {
           aa: true, rcode: DnsRcode.NOERROR, answers: [],

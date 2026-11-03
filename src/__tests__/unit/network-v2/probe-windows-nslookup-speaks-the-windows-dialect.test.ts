@@ -147,7 +147,7 @@ describe('answers use the Windows layout', () => {
     const { nslookup } = await lab();
     const out = await nslookup('-type=MX example.com');
     expect(out).toContain('example.com\tMX preference = 10, mail exchanger = mail.example.com\n');
-    expect(out).toContain('\n\nmail.example.com\tinternet address = 10.0.0.25');
+    expect(out).toContain('\n\nexample.com\tnameserver = ns1.example.com\nmail.example.com\tinternet address = 10.0.0.25');
   });
 
   it('NS records carry no trailing dot', async () => {

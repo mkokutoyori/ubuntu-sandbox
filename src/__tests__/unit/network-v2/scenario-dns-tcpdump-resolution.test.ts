@@ -143,7 +143,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       expect(after).toMatch(/Flags \[S\.\]/);
       expect(after).toMatch(/A\? many\.example\.com/);
 
-      const tcpResponseLine = lines.find((l) => l.includes(`60/0/0`));
+      const tcpResponseLine = lines.find((l) => l.includes(`60/1/1`));
       expect(tcpResponseLine).toBeDefined();
       expect(tcpResponseLine).not.toContain('truncated');
     });
