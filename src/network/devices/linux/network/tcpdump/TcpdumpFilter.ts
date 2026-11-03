@@ -2,12 +2,14 @@ import { VID_WILDCARD } from '../../../../layers/link/vlan/VlanId';
 import { IPAddress, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
 import { isMulticastIpv4 } from '@/network/core/ip';
 import type { CaptureFrame } from './CaptureFrame';
+import { RejectPacket, parseRelation, relexFilter, startsArithmetic } from './TcpdumpExpression';
 
 export type CapturePredicate = (f: CaptureFrame) => boolean;
 
 export interface FilterOk {
   ok: true;
   predicate: CapturePredicate;
+  constant?: boolean;
 }
 export interface FilterErr {
   ok: false;
@@ -120,7 +122,7 @@ class Parser {
       if (!right.ok) return right;
       const l = left.predicate;
       const r = right.predicate;
-      left = { ok: true, predicate: (f) => l(f) || r(f) };
+      left = { ok: true, predicate: (f) => l(f) || r(f), constant: orConstant(left.constant, right.constant) };
     }
     return left;
   }
@@ -134,7 +136,7 @@ class Parser {
       if (!right.ok) return right;
       const l = left.predicate;
       const r = right.predicate;
-      left = { ok: true, predicate: (f) => l(f) && r(f) };
+      left = { ok: true, predicate: (f) => l(f) && r(f), constant: andConstant(left.constant, right.constant) };
     }
     return left;
   }
@@ -145,7 +147,7 @@ class Parser {
       const inner = this.parseNot();
       if (!inner.ok) return inner;
       const p = inner.predicate;
-      return { ok: true, predicate: (f) => !p(f) };
+      return { ok: true, predicate: (f) => !p(f), constant: inner.constant === undefined ? undefined : !inner.constant };
     }
     return this.parsePrimary();
   }
@@ -156,6 +158,8 @@ class Parser {
       return syntaxError();
     }
     if (token === '(') {
+      const relation = this.parseRelationHere();
+      if (relation !== null) return relation;
       this.next();
       const inner = this.parseOr();
       if (!inner.ok) return inner;
@@ -171,7 +175,20 @@ class Parser {
     return this.parseExpression();
   }
 
+  private parseRelationHere(): FilterResult | null {
+    const relation = parseRelation(this.tokens, this.pos);
+    if (!relation.ok) return null;
+    this.pos = relation.next;
+    return { ok: true, predicate: relation.predicate, constant: relation.constant };
+  }
+
   private parseExpression(): FilterResult {
+    if (startsArithmetic(this.peek())) {
+      const relation = parseRelation(this.tokens, this.pos);
+      if (!relation.ok) return relation;
+      this.pos = relation.next;
+      return { ok: true, predicate: relation.predicate, constant: relation.constant };
+    }
     let dir: 'src' | 'dst' | null = null;
     if (this.peek() === 'src' || this.peek() === 'dst') {
       const lookahead = this.tokens[this.pos + 1];
@@ -420,149 +437,8 @@ class Parser {
   }
 
   private parseBareValue(token: string, dir: 'src' | 'dst' | null): FilterResult {
-    if (/^(ip|arp|tcp|udp|icmp)\[/.test(token)) return this.parseByteSlice(token);
     if (isKeyword(token) || /[[\]&|=<>!]/.test(token)) return syntaxError();
     return this.hostByName(token, dir);
-  }
-
-  private parseByteSlice(token: string): FilterResult {
-    const spec = parseByteSliceSpec(token);
-    if (spec === null) return syntaxError();
-
-    let mask: number | null = null;
-    if (this.peek() === '&') {
-      this.next();
-      const maskTok = this.next();
-      const maskVal = maskTok === undefined ? null : resolveByteSliceValue(maskTok);
-      if (maskVal === null) return syntaxError();
-      mask = maskVal;
-    }
-
-    const cmpTok = this.peek();
-    if (cmpTok === undefined || !COMPARATORS.has(cmpTok)) {
-      return { ok: true, predicate: (f) => readByteSliceValue(f, spec) !== null };
-    }
-    this.next();
-    const value = this.parseByteSliceValue();
-    if (value === null) return syntaxError();
-    return {
-      ok: true,
-      predicate: (f) => {
-        const raw = readByteSliceValue(f, spec);
-        if (raw === null) return false;
-        return compareByteSliceValue(mask !== null ? raw & mask : raw, cmpTok, value);
-      },
-    };
-  }
-
-  private parseByteSliceValue(): number | null {
-    if (this.peek() === '(') {
-      this.next();
-      const orTok = this.next();
-      if (orTok === undefined) return null;
-      let combined = 0;
-      for (const part of orTok.split('|')) {
-        const v = resolveByteSliceValue(part);
-        if (v === null) return null;
-        combined |= v;
-      }
-      if (this.peek() !== ')') return null;
-      this.next();
-      return combined;
-    }
-    const tok = this.next();
-    return tok === undefined ? null : resolveByteSliceValue(tok);
-  }
-}
-
-interface ByteSliceSpec {
-  proto: 'ip' | 'arp' | 'tcp' | 'udp' | 'icmp';
-  offset: number;
-  length: number;
-}
-
-const SYMBOLIC_FIELD_OFFSET: Record<string, { proto: ByteSliceSpec['proto']; offset: number }> = {
-  tcpflags: { proto: 'tcp', offset: 13 },
-  icmptype: { proto: 'icmp', offset: 0 },
-  icmpcode: { proto: 'icmp', offset: 1 },
-};
-
-const BPF_NAMED_CONSTANTS: Record<string, number> = {
-  'tcp-fin': 0x01,
-  'tcp-syn': 0x02,
-  'tcp-rst': 0x04,
-  'tcp-push': 0x08,
-  'tcp-ack': 0x10,
-  'tcp-urg': 0x20,
-  'icmp-echoreply': 0,
-  'icmp-unreach': 3,
-  'icmp-sourcequench': 4,
-  'icmp-redirect': 5,
-  'icmp-echo': 8,
-  'icmp-routeradvert': 9,
-  'icmp-routersolicit': 10,
-  'icmp-timxceed': 11,
-  'icmp-paramprob': 12,
-  'icmp-tstamp': 13,
-  'icmp-tstampreply': 14,
-};
-
-const COMPARATORS = new Set(['=', '==', '!=', '<', '>', '<=', '>=']);
-
-function parseByteSliceSpec(token: string): ByteSliceSpec | null {
-  const numeric = /^(ip|arp|tcp|udp|icmp)\[(\d+)(?::([124]))?\]$/.exec(token);
-  if (numeric) {
-    return {
-      proto: numeric[1] as ByteSliceSpec['proto'],
-      offset: parseInt(numeric[2], 10),
-      length: numeric[3] ? parseInt(numeric[3], 10) : 1,
-    };
-  }
-  const symbolic = /^(ip|arp|tcp|udp|icmp)\[([a-z]+)\]$/.exec(token);
-  if (symbolic) {
-    const field = SYMBOLIC_FIELD_OFFSET[symbolic[2]];
-    if (!field || field.proto !== symbolic[1]) return null;
-    return { proto: field.proto, offset: field.offset, length: 1 };
-  }
-  return null;
-}
-
-function resolveByteSliceValue(token: string): number | null {
-  if (token in BPF_NAMED_CONSTANTS) return BPF_NAMED_CONSTANTS[token];
-  if (/^0x[0-9a-fA-F]+$/.test(token)) return parseInt(token, 16);
-  if (/^\d+$/.test(token)) return parseInt(token, 10);
-  return null;
-}
-
-function byteSliceProtoMatches(frame: CaptureFrame, proto: ByteSliceSpec['proto']): boolean {
-  if (proto === 'ip') return frame.l3 === 'ipv4' || frame.l3 === 'ipv6';
-  if (proto === 'arp') return frame.l3 === 'arp';
-  if (proto === 'icmp') return frame.l4 === 'icmp' || frame.l4 === 'icmp6';
-  return frame.l4 === proto;
-}
-
-function readByteSliceValue(frame: CaptureFrame, spec: ByteSliceSpec): number | null {
-  if (!byteSliceProtoMatches(frame, spec.proto)) return null;
-  const base = spec.proto === 'ip' || spec.proto === 'arp'
-    ? frame.rawLinkOffset
-    : frame.rawLinkOffset + (frame.ipHeaderLen ?? 20);
-  const abs = base + spec.offset;
-  if (abs < 0 || abs + spec.length > frame.raw.length) return null;
-  let value = 0;
-  for (let i = 0; i < spec.length; i++) value = (value << 8) | frame.raw[abs + i];
-  return value >>> 0;
-}
-
-function compareByteSliceValue(actual: number, comparator: string, expected: number): boolean {
-  switch (comparator) {
-    case '=':
-    case '==': return actual === expected;
-    case '!=': return actual !== expected;
-    case '<': return actual < expected;
-    case '>': return actual > expected;
-    case '<=': return actual <= expected;
-    case '>=': return actual >= expected;
-    default: return false;
   }
 }
 
@@ -599,6 +475,32 @@ function isKeyword(token: string): boolean {
   return KEYWORDS.has(token);
 }
 
+function andConstant(left: boolean | undefined, right: boolean | undefined): boolean | undefined {
+  if (left === false || right === false) return false;
+  if (left === true && right === true) return true;
+  return undefined;
+}
+
+function orConstant(left: boolean | undefined, right: boolean | undefined): boolean | undefined {
+  if (left === true || right === true) return true;
+  if (left === false && right === false) return false;
+  return undefined;
+}
+
+function guardedAgainstRejection(predicate: CapturePredicate): CapturePredicate {
+  return (frame) => {
+    try {
+      return predicate(frame);
+    } catch (stop) {
+      if (stop instanceof RejectPacket) return false;
+      throw stop;
+    }
+  };
+}
+
 export function compileFilter(tokens: string[], names?: FilterNames): FilterResult {
-  return new Parser(tokens, names).parse();
+  const result = new Parser(relexFilter(tokens.join(' ')), names).parse();
+  if (!result.ok) return result;
+  if (result.constant === false) return failure('expression rejects all packets');
+  return { ok: true, predicate: guardedAgainstRejection(result.predicate) };
 }
