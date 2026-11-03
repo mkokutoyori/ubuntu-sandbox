@@ -12,11 +12,19 @@
  * WITNESSES (a plain DNS= server, the default stub on 127.0.0.53, a name resolving through the upstream with the cache disabled, and the
  * default of ReadEtcHosts/StaleRetentionSec) only prove the lab itself is sound; the old parser did read DNS=, Domains=, LLMNR=,
  * MulticastDNS=, DNSSEC=, DNSOverTLS= and Cache= from the main file, and nothing else.
+ *
+ * The last block of the file (31 cases in all) pins what the service keeps now that it stores its answers in the DnsCache the DNS servers and the Windows client share, by the rules
+ * of resolved-dns-cache.c: a name that does not exist lives min(SOA TTL, SOA minimum) and needs the SOA, a zero TTL is not kept, a positive entry is capped at two hours while the first
+ * reply is handed over whole, a SERVFAIL lives ten seconds, the next server of the list is tried when one stays silent, Cache=no-negative forgets the negative answers only, and the
+ * target of a CNAME is answered from what the alias brought.  Measured with git stash push -- src/network src/powershell: 14 of the 31 fall.  The 8 cases of that block all fall (the old
+ * service kept no negative answer, no SERVFAIL, asked the first server only, and could not follow a CNAME); the 6 older cases fall only because the fake upstream now speaks in records
+ * and a rcode instead of a list of addresses, which is the interface they were adapted to, not a defect they pin.
  */
 import { describe, it, expect } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { readResolvedConfig } from '@/network/devices/linux/net/ResolvedConfig';
 import { ResolvedService, type ResolvedDeps, type UpstreamAnswer } from '@/network/devices/linux/net/ResolvedService';
+import { makeARecord, makeCnameRecord, makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { discoverNetworkdFiles, getAll } from '@/network/devices/linux/net/NetworkdFiles';
 import { parseUnitFile } from '@/network/devices/linux/LinuxServiceManager';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
@@ -99,12 +107,16 @@ describe('the grammar of resolved.conf', () => {
   });
 });
 
+function answerWith(address: string): UpstreamAnswer {
+  return { answers: [makeARecord('a.example', 60, address)], authorities: [], rcode: 0 };
+}
+
 function fakeService(overrides: Partial<ResolvedDeps> & { upstream?: (server: string, name: string) => UpstreamAnswer | null } = {}): { service: ResolvedService; asked: string[]; clock: { now: number } } {
   const asked: string[] = [];
   const clock = { now: 1_000_000 };
   const deps: ResolvedDeps = {
-    queryUpstream: async (server, name) => { asked.push(`${server}:${name}`); return overrides.upstream ? overrides.upstream(server, name) : { addresses: ['10.0.0.1'], records: [] }; },
-    queryUpstreamSync: (server, name) => { asked.push(`${server}:${name}`); return overrides.upstream ? overrides.upstream(server, name) : { addresses: ['10.0.0.1'], records: [] }; },
+    queryUpstream: async (server, name) => { asked.push(`${server}:${name}`); return overrides.upstream ? overrides.upstream(server, name) : answerWith('10.0.0.1'); },
+    queryUpstreamSync: (server, name) => { asked.push(`${server}:${name}`); return overrides.upstream ? overrides.upstream(server, name) : answerWith('10.0.0.1'); },
     now: () => clock.now,
     ...overrides,
   };
@@ -159,7 +171,7 @@ describe('what the keys decide in the resolver', () => {
 
   it('StaleRetentionSec= serves an expired answer while the server is unreachable, within the window only', async () => {
     let reachable = true;
-    const { service, clock } = fakeService({ upstream: () => (reachable ? { addresses: ['10.0.0.1'], records: [] } : null) });
+    const { service, clock } = fakeService({ upstream: () => (reachable ? answerWith('10.0.0.1') : null) });
     configure(service, 'DNS=192.0.2.1\nStaleRetentionSec=120\n');
     await service.resolve('a.example');
     reachable = false;
@@ -172,12 +184,102 @@ describe('what the keys decide in the resolver', () => {
 
   it('without StaleRetentionSec= an expired answer is not served when the server is unreachable', async () => {
     let reachable = true;
-    const { service, clock } = fakeService({ upstream: () => (reachable ? { addresses: ['10.0.0.1'], records: [] } : null) });
+    const { service, clock } = fakeService({ upstream: () => (reachable ? answerWith('10.0.0.1') : null) });
     configure(service, 'DNS=192.0.2.1\n');
     await service.resolve('a.example');
     reachable = false;
     clock.now += 61_000;
     expect((await service.resolve('a.example')).addresses).toEqual([]);
+  });
+});
+
+const NXDOMAIN_RCODE = 3;
+const SERVFAIL_RCODE = 2;
+
+function soaOf(ttl: number, minimum: number) {
+  return makeSoaRecord('example', ttl, { mname: 'ns.example.', rname: 'hostmaster.example.', serial: 1, refresh: 7200, retry: 900, expire: 1209600, minimum });
+}
+
+describe('what the shared cache keeps, by the rules of resolved-dns-cache.c', () => {
+  it('a name that does not exist is kept for the smaller of the SOA TTL and its minimum, no longer', async () => {
+    const { service, asked, clock } = fakeService({ upstream: () => ({ answers: [], authorities: [soaOf(3600, 60)], rcode: NXDOMAIN_RCODE }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    const first = await service.resolve('absent.example');
+    expect([first.verdict, first.authorities.length]).toEqual(['nxdomain', 1]);
+    clock.now += 59_000;
+    const kept = await service.resolve('absent.example');
+    expect([kept.verdict, kept.origin, kept.authorities[0].ttl]).toEqual(['nxdomain', 'cache', 1]);
+    clock.now += 2_000;
+    await service.resolve('absent.example');
+    expect(asked).toHaveLength(2);
+  });
+
+  it('an answer without a SOA is not kept', async () => {
+    const { service, asked } = fakeService({ upstream: () => ({ answers: [], authorities: [], rcode: NXDOMAIN_RCODE }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    await service.resolve('absent.example');
+    await service.resolve('absent.example');
+    expect(asked).toHaveLength(2);
+  });
+
+  it('a record with a TTL of zero is not kept', async () => {
+    const { service, asked } = fakeService({ upstream: () => ({ answers: [makeARecord('a.example', 0, '10.0.0.1')], authorities: [], rcode: 0 }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    await service.resolve('a.example');
+    await service.resolve('a.example');
+    expect(asked).toHaveLength(2);
+  });
+
+  it('a record that claims a day is kept two hours at most, and the first reply is still handed over whole', async () => {
+    const { service, asked, clock } = fakeService({ upstream: () => ({ answers: [makeARecord('a.example', 86400, '10.0.0.1')], authorities: [], rcode: 0 }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    expect((await service.resolve('a.example')).records[0].ttl).toBe(86400);
+    clock.now += 7_199_000;
+    const kept = await service.resolve('a.example');
+    expect([kept.origin, kept.records[0].ttl]).toEqual(['cache', 1]);
+    clock.now += 2_000;
+    await service.resolve('a.example');
+    expect(asked).toHaveLength(2);
+  });
+
+  it('a SERVFAIL is kept ten seconds', async () => {
+    const { service, asked, clock } = fakeService({ upstream: () => ({ answers: [], authorities: [], rcode: SERVFAIL_RCODE }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    expect((await service.resolve('a.example')).verdict).toBe('failure');
+    clock.now += 9_000;
+    const kept = await service.resolve('a.example');
+    expect([kept.verdict, kept.origin]).toEqual(['failure', 'cache']);
+    clock.now += 2_000;
+    await service.resolve('a.example');
+    expect(asked).toHaveLength(2);
+  });
+
+  it('the second server of the list answers when the first one does not, and says so', async () => {
+    const { service, asked } = fakeService({ upstream: (server) => (server === '192.0.2.1' ? null : answerWith('10.0.0.2')) });
+    configure(service, 'DNS=192.0.2.1 192.0.2.2\n');
+    const outcome = await service.resolve('a.example');
+    expect([outcome.addresses, outcome.server]).toEqual([['10.0.0.2'], '192.0.2.2']);
+    expect(asked).toEqual(['192.0.2.1:a.example', '192.0.2.2:a.example']);
+  });
+
+  it('Cache=no-negative keeps the answers and forgets the names that do not exist', async () => {
+    const { service, asked } = fakeService({ upstream: (_server, name) => (name === 'a.example' ? answerWith('10.0.0.1') : { answers: [], authorities: [soaOf(3600, 3600)], rcode: NXDOMAIN_RCODE }) });
+    configure(service, 'DNS=192.0.2.1\nCache=no-negative\n');
+    await service.resolve('a.example');
+    await service.resolve('a.example');
+    await service.resolve('absent.example');
+    await service.resolve('absent.example');
+    expect(asked).toEqual(['192.0.2.1:a.example', '192.0.2.1:absent.example', '192.0.2.1:absent.example']);
+  });
+
+  it('the target of a CNAME is answered from what the alias brought', async () => {
+    const { service, asked } = fakeService({ upstream: () => ({ answers: [makeCnameRecord('www.example', 60, 'web.example.'), makeARecord('web.example', 60, '10.0.0.7')], authorities: [], rcode: 0 }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    const alias = await service.resolve('www.example');
+    expect([alias.addresses, alias.records.map((rr) => rr.data.type)]).toEqual([['10.0.0.7'], [5, 1]]);
+    const target = await service.resolve('web.example');
+    expect([target.addresses, target.origin]).toEqual([['10.0.0.7'], 'cache']);
+    expect(asked).toHaveLength(1);
   });
 });
 

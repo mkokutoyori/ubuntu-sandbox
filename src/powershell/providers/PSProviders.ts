@@ -1556,6 +1556,7 @@ export interface INetworkProvider {
   /** Resolve-DnsName -Server, with each answer's real TTL (does not touch the client cache). */
   resolveDnsViaServerWithTtl?(name: string, server: string): Array<{ ip: string; ttl: number }>;
   resolveDnsRecords?(name: string, type: string, server?: string): DnsAnswerRow[] | null;
+  cachedDnsAnswer?(name: string): DnsAnswerRow[];
   dnsLookupFailure?(): DnsLookupFailure | null;
   /** Get-DnsClientCache */
   getDnsClientCache?(): DnsCacheRow[];

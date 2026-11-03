@@ -103,6 +103,50 @@ export const LAB_CHECKS: readonly LabCheck[] = [
     lesson: 'Un serveur de TLD est purement faisant autorite : la recursion y est coupee.',
   },
   {
+    id: 'client-cache', device: 'PC-GUICHET1', shell: 'powershell', command: 'Get-DnsClientCache | Where-Object Name -like "*banquehorizon.com"',
+    expects: [/Type\s*:\s*CNAME/, /Data\s*:\s*web\.banquehorizon\.com/, /Type\s*:\s*A\s/, /Data\s*:\s*203\.0\.113\.20/, /TimeToLive\s*:\s*\d+/],
+    lesson: 'Le poste garde la reponse de www : le CNAME et l\'adresse de web, chacun avec son TTL, qui descend avec l\'horloge.',
+  },
+  {
+    id: 'client-answer-chain', device: 'PC-GUICHET1', shell: 'powershell', command: 'Resolve-DnsName www.banquehorizon.com',
+    expects: [/Type\s*:\s*CNAME/, /NameHost\s*:\s*web\.banquehorizon\.com/, /Type\s*:\s*A\s/, /IPAddress\s*:\s*203\.0\.113\.20/],
+    lesson: 'La reponse est servie par le cache : elle montre la chaine entiere, www vers web puis l\'adresse, avec les TTL que le cache affiche.',
+  },
+  {
+    id: 'server-cache', device: 'DC1', shell: 'powershell', command: 'Show-DnsServerCache | Where-Object HostName -like "*banquehorizon.com"',
+    expects: [/www\.banquehorizon\.com\s+CNAME\s+\d+\s+web\.banquehorizon\.com/, /web\.banquehorizon\.com\s+A\s+\d+\s+203\.0\.113\.20/],
+    lesson: 'Le serveur DNS de DC1 a retenu ce que son redirecteur lui a rendu : un deuxieme poste obtient www sans que DNS-RES soit interroge.',
+  },
+  {
+    id: 'resolver-cache-dump', device: 'DNS-RES', shell: 'bash', command: 'sudo rndc dumpdb -cache; cat /var/cache/bind/named_dump.db',
+    expects: [
+      /Cache dump of view '_default'/,
+      /; authanswer\nwww\.banquehorizon\.com\.\t\d+\tCNAME\tweb\.banquehorizon\.com\./,
+      /; glue\nbanquehorizon\.com\.\t\d+\tNS\tns1\.banquehorizon\.com\./,
+    ],
+    lesson: 'rndc dumpdb -cache ecrit le cache du resolveur BIND : les reponses (authanswer) et les delegations apprises (glue) avec leur TTL restant.',
+  },
+  {
+    id: 'resolver-ttl-decays', device: 'PC-CONSEILLER', shell: 'bash', command: 'sleep 2; dig @10.20.20.53 www.banquehorizon.com +noall +answer',
+    expects: [/www\.banquehorizon\.com\.\s+35[89]\d\s+IN\s+CNAME\s+web\.banquehorizon\.com\./, /web\.banquehorizon\.com\.\s+35[89]\d\s+IN\s+A\s+203\.0\.113\.20/],
+    lesson: 'La reponse vient du cache de DNS-RES : son TTL n\'est plus 3600 mais ce qu\'il en reste, preuve qu\'elle n\'a pas ete redemandee.',
+  },
+  {
+    id: 'negative-cache', device: 'PC-CONSEILLER', shell: 'bash', command: 'dig @10.20.20.53 nexiste.banquehorizon.com; dig @10.20.20.53 nexiste.banquehorizon.com +noall +authority',
+    expects: [/status: NXDOMAIN/, /banquehorizon\.com\.\s+\d+\s+IN\s+SOA\s+ns1\.banquehorizon\.com\./],
+    lesson: 'Un nom qui n\'existe pas se retient aussi (RFC 2308) : le SOA de la zone accompagne la reponse et en fixe la duree de conservation.',
+  },
+  {
+    id: 'linux-stub-link', device: 'PC-CONSEILLER', shell: 'bash', command: 'ls -l /etc/resolv.conf; resolvectl status',
+    expects: [/resolv\.conf -> .*stub-resolv\.conf/, /Link \d+ \(eth0\)/, /DNS Servers:\s+10\.20\.20\.10 10\.20\.20\.53/, /DNS Domain:\s+horizon\.local/],
+    lesson: 'Le poste Linux lit le stub de systemd-resolved comme Ubuntu : serveurs et domaine du bail DHCP sont la configuration du lien eth0, et plus un fichier reecrit.',
+  },
+  {
+    id: 'linux-stub-cache', device: 'PC-CONSEILLER', shell: 'bash', command: 'dig www.banquehorizon.com +short; sleep 3; dig www.banquehorizon.com; resolvectl statistics',
+    expects: [/SERVER: 127\.0\.0\.53#53/, /www\.banquehorizon\.com\.\s+35\d\d\s+IN\s+CNAME\s+web\.banquehorizon\.com\./, /Cache Hits:\s+[1-9]/],
+    lesson: 'La seconde question est servie par le cache du stub : le TTL a baisse de trois secondes et resolvectl statistics compte le succes.',
+  },
+  {
     id: 'web-listeners', device: 'WEB-BANK', shell: 'bash', command: 'ss -ltn',
     expects: [/0\.0\.0\.0:80\s/, /0\.0\.0\.0:443\s/],
     lesson: 'nginx ecoute reellement sur 80 et 443 : `systemctl status` ne suffit pas, ss le prouve.',

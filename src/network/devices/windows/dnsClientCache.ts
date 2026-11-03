@@ -161,6 +161,10 @@ export function renderDisplayDns(rows: readonly DnsCacheRow[]): string {
   for (const r of rows) {
     out.push(`    ${r.entry}`);
     out.push(`    ----------------------------------------`);
+    if (r.status === 'NotExist') {
+      out.push('    Name does not exist.', '');
+      continue;
+    }
     out.push(`    Record Name . . . . . : ${r.recordName}`);
     out.push(`    Record Type . . . . . : ${rrTypeFromName(r.recordType) ?? 0}`);
     out.push(`    Time To Live  . . . . : ${r.timeToLive}`);

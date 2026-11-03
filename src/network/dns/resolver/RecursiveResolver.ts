@@ -8,7 +8,7 @@ import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, ARecordData, CnameRecordData, DsRecordData,
+  ResourceRecord, ResourceRecordData, NsRecordData, ARecordData, CnameRecordData, DsRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
@@ -36,7 +36,8 @@ export function resolutionFromCache(cached: DnsCacheLookup): ResolutionResult | 
   if (cached.kind === 'negative') {
     return {
       status: cached.rcode === DnsRcode.NXDOMAIN ? 'NXDOMAIN' : 'NOERROR',
-      answers: [],
+      answers: cached.aliases ?? [],
+      authorities: [cached.soa],
       fromCache: true,
     };
   }
@@ -82,11 +83,6 @@ const UNCACHEABLE_TYPES: ReadonlySet<number> = new Set([RRType.OPT, RRType.SOA, 
 
 function servfail(): IterationOutcome {
   return { status: 'SERVFAIL', answers: [], authorities: [], negative: null };
-}
-
-function findSoa(records: readonly ResourceRecord<ResourceRecordData>[]): ResourceRecord<SoaRecordData> | null {
-  const soa = records.find((rr) => rr.data.type === RRType.SOA);
-  return (soa as ResourceRecord<SoaRecordData>) ?? null;
 }
 
 function ownedByQuestion(
@@ -199,16 +195,12 @@ export class RecursiveResolver {
       ? capTtlsToSignatures(outcome.answers, this.nowSeconds())
       : outcome.answers;
 
-    if (!raw) {
-      if (outcome.status === 'NOERROR' && answers.length > 0) {
-        this.cache.storePositive(answers, undefined, security);
-      } else if (outcome.negative) {
-        const soa = findSoa(outcome.authorities);
-        if (soa) {
-          const rcode = outcome.negative === 'nxdomain' ? DnsRcode.NXDOMAIN : DnsRcode.NOERROR;
-          this.cache.storeNegative(qname, qtype, rcode, soa);
-        }
-      }
+    if (!raw && outcome.status !== 'SERVFAIL') {
+      this.cache.storeReply(
+        qname, qtype,
+        { rcode: outcome.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN : DnsRcode.NOERROR, answers, authorities: outcome.authorities },
+        { security, trust: this.forwardRecursively ? 'answer' : 'authanswer' },
+      );
     }
 
     return {
@@ -220,10 +212,21 @@ export class RecursiveResolver {
   private async iterate(
     qname: string, qtype: number, depth: number, raw: boolean,
   ): Promise<IterationOutcome> {
-    let servers: readonly IPAddress[] = this.rootHints;
-    let zoneCut = '';
+    if (this.forwardRecursively) return this.forward(this.rootHints, qname, qtype, raw);
+    const known = this.cache.closestDelegation(qname, qtype === RRType.DS);
+    if (known !== null) {
+      const outcome = await this.followDelegations(known.servers, known.zone, qname, qtype, depth, raw);
+      if (outcome.status !== 'SERVFAIL') return outcome;
+      this.cache.forgetDelegation(known.zone);
+    }
+    return this.followDelegations(this.rootHints, '', qname, qtype, depth, raw);
+  }
 
-    if (this.forwardRecursively) return this.forward(servers, qname, qtype, raw);
+  private async followDelegations(
+    startServers: readonly IPAddress[], startZone: string, qname: string, qtype: number, depth: number, raw: boolean,
+  ): Promise<IterationOutcome> {
+    let servers = startServers;
+    let zoneCut = startZone;
 
     for (let referral = 0; referral <= this.maxReferrals; referral++) {
       const response = await this.queryFirstReachable(servers, qname, qtype);
@@ -246,10 +249,11 @@ export class RecursiveResolver {
         return { status: 'NOERROR', answers: [], authorities: response.authorities, negative: 'nodata' };
       }
 
-      const referral = await this.followReferral(response, qname, zoneCut, depth, raw);
-      if (!referral) return servfail();
-      servers = referral.servers;
-      zoneCut = referral.zone;
+      const next = await this.followReferral(response, qname, zoneCut, depth, raw);
+      if (!next) return servfail();
+      if (!raw) this.cache.storeDelegation(next.zone, next.nameServers, next.addresses);
+      servers = next.servers;
+      zoneCut = next.zone;
     }
     return servfail();
   }
@@ -276,7 +280,7 @@ export class RecursiveResolver {
     if (!this.cache.admitsUnrelatedRecords()) return;
     const unrelated = [...response.answers, ...response.authorities, ...response.additionals]
       .filter((rr) => !related.includes(rr) && !UNCACHEABLE_TYPES.has(rr.data.type));
-    if (unrelated.length > 0) this.cache.storePositive(unrelated);
+    if (unrelated.length > 0) this.cache.storePositive(unrelated, undefined, undefined, 'additional');
   }
 
   private async acceptAnswers(
@@ -303,14 +307,17 @@ export class RecursiveResolver {
     return {
       status: chased.status,
       answers: [...answers, ...chased.answers],
-      authorities: [],
+      authorities: chased.authorities ?? [],
       negative: null,
     };
   }
 
   private async followReferral(
     response: DnsMessage, qname: string, zoneCut: string, depth: number, raw: boolean,
-  ): Promise<{ servers: readonly IPAddress[]; zone: string } | null> {
+  ): Promise<{
+    servers: readonly IPAddress[]; zone: string;
+    nameServers: readonly ResourceRecord<NsRecordData>[]; addresses: readonly ResourceRecord<ARecordData>[];
+  } | null> {
     const target = normalizeName(qname);
     const nsRecords = response.authorities.filter(
       (rr): rr is ResourceRecord<NsRecordData> => {
@@ -329,18 +336,22 @@ export class RecursiveResolver {
         && isWithinDomain(normalizeName(rr.name), zoneCut),
     );
     if (glue.length > 0) {
-      return { servers: glue.map((rr) => rr.data.address), zone };
+      return { servers: glue.map((rr) => rr.data.address), zone, nameServers: nsRecords, addresses: glue };
     }
 
     for (const ns of nsRecords) {
+      const known = this.cache.glueAddresses(ns.data.nsdname);
+      if (known.length > 0) {
+        return { servers: known.map((rr) => rr.data.address), zone, nameServers: nsRecords, addresses: known };
+      }
       const nsResult = await this.resolveWithDepth(
         ns.data.nsdname, RRType.A, depth + 1, raw || this.validator !== null,
       );
       if (nsResult.status !== 'NOERROR') continue;
-      const addresses = nsResult.answers
-        .filter((rr): rr is ResourceRecord<ARecordData> => rr.data.type === RRType.A)
-        .map((rr) => rr.data.address);
-      if (addresses.length > 0) return { servers: addresses, zone };
+      const addressRecords = nsResult.answers.filter((rr): rr is ResourceRecord<ARecordData> => rr.data.type === RRType.A);
+      if (addressRecords.length > 0) {
+        return { servers: addressRecords.map((rr) => rr.data.address), zone, nameServers: nsRecords, addresses: addressRecords };
+      }
     }
     return null;
   }

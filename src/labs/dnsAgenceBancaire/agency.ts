@@ -91,7 +91,7 @@ export async function buildAgency(bench: LabWorkbench, ispRouter: Equipment): Pr
     '    eth0:',
     '      dhcp4: true',
   ].join('\n'), '600');
-  await bench.shell(conseiller, 'sudo netplan apply');
+  await bench.shell(conseiller, 'sudo netplan apply', 'sudo ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf');
 
   return { edgeRouter, agencySwitch, dc1, dnsRes, guichet1, guichet2, conseiller };
 }

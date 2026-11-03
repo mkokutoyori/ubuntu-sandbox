@@ -15,9 +15,17 @@
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { isLoopbackServer, parseDnsServerWord } from './DnsServerWord';
 
-import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import {
+  DEFAULT_CACHE_LIMITS, DnsCache, type DnsCacheLimits, type DnsCacheLookup, type DnsReply,
+} from '@/network/dns/resolver/DnsCache';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
-import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
+import { rrTypeFromName } from '@/network/dns/compat/DnsWireCompat';
+import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
+import { RRType } from '@/network/dns/wire/RRType';
+import {
+  makeAaaaRecord, makeARecord,
+  type AaaaRecordData, type ARecordData, type ResourceRecord, type ResourceRecordData,
+} from '@/network/dns/wire/ResourceRecord';
 
 export type TriState = 'yes' | 'no' | 'resolve';
 export type DnssecMode = 'yes' | 'no' | 'allow-downgrade';
@@ -120,12 +128,26 @@ export const STUB_ADDRESS = '127.0.0.53';
 export const RESOLVED_CONF_PATH = '/etc/systemd/resolved.conf';
 export const RUN_STUB_RESOLV = '/run/systemd/resolve/stub-resolv.conf';
 export const RUN_UPSTREAM_RESOLV = '/run/systemd/resolve/resolv.conf';
+const ETC_RESOLV_CONF = '/etc/resolv.conf';
+const RESOLVED_RUN_DIRECTORY = 'run/systemd/resolve/';
 
-/** Les types que le stub sait résoudre. */
-export type ResolvedQtype = 'A' | 'AAAA';
+export interface ResolverLinkDeclaration {
+  readonly servers: readonly string[];
+  readonly domains: readonly string[];
+  readonly useDns: boolean;
+}
+
+export function resolvConfFollowsResolved(vfs: { lstat(path: string): { type: string; target: string } | null }): boolean {
+  const node = vfs.lstat(ETC_RESOLV_CONF);
+  return node !== null && node.type === 'symlink' && node.target.includes(RESOLVED_RUN_DIRECTORY);
+}
+
+export type ResolvedQtype = string;
 
 export interface ResolvedQueryOutcome {
   addresses: string[];
+  records: readonly ResourceRecord<ResourceRecordData>[];
+  authorities: readonly ResourceRecord<ResourceRecordData>[];
   /** D'où vient la réponse — `resolvectl query` le dit à l'opérateur. */
   origin: 'cache' | 'network' | 'hosts' | 'none';
   link: string | null;
@@ -154,13 +176,7 @@ export interface ResolvedQueryOutcome {
   refusedBecause?: 'bogus' | 'unsigned-but-required' | 'no-encrypted-transport';
 }
 
-export interface UpstreamAnswer {
-  addresses: string[];
-  /** Enregistrements bruts, RRSIG compris quand le bit DO est posé. */
-  records: readonly ResourceRecord<ResourceRecordData>[];
-  /** Le nom est inconnu de la zone, tous types confondus. */
-  nxdomain?: boolean;
-}
+export type UpstreamAnswer = DnsReply;
 
 export interface ResolvedDeps {
   /** Interroge réellement un serveur sur le câble. Null = pas de réponse. */
@@ -205,11 +221,58 @@ export function isLlmnrName(name: string): boolean {
   return n !== '' && !n.includes('.');
 }
 
-interface CachedAnswer {
-  addresses: string[]; expiresAtMs: number;
-  dnssec: DnssecStatus | 'unset'; encrypted: boolean;
-  verdict: ResolvedQueryOutcome['verdict'];
-  protocol: ResolvedQueryOutcome['protocol'];
+const RESOLVED_CACHE_LIMITS: DnsCacheLimits = {
+  ...DEFAULT_CACHE_LIMITS, maxTtlSeconds: 7200, maxNegativeTtlSeconds: 7200,
+};
+const STRANGE_RCODE_TTL_SECONDS = 10;
+const SYNTHETIC_TTL_SECONDS = 0;
+const LINK_LOCAL_TTL_SECONDS = { llmnr: 30, mdns: 120 } as const;
+const USEC_PER_MILLISECOND = 1000;
+
+interface Asked {
+  readonly answer: UpstreamAnswer | null;
+  readonly server: string | null;
+  readonly encrypted: boolean;
+  readonly strange: boolean;
+  readonly strictRefusals: number;
+}
+
+function typeOf(qtype: ResolvedQtype): number {
+  return rrTypeFromName(qtype) ?? RRType.A;
+}
+
+function isAddressType(qtype: ResolvedQtype): boolean {
+  return qtype === 'A' || qtype === 'AAAA';
+}
+
+function addressesOf(records: readonly ResourceRecord<ResourceRecordData>[], qtype: ResolvedQtype): string[] {
+  if (!isAddressType(qtype)) return [];
+  const wanted = typeOf(qtype);
+  return records.filter((rr) => rr.data.type === wanted).map((rr) => (rr.data as ARecordData | AaaaRecordData).address.toString());
+}
+
+function addressRecords(
+  name: string, qtype: ResolvedQtype, addresses: readonly string[], ttl: number,
+): ResourceRecord<ResourceRecordData>[] {
+  return addresses.map((address) => (qtype === 'AAAA' ? makeAaaaRecord(name, ttl, address) : makeARecord(name, ttl, address)));
+}
+
+function outcomeOf(fields: Partial<ResolvedQueryOutcome>): ResolvedQueryOutcome {
+  return {
+    addresses: [], records: [], authorities: [], origin: 'none', link: null, server: null,
+    dnssec: 'unset', encrypted: false, protocol: 'dns', verdict: 'failure', ...fields,
+  };
+}
+
+function usable(answer: UpstreamAnswer): boolean {
+  return answer.rcode === DnsRcode.NOERROR || answer.rcode === DnsRcode.NXDOMAIN;
+}
+
+function verdictOf(answer: UpstreamAnswer, qtype: ResolvedQtype): ResolvedQueryOutcome['verdict'] {
+  if (answer.rcode === DnsRcode.NXDOMAIN) return 'nxdomain';
+  if (answer.rcode !== DnsRcode.NOERROR) return 'failure';
+  const wanted = typeOf(qtype);
+  return answer.answers.some((rr) => wanted === RRType.ANY || rr.data.type === wanted) ? 'answer' : 'nodata';
 }
 
 export class ResolvedService {
@@ -220,11 +283,15 @@ export class ResolvedService {
     transactions: 0, cacheHits: 0, cacheMisses: 0,
     currentCacheSize: 0, failedTransactions: 0, secureTransactions: 0,
   };
-  /** Réponses mises en cache par le stub, avec leur échéance. */
-  private readonly answers = new Map<string, CachedAnswer>();
 
   constructor(private readonly deps: ResolvedDeps) {
-    this.cache = new DnsCache(deps.now ?? (() => simulationNowMs()));
+    this.cache = new DnsCache(
+      () => this.now(), () => RESOLVED_CACHE_LIMITS, () => this.global.staleRetentionUsec / USEC_PER_MILLISECOND,
+    );
+  }
+
+  private now(): number {
+    return (this.deps.now ?? (() => simulationNowMs()))();
   }
 
   setGlobal(cfg: ResolvedGlobalConfig): void { this.global = cfg; }
@@ -247,6 +314,11 @@ export class ResolvedService {
    * règle de systemd, et c'est elle qui rend `status` lisible.
    */
   selectServer(name: string): { server: string | null; link: string | null } {
+    const { servers, link } = this.selectServers(name);
+    return { server: servers[0] ?? null, link };
+  }
+
+  selectServers(name: string): { servers: string[]; link: string | null } {
     const fqdn = name.toLowerCase().replace(/\.$/, '');
     let bestLink: string | null = null;
     let bestLength = -1;
@@ -260,19 +332,17 @@ export class ResolvedService {
         }
       }
     }
-    if (bestLink) return { server: this.links.get(bestLink)!.dnsServers[0], link: bestLink };
+    if (bestLink) return { servers: [...this.links.get(bestLink)!.dnsServers], link: bestLink };
 
     for (const [iface, cfg] of this.links) {
-      if (cfg.defaultRoute && cfg.dnsServers.length > 0) {
-        return { server: cfg.dnsServers[0], link: iface };
-      }
+      if (cfg.defaultRoute && cfg.dnsServers.length > 0) return { servers: [...cfg.dnsServers], link: iface };
     }
     for (const [iface, cfg] of this.links) {
-      if (cfg.dnsServers.length > 0) return { server: cfg.dnsServers[0], link: iface };
+      if (cfg.dnsServers.length > 0) return { servers: [...cfg.dnsServers], link: iface };
     }
-    if (this.global.dnsServers.length > 0) return { server: this.global.dnsServers[0], link: null };
-    if (this.global.fallbackDns.length > 0) return { server: this.global.fallbackDns[0], link: null };
-    return { server: null, link: null };
+    if (this.global.dnsServers.length > 0) return { servers: [...this.global.dnsServers], link: null };
+    if (this.global.fallbackDns.length > 0) return { servers: [...this.global.fallbackDns], link: null };
+    return { servers: [], link: null };
   }
 
   /**
@@ -346,106 +416,133 @@ export class ResolvedService {
 
   private cacheEnabled(): boolean { return this.global.cacheMode !== 'no'; }
 
-  private lookupCache(ck: string, now: number): { fresh?: CachedAnswer; stale?: CachedAnswer } {
-    const cached = this.answers.get(ck);
-    if (cached === undefined) return {};
-    if (cached.expiresAtMs > now) return { fresh: cached };
-    if (this.global.staleRetentionUsec > 0 && now < cached.expiresAtMs + this.global.staleRetentionUsec / 1000) return { stale: cached };
-    this.answers.delete(ck);
-    return {};
+  private mayRemember(server: string | null): boolean {
+    if (!this.cacheEnabled()) return false;
+    return server === null || !isLoopbackServer(server) || this.global.cacheFromLocalhost;
   }
 
-  private remember(ck: string, entry: CachedAnswer, server: string | null): void {
-    if (!this.cacheEnabled()) return;
-    if (server !== null && isLoopbackServer(server) && !this.global.cacheFromLocalhost) return;
-    this.answers.set(ck, entry);
-    this.stats.currentCacheSize = this.answers.size;
+  private fromCache(known: DnsCacheLookup, qtype: ResolvedQtype): ResolvedQueryOutcome {
+    if (known.kind === 'hit') {
+      return outcomeOf({
+        addresses: addressesOf(known.records, qtype), records: known.records, origin: 'cache',
+        dnssec: known.security ?? 'unset', encrypted: known.origin?.encrypted ?? false,
+        protocol: known.origin?.protocol ?? 'dns', verdict: 'answer',
+      });
+    }
+    if (known.kind === 'negative') {
+      return outcomeOf({
+        records: known.aliases ?? [], authorities: [known.soa], origin: 'cache',
+        verdict: known.rcode === DnsRcode.NXDOMAIN ? 'nxdomain' : 'nodata',
+      });
+    }
+    return outcomeOf({ origin: 'cache' });
   }
 
-  private fromCache(entry: CachedAnswer): ResolvedQueryOutcome {
-    return {
-      addresses: [...entry.addresses], origin: 'cache', link: null, server: null, dnssec: entry.dnssec, encrypted: entry.encrypted,
-      verdict: entry.verdict, protocol: entry.protocol,
-    };
+  private cachedOutcome(key: string, qtype: ResolvedQtype): ResolvedQueryOutcome | null {
+    if (!this.cacheEnabled()) return null;
+    const known = this.cache.lookup(key, typeOf(qtype));
+    if (known.kind === 'miss') return null;
+    this.stats.cacheHits++;
+    return this.fromCache(known, qtype);
+  }
+
+  private staleOutcome(key: string, qtype: ResolvedQtype): ResolvedQueryOutcome | null {
+    if (!this.cacheEnabled() || this.global.staleRetentionUsec <= 0) return null;
+    const known = this.cache.lookup(key, typeOf(qtype), true);
+    return known.kind === 'hit' && known.stale === true ? this.fromCache(known, qtype) : null;
   }
 
   private fromHosts(key: string, qtype: ResolvedQtype): ResolvedQueryOutcome | null {
-    if (!this.global.readEtcHosts || this.deps.hostsLookup === undefined) return null;
+    if (!this.global.readEtcHosts || this.deps.hostsLookup === undefined || !isAddressType(qtype)) return null;
     const found = this.deps.hostsLookup(key, qtype);
     if (!found.known) return null;
-    return {
-      addresses: found.addresses, origin: 'hosts', link: null, server: null, dnssec: 'secure', encrypted: true,
-      verdict: found.addresses.length > 0 ? 'answer' : 'nodata', protocol: 'dns',
-    };
+    return outcomeOf({
+      addresses: found.addresses, records: addressRecords(key, qtype, found.addresses, SYNTHETIC_TTL_SECONDS),
+      origin: 'hosts', dnssec: 'secure', encrypted: true, verdict: found.addresses.length > 0 ? 'answer' : 'nodata',
+    });
   }
 
   private refusesUnicast(key: string): boolean {
     return isLlmnrName(key) && !this.global.resolveUnicastSingleLabel;
   }
 
-  /**
-   * Chemin synchrone : même cache, même sélection de serveur, sans
-   * validation. Rend null quand la validation s'impose — l'appelant doit
-   * alors passer par `resolve`.
-   */
-  /** La clé de cache : un nom seul ne suffit pas, A et AAAA diffèrent. */
-  private cacheKey(name: string, qtype: ResolvedQtype): string {
-    return `${name}|${qtype}`;
+  private counted(outcome: ResolvedQueryOutcome): ResolvedQueryOutcome {
+    if (outcome.verdict !== 'answer') this.stats.failedTransactions++;
+    return outcome;
   }
 
-  resolveSync(
-    name: string, qtype: ResolvedQtype = 'A', ttlSeconds = 60,
-  ): ResolvedQueryOutcome | null {
+  private failed(fields: Partial<ResolvedQueryOutcome> = {}): ResolvedQueryOutcome {
+    return this.counted(outcomeOf(fields));
+  }
+
+  private conclude(
+    key: string, qtype: ResolvedQtype, answer: UpstreamAnswer,
+    via: { link: string | null; server: string; dnssec: DnssecStatus | 'unset'; encrypted: boolean },
+  ): ResolvedQueryOutcome {
+    const verdict = verdictOf(answer, qtype);
+    const negative = verdict !== 'answer';
+    if (this.mayRemember(via.server) && !(negative && this.global.cacheMode === 'no-negative')) {
+      this.cache.storeReply(key, typeOf(qtype), answer, {
+        security: via.dnssec === 'unset' ? undefined : via.dnssec, trust: 'answer',
+        origin: { protocol: 'dns', encrypted: via.encrypted },
+      });
+    }
+    if (verdict === 'nxdomain') this.stats.failedTransactions++;
+    return outcomeOf({
+      addresses: addressesOf(answer.answers, qtype), records: answer.answers,
+      authorities: negative ? answer.authorities : [], origin: 'network', link: via.link, server: via.server,
+      dnssec: via.dnssec, encrypted: via.encrypted, verdict,
+    });
+  }
+
+  private noAnswer(
+    key: string, qtype: ResolvedQtype, link: string | null, servers: readonly string[], asked: Asked,
+  ): ResolvedQueryOutcome {
+    const stale = this.staleOutcome(key, qtype);
+    if (stale !== null) return stale;
+    if (asked.strange && this.mayRemember(null)) this.cache.storeServfail(key, typeOf(qtype), STRANGE_RCODE_TTL_SECONDS);
+    return this.failed({ link, server: servers[0] ?? null });
+  }
+
+  private askSync(servers: readonly string[], key: string, qtype: ResolvedQtype): Asked | null {
+    let strange = false;
+    for (const server of servers) {
+      const reply = this.deps.queryUpstreamSync!(server, key, qtype);
+      if (reply === null) return null;
+      if (usable(reply)) return { answer: reply, server, encrypted: false, strange, strictRefusals: 0 };
+      strange = true;
+    }
+    return { answer: null, server: null, encrypted: false, strange, strictRefusals: 0 };
+  }
+
+  private countTransaction(): void {
+    this.stats.transactions++;
+    if (this.cacheEnabled()) this.stats.cacheMisses++;
+  }
+
+  resolveSync(name: string, qtype: ResolvedQtype = 'A'): ResolvedQueryOutcome | null {
     const key = name.toLowerCase().replace(/\.$/, '');
     const hosts = this.fromHosts(key, qtype);
     if (hosts !== null) return hosts;
-    const ck = this.cacheKey(key, qtype);
-    const now = (this.deps.now ?? (() => simulationNowMs()))();
-
-    let stale: CachedAnswer | undefined;
-    if (this.cacheEnabled()) {
-      const cached = this.lookupCache(ck, now);
-      if (cached.fresh !== undefined) {
-        this.stats.transactions++;
-        this.stats.cacheHits++;
-        return this.fromCache(cached.fresh);
-      }
-      stale = cached.stale;
+    const known = this.cachedOutcome(key, qtype);
+    if (known !== null) {
+      this.stats.transactions++;
+      return known;
     }
     if (this.usesLinkLocal(key, null) || this.refusesUnicast(key)) return null;
-    const { server, link } = this.selectServer(key);
+    const { servers, link } = this.selectServers(key);
     if (this.requiresAsync(link, key) || !this.deps.queryUpstreamSync) return null;
-    if (server !== null && (parseDnsServerWord(server)?.port ?? 0) !== 0) return null;
+    if (servers.some((server) => (parseDnsServerWord(server)?.port ?? 0) !== 0)) return null;
 
-    this.stats.transactions++;
-    if (this.cacheEnabled()) {
-      if (stale === undefined) this.answers.delete(ck);
-      this.stats.cacheMisses++;
+    if (servers.length === 0) {
+      this.countTransaction();
+      return this.failed();
     }
-    if (!server) {
-      this.stats.failedTransactions++;
-      return {
-        addresses: [], origin: 'none', link: null, server: null,
-        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
-      };
-    }
-    const answer = this.deps.queryUpstreamSync(server, key, qtype);
-    if (answer === null && stale !== undefined) return this.fromCache(stale);
-    if (!answer || answer.addresses.length === 0) {
-      this.stats.failedTransactions++;
-      return {
-        addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted: false,
-        verdict: this.emptyVerdict(answer), protocol: 'dns',
-      };
-    }
-    this.remember(ck, {
-      addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol: 'dns',
-    }, server);
-    return {
-      addresses: answer.addresses, origin: 'network', link, server,
-      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol: 'dns',
-    };
+    const asked = this.askSync(servers, key, qtype);
+    if (asked === null) return null;
+    this.countTransaction();
+    if (asked.answer === null) return this.noAnswer(key, qtype, link, servers, asked);
+    return this.conclude(key, qtype, asked.answer, { link, server: asked.server!, dnssec: 'unset', encrypted: false });
   }
 
   /**
@@ -491,200 +588,128 @@ export class ResolvedService {
     return null;
   }
 
-  /**
-   * Une réponse vide n'est pas forcément un échec : le serveur a pu dire
-   * « ce nom existe, mais pas pour ce type ».
-   */
-  private emptyVerdict(answer: UpstreamAnswer | null): ResolvedQueryOutcome['verdict'] {
-    if (!answer) return 'failure';
-    return answer.nxdomain ? 'nxdomain' : 'nodata';
+  private async askInOrder(
+    servers: readonly string[], key: string, qtype: ResolvedQtype, wantDnssec: boolean, tls: DnsOverTlsMode,
+  ): Promise<Asked> {
+    let strange = false;
+    let strictRefusals = 0;
+    for (const server of servers) {
+      let reply: UpstreamAnswer | null = null;
+      let encrypted = false;
+      if (tls !== 'no') {
+        reply = await this.deps.queryUpstream(server, key, qtype, wantDnssec, true);
+        encrypted = reply !== null;
+      }
+      if (reply === null && tls === 'yes') {
+        strictRefusals++;
+        continue;
+      }
+      if (reply === null) reply = await this.deps.queryUpstream(server, key, qtype, wantDnssec, false);
+      if (reply === null) continue;
+      if (usable(reply)) return { answer: reply, server, encrypted, strange, strictRefusals };
+      strange = true;
+    }
+    return { answer: null, server: null, encrypted: false, strange, strictRefusals };
   }
 
-  /**
-   * Ce que le stub fait d'une requête : cache, puis fil — chiffré ou non
-   * selon le mode du lien — validation, puis cache. Asynchrone parce que
-   * chiffrer demande une poignée de main et que valider demande de vraies
-   * requêtes vers le haut de la chaîne de confiance (DNSKEY, DS).
-   */
-  async resolve(
-    name: string, qtype: ResolvedQtype = 'A', ttlSeconds = 60,
+  private async viaLinkLocal(
+    protocol: 'llmnr' | 'mdns', key: string, link: string | null, qtype: ResolvedQtype,
   ): Promise<ResolvedQueryOutcome> {
+    const addresses = await (protocol === 'mdns' ? this.deps.resolveMdns!(key) : this.deps.resolveLlmnr!(key));
+    return this.finishLinkLocal(protocol, key, link, qtype, addresses);
+  }
+
+  async resolve(name: string, qtype: ResolvedQtype = 'A'): Promise<ResolvedQueryOutcome> {
     const key = name.toLowerCase().replace(/\.$/, '');
     const hosts = this.fromHosts(key, qtype);
     if (hosts !== null) return hosts;
     this.stats.transactions++;
-    const ck = this.cacheKey(key, qtype);
-    const now = (this.deps.now ?? (() => simulationNowMs()))();
+    const known = this.cachedOutcome(key, qtype);
+    if (known !== null) return known;
+    if (this.cacheEnabled()) this.stats.cacheMisses++;
 
-    let stale: CachedAnswer | undefined;
-    if (this.cacheEnabled()) {
-      const cached = this.lookupCache(ck, now);
-      if (cached.fresh !== undefined) {
-        this.stats.cacheHits++;
-        return this.fromCache(cached.fresh);
-      }
-      stale = cached.stale;
-      this.stats.cacheMisses++;
-    }
+    const { servers, link } = this.selectServers(key);
 
-    const { server, link } = this.selectServer(key);
-
-    // Règle de systemd : `.local` appartient à mDNS et ne part jamais
-    // vers un serveur unicast (RFC 6762 §3) ; un nom mono-label est
-    // demandé au lien en LLMNR. Le DNS ne voit ni l'un ni l'autre.
     const linkLocal = this.usesLinkLocal(key, link);
-    if (linkLocal === 'mdns') {
-      return this.finishLinkLocal(
-        'mdns', ck, link, qtype, now, ttlSeconds,
-        await this.deps.resolveMdns!(key));
+    if (linkLocal === 'mdns') return this.counted(await this.viaLinkLocal('mdns', key, link, qtype));
+    if (linkLocal === 'llmnr' && (servers.length === 0 || this.refusesUnicast(key))) {
+      return this.counted(await this.viaLinkLocal('llmnr', key, link, qtype));
     }
-    if (linkLocal === 'llmnr' && (!server || this.refusesUnicast(key))) {
-      return this.finishLinkLocal(
-        'llmnr', ck, link, qtype, now, ttlSeconds,
-        await this.deps.resolveLlmnr!(key));
-    }
-    if (this.refusesUnicast(key)) {
-      this.stats.failedTransactions++;
-      return {
-        addresses: [], origin: 'none', link: null, server: null,
-        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
-      };
-    }
-
-    if (!server) {
-      this.stats.failedTransactions++;
-      return {
-        addresses: [], origin: 'none', link: null, server: null,
-        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
-      };
-    }
+    if (this.refusesUnicast(key) || servers.length === 0) return this.failed();
 
     const mode = this.dnssecModeFor(link);
     const wantDnssec = this.willValidate(link, key);
     const tls = this.dnsOverTlsModeFor(link);
+    const asked = await this.askInOrder(servers, key, qtype, wantDnssec, tls);
 
-    let answer: UpstreamAnswer | null = null;
-    let encrypted = false;
-    if (tls !== 'no') {
-      answer = await this.deps.queryUpstream(server, key, qtype, wantDnssec, true);
-      encrypted = answer !== null;
+    if (asked.answer === null && tls === 'yes' && asked.strictRefusals > 0) {
+      return this.failed({ link, server: servers[0], refusedBecause: 'no-encrypted-transport' });
     }
-    // `yes` est strict : plutôt aucune réponse qu'une réponse en clair.
-    // `opportunistic` retombe sur le clair, ce qui est tout ce qu'il
-    // promet — il protège d'un observateur passif, pas d'un actif.
-    if (!answer && tls === 'yes') {
-      this.stats.failedTransactions++;
-      return {
-        addresses: [], origin: 'none', link, server,
-        dnssec: 'unset', encrypted: false, verdict: 'failure', protocol: 'dns',
-        refusedBecause: 'no-encrypted-transport',
-      };
-    }
-    if (!answer) answer = await this.deps.queryUpstream(server, key, qtype, wantDnssec, false);
-
-    if (answer === null && stale !== undefined) return this.fromCache(stale);
-    if (!answer || answer.addresses.length === 0) {
-      // Le DNS n'a rien : c'est là que LLMNR prend le relais pour un nom
-      // mono-label, exactement comme systemd — le lien répond de ce que
-      // le serveur ignore.
+    if (asked.answer === null) {
+      const stale = this.staleOutcome(key, qtype);
+      if (stale !== null) return stale;
       if (linkLocal === 'llmnr') {
-        const viaLink = await this.deps.resolveLlmnr!(key);
-        if (viaLink.length > 0) {
-          return this.finishLinkLocal('llmnr', ck, link, qtype, now, ttlSeconds, viaLink);
-        }
+        const viaLink = await this.viaLinkLocal('llmnr', key, link, qtype);
+        if (viaLink.verdict === 'answer') return viaLink;
       }
-      this.stats.failedTransactions++;
-      return {
-        addresses: [], origin: 'none', link, server, dnssec: 'unset', encrypted,
-        verdict: this.emptyVerdict(answer), protocol: 'dns',
-      };
+      return this.noAnswer(key, qtype, link, servers, asked);
+    }
+
+    const answer = asked.answer;
+    const { server, encrypted } = asked;
+    if (verdictOf(answer, qtype) !== 'answer' && linkLocal === 'llmnr') {
+      const viaLink = await this.viaLinkLocal('llmnr', key, link, qtype);
+      if (viaLink.verdict === 'answer') return viaLink;
     }
 
     let dnssec: DnssecStatus | 'unset' = 'unset';
-    if (wantDnssec) {
-      dnssec = await this.deps.validate!(answer.records);
+    if (wantDnssec && verdictOf(answer, qtype) === 'answer') {
+      dnssec = await this.deps.validate!(answer.answers);
       if (dnssec === 'secure') this.stats.secureTransactions++;
-      // Une réponse falsifiée est refusée quel que soit le mode : c'est
-      // tout l'objet de DNSSEC. Une zone non signée n'est refusée qu'en
-      // mode strict, `allow-downgrade` l'acceptant par définition.
       if (dnssec === 'bogus') {
-        this.stats.failedTransactions++;
-        return {
-          addresses: [], origin: 'none', link, server,
-          dnssec, encrypted, verdict: 'failure', protocol: 'dns', refusedBecause: 'bogus',
-        };
+        return this.failed({ link, server: server!, dnssec, encrypted, refusedBecause: 'bogus' });
       }
       if (dnssec === 'insecure' && mode === 'yes') {
-        this.stats.failedTransactions++;
-        return {
-          addresses: [], origin: 'none', link, server,
-          dnssec, encrypted, verdict: 'failure', protocol: 'dns',
-          refusedBecause: 'unsigned-but-required',
-        };
+        return this.failed({ link, server: server!, dnssec, encrypted, refusedBecause: 'unsigned-but-required' });
       }
     }
-
-    this.remember(ck, {
-      addresses: [...answer.addresses], expiresAtMs: now + ttlSeconds * 1000,
-      dnssec, encrypted, verdict: 'answer', protocol: 'dns',
-    }, server);
-    return {
-      addresses: answer.addresses, origin: 'network', link, server,
-      dnssec, encrypted, verdict: 'answer', protocol: 'dns',
-    };
+    return this.conclude(key, qtype, answer, { link, server: server!, dnssec, encrypted });
   }
 
-  /**
-   * Range une réponse venue du lien. Elle n'a ni serveur ni verdict
-   * DNSSEC : personne ne l'a signée, et prétendre le contraire serait
-   * exactement le genre d'affirmation que cette série corrige. Elle est
-   * en revanche mise en cache comme les autres, et le TTL court des deux
-   * protocoles est ce qui l'empêche de survivre au départ du pair.
-   */
   private finishLinkLocal(
-    protocol: 'llmnr' | 'mdns',
-    ck: string,
-    link: string | null,
-    qtype: ResolvedQtype,
-    now: number,
-    ttlSeconds: number,
-    addresses: string[],
+    protocol: 'llmnr' | 'mdns', key: string, link: string | null, qtype: ResolvedQtype, addresses: string[],
   ): ResolvedQueryOutcome {
-    // Le lien ne parle qu'IPv4 ici : une question AAAA n'a pas de
-    // réponse à en tirer, et l'inventer serait mentir.
-    const usable = qtype === 'A' ? addresses : [];
-    if (usable.length === 0) {
-      this.stats.failedTransactions++;
-      return {
-        addresses: [], origin: 'none', link, server: null,
-        dnssec: 'unset', encrypted: false,
-        verdict: qtype === 'A' ? 'nxdomain' : 'nodata', protocol,
-      };
+    const usableAddresses = qtype === 'A' ? addresses : [];
+    if (usableAddresses.length === 0) {
+      return outcomeOf({ link, verdict: qtype === 'A' ? 'nxdomain' : 'nodata', protocol });
     }
-    this.remember(ck, {
-      addresses: [...usable], expiresAtMs: now + ttlSeconds * 1000,
-      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol,
-    }, null);
-    return {
-      addresses: usable, origin: 'network', link, server: null,
-      dnssec: 'unset', encrypted: false, verdict: 'answer', protocol,
-    };
+    const records = addressRecords(key, qtype, usableAddresses, LINK_LOCAL_TTL_SECONDS[protocol]);
+    if (this.mayRemember(null)) {
+      this.cache.storePositive(records, key, undefined, 'answer', { protocol, encrypted: false });
+    }
+    return outcomeOf({
+      addresses: usableAddresses, records, origin: 'network', link, protocol, verdict: 'answer',
+    });
   }
 
   flushCaches(): void {
-    this.answers.clear();
     this.cache.flush();
     this.stats.currentCacheSize = 0;
   }
 
+  private cacheItemCount(): number {
+    const held = this.cache.snapshot();
+    return held.recordSets.length + held.negatives.length;
+  }
+
   statistics(): Readonly<ResolvedStatistics> {
-    return { ...this.stats, currentCacheSize: this.answers.size };
+    return { ...this.stats, currentCacheSize: this.cacheItemCount() };
   }
 
   resetStatistics(): void {
     this.stats = {
       transactions: 0, cacheHits: 0, cacheMisses: 0,
-      currentCacheSize: this.answers.size, failedTransactions: 0, secureTransactions: 0,
+      currentCacheSize: this.cacheItemCount(), failedTransactions: 0, secureTransactions: 0,
     };
   }
 

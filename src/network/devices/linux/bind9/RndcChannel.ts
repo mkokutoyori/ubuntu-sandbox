@@ -52,7 +52,7 @@ export class RndcChannel {
         this.bind9.stop();
         return '';
       case 'dumpdb': {
-        const result = this.bind9.dumpDatabase();
+        const result = this.bind9.dumpDatabase(rest);
         return result.ok ? '' : `rndc: 'dumpdb' failed: ${result.error}`;
       }
       case 'secroots': {

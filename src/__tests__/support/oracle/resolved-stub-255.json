@@ -1,0 +1,1075 @@
+{
+ "resolved": "systemd 255 (255.4-1ubuntu8.18)\n+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified",
+ "delay": 5,
+ "steps": [
+  {
+   "label": "www",
+   "delay": 0,
+   "arguments": [
+    "www.banquehorizon.com"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "www.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "CNAME",
+      "rdata": "web.banquehorizon.com."
+     },
+     {
+      "name": "web.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "A",
+      "rdata": "203.0.113.20"
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     }
+    ]
+   }
+  },
+  {
+   "label": "www-again",
+   "delay": 5,
+   "arguments": [
+    "www.banquehorizon.com"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "www.banquehorizon.com.",
+      "ttl": 3594,
+      "type": "CNAME",
+      "rdata": "web.banquehorizon.com."
+     },
+     {
+      "name": "web.banquehorizon.com.",
+      "ttl": 3594,
+      "type": "A",
+      "rdata": "203.0.113.20"
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3594,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3594,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3594,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     },
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3594,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     }
+    ]
+   }
+  },
+  {
+   "label": "web-direct",
+   "delay": 0,
+   "arguments": [
+    "web.banquehorizon.com"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "web.banquehorizon.com.",
+      "ttl": 3594,
+      "type": "A",
+      "rdata": "203.0.113.20"
+     }
+    ],
+    "authority": [],
+    "additional": []
+   }
+  },
+  {
+   "label": "nxdomain",
+   "delay": 0,
+   "arguments": [
+    "nexiste.banquehorizon.com"
+   ],
+   "reply": {
+    "status": "NXDOMAIN",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "nxdomain-again",
+   "delay": 5,
+   "arguments": [
+    "nexiste.banquehorizon.com"
+   ],
+   "reply": {
+    "status": "NXDOMAIN",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3594,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "nxdomain-other-type",
+   "delay": 0,
+   "arguments": [
+    "nexiste.banquehorizon.com",
+    "MX"
+   ],
+   "reply": {
+    "status": "NXDOMAIN",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3594,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "nodata",
+   "delay": 0,
+   "arguments": [
+    "web.banquehorizon.com",
+    "AAAA"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "nodata-again",
+   "delay": 5,
+   "arguments": [
+    "web.banquehorizon.com",
+    "AAAA"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3594,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "alias-nodata",
+   "delay": 0,
+   "arguments": [
+    "ebanking.banquehorizon.com",
+    "AAAA"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "ebanking.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "CNAME",
+      "rdata": "web.banquehorizon.com."
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3595,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "alias-nodata-again",
+   "delay": 5,
+   "arguments": [
+    "ebanking.banquehorizon.com",
+    "AAAA"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "ebanking.banquehorizon.com.",
+      "ttl": 3589,
+      "type": "CNAME",
+      "rdata": "web.banquehorizon.com."
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3589,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "mx",
+   "delay": 0,
+   "arguments": [
+    "banquehorizon.com",
+    "MX"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "MX",
+      "rdata": "20 mail2.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "MX",
+      "rdata": "10 mail.banquehorizon.com."
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3579,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3579,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "mail.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "A",
+      "rdata": "203.0.113.25"
+     },
+     {
+      "name": "mail2.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "A",
+      "rdata": "203.0.113.26"
+     },
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3579,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3579,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     }
+    ]
+   }
+  },
+  {
+   "label": "mx-again",
+   "delay": 5,
+   "arguments": [
+    "banquehorizon.com",
+    "MX"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3573,
+      "type": "MX",
+      "rdata": "10 mail.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3573,
+      "type": "MX",
+      "rdata": "20 mail2.banquehorizon.com."
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3573,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3573,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "mail2.banquehorizon.com.",
+      "ttl": 3573,
+      "type": "A",
+      "rdata": "203.0.113.26"
+     },
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3573,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3573,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     },
+     {
+      "name": "mail.banquehorizon.com.",
+      "ttl": 3573,
+      "type": "A",
+      "rdata": "203.0.113.25"
+     }
+    ]
+   }
+  },
+  {
+   "label": "txt",
+   "delay": 0,
+   "arguments": [
+    "banquehorizon.com",
+    "TXT"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "TXT",
+      "rdata": "\"v=spf1 mx -all\""
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     }
+    ]
+   }
+  },
+  {
+   "label": "ns",
+   "delay": 0,
+   "arguments": [
+    "banquehorizon.com",
+    "NS"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     }
+    ],
+    "authority": [],
+    "additional": [
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     }
+    ]
+   }
+  },
+  {
+   "label": "soa",
+   "delay": 0,
+   "arguments": [
+    "banquehorizon.com",
+    "SOA"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3600,
+      "type": "SOA",
+      "rdata": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     }
+    ]
+   }
+  },
+  {
+   "label": "srv",
+   "delay": 0,
+   "arguments": [
+    "_imaps._tcp.banquehorizon.com",
+    "SRV"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "_imaps._tcp.banquehorizon.com.",
+      "ttl": 3600,
+      "type": "SRV",
+      "rdata": "0 1 993 mail.banquehorizon.com."
+     }
+    ],
+    "authority": [
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     },
+     {
+      "name": "banquehorizon.com.",
+      "ttl": 3574,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "mail.banquehorizon.com.",
+      "ttl": 3595,
+      "type": "A",
+      "rdata": "203.0.113.25"
+     },
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     }
+    ]
+   }
+  },
+  {
+   "label": "ptr",
+   "delay": 0,
+   "arguments": [
+    "-x",
+    "203.0.113.20"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "20.113.0.203.in-addr.arpa.",
+      "ttl": 3600,
+      "type": "PTR",
+      "rdata": "web.banquehorizon.com."
+     }
+    ],
+    "authority": [
+     {
+      "name": "113.0.203.in-addr.arpa.",
+      "ttl": 3600,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     },
+     {
+      "name": "113.0.203.in-addr.arpa.",
+      "ttl": 3600,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     },
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3574,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     }
+    ]
+   }
+  },
+  {
+   "label": "ptr-again",
+   "delay": 5,
+   "arguments": [
+    "-x",
+    "203.0.113.20"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "20.113.0.203.in-addr.arpa.",
+      "ttl": 3568,
+      "type": "PTR",
+      "rdata": "web.banquehorizon.com."
+     }
+    ],
+    "authority": [
+     {
+      "name": "113.0.203.in-addr.arpa.",
+      "ttl": 3568,
+      "type": "NS",
+      "rdata": "ns2.banquehorizon.com."
+     },
+     {
+      "name": "113.0.203.in-addr.arpa.",
+      "ttl": 3568,
+      "type": "NS",
+      "rdata": "ns1.banquehorizon.com."
+     }
+    ],
+    "additional": [
+     {
+      "name": "ns2.banquehorizon.com.",
+      "ttl": 3568,
+      "type": "A",
+      "rdata": "203.0.113.11"
+     },
+     {
+      "name": "ns1.banquehorizon.com.",
+      "ttl": 3568,
+      "type": "A",
+      "rdata": "203.0.113.10"
+     }
+    ]
+   }
+  },
+  {
+   "label": "long-ttl",
+   "delay": 0,
+   "arguments": [
+    "a.root-servers.net"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "a.root-servers.net.",
+      "ttl": 86400,
+      "type": "A",
+      "rdata": "198.51.100.1"
+     }
+    ],
+    "authority": [
+     {
+      "name": ".",
+      "ttl": 86369,
+      "type": "NS",
+      "rdata": "a.root-servers.net."
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "long-ttl-again",
+   "delay": 5,
+   "arguments": [
+    "a.root-servers.net"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "a.root-servers.net.",
+      "ttl": 7194,
+      "type": "A",
+      "rdata": "198.51.100.1"
+     }
+    ],
+    "authority": [
+     {
+      "name": ".",
+      "ttl": 7194,
+      "type": "NS",
+      "rdata": "a.root-servers.net."
+     }
+    ],
+    "additional": []
+   }
+  },
+  {
+   "label": "localhost",
+   "delay": 0,
+   "arguments": [
+    "localhost"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "aa",
+     "rd",
+     "ra",
+     "ad"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "localhost.",
+      "ttl": 0,
+      "type": "A",
+      "rdata": "127.0.0.1"
+     }
+    ],
+    "authority": [],
+    "additional": []
+   }
+  },
+  {
+   "label": "hosts-name",
+   "delay": 0,
+   "arguments": [
+    "printer.horizon.local"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "aa",
+     "rd",
+     "ra",
+     "ad"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [
+     {
+      "name": "printer.horizon.local.",
+      "ttl": 0,
+      "type": "A",
+      "rdata": "10.20.20.99"
+     }
+    ],
+    "authority": [],
+    "additional": []
+   }
+  },
+  {
+   "label": "hosts-name-other-family",
+   "delay": 0,
+   "arguments": [
+    "printer.horizon.local",
+    "AAAA"
+   ],
+   "reply": {
+    "status": "NOERROR",
+    "flags": [
+     "qr",
+     "aa",
+     "rd",
+     "ra",
+     "ad"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [],
+    "authority": [],
+    "additional": []
+   }
+  },
+  {
+   "label": "hosts-name-mx",
+   "delay": 0,
+   "arguments": [
+    "printer.horizon.local",
+    "MX"
+   ],
+   "reply": {
+    "status": "NXDOMAIN",
+    "flags": [
+     "qr",
+     "rd",
+     "ra"
+    ],
+    "edns": {
+     "version": 0,
+     "flags": [],
+     "udp": 65494
+    },
+    "answer": [],
+    "authority": [
+     {
+      "name": ".",
+      "ttl": 10800,
+      "type": "SOA",
+      "rdata": "a.root-servers.net. hostmaster.root-servers.net. 2026103101 1800 900 604800 86400"
+     }
+    ],
+    "additional": []
+   }
+  }
+ ]
+}

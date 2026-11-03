@@ -49,6 +49,10 @@ export class DnsFailureLedger {
     this.keep(failureOfReply(reply));
   }
 
+  note(failure: DnsLookupFailure): void {
+    this.keep(failure);
+  }
+
   failure(): DnsLookupFailure | null {
     return this.current;
   }

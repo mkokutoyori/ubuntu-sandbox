@@ -90,6 +90,38 @@ eux echouera.
 
 ## Pile TCP/IP
 
+### [dns] le stub de systemd-resolved : ce que la version 255 reelle fait en plus et que le simulateur ne fait pas
+Le stub relaie tous les types, tient le cache dans le `DnsCache` partage (suite de CNAME, TTL decroissants plafonnes a 2 h, cache negatif avec son SOA, `Cache=no-negative`, `StaleRetentionSec=`) et
+est alimente par le bail DHCP et par netplan/networkd ; il est rejoue contre un vrai systemd-resolved 255.4 (`resolved-stub-oracle`, 24 questions). Restent, mesures par cette comparaison : le vrai stub
+recopie dans sa reponse les NS de la zone (section authority) et leur glue (section additional) d'une reponse positive, le simulateur ne renvoie que la section answer ; servi depuis son cache, le vrai stub
+donne a TOUS les enregistrements de la reponse le meme TTL, le plus petit de l'ensemble qu'il a retenu (authority et glue compris : `mx-again` rend 3573 partout alors que la premiere reponse montrait 3600 et
+3579), le simulateur laisse chaque enregistrement decroitre seul ; le serveur courant n'est pas memorise (le vrai resolved garde le dernier serveur qui a repondu, le simulateur reessaie le premier de la
+liste a chaque question, et `resolvectl status` affiche toujours le premier comme `Current DNS Server`) ; `resolvectl statistics` n'a pas ete rejoue contre le vrai service (il passe par D-Bus, absent de
+l'environnement d'enregistrement) : le decompte de `Failure Transactions` pour un NODATA vient de la lecture des sources, pas d'une capture. Un lien retire de netplan garde ses serveurs jusqu'au
+redemarrage du service (la couche declaree n'est effacee que lien par lien).
+
+### [linux] `ping` nomme l'adresse qui repond par une resolution inverse SYNCHRONE : derriere un amont qui repond de facon asynchrone (le DC1 du lab), la premiere reponse montre l'adresse et la suivante le nom
+Mesure sur PC-CONSEILLER (stub de resolved, amont DC1) : `ping -c 1 www.banquehorizon.com` affiche `64 bytes from 203.0.113.20 (203.0.113.20)` puis, le PTR etant revenu entre-temps dans le cache,
+`64 bytes from web.banquehorizon.com (203.0.113.20)` au second appel. `reverseNameOf` (Ping.ts, Traceroute.ts, Tracepath.ts, Netstat.ts) appelle `gethostbyaddr` synchrone ; la version asynchrone
+(`reverseNameOfAsync`) existe et sert deja `tcpdump` et Kerberos. Pourquoi ce n'est pas ferme : la boucle d'affichage de `ping` est synchrone de bout en bout.
+
+### [dig] les options d'affichage `+noall`, `+comments`, `+authority`, `+additional`, `+question`, `+stats`, `+cmd` ne sont pas evaluees, et `dig` ne pose pas d'OPT par defaut
+`+noall +answer` imprime les reponses seules ; toute autre combinaison avec `+noall` (`+noall +comments +answer +authority`) imprime la sortie complete, ce que le vrai dig ne fait pas. Le vrai
+dig 9.18 pose un OPT (EDNS0, `+bufsize=1232`) dans chaque question : le simulateur n'en pose que sous `+bufsize=` / `+dnssec`, si bien que les reponses des serveurs simules n'ont pas de
+section `OPT PSEUDOSECTION` par defaut. Mesure : l'oracle du stub de resolved ne retrouve les 65494 octets annonces par le vrai stub qu'avec `+bufsize=1232` explicite.
+
+### [dns] `rndc dumpdb -cache` et le resolveur BIND : ce que BIND 9.18 fait en plus et que le simulateur ne fait pas
+Le fichier est ecrit dans la mise en page de `masterdump` (colonnes 24/32/40, confiance `; authanswer` / `; glue` / `; answer`, SOA sur plusieurs lignes, entrees negatives, ordre canonique) et compare
+a un vrai BIND (`bind-cache-dump-oracle`). Restent, mesures : la base d'adresses (ADB) est ecrite sans ses entrees (srtt, compteurs edns/plain, cookie) et le cache SERVFAIL sans les siennes ; la
+racine n'est pas amorcee (`. NS` `authanswer` absent, et sa requete d'amorcage) ; BIND 9.18 minimise le nom des questions (`_tcp.banquehorizon.com` NS, `arpa.`...), pas le simulateur ; les serveurs
+faisant autorite du simulateur n'envoient pas le NS de la zone dans la section authority d'une reponse positive, donc le resolveur garde les NS en `glue` la ou BIND a `authauthority` ; la section
+additional d'une reponse faisant autorite n'est pas conservee (`; additional`) ; le plafond `max-ncache-ttl` (10800 s) du cache negatif n'est pas applique. Les blocs concernes sont ecartes de la
+comparaison, nommes dans l'en-tete du test.
+
+### [windows] `ipconfig /displaydns` : seule l'entree `Name does not exist.` est rendue comme Windows
+Un NXDOMAIN retenu par le client s'affiche `Name does not exist.` sous le nom (Microsoft Learn, « Troubleshooting DNS clients »). L'entree NODATA (`Status: NoRecords`) garde la mise en page
+d'un enregistrement faute d'un libelle atteste : la page Microsoft n'a pas pu etre lue en entier depuis cet environnement.
+
 ### [horloge] des piles de protocole lisent l'heure globale, pas celle de leur machine
 **Mesure** : les lecteurs bruts `Date.now()` / `new Date()` ont ete remplaces
 par `simulationNowMs()` / `simulationDate()` (une seule lecture : l'heure de

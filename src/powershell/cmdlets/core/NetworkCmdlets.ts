@@ -515,6 +515,15 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
       } as Record<string, PSValue>)) as PSValue;
     }
 
+    if (server && net.resolveDnsRecords) {
+      const rows = net.resolveDnsRecords(name, 'A', server);
+      if (rows === null || rows.length === 0) { emitResolveFailure(ctx, net, name); return null; }
+      return rows.map(r => ({
+        Name: r.name, Type: r.type, TTL: r.ttl, Section: r.section,
+        ...(r.type === 'A' || r.type === 'AAAA' ? { IPAddress: r.fields['IPAddress'] } : r.fields),
+      } as Record<string, PSValue>)) as PSValue;
+    }
+
     if (server && net.resolveDnsViaServerWithTtl) {
       const records = net.resolveDnsViaServerWithTtl(name, server);
       if (records.length === 0) { emitResolveFailure(ctx, net, name); return null; }
@@ -546,6 +555,13 @@ export class ResolveDnsNameCmdlet implements ICmdlet {
         ? net.resolveDnsWithOptions(name, restrictions)
         : net.resolveDns(name));
     if (ips.length === 0) { emitResolveFailure(ctx, net, name); return null; }
+    const answered = restricted || server ? [] : net.cachedDnsAnswer?.(name) ?? [];
+    if (answered.length > 0) {
+      return answered.map(row => ({
+        Name: row.name, Type: row.type, TTL: row.ttl, Section: row.section,
+        ...(row.type === 'A' || row.type === 'AAAA' ? { IPAddress: row.fields['IPAddress'] } : row.fields),
+      } as Record<string, PSValue>)) as PSValue;
+    }
     const cacheEntries = net.getDnsClientCache?.() ?? [];
     const ttlFor = (ip: string): number =>
       cacheEntries.find(e => e.recordName.toLowerCase() === name.toLowerCase() && e.data === ip)?.timeToLive ?? 300;

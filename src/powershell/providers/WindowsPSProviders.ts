@@ -2441,6 +2441,9 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const records = this.pc.lookupDnsRecordsSync(name, type, server);
     return records === null ? null : records.map(dnsAnswerRowOf);
   }
+  cachedDnsAnswer(name: string): DnsAnswerRow[] {
+    return this.pc.cachedAnswerRecords(name).map(dnsAnswerRowOf);
+  }
   dnsLookupFailure(): DnsLookupFailure | null { return this.pc.lastDnsLookupFailure(); }
   getPrefixPolicies(): NetPrefixPolicyRow[] {
     return prefixPolicyRowsOf(this.pc.prefixPolicies.listed('active'), 'Active');

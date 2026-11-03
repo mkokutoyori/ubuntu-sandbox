@@ -12,7 +12,7 @@ export class ZoneError extends Error {
   }
 }
 
-const MAX_CNAME_CHAIN_DEPTH = 16;
+export const MAX_CNAME_CHAIN_DEPTH = 16;
 
 export type ZoneLookupResult =
   | {

@@ -32,7 +32,7 @@ import { PathClock } from '../core/time/PathClock';
 import { readSshdConfig } from '../protocols/ssh/server/SshdConfigText';
 import { tracerouteHostOf, type TracerouteHost } from './linux/commands/net/Traceroute';
 import { pingHostOf, type PingHost, type PingTiming } from './linux/commands/net/Ping';
-import { EndHost, ARP_MCAST_SOLICIT, ARP_RETRANS_TIME_MS, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions, type RouterAdvertisementAcceptance } from './EndHost';
+import { EndHost, ARP_MCAST_SOLICIT, ARP_RETRANS_TIME_MS, type PingResult, type ARPEntry, type HostRouteEntry, type HostPolicyRule, type TraceProbeMethod, type TraceSocketOptions, type EchoOptions, type Echo6Options, type EchoRoute, type TcpExchangeSocketOptions, type RouterAdvertisementAcceptance, type DnsExchange } from './EndHost';
 import { classifyIpv4Destination } from '@/network/layers/internet/InternetLayer';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import { selectBundleMember } from '@/network/lacp/loadBalance';
@@ -190,6 +190,8 @@ const TNS_BOOT_BANNER = '(CONNECT_DATA=(SERVICE_NAME=ORCL))\r\n';
 import { DnsRcode } from '../dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import { buildLegacyResponseMessage, rrTypeName } from '../dns/compat/DnsWireCompat';
+import { buildRecursiveResponse } from '../dns/resolver/RecursiveResponse';
+import { findOpt, makeOptRecord } from '../dns/wire/EdnsOptRecord';
 import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { bindDnsTcpServer, unbindDnsTcpServer } from '../dns/transport/DnsTcpTransport';
 import { bindDnsTlsServer, unbindDnsTlsServer, DOT_PORT } from '../dns/transport/DnsTlsTransport';
@@ -207,6 +209,8 @@ import {
   RUN_STUB_RESOLV,
   RUN_UPSTREAM_RESOLV,
   STUB_ADDRESS,
+  resolvConfFollowsResolved,
+  type ResolverLinkDeclaration,
   type ResolvedQtype,
   type ResolvedQueryOutcome,
   type UpstreamAnswer,
@@ -215,7 +219,6 @@ import { RRType } from '../dns/wire/RRType';
 import { DnsValidator, type DnssecStatus } from '../dns/dnssec/DnsValidator';
 import type { DsRecordData, ResourceRecord, ResourceRecordData } from '../dns/wire/ResourceRecord';
 import { decodeDnsMessage, encodeDnsMessage } from '../dns/wire/DnsMessageCodec';
-import type { ARecordData } from '../dns/wire/ResourceRecord';
 import type { X509Certificate } from '../pki/X509Certificate';
 import type { NatHook, NatHookContext, NatResult, PacketFacts, PacketInfo, LinuxIptablesManager } from './linux/LinuxIptablesManager';
 import { connectionTupleOf, type ConnectionState, type ConnectionTuple, type NatTranslation } from './linux/ConnectionTracker';
@@ -305,25 +308,14 @@ function parseDnsServerLiteral(literal: string): IPAddress | IPv6Address | null 
   return null;
 }
 
-/**
- * Ce que le stub retient d'une réponse amont : les adresses du type
- * demandé, les enregistrements bruts pour la validation, et si le nom
- * lui-même est inconnu. Sans cette dernière distinction, « pas d'AAAA
- * pour ce nom » et « ce nom n'existe pas » seraient confondus.
- */
-function readUpstreamAnswer(
-  reply: DnsMessage | null, qtype: ResolvedQtype,
-): UpstreamAnswer | null {
+function readUpstreamAnswer(reply: DnsMessage | null): UpstreamAnswer | null {
   if (!reply) return null;
-  const wanted = qtype === 'AAAA' ? RRType.AAAA : RRType.A;
-  return {
-    addresses: reply.answers
-      .filter((rr) => rr.data.type === wanted)
-      .map((rr) => (rr.data as ARecordData).address.toString()),
-    records: reply.answers,
-    nxdomain: reply.flags.rcode === DnsRcode.NXDOMAIN,
-  };
+  return { answers: reply.answers, authorities: reply.authorities, rcode: reply.flags.rcode };
 }
+
+const UPSTREAM_TIMEOUT_MS = 2000;
+const STUB_UDP_PAYLOAD_SIZE = 65494;
+const STUB_REFUSED_TYPES: ReadonlySet<number> = new Set([RRType.AXFR, RRType.IXFR, RRType.OPT, RRType.TSIG]);
 
 const RLIMIT_NOFILE_CEILING = 1048576;
 const LOG_DAEMON_INFO = 30;
@@ -1399,6 +1391,29 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private _resolvedService: ResolvedService | null = null;
+  private readonly pendingUpstream = new Map<string, DnsExchange>();
+
+  private pendingUpstreamKey(server: IPAddress, name: string, qtype: string): string {
+    return `${server.toString()}|${name.toLowerCase()}|${qtype.toUpperCase()}`;
+  }
+
+  private holdPendingUpstream(server: IPAddress, name: string, qtype: string, exchange: DnsExchange): void {
+    const key = this.pendingUpstreamKey(server, name, qtype);
+    this.pendingUpstream.get(key)?.close();
+    this.pendingUpstream.set(key, exchange);
+    this.hostTimers.setTimeout(() => {
+      if (this.pendingUpstream.get(key) !== exchange) return;
+      this.pendingUpstream.delete(key);
+      exchange.close();
+    }, UPSTREAM_TIMEOUT_MS);
+  }
+
+  private takePendingUpstream(server: IPAddress, name: string, qtype: string): DnsExchange | undefined {
+    const key = this.pendingUpstreamKey(server, name, qtype);
+    const held = this.pendingUpstream.get(key);
+    this.pendingUpstream.delete(key);
+    return held;
+  }
 
   /**
    * Le service de résolution de l'hôte. `queryUpstream` part réellement
@@ -1418,20 +1433,34 @@ export abstract class LinuxMachine extends EndHost
           if (word === null) return null;
           let serverIP: IPAddress;
           try { serverIP = new IPAddress(word.address); } catch { return null; }
+          const adopted = encrypted || dnssecOk || word.port !== 0 ? undefined : this.takePendingUpstream(serverIP, name, qtype);
+          if (adopted !== undefined) {
+            const late = await adopted.late(UPSTREAM_TIMEOUT_MS);
+            adopted.close();
+            return readUpstreamAnswer(late);
+          }
           const reply = await this.queryDnsServer(
-            serverIP, name, qtype, 2000, {
+            serverIP, name, qtype, UPSTREAM_TIMEOUT_MS, {
               dnssecOk, tls: encrypted,
               ...(word.port !== 0 ? { port: word.port } : {}),
               ...(word.serverName !== null ? { serverName: word.serverName } : {}),
             });
-          return readUpstreamAnswer(reply, qtype);
+          return readUpstreamAnswer(reply);
         },
         queryUpstreamSync: (server, name, qtype) => {
           const word = parseDnsServerWord(server);
           if (word === null) return null;
           let serverIP: IPAddress;
           try { serverIP = new IPAddress(word.address); } catch { return null; }
-          return readUpstreamAnswer(this.queryDnsServerSync(serverIP, name, qtype), qtype);
+          const exchange = this.openDnsExchange(serverIP, name, qtype);
+          if (exchange === null) return null;
+          const reply = exchange.immediate();
+          if (reply !== null) {
+            exchange.close();
+            return readUpstreamAnswer(reply);
+          }
+          this.holdPendingUpstream(serverIP, name, qtype, exchange);
+          return null;
         },
         hostsLookup: (name, qtype) => {
           const matching = HostsFile.parse(this.executor.vfs.readFile('/etc/hosts')).entries.filter((entry) => entry.hasName(name));
@@ -1618,54 +1647,45 @@ export abstract class LinuxMachine extends EndHost
     });
   }
 
-  /**
-   * Le type demandé, quand le stub sait le résoudre. Tout le reste (MX,
-   * TXT, SRV, PTR…) ne passe pas par le résolveur du stub — il n'a ni
-   * cache ni sélection de serveur pour ces types.
-   */
   private stubQtype(question: DnsMessage['questions'][number]): ResolvedQtype | null {
-    if (question.qtype === RRType.A) return 'A';
-    if (question.qtype === RRType.AAAA) return 'AAAA';
-    return null;
+    return STUB_REFUSED_TYPES.has(question.qtype) ? null : rrTypeName(question.qtype);
   }
 
   private answerResolvedQuerySync(query: DnsMessage): DnsMessage | null {
     const question = query.questions[0];
     if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
     const qtype = this.stubQtype(question);
-    if (!qtype) return buildLegacyResponseMessage(query, 'NOERROR', []);
+    if (!qtype) return buildLegacyResponseMessage(query, 'REFUSED', []);
     const outcome = this.getResolvedService().resolveSync(question.qname, qtype);
-    if (!outcome) return null;
-    return this.renderResolvedAnswer(query, question.qname, qtype, outcome);
+    return outcome === null ? null : this.renderResolvedAnswer(query, outcome);
   }
 
-  /**
-   * Une réponse vide ne vaut pas SERVFAIL : un nom qui existe en A mais
-   * pas en AAAA doit rendre NOERROR sans réponse (NODATA), sans quoi
-   * toute recherche double famille — `getent hosts`, `ahosts` — croit à
-   * un échec et jette la moitié qui avait pourtant abouti.
-   */
-  private renderResolvedAnswer(
-    query: DnsMessage, qname: string, qtype: ResolvedQtype,
-    outcome: ResolvedQueryOutcome,
-  ): DnsMessage {
-    if (outcome.addresses.length === 0) {
-      if (outcome.verdict === 'nxdomain') return buildLegacyResponseMessage(query, 'NXDOMAIN', []);
-      if (outcome.verdict === 'nodata') return buildLegacyResponseMessage(query, 'NOERROR', []);
-      return buildLegacyResponseMessage(query, 'SERVFAIL', []);
-    }
-    return buildLegacyResponseMessage(query, 'NOERROR', outcome.addresses.map((ip) => ({
-      name: qname, type: qtype, value: ip, ttl: 60,
-    })));
+  private renderResolvedAnswer(query: DnsMessage, outcome: ResolvedQueryOutcome): DnsMessage {
+    const response = buildRecursiveResponse(query, {
+      status: outcome.verdict === 'nxdomain' ? 'NXDOMAIN' : outcome.verdict === 'failure' ? 'SERVFAIL' : 'NOERROR',
+      answers: outcome.records,
+      authorities: outcome.authorities,
+      fromCache: outcome.origin === 'cache',
+      ...(outcome.dnssec === 'unset' ? {} : { security: outcome.dnssec }),
+    });
+    const synthetic = outcome.origin === 'hosts';
+    const edns = findOpt(query);
+    return {
+      ...response,
+      flags: synthetic ? { ...response.flags, aa: true, ad: true } : response.flags,
+      additionals: [
+        ...response.additionals.filter((rr) => rr.data.type !== RRType.OPT),
+        ...(edns === null ? [] : [makeOptRecord(STUB_UDP_PAYLOAD_SIZE, { dnssecOk: edns.data.dnssecOk })]),
+      ],
+    };
   }
 
   private async answerResolvedQuery(query: DnsMessage): Promise<DnsMessage> {
     const question = query.questions[0];
     if (!question) return buildLegacyResponseMessage(query, DnsRcode.FORMERR, []);
     const qtype = this.stubQtype(question);
-    if (!qtype) return buildLegacyResponseMessage(query, 'NOERROR', []);
-    const outcome = await this.getResolvedService().resolve(question.qname, qtype);
-    return this.renderResolvedAnswer(query, question.qname, qtype, outcome);
+    if (!qtype) return buildLegacyResponseMessage(query, 'REFUSED', []);
+    return this.renderResolvedAnswer(query, await this.getResolvedService().resolve(question.qname, qtype));
   }
 
   private answerDnsQuery(query: DnsMessage): DnsMessage {
@@ -3499,14 +3519,31 @@ export abstract class LinuxMachine extends EndHost
   }
 
   private readonly dhcpResolverEntries = new Map<string, { servers: readonly string[]; domain: string | null }>();
+  private readonly dhcpv6ResolverEntries = new Map<string, { servers: readonly string[]; domain: string | null }>();
+  private readonly declaredResolverLinks = new Map<string, ResolverLinkDeclaration>();
 
-  private withdrawDhcpResolverEntries(iface: string, text: string): string {
-    const previous = this.dhcpResolverEntries.get(iface);
-    this.dhcpResolverEntries.delete(iface);
+  private withdrawDhcpResolverEntries(previous: { servers: readonly string[]; domain: string | null } | undefined, text: string): string {
     if (previous === undefined) return text;
     let kept = text;
     for (const server of previous.servers) kept = removeNameserver(kept, server);
     return previous.domain === null ? kept : removeSearchDomain(kept, previous.domain);
+  }
+
+  declareResolverLink(iface: string, declaration: ResolverLinkDeclaration): void {
+    this.declaredResolverLinks.set(iface, declaration);
+    this.syncResolvedLink(iface);
+  }
+
+  private syncResolvedLink(iface: string): void {
+    const declared = this.declaredResolverLinks.get(iface);
+    const learned = declared?.useDns === false
+      ? []
+      : [this.dhcpResolverEntries.get(iface), this.dhcpv6ResolverEntries.get(iface)].flatMap((entry) => (entry === undefined ? [] : [entry]));
+    const link = this.getResolvedService().linkConfig(iface);
+    link.dnsServers = [...new Set([...(declared?.servers ?? []), ...learned.flatMap((entry) => entry.servers)])];
+    link.domains = [...new Set([...(declared?.domains ?? []), ...learned.flatMap((entry) => (entry.domain === null ? [] : [entry.domain]))])];
+    link.fromNetworkd = true;
+    this.publishResolvedState();
   }
 
   protected override onDhcpLeaseConfigured(iface: string): void {
@@ -3515,30 +3552,29 @@ export abstract class LinuxMachine extends EndHost
     const dns = lease?.dnsServers ?? [];
     if (dns.length === 0) return;
     const domain = lease?.domainName || null;
-    let text = this.withdrawDhcpResolverEntries(iface, this.executor.readFile('/etc/resolv.conf') ?? '');
+    const previous = this.dhcpResolverEntries.get(iface);
+    this.dhcpResolverEntries.set(iface, { servers: [...dns], domain });
+    this.syncResolvedLink(iface);
+    if (dns[0]) this.dnsResolverIP = dns[0];
+    if (resolvConfFollowsResolved(this.executor.vfs)) return;
+    let text = this.withdrawDhcpResolverEntries(previous, this.executor.readFile('/etc/resolv.conf') ?? '');
     if (domain !== null) text = addSearchDomain(text, domain);
     for (const ip of dns) text = addNameserver(text, ip);
-    this.dhcpResolverEntries.set(iface, { servers: [...dns], domain });
     this.executor.vfs.writeFile('/etc/resolv.conf', text, 0, 0, 0o022);
-    if (dns[0]) this.dnsResolverIP = dns[0];
   }
 
-  /**
-   * Name servers learned by DHCPv6 JOIN those already there rather than
-   * replacing them. The v4 path rewrites the whole file, which is enough
-   * while it is alone; a dual-stack host takes both leases, and the
-   * second would silently erase the first resolver.
-   */
   protected override onDhcpv6LeaseConfigured(
     iface: string, dnsServers: readonly string[], domainName: string | null,
   ): void {
-    void iface;
     if (dnsServers.length === 0) return;
+    this.dhcpv6ResolverEntries.set(iface, { servers: [...dnsServers], domain: domainName });
+    this.syncResolvedLink(iface);
+    if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
+    if (resolvConfFollowsResolved(this.executor.vfs)) return;
     let text = this.executor.readFile('/etc/resolv.conf') ?? '';
     if (domainName) text = addSearchDomain(text, domainName);
     for (const ip of dnsServers) text = addNameserver(text, ip);
     this.executor.vfs.writeFile('/etc/resolv.conf', text, 0, 0, 0o022);
-    if (!this.dnsResolverIP && dnsServers[0]) this.dnsResolverIP = dnsServers[0];
   }
 
   private publishDhcpTimeSources(iface: string, servers: readonly string[]): void {
@@ -3554,7 +3590,14 @@ export abstract class LinuxMachine extends EndHost
 
   protected override onDhcpLeaseReleased(iface: string): void {
     this.publishDhcpTimeSources(iface, []);
-    const text = this.withdrawDhcpResolverEntries(iface, this.executor.readFile('/etc/resolv.conf') ?? '');
+    const previous = this.dhcpResolverEntries.get(iface);
+    this.dhcpResolverEntries.delete(iface);
+    if (previous !== undefined) this.syncResolvedLink(iface);
+    if (resolvConfFollowsResolved(this.executor.vfs)) {
+      this.dnsResolverIP = this.getResolvedService().selectServer('.').server ?? '';
+      return;
+    }
+    const text = this.withdrawDhcpResolverEntries(previous, this.executor.readFile('/etc/resolv.conf') ?? '');
     this.executor.vfs.writeFile('/etc/resolv.conf', text, 0, 0, 0o022);
     this.dnsResolverIP = /^nameserver\s+(\S+)/m.exec(text)?.[1] ?? '';
   }
@@ -5039,6 +5082,7 @@ export abstract class LinuxMachine extends EndHost
       }, processName),
       getResolvedService: () => this.getResolvedService(),
       publishResolvedState: () => this.publishResolvedState(),
+      declareResolverLink: (iface, declaration) => this.declareResolverLink(iface, declaration),
       syncLinkLocalResponders: () => this.syncLinkLocalResponders(),
       getMdnsAgent: () => this.getMdnsAgent(),
       getLldpNeighbors: (iface?: string) => this.getLldpNeighbors(iface),

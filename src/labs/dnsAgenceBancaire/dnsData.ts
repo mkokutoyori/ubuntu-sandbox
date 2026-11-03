@@ -87,6 +87,7 @@ export const RESOLVER_NAMED_CONF = [
   '    allow-query { agence; };',
   '    allow-recursion { agence; };',
   '    dnssec-validation no;',
+  '    empty-zones-enable no;',
   '};',
   'zone "." { type hint; file "/etc/bind/db.root.hints"; };',
   `zone "${INTERNAL_DOMAIN}" {`,

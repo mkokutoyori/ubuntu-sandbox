@@ -284,6 +284,8 @@ export interface LinuxNetKernel {
   getResolvedService(): import('./net/ResolvedService').ResolvedService;
   /** Réécrit `/run/systemd/resolve/` après un changement de configuration. */
   publishResolvedState(): void;
+  /** Ce que networkd (fichiers `.network`, netplan) pose sur un lien : serveurs, domaines, `UseDNS=`. */
+  declareResolverLink(iface: string, declaration: import('./net/ResolvedService').ResolverLinkDeclaration): void;
   /** Ouvre ou ferme les ports LLMNR/mDNS selon la configuration courante. */
   syncLinkLocalResponders(): void;
   /** L'agent mDNS de l'hôte — parcours et résolution DNS-SD. */
