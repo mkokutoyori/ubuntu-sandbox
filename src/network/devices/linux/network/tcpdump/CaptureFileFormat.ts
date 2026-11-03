@@ -49,7 +49,8 @@ function micros(frame: CaptureFrame): number {
 
 function recordOf(frame: CaptureFrame, header: CaptureFileHeader, cooked: CookedInterfaces | null): PcapWriteRecord {
   const microsecond = micros(frame);
-  const subsecond = header.nanosecond === true ? (microsecond % 1_000_000) * 1000 + (frame.atSubMicroNanos ?? 0) : microsecond % 1_000_000;
+  const wholeMicros = frame.subsecondMicros ?? microsecond % 1_000_000;
+  const subsecond = header.nanosecond === true ? wholeMicros * 1000 + (frame.atSubMicroNanos ?? 0) : wholeMicros;
   const bytes = cooked === null ? frame.raw : cookedRecordBytes(frame, cooked);
   const originalLength = cooked === null ? frame.length : cookedLength(frame, cooked);
   const padded = bytes.length >= originalLength ? bytes : [...bytes, ...new Array<number>(originalLength - bytes.length).fill(0)];

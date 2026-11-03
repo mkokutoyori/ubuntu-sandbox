@@ -6181,12 +6181,15 @@ export abstract class LinuxMachine extends EndHost
         const abs = this.executor.vfs.normalizePath(path, cwd);
         return this.executor.vfs.writeFile(abs, content, writer.uid, writer.gid, umask);
       },
-      dirWritable: (path: string, asUser?: string): boolean => {
+      writeRefusal: (path: string, asUser?: string): string | null => {
         const writer = asUser === undefined ? actor : this.executor.pathActorOf(asUser) ?? actor;
         const target = this.executor.vfs.path(path, cwd, writer);
-        const dir = target.dirname;
-        if (dir.startsWith('/sys') || dir.startsWith('/proc')) return false;
-        return target.parent().isWritableDir();
+        const parent = target.parent();
+        if (target.dirname.startsWith('/sys') || target.dirname.startsWith('/proc')) return 'Permission denied';
+        if (!parent.exists()) return 'No such file or directory';
+        if (!parent.isDirectory()) return 'Not a directory';
+        if (target.isDirectory()) return 'Is a directory';
+        return parent.isWritableDir() ? null : 'Permission denied';
       },
       interfaceNetwork: (name: string): { address: string; mask: string } | null => {
         const port = this.ports.get(name);
