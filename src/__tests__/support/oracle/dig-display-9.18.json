@@ -1,0 +1,1202 @@
+{
+ "dig": "DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu",
+ "shapes": {
+  "full": "85800001000200020003196c6f6e6765722d6e616d652d666f722d616c69676e6d656e74076578616d706c65036f7267000001000103777777076578616d706c65036f726700000500010000012c001103776562076578616d706c65036f72670003776562076578616d706c65036f726700000100010000012c0004c0000207076578616d706c65036f7267000002000100000e100011036e7331076578616d706c65036f726700076578616d706c65036f7267000002000100000e100011036e7332076578616d706c65036f726700036e7331076578616d706c65036f7267000001000100000e100004c0000235036e7332076578616d706c65036f7267000001000100000e100004c000023600002904d0000000000000",
+  "nxdomain": "8583000100000001000106616273656e74076578616d706c65036f72670000010001076578616d706c65036f726700000600010000012c003d036e7331076578616d706c65036f7267000a686f73746d6173746572076578616d706c65036f72670078c3fd5d00001c2000000384001275000000012c00002904d0000000000000",
+  "nodata": "85800001000000010001066e6f64617461076578616d706c65036f72670000010001076578616d706c65036f726700000600010000012c003d036e7331076578616d706c65036f7267000a686f73746d6173746572076578616d706c65036f72670078c3fd5d00001c2000000384001275000000012c00002904d0000000000000"
+ },
+ "cases": [
+  {
+   "name": "www.example.org",
+   "options": [],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 60601\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:36 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+all"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +all +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 36351\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:36 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+answer"
+   ],
+   "output": "www.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+comments"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 21889\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+answer"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52911\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+authority"
+   ],
+   "output": "example.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+additional"
+   ],
+   "output": "ns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+question"
+   ],
+   "output": ";www.example.org.\t\tIN\tA\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+stats"
+   ],
+   "output": ";; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+cmd"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +noall +cmd +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+authority",
+    "+additional"
+   ],
+   "output": "www.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+answer",
+    "+authority",
+    "+additional"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 7700\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+nocomments"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +nocomments +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;www.example.org.\t\tIN\tA\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noanswer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +noanswer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22555\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noquestion"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +noquestion +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 47604\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+nostats"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +nostats +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 48835\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+nocmd"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 58093\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+nocmd",
+    "+noall",
+    "+answer"
+   ],
+   "output": "www.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+all",
+    "+noanswer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +all +noanswer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 65444\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+stats"
+   ],
+   "output": "www.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+answer"
+   ],
+   "output": ";www.example.org.\t\tIN\tA\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+nocomments",
+    "+nostats",
+    "+nocmd"
+   ],
+   "output": ";www.example.org.\t\tIN\tA\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+noanswer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+cmd",
+    "+answer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +noall +cmd +answer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+stats"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 38101\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+comments"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 41159\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+short"
+   ],
+   "output": "web.example.org.\n192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+short",
+    "+noall"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noauthority"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +noauthority +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 38589\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 4 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noadditional"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +noadditional +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 8680\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+nocomments",
+    "+noquestion"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +nocomments +noquestion +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noedns"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org +noedns +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 17734\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+noedns"
+   ],
+   "output": "www.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "-t",
+    "MX"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 www.example.org -t MX +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 34612\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;www.example.org.\t\tIN\tMX\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 261\n\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+noall",
+    "+short"
+   ],
+   "output": "web.example.org.\n192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+short",
+    "+authority"
+   ],
+   "output": "web.example.org.\n192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+short",
+    "+comments"
+   ],
+   "output": "web.example.org.\n192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+short",
+    "+stats"
+   ],
+   "output": "web.example.org.\n192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "www.example.org",
+   "options": [
+    "+short",
+    "+answer"
+   ],
+   "output": "web.example.org.\n192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 49125\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+all"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +all +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 3174\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:37 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+answer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+comments"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 64532\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+answer"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 34286\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+authority"
+   ],
+   "output": "example.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+additional"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+question"
+   ],
+   "output": ";absent.example.org.\t\tIN\tA\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+stats"
+   ],
+   "output": ";; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+cmd"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +noall +cmd +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+authority",
+    "+additional"
+   ],
+   "output": "example.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+answer",
+    "+authority",
+    "+additional"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 24706\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+nocomments"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +nocomments +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;absent.example.org.\t\tIN\tA\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noanswer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +noanswer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 48714\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noquestion"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +noquestion +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 64719\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+nostats"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +nostats +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 57284\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+nocmd"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 22486\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+nocmd",
+    "+noall",
+    "+answer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+all",
+    "+noanswer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +all +noanswer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 3713\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 4 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+stats"
+   ],
+   "output": ";; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+answer"
+   ],
+   "output": ";absent.example.org.\t\tIN\tA\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+nocomments",
+    "+nostats",
+    "+nocmd"
+   ],
+   "output": ";absent.example.org.\t\tIN\tA\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+noanswer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+cmd",
+    "+answer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +noall +cmd +answer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+stats"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 58133\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+comments"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 17815\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+short"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+short",
+    "+noall"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noauthority"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +noauthority +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 43066\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noadditional"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +noadditional +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 27764\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+nocomments",
+    "+noquestion"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +nocomments +noquestion +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noedns"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org +noedns +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 37106\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+noedns"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "-t",
+    "MX"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 absent.example.org -t MX +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 45222\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;absent.example.org.\t\tIN\tMX\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+noall",
+    "+short"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+short",
+    "+authority"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+short",
+    "+comments"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+short",
+    "+stats"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "absent.example.org",
+   "options": [
+    "+short",
+    "+answer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49156\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+all"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +all +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 17729\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:38 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+answer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+comments"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 28638\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+answer"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 17109\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+authority"
+   ],
+   "output": "example.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+additional"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+question"
+   ],
+   "output": ";nodata.example.org.\t\tIN\tA\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+stats"
+   ],
+   "output": ";; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+cmd"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +noall +cmd +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+authority",
+    "+additional"
+   ],
+   "output": "example.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+answer",
+    "+authority",
+    "+additional"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 38394\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+nocomments"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +nocomments +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;nodata.example.org.\t\tIN\tA\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noanswer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +noanswer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 26276\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noquestion"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +noquestion +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 7724\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+nostats"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +nostats +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 7224\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+nocmd"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 18179\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+nocmd",
+    "+noall",
+    "+answer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+all",
+    "+noanswer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +all +noanswer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 44132\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+stats"
+   ],
+   "output": ";; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+answer"
+   ],
+   "output": ";nodata.example.org.\t\tIN\tA\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+nocomments",
+    "+nostats",
+    "+nocmd"
+   ],
+   "output": ";nodata.example.org.\t\tIN\tA\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+noanswer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+cmd",
+    "+answer"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +noall +cmd +answer +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+comments",
+    "+stats"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 21492\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+comments"
+   ],
+   "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 60379\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+short"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+short",
+    "+noall"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noauthority"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +noauthority +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 58524\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noadditional"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +noadditional +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 59502\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+nocomments",
+    "+noquestion"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +nocomments +noquestion +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n;; Query time: 4 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noedns"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org +noedns +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 38144\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+answer",
+    "+noedns"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "-t",
+    "MX"
+   ],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 nodata.example.org -t MX +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 3007\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;nodata.example.org.\t\tIN\tMX\n\n;; AUTHORITY SECTION:\nexample.org.\t\t300\tIN\tSOA\tns1.example.org. hostmaster.example.org. 2026110301 7200 900 1209600 300\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 131\n\n",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+noall",
+    "+short"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+short",
+    "+authority"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+short",
+    "+comments"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+short",
+    "+stats"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "nodata.example.org",
+   "options": [
+    "+short",
+    "+answer"
+   ],
+   "output": "",
+   "errors": ""
+  },
+  {
+   "name": "a.example.org",
+   "options": [],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 a.example.org +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 53229\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;a.example.org.\t\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 259\n\n",
+   "errors": ""
+  },
+  {
+   "name": "a.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+answer"
+   ],
+   "output": ";a.example.org.\t\t\tIN\tA\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "mid-size.example.org",
+   "options": [],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 mid-size.example.org +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 38294\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;mid-size.example.org.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 266\n\n",
+   "errors": ""
+  },
+  {
+   "name": "mid-size.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+answer"
+   ],
+   "output": ";mid-size.example.org.\t\tIN\tA\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  },
+  {
+   "name": "longer-name-for-alignment.example.org",
+   "options": [],
+   "output": "\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5353 longer-name-for-alignment.example.org +tries=1 +time=2\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 57081\n;; flags: qr aa rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;longer-name-for-alignment.example.org. IN A\n\n;; ANSWER SECTION:\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n\n;; AUTHORITY SECTION:\nexample.org.\t\t3600\tIN\tNS\tns1.example.org.\nexample.org.\t\t3600\tIN\tNS\tns2.example.org.\n\n;; ADDITIONAL SECTION:\nns1.example.org.\t3600\tIN\tA\t192.0.2.53\nns2.example.org.\t3600\tIN\tA\t192.0.2.54\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.1#5353(127.0.0.1) (UDP)\n;; WHEN: Tue Nov 03 16:37:39 UTC 2026\n;; MSG SIZE  rcvd: 283\n\n",
+   "errors": ""
+  },
+  {
+   "name": "longer-name-for-alignment.example.org",
+   "options": [
+    "+noall",
+    "+question",
+    "+answer"
+   ],
+   "output": ";longer-name-for-alignment.example.org. IN A\nwww.example.org.\t300\tIN\tCNAME\tweb.example.org.\nweb.example.org.\t300\tIN\tA\t192.0.2.7\n",
+   "errors": ""
+  }
+ ],
+ "failures": [
+  {
+   "kind": "timeout",
+   "port": 5354,
+   "options": [],
+   "output": ";; communications error to 127.0.0.1#5354: timed out\n;; communications error to 127.0.0.1#5354: timed out\n;; communications error to 127.0.0.1#5354: timed out\n\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5354 example.org +time=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached\n",
+   "status": 9
+  },
+  {
+   "kind": "timeout",
+   "port": 5354,
+   "options": [
+    "+short"
+   ],
+   "output": ";; communications error to 127.0.0.1#5354: timed out\n;; communications error to 127.0.0.1#5354: timed out\n;; communications error to 127.0.0.1#5354: timed out\n\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5354 example.org +short +time=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached\n",
+   "status": 9
+  },
+  {
+   "kind": "timeout",
+   "port": 5354,
+   "options": [
+    "+nocmd"
+   ],
+   "output": ";; communications error to 127.0.0.1#5354: timed out\n;; communications error to 127.0.0.1#5354: timed out\n;; communications error to 127.0.0.1#5354: timed out\n\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5354 example.org +nocmd +time=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached\n",
+   "status": 9
+  },
+  {
+   "kind": "timeout",
+   "port": 5354,
+   "options": [
+    "+tries=2"
+   ],
+   "output": ";; communications error to 127.0.0.1#5354: timed out\n;; communications error to 127.0.0.1#5354: timed out\n\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5354 example.org +tries=2 +time=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached\n",
+   "status": 9
+  },
+  {
+   "kind": "refused",
+   "port": 5355,
+   "options": [],
+   "output": ";; communications error to 127.0.0.1#5355: connection refused\n;; communications error to 127.0.0.1#5355: connection refused\n;; communications error to 127.0.0.1#5355: connection refused\n\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5355 example.org +time=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached\n",
+   "status": 9
+  },
+  {
+   "kind": "refused",
+   "port": 5355,
+   "options": [
+    "+short"
+   ],
+   "output": ";; communications error to 127.0.0.1#5355: connection refused\n;; communications error to 127.0.0.1#5355: connection refused\n;; communications error to 127.0.0.1#5355: connection refused\n\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5355 example.org +short +time=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached\n",
+   "status": 9
+  },
+  {
+   "kind": "refused",
+   "port": 5355,
+   "options": [
+    "+tries=2"
+   ],
+   "output": ";; communications error to 127.0.0.1#5355: connection refused\n;; communications error to 127.0.0.1#5355: connection refused\n\n; <<>> DiG 9.18.39-0ubuntu0.24.04.8-Ubuntu <<>> @127.0.0.1 -p 5355 example.org +tries=2 +time=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached\n",
+   "status": 9
+  }
+ ]
+}

@@ -105,10 +105,14 @@ Mesure sur PC-CONSEILLER (stub de resolved, amont DC1) : `ping -c 1 www.banqueho
 `64 bytes from web.banquehorizon.com (203.0.113.20)` au second appel. `reverseNameOf` (Ping.ts, Traceroute.ts, Tracepath.ts, Netstat.ts) appelle `gethostbyaddr` synchrone ; la version asynchrone
 (`reverseNameOfAsync`) existe et sert deja `tcpdump` et Kerberos. Pourquoi ce n'est pas ferme : la boucle d'affichage de `ping` est synchrone de bout en bout.
 
-### [dig] les options d'affichage `+noall`, `+comments`, `+authority`, `+additional`, `+question`, `+stats`, `+cmd` ne sont pas evaluees, et `dig` ne pose pas d'OPT par defaut
-`+noall +answer` imprime les reponses seules ; toute autre combinaison avec `+noall` (`+noall +comments +answer +authority`) imprime la sortie complete, ce que le vrai dig ne fait pas. Le vrai
-dig 9.18 pose un OPT (EDNS0, `+bufsize=1232`) dans chaque question : le simulateur n'en pose que sous `+bufsize=` / `+dnssec`, si bien que les reponses des serveurs simules n'ont pas de
-section `OPT PSEUDOSECTION` par defaut. Mesure : l'oracle du stub de resolved ne retrouve les 65494 octets annonces par le vrai stub qu'avec `+bufsize=1232` explicite.
+### [dig] ce que dig 9.18 fait encore et que le simulateur ne fait pas
+Les options d'affichage (`+[no]all`, `+[no]cmd`, `+[no]comments`, `+[no]question`, `+[no]answer`, `+[no]authority`, `+[no]additional`, `+[no]stats`, `+short`), la banniere avec la version du paquet,
+`(1 server found)`, la mise en page de BIND (colonnes 24/32/40/48, espace au-dela de la colonne), le EDNS0 de chaque question (`+bufsize=1232`, `+noedns`), la date et `(UDP)` des statistiques et
+les messages d'echec (`;; communications error to ...: timed out` a chaque essai, banniere meme sous `+short`) sont rejoues contre un vrai dig 9.18.39 (`dig-display-oracle`, 133 cas). Restent, mesures :
+`+tcp` vers un port ferme (le vrai dig ecrit `;; Connection to ...#PORT(...) for NOM failed: connection refused.` et `;; no servers could be reached` a chaque essai, sans banniere ; le transport
+simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien libelle `;; connection timed out; no servers could be reached` et sa propre banniere ; un serveur donne par nom
+(`@hote`) n'est resolu que s'il est une adresse litterale (le vrai dig dit `;; couldn't get address for 'hote': not found`) ; le code de sortie 9 d'un echec n'est pas rendu ; `+multiline`, `+nsid`,
+`+cookie`, `+subnet` et les autres options sont acceptes et ignores.
 
 ### [dns] `rndc dumpdb -cache` et le resolveur BIND : ce que BIND 9.18 fait en plus et que le simulateur ne fait pas
 Le fichier est ecrit dans la mise en page de `masterdump` (colonnes 24/32/40, confiance `; authanswer` / `; glue` / `; answer`, SOA sur plusieurs lignes, entrees negatives, ordre canonique) et compare

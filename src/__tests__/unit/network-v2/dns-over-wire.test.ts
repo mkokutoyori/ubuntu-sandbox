@@ -151,7 +151,8 @@ describe('dig / nslookup / host over UDP/53', () => {
     // (now honored) default of 3 attempts — see PRD-Nslookup-Dig-Rndc-Runas.md P3.
     const out = await pc.executeCommand('dig @10.0.1.10 webserver.example +tries=1');
 
-    expect(out).toContain('connection timed out; no servers could be reached');
+    expect(out).toContain(';; communications error to 10.0.1.10#53: timed out');
+    expect(out).toContain(';; no servers could be reached');
   }, 15000);
 
   it('nslookup answers through the wire', async () => {

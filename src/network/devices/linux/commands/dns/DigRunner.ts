@@ -5,13 +5,29 @@ import { PathClock } from '@/network/core/time/PathClock';
 import { DnsClass, RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
-import { rrTypeFromName, rrTypeName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
+import { rrTypeFromName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn, DnsQueryOptions } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
   ARecordData, NsRecordData, ResourceRecord, ResourceRecordData,
 } from '@/network/dns/wire/ResourceRecord';
-import { formatRdata, formatRecordLine, isDisplayableRecord, rrClassName } from './RecordFormat';
+import { formatQuestionLine, formatRdata, formatRecordLine, isDisplayableRecord } from './RecordFormat';
+import { findPackage } from '../../packages/PackageDatabase';
+
+interface DigDisplay {
+  cmd: boolean;
+  comments: boolean;
+  question: boolean;
+  answer: boolean;
+  authority: boolean;
+  additional: boolean;
+  stats: boolean;
+}
+
+const DISPLAY_FLAGS = ['cmd', 'comments', 'question', 'answer', 'authority', 'additional', 'stats'] as const;
+const DISPLAY_OPTION = /^\+(no)?(cmd|comments|question|answer|authority|additional|stats)$/;
+const DEFAULT_EDNS_BUFFER = 1232;
+const DIG_VERSION_SUFFIX = 'Ubuntu';
 
 interface DigInvocation {
   server: string;
@@ -20,8 +36,9 @@ interface DigInvocation {
   qclass: number;
   reverse: boolean;
   short: boolean;
-  noAll: boolean;
-  showAnswer: boolean;
+  display: DigDisplay;
+  serverGiven: boolean;
+  noEdns: boolean;
   tcp: boolean;
   /** `+tls` — DNS-over-TLS (RFC 7858), port 853 par défaut. */
   tls: boolean;
@@ -50,8 +67,9 @@ function newInvocation(): DigInvocation {
     qclass: DnsClass.IN,
     reverse: false,
     short: false,
-    noAll: false,
-    showAnswer: false,
+    display: { cmd: true, comments: true, question: true, answer: true, authority: true, additional: true, stats: true },
+    serverGiven: false,
+    noEdns: false,
     tcp: false,
     tls: false,
     recurse: true,
@@ -74,10 +92,14 @@ function newInvocation(): DigInvocation {
 function parseDigInvocations(args: string[], resolverIP: string | undefined): DigInvocation[] {
   let server = resolverIP ?? '';
   let short = false;
+  let serverGiven = false;
+  let noEdns = false;
+  const display = newInvocation().display;
+  const setDisplay = (state: boolean, keys: readonly (keyof DigDisplay)[]): void => {
+    for (const key of keys) display[key] = state;
+  };
   let tcp = false;
   let tls = false;
-  let noAll = false;
-  let showAnswer = false;
   let recurse = true;
   let dnssec = false;
   let bufsize: number | null = null;
@@ -94,13 +116,21 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg.startsWith('@')) server = arg.slice(1);
-    else if (arg === '+short') short = true;
+    const displayOption = DISPLAY_OPTION.exec(arg);
+    if (arg.startsWith('@')) { server = arg.slice(1); serverGiven = true; }
+    else if (arg === '+short') {
+      short = true;
+      setDisplay(false, DISPLAY_FLAGS);
+      display.answer = true;
+    }
+    else if (arg === '+noshort') short = false;
+    else if (arg === '+all' || arg === '+noall') setDisplay(arg === '+all', DISPLAY_FLAGS);
+    else if (displayOption) display[displayOption[2] as keyof DigDisplay] = displayOption[1] === undefined;
+    else if (arg === '+noedns') noEdns = true;
+    else if (arg === '+edns' || arg.startsWith('+edns=')) noEdns = false;
     else if (arg === '+tcp' || arg === '+vc') tcp = true;
     else if (arg === '+tls') tls = true;
     else if (arg === '+notls') tls = false;
-    else if (arg === '+noall') noAll = true;
-    else if (arg === '+answer') showAnswer = true;
     else if (arg === '+norecurse') recurse = false;
     else if (arg === '+recurse') recurse = true;
     else if (arg === '+dnssec') dnssec = true;
@@ -142,10 +172,11 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
   for (const g of groups) {
     g.server = server;
     g.short = short;
+    g.display = { ...display };
+    g.serverGiven = serverGiven;
+    g.noEdns = noEdns;
     g.tcp = tcp;
     g.tls = tls;
-    g.noAll = noAll;
-    g.showAnswer = showAnswer;
     g.recurse = recurse;
     g.dnssec = dnssec;
     g.bufsize = bufsize;
@@ -168,8 +199,29 @@ function digPort(invocation: DigInvocation): number {
   return invocation.port ?? (invocation.tls ? 853 : 53);
 }
 
+function digVersion(): string {
+  return `${findPackage('dnsutils')?.version ?? ''}-${DIG_VERSION_SUFFIX}`;
+}
+
+function commandLines(invocation: DigInvocation): string[] {
+  if (!invocation.display.cmd) return [];
+  return [
+    '',
+    `; <<>> DiG ${digVersion()} <<>> ${invocation.typedArguments}`,
+    ...(invocation.serverGiven ? ['; (1 server found)'] : []),
+    ';; global options: +cmd',
+  ];
+}
+
+function digDate(date: Date): string {
+  const two = (value: number): string => String(value).padStart(2, '0');
+  const day = date.toUTCString().slice(0, 3);
+  const month = date.toUTCString().slice(8, 11);
+  return `${day} ${month} ${two(date.getUTCDate())} ${two(date.getUTCHours())}:${two(date.getUTCMinutes())}:${two(date.getUTCSeconds())} UTC ${date.getUTCFullYear()}`;
+}
+
 /** The one diagnostic dig writes to stderr when no server answered. */
-export const DIG_NO_SERVERS = ';; connection timed out; no servers could be reached';
+export const DIG_NO_SERVERS = ';; no servers could be reached';
 
 /**
  * What a terminal shows when nothing answered. `+short` suppresses the
@@ -177,9 +229,9 @@ export const DIG_NO_SERVERS = ';; connection timed out; no servers could be reac
  * stderr line: a tty still displays it, `2>/dev/null` or a capture does
  * not. `digStreams()` is what separates the two for callers that care.
  */
-function noServersLine(banner: string, short = false): string {
-  if (short) return DIG_NO_SERVERS;
-  return `; <<>> DiG <<>> ${banner}\n${DIG_NO_SERVERS}`;
+function noServersLine(invocation: DigInvocation, communications: readonly string[] = []): string {
+  const banner = commandLines({ ...invocation, display: { ...invocation.display, cmd: true } });
+  return [...communications, ...banner, DIG_NO_SERVERS].join('\n');
 }
 
 function shortOutput(answers: readonly ResourceRecord<ResourceRecordData>[]): string {
@@ -187,10 +239,7 @@ function shortOutput(answers: readonly ResourceRecord<ResourceRecordData>[]): st
 }
 
 function transferOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: number): string {
-  const lines: string[] = [
-    `; <<>> DiG <<>> ${invocation.typedArguments}`,
-    ';; global options: +cmd',
-  ];
+  const lines: string[] = commandLines(invocation);
   const records = message.answers.filter(isDisplayableRecord);
   if (message.flags.rcode !== DnsRcode.NOERROR || records.length === 0) {
     lines.push('; Transfer failed.');
@@ -198,8 +247,8 @@ function transferOutput(invocation: DigInvocation, message: DnsMessage, elapsedM
   }
   for (const rr of records) lines.push(formatRecordLine(rr));
   lines.push(`;; Query time: ${Math.round(elapsedMs)} msec`);
-  lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
-  lines.push(`;; WHEN: ${simulationDate().toUTCString()}`);
+  lines.push(serverLine(invocation));
+  lines.push(`;; WHEN: ${digDate(simulationDate())}`);
   lines.push(`;; XFR size: ${records.length} records (messages 1, bytes ${encodeDnsMessage(message).length})`);
   return lines.join('\n');
 }
@@ -218,54 +267,64 @@ function headerFlags(message: DnsMessage): string {
 
 function pushSection(
   lines: string[],
+  display: DigDisplay,
   title: string,
+  shown: boolean,
   records: readonly ResourceRecord<ResourceRecordData>[],
 ): void {
   const displayable = records.filter(isDisplayableRecord);
-  if (displayable.length === 0) return;
-  lines.push(`;; ${title} SECTION:`);
+  if (!shown || displayable.length === 0) return;
+  if (display.comments) lines.push(`;; ${title} SECTION:`);
   for (const rr of displayable) lines.push(formatRecordLine(rr));
-  lines.push('');
+  if (display.comments) lines.push('');
+}
+
+function transportName(invocation: DigInvocation): string {
+  return invocation.tls ? 'TLS' : invocation.tcp ? 'TCP' : 'UDP';
+}
+
+function serverLine(invocation: DigInvocation): string {
+  return `;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server}) (${transportName(invocation)})`;
 }
 
 function fullOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: number): string {
-  const lines: string[] = [
-    `; <<>> DiG <<>> ${invocation.typedArguments}`,
-    ';; global options: +cmd',
-    ';; Got answer:',
-    `;; ->>HEADER<<- opcode: QUERY, status: ${rcodeFromWire(message.flags.rcode)}, id: ${message.id}`,
-    `;; flags: ${headerFlags(message)}; QUERY: ${message.questions.length}, ` +
-      `ANSWER: ${message.answers.length}, AUTHORITY: ${message.authorities.length}, ` +
-      `ADDITIONAL: ${message.additionals.length}`,
-  ];
-  if (invocation.recurse && !message.flags.ra) {
-    lines.push(';; WARNING: recursion requested but not available');
-  }
-  lines.push('');
-
-  const opt = findOpt(message);
-  if (opt) {
-    lines.push(';; OPT PSEUDOSECTION:');
-    const doFlag = opt.data.dnssecOk ? 'flags: do;' : 'flags:;';
-    lines.push(`; EDNS: version: ${opt.data.version}, ${doFlag} udp: ${opt.data.udpPayloadSize}`);
+  const { display } = invocation;
+  const lines: string[] = commandLines(invocation);
+  if (display.comments) {
+    lines.push(
+      ';; Got answer:',
+      `;; ->>HEADER<<- opcode: QUERY, status: ${rcodeFromWire(message.flags.rcode)}, id: ${message.id}`,
+      `;; flags: ${headerFlags(message)}; QUERY: ${message.questions.length}, ` +
+        `ANSWER: ${message.answers.length}, AUTHORITY: ${message.authorities.length}, ` +
+        `ADDITIONAL: ${message.additionals.length}`,
+    );
+    if (invocation.recurse && !message.flags.ra) {
+      lines.push(';; WARNING: recursion requested but not available');
+    }
     lines.push('');
+    const opt = findOpt(message);
+    if (opt) {
+      const doFlag = opt.data.dnssecOk ? 'flags: do;' : 'flags:;';
+      lines.push(';; OPT PSEUDOSECTION:', `; EDNS: version: ${opt.data.version}, ${doFlag} udp: ${opt.data.udpPayloadSize}`);
+    }
   }
-
-  lines.push(';; QUESTION SECTION:');
-  for (const question of message.questions) {
-    const qname = question.qname.endsWith('.') ? question.qname : `${question.qname}.`;
-    lines.push(`;${qname}\t\t\t${rrClassName(question.qclass)}\t${rrTypeName(question.qtype)}`);
+  if (display.question) {
+    if (display.comments) lines.push(';; QUESTION SECTION:');
+    for (const question of message.questions) lines.push(formatQuestionLine(question.qname, question.qclass, question.qtype));
+    if (display.comments) lines.push('');
   }
-  lines.push('');
-
-  pushSection(lines, 'ANSWER', message.answers);
-  pushSection(lines, 'AUTHORITY', message.authorities);
-  pushSection(lines, 'ADDITIONAL', message.additionals);
-
-  lines.push(`;; Query time: ${Math.round(elapsedMs)} msec`);
-  lines.push(`;; SERVER: ${invocation.server}#${digPort(invocation)}(${invocation.server})`);
-  lines.push(`;; WHEN: ${simulationDate().toUTCString()}`);
-  lines.push(`;; MSG SIZE  rcvd: ${encodeDnsMessage(message).length}`);
+  pushSection(lines, display, 'ANSWER', display.answer, message.answers);
+  pushSection(lines, display, 'AUTHORITY', display.authority, message.authorities);
+  pushSection(lines, display, 'ADDITIONAL', display.additional, message.additionals);
+  if (display.stats) {
+    lines.push(
+      `;; Query time: ${Math.round(elapsedMs)} msec`,
+      serverLine(invocation),
+      `;; WHEN: ${digDate(simulationDate())}`,
+      `;; MSG SIZE  rcvd: ${encodeDnsMessage(message).length}`,
+      '',
+    );
+  }
   return lines.join('\n');
 }
 
@@ -319,7 +378,7 @@ function pushTraceHop(
  * would send.
  */
 async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promise<string> {
-  const lines: string[] = [`; <<>> DiG <<>> ${invocation.typedArguments}`, ';; global options: +cmd'];
+  const lines: string[] = commandLines(invocation);
   const timeoutMs = invocation.timeoutSeconds * 1000;
   const port = invocation.port ?? 53;
   let server = invocation.server;
@@ -374,10 +433,8 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
 }
 
 async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn): Promise<string> {
-  const banner = invocation.typedArguments;
-
   if (!invocation.server || !isIpLiteral(invocation.server)) {
-    return noServersLine(banner, invocation.short);
+    return noServersLine(invocation);
   }
 
   if (invocation.trace) {
@@ -389,32 +446,32 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
     tcp: invocation.tcp,
     tls: invocation.tls,
     dnssecOk: invocation.dnssec,
-    udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : undefined),
+    udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : invocation.noEdns ? undefined : DEFAULT_EDNS_BUFFER),
     port: invocation.port ?? undefined,
     qclass: invocation.qclass,
   };
   let message: DnsMessage | null = null;
   let startedAt = PathClock.now();
-  const refusals: string[] = [];
+  const communications: string[] = [];
+  let refused = false;
   const attemptOptions: DnsQueryOptions = {
     ...options,
     onTransportFailure: () => {
-      refusals.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: connection refused`);
+      refused = true;
+      communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: connection refused`);
     },
   };
   for (let attempt = 0; attempt < Math.max(1, invocation.tries); attempt++) {
     startedAt = PathClock.now();
+    refused = false;
     message = await query(
       invocation.server, invocation.domain, invocation.qtype,
       invocation.timeoutSeconds * 1000, attemptOptions,
     );
     if (message) break;
+    if (!refused) communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: timed out`);
   }
-  if (!message && refusals.length > 0) {
-    const verdict = invocation.short ? ';; no servers could be reached' : `; <<>> DiG <<>> ${banner}\n;; no servers could be reached`;
-    return [...refusals, verdict].join('\n');
-  }
-  if (!message) return noServersLine(banner, invocation.short);
+  if (!message) return noServersLine(invocation, communications);
 
   // RFC 1035 §4.2.1 — real dig retries TC=1 over TCP by default.
   if (message.flags.tc && !options.tcp && !options.tls) {
@@ -428,10 +485,7 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
   if (invocation.qtype === 'AXFR' || invocation.qtype === 'IXFR') {
     return transferOutput(invocation, message, PathClock.now() - startedAt);
   }
-  if (invocation.short) return shortOutput(message.answers);
-  if (invocation.noAll && invocation.showAnswer) {
-    return message.answers.filter(isDisplayableRecord).map(formatRecordLine).join('\n');
-  }
+  if (invocation.short) return invocation.display.answer ? shortOutput(message.answers) : '';
   return fullOutput(invocation, message, PathClock.now() - startedAt);
 }
 
@@ -460,7 +514,7 @@ export async function executeDig(
     for (const line of batchLines(content)) {
       outputs.push(await executeDig([...globalArgs, ...line.split(/\s+/)], query, resolverIP, readFile));
     }
-    return outputs.join('\n\n');
+    return outputs.join('\n');
   }
 
   const invocations = parseDigInvocations(args, resolverIP);
@@ -468,5 +522,5 @@ export async function executeDig(
   for (const invocation of invocations) {
     outputs.push(await executeSingleQuery(invocation, query));
   }
-  return outputs.join(invocations[0]?.short ? '\n' : '\n\n');
+  return outputs.join('\n');
 }

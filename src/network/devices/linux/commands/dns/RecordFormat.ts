@@ -46,8 +46,45 @@ export function formatRdata(rr: ResourceRecord<ResourceRecordData>): string {
   }
 }
 
+const MASTER_TAB_WIDTH = 8;
+const DEBUG_STYLE_COLUMNS = { ttl: 24, className: 32, type: 40, rdata: 48 } as const;
+const QUESTION_STYLE_COLUMNS = { className: 32, type: 40 } as const;
+
+export function masterIndent(current: number, target: number): { text: string; column: number } {
+  const to = Math.max(target, current + 1);
+  const tabs = Math.floor(to / MASTER_TAB_WIDTH) - Math.floor(current / MASTER_TAB_WIDTH);
+  if (tabs > 0) {
+    const reached = Math.floor(to / MASTER_TAB_WIDTH) * MASTER_TAB_WIDTH;
+    return { text: '\t'.repeat(tabs) + ' '.repeat(to - reached), column: to };
+  }
+  return { text: ' '.repeat(to - current), column: to };
+}
+
+function masterFields(first: string, fields: ReadonlyArray<readonly [number, string]>): string {
+  let text = first;
+  let column = first.length;
+  for (const [target, field] of fields) {
+    const gap = masterIndent(column, target);
+    text += gap.text + field;
+    column = gap.column + field.length;
+  }
+  return text;
+}
+
 export function formatRecordLine(rr: ResourceRecord<ResourceRecordData>): string {
-  return `${absolute(rr.name)}\t${rr.ttl}\t${rrClassName(rr.rrClass)}\t${rrTypeName(rr.data.type)}\t${formatRdata(rr)}`;
+  return masterFields(absolute(rr.name), [
+    [DEBUG_STYLE_COLUMNS.ttl, String(rr.ttl)],
+    [DEBUG_STYLE_COLUMNS.className, rrClassName(rr.rrClass)],
+    [DEBUG_STYLE_COLUMNS.type, rrTypeName(rr.data.type)],
+    [DEBUG_STYLE_COLUMNS.rdata, formatRdata(rr)],
+  ]);
+}
+
+export function formatQuestionLine(name: string, qclass: number, qtype: number): string {
+  return `;${masterFields(absolute(name), [
+    [QUESTION_STYLE_COLUMNS.className, rrClassName(qclass)],
+    [QUESTION_STYLE_COLUMNS.type, rrTypeName(qtype)],
+  ])}`;
 }
 
 export function isDisplayableRecord(rr: ResourceRecord<ResourceRecordData>): boolean {

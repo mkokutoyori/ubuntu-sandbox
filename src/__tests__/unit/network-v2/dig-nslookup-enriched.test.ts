@@ -77,7 +77,7 @@ describe('dig — enriched header and flags', () => {
 
     expect(out).toContain('status: NOERROR');
     expect(out).toMatch(/flags: qr aa rd;/);
-    expect(out).toContain('QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0');
+    expect(out).toContain('QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1');
     expect(out).toContain('www.example.com.\t3600\tIN\tA\t10.0.1.80');
   }, 20000);
 
@@ -146,7 +146,7 @@ describe('dig — argument handling', () => {
 
     const out = await pc.executeCommand(`dig @${NS1_IP} -t MX example.com`);
 
-    expect(out).toContain('example.com.\t3600\tIN\tMX\t10 mail.example.com.');
+    expect(out).toContain('example.com.\t\t3600\tIN\tMX\t10 mail.example.com.');
   }, 20000);
 
   it('resolves single-label names without a dot', async () => {
@@ -165,7 +165,7 @@ describe('dig — argument handling', () => {
     const out = await pc.executeCommand(`dig @${NS1_IP} lan SOA`);
 
     expect(out).toContain('status: NOERROR');
-    expect(out).toContain('lan.\t3600\tIN\tSOA\tns1.lan.');
+    expect(out).toContain('lan.\t\t\t3600\tIN\tSOA\tns1.lan.');
   }, 20000);
 
   it('formats SOA and TXT rdata like real dig', async () => {

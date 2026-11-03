@@ -9,7 +9,6 @@
  * announces (65494); the set of answer records by type and data (the order is the upstream's: BIND rotates the MX records); for a negative answer the SOA of the authority section; and the
  * TTLs: an answer asked a second time carries its first TTL minus the wait, a record kept above two hours comes back capped at 7200 minus the wait, a record synthesised from /etc/hosts
  * has TTL 0. The recorded waits themselves are checked (5 to 7 seconds) so that the fixture cannot drift from the delay the replay uses.
- * The replay asks with `+bufsize=1232`, which is what dig 9.18 does by default (an OPT record in every query); the simulated dig sends no OPT unless asked, and the stub answers EDNS only to a query that carried it (TODO.md).
  * Not compared, and named: the NS records the real stub copies into the authority section of a positive answer and the glue it copies into the additional section (resolved composes the
  * reply from its cache and the delegation it learned; the simulated stub forwards the answer section only), and the order of the records inside one answer, and the single TTL the real stub gives to every record of an answer served from its cache
  * (the smallest of the message it cached, authority and glue included: all 3573 in mx-again whereas the first reply showed 3600 and 3579; the simulated stub lets each record decay on its own).
@@ -120,7 +119,7 @@ describe('Oracle - the stub of systemd-resolved 255 against the simulated stub o
     const differences: string[] = [];
     for (const step of fixture.steps) {
       if (step.delay > 0) await lab.asked(ASK, 'sh', `sleep ${step.delay}`);
-      const line = `dig @127.0.0.53 ${argumentsOf(step)} +bufsize=1232`;
+      const line = `dig @127.0.0.53 ${argumentsOf(step)}`;
       const got = parseDig((await lab.asked(ASK, 'sh', line)).output);
       replies.set(step.label, got);
       const want = step.reply;

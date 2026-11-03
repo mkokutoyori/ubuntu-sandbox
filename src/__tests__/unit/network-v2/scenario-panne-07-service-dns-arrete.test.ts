@@ -134,10 +134,7 @@ chmod +x /tmp/impact-dns.sh`);
     it('`dig +short` ne rend plus aucune adresse une fois le service arrêté', async () => {
       dns.dnsService.stop();
       const out = await run('dig +short dc01.mandeng.lan @192.168.10.10');
-      // `+short` supprime la bannière et les lignes de commentaire ; il
-      // reste le diagnostic, que dig écrit sur stderr et qu'un terminal
-      // affiche donc bel et bien. Ce qui compte : plus aucune adresse.
-      expect(out.split('\n').filter((line) => !line.startsWith(';;')).join('\n')).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+      expect(out.split('\n').filter((line) => !line.startsWith(';')).join('\n')).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
       expect(out).toContain('no servers could be reached');
     }, LONG);
 

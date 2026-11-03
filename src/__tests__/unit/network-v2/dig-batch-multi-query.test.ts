@@ -82,7 +82,7 @@ describe('dig multi-query (PRD-Nslookup-Dig-Rndc-Runas.md P5)', () => {
     expect(out).toContain('mail.example.com.');
     expect(out).toContain('10 mail.example.com.');
     // Two separate dig-style header blocks, one per query.
-    expect(out.match(/<<>> DiG <<>>/g)?.length).toBe(2);
+    expect(out.match(/<<>> DiG \S+ <<>>/g)?.length).toBe(2);
   });
 
   it('+short concatenates each query answer on its own line, not blank-line separated', async () => {
@@ -100,7 +100,7 @@ describe('dig multi-query (PRD-Nslookup-Dig-Rndc-Runas.md P5)', () => {
 
     expect(out).toContain('status: NOERROR');
     expect(out).toContain('10.0.1.80');
-    expect(out.match(/<<>> DiG <<>>/g)?.length).toBe(1);
+    expect(out.match(/<<>> DiG \S+ <<>>/g)?.length).toBe(1);
   });
 });
 
@@ -115,7 +115,7 @@ describe('dig -f <file> batch mode (PRD-Nslookup-Dig-Rndc-Runas.md P5)', () => {
 
     expect(out).toContain('10.0.1.80');
     expect(out).toContain('10 mail.example.com.');
-    expect(out.match(/<<>> DiG <<>>/g)?.length).toBe(2);
+    expect(out.match(/<<>> DiG \S+ <<>>/g)?.length).toBe(2);
   });
 
   it('reports an error for a missing batch file instead of crashing', async () => {
