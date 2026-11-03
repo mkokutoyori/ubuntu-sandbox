@@ -122,7 +122,9 @@ depuis son cache (`dig @resolveur www.banquehorizon.com` : AUTHORITY: 2, ADDITIO
 
 ### [windows] `ipconfig /displaydns` : seule l'entree `Name does not exist.` est rendue comme Windows
 Un NXDOMAIN retenu par le client s'affiche `Name does not exist.` sous le nom (Microsoft Learn, « Troubleshooting DNS clients »). L'entree NODATA (`Status: NoRecords`) garde la mise en page
-d'un enregistrement faute d'un libelle atteste : la page Microsoft n'a pas pu etre lue en entier depuis cet environnement.
+d'un enregistrement faute d'un libelle atteste. Recherche refaite : ni la page Microsoft Learn ni le fil de la communaute Cisco (le seul resultat qui cite une ligne « Negative cache entry for no
+records ») ne sont joignables depuis cet environnement (`getaddrinfo EAI_AGAIN`), et aucun autre resultat ne reproduit la sortie de `ipconfig /displaydns` pour une reponse sans enregistrement du type
+demande ; le libelle n'est donc ni implemente ni devine. A reprendre des qu'une capture d'une vraie sortie ou la page Microsoft est lisible.
 
 ### [horloge] des piles de protocole lisent l'heure globale, pas celle de leur machine
 **Mesure** : les lecteurs bruts `Date.now()` / `new Date()` ont ete remplaces
