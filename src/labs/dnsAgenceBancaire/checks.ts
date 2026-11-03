@@ -137,6 +137,16 @@ export const LAB_CHECKS: readonly LabCheck[] = [
     lesson: 'Un nom qui n\'existe pas se retient aussi (RFC 2308) : le SOA de la zone accompagne la reponse et en fixe la duree de conservation.',
   },
   {
+    id: 'linux-stub-link', device: 'PC-CONSEILLER', shell: 'bash', command: 'ls -l /etc/resolv.conf; resolvectl status',
+    expects: [/resolv\.conf -> .*stub-resolv\.conf/, /Link \d+ \(eth0\)/, /DNS Servers:\s+10\.20\.20\.10 10\.20\.20\.53/, /DNS Domain:\s+horizon\.local/],
+    lesson: 'Le poste Linux lit le stub de systemd-resolved comme Ubuntu : serveurs et domaine du bail DHCP sont la configuration du lien eth0, et plus un fichier reecrit.',
+  },
+  {
+    id: 'linux-stub-cache', device: 'PC-CONSEILLER', shell: 'bash', command: 'dig www.banquehorizon.com +short; sleep 3; dig www.banquehorizon.com; resolvectl statistics',
+    expects: [/SERVER: 127\.0\.0\.53#53/, /www\.banquehorizon\.com\.\s+35\d\d\s+IN\s+CNAME\s+web\.banquehorizon\.com\./, /Cache Hits:\s+[1-9]/],
+    lesson: 'La seconde question est servie par le cache du stub : le TTL a baisse de trois secondes et resolvectl statistics compte le succes.',
+  },
+  {
     id: 'web-listeners', device: 'WEB-BANK', shell: 'bash', command: 'ss -ltn',
     expects: [/0\.0\.0\.0:80\s/, /0\.0\.0\.0:443\s/],
     lesson: 'nginx ecoute reellement sur 80 et 443 : `systemctl status` ne suffit pas, ss le prouve.',

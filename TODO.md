@@ -90,14 +90,25 @@ eux echouera.
 
 ## Pile TCP/IP
 
-### [dns] le poste Linux ne tient aucun cache de resolution : dig, getent, ping et curl ne passent pas par le stub de systemd-resolved
-Mesure sur PC-CONSEILLER du lab `dns-agence-bancaire` (sonde `zz` jetable, trames UDP/53 comptees au port) : `getent hosts web.banquehorizon.com` emet 2 questions
-(A et AAAA) A CHAQUE appel, `ping -c 1` 3, `curl` 1 ; `resolvectl statistics` reste a `Current Cache Size: 0`, `Cache Hits: 0` ; `resolvectl status` n'a pas de section `Link 2 (eth0)` ;
-`resolvectl query www.banquehorizon.com` repond `Name or service not known` sans emettre une seule question (le service n'a aucun serveur : le bail DHCP n'est pas transmis a
-`ResolvedService`). Le cache des SERVEURS (DC1, DNS-RES) et celui du poste Windows fonctionnent (sonde `dns-agence-bancaire-cache`).
-Pourquoi ce n'est pas ferme : `/etc/resolv.conf` porte les serveurs amont en clair (`LinuxNetworkConfigManager.writeResolvConf`, `PRD-networkd` §7) parce que le resolveur du
-simulateur lit ce fichier ; le pointer vers `127.0.0.53` fait passer tout `dig` et toute la libc par `ResolvedService`, qui tient SA table `answers` a cote d'un `DnsCache` (deux
-magasins pour un seul fait, regle 2 : a fermer ensemble, en gardant le `DnsCache` qui suit deja les CNAME, le cache negatif et les delegations).
+### [dns] le stub de systemd-resolved : ce que la version 255 reelle fait en plus et que le simulateur ne fait pas
+Le stub relaie tous les types, tient le cache dans le `DnsCache` partage (suite de CNAME, TTL decroissants plafonnes a 2 h, cache negatif avec son SOA, `Cache=no-negative`, `StaleRetentionSec=`) et
+est alimente par le bail DHCP et par netplan/networkd ; il est rejoue contre un vrai systemd-resolved 255.4 (`resolved-stub-oracle`, 24 questions). Restent, mesures par cette comparaison : le vrai stub
+recopie dans sa reponse les NS de la zone (section authority) et leur glue (section additional) d'une reponse positive, le simulateur ne renvoie que la section answer ; servi depuis son cache, le vrai stub
+donne a TOUS les enregistrements de la reponse le meme TTL, le plus petit de l'ensemble qu'il a retenu (authority et glue compris : `mx-again` rend 3573 partout alors que la premiere reponse montrait 3600 et
+3579), le simulateur laisse chaque enregistrement decroitre seul ; le serveur courant n'est pas memorise (le vrai resolved garde le dernier serveur qui a repondu, le simulateur reessaie le premier de la
+liste a chaque question, et `resolvectl status` affiche toujours le premier comme `Current DNS Server`) ; `resolvectl statistics` n'a pas ete rejoue contre le vrai service (il passe par D-Bus, absent de
+l'environnement d'enregistrement) : le decompte de `Failure Transactions` pour un NODATA vient de la lecture des sources, pas d'une capture. Un lien retire de netplan garde ses serveurs jusqu'au
+redemarrage du service (la couche declaree n'est effacee que lien par lien).
+
+### [linux] `ping` nomme l'adresse qui repond par une resolution inverse SYNCHRONE : derriere un amont qui repond de facon asynchrone (le DC1 du lab), la premiere reponse montre l'adresse et la suivante le nom
+Mesure sur PC-CONSEILLER (stub de resolved, amont DC1) : `ping -c 1 www.banquehorizon.com` affiche `64 bytes from 203.0.113.20 (203.0.113.20)` puis, le PTR etant revenu entre-temps dans le cache,
+`64 bytes from web.banquehorizon.com (203.0.113.20)` au second appel. `reverseNameOf` (Ping.ts, Traceroute.ts, Tracepath.ts, Netstat.ts) appelle `gethostbyaddr` synchrone ; la version asynchrone
+(`reverseNameOfAsync`) existe et sert deja `tcpdump` et Kerberos. Pourquoi ce n'est pas ferme : la boucle d'affichage de `ping` est synchrone de bout en bout.
+
+### [dig] les options d'affichage `+noall`, `+comments`, `+authority`, `+additional`, `+question`, `+stats`, `+cmd` ne sont pas evaluees, et `dig` ne pose pas d'OPT par defaut
+`+noall +answer` imprime les reponses seules ; toute autre combinaison avec `+noall` (`+noall +comments +answer +authority`) imprime la sortie complete, ce que le vrai dig ne fait pas. Le vrai
+dig 9.18 pose un OPT (EDNS0, `+bufsize=1232`) dans chaque question : le simulateur n'en pose que sous `+bufsize=` / `+dnssec`, si bien que les reponses des serveurs simules n'ont pas de
+section `OPT PSEUDOSECTION` par defaut. Mesure : l'oracle du stub de resolved ne retrouve les 65494 octets annonces par le vrai stub qu'avec `+bufsize=1232` explicite.
 
 ### [dns] `rndc dumpdb -cache` et le resolveur BIND : ce que BIND 9.18 fait en plus et que le simulateur ne fait pas
 Le fichier est ecrit dans la mise en page de `masterdump` (colonnes 24/32/40, confiance `; authanswer` / `; glue` / `; answer`, SOA sur plusieurs lignes, entrees negatives, ordre canonique) et compare

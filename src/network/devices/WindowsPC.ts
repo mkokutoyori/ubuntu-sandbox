@@ -66,7 +66,7 @@ import { RRType } from '../dns/wire/RRType';
 import { WindowsDnsClientSettings } from './windows/dnsClientSettings';
 import { devolvedSuffixes, nrptRuleFor } from './windows/dnsClient';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
-import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord, SoaRecordData } from '../dns/wire/ResourceRecord';
+import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
 import { ptrQName, resourceRecordToLegacyRecord, rrTypeFromName } from '../dns/compat/DnsWireCompat';
 import type { UserAccountHost } from '../equipment/HostCapabilities';
 import { Port } from '../hardware/Port';
@@ -3466,15 +3466,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private absorbDnsResponse(response: DnsMessage | null, qname: string, qtype: number): 'answered' | 'final' | 'retry' {
-    if (response?.answers.some((rr) => rr.data.type === qtype)) {
-      this.dnsCache.storePositive(response.answers, qname);
-      return 'answered';
-    }
     const rcode = response?.flags.rcode;
     if (response === null || (rcode !== DnsRcode.NOERROR && rcode !== DnsRcode.NXDOMAIN)) return 'retry';
-    const soa = response.authorities.find((rr): rr is ResourceRecord<SoaRecordData> => rr.data.type === RRType.SOA);
-    if (soa !== undefined && response.answers.length === 0) this.dnsCache.storeNegative(qname, qtype, rcode, soa);
-    return 'final';
+    this.dnsCache.storeReply(qname, qtype, { rcode, answers: response.answers, authorities: response.authorities }, { entry: qname });
+    return response.answers.some((rr) => rr.data.type === qtype) ? 'answered' : 'final';
   }
 
   private knownMissing(qname: string, qtype: number): boolean {

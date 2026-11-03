@@ -2,7 +2,7 @@
 
 Un lab pour **s'entraîner sur le protocole DNS** avec deux éditeurs côte à côte (**Windows Server** et **BIND9**), un petit arbre DNS complet qui permet la **récursion** (racine → `com` → domaine de la banque), un réseau d'agence avec **DHCP**, et un **site web avancé** servi en HTTPS par nginx.
 
-Tout le lab a été construit en tapant de vraies commandes (PowerShell, bash, IOS) dans les terminaux du simulateur, exporté en JSON, puis **réimporté dans un canevas vierge** : les mêmes 24 vérifications passent sur le lab neuf et sur le lab réimporté (voir `src/labs/dnsAgenceBancaire/checks.ts`).
+Tout le lab a été construit en tapant de vraies commandes (PowerShell, bash, IOS) dans les terminaux du simulateur, exporté en JSON, puis **réimporté dans un canevas vierge** : les mêmes 26 vérifications passent sur le lab neuf et sur le lab réimporté (voir `src/labs/dnsAgenceBancaire/checks.ts`).
 
 ## Ce que le lab enseigne
 
@@ -136,7 +136,7 @@ dig www.banquehorizon.com +short
 curl -sk https://www.banquehorizon.com/ | head -12
 ```
 
-Les 24 vérifications complètes (une par leçon) sont dans `src/labs/dnsAgenceBancaire/checks.ts` ; le test `src/__tests__/unit/labs/dns-agence-bancaire.test.ts` les exécute sur le lab neuf et sur ce fichier réimporté.
+Les 26 vérifications complètes (une par leçon) sont dans `src/labs/dnsAgenceBancaire/checks.ts` ; le test `src/__tests__/unit/labs/dns-agence-bancaire.test.ts` les exécute sur le lab neuf et sur ce fichier réimporté.
 
 ---
 
@@ -310,7 +310,23 @@ Data       :
 
 Le poste Windows plafonne le cache négatif à 900 secondes (`MaxNegativeCacheTtl`), même si le SOA en annonce 3600. Sur **PC-CONSEILLER**, `dig @10.20.20.53 nexiste.banquehorizon.com` montre le SOA dans la section `AUTHORITY`.
 
-**À savoir** : sur PC-CONSEILLER, `dig`, `getent hosts`, `ping` et `curl` lisent `/etc/resolv.conf` et interrogent directement DC1 ; le poste Linux ne tient pas de cache de résolution (le stub `systemd-resolved` existe mais n'est pas dans le chemin, voir `TODO.md`). Le cache se constate donc sur DC1 et sur DNS-RES, pas sur ce poste.
+### Le poste Linux a aussi son cache : le stub `systemd-resolved`
+
+Sur **PC-CONSEILLER**, `/etc/resolv.conf` est le lien qu'Ubuntu fournit vers `/run/systemd/resolve/stub-resolv.conf` : `dig`, `getent hosts`, `ping` et `curl` interrogent le stub `127.0.0.53`, et c'est lui qui interroge DC1 (puis DNS-RES) avec les serveurs et le domaine du bail DHCP. Un bail ou un `netplan apply` ne réécrit plus ce fichier, il met à jour les serveurs du lien.
+
+```bash
+ls -l /etc/resolv.conf
+resolvectl status
+dig www.banquehorizon.com
+sleep 5
+dig www.banquehorizon.com +noall +answer
+resolvectl statistics
+```
+→ `resolvectl status` montre `Link 2 (eth0)` avec `DNS Servers: 10.20.20.10 10.20.20.53` et `DNS Domain: horizon.local` ; la première réponse porte `SERVER: 127.0.0.53#53` et les TTL de DC1 (3600) ; la seconde, cinq secondes plus tard, les TTL du cache du stub (3595) sans qu'**aucun paquet UDP/53** ne quitte le poste (ouvrez `sudo tcpdump -ni eth0 port 53` dans un second terminal) ; `Cache Hits` monte dans `resolvectl statistics`, et `sudo resolvectl flush-caches` le vide.
+
+Le stub relaie **tous** les types (`dig banquehorizon.com MX`, `TXT`, `SRV`, `-x`…) et retient aussi les réponses négatives avec le SOA de la zone : `dig nexiste.banquehorizon.com` deux fois de suite ne pose la question qu'une fois, et `dig web.banquehorizon.com AAAA` (le nom existe, pas dans cette famille) aussi. Comme le vrai `systemd-resolved`, il plafonne la durée de conservation à deux heures, retient un échec SERVFAIL dix secondes et ne retient rien dont le TTL est nul. Les noms de `/etc/hosts` et `localhost` sont répondus sur place (TTL 0), sans trame.
+
+`ping` résout le nom puis cherche le nom de l'adresse qui répond (une question PTR) : `ping -n` supprime cette seconde question. Un autre poste qui demande le même nom à DC1 n'a pas de raison de le faire redescendre : DC1 et DNS-RES gardent leurs propres caches.
 
 ## 4. Les types d'enregistrements
 

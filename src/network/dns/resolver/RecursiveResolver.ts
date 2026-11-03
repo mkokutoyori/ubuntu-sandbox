@@ -8,7 +8,7 @@ import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE } from '@/network/dns/wire/EdnsOptRecord';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
-  ResourceRecord, ResourceRecordData, SoaRecordData, NsRecordData, ARecordData, CnameRecordData, DsRecordData,
+  ResourceRecord, ResourceRecordData, NsRecordData, ARecordData, CnameRecordData, DsRecordData,
 } from '@/network/dns/wire/ResourceRecord';
 import { queryAuthoritativeServer } from '@/network/dns/transport/DnsTcpTransport';
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
@@ -83,11 +83,6 @@ const UNCACHEABLE_TYPES: ReadonlySet<number> = new Set([RRType.OPT, RRType.SOA, 
 
 function servfail(): IterationOutcome {
   return { status: 'SERVFAIL', answers: [], authorities: [], negative: null };
-}
-
-function findSoa(records: readonly ResourceRecord<ResourceRecordData>[]): ResourceRecord<SoaRecordData> | null {
-  const soa = records.find((rr) => rr.data.type === RRType.SOA);
-  return (soa as ResourceRecord<SoaRecordData>) ?? null;
 }
 
 function ownedByQuestion(
@@ -200,16 +195,12 @@ export class RecursiveResolver {
       ? capTtlsToSignatures(outcome.answers, this.nowSeconds())
       : outcome.answers;
 
-    if (!raw) {
-      if (outcome.status === 'NOERROR' && answers.length > 0) {
-        this.cache.storePositive(answers, undefined, security, this.forwardRecursively ? 'answer' : 'authanswer');
-      } else if (outcome.negative) {
-        const soa = findSoa(outcome.authorities);
-        if (soa) {
-          const rcode = outcome.negative === 'nxdomain' ? DnsRcode.NXDOMAIN : DnsRcode.NOERROR;
-          this.cache.storeNegative(qname, qtype, rcode, soa);
-        }
-      }
+    if (!raw && outcome.status !== 'SERVFAIL') {
+      this.cache.storeReply(
+        qname, qtype,
+        { rcode: outcome.status === 'NXDOMAIN' ? DnsRcode.NXDOMAIN : DnsRcode.NOERROR, answers, authorities: outcome.authorities },
+        { security, trust: this.forwardRecursively ? 'answer' : 'authanswer' },
+      );
     }
 
     return {

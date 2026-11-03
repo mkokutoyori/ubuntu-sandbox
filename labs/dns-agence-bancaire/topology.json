@@ -1,10 +1,10 @@
 {
   "version": 1,
   "projectName": "DNS - Agence bancaire (Banque Horizon)",
-  "exportedAt": "2026-11-03T14:20:20.066Z",
+  "exportedAt": "2026-11-03T16:04:42.611Z",
   "devices": [
     {
-      "id": "1793715615343-1",
+      "id": "1793721877355-1",
       "type": "router-cisco",
       "name": "R-ISP",
       "x": 520,
@@ -34,11 +34,11 @@
           "mac": "02:00:00:00:00:04"
         }
       ],
-      "runningConfigText": "Building configuration...\n\nCurrent configuration : 847 bytes\n!\n! Last configuration change at 14:20:16 UTC Tue Nov 3 2026 by console\n! NVRAM config last updated at 14:20:16 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-ISP\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description DNS-INFRA racine et TLD\n ip address 198.51.100.254 255.255.255.0\n!\ninterface GigabitEthernet0/1\n description HEBERGEMENT serveurs de la banque\n ip address 203.0.113.254 255.255.255.0\n!\ninterface GigabitEthernet0/2\n description LIEN VERS AGENCE\n ip address 192.0.2.1 255.255.255.252\n!\ninterface GigabitEthernet0/3\n no ip address\n!\nend",
-      "startupConfigText": "Building configuration...\n\nCurrent configuration : 777 bytes\n!\n! Last configuration change at 14:20:16 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-ISP\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description DNS-INFRA racine et TLD\n ip address 198.51.100.254 255.255.255.0\n!\ninterface GigabitEthernet0/1\n description HEBERGEMENT serveurs de la banque\n ip address 203.0.113.254 255.255.255.0\n!\ninterface GigabitEthernet0/2\n description LIEN VERS AGENCE\n ip address 192.0.2.1 255.255.255.252\n!\ninterface GigabitEthernet0/3\n no ip address\n!\nend"
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 847 bytes\n!\n! Last configuration change at 16:04:38 UTC Tue Nov 3 2026 by console\n! NVRAM config last updated at 16:04:39 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-ISP\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description DNS-INFRA racine et TLD\n ip address 198.51.100.254 255.255.255.0\n!\ninterface GigabitEthernet0/1\n description HEBERGEMENT serveurs de la banque\n ip address 203.0.113.254 255.255.255.0\n!\ninterface GigabitEthernet0/2\n description LIEN VERS AGENCE\n ip address 192.0.2.1 255.255.255.252\n!\ninterface GigabitEthernet0/3\n no ip address\n!\nend",
+      "startupConfigText": "Building configuration...\n\nCurrent configuration : 777 bytes\n!\n! Last configuration change at 16:04:38 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-ISP\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description DNS-INFRA racine et TLD\n ip address 198.51.100.254 255.255.255.0\n!\ninterface GigabitEthernet0/1\n description HEBERGEMENT serveurs de la banque\n ip address 203.0.113.254 255.255.255.0\n!\ninterface GigabitEthernet0/2\n description LIEN VERS AGENCE\n ip address 192.0.2.1 255.255.255.252\n!\ninterface GigabitEthernet0/3\n no ip address\n!\nend"
     },
     {
-      "id": "1793715615574-2",
+      "id": "1793721877562-2",
       "type": "switch-generic",
       "name": "SW-INFRA",
       "x": 300,
@@ -144,7 +144,7 @@
       ]
     },
     {
-      "id": "1793715615643-3",
+      "id": "1793721877643-3",
       "type": "switch-generic",
       "name": "SW-HEBERGEMENT",
       "x": 740,
@@ -250,7 +250,7 @@
       ]
     },
     {
-      "id": "1793715615698-4",
+      "id": "1793721877706-4",
       "type": "linux-server",
       "name": "ROOT-NS",
       "x": 200,
@@ -414,7 +414,7 @@
       ]
     },
     {
-      "id": "1793715616441-5",
+      "id": "1793721878471-5",
       "type": "windows-server",
       "name": "TLD-NS",
       "x": 400,
@@ -502,7 +502,7 @@
       }
     },
     {
-      "id": "1793715616491-6",
+      "id": "1793721878557-6",
       "type": "linux-server",
       "name": "NS1-BANK",
       "x": 640,
@@ -673,7 +673,7 @@
       ]
     },
     {
-      "id": "1793715616601-7",
+      "id": "1793721878703-7",
       "type": "windows-server",
       "name": "NS2-BANK",
       "x": 780,
@@ -780,7 +780,7 @@
       }
     },
     {
-      "id": "1793715616618-8",
+      "id": "1793721878724-8",
       "type": "linux-server",
       "name": "WEB-BANK",
       "x": 920,
@@ -873,14 +873,14 @@
         },
         {
           "path": "/etc/nginx/tls/banquehorizon.key",
-          "content": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCR9G5+Dhcwxuk2\nViupDQsVnEEe+sC5pkCVDPLIvVchwRdbY6oG/1MAN63RxpiGCcSJzYNxL1cJ772H\n8vJN3mejisEb/fD2LxQjTc64O+pw3uEOMDnGm7lHwSgPUm8A/HSUvSOJ9OU+BQnp\n0xHSGMVYJgcjIPUP81ZkWYrMVmEdZW1X9+39ZErMlASZDWpHSV404MgjCufHCa+/\nbbwU3Y3rXOwaZgtRcWam1+8Ax2SmP9t5yDzqy5EqbM8gYDietz4oh+Pj+2jU2vM5\nsn1LpTgp+NiJ3flCu8W3LWw3D70Doz59/hne5aHQnBQzrrzlKdnMY/zHJFTSWdwp\n4lOOfcJTAgMBAAECggEACmHu8jyiXa/oqxraJD5vSWxCHagMyagP9Aplwu3lItuP\ng8rFL5Y+G0far4+HDhHnzz21WfnaITTSsLcRkYR+rt2R+yHHYFvc/N3uFKD+fmT8\ncXvwwDYXqgkNhnmAt/s9d880lf27yPumxuFi5SUp9KlP3KndhPL0dFMCUqLaabLP\n4hEiN89s0XVCwG17zK+tb9mEdBDbKUUK1OMF7XJmcQ30MAhCvDkWI79xDu05/aNY\na5anEFK10AomHBZC5I0oM3CAxmCTpb4gWqunepA8HjUZD/Kq0kISzfdgu42axY6h\nKnw8ZRk6BOF2RxDKbVCaPg6CXJ28jJOLihTQoukLAQKBgQDCIsqKXCkwwQZmALSB\nxylTNRmTtTe8k3o+Nl1Hqg5UvGuwY+ctPtzovUFJGDQ55ESmllsGaId6mNAAR084\nwT1rE8BWRjzDp3EWuoJxlc1HKDKc/ZGY8qBi7Re0giHT/Jow6VngDKTQpHa2nBO2\nir7aeh9sMdNWqYGpCi/jzGBnkwKBgQDAdyAx0+EfDG1t9ctxOODHC0Hcl7SuGta2\nun478Rs6T8IM7bZldYqWd50xeYbtGVPw9z7w78XkjsJcEZr+nMln3C5yVNtq8/zp\nFTT6yRQWbsNOtbeFtk3YvQF4ufZ1bcD3/m9aJWkrxX0pSXZC+GX4QaSjTSgTAkqF\nLtVSOwxyQQKBgD9RV5v+6RRUsICOVFFLoufXlsr9PPuNYj5uPshD576tYbY7L0gr\ni6OBLoznjwkesWFgAro5V46dzqF4oJcTN7P30jCRYfoyX4kZNbhUMoq1yqQ3c8hd\nwf/h8mxWUTAx4Bx5z21q0kqWiX2PtEJCSHM7h4ojShmm2XpHr0zt+LdvAoGAPemU\nR7Ma5fv/b7Hz4dYkKKNsamO60Y78pwdS+EFVOurRR4toczbegAy2WmX3i2nsYMWI\nT8Ux6ZYq26cmLuWMvIZNwqWdd8hJAUm7Izlv5s92sGkwQikk3aXfRVC9AYVu39fP\nRjZmoJgE7TUef+icFMI5DfcR/xtrkXBBWxR3qoECgYEAr+v+TWujef8477C3FZEZ\nyWGMb0ke24K7dcgkAT6GZsRQ6LlPBSlJSap3v5hi9vEWJVgPNz39L/z26E5+G+4S\n73c/2guJ7gzNxZ5bngsUZu0jPs/335AT/nc1PCrogE7PCK195UrQl+TmyHTNSdOz\n4LoztnfvDFDF9GJA7E6OVsA=\n-----END PRIVATE KEY-----\n",
+          "content": "-----BEGIN PRIVATE KEY-----\nMIIEugIBADANBgkqhkiG9w0BAQEFAASCBKQwggSgAgEAAoIBAQDqvPm3UdzRLKv0\nmDDjedljp6Ms1TUvAhukG540TKxMMMhwil1eQ2RlxtqDT0FlfLrXfV1NM5JTKdpH\nWMT6cApL0qQgS37eykmxjsXTtqH5IcUscPQutNRbDBLr7Q/gFWmmevw4cmq18w2K\nlxN169cufGluGObfYDhSstaY1uZF66EKCbi4dox4t6djVlicExti8V/UlSW1h4U0\nmt1CCbNfzC4BhfXPanmU/Gtf6AGyWiOoAfuGL8WugOgfBnHc8JDImaijFQrhXmI0\nnOM+r7khGGfA13Bp8L+u+0w346Z1BT2tq9p7m0zdFpDZwZXiLiCIRb95rnwalg8f\nTjrBBarvAgMBAAECggEAdsg3qL8g+Swcu4HDw2gmTBpJJOeiqO3tJMbg8GAYE9nf\no6swggGiLSpJ6oZRdlR+i4qhiu5czf5wuQe/bWcCnsmxSbJKOdytG88+ZdqV7eZb\nyxhBR90zU/sxG/dywBa1xouXU8z6GKYsJQQ70cEMuzYzd4XcVg5vkdFzbBXaomgY\nlmiRtzTzQym0445Ma8L7KX9bJDXbPMATpRllvyfpMVC21Tx3dJK9vfQOTqQSYBTa\n/elJizm0j4W5EwGgHHRAfbNHbAWJqMEotMx2ctduf6IOsIdsj0ptOUfl9tcse6jv\n2g26bhS9jp5snUt6wH/VXfQJgksejPd4zq4InHuUUQKBgQD1QCf/J2EQgdHH0/SY\nXfUZbAZQmcTICINLQidTRZ6Gmq97D6bUYdR9TZX+YANtd1NPniiN+usvej08/ttI\nDeextKYurDfoTBX71f6QcgfiGGAC8JgCG6kTRz9Df/19d/up353eWY0ffc6+2eGW\n5yimEaCneZI2DkH/D3qMGsK0lwKBgQD1Bt05NaJcSmo1FPE3j8kt5Gco/DOWli4S\nB0kpEmIUJKgKpVS7Iys9EBeCA6Y6m0tKnmJ/pGSN+y8+9IR3+6KDEAAgrcq2E4sh\nhSsGHLMRs4weyybtvZgw52+1wm1lBCDa8ohB11J1YlZsd8Hb41tVyERndEKWIQgg\n170VzOlPaQKBgEx0zsNFtIXf4tVoJ3WkvPdK7QENnwI5XS0GF5pnNs+Bw7kanQjS\n4tqZaGxf5FGpBIjqpnv0wIMRmau9TAE/jH6i8bfVKqy5o5TaFr1TP0/mB3CDLvBh\nTSlcacWSTiViVUuVEfMyecNahiyLYj+YGt0C29G6HbHKahqo6axp309LAn8HqC9B\nmmt4dtrazcy778JZrMmMflUeX5MQ/SlMH0bxWjPmIUSElJTFU7toVLTdH/06V7i8\nRGbgCPlw/jMljLeHYPigDM5I4lN2uLKffkYaR4IZdD/DLimTXaggBfNlNLvSG8Im\nTJRHFsucmCF2vaQdCiUZFoj+KAoY/KTsCXtBAoGAJwaIjQz1CDwawTYJqh7HhA4d\ndH90MYTNiMdyiczG1tVrJy5TfelwBE+uGKacMz9OkaPfWKZT8btSp3neuwm+0QLc\n5z16J6C8imZHGbeq2gNiS0rVMkIbCcuNM0/hBZtvG6JoL/ypNYGo9xRDpjHCCGu4\nb1AAixPJA4yo2gYlHrw=\n-----END PRIVATE KEY-----\n",
           "uid": 0,
           "gid": 0,
           "mode": 384
         },
         {
           "path": "/etc/nginx/tls/banquehorizon.crt",
-          "content": "-----BEGIN CERTIFICATE-----\nMIID4TCCAsmgAwIBAgICUAEwDQYJKoZIhvcNAQELBQAwRjELMAkGA1UEBhMCQ00x\nFzAVBgNVBAoMDkJhbnF1ZSBIb3Jpem9uMR4wHAYDVQQDDBV3d3cuYmFucXVlaG9y\naXpvbi5jb20wHhcNMjYxMTAzMTQzMjE4WhcNMjkwMjA1MTQzMjE4WjBGMQswCQYD\nVQQGEwJDTTEXMBUGA1UECgwOQmFucXVlIEhvcml6b24xHjAcBgNVBAMMFXd3dy5i\nYW5xdWVob3Jpem9uLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAJH0bn4OFzDG6TZWK6kNCxWcQR76wLmmQJUM8si9VyHBF1tjqgb/UwA3rdHGmIYJ\nxInNg3EvVwnvvYfy8k3eZ6OKwRv98PYvFCNNzrg76nDe4Q4wOcabuUfBKA9SbwD8\ndJS9I4n05T4FCenTEdIYxVgmByMg9Q/zVmRZisxWYR1lbVf37f1kSsyUBJkNakdJ\nXjTgyCMK58cJr79tvBTdjetc7BpmC1FxZqbX7wDHZKY/23nIPOrLkSpszyBgOJ63\nPiiH4+P7aNTa8zmyfUulOCn42Ind+UK7xbctbDcPvQOjPn3+Gd7lodCcFDOuvOUp\n2cxj/MckVNJZ3CniU459wlMCAwEAAaOB2DCB1TAPBgNVHRMBAf8EBTADAQH/MIGB\nBgNVHREEejB4ghFiYW5xdWVob3Jpem9uLmNvbYIVd3d3LmJhbnF1ZWhvcml6b24u\nY29tghplYmFua2luZy5iYW5xdWVob3Jpem9uLmNvbYIZYWdlbmNlcy5iYW5xdWVo\nb3Jpem9uLmNvbYIVYXBpLmJhbnF1ZWhvcml6b24uY29tMB0GA1UdDgQWBBS1L511\nGmCdpuLNwgzm+Swt8PkyezAfBgNVHSMEGDAWgBS1L511GmCdpuLNwgzm+Swt8Pky\nezANBgkqhkiG9w0BAQsFAAOCAQEAFMWq3lEszuHDHW1+8ZcAD+mA+M6BnfEWwwFL\ngdBQTBhLtTqcekltsGHlZgzIjy/sFO/bm1k23n/tsHZD1j0ehxj4/1CAkg2UgOWx\nKkmstLHEPCfaiaxXp8Mj03DvLx3VArbXgebUt/HmWwP9JilzuaVYT7d5lde/Ix0o\nM0vi1gHcqR8au0e8CcmXxkHn0KxL/Dk6Yn3wBtMuvQ7mO1Vs+9i6vOgc4jG28006\nkSBHG8LeYL1MLppjKnigBNWVZlDl7su08HektfkG3buJaTj+M3ubiLpJUKqUY2Gx\nvrOR/ZOWnoIuWVS3WmmC9YiT6OjKolOBPwcWynslJqMi0UQ1UQ==\n-----END CERTIFICATE-----\n",
+          "content": "-----BEGIN CERTIFICATE-----\nMIID4TCCAsmgAwIBAgICUAEwDQYJKoZIhvcNAQELBQAwRjELMAkGA1UEBhMCQ00x\nFzAVBgNVBAoMDkJhbnF1ZSBIb3Jpem9uMR4wHAYDVQQDDBV3d3cuYmFucXVlaG9y\naXpvbi5jb20wHhcNMjYxMTAzMTYxNjQwWhcNMjkwMjA1MTYxNjQwWjBGMQswCQYD\nVQQGEwJDTTEXMBUGA1UECgwOQmFucXVlIEhvcml6b24xHjAcBgNVBAMMFXd3dy5i\nYW5xdWVob3Jpem9uLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB\nAOq8+bdR3NEsq/SYMON52WOnoyzVNS8CG6QbnjRMrEwwyHCKXV5DZGXG2oNPQWV8\nutd9XU0zklMp2kdYxPpwCkvSpCBLft7KSbGOxdO2ofkhxSxw9C601FsMEuvtD+AV\naaZ6/DhyarXzDYqXE3Xr1y58aW4Y5t9gOFKy1pjW5kXroQoJuLh2jHi3p2NWWJwT\nG2LxX9SVJbWHhTSa3UIJs1/MLgGF9c9qeZT8a1/oAbJaI6gB+4Yvxa6A6B8Gcdzw\nkMiZqKMVCuFeYjSc4z6vuSEYZ8DXcGnwv677TDfjpnUFPa2r2nubTN0WkNnBleIu\nIIhFv3mufBqWDx9OOsEFqu8CAwEAAaOB2DCB1TAPBgNVHRMBAf8EBTADAQH/MIGB\nBgNVHREEejB4ghFiYW5xdWVob3Jpem9uLmNvbYIVd3d3LmJhbnF1ZWhvcml6b24u\nY29tghplYmFua2luZy5iYW5xdWVob3Jpem9uLmNvbYIZYWdlbmNlcy5iYW5xdWVo\nb3Jpem9uLmNvbYIVYXBpLmJhbnF1ZWhvcml6b24uY29tMB0GA1UdDgQWBBTsoHHH\n+LUnuxarkaoCpO8ejwG2azAfBgNVHSMEGDAWgBTsoHHH+LUnuxarkaoCpO8ejwG2\nazANBgkqhkiG9w0BAQsFAAOCAQEAoi1m8v+7XzhquJG9ItT+9mJIVRKjevTt5uhC\nsu7VpQ6Tw8q+bCgBdomivEoSdEt34Ffeh5RzvsGaHOPZZnHuQI4QeJdtdkXt+6nD\nBnZ/DXvQJZD6AAA9oFYvNOrgdAzzMrDdWrghGqa5e/yWBUYU7tSebkv3Gx8OxlFh\nJLauuECmh4OuSP26yXrEpGtTptB4YI5KjGfNBQjOxLVdtfw/sbKpZE7HDH+XTGDu\npoT+hUYaqhgTgRgBOMaO77h3AyawDuvYcZFF8zwnRAs5uTLVuNHNbb1KssvnrH7J\nAdccHP7vn4OwZbCJi49YC/5qNcZA3be6FzuGxftw3Qc/6gsf1w==\n-----END CERTIFICATE-----\n",
           "uid": 0,
           "gid": 0,
           "mode": 420
@@ -1187,7 +1187,7 @@
       ]
     },
     {
-      "id": "1793716338112-g",
+      "id": "1793722600537-g",
       "type": "router-cisco",
       "name": "R-AGENCE",
       "x": 520,
@@ -1225,11 +1225,11 @@
           "subnetMask": "255.255.255.0"
         }
       ],
-      "runningConfigText": "Building configuration...\n\nCurrent configuration : 1210 bytes\n!\n! Last configuration change at 14:32:18 UTC Tue Nov 3 2026 by console\n! NVRAM config last updated at 14:32:18 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-AGENCE\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description WAN vers R-ISP\n ip address 192.0.2.2 255.255.255.252\n ip nat outside\n!\ninterface GigabitEthernet0/1\n description LAN agence\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n!\ninterface GigabitEthernet0/3\n no ip address\n!\ninterface GigabitEthernet0/1.10\n description VLAN10 POSTES\n encapsulation dot1q 10\n ip address 10.20.10.1 255.255.255.0\n ip helper-address 10.20.20.10\n ip nat inside\n!\ninterface GigabitEthernet0/1.20\n description VLAN20 SERVEURS\n encapsulation dot1q 20\n ip address 10.20.20.1 255.255.255.0\n ip nat inside\n!\nip route 0.0.0.0 0.0.0.0 192.0.2.1\n!\nip nat inside source list 1 interface GigabitEthernet0/0 overload\n!\naccess-list 1 permit 10.20.0.0 0.0.255.255\n!\nend",
-      "startupConfigText": "Building configuration...\n\nCurrent configuration : 1140 bytes\n!\n! Last configuration change at 14:32:18 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-AGENCE\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description WAN vers R-ISP\n ip address 192.0.2.2 255.255.255.252\n ip nat outside\n!\ninterface GigabitEthernet0/1\n description LAN agence\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n!\ninterface GigabitEthernet0/3\n no ip address\n!\ninterface GigabitEthernet0/1.10\n description VLAN10 POSTES\n encapsulation dot1q 10\n ip address 10.20.10.1 255.255.255.0\n ip helper-address 10.20.20.10\n ip nat inside\n!\ninterface GigabitEthernet0/1.20\n description VLAN20 SERVEURS\n encapsulation dot1q 20\n ip address 10.20.20.1 255.255.255.0\n ip nat inside\n!\nip route 0.0.0.0 0.0.0.0 192.0.2.1\n!\nip nat inside source list 1 interface GigabitEthernet0/0 overload\n!\naccess-list 1 permit 10.20.0.0 0.0.255.255\n!\nend"
+      "runningConfigText": "Building configuration...\n\nCurrent configuration : 1210 bytes\n!\n! Last configuration change at 16:16:41 UTC Tue Nov 3 2026 by console\n! NVRAM config last updated at 16:16:41 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-AGENCE\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description WAN vers R-ISP\n ip address 192.0.2.2 255.255.255.252\n ip nat outside\n!\ninterface GigabitEthernet0/1\n description LAN agence\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n!\ninterface GigabitEthernet0/3\n no ip address\n!\ninterface GigabitEthernet0/1.10\n description VLAN10 POSTES\n encapsulation dot1q 10\n ip address 10.20.10.1 255.255.255.0\n ip helper-address 10.20.20.10\n ip nat inside\n!\ninterface GigabitEthernet0/1.20\n description VLAN20 SERVEURS\n encapsulation dot1q 20\n ip address 10.20.20.1 255.255.255.0\n ip nat inside\n!\nip route 0.0.0.0 0.0.0.0 192.0.2.1\n!\nip nat inside source list 1 interface GigabitEthernet0/0 overload\n!\naccess-list 1 permit 10.20.0.0 0.0.255.255\n!\nend",
+      "startupConfigText": "Building configuration...\n\nCurrent configuration : 1140 bytes\n!\n! Last configuration change at 16:16:41 UTC Tue Nov 3 2026 by console\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname R-AGENCE\n!\nusername alice secret 5 $1$5a3bb267$GMxzH3cixF6IBk2wvBsiA1\nusername bob secret 5 $1$b46a6ab6$mOIfvoax7TqBCSzdcnncZ.\nusername carl secret 5 $1$9e421dba$7DehpKiTNXGDP3RxcTmwi/\nusername dave secret 5 $1$d282c41a$cdLE1LSI3zOsXfoyQcdtv/\n!\ninterface GigabitEthernet0/0\n description WAN vers R-ISP\n ip address 192.0.2.2 255.255.255.252\n ip nat outside\n!\ninterface GigabitEthernet0/1\n description LAN agence\n no ip address\n!\ninterface GigabitEthernet0/2\n no ip address\n!\ninterface GigabitEthernet0/3\n no ip address\n!\ninterface GigabitEthernet0/1.10\n description VLAN10 POSTES\n encapsulation dot1q 10\n ip address 10.20.10.1 255.255.255.0\n ip helper-address 10.20.20.10\n ip nat inside\n!\ninterface GigabitEthernet0/1.20\n description VLAN20 SERVEURS\n encapsulation dot1q 20\n ip address 10.20.20.1 255.255.255.0\n ip nat inside\n!\nip route 0.0.0.0 0.0.0.0 192.0.2.1\n!\nip nat inside source list 1 interface GigabitEthernet0/0 overload\n!\naccess-list 1 permit 10.20.0.0 0.0.255.255\n!\nend"
     },
     {
-      "id": "1793716338204-h",
+      "id": "1793722600636-h",
       "type": "switch-cisco",
       "name": "SW-AGENCE",
       "x": 520,
@@ -1405,7 +1405,7 @@
       "startupConfigText": "Building configuration...\n\nCurrent configuration : 1392 bytes\n!\nservice timestamps debug datetime msec\nservice timestamps log datetime msec\n!\nhostname SW-AGENCE\n!\ninterface FastEthernet0/1\n description TRUNK vers R-AGENCE\n switchport mode trunk\n switchport trunk allowed vlan 10,20\n!\ninterface FastEthernet0/2\n description DC1\n switchport mode access\n switchport access vlan 20\n!\ninterface FastEthernet0/3\n description DNS-RES\n switchport mode access\n switchport access vlan 20\n!\ninterface FastEthernet0/4\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/5\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/6\n switchport mode access\n switchport access vlan 10\n!\ninterface FastEthernet0/7\n!\ninterface FastEthernet0/8\n!\ninterface FastEthernet0/9\n!\ninterface FastEthernet0/10\n!\ninterface FastEthernet0/11\n!\ninterface FastEthernet0/12\n!\ninterface FastEthernet0/13\n!\ninterface FastEthernet0/14\n!\ninterface FastEthernet0/15\n!\ninterface FastEthernet0/16\n!\ninterface FastEthernet0/17\n!\ninterface FastEthernet0/18\n!\ninterface FastEthernet0/19\n!\ninterface FastEthernet0/20\n!\ninterface FastEthernet0/21\n!\ninterface FastEthernet0/22\n!\ninterface FastEthernet0/23\n!\ninterface FastEthernet0/24\n!\ninterface GigabitEthernet0/1\n!\ninterface GigabitEthernet0/2\n!\ninterface Vlan1\n no ip address\n shutdown\n!\nvlan 10\n name POSTES\n!\nvlan 20\n name SERVEURS\n!\nspanning-tree mode pvst\nport-channel load-balance src-dst-ip\n!\nend"
     },
     {
-      "id": "1793716338260-i",
+      "id": "1793722600693-i",
       "type": "windows-server",
       "name": "DC1",
       "x": 300,
@@ -1572,7 +1572,7 @@
       }
     },
     {
-      "id": "1793716338276-j",
+      "id": "1793722600716-j",
       "type": "linux-server",
       "name": "DNS-RES",
       "x": 460,
@@ -1736,7 +1736,7 @@
       ]
     },
     {
-      "id": "1793716338353-k",
+      "id": "1793722600794-k",
       "type": "windows-pc",
       "name": "PC-GUICHET1",
       "x": 620,
@@ -1775,12 +1775,12 @@
             "domainName": "horizon.local",
             "serverIdentifier": "10.20.20.10",
             "serverMac": "02:00:00:00:00:4a",
-            "leaseStart": 1793716578860,
+            "leaseStart": 1793722841381,
             "leaseDuration": 691200,
             "renewalTime": 345600,
             "rebindingTime": 604800,
-            "expiration": 1794407778860,
-            "xid": 89156251,
+            "expiration": 1794414041381,
+            "xid": 1022670771,
             "nextServer": null,
             "bootfileName": null,
             "netbiosServers": [],
@@ -1810,7 +1810,7 @@
       ]
     },
     {
-      "id": "1793716338377-l",
+      "id": "1793722600813-l",
       "type": "windows-pc",
       "name": "PC-GUICHET2",
       "x": 780,
@@ -1849,12 +1849,12 @@
             "domainName": "horizon.local",
             "serverIdentifier": "10.20.20.10",
             "serverMac": "02:00:00:00:00:4a",
-            "leaseStart": 1793716578883,
+            "leaseStart": 1793722841404,
             "leaseDuration": 691200,
             "renewalTime": 345600,
             "rebindingTime": 604800,
-            "expiration": 1794407778883,
-            "xid": 2604968219,
+            "expiration": 1794414041404,
+            "xid": 2763831899,
             "nextServer": null,
             "bootfileName": null,
             "netbiosServers": [],
@@ -1884,7 +1884,7 @@
       ]
     },
     {
-      "id": "1793716338395-m",
+      "id": "1793722600832-m",
       "type": "linux-pc",
       "name": "PC-CONSEILLER",
       "x": 940,
@@ -1930,12 +1930,12 @@
             "domainName": "horizon.local",
             "serverIdentifier": "10.20.20.10",
             "serverMac": "02:00:00:00:00:4a",
-            "leaseStart": 1793716578914,
+            "leaseStart": 1793722841438,
             "leaseDuration": 691200,
             "renewalTime": 345600,
             "rebindingTime": 604800,
-            "expiration": 1794407778914,
-            "xid": 3720463851,
+            "expiration": 1794414041438,
+            "xid": 356142568,
             "nextServer": null,
             "bootfileName": null,
             "netbiosServers": [],
@@ -1975,13 +1975,6 @@
           "mode": 384
         },
         {
-          "path": "/etc/resolv.conf",
-          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nsearch horizon.local\nnameserver 10.20.20.10\nnameserver 10.20.20.53\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 420
-        },
-        {
           "path": "/etc/fstab",
           "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=01c7465d-5a37-4a65-0710-5dcb09c2cf4d / ext4 relatime,errors=remount-ro 0 1\nUUID=fec741a4-03a6-c27b-0cb0-a09165452304 /boot ext4 defaults 0 2\n",
           "uid": 0,
@@ -2002,105 +1995,113 @@
           "gid": 0,
           "mode": 384
         }
+      ],
+      "symlinks": [
+        {
+          "path": "/etc/resolv.conf",
+          "target": "/run/systemd/resolve/stub-resolv.conf",
+          "uid": 0,
+          "gid": 0
+        }
       ]
     }
   ],
   "connections": [
     {
-      "sourceDeviceId": "1793715615343-1",
+      "sourceDeviceId": "1793721877355-1",
       "sourceInterfaceId": "GigabitEthernet0/0",
-      "targetDeviceId": "1793715615574-2",
+      "targetDeviceId": "1793721877562-2",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793715615698-4",
+      "sourceDeviceId": "1793721877706-4",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793715615574-2",
+      "targetDeviceId": "1793721877562-2",
       "targetInterfaceId": "eth1",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793715616441-5",
+      "sourceDeviceId": "1793721878471-5",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793715615574-2",
+      "targetDeviceId": "1793721877562-2",
       "targetInterfaceId": "eth2",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793715615343-1",
+      "sourceDeviceId": "1793721877355-1",
       "sourceInterfaceId": "GigabitEthernet0/1",
-      "targetDeviceId": "1793715615643-3",
+      "targetDeviceId": "1793721877643-3",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793715616491-6",
+      "sourceDeviceId": "1793721878557-6",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793715615643-3",
+      "targetDeviceId": "1793721877643-3",
       "targetInterfaceId": "eth1",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793715616601-7",
+      "sourceDeviceId": "1793721878703-7",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793715615643-3",
+      "targetDeviceId": "1793721877643-3",
       "targetInterfaceId": "eth2",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793715616618-8",
+      "sourceDeviceId": "1793721878724-8",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793715615643-3",
+      "targetDeviceId": "1793721877643-3",
       "targetInterfaceId": "eth3",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793716338112-g",
+      "sourceDeviceId": "1793722600537-g",
       "sourceInterfaceId": "GigabitEthernet0/0",
-      "targetDeviceId": "1793715615343-1",
+      "targetDeviceId": "1793721877355-1",
       "targetInterfaceId": "GigabitEthernet0/2",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793716338112-g",
+      "sourceDeviceId": "1793722600537-g",
       "sourceInterfaceId": "GigabitEthernet0/1",
-      "targetDeviceId": "1793716338204-h",
+      "targetDeviceId": "1793722600636-h",
       "targetInterfaceId": "FastEthernet0/1",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793716338260-i",
+      "sourceDeviceId": "1793722600693-i",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793716338204-h",
+      "targetDeviceId": "1793722600636-h",
       "targetInterfaceId": "FastEthernet0/2",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793716338276-j",
+      "sourceDeviceId": "1793722600716-j",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793716338204-h",
+      "targetDeviceId": "1793722600636-h",
       "targetInterfaceId": "FastEthernet0/3",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793716338353-k",
+      "sourceDeviceId": "1793722600794-k",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793716338204-h",
+      "targetDeviceId": "1793722600636-h",
       "targetInterfaceId": "FastEthernet0/4",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793716338377-l",
+      "sourceDeviceId": "1793722600813-l",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793716338204-h",
+      "targetDeviceId": "1793722600636-h",
       "targetInterfaceId": "FastEthernet0/5",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793716338395-m",
+      "sourceDeviceId": "1793722600832-m",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793716338204-h",
+      "targetDeviceId": "1793722600636-h",
       "targetInterfaceId": "FastEthernet0/6",
       "type": "ethernet"
     }

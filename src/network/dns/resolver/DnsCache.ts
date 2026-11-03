@@ -10,11 +10,18 @@ import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
 import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { encodeCanonicalRData } from '@/network/dns/wire/DnsMessageCodec';
 
+export interface DnsOrigin {
+  readonly protocol: 'dns' | 'llmnr' | 'mdns';
+  readonly encrypted: boolean;
+}
+
 export type DnsCacheLookup =
   | {
       readonly kind: 'hit';
       readonly records: readonly ResourceRecord<ResourceRecordData>[];
       readonly security?: DnssecStatus;
+      readonly origin?: DnsOrigin;
+      readonly stale?: boolean;
     }
   | {
       readonly kind: 'negative';
@@ -25,6 +32,19 @@ export type DnsCacheLookup =
   | { readonly kind: 'servfail' }
   | { readonly kind: 'miss' };
 
+export interface DnsReply {
+  readonly rcode: number;
+  readonly answers: readonly ResourceRecord<ResourceRecordData>[];
+  readonly authorities: readonly ResourceRecord<ResourceRecordData>[];
+}
+
+export interface DnsReplyDetails {
+  readonly entry?: string;
+  readonly security?: DnssecStatus;
+  readonly trust?: DnsTrust;
+  readonly origin?: DnsOrigin;
+}
+
 export type DnsTrust = 'additional' | 'glue' | 'answer' | 'authauthority' | 'authanswer';
 
 interface PositiveEntry {
@@ -33,6 +53,7 @@ interface PositiveEntry {
   readonly entry: string;
   readonly security?: DnssecStatus;
   readonly trust: DnsTrust;
+  readonly origin?: DnsOrigin;
 }
 
 export interface CachedRecordSet {
@@ -109,6 +130,29 @@ function combinedSecurity(parts: readonly (DnssecStatus | undefined)[]): DnssecS
   return parts.every((part) => part === parts[0]) ? parts[0] : 'insecure';
 }
 
+function combinedOrigin(parts: readonly (DnsOrigin | undefined)[]): DnsOrigin | undefined {
+  const known = parts.filter((part): part is DnsOrigin => part !== undefined);
+  if (known.length !== parts.length) return undefined;
+  return { protocol: known[0].protocol, encrypted: known.every((part) => part.encrypted) };
+}
+
+function holdsType(answers: readonly ResourceRecord<ResourceRecordData>[], qtype: number): boolean {
+  return answers.some((rr) => qtype === RRType.ANY || rr.data.type === qtype);
+}
+
+function aliasTarget(qname: string, answers: readonly ResourceRecord<ResourceRecordData>[]): string {
+  let name = qname;
+  for (let hops = 0; hops < MAX_CNAME_CHAIN_DEPTH; hops++) {
+    const alias = answers.find((rr) => rr.data.type === RRType.CNAME && normalizeDnsName(rr.name) === normalizeDnsName(name));
+    if (alias === undefined) return name;
+    name = (alias.data as CnameRecordData).cname;
+  }
+  return name;
+}
+
+const STALE_ANSWER_TTL_SECONDS = 30;
+const MILLIS_PER_SECOND = 1000;
+
 const RECORD_FIXED_BYTES = 10;
 const PERCENT = 100;
 
@@ -139,10 +183,12 @@ export class DnsCache {
   constructor(
     private readonly now: () => number = simulationNowMs,
     private readonly limits: () => DnsCacheLimits = () => DEFAULT_CACHE_LIMITS,
+    private readonly staleRetentionMs: () => number = () => 0,
   ) {}
 
   storePositive(
     records: readonly ResourceRecord<ResourceRecordData>[], qname?: string, security?: DnssecStatus, trust: DnsTrust = 'authanswer',
+    origin?: DnsOrigin,
   ): void {
     const storedAtMs = this.now();
     const { maxTtlSeconds, lockingPercent } = this.limits();
@@ -157,11 +203,21 @@ export class DnsCache {
     }
     for (const [key, set] of grouped) {
       if (this.isLocked(key, storedAtMs, lockingPercent)) continue;
-      this.positive.set(key, { records: set, storedAtMs, entry: qname ?? set[0].name, security, trust });
+      this.positive.set(key, { records: set, storedAtMs, entry: qname ?? set[0].name, security, trust, origin });
       this.negative.delete(key);
       this.negative.delete(nameErrorKeyOf(set[0].name));
     }
     this.evictToFit();
+  }
+
+  storeReply(qname: string, qtype: number, reply: DnsReply, details: DnsReplyDetails = {}): void {
+    if (reply.rcode !== DnsRcode.NOERROR && reply.rcode !== DnsRcode.NXDOMAIN) return;
+    if (reply.answers.length > 0) {
+      this.storePositive(reply.answers, details.entry, details.security, details.trust ?? 'authanswer', details.origin);
+    }
+    const soa = reply.authorities.find((rr): rr is ResourceRecord<SoaRecordData> => rr.data.type === RRType.SOA);
+    if (soa === undefined || holdsType(reply.answers, qtype)) return;
+    this.storeNegative(aliasTarget(qname, reply.answers), qtype, reply.rcode, soa);
   }
 
   storeNegative(qname: string, qtype: number, rcode: number, soa: ResourceRecord<SoaRecordData>): void {
@@ -211,7 +267,7 @@ export class DnsCache {
       const live = entry.records
         .map(rr => ({ rr, ttl: rr.ttl - elapsedSeconds }))
         .filter(x => x.ttl > 0);
-      if (live.length === 0) { this.positive.delete(key); continue; }
+      if (live.length === 0) { this.dropUnlessRetained(key, entry); continue; }
       for (const { rr, ttl } of live) {
         const legacy = resourceRecordToLegacyRecord(rr);
         if (!legacy) continue;
@@ -240,7 +296,7 @@ export class DnsCache {
       const elapsedSeconds = Math.floor((nowMs - held.storedAtMs) / 1000);
       const live = held.records.map((rr) => ({ ...rr, ttl: rr.ttl - elapsedSeconds })).filter((rr) => rr.ttl > 0);
       if (live.length === 0) {
-        this.positive.delete(key);
+        this.dropUnlessRetained(key, held);
         continue;
       }
       recordSets.push({ name: live[0].name, type: live[0].data.type, records: live, trust: held.trust, storedAtMs: held.storedAtMs });
@@ -269,27 +325,34 @@ export class DnsCache {
     return this.entries().length;
   }
 
-  lookup(qname: string, qtype: number): DnsCacheLookup {
-    const direct = this.lookupOwnRecords(qname, qtype);
+  lookup(qname: string, qtype: number, serveStale = false): DnsCacheLookup {
+    const direct = this.lookupOwnRecords(qname, qtype, serveStale);
     if (direct.kind !== 'miss' || qtype === RRType.CNAME || qtype === RRType.ANY) return direct;
-    return this.lookupThroughAliases(qname, qtype);
+    return this.lookupThroughAliases(qname, qtype, serveStale);
   }
 
-  private lookupThroughAliases(qname: string, qtype: number): DnsCacheLookup {
+  private lookupThroughAliases(qname: string, qtype: number, serveStale: boolean): DnsCacheLookup {
     const aliases: ResourceRecord<ResourceRecordData>[] = [];
     const securities: (DnssecStatus | undefined)[] = [];
+    const origins: (DnsOrigin | undefined)[] = [];
+    let stale = false;
     const visited = new Set<string>();
     let name = qname;
     while (aliases.length < MAX_CNAME_CHAIN_DEPTH && !visited.has(keyOf(name, qtype))) {
       visited.add(keyOf(name, qtype));
-      const alias = this.lookupOwnRecords(name, RRType.CNAME);
+      const alias = this.lookupOwnRecords(name, RRType.CNAME, serveStale);
       if (alias.kind !== 'hit') return MISS;
       aliases.push(...alias.records);
       securities.push(alias.security);
+      origins.push(alias.origin);
+      stale ||= alias.stale === true;
       name = (alias.records[0].data as CnameRecordData).cname;
-      const target = this.lookupOwnRecords(name, qtype);
+      const target = this.lookupOwnRecords(name, qtype, serveStale);
       if (target.kind === 'hit') {
-        return { kind: 'hit', records: [...aliases, ...target.records], security: combinedSecurity([...securities, target.security]) };
+        return {
+          kind: 'hit', records: [...aliases, ...target.records], security: combinedSecurity([...securities, target.security]),
+          origin: combinedOrigin([...origins, target.origin]), ...(stale || target.stale === true ? { stale: true } : {}),
+        };
       }
       if (target.kind === 'negative') return { ...target, aliases: [...aliases] };
       if (target.kind !== 'miss') return MISS;
@@ -297,7 +360,19 @@ export class DnsCache {
     return MISS;
   }
 
-  private lookupOwnRecords(qname: string, qtype: number): DnsCacheLookup {
+  private expiryOf(entry: PositiveEntry): number {
+    return entry.storedAtMs + Math.max(...entry.records.map((rr) => rr.ttl)) * MILLIS_PER_SECOND;
+  }
+
+  private retained(entry: PositiveEntry): boolean {
+    return this.now() < this.expiryOf(entry) + this.staleRetentionMs();
+  }
+
+  private dropUnlessRetained(key: string, entry: PositiveEntry): void {
+    if (!this.retained(entry)) this.positive.delete(key);
+  }
+
+  private lookupOwnRecords(qname: string, qtype: number, serveStale = false): DnsCacheLookup {
     const key = keyOf(qname, qtype);
     const nowMs = this.now();
 
@@ -325,9 +400,15 @@ export class DnsCache {
         .map((rr) => ({ ...rr, ttl: rr.ttl - elapsedSeconds }))
         .filter((rr) => rr.ttl > 0);
       if (decayed.length > 0) {
-        return { kind: 'hit', records: decayed, security: positiveEntry.security };
+        return { kind: 'hit', records: decayed, security: positiveEntry.security, origin: positiveEntry.origin };
       }
-      this.positive.delete(key);
+      if (serveStale && this.retained(positiveEntry)) {
+        return {
+          kind: 'hit', records: positiveEntry.records.map((rr) => ({ ...rr, ttl: STALE_ANSWER_TTL_SECONDS })),
+          security: positiveEntry.security, origin: positiveEntry.origin, stale: true,
+        };
+      }
+      this.dropUnlessRetained(key, positiveEntry);
     }
 
     return MISS;

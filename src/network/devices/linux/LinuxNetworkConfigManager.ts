@@ -27,6 +27,7 @@ import {
   type NetworkdLinkPlan,
 } from './net/NetworkdPlan';
 import { addNameserver, addSearchDomain, removeNameserver, removeSearchDomain } from './ResolvConfEdit';
+import { resolvConfFollowsResolved } from './net/ResolvedService';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export const INTERFACES_PATH = '/etc/network/interfaces';
@@ -262,6 +263,8 @@ export class LinuxNetworkConfigManager {
    * serveurs d'un bail dont un lien refuse `UseDNS`.
    */
   private writeResolvConf(net: LinuxNetKernel, plans: readonly NetworkdLinkPlan[]): void {
+    for (const plan of plans) net.declareResolverLink(plan.iface, { servers: plan.dns, domains: plan.domains, useDns: plan.useDns });
+    if (resolvConfFollowsResolved(this.vfs)) return;
     const servers: string[] = [];
     const domains: string[] = [];
     const refused: string[] = [];

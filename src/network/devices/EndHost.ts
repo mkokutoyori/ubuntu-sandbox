@@ -605,6 +605,12 @@ const RA_DEFAULT_ROUTE_METRIC = 1024;
 const RA_PREFIX_ROUTE_METRIC = 256;
 const INFINITE_LIFETIME = 0xffffffff;
 
+export interface DnsExchange {
+  immediate(): DnsMessage | null;
+  late(timeoutMs: number): Promise<DnsMessage | null>;
+  close(): void;
+}
+
 export abstract class EndHost extends Equipment {
   // ─── Socket Table (L4) ──────────────────────────────────────────
   /** Per-device socket table — tracks listening and established sockets */
@@ -4809,11 +4815,11 @@ export abstract class EndHost extends Equipment {
     });
   }
 
-  public queryDnsServerSync(
+  public openDnsExchange(
     serverIP: IPAddress | IPv6Address,
     name: string,
     qtype: string,
-  ): DnsMessage | null {
+  ): DnsExchange | null {
     const wire = this.encodeDnsQuery(name, qtype);
     if (!wire) return null;
     let sourcePort: number;
@@ -4823,10 +4829,13 @@ export abstract class EndHost extends Equipment {
       return null;
     }
     let reply: DnsMessage | null = null;
+    const waiting: Array<(message: DnsMessage) => void> = [];
     try {
       this.udpBind(sourcePort, ({ udp }) => {
         const response = this.decodeDnsReply(udp.payload, wire.id);
-        if (response) reply = response;
+        if (!response) return;
+        reply = response;
+        for (const resume of waiting.splice(0)) resume(response);
       }, 'resolver');
     } catch {
       return null;
@@ -4834,7 +4843,31 @@ export abstract class EndHost extends Equipment {
     this.sendUdpDatagramTo(
       serverIP, DNS_PORT, sourcePort, wire.bytes, wire.bytes.length,
     );
-    this.udpClose(sourcePort);
+    return {
+      immediate: () => reply,
+      late: (timeoutMs) => {
+        if (reply !== null) return Promise.resolve(reply);
+        return new Promise<DnsMessage | null>((resolve) => {
+          const timer = this.hostTimers.setTimeout(() => resolve(null), timeoutMs);
+          waiting.push((message) => {
+            this.hostTimers.clear(timer);
+            resolve(message);
+          });
+        });
+      },
+      close: () => this.udpClose(sourcePort),
+    };
+  }
+
+  public queryDnsServerSync(
+    serverIP: IPAddress | IPv6Address,
+    name: string,
+    qtype: string,
+  ): DnsMessage | null {
+    const exchange = this.openDnsExchange(serverIP, name, qtype);
+    if (exchange === null) return null;
+    const reply = exchange.immediate();
+    exchange.close();
     return reply;
   }
 
