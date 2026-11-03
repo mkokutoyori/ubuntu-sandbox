@@ -100,10 +100,10 @@ liste a chaque question, et `resolvectl status` affiche toujours le premier comm
 l'environnement d'enregistrement) : le decompte de `Failure Transactions` pour un NODATA vient de la lecture des sources, pas d'une capture. Un lien retire de netplan garde ses serveurs jusqu'au
 redemarrage du service (la couche declaree n'est effacee que lien par lien).
 
-### [linux] `ping` nomme l'adresse qui repond par une resolution inverse SYNCHRONE : derriere un amont qui repond de facon asynchrone (le DC1 du lab), la premiere reponse montre l'adresse et la suivante le nom
-Mesure sur PC-CONSEILLER (stub de resolved, amont DC1) : `ping -c 1 www.banquehorizon.com` affiche `64 bytes from 203.0.113.20 (203.0.113.20)` puis, le PTR etant revenu entre-temps dans le cache,
-`64 bytes from web.banquehorizon.com (203.0.113.20)` au second appel. `reverseNameOf` (Ping.ts, Traceroute.ts, Tracepath.ts, Netstat.ts) appelle `gethostbyaddr` synchrone ; la version asynchrone
-(`reverseNameOfAsync`) existe et sert deja `tcpdump` et Kerberos. Pourquoi ce n'est pas ferme : la boucle d'affichage de `ping` est synchrone de bout en bout.
+### [linux] `netstat`, `ss` et `nc` nomment les adresses par une resolution inverse SYNCHRONE : derriere un amont qui repond de facon asynchrone, ils montrent l'adresse
+`ping`, `traceroute` et `tracepath` attendent maintenant le PTR avant d'ecrire la ligne (`ReverseNames.learn`, sonde `dns-agence-bancaire-reverse-names`). Restent trois afficheurs synchrones de bout en bout
+qui appellent encore `reverseNameOf` : `netstat` (sans `-n`), `ss -r` et `nc -v`. Pour un nom qui n'est pas dans `/etc/hosts` et dont le PTR vient d'un serveur qui recurse (le DC1 du lab), la premiere
+sortie montre l'adresse et la suivante le nom, le PTR etant entre-temps dans le cache du stub. Les trois peuvent reprendre le meme schema (apprendre les adresses de la table avant de la mettre en forme).
 
 ### [dig] ce que dig 9.18 fait encore et que le simulateur ne fait pas
 Les options d'affichage (`+[no]all`, `+[no]cmd`, `+[no]comments`, `+[no]question`, `+[no]answer`, `+[no]authority`, `+[no]additional`, `+[no]stats`, `+short`), la banniere avec la version du paquet,
