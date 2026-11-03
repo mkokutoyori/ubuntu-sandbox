@@ -7,11 +7,11 @@
  *
  * What is compared, step by step: the status; the header flags (`qr rd ra` for a forwarded answer, `qr aa rd ra ad` for one synthesised from /etc/hosts); the EDNS payload size the stub
  * announces (65494); the set of answer records by type and data (the order is the upstream's: BIND rotates the MX records); for a negative answer the SOA of the authority section; and the
- * TTLs: an answer asked a second time carries its first TTL minus the wait, a record kept above two hours comes back capped at 7200 minus the wait, a record synthesised from /etc/hosts
+ * TTLs: an answer asked a second time carries its first TTL minus the wait and every record of the reply the same TTL (the smallest of the message the real stub kept, authority and glue included: all 3573 in mx-again, 3589 for the CNAME and the SOA of alias-nodata-again), a record kept above two hours comes back capped at 7200 minus the wait, a record synthesised from /etc/hosts
  * has TTL 0. The recorded waits themselves are checked (5 to 7 seconds) so that the fixture cannot drift from the delay the replay uses.
- * Not compared, and named: the NS records the real stub copies into the authority section of a positive answer and the glue it copies into the additional section (resolved composes the
- * reply from its cache and the delegation it learned; the simulated stub forwards the answer section only), and the order of the records inside one answer, and the single TTL the real stub gives to every record of an answer served from its cache
- * (the smallest of the message it cached, authority and glue included: all 3573 in mx-again whereas the first reply showed 3600 and 3579; the simulated stub lets each record decay on its own).
+ * Not compared, and named: the NS records the real stub copies into the authority section of a positive answer and the glue it copies into the additional section (they come from the BIND the
+ * stub asked; the upstream of the replay, DC1, sends none, so there is nothing to hand over: the hand-over itself, TTLs untouched on the first reply and flattened on the cached one, is pinned in
+ * linux-resolved-config with an upstream that sends them), and the order of the records inside one answer.
  *
  * Measured first (git stash push -- src/network src/powershell, this file and dns-agence-bancaire-linux-cache.test.ts together, 18 tests): 15 fall. The 3 that pass either way: the WITNESS on the recording (it
  * reads the fixture only), the WITNESS on the replay lab (the lab's own upstream answers a direct dig, so a failure of the replay is the stub's and not the lab's), and the localhost / hosts-name
@@ -133,6 +133,8 @@ describe('Oracle - the stub of systemd-resolved 255 against the simulated stub o
       if (got.answer.length === 0 && !negativeSoa(got)) continue;
       const ttl = ttlOf(got);
       if (step.label.endsWith('-again')) {
+        const rows = [...got.answer, ...got.authority, ...got.additional];
+        if (new Set(rows.map((row) => row.ttl)).size !== 1) note('one TTL for the whole cached reply', 'every record equal', rows.map((row) => row.ttl));
         const expected = step.label === 'long-ttl-again' ? RESOLVED_CAP - WAIT : ttlOf(replies.get(held)!) - WAIT;
         if (ttl !== expected) note('TTL after the wait', expected, ttl);
       } else if (want.flags.includes('aa')) {

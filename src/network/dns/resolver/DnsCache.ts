@@ -36,6 +36,7 @@ export interface DnsReply {
   readonly rcode: number;
   readonly answers: readonly ResourceRecord<ResourceRecordData>[];
   readonly authorities: readonly ResourceRecord<ResourceRecordData>[];
+  readonly additionals?: readonly ResourceRecord<ResourceRecordData>[];
 }
 
 export interface DnsReplyDetails {

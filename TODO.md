@@ -90,15 +90,13 @@ eux echouera.
 
 ## Pile TCP/IP
 
-### [dns] le stub de systemd-resolved : ce que la version 255 reelle fait en plus et que le simulateur ne fait pas
-Le stub relaie tous les types, tient le cache dans le `DnsCache` partage (suite de CNAME, TTL decroissants plafonnes a 2 h, cache negatif avec son SOA, `Cache=no-negative`, `StaleRetentionSec=`) et
-est alimente par le bail DHCP et par netplan/networkd ; il est rejoue contre un vrai systemd-resolved 255.4 (`resolved-stub-oracle`, 24 questions). Restent, mesures par cette comparaison : le vrai stub
-recopie dans sa reponse les NS de la zone (section authority) et leur glue (section additional) d'une reponse positive, le simulateur ne renvoie que la section answer ; servi depuis son cache, le vrai stub
-donne a TOUS les enregistrements de la reponse le meme TTL, le plus petit de l'ensemble qu'il a retenu (authority et glue compris : `mx-again` rend 3573 partout alors que la premiere reponse montrait 3600 et
-3579), le simulateur laisse chaque enregistrement decroitre seul ; le serveur courant n'est pas memorise (le vrai resolved garde le dernier serveur qui a repondu, le simulateur reessaie le premier de la
-liste a chaque question, et `resolvectl status` affiche toujours le premier comme `Current DNS Server`) ; `resolvectl statistics` n'a pas ete rejoue contre le vrai service (il passe par D-Bus, absent de
-l'environnement d'enregistrement) : le decompte de `Failure Transactions` pour un NODATA vient de la lecture des sources, pas d'une capture. Un lien retire de netplan garde ses serveurs jusqu'au
-redemarrage du service (la couche declaree n'est effacee que lien par lien).
+### [dns] le stub de systemd-resolved : ce que la version 255 reelle fait encore en plus
+Le stub relaie tous les types, tient le cache dans le `DnsCache` partage, passe le serveur suivant quand le courant se tait et s'y tient (`Current DNS Server`), recopie les sections authority et
+additional que l'amont lui envoie (TTL intacts a la premiere reponse), sert la reponse suivante avec un seul TTL pour tous ses enregistrements (le plus petit de l'ensemble retenu), et est rejoue contre un
+vrai systemd-resolved 255.4 (`resolved-stub-oracle`, 24 questions ; le basculement sur un second serveur a ete observe dans son journal de debogage). Restent : `resolvectl statistics` n'a pas ete rejoue
+contre le vrai service (il passe par D-Bus, absent de l'environnement d'enregistrement) : le decompte de `Failure Transactions` pour un NODATA vient de la lecture des sources, pas d'une capture ; le
+vrai resolved degrade aussi le niveau de fonctionnalites d'un serveur (UDP+EDNS0, puis UDP, puis TCP) apres des echecs, le simulateur ne garde que le serveur courant ; un lien retire de netplan garde ses
+serveurs jusqu'au redemarrage du service (la couche declaree n'est effacee que lien par lien).
 
 ### [linux] `netstat`, `ss` et `nc` nomment les adresses par une resolution inverse SYNCHRONE : derriere un amont qui repond de facon asynchrone, ils montrent l'adresse
 `ping`, `traceroute` et `tracepath` attendent maintenant le PTR avant d'ecrire la ligne (`ReverseNames.learn`, sonde `dns-agence-bancaire-reverse-names`). Restent trois afficheurs synchrones de bout en bout

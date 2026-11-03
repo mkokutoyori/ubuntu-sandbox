@@ -148,6 +148,7 @@ export interface ResolvedQueryOutcome {
   addresses: string[];
   records: readonly ResourceRecord<ResourceRecordData>[];
   authorities: readonly ResourceRecord<ResourceRecordData>[];
+  additionals: readonly ResourceRecord<ResourceRecordData>[];
   /** D'où vient la réponse — `resolvectl query` le dit à l'opérateur. */
   origin: 'cache' | 'network' | 'hosts' | 'none';
   link: string | null;
@@ -228,6 +229,7 @@ const STRANGE_RCODE_TTL_SECONDS = 10;
 const SYNTHETIC_TTL_SECONDS = 0;
 const LINK_LOCAL_TTL_SECONDS = { llmnr: 30, mdns: 120 } as const;
 const USEC_PER_MILLISECOND = 1000;
+const MILLIS_PER_SECOND = 1000;
 
 interface Asked {
   readonly answer: UpstreamAnswer | null;
@@ -259,9 +261,24 @@ function addressRecords(
 
 function outcomeOf(fields: Partial<ResolvedQueryOutcome>): ResolvedQueryOutcome {
   return {
-    addresses: [], records: [], authorities: [], origin: 'none', link: null, server: null,
+    addresses: [], records: [], authorities: [], additionals: [], origin: 'none', link: null, server: null,
     dnssec: 'unset', encrypted: false, protocol: 'dns', verdict: 'failure', ...fields,
   };
+}
+
+interface Envelope {
+  readonly authorities: readonly ResourceRecord<ResourceRecordData>[];
+  readonly additionals: readonly ResourceRecord<ResourceRecordData>[];
+  readonly storedAtMs: number;
+}
+
+function flattened(
+  records: readonly ResourceRecord<ResourceRecordData>[], authorities: readonly ResourceRecord<ResourceRecordData>[],
+  additionals: readonly ResourceRecord<ResourceRecordData>[],
+): { records: ResourceRecord<ResourceRecordData>[]; authorities: ResourceRecord<ResourceRecordData>[]; additionals: ResourceRecord<ResourceRecordData>[] } {
+  const smallest = Math.min(...[...records, ...authorities, ...additionals].map((rr) => rr.ttl));
+  const equalised = (rrs: readonly ResourceRecord<ResourceRecordData>[]) => rrs.map((rr) => ({ ...rr, ttl: smallest }));
+  return { records: equalised(records), authorities: equalised(authorities), additionals: equalised(additionals) };
 }
 
 function usable(answer: UpstreamAnswer): boolean {
@@ -279,6 +296,8 @@ export class ResolvedService {
   private global = defaultGlobalConfig();
   private readonly links = new Map<string, ResolvedLinkConfig>();
   private readonly cache: DnsCache;
+  private readonly envelopes = new Map<string, Envelope>();
+  private readonly currentServers = new Map<string, string>();
   private stats: ResolvedStatistics = {
     transactions: 0, cacheHits: 0, cacheMisses: 0,
     currentCacheSize: 0, failedTransactions: 0, secureTransactions: 0,
@@ -319,6 +338,19 @@ export class ResolvedService {
   }
 
   selectServers(name: string): { servers: string[]; link: string | null } {
+    const routed = this.routeServers(name);
+    const current = this.currentServers.get(routed.link ?? '');
+    const at = current === undefined ? -1 : routed.servers.indexOf(current);
+    return at <= 0 ? routed : { ...routed, servers: [...routed.servers.slice(at), ...routed.servers.slice(0, at)] };
+  }
+
+  currentServerOf(link: string | null): string | null {
+    const listed = link === null ? this.global.dnsServers : this.links.get(link)?.dnsServers ?? [];
+    const current = this.currentServers.get(link ?? '');
+    return current !== undefined && listed.includes(current) ? current : listed[0] ?? null;
+  }
+
+  private routeServers(name: string): { servers: string[]; link: string | null } {
     const fqdn = name.toLowerCase().replace(/\.$/, '');
     let bestLink: string | null = null;
     let bestLength = -1;
@@ -421,17 +453,32 @@ export class ResolvedService {
     return server === null || !isLoopbackServer(server) || this.global.cacheFromLocalhost;
   }
 
-  private fromCache(known: DnsCacheLookup, qtype: ResolvedQtype): ResolvedQueryOutcome {
+  private liveEnvelope(key: string, qtype: ResolvedQtype): Pick<Envelope, 'authorities' | 'additionals'> {
+    const held = this.envelopes.get(this.envelopeKey(key, qtype));
+    if (held === undefined) return { authorities: [], additionals: [] };
+    const elapsed = Math.floor((this.now() - held.storedAtMs) / MILLIS_PER_SECOND);
+    const decayed = (rrs: readonly ResourceRecord<ResourceRecordData>[]) => rrs.map((rr) => ({ ...rr, ttl: rr.ttl - elapsed })).filter((rr) => rr.ttl > 0);
+    return { authorities: decayed(held.authorities), additionals: decayed(held.additionals) };
+  }
+
+  private envelopeKey(key: string, qtype: ResolvedQtype): string {
+    return `${key}|${typeOf(qtype)}`;
+  }
+
+  private fromCache(known: DnsCacheLookup, key: string, qtype: ResolvedQtype): ResolvedQueryOutcome {
     if (known.kind === 'hit') {
+      const envelope = this.liveEnvelope(key, qtype);
+      const equal = flattened(known.records, envelope.authorities, envelope.additionals);
       return outcomeOf({
-        addresses: addressesOf(known.records, qtype), records: known.records, origin: 'cache',
-        dnssec: known.security ?? 'unset', encrypted: known.origin?.encrypted ?? false,
+        addresses: addressesOf(equal.records, qtype), records: equal.records, authorities: equal.authorities, additionals: equal.additionals,
+        origin: 'cache', dnssec: known.security ?? 'unset', encrypted: known.origin?.encrypted ?? false,
         protocol: known.origin?.protocol ?? 'dns', verdict: 'answer',
       });
     }
     if (known.kind === 'negative') {
+      const equal = flattened(known.aliases ?? [], [known.soa], []);
       return outcomeOf({
-        records: known.aliases ?? [], authorities: [known.soa], origin: 'cache',
+        records: equal.records, authorities: equal.authorities, origin: 'cache',
         verdict: known.rcode === DnsRcode.NXDOMAIN ? 'nxdomain' : 'nodata',
       });
     }
@@ -443,13 +490,13 @@ export class ResolvedService {
     const known = this.cache.lookup(key, typeOf(qtype));
     if (known.kind === 'miss') return null;
     this.stats.cacheHits++;
-    return this.fromCache(known, qtype);
+    return this.fromCache(known, key, qtype);
   }
 
   private staleOutcome(key: string, qtype: ResolvedQtype): ResolvedQueryOutcome | null {
     if (!this.cacheEnabled() || this.global.staleRetentionUsec <= 0) return null;
     const known = this.cache.lookup(key, typeOf(qtype), true);
-    return known.kind === 'hit' && known.stale === true ? this.fromCache(known, qtype) : null;
+    return known.kind === 'hit' && known.stale === true ? this.fromCache(known, key, qtype) : null;
   }
 
   private fromHosts(key: string, qtype: ResolvedQtype): ResolvedQueryOutcome | null {
@@ -488,9 +535,16 @@ export class ResolvedService {
       });
     }
     if (verdict === 'nxdomain') this.stats.failedTransactions++;
+    this.currentServers.set(via.link ?? '', via.server);
+    const companions = negative ? [] : [...answer.authorities, ...(answer.additionals ?? [])];
+    if (companions.length > 0 && this.mayRemember(via.server)) {
+      this.envelopes.set(this.envelopeKey(key, qtype), {
+        authorities: answer.authorities, additionals: answer.additionals ?? [], storedAtMs: this.now(),
+      });
+    }
     return outcomeOf({
       addresses: addressesOf(answer.answers, qtype), records: answer.answers,
-      authorities: negative ? answer.authorities : [], origin: 'network', link: via.link, server: via.server,
+      authorities: answer.authorities, additionals: negative ? [] : answer.additionals ?? [], origin: 'network', link: via.link, server: via.server,
       dnssec: via.dnssec, encrypted: via.encrypted, verdict,
     });
   }
@@ -694,6 +748,7 @@ export class ResolvedService {
 
   flushCaches(): void {
     this.cache.flush();
+    this.envelopes.clear();
     this.stats.currentCacheSize = 0;
   }
 

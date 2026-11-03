@@ -328,6 +328,8 @@ Le stub relaie **tous** les types (`dig banquehorizon.com MX`, `TXT`, `SRV`, `-x
 
 `ping` résout le nom puis cherche le nom de l'adresse qui répond (une question PTR) : `ping -n` supprime cette seconde question. Un autre poste qui demande le même nom à DC1 n'a pas de raison de le faire redescendre : DC1 et DNS-RES gardent leurs propres caches.
 
+Si DC1 cesse de répondre (`Stop-Service DNS` sur DC1), le stub passe au second serveur du bail, DNS-RES : `resolvectl status` l'affiche comme `Current DNS Server` et les noms suivants lui sont posés directement, sans réessayer DC1 à chaque fois.
+
 ## 4. Les types d'enregistrements
 
 Sur **PC-GUICHET1** :
