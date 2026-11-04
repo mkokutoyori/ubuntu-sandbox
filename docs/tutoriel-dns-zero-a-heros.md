@@ -141,11 +141,11 @@ VIII.3 [🧪 TP 29 — DHCP et enregistrement dynamique](#viii3--tp-29--dhcp-et-
 VIII.4 [🧪 TP 30 — La NRPT du poste Windows](#viii4--tp-30--la-nrpt-du-poste-windows)
 
 ### Partie IX — Observer
-39. [🧪 TP 31 — Journaliser les requêtes](#39--tp-31--journaliser-les-requêtes)
-40. [🧪 TP 32 — Voir le DNS sur le fil : UDP, troncature, TCP](#40--tp-32--voir-le-dns-sur-le-fil--udp-troncature-tcp)
+IX.1 [🧪 TP 31 — Journaliser les requêtes](#ix1--tp-31--journaliser-les-requêtes)
+IX.2 [🧪 TP 32 — Voir le DNS sur le fil : UDP, troncature, TCP](#ix2--tp-32--voir-le-dns-sur-le-fil--udp-troncature-tcp)
 
 ### Partie X — Le web vu du DNS
-41. [🧪 TP 33 — Un nom, une adresse, plusieurs sites](#41--tp-33--un-nom-une-adresse-plusieurs-sites)
+X.1 [🧪 TP 33 — Un nom, une adresse, plusieurs sites](#x1--tp-33--un-nom-une-adresse-plusieurs-sites)
 
 ### Partie XI — Quand ça ne marche pas, et comment le prouver
 42. [La méthode en six questions](#42-la-méthode-en-six-questions)
@@ -6054,29 +6054,81 @@ La résolution publique fonctionne de nouveau.
 
 # Partie IX — Observer
 
-Un service qu'on ne sait pas observer est un service qu'on ne sait pas dépanner, ni prouver. Deux outils : le **journal des requêtes** de `named` (ce qui a été demandé, par qui) et la **capture de paquets** (ce qui a réellement circulé).
+Un service qu'on ne sait pas observer est un service qu'on ne sait pas dépanner, ni prouver. Deux outils :
+
+- le **journal des requêtes** de `named` : *ce qui a été demandé, et par qui* (TP 31) ;
+- la **capture de paquets** : *ce qui a réellement circulé sur le câble* (TP 32).
 
 ---
 
-## 39. 🧪 TP 31 — Journaliser les requêtes
+## IX.1 🧪 TP 31 — Journaliser les requêtes
 
 **🎯 Objectif.** Faire écrire à `named` une ligne par question reçue, dans un fichier qu'on choisit, et savoir lire cette ligne.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `DNS-RES` et un sur `PC-CONSEILLER`. Durée : environ 30 minutes. La configuration est remise en état à la fin.
+
+Par défaut, un résolveur ne garde pas la trace de ce qu'on lui demande. Pour savoir **quel poste a cherché quel site**, il faut le lui demander explicitement.
+
+**Étape 1 — Faire une copie de sauvegarde de la configuration.**
 
 ```
 # sur DNS-RES
 sudo cp /etc/bind/named.conf /tmp/named.conf.orig
-sudo mkdir -p /var/log/named
-sudo tee -a /etc/bind/named.conf <<'EOF'
+```
+
+`cp` copie un fichier. Si tu fais une erreur, tu pourras remettre l'original. La commande n'affiche rien.
+
+**Étape 2 — Ajouter le bloc de journalisation.**
+
+```
+# sur DNS-RES
+sudo mkdir -p /var/log/named; sudo tee -a /etc/bind/named.conf <<'EOF'
 logging {
     channel query_log { file "/var/log/named/query.log" versions 3 size 5m; severity info; print-time yes; };
     category queries { query_log; };
 };
 EOF
+```
+
+Deux commandes sur une ligne. `mkdir -p /var/log/named` crée le dossier où le journal sera écrit. La seconde ajoute à `named.conf` un bloc `logging` qui définit **deux** choses :
+
+```
+logging {
+    channel query_log { file "/var/log/named/query.log" versions 3 size 5m; severity info; print-time yes; };
+    category queries { query_log; };
+};
+```
+
+- un **canal** (`channel query_log`) : *où* écrire. Ici dans le fichier `/var/log/named/query.log`, avec `versions 3 size 5m` (garde trois archives de 5 Mo au plus) et `print-time yes` (écris l'heure sur chaque ligne) ;
+- une **catégorie** (`category queries`) : *quoi* écrire. Ici les `queries`, c'est-à-dire les questions reçues, envoyées vers le canal `query_log`.
+
+**Étape 3 — Vérifier la configuration.** Tu connais la règle d'or (TP 15).
+
+```
+# sur DNS-RES
 named-checkconf; echo rc=$?
+```
+
+```
+rc=0
+```
+
+**Étape 4 — Appliquer et allumer la journalisation.**
+
+```
+# sur DNS-RES
 sudo rndc reconfig; sudo rndc querylog on; sudo rndc status | grep query
 ```
+
+Trois commandes enchaînées : `rndc reconfig` relit la configuration, `rndc querylog on` **allume** la journalisation, et `rndc status | grep query` affiche la ligne de l'état qui parle de `query`.
+
+```
+query logging is ON
+```
+
+`query logging is ON` : le journal est actif.
+
+**Étape 5 — Poser une question.**
 
 ```
 # sur PC-CONSEILLER
@@ -6084,47 +6136,65 @@ dig @10.20.20.53 ebanking.banquehorizon.com +short
 ```
 
 ```
-# sur DNS-RES
-sudo cat /var/log/named/query.log
-```
-
-**✅ Résultat attendu.** La configuration est valide et la journalisation active :
-
-```
-rc=0
-```
-
-```
-query logging is ON
-```
-
-Le poste a obtenu l'alias et l'adresse :
-
-```
 web.banquehorizon.com.
 203.0.113.20
 ```
 
-Et le journal contient **une ligne** pour cette question :
+Le poste a obtenu l'alias et l'adresse, comme au TP 10.
+
+**Étape 6 — Lire le journal.**
+
+```
+# sur DNS-RES
+sudo cat /var/log/named/query.log
+```
 
 ```
 04-Nov-2026 10:29:25.476 client @0x0 10.20.10.52#59210 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A +E(0) (10.20.20.53)
 ```
 
-**🔧 Manipulation (suite).** Une même question, posée de quatre façons différentes : sans demander la récursion, par TCP, sans EDNS, avec le bit DO (DNSSEC) :
+**Une ligne** pour cette question. Lis-la de gauche à droite :
+
+| Champ | Valeur | Sens |
+|---|---|---|
+| Date | `04-Nov-2026 10:29:25.476` | Choisie par `print-time yes`. Chez toi, ce sera la date de ta machine |
+| `client @0x0` | | Identifiant interne du client dans `named` (une adresse mémoire dans un vrai BIND ; ici toujours `0x0`) |
+| `10.20.10.52#59210` | | L'**adresse** de la machine qui pose la question, et son **port** d'envoi (un numéro qui change à chaque `dig`) |
+| `(ebanking.banquehorizon.com)` | | Le nom demandé, tel que le client l'a écrit |
+| `query: … IN A` | | Nom, classe et **type** demandé |
+| `+E(0)` | | Les **drapeaux** (étape 7) |
+| `(10.20.20.53)` | | L'adresse du serveur qui a reçu la question |
+
+C'est la réponse à la question « **qui a demandé quoi ?** » : le poste `10.20.10.52` (`PC-CONSEILLER`) a demandé l'adresse de `ebanking.banquehorizon.com`.
+
+**Étape 7 — Lire les drapeaux, par l'expérience.** Pose maintenant la même question de quatre façons différentes :
 
 ```
 # sur PC-CONSEILLER
-dig @10.20.20.53 ebanking.banquehorizon.com +norecurse +short
-dig @10.20.20.53 ebanking.banquehorizon.com +tcp +short
-dig @10.20.20.53 ebanking.banquehorizon.com +noedns +short
-dig @10.20.20.53 ebanking.banquehorizon.com +dnssec +short
+dig @10.20.20.53 ebanking.banquehorizon.com +norecurse +short; dig @10.20.20.53 ebanking.banquehorizon.com +tcp +short; dig @10.20.20.53 ebanking.banquehorizon.com +noedns +short; dig @10.20.20.53 ebanking.banquehorizon.com +dnssec +short
 ```
+
+Quatre commandes à la suite, séparées par `;`. Les options : `+norecurse` (ne demande pas la récursion), `+tcp` (envoie la question en TCP plutôt qu'en UDP, voir le TP 32), `+noedns` (n'envoie pas l'extension EDNS), `+dnssec` (demande les signatures DNSSEC).
+
+```
+web.banquehorizon.com.
+203.0.113.20
+web.banquehorizon.com.
+203.0.113.20
+web.banquehorizon.com.
+203.0.113.20
+web.banquehorizon.com.
+203.0.113.20
+```
+
+Quatre fois la même réponse. C'est le **journal** qui garde la différence :
 
 ```
 # sur DNS-RES
 sudo tail -4 /var/log/named/query.log
 ```
+
+`tail -4` affiche les **quatre dernières** lignes.
 
 ```
 04-Nov-2026 10:29:25.507 client @0x0 10.20.10.52#57693 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A -E(0) (10.20.20.53)
@@ -6133,99 +6203,99 @@ sudo tail -4 /var/log/named/query.log
 04-Nov-2026 10:29:25.536 client @0x0 10.20.10.52#45456 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A +E(0)D (10.20.20.53)
 ```
 
-On remet le résolveur en état :
+Une ligne par variante, dans l'ordre. Regarde la fin de chaque ligne, juste avant l'adresse du serveur :
+
+| Variante | Ce que le journal montre | Sens |
+|---|---|---|
+| `+norecurse` | `-E(0)` | Le `-` à la place du `+` : la récursion n'a **pas** été demandée |
+| `+tcp` | `+E(0)T` | Le `T` : la question est venue en **TCP** |
+| `+noedns` | `+` | Plus de `E(0)` : pas d'extension EDNS |
+| `+dnssec` | `+E(0)D` | Le `D` : le client a demandé les signatures **DNSSEC** (bit DO) |
+
+Le vrai BIND ajoute encore la lettre `K` quand le client a envoyé un *cookie* (le simulateur n'en envoie pas).
+
+**Étape 8 — Remettre en état.**
 
 ```
 # sur DNS-RES
 sudo cp /tmp/named.conf.orig /etc/bind/named.conf; sudo rndc reconfig; sudo rndc querylog off; sudo rndc status | grep query
 ```
 
+On restaure la sauvegarde, on recharge, on **éteint** la journalisation.
+
 ```
 query logging is OFF
 ```
 
-**🧠 Ce que tu viens d'apprendre.** Lis la ligne de gauche à droite :
+`query logging is OFF` : retour à l'état initial.
 
-| Champ | Exemple | Sens |
-|---|---|---|
-| Date | `04-Nov-2026 10:29:25.476` | Choisie par `print-time yes` |
-| `client @0x0` | | Identifiant interne du client dans `named` (une adresse mémoire dans un vrai BIND ; ici toujours `0x0`) |
-| `10.20.10.52#59210` | | Adresse **et port source** de la machine qui pose la question (un port éphémère : il change à chaque `dig`) |
-| `(ebanking.banquehorizon.com)` | | Le nom demandé, tel que le client l'a écrit |
-| `query: … IN A` | | Nom, classe, **type** demandé |
-| `+E(0)` | | **Drapeaux** (ci-dessous) |
-| `(10.20.20.53)` | | L'adresse du serveur qui a reçu la question |
+> 🔍 **Point d'audit** — Ce journal est une **donnée personnelle** : il dit quel poste a cherché quel site. Il se conserve selon une durée décidée (et écrite), avec un accès restreint. Et c'est la meilleure source pour retrouver, après coup, quels postes ont résolu le nom d'un domaine malveillant.
 
-Les **drapeaux** : `+` la récursion est demandée (`-` : elle ne l'est pas, `+norecurse`) ; `E(0)` la question porte une option EDNS, version 0 (absente avec `+noedns`) ; `T` la question est venue en **TCP** ; `D` le bit DO est positionné : le client veut les signatures DNSSEC. Le vrai BIND ajoute encore `K` quand le client a envoyé un *cookie* (le simulateur n'en envoie pas).
+🆘 **Si ça ne marche pas.**
 
-- **Où écrire** : sans bloc `logging`, un vrai BIND écrit les requêtes dans le journal système. Un bloc `logging` explicite, comme ci-dessus, est la pratique, parce qu'il permet de choisir le fichier, sa rotation (`versions 3 size 5m` : trois archives de 5 Mo au plus) et de n'envoyer **que** les requêtes là où on veut.
-- `rndc querylog on|off` active et désactive la journalisation **sans redémarrer** : on l'allume pour un diagnostic, on l'éteint ensuite — un résolveur chargé écrit des milliers de lignes par minute.
+- À l'étape 6, le fichier n'existe pas ou est vide : la journalisation n'est pas allumée (retour à l'étape 4), ou `named-checkconf` a refusé le bloc (étape 3 : `rc` n'est pas 0).
+- `named-checkconf` affiche une erreur : un point-virgule manque dans le bloc de l'étape 2. Reprends-le tel quel, accolades et points-virgules compris.
 
-> 🔍 **Point d'audit** — Ce journal est une **donnée personnelle** : il dit quel poste a cherché quel site. Il se conserve selon une durée décidée (et écrite), avec accès restreint. Et c'est la meilleure source pour retrouver, après coup, quels postes ont résolu le nom d'un domaine malveillant.
+**🧠 Ce que tu viens d'apprendre.**
+
+- Un bloc `logging` définit un **canal** (où écrire, avec rotation) et une **catégorie** (quoi écrire).
+- `rndc querylog on|off` active et désactive la journalisation **sans redémarrer** : on l'allume pour un diagnostic, on l'éteint ensuite, car un résolveur chargé écrit des milliers de lignes par minute.
+- Chaque ligne dit : quand, **qui** (adresse et port), **quoi** (nom et type), et les **drapeaux** de la question (`+`/`-` récursion, `E` EDNS, `T` TCP, `D` DNSSEC).
+
+**Vérifie-toi.**
+
+1. Quelle lettre du journal indique qu'une question est venue en TCP ?
+2. Que veut dire un `-` au début des drapeaux ?
+3. Pourquoi éteint-on la journalisation après un diagnostic ?
+
+*Réponses.* (1) `T`. (2) La récursion n'a pas été demandée. (3) Un résolveur chargé écrit des milliers de lignes par minute, ce qui remplit le disque.
 
 ---
 
-## 40. 🧪 TP 32 — Voir le DNS sur le fil : UDP, troncature, TCP
+## IX.2 🧪 TP 32 — Voir le DNS sur le fil : UDP, troncature, TCP
 
 **🎯 Objectif.** Capturer des paquets DNS, les relire, et voir ce qui se passe quand une réponse **ne tient pas** dans un datagramme UDP.
 
-**🔧 Manipulation.** On publie d'abord 60 adresses sous un même nom (`many`) — assez pour dépasser 512 octets — :
+**Ce qu'il te faut.** Un terminal sur `NS1-BANK` et un sur `PC-CONSEILLER`. Durée : environ 50 minutes. Tout est remis en état à la fin.
+
+**Deux façons d'envoyer un message DNS.** Jusqu'ici tu as vu des mots comme `UDP` sans les expliquer. Voici l'essentiel.
+
+| | **UDP** | **TCP** |
+|---|---|---|
+| Principe | On envoie un petit paquet, sans formalités | On ouvre une **connexion** (poignée de main), on échange, on la ferme |
+| Vitesse | Très rapide | Plus lent (la poignée de main coûte des échanges) |
+| Taille | Limitée à **512 octets** pour le DNS d'origine | Aucune limite pratique |
+| Usage par le DNS | Presque toutes les questions | Les réponses trop grosses, et les transferts de zone |
+
+Une réponse DNS qui dépasse 512 octets ne tient pas dans un paquet UDP. Que fait le serveur ? Il envoie ce qui rentre, et lève un drapeau **`tc`** (*truncated*, « tronqué »). Le client voit ce drapeau et **recommence en TCP**. Tu vas le voir de tes yeux.
+
+**Étape 1 — Fabriquer une grosse réponse.**
+
+On publie 60 adresses sous un même nom (`many`), ce qui suffit à dépasser 512 octets.
 
 ```
 # sur NS1-BANK
-for i in $(seq 1 60); do echo "many IN A 198.51.100.$i" | sudo tee -a /etc/bind/db.banquehorizon.com > /dev/null; done
-sudo sed -i 's/2026103101/2026103102/' /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
+for i in $(seq 1 60); do echo "many IN A 198.51.100.$i" | sudo tee -a /etc/bind/db.banquehorizon.com > /dev/null; done; sudo sed -i 's/2026103101/2026103102/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com
 ```
 
-Puis une question **sans EDNS** (`+noedns`, comme le faisaient les clients d'avant 1999), capturée dans un fichier, lue ensuite :
+Cette ligne fait trois choses :
+
+1. `for i in $(seq 1 60); do … done` répète **60 fois** ce qui est entre `do` et `done`, avec `i` qui vaut successivement 1, 2, …, 60 ;
+2. à chaque tour, `echo … | sudo tee -a …` ajoute au fichier de zone une ligne `many IN A 198.51.100.<i>` (le `> /dev/null` jette l'affichage, pour ne pas inonder l'écran) ;
+3. ensuite, comme au TP 18, on monte le numéro de série et on recharge.
 
 ```
-# sur PC-CONSEILLER
-sudo tcpdump -ni eth0 -w /tmp/dns.pcap port 53 & sleep 1; dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +noall +comments; sleep 1; sudo pkill tcpdump; sleep 1
-sudo tcpdump -nr /tmp/dns.pcap
+zone reload queued
 ```
 
-**✅ Résultat attendu.** `dig` affiche une réponse complète — mais ce n'est pas ce que le serveur a répondu **en premier** :
+**Étape 2 — Voir la réponse tronquée.**
 
-```
-[1] 45
-;; Truncated, retrying in TCP mode.
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52
-;; flags: qr aa; QUERY: 1, ANSWER: 60, AUTHORITY: 2, ADDITIONAL: 2
-```
-
-La capture, ligne à ligne :
-
-```
-reading from file /tmp/dns.pcap, link-type EN10MB (Ethernet), snapshot length 262144
-10:29:26.782723 IP 10.20.10.52.50810 > 203.0.113.10.53: 51 A? many.banquehorizon.com. (40)
-10:29:26.788844 IP 203.0.113.10.53 > 10.20.10.52.50810: 51*-| 29/0/0 A 198.51.100.1, A 198.51.100.2, A 198.51.100.3, A 198.51.100.4, A 198.51.100.5, A 198.51.100.6, A 198.51.100.7, A 198.51. […]
-10:29:26.792844 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [S], seq 2634807467, win 65535, options [mss 1460,sackOK,TS val 13418 ecr 0,nop,wscale 7], length 0
-10:29:26.795876 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [S.], seq 2871740974, ack 2634807468, win 65535, options [mss 1460,sackOK,TS val 13420 ecr 13418,nop,wscale 7], length 0
-10:29:26.795876 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [.], ack 1, win 511, options [nop,nop,TS val 13421 ecr 13420], length 0
-10:29:26.798891 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [P.], seq 1:43, ack 1, win 511, options [nop,nop,TS val 13424 ecr 13420], length 42 52 A? many.banquehorizon.com. (40)
-10:29:26.801125 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [P.], seq 1:1071, ack 43, win 511, options [nop,nop,TS val 13426 ecr 13424], length 1070 52*- 60/2/2 A 198.51.100.2, A 198.51.10 […]
-10:29:26.801125 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [F.], seq 43, ack 1071, win 511, options [nop,nop,TS val 13427 ecr 13426], length 0
-10:29:26.801154 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [.], ack 44, win 511, options [nop,nop,TS val 13429 ecr 13427], length 0
-10:29:26.801154 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [F.], seq 1071, ack 44, win 511, options [nop,nop,TS val 13429 ecr 13427], length 0
-10:29:26.801154 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [.], ack 1072, win 511, options [nop,nop,TS val 13430 ecr 13429], length 0
-```
-
-(Les lignes 3 et 8 sont coupées à l'affichage : elles énumèrent les adresses, 29 pour la première, 60 pour la seconde.)
-
-**🔧 Manipulation (suite).** Les mêmes questions, en demandant à `dig` de s'arrêter à la réponse tronquée (`+ignore`), puis en le laissant se débrouiller, puis directement en TCP, puis en EDNS avec une taille de 1232 octets :
+On pose la question **sans EDNS** (`+noedns`), c'est-à-dire comme le faisaient les clients d'avant 1999, limités à 512 octets. On ajoute `+ignore` : « si la réponse est tronquée, **ne recommence pas** en TCP, montre-moi la réponse tronquée ».
 
 ```
 # sur PC-CONSEILLER
 dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +ignore +noall +comments +stats
-dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +noall +comments +stats
-dig @203.0.113.10 mail.banquehorizon.com +tcp +noall +comments +answer +stats
-dig @203.0.113.10 many.banquehorizon.com +bufsize=1232 +norecurse +noall +comments
 ```
-
-La réponse **coupée** (`tc`, 29 enregistrements sur 60, 504 octets, par UDP) :
 
 ```
 ;; Got answer:
@@ -6238,7 +6308,20 @@ La réponse **coupée** (`tc`, 29 enregistrements sur 60, 504 octets, par UDP) :
 ;; MSG SIZE  rcvd: 504
 ```
 
-Le comportement normal de `dig` : il **recommence en TCP** et le dit en tête de sortie :
+Trois choses à lire :
+
+- `flags: qr aa tc` : le drapeau **`tc`** est là. Le serveur dit « ma réponse est coupée ».
+- `ANSWER: 29` : il n'a pu mettre que **29** adresses sur les 60.
+- `(UDP)` et `MSG SIZE rcvd: 504` : la réponse est arrivée en UDP, elle fait 504 octets, tout juste sous la limite de 512.
+
+**Étape 3 — Voir `dig` recommencer en TCP tout seul.**
+
+Sans `+ignore`, `dig` fait ce que fait un vrai client.
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +noall +comments +stats
+```
 
 ```
 ;; Truncated, retrying in TCP mode.
@@ -6252,7 +6335,14 @@ Le comportement normal de `dig` : il **recommence en TCP** et le dit en tête de
 ;; MSG SIZE  rcvd: 1068
 ```
 
-Une question TCP d'emblée :
+`;; Truncated, retrying in TCP mode.` : `dig` a vu `tc` et a recommencé en TCP. Cette fois : `ANSWER: 60` (les 60 adresses), `(TCP)` et `MSG SIZE rcvd: 1068` : la réponse complète, qui n'aurait jamais tenu dans 512 octets.
+
+**Étape 4 — Demander directement en TCP.**
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 mail.banquehorizon.com +tcp +noall +comments +answer +stats
+```
 
 ```
 ;; Got answer:
@@ -6271,7 +6361,18 @@ mail.banquehorizon.com.	3600	IN	A	203.0.113.25
 ;; MSG SIZE  rcvd: 135
 ```
 
-Avec EDNS et une taille de 1232 octets, **tout tient** dans un seul datagramme UDP (pas de `tc`, pas de TCP) :
+`+tcp` force le TCP même pour une petite question : `(TCP)` à la fin. Il n'y a rien à tronquer ; on a seulement choisi le mode.
+
+**Étape 5 — Éviter le TCP : EDNS et la taille de 1232.**
+
+Depuis 1999, une extension appelée **EDNS** permet au client d'annoncer *la taille de réponse qu'il accepte en UDP*. Avec 1232 octets, notre grosse réponse tient en un seul paquet :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 many.banquehorizon.com +bufsize=1232 +norecurse +noall +comments
+```
+
+`+bufsize=1232` annonce « j'accepte jusqu'à 1232 octets en UDP ».
 
 ```
 ;; Got answer:
@@ -6282,11 +6383,94 @@ Avec EDNS et une taille de 1232 octets, **tout tient** dans un seul datagramme U
 ; EDNS: version: 0, flags:; udp: 1232
 ```
 
-Et une question « normale » vue de la même façon (le résolveur, avec EDNS, pour `mail2`) :
+`ANSWER: 60`, **pas de `tc`**, et aucune bascule en TCP : tout est arrivé en un seul datagramme UDP. (La valeur 1232 est celle recommandée pour éviter que les paquets soient fragmentés par IP.)
+
+**Étape 6 — Voir tout cela sur le câble.**
+
+Jusqu'ici, tu as vu ce que `dig` dit. Voyons maintenant ce qui a **réellement circulé**. L'outil est `tcpdump`, qui écoute une carte réseau et enregistre les paquets.
+
+```
+# sur PC-CONSEILLER
+sudo tcpdump -ni eth0 -w /tmp/dns.pcap port 53 & sleep 1; dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +noall +comments; sleep 1; sudo pkill tcpdump; sleep 1
+```
+
+Lis cette commande en quatre temps :
+
+1. `sudo tcpdump -ni eth0 -w /tmp/dns.pcap port 53 &` lance la capture en arrière-plan (`&`) : elle écoute la carte `eth0`, ne garde que le **port 53** (celui du DNS) et écrit tout dans le fichier `/tmp/dns.pcap` ;
+2. `sleep 1` laisse une seconde à la capture pour démarrer ;
+3. `dig …` pose la question ;
+4. `sleep 1; sudo pkill tcpdump; sleep 1` arrête la capture.
+
+```
+[1] 45
+;; Truncated, retrying in TCP mode.
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52
+;; flags: qr aa; QUERY: 1, ANSWER: 60, AUTHORITY: 2, ADDITIONAL: 2
+```
+
+Tu retrouves la réponse de l'étape 3 (la bascule en TCP). Le `[1] 45` est le numéro de la tâche en arrière-plan. Maintenant, relis la capture :
+
+```
+# sur PC-CONSEILLER
+sudo tcpdump -nr /tmp/dns.pcap
+```
+
+`-r` veut dire « lis ce fichier » ; `-n` empêche `tcpdump` de remplacer les adresses par des noms.
+
+```
+reading from file /tmp/dns.pcap, link-type EN10MB (Ethernet), snapshot length 262144
+10:29:26.782723 IP 10.20.10.52.50810 > 203.0.113.10.53: 51 A? many.banquehorizon.com. (40)
+10:29:26.788844 IP 203.0.113.10.53 > 10.20.10.52.50810: 51*-| 29/0/0 A 198.51.100.1, A 198.51.100.2, A 198.51.100.3, A 198.51.100.4, A 198.51.100.5, A 198.51.100.6, A 198.51.100.7, A 198.51.100.8, A 198.51.100.9, A 198.51.100.10, A 198.51.100.11, A 198.51.100.12, A 198.51.100.13, A 198.51.100.14, A 198.51.100.15, A 198.51.100.16, A 198.51.100.17, A 198.51.100.18, A 198.51.100.19, A 198.51.100.20, A 198.51.100.21, A 198.51.100.22, A 198.51.100.23, A 198.51.100.24, A 198.51.100.25, A 198.51.100.26, A 198.51.100.27, A 198.51.100.28, A 198.51.100.29 (504)
+10:29:26.792844 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [S], seq 2634807467, win 65535, options [mss 1460,sackOK,TS val 13418 ecr 0,nop,wscale 7], length 0
+10:29:26.795876 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [S.], seq 2871740974, ack 2634807468, win 65535, options [mss 1460,sackOK,TS val 13420 ecr 13418,nop,wscale 7], length 0
+10:29:26.795876 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [.], ack 1, win 511, options [nop,nop,TS val 13421 ecr 13420], length 0
+10:29:26.798891 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [P.], seq 1:43, ack 1, win 511, options [nop,nop,TS val 13424 ecr 13420], length 42 52 A? many.banquehorizon.com. (40)
+10:29:26.801125 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [P.], seq 1:1071, ack 43, win 511, options [nop,nop,TS val 13426 ecr 13424], length 1070 52*- 60/2/2 A 198.51.100.2, A 198.51.100.3, A 198.51.100.4, A 198.51.100.5, A 198.51.100.6, A 198.51.100.7, A 198.51.100.8, A 198.51.100.9, A 198.51.100.10, A 198.51.100.11, A 198.51.100.12, A 198.51.100.13, A 198.51.100.14, A 198.51.100.15, A 198.51.100.16, A 198.51.100.17, A 198.51.100.18, A 198.51.100.19, A 198.51.100.20, A 198.51.100.21, A 198.51.100.22, A 198.51.100.23, A 198.51.100.24, A 198.51.100.25, A 198.51.100.26, A 198.51.100.27, A 198.51.100.28, A 198.51.100.29, A 198.51.100.30, A 198.51.100.31, A 198.51.100.32, A 198.51.100.33, A 198.51.100.34, A 198.51.100.35, A 198.51.100.36, A 198.51.100.37, A 198.51.100.38, A 198.51.100.39, A 198.51.100.40, A 198.51.100.41, A 198.51.100.42, A 198.51.100.43, A 198.51.100.44, A 198.51.100.45, A 198.51.100.46, A 198.51.100.47, A 198.51.100.48, A 198.51.100.49, A 198.51.100.50, A 198.51.100.51, A 198.51.100.52, A 198.51.100.53, A 198.51.100.54, A 198.51.100.55, A 198.51.100.56, A 198.51.100.57, A 198.51.100.58, A 198.51.100.59, A 198.51.100.60, A 198.51.100.1 (1068)
+10:29:26.801125 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [F.], seq 43, ack 1071, win 511, options [nop,nop,TS val 13427 ecr 13426], length 0
+10:29:26.801154 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [.], ack 44, win 511, options [nop,nop,TS val 13429 ecr 13427], length 0
+10:29:26.801154 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [F.], seq 1071, ack 44, win 511, options [nop,nop,TS val 13429 ecr 13427], length 0
+10:29:26.801154 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [.], ack 1072, win 511, options [nop,nop,TS val 13430 ecr 13429], length 0
+```
+
+(Les lignes 3 et 8 sont très longues : elles énumèrent toutes les adresses, 29 puis 60. Fais défiler le bloc vers la droite pour les lire.) La capture compte **onze paquets** (la ligne 1 n'est que l'en-tête du fichier), que tu peux lire par blocs :
+
+| Lignes | Ce que c'est |
+|---|---|
+| 2 | La **question** en UDP : `A? many.banquehorizon.com.` |
+| 3 | La **réponse tronquée** en UDP : `29/0/0`, avec le signe `\|` qui veut dire « tronquée » |
+| 4, 5, 6 | La **poignée de main TCP** : `[S]` (SYN), `[S.]` (SYN-ACK), `[.]` (ACK) |
+| 7 | La **question** de nouveau, en TCP |
+| 8 | La **réponse complète** en TCP : `60/2/2`, les 60 adresses |
+| 9 à 12 | La **fermeture** de la connexion (`[F.]`, FIN) |
+
+**Étape 7 — Lire une ligne de `tcpdump`.** Les lignes 2 et 3 en détail :
+
+| Morceau | Sens |
+|---|---|
+| `51` | L'identifiant de la question (la réponse porte le même) |
+| `A?` | C'est une **question** de type A |
+| `(40)` | La longueur du message DNS, en octets |
+| `51*-\|` | Une **réponse** : `*` = faisant autorité (`aa`), `-` = récursion non disponible, `\|` = **tronquée** (`tc`) |
+| `29/0/0` | Nombre de fiches en `ANSWER` / `AUTHORITY` / `ADDITIONAL` |
+
+**Étape 8 — Pour comparaison : une question « normale ».** Avec EDNS (le comportement par défaut de `dig`) et le résolveur de l'agence, pour une petite réponse :
 
 ```
 # sur PC-CONSEILLER
 sudo tcpdump -ni eth0 -w /tmp/dns2.pcap port 53 & sleep 1; dig @10.20.20.53 mail2.banquehorizon.com +short; sleep 1; sudo pkill tcpdump; sleep 1
+```
+
+```
+[1]+  Done                sudo tcpdump -ni eth0 -w /tmp/dns.pcap port 53
+[2] 47
+203.0.113.26
+```
+
+(La première ligne, `Done`, est la fin de la capture précédente.) Relis :
+
+```
+# sur PC-CONSEILLER
 sudo tcpdump -nr /tmp/dns2.pcap
 ```
 
@@ -6296,34 +6480,32 @@ reading from file /tmp/dns2.pcap, link-type EN10MB (Ethernet), snapshot length 2
 10:29:29.851316 IP 10.20.20.53.53 > 10.20.10.52.59334: 53 1/2/3 A 203.0.113.26 (136)
 ```
 
-On remet la zone en état :
+**Deux paquets seulement** : une question (`53+ [1au] A? …`, où `+` = récursion demandée et `[1au]` = l'extension EDNS), une réponse (`53 1/2/3 A 203.0.113.26`). Pas de poignée de main : c'est UDP, léger. Voilà ce que fait le DNS au quotidien.
+
+**Étape 9 — Remise en état.**
 
 ```
 # sur NS1-BANK
-sudo sed -i '/^many /d; s/2026103102/2026103103/' /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
+sudo sed -i '/^many /d; s/2026103102/2026103103/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com
 ```
+
+```
+zone reload queued
+```
+
+On supprime les 60 lignes `many` et on monte le numéro de série (TP 18).
+
+🆘 **Si ça ne marche pas.**
+
+- À l'étape 2, tu ne vois pas `tc` : l'étape 1 n'est pas terminée (le rechargement de la zone n'est pas passé). Vérifie avec `dig @203.0.113.10 many.banquehorizon.com +short` : tu dois voir une liste d'adresses.
+- À l'étape 6, `tcpdump` affiche `command not found` : tu n'es pas sur `PC-CONSEILLER`.
+- La capture est vide : ne retire pas les `sleep 1` autour de la commande `dig`.
 
 **🧠 Ce que tu viens d'apprendre.**
 
-*Lire une ligne de `tcpdump`* :
-
-| Morceau | Sens |
-|---|---|
-| `51` | Identifiant de la question (la réponse porte le même) |
-| `+` | Récursion demandée (`rd`) |
-| `[1au]` | Un enregistrement dans la section additionnelle, de type **EDNS** (l'`OPT`) |
-| `A?` | C'est une **question** de type A, sur `many.banquehorizon.com.` |
-| `(40)` | Longueur du message DNS, en octets |
-| `51*-\|` | Une **réponse** : `*` faisant autorité (`aa`), `-` récursion **non** disponible, `\|` **tronquée** (`tc`) |
-| `29/0/0` | Nombre d'enregistrements en `ANSWER` / `AUTHORITY` / `ADDITIONAL` |
-| `1/2/3 A 203.0.113.26 (136)` | Idem pour une réponse complète, avec son premier enregistrement |
-
-*Ce qui s'est passé* :
-
-1. Sans EDNS, une réponse UDP est limitée à **512 octets** (RFC 1035 §4.2.1). Le serveur met dans le datagramme ce qui tient (29 adresses), positionne le bit **TC** (*truncated*) et envoie.
-2. Le client voit `tc` et **recommence en TCP** : poignée de main (SYN, SYN-ACK, ACK), la question (précédée de sa longueur sur deux octets), la réponse **complète** (`60/2/2` : 1068 octets de message DNS, précédés de leurs deux octets de longueur), fermeture (FIN).
-3. Avec **EDNS0**, le client annonce la taille qu'il accepte (`udp: 1232`, valeur recommandée pour éviter la fragmentation IP) : 60 adresses tiennent, aucun TCP.
+1. Sans EDNS, une réponse UDP est limitée à **512 octets**. Le serveur met dans le datagramme ce qui tient (29 adresses), positionne le bit **TC** (*truncated*) et envoie.
+2. Le client voit `tc` et **recommence en TCP** : poignée de main (SYN, SYN-ACK, ACK), la question, la réponse **complète** (`60/2/2`), fermeture (FIN).
+3. Avec **EDNS**, le client annonce la taille qu'il accepte (`udp: 1232`) : 60 adresses tiennent, aucun TCP.
 
 - **Le DNS utilise TCP, aussi.** Un pare-feu qui n'ouvre que `UDP/53` casse les grosses réponses (listes d'adresses, DNSSEC, certaines réponses `TXT`) : le symptôme est « ça marche pour les petits noms, pas pour les gros », très difficile à trouver sans capture.
 - Un transfert de zone (TP 18) se fait **toujours** par TCP.
@@ -6331,27 +6513,38 @@ sudo rndc reload banquehorizon.com
 
 > 🔍 **Point d'audit** — Garde des captures datées du trafic DNS à la frontière du réseau : elles prouvent, après coup, qu'un poste a bien interrogé un domaine donné, et à quelle heure.
 
+**Vérifie-toi.**
+
+1. Que signifie le drapeau `tc` ?
+2. Que fait `dig` quand il le voit ?
+3. Pourquoi un pare-feu qui bloque `TCP/53` est-il un problème ?
+
+*Réponses.* (1) La réponse est tronquée : elle ne tient pas dans le paquet UDP. (2) Il recommence la question en TCP. (3) Les réponses trop grosses (et les transferts de zone) ne passeraient plus : certains noms marcheraient, d'autres non.
+
 ---
 
 # Partie X — Le web vu du DNS
 
+Tu as passé neuf parties à faire parler le DNS. Il est temps de te demander : **dans « ouvrir un site web », que fait réellement le DNS ?** La réponse est modeste : il donne l'**adresse**. Tout le reste (quelle page, quel certificat, quelle redirection) appartient à d'autres protocoles. Un TP pour le voir.
+
 ---
 
-## 41. 🧪 TP 33 — Un nom, une adresse, plusieurs sites
+## X.1 🧪 TP 33 — Un nom, une adresse, plusieurs sites
 
 **🎯 Objectif.** Comprendre la part du DNS dans « ouvrir un site » — et ce qu'il ne fait **pas** : il donne l'adresse, le reste appartient à HTTP et à TLS.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `PC-CONSEILLER`. Durée : environ 25 minutes.
+
+**Le rappel de départ.** Au TP 10, tu as vu que `www`, `ebanking`, `agences` et `api` sont quatre alias d'une **même machine** (`web`, `203.0.113.20`). Quatre noms, une adresse. Comment le serveur de cette machine sait-il quelle page servir, selon le nom que tu as tapé ? Tu vas le découvrir avec `curl`, un outil qui télécharge des pages web en ligne de commande.
+
+**Étape 1 — Ouvrir `www` en HTTP.**
 
 ```
 # sur PC-CONSEILLER
 curl -sI http://www.banquehorizon.com/
-curl -skI https://ebanking.banquehorizon.com/
-curl -s -o /dev/null -w "%{http_code}\n" http://203.0.113.20/
-curl -s -o /dev/null -w "%{http_code}\n" -H "Host: www.banquehorizon.com" http://203.0.113.20/
 ```
 
-**✅ Résultat attendu.** `www` : le serveur répond par une **redirection** vers la version HTTPS :
+Les options de `curl` : `-s` (*silent*) supprime les messages de progression, et `-I` demande **seulement les en-têtes** de la réponse, pas la page elle-même.
 
 ```
 HTTP/1.1 301 Moved Permanently
@@ -6361,7 +6554,16 @@ Location: https://www.banquehorizon.com/
 Content-Length: 169
 ```
 
-`ebanking` (un autre nom, **la même machine**, `203.0.113.20`) répond, en HTTPS, avec une autre page et des en-têtes de sécurité :
+La première ligne : `HTTP/1.1 301 Moved Permanently`. Le code `301` veut dire « cette page a **déménagé** ». La ligne `Location: https://www.banquehorizon.com/` dit où : c'est la **version sécurisée** (HTTPS) du même site. Le serveur n'a pas servi la page, il a **redirigé** vers HTTPS.
+
+**Étape 2 — Ouvrir `ebanking` en HTTPS.**
+
+```
+# sur PC-CONSEILLER
+curl -skI https://ebanking.banquehorizon.com/
+```
+
+Une option de plus : `-k` dit à `curl` d'**ignorer la vérification du certificat**. (Dans le laboratoire, le certificat n'est pas signé par une autorité reconnue : en vrai, on ne met jamais `-k` pour un site qu'on ne contrôle pas.)
 
 ```
 HTTP/1.1 200 OK
@@ -6376,26 +6578,68 @@ Accept-Ranges: bytes
 Content-Length: 1508
 ```
 
-Même adresse, mais **par l'adresse seule**, sans dire quel site on veut : le serveur ne sait pas quoi servir.
+`200 OK` : la page est servie. Remarque deux choses. D'abord, le nom `ebanking` mène à la **même machine** que `www`, mais la réponse n'est pas la même (pas de redirection, une autre page de 1 508 octets). Ensuite, le serveur ajoute des en-têtes de **sécurité** (`Strict-Transport-Security`, `X-Frame-Options`, `Cache-Control: no-store`) propres à ce site.
+
+Le DNS a donné la **même adresse** pour `www` et pour `ebanking`. C'est donc le serveur web qui a choisi quoi répondre. Mais comment, puisqu'il reçoit la même adresse ?
+
+**Étape 3 — Viser la machine par son adresse seule.**
+
+```
+# sur PC-CONSEILLER
+curl -s -o /dev/null -w "%{http_code}\n" http://203.0.113.20/
+```
+
+Trois nouveautés : `-o /dev/null` jette la page (on n'en veut pas), et `-w "%{http_code}\n"` affiche seulement le **code de réponse**.
 
 ```
 404
 ```
 
-En ajoutant l'en-tête `Host:` on retrouve le site `www` (et sa redirection) :
+`404` : « page introuvable ». En visant l'adresse `203.0.113.20` **sans nom**, le serveur ne sait pas quel site tu veux. Il en héberge plusieurs, et n'en a choisi aucun.
+
+**Étape 4 — Annoncer le nom, sans passer par le DNS.**
+
+```
+# sur PC-CONSEILLER
+curl -s -o /dev/null -w "%{http_code}\n" -H "Host: www.banquehorizon.com" http://203.0.113.20/
+```
+
+`-H "Host: www.banquehorizon.com"` ajoute un **en-tête** à la requête : « je veux le site `www.banquehorizon.com` ». On vise toujours l'adresse, mais cette fois on dit le nom.
 
 ```
 301
 ```
 
+`301` : on retrouve la redirection de l'étape 1. Le serveur a choisi le site `www`, d'après l'en-tête **`Host:`**.
+
+**Ce qui s'est passé.** Quand tu tapes `http://www.banquehorizon.com/` :
+
+```schema
+ 1. Le DNS traduit le nom en adresse          →  203.0.113.20
+ 2. Le navigateur se connecte à cette adresse et envoie « Host: www.banquehorizon.com »
+ 3. Le serveur web lit ce nom et choisit le site à servir
+```
+
+Le DNS n'a servi qu'à l'étape 1. L'étape 3, c'est l'affaire du serveur web.
+
+🆘 **Si ça ne marche pas.** `curl: (6) Could not resolve host` : le nom ne se résout pas, c'est un problème de DNS (reprends le TP 5). `curl: (7) Failed to connect` : le nom se résout, mais le serveur web ne répond pas (`ping -c 1 203.0.113.20` pour vérifier la connectivité).
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Dans la zone (TP 14), `www`, `ebanking`, `agences` et `api` sont tous des **CNAME** vers `web`, qui a **une** adresse : quatre noms, une machine. Le DNS dit *où* ; c'est le serveur web qui décide *quoi* servir, d'après le nom que le client lui annonce — l'en-tête **`Host:`** en HTTP, l'extension **SNI** dans la poignée de main TLS.
-- C'est pour cela que `curl http://203.0.113.20/` donne `404` : par l'adresse, il n'y a pas de nom, donc pas de site. C'est aussi pourquoi **tester un site en le visant par son adresse IP est un mauvais test** (et pourquoi `curl --resolve nom:443:IP` ou `-H "Host: …"` existent).
-- Changer l'adresse de `web` (une migration de serveur) change l'accès aux **quatre** sites en une seule modification : l'intérêt du CNAME. Son prix : une résolution de plus à chaque fois (TP 10).
-- Le **CNAME est interdit au sommet de la zone** : `banquehorizon.com.` lui-même porte un `A` (`203.0.113.20`), pas un alias, parce qu'un sommet de zone a toujours un SOA et des NS, et qu'un CNAME ne peut coexister avec aucun autre type (TP 15).
+- Le DNS dit *où* (l'adresse) ; c'est le serveur web qui décide *quoi* servir, d'après le nom que le client lui annonce — l'en-tête **`Host:`** en HTTP, l'extension **SNI** dans la poignée de main TLS (HTTPS).
+- C'est pour cela que `curl http://203.0.113.20/` donne `404` : par l'adresse, il n'y a pas de nom, donc pas de site. **Tester un site en le visant par son adresse IP est un mauvais test.** L'option `-H "Host: …"` ou `curl --resolve nom:443:adresse` permettent de tester proprement.
+- Changer l'adresse de `web` (une migration de serveur) change l'accès aux **quatre** sites en une seule modification : c'est l'intérêt du CNAME. Son prix : une résolution de plus à chaque fois (TP 10).
+- Le **CNAME est interdit au sommet de la zone** : `banquehorizon.com.` lui-même porte un `A` (`203.0.113.20`), pas un alias, parce qu'un sommet de zone a toujours un SOA et des NS, et qu'un CNAME ne peut coexister avec aucun autre type (TP 15, cas 4).
 
 > 🔍 **Point d'audit** — Plusieurs sites sur une seule adresse : un certificat qui ne couvre pas tous les noms est le défaut le plus fréquent. Vérifie, nom par nom, que le certificat présenté correspond (`curl -v` ou `openssl s_client -servername …`).
+
+**Vérifie-toi.**
+
+1. Quelle est la seule chose que le DNS apporte à l'ouverture d'un site ?
+2. Pourquoi `http://203.0.113.20/` ne montre-t-il pas le site de la banque ?
+3. Que signifie `301` ?
+
+*Réponses.* (1) L'adresse IP correspondant au nom. (2) Sans nom, le serveur ne sait pas quel site servir parmi ceux qu'il héberge. (3) « Déplacé définitivement » : le serveur renvoie vers une autre adresse web, ici la version HTTPS.
 
 ---
 
