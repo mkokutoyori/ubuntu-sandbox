@@ -380,8 +380,8 @@ describe('scp: the contents arrive intact', () => {
   it('a binary file (a private key) keeps every byte', async () => {
     await lan.run('PC2', 'ssh-keygen -q -t ed25519 -N "" -f /tmp/bin-key');
     await scp('PC2', 'alice', `/tmp/bin-key alice@${lan.ip('PC6')}:/tmp/bin-key-copy`);
-    const a = (await lan.run('PC2', 'sha256sum /tmp/bin-key')).split(' ')[0];
-    const b = (await lan.run('PC6', 'sha256sum /tmp/bin-key-copy')).split(' ')[0];
+    const a = (await lan.run('PC2', 'sudo sha256sum /tmp/bin-key')).split(' ')[0];
+    const b = (await lan.run('PC6', 'sudo sha256sum /tmp/bin-key-copy')).split(' ')[0];
     expect(b).toBe(a);
   });
 

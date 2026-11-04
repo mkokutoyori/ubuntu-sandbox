@@ -30,7 +30,7 @@ import { runTac } from '../../coreutils/TacCommand';
 import { runFmt } from '../../coreutils/FmtCommand';
 import { runPr } from '../../coreutils/PrCommand';
 import { runJoin } from '../../coreutils/JoinCommand';
-import { runCksum } from '../../coreutils/CksumCommand';
+import { runCksum, runSum } from '../../coreutils/CksumCommand';
 import { runCmp } from '../../coreutils/CmpCommand';
 import { runBase64 } from '../../coreutils/Base64Command';
 import { runSplit } from '../../coreutils/SplitCommand';
@@ -404,6 +404,16 @@ export const cksumCommand = viaCoreutils(coreutil(
   () => '',
 ), runCksum);
 
+export const sumCommand = viaCoreutils(coreutil(
+  'sum', 'sum [OPTION]... [FILE]...',
+  'Print checksum and block counts for each FILE.',
+  [
+    { flag: '-r', description: 'Use the BSD sum algorithm (the default), 1K blocks' },
+    { flag: '-s', description: 'Use the System V sum algorithm, 512-byte blocks' },
+  ],
+  () => '',
+), runSum);
+
 export const lessCommand: LinuxCommand = { package: 'less', ...coreutil(
   'less', 'less [OPTIONS] [FILE]...',
   'View a file one screen at a time. Without a terminal on its output,\n'
@@ -434,4 +444,5 @@ export const TEXT_STREAM_COMMANDS: LinuxCommand[] = [
   tacCommand, nlCommand, pasteCommand, commCommand, joinCommand, foldCommand,
   expandCommand, unexpandCommand, fmtCommand, prCommand, columnCommand,
   cmpCommand, splitCommand, base64Command, cksumCommand,
+  sumCommand,
 ];
