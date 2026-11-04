@@ -19,6 +19,10 @@
  * function that insists on an SOA record, which a hint file has none of. The record-level parser is now
  * exposed and the hint file goes through it.
  *
+ * Corrected afterwards against a real named 9.18.39 (scripts/oracle/record_bind_recursive_response.py, bind-recursive-response-oracle): with an empty cache the question for `. NS` is NOT answered from the
+ * hints but referred to them (no answer, the hint name servers in the authority section) and the additional section holds the OPT of the question alone, never the addresses of the hint file; the two cases
+ * that said otherwise ("answers the priming query ... from the hints", "gives the resolver the glue of the hint file") encoded a premise the real resolver does not follow.
+ *
  * Discrimination (git stash of the source files): 6 of the 9 cases fall before the change. Three pass either way:
  *  - "reads a hint file in the named.root layout" — NON-REGRESSION: the regular expression also found the
  *    addresses; the case guards the move to the record parser (upper case names, comments, an AAAA line).
@@ -115,14 +119,13 @@ beforeEach(() => {
 });
 
 describe('BIND answers a query without recursion', () => {
-  it('answers the priming query for the root name servers from the hints', async () => {
+  it('refers the question for the root name servers to the hints while its cache is empty', async () => {
     const { pc } = await lab();
     const out = await pc.executeCommand(`dig +norecurse . NS @${RESOLVER_IP}`);
     expect(out).toContain('status: NOERROR');
     expect(out).toMatch(/flags: qr ra;/);
-    expect(out).toMatch(/ANSWER: 1,/);
-    expect(out).toMatch(/^\.\s+3600000\s+IN\s+NS\s+A\.ROOT-SERVERS\.NET\.$/m);
-    expect(out).toMatch(/^A\.ROOT-SERVERS\.NET\.\s+3600000\s+IN\s+A\s+10\.0\.0\.1$/m);
+    expect(out).toMatch(/ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1/);
+    expect(out).toMatch(/AUTHORITY SECTION:\n\.\s+3600000\s+IN\s+NS\s+A\.ROOT-SERVERS\.NET\.\n/);
   });
 
   it('refers a name it has never seen to the root hints', async () => {
@@ -164,10 +167,11 @@ describe('BIND answers a query without recursion', () => {
     expect(await pc.executeCommand(`dig www.corp.test @${RESOLVER_IP} +short`)).toContain('10.0.0.80');
   });
 
-  it('gives the resolver the glue of the hint file in the additional section', async () => {
+  it('keeps the addresses of the hint file out of the additional section, where only the OPT of the question is echoed', async () => {
     const { pc } = await lab();
     const out = await pc.executeCommand(`dig +norecurse www.corp.test @${RESOLVER_IP}`);
-    expect(out).toMatch(/ADDITIONAL SECTION:\nA\.ROOT-SERVERS\.NET\.\s+3600000\s+IN\s+A\s+10\.0\.0\.1\n/);
+    expect(out).toMatch(/ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1/);
+    expect(out).not.toContain('ADDITIONAL SECTION');
   });
 
   it('keeps refusing a client that allow-recursion excludes', async () => {

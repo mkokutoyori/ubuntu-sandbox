@@ -3,7 +3,7 @@ import type { DnsHeaderFlags } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 import {
-  findOpt, findOpts, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE, EDNS_VERSION, EDNS_BADVERS_EXTENDED_RCODE_HIGH,
+  findOpt, findOpts, echoedOpt, makeOptRecord, DEFAULT_EDNS_PAYLOAD_SIZE, EDNS_VERSION, EDNS_BADVERS_EXTENDED_RCODE_HIGH,
 } from '@/network/dns/wire/EdnsOptRecord';
 import type { PositiveTrim, ZoneStore } from '@/network/dns/zone/ZoneStore';
 import type { Zone } from '@/network/dns/zone/Zone';
@@ -78,9 +78,7 @@ export class AuthoritativeServer {
       zone: records,
     });
     const additionals: ResourceRecord<ResourceRecordData>[] = [...result.additional];
-    if (queryOpt) {
-      additionals.push(makeOptRecord(this.advertisedPayloadSize(), { dnssecOk: wantDnssec }));
-    }
+    additionals.push(...echoedOpt(query, this.advertisedPayloadSize()));
 
     return {
       message: {

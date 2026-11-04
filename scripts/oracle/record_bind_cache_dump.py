@@ -96,12 +96,12 @@ def write(directory, name, text):
         handle.write(text)
 
 
-def instance(root, name, address, control, recursion, zones, hints=False, extra=""):
+def instance(root, name, address, control, recursion, zones, hints=False, extra="", minimal="no"):
     directory = os.path.join(root, name)
     os.makedirs(directory)
     config = [
         f'options {{ directory "{directory}"; listen-on {{ {address}; }}; listen-on-v6 {{ none; }}; pid-file "{directory}/named.pid"; session-keyfile "{directory}/session.key";',
-        f'  dump-file "named_dump.db"; recursion {"yes" if recursion else "no"}; allow-query {{ any; }}; allow-recursion {{ any; }}; allow-transfer {{ none; }}; dnssec-validation no; minimal-responses no; empty-zones-enable no; {extra} }};',
+        f'  dump-file "named_dump.db"; recursion {"yes" if recursion else "no"}; allow-query {{ any; }}; allow-recursion {{ any; }}; allow-transfer {{ none; }}; dnssec-validation no; minimal-responses {minimal}; empty-zones-enable no; {extra} }};',
         f'controls {{ inet 127.0.0.1 port {control} allow {{ 127.0.0.1; }} keys {{ "rndc-key"; }}; }};',
         KEY,
     ]

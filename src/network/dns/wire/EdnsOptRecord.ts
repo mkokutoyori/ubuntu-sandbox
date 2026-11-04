@@ -55,3 +55,8 @@ export function findOpts(message: DnsMessage): ResourceRecord<OptRecordData>[] {
   return message.additionals.filter(
     (rr): rr is ResourceRecord<OptRecordData> => rr.data.type === RRType.OPT);
 }
+
+export function echoedOpt(query: DnsMessage, udpPayloadSize: number): ResourceRecord<OptRecordData>[] {
+  const opt = findOpt(query);
+  return opt === null ? [] : [makeOptRecord(udpPayloadSize, { dnssecOk: opt.data.dnssecOk })];
+}

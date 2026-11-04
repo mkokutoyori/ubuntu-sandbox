@@ -25,10 +25,10 @@ import {
 import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName, type TsigKey } from '@/network/dns/tsig/Tsig';
 import { serialAdd } from '@/network/dns/zone/SerialNumber';
 import { RRType } from '@/network/dns/wire/RRType';
-import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
+import { echoedOpt, findOpt } from '@/network/dns/wire/EdnsOptRecord';
 import { applyDns64, dns64ReverseTarget } from '@/network/dns/dns64/Dns64';
 import type { ResolutionResult } from '@/network/dns/resolver/RecursiveResolver';
-import { buildRecursiveResponse, recursiveResolveOptions } from '@/network/dns/resolver/RecursiveResponse';
+import { buildRecursiveResponse, recursiveResolveOptions, type RecursiveEnvelope } from '@/network/dns/resolver/RecursiveResponse';
 import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { updatePolicyPermits } from './NamedUpdatePolicy';
 import {
@@ -77,7 +77,7 @@ export class Bind9Service {
   private store: ZoneStore | null = null;
   private authoritative: AuthoritativeServer | null = null;
   private resolvers: RecursiveResolver[] = [];
-  private rootHints: { readonly ns: readonly ResourceRecord<NsRecordData>[]; readonly glue: readonly ResourceRecord<ResourceRecordData>[] } | null = null;
+  private rootHints: { readonly ns: readonly ResourceRecord<NsRecordData>[] } | null = null;
   private forwardZones = new Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }>();
   private readonly cache = new DnsCache(() => this.host.getSystemClockMs(), () => this.cacheLimits());
   private readonly loadedZones = new Map<string, number>();
@@ -411,10 +411,7 @@ export class Bind9Service {
       .map((record) => record.data.address);
     const hintNs = hintRecords.filter((record): record is ResourceRecord<NsRecordData> => record.data.type === RRType.NS);
     if (hintNs.length > 0) {
-      this.rootHints = {
-        ns: hintNs,
-        glue: hintRecords.filter((record) => record.data.type === RRType.A || record.data.type === RRType.AAAA),
-      };
+      this.rootHints = { ns: hintNs };
     }
     if (forwarders.length > 0) {
       const fallsBack = config.options.forwardMode === 'first' && hints.length > 0;
@@ -728,10 +725,9 @@ export class Bind9Service {
   private answerWithoutRecursion(query: DnsMessage): DnsMessage | null {
     const question = query.questions[0];
     const known = resolutionFromCache(this.cache.lookup(question.qname, question.qtype));
-    if (known !== null) return buildRecursiveResponse(query, known);
+    if (known !== null) return buildRecursiveResponse(query, known, this.recursiveEnvelope(query));
     const hints = this.rootHints;
     if (hints === null) return null;
-    const priming = normalizeDnsName(question.qname) === normalizeDnsName('.') && question.qtype === RRType.NS;
     return {
       id: query.id,
       flags: {
@@ -739,9 +735,9 @@ export class Bind9Service {
         rd: query.flags.rd, ra: true, ad: false, cd: query.flags.cd, rcode: DnsRcode.NOERROR,
       },
       questions: query.questions,
-      answers: priming ? [...hints.ns] : [],
-      authorities: priming ? [] : [...hints.ns],
-      additionals: [...hints.glue],
+      answers: [],
+      authorities: [...hints.ns],
+      additionals: echoedOpt(query, this.config?.options.ednsUdpSize ?? DEFAULT_EDNS_UDP_SIZE),
     };
   }
 
@@ -922,7 +918,21 @@ export class Bind9Service {
       if (result.status !== 'SERVFAIL') break;
       result = await next.resolve(question.qname, question.qtype, options);
     }
-    return buildRecursiveResponse(query, result);
+    return buildRecursiveResponse(query, this.asHeldByCache(question, result), this.recursiveEnvelope(query));
+  }
+
+  private asHeldByCache(question: DnsMessage['questions'][number], result: ResolutionResult): ResolutionResult {
+    if (result.status === 'SERVFAIL' || result.answers.length > 0) return result;
+    const held = resolutionFromCache(this.cache.lookup(question.qname, question.qtype));
+    return held !== null && held.status === result.status && held.answers.length === 0 ? held : result;
+  }
+
+  private recursiveEnvelope(query: DnsMessage): RecursiveEnvelope {
+    return {
+      cache: this.cache,
+      trim: this.positiveTrim(query.flags.rd),
+      ednsPayloadSize: this.config?.options.ednsUdpSize ?? DEFAULT_EDNS_UDP_SIZE,
+    };
   }
 
   private refuse(query: DnsMessage, recursionAllowed: boolean): DnsMessage {

@@ -1,3 +1,4 @@
+import { additionalSectionTarget } from '@/network/dns/wire/AdditionalTarget';
 import { Zone, type ZoneLookupResult } from '@/network/dns/zone/Zone';
 import { normalizeDnsName as normalize, parentName as parentOf } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
@@ -193,10 +194,7 @@ export class ZoneStore {
     const seen = new Set<string>();
 
     for (const rr of records) {
-      const targetName =
-        rr.data.type === RRType.NS ? rr.data.nsdname :
-        rr.data.type === RRType.MX ? rr.data.exchange :
-        null;
+      const targetName = additionalSectionTarget(rr);
       if (!targetName) continue;
 
       const key = normalize(targetName);
