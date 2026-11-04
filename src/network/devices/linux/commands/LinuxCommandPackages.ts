@@ -28,7 +28,7 @@ export const COMMAND_PACKAGES: Readonly<Record<string, string>> = {
   nproc: 'coreutils', readlink: 'coreutils', dirname: 'coreutils',
   basename: 'coreutils', mktemp: 'coreutils', truncate: 'coreutils',
   md5sum: 'coreutils', sha256sum: 'coreutils', sha512sum: 'coreutils', sha224sum: 'coreutils', sha384sum: 'coreutils',
-  b2sum: 'coreutils', sum: 'coreutils', factor: 'coreutils', strings: 'binutils', link: 'coreutils', unlink: 'coreutils', pathchk: 'coreutils', hostid: 'coreutils',
+  b2sum: 'coreutils', sum: 'coreutils', factor: 'coreutils', stdbuf: 'coreutils', strings: 'binutils', link: 'coreutils', unlink: 'coreutils', pathchk: 'coreutils', hostid: 'coreutils',
   sha1sum: 'coreutils', base64: 'coreutils', base32: 'coreutils', basenc: 'coreutils', env: 'coreutils', nl: 'coreutils',
   split: 'coreutils', join: 'coreutils', paste: 'coreutils', comm: 'coreutils',
   fold: 'coreutils', expand: 'coreutils', unexpand: 'coreutils', tsort: 'coreutils',
