@@ -89,7 +89,7 @@ options {
 
   it('rejects a non-boolean value where yes/no is expected', () => {
     expect(() => build('options { recursion maybe; };'))
-      .toThrowError(`${CONF}:1: expected boolean near 'maybe'`);
+      .toThrowError(`${CONF}:1: boolean expected near 'maybe'`);
   });
 
   it('rejects an unknown top-level clause', () => {
@@ -171,7 +171,7 @@ zone "example.com" {
 
   it('rejects an unknown zone type', () => {
     expect(() => build('zone "lan" { type primry; file "db.lan"; };'))
-      .toThrowError(`${CONF}:1: zone 'lan': unknown type 'primry'`);
+      .toThrowError(`${CONF}:1: 'primry' unexpected`);
   });
 
   it('rejects a primary zone without a file', () => {

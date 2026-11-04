@@ -159,7 +159,7 @@ describe('named — secondary zones (config-driven AXFR)', () => {
 
     writeRoot(primary, '/etc/bind/db.example.com', zoneDb(2024010102, '10.0.1.90'));
     const out = await primary.executeCommand('rndc reload example.com');
-    expect(out).toContain('zone reload successful');
+    expect(out).toContain('zone reload queued');
 
     await waitForAnswer(pc1, 'www.example.com', '10.0.1.90');
   }, 25000);

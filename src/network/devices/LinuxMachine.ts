@@ -919,6 +919,7 @@ export abstract class LinuxMachine extends EndHost
         this.executor.vfs.writeFile(path, content, 0, 0, 0o022, true);
       },
       write: (path, content) => { this.executor.vfs.writeFile(path, content, 0, 0, 0o022); },
+      log: (message) => this.executor.logMgr.logDaemon('named', message, this.executor.serviceMgr.status('named')?.mainPid, 'named'),
     });
     this.executor.serviceMgr.registerConfigCheck('named', () => this.bind9.checkConfig());
 

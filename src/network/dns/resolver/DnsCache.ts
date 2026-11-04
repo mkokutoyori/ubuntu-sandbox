@@ -3,7 +3,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 import type { IPAddress } from '@/network/core/types';
 import type { ARecordData, CnameRecordData, NsRecordData, ResourceRecord, ResourceRecordData, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
 import { RRType } from '@/network/dns/wire/RRType';
-import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
+import { isWithinDomain, normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import { MAX_CNAME_CHAIN_DEPTH } from '@/network/dns/zone/Zone';
 import { resourceRecordToLegacyRecord } from '@/network/dns/compat/DnsWireCompat';
 import type { DnssecStatus } from '@/network/dns/dnssec/DnsValidator';
@@ -537,12 +537,31 @@ export class DnsCache {
     this.servfail.set(keyOf(qname, qtype), { expiresAtMs: this.now() + bounded * 1000 });
   }
 
-  forget(name: string): void {
-    const prefix = `${name.toLowerCase().replace(/\.$/, '')}|`;
+  flushName(name: string): void {
+    const wanted = normalizeDnsName(name);
+    this.dropOwned((owner) => owner === wanted);
+  }
+
+  flushTree(name: string): void {
+    const top = normalizeDnsName(name);
+    this.dropOwned((owner) => isWithinDomain(owner, top));
+  }
+
+  private dropOwned(selects: (owner: string) => boolean): void {
     for (const store of [this.positive, this.negative, this.servfail]) {
       for (const key of [...store.keys()]) {
-        if (key.startsWith(prefix)) store.delete(key);
+        if (selects(key.slice(0, key.lastIndexOf('|')))) store.delete(key);
       }
+    }
+    for (const [zone, held] of [...this.delegationEntries]) {
+      if (selects(zone)) {
+        this.delegationEntries.delete(zone);
+        continue;
+      }
+      const addresses = held.addresses.filter((rr) => !selects(normalizeDnsName(rr.name)));
+      if (addresses.length === held.addresses.length) continue;
+      if (addresses.length === 0) this.delegationEntries.delete(zone);
+      else this.delegationEntries.set(zone, { ...held, addresses });
     }
   }
 

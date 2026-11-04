@@ -1,6 +1,8 @@
 import { simulationDate } from '@/network/core/SystemClock';
 
 import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
+import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
 import type { NamedConfig } from './NamedConfig';
 
 export type AppendFileFn = (path: string, content: string) => void;
@@ -20,11 +22,17 @@ function bindTimestamp(date: Date): string {
 }
 
 export interface QueryLogEntry {
+  readonly flags: string;
   readonly clientIP: string;
   readonly clientPort: number;
   readonly qname: string;
   readonly qtype: number;
   readonly serverIP: string;
+}
+
+export function queryLogFlags(query: DnsMessage, transport: 'udp' | 'tcp'): string {
+  const opt = findOpt(query);
+  return `${query.flags.rd ? '+' : '-'}${opt ? `E(${opt.data.version})` : ''}${transport === 'tcp' ? 'T' : ''}${opt?.data.dnssecOk ? 'D' : ''}${query.flags.cd ? 'C' : ''}`;
 }
 
 export class Bind9Logging {
@@ -49,7 +57,7 @@ export class Bind9Logging {
     const type = rrTypeName(entry.qtype);
     const line = `${bindTimestamp(this.now())} client @0x0 ` +
       `${entry.clientIP}#${entry.clientPort} (${entry.qname}): ` +
-      `query: ${entry.qname} IN ${type} + (${entry.serverIP})\n`;
+      `query: ${entry.qname} IN ${type} ${entry.flags} (${entry.serverIP})\n`;
     this.appendFile(path, line);
   }
 }

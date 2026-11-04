@@ -1,27 +1,6 @@
-import type { DnsMessage } from '../../dns/wire/DnsMessage';
-import {
-  type DnsRecord,
-  type DnsRcodeName,
-  type DnsQueryFn,
-  resourceRecordToLegacyRecord,
-  rcodeFromWire,
-} from '../../dns/compat/DnsWireCompat';
+import type { DnsRecord, DnsQueryFn } from '../../dns/compat/DnsWireCompat';
 
 export type { DnsRecord, DnsQueryFn };
-
-interface DecodedResponse {
-  rcode: DnsRcodeName;
-  answers: DnsRecord[];
-}
-
-function toDecodedResponse(message: DnsMessage): DecodedResponse {
-  return {
-    rcode: rcodeFromWire(message.flags.rcode),
-    answers: message.answers
-      .map(resourceRecordToLegacyRecord)
-      .filter((record): record is DnsRecord => record !== null),
-  };
-}
 
 // ─── DNS Service (runs on a LinuxPC acting as DNS server) ─────────
 
@@ -172,45 +151,4 @@ export class DnsService {
 export { executeDig } from './commands/dns/DigRunner';
 export { executeNslookup } from './commands/dns/NslookupRunner';
 
-// ─── host command implementation ─────────────────────────────────
-
-function formatHostAnswer(domain: string, r: DnsRecord): string {
-  switch (r.type) {
-    case 'AAAA': return `${domain} has IPv6 address ${r.value}`;
-    case 'MX': return `${domain} mail is handled by ${r.priority ?? 0} ${r.value}`;
-    case 'TXT': return `${domain} descriptive text "${r.value}"`;
-    case 'CNAME': return `${domain} is an alias for ${r.value}`;
-    case 'NS': return `${domain} name server ${r.value}`;
-    case 'PTR': return `${domain} domain name pointer ${r.value}`;
-    default: return `${domain} has address ${r.value}`;
-  }
-}
-
-export async function executeHost(args: string[], query: DnsQueryFn, resolverIP?: string): Promise<string> {
-  let qtype = 'A';
-  const positional: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-t') { qtype = args[++i]?.toUpperCase() ?? qtype; continue; }
-    if (!args[i].startsWith('-')) positional.push(args[i]);
-  }
-  const domain = positional[0];
-  const server = positional[1] || resolverIP || '';
-
-  if (!domain) return 'Usage: host [-t type] name [server]';
-
-  if (!server) {
-    return `Host ${domain} not found: 5(REFUSED)`;
-  }
-
-  const message = await query(server, domain, qtype);
-  if (!message) {
-    return `;; connection timed out; no servers could be reached`;
-  }
-  const response = toDecodedResponse(message);
-
-  if (response.answers.length === 0) {
-    return `Host ${domain} not found: 3(NXDOMAIN)`;
-  }
-
-  return response.answers.map(r => formatHostAnswer(domain, r)).join('\n');
-}
+export { executeHost } from './commands/dns/HostRunner';

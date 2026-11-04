@@ -4,6 +4,8 @@ Un lab pour **s'entraîner sur le protocole DNS** avec deux éditeurs côte à c
 
 Tout le lab a été construit en tapant de vraies commandes (PowerShell, bash, IOS) dans les terminaux du simulateur, exporté en JSON, puis **réimporté dans un canevas vierge** : les mêmes 28 vérifications passent sur le lab neuf et sur le lab réimporté (voir `src/labs/dnsAgenceBancaire/checks.ts`).
 
+Le tutoriel pas à pas de ce lab, de zéro à héros (35 TP, chacun rejoué par un test) : [`docs/tutoriel-dns-zero-a-heros.md`](../../docs/tutoriel-dns-zero-a-heros.md).
+
 ## Ce que le lab enseigne
 
 - la **délégation** : la racine délègue `com`, `com` délègue `banquehorizon.com`, la racine du lab délègue aussi la zone inverse `113.0.203.in-addr.arpa` ;
@@ -610,7 +612,7 @@ Get-DnsClientNrptRule
 reg query HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig /s
 ```
 
-`dc1.horizon.local` se résout de nouveau : la règle (la plus spécifique l'emporte ; `.` vaut pour tout nom) remplace les serveurs de la carte pour ce suffixe. La règle est une clé du registre (`Version`, `Name`, `ConfigOptions`, `GenericDNSServers`, et rien d'autre tant qu'un champ facultatif — `-DisplayName`, `-Comment`, `-DnsSecEnable`… — n'est pas renseigné). Retirez-la avec `Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force`, remettez les serveurs du DHCP avec `ipconfig /renew`.
+`dc1.horizon.local` se résout de nouveau : la règle (la plus spécifique l'emporte ; `.` vaut pour tout nom) remplace les serveurs de la carte pour ce suffixe. La règle est une clé du registre (`Version`, `Name`, `ConfigOptions`, `GenericDNSServers`, et rien d'autre tant qu'un champ facultatif — `-DisplayName`, `-Comment`, `-DnsSecEnable`… — n'est pas renseigné). Retirez-la avec `Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force`, remettez les serveurs du DHCP avec `Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ResetServerAddresses`.
 
 Autres cmdlets du module DnsClient à essayer : `Get-DnsClient` (suffixe de connexion, enregistrement de l'adresse), `Set-DnsClient -ConnectionSpecificSuffix`, `Get-DnsClientGlobalSetting` / `Set-DnsClientGlobalSetting -SuffixSearchList`, `Get-DnsClientDohServerAddress`, `Register-DnsClient`.
 

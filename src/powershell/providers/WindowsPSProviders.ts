@@ -2409,6 +2409,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const m = this.pc as unknown as { setDnsServers?: (n: string, s: string[]) => void };
     if (m.setDnsServers) m.setDnsServers(toPortName(ifAlias) ?? ifAlias, servers);
   }
+  resetDnsServers(ifAlias: string): void {
+    const m = this.pc as unknown as { resetDnsServers?: (n: string) => void };
+    if (m.resetDnsServers) m.resetDnsServers(toPortName(ifAlias) ?? ifAlias);
+  }
   getDefaultGateway(): string | null {
     const m = this.pc as unknown as { getDefaultGatewayString?: () => string | null };
     return m.getDefaultGatewayString ? m.getDefaultGatewayString() : null;

@@ -1521,6 +1521,7 @@ export interface INetworkProvider {
   setIPAddress(ip: string, ifAlias: string, opts: NetIPAddressUpdate): string;
   getDnsServers(ifAlias: string): string[];
   setDnsServers(ifAlias: string, servers: string[]): void;
+  resetDnsServers(ifAlias: string): void;
   getDefaultGateway(): string | null;
   isDHCPConfigured(ifAlias: string): boolean;
   getDhcpServer?(ifAlias: string): string | null;

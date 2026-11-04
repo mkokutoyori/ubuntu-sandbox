@@ -127,10 +127,10 @@ function parseElement(
     if (addressMatch) {
       const base = toUint32(addressMatch[1]);
       const prefix = addressMatch[2] === undefined ? FULL_PREFIX : Number(addressMatch[2]);
-      if (base === null || prefix > FULL_PREFIX) {
+      if (base !== null && prefix > FULL_PREFIX) {
         throw new NamedConfigError(statement.file, statement.line, `expected IP address near '${text}'`);
       }
-      return { kind: 'address', base, prefix, negated };
+      if (base !== null) return { kind: 'address', base, prefix, negated };
     }
   }
 

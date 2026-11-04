@@ -171,7 +171,7 @@ describe('rndc reload', () => {
 
     const out = await ns1.executeCommand('rndc reload example.com');
 
-    expect(out).toContain('zone reload successful');
+    expect(out).toContain('zone reload queued');
     const response = await ask(pc1, 'www.example.com');
     expect((response!.answers[0].data as ARecordData).address.toString()).toBe('10.0.1.91');
   }, 20000);

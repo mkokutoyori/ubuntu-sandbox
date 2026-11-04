@@ -9,6 +9,12 @@
  * collé — ne peut pas extraire le qname : les pipelines ci-dessous ciblent
  * le token qui suit le marqueur de type, vérifié empiriquement contre la
  * sortie réelle de la plateforme.
+ *
+ * `host` NOM interroge un nom qui existe en A, AAAA puis MX, et un nom qui n'existe
+ * pas en A seulement : mesuré sur le fil avec le vrai host 9.18.39 (tcpdump sur lo),
+ * ce que le simulateur fait désormais (host-oracle). Le dénombrement des requêtes
+ * du tunnel (huit NXDOMAIN et `www`) et la part de TXT tiennent compte de ces trois
+ * questions par nom existant ; ils comptaient auparavant une seule question en A.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
@@ -153,7 +159,7 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
       );
 
       expect(report).toContain(TUNNEL_DOMAIN);
-      expect(report.trim().startsWith(String(tunnelLabels.length + 1))).toBe(true);
+      expect(report.trim().startsWith(String(tunnelLabels.length + 3))).toBe(true);
     });
   });
 
@@ -165,10 +171,10 @@ describe('Scénario 6 — Détection d\'un tunnel DNS', () => {
         // Trafic légitime : quelques requêtes A normales.
         await pc.executeCommand(`host www.${TUNNEL_DOMAIN} ${NS1_IP}`);
         await pc.executeCommand(`host ns1.${TUNNEL_DOMAIN} ${NS1_IP}`);
-        // Trafic tunnel : `host` n'interroge qu'en A ; un vrai tunnel type
-        // dnscat2 encode dans des requêtes TXT pour une capacité par
-        // requête plus grande — simulé ici via `dig ... TXT`.
-        for (let i = 0; i < 6; i++) {
+        // Trafic tunnel : un vrai tunnel type dnscat2 encode dans des
+        // requêtes TXT pour une capacité par requête plus grande —
+        // simulé ici via `dig ... TXT`.
+        for (let i = 0; i < 12; i++) {
           await pc.executeCommand(`dig @${NS1_IP} ${randomLabel(40)}.${TUNNEL_DOMAIN} TXT`).catch(() => {});
         }
       });

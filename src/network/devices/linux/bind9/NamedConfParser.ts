@@ -4,6 +4,7 @@ import type { NamedConfToken } from './NamedConfLexer';
 export interface NamedConfValue {
   readonly text: string;
   readonly quoted: boolean;
+  readonly line?: number;
 }
 
 export type NamedConfPart =
@@ -33,6 +34,7 @@ class TokenCursor {
   constructor(
     private readonly tokens: readonly NamedConfToken[],
     readonly file: string,
+    readonly endOfFileLine: number,
   ) {}
 
   peek(): NamedConfToken | null {
@@ -64,7 +66,7 @@ function parseStatements(
     if (token === null) {
       if (openBrace) {
         throw new NamedConfSyntaxError(
-          openBrace.file, openBrace.line, "missing '}' before end of file",
+          openBrace.file, cursor.endOfFileLine, "'}' expected near end of file",
         );
       }
       return statements;
@@ -72,7 +74,7 @@ function parseStatements(
 
     if (token.kind === '}') {
       if (!openBrace) {
-        throw new NamedConfSyntaxError(token.file, token.line, "unexpected '}'");
+        throw new NamedConfSyntaxError(token.file, token.line, "syntax error near '}'");
       }
       cursor.next();
       return statements;
@@ -121,7 +123,7 @@ function parseStatement(
     }
 
     cursor.next();
-    parts.push({ kind: 'value', value: { text: token.text, quoted: token.kind === 'string' } });
+    parts.push({ kind: 'value', value: { text: token.text, quoted: token.kind === 'string', line: token.line } });
   }
 
   const values = parts
@@ -164,7 +166,7 @@ function parseNamedConfSource(
   file: string,
   readInclude: IncludeReader | undefined,
 ): NamedConfStatement[] {
-  const cursor = new TokenCursor(lexNamedConf(source, file), file);
+  const cursor = new TokenCursor(lexNamedConf(source, file), file, source.split('\n').length);
   return parseStatements(cursor, readInclude, null);
 }
 
