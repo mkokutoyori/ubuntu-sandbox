@@ -1232,6 +1232,13 @@
     "output": ";\n; Start view _default\n;\n;\n; Cache dump of view '_default' (cache _default)\n;\n; using a 0 second stale ttl\n$DATE 20261104102900\n; authanswer\n.\t\t\t86390\tIN NS\ta.root-servers.net.\n; glue\ncom.\t\t\t86390\tNS\ta.nic.com.\n; authauthority\nbanquehorizon.com.\t3590\tNS\tns1.banquehorizon.com.\n\t\t\t3590\tNS\tns2.banquehorizon.com.\n; answer\nnexiste.banquehorizon.com. 3595\t\\-ANY\t;-$NXDOMAIN\n; banquehorizon.com. SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\n; glue\nns1.banquehorizon.com.\t3590\tA\t203.0.113.10\n; glue\nns2.banquehorizon.com.\t3590\tA\t203.0.113.11\n; answer\nweb.banquehorizon.com.\t3595\t\\-AAAA\t;-$NXRRSET\n; banquehorizon.com. SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\n; authanswer\n\t\t\t3590\tA\t203.0.113.20\n; authanswer\nwww.banquehorizon.com.\t3590\tCNAME\tweb.banquehorizon.com.\n; glue\na.nic.com.\t\t86390\tA\t198.51.100.2\n;\n; Address database dump\n;\n; [edns success/timeout]\n; [plain success/timeout]\n;\n;\n; Unassociated entries\n;\n;\n; Bad cache\n;\n;\n; SERVFAIL cache\n;\n;\n; Start view _bind\n;\n;\n; Cache dump of view '_bind' (cache _bind)\n;\n; using a 0 second stale ttl\n$DATE 20261104102900\n;\n; Address database dump\n;\n; [edns success/timeout]\n; [plain success/timeout]\n;\n;\n; Unassociated entries\n;\n;\n; Bad cache\n;\n;\n; SERVFAIL cache\n;\n; Dump complete"
    },
    {
+    "id": "c5.dump-before",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc dumpdb -cache; sudo grep -c nexiste /var/cache/bind/named_dump.db",
+    "output": "1"
+   },
+   {
     "id": "c5.flushname",
     "dev": "DNS-RES",
     "kind": "sh",
@@ -1244,6 +1251,13 @@
     "kind": "sh",
     "cmd": "sudo rndc dumpdb -cache; sudo grep -c nexiste /var/cache/bind/named_dump.db",
     "output": "0"
+   },
+   {
+    "id": "c5.tree-before",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc dumpdb -cache; sudo grep -c banquehorizon /var/cache/bind/named_dump.db",
+    "output": "7"
    },
    {
     "id": "c5.flushtree",

@@ -127,12 +127,12 @@ VI.6 [🧪 TP 19 — Le piège du numéro de série oublié](#vi6--tp-19--le-pi�
 VI.7 [⭐ 🧪 TP 20 — Créer sa propre zone et la brancher dans l'arbre](#vi7---tp-20--créer-sa-propre-zone-et-la-brancher-dans-larbre)
 
 ### Partie VII — Le cache
-29. [🧪 TP 21 — Le TTL qui décroît](#29--tp-21--le-ttl-qui-décroît)
-30. [🧪 TP 22 — Le cache négatif](#30--tp-22--le-cache-négatif)
-31. [🧪 TP 23 — Le cache du poste Windows](#31--tp-23--le-cache-du-poste-windows)
-32. [🧪 TP 24 — Lire le cache de BIND](#32--tp-24--lire-le-cache-de-bind)
-33. [🧪 TP 25 — Vider le cache, en entier ou en partie](#33--tp-25--vider-le-cache-en-entier-ou-en-partie)
-34. [🧪 TP 26 — Le cache des échecs (SERVFAIL)](#34--tp-26--le-cache-des-échecs-servfail)
+VII.1 [🧪 TP 21 — Le TTL qui décroît](#vii1--tp-21--le-ttl-qui-décroît)
+VII.2 [🧪 TP 22 — Le cache négatif](#vii2--tp-22--le-cache-négatif)
+VII.3 [🧪 TP 23 — Le cache du poste Windows](#vii3--tp-23--le-cache-du-poste-windows)
+VII.4 [🧪 TP 24 — Lire le cache de BIND](#vii4--tp-24--lire-le-cache-de-bind)
+VII.5 [🧪 TP 25 — Vider le cache, en entier ou en partie](#vii5--tp-25--vider-le-cache-en-entier-ou-en-partie)
+VII.6 [🧪 TP 26 — Le cache des échecs (SERVFAIL)](#vii6--tp-26--le-cache-des-échecs-servfail)
 
 ### Partie VIII — Redondance, DNS privé et DHCP
 35. [🧪 TP 27 — NS1-BANK tombe](#35--tp-27--ns1-bank-tombe)
@@ -4757,29 +4757,43 @@ dig @10.20.20.53 www.exemple.test +noall +comments
 
 # Partie VII — Le cache
 
-Le cache est ce qui rend le DNS rapide, et ce qui rend ses pannes **lentes à disparaître** : un enregistrement corrigé sur le serveur peut rester faux, chez les clients, pendant toute sa durée de vie. Six TP pour voir, lire et vider chaque cache du laboratoire : celui du résolveur BIND, celui du poste Windows, celui du serveur Windows DC1.
+Au § I.10, tu as appris l'idée : un résolveur ne redemande pas cent fois la même chose, il **garde la réponse en mémoire** pendant le temps que dit le TTL. Ce mécanisme rend le DNS rapide. Il rend aussi ses pannes **lentes à disparaître** : un enregistrement corrigé sur le serveur peut rester faux, chez les clients, pendant toute sa durée de vie.
+
+Il n'y a pas **un** cache, il y en a plusieurs, empilés entre l'utilisateur et la zone d'autorité :
+
+```schema
+ application ─► cache du POSTE ─► cache du RÉSOLVEUR ─► (éventuel transmetteur, DC1, avec son cache) ─► serveur d'AUTORITÉ
+   (ping, dig)     Windows : oui     BIND (DNS-RES) : oui                                                  la vérité
+                   Linux : le stub
+```
+
+Quand « ça ne marche pas pour lui mais ça marche pour moi », il faut se demander **dans quel cache** la mauvaise réponse est restée. Six TP pour voir, lire et vider chacun de ces caches.
 
 ---
 
-## 29. 🧪 TP 21 — Le TTL qui décroît
+## VII.1 🧪 TP 21 — Le TTL qui décroît
 
 **🎯 Objectif.** *Voir* le temps passer dans un cache : la même réponse, posée deux fois à cinq secondes d'intervalle, ne porte pas le même TTL.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `DNS-RES` et un sur `PC-CONSEILLER`. Durée : environ 15 minutes.
+
+**Étape 1 — Vider le cache du résolveur.** Pour que l'expérience soit propre, on part d'un résolveur qui n'a rien en mémoire.
 
 ```
 # sur DNS-RES
 sudo rndc flush
 ```
 
+`rndc flush` efface le cache de `DNS-RES`. La commande n'affiche rien : le silence veut dire que ça a marché (TP 9).
+
+**Étape 2 — Poser la question à un résolveur vide.**
+
 ```
 # sur PC-CONSEILLER
 dig @10.20.20.53 www.banquehorizon.com +noall +answer +stats
-sleep 5
-dig @10.20.20.53 www.banquehorizon.com +noall +answer
 ```
 
-**✅ Résultat attendu.** Résolveur vide : il doit **descendre l'arbre** pour répondre. La réponse porte le TTL d'origine, celui de la zone (`3600`) :
+Tu interroges directement `DNS-RES` (`@10.20.20.53`, TP 3) et tu demandes la réponse plus le pied de page (`+stats`).
 
 ```
 www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
@@ -4790,38 +4804,65 @@ web.banquehorizon.com.	3600	IN	A	203.0.113.20
 ;; MSG SIZE  rcvd: 152
 ```
 
-Cinq secondes plus tard, la réponse vient **du cache**. Le TTL a diminué de cinq :
+`DNS-RES` n'avait rien en mémoire : il a dû **descendre l'arbre** (TP 7) pour répondre. La réponse porte le TTL d'origine, celui de la zone : `3600`.
+
+**Étape 3 — Attendre cinq secondes.**
+
+```
+# sur PC-CONSEILLER
+sleep 5
+```
+
+`sleep 5` ne fait qu'attendre cinq secondes, puis rend la main. Il n'affiche rien.
+
+**Étape 4 — Reposer exactement la même question.**
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.banquehorizon.com +noall +answer
+```
 
 ```
 www.banquehorizon.com.	3595	IN	CNAME	web.banquehorizon.com.
 web.banquehorizon.com.	3595	IN	A	203.0.113.20
 ```
 
+Compare les deux chiffres : `3600` devient `3595`. Cette fois, `DNS-RES` n'a **pas** redescendu l'arbre : il a répondu **depuis sa mémoire**, et le TTL qu'il annonce est ce qu'il **reste à vivre** à la fiche : 3 600 moins les 5 secondes écoulées.
+
+> 💡 Le `Query time` est le même (`0 msec`) dans les deux cas : le laboratoire est un réseau sans latence mesurable. Sur un vrai réseau, la première question serait plus lente que la seconde, et c'est la façon la plus simple de mesurer l'efficacité d'un cache.
+
+🆘 **Si ça ne marche pas.** Le deuxième TTL est encore `3600` : tu as relancé la commande avant la fin des 5 secondes, ou tu as sauté l'étape 3. Recommence à l'étape 1.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Le TTL d'une réponse de cache n'est **pas** le TTL de la zone : c'est ce qu'il **reste** à vivre à l'enregistrement dans la mémoire du résolveur. Il part de la valeur de la zone, descend d'une seconde par seconde, et à zéro l'entrée disparaît : la prochaine question redescend l'arbre.
+- Le TTL d'une réponse de cache n'est **pas** le TTL de la zone : c'est ce qu'il **reste** à vivre à la fiche dans la mémoire du résolveur. Il part de la valeur de la zone, descend d'une seconde par seconde, et à zéro la fiche disparaît : la prochaine question redescend l'arbre.
 - Cela explique deux phrases que tu entendras souvent : « le changement est fait mais certains voient encore l'ancienne adresse » (leur résolveur n'a pas encore atteint zéro) et « on a baissé le TTL **avant** le changement » (pour que le délai d'attente soit court le jour J).
-- Le `Query time` est le même (`0 msec`) dans les deux cas : le laboratoire est un réseau sans latence mesurable. Sur un vrai réseau, la première question serait plus lente que la seconde — c'est la mesure la plus simple de l'efficacité d'un cache.
 
 > 🔍 **Point d'audit** — Le TTL est un compromis à **documenter** : un TTL long (24 h) soulage le serveur et masque une panne de ses serveurs, un TTL court (60 s) accélère les changements et multiplie les requêtes. Note, pour chaque enregistrement critique, le TTL choisi et pourquoi.
 
+**Vérifie-toi.**
+
+1. Pourquoi le TTL de la deuxième réponse est-il plus petit ?
+2. Pourquoi baisse-t-on le TTL *avant* un changement d'adresse ?
+
+*Réponses.* (1) Parce qu'il indique le temps qui reste à la fiche dans le cache, et que cinq secondes se sont écoulées. (2) Pour que les anciens caches expirent vite après le changement.
+
 ---
 
-## 30. 🧪 TP 22 — Le cache négatif
+## VII.2 🧪 TP 22 — Le cache négatif
 
 **🎯 Objectif.** Constater qu'un résolveur retient aussi les **réponses négatives** — « ce nom n'existe pas », « ce type n'existe pas » — et pour combien de temps.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Le TP 21 terminé. Un terminal sur `PC-CONSEILLER`. Durée : environ 15 minutes.
+
+**Étape 1 — Un nom qui n'existe pas.**
 
 ```
 # sur PC-CONSEILLER
 dig @10.20.20.53 nexiste.banquehorizon.com +noall +comments +authority
-dig @10.20.20.53 web.banquehorizon.com AAAA +noall +comments +authority
-sleep 5
-dig @10.20.20.53 nexiste.banquehorizon.com +noall +comments +authority
 ```
 
-**✅ Résultat attendu.** La première question (cache vide pour ce nom) :
+Tu as déjà vu cette commande au TP 13.
 
 ```
 ;; Got answer:
@@ -4834,7 +4875,39 @@ dig @10.20.20.53 nexiste.banquehorizon.com +noall +comments +authority
 banquehorizon.com.	3600	IN	SOA	ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
 ```
 
-La section `AUTHORITY` porte le SOA de la zone, avec le TTL `3600`. Cinq secondes plus tard, **le même SOA, avec un TTL de 3595** : l'absence est en cache, et elle vieillit comme une présence.
+`NXDOMAIN`, et la section `AUTHORITY` porte le SOA de la zone avec le TTL `3600`. C'est lui qui fixe pour combien de temps le résolveur retient cette absence.
+
+**Étape 2 — Un nom qui existe, mais pas ce type.**
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 web.banquehorizon.com AAAA +noall +comments +authority
+```
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 43
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; AUTHORITY SECTION:
+banquehorizon.com.	3600	IN	SOA	ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+```
+
+Même fiche SOA, mais `NOERROR` : c'est le NODATA du TP 13. Le résolveur retient aussi celui-là.
+
+**Étape 3 — Attendre, puis reposer la première question.**
+
+```
+# sur PC-CONSEILLER
+sleep 5
+```
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 nexiste.banquehorizon.com +noall +comments +authority
+```
 
 ```
 ;; Got answer:
@@ -4847,38 +4920,63 @@ La section `AUTHORITY` porte le SOA de la zone, avec le TTL `3600`. Cinq seconde
 banquehorizon.com.	3595	IN	SOA	ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
 ```
 
+Regarde la dernière ligne : le **même SOA**, mais avec un TTL de **3595**. Le résolveur n'est pas allé reposer la question à `NS1-BANK` : il a répondu depuis sa mémoire, et l'**absence** a vieilli comme une présence.
+
+⚠️ **Attention — le piège classique.** Un administrateur crée l'enregistrement `nouveau.banquehorizon.com`, mais le teste *avant* de l'avoir publié (« ça ne marche pas »). Il le publie, puis le teste de nouveau : **toujours `NXDOMAIN`**, pendant toute la durée du cache négatif. Modifier la zone ne sert à rien : il faut **vider le cache** (TP 25) ou attendre.
+
+🆘 **Si ça ne marche pas.** À l'étape 1, le TTL est déjà inférieur à `3600` : tu avais posé cette question plus tôt (TP 13), et la réponse vieillit depuis. C'est normal, et c'est la preuve même du cache négatif. Si le TTL est le même à l'étape 3 qu'à l'étape 1, tu as relancé la commande avant la fin des 5 secondes.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- C'est le **cache négatif** (RFC 2308) : pour ne pas redemander cent fois un nom qui n'existe pas (une faute de frappe répétée, un logiciel mal configuré), le résolveur retient l'*absence*.
-- Sa durée est **le plus petit** du TTL du SOA et du champ `minimum` du SOA. C'est le dernier nombre du SOA (`3600`) qu'on règle pour cela : trop long, et un nom **créé** après une erreur reste « inexistant » chez les clients pendant des heures.
-- `NXDOMAIN` et `NODATA` (TP 13) sont tous deux retenus. Le TP 24 les montre dans le cache de BIND (`\-ANY ;-$NXDOMAIN`, `\-AAAA ;-$NXRRSET`).
+- C'est le **cache négatif** : pour ne pas redemander cent fois un nom qui n'existe pas (une faute de frappe répétée, un logiciel mal configuré), le résolveur retient l'*absence*.
+- Sa durée est **le plus petit** du TTL du SOA et du champ `minimum` du SOA. C'est le dernier nombre du SOA (`3600`, TP 11) qu'on règle pour cela : trop long, et un nom **créé** après une erreur reste « inexistant » chez les clients pendant des heures.
+- `NXDOMAIN` et `NODATA` (TP 13) sont tous deux retenus. Le TP 24 les montre dans le cache de BIND.
 
-⚠️ **Attention** — Scénario classique : un administrateur crée l'enregistrement `nouveau.banquehorizon.com`, le teste *avant* de l'avoir publié (« ça ne marche pas »), le publie, et le teste de nouveau : toujours `NXDOMAIN`, pendant toute la durée du cache négatif. La solution n'est pas de modifier la zone mais de **vider le cache** (TP 25) ou d'attendre.
+**Vérifie-toi.**
+
+1. Qu'est-ce qui décide de la durée du cache négatif ?
+2. Tu crées un enregistrement mais un poste le voit toujours « inexistant ». Quelle est la cause probable ?
+
+*Réponses.* (1) Le champ `minimum` du SOA (au plus, le TTL de la fiche SOA). (2) Un cache a retenu l'absence avant la création : il faut le vider ou attendre.
 
 ---
 
-## 31. 🧪 TP 23 — Le cache du poste Windows
+## VII.3 🧪 TP 23 — Le cache du poste Windows
 
 **🎯 Objectif.** Lire le cache du *client* Windows avec les deux interfaces (PowerShell et `ipconfig`), voir qu'il retient aussi les réponses négatives, et le vider.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal PowerShell sur `PC-GUICHET1` et un sur `DC1`. Durée : environ 30 minutes.
+
+Le poste Windows a **son propre cache** (le service « Client DNS »), distinct de celui du résolveur. Il y a donc au moins **deux** caches entre l'utilisateur et la zone d'autorité.
+
+**Étape 1 — Partir d'un cache vide.**
 
 ```powershell
 # sur PC-GUICHET1
 Clear-DnsClientCache
+```
+
+La commande n'affiche rien.
+
+**Étape 2 — Faire une résolution.**
+
+```powershell
+# sur PC-GUICHET1
 Resolve-DnsName www.banquehorizon.com | Out-Null
-Get-DnsClientCache | Where-Object Name -like "*banquehorizon*"
-ipconfig /displaydns
-Resolve-DnsName nexiste.banquehorizon.com
-Get-DnsClientCache | Where-Object Name -like "nexiste*"
-ipconfig /flushdns
+```
+
+Le symbole `|` (« tube ») envoie le résultat de la première commande à la seconde. `Out-Null` le **jette** : on veut seulement que la résolution ait lieu, sans rien afficher.
+
+**Étape 3 — Lire le cache : `Get-DnsClientCache`.**
+
+```powershell
+# sur PC-GUICHET1
 Get-DnsClientCache | Where-Object Name -like "*banquehorizon*"
 ```
 
-**✅ Résultat attendu.** Le cache contient **les deux** enregistrements de la chaîne (le CNAME et l'adresse). Le TTL, déjà un peu entamé, vient du résolveur (`3600` moins le temps passé dans son cache) :
+`Get-DnsClientCache` affiche tout le cache. `Where-Object Name -like "*banquehorizon*"` **filtre** : « garde seulement les entrées dont le nom contient `banquehorizon` » (`*` remplace n'importe quels caractères).
 
 ```
-
 Entry      : www.banquehorizon.com
 Name       : www.banquehorizon.com
 Type       : CNAME
@@ -4898,7 +4996,14 @@ DataLength : 4
 Data       : 203.0.113.20
 ```
 
-La même chose vue par `ipconfig /displaydns` (le numéro de type est celui de l'IANA : 5 = CNAME, 1 = A) :
+Le cache contient **deux fiches** : le `CNAME` (`www` vers `web`) et l'adresse (`A`) de `web`. C'est la chaîne complète du TP 2. Le `TimeToLive` est `3590` : ce n'est pas `3600`, parce que la fiche avait déjà vieilli dans le cache du résolveur avant d'arriver.
+
+**Étape 4 — La même chose avec l'ancienne interface : `ipconfig /displaydns`.**
+
+```powershell
+# sur PC-GUICHET1
+ipconfig /displaydns
+```
 
 ```
 Windows IP Configuration
@@ -4922,7 +5027,14 @@ Windows IP Configuration
     A (Host) Record  . . . : 203.0.113.20
 ```
 
-Une réponse négative est retenue **aussi** :
+C'est le **même** cache, présenté plus en longueur. `Record Type 5` est un `CNAME`, `Record Type 1` un `A` : ce sont les numéros officiels des types de fiche. `Get-DnsClientCache` et `ipconfig /displaydns` sont deux interfaces sur **un seul** cache.
+
+**Étape 5 — Le cache négatif du poste.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName nexiste.banquehorizon.com
+```
 
 ```
 Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist
@@ -4930,19 +5042,32 @@ Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist
     + FullyQualifiedErrorId : DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName
 ```
 
+C'est l'erreur que tu connais (TP 13, `DNS name does not exist`). Maintenant regarde si le poste l'a retenue :
+
+```powershell
+# sur PC-GUICHET1
+Get-DnsClientCache | Where-Object Name -like "nexiste*"
 ```
 
+```
 Entry      : nexiste.banquehorizon.com
 Name       : nexiste.banquehorizon.com
-Type       :
+Type       : 
 Status     : NotExist
 Section    : Authority
 TimeToLive : 900
 DataLength : 0
-Data       :
+Data       : 
 ```
 
-Puis on vide le cache :
+`Status : NotExist` : le poste a retenu que ce nom n'existe pas, avec un `TimeToLive` de **900** secondes. Cette durée est une valeur par défaut de Windows (réglée par la clé de registre `MaxNegativeCacheTtl`) ; elle **ne suit pas** le champ `minimum` du SOA comme le fait BIND.
+
+**Étape 6 — Vider le cache du poste.**
+
+```powershell
+# sur PC-GUICHET1
+ipconfig /flushdns
+```
 
 ```
 Windows IP Configuration
@@ -4950,13 +5075,22 @@ Windows IP Configuration
 Successfully flushed the DNS Resolver Cache.
 ```
 
+Vérifie que le cache est vide :
+
+```powershell
+# sur PC-GUICHET1
+Get-DnsClientCache | Where-Object Name -like "*banquehorizon*"
 ```
 
 ```
 
-(Aucune ligne : le cache est vide.)
+```
 
-Enfin, DC1 est lui aussi un serveur DNS **avec cache** — c'est lui qui transfère les questions publiques au résolveur (TP 28). Son cache se lit avec `Show-DnsServerCache` :
+Aucune ligne : le cache est vide. (`Clear-DnsClientCache`, l'étape 1, fait la même chose que `ipconfig /flushdns`.)
+
+**Étape 7 — Le cache de `DC1`, serveur DNS Windows.**
+
+`DC1` est lui aussi un serveur DNS **avec cache** : c'est lui qui transfère les questions publiques au résolveur (TP 28). Son cache se lit avec `Show-DnsServerCache` :
 
 ```powershell
 # sur DC1
@@ -4964,34 +5098,45 @@ Show-DnsServerCache | Where-Object HostName -like "*banquehorizon.com"
 ```
 
 ```
-
-HostName              RecordType TimeToLive RecordData
---------              ---------- ---------- ----------
+HostName              RecordType TimeToLive RecordData           
+--------              ---------- ---------- ----------           
 www.banquehorizon.com CNAME            3590 web.banquehorizon.com
-web.banquehorizon.com A                3590 203.0.113.20
+web.banquehorizon.com A                3590 203.0.113.20         
 ```
+
+`DC1` a lui aussi gardé la chaîne `www` vers `web`. Il y a donc **trois caches** sur le trajet de `PC-GUICHET1` : celui du poste, celui de `DC1`, celui de `DNS-RES`.
+
+🆘 **Si ça ne marche pas.** À l'étape 3, aucune ligne : tu as exécuté `Clear-DnsClientCache` après l'étape 2, ou tu n'as pas fait l'étape 2. Refais les étapes 1 à 3 dans l'ordre.
 
 **🧠 Ce que tu viens d'apprendre.**
 
-- Le poste Windows a **son propre cache** (service *Client DNS*), en plus de celui du résolveur : il y a au moins **deux** caches entre un utilisateur et la zone d'autorité. `Get-DnsClientCache` et `ipconfig /displaydns` sont deux interfaces sur le **même** cache.
-- Le cache négatif Windows dure **900 s** (`TimeToLive : 900`, `Status : NotExist`) quel que soit le SOA : c'est la valeur par défaut de la clé de registre `MaxNegativeCacheTtl`, et elle ne suit pas le champ `minimum` du SOA comme le fait BIND.
-- Le vidage est local : `Clear-DnsClientCache` et `ipconfig /flushdns` ne touchent ni le résolveur ni DC1. Si la réponse est toujours fausse après un vidage du poste, le problème est **plus haut** (TP 25).
+- Le poste Windows a **son propre cache**. `Get-DnsClientCache` et `ipconfig /displaydns` sont deux interfaces sur le **même** cache.
+- Le cache négatif Windows dure **900 s**, quel que soit le SOA.
+- Le vidage est **local** : `Clear-DnsClientCache` et `ipconfig /flushdns` ne touchent ni le résolveur ni `DC1`. Si la réponse est toujours fausse après avoir vidé le poste, le problème est **plus haut** (TP 25).
+
+**Vérifie-toi.**
+
+1. Combien de caches y a-t-il, au minimum, entre `PC-GUICHET1` et la zone d'autorité ?
+2. Vider le cache du poste vide-t-il celui du résolveur ?
+
+*Réponses.* (1) Au moins deux (le poste et le résolveur), trois avec `DC1`. (2) Non : chaque cache se vide séparément.
 
 ---
 
-## 32. 🧪 TP 24 — Lire le cache de BIND
+## VII.4 🧪 TP 24 — Lire le cache de BIND
 
 **🎯 Objectif.** Ouvrir le cache du résolveur et reconnaître ce qu'il y a dedans : les réponses, les délégations apprises, les absences.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Les TP 21 à 23 faits (le cache de `DNS-RES` contient ainsi des résultats à lire). Un terminal sur `DNS-RES`. Durée : environ 25 minutes.
+
+**Étape 1 — Demander à BIND d'écrire son cache dans un fichier, et l'afficher.**
 
 ```
 # sur DNS-RES
-sudo rndc dumpdb -cache
-sudo cat /var/cache/bind/named_dump.db
+sudo rndc dumpdb -cache; sudo cat /var/cache/bind/named_dump.db
 ```
 
-**✅ Résultat attendu.** (Le fichier se termine par la liste des vues et des bases d'adresses ; seule la première partie nous intéresse.)
+`rndc dumpdb -cache` ordonne à `named` de **recopier son cache dans un fichier** (`named_dump.db`, dans `/var/cache/bind`). `cat` affiche ensuite ce fichier. La sortie est longue ; **seule la première partie nous intéresse**, jusqu'à la ligne 32 :
 
 ```
 ;
@@ -5028,99 +5173,212 @@ a.nic.com.		86390	A	198.51.100.2
 ;
 ```
 
-**🧠 Ce que tu viens d'apprendre.** Chaque ensemble est précédé d'un **niveau de confiance** :
+Le reste du fichier (adresses de serveurs, échecs) est vide pour l'instant.
 
-| Étiquette | Sens |
-|---|---|
-| `; authanswer` | Réponse **faisant autorité**, reçue d'un serveur qui détient la zone (`www`, `web`, la racine) |
-| `; authauthority` | NS d'une zone, appris d'un serveur qui détient cette zone (`banquehorizon.com NS`) |
-| `; glue` | Adresses/NS venus d'un **renvoi** (ceux de `com`, `ns1`, `ns2`) : crédibles, mais jamais préférés à une réponse d'autorité |
-| `; answer` | Réponse non autoritaire — ici, des **absences** |
+**Étape 2 — Comprendre la structure.**
 
-- `nexiste.banquehorizon.com. 3595 \-ANY ;-$NXDOMAIN` : le nom n'existe pas (`\-` introduit une entrée **négative**, `ANY` : pour tous les types). La ligne suivante, en commentaire, donne le SOA qui justifie la durée.
-- `web.banquehorizon.com. 3595 \-AAAA ;-$NXRRSET` : le nom existe, mais pas ce type (le NODATA du TP 13).
-- Les TTL sont ceux **restants** : `3590`, `86390`... (5 à 10 secondes de moins que ceux de la zone).
-- Rien ne dit « le cache contient tout ce qui est vrai » : c'est ce qui a été **demandé et retenu**. Le cache d'un résolveur est une preuve de ce que ses clients ont demandé.
+Les lignes qui commencent par `;` sont des commentaires. La ligne `; Start view _default` ouvre la « vue » principale, dans laquelle se trouve le cache. Ensuite, chaque groupe de fiches est **précédé d'une étiquette** qui dit comment BIND a appris l'information, donc quelle confiance lui accorder :
+
+| Étiquette | Sens | Exemple dans ce cache |
+|---|---|---|
+| `; authanswer` | Réponse **faisant autorité**, reçue d'un serveur qui détient la zone | `www`, `web`, la racine |
+| `; authauthority` | Les serveurs de noms d'une zone, appris d'un serveur qui détient cette zone | `banquehorizon.com NS` |
+| `; glue` | Adresses et serveurs venus d'un **renvoi** (TP 8) : crédibles, mais jamais préférés à une réponse d'autorité | `com NS`, `ns1`, `ns2`, `a.nic.com` |
+| `; answer` | Réponse non autoritaire : ici, des **absences** | `nexiste`, `AAAA` de `web` |
+
+**Étape 3 — Lire les fiches positives.**
+
+```
+; authanswer
+			3590	A	203.0.113.20
+; authanswer
+www.banquehorizon.com.	3590	CNAME	web.banquehorizon.com.
+```
+
+Voilà ce que tu as appris en demandant `www.banquehorizon.com` : le `CNAME` et l'adresse `A`, étiquetés `authanswer`. Les TTL (`3590`) sont ceux **restants**, un peu plus petits que `3600` (TP 21).
+
+**Étape 4 — Lire les absences.**
+
+```
+; answer
+nexiste.banquehorizon.com. 3595	\-ANY	;-$NXDOMAIN
+; banquehorizon.com. SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+```
+
+`nexiste.banquehorizon.com. 3595 \-ANY ;-$NXDOMAIN` signifie : « le nom n'existe pas ». Le `\-` introduit une entrée **négative**, `ANY` veut dire « pour tous les types », et `;-$NXDOMAIN` est le motif. La ligne suivante, en commentaire, recopie le SOA qui justifie la durée.
+
+```
+; answer
+web.banquehorizon.com.	3595	\-AAAA	;-$NXRRSET
+; banquehorizon.com. SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+```
+
+`web.banquehorizon.com. 3595 \-AAAA ;-$NXRRSET` : le nom existe, mais pas ce **type** (`AAAA`). C'est le NODATA du TP 13.
+
+**Ce qu'il faut retenir.** Le cache ne contient pas tout ce qui est vrai : il contient **ce qui a été demandé et retenu**. Le cache d'un résolveur est donc une preuve de ce que ses clients ont demandé.
 
 > 🔍 **Point d'audit** — Le vidage du cache d'un résolveur (`rndc dumpdb`) est l'une des meilleures sources pour reconstituer, après un incident, **ce que ses clients ont résolu** (noms de domaines de commande et contrôle d'un logiciel malveillant, par exemple). Pense à le conserver avant de vider.
 
+**🧠 Ce que tu viens d'apprendre.**
+
+- `rndc dumpdb -cache` écrit le cache dans `named_dump.db`, qu'on lit avec `cat`.
+- Chaque groupe de fiches est étiqueté (`authanswer`, `authauthority`, `glue`, `answer`) : l'étiquette dit comment BIND a appris la fiche.
+- Les absences sont retenues aussi : `\-ANY ;-$NXDOMAIN` (le nom n'existe pas) et `\-AAAA ;-$NXRRSET` (pas ce type).
+
+**Vérifie-toi.**
+
+1. Que veut dire `; glue` devant une fiche ?
+2. Comment le cache note-t-il un nom inexistant ?
+
+*Réponses.* (1) Cette fiche vient d'un renvoi (une délégation), pas d'une réponse d'autorité. (2) Par une entrée négative `\-ANY ;-$NXDOMAIN`.
+
 ---
 
-## 33. 🧪 TP 25 — Vider le cache, en entier ou en partie
+## VII.5 🧪 TP 25 — Vider le cache, en entier ou en partie
 
 **🎯 Objectif.** Choisir le bon outil pour oublier : un nom, un domaine entier, tout.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Le TP 24 fait, un terminal sur `DNS-RES`. Durée : environ 20 minutes.
+
+Pour mesurer l'effet d'un vidage, on **compte** les lignes du cache qui contiennent un mot. `grep -c mot fichier` compte les lignes qui contiennent `mot`.
+
+**Étape 1 — Compter avant.**
+
+```
+# sur DNS-RES
+sudo rndc dumpdb -cache; sudo grep -c nexiste /var/cache/bind/named_dump.db
+```
+
+```
+1
+```
+
+Le cache contient une ligne qui parle de `nexiste` (l'entrée négative du TP 24).
+
+**Étape 2 — Oublier un seul nom : `flushname`.**
 
 ```
 # sur DNS-RES
 sudo rndc flushname nexiste.banquehorizon.com
+```
+
+La commande n'affiche rien. Compte de nouveau :
+
+```
+# sur DNS-RES
 sudo rndc dumpdb -cache; sudo grep -c nexiste /var/cache/bind/named_dump.db
-sudo rndc flushtree banquehorizon.com
+```
+
+```
+0
+```
+
+`0` : l'entrée `nexiste` a disparu. `flushname` ne retire que **ce nom** : les autres fiches du cache sont intactes.
+
+**Étape 3 — Oublier un domaine entier : `flushtree`.**
+
+D'abord, combien de lignes parlent de `banquehorizon` ?
+
+```
+# sur DNS-RES
 sudo rndc dumpdb -cache; sudo grep -c banquehorizon /var/cache/bind/named_dump.db
+```
+
+```
+7
+```
+
+Plusieurs lignes (sept ici) : les fiches de la zone, les serveurs de noms, leurs adresses. Maintenant on oublie **tout le domaine** :
+
+```
+# sur DNS-RES
+sudo rndc flushtree banquehorizon.com
+```
+
+```
+# sur DNS-RES
+sudo rndc dumpdb -cache; sudo grep -c banquehorizon /var/cache/bind/named_dump.db
+```
+
+```
+0
+```
+
+`0` : plus rien ne parle de `banquehorizon`. `flushtree` retire le nom **et tout ce qui est en dessous** : ici toute la zone, y compris les serveurs de noms et leur glue.
+
+**Étape 4 — Tout oublier : `flush`.**
+
+```
+# sur DNS-RES
 sudo rndc flush
 ```
 
-**✅ Résultat attendu.** `flushname` ne retire que **l'entrée** du nom demandé (la ligne `nexiste` disparaît du fichier) :
+Aucun message : le silence est un succès. Le cache est entièrement vide.
 
-```
-0
-```
-
-`flushtree` retire le nom **et tout ce qui est en dessous** — ici toute la zone `banquehorizon.com`, y compris les NS et leur glue :
-
-```
-0
-```
-
-`rndc flush` vide tout (aucun message : le silence est un succès).
-
-**🧠 Ce que tu viens d'apprendre.**
+**Trois outils, trois usages.**
 
 | Commande | Effet | Quand l'utiliser |
 |---|---|---|
-| `rndc flushname NOM` | Oublie ce nom (tous types) | Un seul nom est faux ou « inexistant » à tort |
-| `rndc flushtree DOMAINE` | Oublie le domaine et ses sous-domaines | Après un changement de serveurs de noms, ou un incident sur une zone |
-| `rndc flush` | Oublie tout | En dernier recours : le résolveur redescend tout l'arbre pour chaque question, et sa charge monte |
+| `rndc flushname NOM` | Oublie ce nom (tous types) | Un seul nom est faux, ou « inexistant » à tort |
+| `rndc flushtree DOMAINE` | Oublie le domaine **et ses sous-domaines** | Après un changement de serveurs de noms, ou un incident sur une zone |
+| `rndc flush` | Oublie **tout** | En dernier recours : le résolveur redescend tout l'arbre pour chaque question, et sa charge monte |
 
-- **Vider le cache d'un résolveur ne vide pas celui des clients.** Si le poste Windows a gardé la mauvaise réponse, il faut aussi `Clear-DnsClientCache` (TP 23), et pour un poste Linux avec `systemd-resolved`, `sudo resolvectl flush-caches`.
+🆘 **Si ça ne marche pas.** À l'étape 1, le compte vaut `0` : le cache ne contient pas `nexiste`. Refais le TP 22 (étape 1) puis relance.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- **Vider le cache d'un résolveur ne vide pas celui des clients.** Si le poste Windows a gardé la mauvaise réponse, il faut aussi `Clear-DnsClientCache` (TP 23) ; sur un poste Linux avec `systemd-resolved`, `sudo resolvectl flush-caches`.
+- Choisis le **plus petit** vidage qui suffit : un nom avant un domaine, un domaine avant tout.
 - L'ordre de remontée d'un problème de cache est toujours : **client → résolveur local → éventuel transmetteur → serveur d'autorité**.
+
+**Vérifie-toi.**
+
+1. Quelle commande oublie un nom mais pas le reste du cache ?
+2. Pourquoi éviter `rndc flush` si un nom suffit ?
+
+*Réponses.* (1) `rndc flushname NOM`. (2) Parce que le résolveur doit alors redescendre tout l'arbre pour chaque question, ce qui augmente sa charge.
 
 ---
 
-## 34. 🧪 TP 26 — Le cache des échecs (SERVFAIL)
+## VII.6 🧪 TP 26 — Le cache des échecs (SERVFAIL)
 
 **🎯 Objectif.** Provoquer un `SERVFAIL`, voir que BIND le retient (brièvement) pour ne pas retomber dans le même trou, et le lire dans le cache.
 
-**🔧 Manipulation.** On crée un domaine `broken.com` dont le serveur de noms ne répond pas, en ajoutant une **délégation** dans la zone `com` (sur le serveur Windows qui la détient), puis on règle `servfail-ttl` à 30 secondes pour avoir le temps de l'observer :
+**Ce qu'il te faut.** Un terminal PowerShell sur `TLD-NS`, un terminal sur `DNS-RES` et un sur `PC-CONSEILLER`. Durée : environ 30 minutes. Tout est remis en état à la fin.
+
+`SERVFAIL` veut dire « **j'ai essayé et je n'ai pas pu** » : un serveur d'autorité injoignable, une zone cassée… Ce n'est pas `NXDOMAIN` (« j'ai pu, et ça n'existe pas »). Pour en provoquer un, tu vas créer un domaine `broken.com` dont le serveur de noms **n'existe pas**.
+
+**Étape 1 — Créer le domaine cassé.** Dans la zone `com`, que détient `TLD-NS`, on ajoute une délégation vers un serveur qui n'existe pas :
 
 ```powershell
 # sur TLD-NS
 Add-DnsServerZoneDelegation -Name com -ChildZoneName broken -NameServer ns.broken.com -IPAddress 203.0.113.99
 ```
 
+`Add-DnsServerZoneDelegation` ajoute un renvoi (TP 8) dans la zone `com` : « pour `broken.com`, demande à `ns.broken.com`, qui est à l'adresse `203.0.113.99` ». Cette adresse **n'existe pas** dans le laboratoire. La commande n'affiche rien.
+
+**Étape 2 — Régler le résolveur pour avoir le temps d'observer.**
+
+Par défaut, BIND retient un échec très peu de temps. On le règle à 30 secondes pour avoir le temps de le voir.
+
 ```
 # sur DNS-RES
 sudo sed -i 's/empty-zones-enable no;/empty-zones-enable no; servfail-ttl 30;/' /etc/bind/named.conf
+```
+
+```
+# sur DNS-RES
 sudo systemctl restart named
 ```
+
+Le premier ordre ajoute `servfail-ttl 30;` dans `named.conf`. Le second **redémarre** le service `named` pour qu'il le prenne en compte. Aucun des deux n'affiche quoi que ce soit.
+
+**Étape 3 — Provoquer le `SERVFAIL`.**
 
 ```
 # sur PC-CONSEILLER
 dig @10.20.20.53 www.broken.com +noall +comments
 ```
-
-```
-# sur DNS-RES
-sudo rndc dumpdb -cache; sudo grep -A4 'SERVFAIL cache' /var/cache/bind/named_dump.db | head -5
-```
-
-```
-# sur PC-CONSEILLER
-dig @10.20.20.53 www.broken.com +noall +comments +stats
-```
-
-**✅ Résultat attendu.** Le résolveur suit la délégation, interroge `203.0.113.99` (qui n'existe pas), n'obtient rien, et répond `SERVFAIL` :
 
 ```
 ;; Got answer:
@@ -5131,7 +5389,16 @@ dig @10.20.20.53 www.broken.com +noall +comments +stats
 ; EDNS: version: 0, flags:; udp: 1232
 ```
 
-L'échec est dans une section **à part** du cache : la durée est celle de `servfail-ttl` (**exprimée en millisecondes** dans cette version de BIND : `29995` ≈ 30 s, qui diminuent) :
+Le résolveur a suivi la délégation, a interrogé `203.0.113.99`, n'a obtenu **aucune réponse**, et a fini par répondre `status: SERVFAIL` à ton poste.
+
+**Étape 4 — Voir l'échec dans le cache.**
+
+```
+# sur DNS-RES
+sudo rndc dumpdb -cache; sudo grep -A4 'SERVFAIL cache' /var/cache/bind/named_dump.db | head -5
+```
+
+`grep -A4` affiche, en plus de la ligne trouvée, les **4 lignes suivantes**, et `head -5` garde seulement les cinq premières lignes du résultat.
 
 ```
 ; SERVFAIL cache
@@ -5141,7 +5408,14 @@ L'échec est dans une section **à part** du cache : la durée est celle de `ser
 ; Start view _bind
 ```
 
-Une deuxième question, tout de suite après, est **servie par le cache** (aucun nouveau délai d'attente) :
+L'échec est dans une section **à part** du cache, `SERVFAIL cache`. La ligne `www.broken.com/A [ttl 29995]` dit : « la question `www.broken.com`, type `A`, a échoué ; je m'en souviens pendant encore environ 30 secondes » (la valeur est écrite en millisecondes dans cette version de BIND, elle décroît).
+
+**Étape 5 — Reposer la question : le cache répond.**
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.broken.com +noall +comments +stats
+```
 
 ```
 ;; Got answer:
@@ -5156,7 +5430,9 @@ Une deuxième question, tout de suite après, est **servie par le cache** (aucun
 ;; MSG SIZE  rcvd: 43
 ```
 
-On remet en état — configuration, délégation :
+Même `SERVFAIL`, mais cette fois **instantanément** : le résolveur n'a pas retenté d'interroger le serveur fantôme, il a répondu depuis la mémoire de son échec. Sans cette mémoire, un client insistant ferait relancer une résolution vouée à l'échec à chaque tentative, avec un délai d'attente à chaque fois.
+
+**Étape 6 — Remise en état.**
 
 ```
 # sur DNS-RES
@@ -5168,24 +5444,40 @@ sudo sed -i 's/ servfail-ttl 30;//' /etc/bind/named.conf; sudo systemctl restart
 Remove-DnsServerZoneDelegation -Name com -ChildZoneName broken -Force
 ```
 
+On enlève le réglage, on redémarre `named`, puis on supprime la délégation (`-Force` évite la demande de confirmation). Contrôle :
+
 ```
 # sur PC-CONSEILLER
 dig @10.20.20.53 www.broken.com +noall +comments
 ```
 
-Le domaine n'existe plus : `NXDOMAIN` (et non plus `SERVFAIL`), puisque `named` a redémarré avec un cache vide et que `com` ne délègue plus rien.
-
 ```
+;; Got answer:
 ;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 60
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
 ```
+
+Cette fois `NXDOMAIN`, et non plus `SERVFAIL` : `named` a redémarré avec un cache vide, et `com` ne délègue plus rien. Le domaine n'existe plus.
+
+> 🔍 **Point d'audit** — Un `SERVFAIL` durable sur un domaine que tu gères est un signal à superviser. Une sonde qui interroge périodiquement les noms critiques **à travers un résolveur** (pas directement les serveurs d'autorité) est la seule à voir ce que voient les utilisateurs.
+
+🆘 **Si ça ne marche pas.** À l'étape 3, `NXDOMAIN` au lieu de `SERVFAIL` : la délégation de l'étape 1 n'est pas faite (ou `DNS-RES` avait déjà retenu un `NXDOMAIN` pour `www.broken.com` : lance `sudo rndc flush`, puis recommence l'étape 3).
 
 **🧠 Ce que tu viens d'apprendre.**
 
-- `SERVFAIL` veut dire « **j'ai essayé et je n'ai pas pu** » : un serveur d'autorité injoignable, une signature DNSSEC invalide, une zone cassée. Ce n'est pas `NXDOMAIN` (« j'ai pu, et ça n'existe pas »). La première chose à vérifier devant un `SERVFAIL` est donc la **chaîne de délégation** (`dig +trace`) et la **joignabilité** des serveurs faisant autorité.
-- BIND retient l'échec pendant `servfail-ttl` secondes (30 au plus) : sans cela, un client insistant ferait relancer une résolution vouée à l'échec à chaque tentative, avec un délai d'attente à chaque fois.
-- **Un redémarrage de `named` repart d'un cache vide** : c'est une raison de plus de préférer `rndc flush` à un redémarrage (qui interrompt aussi le service) — mais c'est aussi pourquoi un redémarrage « répare » parfois des symptômes de cache.
+- `SERVFAIL` veut dire « **j'ai essayé et je n'ai pas pu** ». Devant un `SERVFAIL`, vérifie d'abord la **chaîne de délégation** (`dig +trace`, TP 7) et la **joignabilité** des serveurs faisant autorité.
+- BIND retient l'échec pendant `servfail-ttl` secondes (30 au plus) pour ne pas retomber dans le même trou.
+- **Un redémarrage de `named` repart d'un cache vide** : c'est une raison de plus de préférer `rndc flush` (qui n'interrompt pas le service) ; c'est aussi pourquoi un redémarrage « répare » parfois des symptômes de cache.
 
-> 🔍 **Point d'audit** — Un `SERVFAIL` durable sur un domaine que vous gérez est un signal à superviser. Une sonde qui interroge périodiquement vos noms critiques **à travers un résolveur** (pas directement vos serveurs d'autorité) est la seule à voir ce que voient les utilisateurs.
+**Vérifie-toi.**
+
+1. Quelle est la différence entre `SERVFAIL` et `NXDOMAIN` ?
+2. Pourquoi BIND retient-il un échec ?
+
+*Réponses.* (1) `SERVFAIL` : le serveur n'a pas pu obtenir de réponse ; `NXDOMAIN` : il a obtenu la réponse « ce nom n'existe pas ». (2) Pour éviter de relancer, à chaque question d'un client insistant, une résolution qui échouera encore.
 
 ---
 
