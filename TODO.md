@@ -4441,3 +4441,7 @@ diff and xargs are compared with GNU diffutils 3.10 and findutils 4.9.0 (see pro
 ## coreutils batch 7: pr — what is still approximate
 
 pr is compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot7-pr). Still approximate: a form feed inside the input is printed as is, where pr starts a new page; a line of control characters is measured as zero columns, which is what pr does for `-c`/`-v` off, but the width of a multi-byte character is counted as one column; `-b` is accepted and ignored as in the real tool; the tab expansion of a `\b` is not modelled; the header date of a file read through a symlink uses the target's mtime.
+
+## coreutils batch 8: checksums — what is still approximate
+
+md5sum, sha1sum, sha224sum, sha256sum, sha384sum, sha512sum, b2sum, sum and cksum share one engine (see probe-linux-coreutils-lot8-checksums). Still approximate: `md5sum --check` of a line escaped with a leading backslash only un-escapes `\\` and `\n`; the BSD `-b`/`-t` marker of a line read back from a file is accepted but not used to pick the read mode (the simulator has no text/binary distinction); `sum` of a file larger than the simulated read buffer is computed on the whole content at once.

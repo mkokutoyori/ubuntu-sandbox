@@ -77,6 +77,7 @@ import { runSeq } from './coreutils/SeqCommand';
 import { runCat } from './coreutils/CatCommand';
 import { runOd } from './coreutils/OdCommand';
 import { runRev } from './coreutils/RevCommand';
+import { runChecksum } from './coreutils/CksumCommand';
 import { runTee } from './coreutils/TeeCommand';
 import type { SplitHost } from './coreutils/SplitCommand';
 import { runMkfifo } from './coreutils/MkfifoCommand';
@@ -278,8 +279,7 @@ import { SshKnownHostEntry } from './network/SshKnownHostEntry';
 import { SshForwardingTable } from './network/SshForwardingTable';
 import type { SshClientHandle, SshClientPlacement } from './network/SshClientProcess';
 import type { TcpStack } from '../../tcp/TcpStack';
-import { md5, sha1, sha256 } from '@/crypto/hash';
-import { bytesToHex, fileTextToBytes } from '@/crypto/encoding';
+import { fileTextToBytes } from '@/crypto/encoding';
 import { describePcapFile } from '@/network/capture/pcap/PcapFileMagic';
 import type { SshSessionTable } from './network/SshSessionTable';
 import { renderWho } from './network/whoFormatter';
@@ -350,7 +350,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
-  'tac', 'nl', 'paste', 'comm', 'join', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'tac', 'nl', 'paste', 'comm', 'join', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
   'column', 'split', 'base64', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
@@ -421,6 +421,7 @@ const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'rm', 'cp', 'mv',
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
   'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac', 'od',
+  'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
@@ -493,7 +494,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'diff', 'pr', 'join', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'diff', 'pr', 'join', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -7068,39 +7069,6 @@ export class LinuxCommandExecutor {
         };
         return { output: targets.map(render).join('\n'), exitCode: 0 };
       }
-      case 'md5sum':
-      case 'sha256sum':
-      case 'sha1sum': {
-        const checkMode = args.includes('-c') || args.includes('--check');
-        const named = args.filter(a => a === '-' || !a.startsWith('-'));
-        const targets = named.length > 0 ? named : ['-'];
-        if (checkMode) {
-          const checksumFile = this.vfs.readFile(this.vfs.normalizePath(targets[0], this.cwd));
-          if (checksumFile === null) return { output: `${cmd}: ${targets[0]}: No such file or directory`, exitCode: 1 };
-          const lines = checksumFile.split('\n').filter(l => l.trim());
-          const results: string[] = [];
-          let failed = 0;
-          for (const line of lines) {
-            const m = line.match(/^([0-9a-f]+)\s+(.+)$/);
-            if (!m) continue;
-            const [, expectedHash, filePath] = m;
-            const content = this.vfs.readFile(this.vfs.normalizePath(filePath, this.cwd));
-            if (content === null) { results.push(`${filePath}: FAILED open or read`); failed++; continue; }
-            const actual = checksumVfs(content, cmd);
-            if (actual === expectedHash) results.push(`${filePath}: OK`);
-            else { results.push(`${filePath}: FAILED`); failed++; }
-          }
-          if (failed) results.push(`${cmd}: WARNING: ${failed} computed checksum did NOT match`);
-          return { output: results.join('\n'), exitCode: failed ? 1 : 0 };
-        }
-        const lines: string[] = [];
-        for (const target of targets) {
-          const content = target === '-' ? stdin ?? '' : this.vfs.readFile(this.vfs.normalizePath(target, this.cwd));
-          if (content === null) { lines.push(`${cmd}: ${target}: No such file or directory`); continue; }
-          lines.push(`${checksumVfs(content, cmd)}  ${target}`);
-        }
-        return { output: lines.join('\n'), exitCode: 0 };
-      }
       case 'diff': {
         const compared = cmdDiff({
         readFile: (p) => this.vfs.readFile(p),
@@ -7178,6 +7146,8 @@ export class LinuxCommandExecutor {
         return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
       case 'rev': return asDispatch(runRev(args, coreutilsIO(c, stdin)));
+      case 'md5sum': case 'sha1sum': case 'sha224sum': case 'sha256sum': case 'sha384sum': case 'sha512sum': case 'b2sum':
+        return asDispatch(runChecksum(cmd, args, coreutilsIO(c, stdin)));
       case 'basename': return asDispatch(runBasename(args));
       case 'dirname': return asDispatch(runDirname(args));
 
@@ -9573,13 +9543,6 @@ function simpleTokenize(input: string): string[] {
   }
   if (buf) out.push(buf);
   return out;
-}
-
-function checksumVfs(content: string, cmd: string): string {
-  const bytes = fileTextToBytes(content);
-  if (cmd === 'sha256sum') return bytesToHex(sha256(bytes));
-  if (cmd === 'sha1sum') return bytesToHex(sha1(bytes));
-  return bytesToHex(md5(bytes));
 }
 
 function leadingAssignments(argv: string[]): { assigned: Record<string, string>; rest: string[] } {
