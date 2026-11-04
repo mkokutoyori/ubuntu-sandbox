@@ -47,7 +47,7 @@ describe('Scénario 1 — lire un fichier ou lire le tuyau', () => {
   it('`cksum` donne le CRC POSIX, pas celui de zlib', async () => {
     const pc = await lab();
     // `cksum` réel sur ces 14 octets : 3233290692 14.
-    expect(await pc.executeCommand('cksum a.txt')).toBe('3233290692 14 a.txt');
+    expect(await pc.executeCommand('cksum a.txt')).toBe('3233290692 14 a.txt\n');
     // Sans fichier nommé, le vrai cksum n'imprime pas de nom.
     expect(await pc.executeCommand('printf "un\\ndeux\\ntrois\\n" | cksum')).toBe('3233290692 14');
   });
@@ -76,7 +76,7 @@ describe('Scénario 2 — mettre côte à côte et comparer', () => {
     const pc = await lab();
     expect(await pc.executeCommand('cmp a.txt a.txt; echo "rc=$?"')).toBe('rc=0');
     // Le vrai cmp dit « char », pas « byte ».
-    expect(await pc.executeCommand('cmp a.txt b.txt')).toBe('a.txt b.txt differ: byte 1, line 1');
+    expect(await pc.executeCommand('cmp a.txt b.txt')).toBe('a.txt b.txt differ: byte 1, line 1\n');
   });
 });
 

@@ -108,7 +108,10 @@ function inputs(ctx: LinuxCommandContext, files: string[], stdin: string | undef
 }
 
 function viaCoreutils(base: LinuxCommand, run: (args: string[], io: CoreutilsIO, ctx: LinuxCommandContext) => CoreutilsRun): LinuxCommand {
-  const execute = (ctx: LinuxCommandContext, args: string[], stdin?: string) => asDispatch(run(args, coreutilsIO(ctx.executor.ctx(), stdin), ctx));
+  const execute = (ctx: LinuxCommandContext, args: string[], stdin?: string) => {
+    const result = run(args, coreutilsIO(ctx.executor.ctx(), stdin), ctx);
+    return result.exitCode === 0 ? asDispatch(result) : { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr, interleaved: result.interleaved };
+  };
   return {
     ...base,
     run: (ctx, args, stdin) => execute(ctx, args, stdin).output,

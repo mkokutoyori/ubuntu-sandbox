@@ -30,7 +30,6 @@ export function runNl(args: readonly string[], io: CoreutilsIO): CoreutilsRun {
     contents.push(read.text);
   }
   const body = numberLines(parsed.plan, contents, toLines);
-  const endsWithNewline = contents.some((content) => content.endsWith('\n'));
-  streams.stdout(body + (body !== '' && endsWithNewline ? '\n' : ''));
+  streams.stdout(body + (body !== '' ? '\n' : ''));
   return streams.result();
 }

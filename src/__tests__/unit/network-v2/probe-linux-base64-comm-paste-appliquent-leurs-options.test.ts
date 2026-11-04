@@ -25,7 +25,7 @@ describe('witnesses', () => {
   it('default wrapping at 76 columns', async () => {
     const lines = (await run('base64 /tmp/long')).split('\n');
     expect(lines[0]).toHaveLength(76);
-    expect(lines).toHaveLength(2);
+    expect(lines).toHaveLength(3);
   });
   it('plain decode', async () => { expect(await run('base64 -d /tmp/d')).toBe('hello'); });
   it('plain comm', async () => { expect(await run('comm /tmp/b /tmp/c')).toBe('a\n\t\tb\n\t\tc\n\td\n'); });
@@ -33,10 +33,10 @@ describe('witnesses', () => {
 
 describe('options are evaluated', () => {
   it('base64 -w0 never wraps', async () => { expect((await run('base64 -w0 /tmp/long')).includes('\n')).toBe(false); });
-  it('base64 --wrap=6', async () => { expect(await run('base64 --wrap=6 /tmp/a')).toBe('aGVsbG\n8gd29y\nbGQgZm\n9vCg=='); });
+  it('base64 --wrap=6', async () => { expect(await run('base64 --wrap=6 /tmp/a')).toBe('aGVsbG\n8gd29y\nbGQgZm\n9vCg==\n'); });
   it('base64 -w4', async () => { expect((await run('base64 -w4 /tmp/a')).split('\n')[0]).toBe('aGVs'); });
   it('base64 -di clustered decodes', async () => { expect(await run('base64 -di /tmp/d')).toBe('hello'); });
-  it('base64 bad wrap is refused', async () => { expect(await run('base64 -w x /tmp/a')).toContain("base64: invalid wrap size: 'x'"); });
+  it('base64 bad wrap is refused', async () => { expect(await run('base64 -w x /tmp/a')).toContain('base64: invalid wrap size: ‘x’'); });
   it('comm --output-delimiter', async () => { expect(await run('comm --output-delimiter=: /tmp/b /tmp/c')).toBe('a\n::b\n::c\n:d\n'); });
   it('comm --total', async () => { expect((await run('comm --total /tmp/b /tmp/c')).trimEnd().split('\n').pop()).toBe('1\t1\t2\ttotal'); });
   it('comm -z reads NUL-terminated records', async () => { expect(await run('comm -12 -z /tmp/z1 /tmp/z2')).toBe('b\0c\0'); });
