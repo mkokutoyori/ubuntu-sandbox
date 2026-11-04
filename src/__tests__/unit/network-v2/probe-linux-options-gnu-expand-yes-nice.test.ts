@@ -29,7 +29,7 @@ function pc(): Sh {
 describe('an unknown option is refused in coreutils words', () => {
   it.each(['yes', 'cksum', 'sync', 'expand', 'unexpand'])('`%s --zorglub`', async (command) => {
     expect(await pc().executeCommand(`${command} --zorglub`))
-      .toBe(`${command}: unrecognized option '--zorglub'\nTry '${command} --help' for more information.${['expand', 'unexpand'].includes(command) ? '\n' : ''}`);
+      .toBe(`${command}: unrecognized option '--zorglub'\nTry '${command} --help' for more information.${['expand', 'unexpand', 'cksum'].includes(command) ? '\n' : ''}`);
   });
 
   it.each(['nice', 'nohup'])('`%s --zorglub` exits 125', async (command) => {
