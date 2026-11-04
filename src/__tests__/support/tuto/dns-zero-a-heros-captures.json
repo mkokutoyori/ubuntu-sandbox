@@ -325,11 +325,32 @@
     "output": "www.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20\n;; Query time: 0 msec\n;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)\n;; WHEN: Wed Nov 04 11:05:30 UTC 2026\n;; MSG SIZE  rcvd: 84"
    },
    {
+    "id": "3.at-resolver",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.banquehorizon.com +noall +answer +stats",
+    "output": "www.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20\n;; Query time: 0 msec\n;; SERVER: 10.20.20.53#53(10.20.20.53) (UDP)\n;; WHEN: Wed Nov 04 20:12:19 UTC 2026\n;; MSG SIZE  rcvd: 152"
+   },
+   {
+    "id": "3.mx-answer",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com MX +noall +answer",
+    "output": "banquehorizon.com.\t3600\tIN\tMX\t10 mail.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tMX\t20 mail2.banquehorizon.com."
+   },
+   {
     "id": "3.comments",
     "dev": "PC-CONSEILLER",
     "kind": "sh",
     "cmd": "dig @203.0.113.10 banquehorizon.com MX +norecurse +noall +comments +answer +authority +additional",
-    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49\n;; flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 5\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nbanquehorizon.com.\t3600\tIN\tMX\t10 mail.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tMX\t20 mail2.banquehorizon.com.\n\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tNS\tns1.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tNS\tns2.banquehorizon.com.\n\n;; ADDITIONAL SECTION:\nmail.banquehorizon.com.\t3600\tIN\tA\t203.0.113.25\nmail2.banquehorizon.com. 3600\tIN\tA\t203.0.113.26\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11"
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 60\n;; flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 5\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nbanquehorizon.com.\t3600\tIN\tMX\t20 mail2.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tMX\t10 mail.banquehorizon.com.\n\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tNS\tns1.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tNS\tns2.banquehorizon.com.\n\n;; ADDITIONAL SECTION:\nmail2.banquehorizon.com. 3600\tIN\tA\t203.0.113.26\nmail.banquehorizon.com.\t3600\tIN\tA\t203.0.113.25\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11"
+   },
+   {
+    "id": "3.nxdomain",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig nexiste.banquehorizon.com +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 61\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494"
    },
    {
     "id": "4.nslookup",
@@ -343,7 +364,7 @@
     "dev": "PC-GUICHET1",
     "kind": "ps",
     "cmd": "nslookup -type=MX banquehorizon.com",
-    "output": "Server:  dc1.horizon.local\nAddress:  10.20.20.10\n\nNon-authoritative answer:\nbanquehorizon.com\tMX preference = 20, mail exchanger = mail2.banquehorizon.com\nbanquehorizon.com\tMX preference = 10, mail exchanger = mail.banquehorizon.com\n"
+    "output": "Server:  dc1.horizon.local\nAddress:  10.20.20.10\n\nNon-authoritative answer:\nbanquehorizon.com\tMX preference = 10, mail exchanger = mail.banquehorizon.com\nbanquehorizon.com\tMX preference = 20, mail exchanger = mail2.banquehorizon.com\n"
    },
    {
     "id": "4.nslookup-server",
@@ -357,7 +378,7 @@
     "dev": "PC-GUICHET1",
     "kind": "ps",
     "cmd": "Resolve-DnsName banquehorizon.com -Type MX",
-    "output": "\nName         : banquehorizon.com\nType         : MX\nTTL          : 3600\nSection      : Answer\nNameExchange : mail2.banquehorizon.com\nPreference   : 20\n\nName         : banquehorizon.com\nType         : MX\nTTL          : 3600\nSection      : Answer\nNameExchange : mail.banquehorizon.com\nPreference   : 10\n"
+    "output": "\nName         : banquehorizon.com\nType         : MX\nTTL          : 3600\nSection      : Answer\nNameExchange : mail.banquehorizon.com\nPreference   : 10\n\nName         : banquehorizon.com\nType         : MX\nTTL          : 3600\nSection      : Answer\nNameExchange : mail2.banquehorizon.com\nPreference   : 20\n"
    },
    {
     "id": "5.resolv",

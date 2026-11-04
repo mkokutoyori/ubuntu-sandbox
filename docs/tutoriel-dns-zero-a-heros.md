@@ -100,11 +100,11 @@ II.2 [Les douze équipements](#ii2-les-douze-équipements)
 II.3 [🧪 TP 1 — Le laboratoire respire](#ii3--tp-1--le-laboratoire-respire)
 
 ### Partie III — Poser une question
-10. [🧪 TP 2 — Lire une réponse de `dig`](#10--tp-2--lire-une-réponse-de-dig)
-11. [🧪 TP 3 — Choisir ce que `dig` affiche](#11--tp-3--choisir-ce-que-dig-affiche)
-12. [🧪 TP 4 — Les mêmes questions côté Windows](#12--tp-4--les-mêmes-questions-côté-windows)
-13. [🧪 TP 5 — Qui est mon serveur DNS ?](#13--tp-5--qui-est-mon-serveur-dns-)
-14. [🧪 TP 6 — Les suffixes de recherche](#14--tp-6--les-suffixes-de-recherche)
+III.1 [🧪 TP 2 — Lire une réponse de `dig`](#iii1--tp-2--lire-une-réponse-de-dig)
+III.2 [🧪 TP 3 — Choisir ce que `dig` affiche](#iii2--tp-3--choisir-ce-que-dig-affiche)
+III.3 [🧪 TP 4 — Les mêmes questions côté Windows](#iii3--tp-4--les-mêmes-questions-côté-windows)
+III.4 [🧪 TP 5 — Qui est mon serveur DNS ?](#iii4--tp-5--qui-est-mon-serveur-dns-)
+III.5 [🧪 TP 6 — Les suffixes de recherche](#iii5--tp-6--les-suffixes-de-recherche)
 
 ### Partie IV — Descendre l'arbre
 15. [🧪 TP 7 — `dig +trace` : refaire le travail du résolveur](#15--tp-7--dig-trace--refaire-le-travail-du-résolveur)
@@ -1045,30 +1045,40 @@ IPAddress : 203.0.113.20
 
 # Partie III — Poser une question
 
-Cinq outils, que tu utiliseras tout au long du tutoriel :
+Jusqu'ici, tu as **regardé** le DNS travailler en arrière-plan : `ping` et `getent hosts` ont traduit des noms sans que tu voies comment. Dans cette partie, tu vas **poser toi-même des questions au DNS** et lire ses réponses telles qu'elles sont, sans rien cacher.
 
-| Outil | Où | Pour quoi faire |
+**Pourquoi ne pas se contenter de `ping` ?** `ping` répond à la question « *cette machine est-elle joignable ?* ». Il ne dit pas ce que le DNS a répondu, ni qui l'a répondu, ni depuis combien de temps cette réponse est gardée. Pour dépanner un service de noms, il faut un outil qui montre **la réponse du DNS elle-même**.
+
+Tu vas apprendre à manier trois outils :
+
+| Outil | Sur quel poste | À quoi il sert |
 |---|---|---|
-| **`dig`** | Linux | L'outil de référence : il montre **tout** le message DNS |
-| **`nslookup`** | Windows (et Linux) | Plus lisible, moins détaillé ; interroge directement un serveur |
-| **`Resolve-DnsName`** | PowerShell | Le `dig` de Windows : sort des objets, passe par le cache du poste |
-| **`getent hosts`** / **`ping`** | Linux | Ce que **les applications** voient (ils passent par la même chaîne que `curl` ou `ssh`) |
-| **`rndc`** | serveurs BIND | La télécommande de `named` (recharger, vider le cache, lire le cache) |
+| **`dig`** | Linux | L'outil de référence : il montre **toute** la réponse, sans la simplifier |
+| **`nslookup`** | Windows (et Linux) | Plus ancien, plus court à lire, moins détaillé |
+| **`Resolve-DnsName`** | PowerShell (Windows) | Le « `dig` de Windows » : il passe par le cache du poste |
+
+Tu les utiliseras tous les trois jusqu'à la fin du tutoriel. Un quatrième outil, `rndc`, la télécommande des serveurs BIND, arrivera dans la Partie VI.
+
+> 💡 **Astuce** — La sortie de `dig` paraît touffue la première fois. C'est normal. On ne la lit **jamais d'un bloc** : on la découpe en cinq morceaux et on lit un morceau à la fois. C'est exactement ce que fait le TP 2.
 
 ---
 
-## 10. 🧪 TP 2 — Lire une réponse de `dig`
+## III.1 🧪 TP 2 — Lire une réponse de `dig`
 
-**🎯 Objectif.** Savoir lire, ligne par ligne, la réponse complète de `dig`. Tout le reste du tutoriel s'appuie sur cette lecture.
+**🎯 Objectif.** Savoir lire, bloc par bloc, la réponse complète de `dig`. Tout le reste du tutoriel s'appuie sur cette lecture.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Le laboratoire importé (§ 0.1) et un terminal ouvert sur `PC-CONSEILLER`. Durée : environ 25 minutes.
+
+**Étape 1 — Poser la question.**
 
 ```
 # sur PC-CONSEILLER
 dig www.banquehorizon.com
 ```
 
-**✅ Résultat attendu.**
+`dig` est le nom de la commande. `www.banquehorizon.com` est son seul **argument** : le nom dont on veut connaître l'adresse (rappel : § 0.4, une commande est suivie de ses arguments).
+
+Tu dois obtenir ceci :
 
 ```
 ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> www.banquehorizon.com
@@ -1088,108 +1098,396 @@ web.banquehorizon.com.	3600	IN	A	203.0.113.20
 
 ;; Query time: 0 msec
 ;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)
-;; WHEN: Wed Nov 04 08:55:08 UTC 2026
+;; WHEN: Wed Nov 04 11:05:30 UTC 2026
 ;; MSG SIZE  rcvd: 84
 ```
 
-(L'`id`, la date et la durée changent d'une exécution à l'autre.)
+Trois valeurs seront **différentes chez toi**, et c'est normal : le numéro après `id:`, la date après `WHEN:` et parfois la durée après `Query time:`.
 
-Lis la réponse du haut vers le bas :
+**N'essaie pas de tout comprendre maintenant.** Fais une seule chose : repère que la sortie est faite de **cinq paragraphes** séparés par des lignes vides ou par des titres.
+
+**Étape 2 — Découper en cinq blocs.**
+
+| N° | Bloc | Il commence par | Ce qu'il te dit |
+|---|---|---|---|
+| 1 | Le **bandeau** | `; <<>> DiG …` | Un rappel de ce que tu as tapé |
+| 2 | L'**en-tête** | `;; Got answer:` | Comment l'échange s'est passé (succès ou erreur, combien de fiches reviennent) |
+| 3 | La **question** | `;; QUESTION SECTION:` | Ce que `dig` a réellement demandé |
+| 4 | La **réponse** | `;; ANSWER SECTION:` | Ce que le DNS a répondu : les fiches |
+| 5 | Le **pied** | `;; Query time:` | **Qui** a répondu, en combien de temps, quelle taille |
+
+Le bloc 1 (le bandeau) ne contient rien à apprendre : il répète la commande que tu viens de taper et ses options. On lit les quatre autres **dans l'ordre 3, 4, 2, 5** : d'abord ce qu'on a demandé, puis ce qu'on a reçu, puis si ça s'est bien passé, puis qui a répondu. Suis le guide.
+
+**Étape 3 — Lire le bloc 3 : la question.**
+
+Voici la partie concernée :
+
+```
+;; QUESTION SECTION:
+;www.banquehorizon.com.		IN	A
+```
+
+Elle te redit ce que tu as demandé, en trois morceaux :
+
+- `;www.banquehorizon.com.` : le nom. Le point final est celui de la **racine** de l'arbre (§ I.5) : `dig` écrit toujours le nom complet.
+- `IN` : la *classe*. C'est toujours `IN` (« Internet »). Tu peux l'ignorer.
+- `A` : le *type* de fiche demandé. `A` veut dire « donne-moi l'**adresse** IPv4 ». C'est le type par défaut quand tu n'en précises pas.
+
+Le `;` au début de la ligne signifie « commentaire » pour `dig` : c'est une ligne qui explique, pas une donnée. Toutes les lignes qui commencent par `;` sont des commentaires.
+
+**Étape 4 — Lire le bloc 4 : la réponse.**
+
+C'est le cœur de la sortie :
+
+```
+;; ANSWER SECTION:
+www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
+web.banquehorizon.com.	3600	IN	A	203.0.113.20
+```
+
+Ce sont **deux fiches**, une par ligne. Chaque fiche a cinq colonnes, séparées par des espaces ou des tabulations. Voici la première décomposée :
+
+| Colonne | Valeur de la 1re fiche | Ce que ça veut dire |
+|---|---|---|
+| Nom | `www.banquehorizon.com.` | Le nom auquel la fiche s'applique |
+| TTL | `3600` | Combien de **secondes** cette réponse peut être gardée en cache (§ I.10) : 3 600 s, soit une heure |
+| Classe | `IN` | Toujours `IN` |
+| Type | `CNAME` | Le genre de fiche : ici un **alias** |
+| Donnée | `web.banquehorizon.com.` | Le contenu de la fiche |
+
+Lis maintenant les deux lignes **comme deux phrases** :
+
+1. « `www.banquehorizon.com` est un *alias* de `web.banquehorizon.com` » (type `CNAME`) ;
+2. « `web.banquehorizon.com` a l'adresse `203.0.113.20` » (type `A`).
+
+Tu avais demandé l'adresse de `www`. Le DNS t'a répondu en deux temps : il t'a d'abord dit que `www` n'est qu'un autre nom pour `web`, puis il t'a donné l'adresse de `web`. C'est l'adresse que `ping` utiliserait.
+
+**Étape 5 — Lire le bloc 2 : l'en-tête.**
+
+C'est le bloc le plus dense, donc on le prend ligne par ligne.
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 44
+;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1
+```
+
+*La ligne `status`.*
+
+- `opcode: QUERY` : le message est une **question** ordinaire. Tu peux l'ignorer.
+- `status: NOERROR` : **le code de retour**. `NOERROR` veut dire « aucune erreur, j'ai traité ta question ». C'est le mot à chercher en premier dans toute sortie de `dig`. Tu en rencontreras d'autres :
+
+| Code | Sens | Quand tu le vois |
+|---|---|---|
+| `NOERROR` | Pas d'erreur | La question a été traitée (la réponse peut quand même être vide, voir le TP 13) |
+| `NXDOMAIN` | Ce nom **n'existe pas** | Tu as demandé un nom inconnu (étape 7 du TP 3) |
+| `SERVFAIL` | Le serveur **n'a pas réussi** à répondre | Un serveur en amont est en panne (TP 26) |
+| `REFUSED` | Le serveur **refuse** de te répondre | Il n'a pas le droit de te servir (TP 9) |
+
+- `id: 44` : le **numéro de la question**. Il sert à associer une réponse à sa question. Il change à chaque exécution, ne le retiens pas.
+
+*La ligne `flags`.* Les **drapeaux** sont de petits interrupteurs, chacun désigné par deux lettres :
+
+| Drapeau | Mot anglais | Sens |
+|---|---|---|
+| `qr` | *query response* | Ce message est une **réponse** (et non une question) |
+| `rd` | *recursion desired* | Tu as **demandé** la récursion : « fais tout le chemin pour moi » |
+| `ra` | *recursion available* | Le serveur **offre** la récursion |
+| `aa` | *authoritative answer* | Celui qui répond **fait autorité** sur cette zone (absent ici) |
+
+Ici : `qr rd ra`. Tu lis : « c'est une réponse, tu avais demandé la récursion, le serveur sait la faire ». **Il n'y a pas `aa`** : celui qui t'a répondu n'est donc pas le serveur qui détient la zone, il a appris la réponse ailleurs. Garde ce point : tu le retrouveras avec le drapeau `aa` à l'étape 6 du TP 3.
+
+*Les compteurs* `QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1`. Ils annoncent combien de fiches contient chaque section : 1 question, 2 fiches de réponse (le CNAME et le A), 0 fiche d'autorité, 1 fiche supplémentaire.
+
+Cette « fiche supplémentaire » n'en est pas vraiment une : c'est le décompte d'un champ technique appelé **OPT** (une extension du protocole, EDNS), décrit par les deux lignes suivantes :
+
+```
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 65494
+```
+
+`udp: 65494` annonce la taille maximale des réponses que ce client sait recevoir. **Ignore ces deux lignes** pour l'instant, elles n'ont d'importance qu'au TP 32.
+
+**Étape 6 — Lire le bloc 5 : le pied.**
+
+```
+;; Query time: 0 msec
+;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)
+;; WHEN: Wed Nov 04 11:05:30 UTC 2026
+;; MSG SIZE  rcvd: 84
+```
 
 | Ligne | Ce qu'elle dit |
 |---|---|
-| `status: NOERROR` | La question a été traitée sans erreur |
-| `flags: qr rd ra` | C'est une **r**éponse (`qr`) ; tu **demandais** la récursion (`rd`) ; le serveur **l'offre** (`ra`). Pas de `aa` : celui qui répond **n'est pas** l'autorité de la zone, il l'a apprise ailleurs |
-| `QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1` | Le nombre d'enregistrements de chaque section. L'« 1 » de `ADDITIONAL` est l'enregistrement `OPT` d'EDNS, pas une vraie donnée |
-| `EDNS … udp: 65494` | La taille de réponse que ce serveur sait envoyer en UDP |
-| `QUESTION SECTION` | Ce que tu as demandé : le nom, la classe `IN`, le type `A` (par défaut) |
-| `ANSWER SECTION` | Deux enregistrements : l'alias, puis l'adresse à laquelle il mène. Le **TTL** est `3600` secondes |
-| `SERVER: 127.0.0.53#53 (UDP)` | **À qui** tu as parlé : pas à DNS-RES, mais au **stub local** (voir le TP 5) |
-| `MSG SIZE rcvd: 84` | La taille de la réponse, en octets |
+| `Query time: 0 msec` | La durée de l'échange, en millisecondes. Le simulateur est instantané ; sur un vrai réseau, on lit quelques millisecondes |
+| `SERVER: 127.0.0.53#53(127.0.0.53) (UDP)` | **À qui `dig` a parlé** : l'adresse `127.0.0.53`, le port `53` (le port du DNS), en `UDP` (un mode d'envoi léger, voir le TP 32) |
+| `WHEN: …` | La date de la question (celle de ta machine) |
+| `MSG SIZE rcvd: 84` | La taille de la réponse reçue, en octets |
 
-**🧠 Ce que tu viens d'apprendre.** Une réponse `dig` n'est pas « une adresse » : c'est un **message** avec un en-tête (drapeaux, code de retour, compteurs) et quatre sections. La ligne la plus importante est `SERVER:` — elle te dit qui a répondu. La seconde est `flags:` — elle te dit s'il s'agit d'une autorité (`aa`) ou d'un cache (`ra` sans `aa`).
+**Remarque la ligne `SERVER`.** `dig` n'a **pas** parlé à `DNS-RES` (`10.20.20.53`) ni à `DC1` (`10.20.20.10`) : il a parlé à `127.0.0.53`, une adresse qui désigne **la machine elle-même**. Un petit programme installé sur `PC-CONSEILLER` écoute là et relaie les questions. Le TP 5 explique pourquoi.
+
+**Étape 7 — Les trois réflexes.** Retiens l'ordre dans lequel un administrateur lit une sortie de `dig` :
+
+1. **`status`** : y a-t-il une erreur ? (`NOERROR` : non.)
+2. **`ANSWER SECTION`** : qu'est-ce que le DNS a répondu ? Y a-t-il des fiches ?
+3. **`SERVER` et `flags`** : qui m'a répondu, et fait-il autorité (`aa`) ou répond-il depuis un cache ?
+
+🆘 **Si ça ne marche pas.**
+
+- `connection timed out; no servers could be reached` : aucun serveur DNS n'a répondu. Refais le TP 1 (le laboratoire est peut-être mal importé).
+- Tu lis `status: NXDOMAIN` : tu as sans doute fait une faute de frappe dans le nom.
+- Le `id`, la date et la durée sont différents de ceux du document : c'est normal.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- Une réponse `dig` n'est pas « une adresse » : c'est un **message** composé d'un en-tête (code de retour, drapeaux, compteurs) et de sections (question, réponse, …).
+- Une fiche a toujours la forme **nom, TTL, classe, type, donnée**.
+- Les deux lignes à regarder en premier sont `status:` (est-ce que ça a marché ?) et `SERVER:` (à qui ai-je parlé ?).
+- Le drapeau `aa` dit si celui qui répond détient la zone (autorité) ou répond depuis un cache.
+
+**Vérifie-toi.**
+
+1. Quelle colonne d'une fiche donne la durée de cache ?
+2. Que veut dire `status: NXDOMAIN` ?
+3. Sur la sortie ci-dessus, le serveur qui a répondu fait-il autorité ? Comment le sais-tu ?
+
+*Réponses.* (1) La colonne **TTL**, en secondes. (2) Le nom demandé n'existe pas. (3) Non : le drapeau `aa` est absent de la ligne `flags`.
 
 ---
 
-## 11. 🧪 TP 3 — Choisir ce que `dig` affiche
+## III.2 🧪 TP 3 — Choisir ce que `dig` affiche
 
-**🎯 Objectif.** Ne voir que ce qui t'intéresse, et lire les sections qu'un résolveur masque.
+**🎯 Objectif.** Ne voir que ce qui t'intéresse, choisir **à quel serveur** tu poses la question, et reconnaître la réponse d'une autorité.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Le TP 2 terminé, un terminal sur `PC-CONSEILLER`. Durée : environ 35 minutes.
+
+**Étape 1 — La version courte : `+short`.**
 
 ```
 # sur PC-CONSEILLER
 dig www.banquehorizon.com +short
-dig www.banquehorizon.com +noall +answer
-dig www.banquehorizon.com +noall +answer +stats
-dig @203.0.113.10 banquehorizon.com MX +norecurse +noall +comments +answer +authority +additional
 ```
 
-**✅ Résultat attendu.**
-
-`+short` ne garde que les données :
+`+short` est une **option** de `dig`. Les options de `dig` commencent par un `+` et se placent après le nom. Celle-ci dit : « ne me donne que les données, sans rien d'autre ».
 
 ```
 web.banquehorizon.com.
 203.0.113.20
 ```
 
-`+noall +answer` : tout est éteint, puis on rallume la seule section de réponse (avec ses TTL) :
+Tu retrouves les deux données de la réponse du TP 2 : le nom canonique (la cible de l'alias), puis l'adresse. Plus de TTL, plus de type, plus d'en-tête : c'est pratique pour récupérer une valeur, mais tu perds les informations utiles au diagnostic.
+
+**Étape 2 — Éteindre tout, rallumer ce qu'on veut : `+noall +answer`.**
+
+Pense à un tableau de bord avec des interrupteurs. Chaque morceau de la sortie de `dig` est un interrupteur que tu peux allumer (`+nom`) ou éteindre (`+nonom`). Deux interrupteurs sont particulièrement utiles :
+
+- `+noall` éteint **tous** les morceaux d'un coup ;
+- `+answer` rallume **uniquement** la section de réponse.
+
+```
+# sur PC-CONSEILLER
+dig www.banquehorizon.com +noall +answer
+```
 
 ```
 www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
 web.banquehorizon.com.	3600	IN	A	203.0.113.20
 ```
 
-`+stats` rajoute le pied de page (durée, serveur, date, taille). Et la quatrième commande interroge **directement NS1-BANK**, sans le stub :
+Voilà la section réponse seule, **avec** les TTL et les types. C'est la forme que l'on utilise le plus souvent.
+
+Les interrupteurs que tu viendras allumer sont :
+
+| Option | Ce qu'elle rallume |
+|---|---|
+| `+question` | La section question |
+| `+answer` | La section réponse |
+| `+authority` | La section autorité (les serveurs de la zone) |
+| `+additional` | La section supplémentaire (adresses utiles) |
+| `+comments` | L'en-tête (`status`, `flags`, compteurs) |
+| `+stats` | Le pied (durée, serveur, date, taille) |
+| `+cmd` | Le bandeau du début |
+
+**Étape 3 — Ajouter le pied : `+stats`.**
+
+```
+# sur PC-CONSEILLER
+dig www.banquehorizon.com +noall +answer +stats
+```
+
+```
+www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
+web.banquehorizon.com.	3600	IN	A	203.0.113.20
+;; Query time: 0 msec
+;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)
+;; WHEN: Wed Nov 04 11:05:30 UTC 2026
+;; MSG SIZE  rcvd: 84
+```
+
+Les deux premières lignes sont la réponse, les quatre suivantes sont le pied que tu connais (TP 2, étape 6). Remarque `SERVER: 127.0.0.53` : tu parles encore au petit programme local.
+
+**Étape 4 — Choisir à qui on parle : `@serveur`.**
+
+Par défaut, `dig` interroge le serveur que la machine a configuré (ici le programme local `127.0.0.53`). Tu peux imposer un autre serveur en écrivant son adresse **précédée d'un `@`**. Tu vas interroger directement `DNS-RES`, le résolveur de l'agence :
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.banquehorizon.com +noall +answer +stats
+```
+
+```
+www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
+web.banquehorizon.com.	3600	IN	A	203.0.113.20
+;; Query time: 0 msec
+;; SERVER: 10.20.20.53#53(10.20.20.53) (UDP)
+;; WHEN: Wed Nov 04 20:12:19 UTC 2026
+;; MSG SIZE  rcvd: 152
+```
+
+Compare avec l'étape 3 : **la réponse est la même** (le même alias, la même adresse), mais la ligne `SERVER` a changé. Elle dit maintenant `10.20.20.53` : c'est bien `DNS-RES` qui t'a répondu, sans passer par le programme local. La taille du message change aussi (152 octets au lieu de 84), ce qui montre que ce n'est pas le même interlocuteur qui a rédigé la réponse.
+
+La forme générale est donc :
+
+```schema
+dig @serveur  nom  [type]  [+options]
+```
+
+**Étape 5 — Choisir le type de fiche.**
+
+Jusqu'ici tu as demandé des fiches de type `A` (les adresses). Le type se place **après le nom**. Pour savoir qui reçoit le courrier de la banque, tu demandes les fiches `MX` (*mail exchanger*, « serveur de messagerie »). Et tu interroges cette fois `NS1-BANK` (`203.0.113.10`), le serveur qui détient la zone `banquehorizon.com` :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 banquehorizon.com MX +noall +answer
+```
+
+```
+banquehorizon.com.	3600	IN	MX	10 mail.banquehorizon.com.
+banquehorizon.com.	3600	IN	MX	20 mail2.banquehorizon.com.
+```
+
+Chaque ligne se lit : « pour le courrier de `banquehorizon.com`, le serveur de messagerie est `mail.banquehorizon.com`, avec la **préférence** `10` » (et `mail2` avec la préférence `20`). **Le plus petit nombre est essayé en premier** : `mail` est le serveur principal, `mail2` est le secours (§ I.11, détaillé au TP 11).
+
+> 💡 L'ordre des deux lignes peut être inversé chez toi : le serveur fait tourner les fiches d'un même ensemble pour répartir la charge. Ce n'est **pas** l'ordre qui compte, c'est le nombre de préférence.
+
+**Étape 6 — Parler à une autorité : `+norecurse`.**
+
+Dans le TP 2, le drapeau `rd` était présent : tu **demandais** la récursion. Quand tu interroges l'autorité de la zone, tu n'en as pas besoin. Tu peux l'éteindre avec `+norecurse` (le préfixe `no` éteint toujours une option). Tu vas aussi rallumer l'en-tête et les sections autorité et supplémentaire pour tout voir :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 banquehorizon.com MX +norecurse +noall +comments +answer +authority +additional
+```
 
 ```
 ;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 60
 ;; flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 5
 
 ;; OPT PSEUDOSECTION:
 ; EDNS: version: 0, flags:; udp: 1232
 ;; ANSWER SECTION:
-banquehorizon.com.	3600	IN	MX	10 mail.banquehorizon.com.
 banquehorizon.com.	3600	IN	MX	20 mail2.banquehorizon.com.
+banquehorizon.com.	3600	IN	MX	10 mail.banquehorizon.com.
 
 ;; AUTHORITY SECTION:
 banquehorizon.com.	3600	IN	NS	ns1.banquehorizon.com.
 banquehorizon.com.	3600	IN	NS	ns2.banquehorizon.com.
 
 ;; ADDITIONAL SECTION:
-mail.banquehorizon.com.	3600	IN	A	203.0.113.25
 mail2.banquehorizon.com. 3600	IN	A	203.0.113.26
+mail.banquehorizon.com.	3600	IN	A	203.0.113.25
 ns1.banquehorizon.com.	3600	IN	A	203.0.113.10
 ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
 ```
 
-(L'ordre de deux enregistrements d'un même ensemble peut changer d'une exécution à l'autre : c'est la **rotation** que les serveurs appliquent pour répartir la charge.)
+Lis cette sortie par trois différences avec le TP 2 :
+
+1. **`flags: qr aa`.** `aa` est là : cette fois, celui qui répond **fait autorité**. Il n'y a ni `rd` (tu ne l'as pas demandé) ni `ra` (une autorité n'offre pas de récursion).
+2. **`AUTHORITY SECTION`.** Une autorité écrit à côté de la réponse **la liste des serveurs de la zone** : `ns1` et `ns2`. C'est comme une carte de visite.
+3. **`ADDITIONAL SECTION`.** Elle écrit aussi **les adresses dont tu auras besoin ensuite** : celles des serveurs de messagerie qu'elle vient de te citer (`mail`, `mail2`) et celles des serveurs de la zone (`ns1`, `ns2`). Elle t'évite de poser quatre questions de plus.
+
+`AUTHORITY: 2, ADDITIONAL: 5` : deux fiches d'autorité, et cinq en supplément, dont l'enregistrement technique `OPT` (étape 5 du TP 2) et les quatre adresses.
+
+**Étape 7 — Une réponse qui dit « non ».**
+
+Que répond le DNS à un nom qui n'existe pas ? Tu vas le voir.
+
+```
+# sur PC-CONSEILLER
+dig nexiste.banquehorizon.com +noall +comments
+```
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 61
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 65494
+```
+
+Trois choses à lire :
+
+- **`status: NXDOMAIN`** : « ce nom n'existe pas ». Ce n'est **pas une panne** : c'est une réponse parfaitement valable, que le DNS donne volontiers.
+- **`ANSWER: 0`** : aucune fiche, puisqu'il n'y a rien à donner.
+- **`AUTHORITY: 1`** : le serveur a joint une fiche d'autorité (la fiche `SOA`, que tu liras au TP 14) qui permet au résolveur de retenir « ce nom n'existe pas » pendant un certain temps, pour ne pas reposer la question (TP 22).
+
+**À toi de jouer.** Affiche **uniquement** les noms des serveurs de la zone `banquehorizon.com` (leur type est `NS`), en version courte, sans préciser de serveur.
+
+<details>
+<summary>Voir la solution</summary>
+
+```
+# sur PC-CONSEILLER
+dig banquehorizon.com NS +short
+```
+
+```
+ns1.banquehorizon.com.
+ns2.banquehorizon.com.
+```
+
+On a mis le type `NS` après le nom, et `+short` pour ne garder que les données.
+
+</details>
+
+🆘 **Si ça ne marche pas.**
+
+- `dig: couldn't get address for '…'` ou `status: SERVFAIL` : vérifie l'adresse après le `@` (pas d'espace entre le `@` et l'adresse).
+- `connection timed out` en interrogeant `203.0.113.10` : ce serveur ne répond pas, ou le routeur de l'agence n'a pas fini d'apprendre ses routes. Relance `ping -c 1 203.0.113.10` (§ II.3) : tant qu'il échoue, `dig` échouera aussi.
 
 **🧠 Ce que tu viens d'apprendre.**
 
-- `+noall` éteint tout, puis on rallume : `+question`, `+answer`, `+authority`, `+additional`, `+comments` (en-tête et compteurs), `+stats`, `+cmd` (la bannière). `+short` est un raccourci qui ne garde que les données.
-- `@203.0.113.10` choisit **le serveur à interroger** au lieu de celui du système. `+norecurse` retire le drapeau `rd` : « ne fais pas de récursion pour moi ».
-- Un serveur **faisant autorité** (`aa`) écrit, à côté de la réponse, **les serveurs de la zone** (section `AUTHORITY`) et **les adresses dont tu auras besoin ensuite** (section `ADDITIONAL` : les serveurs de messagerie qu'il vient de te citer *et* les serveurs de la zone). C'est le comportement par défaut de BIND (`minimal-responses no`).
+- Les options de `dig` s'écrivent `+option` pour allumer, `+nooption` pour éteindre. **`+noall` puis ce qu'on veut** est la méthode la plus propre.
+- `@adresse` choisit **à qui on parle** ; le mot placé après le nom (`MX`, `NS`, `A`…) choisit **le type de fiche**.
+- Une **autorité** (`aa`) répond avec les serveurs de la zone (`AUTHORITY`) et des adresses utiles (`ADDITIONAL`), sans offrir de récursion.
+- `NXDOMAIN` est une réponse, pas une panne : elle dit « ce nom n'existe pas ».
+
+**Vérifie-toi.**
+
+1. Quelle option montre uniquement l'en-tête et la réponse ?
+2. Comment demander à `DNS-RES` (`10.20.20.53`) l'adresse de `www.banquehorizon.com` ?
+3. Qu'est-ce qui distingue, dans `flags`, la réponse d'une autorité de celle d'un résolveur ?
+
+*Réponses.* (1) `+noall +comments +answer`. (2) `dig @10.20.20.53 www.banquehorizon.com`. (3) Une autorité porte le drapeau `aa` ; un résolveur porte `ra` mais pas `aa`.
 
 ---
 
-## 12. 🧪 TP 4 — Les mêmes questions côté Windows
+## III.3 🧪 TP 4 — Les mêmes questions côté Windows
 
-**🎯 Objectif.** Poser les mêmes questions depuis un poste Windows et reconnaître ce que chaque outil ajoute.
+**🎯 Objectif.** Poser les mêmes questions depuis un poste Windows, avec les deux outils que Windows met à ta disposition, et reconnaître ce que chacun ajoute.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal PowerShell sur `PC-GUICHET1` (rappel : § 0.5, la ligne d'invite commence par `PS`). Durée : environ 25 minutes.
+
+Windows n'a pas `dig`. Il a `nslookup`, un outil très ancien qui existe aussi sous Linux, et `Resolve-DnsName`, l'outil moderne de PowerShell.
+
+**Étape 1 — `nslookup` : la question la plus simple.**
 
 ```powershell
 # sur PC-GUICHET1
 nslookup www.banquehorizon.com
-nslookup -type=MX banquehorizon.com
-nslookup www.banquehorizon.com 10.20.20.53
-Resolve-DnsName banquehorizon.com -Type MX
 ```
-
-**✅ Résultat attendu.**
 
 ```
 Server:  dc1.horizon.local
@@ -1201,16 +1499,42 @@ Address:  203.0.113.20
 Aliases:  www.banquehorizon.com
 ```
 
+Lis ces sept lignes en deux paragraphes :
+
+- **`Server:` et `Address:`** : *à qui* `nslookup` a posé la question. C'est `DC1`, le premier serveur DNS que le DHCP a donné au poste (§ II.3, partie B).
+- **`Non-authoritative answer:`** : « réponse **non faisant autorité** ». Elle veut dire que `DC1` n'est pas le serveur qui détient la zone `banquehorizon.com` : il l'a apprise ailleurs. Ce n'est pas un défaut.
+- **`Name:` / `Address:` / `Aliases:`** : le résultat. `nslookup` te dit que le nom réel est `web.banquehorizon.com`, son adresse est `203.0.113.20`, et que `www.banquehorizon.com` en est un alias.
+
+`nslookup` fait donc le même travail que `dig`, mais il **résume** : tu ne vois ni les TTL, ni les drapeaux.
+
+**Étape 2 — Demander un type de fiche : `-type=`.**
+
+Sous `nslookup`, une option s'écrit avec un tiret et non avec un plus.
+
+```powershell
+# sur PC-GUICHET1
+nslookup -type=MX banquehorizon.com
+```
+
 ```
 Server:  dc1.horizon.local
 Address:  10.20.20.10
 
 Non-authoritative answer:
-banquehorizon.com	MX preference = 20, mail exchanger = mail2.banquehorizon.com
 banquehorizon.com	MX preference = 10, mail exchanger = mail.banquehorizon.com
+banquehorizon.com	MX preference = 20, mail exchanger = mail2.banquehorizon.com
 ```
 
-Interroger **DNS-RES** directement (3ᵉ commande) change la première ligne :
+Même lecture que le TP 3, étape 5 : deux serveurs de messagerie, `mail` avec la préférence 10, `mail2` avec la préférence 20. L'ordre d'affichage peut varier, seul le nombre de préférence compte.
+
+**Étape 3 — Choisir le serveur : un deuxième argument.**
+
+Pour interroger un serveur précis, on l'écrit **à la fin**, sans `@`.
+
+```powershell
+# sur PC-GUICHET1
+nslookup www.banquehorizon.com 10.20.20.53
+```
 
 ```
 Server:  UnKnown
@@ -1222,7 +1546,16 @@ Address:  203.0.113.20
 Aliases:  www.banquehorizon.com
 ```
 
-et `Resolve-DnsName -Type MX` rend un objet par enregistrement :
+La réponse est identique, mais la première ligne change : `Server:  UnKnown`. **Ce n'est pas une erreur.** Avant de poser ta question, `nslookup` essaie de retrouver le *nom* du serveur à partir de son adresse (c'est le « DNS inverse », que tu verras au TP 12). `DC1` a un nom déclaré dans l'annuaire (`dc1.horizon.local`), pas `DNS-RES` : `nslookup` écrit alors `UnKnown` (« inconnu »). L'adresse en dessous (`10.20.20.53`) prouve que c'est bien lui qui a répondu.
+
+**Étape 4 — `Resolve-DnsName` : l'outil PowerShell.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName banquehorizon.com -Type MX
+```
+
+`Resolve-DnsName` est une *commande PowerShell* (une « cmdlet »). Son premier argument est le nom. Le mot `-Type` est un **paramètre** : un tiret, un nom, puis sa valeur (`MX`).
 
 ```
 Name         : banquehorizon.com
@@ -1231,39 +1564,57 @@ TTL          : 3600
 Section      : Answer
 NameExchange : mail.banquehorizon.com
 Preference   : 10
+
+Name         : banquehorizon.com
+Type         : MX
+TTL          : 3600
+Section      : Answer
+NameExchange : mail2.banquehorizon.com
+Preference   : 20
 ```
 
-(Là aussi, l'ordre des deux MX peut varier.)
+Au lieu d'un texte, `Resolve-DnsName` rend **un petit tableau par fiche**, avec une ligne par champ : `Name` (le nom), `Type`, `TTL`, `Section`, puis les champs propres au type (`NameExchange` et `Preference` pour un MX). On y retrouve les mêmes informations que dans la réponse de `dig`, y compris le TTL.
+
+**Comparaison des trois outils.**
+
+| | `dig` (Linux) | `nslookup` (Windows) | `Resolve-DnsName` (Windows) |
+|---|---|---|---|
+| Montre l'en-tête et les drapeaux | oui | non | non |
+| Montre le TTL | oui | non | oui |
+| Choisir le serveur | `@serveur` | dernier argument | `-Server` |
+| Choisir le type | `MX` après le nom | `-type=MX` | `-Type MX` |
+| Interroge toujours un serveur | oui | oui | non : regarde d'abord le **cache du poste** (TP 23) |
+
+🆘 **Si ça ne marche pas.**
+
+- `nslookup` n'est pas reconnu : tu es dans un terminal Linux. Les commandes de ce TP se tapent sur `PC-GUICHET1`.
+- `DNS request timed out` : le serveur interrogé ne répond pas. Refais le TP 1.
 
 **🧠 Ce que tu viens d'apprendre.**
 
-- `nslookup` **cherche d'abord le nom du serveur interrogé** (une requête PTR sur son adresse) pour écrire `Server:`. DC1 a un enregistrement inverse (`dc1.horizon.local`), DNS-RES n'en a pas : `UnKnown`. Ce n'est **pas** une erreur.
-- `Non-authoritative answer` : la réponse ne vient pas de l'autorité de la zone, mais d'un cache ou d'un redirecteur. DC1 n'est pas autorité pour `banquehorizon.com`.
-- `Aliases:` : `nslookup` présente le CNAME comme un alias du nom final.
-- `Resolve-DnsName` passe par **le cache du poste** (TP 23) alors que `nslookup` interroge toujours un serveur.
-- Les MX arrivent dans un ordre quelconque : c'est **la préférence** (le plus petit nombre d'abord) qui compte, pas la position.
+- `nslookup` **résume** : il sert pour un coup d'œil rapide. `dig` **détaille** : il sert pour comprendre.
+- `Non-authoritative answer` veut dire « je ne suis pas le serveur qui détient la zone, je l'ai apprise d'un autre ».
+- `Server: UnKnown` n'est pas une erreur : `nslookup` n'a simplement pas trouvé de nom pour l'adresse du serveur.
+- `Resolve-DnsName` passe par le cache du poste, `nslookup` jamais.
 
 ---
 
-## 13. 🧪 TP 5 — Qui est mon serveur DNS ?
+## III.4 🧪 TP 5 — Qui est mon serveur DNS ?
 
-**🎯 Objectif.** Savoir, sur chaque système, **quel serveur DNS la machine interroge**, et d'où elle le tient. C'est la première question de tout dépannage.
+**🎯 Objectif.** Savoir, sur chaque système, **à quel serveur DNS la machine pose ses questions**, et d'où elle le tient. C'est la première question de tout dépannage.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `PC-CONSEILLER` (Linux) et un autre sur `PC-GUICHET1` (Windows). Durée : environ 20 minutes.
+
+Quand tu tapes un nom dans un navigateur, ta machine doit savoir **à qui** poser la question. Cette adresse est écrite quelque part. Il faut savoir la retrouver, car un serveur DNS mal configuré est l'une des causes de panne les plus fréquentes.
+
+**Étape 1 — Sous Linux : le fichier `/etc/resolv.conf`.**
 
 ```
 # sur PC-CONSEILLER
 cat /etc/resolv.conf
-resolvectl status
 ```
 
-```powershell
-# sur PC-GUICHET1
-Get-DnsClientServerAddress -InterfaceAlias "Ethernet 0"
-Get-DnsClient
-```
-
-**✅ Résultat attendu.**
+`cat` affiche le contenu d'un fichier, ici le fichier de configuration du client DNS.
 
 ```
 # This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).
@@ -1272,6 +1623,26 @@ Get-DnsClient
 nameserver 127.0.0.53
 search horizon.local
 ```
+
+- Les deux premières lignes commencent par `#` : ce sont des **commentaires** (la machine les ignore). Elles signalent que le fichier est géré automatiquement, par `systemd-resolved`.
+- `nameserver 127.0.0.53` : le serveur DNS de la machine. **Mais ce n'est pas un vrai serveur** : `127.0.0.53` est une adresse qui désigne la machine elle-même. Un petit programme y écoute ; on l'appelle le **stub** (§ I.8).
+- `search horizon.local` : le *suffixe de recherche* (TP 6).
+
+Pourquoi ce détour ? Parce que les vrais serveurs changent : le DHCP peut en donner de nouveaux à chaque connexion. Plutôt que de réécrire un fichier, le système laisse **le stub** les connaître et garde le fichier immuable. Le stub a un autre avantage : il garde en cache les réponses du poste (TP 21).
+
+```schema
+application  ──►  stub 127.0.0.53  ──►  DC1 10.20.20.10      (d'abord)
+(dig, ping)       (sur le poste)        DNS-RES 10.20.20.53  (si DC1 ne répond pas)
+```
+
+**Étape 2 — Retrouver les vrais serveurs : `resolvectl status`.**
+
+```
+# sur PC-CONSEILLER
+resolvectl status
+```
+
+`resolvectl` est la télécommande du stub. Sa sortie est longue, mais **trois lignes** seulement t'intéressent, dans le bloc `Link 2 (eth0)` :
 
 ```
 Global
@@ -1291,6 +1662,21 @@ MulticastDNS setting: no
           DNS Domain: horizon.local
 ```
 
+- `Current DNS Server: 10.20.20.10` : le serveur qui a répondu en dernier (`DC1`).
+- `DNS Servers: 10.20.20.10 10.20.20.53` : la **liste** des serveurs, dans l'ordre où on les essaie. C'est le DHCP qui l'a fournie (§ II.3, partie B).
+- `DNS Domain: horizon.local` : le suffixe de recherche.
+
+**Étape 3 — Sous Windows : `Get-DnsClientServerAddress`.**
+
+Il n'y a pas de stub sous Windows : le client DNS (le service `Dnscache`) lit directement les adresses de la carte réseau.
+
+```powershell
+# sur PC-GUICHET1
+Get-DnsClientServerAddress -InterfaceAlias "Ethernet 0"
+```
+
+Le nom d'une commande PowerShell suit toujours la forme **Verbe-Nom** : `Get-` (obtenir) `DnsClientServerAddress` (les adresses des serveurs DNS du client). Le paramètre `-InterfaceAlias` choisit la carte réseau, ici `Ethernet 0`, celle qui est branchée au réseau.
+
 ```
 InterfaceAlias InterfaceIndex AddressFamily ServerAddresses           
 -------------- -------------- ------------- ---------------           
@@ -1298,41 +1684,55 @@ Ethernet 0                  2 IPv4          {10.20.20.10, 10.20.20.53}
 Ethernet 0                  2 IPv6          {}                        
 ```
 
-`Get-DnsClient` montre en plus le suffixe propre à la carte (`ConnectionSpecificSuffix`: `horizon.local`).
+La ligne `IPv4` donne les deux serveurs, dans l'ordre : `DC1` d'abord, puis `DNS-RES`. La ligne `IPv6` est vide : aucun serveur DNS n'est configuré pour IPv6.
+
+**Étape 4 — Le suffixe de la carte : `Get-DnsClient`.**
+
+```powershell
+# sur PC-GUICHET1
+Get-DnsClient
+```
+
+```
+InterfaceAlias InterfaceIndex ConnectionSpecificSuffix ConnectionSpecificSuffixSearchList RegisterThisConnectionsAddress UseSuffixWhenRegistering
+-------------- -------------- ------------------------ ---------------------------------- ------------------------------ ------------------------
+Ethernet 0                  2 horizon.local            {}                                 True                           False                   
+Ethernet 1                  3                          {}                                 True                           False                   
+Ethernet 2                  4                          {}                                 True                           False                   
+Ethernet 3                  5                          {}                                 True                           False                   
+```
+
+Lis seulement la colonne `ConnectionSpecificSuffix`. La carte `Ethernet 0` porte `horizon.local` ; les trois autres cartes n'ont pas de suffixe, car elles ne sont reliées à rien.
+
+> 🔍 **Point d'audit** — Que les serveurs DNS d'un poste viennent du DHCP est une bonne chose (un seul endroit à tenir à jour), **à condition que le serveur DHCP soit lui-même maîtrisé**. Un DHCP pirate qui distribue son propre « DNS » détourne toute la résolution du poste.
+
+🆘 **Si ça ne marche pas.** Si `resolvectl status` affiche `DNS Servers` vide, le DHCP n'a pas répondu à `PC-CONSEILLER` : refais le TP 1.
 
 **🧠 Ce que tu viens d'apprendre.**
 
-- Sous Ubuntu, `/etc/resolv.conf` ne contient **pas** les vrais serveurs : il pointe le **stub** `127.0.0.53` de `systemd-resolved`. C'est lui qui connaît les vrais serveurs (ceux du bail DHCP, par carte réseau) : `resolvectl status` les liste. `Current DNS Server` est celui qui a répondu en dernier.
-- Pourquoi un stub ? Parce que les serveurs peuvent changer à chaque bail DHCP, et que le stub **garde un cache** pour le poste (TP 21).
-- Sous Windows, il n'y a pas de stub : le client DNS (`Dnscache`) lit directement les adresses de la carte, et on les voit avec `Get-DnsClientServerAddress`.
-- `search horizon.local` / `DNS Domain: horizon.local` : le **suffixe de recherche** (TP 6).
-
-> 🔍 **Point d'audit** — Que le serveur DNS d'un poste vienne du DHCP est une bonne chose (un seul endroit à tenir à jour) **à condition que le serveur DHCP soit lui-même maîtrisé** : un DHCP pirate qui donne son propre « DNS » détourne toute la résolution du poste.
+- Sous Ubuntu, `/etc/resolv.conf` ne contient **pas** les vrais serveurs : il pointe vers le **stub** local `127.0.0.53`. Les vrais serveurs se lisent avec `resolvectl status`.
+- Sous Windows, il n'y a pas de stub : `Get-DnsClientServerAddress` liste directement les serveurs de la carte.
+- L'**ordre** des serveurs compte : le premier est essayé d'abord.
+- La liste vient du DHCP, ce qui est pratique mais doit être protégé (point d'audit).
 
 ---
 
-## 14. 🧪 TP 6 — Les suffixes de recherche
+## III.5 🧪 TP 6 — Les suffixes de recherche
 
 **🎯 Objectif.** Comprendre pourquoi taper `intranet` suffit, alors que le vrai nom est `intranet.horizon.local`.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `PC-GUICHET1` et un sur `PC-CONSEILLER`. Durée : environ 25 minutes.
+
+Dans une entreprise, on ne tape pas `intranet.horizon.local` : on tape `intranet`, et ça marche. Il y a donc quelqu'un qui **complète le nom**. Qui ? Et pourquoi `dig` ne le fait-il pas ?
+
+**Le principe.** Un nom **sans aucun point** est un nom *court*. Le poste lui **ajoute un suffixe** pris dans sa liste de recherche (celle que tu as vue au TP 5 : `horizon.local`), avant de poser la question. C'est **le poste qui complète, pas le serveur** : sur le fil, la question qui part est bien `intranet.horizon.local`.
+
+**Étape 1 — Sous Windows.**
 
 ```powershell
 # sur PC-GUICHET1
 Resolve-DnsName intranet
 ```
-
-```
-# sur PC-CONSEILLER
-getent hosts intranet
-getent hosts dc1.horizon.local
-dig intranet.horizon.local +short
-dig intranet +noall +comments +question
-dig intranet +search +noall +comments +question +answer
-dig intranet +search +short
-```
-
-**✅ Résultat attendu.**
 
 ```
 Name     : intranet.horizon.local
@@ -1348,16 +1748,56 @@ Section   : Answer
 IPAddress : 10.20.20.10
 ```
 
+Tu avais tapé `intranet` ; la fiche s'appelle `intranet.horizon.local`. Le poste a donc ajouté `horizon.local` tout seul. Tu vois aussi que `intranet` est un **alias** (`CNAME`) de `dc1.horizon.local`, dont l'adresse est `10.20.20.10`.
+
+**Étape 2 — Sous Linux, comme une application.**
+
+```
+# sur PC-CONSEILLER
+getent hosts intranet
+```
+
+`getent hosts` pose la question comme le ferait un programme (rappel : § I.9).
+
 ```
 10.20.20.10     dc1.horizon.local intranet.horizon.local
+```
+
+Une ligne : l'adresse, puis le **nom canonique** (le vrai nom, `dc1.horizon.local`), puis l'alias que tu as suivi (`intranet.horizon.local`). L'application a complété le nom elle aussi.
+
+**Étape 3 — Vérifier que c'est la même machine.**
+
+```
+# sur PC-CONSEILLER
+getent hosts dc1.horizon.local
+```
+
+```
 10.20.20.10     dc1.horizon.local
+```
+
+Même adresse, `10.20.20.10`. `intranet` n'est qu'un autre nom pour `DC1`.
+
+**Étape 4 — `dig` avec le nom complet.**
+
+```
+# sur PC-CONSEILLER
+dig intranet.horizon.local +short
+```
+
+```
 dc1.horizon.local.
 10.20.20.10
 ```
 
-`getent hosts intranet` écrit le nom **canonique** d'abord (`dc1.horizon.local`, le bout du CNAME) puis l'alias qu'on a suivi (`intranet.horizon.local`) : c'est la forme d'un enregistrement `hosts`, nom officiel puis surnoms.
+Avec le nom **complet**, `dig` répond sans surprise : le nom canonique, puis l'adresse.
 
-`dig`, lui, ne cherche **pas** dans la liste de suffixes tant qu'on ne le lui demande pas : le nom est cherché tel quel (`intranet.`, la racine) et n'existe pas.
+**Étape 5 — `dig` avec le nom court : il ne complète pas.**
+
+```
+# sur PC-CONSEILLER
+dig intranet +noall +comments +question
+```
 
 ```
 ;; Got answer:
@@ -1370,7 +1810,16 @@ dc1.horizon.local.
 ;intranet.			IN	A
 ```
 
-Avec `+search`, il lit la liste de `/etc/resolv.conf` (`search horizon.local`) et obtient, comme les applications, la bonne réponse. Remarque la question : c'est `intranet.horizon.local.` qui est partie sur le fil.
+`status: NXDOMAIN` : le nom n'existe pas. Regarde la section question : `dig` a demandé `intranet.` et non `intranet.horizon.local.`. Le point final désigne la racine, c'est-à-dire un nom **sans suffixe**. `dig` prend ce que tu écris à la lettre ; or aucun domaine nommé simplement `intranet` n'existe à la racine.
+
+**Étape 6 — Demander à `dig` de compléter : `+search`.**
+
+```
+# sur PC-CONSEILLER
+dig intranet +search +noall +comments +question +answer
+```
+
+L'option `+search` dit à `dig` : « lis la ligne `search` de `/etc/resolv.conf` (TP 5) et complète comme une application ».
 
 ```
 ;; Got answer:
@@ -1387,14 +1836,25 @@ intranet.horizon.local.	3600	IN	CNAME	dc1.horizon.local.
 dc1.horizon.local.	3600	IN	A	10.20.20.10
 ```
 
-```
-dc1.horizon.local.
-10.20.20.10
-```
+Cette fois, `NOERROR` : la question est devenue `intranet.horizon.local.` et la réponse est arrivée.
 
-**🧠 Ce que tu viens d'apprendre.** Le nom `intranet` n'a **aucun point** : le client le considère comme « court » et lui **ajoute le suffixe** reçu du DHCP (`horizon.local`) avant de poser la question. C'est le client qui complète, pas le serveur : sur le fil, la question est bien `intranet.horizon.local`. `dig`, lui, **n'ajoute pas** de suffixe par défaut (il faut `+search`) : c'est une différence classique entre ce que voient les applications (`getent`, `ping`, `curl`) et ce que montre `dig`.
+⚠️ **Attention** — Un suffixe automatique est pratique et **dangereux**. Si `intranet.horizon.local` n'existait pas, le poste pourrait essayer le suffixe suivant de sa liste, par exemple `intranet.com`. Un nom court mal tapé peut ainsi tomber sur le site d'un tiers. Réduis la liste des suffixes au strict nécessaire.
 
-⚠️ **Attention** — Un suffixe automatique est pratique et **dangereux** : si `intranet.horizon.local` n'existe pas, le client peut essayer `intranet.com`, ou le premier suffixe suivant. Un nom court mal tapé peut ainsi tomber sur le site d'un tiers. Réduis la liste des suffixes au strict nécessaire.
+🆘 **Si ça ne marche pas.** À l'étape 6, `NXDOMAIN` malgré `+search` : le fichier `/etc/resolv.conf` n'a pas de ligne `search` (relis l'étape 1 du TP 5).
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- Un nom **sans point** est complété par le **poste**, avec les suffixes de sa liste de recherche. Le serveur DNS ne voit que le nom complet.
+- Les applications (`ping`, `getent`, `curl`) et `Resolve-DnsName` complètent. **`dig` ne complète pas** tant qu'on ne lui dit pas `+search`.
+- C'est une différence classique entre « ce que voient les applications » et « ce que montre `dig` » : quand les deux se contredisent, pense d'abord au suffixe.
+
+**Vérifie-toi.**
+
+1. Quelle commande de la Partie III complète un nom court tout seul ? Laquelle ne le fait pas ?
+2. Que contient la section question quand on tape `dig intranet` ?
+3. Pourquoi une liste de suffixes trop longue est-elle dangereuse ?
+
+*Réponses.* (1) `Resolve-DnsName`, `getent hosts` et `ping` complètent ; `dig` ne complète qu'avec `+search`. (2) `intranet.` : le nom tel quel, sous la racine. (3) Un nom court mal tapé peut aboutir chez un tiers, sur un domaine qui porte le nom complété par un des suffixes.
 
 ---
 
