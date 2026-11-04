@@ -4450,3 +4450,7 @@ md5sum, sha1sum, sha224sum, sha256sum, sha384sum, sha512sum, b2sum, sum and cksu
 
 link, unlink, pathchk, hostid, factor, tsort, base32 and basenc are compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot9-nouvelles-commandes). Still approximate: `factor` uses Pollard's rho, so a 128-bit semiprime with two large factors (2^128+1) takes far longer than the real tool; `hostid` derives its value from the host's /etc/hosts entry rather than from /etc/hostid; `basenc --z85` encodes only whole 4-byte groups, as the real tool does, but its decoder does not report the offending character; the default-mode `pathchk` does not consult the file system limits of a mounted file system, it assumes 255/4096.
 Still missing from the simulator although coreutils ships them: numfmt, csplit, shuf, shred, stdbuf, ptx, dircolors, vdir, pinky, chcon, runcon, and strings (binutils).
+
+## strings
+
+strings is measured against the real binutils 2.42 (see probe-linux-coreutils-lot10-strings); the binutils source was not reachable, so it is not a port. Not modelled: object-file section selection (`-d` is accepted and scans the whole file, as `-a` does on a non-ELF input), the `-T` target names (accepted and ignored) and `@file` argument files.
