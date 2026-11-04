@@ -100,7 +100,7 @@ import { runMkdir, mkdirOperands } from './coreutils/MkdirCommand';
 import { runMknod } from './coreutils/MknodCommand';
 import { runRmdir } from './coreutils/RmdirCommand';
 import { runSort } from './coreutils/SortCommand';
-import { asDispatch, quoteLocale } from './coreutils/CoreutilsKit';
+import { asDispatch, docsResult, quoteLocale } from './coreutils/CoreutilsKit';
 import { coreutilsIO } from './coreutils/CoreutilsFiles';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
@@ -6202,6 +6202,14 @@ export class LinuxCommandExecutor {
 
   private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     stdin ??= this.takeExecInput(cmd, args);
+    if (cmd === 'vdir' || cmd === 'dir') {
+      if (args.includes('--help')) return asDispatch(docsResult(cmd, 'help'));
+      if (args.includes('--version')) return asDispatch(docsResult(cmd, 'version'));
+      const renamed = (text: string | undefined): string | undefined => text?.replace(/^ls: /gm, `${cmd}: `).replace(/Try 'ls --help'/g, `Try '${cmd} --help'`);
+      const listed = this.dispatchCommand('ls', [cmd === 'vdir' ? '-l' : '-C', '-b', ...args], stdin, isSudo, outputPiped);
+      const refused = /unrecognized option|invalid option/.test(listed.stderr ?? '');
+      return { ...listed, exitCode: refused ? 2 : listed.exitCode, output: renamed(listed.output) ?? '', stderr: renamed(listed.stderr), interleaved: renamed(listed.interleaved) };
+    }
     const c = this.ctx(outputPiped);
     useLocaleQuotes(this.env.get('LC_ALL') || this.env.get('LC_CTYPE') || this.env.get('LANG') || '');
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;

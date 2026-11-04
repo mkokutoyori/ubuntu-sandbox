@@ -140,7 +140,7 @@ export function lsQuoteC(name: string): string {
 }
 
 export function lsEscapeNonPrinting(name: string): string {
-  return name.replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/\\/g, '\\\\');
+  return name.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/ /g, '\\ ').replace(/"/g, '\\"');
 }
 
 export function lsHideControl(name: string): string {

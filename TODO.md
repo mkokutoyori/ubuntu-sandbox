@@ -4466,7 +4466,7 @@ csplit is a port of csplit.c 9.4 for inputs held in one buffer (the whole simula
 ## numfmt
 
 numfmt follows numfmt.c 9.4 but computes in IEEE doubles where the real tool uses long double: integers up to 33 digits pass through as text when no scaling applies, but scaled results of values above 2^53 can differ in the last digit. The simulated `printf` does not read `\000` followed by digits as a NUL plus text (`printf '1\0002'`), which blocks a `-z` probe; `--grouping` has no effect, as in a UTF-8 C locale where the thousands separator is empty.
-Still missing: ptx, dircolors, vdir, pinky, chcon, runcon.
+Still missing: ptx, dircolors, pinky, chcon, runcon.
 
 ## shred
 
