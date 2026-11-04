@@ -35,13 +35,13 @@ export function recursiveResolveOptions(query: DnsMessage): { checkingDisabled: 
 }
 
 function positiveEnvelope(
-  answers: DnsMessage['answers'], envelope: RecursiveEnvelope,
+  answers: DnsMessage['answers'], envelope: RecursiveEnvelope, qtype: number,
 ): { authority: readonly ResourceRecord<NsRecordData>[]; additional: ResourceRecord<ResourceRecordData>[] } {
   const nameServerAnswers = answers.filter((rr) => rr.data.type === RRType.NS);
   const authority = envelope.trim === 'none' && nameServerAnswers.length === 0
     ? envelope.cache.enclosingNameServers(answers[answers.length - 1].name)
     : [];
-  const sources = envelope.trim === 'authority-and-additional' ? nameServerAnswers : [...answers, ...authority];
+  const sources = qtype === RRType.ANY ? [] : envelope.trim === 'authority-and-additional' ? nameServerAnswers : [...answers, ...authority];
   const answered = new Set(answers.map((rr) => normalizeDnsName(rr.name)));
   const additional: ResourceRecord<ResourceRecordData>[] = [];
   for (const source of sources) {
@@ -67,7 +67,7 @@ export function buildRecursiveResponse(query: DnsMessage, result: ResolutionResu
     DnsRcode.SERVFAIL;
   const negative = answersNothing(answers, queryType(query)) && result.status !== 'SERVFAIL';
   const positive = !negative && result.status === 'NOERROR' && answers.length > 0;
-  const carried = envelope !== undefined && positive ? positiveEnvelope(answers, envelope) : null;
+  const carried = envelope !== undefined && positive ? positiveEnvelope(answers, envelope, queryType(query)) : null;
   const opt = envelope !== undefined
     ? echoedOpt(query, envelope.ednsPayloadSize)
     : wantsDnssec ? [makeOptRecord(DEFAULT_EDNS_PAYLOAD_SIZE, { dnssecOk: true })] : [];

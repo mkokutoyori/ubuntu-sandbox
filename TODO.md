@@ -114,12 +114,17 @@ simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien 
 pas (le drapeau `K` du journal de requetes de named, `+E(0)K`, manque pour la meme raison) ; une reponse UDP tronquee du vrai named porte aussi le drapeau `ad` (`qr aa tc ad`, mesure sous `+ignore`), pas celle du simulateur ; un `REFUSED` du vrai named a un client que `allow-query` exclut porte l'option EDE `18 (Prohibited)` dans l'OPT (`; EDE: 18 (Prohibited)`), le simulateur n'ecrit pas d'option EDE ; `+search` lit la liste de `/etc/resolv.conf` (`search`, `domain`, `ndots`) et prend la reponse du premier candidat qui n'est pas NXDOMAIN, mais quand tous echouent le vrai dig imprime parfois deux fois les statistiques (`web.banquehorizon +search`), ce que le simulateur ne fait pas.
 
 ### [host] ce que host 9.18 fait encore et que le simulateur ne fait pas
-Les formes `host NOM`, `host -t TYPE NOM`, `host ADRESSE` (IPv4 et IPv6, question PTR quel que soit `-t`), avec ou sans serveur (le bloc `Using domain server:`), les phrases `has address`, `has IPv6 address`,
-`is an alias for`, `mail is handled by`, `name server`, `domain name pointer`, `has SOA record`, `descriptive text`, `has SRV record`, `has no TYPE record`, `Host NOM not found: 3(NXDOMAIN)`, `host: invalid type: X` et
-le texte d'usage sont rejoues contre un vrai host 9.18.39 (`host-oracle`, 85 questions). Restent, mesures : `-v`, `-d` et `-a` (sortie verbeuse du message, `-a` valant `-v -t ANY`), `-C`, `-l` (AXFR), `-r`, `-T`,
-`-U`, `-4`, `-6`, `-s`, `-w`, `-W`, `-R`, `-p`, `-c`, `-N` sont acceptes et ignores (les options a valeur consomment leur argument) ; un serveur donne par nom n'est pas resolu ; un serveur qui ne repond pas
-garde l'ancien libelle `;; connection timed out; no servers could be reached`, le vrai host ecrit `;; communications error to ...` a chaque essai (l'enregistrement a ete fait dans un espace de noms ou
-l'adresse etait inatteignable, ce qui donne `network unreachable`, un autre message) ; le code de sortie (1 sur un refus, 2 sur un type inconnu) n'est pas rendu.
+`host` est rejoue contre un vrai host 9.18.39 (`host-oracle`, 431 invocations dont 396 rejouees, les 35 autres ecartees avec leur raison dans le test) : le moteur de `dighost.c` (essais partages entre les
+serveurs, liste de recherche et ndots, requetes AAAA et MX apres le A, repli TCP sur une reponse tronquee, SERVFAIL et absence de RA), `-v -d -a -A -t -c -C -l -T -U -r -s -w -W -R -p -N -4 -6 -V`, le serveur
+donne par nom, les codes de sortie 1, 2 et 3. Restent, mesures :
+- `-D` est accepte et n'ecrit pas la trace de debug du vrai host (adresses memoire et heures sur stderr, non rejouables).
+- Un nom dont une etiquette porte un point ou un octet echappe (`web\.banquehorizon.com`, `web\046banquehorizon.com`) est lu comme le vrai host le lit, mais les noms du codec de fil sont des chaines : l'etiquette est
+  coupee au point et le simulateur resout `web.banquehorizon.com`, le vrai resolveur repond NXDOMAIN.
+- Le resolveur du simulateur rend le nom propriete d'une reponse avec la casse de la question (`host WEB.BanqueHorizon.COM` ecrit `WEB.BanqueHorizon.COM has address ...`), le vrai named repond depuis son cache,
+  en minuscules.
+- `formatRdata` ne presente que A, AAAA, NS, CNAME, PTR, MX, TXT, SOA et SRV (partage avec `dig`) : HINFO, LOC, NAPTR, CAA, DNSKEY, DS, RRSIG, NSEC ecrivent une donnee vide.
+- La taille d'un transfert de zone (`Received N bytes`) differe de celle du vrai named (511 octets contre 550 pour la zone de la banque) : le codec ne place pas les memes pointeurs de compression.
+- `-C` envoie ses questions SOA l'une apres l'autre dans l'ordre de la reponse NS ; le vrai host les envoie en parallele et le bloc `Using domain server:` porte le nom du premier serveur qui repond.
 
 ### [rndc] `rndc zonestatus` est inconnu
 Le vrai `rndc zonestatus ZONE` d'une zone primaire ecrit `name`, `type`, `files`, `serial`, `nodes` (les noms du fichier, noeuds vides compris : 13 pour la zone de la banque), `last loaded` (une date en GMT), `secure`,
