@@ -283,20 +283,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  date: {
-    optstring: 'd:f:I::r:Rs:uV',
-    long: [
-      valued('date', 'd'), flag('debug'), valued('file', 'f'), optional('iso-8601', 'I'),
-      valued('reference', 'r'), flag('rfc-email', 'R'), valued('rfc-3339'), valued('set', 's'),
-      flag('utc', 'u'), flag('universal', 'u'), flag('resolution'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  tee: {
-    optstring: 'aip',
-    long: [flag('append', 'a'), flag('ignore-interrupts', 'i'), valued('output-error'), ...HELP_VERSION],
-    operands: true,
-  },
   printenv: { optstring: '0', long: [flag('null', '0'), ...HELP_VERSION], operands: true },
   md5sum: {
     optstring: 'bctwz',
@@ -373,15 +359,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     long: [
       flag('context', 'Z'), flag('group', 'g'), flag('groups', 'G'), flag('name', 'n'), flag('real', 'r'),
       flag('user', 'u'), flag('zero', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  chown: {
-    optstring: 'cfhHLPRv',
-    long: [
-      flag('changes', 'c'), flag('dereference'), flag('no-dereference', 'h'), valued('from'), flag('no-preserve-root'),
-      flag('preserve-root'), flag('quiet', 'f'), flag('silent', 'f'), valued('reference'), flag('recursive', 'R'),
-      flag('verbose', 'v'), ...HELP_VERSION,
     ],
     operands: true,
   },

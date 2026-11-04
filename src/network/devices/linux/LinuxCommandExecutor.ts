@@ -63,7 +63,7 @@ import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
-import { type ShellContext, cmdTouch, cmdLs, cmdEcho, cmdInstall, installOperands, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
+import { type ShellContext, cmdTouch, cmdLs, cmdEcho, cmdInstall, installOperands, cmdPwd, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdAwk, awkOptionError, cmdSed } from './LinuxTextCommands';
 import { runHead } from './coreutils/HeadCommand';
 import { runWc } from './coreutils/WcCommand';
@@ -77,6 +77,7 @@ import { runSeq } from './coreutils/SeqCommand';
 import { runCat } from './coreutils/CatCommand';
 import { runOd } from './coreutils/OdCommand';
 import { runRev } from './coreutils/RevCommand';
+import { runTee } from './coreutils/TeeCommand';
 import type { SplitHost } from './coreutils/SplitCommand';
 import { runMkfifo } from './coreutils/MkfifoCommand';
 import { runReadlink, runRealpath } from './coreutils/RealpathCommands';
@@ -95,7 +96,7 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChown, cmdChgrp } from './LinuxPermCommands';
+import { runChown, runChgrp } from './coreutils/ChownCommands';
 import { runStat } from './coreutils/StatCommand';
 import { runUmask } from './umask/Umask';
 import {
@@ -492,7 +493,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -6294,8 +6295,7 @@ export class LinuxCommandExecutor {
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': {
-        const teed = cmdTee(c, args, stdin ?? '');
-        return { output: teed.output, exitCode: teed.failed ? 1 : 0 };
+        return asDispatch(runTee(c, args, stdin ?? ''));
       }
 
       // cd changes state
@@ -6393,19 +6393,11 @@ export class LinuxCommandExecutor {
         }
         return asDispatch(runChmod(c, args));
       }
-      case 'chown': {
-        for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'a', 'chown');
-          this.publishSyscall('chown', abs);
-        }
-        const out = cmdChown(c, args);
-        return { output: out, exitCode: out.startsWith('chown:') ? 1 : 0 };
-      }
-      case 'chgrp': {
-        const out = cmdChgrp(c, args);
-        return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
-      }
+      case 'chown': return asDispatch(runChown(c, args, (abs) => {
+        this.publishFsAccess(abs, 'a', 'chown');
+        this.publishSyscall('chown', abs);
+      }));
+      case 'chgrp': return asDispatch(runChgrp(c, args));
       case 'stat': return asDispatch(runStat({ ...c, mounts: this.mountTable.list(), storage: this.hardware.storage, stdin }, args));
       case 'umask': {
         const result = runUmask(args, this.umask);

@@ -1,6 +1,6 @@
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { cmdChown } from '../../LinuxPermCommands';
+import { runChown } from '../../coreutils/ChownCommands';
 import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
 
 const CHOWN_OPTIONS: readonly LinuxCommandOption[] = [
@@ -12,15 +12,12 @@ const CHOWN_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-h', aliases: ['--no-dereference'], dest: 'noDereference', description: "Affect a symbolic link's own owner, not the file it points to" },
 ];
 
-function run(ctx: LinuxCommandContext, args: string[]): { output: string; exitCode: number } {
-  const cwd = ctx.executor.ctx().cwd;
-  for (const p of args.filter((a) => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
-    const abs = ctx.executor.vfs.normalizePath(p, cwd);
+function run(ctx: LinuxCommandContext, args: string[]) {
+  const result = runChown(ctx.executor.ctx(), args, (abs) => {
     ctx.executor.publishAuditFsAccess(abs, 'a', 'chown');
     ctx.executor.publishAuditSyscall('chown', abs);
-  }
-  const out = cmdChown(ctx.executor.ctx(), args);
-  return { output: out, exitCode: out.startsWith('chown:') ? 1 : 0 };
+  });
+  return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr, interleaved: result.interleaved };
 }
 
 export const chownCommand: LinuxCommand = {

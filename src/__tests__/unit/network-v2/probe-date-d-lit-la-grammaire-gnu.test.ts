@@ -93,7 +93,7 @@ describe('date -d reads the GNU date input grammar', () => {
 
   it.each(REFUSED)('refuses %s like GNU date', async (spec) => {
     const out = await server.executeCommand(`date -d "${spec}"`);
-    expect(out.trim()).toBe(`date: invalid date '${spec}'`);
+    expect(out.trim()).toBe(`date: invalid date ‘${spec}’`);
   });
 
   it('reads the date in the zone of the machine', async () => {

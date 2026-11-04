@@ -26,7 +26,7 @@ describe('every view of a Linux machine reads the clock that date -s set', () =>
   it('the lab sets its clock — WITNESS', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1');
     await pc.executeCommand(SET);
-    expect(await pc.executeCommand('date -u +%Y')).toBe('2030');
+    expect(await pc.executeCommand('date -u +%Y')).toBe('2030\n');
   });
 
   it('a file created afterwards carries the new date', async () => {
