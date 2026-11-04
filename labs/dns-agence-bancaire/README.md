@@ -2,7 +2,7 @@
 
 Un lab pour **s'entraîner sur le protocole DNS** avec deux éditeurs côte à côte (**Windows Server** et **BIND9**), un petit arbre DNS complet qui permet la **récursion** (racine → `com` → domaine de la banque), un réseau d'agence avec **DHCP**, et un **site web avancé** servi en HTTPS par nginx.
 
-Tout le lab a été construit en tapant de vraies commandes (PowerShell, bash, IOS) dans les terminaux du simulateur, exporté en JSON, puis **réimporté dans un canevas vierge** : les mêmes 26 vérifications passent sur le lab neuf et sur le lab réimporté (voir `src/labs/dnsAgenceBancaire/checks.ts`).
+Tout le lab a été construit en tapant de vraies commandes (PowerShell, bash, IOS) dans les terminaux du simulateur, exporté en JSON, puis **réimporté dans un canevas vierge** : les mêmes 28 vérifications passent sur le lab neuf et sur le lab réimporté (voir `src/labs/dnsAgenceBancaire/checks.ts`).
 
 ## Ce que le lab enseigne
 
@@ -136,7 +136,7 @@ dig www.banquehorizon.com +short
 curl -sk https://www.banquehorizon.com/ | head -12
 ```
 
-Les 26 vérifications complètes (une par leçon) sont dans `src/labs/dnsAgenceBancaire/checks.ts` ; le test `src/__tests__/unit/labs/dns-agence-bancaire.test.ts` les exécute sur le lab neuf et sur ce fichier réimporté.
+Les 28 vérifications complètes (une par leçon) sont dans `src/labs/dnsAgenceBancaire/checks.ts` ; le test `src/__tests__/unit/labs/dns-agence-bancaire.test.ts` les exécute sur le lab neuf et sur ce fichier réimporté.
 
 ---
 
@@ -175,12 +175,14 @@ web.banquehorizon.com.	3600	IN	A	203.0.113.20
 dig @127.0.0.1 www.banquehorizon.com +norecurse
 ```
 ```
-;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 2
 ;; AUTHORITY SECTION:
 com.	86400	IN	NS	a.nic.com.
 ;; ADDITIONAL SECTION:
 a.nic.com.	86400	IN	A	198.51.100.2
 ```
+
+`ADDITIONAL: 2` compte la glue `a.nic.com` **et** l'enregistrement OPT (EDNS0) que `dig` joint à sa question et que le serveur recopie : c'est le « 1 » en plus des versions de `dig` qui n'envoyaient pas d'OPT. Pour ne voir que les sections qui vous intéressent, `dig` accepte `+noall` puis les sections à rétablir : `+comments` (l'en-tête et les compteurs), `+question`, `+answer`, `+authority`, `+additional`, `+stats`, `+cmd`. `+short` n'affiche que la réponse.
 
 Un serveur faisant autorité ne recurse pas : il **renvoie** (*referral*). Sur **DNS-RES** la même question sans récursion :
 
@@ -194,6 +196,41 @@ dig @127.0.0.1 www.banquehorizon.com +norecurse
 ```
 
 Le drapeau `ra` (recursion available) signale un résolveur ; sans cache pour ce nom, il renvoie les serveurs racine connus de son fichier d'indices. Refaites la requête **avec** récursion (`dig @127.0.0.1 www.banquehorizon.com`) puis de nouveau avec `+norecurse` : la réponse sort maintenant du cache.
+
+### Ce qu'un serveur faisant autorité écrit à côté de la réponse
+
+Sur **PC-CONSEILLER**, interrogez NS1-BANK directement, sans récursion :
+
+```bash
+dig @203.0.113.10 banquehorizon.com MX +norecurse +noall +comments +answer +authority +additional
+```
+```
+;; flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 5
+
+;; ANSWER SECTION:
+banquehorizon.com.	3600	IN	MX	10 mail.banquehorizon.com.
+banquehorizon.com.	3600	IN	MX	20 mail2.banquehorizon.com.
+
+;; AUTHORITY SECTION:
+banquehorizon.com.	3600	IN	NS	ns1.banquehorizon.com.
+banquehorizon.com.	3600	IN	NS	ns2.banquehorizon.com.
+
+;; ADDITIONAL SECTION:
+mail.banquehorizon.com.	3600	IN	A	203.0.113.25
+mail2.banquehorizon.com. 3600	IN	A	203.0.113.26
+ns1.banquehorizon.com.	3600	IN	A	203.0.113.10
+ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
+```
+
+`aa` (*authoritative answer*) dit que NS1-BANK répond de sa propre zone. Par défaut BIND (`minimal-responses no`) ajoute **les serveurs de la zone** (authority) et **les adresses dont le client aura besoin** : celles des serveurs de messagerie qu'il vient d'apprendre et celles des serveurs de la zone (additional, plus l'OPT : d'où `ADDITIONAL: 5`). C'est ce paquet que le résolveur DNS-RES range ensuite dans son cache sous les niveaux de confiance `authauthority` et `additional` (voir `rndc dumpdb -cache` plus bas).
+
+Pour voir la différence, sur **NS1-BANK** :
+
+```bash
+sudo sed -i 's/recursion no;/recursion no; minimal-responses yes;/' /etc/bind/named.conf
+sudo rndc reconfig
+```
+Puis refaites le `dig` de PC-CONSEILLER : `AUTHORITY: 0, ADDITIONAL: 1` (l'OPT seul), il ne reste que la section `ANSWER`. Les trois autres valeurs de `minimal-responses` se règlent de la même façon : `no-auth` retire l'authority et garde les adresses utiles à la réponse, `no-auth-recursive` fait pareil seulement quand la question demande la récursion (bit `rd`). Remettez `minimal-responses no;` avant d'enchaîner si vous voulez retrouver les caches de l'exercice 3.
 
 ## 3. Le cache : client, serveur Windows, résolveur BIND
 
@@ -266,7 +303,43 @@ www.banquehorizon.com.	3590	CNAME	web.banquehorizon.com.
 ...
 ```
 
+Au tout début du fichier, `.	86396	IN NS	a.root-servers.net.` (`authanswer`) est la réponse à la **question d'amorçage** : avant sa première question, le résolveur demande à un serveur racine de ses indices la liste des serveurs racine et la range dans son cache. C'est pourquoi la toute première résolution à froid atteint ROOT-NS **deux fois** : l'amorçage, puis la question.
+
 Chaque bloc commence par le **niveau de confiance** de BIND : `authanswer` (réponse d'un serveur faisant autorité), `authauthority` (les serveurs d'une zone, annoncés par la zone elle-même dans la section authority), `glue` (adresses et délégations apprises d'une référence), `answer` (réponse négative), `additional` (adresses vues dans la section additionnelle, qui cèdent devant la glue). La première ligne, `. NS`, est la réponse à la question d'amorçage que le résolveur pose à la racine avant sa toute première question. Le nom du propriétaire n'est écrit qu'une fois par nœud, le TTL est ce qu'il **reste** et la classe `IN` n'apparaît que sur le premier enregistrement. Les noms sont rangés dans l'ordre canonique du DNS (`com.` avant `banquehorizon.com.`).
+
+### Le cache retient aussi les échecs : le cache SERVFAIL
+
+Un serveur qui ne répond pas ne doit pas être interrogé à chaque question. Déléguez `broken.com` à une adresse où personne n'écoute, sur **TLD-NS** (PowerShell) :
+
+```powershell
+Add-DnsServerZoneDelegation -Name com -ChildZoneName broken -NameServer ns.broken.com -IPAddress 203.0.113.99
+```
+Sur **DNS-RES**, réglez la durée de rétention d'un échec (`servfail-ttl`, 1 seconde par défaut, 30 au plus) et redémarrez :
+
+```bash
+sudo sed -i 's/empty-zones-enable no;/empty-zones-enable no; servfail-ttl 30;/' /etc/bind/named.conf
+sudo systemctl restart named
+```
+Sur **PC-CONSEILLER** :
+
+```bash
+dig @10.20.20.53 www.broken.com +noall +comments
+```
+```
+;; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 49
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 0
+```
+Puis sur **DNS-RES** :
+
+```bash
+sudo rndc dumpdb -cache; sudo grep -A4 "SERVFAIL cache" /var/cache/bind/named_dump.db
+```
+```
+; SERVFAIL cache
+;
+; www.broken.com/A [ttl 29993]
+```
+Le nombre entre crochets est ce qu'il **reste, en millisecondes**, de la rétention : tant qu'il n'est pas écoulé, DNS-RES répond SERVFAIL sans reposer la question à `ns.broken.com` (comptez les trames UDP/53 sortantes de DNS-RES avec `sudo tcpdump -ni eth0 port 53`). La délégation reste, elle, dans le cache comme `; glue`.
 
 ### Le cache répond : une seule question descend l'arbre
 
@@ -328,7 +401,7 @@ resolvectl statistics
 
 Le stub relaie **tous** les types (`dig banquehorizon.com MX`, `TXT`, `SRV`, `-x`…) et retient aussi les réponses négatives avec le SOA de la zone : `dig nexiste.banquehorizon.com` deux fois de suite ne pose la question qu'une fois, et `dig web.banquehorizon.com AAAA` (le nom existe, pas dans cette famille) aussi. Comme le vrai `systemd-resolved`, il plafonne la durée de conservation à deux heures, retient un échec SERVFAIL dix secondes et ne retient rien dont le TTL est nul. Les noms de `/etc/hosts` et `localhost` sont répondus sur place (TTL 0), sans trame.
 
-`ping` résout le nom puis cherche le nom de l'adresse qui répond (une question PTR) : `ping -n` supprime cette seconde question. Un autre poste qui demande le même nom à DC1 n'a pas de raison de le faire redescendre : DC1 et DNS-RES gardent leurs propres caches.
+`ping` résout le nom puis cherche le nom de l'adresse qui répond (une question PTR) et **attend** cette réponse avant d'écrire la ligne : `ping -c 1 www.banquehorizon.com` écrit dès la première fois `64 bytes from web.banquehorizon.com (203.0.113.20)`, le nom de l'adresse (`web`) et non celui qu'on a demandé (`www`). `ping -n` supprime cette seconde question. Un autre poste qui demande le même nom à DC1 n'a pas de raison de le faire redescendre : DC1 et DNS-RES gardent leurs propres caches.
 
 Si DC1 cesse de répondre (`Stop-Service DNS` sur DC1), le stub passe au second serveur du bail, DNS-RES : `resolvectl status` l'affiche comme `Current DNS Server` et les noms suivants lui sont posés directement, sans réessayer DC1 à chaque fois.
 

@@ -472,6 +472,28 @@ export class DnsCache {
     return null;
   }
 
+  enclosingNameServers(name: string): readonly ResourceRecord<NsRecordData>[] {
+    let current: string | null = normalizeDnsName(name);
+    while (current !== null) {
+      const cached = this.lookup(current, RRType.NS);
+      if (cached.kind === 'hit') return cached.records.filter((rr): rr is ResourceRecord<NsRecordData> => rr.data.type === RRType.NS);
+      const delegation = this.liveDelegation(current);
+      if (delegation !== null) return delegation.nameServers;
+      current = parentName(current);
+    }
+    return [];
+  }
+
+  knownAddresses(name: string): ResourceRecord<ResourceRecordData>[] {
+    const glue = this.glueAddresses(name);
+    const ipv4 = this.lookup(name, RRType.A);
+    const ipv6 = this.lookup(name, RRType.AAAA);
+    return [
+      ...(glue.length > 0 ? glue : ipv4.kind === 'hit' ? ipv4.records : []),
+      ...(ipv6.kind === 'hit' ? ipv6.records : []),
+    ];
+  }
+
   glueAddresses(name: string): ResourceRecord<ARecordData>[] {
     const wanted = normalizeDnsName(name);
     for (const zone of [...this.delegationEntries.keys()]) {

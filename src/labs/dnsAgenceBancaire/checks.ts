@@ -121,10 +121,11 @@ export const LAB_CHECKS: readonly LabCheck[] = [
     id: 'resolver-cache-dump', device: 'DNS-RES', shell: 'bash', command: 'sudo rndc dumpdb -cache; cat /var/cache/bind/named_dump.db',
     expects: [
       /Cache dump of view '_default'/,
+      /; authanswer\n\.\t+\d+\tIN NS\ta\.root-servers\.net\./,
       /; authanswer\nwww\.banquehorizon\.com\.\t\d+\tCNAME\tweb\.banquehorizon\.com\./,
       /; authauthority\nbanquehorizon\.com\.\t\d+\tNS\tns1\.banquehorizon\.com\./,
     ],
-    lesson: 'rndc dumpdb -cache ecrit le cache du resolveur BIND : les reponses (authanswer), les serveurs de la zone annonces par la zone elle-meme (authauthority) et les delegations apprises (glue) avec leur TTL restant.',
+    lesson: 'rndc dumpdb -cache ecrit le cache du resolveur BIND : la reponse a la question d\'amorcage de la racine (`. NS`), les reponses (authanswer), les serveurs de la zone annonces par la zone elle-meme (authauthority) et les delegations apprises (glue) avec leur TTL restant.',
   },
   {
     id: 'resolver-ttl-decays', device: 'PC-CONSEILLER', shell: 'bash', command: 'sleep 2; dig @10.20.20.53 www.banquehorizon.com +noall +answer',
@@ -145,6 +146,22 @@ export const LAB_CHECKS: readonly LabCheck[] = [
     id: 'linux-stub-cache', device: 'PC-CONSEILLER', shell: 'bash', command: 'dig www.banquehorizon.com +short; sleep 3; dig www.banquehorizon.com; resolvectl statistics',
     expects: [/SERVER: 127\.0\.0\.53#53/, /www\.banquehorizon\.com\.\s+35\d\d\s+IN\s+CNAME\s+web\.banquehorizon\.com\./, /Cache Hits:\s+[1-9]/],
     lesson: 'La seconde question est servie par le cache du stub : le TTL a baisse de trois secondes et resolvectl statistics compte le succes.',
+  },
+  {
+    id: 'linux-ping-name', device: 'PC-CONSEILLER', shell: 'bash', command: 'ping -c 1 www.banquehorizon.com',
+    expects: [/PING www\.banquehorizon\.com \(203\.0\.113\.20\)/, /64 bytes from web\.banquehorizon\.com \(203\.0\.113\.20\): icmp_seq=1/],
+    lesson: 'ping nomme l\'adresse qui repond : il pose la question PTR et attend la reponse avant d\'ecrire la ligne, comme iputils ; le nom demande (www) et le nom de l\'adresse (web) ne sont pas les memes.',
+  },
+  {
+    id: 'authoritative-sections', device: 'PC-CONSEILLER', shell: 'bash', command: 'dig @203.0.113.10 banquehorizon.com MX +norecurse +noall +comments +answer +authority +additional',
+    expects: [
+      /flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 5/,
+      /banquehorizon\.com\.\s+3600\s+IN\s+NS\s+ns1\.banquehorizon\.com\./,
+      /banquehorizon\.com\.\s+3600\s+IN\s+NS\s+ns2\.banquehorizon\.com\./,
+      /mail\.banquehorizon\.com\.\s+3600\s+IN\s+A\s+203\.0\.113\.25/,
+      /ns2\.banquehorizon\.com\.\s+3600\s+IN\s+A\s+203\.0\.113\.11/,
+    ],
+    lesson: 'Un serveur BIND qui fait autorite ecrit a cote de la reponse les serveurs de la zone (authority) et les adresses utiles (additional) ; `minimal-responses yes` les supprime. C\'est ce que le resolveur retient en `authauthority` et `additional`.',
   },
   {
     id: 'web-listeners', device: 'WEB-BANK', shell: 'bash', command: 'ss -ltn',

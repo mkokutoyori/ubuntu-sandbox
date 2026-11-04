@@ -4,7 +4,7 @@
 usage: record_bind_minimal_responses.py out.json
 
 One named plays the authoritative server of example.test on 127.0.0.1:5300 (zone below), restarted for every pair (recursion yes|no, minimal-responses
-yes|no|no-auth|no-auth-recursive). Six questions (A of the apex, MX with its glue, NS, a CNAME, an NXDOMAIN, a NODATA) are asked with and without the RD flag and the
+yes|no|no-auth|no-auth-recursive). Seven questions (A of the apex, MX with its glue, NS, a CNAME, an NXDOMAIN, a NODATA, an SRV) are asked with and without the RD flag and the
 real dig prints only the three record sections. Needs root, bind9 and dnsutils; run it in a network namespace (unshare -n) so that `lo` is private.
 """
 import json, os, shutil, subprocess, sys, tempfile, time
@@ -23,6 +23,7 @@ ns2 IN A 192.0.2.2
 mail IN A 192.0.2.25
 backup IN A 192.0.2.26
 www IN CNAME @
+_imaps._tcp IN SRV 0 1 993 mail
 """
 QUESTIONS = [
     ["example.test", "A"],
@@ -31,6 +32,7 @@ QUESTIONS = [
     ["www.example.test", "A"],
     ["missing.example.test", "A"],
     ["example.test", "AAAA"],
+    ["_imaps._tcp.example.test", "SRV"],
 ]
 SETTINGS = ["no", "yes", "no-auth", "no-auth-recursive"]
 

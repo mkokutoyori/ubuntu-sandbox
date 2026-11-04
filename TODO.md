@@ -114,11 +114,11 @@ simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien 
 
 ### [dns] `rndc dumpdb -cache` et le resolveur BIND : ce que BIND 9.18 fait en plus et que le simulateur ne fait pas
 Le fichier est ecrit dans la mise en page de `masterdump` (confiances `authanswer`, `authauthority`, `glue`, `answer`, `additional`, SOA sur plusieurs lignes, entrees negatives plafonnees par
-`max-ncache-ttl`, TTL positifs plafonnes par `max-cache-ttl`, amorcage `. NS`, lignes du cache SERVFAIL) et rejoue contre un vrai BIND (`bind-cache-dump-oracle`, `bind-minimal-responses-oracle`). Restent,
-mesures : la base d'adresses (ADB) est ecrite sans ses entrees (srtt, compteurs edns/plain, cookie : des mesures du fil que le simulateur ne tient pas) ; BIND 9.18 minimise le nom des questions
-(`_tcp.banquehorizon.com` NS, `arpa.`... : les entrees `\-NS` du vrai cache), pas le simulateur, ce qui change aussi les questions vues sur le fil par la racine et le TLD ; la reponse recursive que le
-resolveur BIND rend a son client ne porte ni la section authority (NS de la zone), ni les adresses de ces serveurs en additional, ni l'OPT de la question EDNS, alors que le vrai `named` les ajoute
-depuis son cache (`dig @resolveur www.banquehorizon.com` : AUTHORITY: 2, ADDITIONAL: 3 avec l'OPT sur le vrai, 0 et 0 ici ; `. NS` : une reponse sans additional sur le vrai comme ici).
+`max-ncache-ttl`, TTL positifs plafonnes par `max-cache-ttl`, amorcage `. NS`, lignes du cache SERVFAIL) et rejoue contre un vrai BIND (`bind-cache-dump-oracle`), de meme que ce que le resolveur
+repond a ses clients (`bind-recursive-response-oracle` : authority, glue et OPT, quatre valeurs de `minimal-responses`, a froid, au chaud, sans recursion, sans EDNS) et ce que les serveurs faisant autorite
+ecrivent a cote de leur reponse (`bind-minimal-responses-oracle`). Restent, mesures : la base d'adresses (ADB) est ecrite sans ses entrees (srtt, compteurs edns/plain, cookie : des mesures du fil que le
+simulateur ne tient pas) ; BIND 9.18 minimise le nom des questions (`_tcp.banquehorizon.com` NS, `arpa.`... : les entrees `\-NS` du vrai cache), pas le simulateur, ce qui change aussi les questions vues sur le
+fil par la racine et le TLD ; les questions `com NS`, `a.nic.com A` et `. NS` ne sont pas rejouees contre le resolveur recursif parce que le TLD du lab est un serveur Windows et non un BIND.
 
 ### [windows] `ipconfig /displaydns` : seule l'entree `Name does not exist.` est rendue comme Windows
 Un NXDOMAIN retenu par le client s'affiche `Name does not exist.` sous le nom (Microsoft Learn, « Troubleshooting DNS clients »). L'entree NODATA (`Status: NoRecords`) garde la mise en page
