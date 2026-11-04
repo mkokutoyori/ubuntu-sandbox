@@ -136,3 +136,22 @@ www IN A 192.0.2.10
     expect(() => parseZoneFile(bad)).toThrow(ZoneFileError);
   });
 });
+
+describe('TTLs written with units (RFC 1035 3.3.13 / BIND master file format)', () => {
+  it('reads $TTL, a record TTL and the SOA timers in s, m, h, d and w', () => {
+    const zone = parseZoneFile([
+      '$ORIGIN example.org.',
+      '$TTL 1h',
+      '@ IN SOA ns1 hostmaster ( 7 2h 15m 2w 1d )',
+      '@ IN NS ns1',
+      'ns1 30m IN A 192.0.2.1',
+      'www IN A 192.0.2.2',
+    ].join('\n'));
+    expect(zone.soa.data.refresh).toBe(7200);
+    expect(zone.soa.data.retry).toBe(900);
+    expect(zone.soa.data.expire).toBe(1209600);
+    expect(zone.soa.data.minimum).toBe(86400);
+    expect(zone.getRRSet('ns1.example.org', 1)?.[0].ttl).toBe(1800);
+    expect(zone.getRRSet('www.example.org', 1)?.[0].ttl).toBe(3600);
+  });
+});

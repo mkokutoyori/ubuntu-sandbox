@@ -110,7 +110,25 @@ les messages d'echec (`;; communications error to ...: timed out` a chaque essai
 `+tcp` vers un port ferme (le vrai dig ecrit `;; Connection to ...#PORT(...) for NOM failed: connection refused.` et `;; no servers could be reached` a chaque essai, sans banniere ; le transport
 simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien libelle `;; connection timed out; no servers could be reached` et sa propre banniere ; un serveur donne par nom
 (`@hote`) n'est resolu que s'il est une adresse litterale (le vrai dig dit `;; couldn't get address for 'hote': not found`) ; le code de sortie 9 d'un echec n'est pas rendu ; `+multiline`, `+nsid`,
-`+cookie`, `+subnet` et les autres options sont acceptes et ignores.
+`+cookie`, `+subnet` et les autres options sont acceptes et ignores : le vrai dig 9.18 envoie un cookie client par defaut et ecrit la ligne `; COOKIE: ... (good)` sous l'OPT de la reponse, le simulateur n'en envoie
+pas (le drapeau `K` du journal de requetes de named, `+E(0)K`, manque pour la meme raison) ; une reponse UDP tronquee du vrai named porte aussi le drapeau `ad` (`qr aa tc ad`, mesure sous `+ignore`), pas celle du simulateur ; un `REFUSED` du vrai named a un client que `allow-query` exclut porte l'option EDE `18 (Prohibited)` dans l'OPT (`; EDE: 18 (Prohibited)`), le simulateur n'ecrit pas d'option EDE ; `+search` lit la liste de `/etc/resolv.conf` (`search`, `domain`, `ndots`) et prend la reponse du premier candidat qui n'est pas NXDOMAIN, mais quand tous echouent le vrai dig imprime parfois deux fois les statistiques (`web.banquehorizon +search`), ce que le simulateur ne fait pas.
+
+### [host] ce que host 9.18 fait encore et que le simulateur ne fait pas
+Les formes `host NOM`, `host -t TYPE NOM`, `host ADRESSE` (IPv4 et IPv6, question PTR quel que soit `-t`), avec ou sans serveur (le bloc `Using domain server:`), les phrases `has address`, `has IPv6 address`,
+`is an alias for`, `mail is handled by`, `name server`, `domain name pointer`, `has SOA record`, `descriptive text`, `has SRV record`, `has no TYPE record`, `Host NOM not found: 3(NXDOMAIN)`, `host: invalid type: X` et
+le texte d'usage sont rejoues contre un vrai host 9.18.39 (`host-oracle`, 85 questions). Restent, mesures : `-v`, `-d` et `-a` (sortie verbeuse du message, `-a` valant `-v -t ANY`), `-C`, `-l` (AXFR), `-r`, `-T`,
+`-U`, `-4`, `-6`, `-s`, `-w`, `-W`, `-R`, `-p`, `-c`, `-N` sont acceptes et ignores (les options a valeur consomment leur argument) ; un serveur donne par nom n'est pas resolu ; un serveur qui ne repond pas
+garde l'ancien libelle `;; connection timed out; no servers could be reached`, le vrai host ecrit `;; communications error to ...` a chaque essai (l'enregistrement a ete fait dans un espace de noms ou
+l'adresse etait inatteignable, ce qui donne `network unreachable`, un autre message) ; le code de sortie (1 sur un refus, 2 sur un type inconnu) n'est pas rendu.
+
+### [rndc] `rndc zonestatus` est inconnu
+Le vrai `rndc zonestatus ZONE` d'une zone primaire ecrit `name`, `type`, `files`, `serial`, `nodes` (les noms du fichier, noeuds vides compris : 13 pour la zone de la banque), `last loaded` (une date en GMT), `secure`,
+`dynamic` et `reconfigurable via modzone` : la sortie est enregistree dans `bind-rndc-9.18.json`. Celle d'un secondaire (`next refresh`, `expires`...) n'est pas mesuree. Le simulateur repond `rndc: unknown command 'zonestatus'`.
+
+### [bind9] sans stanza `logging`, `rndc querylog on` ecrit un fichier, le vrai named ecrit dans syslog
+Le vrai named range la categorie `queries` dans le canal par defaut `default_syslog` (facility daemon : le journal, `journalctl -u named`, `/var/log/syslog`) tant qu'aucune stanza `logging` ne la deplace ; le simulateur
+ecrit `/var/log/named/query.log` (`DEFAULT_QUERY_LOG_PATH`, lu par `bind9-rndc` et `probe-a-parent-zone-refers-ns-queries-at-a-delegation`). Une ligne du journal de requetes ne porte pas non plus l'adresse du client
+(`@0x7f...`) : le simulateur ecrit `@0x0`. Le tutoriel DNS passe donc par une stanza `logging` explicite, ce qui est aussi la pratique.
 
 ### [dns] `rndc dumpdb -cache` et le resolveur BIND : ce que BIND 9.18 fait en plus et que le simulateur ne fait pas
 Le fichier est ecrit dans la mise en page de `masterdump` (confiances `authanswer`, `authauthority`, `glue`, `answer`, `additional`, SOA sur plusieurs lignes, entrees negatives plafonnees par

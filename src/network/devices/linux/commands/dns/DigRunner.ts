@@ -13,6 +13,8 @@ import type {
 } from '@/network/dns/wire/ResourceRecord';
 import { formatQuestionLine, formatRdata, formatRecordLine, isDisplayableRecord } from './RecordFormat';
 import { findPackage } from '../../packages/PackageDatabase';
+import { parseResolvConf, searchCandidates } from '../../nss/ResolvConf';
+import type { ResolvConfOptions } from '../../nss/ResolvConf';
 
 interface DigDisplay {
   cmd: boolean;
@@ -40,6 +42,8 @@ interface DigInvocation {
   serverGiven: boolean;
   noEdns: boolean;
   tcp: boolean;
+  ignoreTruncation: boolean;
+  search: boolean;
   /** `+tls` — DNS-over-TLS (RFC 7858), port 853 par défaut. */
   tls: boolean;
   recurse: boolean;
@@ -71,6 +75,8 @@ function newInvocation(): DigInvocation {
     serverGiven: false,
     noEdns: false,
     tcp: false,
+    ignoreTruncation: false,
+    search: false,
     tls: false,
     recurse: true,
     dnssec: false,
@@ -99,6 +105,8 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     for (const key of keys) display[key] = state;
   };
   let tcp = false;
+  let ignoreTruncation = false;
+  let search = false;
   let tls = false;
   let recurse = true;
   let dnssec = false;
@@ -129,6 +137,10 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     else if (arg === '+noedns') noEdns = true;
     else if (arg === '+edns' || arg.startsWith('+edns=')) noEdns = false;
     else if (arg === '+tcp' || arg === '+vc') tcp = true;
+    else if (arg === '+search') search = true;
+    else if (arg === '+nosearch') search = false;
+    else if (arg === '+ignore') ignoreTruncation = true;
+    else if (arg === '+noignore') ignoreTruncation = false;
     else if (arg === '+tls') tls = true;
     else if (arg === '+notls') tls = false;
     else if (arg === '+norecurse') recurse = false;
@@ -176,6 +188,8 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     g.serverGiven = serverGiven;
     g.noEdns = noEdns;
     g.tcp = tcp;
+    g.ignoreTruncation = ignoreTruncation;
+    g.search = search;
     g.tls = tls;
     g.recurse = recurse;
     g.dnssec = dnssec;
@@ -399,7 +413,7 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
     if (nsRecords.length > 0) {
       let nextServer: string | null = null;
       for (const ns of nsRecords) {
-        nextServer = await resolveNsAddress(ns.data.nsdname, glue, server, query, timeoutMs);
+        nextServer = await resolveNsAddress(ns.data.nsdname, glue, invocation.server, query, timeoutMs);
         if (nextServer) break;
       }
       if (!nextServer) {
@@ -432,24 +446,14 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
   return lines.join('\n');
 }
 
-async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn): Promise<string> {
-  if (!invocation.server || !isIpLiteral(invocation.server)) {
-    return noServersLine(invocation);
-  }
+interface Exchange {
+  readonly message: DnsMessage | null;
+  readonly startedAt: number;
+  readonly communications: readonly string[];
+  readonly retriedOverTcp: boolean;
+}
 
-  if (invocation.trace) {
-    return traceOutput(invocation, query);
-  }
-
-  const options: DnsQueryOptions = {
-    recursionDesired: invocation.recurse,
-    tcp: invocation.tcp,
-    tls: invocation.tls,
-    dnssecOk: invocation.dnssec,
-    udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : invocation.noEdns ? undefined : DEFAULT_EDNS_BUFFER),
-    port: invocation.port ?? undefined,
-    qclass: invocation.qclass,
-  };
+async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, options: DnsQueryOptions): Promise<Exchange> {
   let message: DnsMessage | null = null;
   let startedAt = PathClock.now();
   const communications: string[] = [];
@@ -471,22 +475,56 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn):
     if (message) break;
     if (!refused) communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: timed out`);
   }
-  if (!message) return noServersLine(invocation, communications);
+  if (!message) return { message, startedAt, communications, retriedOverTcp: false };
 
-  // RFC 1035 §4.2.1 — real dig retries TC=1 over TCP by default.
-  if (message.flags.tc && !options.tcp && !options.tls) {
+  let retriedOverTcp = false;
+  if (message.flags.tc && !options.tcp && !options.tls && !invocation.ignoreTruncation) {
     const tcpMessage = await query(
       invocation.server, invocation.domain, invocation.qtype,
       invocation.timeoutSeconds * 1000, { ...options, tcp: true },
     );
-    if (tcpMessage) message = tcpMessage;
+    if (tcpMessage) {
+      message = tcpMessage;
+      retriedOverTcp = true;
+    }
+  }
+  return { message, startedAt, communications, retriedOverTcp };
+}
+
+async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn, searchList: ResolvConfOptions): Promise<string> {
+  if (!invocation.server || !isIpLiteral(invocation.server)) {
+    return noServersLine(invocation);
   }
 
-  if (invocation.qtype === 'AXFR' || invocation.qtype === 'IXFR') {
-    return transferOutput(invocation, message, PathClock.now() - startedAt);
+  if (invocation.trace) {
+    return traceOutput(invocation, query);
   }
-  if (invocation.short) return invocation.display.answer ? shortOutput(message.answers) : '';
-  return fullOutput(invocation, message, PathClock.now() - startedAt);
+
+  const options: DnsQueryOptions = {
+    recursionDesired: invocation.recurse,
+    tcp: invocation.tcp,
+    tls: invocation.tls,
+    dnssecOk: invocation.dnssec,
+    udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : invocation.noEdns ? undefined : DEFAULT_EDNS_BUFFER),
+    port: invocation.port ?? undefined,
+    qclass: invocation.qclass,
+  };
+  const candidates = invocation.search ? searchCandidates(invocation.domain, searchList.search, searchList.ndots) : [invocation.domain];
+  let asked = { ...invocation, domain: candidates[0] };
+  let exchange = await exchangeWith(asked, query, options);
+  for (let index = 1; index < candidates.length && exchange.message !== null && exchange.message.flags.rcode === DnsRcode.NXDOMAIN; index++) {
+    asked = { ...invocation, domain: candidates[index] };
+    exchange = await exchangeWith(asked, query, options);
+  }
+  const { startedAt, retriedOverTcp } = exchange;
+  const message = exchange.message;
+  if (!message) return noServersLine(asked, exchange.communications);
+  if (asked.qtype === 'AXFR' || asked.qtype === 'IXFR') {
+    return transferOutput(asked, message, PathClock.now() - startedAt);
+  }
+  if (asked.short) return asked.display.answer ? shortOutput(message.answers) : '';
+  const printed = fullOutput(retriedOverTcp ? { ...asked, tcp: true } : asked, message, PathClock.now() - startedAt);
+  return retriedOverTcp && asked.display.comments ? `;; Truncated, retrying in TCP mode.\n${printed}` : printed;
 }
 
 /** Reads a `dig -f <file>` batch file: one query per non-empty, non-comment line. */
@@ -518,9 +556,10 @@ export async function executeDig(
   }
 
   const invocations = parseDigInvocations(args, resolverIP);
+  const searchList = parseResolvConf(readFile?.('/etc/resolv.conf') ?? '');
   const outputs: string[] = [];
   for (const invocation of invocations) {
-    outputs.push(await executeSingleQuery(invocation, query));
+    outputs.push(await executeSingleQuery(invocation, query, searchList));
   }
   return outputs.join('\n');
 }

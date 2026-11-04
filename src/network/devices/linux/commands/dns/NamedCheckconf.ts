@@ -4,33 +4,57 @@ import { parseNamedConf } from '../../bind9/NamedConfParser';
 import { NamedConfSyntaxError } from '../../bind9/NamedConfLexer';
 import { buildNamedConfig, NamedConfigError } from '../../bind9/NamedConfig';
 import type { NamedConfig, NamedZone } from '../../bind9/NamedConfig';
-import { parseZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
+import { loadZoneFile, zoneFailureReport, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 
 const DEFAULT_CONF = '/etc/bind/named.conf';
 
-function loadZoneLine(zone: NamedZone, readFile: (path: string) => string | null): string {
+interface ZoneCheck {
+  readonly lines: readonly string[];
+  readonly failed: boolean;
+}
+
+function loadZoneLines(zone: NamedZone, readFile: (path: string) => string | null): ZoneCheck {
   const content = zone.file === null ? null : readFile(zone.file);
   if (content === null) {
-    return `zone ${zone.name}/IN: loading from master file ${zone.file} failed: file not found`;
+    return {
+      lines: [
+        `zone ${zone.name}/IN: loading from master file ${zone.file} failed: file not found`,
+        `zone ${zone.name}/IN: not loaded due to errors.`,
+        `_default/${zone.name}/IN: file not found`,
+      ],
+      failed: true,
+    };
   }
   try {
-    const parsed = parseZoneFile(content, zone.name);
-    return `zone ${zone.name}/IN: loaded serial ${parsed.soa.data.serial}`;
+    const { zone: loaded, warnings } = loadZoneFile(content, zone.name);
+    return {
+      lines: [
+        ...warnings.map((warning) => warning(zone.file!, zone.name)),
+        `zone ${zone.name}/IN: loaded serial ${loaded.soa.data.serial}`,
+      ],
+      failed: false,
+    };
   } catch (error) {
     if (error instanceof ZoneFileError) {
-      return `zone ${zone.name}/IN: loading from master file ${zone.file} failed: ${error.message}`;
+      return {
+        lines: [...zoneFailureReport(zone.name, zone.file!, error), `_default/${zone.name}/IN: ${error.stage === 'load' ? error.reason : 'bad zone'}`],
+        failed: true,
+      };
     }
     throw error;
   }
 }
 
-function checkZones(config: NamedConfig, readFile: (path: string) => string | null): string {
+function checkZones(config: NamedConfig, readFile: (path: string) => string | null): { output: string; exitCode: number } {
   const lines: string[] = [];
+  let failed = false;
   for (const zone of config.zones) {
     if (zone.type !== 'primary' && zone.type !== 'hint') continue;
-    lines.push(loadZoneLine(zone, readFile));
+    const check = loadZoneLines(zone, readFile);
+    lines.push(...check.lines);
+    failed = failed || check.failed;
   }
-  return lines.join('\n');
+  return { output: lines.join('\n'), exitCode: failed ? 1 : 0 };
 }
 
 export const namedCheckconfCommand: LinuxCommand = {
@@ -48,6 +72,10 @@ export const namedCheckconfCommand: LinuxCommand = {
     '  filename      The name of the configuration file to be checked.',
 
   run(ctx: LinuxCommandContext, args: string[]): string {
+    return this.runWithStatusSync!(ctx, args).output;
+  },
+
+  runWithStatusSync(ctx: LinuxCommandContext, args: string[]): { output: string; exitCode: number } {
     let file = DEFAULT_CONF;
     let loadZones = false;
     for (const arg of args) {
@@ -58,15 +86,15 @@ export const namedCheckconfCommand: LinuxCommand = {
     const readFile = (path: string): string | null => ctx.executor.readFile(path);
     const source = readFile(file);
     if (source === null) {
-      return `named-checkconf: open: ${file}: file not found`;
+      return { output: `named-checkconf: open: ${file}: file not found`, exitCode: 1 };
     }
 
     try {
       const config = buildNamedConfig(parseNamedConf(source, { file, readInclude: readFile }));
-      return loadZones ? checkZones(config, readFile) : '';
+      return loadZones ? checkZones(config, readFile) : { output: '', exitCode: 0 };
     } catch (error) {
       if (error instanceof NamedConfSyntaxError || error instanceof NamedConfigError) {
-        return error.message;
+        return { output: error.message, exitCode: 1 };
       }
       throw error;
     }

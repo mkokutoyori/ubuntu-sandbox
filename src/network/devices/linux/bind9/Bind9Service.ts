@@ -4,7 +4,7 @@ import { ZoneStore, type PositiveTrim } from '@/network/dns/zone/ZoneStore';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver, resolutionFromCache } from '@/network/dns/resolver/RecursiveResolver';
 import { DEFAULT_CACHE_LIMITS, DnsCache, type DnsCacheLimits } from '@/network/dns/resolver/DnsCache';
-import { parseZoneFile, parseZoneRecords, renderZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
+import { loadZoneFile, parseZoneRecords, renderZoneFile, zoneFailureReport, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
@@ -41,8 +41,9 @@ import { parseNamedConf } from './NamedConfParser';
 import { NamedConfSyntaxError } from './NamedConfLexer';
 import { buildNamedConfig, DEFAULT_EDNS_UDP_SIZE } from './NamedConfig';
 import { NamedConfigError } from './NamedConfigError';
-import { Bind9Logging } from './Bind9Logging';
+import { Bind9Logging, queryLogFlags } from './Bind9Logging';
 import { RndcChannel } from './RndcChannel';
+import { bindPackageVersion } from './BindVersion';
 import { renderViewDump } from './NamedCacheDump';
 import { RndcServer } from './RndcServer';
 import type { Zone } from '@/network/dns/zone/Zone';
@@ -58,6 +59,7 @@ export interface Bind9Files {
   read(path: string): string | null;
   append(path: string, content: string): void;
   write(path: string, content: string): void;
+  log?(message: string): void;
 }
 
 export interface ZoneReloadResult extends OperationResult {
@@ -81,7 +83,9 @@ export class Bind9Service {
   private forwardZones = new Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }>();
   private readonly cache = new DnsCache(() => this.host.getSystemClockMs(), () => this.cacheLimits());
   private readonly loadedZones = new Map<string, number>();
+  private readonly loadedFiles = new Map<string, string>();
   private readonly failedZones = new Set<string>();
+  private readonly reloadPending = new Set<string>();
   private readonly secondaries: SecondaryZoneRefresher;
   private readonly frozenZones = new Set<string>();
   private keyring = new TsigKeyring();
@@ -195,6 +199,14 @@ export class Bind9Service {
     this.cache.flush();
   }
 
+  flushName(name: string): void {
+    this.cache.flushName(name);
+  }
+
+  flushTree(name: string): void {
+    this.cache.flushTree(name);
+  }
+
   freezeZone(name: string): OperationResult {
     const zone = this.primaryZone(name);
     if (!zone) return { ok: false, error: 'not found' };
@@ -222,22 +234,31 @@ export class Bind9Service {
       return { ok: false, error: `loading from master file ${zone.file} failed: file not found` };
     }
     try {
-      const parsed = parseZoneFile(content, zone.name);
-      if (this.loadedZones.get(zone.name) === parsed.soa.data.serial) {
-        return { ok: true, changed: false };
-      }
+      if (this.loadedFiles.get(zone.name) === content && !this.reloadPending.has(zone.name)) return { ok: true, changed: false };
+      const parsed = loadZoneFile(content, zone.name).zone;
       this.store.removeZone(zone.name);
       this.store.addZone(parsed);
       this.loadedZones.set(zone.name, parsed.soa.data.serial);
+      this.loadedFiles.set(zone.name, content);
       this.failedZones.delete(zone.name);
+      this.reloadPending.delete(zone.name);
       this.notifySecondaries(zone.name);
       return { ok: true, changed: true };
     } catch (error) {
       if (error instanceof ZoneFileError || error instanceof ZoneError) {
-        return { ok: false, error: error.message };
+        this.reloadPending.add(zone.name);
+        this.reportLoadFailure(zone.name, zone.file, error);
+        return { ok: true, changed: true };
       }
       throw error;
     }
+  }
+
+  private reportLoadFailure(zoneName: string, file: string, error: ZoneFileError | ZoneError): void {
+    const lines = error instanceof ZoneFileError
+      ? zoneFailureReport(zoneName, file, error)
+      : [`zone ${zoneName}/IN: loading from master file ${file} failed: ${error.message}`, `zone ${zoneName}/IN: not loaded due to errors.`];
+    for (const line of lines) this.files.log?.(line);
   }
 
   private primaryZone(name: string): NamedZone | null {
@@ -256,6 +277,7 @@ export class Bind9Service {
     const loaded = this.loadConfig();
     if (!loaded.ok) return loaded;
 
+    this.cache.flush();
     this.applyConfig(loaded.config);
     const port = loaded.config.options.listenOnPort;
     try {
@@ -330,7 +352,9 @@ export class Bind9Service {
   private applyConfig(config: NamedConfig): void {
     const store = new ZoneStore();
     this.loadedZones.clear();
+    this.loadedFiles.clear();
     this.failedZones.clear();
+    this.reloadPending.clear();
 
     for (const zone of config.zones) {
       if (zone.type === 'secondary') {
@@ -344,12 +368,14 @@ export class Bind9Service {
         continue;
       }
       try {
-        const parsed = parseZoneFile(content, zone.name);
+        const parsed = loadZoneFile(content, zone.name).zone;
         store.addZone(parsed);
         this.loadedZones.set(zone.name, parsed.soa.data.serial);
+        this.loadedFiles.set(zone.name, content);
       } catch (error) {
         if (error instanceof ZoneFileError || error instanceof ZoneError) {
           this.failedZones.add(zone.name);
+          this.reportLoadFailure(zone.name, zone.file!, error);
           continue;
         }
         throw error;
@@ -514,12 +540,35 @@ export class Bind9Service {
    * from the running version regardless of any configured zone, and
    * `hostname.bind`/`id.server` report this server's identity.
    */
+  private chaosEmpty(query: DnsMessage): DnsMessage {
+    const question = query.questions[0];
+    const name = normalizeDnsName(question.qname);
+    const soa = makeSoaRecord(name, 86400, {
+      mname: name, rname: `hostmaster.${name}`, serial: 0, refresh: 28800, retry: 7200, expire: 604800, minimum: 86400,
+    });
+    return {
+      id: query.id,
+      flags: {
+        qr: true, opcode: DnsOpcode.QUERY, aa: true, tc: false,
+        rd: query.flags.rd, ra: false, ad: false, cd: false, rcode: DnsRcode.NOERROR,
+      },
+      questions: query.questions,
+      answers: [],
+      authorities: [{ ...soa, rrClass: DnsClass.CH }],
+      additionals: [],
+    };
+  }
+
   private chaosAnswer(query: DnsMessage): DnsMessage | null {
     const question = query.questions[0];
     if (!question || question.qclass !== DnsClass.CH) return null;
     const qname = normalizeDnsName(question.qname);
     let text: string;
-    if (qname === 'version.bind' || qname === 'authors.bind') text = 'bind-simulator';
+    if (qname === 'version.bind') {
+      const version = this.config?.options.version ?? { kind: 'real' };
+      if (version.kind === 'none') return this.chaosEmpty(query);
+      text = version.kind === 'text' ? version.text : bindPackageVersion();
+    } else if (qname === 'authors.bind') text = 'bind-simulator';
     else if (qname === 'hostname.bind' || qname === 'id.server') text = this.host.getHostname();
     else return null;
 
@@ -679,6 +728,7 @@ export class Bind9Service {
     const question = query.questions[0];
     if (this.queryLogEnabled && question) {
       this.logging.logQuery(config, {
+        flags: queryLogFlags(query, transport),
         clientIP: source,
         clientPort: sourcePort ?? 0,
         qname: question.qname,
@@ -816,7 +866,9 @@ export class Bind9Service {
     const zone = named ? this.store?.getZone(named.name) ?? null : null;
     if (!named || !zone || named.file === null) return { ok: false, error: 'not found' };
     if (!this.isDynamic(named)) return { ok: false, error: 'not dynamic' };
-    this.files.write(named.file, renderZoneFile(zone));
+    const rendered = renderZoneFile(zone);
+    this.files.write(named.file, rendered);
+    this.loadedFiles.set(named.name, rendered);
     return { ok: true };
   }
 
@@ -946,7 +998,7 @@ export class Bind9Service {
       questions: query.questions,
       answers: [],
       authorities: [],
-      additionals: [],
+      additionals: echoedOpt(query, this.config?.options.ednsUdpSize ?? DEFAULT_EDNS_UDP_SIZE),
     };
   }
 

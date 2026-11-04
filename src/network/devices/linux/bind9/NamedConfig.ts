@@ -38,6 +38,7 @@ export interface NamedOptions {
   readonly maxNcacheTtl: number;
   readonly minimalResponses: MinimalResponsesMode;
   readonly ednsUdpSize: number;
+  readonly version: VersionOption;
   readonly emptyZonesEnable: boolean;
   readonly listenOn: AddressMatchList;
   readonly allowQuery: AddressMatchList;
@@ -107,6 +108,7 @@ const DEFAULT_DIRECTORY = '/var/cache/bind';
 const DEFAULT_RNDC_PORT = 953;
 const DEFAULT_DNS_PORT = 53;
 export type MinimalResponsesMode = 'yes' | 'no' | 'no-auth' | 'no-auth-recursive';
+export type VersionOption = { readonly kind: 'real' } | { readonly kind: 'none' } | { readonly kind: 'text'; readonly text: string };
 
 export const DEFAULT_EDNS_UDP_SIZE = 1232;
 const MIN_EDNS_UDP_SIZE = 512;
@@ -152,11 +154,19 @@ function requireBlock(statement: NamedConfStatement): readonly NamedConfStatemen
   return statement.block;
 }
 
+function rejectExtraWords(statement: NamedConfStatement, allowed: number): void {
+  const extra = statement.values[allowed + 1];
+  if (extra !== undefined) {
+    throw new NamedConfigError(statement.file, extra.line ?? statement.line, `missing ';' before '${extra.text}'`);
+  }
+}
+
 function parseBoolean(statement: NamedConfStatement): boolean {
+  rejectExtraWords(statement, 1);
   const value = argsOf(statement)[0];
   if (value === 'yes' || value === 'true') return true;
   if (value === 'no' || value === 'false') return false;
-  return fail(statement, `expected boolean near '${value ?? ';'}'`);
+  return fail(statement, `boolean expected near '${value ?? ';'}'`);
 }
 
 function parseForwardMode(statement: NamedConfStatement): ForwardMode {
@@ -201,6 +211,7 @@ interface MutableOptions {
   maxNcacheTtl: number;
   minimalResponses: MinimalResponsesMode;
   ednsUdpSize: number;
+  version: VersionOption;
   emptyZonesEnable: boolean;
   listenOn: AddressMatchList;
   allowQuery: AddressMatchList;
@@ -225,6 +236,7 @@ function defaultOptions(): MutableOptions {
     maxNcacheTtl: DEFAULT_MAX_NCACHE_TTL,
     minimalResponses: 'no',
     ednsUdpSize: DEFAULT_EDNS_UDP_SIZE,
+    version: { kind: 'real' },
     emptyZonesEnable: true,
     listenOn: AddressMatchList.any(),
     allowQuery: AddressMatchList.any(),
@@ -247,6 +259,7 @@ function parseOptions(
     const args = argsOf(entry);
     switch (keyword) {
       case 'directory':
+        rejectExtraWords(entry, 1);
         options.directory = args[0] ?? options.directory;
         break;
       case 'recursion':
@@ -292,6 +305,12 @@ function parseOptions(
       case 'max-ncache-ttl':
         options.maxNcacheTtl = Math.min(ttlWord(entry, args[0]), MAX_NCACHE_TTL);
         break;
+      case 'version': {
+        const value = entry.values[1];
+        if (value === undefined) fail(entry, "expected a string or 'none' near ';'");
+        options.version = !value.quoted && value.text === 'none' ? { kind: 'none' } : { kind: 'text', text: value.text };
+        break;
+      }
       case 'edns-udp-size': {
         const size = Number(args[0]);
         if (!Number.isInteger(size) || size < 0) fail(entry, `expected a number near '${args[0] ?? ';'}'`);
@@ -423,12 +442,14 @@ function parseZoneEntries(
     if (AUTHORITATIVE_ONLY_OPTIONS.includes(keyword)) draft.authoritativeOnly.set(keyword, entry);
     switch (keyword) {
       case 'type': {
+        rejectExtraWords(entry, 1);
         const type = ZONE_TYPE_ALIASES[args[0] ?? ''];
-        if (!type) fail(statement, `zone '${zoneName}': unknown type '${args[0] ?? ''}'`);
+        if (!type) fail(entry, `'${args[0] ?? ''}' unexpected`);
         draft.type = type;
         break;
       }
       case 'file':
+        rejectExtraWords(entry, 1);
         draft.file = args[0] ?? null;
         break;
       case 'primaries':
@@ -713,6 +734,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const zoneStatements: NamedConfStatement[] = [];
   const controlsStatements: NamedConfStatement[] = [];
   const trustAnchors: ResourceRecord<DsRecordData>[] = [];
+  let optionsSeen = false;
 
   for (const statement of statements) {
     const keyword = keywordOf(statement);
@@ -725,6 +747,8 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
         break;
       }
       case 'options':
+        if (optionsSeen) fail(statement, "'options' redefined near 'options'");
+        optionsSeen = true;
         parseOptions(statement, options, acls);
         break;
       case 'zone':

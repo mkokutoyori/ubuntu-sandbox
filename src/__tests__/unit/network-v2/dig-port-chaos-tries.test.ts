@@ -100,7 +100,7 @@ describe('dig CH-class built-in names (RFC 4892 §2.1, PRD P3)', () => {
     const out = await pc.executeCommand(`dig @${NS1_IP} -c CH version.bind TXT`);
 
     expect(out).toContain('status: NOERROR');
-    expect(out).toMatch(/version\.bind\.\s+0\s+CH\s+TXT\s+"bind-simulator"/);
+    expect(out).toMatch(/version\.bind\.\s+0\s+CH\s+TXT\s+"9\.18\.12-0ubuntu0\.22\.04\.1-Ubuntu"/);
   });
 
   it('bare "chaos" keyword form also selects the CH class', async () => {
@@ -117,7 +117,7 @@ describe('dig CH-class built-in names (RFC 4892 §2.1, PRD P3)', () => {
 
     const out = await pc.executeCommand(`dig @${NS1_IP} -c CH www.example.com TXT`);
 
-    expect(out).not.toContain('bind-simulator');
+    expect(out).not.toContain('"9.18.12-0ubuntu0.22.04.1-Ubuntu"');
   });
 });
 

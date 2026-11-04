@@ -9,73 +9,125 @@ import {
 } from '@/network/dns/wire/ResourceRecord';
 import { dhcidFromPresentation, dhcidToPresentation } from '@/network/dns/wire/Dhcid';
 import { RRType } from '@/network/dns/wire/RRType';
+import { IPAddress, IPv6Address } from '@/network/core/types';
+import { isWithinDomain, normalizeDnsName } from '@/network/dns/wire/DnsName';
+
+export type ZoneLocator = (file: string) => string;
+export type ZoneWarning = (file: string, zoneName: string) => string;
 
 export class ZoneFileError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(
+    readonly reason: string,
+    readonly locators: readonly ZoneLocator[] = [],
+    readonly stage: 'load' | 'check' = 'load',
+  ) {
+    super(reason);
     this.name = 'ZoneFileError';
   }
 }
 
+export function zoneFailureReport(zoneName: string, file: string, error: ZoneFileError): string[] {
+  const subject = `zone ${zoneName}/IN`;
+  return [
+    ...error.locators.map((locator) => locator(file)),
+    error.stage === 'load' ? `${subject}: loading from master file ${file} failed: ${error.reason}` : `${subject}: ${error.reason}`,
+    `${subject}: not loaded due to errors.`,
+  ];
+}
+
+export interface ZoneLoad {
+  readonly zone: Zone;
+  readonly warnings: readonly ZoneWarning[];
+}
+
+interface Token {
+  readonly text: string;
+  readonly line: number;
+}
+
+interface Statement {
+  readonly tokens: readonly Token[];
+  readonly indented: boolean;
+  readonly line: number;
+}
+
+interface Problem {
+  readonly reason: string;
+  readonly locator: ZoneLocator | null;
+}
+
+class StatementFailure extends Error {
+  constructor(readonly problem: Problem) {
+    super(problem.reason);
+  }
+}
+
 const CLASS_KEYWORD = /^(IN|CH|HS|ANY)$/i;
-const DIGITS_ONLY = /^\d+$/;
+const TTL_WORD = /^(\d+)([smhdw]?)$/i;
+const TTL_UNIT_SECONDS: Readonly<Record<string, number>> = { s: 1, m: 60, h: 3600, d: 86400, w: 604800 };
+const DOTTED_QUAD = /^\d{1,3}(\.\d{1,3}){3}$/;
+const MAX_UINT16 = 65535;
+const MAX_UINT32 = 4294967295;
+const DNSSEC_COMPANIONS: ReadonlySet<number> = new Set([RRType.RRSIG, RRType.NSEC]);
 
-function preprocess(text: string): string[] {
-  const lines: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  let parenDepth = 0;
-  let i = 0;
+function ttlValue(word: string): number | null {
+  const match = TTL_WORD.exec(word);
+  return match === null ? null : Number(match[1]) * TTL_UNIT_SECONDS[(match[2] || 's').toLowerCase()];
+}
 
-  while (i < text.length) {
+function scan(text: string): { statements: Statement[]; unbalancedQuoteLine: number | null } {
+  const statements: Statement[] = [];
+  let tokens: Token[] = [];
+  let indented = false;
+  let buffer = '';
+  let bufferLine = 1;
+  let quoted = false;
+  let quoteLine = 1;
+  let depth = 0;
+  let line = 1;
+  let atLineStart = true;
+
+  const endToken = (): void => {
+    if (buffer !== '') tokens.push({ text: buffer, line: bufferLine });
+    buffer = '';
+  };
+  const endStatement = (): void => {
+    endToken();
+    if (tokens.length > 0) statements.push({ tokens, indented, line: tokens[0].line });
+    tokens = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
     const ch = text[i];
-
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      current += ch;
-      i++;
-      continue;
-    }
-    if (!inQuotes && ch === ';') {
-      while (i < text.length && text[i] !== '\n') i++;
-      continue;
-    }
-    if (!inQuotes && ch === '(') {
-      parenDepth++;
-      i++;
-      continue;
-    }
-    if (!inQuotes && ch === ')') {
-      parenDepth--;
-      i++;
+    if (quoted) {
+      if (ch === '\\' && i + 1 < text.length) { buffer += text[++i]; continue; }
+      if (ch === '"') { quoted = false; tokens.push({ text: buffer, line: quoteLine }); buffer = ''; continue; }
+      if (ch === '\n') line++;
+      buffer += ch;
       continue;
     }
     if (ch === '\n') {
-      if (parenDepth > 0) {
-        current += ' ';
-      } else {
-        lines.push(current);
-        current = '';
-      }
-      i++;
+      if (depth === 0) endStatement();
+      else endToken();
+      line++;
+      atLineStart = true;
       continue;
     }
-
-    current += ch;
-    i++;
+    if (atLineStart && depth === 0 && tokens.length === 0 && buffer === '') indented = ch === ' ' || ch === '\t';
+    atLineStart = false;
+    if (ch === ';') {
+      while (i + 1 < text.length && text[i + 1] !== '\n') i++;
+      continue;
+    }
+    if (ch === '"') { endToken(); quoted = true; quoteLine = line; continue; }
+    if (ch === '(') { endToken(); depth++; continue; }
+    if (ch === ')') { endToken(); depth = Math.max(0, depth - 1); continue; }
+    if (ch === ' ' || ch === '\t' || ch === '\r') { endToken(); continue; }
+    if (buffer === '') bufferLine = line;
+    buffer += ch;
   }
-  if (current.trim().length > 0) lines.push(current);
-  return lines;
-}
-
-function tokenize(line: string): string[] {
-  const tokens: string[] = [];
-  const pattern = /"([^"]*)"|(\S+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(line)) !== null) {
-    tokens.push(match[1] !== undefined ? match[1] : match[2]);
-  }
-  return tokens;
+  endStatement();
+  return { statements, unbalancedQuoteLine: quoted ? quoteLine : null };
 }
 
 function normalizeOrigin(token: string): string {
@@ -88,160 +140,304 @@ function resolveName(token: string, origin: string): string {
   return `${token}.${origin}`;
 }
 
+class Rdata {
+  private index = 0;
+  private lastLine: number;
+
+  constructor(
+    private readonly tokens: readonly Token[],
+    typeToken: Token,
+    private readonly origin: string,
+    private readonly locate: (line: number, near: string, reason: string) => never,
+  ) {
+    this.lastLine = typeToken.line;
+  }
+
+  private take(): Token {
+    const token = this.tokens[this.index];
+    if (token === undefined) this.locate(this.lastLine, 'eol', 'unexpected end of input');
+    this.index++;
+    return token;
+  }
+
+  private reject(token: Token, reason: string): never {
+    return this.locate(this.lastLine, `'${token.text}'`, reason);
+  }
+
+  private accept(token: Token): string {
+    this.lastLine = token.line;
+    return token.text;
+  }
+
+  ipv4(): string {
+    const token = this.take();
+    if (!DOTTED_QUAD.test(token.text) || IPAddress.tryParse(token.text) === null) this.reject(token, 'bad dotted quad');
+    return this.accept(token);
+  }
+
+  ipv6(): string {
+    const token = this.take();
+    if (IPv6Address.tryParse(token.text) === null) this.reject(token, 'bad IPv6 address');
+    return this.accept(token);
+  }
+
+  name(): string {
+    return resolveName(this.accept(this.take()), this.origin);
+  }
+
+  number(maximum = MAX_UINT16): number {
+    const token = this.take();
+    if (!/^\d+$/.test(token.text) || Number(token.text) > maximum) this.reject(token, 'not a valid number');
+    return Number(this.accept(token));
+  }
+
+  timer(): number {
+    const token = this.take();
+    const value = ttlValue(token.text);
+    if (value === null || value > MAX_UINT32) this.reject(token, 'not a valid number');
+    this.accept(token);
+    return value;
+  }
+
+  rest(): string[] {
+    if (this.index >= this.tokens.length) this.locate(this.lastLine, 'eol', 'unexpected end of input');
+    const texts = this.tokens.slice(this.index).map((token) => token.text);
+    this.index = this.tokens.length;
+    return texts;
+  }
+
+  finish(): void {
+    const token = this.tokens[this.index];
+    if (token !== undefined) this.reject(token, 'extra input text');
+  }
+}
+
 export interface ParsedZoneRecords {
   readonly records: readonly ResourceRecord[];
   readonly soaOrigin: string | null;
 }
 
-export function parseZoneFile(text: string, defaultOrigin?: string): Zone {
-  const { records, soaOrigin } = parseZoneRecords(text, defaultOrigin);
-  const soas = records.filter((rr) => rr.data.type === RRType.SOA);
-  if (soas.length > 1) throw new ZoneFileError('a zone file may only contain one SOA record');
-  if (soas.length === 0 || soaOrigin === null) throw new ZoneFileError('zone file does not contain an SOA record');
-  const zone = new Zone(soaOrigin, soas[0] as ResourceRecord<SoaRecordData>);
-  for (const rr of records) {
-    if (rr.data.type !== RRType.SOA) zone.addRecord(rr);
-  }
-  return zone;
+interface ScannedZone extends ParsedZoneRecords {
+  readonly lines: readonly number[];
+  readonly exchangeTexts: readonly (string | null)[];
+  readonly problems: readonly Problem[];
 }
 
-export function parseZoneRecords(text: string, defaultOrigin?: string): ParsedZoneRecords {
-  const lines = preprocess(text);
+function scanZone(text: string, defaultOrigin?: string): ScannedZone {
+  const { statements, unbalancedQuoteLine } = scan(text);
+  const problems: Problem[] = [];
+  const records: ResourceRecord[] = [];
+  const lines: number[] = [];
+  const exchangeTexts: (string | null)[] = [];
+  const typesAt = new Map<string, Set<number>>();
 
   let origin: string | null = defaultOrigin ? normalizeOrigin(defaultOrigin) : null;
   let defaultTtl: number | undefined;
   let soaMinimum: number | undefined;
   let lastOwner: string | null = null;
   let soaOrigin: string | null = null;
-  const records: ResourceRecord[] = [];
 
-  for (const rawLine of lines) {
-    const hasLeadingWhitespace = /^[ \t]/.test(rawLine);
-    const trimmed = rawLine.trim();
-    if (trimmed === '') continue;
+  const rdataProblem = (line: number, near: string, reason: string): never => {
+    throw new StatementFailure({
+      reason,
+      locator: (file) => `dns_rdata_fromtext: ${file}:${line}: ${near === '' ? '' : `near ${near}: `}${reason}`,
+    });
+  };
 
-    const tokens = tokenize(trimmed);
+  for (const statement of statements) {
+    const { tokens } = statement;
+    try {
+      if (tokens[0].text.startsWith('$')) {
+        const directive = tokens[0].text.toUpperCase();
+        if (directive === '$ORIGIN') {
+          origin = normalizeOrigin(tokens[1]?.text ?? '');
+        } else if (directive === '$TTL') {
+          const value = tokens[1] === undefined ? null : ttlValue(tokens[1].text);
+          if (value === null) throw new ZoneFileError('bad ttl', problems.map((problem) => problem.locator).filter((locator): locator is ZoneLocator => locator !== null));
+          defaultTtl = value;
+        } else {
+          throw new StatementFailure({ reason: `unsupported zone file directive "${tokens[0].text}"`, locator: null });
+        }
+        continue;
+      }
 
-    if (tokens[0].startsWith('$')) {
-      const directive = tokens[0].toUpperCase();
-      if (directive === '$ORIGIN') {
-        origin = normalizeOrigin(tokens[1]);
-      } else if (directive === '$TTL') {
-        defaultTtl = parseInt(tokens[1], 10);
+      let owner: string;
+      let rest: readonly Token[];
+      if (statement.indented) {
+        if (lastOwner === null) {
+          throw new StatementFailure({ reason: `record line has no owner name and none precedes it: "${tokens.map((token) => token.text).join(' ')}"`, locator: null });
+        }
+        owner = lastOwner;
+        rest = tokens;
       } else {
-        throw new ZoneFileError(`unsupported zone file directive "${tokens[0]}"`);
+        if (origin === null) throw new StatementFailure({ reason: 'a $ORIGIN directive (or a default origin) is required before any record', locator: null });
+        owner = resolveName(tokens[0].text, origin);
+        rest = tokens.slice(1);
       }
-      continue;
-    }
+      lastOwner = owner;
+      if (origin === null) throw new StatementFailure({ reason: 'a $ORIGIN directive (or a default origin) is required before any record', locator: null });
 
-    let owner: string;
-    let rest: string[];
-    if (hasLeadingWhitespace) {
-      if (lastOwner === null) {
-        throw new ZoneFileError(`record line has no owner name and none precedes it: "${trimmed}"`);
+      let ttl: number | undefined;
+      let index = 0;
+      while (index < rest.length) {
+        const value = ttlValue(rest[index].text);
+        if (value !== null) { ttl = value; index++; continue; }
+        if (CLASS_KEYWORD.test(rest[index].text)) { index++; continue; }
+        break;
       }
-      owner = lastOwner;
-      rest = tokens;
-    } else {
-      if (origin === null) {
-        throw new ZoneFileError('a $ORIGIN directive (or a default origin) is required before any record');
+      if (ttl === undefined) ttl = defaultTtl ?? soaMinimum;
+      if (ttl === undefined) {
+        throw new StatementFailure({ reason: `record for owner "${owner}" has no TTL and no $TTL default is in scope`, locator: null });
       }
-      owner = resolveName(tokens[0], origin);
-      rest = tokens.slice(1);
-    }
-    lastOwner = owner;
 
-    if (origin === null) {
-      throw new ZoneFileError('a $ORIGIN directive (or a default origin) is required before any record');
-    }
-
-    let ttl: number | undefined;
-    let idx = 0;
-    while (idx < rest.length) {
-      if (DIGITS_ONLY.test(rest[idx])) {
-        ttl = parseInt(rest[idx], 10);
-        idx++;
-        continue;
+      const typeToken = rest[index];
+      if (typeToken === undefined) {
+        throw new StatementFailure({ reason: `record for owner "${owner}" is missing its record type`, locator: null });
       }
-      if (CLASS_KEYWORD.test(rest[idx])) {
-        idx++;
-        continue;
+      const type = typeToken.text.toUpperCase();
+      const data = new Rdata(rest.slice(index + 1), typeToken, origin, rdataProblem);
+
+      let rr: ResourceRecord;
+      let exchangeText: string | null = null;
+      switch (type) {
+        case 'A': rr = makeARecord(owner, ttl, data.ipv4()); data.finish(); break;
+        case 'AAAA': rr = makeAaaaRecord(owner, ttl, data.ipv6()); data.finish(); break;
+        case 'NS': rr = makeNsRecord(owner, ttl, data.name()); data.finish(); break;
+        case 'CNAME': rr = makeCnameRecord(owner, ttl, data.name()); data.finish(); break;
+        case 'PTR': rr = makePtrRecord(owner, ttl, data.name()); data.finish(); break;
+        case 'MX': {
+          const preference = data.number();
+          exchangeText = rest[index + 2]?.text ?? null;
+          rr = makeMxRecord(owner, ttl, preference, data.name());
+          data.finish();
+          break;
+        }
+        case 'TXT': {
+          const strings = data.rest();
+          rr = makeTxtRecord(owner, ttl, strings.length === 1 ? strings[0] : strings);
+          break;
+        }
+        case 'SRV': {
+          const priority = data.number();
+          const weight = data.number();
+          const port = data.number();
+          rr = makeSrvRecord(owner, ttl, { priority, weight, port, target: data.name() });
+          data.finish();
+          break;
+        }
+        case 'DHCID': rr = makeDhcidRecord(owner, ttl, dhcidFromPresentation(data.rest().join(''))); break;
+        case 'SOA': {
+          const mname = data.name();
+          const rname = data.name();
+          const serial = data.number(MAX_UINT32);
+          const refresh = data.timer();
+          const retry = data.timer();
+          const expire = data.timer();
+          const minimum = data.timer();
+          data.finish();
+          const soa = makeSoaRecord(owner, ttl, { mname, rname, serial, refresh, retry, expire, minimum });
+          soaMinimum = minimum;
+          rr = soa;
+          break;
+        }
+        default:
+          if (type in RRType) {
+            throw new StatementFailure({ reason: `unrecognized record type "${typeToken.text}" for owner "${owner}"`, locator: null });
+          }
+          throw new StatementFailure({
+            reason: 'unknown class/type',
+            locator: (file) => `${file}:${typeToken.line}: unknown RR type '${typeToken.text}'`,
+          });
       }
-      break;
-    }
-    if (ttl === undefined) ttl = defaultTtl ?? soaMinimum;
-    if (ttl === undefined) {
-      throw new ZoneFileError(`record for owner "${owner}" has no TTL and no $TTL default is in scope`);
-    }
 
-    const typeToken = rest[idx];
-    idx++;
-    if (!typeToken) {
-      throw new ZoneFileError(`record for owner "${owner}" is missing its record type`);
-    }
-    const rdata = rest.slice(idx);
-    const type = typeToken.toUpperCase();
-
-    let rr: ResourceRecord;
-    switch (type) {
-      case 'A':
-        rr = makeARecord(owner, ttl, rdata[0]);
-        break;
-      case 'AAAA':
-        rr = makeAaaaRecord(owner, ttl, rdata[0]);
-        break;
-      case 'NS':
-        rr = makeNsRecord(owner, ttl, resolveName(rdata[0], origin));
-        break;
-      case 'CNAME':
-        rr = makeCnameRecord(owner, ttl, resolveName(rdata[0], origin));
-        break;
-      case 'PTR':
-        rr = makePtrRecord(owner, ttl, resolveName(rdata[0], origin));
-        break;
-      case 'MX':
-        rr = makeMxRecord(owner, ttl, parseInt(rdata[0], 10), resolveName(rdata[1], origin));
-        break;
-      case 'TXT':
-        rr = makeTxtRecord(owner, ttl, rdata.length === 1 ? rdata[0] : rdata);
-        break;
-      case 'SRV':
-        rr = makeSrvRecord(owner, ttl, {
-          priority: parseInt(rdata[0], 10),
-          weight: parseInt(rdata[1], 10),
-          port: parseInt(rdata[2], 10),
-          target: resolveName(rdata[3], origin),
+      const held = typesAt.get(normalizeDnsName(owner)) ?? new Set<number>();
+      const clash = rr.data.type === RRType.CNAME
+        ? [...held].some((heldType) => !DNSSEC_COMPANIONS.has(heldType) && heldType !== RRType.CNAME)
+        : !DNSSEC_COMPANIONS.has(rr.data.type) && held.has(RRType.CNAME);
+      if (clash) {
+        throw new StatementFailure({
+          reason: 'CNAME and other data',
+          locator: (file) => `dns_master_load: ${file}:${statement.line}: ${owner}: CNAME and other data`,
         });
-        break;
-      case 'DHCID':
-        rr = makeDhcidRecord(owner, ttl, dhcidFromPresentation(rdata.join('')));
-        break;
-      case 'SOA': {
-        const soaData = makeSoaRecord(owner, ttl, {
-          mname: resolveName(rdata[0], origin),
-          rname: resolveName(rdata[1], origin),
-          serial: parseInt(rdata[2], 10),
-          refresh: parseInt(rdata[3], 10),
-          retry: parseInt(rdata[4], 10),
-          expire: parseInt(rdata[5], 10),
-          minimum: parseInt(rdata[6], 10),
-        });
-        soaMinimum = (soaData.data as SoaRecordData).minimum;
-        rr = soaData;
-        break;
       }
-      default:
-        throw new ZoneFileError(`unrecognized record type "${typeToken}" for owner "${owner}"`);
-    }
+      held.add(rr.data.type);
+      typesAt.set(normalizeDnsName(owner), held);
 
-    if (rr.data.type === RRType.SOA) {
-      if (soaOrigin !== null) throw new ZoneFileError('a zone file may only contain one SOA record');
-      soaOrigin = origin;
+      if (rr.data.type === RRType.SOA) soaOrigin = origin;
+      records.push(rr);
+      lines.push(statement.line);
+      exchangeTexts.push(exchangeText);
+    } catch (error) {
+      if (error instanceof StatementFailure) { problems.push(error.problem); continue; }
+      if (error instanceof ZoneFileError) {
+        throw new ZoneFileError(error.reason, [...problems.map((problem) => problem.locator), ...error.locators].filter((locator): locator is ZoneLocator => locator !== null));
+      }
+      throw error;
     }
-    records.push(rr);
   }
 
-  return { records, soaOrigin };
+  if (unbalancedQuoteLine !== null) {
+    const line = unbalancedQuoteLine;
+    problems.push({ reason: 'unbalanced quotes', locator: (file) => `dns_rdata_fromtext: ${file}:${line}: unbalanced quotes` });
+  }
+  return { records, lines, exchangeTexts, soaOrigin, problems };
+}
+
+function failWith(problems: readonly Problem[]): never {
+  throw new ZoneFileError(problems[0].reason, problems.map((problem) => problem.locator).filter((locator): locator is ZoneLocator => locator !== null));
+}
+
+export function parseZoneRecords(text: string, defaultOrigin?: string): ParsedZoneRecords {
+  const scanned = scanZone(text, defaultOrigin);
+  if (scanned.problems.length > 0) failWith(scanned.problems);
+  return { records: scanned.records, soaOrigin: scanned.soaOrigin };
+}
+
+function buildZone(text: string, defaultOrigin: string | undefined, named: boolean): ZoneLoad {
+  const scanned = scanZone(text, defaultOrigin);
+  if (scanned.problems.length > 0) failWith(scanned.problems);
+  const soas = scanned.records.filter((rr) => rr.data.type === RRType.SOA);
+  if (soas.length !== 1 || scanned.soaOrigin === null) throw new ZoneFileError(`has ${soas.length} SOA records`, [], 'check');
+  const origin = scanned.soaOrigin;
+  const warnings: ZoneWarning[] = [];
+  const kept: ResourceRecord[] = [];
+  scanned.records.forEach((rr, index) => {
+    const line = scanned.lines[index];
+    if (named && !isWithinDomain(normalizeDnsName(rr.name), normalizeDnsName(origin))) {
+      warnings.push((file) => `${file}:${line}: ignoring out-of-zone data (${rr.name})`);
+      return;
+    }
+    kept.push(rr);
+    const exchange = scanned.exchangeTexts[index];
+    if (named && exchange !== null && (IPAddress.tryParse(exchange) !== null || IPv6Address.tryParse(exchange) !== null)) {
+      warnings.push((file) => `${file}:${line}: warning: '${exchange}': MX is an address`);
+    }
+  });
+  if (named && !kept.some((rr) => rr.data.type === RRType.NS && normalizeDnsName(rr.name) === normalizeDnsName(origin))) {
+    throw new ZoneFileError('has no NS records', [], 'check');
+  }
+  const zone = new Zone(origin, soas[0] as ResourceRecord<SoaRecordData>);
+  for (const rr of kept) {
+    if (rr.data.type !== RRType.SOA) zone.addRecord(rr);
+  }
+  if (named) {
+    for (const rr of kept) {
+      if (rr.data.type !== RRType.MX) continue;
+      const target = (rr.data as MxRecordData).exchange;
+      if (!isWithinDomain(normalizeDnsName(target), normalizeDnsName(origin))) continue;
+      const hasAddress = (zone.getRRSet(target, RRType.A)?.length ?? 0) + (zone.getRRSet(target, RRType.AAAA)?.length ?? 0) > 0;
+      if (!hasAddress) warnings.push((_file, zoneName) => `zone ${zoneName}/IN: ${rr.name}/MX '${target}' has no address records (A or AAAA)`);
+    }
+  }
+  return { zone, warnings };
+}
+
+export function loadZoneFile(text: string, defaultOrigin?: string): ZoneLoad {
+  return buildZone(text, defaultOrigin, true);
+}
+
+export function parseZoneFile(text: string, defaultOrigin?: string): Zone {
+  return buildZone(text, defaultOrigin, false).zone;
 }
 
 function absoluteName(name: string): string {

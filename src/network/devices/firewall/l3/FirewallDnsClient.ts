@@ -143,7 +143,7 @@ export class FirewallDnsClient {
 
   forget(fqdn: string): void {
     this.asked.delete(fqdn.toLowerCase());
-    this.cache.forget(fqdn);
+    this.cache.flushName(fqdn);
   }
 
   entries(): readonly ResolvedFqdn[] {

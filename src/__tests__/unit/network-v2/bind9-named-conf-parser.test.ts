@@ -60,7 +60,7 @@ describe('NamedConfLexer', () => {
 
   it('rejects an unterminated block comment', () => {
     expect(() => lexNamedConf('recursion yes;\n/* never closed', CONF))
-      .toThrowError(`${CONF}:2: unterminated comment`);
+      .toThrowError(`${CONF}:2: unexpected end of input`);
   });
 });
 
@@ -164,12 +164,12 @@ logging {
 
   it('reports an unexpected closing brace', () => {
     expect(() => parse('};'))
-      .toThrowError(`${CONF}:1: unexpected '}'`);
+      .toThrowError(`${CONF}:1: syntax error near '}'`);
   });
 
   it('reports an unclosed block at end of file', () => {
     expect(() => parse('options {\n  recursion yes;\n'))
-      .toThrowError(`${CONF}:1: missing '}' before end of file`);
+      .toThrowError(`${CONF}:3: '}' expected near end of file`);
   });
 
   it('rejects a statement starting with a semicolon', () => {

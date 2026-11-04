@@ -1,7 +1,7 @@
 import type { Bind9Service } from './Bind9Service';
+import { bindStatusVersion } from './BindVersion';
 
 const CONTROL_ENDPOINT = '127.0.0.1#953';
-const BIND_VERSION = 'BIND 9.18.28-0ubuntu0.22.04.1-Ubuntu (Extended Support Version) <id:>';
 
 export class RndcChannel {
   constructor(private readonly bind9: Bind9Service) {}
@@ -26,6 +26,13 @@ export class RndcChannel {
       case 'flush':
         this.bind9.flushCache();
         return '';
+      case 'flushname':
+      case 'flushtree': {
+        if (rest[0] === undefined) return `rndc: '${command}' failed: unexpected end of input`;
+        if (command === 'flushname') this.bind9.flushName(rest[0]);
+        else this.bind9.flushTree(rest[0]);
+        return '';
+      }
       case 'freeze': {
         const result = this.bind9.freezeZone(rest[0] ?? '');
         return result.ok ? '' : `rndc: 'freeze' failed: ${result.error}`;
@@ -68,7 +75,7 @@ export class RndcChannel {
 
   private status(): string {
     return [
-      `version: ${BIND_VERSION}`,
+      `version: ${bindStatusVersion()}`,
       `number of zones: ${this.bind9.zoneCount()} (0 automatic)`,
       'debug level: 0',
       'xfers running: 0',
@@ -87,8 +94,12 @@ export class RndcChannel {
       return result.ok ? 'server reload successful' : `rndc: 'reload' failed: ${result.error}`;
     }
     const result = this.bind9.reloadZone(zoneName);
-    if (!result.ok) return `rndc: 'reload' failed: ${result.error}`;
-    return result.changed ? 'zone reload successful' : 'zone reload up-to-date';
+    if (!result.ok) {
+      return result.error === 'not found'
+        ? `rndc: 'reload' failed: not found\nno matching zone '${zoneName}' in any view`
+        : `rndc: 'reload' failed: ${result.error}`;
+    }
+    return result.changed ? 'zone reload queued' : 'zone reload up-to-date';
   }
 
   private querylog(mode: string | undefined): string {

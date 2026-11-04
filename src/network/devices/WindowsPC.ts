@@ -4454,7 +4454,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       },
       setDnsMode: (ifName: string, mode: 'static' | 'dhcp') => {
         if (mode === 'dhcp') {
-          this.dnsConfig.set(ifName, { servers: [], mode: 'dhcp' });
+          this.resetDnsServers(ifName);
         } else {
           const cfg = this.dnsConfig.get(ifName);
           if (cfg) cfg.mode = 'static';
@@ -5073,6 +5073,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   setDnsServers(ifName: string, servers: string[]): void {
     this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
+  }
+
+  resetDnsServers(ifName: string): void {
+    this.dnsConfig.set(ifName, { servers: [], mode: 'dhcp' });
   }
 
   staticDnsServers(): { interface: string; servers: string[] }[] {

@@ -1815,7 +1815,7 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
   readonly name = 'set-dnsclientserveraddress';
   readonly displayName = 'Set-DnsClientServerAddress';
   readonly aliases = [] as const;
-  readonly parameters = ['InterfaceAlias', 'ServerAddresses'] as const;
+  readonly parameters = ['InterfaceAlias', 'ServerAddresses', 'ResetServerAddresses'] as const;
   readonly parameterValues = { InterfaceAlias: 'interfaceAlias' } as const;
   readonly description = 'Sets DNS server addresses associated with the TCP/IP properties on an interface.';
 
@@ -1823,7 +1823,16 @@ export class SetDnsClientServerAddressCmdlet implements ICmdlet {
     const net = requireNetwork(ctx);
     const ifAlias = psValueToString(ctx.named['interfacealias'] ?? ctx.positional[0] ?? '');
     const raw     = ctx.named['serveraddresses'];
+    const reset   = ctx.named['resetserveraddresses'] === true;
     if (!ifAlias) { ctx.emitError('Set-DnsClientServerAddress requires -InterfaceAlias'); return null; }
+    if (reset && raw !== undefined && raw !== null) {
+      ctx.emitError(`${this.displayName} : Parameter set cannot be resolved using the specified named parameters.`);
+      return null;
+    }
+    if (reset) {
+      net.resetDnsServers(ifAlias);
+      return null;
+    }
     if (raw === undefined || raw === null) {
       ctx.emitError('Set-DnsClientServerAddress requires -ServerAddresses');
       return null;

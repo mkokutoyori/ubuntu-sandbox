@@ -63,7 +63,7 @@ export function lexNamedConf(source: string, file: string): NamedConfToken[] {
       advance();
       while (i < source.length && !(source[i] === '*' && source[i + 1] === '/')) advance();
       if (i >= source.length) {
-        throw new NamedConfSyntaxError(file, startLine, 'unterminated comment');
+        throw new NamedConfSyntaxError(file, line, 'unexpected end of input');
       }
       advance();
       advance();
