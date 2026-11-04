@@ -1970,6 +1970,41 @@
   ],
   "N": [
    {
+    "id": "10.web",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig web.banquehorizon.com +short",
+    "output": "203.0.113.20"
+   },
+   {
+    "id": "10.ebanking",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig ebanking.banquehorizon.com +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "10.www-cname",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig www.banquehorizon.com CNAME +short",
+    "output": "web.banquehorizon.com."
+   },
+   {
+    "id": "10.api-cname",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName api.banquehorizon.com -Type CNAME",
+    "output": "\nName     : api.banquehorizon.com\nType     : CNAME\nTTL      : 3600\nSection  : Answer\nNameHost : web.banquehorizon.com\n"
+   },
+   {
+    "id": "11.mx-short",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig banquehorizon.com MX +short",
+    "output": "10 mail.banquehorizon.com.\n20 mail2.banquehorizon.com."
+   },
+   {
     "id": "f9.dig-x",
     "dev": "PC-CONSEILLER",
     "kind": "sh",

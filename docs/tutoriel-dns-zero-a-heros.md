@@ -107,15 +107,15 @@ III.4 [🧪 TP 5 — Qui est mon serveur DNS ?](#iii4--tp-5--qui-est-mon-serveur
 III.5 [🧪 TP 6 — Les suffixes de recherche](#iii5--tp-6--les-suffixes-de-recherche)
 
 ### Partie IV — Descendre l'arbre
-15. [🧪 TP 7 — `dig +trace` : refaire le travail du résolveur](#15--tp-7--dig-trace--refaire-le-travail-du-résolveur)
-16. [🧪 TP 8 — Interroger chaque niveau : renvois et glue](#16--tp-8--interroger-chaque-niveau--renvois-et-glue)
-17. [🧪 TP 9 — Le bit de récursion](#17--tp-9--le-bit-de-récursion)
+IV.1 [🧪 TP 7 — `dig +trace` : refaire le travail du résolveur](#iv1--tp-7--dig-trace--refaire-le-travail-du-résolveur)
+IV.2 [🧪 TP 8 — Interroger chaque niveau : renvois et glue](#iv2--tp-8--interroger-chaque-niveau--renvois-et-glue)
+IV.3 [🧪 TP 9 — Le bit de récursion](#iv3--tp-9--le-bit-de-récursion)
 
 ### Partie V — Les enregistrements
-18. [🧪 TP 10 — A, AAAA et CNAME](#18--tp-10--a-aaaa-et-cname)
-19. [🧪 TP 11 — MX, TXT (SPF, DMARC) et SRV](#19--tp-11--mx-txt-spf-dmarc-et-srv)
-20. [🧪 TP 12 — PTR : retrouver un nom depuis une adresse](#20--tp-12--ptr--retrouver-un-nom-depuis-une-adresse)
-21. [🧪 TP 13 — NXDOMAIN ou NODATA ?](#21--tp-13--nxdomain-ou-nodata-)
+V.1 [🧪 TP 10 — A, AAAA et CNAME](#v1--tp-10--a-aaaa-et-cname)
+V.2 [🧪 TP 11 — MX, TXT (SPF, DMARC) et SRV](#v2--tp-11--mx-txt-spf-dmarc-et-srv)
+V.3 [🧪 TP 12 — PTR : retrouver un nom depuis une adresse](#v3--tp-12--ptr--retrouver-un-nom-depuis-une-adresse)
+V.4 [🧪 TP 13 — NXDOMAIN ou NODATA ?](#v4--tp-13--nxdomain-ou-nodata-)
 
 ### Partie VI — Les serveurs
 22. [🧪 TP 14 — Lire la configuration et la zone de NS1-BANK](#22--tp-14--lire-la-configuration-et-la-zone-de-ns1-bank)
@@ -1860,20 +1860,39 @@ Cette fois, `NOERROR` : la question est devenue `intranet.horizon.local.` et la 
 
 # Partie IV — Descendre l'arbre
 
+Au § I.9, on t'a **raconté** comment un résolveur trouve une adresse en descendant l'arbre des noms : la racine, puis `com`, puis la banque. Dans cette partie, tu vas **le voir faire**, puis le faire toi-même, un pas à la fois.
+
+Rappel du trajet, tel que tu vas l'observer :
+
+```schema
+ 1. DNS-RES   10.20.20.53    « qui sont les serveurs racine ? »    →  a.root-servers.net
+ 2. ROOT-NS   198.51.100.1   « www.banquehorizon.com ? »           →  « pour com, demande à a.nic.com »
+ 3. TLD-NS    198.51.100.2   « www.banquehorizon.com ? »           →  « demande à ns1 ou ns2.banquehorizon.com »
+ 4. NS1-BANK  203.0.113.10   « www.banquehorizon.com ? »           →  la réponse : 203.0.113.20
+```
+
+Trois mots à avoir en tête (ils viennent de la Partie I) :
+
+- un **renvoi** (en anglais *referral*) : un serveur qui ne connaît pas la réponse te dit **à qui demander ensuite** ;
+- la **glue** : l'adresse du serveur vers lequel on te renvoie, donnée avec le renvoi pour t'éviter de la chercher ;
+- une **autorité** : le serveur qui détient la zone et donne la réponse définitive.
+
 ---
 
-## 15. 🧪 TP 7 — `dig +trace` : refaire le travail du résolveur
+## IV.1 🧪 TP 7 — `dig +trace` : refaire le travail du résolveur
 
-**🎯 Objectif.** Voir, étape par étape, le chemin que suit un résolveur : racine → `com` → banque.
+**🎯 Objectif.** Voir, étape par étape, le chemin qui mène de la racine à la réponse.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Le laboratoire importé et un terminal sur `PC-CONSEILLER`. Durée : environ 25 minutes.
+
+**Étape 1 — Lancer la commande.**
 
 ```
 # sur PC-CONSEILLER
 dig +trace @10.20.20.53 www.banquehorizon.com
 ```
 
-**✅ Résultat attendu.**
+Deux nouveautés par rapport à la Partie III : l'option `+trace` (« montre-moi chaque étape de la descente »), et `@10.20.20.53` (c'est `DNS-RES` que tu prends pour point de départ, TP 3 étape 4). Cette fois, **c'est `dig` lui-même qui fait le travail du résolveur** : il interroge les serveurs l'un après l'autre.
 
 ```
 ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> +trace @10.20.20.53 www.banquehorizon.com
@@ -1899,45 +1918,107 @@ ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
 ;; Received 141 bytes from 203.0.113.10#53(203.0.113.10) in 0 ms
 ```
 
-**Lecture, hop par hop.**
+**Étape 2 — Trouver la structure.** La sortie fait une vingtaine de lignes, mais elle est bien rangée : elle est faite de **quatre paragraphes** séparés par une ligne vide. Chaque paragraphe se termine par une ligne qui commence par `;; Received`. Cette ligne est la clé : elle te dit **quel serveur a fourni le paragraphe qui est au-dessus**. Lis toujours un paragraphe *avec* la ligne `Received` qui le suit.
 
-| # | Interrogé | Il répond | Ce que ça dit |
+**Étape 3 — Paragraphe 1 : où est la racine ?**
+
+```
+.			86400	IN	NS	a.root-servers.net.
+;; Received 48 bytes from 10.20.20.53#53(10.20.20.53) in 0 ms
+```
+
+- `.` est la **racine** de l'arbre (le point tout seul, § I.5).
+- `NS` est le type de fiche « serveur de noms » : cette ligne dit « les serveurs de la racine, c'est `a.root-servers.net` ».
+- `86400` est le TTL : une journée.
+- `Received … from 10.20.20.53` : cette liste vient de **`DNS-RES`**, que tu avais pris comme point de départ. Un résolveur connaît par cœur les serveurs de la racine (c'est son fichier d'*indices racine*). Rien n'est encore descendu dans l'arbre.
+
+**Étape 4 — Paragraphe 2 : la racine renvoie vers `com`.**
+
+```
+com.			86400	IN	NS	a.nic.com.
+a.nic.com.		86400	IN	A	198.51.100.2
+;; Received 75 bytes from 198.51.100.1#53(198.51.100.1) in 0 ms
+```
+
+`dig` a maintenant interrogé le serveur racine : c'est l'adresse `198.51.100.1` de la dernière ligne, qui est `ROOT-NS`. La racine **ne connaît pas** `www.banquehorizon.com`, mais elle sait qui tient `com` : elle te renvoie vers `a.nic.com` (première ligne) et te donne son adresse, `198.51.100.2` (deuxième ligne, type `A`). C'est un **renvoi** avec sa **glue**.
+
+**Étape 5 — Paragraphe 3 : `com` renvoie vers la banque.**
+
+```
+banquehorizon.com.	3600	IN	NS	ns1.banquehorizon.com.
+banquehorizon.com.	3600	IN	NS	ns2.banquehorizon.com.
+ns1.banquehorizon.com.	3600	IN	A	203.0.113.10
+ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
+;; Received 107 bytes from 198.51.100.2#53(198.51.100.2) in 0 ms
+```
+
+`dig` demande maintenant à `198.51.100.2` (c'est `TLD-NS`, qui tient la zone `com`). Lui non plus ne connaît pas `www`, mais il sait qui tient `banquehorizon.com` : les deux serveurs `ns1` et `ns2` de la banque (deux lignes `NS`), avec leurs adresses (deux lignes `A`, la glue).
+
+**Étape 6 — Paragraphe 4 : la réponse.**
+
+```
+www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
+web.banquehorizon.com.	3600	IN	A	203.0.113.20
+ns1.banquehorizon.com.	3600	IN	A	203.0.113.10
+ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
+;; Received 141 bytes from 203.0.113.10#53(203.0.113.10) in 0 ms
+```
+
+`dig` demande enfin à `203.0.113.10`, c'est-à-dire `NS1-BANK`. Cette fois, ce serveur **détient** la zone : il répond. Les deux premières lignes sont la réponse que tu connais depuis le TP 2 (`www` est un alias de `web`, qui vaut `203.0.113.20`). Les deux dernières sont des compléments.
+
+**Étape 7 — Résumé.** Voici les quatre sauts, avec la ligne `Received` qui prouve chacun :
+
+| Saut | Serveur interrogé | Ce qu'il répond | Ce que ça veut dire |
 |---|---|---|---|
-| 1 | **DNS-RES** (10.20.20.53) | `. NS a.root-servers.net.` | Où est la racine ? Ce sont les **indices racine** du résolveur |
-| 2 | **ROOT-NS** (198.51.100.1) | `com. NS a.nic.com.` + son adresse | La racine ne sait pas pour `www`, mais elle sait qui tient `com` : un **renvoi** (*referral*) |
-| 3 | **TLD-NS** (198.51.100.2) | `banquehorizon.com. NS ns1, ns2` + adresses | `com` renvoie vers les deux serveurs de la banque, avec leur **glue** |
-| 4 | **NS1-BANK** (203.0.113.10) | `www CNAME web`, `web A 203.0.113.20` | **La réponse**, de l'autorité |
+| 1 | `DNS-RES` (10.20.20.53) | `. NS a.root-servers.net.` | La liste des serveurs de la racine |
+| 2 | `ROOT-NS` (198.51.100.1) | `com. NS a.nic.com.` + son adresse | Un **renvoi** vers le serveur de `com` |
+| 3 | `TLD-NS` (198.51.100.2) | `banquehorizon.com. NS ns1, ns2` + adresses | Un **renvoi** vers les serveurs de la banque |
+| 4 | `NS1-BANK` (203.0.113.10) | `www CNAME web`, `web A 203.0.113.20` | **La réponse**, donnée par l'autorité |
 
-**🧠 Ce que tu viens d'apprendre.** Chaque étape descend d'un niveau dans l'arbre. Les trois premières ne donnent **jamais la réponse** : elles donnent *l'adresse de la suite*. Seul le dernier serveur, qui est l'**autorité** de la zone, répond. C'est exactement ce que fait DNS-RES la première fois, sauf que lui garde tout en cache (TP 24).
+> 💡 **Astuce** — `+trace` **ignore tous les caches** : il refait toujours le chemin complet. C'est l'outil idéal pour savoir **où** une délégation est cassée : quand un serveur ne répond pas, le chemin s'arrête au saut fautif, et tu sais lequel.
 
-💡 **Astuce** — `+trace` ignore le cache : il refait toujours le chemin complet. C'est l'outil idéal pour savoir **où** une délégation est cassée (le chemin s'arrête au saut fautif).
+🆘 **Si ça ne marche pas.** `;; communications error … timed out` à l'un des sauts : le serveur correspondant ne répond pas. Tente un `ping -c 1 -W 1` vers son adresse (§ II.3) pour savoir si c'est le réseau ou le serveur.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- Chaque saut descend d'un niveau dans l'arbre. Les trois premiers ne donnent **jamais la réponse** : ils donnent *l'adresse de la suite*.
+- Seul le dernier serveur, qui est l'**autorité** de la zone, répond.
+- C'est exactement ce que fait `DNS-RES` la première fois qu'on lui pose une question, sauf que lui **garde tout en cache** (TP 24).
+- La ligne `Received … from X` te dit toujours **qui** a fourni un paragraphe.
+
+**Vérifie-toi.**
+
+1. Combien d'équipements différents ont répondu à `dig +trace` ?
+2. Quel serveur a donné la réponse finale ? Comment le sais-tu ?
+
+*Réponses.* (1) Quatre : `DNS-RES`, `ROOT-NS`, `TLD-NS`, `NS1-BANK`. (2) `NS1-BANK` (`203.0.113.10`), grâce à la ligne `Received` du dernier paragraphe ; c'est aussi le seul paragraphe qui contient la réponse (`www` et `web`).
 
 ---
 
-## 16. 🧪 TP 8 — Interroger chaque niveau : renvois et glue
+## IV.2 🧪 TP 8 — Interroger chaque niveau : renvois et glue
 
-**🎯 Objectif.** Poser *toi-même* la même question à ROOT-NS, à TLD-NS puis à NS1-BANK, sans récursion, et voir le renvoi se transformer en réponse.
+**🎯 Objectif.** Poser **toi-même** la même question à `ROOT-NS`, à `TLD-NS`, puis à `NS1-BANK`, sans récursion, et voir un renvoi se transformer en réponse.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Les TP 3 et 7. Deux terminaux : `ROOT-NS` (double-clic sur l'équipement, § 0.2) et `PC-CONSEILLER`. Durée : environ 30 minutes.
+
+Au TP 7, `dig` jouait le rôle d'un résolveur. Ici c'est **toi** qui joues ce rôle : tu poses la question à un seul serveur, et tu lis ce qu'il te répond. Pour que le serveur ne cherche pas à t'aider en faisant le travail à ta place, tu ajoutes **`+norecurse`** (TP 3, étape 6).
+
+**Étape 1 — Interroger la racine.** Ouvre un terminal sur `ROOT-NS`.
 
 ```
 # sur ROOT-NS
 dig @127.0.0.1 www.banquehorizon.com +norecurse +noall +comments +authority +additional
 ```
 
-```
-# sur PC-CONSEILLER
-dig @198.51.100.2 www.banquehorizon.com +norecurse +noall +comments +authority +additional
-dig @203.0.113.10 www.banquehorizon.com +norecurse +noall +comments +answer +authority +additional
-```
-
-**✅ Résultat attendu.**
-
-ROOT-NS ne connaît que `com` :
+`127.0.0.1` est l'adresse **de la machine elle-même** (§ 0.4) : `ROOT-NS` s'interroge lui-même, il est le serveur racine.
 
 ```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 74
 ;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 2
 
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
 ;; AUTHORITY SECTION:
 com.			86400	IN	NS	a.nic.com.
 
@@ -1945,11 +2026,28 @@ com.			86400	IN	NS	a.nic.com.
 a.nic.com.		86400	IN	A	198.51.100.2
 ```
 
-TLD-NS ne connaît que `banquehorizon.com` (c'est un serveur **Windows** : il annonce `udp: 4096` au lieu de `1232`, sans que cela change le raisonnement) :
+Cherche trois signes dans cette sortie :
+
+- **`ANSWER: 0`** (ligne `flags`) : aucune réponse à ta question.
+- **Une fiche `NS` dans `AUTHORITY SECTION`** : `com. NS a.nic.com.`. Le serveur dit « demande à `a.nic.com` ».
+- **Pas de `aa`** : `flags: qr` seulement. `ROOT-NS` ne fait pas autorité pour `banquehorizon.com`.
+
+Ces trois signes, ensemble, définissent un **renvoi**. La section `ADDITIONAL` donne la glue : l'adresse de `a.nic.com`, `198.51.100.2`.
+
+**Étape 2 — Interroger le serveur de `com`.** Sur `PC-CONSEILLER`, interroge l'adresse que la racine vient de te donner.
 
 ```
+# sur PC-CONSEILLER
+dig @198.51.100.2 www.banquehorizon.com +norecurse +noall +comments +authority +additional
+```
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 75
 ;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 2, ADDITIONAL: 3
 
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
 ;; AUTHORITY SECTION:
 banquehorizon.com.	3600	IN	NS	ns1.banquehorizon.com.
 banquehorizon.com.	3600	IN	NS	ns2.banquehorizon.com.
@@ -1959,11 +2057,26 @@ ns1.banquehorizon.com.	3600	IN	A	203.0.113.10
 ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
 ```
 
-NS1-BANK, enfin, **répond** :
+Même schéma : `ANSWER: 0`, des `NS` en `AUTHORITY`, pas de `aa`. Cette fois le renvoi mène aux deux serveurs de la banque, `ns1` et `ns2`, avec leurs adresses en `ADDITIONAL`.
+
+`TLD-NS` est un serveur **Windows**. Un détail le trahit : la ligne `udp: 4096` (un serveur BIND écrit `udp: 1232`). Cela ne change en rien le raisonnement.
+
+**Étape 3 — Interroger la banque.**
 
 ```
+# sur PC-CONSEILLER
+dig @203.0.113.10 www.banquehorizon.com +norecurse +noall +comments +answer +authority +additional
+```
+
+On a ajouté `+answer` pour afficher la section réponse.
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 76
 ;; flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3
 
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
 ;; ANSWER SECTION:
 www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
 web.banquehorizon.com.	3600	IN	A	203.0.113.20
@@ -1977,138 +2090,309 @@ ns1.banquehorizon.com.	3600	IN	A	203.0.113.10
 ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
 ```
 
+Cette fois, trois signes inverses :
+
+- **`flags: qr aa`** : le drapeau `aa` est là, `NS1-BANK` **fait autorité**.
+- **`ANSWER: 2`** : la réponse est donnée (le `CNAME` puis le `A`).
+- La section `AUTHORITY` n'est plus un renvoi : elle recopie simplement les serveurs de la zone.
+
+**Comparaison des trois réponses.**
+
+| Interrogé | `flags` | `ANSWER` | `AUTHORITY` | Verdict |
+|---|---|---|---|---|
+| `ROOT-NS` | `qr` | 0 | `NS` de `com` | **Renvoi** |
+| `TLD-NS` | `qr` | 0 | `NS` de `banquehorizon.com` | **Renvoi** |
+| `NS1-BANK` | `qr aa` | 2 | `NS` de la zone | **Réponse** |
+
+**Pourquoi la glue ?** Regarde les deux serveurs de la banque : `ns1.banquehorizon.com` et `ns2.banquehorizon.com`. Leurs noms **se trouvent dans la zone qu'ils servent**. Si `TLD-NS` te disait seulement « demande à `ns1.banquehorizon.com` », il te faudrait connaître l'adresse de `ns1.banquehorizon.com`… en le demandant à `ns1.banquehorizon.com`. Impossible. La **glue** (les fiches `A` jointes au renvoi) rompt ce cercle.
+
+> 🔍 **Point d'audit** — Une délégation dont la glue est fausse (une adresse périmée après un changement de serveur) est l'une des pannes DNS les plus sournoises : tout marche tant que le cache du résolveur est chaud, tout s'effondre à l'expiration. Vérifie la glue **chez le parent** (ici `TLD-NS`), pas chez toi.
+
+🆘 **Si ça ne marche pas.** `connection timed out` à l'étape 2 : `PC-CONSEILLER` n'atteint pas `198.51.100.2`. Refais le `ping` du TP 1.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Un renvoi se reconnaît à trois signes : `ANSWER: 0`, des `NS` dans la section `AUTHORITY`, **pas de `aa`**.
+- Un **renvoi** se reconnaît à trois signes : `ANSWER: 0`, des `NS` dans `AUTHORITY`, **pas de `aa`**.
 - La réponse définitive porte `aa` et une section `ANSWER` remplie.
-- La **glue** (les `A` de la section `ADDITIONAL` d'un renvoi) n'est pas une décoration : sans elle, le résolveur devrait résoudre `ns1.banquehorizon.com`… dans la zone qu'il cherche justement à joindre. Le `ADDITIONAL: 2` de ROOT-NS compte la glue **et** l'enregistrement `OPT` d'EDNS que `dig` envoie avec sa question.
+- La **glue** n'est pas un luxe : sans elle, le résolveur devrait résoudre `ns1.banquehorizon.com` dans la zone qu'il cherche justement à joindre.
+- Le `ADDITIONAL: 2` de `ROOT-NS` compte la glue **et** l'enregistrement technique `OPT` que `dig` envoie avec sa question (TP 2, étape 5).
 
-> 🔍 **Point d'audit** — Une délégation dont la glue est fausse (une adresse périmée après un changement de serveur) est l'une des pannes DNS les plus sournoises : tout marche tant que le cache du résolveur est chaud, tout s'effondre à l'expiration. Vérifie la glue **chez le parent** (ici TLD-NS), pas chez toi.
+**Vérifie-toi.**
+
+1. Quels sont les trois signes d'un renvoi ?
+2. Pourquoi les serveurs de la banque ont-ils besoin d'une glue ?
+
+*Réponses.* (1) `ANSWER: 0`, des `NS` en `AUTHORITY`, pas de `aa`. (2) Leurs noms sont dans la zone qu'ils servent : sans leurs adresses fournies avec le renvoi, on ne pourrait pas les joindre.
 
 ---
 
-## 17. 🧪 TP 9 — Le bit de récursion
+## IV.3 🧪 TP 9 — Le bit de récursion
 
-**🎯 Objectif.** Voir la différence entre un serveur qui *fait la récursion* (DNS-RES), un serveur qui *refuse de la faire* (TLD-NS) et un serveur qui *refuse de répondre* (NS1-BANK hors de sa zone).
+**🎯 Objectif.** Voir la différence entre trois comportements : un serveur qui **fait la récursion** (`DNS-RES`), un serveur qui **ne la fait pas** (`TLD-NS`) et un serveur qui **refuse** de répondre (`NS1-BANK` hors de sa zone).
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `DNS-RES` (double-clic sur l'équipement) et un sur `PC-CONSEILLER`. Durée : environ 30 minutes.
+
+Rappel (TP 2, étape 5) : le drapeau **`rd`** dit « *je demande* la récursion » (de ta part), et **`ra`** dit « *je l'offre* » (de la part du serveur). La **récursion**, c'est faire tout le chemin du TP 7 à la place de celui qui demande. Seul un **résolveur** doit la faire.
+
+**Étape 1 — Vider le cache de `DNS-RES`.** Pour que l'expérience soit propre, on part d'un résolveur qui n'a rien appris.
 
 ```
 # sur DNS-RES
 sudo rndc flush
+```
+
+`sudo` exécute une commande avec les droits d'administrateur. `rndc` est la télécommande de `named`, le logiciel DNS de ce serveur ; `flush` veut dire « vide ton cache ». La commande n'affiche rien : sur Linux, **le silence veut dire que ça a marché**.
+
+**Étape 2 — Interdire la récursion à un résolveur vide.**
+
+```
+# sur DNS-RES
 dig @127.0.0.1 www.banquehorizon.com +norecurse +noall +comments +authority +additional
-dig @127.0.0.1 www.banquehorizon.com +noall +comments +answer
-dig @127.0.0.1 www.banquehorizon.com +norecurse +noall +comments +answer
 ```
 
 ```
-# sur PC-CONSEILLER
-dig @198.51.100.2 www.banquehorizon.com
-dig @203.0.113.10 google.com
-```
-
-**✅ Résultat attendu.**
-
-*Cache vidé, sans récursion* : DNS-RES ne sait rien du nom, il ne peut que renvoyer vers les serveurs racine de son fichier d'indices. Il **ne descend pas** l'arbre, puisqu'on le lui interdit :
-
-```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 77
 ;; flags: qr ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
 
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
 ;; AUTHORITY SECTION:
 .			3600000	IN	NS	a.root-servers.net.
 ```
 
-*Avec récursion*, il fait tout le chemin du TP 7 et répond. Remarque les compteurs : `AUTHORITY: 2, ADDITIONAL: 3` — un résolveur BIND recopie, à côté de la réponse, les `NS` de la zone et leur glue (comme le ferait un serveur d'autorité), même si la commande n'affiche que la section `ANSWER` :
+`DNS-RES` n'a rien en cache, et tu lui interdis de chercher (`+norecurse`). Il ne peut que te dire par où il **commencerait** : la section `AUTHORITY` donne le serveur racine (le TTL très long, `3600000`, vient de son fichier d'indices). Remarque `flags: qr ra` : `ra`, il **offre** la récursion, mais tu ne l'as pas demandée, donc il ne la fait pas.
+
+**Étape 3 — Autoriser la récursion.**
 
 ```
+# sur DNS-RES
+dig @127.0.0.1 www.banquehorizon.com +noall +comments +answer
+```
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 78
 ;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3
 
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
 ;; ANSWER SECTION:
 www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
 web.banquehorizon.com.	3600	IN	A	203.0.113.20
 ```
 
-*Une seconde fois sans récursion*, il répond **depuis son cache** — la réponse est complète, sans qu'il ait eu à demander quoi que ce soit :
+Cette fois il a fait tout le chemin du TP 7 et il répond. Les drapeaux sont `qr rd ra` : tu as demandé (`rd`), il offre (`ra`). Remarque aussi les compteurs : `AUTHORITY: 2, ADDITIONAL: 3`. Un résolveur BIND recopie, à côté de la réponse, les serveurs de la zone et leur glue, même si ta commande n'a affiché que la section `ANSWER`.
+
+**Étape 4 — Redemander sans récursion.**
 
 ```
+# sur DNS-RES
+dig @127.0.0.1 www.banquehorizon.com +norecurse +noall +comments +answer
+```
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 79
 ;; flags: qr ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3
 
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
 ;; ANSWER SECTION:
 www.banquehorizon.com.	3600	IN	CNAME	web.banquehorizon.com.
 web.banquehorizon.com.	3600	IN	A	203.0.113.20
 ```
 
-TLD-NS, un serveur Windows **sans récursion**, ignore ta demande de récursion et le dit :
+Même interdiction qu'à l'étape 2, mais **la réponse est complète**. `DNS-RES` n'a rien eu à demander : il avait **gardé** la réponse en cache à l'étape 3. Voilà le cache à l'œuvre (§ I.10).
+
+**Étape 5 — Un serveur qui ne fait pas la récursion.** Sur `PC-CONSEILLER`, demande à `TLD-NS` (le serveur Windows de `com`) de faire le travail pour toi :
 
 ```
+# sur PC-CONSEILLER
+dig @198.51.100.2 www.banquehorizon.com
+```
+
+```
+; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @198.51.100.2 www.banquehorizon.com
+; (1 server found)
+;; global options: +cmd
 ;; Got answer:
 ;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 80
 ;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 2, ADDITIONAL: 3
 ;; WARNING: recursion requested but not available
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+;; QUESTION SECTION:
+;www.banquehorizon.com.		IN	A
+
+;; AUTHORITY SECTION:
+banquehorizon.com.	3600	IN	NS	ns1.banquehorizon.com.
+banquehorizon.com.	3600	IN	NS	ns2.banquehorizon.com.
+
+;; ADDITIONAL SECTION:
+ns1.banquehorizon.com.	3600	IN	A	203.0.113.10
+ns2.banquehorizon.com.	3600	IN	A	203.0.113.11
+
+;; Query time: 0 msec
+;; SERVER: 198.51.100.2#53(198.51.100.2) (UDP)
+;; WHEN: Wed Nov 04 11:05:30 UTC 2026
+;; MSG SIZE  rcvd: 118
 ```
 
-(suivi du même renvoi vers `ns1`/`ns2` qu'au TP 8.) Enfin NS1-BANK, qui ne fait pas autorité pour `google.com` et ne fait pas de récursion, **refuse** :
+Trois lignes sont à lire :
+
+- `flags: qr rd` : tu as demandé la récursion (`rd`), mais **il n'y a pas de `ra`** : `TLD-NS` ne l'offre pas.
+- `;; WARNING: recursion requested but not available` : `dig` te le dit en clair.
+- Il te renvoie quand même (`ANSWER: 0`, des `NS` en `AUTHORITY`) : comme à l'étape 2 du TP 8, c'est un renvoi.
+
+**Étape 6 — Un serveur qui refuse.** `NS1-BANK` fait autorité pour `banquehorizon.com` seulement. Pose-lui une question hors de sa zone :
 
 ```
+# sur PC-CONSEILLER
+dig @203.0.113.10 google.com
+```
+
+```
+; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @203.0.113.10 google.com
+; (1 server found)
+;; global options: +cmd
 ;; Got answer:
 ;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 92
 ;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1
 ;; WARNING: recursion requested but not available
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;google.com.			IN	A
+
+;; Query time: 0 msec
+;; SERVER: 203.0.113.10#53(203.0.113.10) (UDP)
+;; WHEN: Wed Nov 04 11:05:45 UTC 2026
+;; MSG SIZE  rcvd: 39
 ```
 
-**🧠 Ce que tu viens d'apprendre.**
+`status: REFUSED` : « ce n'est pas mon rayon, et je ne fais pas la récursion pour toi ». Il n'a même pas essayé de t'aider (`ANSWER: 0`, `AUTHORITY: 0`).
+
+**Résumé des cas.**
 
 | Situation | Signe dans la réponse |
 |---|---|
 | Le serveur **offre** la récursion | `ra` dans les drapeaux |
 | Le serveur **n'offre pas** la récursion et tu l'as demandée | `WARNING: recursion requested but not available` |
 | Le serveur est **autorité** de la zone | `aa` |
-| Le serveur **refuse** (politique, ou question hors de sa zone) | `status: REFUSED` |
+| Le serveur **refuse** (hors de sa zone, sans récursion) | `status: REFUSED` |
 | Le serveur ne sait pas mais te met sur la voie | `ANSWER: 0` + `NS` en `AUTHORITY` (un **renvoi**) |
 
-> 🔍 **Point d'audit** — Ce `REFUSED` est un **bon** signe : NS1-BANK, le serveur faisant autorité de la banque, ne doit jamais faire la récursion pour le compte d'inconnus. Si ce serveur répondait `NOERROR` à `google.com`, ce serait un résolveur ouvert, exploitable pour des attaques par amplification. C'est le premier test du TP 35.
+> 🔍 **Point d'audit** — Ce `REFUSED` est un **bon** signe : `NS1-BANK`, serveur faisant autorité de la banque, ne doit jamais faire la récursion pour le compte d'inconnus. S'il répondait `NOERROR` à `google.com`, ce serait un *résolveur ouvert*, exploitable pour des attaques par amplification. C'est le premier test du TP 35.
+
+🆘 **Si ça ne marche pas.** À l'étape 4, `ANSWER: 0` : tu as sauté l'étape 3, ou `DNS-RES` a vu son cache vidé entre-temps. Refais les étapes 3 et 4 dans l'ordre.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- `rd` est une **demande** du client, `ra` est une **offre** du serveur. Un résolveur offre (`ra`), une autorité pure non.
+- Sans récursion, un résolveur ne sait répondre que depuis son **cache** ; avec, il refait le chemin.
+- Un serveur d'autorité qui répond `REFUSED` à une question hors de sa zone se comporte **correctement**.
+
+**Vérifie-toi.**
+
+1. Que signifie `rd` ? Qui l'envoie ?
+2. Que signifie `ra` ? Qui l'envoie ?
+3. `NS1-BANK` répond `REFUSED` à `google.com` : est-ce une panne ?
+
+*Réponses.* (1) « Recursion desired » : c'est le client qui l'envoie, pour demander au serveur de faire tout le chemin. (2) « Recursion available » : c'est le serveur qui l'envoie, pour dire qu'il sait le faire. (3) Non, c'est le comportement attendu d'un serveur d'autorité.
 
 ---
 
 # Partie V — Les enregistrements
 
-Chaque TP de cette partie pose la même question avec **les deux familles d'outils** (`dig` côté Linux, `Resolve-DnsName` côté Windows) : la réponse est la même, seule la présentation change.
+Au TP 2, tu as appris qu'une fiche de l'annuaire a toujours la même forme : **nom, TTL, classe, type, donnée**. Dans cette partie, tu vas t'intéresser à la quatrième colonne, le **type**. C'est lui qui donne son sens à la donnée : une adresse, un autre nom, un serveur de messagerie, un texte…
+
+Voici les types que tu vas manipuler. Tu en connais déjà certains.
+
+| Type | Ce que contient la fiche | Question à laquelle elle répond | Vu au |
+|---|---|---|---|
+| **A** | Une adresse IPv4 | « Quelle est l'adresse de ce nom ? » | TP 2 |
+| **AAAA** | Une adresse IPv6 | La même question, pour IPv6 | TP 10 |
+| **CNAME** | Un autre nom | « Ce nom est-il un alias ? De quoi ? » | TP 2, TP 10 |
+| **NS** | Un serveur de la zone | « Qui détient cette zone ? » | TP 3, TP 11 |
+| **MX** | Un serveur de messagerie et sa préférence | « Où livrer le courrier de ce domaine ? » | TP 3, TP 11 |
+| **TXT** | Un texte libre (règles anti-usurpation) | « Quelles règles ce domaine publie-t-il ? » | TP 11 |
+| **SRV** | Un serveur **et un port** pour un service | « Où se trouve ce service ? » | TP 11 |
+| **SOA** | La fiche d'identité de la zone | « Comment cette zone est-elle gérée ? » | TP 11 |
+| **PTR** | Un nom, rattaché à une adresse | « Quel est le nom de cette adresse ? » | TP 12 |
+
+Chaque TP de cette partie pose les mêmes questions avec les **deux familles d'outils** : `dig` sur Linux, `Resolve-DnsName` sur Windows. La réponse est la même, seule la présentation change.
 
 ---
 
-## 18. 🧪 TP 10 — A, AAAA et CNAME
+## V.1 🧪 TP 10 — A, AAAA et CNAME
 
-**🎯 Objectif.** Comprendre qu'**une adresse peut avoir plusieurs noms** et qu'un alias se **suit**.
+**🎯 Objectif.** Comprendre qu'**une machine peut avoir plusieurs noms**, qu'un alias se **suit**, et qu'une adresse IPv4 et une adresse IPv6 sont deux fiches différentes.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `PC-CONSEILLER` et un sur `PC-GUICHET1`. Durée : environ 25 minutes.
+
+Dans le laboratoire, la machine du site de la banque s'appelle `web`. Mais les clients écrivent `www`, `ebanking`, `agences`, `api`… Ces quatre noms ne désignent pas quatre machines : ce sont des **alias** (des surnoms) de `web`.
+
+```schema
+web.banquehorizon.com       A      203.0.113.20          ← la seule fiche qui porte l'adresse
+www.banquehorizon.com       CNAME  web.banquehorizon.com ← un alias de web
+ebanking.banquehorizon.com  CNAME  web.banquehorizon.com
+agences.banquehorizon.com   CNAME  web.banquehorizon.com
+api.banquehorizon.com       CNAME  web.banquehorizon.com
+```
+
+L'intérêt : si le site change d'adresse, on corrige **une seule fiche** (`web`), et les quatre alias suivent.
+
+**Étape 1 — La fiche A de `web`.**
 
 ```
 # sur PC-CONSEILLER
 dig web.banquehorizon.com +short
+```
+
+```
+203.0.113.20
+```
+
+Une seule ligne : l'adresse IPv4 de `web`. C'est la fiche de type **A**.
+
+**Étape 2 — Demander l'adresse d'un alias.**
+
+```
+# sur PC-CONSEILLER
 dig ebanking.banquehorizon.com +short
+```
+
+```
+web.banquehorizon.com.
+203.0.113.20
+```
+
+Cette fois il y a **deux lignes**. Lis-les dans l'ordre : le serveur te dit d'abord vers quel nom l'alias mène (`web.banquehorizon.com.`), puis l'adresse de ce nom. Tu avais demandé une adresse, il a **suivi l'alias pour toi** et t'a donné les deux fiches dans la même réponse. Tu n'as pas à reposer la question.
+
+**Étape 3 — Demander l'alias lui-même.**
+
+```
+# sur PC-CONSEILLER
 dig www.banquehorizon.com CNAME +short
 ```
+
+Cette fois tu précises le type : `CNAME`. Tu ne veux plus l'adresse, tu veux la fiche d'alias.
+
+```
+web.banquehorizon.com.
+```
+
+Une seule ligne : la cible de l'alias. `dig` n'a **pas** suivi : tu avais demandé la fiche `CNAME`, tu as reçu la fiche `CNAME`. Un `CNAME` va **d'un nom à un autre nom** ; il ne porte jamais d'adresse.
+
+**Étape 4 — Le même alias, vu depuis Windows.**
 
 ```powershell
 # sur PC-GUICHET1
 Resolve-DnsName agences.banquehorizon.com
-Resolve-DnsName api.banquehorizon.com -Type CNAME
 ```
-
-**✅ Résultat attendu.**
-
-```
-203.0.113.20
-```
-```
-web.banquehorizon.com.
-203.0.113.20
-```
-```
-web.banquehorizon.com.
-```
-
-et côté Windows, la chaîne est complète : l'alias puis l'adresse.
 
 ```
 Name     : agences.banquehorizon.com
@@ -2124,51 +2408,213 @@ Section   : Answer
 IPAddress : 203.0.113.20
 ```
 
+Deux petits tableaux, un par fiche. Le premier est le `CNAME` (`agences` mène à `web`) ; le second est le `A` (`web` vaut `203.0.113.20`). C'est la même chaîne qu'à l'étape 2, présentée autrement.
+
+**Étape 5 — Seulement l'alias, côté Windows.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName api.banquehorizon.com -Type CNAME
+```
+
+```
+Name     : api.banquehorizon.com
+Type     : CNAME
+TTL      : 3600
+Section  : Answer
+NameHost : web.banquehorizon.com
+```
+
+Avec `-Type CNAME`, `Resolve-DnsName` se limite à la fiche d'alias, comme `dig … CNAME` à l'étape 3.
+
+**Étape 6 — La fiche AAAA : l'adresse IPv6.**
+
+Il existe deux sortes d'adresses IP : IPv4 (`203.0.113.20`) et IPv6 (de la forme `2001:db8::1`, plus longue). Elles ont chacune leur type de fiche : **A** pour IPv4, **AAAA** (« quad-A ») pour IPv6. Demande l'adresse IPv6 de `web` :
+
+```
+# sur PC-CONSEILLER
+dig web.banquehorizon.com AAAA
+```
+
+```
+; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> web.banquehorizon.com AAAA
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 65494
+;; QUESTION SECTION:
+;web.banquehorizon.com.		IN	AAAA
+
+;; AUTHORITY SECTION:
+banquehorizon.com.	3600	IN	SOA	ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+
+;; Query time: 0 msec
+;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)
+;; WHEN: Wed Nov 04 11:06:00 UTC 2026
+;; MSG SIZE  rcvd: 101
+```
+
+Regarde bien : `status: NOERROR`, mais `ANSWER: 0`. **Aucune erreur, et aucune réponse.** La machine `web` n'a pas d'adresse IPv6, donc il n'y a pas de fiche AAAA à donner. Le TP 13 explique en détail ce « rien ».
+
+⚠️ **Attention** — Chaque alias coûte **une résolution de plus** au client. Une chaîne d'alias qui mènent à d'autres alias ralentit les pages ; les résolveurs limitent d'ailleurs la longueur de la chaîne.
+
+🆘 **Si ça ne marche pas.** `status: NXDOMAIN` à l'étape 6 : tu as fait une faute dans `web.banquehorizon.com`. Un `NXDOMAIN` veut dire « ce nom n'existe pas » (TP 3, étape 7).
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Les quatre noms `www`, `ebanking`, `agences` et `api` sont des **alias** (CNAME) de `web`, qui porte l'unique adresse `203.0.113.20`. Changer l'adresse du site = modifier **une seule ligne** (`web`).
-- Quand tu demandes l'adresse d'un alias, le serveur renvoie **l'alias et la cible** dans la même réponse : tu n'as pas à refaire la question.
-- `dig … CNAME +short` ne montre que l'alias lui-même, sans suivre.
-- Un CNAME est un renvoi **de nom à nom** : il ne porte jamais d'adresse.
+- Les quatre noms `www`, `ebanking`, `agences` et `api` sont des **alias** (CNAME) de `web`, qui porte l'unique adresse. Pour changer l'adresse du site, on modifie **une seule fiche**.
+- Quand tu demandes l'adresse d'un alias, le serveur renvoie **l'alias et sa cible** dans la même réponse.
+- Si tu demandes explicitement le type `CNAME`, tu n'obtiens que l'alias.
+- **A** est l'adresse IPv4, **AAAA** l'adresse IPv6. Un nom peut avoir l'une, l'autre, les deux, ou aucune.
 
-⚠️ **Attention** — Chaque alias coûte **une résolution de plus** au client. Une chaîne de CNAME de CNAME ralentit la page ; les résolveurs limitent d'ailleurs la longueur de la chaîne.
+**Vérifie-toi.**
+
+1. Quel type de fiche porte une adresse IPv4 ? IPv6 ?
+2. Que contient la donnée d'un `CNAME` ?
+3. `dig web.banquehorizon.com AAAA` répond `NOERROR` sans réponse. Est-ce une panne ?
+
+*Réponses.* (1) `A` ; `AAAA`. (2) Un autre **nom**, jamais une adresse. (3) Non : `web` n'a simplement pas d'adresse IPv6.
 
 ---
 
-## 19. 🧪 TP 11 — MX, TXT (SPF, DMARC) et SRV
+## V.2 🧪 TP 11 — MX, TXT (SPF, DMARC) et SRV
 
-**🎯 Objectif.** Lire les enregistrements que **d'autres services** consultent à ta place : la messagerie, la lutte contre l'usurpation d'identité, la découverte de service.
+**🎯 Objectif.** Lire les fiches que **d'autres services** consultent à ta place : la messagerie, la lutte contre l'usurpation d'identité, la découverte d'un service.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `PC-CONSEILLER` et un sur `PC-GUICHET1`. Durée : environ 40 minutes.
+
+Toutes les commandes de ce TP utilisent `+short` (TP 3, étape 1), pour ne voir que la donnée.
+
+**Étape 1 — MX : où livrer le courrier ?**
+
+Quand quelqu'un envoie un message à `contact@banquehorizon.com`, son serveur de messagerie demande au DNS : « Quel est le serveur qui reçoit le courrier de `banquehorizon.com` ? ». La réponse est une fiche **MX**.
+
+```
+# sur PC-CONSEILLER
+dig banquehorizon.com MX +short
+```
+
+```
+10 mail.banquehorizon.com.
+20 mail2.banquehorizon.com.
+```
+
+Chaque ligne a deux morceaux : un **nombre** (la *préférence*) et un **nom** de serveur. On essaie d'abord le **plus petit nombre** : `mail` (préférence 10) est le serveur principal ; `mail2` (préférence 20) est le secours si `mail` est injoignable. L'ordre d'affichage peut varier chez toi, seule la préférence compte.
+
+**Étape 2 — TXT : le texte libre, et la règle SPF.**
+
+Une fiche **TXT** contient du texte. On s'en sert pour publier des règles lisibles par des machines. La plus répandue est le **SPF** : « voici les serveurs qui ont le droit d'envoyer du courrier au nom de mon domaine ».
 
 ```
 # sur PC-CONSEILLER
 dig banquehorizon.com TXT +short
+```
+
+```
+"v=spf1 mx -all"
+```
+
+Lis ce texte mot par mot :
+
+| Morceau | Sens |
+|---|---|
+| `v=spf1` | « Ceci est une règle SPF, version 1 » |
+| `mx` | « Les serveurs listés dans mes fiches MX ont le droit d'envoyer » |
+| `-all` | « **Tous les autres sont refusés** » |
+
+Un serveur qui reçoit un message prétendument envoyé par `banquehorizon.com` consulte cette fiche. Si l'expéditeur n'est pas un des MX, il peut rejeter le message.
+
+**Étape 3 — TXT : la politique DMARC.**
+
+Le **DMARC** dit quoi faire d'un message qui échoue aux contrôles. Il est publié sous un nom particulier, qui commence toujours par `_dmarc`.
+
+```
+# sur PC-CONSEILLER
 dig _dmarc.banquehorizon.com TXT +short
+```
+
+```
+"v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com"
+```
+
+| Morceau | Sens |
+|---|---|
+| `v=DMARC1` | « Politique DMARC, version 1 » |
+| `p=reject` | « **Jette** les messages qui échouent aux contrôles » |
+| `rua=mailto:dmarc@banquehorizon.com` | « Envoie-moi les rapports à cette adresse » |
+
+Le nom commence par un tiret bas (`_dmarc`) : c'est la convention pour un nom qui désigne un **service** et non une machine.
+
+**Étape 4 — SRV : où est ce service, et sur quel port ?**
+
+Une fiche `A` donne l'adresse d'une machine, pas **le numéro de port** d'un service. Une fiche **SRV** donne les deux. Son nom a la forme `_service._protocole.domaine`.
+
+```
+# sur PC-CONSEILLER
 dig _imaps._tcp.banquehorizon.com SRV +short
+```
+
+```
+0 1 993 mail.banquehorizon.com.
+```
+
+Le nom `_imaps._tcp.banquehorizon.com` se lit : « le service **IMAPS** (lecture de courrier sécurisée), en **TCP**, pour le domaine `banquehorizon.com` ». Les quatre valeurs sont :
+
+| Valeur | Nom | Sens |
+|---|---|---|
+| `0` | priorité | Plus petit = essayé d'abord |
+| `1` | poids | Répartition de charge entre serveurs de même priorité |
+| `993` | **port** | Le port TCP du service |
+| `mail.banquehorizon.com.` | cible | La machine qui l'offre |
+
+**Étape 5 — NS : les serveurs de la zone.**
+
+```
+# sur PC-CONSEILLER
 dig banquehorizon.com NS +short
+```
+
+```
+ns1.banquehorizon.com.
+ns2.banquehorizon.com.
+```
+
+Deux serveurs de noms : `ns1` (le principal) et `ns2` (le secondaire). Tu les as déjà croisés dans la section `AUTHORITY` (TP 3, étape 6). L'ordre peut varier.
+
+**Étape 6 — SOA : la fiche d'identité de la zone.**
+
+```
+# sur PC-CONSEILLER
 dig banquehorizon.com SOA +short
 ```
+
+```
+ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+```
+
+Une seule ligne, mais **sept valeurs**, dans cet ordre :
+
+| Rang | Valeur | Rôle |
+|---|---|---|
+| 1 | `ns1.banquehorizon.com.` | Le serveur **primaire** de la zone |
+| 2 | `hostmaster.banquehorizon.com.` | L'adresse du responsable (`hostmaster@banquehorizon.com` : le premier point remplace le `@`) |
+| 3 | `2026103101` | Le **numéro de série** : la version de la zone. Les secondaires ne recopient la zone que si ce nombre a **augmenté** |
+| 4 | `7200` | *refresh* : tous les combien de secondes le secondaire demande le numéro de série |
+| 5 | `900` | *retry* : combien attendre avant de réessayer si le primaire ne répond pas |
+| 6 | `1209600` | *expire* : au-delà de 14 jours sans nouvelle du primaire, le secondaire **cesse de répondre** |
+| 7 | `3600` | *minimum* : combien de temps garder en cache une réponse **négative** (TP 22) |
+
+Tu relèveras ces valeurs en détail aux TP 14 et 18.
+
+**Étape 7 — Les mêmes fiches, côté Windows.**
 
 ```powershell
 # sur PC-GUICHET1
 Resolve-DnsName banquehorizon.com -Type TXT
-Resolve-DnsName _imaps._tcp.banquehorizon.com -Type SRV
-Resolve-DnsName banquehorizon.com -Type SOA
 ```
-
-**✅ Résultat attendu.**
-
-```
-"v=spf1 mx -all"
-"v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com"
-0 1 993 mail.banquehorizon.com.
-ns1.banquehorizon.com.
-ns2.banquehorizon.com.
-ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
-```
-
-(L'ordre des deux `NS` varie.) Côté Windows :
 
 ```
 Name    : banquehorizon.com
@@ -2177,6 +2623,12 @@ TTL     : 3600
 Section : Answer
 Strings : {v=spf1 mx -all}
 ```
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName _imaps._tcp.banquehorizon.com -Type SRV
+```
+
 ```
 Name       : _imaps._tcp.banquehorizon.com
 Type       : SRV
@@ -2187,6 +2639,12 @@ Priority   : 0
 Weight     : 1
 Port       : 993
 ```
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName banquehorizon.com -Type SOA
+```
+
 ```
 Name                   : banquehorizon.com
 Type                   : SOA
@@ -2201,59 +2659,73 @@ TimeToExpiration       : 1209600
 DefaultTTL             : 3600
 ```
 
+`Resolve-DnsName` nomme chaque valeur : il t'évite de compter les colonnes. `Strings` contient le texte du `TXT`, `NameTarget`/`Priority`/`Weight`/`Port` sont les quatre valeurs du `SRV`, et `SerialNumber`, `TimeToZoneRefresh`, `TimeToZoneFailureRetry`, `TimeToExpiration`, `DefaultTTL` sont le numéro de série et les quatre durées du `SOA`.
+
+> 🔍 **Point d'audit** — `p=reject` + `-all` est la configuration **stricte** : un contrôleur y voit une bonne hygiène contre l'hameçonnage. Une zone sans SPF ni DMARC laisse n'importe qui envoyer du courrier « de » ta banque. Garde la sortie de l'étape 2 et 3 comme preuve.
+
+🆘 **Si ça ne marche pas.** Une réponse vide (`+short` n'affiche rien) : le nom est mal écrit. Vérifie le tiret bas de `_dmarc` et de `_imaps._tcp`.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-| Enregistrement | Qui le lit | Ce que dit celui du laboratoire |
+| Fiche | Qui la lit | Ce que dit celle du laboratoire |
 |---|---|---|
-| **MX** | Les serveurs de messagerie qui t'envoient un courrier | `10 mail`, `20 mail2` : essayer d'abord `mail`, et `mail2` s'il est injoignable |
-| **TXT / SPF** | Le serveur qui **reçoit** un courrier « de » ton domaine | `v=spf1 mx -all` : « seuls mes MX ont le droit d'envoyer, **tout le reste est refusé** (`-all`) » |
-| **TXT / DMARC**, au nom `_dmarc` | Idem | `p=reject` : « jette le courrier qui échoue aux contrôles » ; `rua=` : où m'envoyer les rapports |
-| **SRV**, au nom `_service._protocole` | Un client qui cherche un *service* | `_imaps._tcp` : IMAP sur TLS = port **993** de `mail`, priorité 0, poids 1 |
-| **SOA** | Les secondaires, les outils | Les **sept** champs : voir le tableau ci-dessous |
+| **MX** | Les serveurs de messagerie qui t'envoient du courrier | `10 mail`, `20 mail2` : essayer d'abord `mail` |
+| **TXT / SPF** | Le serveur qui **reçoit** un courrier « de » ton domaine | Seuls mes MX ont le droit d'envoyer, tous les autres sont refusés |
+| **TXT / DMARC** | Idem | Jette ce qui échoue aux contrôles ; envoie-moi les rapports |
+| **SRV** | Un client qui cherche un *service* | IMAP sur TLS : le port **993** de `mail` |
+| **SOA** | Les serveurs secondaires et les outils | Les sept valeurs de l'étape 6 |
 
-Les champs du **SOA**, que tu relèveras au TP 18 :
+**Vérifie-toi.**
 
-| Champ | Valeur | Rôle |
-|---|---|---|
-| serveur primaire / responsable | `ns1…`, `hostmaster…` (= `hostmaster@banquehorizon.com`) | Qui contacter |
-| **serial** | `2026103101` | **Numéro de version de la zone** : les secondaires ne transfèrent que s'il a augmenté |
-| refresh | 7200 s | Tous les combien le secondaire redemande le serial |
-| retry | 900 s | Délai avant de réessayer si le primaire ne répond pas |
-| expire | 1209600 s (14 jours) | Au-delà, le secondaire **cesse de répondre** s'il ne joint plus le primaire |
-| minimum | 3600 s | Durée de conservation des réponses **négatives** (TP 22) |
+1. Dans un MX, quelle valeur décide quel serveur est essayé en premier ?
+2. Que veut dire `-all` dans une règle SPF ?
+3. Quelle valeur du SOA oblige un secondaire à recopier la zone ?
 
-> 🔍 **Point d'audit** — `p=reject` + `-all` est la configuration **stricte** : un contrôleur y voit une bonne hygiène anti-hameçonnage. Une zone sans SPF/DMARC laisse n'importe qui envoyer du courrier « de » ta banque.
+*Réponses.* (1) La préférence : le plus petit nombre d'abord. (2) Tous les expéditeurs non listés sont refusés. (3) Le numéro de série : quand il augmente, le secondaire recopie.
 
 ---
 
-## 20. 🧪 TP 12 — PTR : retrouver un nom depuis une adresse
+## V.3 🧪 TP 12 — PTR : retrouver un nom depuis une adresse
 
-**🎯 Objectif.** Faire une **résolution inverse** et comprendre pourquoi elle vit dans une zone à part.
+**🎯 Objectif.** Faire une **résolution inverse** (de l'adresse vers le nom) et comprendre pourquoi elle vit dans une zone à part.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `PC-CONSEILLER` et un sur `PC-GUICHET1`. Durée : environ 25 minutes.
+
+Jusqu'ici, tu partais d'un **nom** pour trouver une **adresse**. Le chemin inverse existe : on part de l'adresse et on cherche son nom. Cela sert aux journaux (afficher un nom plutôt qu'un numéro), à certains serveurs de messagerie (qui vérifient que l'expéditeur a un nom cohérent) et à des outils comme `ping`.
+
+Il y a un problème : l'annuaire est rangé **par nom**, pas par adresse. Pour pouvoir retrouver un nom à partir d'une adresse, on a créé un arbre particulier, sous le nom **`in-addr.arpa`**. On y écrit l'adresse **à l'envers** :
+
+```schema
+203.0.113.20    devient    20.113.0.203.in-addr.arpa
+```
+
+Pourquoi à l'envers ? Dans un nom, la partie la plus générale est à droite (`com`). Dans une adresse, c'est le contraire : la partie la plus générale (le réseau, `203`) est à gauche. En retournant l'adresse, on obtient un nom qui se lit comme les autres, de droite à gauche, du général au particulier : et on peut **déléguer** par réseau, exactement comme on délègue par domaine.
+
+**Étape 1 — `dig -x`.**
 
 ```
 # sur PC-CONSEILLER
 dig -x 203.0.113.20 +short
-dig -x 203.0.113.20 +noall +comments +answer
-host 203.0.113.20
-ping -c 1 www.banquehorizon.com
 ```
 
-```powershell
-# sur PC-GUICHET1
-Resolve-DnsName 203.0.113.20
-```
-
-**✅ Résultat attendu.**
+L'option `-x` dit à `dig` : « voici une adresse, retrouve son nom » — il écrit le nom en `in-addr.arpa` à ta place.
 
 ```
 web.banquehorizon.com.
 ```
 
+Le nom de la machine : `web.banquehorizon.com.`
+
+**Étape 2 — Voir la vraie question.**
+
+```
+# sur PC-CONSEILLER
+dig -x 203.0.113.20 +noall +comments +answer
+```
+
 ```
 ;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 46
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 54
 ;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
 
 ;; OPT PSEUDOSECTION:
@@ -2262,15 +2734,28 @@ web.banquehorizon.com.
 20.113.0.203.in-addr.arpa. 3600	IN	PTR	web.banquehorizon.com.
 ```
 
-`host` fait la même chose en une ligne, et construit lui-même le nom en `in-addr.arpa` :
+Regarde la dernière ligne : la fiche s'appelle `20.113.0.203.in-addr.arpa.` et son type est **`PTR`** (« *pointer* », un pointeur vers un nom). Voilà la fiche que `dig -x` est allé chercher.
+
+**Étape 3 — `host`, la version courte.**
+
+`host` est un autre outil Linux, plus bref que `dig` : `host nom` donne l'adresse, `host adresse` donne le nom.
+
+```
+# sur PC-CONSEILLER
+host 203.0.113.20
+```
 
 ```
 20.113.0.203.in-addr.arpa domain name pointer web.banquehorizon.com.
 ```
 
-```
-PING www.banquehorizon.com (203.0.113.20) 56(84) bytes of data.
-64 bytes from web.banquehorizon.com (203.0.113.20): icmp_seq=1 ttl=62 time=0.043 ms
+Une phrase : « le nom `20.113.0.203.in-addr.arpa` pointe vers `web.banquehorizon.com` ».
+
+**Étape 4 — Côté Windows.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName 203.0.113.20
 ```
 
 ```
@@ -2281,37 +2766,65 @@ Section  : Answer
 NameHost : web.banquehorizon.com
 ```
 
+`Resolve-DnsName` a reconnu qu'on lui donnait une adresse : il a lui-même construit le nom en `in-addr.arpa` et demandé la fiche `PTR`.
+
+**Étape 5 — Quand `ping` fait une résolution inverse sans te le dire.**
+
+```
+# sur PC-CONSEILLER
+ping -c 1 www.banquehorizon.com
+```
+
+```
+PING www.banquehorizon.com (203.0.113.20) 56(84) bytes of data.
+64 bytes from web.banquehorizon.com (203.0.113.20): icmp_seq=1 ttl=62 time=0.043 ms
+
+--- www.banquehorizon.com ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.043/0.043/0.043/0.000 ms
+```
+
+Compare les deux premières lignes. Tu as tapé `www.banquehorizon.com`, mais `ping` écrit à la ligne 2 `web.banquehorizon.com`. Pourquoi ? Parce que `ping` a d'abord traduit le nom en adresse (`203.0.113.20`), puis, pour afficher l'origine de la réponse, a fait une **résolution inverse** de cette adresse : le PTR donne `web`, pas `www`. Les journaux d'un serveur, `traceroute` ou `netstat` font de même. L'option `-n` de `ping` supprime cette seconde question et affiche seulement l'adresse.
+
+> 🔍 **Point d'audit** — Un PTR absent ou incohérent avec le nom direct est un motif de rejet pour certains serveurs de messagerie. Vérifie que chaque adresse publique porte un PTR cohérent avec son nom.
+
+🆘 **Si ça ne marche pas.** `NXDOMAIN` à l'étape 1 : l'adresse n'a pas de PTR, ou tu as tapé une adresse dont le réseau n'a pas de zone inverse dans le laboratoire.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- `dig -x` écrit le nom `in-addr.arpa` à ta place : l'adresse est **lue à l'envers** (`20.113.0.203`) parce que, dans une adresse, la partie qui change le moins est à gauche, alors que dans un nom elle est à droite.
-- La zone `113.0.203.in-addr.arpa` est une **zone à part**, déléguée par la racine du laboratoire à NS1-BANK : *celui qui possède l'adresse* possède sa résolution inverse (en vrai, c'est le fournisseur d'accès qui délègue).
-- **`ping` utilise le PTR** : il écrit le nom de l'adresse qui répond (`web.banquehorizon.com`), **pas** le nom que tu as tapé (`www.banquehorizon.com`). Les journaux d'un serveur, `traceroute` et `netstat` en font autant. `ping -n` supprime cette seconde question.
+- La résolution inverse cherche une fiche **PTR** dans l'arbre `in-addr.arpa`, où l'adresse est écrite **à l'envers**.
+- `dig -x`, `host adresse` et `Resolve-DnsName adresse` construisent ce nom à ta place.
+- La zone `113.0.203.in-addr.arpa` est une **zone à part** : *celui qui possède l'adresse* possède sa résolution inverse (dans la vraie vie, c'est le fournisseur d'accès qui délègue ; dans le laboratoire, elle est déléguée à `NS1-BANK`).
+- **`ping` utilise le PTR** pour afficher un nom : il écrit le nom de l'adresse qui répond, pas celui que tu as tapé.
 
-> 🔍 **Point d'audit** — Un PTR absent ou incohérent avec le nom direct (la « résolution inverse confirmée ») est un motif de rejet pour certains serveurs de messagerie. Vérifie que chaque adresse publique porte un PTR cohérent avec son nom.
+**Vérifie-toi.**
+
+1. Quel nom DNS correspond à l'adresse `203.0.113.20` ?
+2. Quel type de fiche trouve-t-on dans `in-addr.arpa` ?
+
+*Réponses.* (1) `20.113.0.203.in-addr.arpa`. (2) Des fiches `PTR`.
 
 ---
 
-## 21. 🧪 TP 13 — NXDOMAIN ou NODATA ?
+## V.4 🧪 TP 13 — NXDOMAIN ou NODATA ?
 
-**🎯 Objectif.** Distinguer les **deux** façons de répondre « rien », et lire pourquoi elles n'ont pas le même sens.
+**🎯 Objectif.** Distinguer les **deux** façons de répondre « rien », et comprendre pourquoi elles n'ont pas le même sens.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `PC-CONSEILLER` et un sur `PC-GUICHET1`. Durée : environ 25 minutes.
+
+Quand on demande quelque chose qui n'existe pas, le DNS ne répond pas « non » de toujours la même façon. Il faut distinguer deux cas :
+
+- le **nom** n'existe pas du tout (**NXDOMAIN**) ;
+- le nom existe, mais **pas ce type de fiche** (**NODATA**).
+
+Un exemple de chaque. Tu interroges directement `DNS-RES` (`@10.20.20.53`) et tu ne gardes que l'en-tête et la section `AUTHORITY` (TP 3).
+
+**Étape 1 — Un nom qui n'existe pas.**
 
 ```
 # sur PC-CONSEILLER
 dig @10.20.20.53 nexiste.banquehorizon.com +noall +comments +authority
-dig @10.20.20.53 web.banquehorizon.com AAAA +noall +comments +authority
 ```
-
-```powershell
-# sur PC-GUICHET1
-Resolve-DnsName nexiste.banquehorizon.com
-Resolve-DnsName web.banquehorizon.com -Type AAAA
-```
-
-**✅ Résultat attendu.**
-
-*Le nom n'existe pas* :
 
 ```
 ;; Got answer:
@@ -2324,7 +2837,16 @@ Resolve-DnsName web.banquehorizon.com -Type AAAA
 banquehorizon.com.	3600	IN	SOA	ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
 ```
 
-*Le nom existe, mais pas dans cette famille* :
+- `status: NXDOMAIN` : le nom n'existe pas.
+- `ANSWER: 0` : rien à donner.
+- `AUTHORITY: 1` : le serveur joint la fiche **SOA** de la zone (TP 11, étape 6). Retiens-la : elle sert à plus tard.
+
+**Étape 2 — Un nom qui existe, mais sans cette fiche.**
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 web.banquehorizon.com AAAA +noall +comments +authority
+```
 
 ```
 ;; Got answer:
@@ -2337,31 +2859,63 @@ banquehorizon.com.	3600	IN	SOA	ns1.banquehorizon.com. hostmaster.banquehorizon.c
 banquehorizon.com.	3600	IN	SOA	ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
 ```
 
-Et côté Windows, les deux messages ne sont pas les mêmes :
+Compare avec l'étape 1 : `ANSWER: 0` et la même fiche SOA, mais cette fois **`status: NOERROR`**. Le serveur ne dit pas « ce nom n'existe pas » : il dit « ce nom existe, mais je n'ai pas de fiche AAAA pour lui ». C'est un **NODATA**.
+
+**Étape 3 — Les mêmes cas côté Windows.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName nexiste.banquehorizon.com
+```
 
 ```
 Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist
     + CategoryInfo          : ResourceUnavailable: (nexiste.banquehorizon.com:String) [Resolve-DnsName], Win32Exception
     + FullyQualifiedErrorId : DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName
 ```
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName web.banquehorizon.com -Type AAAA
+```
+
 ```
 Resolve-DnsName : web.banquehorizon.com : DNS record does not exist
     + CategoryInfo          : ResourceUnavailable: (web.banquehorizon.com:String) [Resolve-DnsName], Win32Exception
     + FullyQualifiedErrorId : DNS_ERROR_RECORD_DOES_NOT_EXIST,Microsoft.DnsClient.Commands.ResolveDnsName
 ```
 
-**🧠 Ce que tu viens d'apprendre.**
+PowerShell affiche une erreur rouge dans les deux cas, mais les deux messages ne sont pas les mêmes : `DNS name does not exist` (le nom n'existe pas) pour NXDOMAIN, `DNS record does not exist` (le nom existe, la fiche non) pour NODATA. Cherche le mot après `FullyQualifiedErrorId` : `DNS_ERROR_RCODE_NAME_ERROR` ou `DNS_ERROR_RECORD_DOES_NOT_EXIST`.
+
+**Étape 4 — Pourquoi la fiche SOA dans les deux cas ?**
+
+Dans les deux cas, la section `AUTHORITY` porte le **SOA** de la zone. Ce n'est pas un hasard : c'est lui qui dit **pendant combien de temps** un résolveur peut mémoriser cette réponse négative (« ce nom n'existe pas », « cette fiche n'existe pas »). La durée est la plus petite des deux valeurs : le TTL de la fiche SOA (3600) ou son dernier champ, `minimum` (3600 aussi ici). C'est le **cache négatif**, que tu verras au TP 22.
+
+**Récapitulatif.**
 
 | | **NXDOMAIN** | **NODATA** |
 |---|---|---|
 | `status` | `NXDOMAIN` | `NOERROR` (**avec** `ANSWER: 0`) |
 | Sens | Ce **nom** n'existe pour **aucun** type | Le nom existe, mais **pas ce type** |
 | Exemple | `nexiste` | `web` a une adresse IPv4, pas d'IPv6 |
-| Windows | `DNS name does not exist` (`DNS_ERROR_RCODE_NAME_ERROR`) | `DNS record does not exist` (`DNS_ERROR_RECORD_DOES_NOT_EXIST`) |
-
-Dans les deux cas, la section `AUTHORITY` porte le **SOA** de la zone : ce n'est pas un hasard, c'est lui qui dit **pendant combien de temps** garder cette réponse négative en cache (le plus petit de son TTL et de son champ `minimum`, ici 3600 s). C'est le **cache négatif** du TP 22.
+| Windows | `DNS name does not exist` | `DNS record does not exist` |
 
 ⚠️ **Attention** — Confondre les deux fait perdre des heures. « Pas d'IPv6 » n'est **pas** une erreur : c'est un `NOERROR` vide. Un programme qui traite le `NOERROR` vide comme un `NXDOMAIN` dira à tort que le site n'existe pas.
+
+🆘 **Si ça ne marche pas.** À l'étape 1, `NOERROR` au lieu de `NXDOMAIN` : tu as sans doute tapé un nom qui existe (`web`, `www`, `mail`…). Choisis un nom au hasard, comme `nexiste`.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- `NXDOMAIN` = le nom n'existe pas ; `NOERROR` avec `ANSWER: 0` = le nom existe, mais pas cette fiche.
+- Dans les deux cas, la fiche **SOA** est jointe pour fixer la durée du cache négatif.
+- Sous Windows, les deux cas ont deux messages d'erreur différents.
+
+**Vérifie-toi.**
+
+1. `dig` répond `status: NOERROR` et `ANSWER: 0`. Le nom existe-t-il ?
+2. Quel mot de l'erreur PowerShell distingue les deux cas ?
+
+*Réponses.* (1) Oui : le nom existe, mais il n'a pas de fiche du type demandé (NODATA). (2) `name` (le nom n'existe pas) contre `record` (la fiche n'existe pas).
 
 ---
 
