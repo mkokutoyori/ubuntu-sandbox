@@ -131,7 +131,7 @@ describe('Scénario 4 — les commandes réelles qui s\'en servent', () => {
   it('`tac` distingue le fichier de la canalisation', async () => {
     const { pc } = lab();
     await pc.executeCommand('printf "un\\ndeux\\n" > a.txt');
-    expect(await pc.executeCommand('tac a.txt')).toBe('deux\nun');
+    expect(await pc.executeCommand('tac a.txt')).toBe('deux\nun\n');
     expect(await pc.executeCommand('printf "un\\ndeux\\n" | tac')).toBe('deux\nun');
   });
 });

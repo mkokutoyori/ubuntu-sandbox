@@ -116,3 +116,16 @@ export function takeBytes(text: string, count: number, fromEnd = false): string 
   const buffer = toBytes(text);
   return fromBytes(fromEnd ? buffer.subarray(Math.max(0, buffer.length - count)) : buffer.subarray(0, count));
 }
+
+export class InputQueue {
+  private standardInputUsed = false;
+
+  constructor(private readonly io: CoreutilsIO) {}
+
+  read(name: string): FileRead {
+    if (name !== '-') return this.io.read(name);
+    const text = this.standardInputUsed ? '' : (this.io.stdin ?? '');
+    this.standardInputUsed = true;
+    return { kind: 'ok', text };
+  }
+}

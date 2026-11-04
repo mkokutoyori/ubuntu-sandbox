@@ -103,14 +103,3 @@ export function cmdChgrp(ctx: ShellContext, args: string[]): string {
   return '';
 }
 
-export function cmdMkfifo(ctx: ShellContext, args: string[]): string {
-  for (const a of args) {
-    if (a.startsWith('-')) continue;
-    const absPath = ctx.vfs.normalizePath(a, ctx.cwd);
-    const perms = 0o666 & ~ctx.umask;
-    if (!ctx.vfs.createFifo(absPath, perms, ctx.uid, ctx.gid)) {
-      return `mkfifo: cannot create fifo '${a}'`;
-    }
-  }
-  return '';
-}

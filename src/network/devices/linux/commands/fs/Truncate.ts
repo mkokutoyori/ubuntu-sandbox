@@ -15,6 +15,8 @@
 
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
 import type { LinuxCommandExecutor } from '../../LinuxCommandExecutor';
+import { asDispatch } from '../../coreutils/CoreutilsKit';
+import { runTruncate as runTruncateCommand } from '../../coreutils/TruncateCommand';
 
 const TRUNCATE_OPTIONS: readonly LinuxCommandOption[] = [
   { flag: '-s', aliases: ['--size'], dest: 'size', takesArg: true, argName: 'SIZE', description: 'Set or adjust the file size to SIZE bytes' },
@@ -45,39 +47,11 @@ export function parseTruncateSize(raw: string | undefined): number | null {
  */
 export function runTruncate(
   exec: LinuxCommandExecutor, args: string[],
-): { output: string; exitCode: number } {
-  const sizeIndex = args.findIndex((a) => a === '-s' || a === '--size');
-  const sizeArg = sizeIndex >= 0 ? args[sizeIndex + 1] : undefined;
-  const size = sizeIndex >= 0 ? parseTruncateSize(sizeArg) : null;
-  if (sizeIndex >= 0 && size === null) {
-    return { output: `truncate: invalid number: '${sizeArg ?? ''}'`, exitCode: 1 };
-  }
-  const noCreate = args.includes('-c') || args.includes('--no-create');
-
-  const files = args.filter((a, i) => !a.startsWith('-') && i !== sizeIndex + 1);
-  if (files.length === 0) {
-    return { output: 'truncate: missing file operand', exitCode: 1 };
-  }
-
-  for (const p of files) {
-    const abs = exec.vfs.normalizePath(p, exec.getCwd());
-    if (noCreate && !exec.vfs.exists(abs)) continue;
+): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+  return asDispatch(runTruncateCommand(exec.ctx(), args, (abs) => {
     exec.publishAuditFsAccess(abs, 'w', 'truncate');
     exec.publishAuditSyscall('truncate', abs);
-    const ok = exec.vfs.writeFile(
-      abs, '', exec.userMgr.currentUid, exec.userMgr.currentGid, exec.getUmask(),
-      false, size ?? undefined,
-    );
-    if (!ok) {
-      // The volume being full, or out of inodes, is the refusal this
-      // command reaches — permission cases are reported upstream.
-      return {
-        output: `truncate: cannot open '${p}' for writing: No space left on device`,
-        exitCode: 1,
-      };
-    }
-  }
-  return { output: '', exitCode: 0 };
+  }));
 }
 
 export const truncateCommand: LinuxCommand = {

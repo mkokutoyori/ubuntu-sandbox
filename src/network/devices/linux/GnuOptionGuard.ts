@@ -292,11 +292,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  tac: {
-    optstring: 'brs:',
-    long: [flag('before', 'b'), flag('regex', 'r'), valued('separator', 's'), ...HELP_VERSION],
-    operands: true,
-  },
   tee: {
     optstring: 'aip',
     long: [flag('append', 'a'), flag('ignore-interrupts', 'i'), valued('output-error'), ...HELP_VERSION],
@@ -361,24 +356,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  fold: {
-    optstring: 'bsw:',
-    long: [flag('bytes', 'b'), flag('spaces', 's'), valued('width', 'w'), ...HELP_VERSION],
-    operands: true,
-  },
-  paste: {
-    optstring: 'd:sz',
-    long: [valued('delimiters', 'd'), flag('serial', 's'), flag('zero-terminated', 'z'), ...HELP_VERSION],
-    operands: true,
-  },
-  comm: {
-    optstring: '123z',
-    long: [
-      flag('check-order'), flag('nocheck-order'), valued('output-delimiter'), flag('total'),
-      flag('zero-terminated', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
   base64: {
     optstring: 'diw:',
     long: [flag('decode', 'd'), flag('ignore-garbage', 'i'), valued('wrap', 'w'), ...HELP_VERSION],
@@ -396,7 +373,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  rev: { optstring: '0hV', long: [flag('zero', '0'), flag('help', 'h'), flag('version', 'V')], operands: true },
   id: {
     optstring: 'agGnruzZ',
     long: [
@@ -507,46 +483,11 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  truncate: {
-    optstring: 'cor:s:',
-    long: [flag('no-create', 'c'), flag('io-blocks', 'o'), valued('reference', 'r'), valued('size', 's'), ...HELP_VERSION],
-    operands: true,
-  },
   mknod: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
-  mkfifo: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
   cksum: { optstring: '', long: [...HELP_VERSION], operands: true },
   sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },
-  expand: { optstring: 'it:0123456789,', long: [flag('initial', 'i'), valued('tabs', 't'), ...HELP_VERSION], operands: true },
-  unexpand: { optstring: 'at:0123456789,', long: [flag('all', 'a'), flag('first-only'), valued('tabs', 't'), ...HELP_VERSION], operands: true },
   nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125 },
   nohup: { optstring: '+', long: [...HELP_VERSION], operands: true, failureStatus: 125 },
-  readlink: {
-    optstring: 'efmnqsvz',
-    long: [
-      flag('canonicalize-existing', 'e'), flag('canonicalize', 'f'), flag('canonicalize-missing', 'm'),
-      flag('no-newline', 'n'), flag('quiet', 'q'), flag('silent', 's'), flag('verbose', 'v'), flag('zero', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  realpath: {
-    optstring: 'emLPqsz',
-    long: [
-      flag('canonicalize-existing', 'e'), flag('canonicalize-missing', 'm'), flag('logical', 'L'), flag('physical', 'P'),
-      flag('quiet', 'q'), valued('relative-to'), valued('relative-base'), flag('strip', 's'), flag('no-symlinks', 's'),
-      flag('zero', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  split: {
-    optstring: 'a:b:C:del:n:t:ux',
-    long: [
-      valued('suffix-length', 'a'), valued('bytes', 'b'), valued('line-bytes', 'C'), optional('numeric-suffixes', 'd'),
-      optional('hex-suffixes', 'x'), valued('additional-suffix'), flag('elide-empty-files', 'e'), valued('filter'),
-      valued('lines', 'l'), valued('number', 'n'), valued('separator', 't'), flag('unbuffered', 'u'),
-      flag('verbose'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
   uname: {
     optstring: 'asnrvmpio',
     long: [

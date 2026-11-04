@@ -76,6 +76,10 @@ import { runBasename, runDirname } from './coreutils/PathNameCommands';
 import { runSeq } from './coreutils/SeqCommand';
 import { runCat } from './coreutils/CatCommand';
 import { runOd } from './coreutils/OdCommand';
+import { runRev } from './coreutils/RevCommand';
+import type { SplitHost } from './coreutils/SplitCommand';
+import { runMkfifo } from './coreutils/MkfifoCommand';
+import { runReadlink, runRealpath } from './coreutils/RealpathCommands';
 import { useLocaleQuotes } from './coreutils/CoreutilsKit';
 import { runCp, cpOperands } from './coreutils/CpCommand';
 import { runMv, mvOperands } from './coreutils/MvCommand';
@@ -91,7 +95,7 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChown, cmdChgrp, cmdMkfifo } from './LinuxPermCommands';
+import { cmdChown, cmdChgrp } from './LinuxPermCommands';
 import { runStat } from './coreutils/StatCommand';
 import { runUmask } from './umask/Umask';
 import {
@@ -488,7 +492,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'split', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -4185,6 +4189,20 @@ export class LinuxCommandExecutor {
     return name !== '' && TimeZone.parse(name) !== null ? name : undefined;
   }
 
+  splitHost(): SplitHost {
+    return {
+      runFilter: (command, file, input) => {
+        const previous = this.env.get('FILE');
+        this.env.set('FILE', file);
+        try {
+          return this.dispatch('sh', ['-c', command], input);
+        } finally {
+          if (previous === undefined) this.env.delete('FILE'); else this.env.set('FILE', previous);
+        }
+      },
+    };
+  }
+
   ctx(outputPiped = false): ShellContext {
     return {
       vfs: this.vfs,
@@ -6470,7 +6488,7 @@ export class LinuxCommandExecutor {
       case 'test':
       case '[': return this.handleTest(cmd, args);
       case 'expr': return this.handleExpr(args);
-      case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
+      case 'mkfifo': return asDispatch(runMkfifo(c, args));
       case 'mknod': return asDispatch(runMknod(c, args));
 
       // User commands
@@ -7151,32 +7169,7 @@ export class LinuxCommandExecutor {
       case 'od': {
         return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
-      case 'rev': {
-        const reverse = (input: string): string => {
-          const body = input.endsWith('\n') ? input.slice(0, -1) : input;
-          const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
-          return input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : '');
-        };
-        const files = args.filter((word) => !word.startsWith('-') || word === '-');
-        if (files.length === 0) return { output: reverse(stdin || ''), exitCode: 0 };
-        let output = '';
-        let interleaved = '';
-        const errors: string[] = [];
-        for (const file of files) {
-          const content = file === '-' ? (stdin || '') : this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
-          if (content === null) {
-            const line = `rev: cannot open ${file}: No such file or directory`;
-            errors.push(line);
-            interleaved += `${line}\n`;
-          } else {
-            const reversed = reverse(content);
-            output += reversed;
-            interleaved += reversed;
-          }
-        }
-        if (errors.length === 0) return { output, exitCode: 0 };
-        return { output, stderr: errors.join('\n'), interleaved, exitCode: 1 };
-      }
+      case 'rev': return asDispatch(runRev(args, coreutilsIO(c, stdin)));
       case 'basename': return asDispatch(runBasename(args));
       case 'dirname': return asDispatch(runDirname(args));
 
@@ -7282,53 +7275,8 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
 
-      case 'readlink': {
-        const canon = args.includes('-f') || args.includes('-e') || args.includes('-m');
-        const targets = args.filter(a => !a.startsWith('-'));
-        const out: string[] = [];
-        let failed = false;
-        for (const t of targets) {
-          const p = this.path(t);
-          if (canon) {
-            const r = p.realpath(args.includes('-e'));
-            if (!r) { failed = true; continue; }
-            out.push(r.value);
-          } else {
-            const node = p.lstatNode();
-            if (!node || node.type !== 'symlink') { failed = true; continue; }
-            // Same string `ls -l` prints after the arrow — a link whose
-            // target is computed (`/proc/<pid>/exe`) must not read one way
-            // in `ls` and another in `readlink`.
-            out.push(this.vfs.linkTarget(node));
-          }
-        }
-        return { output: out.join('\n'), exitCode: failed && out.length === 0 ? 1 : 0 };
-      }
-      case 'realpath': {
-        const quiet = args.includes('-q');
-        const noExist = args.includes('-m');
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (targets.length === 0) targets.push('.');
-        const lines: string[] = [];
-        let exit = 0;
-        for (const t of targets) {
-          const parentOnly = !noExist && !args.includes('-e');
-          let r = this.path(t).realpath(!noExist && !parentOnly);
-          if (!r && parentOnly) {
-            const absolute = this.vfs.normalizePath(t, this.cwd);
-            const slash = absolute.lastIndexOf('/');
-            const parent = this.vfs.exists(absolute.slice(0, slash) || '/') ? this.path(absolute.slice(0, slash) || '/').realpath(true) : null;
-            if (parent) r = { value: `${parent.value === '/' ? '' : parent.value}/${absolute.slice(slash + 1)}` } as typeof r;
-          }
-          if (!r) {
-            exit = 1;
-            if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);
-          } else {
-            lines.push(r.value);
-          }
-        }
-        return { output: lines.join('\n'), exitCode: exit };
-      }
+      case 'readlink': return asDispatch(runReadlink(c, args));
+      case 'realpath': return asDispatch(runRealpath(c, args));
       case 'ps': return runPsCommand({ executor: this, outputPiped: c.isPiped }, args);
       case 'mktemp': {
         const result = runMktemp(this, args, (name) => (this._cmdEnv ?? Object.fromEntries(this.env))[name]);

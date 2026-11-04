@@ -4416,3 +4416,7 @@ de sorte qu'un terminal Linux ne tire que la plateforme Linux. Non fait
 ici : `sessionFactory` et chaque session ont des appelants dans
 `src/terminal/` et 276 fichiers de tests les importent ; c'est un
 changement propre, a mesurer a part.
+
+## coreutils batch 3: what is still approximate
+
+tac, nl, fold, paste, comm, expand, unexpand, rev, readlink, realpath, truncate, mkfifo and split are compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot3-evalue-ses-options). Still approximate: `tac -r` finds separators with an ERE scan from the left, where the real command scans backwards, so a regular expression that matches runs (`[0-9]+`) cuts at different places; `fold` counts a multibyte character as one column where the real command, in the recorded environment, counted its bytes; `split --filter` with more than one piece runs the first command only (the filter's `$FILE` is not re-read by the second shell invocation); `rev` and `split` carry util-linux 2.37 and coreutils 8.32 banners where the transcripts are 2.39 and 9.4; `unexpand` does not re-emit original tab characters when a run is only partly converted past the last tab stop.
