@@ -1,45 +1,60 @@
 # DNS de Zéro à Héros : de `www.banquehorizon.com` à une infrastructure de noms que tu sais construire, lire, casser et réparer
 
 > **À qui s'adresse ce tutoriel ?**
-> À toute personne qui doit installer, exploiter, dépanner ou auditer un service de noms : technicien réseau, administrateur système, ingénieur sécurité, auditeur. On part de zéro — je ne suppose pas que tu sais ce qu'est une zone, un résolveur ou un TTL. La seule chose que je te demande, c'est de ne pas avoir peur d'un terminal.
+> À toute personne qui veut comprendre et faire fonctionner un service de noms (DNS) : étudiant, technicien, administrateur, auditeur. **Tu n'as besoin de rien savoir.** Pas même ce qu'est un terminal : la Partie 0 te l'apprend en dix minutes. Tout mot technique est expliqué la première fois qu'il apparaît, et un glossaire en fin de document les rassemble.
 
-> **Ce qui rend ce tutoriel différent**
-> Il est **fait pour être exécuté, pas lu**. Tout se passe dans un laboratoire de **douze équipements** — des serveurs DNS **BIND 9 (Linux)** et **Windows Server** côte à côte, une racine, un domaine `com`, le domaine d'une banque, un résolveur d'agence, un contrôleur de domaine avec DHCP, trois postes — que tu importes en un clic. Chaque notion est immédiatement suivie d'un **TP** que tu tapes, et **chaque TP est rejoué par un test automatique** (`src/__tests__/unit/network-v2/tuto-dns-zero-a-heros.test.ts`) : si une commande de ce document ne produit pas ce qui est écrit, c'est un défaut du simulateur ou du document, et le test le dira. Les sorties que tu lis ici sont des sorties **mesurées** dans le laboratoire, et le comportement de BIND (réponses, caches, messages d'erreur) a été **comparé à un vrai BIND 9.18** (voir `docs/` et les tests `bind-*-oracle`).
+> **Comment ce tutoriel est construit**
+> On avance par **très petits pas**. Chaque pas est une seule chose : une idée, ou une commande à taper. Après chaque commande, tu vois ce que tu dois obtenir, puis on la **relit ensemble ligne par ligne**. Tu n'as jamais à deviner.
 >
-> Chaque TP suit la même structure :
-> **🎯 Objectif** → **🔧 Manipulation** → **✅ Résultat attendu** → **🧠 Ce que tu viens d'apprendre**, et, parce que le DNS est aussi une affaire de conformité, une case **🔍 Point d'audit** quand le sujet touche à la preuve ou à la sécurité.
-
-> **Et le tutoriel DNS qui existe déjà ?**
-> [`tutoriel-dns.md`](../tutoriel-dns.md) part de la **couche réseau** (adresse IP, masque, switch) et construit un petit réseau avec un seul serveur BIND et un serveur DHCP Cisco. Celui-ci suppose que tu sais ce qu'est une adresse IP et va **beaucoup plus loin sur le DNS lui-même** : l'arbre complet, la récursion, les caches, la redondance, le transfert de zone, le DNS Windows, l'observation sur le fil et le dépannage. Les deux se complètent ; commence par l'ancien si les mots « masque » ou « passerelle » te sont étrangers.
+> Tout se passe dans un **laboratoire** que tu fais tourner dans ton navigateur : douze machines virtuelles (des postes, des serveurs, des routeurs) qui forment une petite banque et un petit morceau d'Internet. Tu ne peux **rien casser** : si tu te perds, tu ré-importes le laboratoire et tu repars d'un état propre.
+>
+> **Les sorties que tu lis dans ce document sont réelles.** Chaque commande a été exécutée dans ce laboratoire et un test automatique (`src/__tests__/unit/network-v2/tuto-dns-zero-a-heros.test.ts`) la rejoue : si le document et le simulateur ne sont plus d'accord, le test échoue. Le comportement du serveur DNS a été comparé à un vrai BIND 9.18.
 
 ---
 
-## Comment utiliser ce document
+## Comment lire ce document
 
-**1. Ne saute pas les TP.** Le DNS s'apprend dans les doigts. Tu ne comprendras vraiment le TTL que le jour où tu verras une réponse *vieillir* sous tes yeux, et la délégation le jour où tu en casseras une.
+Le tutoriel est découpé en **onze parties**, précédées d'une **Partie 0** qui prépare le terrain.
 
-**2. Casse des choses exprès.** Plusieurs TP te demandent d'arrêter un serveur, de fausser une adresse ou d'oublier un numéro de série, puis de **lire** ce qui se passe. Un administrateur qui n'a jamais lu `SERVFAIL` ou `connection refused` ne sait pas dire *pourquoi* un nom ne se résout pas.
+| Partie | Ce que tu y fais | Durée indicative |
+|---|---|---|
+| **0** | Apprendre à te servir du simulateur et d'un terminal | 30 min |
+| **I** | Comprendre ce qu'est le DNS, **sans rien installer**, avec quelques petites expériences | 45 min |
+| **II** | Découvrir le laboratoire et vérifier qu'il fonctionne | 30 min |
+| **III** | Poser des questions au DNS et lire les réponses (`dig`, `nslookup`) | 2 h |
+| **IV** | Voir comment une question descend l'arbre des noms | 1 h |
+| **V** | Connaître les types de fiches (A, CNAME, MX, TXT, SRV, PTR…) | 1 h 30 |
+| **VI** | Lire, vérifier, modifier et créer des zones sur un vrai serveur | 3 h |
+| **VII** | Comprendre le cache : pourquoi une modification n'arrive pas tout de suite | 2 h |
+| **VIII** | Redondance, DNS privé, DHCP | 1 h 30 |
+| **IX–X** | Observer le DNS sur le fil, et voir ce qu'il fait pour le web | 1 h 30 |
+| **XI** | Diagnostiquer une panne avec méthode, et auditer | 2 h |
 
-**3. Respecte l'ordre.** Les TP s'enchaînent sur **le même laboratoire** : certains modifient une zone, arrêtent un service ou posent une règle. Chaque TP qui change quelque chose **remet ensuite les choses en état** (c'est écrit dans sa dernière étape). Si tu as un doute, ré-importe le laboratoire : c'est gratuit.
+Tu n'as pas à tout faire d'une traite. **Arrête-toi quand tu es fatigué**, reprends plus tard : chaque TP commence par rappeler ce qu'il te faut.
 
-**4. Lis la section « Ce que tu viens d'apprendre ».** C'est là que le « pourquoi » est écrit.
+**Trois règles.**
 
----
+1. **Ne saute pas les étapes.** Le DNS s'apprend avec les doigts. Tu ne comprends vraiment le TTL qu'au moment où tu vois une réponse *vieillir* sous tes yeux.
+2. **Un TP = un seul sujet.** Chaque TP porte sur une seule idée, découpée en étapes numérotées. Fais-les dans l'ordre.
+3. **Lis la section « Ce que tu viens d'apprendre ».** C'est là que le « pourquoi » est écrit, une fois que tu as vu le « comment ».
 
-## Conventions typographiques
+### Les encadrés
 
 | Marqueur | Signification |
 |---|---|
-| 💡 **Astuce** | Un raccourci ou une bonne pratique |
+| 💡 **Astuce** | Un raccourci ou une bonne habitude |
 | ⚠️ **Attention** | Un piège classique |
 | 🚨 **Danger** | Une commande qui peut te couper l'accès au service |
-| 🧪 **TP** | Un exercice à faire, pas à lire |
+| 🧪 **TP** | Un exercice à faire sur le laboratoire, pas seulement à lire |
 | 🧠 **Comprendre** | Le « pourquoi » derrière le « comment » |
-| 🔍 **Point d'audit** | Ce qu'un auditeur ou un RSSI vérifierait, et comment en garder la preuve |
+| 🆘 **Si ça ne marche pas** | Ce que tu vérifies si ta sortie ne ressemble pas à celle du document |
+| 🔍 **Point d'audit** | Ce qu'un auditeur vérifierait, et comment en garder la preuve |
 
-Les invites indiquent toujours *où* tu tapes. Dans ce document, chaque bloc de commandes commence par une ligne `# sur <équipement>` :
+### Le sens d'un bloc de commande
 
-```
+Chaque bloc de commandes commence par une ligne `# sur <équipement>` qui te dit **dans quel terminal tu tapes**. Cette ligne n'est **pas** à taper : c'est une indication.
+
+```schema
 # sur PC-CONSEILLER      ← poste Linux de l'agence (bash)
 # sur PC-GUICHET1        ← poste Windows de l'agence (PowerShell)
 # sur DNS-RES            ← résolveur Linux/BIND de l'agence (bash)
@@ -48,26 +63,41 @@ Les invites indiquent toujours *où* tu tapes. Dans ce document, chaque bloc de 
 # sur TLD-NS             ← serveur Windows de la zone « com » (PowerShell)
 ```
 
-Une sortie est toujours donnée sous la commande, dans un bloc séparé. Quand une valeur change d'une exécution à l'autre (numéro d'identification `id:`, date, durée en ms, ordre de deux enregistrements d'un même ensemble), le texte le dit.
+Ce qu'une commande affiche s'écrit **dans un autre bloc, juste en dessous**. Quand une valeur change d'une exécution à l'autre (un numéro `id:`, une date, une durée en ms), le texte le précise.
 
-Deux différences connues avec un vrai poste, à ne pas prendre pour une erreur : un vrai `dig` 9.18 envoie un *cookie* et ajoute à l'`OPT` de la réponse une ligne `; COOKIE: … (good)` que le simulateur n'écrit pas ; et les dates affichées (« Wed Nov 04 … 2026 », baux, horodatages des captures) sont celles de l'horloge de la machine qui exécute le simulateur.
+Deux différences connues avec un vrai poste, à ne pas prendre pour une erreur : un vrai `dig` 9.18 envoie un *cookie* et ajoute à la réponse une ligne `; COOKIE: … (good)` que le simulateur n'écrit pas ; et les dates affichées sont celles de l'horloge de la machine qui exécute le simulateur.
 
 ---
 
 ## Table des matières
 
-### Partie I — Comprendre le DNS
-1. [À quoi sert le DNS, et ce qu'il remplace](#1-à-quoi-sert-le-dns-et-ce-quil-remplace)
-2. [L'arbre, les domaines, les zones et la délégation](#2-larbre-les-domaines-les-zones-et-la-délégation)
-3. [Trois acteurs : le stub, le résolveur, le serveur faisant autorité](#3-trois-acteurs--le-stub-le-résolveur-le-serveur-faisant-autorité)
-4. [Une résolution pas à pas](#4-une-résolution-pas-à-pas)
-5. [Les enregistrements à connaître](#5-les-enregistrements-à-connaître)
-6. [Le message DNS : drapeaux, sections, codes de retour](#6-le-message-dns--drapeaux-sections-codes-de-retour)
+### Partie 0 — Prendre en main le simulateur et le terminal
+0.1 [Ouvrir le laboratoire](#01-ouvrir-le-laboratoire)
+0.2 [Le terminal : une fenêtre où l'on donne des ordres](#02-le-terminal--une-fenêtre-où-lon-donne-des-ordres)
+0.3 [Ton premier ordre](#03-ton-premier-ordre)
+0.4 [Anatomie d'une commande](#04-anatomie-dune-commande)
+0.5 [L'autre famille : Windows et PowerShell](#05-lautre-famille--windows-et-powershell)
+0.6 [Quand quelque chose ne marche pas](#06-quand-quelque-chose-ne-marche-pas)
+0.7 [Dix mots pour commencer](#07-dix-mots-pour-commencer)
+
+### Partie I — Comprendre le DNS, en petits pas
+I.1 [Les machines ne comprennent que des numéros](#i1-les-machines-ne-comprennent-que-des-numéros)
+I.2 [Première solution : le carnet d'adresses de la machine](#i2-première-solution--le-carnet-dadresses-de-la-machine)
+I.3 [Pourquoi un carnet ne suffit plus](#i3-pourquoi-un-carnet-ne-suffit-plus)
+I.4 [L'idée du DNS : un annuaire découpé en morceaux](#i4-lidée-du-dns--un-annuaire-découpé-en-morceaux)
+I.5 [Lire un nom de droite à gauche](#i5-lire-un-nom-de-droite-à-gauche)
+I.6 [Qui détient quel morceau ? Zone et serveur faisant autorité](#i6-qui-détient-quel-morceau--zone-et-serveur-faisant-autorité)
+I.7 [La délégation : « je ne tiens pas ce rayon, demande là-bas »](#i7-la-délégation--je-ne-tiens-pas-ce-rayon-demande-là-bas)
+I.8 [Celui qui fait les démarches : le résolveur](#i8-celui-qui-fait-les-démarches--le-résolveur)
+I.9 [Une résolution racontée du début à la fin](#i9-une-résolution-racontée-du-début-à-la-fin)
+I.10 [Le cache et le TTL : ne pas redemander cent fois](#i10-le-cache-et-le-ttl--ne-pas-redemander-cent-fois)
+I.11 [Les fiches de l'annuaire : les enregistrements](#i11-les-fiches-de-lannuaire--les-enregistrements)
+I.12 [Vérifie-toi](#i12-vérifie-toi)
 
 ### Partie II — Le laboratoire Banque Horizon
-7. [Les douze équipements et le plan d'adressage](#7-les-douze-équipements-et-le-plan-dadressage)
-8. [Ouvrir le laboratoire](#8-ouvrir-le-laboratoire)
-9. [🧪 TP 1 — Le laboratoire respire](#9--tp-1--le-laboratoire-respire)
+II.1 [L'histoire du laboratoire](#ii1-lhistoire-du-laboratoire)
+II.2 [Les douze équipements](#ii2-les-douze-équipements)
+II.3 [🧪 TP 1 — Le laboratoire respire](#ii3--tp-1--le-laboratoire-respire)
 
 ### Partie III — Poser une question
 10. [🧪 TP 2 — Lire une réponse de `dig`](#10--tp-2--lire-une-réponse-de-dig)
@@ -126,35 +156,463 @@ Deux différences connues avec un vrai poste, à ne pas prendre pour une erreur 
 
 ---
 
-# Partie I — Comprendre le DNS
+# Partie 0 — Prendre en main le simulateur et le terminal
+
+Cette partie ne parle **pas** encore de DNS. Elle t'apprend les gestes dont tu auras besoin pendant tout le reste : ouvrir le laboratoire, ouvrir un terminal, taper une commande, la lire. Si tu les maîtrises déjà, passe directement à la Partie I.
 
 ---
 
-## 1. À quoi sert le DNS, et ce qu'il remplace
+## 0.1 Ouvrir le laboratoire
 
-Une machine ne sait envoyer un paquet qu'à une **adresse IP** (`203.0.113.20`). Un humain ne retient que des **noms** (`www.banquehorizon.com`). Le **DNS** (*Domain Name System*) est l'annuaire qui fait la correspondance, dans les deux sens : nom → adresse (« résolution directe ») et adresse → nom (« résolution inverse »).
+Le **simulateur** est un logiciel qui tourne dans ton navigateur. On y pose des équipements (des postes, des serveurs, des routeurs), on les relie par des câbles, et chacun se comporte comme la vraie machine. Le **laboratoire** de ce tutoriel est un réseau déjà construit, que tu charges depuis un fichier.
 
-Il a remplacé un fichier. Au début d'Internet, un seul fichier `HOSTS.TXT`, tenu par une seule personne, listait toutes les machines ; chacun le recopiait. Cela ne tient plus dès que le réseau grandit : le fichier devient énorme, change tout le temps, et personne ne peut le tenir seul. Le fichier existe toujours sur ta machine (`/etc/hosts` sous Linux, `C:\Windows\System32\drivers\etc\hosts` sous Windows) et **il est consulté avant le DNS**.
+**Étape 1 — Lancer le simulateur.** Il y a deux façons, choisis la tienne.
 
-| Idée | Ce que ça change |
-|---|---|
-| **Un annuaire hiérarchique** | Personne ne tient la liste complète : chacun tient *sa* partie |
-| **La délégation** | Le propriétaire d'une partie de l'arbre en confie des morceaux à d'autres |
-| **Le cache** | Une réponse est gardée un temps limité (le TTL) pour ne pas redemander cent fois |
-| **La redondance** | Chaque partie est servie par plusieurs serveurs |
+- *Tu as le code du projet sur ta machine.* Dans un terminal **de ton ordinateur** (pas celui du simulateur), place-toi dans le dossier du projet, tape `npm run dev`, puis ouvre <http://localhost:8080> dans ton navigateur.
+- *Tu utilises la version en ligne.* Ouvre l'adresse du simulateur que ton formateur t'a donnée. Dans ce cas, télécharge d'abord le fichier du laboratoire, `labs/dns-agence-bancaire/topology.json`, depuis le dépôt du projet (`github.com/mkokutoyori/ubuntu-sandbox`).
 
-Le DNS n'est pas qu'un confort : **tout** passe par lui. La messagerie (enregistrements MX), l'authentification Windows (enregistrements SRV d'Active Directory), la validation d'un certificat, la détection d'hameçonnage (SPF, DMARC), le choix d'un serveur de secours… Quand le DNS tombe, « Internet est cassé » alors que les câbles sont intacts.
+**Étape 2 — Importer le laboratoire.** Dans la barre d'outils du simulateur, clique sur **Importer**, puis choisis le fichier `topology.json` du dossier `labs/dns-agence-bancaire/`.
 
-> 🔍 **Point d'audit** — Un auditeur ne demande jamais « le DNS marche-t-il ? ». Il demande : *qui peut modifier une zone ? qui peut l'interroger ? que se passe-t-il quand un serveur tombe ? qui garde la trace des requêtes ?* Tu sauras répondre à chacune à la fin de ce tutoriel.
+**Étape 3 — Vérifier que tout est là.** Au bout de quelques secondes, le canevas (la grande zone centrale) affiche **douze équipements reliés par des câbles**. Tu dois reconnaître, entre autres, des noms comme `PC-CONSEILLER`, `DNS-RES`, `NS1-BANK`, `ROOT-NS`.
+
+🆘 **Si ça ne marche pas.** Rien ne s'affiche après l'import : recharge la page et recommence l'import. Tu vois moins de douze équipements : l'import a été interrompu, recommence-le.
+
+> 💡 **Astuce** — Le laboratoire peut être ré-importé à tout moment. Quand tu auras modifié des fichiers, arrêté des services ou changé des adresses au fil des TP, **ré-importer le fichier te rend un laboratoire neuf**. C'est ta ceinture de sécurité.
 
 ---
 
-## 2. L'arbre, les domaines, les zones et la délégation
+## 0.2 Le terminal : une fenêtre où l'on donne des ordres
 
-Un nom se lit **de droite à gauche**. `www.banquehorizon.com.` se découpe en étiquettes (*labels*) :
+Pour parler à un équipement, on ne clique pas sur des boutons : on lui écrit des **ordres**, qu'on appelle des **commandes**. La fenêtre où on les écrit s'appelle un **terminal**.
+
+**Étape 1 — Ouvrir le terminal d'un équipement.** Sur le canevas, **double-clique** sur `PC-CONSEILLER`. Une fenêtre s'ouvre.
+
+**Étape 2 — Reconnaître la ligne d'invite.** Dans cette fenêtre, la dernière ligne affichée est la **ligne d'invite** (en anglais, le *prompt*). C'est la machine qui te dit : « je t'écoute ». Elle contient en général ton nom, le nom de la machine et finit par le signe `$` sur Linux. Ton curseur clignote juste après.
+
+**Étape 3 — Comment on s'en sert.**
+
+- Tu **tapes** une commande, puis tu appuies sur **Entrée**. La machine l'exécute et **affiche son résultat** sous ta ligne, puis te redonne une ligne d'invite.
+- Tu peux **copier/coller** les commandes de ce document dans le terminal.
+- La touche **flèche haut** rappelle la commande précédente, très pratique pour corriger une faute de frappe.
+- Si une commande tourne sans s'arrêter, **Ctrl + C** l'interrompt.
+
+> 💡 **Astuce** — Garde plusieurs terminaux ouverts en même temps, un par équipement, et reconnais-les à leur titre. Tout au long du tutoriel, le texte `# sur PC-CONSEILLER` te dit lequel utiliser.
+
+---
+
+## 0.3 Ton premier ordre
+
+Tu as maintenant un terminal ouvert sur `PC-CONSEILLER`. On va lui donner quatre ordres très simples. Il n'y a **aucun risque** : ils ne font que **lire** des informations.
+
+**Étape 1 — Faire parler la machine.** La commande `echo` répète ce qu'on lui donne.
 
 ```
-                       .                    ← la racine (le point final que l'on oublie d'écrire)
+# sur PC-CONSEILLER
+echo bonjour
+```
+
+Tu dois voir :
+
+```
+bonjour
+```
+
+La machine a simplement répété le mot. Si tu vois `bonjour`, ton terminal fonctionne et tu sais taper une commande.
+
+**Étape 2 — Demander qui tu es.**
+
+```
+# sur PC-CONSEILLER
+whoami
+```
+
+```
+user
+```
+
+`whoami` signifie « *who am I* », qui suis-je ? La réponse est `user` : tu es connecté sous le compte `user`. Dans le laboratoire, tu es toujours déjà connecté, tu n'auras **aucun mot de passe** à saisir.
+
+**Étape 3 — Demander comment s'appelle la machine.**
+
+```
+# sur PC-CONSEILLER
+hostname
+```
+
+```
+PC-CONSEILLER
+```
+
+`hostname` (« nom de l'hôte ») affiche le nom de la machine sur laquelle tu es. C'est un bon réflexe : **quand tu doutes du terminal dans lequel tu es, tape `hostname`**.
+
+**Étape 4 — Demander où tu es.**
+
+```
+# sur PC-CONSEILLER
+pwd
+```
+
+```
+/home/user
+```
+
+`pwd` (« *print working directory* ») affiche le dossier dans lequel tu te trouves. `/home/user` est ton dossier personnel. Le signe `/` sépare les dossiers : on écrit un **chemin** `/home/user` pour dire « dans le dossier `home`, le dossier `user` ». Tout ce qui est un fichier ou un dossier a un chemin.
+
+---
+
+## 0.4 Anatomie d'une commande
+
+Presque toutes les commandes se lisent comme une phrase de trois morceaux :
+
+```schema
+ wc   -l   /etc/hosts
+ │    │    └── l'argument : ce sur quoi la commande travaille (ici un fichier)
+ │    └─────── l'option : une précision sur la façon de faire (ici « compte les lignes »)
+ └──────────── le programme : ce qu'on demande de faire
+```
+
+- Le **programme** est toujours le premier mot.
+- Les **options** commencent par un tiret (`-l`, `-c`) ou deux (`--help`). Elles changent le comportement. Plusieurs options se mettent les unes après les autres.
+- Les **arguments** disent sur quoi travailler : un fichier, un nom, une adresse.
+
+Tout est séparé par des **espaces**. Une espace de trop ou de moins peut changer le sens de la commande, c'est pourquoi on copie-colle quand on peut.
+
+**Étape 1 — Une commande avec une option et un argument.**
+
+```
+# sur PC-CONSEILLER
+wc -l /etc/hosts
+```
+
+```
+5 /etc/hosts
+```
+
+`wc` compte. Avec l'option `-l` (*lines*), il compte les **lignes** du fichier `/etc/hosts`. Il répond : 5 lignes. (On ouvrira ce fichier à la Partie I : il va nous servir.)
+
+**Étape 2 — Une commande qui parle à une autre machine.**
+
+```
+# sur PC-CONSEILLER
+ping -c 1 127.0.0.1
+```
+
+```
+PING 127.0.0.1 (127.0.0.1) 56(84) bytes of data.
+64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.010 ms
+
+--- 127.0.0.1 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
+```
+
+`ping` est le « sonar » du réseau : il envoie un petit message à une machine et attend qu'elle réponde. L'option `-c 1` veut dire « *count* 1 » : envoie **un seul** message (sans cette option, `ping` tourne sans fin). L'argument `127.0.0.1` est l'adresse de la machine à joindre : c'est un cas particulier, l'adresse **de la machine elle-même**.
+
+Comment lire le résultat ? **Une seule ligne compte pour l'instant** : l'avant-dernière.
+
+- `1 packets transmitted, 1 received, 0% packet loss` : j'ai envoyé 1 message, 1 réponse est revenue, rien perdu. **Ça marche.**
+- Si tu lis `0 received, 100% packet loss`, personne n'a répondu.
+
+Le reste (`ttl`, `time`, `rtt`) donne des détails techniques dont on n'aura pas besoin avant la Partie II.
+
+---
+
+## 0.5 L'autre famille : Windows et PowerShell
+
+Le laboratoire contient deux familles de machines : des **Linux** (comme `PC-CONSEILLER`) et des **Windows** (comme `PC-GUICHET1`). Elles ne se pilotent pas avec les mêmes commandes, et tu dois savoir manier les deux, parce qu'un administrateur DNS rencontre les deux.
+
+Sous Windows, le terminal s'appelle **PowerShell**. Sa ligne d'invite commence par `PS` et finit par `>`.
+
+**Étape 1 — Ouvrir PowerShell.** Double-clique sur `PC-GUICHET1`.
+
+**Étape 2 — Reconnaître les différences d'écriture.**
+
+- Les commandes PowerShell s'appellent des *cmdlets* et s'écrivent **Verbe-Nom** : `Get-Location` (« obtenir l'emplacement »), `Resolve-DnsName` (« résoudre un nom DNS »). Tu devines presque toujours ce qu'elles font.
+- Les options s'écrivent `-Nom valeur` : `Resolve-DnsName banquehorizon.com -Type MX`.
+- Les majuscules n'ont **pas** d'importance sous PowerShell. Sous Linux, **elles en ont** : `Hostname` n'est pas `hostname`.
+
+**Étape 3 — Trois ordres pour essayer.**
+
+```powershell
+# sur PC-GUICHET1
+hostname
+```
+
+```
+PC-GUICHET1
+```
+
+Comme sous Linux : le nom de la machine. (Certaines commandes simples existent dans les deux mondes.)
+
+```powershell
+# sur PC-GUICHET1
+Get-Location
+```
+
+```
+Path         
+----         
+C:\Users\User
+```
+
+`Get-Location` est l'équivalent de `pwd`. Remarque le style Windows : les dossiers sont séparés par un `\` et le chemin commence par une **lettre de lecteur** (`C:`). PowerShell présente le résultat en **tableau**, avec un titre (`Path`) souligné.
+
+```powershell
+# sur PC-GUICHET1
+Write-Output bonjour
+```
+
+```
+bonjour
+```
+
+`Write-Output` est l'équivalent de `echo`.
+
+> 💡 **Astuce** — Retiens cette règle simple : **la ligne `# sur X` te dit le terminal ; le nom du bloc te dit la famille.** Un bloc `powershell` se tape dans un équipement Windows, les autres dans un équipement Linux.
+
+---
+
+## 0.6 Quand quelque chose ne marche pas
+
+Tu rencontreras des messages d'erreur, c'est normal : ils font partie de l'apprentissage et certains TP les provoquent exprès. Voici dans l'ordre les cinq vérifications à faire.
+
+1. **Es-tu dans le bon terminal ?** Tape `hostname` et compare avec la ligne `# sur …` du TP.
+2. **As-tu bien recopié la commande ?** Les espaces, les majuscules (sous Linux), les guillemets comptent. Copie-colle.
+3. **Le message d'erreur dit-il quelque chose de précis ?** `command not found` : le mot n'est pas une commande (faute de frappe, ou mauvaise famille Linux/Windows). `Permission denied` : il manque des droits (voir `sudo`, plus loin).
+4. **Le laboratoire est-il dans son état de départ ?** Si tu as fait des modifications dans un TP précédent et que tu as sauté sa dernière étape (le « remettre en état »), les sorties peuvent différer. Ré-importe le laboratoire.
+5. **Si rien ne va, ré-importe le laboratoire** (§ 0.1) et reprends le TP depuis le début.
+
+---
+
+## 0.7 Dix mots pour commencer
+
+Tu les as déjà croisés ou tu les croiseras tout de suite. Ne cherche pas à les apprendre par cœur : reviens ici quand tu en as besoin.
+
+| Mot | Ce que ça veut dire, en mots simples |
+|---|---|
+| **Réseau** | Des machines reliées entre elles pour pouvoir s'envoyer des messages |
+| **Hôte** | N'importe quelle machine du réseau : un poste, un serveur, un routeur |
+| **Adresse IP** | Le **numéro** d'une machine sur le réseau, comme un numéro de téléphone (`203.0.113.20`) |
+| **Client** | La machine qui **demande** quelque chose (ton poste) |
+| **Serveur** | La machine qui **répond** et rend un service (un serveur web, un serveur DNS) |
+| **Requête** | Le message de la question envoyée par un client |
+| **Réponse** | Le message qui revient en retour |
+| **Protocole** | La façon convenue de se parler (le vocabulaire et l'ordre des messages). DNS est un protocole |
+| **Port** | Le « guichet » d'une machine : un serveur DNS écoute au port 53, un serveur web au port 80 |
+| **Paquet** | Un petit morceau de message qui voyage sur le réseau |
+
+---
+
+# Partie I — Comprendre le DNS, en petits pas
+
+Dans cette partie, on construit l'idée du DNS **une pièce à la fois**. Tu n'as pas besoin du laboratoire complet ; ton terminal sur `PC-CONSEILLER` suffit, pour trois petites expériences. À chaque section, une seule idée nouvelle.
+
+---
+
+## I.1 Les machines ne comprennent que des numéros
+
+Quand tu tapes `www.banquehorizon.com` dans un navigateur, ta machine ne sait pas du tout ce qu'est « `www.banquehorizon.com` ». Pour envoyer un message à une autre machine sur un réseau, elle a besoin de son **adresse IP** : un numéro, formé de quatre nombres séparés par des points, comme `203.0.113.20`.
+
+Un numéro de téléphone fonctionne pareil : pour appeler quelqu'un, il faut son numéro, le nom ne suffit pas.
+
+Chaque machine du réseau a son numéro. Tu peux demander le tien.
+
+**Étape 1 — Voir l'adresse de `PC-CONSEILLER`.**
+
+```
+# sur PC-CONSEILLER
+hostname -I
+```
+
+```
+10.20.10.52
+```
+
+(Tu lis `10.20.10.52` suivi d'une espace.) `hostname -I`, avec un `I` majuscule, affiche les adresses IP de la machine. Celle de `PC-CONSEILLER` est `10.20.10.52`.
+
+Les humains retiennent mal les numéros et bien les noms. Or une machine ne sait manier que les numéros. Il faut donc un **traducteur** entre les deux : quelqu'un qui, à partir de `www.banquehorizon.com`, donne `203.0.113.20`. Ce traducteur s'appelle le **DNS**, pour *Domain Name System* (« système de noms de domaine »).
+
+🧠 **À retenir.** Le DNS traduit un **nom** (pour les humains) en **adresse IP** (pour les machines), et dans l'autre sens aussi.
+
+---
+
+## I.2 Première solution : le carnet d'adresses de la machine
+
+Avant d'inventer le DNS, comment faisait-on ? Chaque machine a un petit **carnet d'adresses** personnel : un simple fichier texte qui associe des noms à des numéros. Sous Linux il s'appelle `/etc/hosts`. Faisons l'expérience.
+
+**Étape 1 — Lire le carnet tel qu'il est.**
+
+```
+# sur PC-CONSEILLER
+cat /etc/hosts
+```
+
+```
+127.0.0.1	localhost
+127.0.1.1	PC-CONSEILLER
+
+# The following lines are desirable for IPv6 capable hosts
+::1	localhost ip6-localhost ip6-loopback
+```
+
+`cat` (« concaténer ») affiche le contenu d'un fichier. Chaque ligne utile associe un numéro à un ou plusieurs noms : `127.0.0.1` s'appelle `localhost` (c'est « moi-même »), et la machine a son propre nom sur la deuxième ligne. Les lignes qui commencent par `#` sont des commentaires, la machine les ignore. (Les 5 lignes comptées au § 0.4, ce sont celles-ci, avec la ligne vide.)
+
+**Étape 2 — Essayer de joindre un nom que le carnet ne connaît pas.**
+
+```
+# sur PC-CONSEILLER
+ping -c 1 -W 1 monsite.banque
+```
+
+```
+ping: monsite.banque: Name or service not known
+```
+
+`monsite.banque` est un nom que j'invente. L'option `-W 1` veut dire « n'attends pas plus d'une seconde ». Le message dit : `Name or service not known`, « nom inconnu ». La machine n'a trouvé ce nom **nulle part** : elle ne peut donc pas envoyer le moindre message. C'est la première erreur DNS que tu rencontres, et tu la reverras souvent.
+
+**Étape 3 — Ajouter une ligne au carnet.** On va dire à la machine que `monsite.banque` est l'adresse `203.0.113.20` (celle du serveur web de la banque).
+
+```
+# sur PC-CONSEILLER
+echo '203.0.113.20 monsite.banque' | sudo tee -a /etc/hosts
+```
+
+```
+203.0.113.20 monsite.banque
+```
+
+Cette commande en trois pièces mérite d'être lue lentement :
+
+- `echo '203.0.113.20 monsite.banque'` fabrique la ligne de texte à ajouter.
+- Le signe `|` (le *tube*, ou *pipe*) passe ce texte **à la commande suivante**.
+- `sudo tee -a /etc/hosts` écrit ce texte **à la fin** (`-a`, *append*) du fichier `/etc/hosts`. `tee` recopie ce qu'il reçoit dans un fichier et à l'écran. `sudo` veut dire « exécute en tant qu'administrateur » : un fichier système comme `/etc/hosts` ne se modifie pas avec un compte ordinaire. Dans le laboratoire, `sudo` ne demande jamais de mot de passe.
+
+La machine répète la ligne à l'écran : c'est la preuve qu'elle l'a écrite.
+
+**Étape 4 — Vérifier que le carnet a changé.**
+
+```
+# sur PC-CONSEILLER
+cat /etc/hosts
+```
+
+```
+127.0.0.1	localhost
+127.0.1.1	PC-CONSEILLER
+
+# The following lines are desirable for IPv6 capable hosts
+::1	localhost ip6-localhost ip6-loopback
+203.0.113.20 monsite.banque
+```
+
+Ta ligne est tout en bas.
+
+**Étape 5 — Réessayer le même `ping`.**
+
+```
+# sur PC-CONSEILLER
+ping -c 1 -W 1 monsite.banque
+```
+
+```
+PING monsite.banque (203.0.113.20) 56(84) bytes of data.
+64 bytes from monsite.banque (203.0.113.20): icmp_seq=1 ttl=62 time=0.043 ms
+
+--- monsite.banque ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.043/0.043/0.043/0.000 ms
+```
+
+Cette fois ça marche. Regarde la première ligne : `PING monsite.banque (203.0.113.20)`. La machine a **traduit** `monsite.banque` en `203.0.113.20` en lisant son carnet, puis a envoyé le message à ce numéro. Elle a répondu (`1 received`). Tu viens de faire, à la main, ce que fait le DNS.
+
+**Étape 6 — Remettre le carnet en état.** On supprime la ligne qu'on vient d'ajouter.
+
+```
+# sur PC-CONSEILLER
+sudo sed -i '/monsite.banque/d' /etc/hosts
+```
+
+(Cette commande n'affiche rien : en Linux, **pas de nouvelle = bonne nouvelle**.) `sed -i '/monsite.banque/d'` signifie : « dans le fichier, **d**élète toute ligne qui contient `monsite.banque` ». Vérifie que le nom est de nouveau inconnu :
+
+```
+# sur PC-CONSEILLER
+ping -c 1 -W 1 monsite.banque
+```
+
+```
+ping: monsite.banque: Name or service not known
+```
+
+Tu es revenu à l'état de départ.
+
+🧠 **Ce que tu viens d'apprendre.** Une machine commence **toujours** par lire son carnet local (`/etc/hosts`) avant de demander quoi que ce soit à qui que ce soit. C'est un traducteur nom → numéro, mais un traducteur **privé**, que seul son propriétaire connaît.
+
+---
+
+## I.3 Pourquoi un carnet ne suffit plus
+
+Au début d'Internet, quelques centaines de machines seulement étaient reliées. Un seul fichier, appelé `HOSTS.TXT`, tenu par une seule personne, listait toutes les machines du monde, et chacun en recopiait une version à jour. Cela marchait… tant qu'il y avait peu de machines.
+
+Imagine maintenant des **milliards** de machines :
+
+- le fichier serait **gigantesque** et chaque machine devrait l'avoir en entier ;
+- il **changerait à chaque seconde** (une machine arrive, une change d'adresse) : personne ne pourrait suivre ;
+- **une seule personne** ne peut pas tenir à jour le carnet du monde entier.
+
+Il faut donc un autre système, où **personne ne connaît tout** et où chacun ne s'occupe que de sa partie.
+
+> 💡 **Astuce** — Le carnet `/etc/hosts` existe toujours, et il est toujours consulté **en premier**. Les administrateurs s'en servent pour forcer un nom (un test, un blocage). Mais pour tout le reste, il y a le DNS.
+
+---
+
+## I.4 L'idée du DNS : un annuaire découpé en morceaux
+
+Pense à un annuaire téléphonique **géant**. Il serait impossible à tenir dans un seul livre. Alors on le découpe : un livre par pays, dans chaque pays un livre par région, dans chaque région un livre par ville… Personne n'a le livre entier. Mais **si on connaît le moyen de trouver le bon livre**, on retrouve n'importe quel numéro.
+
+Le DNS fonctionne exactement ainsi :
+
+| Dans l'annuaire papier | Dans le DNS |
+|---|---|
+| Un livre par pays, par région, par ville | Un **morceau** d'annuaire (une *zone*) tenu par un **serveur** |
+| L'index du pays qui dit « pour Paris, voir le livre de Paris » | Une **délégation** : « pour tout ce qui est sous ce nom, demande à ces serveurs-là » |
+| Le fait de ne recopier un numéro qu'une fois par jour | Le **cache** |
+
+Trois idées à retenir pour la suite :
+
+1. **L'annuaire est hiérarchique** : les noms se rangent dans un arbre.
+2. **Chaque serveur ne tient que sa part** et sait à qui renvoyer pour le reste.
+3. **On garde en mémoire les réponses un moment** pour ne pas tout redemander.
+
+Les sections suivantes détaillent chacune de ces trois idées.
+
+---
+
+## I.5 Lire un nom de droite à gauche
+
+Un nom de machine comme `www.banquehorizon.com` est fait de **morceaux séparés par des points**. Ces morceaux s'appellent des **étiquettes** (*labels*). Il y en a trois ici : `www`, `banquehorizon` et `com`.
+
+Le point important, qui surprend tout le monde : **un nom DNS se lit de droite à gauche**. Le morceau le plus à droite est le plus **général**, celui de gauche est le plus **précis**.
+
+```schema
+   www . banquehorizon . com .
+    │          │          │   └── la racine (le point final, qu'on oublie d'écrire)
+    │          │          └────── le domaine de premier niveau (TLD)
+    │          └───────────────── le domaine de la banque
+    └──────────────────────────── le nom de la machine dans ce domaine
+```
+
+Comme les adresses postales, mais à l'envers : « France, Paris, rue de la Paix » devient « rue de la Paix . Paris . France ».
+
+Voyons les mots un à un.
+
+- La **racine** (*root*) est le sommet de l'arbre. Elle se note par un simple point. Dans un nom complet, on l'écrit au bout : `www.banquehorizon.com.` (avec le point final). La plupart du temps on l'omet, mais le DNS, lui, le sous-entend toujours.
+- Un **domaine de premier niveau** (*TLD*, *top-level domain*) est juste en dessous de la racine : `com`, `org`, `fr`…
+- Un **domaine** est un nom et **tout ce qui est en dessous** : `banquehorizon.com` est le domaine de la banque.
+- Un **sous-domaine** est un domaine contenu dans un autre : dans `agence.banquehorizon.com`, `agence` est un sous-domaine de `banquehorizon.com`.
+- Un nom **complet**, avec toutes ses étiquettes jusqu'à la racine, s'appelle un **FQDN** (*fully qualified domain name*) : `www.banquehorizon.com.`
+
+```schema
+                       .                    ← la racine
                        │
                       com                   ← domaine de premier niveau (TLD)
                        │
@@ -163,130 +621,201 @@ Un nom se lit **de droite à gauche**. `www.banquehorizon.com.` se découpe en �
             www       web       mail        ← les noms à l'intérieur
 ```
 
-Deux mots qu'on confond tout le temps :
+**Petit exercice.** Pour `ebanking.banquehorizon.com`, retrouve : (a) le TLD, (b) le domaine de la banque, (c) le nom de la machine. *Réponses* : (a) `com`, (b) `banquehorizon.com`, (c) `ebanking`.
+
+---
+
+## I.6 Qui détient quel morceau ? Zone et serveur faisant autorité
+
+Un **serveur DNS** est un programme qui répond aux questions du type « quelle est l'adresse de tel nom ? ». Mais il ne connaît pas tous les noms du monde : il connaît **ceux dont il est responsable**.
+
+L'ensemble des noms dont un serveur est officiellement responsable s'appelle une **zone**. Pense à un **rayon de bibliothèque** : le serveur en tient le registre officiel. Sur un serveur, la zone est décrite par un fichier texte, le **fichier de zone**, qui liste les noms et leurs adresses (on en lira un en Partie VI).
+
+Un serveur qui détient la version **officielle** d'une zone est dit **faisant autorité** (*authoritative*) pour cette zone. C'est lui la source : quand il répond, ce n'est pas une rumeur, c'est le registre.
+
+⚠️ **Attention** — On confond souvent *domaine* et *zone*.
 
 | | Définition | Exemple |
 |---|---|---|
-| **Domaine** | Un *sous-arbre* de l'arbre des noms | `banquehorizon.com` et **tout ce qui est dessous** |
-| **Zone** | Un *morceau administratif* : ce qu'**un même serveur fait autorité** à décrire | `banquehorizon.com`, sans les sous-domaines délégués ailleurs |
+| **Domaine** | Un **sous-arbre de l'arbre des noms** : un nom et tout ce qui est dessous | `banquehorizon.com` et tous ses sous-noms |
+| **Zone** | Le **morceau administratif** qu'**un même serveur** décrit | la part de `banquehorizon.com` que ce serveur tient |
 
-Un domaine peut contenir plusieurs zones, quand on délègue. La **délégation** est un enregistrement `NS` dans la zone du parent qui dit : « pour tout ce qui est sous ce nom, adresse-toi à ces serveurs-là ». Dans le laboratoire :
-
-```
-.                              zone tenue par ROOT-NS      (BIND, Linux)
-└── com.                       zone tenue par TLD-NS       (DNS Windows)    ← délégué par « . »
-    └── banquehorizon.com.     zones tenues par NS1-BANK   (BIND, Linux)    ← délégué par « com »
-                                              NS2-BANK     (DNS Windows, secondaire)
-```
-
-🧠 **Comprendre** — La racine ne sait *rien* de `www.banquehorizon.com`. Elle sait seulement qui s'occupe de `com`. `com` ne sait rien de `www` non plus : il sait qui s'occupe de `banquehorizon.com`. C'est **ce découpage qui permet au DNS de grandir sans qu'aucun serveur ne connaisse tout**.
-
-⚠️ **Attention** — Les serveurs d'un nom délégué portent eux-mêmes des noms (`ns1.banquehorizon.com`). Pour en trouver l'adresse, il faudrait… résoudre `banquehorizon.com`, qu'on est justement en train de chercher. Le parent joint donc aux délégations les adresses de ces serveurs : c'est la **glue** (la « colle »). Tu la verras dans le TP 8.
+Dans ce tutoriel, domaine et zone coïncident presque toujours ; la nuance importe quand on **délègue** une partie d'un domaine à quelqu'un d'autre, ce qu'on va voir.
 
 ---
 
-## 3. Trois acteurs : le stub, le résolveur, le serveur faisant autorité
+## I.7 La délégation : « je ne tiens pas ce rayon, demande là-bas »
 
-Presque tous les malentendus sur le DNS viennent de la confusion de ces trois rôles.
+Comment un serveur qui ne connaît qu'un morceau de l'arbre aide-t-il à trouver le reste ? Par la **délégation**.
 
+Imagine un employé de la bibliothèque à qui tu demandes un livre de cuisine. Il ne l'a pas dans son rayon, mais il te dit : « La cuisine, c'est le rayon 4, tenu par Marie. » Il ne t'a pas donné le livre : il t'a **renvoyé** vers celui qui sait.
+
+Dans le DNS, c'est exactement cela. Un serveur dit : « Pour tout ce qui est sous *tel nom*, adresse-toi à *tel serveur* ». Cette indication est une fiche d'un type particulier, appelée **NS** (pour *name server*, « serveur de noms »). La réponse « va demander ailleurs » s'appelle un **renvoi** (*referral*).
+
+Dans le laboratoire, la chaîne est la suivante :
+
+```schema
+.                              zone tenue par ROOT-NS      (la racine)
+└── com.                       zone tenue par TLD-NS       ← la racine y renvoie
+    └── banquehorizon.com.     zones tenues par NS1-BANK et NS2-BANK   ← com y renvoie
 ```
- poste                  résolveur récursif                    serveurs faisant autorité
-┌───────┐  « www ? »  ┌───────────────────┐  ┌───────────┐  ┌───────────┐  ┌──────────────┐
-│ stub  │ ───────────▶│  DNS-RES  (cache) │─▶│ racine    │  │ com       │  │ banquehorizon│
-│       │◀─────────── │                   │◀─│ « demande │  │ « demande │  │ « la voici : │
-└───────┘  réponse    └───────────────────┘  │  à com »  │  │  à NS1 »  │  │  203.0.113.20»│
-                                             └───────────┘  └───────────┘  └──────────────┘
+
+- La **racine** ne sait *rien* de `www.banquehorizon.com`. Elle sait seulement qui s'occupe de `com`.
+- `com` ne sait rien de `www` non plus : il sait qui s'occupe de `banquehorizon.com`.
+- Seuls **NS1-BANK** et **NS2-BANK**, qui détiennent la zone de la banque, savent que `www` est un alias de `web` et que `web` vaut `203.0.113.20`.
+
+🧠 **Pourquoi c'est génial.** C'est ce découpage qui permet au DNS de grandir sans qu'aucun serveur ne connaisse tout. Et les propriétaires de chaque morceau le gèrent **seuls**, sans demander la permission à personne d'autre.
+
+⚠️ **Un détail qui reviendra.** Dans le renvoi « `banquehorizon.com`, demande à `ns1.banquehorizon.com` », on te donne un **nom** de serveur. Pour lui envoyer ta question, il te faut son **adresse**… mais pour l'avoir, il faudrait résoudre `banquehorizon.com`, c'est-à-dire justement ce qu'on cherche ! Pour sortir de ce cercle, celui qui renvoie **joint l'adresse** du serveur à sa réponse. Cette adresse offerte avec le renvoi s'appelle la **glue** (« colle »). Tu la verras au TP 8.
+
+---
+
+## I.8 Celui qui fait les démarches : le résolveur
+
+Ton poste ne descend pas l'arbre tout seul : il serait obligé de connaître la racine, `com`, etc. Il délègue ce travail à un spécialiste. Voici les rôles, **un par un**.
+
+**Le stub (le « petit client »).** C'est le petit morceau de logiciel de ton poste qui sait poser **une** question à **un** serveur de son choix et attendre **la** réponse. Il ne sait rien d'autre. C'est un peu l'accueil d'un bureau : il prend ta demande.
+
+**Le résolveur récursif.** C'est un serveur qui **fait tout le travail à la place du stub** : il interroge la racine, puis `com`, puis la banque, jusqu'à obtenir la réponse, puis la renvoie au stub. On dit qu'il fait de la **récursion** (« je me débrouille et je reviens avec la réponse »). C'est aussi lui qui garde les réponses en **cache**. Dans le laboratoire, c'est `DNS-RES`. C'est l'employé qui court de bureau en bureau pour toi.
+
+**Le serveur faisant autorité** (déjà vu en I.6). Il connaît **sa** zone et répond définitivement. Pour tout le reste, il se contente de **renvoyer** vers d'autres. Il ne fait **pas** de récursion.
+
+```schema
+  ton poste           résolveur récursif                 serveurs faisant autorité
+ ┌───────┐ « www ? » ┌──────────────────┐   ┌──────────┐ ┌──────────┐ ┌─────────────┐
+ │ stub  │──────────▶│ DNS-RES (cache)  │──▶│ racine   │ │ com      │ │ banque      │
+ │       │◀──────────│                  │◀──│ « va voir│ │ « va voir│ │ « la voici »│
+ └───────┘ réponse   └──────────────────┘   │  com »   │ │  la banque»│ └─────────────┘
+                                            └──────────┘ └──────────┘
 ```
 
-| Acteur | Ce qu'il fait | Dans le laboratoire |
+Tout le malentendu sur le DNS vient de la confusion entre ces trois rôles. Retiens-les ainsi :
+
+| Rôle | Il fait… | Dans le laboratoire |
 |---|---|---|
-| **Stub** (client) | Pose *une* question à *un* résolveur et attend *la* réponse. Ne sait pas descendre l'arbre. | Les trois postes ; `systemd-resolved` sur le poste Linux |
-| **Résolveur récursif** | Fait *tout le travail* à la place du client : interroge la racine, puis `com`, puis la banque ; **garde les réponses en cache**. | DNS-RES (BIND) et DC1 (Windows, qui redirige vers DNS-RES) |
-| **Serveur faisant autorité** | Connaît *sa* zone et répond **définitivement** ; pour le reste il **renvoie** vers qui sait (*referral*). Ne fait **pas** de récursion. | ROOT-NS, TLD-NS, NS1-BANK, NS2-BANK |
+| **Stub** | Pose une question, attend la réponse | tes postes |
+| **Résolveur récursif** | Fait tout le chemin et garde en cache | `DNS-RES` |
+| **Serveur faisant autorité** | Détient une zone et répond officiellement | `ROOT-NS`, `TLD-NS`, `NS1-BANK`, `NS2-BANK` |
 
-Un même logiciel peut jouer plusieurs rôles (BIND peut être serveur faisant autorité *et* résolveur) ; c'est une mauvaise idée de le faire sur un serveur exposé à Internet, et le laboratoire sépare donc soigneusement les deux.
+Il existe un quatrième rôle, le **redirecteur** (*forwarder*) : un résolveur qui, au lieu de descendre l'arbre lui-même, **passe la question** à un autre résolveur. `DC1` joue ce rôle : il redirige ce qu'il ne connaît pas vers `DNS-RES`.
 
-Il existe un quatrième rôle, le **redirecteur** (*forwarder*) : un résolveur qui, au lieu de descendre l'arbre lui-même, **transmet** la question à un autre résolveur. DC1 redirige tout ce qu'il ne connaît pas vers DNS-RES.
-
-> 🔍 **Point d'audit** — Un résolveur qui répond à **tout le monde** (un « résolveur ouvert ») est un outil d'attaque par amplification. La première vérification d'un auditeur est donc : *la récursion est-elle limitée aux réseaux de l'entreprise ?* (TP 9 et TP 35).
+> 🔍 **Point d'audit** — Un résolveur qui répond à **n'importe qui sur Internet** s'appelle un *résolveur ouvert* ; c'est un instrument d'attaque. La première vérification d'un auditeur : *la récursion est-elle limitée aux réseaux de l'entreprise ?* Tu le vérifieras aux TP 9 et 35.
 
 ---
 
-## 4. Une résolution pas à pas
+## I.9 Une résolution racontée du début à la fin
 
-Le poste PC-CONSEILLER veut joindre `www.banquehorizon.com`. Cache vide partout :
+Reprenons ton poste `PC-CONSEILLER` qui veut joindre `www.banquehorizon.com`. Au départ, **aucun cache n'est rempli**.
 
-1. **Le stub** regarde `/etc/hosts` (rien), puis envoie la question à son résolveur.
-2. **Le résolveur** n'a rien en cache. Il connaît seulement les **indices racine** (*root hints*) : l'adresse de la racine. Il demande à la racine : « `www.banquehorizon.com` ? ».
-3. **La racine** ne sait pas, mais elle sait qui tient `com` : elle répond par un **renvoi** (« demande à `a.nic.com`, voici son adresse »).
-4. **Le résolveur** repose la question à `a.nic.com` (le serveur de `com`).
-5. **`com`** renvoie vers `ns1.banquehorizon.com` et `ns2.banquehorizon.com`, avec leurs adresses (glue).
-6. **Le résolveur** repose la question à `ns1.banquehorizon.com`, qui fait **autorité** : il répond « `www` est un alias de `web`, et `web` vaut `203.0.113.20` ».
-7. **Le résolveur** garde tout cela en cache **pour la durée du TTL** et renvoie la réponse au stub.
+1. **Le stub** regarde d'abord dans le carnet local (`/etc/hosts`) : rien. Il envoie alors la question à son résolveur : « Quelle est l'adresse de `www.banquehorizon.com` ? »
+2. **Le résolveur** n'a rien en cache. Il connaît seulement une petite liste de départ, les **indices racine** (*root hints*) : les adresses des serveurs de la racine. Il demande à la racine : « Quelle est l'adresse de `www.banquehorizon.com` ? »
+3. **La racine** ne sait pas, mais elle sait qui tient `com`. Elle répond par un **renvoi** : « Demande à `a.nic.com`, voici son adresse. »
+4. **Le résolveur** repose la même question à `a.nic.com` (le serveur de `com`).
+5. **`com`** ne sait pas non plus, mais il sait qui tient `banquehorizon.com`. Il renvoie vers `ns1.banquehorizon.com` et `ns2.banquehorizon.com`, avec leurs adresses (la glue).
+6. **Le résolveur** repose la question à `ns1.banquehorizon.com`. Celui-ci **fait autorité** : il répond « `www` est un alias de `web`, et `web` vaut `203.0.113.20` ».
+7. **Le résolveur** garde la réponse en cache pour une durée limitée, et **renvoie la réponse au stub**. Ton poste peut maintenant envoyer son message à `203.0.113.20`.
 
-La deuxième fois, les étapes 2 à 6 disparaissent : le résolveur répond depuis son cache. Voilà pourquoi le DNS tient la charge — et pourquoi, après une modification, **une réponse périmée peut survivre jusqu'à l'expiration du TTL**.
+La **deuxième fois** qu'on pose la question, les étapes 2 à 6 disparaissent : le résolveur répond depuis son cache, instantanément.
 
-🧠 **Comprendre** — Il y a deux types de questions. La question **récursive** (celle du stub : « fais le travail pour moi ») et la question **itérative** (celle du résolveur à chaque serveur : « dis-moi ce que tu sais »). Le drapeau `rd` (*recursion desired*) distingue les deux ; `ra` (*recursion available*) dit « moi, je sais faire la récursion ».
+🧠 **Deux sortes de questions.** La question du stub au résolveur est dite **récursive** : « fais le travail pour moi ». Les questions du résolveur aux serveurs sont dites **itératives** : « dis-moi simplement ce que tu sais ». On verra des drapeaux (`rd`, `ra`) qui distinguent ces deux cas.
 
----
+**Tu vas le voir de tes yeux** aux TP 7 et 8, où tu poseras toi-même chaque question.
 
-## 5. Les enregistrements à connaître
-
-Une zone est une liste d'**enregistrements** (*resource records*). Chacun a un **nom**, un **TTL**, une **classe** (toujours `IN`, Internet), un **type** et des **données**.
-
-| Type | Ce qu'il porte | Exemple dans le laboratoire |
-|---|---|---|
-| **SOA** | L'« acte de naissance » de la zone : serveur primaire, adresse du responsable, **numéro de série**, minuteries | `ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600` |
-| **NS** | Un serveur qui fait autorité pour la zone — ou, dans le parent, **la délégation** | `banquehorizon.com. NS ns1.banquehorizon.com.` |
-| **A** / **AAAA** | Un nom → une adresse IPv4 / IPv6 | `web.banquehorizon.com. A 203.0.113.20` |
-| **CNAME** | Un nom → **un autre nom** (alias) | `www.banquehorizon.com. CNAME web.banquehorizon.com.` |
-| **MX** | Où livrer le courrier du domaine, avec une **préférence** (la plus petite d'abord) | `10 mail.banquehorizon.com.` |
-| **TXT** | Du texte libre : SPF, DMARC, vérifications de propriété | `"v=spf1 mx -all"` |
-| **SRV** | Où trouver un *service* (priorité, poids, port, cible) | `_imaps._tcp` → `0 1 993 mail.banquehorizon.com.` |
-| **PTR** | adresse → nom (résolution inverse), dans la zone `in-addr.arpa` | `20.113.0.203.in-addr.arpa. PTR web.banquehorizon.com.` |
-
-⚠️ **Attention** — Un `CNAME` ne cohabite **avec aucun autre type** sur le même nom (sauf des signatures DNSSEC). Et un alias ne peut pas être placé à la racine de la zone (`banquehorizon.com` lui-même a un `A`, pas un `CNAME`). Tu le verras au TP 15, où l'outil de vérification refuse la zone.
-
-La **résolution inverse** lit l'adresse à l'envers : `203.0.113.20` devient `20.113.0.203.in-addr.arpa`. C'est parce que, dans une adresse, la partie qui change le moins est à gauche, alors que dans un nom elle est à droite : on retourne l'adresse pour que le découpage par délégation fonctionne là aussi.
-
----
-
-## 6. Le message DNS : drapeaux, sections, codes de retour
-
-Toutes les questions et réponses ont la même forme.
+Une dernière expérience, pour constater que le DNS travaille *déjà* pour toi.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ En-tête : id · drapeaux (qr aa tc rd ra ad cd) · rcode · compteurs        │
-├──────────────────────────────────────────────────────────────────────────┤
-│ QUESTION    : le nom demandé et son type                                  │
-│ ANSWER      : la réponse                                                  │
-│ AUTHORITY   : qui fait autorité (NS)… ou le SOA, pour une réponse négative│
-│ ADDITIONAL  : ce qui sera utile ensuite (glue, adresses) + l'OPT d'EDNS   │
-└──────────────────────────────────────────────────────────────────────────┘
+# sur PC-CONSEILLER
+ping -c 1 www.banquehorizon.com
 ```
 
-**Les drapeaux** que tu liras tout le temps :
+```
+PING www.banquehorizon.com (203.0.113.20) 56(84) bytes of data.
+64 bytes from web.banquehorizon.com (203.0.113.20): icmp_seq=1 ttl=62 time=0.043 ms
 
-| Drapeau | Sens |
-|---|---|
-| `qr` | c'est une **r**éponse (absent d'une question) |
-| `aa` | réponse **faisant autorité** (le serveur tient la zone) |
-| `tc` | réponse **tronquée** : refais la question en TCP |
-| `rd` | le client **demande** la récursion |
-| `ra` | le serveur **offre** la récursion |
-| `ad` / `cd` | validation DNSSEC (hors périmètre de ce tutoriel) |
+--- www.banquehorizon.com ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.043/0.043/0.043/0.000 ms
+```
 
-**Les codes de retour** (`status:` dans `dig`) :
+Tu n'as ajouté aucune ligne à un carnet, et pourtant la machine a traduit `www.banquehorizon.com` en `203.0.113.20`. C'est le DNS qui a travaillé en coulisse. Regarde aussi la deuxième ligne : la machine répond sous le nom `web.banquehorizon.com`. C'est que `www` n'est pas une vraie machine, mais un **alias** (un surnom) de `web`. On y revient en Partie V.
 
-| Code | Sens | À retenir |
+Pour voir la même chose avec l'outil du système, sans `ping` :
+
+```
+# sur PC-CONSEILLER
+getent hosts www.banquehorizon.com
+```
+
+```
+203.0.113.20    web.banquehorizon.com www.banquehorizon.com
+```
+
+`getent hosts` pose à ta machine **la même question qu'une application** (navigateur, `ssh`, `curl`) et affiche le résultat : l'adresse, puis le nom officiel, puis le nom que tu avais tapé.
+
+---
+
+## I.10 Le cache et le TTL : ne pas redemander cent fois
+
+Si le résolveur refaisait tout le chemin à chaque question, le DNS s'effondrerait. Alors il **garde la réponse en mémoire** : c'est le **cache**. Comme un post-it collé sur l'écran : « `www` = `203.0.113.20` ».
+
+Mais cette réponse finit par ne plus être vraie (le site change d'adresse). Il faut donc une date de péremption. Chaque réponse porte une durée de vie, le **TTL** (*time to live*), en secondes : « garde-moi pendant 3 600 secondes (une heure), puis redemande ». Le propriétaire de la zone fixe ce TTL.
+
+Deux conséquences que tu vérifieras en Partie VII :
+
+- grâce au cache, le DNS répond vite et supporte une charge énorme ;
+- **mais** quand tu changes une adresse, les résolveurs qui ont déjà la vieille réponse **la servent encore** jusqu'à l'expiration de son TTL. C'est la raison pour laquelle « j'ai modifié le DNS mais ça ne change rien » est la plainte la plus fréquente.
+
+---
+
+## I.11 Les fiches de l'annuaire : les enregistrements
+
+Une zone est une liste de **fiches**. On les appelle des **enregistrements** (en anglais *resource records*, abrégé RR). Chaque fiche contient quatre informations :
+
+| Champ | Exemple | Sens |
 |---|---|---|
-| `NOERROR` | La question est comprise et traitée | Avec 0 réponse = « le nom existe, mais pas ce type » (**NODATA**) |
-| `NXDOMAIN` | Le **nom** n'existe pas | Pour aucun type |
-| `SERVFAIL` | Le serveur n'a pas pu répondre | Souvent : un serveur en aval injoignable |
-| `REFUSED` | Le serveur **refuse** de répondre | Politique (ACL), ou question hors de sa zone |
+| **Nom** | `web.banquehorizon.com.` | À quel nom la fiche s'applique |
+| **TTL** | `3600` | Combien de secondes on peut la garder en cache |
+| **Type** | `A` | Quelle sorte d'information elle contient |
+| **Donnée** | `203.0.113.20` | L'information elle-même |
 
-**Le transport.** Une question DNS tient dans un datagramme **UDP port 53**. Si la réponse est trop grosse (512 octets à l'origine, davantage avec **EDNS0**, qui annonce une taille via un pseudo-enregistrement `OPT`), le serveur la **tronque** (`tc`) et le client recommence en **TCP port 53**. Le TCP sert aussi aux **transferts de zone** (AXFR) entre un primaire et ses secondaires.
+(Il y a aussi une « classe », toujours `IN` comme *Internet*, que tu verras dans les sorties et que tu peux ignorer.)
+
+Le **type** est ce qui compte : c'est lui qui dit *ce que la fiche raconte*. Voici les cinq types dont on aura besoin tout de suite ; les autres seront présentés quand on en aura besoin.
+
+| Type | Il dit… | Exemple dans le laboratoire |
+|---|---|---|
+| **A** | « ce nom a **cette adresse IP** » (version 4) | `web.banquehorizon.com.` → `203.0.113.20` |
+| **CNAME** | « ce nom est un **alias** d'un autre nom » | `www.banquehorizon.com.` → `web.banquehorizon.com.` |
+| **NS** | « **ce serveur** s'occupe de cette zone » (la délégation) | `banquehorizon.com.` → `ns1.banquehorizon.com.` |
+| **MX** | « le courrier de ce domaine va **à ce serveur** » | `banquehorizon.com.` → `10 mail.banquehorizon.com.` |
+| **SOA** | « **l'acte de naissance** de la zone » (responsable, numéro de version, durées) | `banquehorizon.com.` → un bloc de chiffres |
+
+Tu les rencontreras tous dans des TP, un par un. **Aucune panique** si tu ne retiens pas tout : on y reviendra à chaque fois.
+
+---
+
+## I.12 Vérifie-toi
+
+Réponds de tête, puis compare avec les réponses plus bas. Si tu hésites, relis la section indiquée.
+
+1. Quel est le rôle du DNS ? *(§ I.1)*
+2. Dans quel ordre se lit le nom `www.banquehorizon.com` ? Quel est le TLD ? *(§ I.5)*
+3. Qu'est-ce qu'un serveur « faisant autorité » ? *(§ I.6)*
+4. Que fait un serveur qui ne connaît pas la réponse mais sait qui la connaît ? *(§ I.7)*
+5. Quelle est la différence entre le stub et le résolveur ? *(§ I.8)*
+6. Pourquoi la deuxième résolution d'un même nom est-elle plus rapide ? *(§ I.10)*
+7. Pourquoi une modification de DNS n'est-elle pas visible partout immédiatement ? *(§ I.10)*
+
+**Réponses.**
+1. Traduire des noms en adresses IP (et l'inverse).
+2. De droite à gauche : `com` (le TLD), puis `banquehorizon`, puis `www`.
+3. Un serveur qui détient la version officielle d'une zone et en répond comme source de vérité.
+4. Il renvoie : il donne l'adresse d'un autre serveur à interroger (un renvoi / une délégation).
+5. Le stub pose la question ; le résolveur fait tout le chemin pour répondre, et garde les réponses en cache.
+6. Parce que le résolveur a gardé la réponse en cache.
+7. Parce que les caches continuent de servir l'ancienne réponse jusqu'à l'expiration de son TTL.
+
+Si tu as répondu juste à cinq questions sur sept, tu peux continuer. Sinon, relis I.4 à I.10 : le reste du tutoriel s'appuie dessus.
 
 ---
 
@@ -294,9 +823,29 @@ Toutes les questions et réponses ont la même forme.
 
 ---
 
-## 7. Les douze équipements et le plan d'adressage
+## II.1 L'histoire du laboratoire
 
-```
+Tu travailles pour **Banque Horizon**, une banque qui a une agence et un site web public. Le laboratoire simule trois mondes reliés entre eux :
+
+1. **L'agence** (les trois postes, un contrôleur de domaine, un résolveur DNS, un routeur et un commutateur) : c'est ton « chez toi ». Tes postes y utilisent le DNS.
+2. **L'hébergement de la banque** (les deux serveurs de noms de la banque et son serveur web) : c'est là que vit le nom `www.banquehorizon.com`.
+3. **L'Internet simulé** (un serveur racine, un serveur du domaine `com`, un routeur de fournisseur d'accès) : c'est ce qui permet de **descendre l'arbre** comme sur le vrai Internet.
+
+Pour commencer, **retiens seulement trois choses** :
+
+- **`PC-CONSEILLER`** et **`PC-GUICHET1`** sont les postes depuis lesquels tu poses des questions (Linux et Windows).
+- **`DNS-RES`** est le résolveur de l'agence : c'est lui qui descend l'arbre pour tes postes.
+- **`NS1-BANK`** est le serveur qui détient le registre officiel du domaine `banquehorizon.com`. C'est celui que tu administreras en Partie VI.
+
+Le reste du laboratoire sera présenté **au moment où on s'en sert**.
+
+---
+
+## II.2 Les douze équipements
+
+Voici le plan complet, pour référence. Ne cherche pas à le mémoriser : reviens-y quand un TP cite un équipement.
+
+```schema
    INTERNET SIMULÉ (R-ISP)
 
    198.51.100.0/24 « infra DNS »                       203.0.113.0/24 « hébergement banque »
@@ -328,19 +877,19 @@ Toutes les questions et réponses ont la même forme.
 | **ROOT-NS** | serveur racine (zone `.`) | Linux + BIND 9 | 198.51.100.1 |
 | **TLD-NS** | serveur de la zone `com` (sans récursion) | Windows Server + DNS | 198.51.100.2 |
 | **NS1-BANK** | primaire de `banquehorizon.com` et de la zone inverse | Linux + BIND 9 | 203.0.113.10 |
-| **NS2-BANK** | secondaire (transfert depuis NS1-BANK) | Windows Server + DNS | 203.0.113.11 |
+| **NS2-BANK** | secondaire (reçoit une copie depuis NS1-BANK) | Windows Server + DNS | 203.0.113.11 |
 | **WEB-BANK** | le site de la banque (nginx) | Linux | 203.0.113.20 |
 | **R-ISP** | routeur du fournisseur d'accès | Cisco IOS | 198.51.100.254, 203.0.113.254, 192.0.2.1 |
-| **R-AGENCE** | routeur de l'agence : NAT, relais DHCP | Cisco IOS | 192.0.2.2, 10.20.10.1, 10.20.20.1 |
+| **R-AGENCE** | routeur de l'agence : traduction d'adresses (NAT), relais DHCP | Cisco IOS | 192.0.2.2, 10.20.10.1, 10.20.20.1 |
 | **SW-AGENCE** | commutateur de l'agence (VLAN 10 et 20) | Cisco IOS | — |
 | **DC1** | DNS **interne** `horizon.local` + serveur DHCP | Windows Server | 10.20.20.10 |
 | **DNS-RES** | résolveur récursif de l'agence | Linux + BIND 9 | 10.20.20.53 |
 | **PC-GUICHET1 / 2** | postes de guichet | Windows | DHCP : 10.20.10.50 / .51 |
 | **PC-CONSEILLER** | poste du conseiller | Linux | DHCP : 10.20.10.52 |
 
-L'arbre DNS qu'ils servent :
+L'arbre DNS que ces serveurs servent :
 
-```
+```schema
 .                                   ROOT-NS   a.root-servers.net = 198.51.100.1
 └── com.                            TLD-NS    a.nic.com          = 198.51.100.2
     └── banquehorizon.com.          NS1-BANK (primaire)  +  NS2-BANK (secondaire)
@@ -358,7 +907,7 @@ Quatre choses à noter dès maintenant, parce qu'elles reviennent partout :
 
 1. **Deux éditeurs, un seul protocole.** Les serveurs BIND (Linux) se configurent avec des fichiers texte ; les serveurs Windows avec PowerShell (`Get-DnsServerZone`…). Ils parlent exactement le même DNS sur le fil.
 2. **Deux niveaux de DNS dans l'agence.** Les postes interrogent d'abord **DC1** (qui connaît `horizon.local`), puis **DNS-RES** s'il tombe. DC1 *redirige* vers DNS-RES tout ce qui n'est pas à lui.
-3. **`horizon.local` est privée.** Elle n'existe que chez DC1 ; DNS-RES la lui renvoie (*forward only*). Les serveurs de l'« Internet » (racine, `com`, banque) ne l'ont jamais entendu citer.
+3. **`horizon.local` est privée.** Elle n'existe que chez DC1 ; DNS-RES la lui renvoie. Les serveurs de l'« Internet » (racine, `com`, banque) ne l'ont jamais entendu citer.
 4. **Le résolveur est protégé par une liste de contrôle d'accès.** DNS-RES ne répond qu'aux adresses `10.20.0.0/16` : depuis l'extérieur, ce serait un refus.
 
 **Comptes.** Chaque terminal s'ouvre déjà connecté.
@@ -372,40 +921,64 @@ Quatre choses à noter dès maintenant, parce qu'elles reviennent partout :
 
 ---
 
-## 8. Ouvrir le laboratoire
+## II.3 🧪 TP 1 — Le laboratoire respire
 
-1. Lance le simulateur : `npm run dev`, puis ouvre <http://localhost:8080>.
-2. Barre d'outils → **Importer** → choisis `labs/dns-agence-bancaire/topology.json`.
-3. **Double-clique** sur un équipement pour ouvrir son terminal. Garde sous la main **PC-CONSEILLER**, **PC-GUICHET1**, **DNS-RES**, **NS1-BANK** et **DC1** : tu t'en serviras tout le temps.
+**🎯 Objectif.** Avant de toucher à quoi que ce soit, vérifier que le laboratoire fonctionne : les machines se joignent, le DHCP a distribué ses adresses, la résolution marche de bout en bout. **Si ce TP réussit, tout le reste est possible.**
 
-> 💡 **Astuce** — Le laboratoire est *reconstruit à neuf* à chaque lancement du test automatique : toutes les sorties de ce document viennent d'un laboratoire fraîchement importé. Si ton laboratoire a déjà servi (zones modifiées, services arrêtés), ré-importe `topology.json`.
+**Ce qu'il te faut.** Le laboratoire importé (§ 0.1) et deux terminaux ouverts : `PC-CONSEILLER` et `PC-GUICHET1`.
 
----
+### Partie A — Les machines se parlent-elles ?
 
-## 9. 🧪 TP 1 — Le laboratoire respire
-
-**🎯 Objectif.** Vérifier, avant de toucher à quoi que ce soit, que le laboratoire fonctionne : les machines se joignent, le DHCP a distribué ses baux, la résolution marche de bout en bout.
-
-**🔧 Manipulation.**
+**Étape 1 — Joindre le résolveur de l'agence.**
 
 ```
 # sur PC-CONSEILLER
 ping -c 1 -W 1 10.20.20.53
+```
+
+```
+PING 10.20.20.53 (10.20.20.53) 56(84) bytes of data.
+64 bytes from 10.20.20.53: icmp_seq=1 ttl=63 time=0.118 ms
+
+--- 10.20.20.53 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms
+```
+
+Rappel (§ 0.4) : on lit **la ligne `1 received`**. Elle te dit que `PC-CONSEILLER` atteint `DNS-RES`. Tu viens de franchir deux équipements (le commutateur et le routeur de l'agence), puisque le poste et le résolveur ne sont pas dans le même sous-réseau.
+
+**Étape 2 — Joindre le site de la banque.**
+
+```
+# sur PC-CONSEILLER
 ping -c 1 -W 1 203.0.113.20
+```
+
+Tu dois lire `1 received`. Cette fois le message traverse l'agence, le NAT de `R-AGENCE`, le routeur du fournisseur d'accès `R-ISP`, et arrive chez `WEB-BANK`.
+
+**Étape 3 — Joindre la racine.**
+
+```
+# sur PC-CONSEILLER
 ping -c 1 -W 1 198.51.100.1
 ```
+
+Tu dois encore lire `1 received` : le serveur racine est joignable lui aussi.
+
+🆘 **Si ça ne marche pas.** `100% packet loss` : le laboratoire est mal importé, ou un équipement est éteint. Ré-importe `topology.json` (§ 0.1). Attends dix secondes avant de relancer, le temps que les routeurs apprennent leurs routes.
+
+### Partie B — Que t'a donné le DHCP ?
+
+Le poste Windows n'a pas été configuré à la main : il a reçu ses réglages automatiquement. Le **DHCP** est le service qui, quand une machine arrive sur le réseau, lui **distribue** une adresse IP et ses réglages (passerelle, serveurs DNS…). Nous l'étudierons en Partie VIII ; pour l'instant, regarde ce qu'il a donné.
+
+**Étape 4 — Afficher la configuration réseau du poste Windows.**
 
 ```powershell
 # sur PC-GUICHET1
 ipconfig /all
-Resolve-DnsName www.banquehorizon.com
 ```
 
-**✅ Résultat attendu.**
-
-Les trois `ping` répondent (`1 received`) : le poste atteint le résolveur (VLAN 20), le site de la banque et la racine (à travers R-AGENCE, le NAT et R-ISP).
-
-`ipconfig /all` sur PC-GUICHET1 montre ce que le DHCP lui a donné :
+`ipconfig /all` affiche beaucoup de lignes (une « carte réseau » par bloc). **Ne les lis pas toutes.** Cherche le bloc qui s'appelle `Ethernet adapter Ethernet 0` et, dedans, **ces lignes seulement** :
 
 ```
    Connection-specific DNS Suffix  . : horizon.local
@@ -418,7 +991,25 @@ Les trois `ping` répondent (`1 received`) : le poste atteint le résolveur (VLA
                                        10.20.20.53
 ```
 
-et `Resolve-DnsName` suit l'alias jusqu'à l'adresse :
+Lecture, ligne par ligne :
+
+| Ligne | Ce que ça veut dire |
+|---|---|
+| `IPv4 Address … 10.20.10.50` | L'adresse IP de ce poste |
+| `Subnet Mask … 255.255.255.0` | Le « masque » : il indique que le sous-réseau est `10.20.10.x` |
+| `Default Gateway … 10.20.10.1` | La **passerelle** : le routeur par lequel passe tout ce qui sort du sous-réseau |
+| `DHCP Enabled … Yes` / `DHCP Server … 10.20.20.10` | Ces réglages **viennent du DHCP**, qui est `DC1` |
+| `DNS Servers … 10.20.20.10, 10.20.20.53` | **Les deux serveurs DNS** que le poste interrogera, **dans cet ordre** : d'abord `DC1`, puis `DNS-RES` s'il ne répond pas |
+| `Connection-specific DNS Suffix … horizon.local` | Un « suffixe » que le poste ajoutera aux noms courts (TP 6) |
+
+### Partie C — Le DNS répond-il ?
+
+**Étape 5 — Poser la première vraie question DNS.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName www.banquehorizon.com
+```
 
 ```
 Name     : www.banquehorizon.com
@@ -434,7 +1025,21 @@ Section   : Answer
 IPAddress : 203.0.113.20
 ```
 
-**🧠 Ce que tu viens d'apprendre.** Le poste a reçu **deux serveurs DNS et un suffixe** dans le même bail DHCP que son adresse : le DNS d'un poste n'est presque jamais saisi à la main, il est *distribué*. L'ordre compte : `10.20.20.10` (DC1) est interrogé d'abord, `10.20.20.53` (DNS-RES) seulement si DC1 ne répond pas. Et `www` n'est pas une machine : c'est un **alias** (CNAME) de `web`.
+`Resolve-DnsName` est l'outil Windows pour poser une question au DNS. Il renvoie **deux fiches** (voir § I.11) :
+
+1. une fiche **CNAME** : `www.banquehorizon.com` est un alias de `web.banquehorizon.com` ;
+2. une fiche **A** : `web.banquehorizon.com` a l'adresse `203.0.113.20`.
+
+`TTL : 3600` veut dire « tu peux garder cette réponse en cache pendant 3 600 secondes ». `Section : Answer` : ces fiches sont la **réponse** à la question.
+
+🆘 **Si ça ne marche pas.** `DNS name does not exist` ou `timed out` : DC1 ou DNS-RES ne répond pas. Attends dix secondes et relance ; si ça persiste, ré-importe le laboratoire.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- Le poste a reçu **deux serveurs DNS et un suffixe** dans la même distribution DHCP que son adresse. Le DNS d'un poste n'est presque jamais saisi à la main : il est **distribué**.
+- L'ordre des serveurs compte : `10.20.20.10` (DC1) d'abord, `10.20.20.53` (DNS-RES) seulement si le premier ne répond pas.
+- `www` n'est pas une machine : c'est un **alias** (CNAME) de `web`.
+- Le laboratoire fonctionne : tu peux commencer à poser des questions.
 
 ---
 
