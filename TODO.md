@@ -4458,3 +4458,7 @@ strings is measured against the real binutils 2.42 (see probe-linux-coreutils-lo
 ## shuf
 
 shuf follows shuf.c 9.4 (fetched from the v9.4 tag) for its options and diagnostics. Not byte-exact: the order produced by `--random-source=FILE`, because gnulib's randperm.c/randint.c (which decide how the bytes of the file are consumed) were unreachable from this environment; the simulator draws uniformly from the bytes of the file with its own rejection rule, reports `end of file` when they run out, and is otherwise random. `shuf -r` without `-n` would never end on a real host; the simulator stops after 10000 lines. Reservoir sampling for large inputs is not modelled (the whole input is read, which gives the same distribution).
+
+## csplit
+
+csplit is a port of csplit.c 9.4 for inputs held in one buffer (the whole simulated file); the multi-buffer paths (inputs above the real read size, where `find_line` can no longer reach consumed buffers) are not modelled. The printf suffix of `-b` goes through the bash printf formatter, so the `'` flag is validated but not rendered.

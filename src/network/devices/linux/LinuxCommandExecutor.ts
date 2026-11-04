@@ -82,6 +82,7 @@ import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
 import { runStrings } from './coreutils/StringsCommand';
+import { runCsplit } from './coreutils/CsplitCommand';
 import { generatorFromMath, runShuf } from './coreutils/ShufCommand';
 import { planStdbuf } from './coreutils/StdbufCommand';
 import { runHostid, runPathchk } from './coreutils/PathchkCommand';
@@ -357,7 +358,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
-  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'stdbuf', 'shuf', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'stdbuf', 'shuf', 'csplit', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
   'column', 'split', 'base64', 'base32', 'basenc', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
@@ -463,6 +464,7 @@ const OPTIONS_TAKING_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
   awk: new Set(['-F', '-v', '-f', '--field-separator', '--assign', '--file']),
   od: new Set(['-A', '-j', '-N', '-S', '-t']),
   shuf: new Set(['-i', '-n', '-o', '--input-range', '--head-count', '--output', '--random-source']),
+  csplit: new Set(['-f', '-b', '-n', '--prefix', '--suffix-format', '--digits']),
   strings: new Set(['-n', '-t', '-s', '-e', '-T', '--bytes', '--radix', '--encoding', '--output-separator', '--target']),
 };
 
@@ -503,7 +505,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'shuf', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'shuf', 'csplit', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -6510,6 +6512,7 @@ export class LinuxCommandExecutor {
       case 'factor': return asDispatch(runFactor(args, coreutilsIO(c, stdin)));
       case 'tsort': return asDispatch(runTsort(args, coreutilsIO(c, stdin)));
       case 'strings': return asDispatch(runStrings(args, coreutilsIO(c, stdin)));
+      case 'csplit': return asDispatch(runCsplit(args, coreutilsIO(c, stdin)));
       case 'shuf': return asDispatch(runShuf(args, coreutilsIO(c, stdin), generatorFromMath()));
       case 'stdbuf': {
         const inherited = this.environmentOfCommand();
