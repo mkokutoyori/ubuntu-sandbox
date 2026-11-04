@@ -118,13 +118,13 @@ V.3 [🧪 TP 12 — PTR : retrouver un nom depuis une adresse](#v3--tp-12--ptr--
 V.4 [🧪 TP 13 — NXDOMAIN ou NODATA ?](#v4--tp-13--nxdomain-ou-nodata-)
 
 ### Partie VI — Les serveurs
-22. [🧪 TP 14 — Lire la configuration et la zone de NS1-BANK](#22--tp-14--lire-la-configuration-et-la-zone-de-ns1-bank)
-23. [🧪 TP 15 — Vérifier avant de recharger](#23--tp-15--vérifier-avant-de-recharger)
-24. [🧪 TP 16 — Le résolveur DNS-RES](#24--tp-16--le-résolveur-dns-res)
-25. [🧪 TP 17 — Les serveurs Windows](#25--tp-17--les-serveurs-windows)
-26. [🧪 TP 18 — Modifier une zone et la voir arriver chez le secondaire](#26--tp-18--modifier-une-zone-et-la-voir-arriver-chez-le-secondaire)
-27. [🧪 TP 19 — Le piège du numéro de série oublié](#27--tp-19--le-piège-du-numéro-de-série-oublié)
-28. [⭐ 🧪 TP 20 — Créer sa propre zone et la brancher dans l'arbre](#28---tp-20--créer-sa-propre-zone-et-la-brancher-dans-larbre)
+VI.1 [🧪 TP 14 — Lire la configuration et la zone de NS1-BANK](#vi1--tp-14--lire-la-configuration-et-la-zone-de-ns1-bank)
+VI.2 [🧪 TP 15 — Vérifier avant de recharger](#vi2--tp-15--vérifier-avant-de-recharger)
+VI.3 [🧪 TP 16 — Le résolveur DNS-RES](#vi3--tp-16--le-résolveur-dns-res)
+VI.4 [🧪 TP 17 — Les serveurs Windows](#vi4--tp-17--les-serveurs-windows)
+VI.5 [🧪 TP 18 — Modifier une zone et la voir arriver chez le secondaire](#vi5--tp-18--modifier-une-zone-et-la-voir-arriver-chez-le-secondaire)
+VI.6 [🧪 TP 19 — Le piège du numéro de série oublié](#vi6--tp-19--le-piège-du-numéro-de-série-oublié)
+VI.7 [⭐ 🧪 TP 20 — Créer sa propre zone et la brancher dans l'arbre](#vi7---tp-20--créer-sa-propre-zone-et-la-brancher-dans-larbre)
 
 ### Partie VII — Le cache
 29. [🧪 TP 21 — Le TTL qui décroît](#29--tp-21--le-ttl-qui-décroît)
@@ -2921,39 +2921,71 @@ Dans les deux cas, la section `AUTHORITY` porte le **SOA** de la zone. Ce n'est 
 
 # Partie VI — Les serveurs
 
-Jusqu'ici tu as *posé* des questions. Dans cette partie tu passes de l'autre côté : tu **lis, vérifies, modifies et casses** les serveurs qui répondent. Sept TP, sur les trois familles de serveurs du laboratoire : BIND faisant autorité (NS1-BANK, ROOT-NS), BIND résolveur (DNS-RES) et DNS Windows (TLD-NS, DC1, NS2-BANK).
+Jusqu'ici, tu as **posé des questions**. Dans cette partie tu passes de l'autre côté du guichet : tu vas **lire, vérifier, modifier et casser** les serveurs qui répondent. C'est ce que fait un administrateur DNS.
+
+Le laboratoire contient trois familles de serveurs :
+
+| Famille | Équipements | Ce qu'ils font |
+|---|---|---|
+| **BIND faisant autorité** | `NS1-BANK`, `ROOT-NS` | Détiennent des zones et répondent à leur sujet |
+| **BIND résolveur** | `DNS-RES` | Fait le travail des résolveurs (§ I.8) pour l'agence |
+| **DNS Windows** | `TLD-NS`, `DC1`, `NS2-BANK` | Détiennent des zones (ou servent de copie) sous Windows |
+
+**Avant de commencer, trois règles de sécurité.**
+
+1. **Tout ce que tu modifies sera remis en état à la fin du TP.** Le texte te dit quand. Ne passe pas au TP suivant avant d'avoir terminé la remise en état.
+2. **Si tu t'embrouilles, ré-importe le laboratoire** (§ 0.1) : tu repars d'un état propre. C'est le droit à l'erreur du simulateur.
+3. **Dans le simulateur, rien n'est réel.** Tu ne peux casser aucun vrai serveur. Profite-en : on apprend surtout en cassant.
+
+**Ta boîte à outils Linux pour cette partie.** Tu en connais déjà une partie (§ 0.4, § I.2). Voici le tableau complet : tu peux y revenir.
+
+| Commande | Ce qu'elle fait | Exemple |
+|---|---|---|
+| `ls` | Liste les fichiers d'un dossier | `ls /etc/bind` |
+| `cat` | Affiche le contenu d'un fichier | `cat /etc/bind/named.conf` |
+| `grep` | Garde les lignes qui contiennent un mot | `grep recursion /etc/bind/named.conf` |
+| `sed -i` | Remplace du texte **dans** un fichier | `sudo sed -i 's/ancien/nouveau/' fichier` |
+| `tee -a` | Ajoute du texte **à la fin** d'un fichier | `echo 'ligne' \| sudo tee -a fichier` |
+| `sudo` | Exécute en administrateur | `sudo rndc status` |
+| `named-checkconf` | Vérifie la **configuration** de BIND | `named-checkconf` |
+| `named-checkzone` | Vérifie un **fichier de zone** | `named-checkzone zone fichier` |
+| `rndc` | Commande le serveur BIND en marche | `sudo rndc reload` |
+
+Et pour Windows : les commandes PowerShell `Get-DnsServer…` et `Add-DnsServer…`, présentées au fur et à mesure.
 
 ---
 
-## 22. 🧪 TP 14 — Lire la configuration et la zone de NS1-BANK
+## VI.1 🧪 TP 14 — Lire la configuration et la zone de NS1-BANK
 
 **🎯 Objectif.** Savoir lire, ligne à ligne, ce qui fait d'un serveur BIND un serveur *faisant autorité* pour `banquehorizon.com`.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `NS1-BANK` (double-clic sur l'équipement). Durée : environ 45 minutes. Dans ce TP, **tu ne modifies rien** : tu lis.
+
+**Étape 1 — Où sont les fichiers ?**
 
 ```
 # sur NS1-BANK
 ls /etc/bind
-cat /etc/bind/named.conf
-wc -c /etc/bind/named.conf.options /etc/bind/named.conf.local
-cat /etc/bind/db.banquehorizon.com
-cat /etc/bind/db.203.0.113
-named-checkconf; echo rc=$?
-named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com
-sudo rndc status
-ss -ulnp | grep named
 ```
 
-**✅ Résultat attendu.**
-
-Les fichiers du paquet `bind9` :
+`ls` liste le contenu d'un dossier. `/etc/bind` est le dossier où BIND range sa configuration.
 
 ```
 db.203.0.113	      named.conf	named.conf.options
 db.banquehorizon.com  named.conf.local
 ```
 
-Le fichier de configuration :
+Cinq fichiers. Deux familles :
+
+- les fichiers qui commencent par `named.conf` sont des fichiers de **configuration** (comment le serveur fonctionne) ;
+- les fichiers qui commencent par `db.` sont des fichiers de **zone** (les fiches de l'annuaire). Par habitude, `db.banquehorizon.com` contient la zone `banquehorizon.com`, et `db.203.0.113` la zone inverse (TP 12).
+
+**Étape 2 — La configuration principale.**
+
+```
+# sur NS1-BANK
+cat /etc/bind/named.conf
+```
 
 ```
 options {
@@ -2973,12 +3005,67 @@ zone "113.0.203.in-addr.arpa" {
 };
 ```
 
-Les deux autres fichiers du paquet Debian (`named.conf.options`, `named.conf.local`) sont là, mais **`named.conf` ne les inclut pas** (aucune ligne `include`) : ils ne sont pas lus. Dans ce laboratoire tout tient dans `named.conf`.
+Ce fichier est fait de **blocs** : un mot, une accolade ouvrante, des lignes, une accolade fermante **suivie d'un point-virgule**. Il y en a trois. Chaque ligne se termine, elle aussi, par un point-virgule : **c'est l'oubli le plus fréquent**, tu le provoqueras volontairement au TP 15.
+
+*Le bloc `options` (lignes 1 à 5)* règle le comportement général :
+
+```
+options {
+    directory "/var/cache/bind";
+    recursion no;
+    allow-query { any; };
+};
+```
+
+| Ligne | Sens |
+|---|---|
+| `directory "/var/cache/bind";` | Le dossier de travail de `named` : c'est là qu'il écrit ses fichiers temporaires |
+| `recursion no;` | Ce serveur **ne résout pas pour les autres** (§ I.8). Il répond sur ses zones, point. C'est ce qui a produit le `REFUSED` du TP 9 |
+| `allow-query { any; };` | Tout le monde a le droit de lui poser des questions. C'est normal pour un serveur public |
+
+*Les blocs `zone` (lignes 6 à 15)* déclarent les deux zones que le serveur détient :
+
+```
+zone "banquehorizon.com" {
+    type primary;
+    file "/etc/bind/db.banquehorizon.com";
+    allow-transfer { 203.0.113.11; };
+    notify yes;
+};
+```
+
+| Ligne | Sens |
+|---|---|
+| `zone "banquehorizon.com" {` | Le nom de la zone |
+| `type primary;` | Cette machine détient la **copie de référence** (on disait avant *master*). L'autre, sur `NS2-BANK`, en est une copie |
+| `file "…";` | Où se trouve le fichier de zone |
+| `allow-transfer { 203.0.113.11; };` | **Seul `NS2-BANK`** (`203.0.113.11`) peut copier la zone en entier. Le TP 18 le prouve |
+| `notify yes;` | Quand la zone change, **prévenir** le secondaire pour qu'il vienne la relire |
+
+Le second bloc `zone` (`113.0.203.in-addr.arpa`) déclare la zone inverse du TP 12, avec le même format.
+
+**Étape 3 — Deux fichiers présents, mais jamais lus.**
+
+Tu as vu dans `ls` deux fichiers de configuration en plus : `named.conf.options` et `named.conf.local`. Regarde ce qu'ils contiennent :
+
+```
+# sur NS1-BANK
+wc -c /etc/bind/named.conf.options /etc/bind/named.conf.local
+```
+
+`wc -c` compte les **octets** (les caractères) de chaque fichier.
 
 ```
 94 /etc/bind/named.conf.options
  0 /etc/bind/named.conf.local
 94 total
+```
+
+`named.conf.local` fait 0 octet : il est **vide**. `named.conf.options` fait 94 octets : il contient quelque chose.
+
+```
+# sur NS1-BANK
+cat /etc/bind/named.conf.options
 ```
 
 ```
@@ -2991,7 +3078,14 @@ options {
 };
 ```
 
-La zone directe :
+Ce fichier contient d'autres réglages (`dnssec-validation`, `listen-on-v6`). **Mais `named.conf` ne contient aucune ligne `include`** pour le lire : BIND l'ignore. Dans ce laboratoire, tout ce qui compte est dans `named.conf`. Retiens le piège : **la présence d'un fichier dans `/etc/bind` ne prouve pas qu'il est utilisé.**
+
+**Étape 4 — La zone directe.**
+
+```
+# sur NS1-BANK
+cat /etc/bind/db.banquehorizon.com
+```
 
 ```
 $TTL 3600
@@ -3016,7 +3110,70 @@ _dmarc IN TXT "v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com"
 _imaps._tcp IN SRV 0 1 993 mail
 ```
 
-La zone inverse (celle du TP 12) :
+Un fichier de zone est une liste de fiches, une par ligne. Lis-le en quatre parties.
+
+*Les deux lignes de réglages (lignes 1 et 2).*
+
+```
+$TTL 3600
+$ORIGIN banquehorizon.com.
+```
+
+- `$TTL 3600` : la durée de vie (TTL, § I.10) donnée aux fiches qui n'en précisent pas.
+- `$ORIGIN banquehorizon.com.` : le suffixe **ajouté aux noms qui n'ont pas de point final**. Le symbole `@` désigne l'origine elle-même.
+
+*La fiche d'identité (ligne 3), le `SOA`.*
+
+```
+@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 2026103101 7200 900 1209600 3600 )
+```
+
+Tu l'as décomposée au TP 11 : serveur primaire, responsable, numéro de série `2026103101`, puis les durées *refresh* (7 200 s), *retry* (900 s), *expire* (14 jours), *minimum* (3 600 s). Le numéro de série suit la convention `AAAAMMJJNN` : année, mois, jour, puis un numéro de révision dans la journée.
+
+*Les fiches des serveurs et du domaine (lignes 4 à 9).*
+
+```
+@ IN NS ns1.banquehorizon.com.
+@ IN NS ns2.banquehorizon.com.
+@ IN A 203.0.113.20
+@ IN MX 10 mail.banquehorizon.com.
+@ IN MX 20 mail2.banquehorizon.com.
+@ IN TXT "v=spf1 mx -all"
+```
+
+`@ IN NS …` (deux fiches) déclare les serveurs de la zone. `@ IN A` donne une adresse au domaine nu. `@ IN MX` déclare la messagerie, et `@ IN TXT` la règle SPF (TP 11).
+
+*Les fiches des machines et des alias (lignes 10 à 20).*
+
+```
+ns1 IN A 203.0.113.10
+ns2 IN A 203.0.113.11
+web IN A 203.0.113.20
+www IN CNAME web
+ebanking IN CNAME web
+agences IN CNAME web
+api IN CNAME web
+mail IN A 203.0.113.25
+mail2 IN A 203.0.113.26
+_dmarc IN TXT "v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com"
+_imaps._tcp IN SRV 0 1 993 mail
+```
+
+Les noms sont écrits **sans point final** : `web` veut dire `web.banquehorizon.com.` (on ajoute l'origine). C'est la **règle des noms relatifs** :
+
+- un nom **sans point final** est relatif : on lui ajoute l'origine. `www IN CNAME web` signifie « `www.banquehorizon.com.` est un alias de `web.banquehorizon.com.` » ;
+- un nom **avec** point final est absolu : `mail.banquehorizon.com.` reste tel quel.
+
+⚠️ **Attention** — Oublier le point final sur un nom complet est l'une des erreurs les plus classiques : `mail.banquehorizon.com` (sans point) devient `mail.banquehorizon.com.banquehorizon.com.`. Tu le provoqueras au TP 15.
+
+La ligne `_imaps._tcp IN SRV 0 1 993 mail` est la fiche SRV du TP 11 : priorité 0, poids 1, port 993, serveur `mail`.
+
+**Étape 5 — La zone inverse.**
+
+```
+# sur NS1-BANK
+cat /etc/bind/db.203.0.113
+```
 
 ```
 $TTL 3600
@@ -3030,16 +3187,49 @@ $ORIGIN 113.0.203.in-addr.arpa.
 25 IN PTR mail.banquehorizon.com.
 ```
 
-Les deux vérificateurs, puis l'état du serveur et le port d'écoute :
+Même format, mais l'origine est `113.0.203.in-addr.arpa.` et les fiches sont des `PTR` (TP 12). Un nom relatif comme `10` signifie `10.113.0.203.in-addr.arpa.`, c'est-à-dire l'adresse `203.0.113.10`. Chaque ligne donne le nom d'une adresse du réseau : `10` pour `ns1`, `11` pour `ns2`, `20` pour `web`, `25` pour `mail`.
+
+**Étape 6 — Vérifier la configuration.**
+
+Avant de faire confiance à un fichier, on le fait **relire par l'outil de BIND**, sans rien démarrer.
+
+```
+# sur NS1-BANK
+named-checkconf; echo rc=$?
+```
+
+`named-checkconf` relit `named.conf`. Le `;` enchaîne deux commandes sur la même ligne : la seconde (`echo rc=$?`) affiche le **code de retour** de la première. `$?` désigne ce code. Sous Linux, `0` veut dire « tout va bien » et tout autre nombre veut dire « il y a eu un problème ».
 
 ```
 rc=0
 ```
 
+`rc=0` : la configuration est correcte. (La commande elle-même n'affiche rien quand tout va bien.)
+
+**Étape 7 — Vérifier la zone.**
+
+```
+# sur NS1-BANK
+named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com
+```
+
+`named-checkzone` prend deux arguments : le **nom de la zone** et son **fichier**.
+
 ```
 zone banquehorizon.com/IN: loaded serial 2026103101
 OK
 ```
+
+`loaded serial 2026103101` : la zone est chargée et son numéro de série est lu. `OK` : aucune erreur. Ces deux outils sont ceux qu'il ne faut jamais oublier de lancer avant de recharger un serveur (TP 15).
+
+**Étape 8 — Demander son état au serveur en marche.**
+
+```
+# sur NS1-BANK
+sudo rndc status
+```
+
+`rndc` (*remote name daemon control*) est la **télécommande** de `named`, le programme qui fait tourner BIND. `status` affiche son état.
 
 ```
 version: BIND 9.18.12-0ubuntu0.22.04.1-Ubuntu (Extended Support Version) <id:>
@@ -3054,59 +3244,75 @@ tcp clients: 0/150
 server is up and running
 ```
 
+Tu n'as pas besoin de tout lire. Retiens trois lignes : `version: BIND 9.18…` (la version), `number of zones: 2` (les deux zones sont chargées : la directe et l'inverse) et `server is up and running` (il fonctionne).
+
+**Étape 9 — Sur quel port écoute-t-il ?**
+
 ```
-UNCONN 0      0            0.0.0.0:53         0.0.0.0:*    users:(("named",pid=43,fd=3))
+# sur NS1-BANK
+ss -ulnp | grep named
 ```
+
+Cette ligne combine deux commandes avec le symbole `|` (le « tube », *pipe*) : la sortie de la première est donnée à la seconde. `ss` liste les connexions réseau ; `-ulnp` signifie *UDP*, *listening* (en écoute), *numérique* (pas de noms), *processus* (qui écoute). `grep named` ne garde que les lignes qui contiennent `named`.
+
+```
+UNCONN 0      0            0.0.0.0:53         0.0.0.0:*    users:(("named",pid=43,fd=3))          
+```
+
+`UNCONN` : en écoute (UDP n'a pas de connexion). `0.0.0.0:53` : sur **toutes** les interfaces de la machine, au port `53`, celui du DNS. `users:(("named",…))` : c'est le programme `named` qui y écoute.
+
+> 🔍 **Point d'audit** — Garde une copie datée de `named.conf` et des fichiers de zone avec leur somme `sha256sum` : c'est la « configuration de référence » à laquelle un auditeur comparera. `allow-transfer` doit nommer des adresses, **jamais `any`** (TP 35).
+
+🆘 **Si ça ne marche pas.** `Permission denied` à l'étape 8 : tu as oublié `sudo`. `cat: …: No such file or directory` : tu n'es pas sur `NS1-BANK` (vérifie le titre du terminal).
 
 **🧠 Ce que tu viens d'apprendre.**
 
-*La configuration (`named.conf`)* est faite de blocs `mot { … };` — **le point-virgule final est obligatoire**, c'est l'erreur de frappe la plus fréquente.
+- Un serveur BIND, c'est une **configuration** (`named.conf`) qui déclare les zones, plus un **fichier de zone** par zone.
+- Dans `named.conf`, les blocs se terminent par `};` et les lignes par `;`. L'oubli du point-virgule est l'erreur n°1.
+- Dans un fichier de zone, un nom **sans point final est relatif** (on lui ajoute l'origine), un nom **avec** point final est absolu.
+- `named-checkconf` et `named-checkzone` relisent les fichiers **sans rien démarrer** ; `rndc` pilote le serveur en marche.
+- La présence d'un fichier ne prouve pas qu'il est lu : seul `include` ou la déclaration de zone le branche.
 
-| Ligne | Sens |
-|---|---|
-| `directory "/var/cache/bind";` | Le répertoire de travail de `named` (les fichiers de zone relatifs, le vidage du cache) |
-| `recursion no;` | Ce serveur **ne résout pas pour les autres** : il répond sur ses zones, point (le `REFUSED` du TP 9) |
-| `allow-query { any; };` | Tout le monde peut poser des questions sur ses zones — normal pour un serveur public |
-| `type primary;` | Cette machine détient la **copie de référence** de la zone (anciennement `master`) |
-| `file "…";` | Où est écrite la zone |
-| `allow-transfer { 203.0.113.11; };` | **Seul NS2-BANK** peut copier la zone en entier (le TP 18 le prouve) |
-| `notify yes;` | Quand la zone change, prévenir les serveurs secondaires pour qu'ils viennent la relire |
+**Vérifie-toi.**
 
-*Le fichier de zone* se lit de haut en bas :
+1. Quelle ligne de `named.conf` empêche `NS1-BANK` de résoudre pour les autres ?
+2. Dans la zone, que signifie `www IN CNAME web` ?
+3. Que signifie `rc=0` ?
 
-- `$TTL 3600` : la durée de vie donnée aux enregistrements qui n'en précisent pas. `$ORIGIN banquehorizon.com.` : le suffixe **ajouté aux noms sans point final**. `@` désigne l'origine elle-même.
-- L'enregistrement **SOA** (*Start Of Authority*) porte le numéro de série `2026103101` (convention `AAAAMMJJNN` : année, mois, jour, numéro de révision du jour) et quatre durées en secondes : `7200` = *refresh* (tous les combien de temps un secondaire demande si la zone a changé), `900` = *retry* (s'il n'a pas pu), `1209600` = *expire* (14 jours sans nouvelles : le secondaire arrête de répondre plutôt que de servir une zone périmée), `3600` = *minimum*, c'est-à-dire la durée de vie du **cache négatif** (le plafond du TTL des réponses `NXDOMAIN`, voir TP 13 et TP 22).
-- **Un nom sans point final est relatif** : `www IN CNAME web` signifie `web.banquehorizon.com.`. Un nom avec le point final (`mail.banquehorizon.com.`) est absolu. Oublier le point final sur un nom complet est l'une des erreurs les plus classiques — le nom devient `mail.banquehorizon.com.banquehorizon.com.` (voir le TP 15).
-- `_imaps._tcp IN SRV 0 1 993 mail` : priorité 0, poids 1, port 993, serveur `mail.banquehorizon.com.` (TP 11).
-
-*Les deux vérificateurs* font ce que fait `named` à son démarrage, **sans rien démarrer** : `named-checkconf` lit la configuration (`rc=0` : rien à signaler), `named-checkzone` charge la zone et affiche son numéro de série suivi de `OK`. Ce sont les deux outils de ce chapitre qu'il ne faut jamais oublier de lancer.
-
-*`rndc`* (*remote name daemon control*) est la télécommande de `named` : `status` affiche la version, le nombre de zones chargées (`2`, la directe et l'inverse) et les compteurs. *`ss`* montre que `named` écoute en UDP sur le port 53 de toutes les interfaces (`0.0.0.0:53`).
-
-> 🔍 **Point d'audit** — Garde une copie datée de `named.conf` et des zones avec la somme `sha256sum` : c'est la « configuration de référence » à laquelle un auditeur comparera. `allow-transfer` doit nommer des adresses, jamais `any` (TP 35).
+*Réponses.* (1) `recursion no;`. (2) `www.banquehorizon.com.` est un alias de `web.banquehorizon.com.` (le nom sans point final est complété par l'origine). (3) La commande précédente s'est terminée sans erreur.
 
 ---
+## VI.2 🧪 TP 15 — Vérifier avant de recharger
 
-## 23. 🧪 TP 15 — Vérifier avant de recharger
+**🎯 Objectif.** Faire à la main huit erreurs de zone classiques et lire ce que dit `named-checkzone` ; puis constater ce qui arrive à un serveur en marche quand on recharge une zone cassée.
 
-**🎯 Objectif.** Faire à la main **sept** erreurs de zone classiques, lire ce que dit `named-checkzone`, puis constater ce qui arrive à un serveur en marche quand on recharge une zone cassée.
+**Ce qu'il te faut.** Le TP 14 terminé, un terminal sur `NS1-BANK`, puis un sur `PC-CONSEILLER` pour la dernière partie. Durée : environ 1 heure.
 
-**🔧 Manipulation.** On ne touche pas encore à la vraie zone : chaque erreur est faite sur une **copie** dans `/tmp`.
+**Pourquoi ce TP ?** Un fichier de zone est un fichier texte écrit à la main. Une faute de frappe dedans peut priver un domaine entier de DNS. L'habitude d'un administrateur : **vérifier avant de recharger**. Tu vas voir ce qui se passe quand on ne le fait pas.
+
+### Partie A — Casser une copie de la zone, huit fois
+
+On ne touche pas encore à la vraie zone : chaque erreur est faite sur une **copie** dans `/tmp`, un dossier où l'on peut écrire sans danger.
+
+**Le principe des commandes de cette partie.** Chaque commande fait trois gestes sur une seule ligne :
+
+```schema
+sed 's/avant/après/' zone | sudo tee /tmp/z1 > /dev/null ; named-checkzone banquehorizon.com /tmp/z1
+└─ 1. fabrique une version cassée │ 2. l'écrit dans /tmp/z1, sans rien afficher │ 3. la fait vérifier
+```
+
+1. `sed 's/avant/après/' fichier` lit le fichier et remplace `avant` par `après` **dans ce qu'il affiche**, sans toucher au fichier d'origine. Le `^` veut dire « au début de la ligne ».
+2. `| sudo tee /tmp/z1 > /dev/null` envoie ce texte dans un nouveau fichier `/tmp/z1`. Le `> /dev/null` jette l'affichage de `tee` (`/dev/null` est la poubelle de Linux), pour qu'il ne te reste à lire que le verdict.
+3. `named-checkzone … /tmp/z1` vérifie la copie.
+
+Tu n'as pas à comprendre chaque symbole : **copie-colle les commandes**, et lis le verdict. Le message d'erreur donne toujours le **fichier**, la **ligne** et le **mot** fautif.
+
+**Cas 1 — Un type de fiche inventé.** On écrit `AA` au lieu de `A`.
 
 ```
 # sur NS1-BANK
 sed 's/^web IN A/web IN AA/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z1 > /dev/null; named-checkzone banquehorizon.com /tmp/z1
-sed 's/^web IN A 203.0.113.20/web IN A 203.0.113.999/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z2 > /dev/null; named-checkzone banquehorizon.com /tmp/z2
-sed 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.25 oops/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z3 > /dev/null; named-checkzone banquehorizon.com /tmp/z3
-(cat /etc/bind/db.banquehorizon.com; echo 'www IN A 203.0.113.21') | sudo tee /tmp/z4 > /dev/null; named-checkzone banquehorizon.com /tmp/z4
-grep -v SOA /etc/bind/db.banquehorizon.com | sudo tee /tmp/z5 > /dev/null; named-checkzone banquehorizon.com /tmp/z5
-grep -v ' NS ' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z6 > /dev/null; named-checkzone banquehorizon.com /tmp/z6
-sed 's/^@ IN MX 10 mail.banquehorizon.com./@ IN MX 10 203.0.113.25/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z8 > /dev/null; named-checkzone banquehorizon.com /tmp/z8
 ```
-
-**✅ Résultat attendu.** Une erreur par zone, et un message qui donne le **fichier**, la **ligne** et le **mot** fautif.
-
-*Un type d'enregistrement inventé (`AA` au lieu de `A`)* :
 
 ```
 /tmp/z1:12: unknown RR type 'AA'
@@ -3114,7 +3320,14 @@ zone banquehorizon.com/IN: loading from master file /tmp/z1 failed: unknown clas
 zone banquehorizon.com/IN: not loaded due to errors.
 ```
 
-*Une adresse IPv4 impossible (un octet à 999)* :
+Lis de gauche à droite : `/tmp/z1:12` (le fichier et la **ligne 12**), `unknown RR type 'AA'` (« type de fiche inconnu : `AA` »). Trois lignes disent la même chose en plus long : la dernière, `not loaded due to errors`, signifie **zone refusée**.
+
+**Cas 2 — Une adresse impossible.** Un octet à `999`.
+
+```
+# sur NS1-BANK
+sed 's/^web IN A 203.0.113.20/web IN A 203.0.113.999/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z2 > /dev/null; named-checkzone banquehorizon.com /tmp/z2
+```
 
 ```
 dns_rdata_fromtext: /tmp/z2:12: near '203.0.113.999': bad dotted quad
@@ -3122,7 +3335,14 @@ zone banquehorizon.com/IN: loading from master file /tmp/z2 failed: bad dotted q
 zone banquehorizon.com/IN: not loaded due to errors.
 ```
 
-*Du texte en trop après l'adresse* :
+`near '203.0.113.999'` désigne le mot fautif, `bad dotted quad` veut dire « adresse IPv4 mal formée ».
+
+**Cas 3 — Du texte en trop.**
+
+```
+# sur NS1-BANK
+sed 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.25 oops/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z3 > /dev/null; named-checkzone banquehorizon.com /tmp/z3
+```
 
 ```
 dns_rdata_fromtext: /tmp/z3:17: near 'oops': extra input text
@@ -3130,7 +3350,14 @@ zone banquehorizon.com/IN: loading from master file /tmp/z3 failed: extra input 
 zone banquehorizon.com/IN: not loaded due to errors.
 ```
 
-*Un alias (`CNAME`) qui cohabite avec un autre type sur le même nom* — interdit par la RFC 1034 :
+`extra input text` : il y a un mot (`oops`) après la fin de la fiche. Retiens ce cas, tu vas le refaire dans la partie C.
+
+**Cas 4 — Un alias qui cohabite avec une autre fiche.** On ajoute une fiche `A` au nom `www`, qui est déjà un alias.
+
+```
+# sur NS1-BANK
+(cat /etc/bind/db.banquehorizon.com; echo 'www IN A 203.0.113.21') | sudo tee /tmp/z4 > /dev/null; named-checkzone banquehorizon.com /tmp/z4
+```
 
 ```
 dns_master_load: /tmp/z4:21: www.banquehorizon.com: CNAME and other data
@@ -3138,21 +3365,42 @@ zone banquehorizon.com/IN: loading from master file /tmp/z4 failed: CNAME and ot
 zone banquehorizon.com/IN: not loaded due to errors.
 ```
 
-*Plus de SOA* — pas de zone sans SOA :
+`CNAME and other data` : un nom qui est un alias (`CNAME`) **ne peut porter aucune autre fiche**. La règle vient de la norme DNS : un alias dit « ce nom *est* un autre nom », il ne peut donc pas avoir sa propre adresse.
+
+**Cas 5 — Plus de SOA.** `grep -v SOA` garde toutes les lignes **sauf** celles qui contiennent `SOA`.
+
+```
+# sur NS1-BANK
+grep -v SOA /etc/bind/db.banquehorizon.com | sudo tee /tmp/z5 > /dev/null; named-checkzone banquehorizon.com /tmp/z5
+```
 
 ```
 zone banquehorizon.com/IN: has 0 SOA records
 zone banquehorizon.com/IN: not loaded due to errors.
 ```
 
-*Plus de NS* — pas de zone sans serveur de noms :
+Pas de zone sans fiche d'identité : `has 0 SOA records`.
+
+**Cas 6 — Plus de NS.**
+
+```
+# sur NS1-BANK
+grep -v ' NS ' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z6 > /dev/null; named-checkzone banquehorizon.com /tmp/z6
+```
 
 ```
 zone banquehorizon.com/IN: has no NS records
 zone banquehorizon.com/IN: not loaded due to errors.
 ```
 
-*Un MX qui pointe sur une adresse* — pas une erreur mais un **avertissement**, la zone se charge quand même (et le MX est inutilisable) :
+Pas de zone sans serveur de noms : `has no NS records`.
+
+**Cas 7 — Un MX qui pointe sur une adresse.** Ici le résultat est différent.
+
+```
+# sur NS1-BANK
+sed 's/^@ IN MX 10 mail.banquehorizon.com./@ IN MX 10 203.0.113.25/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z8 > /dev/null; named-checkzone banquehorizon.com /tmp/z8
+```
 
 ```
 /tmp/z8:7: warning: '203.0.113.25': MX is an address
@@ -3161,31 +3409,60 @@ zone banquehorizon.com/IN: loaded serial 2026103101
 OK
 ```
 
-**🔧 Manipulation (suite).** Même chose pour la **configuration** (on se place dans `/tmp` pour que le message porte le nom court du fichier) :
+Regarde la fin : `loaded serial 2026103101` puis `OK`. La zone **se charge**. Ce n'est pas une erreur, c'est un **avertissement** (`warning`) : un MX doit contenir un **nom**, jamais une adresse, donc ce MX est inutilisable. Mais l'outil ne l'interdit pas. Un avertissement ne bloque pas : **lis-les quand même**.
+
+**Cas 8 — L'erreur que l'outil ne voit pas.** On écrit un nom complet **sans point final**.
 
 ```
 # sur NS1-BANK
-cd /tmp
-sed 's/recursion no;/recursion nope;/' /etc/bind/named.conf | sudo tee /tmp/bad.conf > /dev/null; named-checkconf bad.conf; echo rc=$?
-sed 's/recursion no;/recursion no/' /etc/bind/named.conf | sudo tee /tmp/bad2.conf > /dev/null; named-checkconf bad2.conf; echo rc=$?
-named-checkconf -z; echo rc=$?
+sed 's/^www IN CNAME web/www IN CNAME web.banquehorizon.com/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z9 > /dev/null; named-checkzone banquehorizon.com /tmp/z9
 ```
 
-*Une valeur qui n'est pas un booléen* :
+```
+zone banquehorizon.com/IN: loaded serial 2026103101
+OK
+```
+
+`OK`, et pourtant la fiche est fausse : sans point final, `web.banquehorizon.com` est un nom **relatif** (rappel : TP 14, étape 4), complété en `web.banquehorizon.com.banquehorizon.com.`, qui n'existe pas. L'outil ne le détecte pas, car la syntaxe est correcte : seul un `dig` sur le nom, après un rechargement, révèle le défaut.
+
+### Partie B — Casser la configuration
+
+On fait la même chose avec `named.conf`. On se place d'abord dans `/tmp` (avec `cd`) pour que les messages portent le nom court du fichier.
+
+**Cas 9 — Une valeur qui n'est pas un booléen.** `recursion` attend `yes` ou `no`.
+
+```
+# sur NS1-BANK
+cd /tmp; sed 's/recursion no;/recursion nope;/' /etc/bind/named.conf | sudo tee /tmp/bad.conf > /dev/null; named-checkconf bad.conf; echo rc=$?
+```
 
 ```
 bad.conf:3: boolean expected near 'nope'
 rc=1
 ```
 
-*Un point-virgule oublié* — le message désigne le mot **suivant** (`allow-query`), à la ligne où le serveur s'est aperçu de l'oubli :
+`bad.conf:3` : la ligne 3 du fichier. `boolean expected near 'nope'` : « une valeur oui/non était attendue ». `rc=1` : code de retour **différent de zéro**, donc un échec (rappel : TP 14, étape 6).
+
+**Cas 10 — Un point-virgule oublié.**
+
+```
+# sur NS1-BANK
+cd /tmp; sed 's/recursion no;/recursion no/' /etc/bind/named.conf | sudo tee /tmp/bad2.conf > /dev/null; named-checkconf bad2.conf; echo rc=$?
+```
 
 ```
 bad2.conf:4: missing ';' before 'allow-query'
 rc=1
 ```
 
-`-z` demande à `named-checkconf` de **charger aussi les zones primaires** — la vérification complète en une commande :
+Le message désigne le mot **suivant** celui qui manque (`allow-query`) : BIND ne comprend qu'en arrivant au mot d'après qu'un `;` aurait dû terminer la ligne. Quand tu cherches un point-virgule oublié, **regarde la ligne d'avant**.
+
+**Cas 11 — Tout vérifier d'un coup : `-z`.** On revient à la vraie configuration.
+
+```
+# sur NS1-BANK
+named-checkconf -z; echo rc=$?
+```
 
 ```
 zone banquehorizon.com/IN: loaded serial 2026103101
@@ -3193,20 +3470,26 @@ zone 113.0.203.in-addr.arpa/IN: loaded serial 2026103101
 rc=0
 ```
 
-**🔧 Manipulation (la vraie zone).** Maintenant on casse volontairement la **vraie** zone — on change l'adresse de `mail` *et* on laisse du texte en trop — et on recharge, comme le ferait un administrateur pressé qui ne vérifie pas :
+L'option `-z` demande à `named-checkconf` de **charger aussi les zones primaires** : en une seule commande, tu vérifies la configuration **et** les deux zones. `rc=0` : tout est bon. C'est la vérification complète.
+
+### Partie C — Recharger une vraie zone cassée
+
+Maintenant on casse volontairement la **vraie** zone, et on la recharge comme le ferait un administrateur pressé qui ne vérifie pas. On change l'adresse de `mail` **et** on laisse du texte en trop.
+
+**Étape 1 — Casser.**
 
 ```
 # sur NS1-BANK
 sudo sed -i 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.99 oops/' /etc/bind/db.banquehorizon.com
-named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
-sudo grep named /var/log/syslog | tail -4
-sudo rndc reload banquehorizon.com
 ```
 
+`sed -i` modifie **le fichier lui-même** (`-i`, *in place*). La commande n'affiche rien : le silence veut dire que ça a marché.
+
+**Étape 2 — La vérification aurait protesté.**
+
 ```
-# sur PC-CONSEILLER
-dig @203.0.113.10 mail.banquehorizon.com +short
+# sur NS1-BANK
+named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com
 ```
 
 ```
@@ -3215,28 +3498,58 @@ zone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.c
 zone banquehorizon.com/IN: not loaded due to errors.
 ```
 
-`rndc reload` répond **sans protester** — c'est le piège :
+Voilà l'erreur du cas 3, sur la vraie zone. Un administrateur prudent s'arrêterait ici. Ce n'est pas notre cas : on recharge.
+
+**Étape 3 — Recharger quand même.**
+
+```
+# sur NS1-BANK
+sudo rndc reload banquehorizon.com
+```
 
 ```
 zone reload queued
 ```
 
-La cause n'est pas dans la réponse de `rndc`, elle est dans le **journal** de `named` :
+`zone reload queued`. **Aucune protestation.** C'est le piège : `queued` veut dire seulement « ta demande est enregistrée, je m'en occupe » — pas « c'est fait » et encore moins « c'est réussi ».
+
+**Étape 4 — Chercher la vraie réponse dans le journal.**
 
 ```
-Nov  4 10:53:16 NS1-BANK systemd: Started named.service.
-Nov  4 11:04:17 NS1-BANK named[43]: dns_rdata_fromtext: /etc/bind/db.banquehorizon.com:17: near 'oops': extra input text
-Nov  4 11:04:17 NS1-BANK named[43]: zone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.com failed: extra input text
-Nov  4 11:04:17 NS1-BANK named[43]: zone banquehorizon.com/IN: not loaded due to errors.
+# sur NS1-BANK
+sudo grep named /var/log/syslog | tail -4
 ```
 
-Un deuxième rechargement du même fichier, toujours cassé, répond de la même façon :
+`/var/log/syslog` est le journal du système. `grep named` garde les lignes qui parlent de `named`, et `tail -4` ne garde que les **quatre dernières**.
+
+```
+Nov  4 20:16:01 NS1-BANK systemd: Started named.service.
+Nov  4 20:27:02 NS1-BANK named[43]: dns_rdata_fromtext: /etc/bind/db.banquehorizon.com:17: near 'oops': extra input text
+Nov  4 20:27:02 NS1-BANK named[43]: zone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.com failed: extra input text
+Nov  4 20:27:02 NS1-BANK named[43]: zone banquehorizon.com/IN: not loaded due to errors.
+```
+
+Voilà l'échec : `not loaded due to errors`. Il est dans le **journal**, pas dans la réponse de `rndc`. (Les dates à gauche sont celles de ta machine : elles seront différentes.)
+
+**Étape 5 — Recharger encore.**
+
+```
+# sur NS1-BANK
+sudo rndc reload banquehorizon.com
+```
 
 ```
 zone reload queued
 ```
 
-Et le serveur, lui, a **gardé l'ancienne zone** : l'adresse de `mail` est toujours celle d'avant.
+Même réponse, toujours `queued`, toujours sans protester. Rien n'indique que la zone est cassée.
+
+**Étape 6 — Regarder ce que le serveur répond.** Sur `PC-CONSEILLER` :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 mail.banquehorizon.com +noall +comments +answer
+```
 
 ```
 ;; Got answer:
@@ -3250,14 +3563,13 @@ Et le serveur, lui, a **gardé l'ancienne zone** : l'adresse de `mail` est toujo
 mail.banquehorizon.com.	3600	IN	A	203.0.113.25
 ```
 
-On répare, on vérifie, on recharge :
+Regarde la dernière ligne : `mail` vaut **encore** `203.0.113.25`, l'ancienne adresse, et non `203.0.113.99`. Le serveur a **gardé l'ancienne copie de la zone**, celle qui fonctionnait, et ignore ton fichier cassé. Tout a l'air normal, alors que le fichier sur le disque est faux.
+
+**Étape 7 — Réparer.** Sur `NS1-BANK` :
 
 ```
 # sur NS1-BANK
-sudo sed -i 's/203.0.113.99 oops/203.0.113.25/' /etc/bind/db.banquehorizon.com
-named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
-sudo rndc reload banquehorizon.com
+sudo sed -i 's/203.0.113.99 oops/203.0.113.25/' /etc/bind/db.banquehorizon.com; named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com
 ```
 
 ```
@@ -3265,46 +3577,68 @@ zone banquehorizon.com/IN: loaded serial 2026103101
 OK
 ```
 
+On remet l'adresse d'origine et on **vérifie d'abord** : `OK`.
+
+**Étape 8 — Recharger, deux fois.**
+
+```
+# sur NS1-BANK
+sudo rndc reload banquehorizon.com
+```
+
 ```
 zone reload queued
+```
+
+```
+# sur NS1-BANK
+sudo rndc reload banquehorizon.com
 ```
 
 ```
 zone reload up-to-date
 ```
 
-**🧠 Ce que tu viens d'apprendre.**
-
-- **Lis le message de gauche à droite** : `fichier:ligne: near 'mot'` (où) puis la raison (`unknown RR type`, `bad dotted quad`, `extra input text`, `CNAME and other data`). La ligne rapportée est celle du mot fautif ; quand un enregistrement s'étend sur plusieurs lignes entre parenthèses (le SOA), c'est la ligne du mot qui *précède* la faute.
-- Les **vérifications logiques** sont faites après le chargement : `has 0 SOA records`, `has no NS records`, `CNAME and other data`. Les **avertissements** (`MX is an address`, nom hors zone ignoré) n'empêchent pas le chargement.
-- **`rndc reload` ne dit pas si le chargement a réussi.** `zone reload queued` signifie seulement « la demande est enregistrée » ; l'échec est écrit dans le journal, et `named` continue de servir **l'ancienne** copie de la zone. Un serveur cassé qui continue de répondre avec des données anciennes est plus dangereux qu'un serveur en panne, parce que personne ne s'en aperçoit. D'où la règle : **`named-checkzone` d'abord, `rndc reload` ensuite, `dig` pour vérifier**.
-- `zone reload up-to-date` veut dire « le fichier n'a pas changé depuis le dernier chargement réussi » : `named` compare le **fichier**, pas le numéro de série. Après un chargement raté, le fichier compte comme « à recharger » même si on l'a remis en l'état, d'où le `queued` avant le `up-to-date`.
-
-⚠️ **Attention** — `named-checkzone` accepte `www IN CNAME web.banquehorizon.com` (sans point final) : ce n'est pas une erreur de syntaxe, c'est un **autre nom** (`web.banquehorizon.com.banquehorizon.com.`). Seul un `dig` sur le nom, après le rechargement, le révèle.
+Le premier rechargement est `queued` : le serveur relit le fichier (réparé). Le second dit `zone reload up-to-date` : « le fichier n'a pas changé depuis mon dernier chargement réussi ». Ce deuxième message te prouve que le premier a réussi.
 
 > 🔍 **Point d'audit** — Mets `named-checkconf -z` dans la procédure de changement et garde sa sortie (`rc=0` et les numéros de série chargés) dans le ticket : c'est la preuve que la configuration livrée est celle qui a été vérifiée.
 
+🆘 **Si ça ne marche pas.**
+
+- À l'étape 6, la réponse est `203.0.113.99` : tu as fait l'étape 1 sans le `oops`. Ré-importe le laboratoire (§ 0.1) et recommence.
+- Après l'étape 8, `named-checkzone` ne dit pas `OK` : un `sed` n'a pas fait ce qu'il fallait. Rouvre le fichier avec `cat /etc/bind/db.banquehorizon.com` et corrige la ligne de `mail` à la main.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- **Lis le message de gauche à droite** : `fichier:ligne: near 'mot'` (où), puis la raison (`unknown RR type`, `bad dotted quad`, `extra input text`, `CNAME and other data`).
+- Les **vérifications logiques** (pas de SOA, pas de NS, `CNAME and other data`) échouent à la fin du chargement ; les **avertissements** (`MX is an address`) n'empêchent pas le chargement.
+- **`rndc reload` ne dit pas si le chargement a réussi.** `zone reload queued` signifie seulement « la demande est enregistrée ». L'échec est dans le journal, et `named` continue de servir **l'ancienne** copie de la zone.
+- Un serveur cassé qui répond avec des données anciennes est plus dangereux qu'un serveur en panne : **personne ne s'en aperçoit**. D'où la règle d'or : **`named-checkzone` d'abord, `rndc reload` ensuite, `dig` pour vérifier**.
+- `zone reload up-to-date` veut dire « fichier inchangé depuis le dernier chargement réussi ». Il se compare au **fichier**, pas au numéro de série.
+
+**Vérifie-toi.**
+
+1. Que veut dire `zone reload queued` ?
+2. Où trouve-t-on la raison d'un rechargement raté ?
+3. Quelles sont les trois commandes de la règle d'or, dans l'ordre ?
+
+*Réponses.* (1) La demande de rechargement est enregistrée ; cela ne dit rien du résultat. (2) Dans le journal (`/var/log/syslog`). (3) `named-checkzone`, puis `rndc reload`, puis `dig`.
+
 ---
+## VI.3 🧪 TP 16 — Le résolveur DNS-RES
 
-## 24. 🧪 TP 16 — Le résolveur DNS-RES
+**🎯 Objectif.** Lire la configuration d'un serveur **récursif** (un résolveur, § I.8), comprendre en quoi elle diffère de celle d'un serveur faisant autorité, et **prouver** que sa liste de contrôle d'accès décide vraiment de qui il sert.
 
-**🎯 Objectif.** Lire la configuration d'un serveur **récursif**, comprendre en quoi elle diffère d'un serveur faisant autorité, et **prouver** que ses listes de contrôle d'accès décident bien.
+**Ce qu'il te faut.** Le TP 14 terminé. Un terminal sur `DNS-RES`, un sur `ROOT-NS` et un sur `PC-CONSEILLER`. Durée : environ 45 minutes. Les modifications de ce TP sont remises en état en fin de partie B.
 
-**🔧 Manipulation.**
+### Partie A — Lire la configuration d'un résolveur
+
+**Étape 1 — Le fichier principal.**
 
 ```
 # sur DNS-RES
 cat /etc/bind/named.conf
-cat /etc/bind/db.root.hints
-grep -nE 'recursion|allow-|forwarders|listen-on' /etc/bind/named.conf
 ```
-
-```
-# sur ROOT-NS
-cat /etc/bind/db.root
-```
-
-**✅ Résultat attendu.**
 
 ```
 acl "agence" { 10.20.0.0/16; 127.0.0.0/8; };
@@ -3324,12 +3658,75 @@ zone "horizon.local" {
 };
 ```
 
-Le fichier d'amorçage, `db.root.hints` (les « conseils racine ») : **une seule ligne utile**, l'adresse d'un serveur racine.
+Compare avec `NS1-BANK` (TP 14, étape 2) : le fichier est plus riche. Il contient quatre morceaux.
+
+*L'ACL (ligne 1).*
+
+```
+acl "agence" { 10.20.0.0/16; 127.0.0.0/8; };
+```
+
+Une **ACL** (*access control list*) est une **liste d'adresses à laquelle on donne un nom**, pour la réutiliser. Celle-ci s'appelle `agence` et contient deux plages :
+
+- `10.20.0.0/16` : toutes les adresses qui **commencent par `10.20`** (le `/16` veut dire « les 16 premiers bits, c'est-à-dire les deux premiers nombres, sont fixes »). C'est le réseau de l'agence ;
+- `127.0.0.0/8` : toutes les adresses qui commencent par `127`, c'est-à-dire **la machine elle-même**.
+
+*Les options (lignes 2 à 9).*
+
+```
+options {
+    directory "/var/cache/bind";
+    recursion yes;
+    allow-query { agence; };
+    allow-recursion { agence; };
+    dnssec-validation no;
+    empty-zones-enable no;
+};
+```
+
+| Ligne | Sens |
+|---|---|
+| `recursion yes;` | Ce serveur **fait le travail** de résolution (§ I.8) — l'inverse de `NS1-BANK` |
+| `allow-query { agence; };` | **Qui peut lui poser une question** : seulement la liste `agence` |
+| `allow-recursion { agence; };` | **Pour qui il fait le travail** : seulement l'agence |
+| `dnssec-validation no;`, `empty-zones-enable no;` | Réglages techniques du laboratoire, tu peux les ignorer |
+
+*Les zones (lignes 10 à 15).* Il y en a deux, de natures différentes.
+
+```
+zone "." { type hint; file "/etc/bind/db.root.hints"; };
+zone "horizon.local" {
+    type forward;
+    forward only;
+    forwarders { 10.20.20.10; };
+};
+```
+
+- `zone "." { type hint; … }` : la zone racine, de type **`hint`** (« conseil »). Elle ne contient pas la racine, elle dit **par où entrer dans l'arbre**. Sans ce bloc, le résolveur ne saurait pas où commencer.
+- `zone "horizon.local" { type forward; forward only; forwarders { 10.20.20.10; }; }` : une **exception**. Pour le domaine `horizon.local` (le domaine privé de l'agence), ne pas descendre l'arbre depuis la racine, mais **transférer** la question à `DC1` (`10.20.20.10`), le seul à connaître cette zone. `forward only` veut dire « uniquement lui, et pas d'autre chemin ».
+
+**Étape 2 — Le fichier d'amorçage.**
+
+```
+# sur DNS-RES
+cat /etc/bind/db.root.hints
+```
 
 ```
 . 3600000 IN NS a.root-servers.net.
 a.root-servers.net. 3600000 IN A 198.51.100.1
 ```
+
+Deux lignes, c'est tout : le nom du serveur racine (`a.root-servers.net`) et son adresse (`198.51.100.1`). Le TTL très long (`3600000`) montre que cette liste est faite pour durer. C'est la première chose que ce résolveur sait, avant même d'avoir posé une question.
+
+**Étape 3 — Retrouver les lignes qui comptent avec `grep`.**
+
+```
+# sur DNS-RES
+grep -nE 'recursion|allow-|forwarders|listen-on' /etc/bind/named.conf
+```
+
+`grep` garde les lignes qui contiennent un mot. Ici, deux options : `-n` ajoute le **numéro de la ligne** devant chaque résultat, et `-E` permet d'écrire plusieurs mots possibles séparés par `|` (« ou »). C'est le moyen le plus rapide de retrouver toutes les lignes qui contrôlent qui est servi.
 
 ```
 4:    recursion yes;
@@ -3338,7 +3735,16 @@ a.root-servers.net. 3600000 IN A 198.51.100.1
 14:    forwarders { 10.20.20.10; };
 ```
 
-La zone racine de ROOT-NS : elle ne délègue que deux choses, `com` et la zone inverse de la banque.
+Chaque ligne commence par son numéro dans le fichier (`4:`, `5:`…).
+
+**Étape 4 — La zone racine du laboratoire.**
+
+Pour comprendre d'où vient l'adresse `198.51.100.1`, regarde la zone racine, sur `ROOT-NS` :
+
+```
+# sur ROOT-NS
+cat /etc/bind/db.root
+```
 
 ```
 $TTL 86400
@@ -3350,34 +3756,37 @@ a.nic.com. IN A 198.51.100.2
 113.0.203.in-addr.arpa. IN NS ns1.banquehorizon.com.
 ```
 
-**🔧 Manipulation (le contrôle d'accès).** On sort volontairement les postes de l'agence de l'ACL `agence` (on la fait porter sur `10.99.0.0/16` au lieu de `10.20.0.0/16`), on recharge la configuration, on interroge, puis on remet tout en état :
+C'est un fichier de zone comme celui du TP 14, mais **minuscule** : la racine ne connaît que deux choses. Elle délègue `com.` à `a.nic.com` (lignes 5 et 6), et elle délègue la zone inverse `113.0.203.in-addr.arpa.` à `ns1.banquehorizon.com` (ligne 7). Tout le reste de l'Internet du laboratoire se trouve plus bas.
+
+### Partie B — Prouver que l'ACL décide
+
+On va **sortir volontairement les postes de l'agence de l'ACL**, voir ce qui se passe, puis tout remettre.
+
+**Étape 5 — Changer l'ACL.**
 
 ```
 # sur DNS-RES
 sudo sed -i 's#10.20.0.0/16;#10.99.0.0/16;#' /etc/bind/named.conf; sudo rndc reconfig; grep -n acl /etc/bind/named.conf
 ```
 
-```
-# sur PC-CONSEILLER
-dig @10.20.20.53 www.banquehorizon.com +noall +comments
-```
+Cette ligne fait trois choses :
 
-```
-# sur DNS-RES
-dig @127.0.0.1 www.banquehorizon.com +short
-sudo sed -i 's#10.99.0.0/16;#10.20.0.0/16;#' /etc/bind/named.conf; sudo rndc reconfig; grep -n acl /etc/bind/named.conf
-```
-
-```
-# sur PC-CONSEILLER
-dig @10.20.20.53 www.banquehorizon.com +short
-```
+1. `sed -i 's#10.20.0.0/16;#10.99.0.0/16;#' …` remplace `10.20.0.0/16` par `10.99.0.0/16` dans le fichier. (On utilise `#` à la place de `/` comme séparateur, parce que l'adresse contient déjà des `/`.)
+2. `rndc reconfig` dit au serveur de **relire sa configuration**, sans le redémarrer et sans vider son cache.
+3. `grep -n acl …` affiche la ligne modifiée pour que tu la contrôles.
 
 ```
 1:acl "agence" { 10.99.0.0/16; 127.0.0.0/8; };
 ```
 
-Le poste de l'agence n'est plus dans l'ACL : le résolveur le **refuse** (et ne dit pas `ra` : il n'offre pas la récursion à *ce* client) :
+La liste `agence` désigne maintenant le réseau `10.99`, qui n'existe pas : les postes de l'agence (`10.20…`) n'y sont plus.
+
+**Étape 6 — Interroger depuis l'agence.**
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.banquehorizon.com +noall +comments
+```
 
 ```
 ;; Got answer:
@@ -3389,71 +3798,121 @@ Le poste de l'agence n'est plus dans l'ACL : le résolveur le **refuse** (et ne 
 ; EDNS: version: 0, flags:; udp: 1232
 ```
 
-Lui-même, en revanche (`127.0.0.0/8` est resté dans l'ACL), continue d'être servi :
+`status: REFUSED` : le résolveur **refuse**. Regarde aussi les drapeaux : `qr rd`, **sans `ra`**. Il n'offre pas la récursion à *ce* client. C'est une réponse **explicite**, que le client peut afficher et journaliser.
+
+**Étape 7 — Interroger depuis le résolveur lui-même.**
+
+```
+# sur DNS-RES
+dig @127.0.0.1 www.banquehorizon.com +short
+```
 
 ```
 web.banquehorizon.com.
 203.0.113.20
 ```
 
-Remise en état :
+Lui-même est toujours servi : `127.0.0.0/8` est resté dans l'ACL.
+
+**Étape 8 — Remettre l'ACL en état.**
+
+```
+# sur DNS-RES
+sudo sed -i 's#10.99.0.0/16;#10.20.0.0/16;#' /etc/bind/named.conf; sudo rndc reconfig; grep -n acl /etc/bind/named.conf
+```
 
 ```
 1:acl "agence" { 10.20.0.0/16; 127.0.0.0/8; };
 ```
 
+La ligne est revenue à `10.20.0.0/16`. Vérifie depuis l'agence :
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.banquehorizon.com +short
+```
+
 ```
 web.banquehorizon.com.
 203.0.113.20
 ```
 
-**🧠 Ce que tu viens d'apprendre.**
+Les réponses reviennent : tout est en ordre.
 
-| Bloc | Rôle |
-|---|---|
-| `acl "agence" { 10.20.0.0/16; 127.0.0.0/8; };` | Une **liste d'adresses nommée**, réutilisable |
-| `recursion yes;` | Ce serveur *fait le travail* de résolution |
-| `allow-query { agence; };` + `allow-recursion { agence; };` | **Qui** peut lui poser des questions, et **pour qui** il fait le travail : seulement l'agence |
-| `zone "." { type hint; … };` | Où commencer : les **conseils racine**. Sans ce bloc, le résolveur ne sait pas par où entrer dans l'arbre |
-| `zone "horizon.local" { type forward; forward only; forwarders { 10.20.20.10; }; };` | Une **exception** : pour ce domaine, ne pas descendre l'arbre, **demander à DC1** (qui est le seul à connaître cette zone privée) |
+**Étape 9 — Et depuis « Internet » ?**
 
-- Le dernier bloc est la réponse à la question « comment un résolveur public peut-il résoudre un nom interne ? » : il ne le fait pas lui-même, il **transfère** (TP 28).
-- Un client que l'ACL exclut reçoit `REFUSED` : une réponse **explicite**, que `dig` affiche (`status: REFUSED`) et que le client peut journaliser — pas un silence. Un silence (`timed out`) a une autre cause : un routage ou un pare-feu en amont. Les deux se distinguent d'un coup d'œil, et ne se corrigent pas au même endroit.
-- `rndc reconfig` a suffi à appliquer le nouveau `named.conf` sans redémarrer le service et sans vider le cache.
-- Depuis un poste *hors* du réseau privé, le résolveur n'est même pas joignable : ROOT-NS, qui est « sur Internet » dans ce laboratoire, reçoit `Destination Net Unreachable` (les adresses `10.20.0.0/16` ne sont pas routables). L'ACL est donc une **seconde** barrière, pas la première.
+Dans ce laboratoire, `ROOT-NS` est « sur Internet », hors du réseau privé de l'agence. Que se passe-t-il s'il interroge le résolveur ?
+
+```
+# sur ROOT-NS
+dig @10.20.20.53 www.banquehorizon.com
+```
+
+```
+;; communications error to 10.20.20.53#53: timed out
+;; communications error to 10.20.20.53#53: timed out
+;; communications error to 10.20.20.53#53: timed out
+
+; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @10.20.20.53 www.banquehorizon.com
+; (1 server found)
+;; global options: +cmd
+;; no servers could be reached
+```
+
+Cette fois il n'y a **pas de réponse du tout** : `timed out`, trois fois, puis `no servers could be reached`. Les adresses privées (`10.20…`) ne sont pas routables sur Internet : la question n'arrive même pas jusqu'au résolveur. **L'ACL n'est donc pas la première barrière, c'est la seconde.**
+
+**Deux manières d'échouer à distinguer.** Elles ne se corrigent pas au même endroit :
+
+| Ce que tu vois | Signification | Où chercher |
+|---|---|---|
+| `status: REFUSED` | Le serveur **a reçu** la question et **a refusé** de répondre | La configuration du serveur : l'ACL (`allow-query`, `allow-recursion`) |
+| `timed out` | La question **n'a pas reçu de réponse** | Le réseau : routage, pare-feu, serveur arrêté |
 
 > 🔍 **Point d'audit** — `allow-recursion` est **le** contrôle qui empêche un résolveur d'être « ouvert » (utilisable par n'importe qui sur Internet pour des attaques par amplification). Teste-le comme ci-dessus — sortir ton propre poste de l'ACL et constater le `REFUSED` — et garde la trace du résultat.
 
+🆘 **Si ça ne marche pas.** À l'étape 6, `NOERROR` au lieu de `REFUSED` : l'étape 5 ne s'est pas appliquée. Relis la ligne affichée par `grep -n acl` : elle doit montrer `10.99.0.0/16`. Si tu es bloqué, ré-importe le laboratoire (§ 0.1).
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- Un **résolveur** a `recursion yes;`, une ACL qui limite ses clients, une zone `hint` qui lui dit par où commencer, et éventuellement des zones `forward` qui lui font demander à un autre serveur pour un domaine donné.
+- Le bloc `forward` est la réponse à la question « comment un résolveur peut-il résoudre un nom **interne** ? » : il ne le fait pas lui-même, il **transfère** à `DC1` (TP 28).
+- `rndc reconfig` applique un nouveau `named.conf` sans redémarrer ni vider le cache.
+- Un client que l'ACL exclut reçoit `REFUSED` : une réponse **explicite**. Un silence (`timed out`) a une autre cause : le réseau.
+
+**Vérifie-toi.**
+
+1. Que contient l'ACL `agence` ?
+2. Quel bloc dit au résolveur par où commencer ?
+3. Quelle différence entre `REFUSED` et `timed out` ?
+
+*Réponses.* (1) Le réseau de l'agence (`10.20.0.0/16`) et la machine elle-même (`127.0.0.0/8`). (2) `zone "." { type hint; … }`. (3) `REFUSED` : le serveur a répondu « non » ; `timed out` : aucune réponse n'est arrivée.
+
 ---
+## VI.4 🧪 TP 17 — Les serveurs Windows
 
-## 25. 🧪 TP 17 — Les serveurs Windows
+**🎯 Objectif.** Retrouver, avec les commandes PowerShell du module `DnsServer`, ce que tu viens de lire dans les fichiers BIND : des zones, des serveurs primaire et secondaire, des fiches.
 
-**🎯 Objectif.** Retrouver, avec les cmdlets du module `DnsServer`, ce que tu viens de lire dans les fichiers BIND.
+**Ce qu'il te faut.** Trois terminaux PowerShell : `TLD-NS`, `DC1` et `NS2-BANK` (double-clic sur chaque équipement). Durée : environ 30 minutes. Dans ce TP, **tu ne modifies rien**.
 
-**🔧 Manipulation.**
+Sous Linux, un serveur DNS se lit dans des fichiers texte. Sous Windows, il n'y a pas de fichiers à ouvrir à la main : on **interroge le serveur avec des commandes**. Le vocabulaire est un peu différent, mais le modèle est le même : des zones, un SOA, des NS, des A.
+
+| BIND (Linux) | DNS Windows | Même idée |
+|---|---|---|
+| `type primary;` | `ZoneType : Primary` | Détient la copie de référence |
+| `type secondary;` (côté `NS2-BANK`) | `ZoneType : Secondary` | Détient une copie recopiée |
+| `cat db.banquehorizon.com` | `Get-DnsServerResourceRecord` | Lire les fiches d'une zone |
+| `rndc status` | `Get-DnsServerZone` | Voir quelles zones le serveur détient |
+
+**Étape 1 — Les zones d'un serveur : `Get-DnsServerZone`.** Commence par `TLD-NS`.
 
 ```powershell
 # sur TLD-NS
 Get-DnsServerZone
-Get-DnsServerResourceRecord -ZoneName com
 ```
 
-```powershell
-# sur DC1
-Get-DnsServerZone
-Get-DnsServerResourceRecord -ZoneName horizon.local
-```
-
-```powershell
-# sur NS2-BANK
-Get-DnsServerZone
-(Get-DnsServerZone -Name banquehorizon.com).RecordCount
-```
-
-**✅ Résultat attendu.** TLD-NS fait autorité pour `com` :
+La commande suit la forme **Verbe-Nom** (§ III.4) : `Get-` (obtenir) `DnsServerZone` (les zones du serveur DNS).
 
 ```
-
 ZoneName            : com
 ZoneType            : Primary
 DynamicUpdate       : NonsecureAndSecure
@@ -3469,58 +3928,96 @@ MasterServers       : {}
 SecureSecondaries   : TransferToZoneNameServer
 SecondaryServers    : {}
 Notify              : Notify
+NotifyServers       : {}
+RecordCount         : 7
 ```
 
+Il y a dix-sept lignes ; les trois à retenir sont celles-ci :
+
+| Ligne | Sens |
+|---|---|
+| `ZoneName : com` | Le nom de la zone : `TLD-NS` détient la zone `com` |
+| `ZoneType : Primary` | Il détient la **copie de référence**. Équivalent de `type primary;` |
+| `ZoneFile : com.dns` | Le fichier où Windows range la zone (tu n'as pas besoin de l'ouvrir) |
+| `RecordCount : 7` | Le nombre de fiches de la zone |
+
+Les autres lignes (`IsPaused`, `IsSigned`, `Notify`…) sont des réglages que tu n'as pas à connaître pour l'instant.
+
+**Étape 2 — Les fiches d'une zone : `Get-DnsServerResourceRecord`.**
+
+```powershell
+# sur TLD-NS
+Get-DnsServerResourceRecord -ZoneName com
 ```
 
-HostName          RecordType Type Timestamp TimeToLive RecordData
---------          ---------- ---- --------- ---------- ----------
+`-ZoneName com` dit **quelle zone** lire. Le résultat est un tableau.
+
+```
+HostName          RecordType Type Timestamp TimeToLive RecordData                                       
+--------          ---------- ---- --------- ---------- ----------                                       
 @                 SOA           6                 3600 [7][900][600][86400][3600] ns1.com hostmaster.com
-@                 NS            2                 3600 a.nic.com
-a.nic             A             1                 3600 198.51.100.2
-banquehorizon     NS            2                 3600 ns1.banquehorizon.com
-banquehorizon     NS            2                 3600 ns2.banquehorizon.com
-ns1.banquehorizon A             1                 3600 203.0.113.10
-ns2.banquehorizon A             1                 3600 203.0.113.11
+@                 NS            2                 3600 a.nic.com                                        
+a.nic             A             1                 3600 198.51.100.2                                     
+banquehorizon     NS            2                 3600 ns1.banquehorizon.com                            
+banquehorizon     NS            2                 3600 ns2.banquehorizon.com                            
+ns1.banquehorizon A             1                 3600 203.0.113.10                                     
+ns2.banquehorizon A             1                 3600 203.0.113.11                                     
 ```
 
-DC1 : sa zone, ses enregistrements — et ceux que **le serveur DHCP y a inscrits tout seul** (la colonne `Timestamp` n'est remplie que pour eux) :
+Une ligne par fiche. Lis les colonnes :
 
+| Colonne | Sens |
+|---|---|
+| `HostName` | Le nom de la fiche, **relatif** à la zone (`@` désigne la zone elle-même, comme dans BIND) |
+| `RecordType` | Le type : `SOA`, `NS`, `A`, `CNAME`… |
+| `Type` | Le **numéro** de ce type (6 pour SOA, 2 pour NS, 1 pour A). Tu peux l'ignorer |
+| `Timestamp` | Vide ici : cette fiche a été saisie à la main. Elle ne se remplit que pour les fiches inscrites automatiquement (voir l'étape 4) |
+| `TimeToLive` | Le TTL en secondes |
+| `RecordData` | La donnée |
+
+Tu retrouves ce que tu as vu au TP 8 : cette zone ne contient que des **renvois**. Les deux lignes `banquehorizon NS …` sont la délégation vers la banque, et les deux lignes `ns1.banquehorizon`, `ns2.banquehorizon` en sont la **glue** (§ IV.2). Le SOA s'écrit ici `[7][900][600][86400][3600]` suivi du serveur et du responsable : `[numéro de série][refresh][retry][expire][minimum]`.
+
+**Étape 3 — Le serveur du domaine de l'agence : `DC1`.**
+
+```powershell
+# sur DC1
+Get-DnsServerZone
 ```
 
+```
 ZoneName            : horizon.local
 ZoneType            : Primary
 DynamicUpdate       : NonsecureAndSecure
-ReplicationScope    : None
-IsDsIntegrated      : False
-IsReverseLookupZone : False
-IsAutoCreated       : False
-IsPaused            : False
-IsReadOnly          : False
-IsSigned            : False
-ZoneFile            : horizon.local.dns
-MasterServers       : {}
-SecureSecondaries   : TransferToZoneNameServer
-SecondaryServers    : {}
-Notify              : Notify
+```
+
+On a gardé les trois premières lignes : `DC1` détient la zone **`horizon.local`**, domaine **privé** de l'agence, en `Primary`. `DynamicUpdate : NonsecureAndSecure` veut dire que les machines peuvent **s'inscrire elles-mêmes** dans cette zone. Regarde ce que ça donne :
+
+```powershell
+# sur DC1
+Get-DnsServerResourceRecord -ZoneName horizon.local
 ```
 
 ```
-
-HostName    RecordType Type          Timestamp TimeToLive RecordData
---------    ---------- ----          --------- ---------- ----------
+HostName    RecordType Type          Timestamp TimeToLive RecordData                                                           
+--------    ---------- ----          --------- ---------- ----------                                                           
 @           SOA           6                          3600 [8][900][600][86400][3600] ns1.horizon.local hostmaster.horizon.local
-dc1         A             1                          3600 10.20.20.10
-dns-res     A             1                          3600 10.20.20.53
-intranet    CNAME         5                          3600 dc1.horizon.local
-pc-guichet1 A             1 11/4/2026 11:01 AM       1200 10.20.10.50
-pc-guichet2 A             1 11/4/2026 11:01 AM       1200 10.20.10.51
+dc1         A             1                          3600 10.20.20.10                                                          
+dns-res     A             1                          3600 10.20.20.53                                                          
+intranet    CNAME         5                          3600 dc1.horizon.local                                                    
+pc-guichet1 A             1 11/4/2026 11:01 AM       1200 10.20.10.50                                                          
+pc-guichet2 A             1 11/4/2026 11:01 AM       1200 10.20.10.51                                                          
 ```
 
-NS2-BANK ne détient pas la zone : il en a une **copie** (`ZoneType : Secondary`, `MasterServers : {203.0.113.10}`, `IsReadOnly : True`) :
+Les trois premières fiches (`dc1`, `dns-res`, `intranet`) ont été saisies à la main. En revanche `pc-guichet1` et `pc-guichet2` ont un **`Timestamp`** rempli et un TTL court (`1200`, soit 20 minutes) : ces fiches ont été **inscrites toutes seules** par le serveur DHCP quand il a distribué leurs adresses (TP 29). La colonne `Timestamp` sert à distinguer, d'un coup d'œil, les fiches automatiques des fiches manuelles.
 
+**Étape 4 — Le secondaire : `NS2-BANK`.**
+
+```powershell
+# sur NS2-BANK
+Get-DnsServerZone
 ```
 
+```
 ZoneName            : banquehorizon.com
 ZoneType            : Secondary
 DynamicUpdate       : None
@@ -3536,71 +4033,178 @@ MasterServers       : {203.0.113.10}
 SecureSecondaries   : TransferToZoneNameServer
 SecondaryServers    : {}
 Notify              : Notify
+NotifyServers       : {}
+RecordCount         : 18
 ```
 
-```
-18
-```
+Compare avec l'étape 1. Deux lignes changent, et elles comptent :
 
-**🧠 Ce que tu viens d'apprendre.**
+- `ZoneType : Secondary` : `NS2-BANK` ne détient pas la zone, il en a une **copie**.
+- `MasterServers : {203.0.113.10}` : il recopie depuis `203.0.113.10`, c'est-à-dire `NS1-BANK`.
+- `IsReadOnly : True` : cette copie est en **lecture seule**. On ne la modifie pas ici, on la modifie sur le primaire.
 
-- Le vocabulaire change, pas le modèle : `Primary` / `Secondary` / `MasterServers`, un SOA, des NS, des A. `Get-DnsServerResourceRecord` affiche le SOA sous la forme `[numéro de série][refresh][retry][expire][minimum] serveur responsable`.
-- `RecordCount` de NS2-BANK (`18`) est le nombre d'enregistrements **après le transfert de zone** : c'est la copie qu'a reçue le secondaire. Le TP 18 le fait bouger.
-- Dans une zone Windows « normale », les clients DHCP s'enregistrent eux-mêmes (`DynamicUpdate : NonsecureAndSecure`) ; dans une zone BIND de type `primary` sans `allow-update`, ce n'est pas le cas. C'est un point de différence à connaître avant de mélanger les deux familles (TP 29).
-- Les serveurs Windows de ce laboratoire annoncent `udp: 4096` dans leur `OPT`, BIND `1232` : même protocole, valeurs par défaut différentes.
+La sortie complète comporte un second bloc, identique, pour la zone inverse `113.0.203.in-addr.arpa` (avec `IsReverseLookupZone : True`).
 
----
-
-## 26. 🧪 TP 18 — Modifier une zone et la voir arriver chez le secondaire
-
-**🎯 Objectif.** Faire un changement **complet** : modifier la zone sur le primaire, la recharger, et **prouver** qu'elle est arrivée sur le secondaire (qui est, ici, un serveur *Windows*).
-
-**🔧 Manipulation.**
-
-```
-# sur NS1-BANK
-sudo sed -i 's/2026103101/2026103102/' /etc/bind/db.banquehorizon.com
-echo 'api2 IN A 203.0.113.30' | sudo tee -a /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
-dig @127.0.0.1 banquehorizon.com AXFR
-```
-
-```
-# sur PC-CONSEILLER
-dig @203.0.113.10 banquehorizon.com SOA +short
-dig @203.0.113.11 banquehorizon.com SOA +short
-```
-
-```powershell
-# sur PC-GUICHET1
-Resolve-DnsName api2.banquehorizon.com -Server 203.0.113.11
-```
+**Étape 5 — Compter les fiches d'une zone.**
 
 ```powershell
 # sur NS2-BANK
 (Get-DnsServerZone -Name banquehorizon.com).RecordCount
 ```
 
-**✅ Résultat attendu.** On a monté le numéro de série (`…01` → `…02`) **et** ajouté `api2`. Le rechargement :
+Les parenthèses disent à PowerShell : « exécute d'abord la commande à l'intérieur, puis lis sa propriété `RecordCount` ». On n'obtient que ce nombre.
+
+```
+18
+```
+
+`18` : la copie contient 18 fiches. C'est le nombre de fiches qu'`NS2-BANK` a reçues lors du **transfert de zone** : il a recopié la zone de `NS1-BANK`. Retiens ce chiffre : au TP 18, tu verras comment il bouge quand on modifie la zone sur le primaire.
+
+🆘 **Si ça ne marche pas.** `The term 'Get-DnsServerZone' is not recognized` : tu es sur un équipement qui n'est pas un serveur DNS Windows (un poste, par exemple). Vérifie le titre du terminal : `TLD-NS`, `DC1` ou `NS2-BANK`.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- Le vocabulaire change, pas le modèle : `Primary` / `Secondary` / `MasterServers`, un SOA, des NS, des A. `Get-DnsServerResourceRecord` écrit le SOA `[numéro de série][refresh][retry][expire][minimum]`.
+- Un serveur secondaire a `ZoneType : Secondary`, un `MasterServers` qui nomme le primaire, et une copie en lecture seule.
+- Dans une zone Windows, les clients DHCP peuvent s'enregistrer eux-mêmes (`DynamicUpdate : NonsecureAndSecure`) ; dans une zone BIND de type `primary` sans `allow-update`, ce n'est pas le cas. C'est une différence à connaître avant de mélanger les deux familles (TP 29).
+- Les serveurs Windows de ce laboratoire annoncent `udp: 4096` dans l'enregistrement `OPT` (TP 8), BIND `1232` : même protocole, valeurs par défaut différentes.
+
+**Vérifie-toi.**
+
+1. Comment sait-on, sous Windows, qu'un serveur détient une copie et non la zone de référence ?
+2. À quoi sert la colonne `Timestamp` de `Get-DnsServerResourceRecord` ?
+
+*Réponses.* (1) `ZoneType : Secondary` et `MasterServers` qui nomme le primaire. (2) Elle n'est remplie que pour les fiches inscrites automatiquement (par le DHCP, par exemple).
+
+---
+## VI.5 🧪 TP 18 — Modifier une zone et la voir arriver chez le secondaire
+
+**🎯 Objectif.** Faire un changement **complet** : modifier la zone sur le primaire, la recharger, et **prouver** qu'elle est arrivée sur le secondaire (qui est, ici, un serveur *Windows*).
+
+**Ce qu'il te faut.** Les TP 14 et 15 terminés. Un terminal sur `NS1-BANK`, un sur `PC-CONSEILLER`, un sur `PC-GUICHET1` et un sur `NS2-BANK`. Durée : environ 1 heure. Tout est remis en état à la fin.
+
+**Pourquoi deux serveurs ?** Si `NS1-BANK` tombe, le domaine `banquehorizon.com` ne doit pas disparaître. On a donc un deuxième serveur, `NS2-BANK`, qui détient une **copie** de la zone. Cette copie doit rester à jour sans que personne ne la recopie à la main. Voici comment le DNS s'y prend :
+
+```schema
+ 1. L'administrateur modifie la zone sur NS1-BANK, et AUGMENTE le numéro de série
+ 2. NS1-BANK recharge la zone
+ 3. NS1-BANK envoie un « NOTIFY » à NS2-BANK : « ma zone a changé »
+ 4. NS2-BANK demande le SOA de NS1-BANK et compare les numéros de série
+ 5. Si celui de NS1-BANK est plus grand : NS2-BANK demande toute la zone (transfert « AXFR »)
+ 6. NS2-BANK répond désormais avec la nouvelle version
+```
+
+Le **numéro de série** est donc le déclencheur : s'il n'augmente pas, le secondaire ne bouge pas (c'est le piège du TP 19).
+
+### Partie A — L'état de départ
+
+**Étape 1 — Les deux serveurs sont-ils d'accord ?** Compare le SOA des deux serveurs (TP 11, étape 6).
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 banquehorizon.com SOA +short
+```
+
+```
+ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+```
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.11 banquehorizon.com SOA +short
+```
+
+```
+ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+```
+
+Les deux serveurs annoncent le **même** numéro de série : `2026103101`. Le secondaire est à jour. Rappelle-toi aussi que `NS2-BANK` a **18 fiches** (TP 17, étape 5).
+
+### Partie B — Faire le changement
+
+On va ajouter une fiche `api2` à la zone. Sur `NS1-BANK`.
+
+**Étape 2 — Augmenter le numéro de série.**
+
+```
+# sur NS1-BANK
+sudo sed -i 's/2026103101/2026103102/' /etc/bind/db.banquehorizon.com
+```
+
+`sed -i 's/ancien/nouveau/'` remplace `2026103101` par `2026103102` dans le fichier. La commande n'affiche rien. **Ce geste est celui qu'on oublie le plus souvent.**
+
+**Étape 3 — Ajouter la fiche.**
+
+```
+# sur NS1-BANK
+echo 'api2 IN A 203.0.113.30' | sudo tee -a /etc/bind/db.banquehorizon.com
+```
+
+`echo` produit le texte, `tee -a` l'**ajoute à la fin** du fichier (§ I.2) et l'affiche.
+
+```
+api2 IN A 203.0.113.30
+```
+
+**Étape 4 — Vérifier avant de recharger.** Tu connais la règle d'or du TP 15.
+
+```
+# sur NS1-BANK
+named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com
+```
+
+```
+zone banquehorizon.com/IN: loaded serial 2026103102
+OK
+```
+
+`loaded serial 2026103102` : le nouveau numéro est lu. `OK` : aucune erreur.
+
+**Étape 5 — Recharger.**
+
+```
+# sur NS1-BANK
+sudo rndc reload banquehorizon.com
+```
 
 ```
 zone reload queued
 ```
 
-Les deux serveurs annoncent le **même** numéro de série :
+### Partie C — Prouver que le secondaire a suivi
+
+**Étape 6 — Comparer les deux SOA.**
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 banquehorizon.com SOA +short
+```
 
 ```
 ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103102 7200 900 1209600 3600
 ```
 
 ```
+# sur PC-CONSEILLER
+dig @203.0.113.11 banquehorizon.com SOA +short
+```
+
+```
 ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103102 7200 900 1209600 3600
 ```
 
-NS2-BANK — un serveur **Windows** — répond pour le nouveau nom, et sa zone compte un enregistrement de plus (`18` → `19`) :
+Les deux serveurs annoncent maintenant `2026103102`. `NS2-BANK` a reçu le `NOTIFY`, comparé, et recopié. **Comparer les SOA des deux serveurs est la preuve en une commande** de la cohérence primaire/secondaire : deux numéros différents = un secondaire en retard.
 
+**Étape 7 — Interroger le secondaire (Windows) sur le nouveau nom.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName api2.banquehorizon.com -Server 203.0.113.11
 ```
 
+Le paramètre `-Server` choisit **le serveur à interroger** (§ III.3), ici `NS2-BANK`.
+
+```
 Name      : api2.banquehorizon.com
 Type      : A
 TTL       : 3600
@@ -3608,34 +4212,70 @@ Section   : Answer
 IPAddress : 203.0.113.30
 ```
 
+`NS2-BANK` — un serveur **Windows** — répond pour `api2`, une fiche qui n'existait pas il y a une minute. Elle vient du transfert.
+
+**Étape 8 — Compter les fiches.**
+
+```powershell
+# sur NS2-BANK
+(Get-DnsServerZone -Name banquehorizon.com).RecordCount
+```
+
 ```
 19
 ```
 
-Enfin, le test de sécurité : la copie de la zone n'est accordée **qu'à NS2-BANK** (`allow-transfer`), pas à la machine locale :
+`19` au lieu de `18` : la copie a une fiche de plus.
+
+### Partie D — Le test de sécurité
+
+**Étape 9 — Demander la zone entière à `NS1-BANK` lui-même.**
+
+Un **transfert de zone** (`AXFR`) copie la zone en entier. Le secondaire en a besoin ; un inconnu ne doit pas pouvoir le faire, car il obtiendrait **la liste complète de tes machines**. Tu as vu au TP 14 que `allow-transfer { 203.0.113.11; };` ne permet le transfert qu'à `NS2-BANK`. Prouve-le en le demandant depuis la machine locale :
 
 ```
+# sur NS1-BANK
+dig @127.0.0.1 banquehorizon.com AXFR
+```
 
+```
 ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @127.0.0.1 banquehorizon.com AXFR
 ; (1 server found)
 ;; global options: +cmd
 ; Transfer failed.
 ```
 
-On remet les choses en état (suppression de `api2`, et un numéro de série plus grand pour que le secondaire se remette à jour) :
+`Transfer failed.` est la **bonne** réponse : `NS1-BANK` refuse, car la machine locale n'est pas dans `allow-transfer`.
+
+### Partie E — Remise en état
+
+**Étape 10 — Supprimer `api2` et passer à `…03`.**
 
 ```
 # sur NS1-BANK
-sudo sed -i '/^api2 /d; s/2026103102/2026103103/' /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
+sudo sed -i '/^api2 /d; s/2026103102/2026103103/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com
 ```
+
+Cette ligne contient deux ordres à `sed`, séparés par `;` : `/^api2 /d` **supprime** la ligne qui commence par `api2`, et `s/2026103102/2026103103/` monte encore le numéro de série (un serveur secondaire ne suit qu'un numéro qui **augmente**, jamais un numéro qui redescend).
 
 ```
 zone reload queued
 ```
 
+Contrôle que le secondaire a suivi :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.11 banquehorizon.com SOA +short
+```
+
 ```
 ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103103 7200 900 1209600 3600
+```
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.11 api2.banquehorizon.com +noall +comments
 ```
 
 ```
@@ -3648,46 +4288,74 @@ ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103103 7200 900 1209600
 ; EDNS: version: 0, flags:; udp: 4096
 ```
 
+Le numéro de série est `2026103103` et `api2` a disparu (`NXDOMAIN`). Remarque `flags: qr aa` : `NS2-BANK`, qui n'est pourtant qu'un secondaire, **fait autorité** : une copie fidèle d'une zone est une source officielle au même titre que l'original.
+
+> 🔍 **Point d'audit** — Collecte, à chaque changement, les SOA des deux serveurs (étape 6) : c'est la preuve de la cohérence primaire/secondaire à la date du changement.
+
+🆘 **Si ça ne marche pas.**
+
+- Étape 6 : les deux numéros de série sont différents. Attends dix secondes et relance : le `NOTIFY` met un instant à produire son effet.
+- Étape 7 : `DNS name does not exist` pour `api2` : tu as oublié l'étape 2 (le numéro de série n'a pas augmenté, voir le TP 19).
+- Étape 9 : le transfert réussit (tu vois toute la zone) : `allow-transfer` a été modifié. Relis `named.conf` (TP 14).
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Le circuit complet d'un changement : **modifier → monter le numéro de série → recharger → `NOTIFY` au secondaire → le secondaire compare les séries → transfert (`AXFR`) → il répond**. Le `NOTIFY` est ce qui évite d'attendre le `refresh` (7200 s) du SOA.
-- Preuve en une commande : **comparer les SOA des deux serveurs**. Deux numéros de série différents = un secondaire en retard.
-- `Transfer failed.` du `AXFR` local est la **bonne** réponse : `allow-transfer { 203.0.113.11; }` refuse toute autre source. Un transfert de zone ouvert à tous livre à un attaquant la liste complète de vos machines.
+- Le circuit complet d'un changement : **modifier → monter le numéro de série → vérifier → recharger → `NOTIFY` → le secondaire compare les séries → transfert (`AXFR`) → il répond**. Le `NOTIFY` évite d'attendre le *refresh* (7 200 s) du SOA.
+- La preuve la plus courte : **comparer les SOA des deux serveurs**.
+- `Transfer failed.` pour un `AXFR` non autorisé est le **bon** résultat. Un transfert de zone ouvert à tous livre à un attaquant la liste complète de tes machines.
+- Un secondaire est une source **faisant autorité** (`aa`) comme le primaire.
 
-> 🔍 **Point d'audit** — Collecte, à chaque changement, les SOA des deux serveurs (la commande du TP) : c'est la preuve de la cohérence primaire/secondaire à la date du changement.
+**Vérifie-toi.**
+
+1. Quel geste déclenche la mise à jour du secondaire ?
+2. Comment prouver, en une commande, que le secondaire est à jour ?
+3. Pourquoi un `AXFR` refusé est-il une bonne nouvelle ?
+
+*Réponses.* (1) L'augmentation du numéro de série dans le SOA, suivie du rechargement de la zone. (2) Comparer le SOA des deux serveurs (`dig @serveur zone SOA +short`). (3) Parce que seul le secondaire autorisé doit pouvoir copier la zone entière.
 
 ---
-
-## 27. 🧪 TP 19 — Le piège du numéro de série oublié
+## VI.6 🧪 TP 19 — Le piège du numéro de série oublié
 
 **🎯 Objectif.** Vivre l'incident le plus fréquent des zones à plusieurs serveurs : *modifier la zone, recharger, et oublier de monter le numéro de série*.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Le TP 18 terminé (la zone est revenue à l'état normal, avec le numéro de série `2026103103`). Un terminal sur `NS1-BANK` et un sur `PC-CONSEILLER`. Durée : environ 25 minutes.
+
+Au TP 18, tu as fait **tout juste**, dans l'ordre. Ici, tu vas faire exactement la même chose en **omettant une seule étape** : celle que les administrateurs oublient le plus souvent. Tu vas voir l'incident naître, comprendre son symptôme, puis le réparer.
+
+**Étape 1 — Ajouter une fiche et recharger, sans toucher au numéro de série.** Sur `NS1-BANK` :
 
 ```
 # sur NS1-BANK
-echo 'novelty IN A 203.0.113.77' | sudo tee -a /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
+echo 'novelty IN A 203.0.113.77' | sudo tee -a /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com
 ```
 
-```
-# sur PC-CONSEILLER
-dig @203.0.113.10 novelty.banquehorizon.com +short
-dig @203.0.113.11 novelty.banquehorizon.com +noall +comments
-dig @203.0.113.10 banquehorizon.com SOA +short; dig @203.0.113.11 banquehorizon.com SOA +short
-```
-
-**✅ Résultat attendu.** Le primaire charge le fichier modifié :
+Deux commandes sur une ligne, séparées par `;` : on ajoute la fiche `novelty` à la fin du fichier, puis on recharge.
 
 ```
 novelty IN A 203.0.113.77
 zone reload queued
 ```
 
-Il répond pour le nouveau nom — mais **le secondaire, non** :
+La fiche est ajoutée, le rechargement est enregistré. **On n'a pas touché au numéro de série.**
+
+**Étape 2 — Interroger le primaire.** Sur `PC-CONSEILLER` :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 novelty.banquehorizon.com +short
+```
 
 ```
 203.0.113.77
+```
+
+`NS1-BANK` connaît `novelty` : il a rechargé son fichier.
+
+**Étape 3 — Interroger le secondaire.**
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.11 novelty.banquehorizon.com +noall +comments
 ```
 
 ```
@@ -3700,58 +4368,125 @@ Il répond pour le nouveau nom — mais **le secondaire, non** :
 ; EDNS: version: 0, flags:; udp: 4096
 ```
 
-Les deux numéros de série sont **identiques**, donc le secondaire n'a aucune raison de se mettre à jour :
+`status: NXDOMAIN` : **`NS2-BANK` ne connaît pas `novelty`**. Remarque `flags: qr aa` : il répond avec autorité, donc avec assurance, mais il répond **faux**. Les deux serveurs de la même zone disent maintenant des choses différentes.
+
+**Étape 4 — Chercher pourquoi : comparer les numéros de série.**
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 banquehorizon.com SOA +short; dig @203.0.113.11 banquehorizon.com SOA +short
+```
 
 ```
 ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103103 7200 900 1209600 3600
 ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103103 7200 900 1209600 3600
 ```
 
-Recharger encore ne change rien (le fichier est déjà chargé) :
+Les deux numéros de série sont **identiques** (`2026103103`). Pour `NS2-BANK`, rien n'a changé : il compare les numéros de série, voit qu'ils sont égaux et **ne recopie rien** (rappel : étape 4 du circuit du TP 18). Voilà le coupable.
+
+**Étape 5 — Recharger ne sert à rien.**
+
+```
+# sur NS1-BANK
+sudo rndc reload banquehorizon.com
+```
 
 ```
 zone reload up-to-date
 ```
 
-On monte le numéro de série (`…03` → `…04`) et on recharge :
+`up-to-date` : le primaire dit « mon fichier est déjà chargé ». Le problème n'est pas chez lui, il est dans le **numéro de série**.
+
+**Étape 6 — Réparer : monter le numéro de série et recharger.**
 
 ```
 # sur NS1-BANK
-sudo sed -i 's/2026103103/2026103104/' /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
+sudo sed -i 's/2026103103/2026103104/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com
 ```
 
 ```
 zone reload queued
 ```
 
+Le numéro passe à `2026103104` : il est **plus grand** que celui du secondaire. Le `NOTIFY` part, le secondaire compare, voit que le primaire est en avance, et recopie. Vérifie :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.11 novelty.banquehorizon.com +short
+```
+
 ```
 203.0.113.77
 ```
 
-Remise en état :
+Cette fois `NS2-BANK` connaît `novelty`.
+
+**Étape 7 — Remise en état.**
 
 ```
 # sur NS1-BANK
-sudo sed -i '/^novelty /d; s/2026103104/2026103105/' /etc/bind/db.banquehorizon.com
-sudo rndc reload banquehorizon.com
+sudo sed -i '/^novelty /d; s/2026103104/2026103105/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com
 ```
+
+```
+zone reload queued
+```
+
+On supprime la fiche `novelty` et on **monte encore** le numéro de série, pour que le secondaire retire la fiche lui aussi. Contrôle :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.11 novelty.banquehorizon.com +noall +comments
+```
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 61
+;; flags: qr aa rd; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+;; WARNING: recursion requested but not available
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 4096
+```
+
+`NXDOMAIN` : la fiche a disparu des deux côtés.
+
+🆘 **Si ça ne marche pas.** À l'étape 3, `NS2-BANK` répond déjà `203.0.113.77` : il a eu le temps de recopier, ce qui ne devrait pas arriver sans série plus grande. Vérifie à l'étape 4 que les deux numéros de série sont bien égaux ; sinon, tu as monté le numéro sans t'en apercevoir.
 
 **🧠 Ce que tu viens d'apprendre.**
 
 - **Le primaire se recharge à partir du fichier ; le secondaire ne compare que le numéro de série.** Sans série plus grand, aucun transfert : pendant des heures, des jours même, les deux serveurs répondent **différemment** à la même question, et c'est l'ordre d'interrogation du résolveur qui décide de ce que voit l'utilisateur.
 - C'est le symptôme le plus déroutant du DNS : « ça marche pour moi, pas pour lui ». La première question devant un tel symptôme est toujours : **les SOA sont-ils identiques ?**
-- Une automatisation sûre (script ou outil de gestion) monte la série **dans la même opération** que la modification. Le format `AAAAMMJJNN` aide : on lit la date du dernier changement dans le numéro.
+- Une automatisation sûre monte la série **dans la même opération** que la modification. Le format `AAAAMMJJNN` aide : on lit la date du dernier changement dans le numéro.
 
-⚠️ **Attention** — Monter le numéro de série *trop haut* (au-delà de 2³² − 1) ou le **faire redescendre** est pire que l'oublier : un secondaire ignore les séries plus petites que les siennes (RFC 1982, arithmétique de série). Ne revenez jamais en arrière sans une procédure explicite.
+⚠️ **Attention** — Monter le numéro de série *trop haut* (au-delà de 2³² − 1) ou le **faire redescendre** est pire que l'oublier : un secondaire ignore les séries plus petites que les siennes (RFC 1982, arithmétique de série). Ne reviens jamais en arrière sans une procédure explicite.
+
+**Vérifie-toi.**
+
+1. Tu as modifié une zone et rechargé le primaire, mais le secondaire répond encore l'ancienne version. Quelle est ta première vérification ?
+2. Pourquoi ne faut-il jamais faire redescendre le numéro de série ?
+
+*Réponses.* (1) Comparer le SOA (donc le numéro de série) du primaire et du secondaire. (2) Un secondaire ignore les numéros plus petits que le sien : il ne se remettrait plus à jour.
 
 ---
+## VI.7 ⭐ 🧪 TP 20 — Créer sa propre zone et la brancher dans l'arbre
 
-## 28. ⭐ 🧪 TP 20 — Créer sa propre zone et la brancher dans l'arbre
+**🎯 Objectif.** Publier une **nouvelle zone** (`exemple.test`) sur `NS1-BANK`, constater qu'elle répond *chez elle* mais reste **invisible** du reste du monde, puis la rattacher à l'arbre par une **délégation**.
 
-**🎯 Objectif.** Publier une **nouvelle zone** (`exemple.test`) sur NS1-BANK, constater qu'elle répond *chez elle* mais reste **invisible** du reste du monde, puis la rattacher à l'arbre par une **délégation**.
+**Ce qu'il te faut.** Les TP 14 à 19 terminés. Un terminal sur `NS1-BANK`, un sur `ROOT-NS`, un sur `DNS-RES`, un sur `PC-CONSEILLER`. Durée : environ 1 heure. C'est le TP de synthèse de la Partie VI (⭐) : il réutilise tout ce que tu as appris. Tout est remis en état à la fin.
 
-**🔧 Manipulation.**
+**Le principe.** Créer une zone, c'est faire **deux choses indépendantes** :
+
+```schema
+ 1. HÉBERGER la zone      →  NS1-BANK détient les données de exemple.test (un fichier + une ligne dans named.conf)
+ 2. PUBLIER la zone       →  le PARENT (ici la racine) déclare « test. est délégué à NS1-BANK »
+```
+
+Tu vas faire la première, constater que ça ne suffit pas, puis faire la seconde. C'est la situation d'un domaine qu'on vient d'acheter : tant que le registre n'a pas enregistré tes serveurs de noms, personne ne le trouve.
+
+### Partie A — Héberger la zone
+
+**Étape 1 — Écrire le fichier de zone.**
 
 ```
 # sur NS1-BANK
@@ -3761,21 +4496,42 @@ $TTL 3600
 @ IN NS ns1.banquehorizon.com.
 www IN A 203.0.113.40
 EOF
+```
+
+Cette commande écrit **plusieurs lignes d'un coup** dans un fichier. `<<'EOF'` signifie « tout ce qui suit, jusqu'à la ligne `EOF`, est le texte à envoyer ». `tee` l'écrit dans `/etc/bind/db.exemple.test` (et l'affiche).
+
+```
+$TTL 3600
+@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 1 7200 900 1209600 3600 )
+@ IN NS ns1.banquehorizon.com.
+www IN A 203.0.113.40
+```
+
+Lis le contenu : c'est une zone minimale, comme celle du TP 14. Elle contient son SOA (numéro de série `1`), un NS et une machine `www` qui vaut `203.0.113.40`. Remarque qu'**il n'y a pas de ligne `$ORIGIN`** : BIND prend alors, comme origine, le nom de la zone déclarée dans `named.conf`.
+
+**Étape 2 — Déclarer la zone dans `named.conf`.**
+
+```
+# sur NS1-BANK
 sudo tee -a /etc/bind/named.conf <<'EOF'
 zone "exemple.test" { type primary; file "/etc/bind/db.exemple.test"; };
 EOF
+```
+
+`tee -a` **ajoute** (`-a`, *append*) à la fin du fichier, sans effacer ce qui existe.
+
+```
+zone "exemple.test" { type primary; file "/etc/bind/db.exemple.test"; };
+```
+
+C'est le bloc `zone` du TP 14 (étape 2), écrit sur une seule ligne.
+
+**Étape 3 — Vérifier. Toujours.**
+
+```
+# sur NS1-BANK
 named-checkzone exemple.test /etc/bind/db.exemple.test
-named-checkconf; echo rc=$?
-sudo rndc reconfig
 ```
-
-```
-# sur PC-CONSEILLER
-dig @203.0.113.10 www.exemple.test +norecurse +noall +comments +answer
-dig @10.20.20.53 www.exemple.test +noall +comments +answer +authority
-```
-
-**✅ Résultat attendu.** La zone passe les deux vérifications :
 
 ```
 zone exemple.test/IN: loaded serial 1
@@ -3783,10 +4539,31 @@ OK
 ```
 
 ```
+# sur NS1-BANK
+named-checkconf; echo rc=$?
+```
+
+```
 rc=0
 ```
 
-Interrogé **directement**, NS1-BANK répond (`aa` : il fait autorité) :
+La zone est lue (`loaded serial 1`) et la configuration est correcte (`rc=0`) : on peut appliquer.
+
+**Étape 4 — Prendre en compte la nouvelle zone.**
+
+```
+# sur NS1-BANK
+sudo rndc reconfig
+```
+
+`rndc reconfig` relit `named.conf` et charge les zones **nouvelles**, sans toucher aux autres et sans vider les caches. (Pour une zone qui **existe déjà**, c'est `rndc reload` — TP 15.) La commande n'affiche rien : le silence veut dire que ça a marché.
+
+**Étape 5 — Interroger la nouvelle zone directement.**
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 www.exemple.test +norecurse +noall +comments +answer
+```
 
 ```
 ;; Got answer:
@@ -3799,7 +4576,16 @@ Interrogé **directement**, NS1-BANK répond (`aa` : il fait autorité) :
 www.exemple.test.	3600	IN	A	203.0.113.40
 ```
 
-Mais à travers le résolveur de l'agence, **personne ne la connaît** — la racine ne sait pas que `test.` existe :
+`NS1-BANK` répond : `status: NOERROR`, la réponse est présente, et `flags: qr aa` — il **fait autorité**. Interrogée chez elle, la zone fonctionne.
+
+### Partie B — Constater que personne ne la voit
+
+**Étape 6 — Poser la même question par le chemin normal.** Au lieu d'interroger `NS1-BANK` directement, passe par le résolveur de l'agence.
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.exemple.test +noall +comments +answer +authority
+```
 
 ```
 ;; Got answer:
@@ -3812,30 +4598,49 @@ Mais à travers le résolveur de l'agence, **personne ne la connaît** — la ra
 .			10800	IN	SOA	a.root-servers.net. hostmaster.root-servers.net. 2026103101 1800 900 604800 86400
 ```
 
-**🔧 Manipulation (la délégation).** On déclare, dans la zone racine, que `test.` est délégué à NS1-BANK :
+`status: NXDOMAIN` : **le résolveur ne connaît pas ce nom.** Regarde la section `AUTHORITY` : c'est le SOA de la **racine** (`.`), qui dit « ce nom n'existe pas ». Le résolveur est parti de la racine (§ I.9), et la racine ne sait pas que `test.` existe. La zone est bien hébergée, mais **elle n'est branchée à rien**.
+
+### Partie C — Publier : déléguer depuis le parent
+
+Pour que la racine renvoie vers `NS1-BANK` quand on lui parle de `test.`, il faut lui déclarer la délégation, c'est-à-dire une fiche `NS`.
+
+**Étape 7 — Déclarer la délégation sur la racine.**
 
 ```
 # sur ROOT-NS
 echo 'test. IN NS ns1.banquehorizon.com.' | sudo tee -a /etc/bind/db.root
+```
+
+```
+test. IN NS ns1.banquehorizon.com.
+```
+
+On ajoute à la zone racine une fiche `NS` : « le domaine `test.` est tenu par `ns1.banquehorizon.com` ». Puis on recharge la racine :
+
+```
+# sur ROOT-NS
 sudo rndc reload
-```
-
-```
-# sur DNS-RES
-sudo rndc flush
-```
-
-```
-# sur PC-CONSEILLER
-dig @10.20.20.53 www.exemple.test +noall +comments +answer +authority
-dig +trace @10.20.20.53 www.exemple.test
 ```
 
 ```
 server reload successful
 ```
 
-Le résolveur trouve maintenant l'adresse :
+**Étape 8 — Vider le cache du résolveur.**
+
+```
+# sur DNS-RES
+sudo rndc flush
+```
+
+À l'étape 6, `DNS-RES` a **mémorisé** que `www.exemple.test` n'existe pas (c'est le *cache négatif*, TP 22). S'il le garde en mémoire, il répondra encore « n'existe pas » malgré la délégation. On le vide pour repartir de zéro (la commande n'affiche rien).
+
+**Étape 9 — Reposer la question.**
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.exemple.test +noall +comments +answer +authority
+```
 
 ```
 ;; Got answer:
@@ -3851,10 +4656,16 @@ www.exemple.test.	3600	IN	A	203.0.113.40
 exemple.test.		3600	IN	NS	ns1.banquehorizon.com.
 ```
 
-Et `+trace` montre la chaîne : racine → délégation de `test.` → NS1-BANK :
+Cette fois : `NOERROR` et la réponse `203.0.113.40`. La section `AUTHORITY` donne le serveur de la zone, `ns1.banquehorizon.com`. Le résolveur a trouvé le chemin.
+
+**Étape 10 — Voir le chemin avec `+trace`.**
 
 ```
+# sur PC-CONSEILLER
+dig +trace @10.20.20.53 www.exemple.test
+```
 
+```
 ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> +trace @10.20.20.53 www.exemple.test
 ; (1 server found)
 ;; global options: +cmd
@@ -3868,24 +4679,79 @@ www.exemple.test.	3600	IN	A	203.0.113.40
 ;; Received 85 bytes from 203.0.113.10#53(203.0.113.10) in 0 ms
 ```
 
-On remet le laboratoire en état :
+Tu retrouves les paragraphes du TP 7 :
+
+1. `DNS-RES` donne la racine ;
+2. la racine **renvoie** vers `ns1.banquehorizon.com` pour `test.` : c'est la délégation que tu viens d'écrire ;
+3. `203.0.113.10` (`NS1-BANK`) répond avec l'adresse.
+
+**Pourquoi pas de glue ici ?** Le serveur de la nouvelle zone (`ns1.banquehorizon.com`) se trouve dans **une autre zone** (`banquehorizon.com`) : le résolveur peut retrouver son adresse par une question à part. Si le serveur avait été **dans** la zone déléguée (`ns1.exemple.test`), la glue aurait été obligatoire (TP 8).
+
+### Partie D — Remise en état
+
+Il faut défaire les trois choses, dans cet ordre :
 
 ```
 # sur ROOT-NS
 sudo sed -i '/^test\. IN NS/d' /etc/bind/db.root; sudo rndc reload
+```
+
+```
+server reload successful
+```
+
+On supprime la délégation de la racine.
+
+```
 # sur NS1-BANK
 sudo sed -i '/exemple.test/d' /etc/bind/named.conf; sudo rm /etc/bind/db.exemple.test; sudo rndc reconfig
+```
+
+On supprime de `named.conf` la ligne de la zone, on efface le fichier de zone (`rm`), et on recharge la configuration.
+
+```
 # sur DNS-RES
 sudo rndc flush
 ```
 
+On vide le cache du résolveur. Vérifie que la zone a disparu :
+
+```
+# sur PC-CONSEILLER
+dig @10.20.20.53 www.exemple.test +noall +comments
+```
+
+```
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 70
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+```
+
+`NXDOMAIN` : le laboratoire est revenu à l'état d'avant le TP.
+
+> 🔍 **Point d'audit** — Une zone qui répond « chez elle » mais n'est pas déléguée est une **zone fantôme** : elle passe tous les tests locaux et échoue pour les utilisateurs. Contrôle toujours avec un `dig +trace` depuis un poste qui n'a pas accès au serveur d'autorité.
+
+🆘 **Si ça ne marche pas.**
+
+- À l'étape 9, toujours `NXDOMAIN` : tu as oublié l'étape 8 (le résolveur se souvient de son « non ») ou la délégation n'est pas rechargée (étape 7, deuxième commande).
+- `named-checkzone` affiche une erreur à l'étape 3 : une ligne du fichier a été mal recopiée. Reprends la commande de l'étape 1.
+- À la remise en état, `sed` ne supprime rien : vérifie avec `cat /etc/bind/db.root`.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Créer une zone, c'est **deux** choses indépendantes : (1) *héberger* les données (`zone … { type primary; file … };` + le fichier) ; (2) *publier* la zone, c'est-à-dire la faire connaître au **parent** par une délégation (`NS` dans la zone parente, ici la racine). Sans la deuxième, la zone existe mais personne ne sait l'atteindre : c'est exactement le cas d'un domaine qu'on a acheté mais dont le registre n'a pas encore les serveurs de noms.
-- `rndc reconfig` relit `named.conf` et charge les zones **nouvelles** sans toucher aux autres ni vider les caches ; `rndc reload` relit les zones. Pour une zone *ajoutée*, c'est `reconfig`.
-- Ici le serveur de la nouvelle zone se trouve dans une autre zone (`ns1.banquehorizon.com`) : pas besoin de glue, le résolveur trouvera l'adresse par une question à part. Si le serveur avait été **dans** la zone déléguée (`ns1.exemple.test`), la glue aurait été obligatoire, sinon on tourne en rond (TP 8).
+- Créer une zone, c'est **deux** choses : (1) *héberger* les données (`zone … { type primary; file … };` + un fichier) ; (2) *publier* la zone par une **délégation** (`NS`) dans la zone parente. Sans la deuxième, la zone existe mais personne ne sait l'atteindre.
+- `rndc reconfig` charge les zones **nouvelles** ; `rndc reload` relit les zones existantes ; `rndc flush` vide le cache.
+- Un nom qui n'existait pas peut être **mémorisé comme inexistant** par un résolveur : après un changement, il faut parfois vider son cache (Partie VII).
 
-> 🔍 **Point d'audit** — Une zone qui répond « chez elle » mais n'est pas déléguée est une **zone fantôme** : elle passe tous les tests locaux et échoue pour les utilisateurs. Contrôle toujours avec un `dig +trace` depuis un poste qui n'a pas accès au serveur autoritaire.
+**Vérifie-toi.**
+
+1. Quelles sont les deux choses nécessaires pour qu'une nouvelle zone soit atteignable par tous ?
+2. Pourquoi a-t-il fallu vider le cache de `DNS-RES` à l'étape 8 ?
+
+*Réponses.* (1) L'héberger (fichier + déclaration dans `named.conf`), et la déléguer depuis la zone parente. (2) Parce qu'il avait retenu que le nom n'existe pas (cache négatif) et continuerait de le dire.
 
 ---
 

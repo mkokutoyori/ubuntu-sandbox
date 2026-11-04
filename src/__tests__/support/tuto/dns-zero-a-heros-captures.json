@@ -688,7 +688,7 @@
     "dev": "NS1-BANK",
     "kind": "sh",
     "cmd": "sudo grep named /var/log/syslog | tail -4",
-    "output": "Nov  4 10:53:16 NS1-BANK systemd: Started named.service.\nNov  4 11:04:17 NS1-BANK named[43]: dns_rdata_fromtext: /etc/bind/db.banquehorizon.com:17: near 'oops': extra input text\nNov  4 11:04:17 NS1-BANK named[43]: zone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.com failed: extra input text\nNov  4 11:04:17 NS1-BANK named[43]: zone banquehorizon.com/IN: not loaded due to errors."
+    "output": "Nov  4 20:16:01 NS1-BANK systemd: Started named.service.\nNov  4 20:27:02 NS1-BANK named[43]: dns_rdata_fromtext: /etc/bind/db.banquehorizon.com:17: near 'oops': extra input text\nNov  4 20:27:02 NS1-BANK named[43]: zone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.com failed: extra input text\nNov  4 20:27:02 NS1-BANK named[43]: zone banquehorizon.com/IN: not loaded due to errors."
    },
    {
     "id": "15.reload2",
@@ -831,6 +831,20 @@
     "output": "18"
    },
    {
+    "id": "17.soa-before-ns1",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+   },
+   {
+    "id": "17.soa-before-ns2",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+   },
+   {
     "id": "17.serial",
     "dev": "NS1-BANK",
     "kind": "sh",
@@ -843,6 +857,13 @@
     "kind": "sh",
     "cmd": "echo 'api2 IN A 203.0.113.30' | sudo tee -a /etc/bind/db.banquehorizon.com",
     "output": "api2 IN A 203.0.113.30"
+   },
+   {
+    "id": "17.check",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
+    "output": "zone banquehorizon.com/IN: loaded serial 2026103102\nOK"
    },
    {
     "id": "17.reload",
@@ -1773,7 +1794,7 @@
     "id": "f5.break-zone",
     "dev": "NS1-BANK",
     "kind": "sh",
-    "cmd": "sudo sed -i 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.25 oops/' /etc/bind/db.banquehorizon.com",
+    "cmd": "sudo sed -i 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.99 oops/' /etc/bind/db.banquehorizon.com",
     "output": ""
    },
    {
@@ -1801,7 +1822,7 @@
     "id": "f5.fix",
     "dev": "NS1-BANK",
     "kind": "sh",
-    "cmd": "sudo sed -i 's/ oops//' /etc/bind/db.banquehorizon.com; named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
+    "cmd": "sudo sed -i 's/203.0.113.99 oops/203.0.113.25/' /etc/bind/db.banquehorizon.com; named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
     "output": "zone banquehorizon.com/IN: loaded serial 2026103101\nOK"
    },
    {
