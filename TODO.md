@@ -4466,7 +4466,7 @@ csplit is a port of csplit.c 9.4 for inputs held in one buffer (the whole simula
 ## numfmt
 
 numfmt follows numfmt.c 9.4 but computes in IEEE doubles where the real tool uses long double: integers up to 33 digits pass through as text when no scaling applies, but scaled results of values above 2^53 can differ in the last digit. The simulated `printf` does not read `\000` followed by digits as a NUL plus text (`printf '1\0002'`), which blocks a `-z` probe; `--grouping` has no effect, as in a UTF-8 C locale where the thousands separator is empty.
-Still missing: pinky, chcon, runcon.
+Still missing: pinky, chcon, runcon. They are not measurable here: the dev container has no login session (pinky answers only its header) and its kernel answers chcon/runcon in ways a stock Ubuntu host does not (runcon with no command prints `kernel` and exits 0, `chcon u:r:t file` succeeds silently), so any output would be a guess. They get implemented from a capture taken on a real host, with the session table (`SshSessionTable`, as `who` uses it) behind pinky.
 
 ## shred
 
