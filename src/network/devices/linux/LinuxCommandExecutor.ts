@@ -82,6 +82,7 @@ import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
 import { runStrings } from './coreutils/StringsCommand';
+import { runShred } from './coreutils/ShredCommand';
 import { runNumfmt } from './coreutils/NumfmtCommand';
 import { runCsplit } from './coreutils/CsplitCommand';
 import { generatorFromMath, runShuf } from './coreutils/ShufCommand';
@@ -359,7 +360,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
-  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'stdbuf', 'shuf', 'csplit', 'numfmt', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'stdbuf', 'shuf', 'csplit', 'numfmt', 'shred', 'shred', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
   'column', 'split', 'base64', 'base32', 'basenc', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
@@ -465,6 +466,7 @@ const OPTIONS_TAKING_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
   awk: new Set(['-F', '-v', '-f', '--field-separator', '--assign', '--file']),
   od: new Set(['-A', '-j', '-N', '-S', '-t']),
   shuf: new Set(['-i', '-n', '-o', '--input-range', '--head-count', '--output', '--random-source']),
+  shred: new Set(['-n', '-s', '--iterations', '--size', '--random-source']),
   numfmt: new Set(['-d', '--from', '--from-unit', '--to', '--to-unit', '--round', '--padding', '--suffix', '--delimiter', '--field', '--format', '--invalid']),
   csplit: new Set(['-f', '-b', '-n', '--prefix', '--suffix-format', '--digits']),
   strings: new Set(['-n', '-t', '-s', '-e', '-T', '--bytes', '--radix', '--encoding', '--output-separator', '--target']),
@@ -6514,6 +6516,7 @@ export class LinuxCommandExecutor {
       case 'factor': return asDispatch(runFactor(args, coreutilsIO(c, stdin)));
       case 'tsort': return asDispatch(runTsort(args, coreutilsIO(c, stdin)));
       case 'strings': return asDispatch(runStrings(args, coreutilsIO(c, stdin)));
+      case 'shred': return asDispatch(runShred(args, coreutilsIO(c, stdin)));
       case 'numfmt': return asDispatch(runNumfmt(args, coreutilsIO(c, stdin)));
       case 'csplit': return asDispatch(runCsplit(args, coreutilsIO(c, stdin)));
       case 'shuf': return asDispatch(runShuf(args, coreutilsIO(c, stdin), generatorFromMath()));
