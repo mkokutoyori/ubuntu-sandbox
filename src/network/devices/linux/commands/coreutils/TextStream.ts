@@ -28,6 +28,7 @@ import { asDispatch, type CoreutilsIO, type CoreutilsRun } from '../../coreutils
 import { coreutilsIO } from '../../coreutils/CoreutilsFiles';
 import { runTac } from '../../coreutils/TacCommand';
 import { runFmt } from '../../coreutils/FmtCommand';
+import { runPr } from '../../coreutils/PrCommand';
 import { runCksum } from '../../coreutils/CksumCommand';
 import { runCmp } from '../../coreutils/CmpCommand';
 import { runBase64 } from '../../coreutils/Base64Command';
@@ -260,39 +261,26 @@ export const fmtCommand = viaCoreutils(coreutil(
 
 // ─── pr ─────────────────────────────────────────────────────────────
 
-export const prCommand = coreutil(
-  'pr', 'pr [-t] [-n] [FILE]...',
-  'Paginate files for printing. -t omits the page headers and footers,\n'
-  + '-n numbers the lines. Only these two forms are available: full\n'
-  + 'pagination would need a page geometry this host does not model.',
+export const prCommand = viaCoreutils(coreutil(
+  'pr', 'pr [OPTION]... [FILE]...',
+  'Paginate or columnate FILE(s) for printing.',
   [
     { flag: '-t', description: 'Omit headers and footers' },
     { flag: '-n', description: 'Number the lines' },
+    { flag: '-l', description: 'Page length', takesArg: true, argName: 'PAGE_LENGTH' },
+    { flag: '-w', description: 'Page width for multi-column output', takesArg: true, argName: 'PAGE_WIDTH' },
+    { flag: '-m', description: 'Print all files in parallel, one in each column' },
+    { flag: '-h', description: 'Header text', takesArg: true, argName: 'HEADER' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'tn', '');
-    let omitHeader = false;
-    let numbered = false;
-    const files: string[] = [];
-    for (const a of args) {
-      if (a === '-t') { omitHeader = true; continue; }
-      if (a === '-n') { numbered = true; continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
-    }
-    const got = inputs(ctx, files, stdin, 'pr');
-    if (!Array.isArray(got)) return got;
-
-    const out: string[] = [];
-    for (let f = 0; f < got.length; f++) {
-      const body = toLines(got[f]).map((l, i) => (numbered ? `${padToWidth(String(i + 1), 5, 'right')}\t${l}` : l));
-      if (omitHeader) { out.push(...body); continue; }
-      out.push('', '', `${simulationDate().toDateString()}  ${files[f] ?? ''}  Page 1`, '', '');
-      out.push(...body);
-      out.push('', '', '', '', '');
-    }
-    return out.join('\n');
-  },
-);
+  () => '',
+), (args, io, ctx) => {
+  const executor = ctx.executor;
+  return runPr(args, io, {
+    nowMs: executor.simulatedDate().getTime(),
+    timezone: executor.localZone(),
+    fileMtimeMs: (name) => executor.vfs.resolveInode(executor.vfs.normalizePath(name, executor.getCwd()))?.mtime ?? null,
+  });
+});
 
 // ─── column ─────────────────────────────────────────────────────────
 

@@ -84,7 +84,7 @@ export function useLocaleQuotes(locale: string): void {
 export const quoteLocale = (text: string): string => (curlyQuotes ? `‘${text}’` : `'${text}'`);
 export const quoteShell = (text: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? `'${text}'` : `'${text.replace(/'/g, `'\\''`)}'`);
 
-export const quotef = (text: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`);
+export const quotef = (text: string): string => (/^[A-Za-z0-9_@%+,./{}\]-][A-Za-z0-9_@%+,./{}\]~#-]*$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`);
 
 const SUFFIX_FACTORS: Readonly<Record<string, number>> = {
   b: 512, kB: 1000, KB: 1000, k: 1024, K: 1024, KiB: 1024, MB: 1000 ** 2, M: 1024 ** 2, MiB: 1024 ** 2, GB: 1000 ** 3, G: 1024 ** 3, GiB: 1024 ** 3,
