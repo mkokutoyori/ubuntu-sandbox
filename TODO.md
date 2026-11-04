@@ -4479,3 +4479,7 @@ dircolors ports dircolors.c 9.4 with the real compiled database. Not wired: `ls 
 ## ptx (lot 18)
 
 ptx is ported from coreutils 9.4 and measured on 134 cases. Known limits: `-W` with a pattern that matches the empty string loops forever, in the real binary as well, so the simulator does the same and it is not pinned; multibyte locales are not modelled (widths and word characters count bytes, as in the C.UTF-8 locale measured).
+
+## id, env, printenv (lot 19)
+
+`env ./missing` and `env /absent/x` still answer with the shell's `bash: ./missing: No such file or directory` instead of env's own `env: './missing': No such file or directory`: wrapped path commands are refused before the env handler runs. `env echo -n hi` ends the output with a newline that the real command does not print (the wrapper takes `echo` for a line-oriented command). The `--default-signal`, `--ignore-signal`, `--block-signal` and `--list-signal-handling` options are accepted and validated but change nothing: the simulated processes have no signal disposition to set.

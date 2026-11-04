@@ -559,8 +559,11 @@ export class LinuxUserManager {
     const user = this.users.get(username);
     if (!user) return [];
     const result: GroupEntry[] = [];
+    const seenGids = new Set<number>();
     for (const g of this.groups.values()) {
       if (g.gid === user.gid || g.members.includes(username)) {
+        if (seenGids.has(g.gid)) continue;
+        seenGids.add(g.gid);
         result.push(g);
       }
     }

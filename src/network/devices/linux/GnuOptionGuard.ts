@@ -234,14 +234,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: false,
   },
-  env: {
-    optstring: '+i0u:C:S:vh',
-    long: [
-      flag('ignore-environment', 'i'), flag('null', '0'), valued('unset', 'u'), valued('chdir', 'C'),
-      valued('split-string', 'S'), flag('debug', 'v'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
   ls: {
     optstring: 'aAbBcCdDfFgGhHI:iklLmnNopqQrRsStT:uUvw:xXZ1',
     long: [
@@ -260,7 +252,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  printenv: { optstring: '0', long: [flag('null', '0'), ...HELP_VERSION], operands: true },
   sha224sum: {
     optstring: 'bctwz',
     long: [
@@ -304,14 +295,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
       flag('no-dereference', 'P'), flag('separate-dirs', 'S'), flag('si'), flag('summarize', 's'),
       valued('threshold', 't'), optional('time'), valued('time-style'), valued('exclude-from', 'X'),
       valued('exclude'), flag('one-file-system', 'x'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  id: {
-    optstring: 'agGnruzZ',
-    long: [
-      flag('context', 'Z'), flag('group', 'g'), flag('groups', 'G'), flag('name', 'n'), flag('real', 'r'),
-      flag('user', 'u'), flag('zero', 'z'), ...HELP_VERSION,
     ],
     operands: true,
   },

@@ -81,6 +81,8 @@ import { runChecksum } from './coreutils/CksumCommand';
 import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
+import { planEnv, runPrintenv } from './coreutils/EnvCommand';
+import { runId } from './coreutils/IdCommand';
 import { runPtx } from './coreutils/PtxCommand';
 import { runStrings } from './coreutils/StringsCommand';
 import { runDircolors } from './coreutils/DircolorsCommand';
@@ -122,7 +124,7 @@ import {
 import { cmdDiff } from './coreutils/DiffCommand';
 import { formatStatTime } from './time/FileTimes';
 import { runXargs } from './coreutils/Xargs';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -512,6 +514,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
+  'id', 'printenv',
   'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'ptx', 'shuf', 'csplit', 'numfmt', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
@@ -5168,7 +5171,8 @@ export class LinuxCommandExecutor {
     interpreterStdin?: string,
   ): { output: string; exitCode: number; backgroundPid?: number; lineOriented?: boolean } {
     const result = this.dispatchResolved(argv, env, background, outputPiped, interpreterStdin);
-    return { ...result, lineOriented: writesLines(argv) || reportsOwnFailure(argv, result.exitCode) };
+    const innerLineOriented = (result as { lineOriented?: boolean }).lineOriented === true;
+    return { ...result, lineOriented: innerLineOriented || writesLines(argv) || reportsOwnFailure(argv, result.exitCode) };
   }
 
   private dispatchResolved(
@@ -6541,7 +6545,7 @@ export class LinuxCommandExecutor {
         const plan = planStdbuf('stdbuf', args, inherited);
         if (!('command' in plan)) return asDispatch(plan);
         const result = this.dispatchFromInterpreter(plan.command, { ...inherited, ...plan.env });
-        if (result.exitCode === 127 && /command not found/.test(result.output)) {
+        if (result.exitCode === 127 && /command not found|No such file or directory/.test(`${result.output}${(result as { stderr?: string }).stderr ?? ''}`)) {
           return { output: '', stderr: `stdbuf: failed to run command ${quoteLocale(plan.command[0])}: No such file or directory`, exitCode: 127 };
         }
         return result;
@@ -6616,10 +6620,7 @@ export class LinuxCommandExecutor {
       case 'gpasswd': return this.handleGpasswd(args);
       case 'chfn': return this.handleChfn(args);
       case 'finger': return this.handleFinger(args);
-      case 'id': {
-        const out = cmdId(c, args);
-        return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
-      }
+      case 'id': return asDispatch(runId(c, args));
       case 'whoami': return { output: cmdWhoami(c), exitCode: 0 };
       case 'groups': return { output: cmdGroups(c, args), exitCode: 0 };
       case 'who': {
@@ -6713,43 +6714,42 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
 
-      // env — print the environment, or run a command in a modified one.
-      //   env                       → print every variable
-      //   env -i [VAR=v…] cmd       → run cmd with an empty base environment
-      //   env -u NAME … cmd         → run cmd with NAME removed
-      //   env VAR=v … cmd args      → run cmd with VAR overlaid
       case 'env': {
-        const { env: resultEnv, command: cmdline } = parseEnvInvocation(args, this.environmentOfCommand());
-        if (cmdline.length === 0) {
-          return {
-            output: Object.entries(resultEnv).map(([k, v]) => `${k}=${v}`).join('\n'),
-            exitCode: 0,
-          };
+        const plan = planEnv(args, this.environmentOfCommand());
+        if (plan.kind === 'docs') return asDispatch(docsResult('env', plan.which));
+        if (plan.kind === 'failure') {
+          return { output: '', exitCode: plan.exitCode, stderr: `${plan.lines.join('\n')}\n`, interleaved: `${plan.lines.join('\n')}\n` };
         }
-        // Run the supplied command line under the computed environment.
-        return this.dispatchFromInterpreter(cmdline, resultEnv);
+        const notes = plan.debug.map((line) => `${line}\n`).join('');
+        if (plan.kind === 'print') {
+          return notes === '' ? { output: plan.text, exitCode: 0 } : { output: plan.text, exitCode: 0, stderr: notes, interleaved: notes + plan.text };
+        }
+        const previousCwd = this.cwd;
+        if (plan.directory !== null) {
+          const target = this.vfs.normalizePath(plan.directory, this.cwd);
+          const inode = this.vfs.resolveInode(target);
+          if (!inode || inode.type !== 'directory') {
+            const reason = !inode ? 'No such file or directory' : 'Not a directory';
+            const line = `${notes}env: cannot change directory to ${quoteLocale(plan.directory)}: ${reason}\n`;
+            return { output: '', exitCode: 125, stderr: line, interleaved: line };
+          }
+          this.cwd = target;
+          plan.env['PWD'] = target;
+        }
+        let result: { output: string; exitCode: number };
+        try {
+          result = this.dispatchFromInterpreter([...plan.command], plan.env);
+        } finally {
+          this.cwd = previousCwd;
+        }
+        if (result.exitCode === 127 && /command not found/.test(result.output)) {
+          const line = `${notes}env: ${quoteLocale(plan.command[0])}: No such file or directory\n${/\s/.test(plan.command[0]) ? 'env: use -[v]S to pass options in shebang lines\n' : ''}`;
+          return { output: '', exitCode: 127, stderr: line, interleaved: line };
+        }
+        return notes === '' ? result : { ...result, stderr: notes, interleaved: notes + result.output };
       }
 
-      // printenv — print the whole environment, or specific variables.
-      // With names, one value per line; exit 1 if any name is unset.
-      case 'printenv': {
-        const envView = this.environmentOfCommand();
-        const names = args.filter((a) => !a.startsWith('-'));
-        if (names.length === 0) {
-          return {
-            output: Object.entries(envView).map(([k, v]) => `${k}=${v}`).join('\n'),
-            exitCode: 0,
-          };
-        }
-        const out: string[] = [];
-        let missing = false;
-        for (const name of names) {
-          const v = envView[name];
-          if (v === undefined) missing = true;
-          else out.push(v);
-        }
-        return { output: out.join('\n'), exitCode: missing ? 1 : 0 };
-      }
+      case 'printenv': return asDispatch(runPrintenv(args, this.environmentOfCommand()));
 
       // time — run a command and report its elapsed wall/user/sys time
       case 'time': return this.handleTime(args);
@@ -9246,8 +9246,8 @@ export class LinuxCommandExecutor {
         return this.runSupervised(parsed, () => run(parsed.command, env, outputPiped));
       }
       case 'env': {
-        const parsed = parseEnvInvocation(args, env ?? Object.fromEntries(this.env));
-        return run(parsed.command, parsed.env, outputPiped);
+        const plan = planEnv(args, env ?? Object.fromEntries(this.env));
+        return plan.kind === 'run' ? run([...plan.command], plan.env, outputPiped) : null;
       }
       case 'nohup': {
         const target = outputPiped ? null : this.nohupOutputFile();
@@ -9717,30 +9717,6 @@ function timeoutNotice(invocation: TimeoutInvocation, signal: Signal): string {
 
 function timedOutStatus(invocation: TimeoutInvocation, killedBy: Signal, commandStatus: number): number {
   return invocation.preserveStatus || killedBy === 'SIGKILL' ? commandStatus : TIMEOUT_EXIT_TIMEDOUT;
-}
-
-function parseEnvInvocation(
-  args: readonly string[], inherited: Record<string, string>,
-): { env: Record<string, string>; command: string[] } {
-  let i = 0;
-  let ignoreEnv = false;
-  const unset: string[] = [];
-  const overlay: Record<string, string> = {};
-  for (; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-i' || a === '--ignore-environment' || a === '-') { ignoreEnv = true; continue; }
-    if (a === '-u' || a === '--unset') { if (args[i + 1] !== undefined) unset.push(args[++i]); continue; }
-    if (a.startsWith('-')) continue;
-    const eq = a.indexOf('=');
-    if (eq > 0 && /^[A-Za-z_][A-Za-z_0-9]*$/.test(a.slice(0, eq))) {
-      overlay[a.slice(0, eq)] = a.slice(eq + 1);
-      continue;
-    }
-    break;
-  }
-  const base = ignoreEnv ? {} : { ...inherited };
-  for (const u of unset) delete base[u];
-  return { env: { ...base, ...overlay }, command: args.slice(i) };
 }
 
 function nohupResult(output: string, exitCode: number, stderr: string): { output: string; exitCode: number } {
