@@ -493,7 +493,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'diff', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -3391,6 +3391,14 @@ export class LinuxCommandExecutor {
 
   private hasControllingTty(): boolean {
     return this._cmdEnv?.['SSH_NO_TTY'] !== '1' && this.env.get('SSH_NO_TTY') !== '1';
+  }
+
+  private runClosed(argv: readonly string[], isSudo: boolean): { stdout: string; stderr: string; exitCode: number } {
+    const result = this.dispatch(argv[0], argv.slice(1), undefined, isSudo);
+    const closed = (text: string): string => (text === '' || text.endsWith('\n') ? text : `${text}\n`);
+    const printsNothing = argv[0] === 'echo' && argv.slice(1).some((word) => /^-[neE]*n[neE]*$/.test(word));
+    const echoLine = argv[0] === 'echo' && !printsNothing && result.exitCode === 0;
+    return { stdout: echoLine ? `${result.output}\n` : writesLines(argv) ? closed(result.output) : result.output, stderr: closed(result.stderr ?? ''), exitCode: result.exitCode };
   }
 
   private sttyHost(standardInputIsTerminal: boolean, outputPiped: boolean): SttyHost {
@@ -6369,9 +6377,7 @@ export class LinuxCommandExecutor {
           const saved = this.cwd;
           this.cwd = cwd;
           try {
-            const r = this.dispatch(argv[0], argv.slice(1), undefined, isSudo);
-            const closed = (text: string): string => (text === '' || text.endsWith('\n') ? text : `${text}\n`);
-            return { stdout: writesLines(argv) ? closed(r.output) : r.output, stderr: closed(r.stderr ?? ''), exitCode: r.exitCode };
+            return this.runClosed(argv, isSudo);
           } finally {
             this.cwd = saved;
           }
@@ -7104,6 +7110,13 @@ export class LinuxCommandExecutor {
           if (!node) return null;
           return { type: node.type === 'directory' ? 'directory' : node.type === 'file' ? 'file' : 'other', mtimeMs: node.mtime };
         },
+        lstat: (p) => {
+          const node = this.vfs.lstat(p);
+          if (!node) return null;
+          return { type: node.type === 'directory' ? 'directory' : node.type === 'file' ? 'file' : node.type === 'symlink' ? 'symlink' : 'other', mtimeMs: node.mtime };
+        },
+        linkTarget: (p) => { const node = this.vfs.lstat(p); return node && node.type === 'symlink' ? this.vfs.linkTarget(node) : null; },
+        now: () => this.simulatedDate().getTime(),
         list: (p) => this.vfs.listDirectory(p)?.map((entry) => entry.name) ?? null,
         formatTime: (ms) => formatStatTime(ms, this.identity.timezone),
       }, this.cwd, args);
@@ -7129,7 +7142,10 @@ export class LinuxCommandExecutor {
       case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'xargs': {
         const r = runXargs(args, stdin, {
-          run: (argv) => this.dispatch(argv[0], argv.slice(1), undefined, isSudo),
+          run: (argv) => {
+            const closed = this.runClosed(argv, isSudo);
+            return { output: closed.stdout, exitCode: closed.exitCode };
+          },
           readFile: (path) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
         });
         return { output: r.stdout, exitCode: r.exitCode, stderr: r.stderr } as { output: string; exitCode: number };

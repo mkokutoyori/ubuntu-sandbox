@@ -1,8 +1,9 @@
-import { shortOptions, getoptDiagnostic } from '../commands/Getopt';
-import { GNU_OPTION_SETS } from '../GnuOptionGuard';
+import { shortOptions, getoptDiagnostic, type LongOption } from '../commands/Getopt';
+import { defaultFormats, ifdefFormats, renderEd, renderGroupFormat, renderSideBySide, withMarker, type DiffLine, type DiffOp, type GroupFormats } from './DiffFormats';
+import { docsResult, quoteLocale } from './CoreutilsKit';
 
 export interface DiffEntryStat {
-  readonly type: 'file' | 'directory' | 'other';
+  readonly type: 'file' | 'directory' | 'symlink' | 'other';
   readonly mtimeMs: number;
 }
 
@@ -10,6 +11,9 @@ export interface DiffFs {
   readFile(path: string): string | null;
   normalizePath(path: string, cwd: string): string;
   stat(path: string): DiffEntryStat | null;
+  lstat(path: string): DiffEntryStat | null;
+  linkTarget(path: string): string | null;
+  now(): number;
   list(path: string): string[] | null;
   formatTime(ms: number): string;
 }
@@ -19,7 +23,67 @@ export interface DiffResult {
   exitCode: number;
 }
 
-type Format = 'normal' | 'unified' | 'context';
+const LONG_OPTIONS: readonly LongOption[] = [
+  { name: 'normal', letter: '', takesArgument: false },
+  { name: 'brief', letter: 'q', takesArgument: false },
+  { name: 'report-identical-files', letter: 's', takesArgument: false },
+  { name: 'context', letter: 'c', takesArgument: false, optionalArgument: true },
+  { name: 'unified', letter: 'u', takesArgument: false, optionalArgument: true },
+  { name: 'ed', letter: 'e', takesArgument: false },
+  { name: 'rcs', letter: 'n', takesArgument: false },
+  { name: 'side-by-side', letter: 'y', takesArgument: false },
+  { name: 'width', letter: 'W', takesArgument: true },
+  { name: 'left-column', letter: '', takesArgument: false },
+  { name: 'suppress-common-lines', letter: '', takesArgument: false },
+  { name: 'show-c-function', letter: 'p', takesArgument: false },
+  { name: 'show-function-line', letter: 'F', takesArgument: true },
+  { name: 'label', letter: 'L', takesArgument: true },
+  { name: 'expand-tabs', letter: 't', takesArgument: false },
+  { name: 'initial-tab', letter: 'T', takesArgument: false },
+  { name: 'tabsize', letter: '', takesArgument: true },
+  { name: 'suppress-blank-empty', letter: '', takesArgument: false },
+  { name: 'paginate', letter: 'l', takesArgument: false },
+  { name: 'recursive', letter: 'r', takesArgument: false },
+  { name: 'no-dereference', letter: '', takesArgument: false },
+  { name: 'new-file', letter: 'N', takesArgument: false },
+  { name: 'unidirectional-new-file', letter: '', takesArgument: false },
+  { name: 'ignore-file-name-case', letter: '', takesArgument: false },
+  { name: 'no-ignore-file-name-case', letter: '', takesArgument: false },
+  { name: 'exclude', letter: 'x', takesArgument: true },
+  { name: 'exclude-from', letter: 'X', takesArgument: true },
+  { name: 'starting-file', letter: 'S', takesArgument: true },
+  { name: 'from-file', letter: '', takesArgument: true },
+  { name: 'to-file', letter: '', takesArgument: true },
+  { name: 'ignore-case', letter: 'i', takesArgument: false },
+  { name: 'ignore-tab-expansion', letter: 'E', takesArgument: false },
+  { name: 'ignore-trailing-space', letter: 'Z', takesArgument: false },
+  { name: 'ignore-space-change', letter: 'b', takesArgument: false },
+  { name: 'ignore-all-space', letter: 'w', takesArgument: false },
+  { name: 'ignore-blank-lines', letter: 'B', takesArgument: false },
+  { name: 'ignore-matching-lines', letter: 'I', takesArgument: true },
+  { name: 'text', letter: 'a', takesArgument: false },
+  { name: 'strip-trailing-cr', letter: '', takesArgument: false },
+  { name: 'ifdef', letter: 'D', takesArgument: true },
+  { name: 'line-format', letter: '', takesArgument: true },
+  { name: 'old-line-format', letter: '', takesArgument: true },
+  { name: 'new-line-format', letter: '', takesArgument: true },
+  { name: 'unchanged-line-format', letter: '', takesArgument: true },
+  { name: 'old-group-format', letter: '', takesArgument: true },
+  { name: 'new-group-format', letter: '', takesArgument: true },
+  { name: 'unchanged-group-format', letter: '', takesArgument: true },
+  { name: 'changed-group-format', letter: '', takesArgument: true },
+  { name: 'minimal', letter: 'd', takesArgument: false },
+  { name: 'horizon-lines', letter: '', takesArgument: true },
+  { name: 'speed-large-files', letter: '', takesArgument: false },
+  { name: 'color', letter: '', takesArgument: false, optionalArgument: true },
+  { name: 'palette', letter: '', takesArgument: true },
+  { name: 'help', letter: '', takesArgument: false },
+  { name: 'version', letter: 'v', takesArgument: false },
+];
+
+const OPTSTRING = 'abBcC:dD:eEfF:hiI:lL:nNpqrsS:tTuU:vwW:x:X:yZ0123456789';
+
+type Format = 'normal' | 'unified' | 'context' | 'ed' | 'rcs' | 'side' | 'groups';
 
 interface DiffOptions {
   format: Format;
@@ -36,19 +100,33 @@ interface DiffOptions {
   labels: string[];
   excludes: RegExp[];
   optionText: string;
+  text: boolean;
+  stripCr: boolean;
+  initialTab: boolean;
+  showFunction: RegExp | null;
+  width: number;
+  leftColumn: boolean;
+  suppressCommon: boolean;
+  expandTabs: boolean;
+  tabSize: number;
+  noDereference: boolean;
+  fromFile: string | null;
+  toFile: string | null;
+  formats: GroupFormats;
+  paginate: boolean;
 }
 
-interface Op {
-  readonly kind: ' ' | '-' | '+';
-  readonly text: string;
-  readonly aLine: number;
-  readonly bLine: number;
-}
+type Op = DiffOp;
 
-function splitLines(content: string): string[] {
-  const lines = content.split('\n');
-  if (lines[lines.length - 1] === '') lines.pop();
-  return lines;
+function splitLines(content: string, stripCr: boolean): DiffLine[] {
+  if (content === '') return [];
+  const raw = content.split('\n');
+  const endsWithNewline = raw[raw.length - 1] === '';
+  if (endsWithNewline) raw.pop();
+  return raw.map((text, index) => ({
+    text: stripCr ? text.replace(/\r$/, '') : text,
+    noEol: !endsWithNewline && index === raw.length - 1,
+  }));
 }
 
 function comparisonKey(line: string, options: DiffOptions): string {
@@ -69,22 +147,23 @@ function lcsTable(a: string[], b: string[]): number[][] {
   return table;
 }
 
-function editScript(a: string[], b: string[], options: DiffOptions): Op[] {
-  const keysA = a.map((line) => comparisonKey(line, options));
-  const keysB = b.map((line) => comparisonKey(line, options));
+function editScript(a: DiffLine[], b: DiffLine[], options: DiffOptions): Op[] {
+  const keyOf = (line: DiffLine): string => `${comparisonKey(line.text, options)}${line.noEol ? '\u0000noeol' : ''}`;
+  const keysA = a.map(keyOf);
+  const keysB = b.map(keyOf);
   const table = lcsTable(keysA, keysB);
   const ops: Op[] = [];
   let i = 0;
   let j = 0;
   while (i < a.length || j < b.length) {
     if (i < a.length && j < b.length && keysA[i] === keysB[j]) {
-      ops.push({ kind: ' ', text: a[i], aLine: i + 1, bLine: j + 1 });
+      ops.push({ kind: ' ', text: a[i].text, noEol: a[i].noEol, aLine: i + 1, bLine: j + 1 });
       i++; j++;
     } else if (i < a.length && (j >= b.length || table[i + 1][j] >= table[i][j + 1])) {
-      ops.push({ kind: '-', text: a[i], aLine: i + 1, bLine: j + 1 });
+      ops.push({ kind: '-', text: a[i].text, noEol: a[i].noEol, aLine: i + 1, bLine: j + 1 });
       i++;
     } else {
-      ops.push({ kind: '+', text: b[j], aLine: i + 1, bLine: j + 1 });
+      ops.push({ kind: '+', text: b[j].text, noEol: b[j].noEol, aLine: i + 1, bLine: j + 1 });
       j++;
     }
   }
@@ -142,7 +221,7 @@ function normalRange(start: number, count: number): string {
   return count === 1 ? String(start + 1) : `${start + 1},${start + count}`;
 }
 
-function renderNormal(ops: Op[]): string[] {
+function renderNormal(ops: Op[], tab: boolean): string[] {
   const out: string[] = [];
   for (const region of changeRegions(ops)) {
     const removed = ops.slice(region.start, region.end).filter((op) => op.kind === '-');
@@ -151,9 +230,9 @@ function renderNormal(ops: Op[]): string[] {
     const bStart = ops[region.start].bLine - 1;
     const op = removed.length === 0 ? 'a' : added.length === 0 ? 'd' : 'c';
     out.push(`${normalRange(aStart, removed.length)}${op}${normalRange(bStart, added.length)}`);
-    for (const line of removed) out.push(`< ${line.text}`);
+    for (const line of removed) out.push(...withMarker(`<${tab ? '\t' : ' '}`, line));
     if (removed.length > 0 && added.length > 0) out.push('---');
-    for (const line of added) out.push(`> ${line.text}`);
+    for (const line of added) out.push(...withMarker(`>${tab ? '\t' : ' '}`, line));
   }
   return out;
 }
@@ -169,14 +248,26 @@ function sideSpan(slice: Op[], side: 'a' | 'b'): { first: number; count: number;
   return { first, count: own.length, previous: first };
 }
 
-function renderUnified(ops: Op[], context: number, headers: [string, string]): string[] {
+function functionHeader(ops: Op[], group: Region, lines: DiffLine[], pattern: RegExp | null): string {
+  if (pattern === null) return '';
+  const first = ops[group.start];
+  for (let index = first.aLine - 2; index >= 0; index--) {
+    if (pattern.test(lines[index].text)) return ` ${lines[index].text.replace(/\s+$/, '').slice(0, 40)}`;
+  }
+  return '';
+}
+
+function renderUnified(ops: Op[], context: number, headers: [string, string], options: DiffOptions, lines: DiffLine[]): string[] {
   const out = [`--- ${headers[0]}`, `+++ ${headers[1]}`];
   for (const group of hunkGroups(ops, context)) {
     const slice = ops.slice(group.start, group.end);
     const a = sideSpan(slice, 'a');
     const b = sideSpan(slice, 'b');
-    out.push(`@@ -${unifiedRange(a.first, a.count)} +${unifiedRange(b.first, b.count)} @@`);
-    for (const op of slice) out.push(`${op.kind}${op.text}`);
+    out.push(`@@ -${unifiedRange(a.first, a.count)} +${unifiedRange(b.first, b.count)} @@${functionHeader(ops, group, lines, options.showFunction)}`);
+    for (const op of slice) {
+      if (options.initialTab) out.push(...withMarker(op.kind === ' ' ? '\t' : `${op.kind}\t`, op));
+      else out.push(...withMarker(op.kind, op));
+    }
   }
   return out;
 }
@@ -196,25 +287,26 @@ function changeMarkers(ops: Op[]): Map<number, string> {
   return markers;
 }
 
-function renderContext(ops: Op[], context: number, headers: [string, string]): string[] {
+function renderContext(ops: Op[], context: number, headers: [string, string], options: DiffOptions, lines: DiffLine[]): string[] {
   const out = [`*** ${headers[0]}`, `--- ${headers[1]}`];
   const markers = changeMarkers(ops);
+  const second = options.initialTab ? '\t' : ' ';
   for (const group of hunkGroups(ops, context)) {
     const slice = ops.slice(group.start, group.end);
     const a = sideSpan(slice, 'a');
     const b = sideSpan(slice, 'b');
     const marked = (kind: '-' | '+'): boolean => slice.some((op) => op.kind === kind);
-    out.push('***************');
+    out.push(`***************${functionHeader(ops, group, lines, options.showFunction)}`);
     out.push(`*** ${contextRange(a.first, a.count)} ****`);
     if (marked('-')) {
       slice.forEach((op, offset) => {
-        if (op.kind !== '+') out.push(op.kind === ' ' ? `  ${op.text}` : `${markers.get(group.start + offset)} ${op.text}`);
+        if (op.kind !== '+') out.push(...withMarker(op.kind === ' ' ? ` ${second}` : `${markers.get(group.start + offset)}${second}`, op));
       });
     }
     out.push(`--- ${contextRange(b.first, b.count)} ----`);
     if (marked('+')) {
       slice.forEach((op, offset) => {
-        if (op.kind !== '-') out.push(op.kind === ' ' ? `  ${op.text}` : `${markers.get(group.start + offset)} ${op.text}`);
+        if (op.kind !== '-') out.push(...withMarker(op.kind === ' ' ? ` ${second}` : `${markers.get(group.start + offset)}${second}`, op));
       });
     }
   }
@@ -232,25 +324,57 @@ function globToRegExp(glob: string): RegExp {
 }
 
 function parse(args: string[]): { options: DiffOptions; operands: string[] } | { error: DiffResult } {
-  const set = GNU_OPTION_SETS.diff;
   const options: DiffOptions = {
     format: 'normal', context: 3, brief: false, reportIdentical: false, ignoreCase: false, ignoreAllSpace: false,
     ignoreSpaceChange: false, ignoreTrailingSpace: false, ignoreBlankLines: false, recursive: false, newFile: false,
-    labels: [], excludes: [], optionText: '',
+    labels: [], excludes: [], optionText: '', text: false, stripCr: false, initialTab: false, showFunction: null, width: 130,
+    leftColumn: false, suppressCommon: false, expandTabs: false, tabSize: 8, noDereference: false, fromFile: null, toFile: null,
+    formats: defaultFormats(), paginate: false,
   };
   const operands: string[] = [];
   const typed: string[] = [];
-  for (const item of shortOptions(args, set.optstring, set.long)) {
+  let previousWasDigit = false;
+  let functionOption = false;
+  for (const item of shortOptions(args, OPTSTRING, LONG_OPTIONS)) {
     if (item.kind === 'operand') { operands.push(item.value); continue; }
     if (item.kind !== 'option') {
-      return { error: { output: `${getoptDiagnostic('diff', item)}\ndiff: Try 'diff --help' for more information.`, exitCode: 2 } };
+      return { error: { output: `${getoptDiagnostic('diff', item)}\ndiff: Try 'diff --help' for more information.\n`, exitCode: 2 } };
     }
     const value = item.argument;
-    if (/^[0-9]$/.test(item.letter)) { options.format = 'context'; options.context = Number(`${options.context === 3 ? '' : options.context}${item.letter}`); continue; }
+    if (item.letter === '' && item.long !== undefined) {
+      const text = value ?? '';
+      const formats = options.formats;
+      switch (item.long) {
+        case 'left-column': options.leftColumn = true; break;
+        case 'suppress-common-lines': options.suppressCommon = true; break;
+        case 'strip-trailing-cr': options.stripCr = true; break;
+        case 'tabsize': options.tabSize = Math.max(1, Number(text) || 8); break;
+        case 'no-dereference': options.noDereference = true; break;
+        case 'from-file': options.fromFile = text; break;
+        case 'to-file': options.toFile = text; break;
+        case 'normal': options.format = 'normal'; break;
+        case 'line-format': formats.oldLine = text; formats.newLine = text; formats.unchangedLine = text; options.format = 'groups'; break;
+        case 'old-line-format': formats.oldLine = text; options.format = 'groups'; break;
+        case 'new-line-format': formats.newLine = text; options.format = 'groups'; break;
+        case 'unchanged-line-format': formats.unchangedLine = text; options.format = 'groups'; break;
+        case 'old-group-format': formats.oldGroup = text; options.format = 'groups'; break;
+        case 'new-group-format': formats.newGroup = text; options.format = 'groups'; break;
+        case 'unchanged-group-format': formats.unchangedGroup = text; options.format = 'groups'; break;
+        case 'changed-group-format': formats.changedGroup = text; options.format = 'groups'; break;
+        default: break;
+      }
+      continue;
+    }
+    if (/^[0-9]$/.test(item.letter)) {
+      options.context = Number(`${previousWasDigit ? options.context : ''}${item.letter}`);
+      previousWasDigit = true;
+      continue;
+    }
+    previousWasDigit = false;
     switch (item.letter) {
-      case 'u': options.format = 'unified'; if (value !== undefined) options.context = Number(value); break;
+      case 'u': options.format = 'unified'; break;
       case 'U': options.format = 'unified'; options.context = Number(value); break;
-      case 'c': options.format = 'context'; if (value !== undefined) options.context = Number(value); break;
+      case 'c': options.format = 'context'; break;
       case 'C': options.format = 'context'; options.context = Number(value); break;
       case 'q': options.brief = true; break;
       case 's': options.reportIdentical = true; break;
@@ -263,11 +387,23 @@ function parse(args: string[]): { options: DiffOptions; operands: string[] } | {
       case 'N': options.newFile = true; break;
       case 'L': options.labels.push(value ?? ''); break;
       case 'x': options.excludes.push(globToRegExp(value ?? '')); break;
+      case 'e': options.format = 'ed'; break;
+      case 'n': options.format = 'rcs'; break;
+      case 'y': options.format = 'side'; break;
+      case 'W': options.width = Number(value); break;
+      case 'a': options.text = true; break;
+      case 'T': options.initialTab = true; break;
+      case 't': options.expandTabs = true; break;
+      case 'l': options.paginate = true; break;
+      case 'p': functionOption = true; options.showFunction ??= /^[A-Za-z_$]/; break;
+      case 'F': options.showFunction = new RegExp(value ?? ''); break;
+      case 'D': options.format = 'groups'; options.formats = ifdefFormats(value ?? ''); break;
       default: break;
     }
   }
   for (const arg of args) if (arg.startsWith('-') && arg !== '-') typed.push(arg);
   options.optionText = typed.filter((arg) => !/^-[LxXSIDFWU]$/.test(arg)).join(' ');
+  if (functionOption && options.format === 'normal') options.format = 'context';
   if (!Number.isFinite(options.context) || options.context < 0) options.context = 3;
   return { options, operands };
 }
@@ -275,12 +411,17 @@ function parse(args: string[]): { options: DiffOptions; operands: string[] } | {
 class Differ {
   readonly lines: string[] = [];
   status = 0;
+  unterminated = false;
 
   constructor(private readonly fs: DiffFs, private readonly cwd: string, private readonly options: DiffOptions) {}
 
   private trouble(message: string): void {
     this.lines.push(message);
     this.status = 2;
+  }
+
+  text(): string {
+    return this.lines.length === 0 ? '' : this.lines.join('\n') + (this.unterminated ? '' : '\n');
   }
 
   private mark(): void {
@@ -294,30 +435,84 @@ class Differ {
   }
 
   compareFiles(pathA: string, pathB: string, contentA: string | null, contentB: string | null, announce: boolean): void {
-    const a = splitLines(contentA ?? '');
-    const b = splitLines(contentB ?? '');
-    const ops = editScript(a, b, this.options);
-    if (changeRegions(ops).length === 0) {
-      if (this.options.reportIdentical) this.lines.push(`Files ${pathA} and ${pathB} are identical`);
+    const { options } = this;
+    const rawA = contentA ?? '';
+    const rawB = contentB ?? '';
+    const binary = !options.text && (rawA.includes('\0') || rawB.includes('\0'));
+    const a = splitLines(rawA, options.stripCr);
+    const b = splitLines(rawB, options.stripCr);
+    const ops = editScript(a, b, options);
+    const regions = changeRegions(ops);
+    const identical = binary ? rawA === rawB : regions.length === 0;
+    if (identical) {
+      if (options.reportIdentical) this.lines.push(`Files ${pathA} and ${pathB} are identical`);
       return;
     }
     this.mark();
-    if (this.options.brief) { this.lines.push(`Files ${pathA} and ${pathB} differ`); return; }
-    if (announce) this.lines.push(`diff ${this.options.optionText ? `${this.options.optionText} ` : ''}${pathA} ${pathB}`.replace(/ +/g, ' '));
+    if (options.brief) { this.lines.push(`Files ${pathA} and ${pathB} differ`); return; }
+    if (binary) { this.lines.push(`Binary files ${pathA} and ${pathB} differ`); return; }
+    const body: string[] = [];
+    if (announce) body.push(`diff ${options.optionText ? `${options.optionText} ` : ''}${pathA} ${pathB}`.replace(/ +/g, ' '));
     const statA = this.fs.stat(this.fs.normalizePath(pathA, this.cwd));
     const statB = this.fs.stat(this.fs.normalizePath(pathB, this.cwd));
     const headers: [string, string] = [
       this.header(pathA, contentA === null ? null : statA?.mtimeMs ?? null, 0),
       this.header(pathB, contentB === null ? null : statB?.mtimeMs ?? null, 1),
     ];
-    if (this.options.format === 'unified') this.lines.push(...renderUnified(ops, this.options.context, headers));
-    else if (this.options.format === 'context') this.lines.push(...renderContext(ops, this.options.context, headers));
-    else this.lines.push(...renderNormal(ops));
+    switch (options.format) {
+      case 'unified': body.push(...renderUnified(ops, options.context, headers, options, a)); break;
+      case 'context': body.push(...renderContext(ops, options.context, headers, options, a)); break;
+      case 'ed': body.push(...renderEd(ops, regions, false)); break;
+      case 'rcs': body.push(...renderEd(ops, regions, true)); break;
+      case 'side': body.push(...renderSideBySide(ops, {
+        width: options.width, leftColumn: options.leftColumn, suppressCommon: options.suppressCommon,
+        expandTabs: options.expandTabs, tabSize: options.tabSize,
+      })); break;
+      case 'groups': {
+        const text = renderGroupFormat(ops, options.formats);
+        if (text !== '') {
+          body.push(text.endsWith('\n') ? text.slice(0, -1) : text);
+          this.unterminated = !text.endsWith('\n');
+        }
+        break;
+      }
+      default: body.push(...renderNormal(ops, options.initialTab));
+    }
+    this.lines.push(...(options.paginate ? this.paginate(body, `diff ${options.optionText ? `${options.optionText} ` : ''}${pathA} ${pathB}`.replace(/ +/g, ' ')) : body));
+  }
+
+  private paginate(body: string[], title: string): string[] {
+    const stamp = new Date(this.fs.now()).toISOString().slice(0, 16).replace('T', ' ');
+    const free = Math.max(2, 72 - stamp.length - title.length - 6);
+    const header = `${stamp}${' '.repeat(Math.floor(free / 2))}${title}${' '.repeat(Math.ceil(free / 2))}Page 1`;
+    const page = ['', '', header, '', ''];
+    page.push(...body);
+    while (page.length < 61) page.push('');
+    while (page.length < 66) page.push('');
+    return page;
   }
 
   compare(pathA: string, pathB: string, announce: boolean): void {
     const absA = this.fs.normalizePath(pathA, this.cwd);
     const absB = this.fs.normalizePath(pathB, this.cwd);
+    if (absA === absB) {
+      if (this.options.reportIdentical) this.lines.push(`Files ${pathA} and ${pathB} are identical`);
+      return;
+    }
+    if (this.options.noDereference) {
+      const linkA = this.fs.lstat(absA);
+      const linkB = this.fs.lstat(absB);
+      const describe = (type: string | undefined): string => (type === 'symlink' ? 'a symbolic link' : type === 'directory' ? 'a directory' : 'a regular file');
+      if (linkA !== null && linkB !== null && (linkA.type === 'symlink') !== (linkB.type === 'symlink')) {
+        this.mark();
+        this.lines.push(`File ${pathA} is ${describe(linkA.type)} while file ${pathB} is ${describe(linkB.type)}`);
+        return;
+      }
+      if (linkA?.type === 'symlink' && linkB?.type === 'symlink') {
+        if (this.fs.linkTarget(absA) !== this.fs.linkTarget(absB)) { this.mark(); this.lines.push(`Symbolic links ${pathA} and ${pathB} differ`); }
+        return;
+      }
+    }
     const statA = this.fs.stat(absA);
     const statB = this.fs.stat(absB);
     const missing = (path: string, stat: DiffEntryStat | null): boolean => stat === null && !this.options.newFile && (this.trouble(`diff: ${path}: No such file or directory`), true);
@@ -373,16 +568,27 @@ class Differ {
 }
 
 export function cmdDiff(fs: DiffFs, cwd: string, args: string[]): DiffResult {
+  if (args.includes('--version') || args.includes('-v')) return { output: docsResult('diff', 'version').stdout, exitCode: 0 };
+  if (args.includes('--help')) return { output: docsResult('diff', 'help').stdout, exitCode: 0 };
   const parsed = parse(args);
   if ('error' in parsed) return parsed.error;
   const { options, operands } = parsed;
+  const trouble = (message: string): DiffResult => ({ output: `${message}\ndiff: Try 'diff --help' for more information.\n`, exitCode: 2 });
+  const anchored = options.fromFile ?? options.toFile;
+  if (anchored !== null) {
+    if (operands.length === 0) return trouble(`diff: missing operand after ${quoteLocale('diff')}`);
+    const differ = new Differ(fs, cwd, options);
+    for (const operand of operands) {
+      if (options.fromFile !== null) differ.compare(options.fromFile, operand, false);
+      else differ.compare(operand, options.toFile as string, false);
+    }
+    return { output: differ.text(), exitCode: differ.status };
+  }
   if (operands.length < 2) {
-    return { output: operands.length === 0 ? "diff: missing operand after 'diff'\ndiff: Try 'diff --help' for more information." : `diff: missing operand after '${operands[0]}'\ndiff: Try 'diff --help' for more information.`, exitCode: 2 };
+    return trouble(operands.length === 0 ? `diff: missing operand after ${quoteLocale('diff')}` : `diff: missing operand after ${quoteLocale(operands[0])}`);
   }
-  if (operands.length > 2) {
-    return { output: `diff: extra operand '${operands[2]}'\ndiff: Try 'diff --help' for more information.`, exitCode: 2 };
-  }
+  if (operands.length > 2) return trouble(`diff: extra operand ${quoteLocale(operands[2])}`);
   const differ = new Differ(fs, cwd, options);
   differ.compare(operands[0], operands[1], false);
-  return { output: differ.lines.join('\n'), exitCode: differ.status };
+  return { output: differ.text(), exitCode: differ.status };
 }
