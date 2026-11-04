@@ -1,4 +1,5 @@
 import { RRType, DnsClass } from '@/network/dns/wire/RRType';
+import { RR_TYPE_NAMES as REGISTERED_RR_TYPE_NAMES, rrTypeNumber } from '@/network/dns/wire/RRTypeNames';
 import { DnsRcode as WireRcode, DnsOpcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { IPv6Address } from '@/network/core/types';
@@ -50,6 +51,7 @@ export interface DnsQueryOptions {
   /** Query class override (`dig -c CH`/bare `chaos` keyword), e.g. `DnsClass.CH`. Defaults to IN. */
   readonly qclass?: number;
   readonly onTransportFailure?: (failure: 'refused') => void;
+  readonly onUnreachable?: () => void;
 }
 
 export type DnsQueryFn = (
@@ -60,17 +62,52 @@ export type DnsQueryFn = (
   options?: DnsQueryOptions,
 ) => Promise<DnsMessage | null>;
 
-const RR_TYPE_NAMES: ReadonlyMap<number, string> = new Map(
-  Object.entries(RRType).map(([name, value]) => [value, name]),
-);
+const RR_TYPE_NAMES: ReadonlyMap<number, string> = new Map([
+  ...Object.entries(REGISTERED_RR_TYPE_NAMES).map(([value, name]): [number, string] => [Number(value), name]),
+  ...Object.entries(RRType).map(([name, value]): [number, string] => [value, name]),
+]);
+
+const GENERIC_RR_TYPE = /^TYPE(\d{1,5})$/i;
+const GENERIC_RR_CLASS = /^CLASS(\d{1,5})$/i;
+const MAX_WIRE_VALUE = 65535;
 
 export function rrTypeFromName(name: string): number | null {
-  const type = (RRType as Record<string, number>)[name.toUpperCase()];
-  return typeof type === 'number' ? type : null;
+  const upper = name.toUpperCase();
+  const known = (RRType as Record<string, number>)[upper] ?? rrTypeNumber(upper);
+  if (typeof known === 'number') return known;
+  const generic = GENERIC_RR_TYPE.exec(name);
+  if (generic === null) return null;
+  const value = Number(generic[1]);
+  return value <= MAX_WIRE_VALUE ? value : null;
 }
 
 export function rrTypeName(type: number): string {
   return RR_TYPE_NAMES.get(type) ?? `TYPE${type}`;
+}
+
+const RR_CLASS_NAMES: ReadonlyMap<number, string> = new Map([[1, 'IN'], [3, 'CH'], [4, 'HS'], [254, 'NONE'], [255, 'ANY']]);
+const RR_CLASS_VALUES: Readonly<Record<string, number>> = { IN: 1, CH: 3, CHAOS: 3, HS: 4, HESIOD: 4, NONE: 254, ANY: 255 };
+
+export function rrClassFromName(name: string): number | null {
+  const known = RR_CLASS_VALUES[name.toUpperCase()];
+  if (known !== undefined) return known;
+  const generic = GENERIC_RR_CLASS.exec(name);
+  if (generic === null) return null;
+  const value = Number(generic[1]);
+  return value <= MAX_WIRE_VALUE ? value : null;
+}
+
+export function rrClassText(rrClass: number): string {
+  return RR_CLASS_NAMES.get(rrClass) ?? `CLASS${rrClass}`;
+}
+
+const RCODE_TEXTS = [
+  'NOERROR', 'FORMERR', 'SERVFAIL', 'NXDOMAIN', 'NOTIMP', 'REFUSED', 'YXDOMAIN', 'YXRRSET', 'NXRRSET', 'NOTAUTH', 'NOTZONE',
+  'RESERVED11', 'RESERVED12', 'RESERVED13', 'RESERVED14', 'RESERVED15', 'BADVERS',
+] as const;
+
+export function rcodeText(rcode: number): string {
+  return rcode < RCODE_TEXTS.length ? RCODE_TEXTS[rcode] : `?${rcode}`;
 }
 
 let transactionCounter = 0;
@@ -80,13 +117,13 @@ export function nextDnsTransactionId(): number {
   return transactionCounter;
 }
 
-const IPV4_LITERAL = /^\d{1,3}(\.\d{1,3}){3}$/;
+const IPV4_LITERAL = /^(0|[1-9]\d{0,2})(\.(0|[1-9]\d{0,2})){3}$/;
 
 /** Cheap syntactic pre-check before attempting the (throwing) `IPv6Address` parse. */
 const IPV6_CANDIDATE = /^[0-9a-fA-F:]*:[0-9a-fA-F:.]*(%[^%]+)?$/;
 
 export function isIPv4Literal(target: string): boolean {
-  return IPV4_LITERAL.test(target);
+  return IPV4_LITERAL.test(target) && target.split('.').every((octet) => Number(octet) <= 255);
 }
 
 export function isIPv6Literal(target: string): boolean {

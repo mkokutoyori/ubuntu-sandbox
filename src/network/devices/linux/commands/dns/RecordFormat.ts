@@ -1,9 +1,10 @@
-import { RRType, DnsClass } from '@/network/dns/wire/RRType';
-import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
+import { RRType } from '@/network/dns/wire/RRType';
+import { rrClassText, rrTypeName } from '@/network/dns/compat/DnsWireCompat';
+import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData } from '@/network/dns/wire/ResourceRecord';
 
 export function rrClassName(rrClass: number): string {
-  return rrClass === DnsClass.CH ? 'CH' : rrClass === DnsClass.HS ? 'HS' : 'IN';
+  return rrClassText(rrClass);
 }
 
 export function absolute(name: string): string {
@@ -85,6 +86,18 @@ export function formatQuestionLine(name: string, qclass: number, qtype: number):
     [QUESTION_STYLE_COLUMNS.className, rrClassName(qclass)],
     [QUESTION_STYLE_COLUMNS.type, rrTypeName(qtype)],
   ])}`;
+}
+
+export function headerFlags(message: DnsMessage): string {
+  const flags: string[] = [];
+  if (message.flags.qr) flags.push('qr');
+  if (message.flags.aa) flags.push('aa');
+  if (message.flags.tc) flags.push('tc');
+  if (message.flags.rd) flags.push('rd');
+  if (message.flags.ra) flags.push('ra');
+  if (message.flags.ad) flags.push('ad');
+  if (message.flags.cd) flags.push('cd');
+  return flags.join(' ');
 }
 
 export function isDisplayableRecord(rr: ResourceRecord<ResourceRecordData>): boolean {

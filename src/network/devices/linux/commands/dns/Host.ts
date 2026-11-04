@@ -1,31 +1,20 @@
-/**
- * `host` — simple DNS lookup utility.
- *
- * Thin wrapper around `executeHost` from `LinuxDnsService`.
- *
- * See `linux_gap.md` §8.4 (PR 8).
- */
-
 import type { LinuxCommand } from '../LinuxCommand';
-import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { executeHost } from '../../LinuxDnsService';
-import { readResolverIP } from './resolverIP';
+import { commandResultOf, completeLinesResultOf } from '../ToolOutputShape';
+import { runHost } from './host/HostTool';
+import { linuxHostPort } from './host/LinuxHostPort';
 
 export const hostCommand: LinuxCommand = {
   name: 'host',
   needsNetworkContext: true,
   foregroundClient: true,
+  ownsHelpOption: true,
   manSection: 1,
-  usage: 'host [name] [server]',
+  usage: 'host [-aCdlnrsTUwv] [-c class] [-N ndots] [-t type] [-W time] [-R number] [-m flag] [-p port] hostname [server]',
   help:
-    'DNS lookup utility.\n\n' +
-    'A simple utility for performing DNS lookups. It is normally used\n' +
-    'to convert names to IP addresses and vice versa.\n\n' +
-    'OPTIONS\n' +
-    '  name          The domain name or IP address to look up.\n' +
-    '  server        The DNS server to query.',
+    'host - DNS lookup utility.\n\n' +
+    'host is a simple utility for performing DNS lookups. It is normally used\n' +
+    'to convert names to IP addresses and vice versa.',
 
-  run(ctx: LinuxCommandContext, args: string[]): Promise<string> {
-    return executeHost(args, (s, n, t, ms) => ctx.net.queryDns(s, n, t, ms), readResolverIP(ctx.executor));
-  },
+  run: async (ctx, args) => commandResultOf(await runHost(args, linuxHostPort(ctx))).interleaved,
+  runWithStatus: async (ctx, args) => completeLinesResultOf(await runHost(args, linuxHostPort(ctx))),
 };

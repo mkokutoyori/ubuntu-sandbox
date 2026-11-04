@@ -11,8 +11,8 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type {
   ARecordData, NsRecordData, ResourceRecord, ResourceRecordData,
 } from '@/network/dns/wire/ResourceRecord';
-import { formatQuestionLine, formatRdata, formatRecordLine, isDisplayableRecord } from './RecordFormat';
-import { findPackage } from '../../packages/PackageDatabase';
+import { formatQuestionLine, formatRdata, formatRecordLine, headerFlags, isDisplayableRecord } from './RecordFormat';
+import { bindVersion } from './BindVersion';
 import { parseResolvConf, searchCandidates } from '../../nss/ResolvConf';
 import type { ResolvConfOptions } from '../../nss/ResolvConf';
 
@@ -29,7 +29,6 @@ interface DigDisplay {
 const DISPLAY_FLAGS = ['cmd', 'comments', 'question', 'answer', 'authority', 'additional', 'stats'] as const;
 const DISPLAY_OPTION = /^\+(no)?(cmd|comments|question|answer|authority|additional|stats)$/;
 const DEFAULT_EDNS_BUFFER = 1232;
-const DIG_VERSION_SUFFIX = 'Ubuntu';
 
 interface DigInvocation {
   server: string;
@@ -213,15 +212,11 @@ function digPort(invocation: DigInvocation): number {
   return invocation.port ?? (invocation.tls ? 853 : 53);
 }
 
-function digVersion(): string {
-  return `${findPackage('dnsutils')?.version ?? ''}-${DIG_VERSION_SUFFIX}`;
-}
-
 function commandLines(invocation: DigInvocation): string[] {
   if (!invocation.display.cmd) return [];
   return [
     '',
-    `; <<>> DiG ${digVersion()} <<>> ${invocation.typedArguments}`,
+    `; <<>> DiG ${bindVersion()} <<>> ${invocation.typedArguments}`,
     ...(invocation.serverGiven ? ['; (1 server found)'] : []),
     ';; global options: +cmd',
   ];
@@ -265,18 +260,6 @@ function transferOutput(invocation: DigInvocation, message: DnsMessage, elapsedM
   lines.push(`;; WHEN: ${digDate(simulationDate())}`);
   lines.push(`;; XFR size: ${records.length} records (messages 1, bytes ${encodeDnsMessage(message).length})`);
   return lines.join('\n');
-}
-
-function headerFlags(message: DnsMessage): string {
-  const flags: string[] = [];
-  if (message.flags.qr) flags.push('qr');
-  if (message.flags.aa) flags.push('aa');
-  if (message.flags.tc) flags.push('tc');
-  if (message.flags.rd) flags.push('rd');
-  if (message.flags.ra) flags.push('ra');
-  if (message.flags.ad) flags.push('ad');
-  if (message.flags.cd) flags.push('cd');
-  return flags.join(' ');
 }
 
 function pushSection(

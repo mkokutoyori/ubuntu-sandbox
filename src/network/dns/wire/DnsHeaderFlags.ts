@@ -13,6 +13,7 @@ export const DnsRcode = {
   NXDOMAIN: 3,
   NOTIMP: 4,
   REFUSED: 5,
+  NOTAUTH: 9,
 } as const;
 
 export interface DnsHeaderFlags {
