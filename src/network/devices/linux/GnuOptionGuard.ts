@@ -161,28 +161,6 @@ const GREP_OPTIONS: GnuOptionSet = {
 };
 
 
-const DIFF_OPTIONS: GnuOptionSet = {
-  optstring: 'abBcC:dD:eEfF:hiI:lL:nNpqrsS:tTuU:vwW:x:X:yZ0123456789',
-  long: [
-    flag('normal'), flag('brief', 'q'), flag('report-identical-files', 's'), optional('context', 'c'),
-    optional('unified', 'u'), flag('ed', 'e'), flag('rcs', 'n'), flag('side-by-side', 'y'), valued('width', 'W'),
-    flag('left-column'), flag('suppress-common-lines'), flag('show-c-function', 'p'), valued('show-function-line', 'F'),
-    valued('label', 'L'), flag('expand-tabs', 't'), flag('initial-tab', 'T'), valued('tabsize'),
-    flag('suppress-blank-empty'), flag('paginate', 'l'), flag('recursive', 'r'), flag('no-dereference'),
-    flag('new-file', 'N'), flag('unidirectional-new-file'), flag('ignore-file-name-case'),
-    flag('no-ignore-file-name-case'), valued('exclude', 'x'), valued('exclude-from', 'X'), valued('starting-file', 'S'),
-    valued('from-file'), valued('to-file'), flag('ignore-case', 'i'), flag('ignore-tab-expansion', 'E'),
-    flag('ignore-trailing-space', 'Z'), flag('ignore-space-change', 'b'), flag('ignore-all-space', 'w'),
-    flag('ignore-blank-lines', 'B'), valued('ignore-matching-lines', 'I'), flag('text', 'a'), flag('strip-trailing-cr'),
-    valued('ifdef', 'D'), valued('line-format'), flag('minimal', 'd'), valued('horizon-lines'),
-    flag('speed-large-files'), optional('color'), valued('palette'), flag('help'), flag('version', 'v'),
-  ],
-  operands: true,
-  failureStatus: 2,
-  trailer: "diff: Try 'diff --help' for more information.",
-};
-
-
 const SYSTEMD_COMMON: readonly LongOption[] = [
   flag('help', 'h'), flag('version'), valued('host', 'H'), valued('machine', 'M'), flag('no-pager'),
   flag('no-ask-password'), flag('no-legend'), flag('legend'),
@@ -239,7 +217,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   systemctl: SYSTEMCTL_OPTIONS,
   loginctl: LOGINCTL_OPTIONS,
   timedatectl: TIMEDATECTL_OPTIONS,
-  diff: DIFF_OPTIONS,
   grep: GREP_OPTIONS,
   egrep: GREP_OPTIONS,
   fgrep: GREP_OPTIONS,
@@ -281,25 +258,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
       valued('time-style'), valued('tabsize', 'T'), valued('width', 'w'), flag('context', 'Z'),
       flag('zero'), flag('directory', 'd'), flag('dired', 'D'), ...HELP_VERSION,
     ],
-    operands: true,
-  },
-  date: {
-    optstring: 'd:f:I::r:Rs:uV',
-    long: [
-      valued('date', 'd'), flag('debug'), valued('file', 'f'), optional('iso-8601', 'I'),
-      valued('reference', 'r'), flag('rfc-email', 'R'), valued('rfc-3339'), valued('set', 's'),
-      flag('utc', 'u'), flag('universal', 'u'), flag('resolution'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  tac: {
-    optstring: 'brs:',
-    long: [flag('before', 'b'), flag('regex', 'r'), valued('separator', 's'), ...HELP_VERSION],
-    operands: true,
-  },
-  tee: {
-    optstring: 'aip',
-    long: [flag('append', 'a'), flag('ignore-interrupts', 'i'), valued('output-error'), ...HELP_VERSION],
     operands: true,
   },
   printenv: { optstring: '0', long: [flag('null', '0'), ...HELP_VERSION], operands: true },
@@ -361,29 +319,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  fold: {
-    optstring: 'bsw:',
-    long: [flag('bytes', 'b'), flag('spaces', 's'), valued('width', 'w'), ...HELP_VERSION],
-    operands: true,
-  },
-  paste: {
-    optstring: 'd:sz',
-    long: [valued('delimiters', 'd'), flag('serial', 's'), flag('zero-terminated', 'z'), ...HELP_VERSION],
-    operands: true,
-  },
-  comm: {
-    optstring: '123z',
-    long: [
-      flag('check-order'), flag('nocheck-order'), valued('output-delimiter'), flag('total'),
-      flag('zero-terminated', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  base64: {
-    optstring: 'diw:',
-    long: [flag('decode', 'd'), flag('ignore-garbage', 'i'), valued('wrap', 'w'), ...HELP_VERSION],
-    operands: true,
-  },
   du: {
     optstring: '0aB:bcd:DHhklLmPSst:xX:',
     long: [
@@ -396,21 +331,11 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  rev: { optstring: '0hV', long: [flag('zero', '0'), flag('help', 'h'), flag('version', 'V')], operands: true },
   id: {
     optstring: 'agGnruzZ',
     long: [
       flag('context', 'Z'), flag('group', 'g'), flag('groups', 'G'), flag('name', 'n'), flag('real', 'r'),
       flag('user', 'u'), flag('zero', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  chown: {
-    optstring: 'cfhHLPRv',
-    long: [
-      flag('changes', 'c'), flag('dereference'), flag('no-dereference', 'h'), valued('from'), flag('no-preserve-root'),
-      flag('preserve-root'), flag('quiet', 'f'), flag('silent', 'f'), valued('reference'), flag('recursive', 'R'),
-      flag('verbose', 'v'), ...HELP_VERSION,
     ],
     operands: true,
   },
@@ -507,46 +432,10 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  truncate: {
-    optstring: 'cor:s:',
-    long: [flag('no-create', 'c'), flag('io-blocks', 'o'), valued('reference', 'r'), valued('size', 's'), ...HELP_VERSION],
-    operands: true,
-  },
   mknod: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
-  mkfifo: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
-  cksum: { optstring: '', long: [...HELP_VERSION], operands: true },
   sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },
-  expand: { optstring: 'it:0123456789,', long: [flag('initial', 'i'), valued('tabs', 't'), ...HELP_VERSION], operands: true },
-  unexpand: { optstring: 'at:0123456789,', long: [flag('all', 'a'), flag('first-only'), valued('tabs', 't'), ...HELP_VERSION], operands: true },
   nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125 },
   nohup: { optstring: '+', long: [...HELP_VERSION], operands: true, failureStatus: 125 },
-  readlink: {
-    optstring: 'efmnqsvz',
-    long: [
-      flag('canonicalize-existing', 'e'), flag('canonicalize', 'f'), flag('canonicalize-missing', 'm'),
-      flag('no-newline', 'n'), flag('quiet', 'q'), flag('silent', 's'), flag('verbose', 'v'), flag('zero', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  realpath: {
-    optstring: 'emLPqsz',
-    long: [
-      flag('canonicalize-existing', 'e'), flag('canonicalize-missing', 'm'), flag('logical', 'L'), flag('physical', 'P'),
-      flag('quiet', 'q'), valued('relative-to'), valued('relative-base'), flag('strip', 's'), flag('no-symlinks', 's'),
-      flag('zero', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
-  split: {
-    optstring: 'a:b:C:del:n:t:ux',
-    long: [
-      valued('suffix-length', 'a'), valued('bytes', 'b'), valued('line-bytes', 'C'), optional('numeric-suffixes', 'd'),
-      optional('hex-suffixes', 'x'), valued('additional-suffix'), flag('elide-empty-files', 'e'), valued('filter'),
-      valued('lines', 'l'), valued('number', 'n'), valued('separator', 't'), flag('unbuffered', 'u'),
-      flag('verbose'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
   uname: {
     optstring: 'asnrvmpio',
     long: [

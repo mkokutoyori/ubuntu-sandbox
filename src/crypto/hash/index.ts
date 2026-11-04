@@ -12,3 +12,5 @@ export { sha1, sha1Hex, SHA1 } from './sha1';
 export { sha512, sha512Hex, SHA512, sha384, SHA384 } from './sha512';
 export { fileDigestHex, fileDigestName } from './FileDigests';
 export type { FileDigestName } from './FileDigests';
+export { blake2b } from './blake2b';
+export { sm3 } from './sm3';

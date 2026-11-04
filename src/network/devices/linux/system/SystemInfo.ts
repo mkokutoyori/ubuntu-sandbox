@@ -34,7 +34,7 @@ function hhmmss(d: Date): string {
 
 /** `Tue May 19 16:32:55 UTC 2026` — the real coreutils `date` shape. */
 function fullDate(d: Date, abbr = 'UTC'): string {
-  return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${two(d.getUTCDate())} ` +
+  return `${DAYS[d.getUTCDay()]} ${MONTHS[d.getUTCMonth()]} ${String(d.getUTCDate()).padStart(2, ' ')} ` +
     `${hhmmss(d)} ${abbr} ${d.getUTCFullYear()}`;
 }
 
@@ -217,7 +217,7 @@ function strftime(fmt: string, d: Date, rendu: DateRendering = UTC_RENDERING): s
     'R': `${two(H)}:${two(m)}`,
     'r': `${two(I12)}:${two(m)}:${two(S)} ${p}`,
     'D': `${two(M + 1)}/${two(D)}/${two(Y % 100)}`,
-    'c': fullDate(d, rendu.abbr),
+    'c': `${DAYS[dow]} ${MONTHS[M]} ${String(D).padStart(2, ' ')} ${two(H)}:${two(m)}:${two(S)} ${Y}`,
     'x': `${two(M + 1)}/${two(D)}/${two(Y % 100)}`,
     'X': `${two(H)}:${two(m)}:${two(S)}`,
     'n': '\n',
@@ -225,10 +225,45 @@ function strftime(fmt: string, d: Date, rendu: DateRendering = UTC_RENDERING): s
     's': String(Math.floor(rendu.epochMs / 1000)),
     '%': '%',
   };
-  return fmt.replace(/%([YyCmdejHkIlMSpPaAbhBwuUVNZzFTRrDcxXnts%])/g, (_, c) => map[c] ?? `%${c}`);
+  map.G = String(thursday.getUTCFullYear());
+  map.g = two(thursday.getUTCFullYear() % 100);
+  map.W = two(Math.floor((dayOfYear(d) + 6 - ((dow + 6) % 7)) / 7));
+  const offsetMin = rendu.offsetMin;
+  const sign = offsetMin < 0 ? '-' : '+';
+  const absolute = Math.abs(offsetMin);
+  const hh = two(Math.floor(absolute / 60));
+  const mm = two(absolute % 60);
+  map[':z'] = `${sign}${hh}:${mm}`;
+  map['::z'] = `${sign}${hh}:${mm}:00`;
+  map[':::z'] = mm === '00' ? `${sign}${hh}` : `${sign}${hh}:${mm}`;
+  const textual = new Set(['a', 'A', 'b', 'B', 'h', 'p', 'P', 'Z', 'c', 'x', 'X', 'D', 'F', 'T', 'R', 'r', 'n', 't', '%', ':z', '::z', ':::z', 'z']);
+  const spacePadded = new Set(['e', 'k', 'l']);
+  return fmt.replace(/%([-_0^#]*)(\d*)[EO]?(:{0,3}z|[A-Za-z%])/g, (whole, flags: string, width: string, conv: string) => {
+    let value = map[conv];
+    if (value === undefined) return whole;
+    if (flags.includes('^') || (flags.includes('#') && /[aAbBhZ]/.test(conv))) value = value.toUpperCase();
+    else if (flags.includes('#') && (conv === 'p')) value = value.toLowerCase();
+    const numeric = !textual.has(conv);
+    let pad = numeric ? (spacePadded.has(conv) ? ' ' : '0') : ' ';
+    if (flags.includes('_')) pad = ' ';
+    if (flags.includes('0')) pad = '0';
+    if (flags.includes('-')) {
+      return numeric || spacePadded.has(conv) ? value.replace(/^[0 ]+(?=.)/, '') : value;
+    }
+    const natural = numeric || spacePadded.has(conv) ? value.replace(/^[0 ]+(?=.)/, '') : value;
+    const naturalWidth = numeric || spacePadded.has(conv) ? Math.max(value.length, 1) : value.length;
+    const target = width === '' ? naturalWidth : Number(width);
+    if (numeric || spacePadded.has(conv)) {
+      if (width === '' && !flags.includes('_') && !flags.includes('0')) return value;
+      const signed = natural.startsWith('-') ? '-' : '';
+      const digits = signed === '' ? natural : natural.slice(1);
+      return signed + digits.padStart(Math.max(target - signed.length, 0), pad);
+    }
+    return value.padStart(target, pad === '0' ? '0' : ' ');
+  });
 }
 
-function parseDateSpec(spec: string, nowMs: number, timezone?: string): Date | null {
+export function parseDateSpec(spec: string, nowMs: number, timezone?: string): Date | null {
   const zone = timezone === undefined ? null : TimeZone.parse(timezone);
   const parsed = parseGnuDate(spec, { nowMs, zone });
   return parsed === null ? null : new Date(parsed);
@@ -261,7 +296,7 @@ export interface DateHost {
 
 const POSITIONAL_SET = /^(\d{2})(\d{2})(\d{2})(\d{2})(?:(\d{2})?(\d{2}))?(?:\.(\d{2}))?$/;
 
-function positionalSetSpec(token: string, nowMs: number): string | null {
+export function positionalSetSpec(token: string, nowMs: number): string | null {
   const m = POSITIONAL_SET.exec(token);
   if (!m) return null;
   const year = m[6] === undefined
@@ -269,59 +304,6 @@ function positionalSetSpec(token: string, nowMs: number): string | null {
     : Number(`${m[5] ?? (Number(m[6]) < 69 ? '20' : '19')}${m[6]}`);
   const pad = (n: string | undefined) => (n ?? '00').padStart(2, '0');
   return `${year}-${m[1]}-${m[2]} ${m[3]}:${m[4]}:${pad(m[7])}`;
-}
-
-export function cmdDate(args: string[], timezone: string | undefined, host: DateHost): string {
-  let when = new Date(host.nowMs);
-  let fmtArg: string | undefined;
-  let forceUtc = false;
-  let setSpec: string | null = null;
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-d' || a === '--date') {
-      const spec = args[++i];
-      const parsed = spec !== undefined ? parseDateSpec(spec, host.nowMs, timezone) : null;
-      if (!parsed) return `date: invalid date '${spec ?? ''}'`;
-      when = parsed;
-      continue;
-    }
-    if (a.startsWith('--date=')) {
-      const parsed = parseDateSpec(a.slice('--date='.length), host.nowMs, timezone);
-      if (!parsed) return `date: invalid date '${a.slice('--date='.length)}'`;
-      when = parsed;
-      continue;
-    }
-    if (a === '-s' || a === '--set') {
-      setSpec = args[++i] ?? '';
-      continue;
-    }
-    if (a.startsWith('--set=')) {
-      setSpec = a.slice('--set='.length);
-      continue;
-    }
-    if (a.startsWith('+')) {
-      fmtArg = a.slice(1);
-      continue;
-    }
-    if (a === '-u' || a === '--utc' || a === '--universal') {
-      forceUtc = true;
-      continue;
-    }
-    if (!a.startsWith('-')) setSpec = positionalSetSpec(a, host.nowMs) ?? setSpec;
-  }
-
-  const zone = forceUtc ? undefined : timezone;
-  let denied = '';
-  if (setSpec !== null) {
-    const parsed = parseDateSpec(setSpec, host.nowMs, zone);
-    if (!parsed) return `date: invalid date '${setSpec}'`;
-    when = parsed;
-    if (host.mayStepClock) host.setClock(parsed.getTime());
-    else denied = 'date: cannot set date: Operation not permitted\n';
-  }
-  if (fmtArg !== undefined) return denied + formatLocalTime(fmtArg, when.getTime(), zone);
-  const rendu = renderingIn(zone, when.getTime());
-  return denied + fullDate(new Date(when.getTime() + rendu.offsetMin * 60_000), rendu.abbr);
 }
 
 export function formatLocalTime(fmt: string, atMs: number, timezone?: string, zoneName?: string): string {

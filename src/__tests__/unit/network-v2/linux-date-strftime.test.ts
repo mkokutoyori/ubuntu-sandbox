@@ -107,6 +107,6 @@ describe('date — -d / --date= input parsing', () => {
   it('rejects garbage with the coreutils error string', async () => {
     const pc = new LinuxPC('linux-pc', 'PC1', 0, 0);
     const out = await pc.executeCommand('date -d "not a date" "+%F"');
-    expect(out).toMatch(/^date: invalid date 'not a date'/);
+    expect(out).toMatch(/^date: invalid date ‘not a date’/);
   });
 });

@@ -1568,8 +1568,8 @@ export class VirtualFileSystem {
     return null;
   }
 
-  chown(path: string, uid: number, gid?: number): boolean {
-    const inode = this.resolveInode(path);
+  chown(path: string, uid: number, gid?: number, follow = true): boolean {
+    const inode = this.resolveInode(path, follow);
     if (!inode) return false;
     inode.uid = uid;
     if (gid !== undefined) inode.gid = gid;

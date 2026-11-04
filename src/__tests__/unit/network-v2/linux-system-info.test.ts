@@ -101,7 +101,7 @@ describe('/etc/os-release and date/uptime', () => {
   it('date uses the coreutils shape, not a JS Date string', async () => {
     const pc = new LinuxPC('linux-pc', 'SI-PC', 1, 1);
     const out = (await pc.executeCommand('date')).trim();
-    expect(out).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2} UTC \d{4}$/);
+    expect(out).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} UTC \d{4}$/);
   });
 
   it('date +%Y-%m-%d honours a format string', async () => {

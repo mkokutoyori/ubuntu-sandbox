@@ -91,7 +91,7 @@ describe('a Linux machine prints its own time zone, not the one of the process',
     const underNewYork = await transcript('America/New_York', 'Asia/Tokyo');
     expect(underNewYork).toEqual(underUtc);
     expect(underUtc[0]).toContain('JST');
-    expect(underUtc[0]).toContain('Oct 07 06:');
+    expect(underUtc[0]).toContain('Oct  7 06:');
     expect(underUtc[10]).toMatch(/^Oct {2}7 06:/m);
   });
 

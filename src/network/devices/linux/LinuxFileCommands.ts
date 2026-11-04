@@ -7,6 +7,7 @@ import { simulationNowMs } from '@/network/core/SystemClock';
 
 import { VirtualFileSystem, INode } from './VirtualFileSystem';
 import { LinuxUserManager } from './LinuxUserManager';
+import { argumentFailure } from './coreutils/BackupControl';
 import { gnuOptionSet } from './GnuOptionGuard';
 import { fnmatch } from './fs/Glob';
 import { versionCompare } from './LinuxTextCommands';
@@ -70,6 +71,9 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
   let setModify = false;
   let noCreate = false;
   let stampMs: number | null = null;
+  let dateSpec: string | null = null;
+  let stampSpec: string | null = null;
+  let referenceMs: number | null = null;
   const targets: string[] = [];
   const bad = (message: string): string => `touch: ${message}`;
 
@@ -81,18 +85,17 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
       if (name === 'no-create') noCreate = true;
       else if (name === 'date') {
         const spec = inline ?? args[++i] ?? '';
-        const parsed = parseTouchDate(spec, ctx.zone, nowMs);
-        if (parsed === null) return bad(`invalid date format '${spec}'`);
-        stampMs = parsed;
+        dateSpec = spec;
       } else if (name === 'reference') {
         const ref = inline ?? args[++i] ?? '';
         const inode = ctx.vfs.resolveInode(ctx.vfs.normalizePath(ref, ctx.cwd));
         if (!inode) return bad(`failed to get attributes of '${ref}': No such file or directory`);
-        stampMs = inode.mtime;
+        referenceMs = inode.mtime;
       } else if (name === 'time') {
         const which = inline ?? args[++i] ?? '';
         if (/^(atime|access|use)$/.test(which)) setAccess = true;
         else if (/^(mtime|modify)$/.test(which)) setModify = true;
+        else return `${argumentFailure('touch', 'invalid', which, '--time', ['atime, access, use', 'mtime, modify'])}\nTry 'touch --help' for more information.`;
       }
       continue;
     }
@@ -105,17 +108,13 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
         else if (flag === 'd' || flag === 't' || flag === 'r') {
           const operand = arg.slice(k + 1) || args[++i] || '';
           if (flag === 'd') {
-            const parsed = parseTouchDate(operand, ctx.zone, nowMs);
-            if (parsed === null) return bad(`invalid date format '${operand}'`);
-            stampMs = parsed;
+            dateSpec = operand;
           } else if (flag === 't') {
-            const parsed = parseTouchStamp(operand, ctx.zone, nowMs);
-            if (parsed === null) return bad(`invalid date format '${operand}'`);
-            stampMs = parsed;
+            stampSpec = operand;
           } else {
             const inode = ctx.vfs.resolveInode(ctx.vfs.normalizePath(operand, ctx.cwd));
             if (!inode) return bad(`failed to get attributes of '${operand}': No such file or directory`);
-            stampMs = inode.mtime;
+            referenceMs = inode.mtime;
           }
           break;
         }
@@ -125,6 +124,20 @@ export function cmdTouch(ctx: ShellContext, args: string[]): string {
     targets.push(arg);
   }
 
+  if (stampSpec !== null && (dateSpec !== null || referenceMs !== null)) {
+    return "touch: cannot specify times from more than one source\nTry 'touch --help' for more information.";
+  }
+  if (stampSpec !== null) {
+    const parsed = parseTouchStamp(stampSpec, ctx.zone, nowMs);
+    if (parsed === null) return bad(`invalid date format '${stampSpec}'`);
+    stampMs = parsed;
+  } else if (dateSpec !== null) {
+    const parsed = parseTouchDate(dateSpec, ctx.zone, referenceMs ?? nowMs);
+    if (parsed === null) return bad(`invalid date format '${dateSpec}'`);
+    stampMs = parsed;
+  } else if (referenceMs !== null) {
+    stampMs = referenceMs;
+  }
   if (targets.length === 0) return 'touch: missing file operand\nTry \'touch --help\' for more information.';
   const both = !setAccess && !setModify;
   for (const arg of targets) {
@@ -863,33 +876,6 @@ export function displayedComponent(typed: string, absolute: string, components: 
 
 export function cmdPwd(ctx: ShellContext): string {
   return ctx.cwd;
-}
-
-export function cmdTee(ctx: ShellContext, args: string[], stdin: string): { output: string; failed: boolean } {
-  let append = false;
-  const files: string[] = [];
-  for (const arg of args) {
-    if (arg === '-a') { append = true; continue; }
-    if (arg.startsWith('-')) continue;
-    files.push(arg);
-  }
-
-  const refusedAtOpen: string[] = [];
-  const refusedAtWrite: string[] = [];
-  for (const f of files) {
-    const absPath = ctx.vfs.normalizePath(f, ctx.cwd);
-    const refusal = ctx.openRefusal?.(absPath) ?? null;
-    if (refusal !== null) {
-      refusedAtOpen.push(`tee: ${f}: ${refusal}`);
-      continue;
-    }
-    const written = ctx.vfs.writeFile(absPath, stdin, ctx.uid, ctx.gid, ctx.umask, append);
-    if (!written && ctx.vfs.hasWriter(absPath)) refusedAtWrite.push(`tee: ${f}: Invalid argument`);
-  }
-
-  const copied = refusedAtWrite.length === 0 || stdin.endsWith('\n') ? stdin : `${stdin}\n`;
-  const output = [...refusedAtOpen.map((line) => `${line}\n`), copied, ...refusedAtWrite].join('');
-  return { output, failed: refusedAtOpen.length + refusedAtWrite.length > 0 };
 }
 
 // ─── Glob expansion helper ─────────────────────────────────────────

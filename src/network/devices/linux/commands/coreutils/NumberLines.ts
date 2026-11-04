@@ -1,5 +1,6 @@
-import { shortOptions } from '../Getopt';
+import { getoptDiagnostic, shortOptions } from '../Getopt';
 import { GNU_OPTION_SETS } from '../../GnuOptionGuard';
+import { quoteLocale } from '../../coreutils/CoreutilsKit';
 
 type Style = { readonly kind: 'all' | 'nonEmpty' | 'none' } | { readonly kind: 'pattern'; readonly pattern: RegExp };
 type Format = 'ln' | 'rn' | 'rz';
@@ -19,7 +20,7 @@ export interface NumberingPlan {
   readonly delimiter: string;
 }
 
-export type NumberingParse = { readonly plan: NumberingPlan } | { readonly error: string };
+export type NumberingParse = { readonly plan: NumberingPlan } | { readonly error: string; readonly usage?: boolean };
 
 function positive(value: string): number | null {
   return /^\d+$/.test(value) && Number(value) > 0 ? Number(value) : null;
@@ -48,40 +49,41 @@ export function parseNumbering(args: readonly string[]): NumberingParse {
   };
   for (const item of shortOptions(args, set.optstring, set.long)) {
     if (item.kind === 'operand') { plan.files.push(item.value); continue; }
-    if (item.kind !== 'option') continue;
+    if (item.kind !== 'option') return { error: getoptDiagnostic('nl', item), usage: true };
     const value = item.argument ?? '';
     switch (item.letter) {
       case 'b': case 'h': case 'f': {
         const parsed = style(value);
-        if (parsed === null) return { error: `nl: invalid ${item.letter === 'b' ? 'body' : item.letter === 'h' ? 'header' : 'footer'} numbering style: '${value}'` };
+        if (parsed === null) return { error: `nl: invalid ${item.letter === 'b' ? 'body' : item.letter === 'h' ? 'header' : 'footer'} numbering style: ${quoteLocale(value)}`, usage: true };
         if (item.letter === 'b') plan.body = parsed; else if (item.letter === 'h') plan.header = parsed; else plan.footer = parsed;
         break;
       }
       case 'n':
-        if (value !== 'ln' && value !== 'rn' && value !== 'rz') return { error: `nl: invalid line numbering format: '${value}'` };
+        if (value !== 'ln' && value !== 'rn' && value !== 'rz') return { error: `nl: invalid line numbering format: ${quoteLocale(value)}`, usage: true };
         plan.format = value;
         break;
       case 'w': {
         const width = positive(value);
-        if (width === null) return { error: `nl: invalid line number field width: '${value}'` };
+        if (width === null) return { error: `nl: invalid line number field width: ${quoteLocale(value)}${/^\d+$/.test(value) ? ': Numerical result out of range' : ''}` };
         plan.width = width;
         break;
       }
       case 'v': {
         const start = integer(value);
-        if (start === null) return { error: `nl: invalid starting line number: '${value}'` };
+        if (start === null) return { error: `nl: invalid starting line number: ${quoteLocale(value)}` };
+        if (!Number.isSafeInteger(start)) return { error: `nl: invalid starting line number: ${quoteLocale(value)}: Value too large for defined data type` };
         plan.start = start;
         break;
       }
       case 'i': {
         const increment = integer(value);
-        if (increment === null) return { error: `nl: invalid line number increment: '${value}'` };
+        if (increment === null) return { error: `nl: invalid line number increment: ${quoteLocale(value)}` };
         plan.increment = increment;
         break;
       }
       case 'l': {
         const join = positive(value);
-        if (join === null) return { error: `nl: invalid line number of blank lines: '${value}'` };
+        if (join === null) return { error: `nl: invalid line number of blank lines: ${quoteLocale(value)}` };
         plan.joinBlank = join;
         break;
       }
