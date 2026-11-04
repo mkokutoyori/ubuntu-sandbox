@@ -16,6 +16,7 @@
  * See `linux_gap.md` §7.3.
  */
 
+import type { DestinationPolicy, DestinationSelectionPort } from '../../layers/internet/DestinationSelection';
 import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
 import type { TcpSocket } from '../../tcp/TcpStack';
@@ -167,6 +168,10 @@ export interface LinuxNetKernel {
   isBroadcastDestination(target: IPAddress): boolean;
 
   canReach6(target: IPv6Address): boolean;
+
+  destinationSelectionPort(): DestinationSelectionPort;
+
+  destinationPolicy(): DestinationPolicy;
 
   /** ICMPv6 echo through the real NDP/route resolution path (`ping6`). */
   ping6Sequence(

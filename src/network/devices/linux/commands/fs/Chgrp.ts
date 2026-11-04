@@ -1,5 +1,5 @@
 import type { LinuxCommand, LinuxCommandOption } from '../LinuxCommand';
-import { cmdChgrp } from '../../LinuxPermCommands';
+import { runChgrp } from '../../coreutils/ChownCommands';
 import { Satisfy, Deny } from '../../iam/policy/CommandPrivilegePolicy';
 
 const CHGRP_OPTIONS: readonly LinuxCommandOption[] = [
@@ -17,12 +17,9 @@ export const chgrpCommand: LinuxCommand = {
   usage: 'chgrp GROUP FILE...',
   options: CHGRP_OPTIONS,
   privilege: { satisfiedBy: Satisfy.rootOrGroup('sudo', 'wheel'), deny: Deny.operationNotPermitted },
-  run: (ctx, args) => {
-    const out = cmdChgrp(ctx.executor.ctx(), args);
-    return out;
-  },
+  run: (ctx, args) => runChgrp(ctx.executor.ctx(), args).stdout,
   runWithStatus: (ctx, args) => {
-    const out = cmdChgrp(ctx.executor.ctx(), args);
-    return Promise.resolve({ output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 });
+    const result = runChgrp(ctx.executor.ctx(), args);
+    return Promise.resolve({ output: result.stdout, exitCode: result.exitCode, stderr: result.stderr, interleaved: result.interleaved });
   },
 };

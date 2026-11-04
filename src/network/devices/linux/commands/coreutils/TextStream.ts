@@ -24,6 +24,19 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import { base64ToBytes, bytesToBase64, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import type { LinuxCommand } from '../LinuxCommand';
+import { asDispatch, type CoreutilsIO, type CoreutilsRun } from '../../coreutils/CoreutilsKit';
+import { coreutilsIO } from '../../coreutils/CoreutilsFiles';
+import { runTac } from '../../coreutils/TacCommand';
+import { runFmt } from '../../coreutils/FmtCommand';
+import { runCksum } from '../../coreutils/CksumCommand';
+import { runCmp } from '../../coreutils/CmpCommand';
+import { runBase64 } from '../../coreutils/Base64Command';
+import { runSplit } from '../../coreutils/SplitCommand';
+import { runNl } from '../../coreutils/NlCommand';
+import { runPaste } from '../../coreutils/PasteCommand';
+import { runComm } from '../../coreutils/CommCommand';
+import { runFold } from '../../coreutils/FoldCommand';
+import { runExpand, runUnexpand } from '../../coreutils/TabCommands';
 import { numberLines, parseNumbering } from './NumberLines';
 import { parseLessLaunch } from '../../editors/lessLaunch';
 import { shortOptions } from '../Getopt';
@@ -94,6 +107,19 @@ function inputs(ctx: LinuxCommandContext, files: string[], stdin: string | undef
   return contents;
 }
 
+function viaCoreutils(base: LinuxCommand, run: (args: string[], io: CoreutilsIO, ctx: LinuxCommandContext) => CoreutilsRun): LinuxCommand {
+  const execute = (ctx: LinuxCommandContext, args: string[], stdin?: string) => {
+    const result = run(args, coreutilsIO(ctx.executor.ctx(), stdin), ctx);
+    return result.exitCode === 0 ? asDispatch(result) : { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr, interleaved: result.interleaved };
+  };
+  return {
+    ...base,
+    run: (ctx, args, stdin) => execute(ctx, args, stdin).output,
+    runWithStatusSync: execute,
+    runWithStatus: (ctx, args, stdin) => Promise.resolve(execute(ctx, args, stdin)),
+  };
+}
+
 /** Le squelette commun : un nom, une aide, et une fonction de calcul. */
 function coreutil(
   name: string,
@@ -123,20 +149,20 @@ function coreutil(
 
 // ─── tac ────────────────────────────────────────────────────────────
 
-export const tacCommand = coreutil(
+export const tacCommand = viaCoreutils(coreutil(
   'tac', 'tac [FILE]...',
   'Concatenate and print files in reverse, last line first.',
-  [],
-  (ctx, args, stdin) => {
-    const got = inputs(ctx, args.filter(a => !a.startsWith('-') || a === '-'), stdin, 'tac');
-    if (!Array.isArray(got)) return got;
-    return got.map(c => c.split(/(?<=\n)/).reverse().join('')).join('');
-  },
-);
+  [
+    { flag: '-b', description: 'attach the separator before instead of after' },
+    { flag: '-r', description: 'interpret the separator as a regular expression' },
+    { flag: '-s', description: 'use STRING as the separator instead of newline', takesArg: true, argName: 'STRING' },
+  ],
+  () => '',
+), runTac);
 
 // ─── nl ─────────────────────────────────────────────────────────────
 
-export const nlCommand = coreutil(
+export const nlCommand = viaCoreutils(coreutil(
   'nl', 'nl [OPTION]... [FILE]...',
   'Number the lines of each file. By default only non-empty lines are\n'
   + 'numbered (-b t); -b a numbers every line.',
@@ -153,18 +179,12 @@ export const nlCommand = coreutil(
     { flag: '-d', description: 'Section delimiter characters', takesArg: true, argName: 'CC' },
     { flag: '-p', description: 'Do not restart numbering at each logical page' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const parsed = parseNumbering(rawArgs);
-    if ('error' in parsed) return parsed.error;
-    const got = inputs(ctx, parsed.plan.files, stdin, 'nl');
-    if (!Array.isArray(got)) return got;
-    return numberLines(parsed.plan, got, toLines);
-  },
-);
+  () => '',
+), runNl);
 
 // ─── paste ──────────────────────────────────────────────────────────
 
-export const pasteCommand = coreutil(
+export const pasteCommand = viaCoreutils(coreutil(
   'paste', 'paste [-s] [-d LIST] [FILE]...',
   'Merge lines of files side by side. -s pastes one file per line\n'
   + 'instead of column by column; -d gives the delimiters, consumed in\n'
@@ -173,44 +193,12 @@ export const pasteCommand = coreutil(
     { flag: '-s', description: 'Paste one file per line' },
     { flag: '-d', description: 'Delimiter list', takesArg: true, argName: 'LIST' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const set = GNU_OPTION_SETS.paste;
-    let delims = '\t';
-    let serial = false;
-    let terminator = '\n';
-    const files: string[] = [];
-    for (const item of shortOptions(rawArgs, set.optstring, set.long)) {
-      if (item.kind === 'operand') files.push(item.value);
-      else if (item.kind !== 'option') continue;
-      else if (item.letter === 's') serial = true;
-      else if (item.letter === 'd') delims = item.argument ?? '\t';
-      else if (item.letter === 'z') terminator = '\0';
-    }
-    if (delims === '') delims = '\t';
-    const got = inputs(ctx, files, stdin, 'paste');
-    if (!Array.isArray(got)) return got;
-
-    const sep = (i: number) => delims[i % delims.length];
-    if (serial) {
-      return got
-        .map(c => toLines(c, terminator).reduce((acc, l, i) => (i === 0 ? l : acc + sep(i - 1) + l), ''))
-        .join(terminator);
-    }
-    const columns = got.map(c => toLines(c, terminator));
-    const height = Math.max(0, ...columns.map(c => c.length));
-    const rows: string[] = [];
-    for (let r = 0; r < height; r++) {
-      rows.push(columns
-        .map(c => c[r] ?? '')
-        .reduce((acc, cell, i) => (i === 0 ? cell : acc + sep(i - 1) + cell), ''));
-    }
-    return rows.join(terminator);
-  },
-);
+  () => '',
+), runPaste);
 
 // ─── comm ───────────────────────────────────────────────────────────
 
-export const commCommand = coreutil(
+export const commCommand = viaCoreutils(coreutil(
   'comm', 'comm [OPTION]... FILE1 FILE2',
   'Compare two sorted files line by line, in three columns: lines only\n'
   + 'in FILE1, only in FILE2, and in both. -1/-2/-3 suppress the matching\n'
@@ -224,60 +212,12 @@ export const commCommand = coreutil(
     { flag: '--total', description: 'Print a summary line' },
     { flag: '-z', description: 'Lines end with NUL, not newline' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const set = GNU_OPTION_SETS.comm;
-    const suppressed = new Set<number>();
-    const files: string[] = [];
-    let delimiter = '\t';
-    let checkOrder = false;
-    let total = false;
-    let terminator = '\n';
-    for (const item of shortOptions(rawArgs, set.optstring, set.long)) {
-      if (item.kind === 'operand') files.push(item.value);
-      else if (item.kind !== 'option') continue;
-      else if (/^[123]$/.test(item.letter)) suppressed.add(Number(item.letter));
-      else if (item.long === 'output-delimiter') delimiter = item.argument ?? '\t';
-      else if (item.long === 'check-order') checkOrder = true;
-      else if (item.long === 'nocheck-order') checkOrder = false;
-      else if (item.long === 'total') total = true;
-      else if (item.letter === 'z') terminator = '\0';
-    }
-    if (files.length < 2) return files.length === 0 ? 'comm: missing operand' : `comm: missing operand after '${files[0]}'`;
-    if (files.length > 2) return `comm: extra operand '${files[2]}'`;
-    const got = inputs(ctx, files, stdin, 'comm');
-    if (!Array.isArray(got)) return got;
-
-    const [a, b] = got.map(content => toLines(content, terminator));
-    if (checkOrder) {
-      for (const [index, lines] of [a, b].entries()) {
-        if (lines.some((line, at) => at > 0 && lines[at - 1] > line)) return `comm: file ${index + 1} is not in sorted order`;
-      }
-    }
-    const out: string[] = [];
-    const counts = [0, 0, 0];
-    const emit = (col: 1 | 2 | 3, value: string) => {
-      counts[col - 1]++;
-      if (suppressed.has(col)) return;
-      let indent = 0;
-      for (let c = 1; c < col; c++) if (!suppressed.has(c)) indent++;
-      out.push(delimiter.repeat(indent) + value);
-    };
-    let i = 0, j = 0;
-    while (i < a.length && j < b.length) {
-      if (a[i] === b[j]) { emit(3, a[i]); i++; j++; }
-      else if (a[i] < b[j]) { emit(1, a[i]); i++; }
-      else { emit(2, b[j]); j++; }
-    }
-    while (i < a.length) { emit(1, a[i]); i++; }
-    while (j < b.length) { emit(2, b[j]); j++; }
-    if (total) out.push(`${counts[0]}${delimiter}${counts[1]}${delimiter}${counts[2]}${delimiter}total`);
-    return out.join(terminator);
-  },
-);
+  () => '',
+), runComm);
 
 // ─── fold ───────────────────────────────────────────────────────────
 
-export const foldCommand = coreutil(
+export const foldCommand = viaCoreutils(coreutil(
   'fold', 'fold [-s] [-w WIDTH] [FILE]...',
   'Wrap each input line to fit in WIDTH columns (80 by default).\n'
   + '-s breaks at the last blank before the limit instead of mid-word.',
@@ -285,116 +225,29 @@ export const foldCommand = coreutil(
     { flag: '-w', description: 'Wrap width', takesArg: true, argName: 'WIDTH' },
     { flag: '-s', description: 'Break at spaces' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'sw', 'w');
-    let width = 80;
-    let atSpaces = false;
-    const files: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-s' || a === '--spaces') { atSpaces = true; continue; }
-      if (a === '-w' && args[i + 1]) { width = parseInt(args[i + 1], 10); i++; continue; }
-      if (/^-\d+$/.test(a)) { width = parseInt(a.slice(1), 10); continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
-    }
-    if (!Number.isFinite(width) || width < 1) return 'fold: invalid number of columns';
-    const got = inputs(ctx, files, stdin, 'fold');
-    if (!Array.isArray(got)) return got;
-
-    let text = '';
-    for (const content of got) {
-      const out: string[] = [];
-      for (const line of toLines(content)) {
-        let rest = line;
-        if (rest === '') { out.push(''); continue; }
-        while (rest.length > width) {
-          let cut = width;
-          if (atSpaces) {
-            const lastSpace = rest.lastIndexOf(' ', width - 1);
-            if (lastSpace > 0) cut = lastSpace + 1;
-          }
-          out.push(rest.slice(0, cut));
-          rest = rest.slice(cut);
-        }
-        out.push(rest);
-      }
-      text += out.join('\n') + (out.length > 0 && content.endsWith('\n') ? '\n' : '');
-    }
-    return text;
-  },
-);
+  () => '',
+), runFold);
 
 // ─── expand / unexpand ──────────────────────────────────────────────
 
-function tabStop(args: string[]): number {
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '-t' && args[i + 1]) return parseInt(args[i + 1], 10) || 8;
-  }
-  return 8;
-}
-
-function fileArgs(args: string[]): string[] {
-  return args.filter((a, i) => (!a.startsWith('-') || a === '-') && args[i - 1] !== '-t');
-}
-
-export const expandCommand = coreutil(
+export const expandCommand = viaCoreutils(coreutil(
   'expand', 'expand [-t N] [FILE]...',
   'Convert tabs to spaces, with tab stops every N columns (8 by default).',
   [{ flag: '-t', description: 'Tab stop width', takesArg: true, argName: 'N' }],
-  (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'ta', 't');
-    const stop = tabStop(args);
-    const got = inputs(ctx, fileArgs(args), stdin, 'expand');
-    if (!Array.isArray(got)) return got;
-    const expand = (line: string) => {
-      let out = '';
-      for (const ch of line) {
-        if (ch === '\t') out += ' '.repeat(stop - (out.length % stop));
-        else out += ch;
-      }
-      return out;
-    };
-    return got.map(c => toLines(c).map(expand).join('\n')).join('\n');
-  },
-);
+  () => '',
+), runExpand);
 
-export const unexpandCommand = coreutil(
+export const unexpandCommand = viaCoreutils(coreutil(
   'unexpand', 'unexpand [-t N] [FILE]...',
   'Convert leading spaces back to tabs. Without -a, only the indentation\n'
   + 'of each line is converted, like the real coreutil.',
   [{ flag: '-t', description: 'Tab stop width', takesArg: true, argName: 'N' }],
-  (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'ta', 't');
-    const stop = tabStop(args);
-    const got = inputs(ctx, fileArgs(args), stdin, 'unexpand');
-    if (!Array.isArray(got)) return got;
-    const shrink = (line: string) => {
-      const lead = /^ +/.exec(line);
-      if (!lead) return line;
-      const n = lead[0].length;
-      return '\t'.repeat(Math.floor(n / stop)) + ' '.repeat(n % stop) + line.slice(n);
-    };
-    return got.map(c => toLines(c).map(shrink).join('\n')).join('\n');
-  },
-);
+  () => '',
+), runUnexpand);
 
 // ─── fmt ────────────────────────────────────────────────────────────
 
-function wrapWords(line: string, width: number): string[] {
-  const words = line.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [''];
-  const rows: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    if (cur === '') cur = w;
-    else if (cur.length + 1 + w.length <= width) cur += ' ' + w;
-    else { rows.push(cur); cur = w; }
-  }
-  if (cur !== '') rows.push(cur);
-  return rows;
-}
-
-export const fmtCommand = coreutil(
+export const fmtCommand = viaCoreutils(coreutil(
   'fmt', 'fmt [-s] [-w WIDTH] [FILE]...',
   'Reflow paragraphs to WIDTH columns (75 by default). -s only splits\n'
   + 'long lines and never joins two short ones.',
@@ -402,37 +255,8 @@ export const fmtCommand = coreutil(
     { flag: '-w', description: 'Target width', takesArg: true, argName: 'WIDTH' },
     { flag: '-s', description: 'Split long lines only' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'sw', 'w');
-    let width = 75;
-    let splitOnly = false;
-    const files: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-s') { splitOnly = true; continue; }
-      if (a === '-w' && args[i + 1]) { width = parseInt(args[i + 1], 10); i++; continue; }
-      if (/^-\d+$/.test(a)) { width = parseInt(a.slice(1), 10); continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
-    }
-    const got = inputs(ctx, files, stdin, 'fmt');
-    if (!Array.isArray(got)) return got;
-
-    const out: string[] = [];
-    for (const content of got) {
-      if (splitOnly) {
-        for (const line of toLines(content)) out.push(...wrapWords(line, width));
-        continue;
-      }
-      for (const para of content.split(/\n\s*\n/)) {
-        const words = para.split(/\s+/).filter(Boolean);
-        if (words.length === 0) continue;
-        if (out.length > 0) out.push('');
-        out.push(...wrapWords(words.join(' '), width));
-      }
-    }
-    return out.join('\n');
-  },
-);
+  () => '',
+), runFmt);
 
 // ─── pr ─────────────────────────────────────────────────────────────
 
@@ -510,7 +334,7 @@ export const columnCommand = coreutil(
 
 // ─── cmp ────────────────────────────────────────────────────────────
 
-export const cmpCommand: LinuxCommand = {
+export const cmpCommand = viaCoreutils({
   name: 'cmp',
   needsNetworkContext: true,
   readsStdin: true,
@@ -519,64 +343,10 @@ export const cmpCommand: LinuxCommand = {
   help: 'Compare two files byte by byte. Prints nothing and exits 0 when they\n'
     + 'are identical; otherwise names the first differing byte and line.',
   options: [],
-  run(ctx: LinuxCommandContext, args: string[], stdin?: string): string {
-    return cmpRun(ctx, args, stdin).output;
-  },
-  runWithStatusSync(ctx: LinuxCommandContext, args: string[], stdin?: string) {
-    return cmpRun(ctx, args, stdin);
-  },
-};
+  run: () => '',
+}, runCmp);
 
-function cmpRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
-  const files = args.filter(a => !a.startsWith('-') || a === '-');
-  if (files.length < 2) return { output: '', stderr: 'cmp: missing operand', exitCode: 2 };
-  const got = inputs(ctx, files.slice(0, 2), stdin, 'cmp');
-  if (!Array.isArray(got)) return { output: '', stderr: got, exitCode: 2 };
-
-  const [a, b] = got;
-  const silent = args.some((argument) => argument === '-s' || argument === '--silent' || argument === '--quiet');
-  if (a === b) return { output: '', exitCode: 0 };
-  const min = Math.min(a.length, b.length);
-  for (let i = 0; i < min; i++) {
-    if (a[i] !== b[i]) {
-      const line = a.slice(0, i).split('\n').length;
-      return { output: silent ? '' : `${files[0]} ${files[1]} differ: byte ${i + 1}, line ${line}`, stderr: '', exitCode: 1 };
-    }
-  }
-  const shorter = a.length < b.length ? a : b;
-  const name = a.length < b.length ? files[0] : files[1];
-  const where = shorter === '' ? 'which is empty' : `after byte ${shorter.length}, line ${shorter.split('\n').length - 1}`;
-  return { output: '', stderr: silent ? '' : `cmp: EOF on ${name} ${where}`, exitCode: 1 };
-}
-
-// ─── split ──────────────────────────────────────────────────────────
-
-/** Les suffixes de `split` : aa, ab, … puis ba, bb, … */
-function suffixes(count: number, length: number, kind: 'alpha' | 'numeric' | 'hex', from: number): string[] | null {
-  const radix = kind === 'alpha' ? 26 : kind === 'hex' ? 16 : 10;
-  if (from + count > radix ** length) return null;
-  const out: string[] = [];
-  for (let i = from; i < from + count; i++) {
-    let rest = i;
-    let text = '';
-    for (let place = 0; place < length; place++) {
-      const digit = rest % radix;
-      text = (kind === 'alpha' ? String.fromCharCode(97 + digit) : digit.toString(radix)) + text;
-      rest = Math.floor(rest / radix);
-    }
-    out.push(text);
-  }
-  return out;
-}
-
-function splitSize(raw: string, what: string): number | string {
-  const match = /^(\d+)([KMGkmg]?)$/.exec(raw);
-  if (match === null || Number(match[1]) < 1) return `split: invalid number of ${what}: '${raw}'`;
-  const units: Record<string, number> = { '': 1, k: 1024, K: 1024, m: 1048576, M: 1048576, g: 1073741824, G: 1073741824 };
-  return Number(match[1]) * units[match[2]];
-}
-
-export const splitCommand = coreutil(
+export const splitCommand = viaCoreutils(coreutil(
   'split', 'split [OPTION]... [FILE [PREFIX]]',
   'Split a file into pieces, written to PREFIXaa, PREFIXab, ... -l splits\n'
   + 'every N lines, -b every N bytes, -C at most N bytes of whole lines, -n into\n'
@@ -596,89 +366,12 @@ export const splitCommand = coreutil(
     { flag: '--additional-suffix', description: 'Append SUFFIX to the file names', takesArg: true, argName: 'SUFFIX' },
     { flag: '--verbose', description: 'Print a diagnostic before each file' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const set = GNU_OPTION_SETS.split;
-    let mode: 'lines' | 'bytes' | 'lineBytes' | 'chunks' = 'lines';
-    let size = 1000;
-    let suffixLength = 2;
-    let kind: 'alpha' | 'numeric' | 'hex' = 'alpha';
-    let from = 0;
-    let additional = '';
-    let elideEmpty = false;
-    let verbose = false;
-    let separator = '\n';
-    const positional: string[] = [];
-    for (const item of shortOptions(rawArgs, set.optstring, set.long)) {
-      if (item.kind === 'operand') { positional.push(item.value); continue; }
-      if (item.kind !== 'option') continue;
-      const value = item.argument ?? '';
-      if (item.letter === 'l' || item.letter === 'b' || item.letter === 'C') {
-        const parsed = item.letter === 'l' ? (/^[1-9]\d*$/.test(value) ? Number(value) : `split: invalid number of lines: '${value}'`)
-          : splitSize(value, item.letter === 'b' ? 'bytes' : 'bytes');
-        if (typeof parsed === 'string') return parsed;
-        size = parsed;
-        mode = item.letter === 'l' ? 'lines' : item.letter === 'b' ? 'bytes' : 'lineBytes';
-      } else if (item.letter === 'n') {
-        if (!/^[1-9]\d*$/.test(value)) return `split: invalid number of chunks: '${value}'`;
-        size = Number(value);
-        mode = 'chunks';
-      } else if (item.letter === 'a') {
-        if (!/^[1-9]\d*$/.test(value)) return `split: invalid suffix length: '${value}'`;
-        suffixLength = Number(value);
-      } else if (item.letter === 'd') {
-        kind = 'numeric';
-        if (value !== '') from = parseInt(value, 10) || 0;
-      } else if (item.letter === 'x') {
-        kind = 'hex';
-        if (value !== '') from = parseInt(value, 16) || 0;
-      } else if (item.letter === 'e') elideEmpty = true;
-      else if (item.letter === 't') separator = value === '\\0' ? '\0' : value;
-      else if (item.long === 'additional-suffix') additional = value;
-      else if (item.long === 'verbose') verbose = true;
-    }
-    const source = positional[0];
-    const prefix = positional[1] ?? 'x';
-    const content = source && source !== '-' ? readFile(ctx, source) : (stdin ?? '');
-    if (content === null) return missing('split', source);
-
-    let pieces: string[] = [];
-    if (mode === 'bytes') {
-      for (let i = 0; i < content.length; i += size) pieces.push(content.slice(i, i + size));
-    } else if (mode === 'chunks') {
-      const per = Math.ceil(content.length / size);
-      for (let i = 0; i < size; i++) pieces.push(content.slice(i * per, (i + 1) * per));
-    } else {
-      const records = toLines(content, separator);
-      if (mode === 'lines') {
-        for (let i = 0; i < records.length; i += size) pieces.push(records.slice(i, i + size).join(separator) + separator);
-      } else {
-        let current = '';
-        for (const record of records) {
-          const piece = record + separator;
-          if (current !== '' && current.length + piece.length > size) { pieces.push(current); current = ''; }
-          current += piece;
-        }
-        if (current !== '') pieces.push(current);
-      }
-    }
-    if (elideEmpty) pieces = pieces.filter((piece) => piece !== '');
-
-    const names = suffixes(pieces.length, suffixLength, kind, from);
-    if (names === null) return 'split: output file suffixes exhausted';
-    const vfs = ctx.executor.vfs;
-    const log: string[] = [];
-    pieces.forEach((piece, i) => {
-      const name = `${prefix}${names[i]}${additional}`;
-      vfs.writeFile(vfs.normalizePath(name, ctx.executor.getCwd()), piece, ctx.executor.getCurrentUid(), 0, 0o022);
-      if (verbose) log.push(`creating file '${name}'`);
-    });
-    return log.join('\n');
-  },
-);
+  () => '',
+), (args, io, ctx) => runSplit(ctx.executor.ctx(), args, io, ctx.executor.splitHost()));
 
 // ─── base64 ─────────────────────────────────────────────────────────
 
-export const base64Command = coreutil(
+export const base64Command = viaCoreutils(coreutil(
   'base64', 'base64 [OPTION]... [FILE]',
   'Encode or decode base64. -d decodes; -w wraps encoded lines after COLS\n'
   + 'characters (76 by default, 0 never wraps); -i ignores non-alphabet\n'
@@ -688,82 +381,17 @@ export const base64Command = coreutil(
     { flag: '-i', description: 'When decoding, ignore non-alphabet characters' },
     { flag: '-w', description: 'Wrap encoded lines after COLS characters', takesArg: true, argName: 'COLS' },
   ],
-  (ctx, args, stdin) => {
-    const set = GNU_OPTION_SETS.base64;
-    let decode = false;
-    let ignoreGarbage = false;
-    let wrap = 76;
-    const files: string[] = [];
-    for (const item of shortOptions(args, set.optstring, set.long)) {
-      if (item.kind === 'operand') files.push(item.value);
-      else if (item.kind === 'option' && item.letter === 'd') decode = true;
-      else if (item.kind === 'option' && item.letter === 'i') ignoreGarbage = true;
-      else if (item.kind === 'option' && item.letter === 'w') {
-        if (!/^\d+$/.test(item.argument ?? '')) return `base64: invalid wrap size: '${item.argument}'`;
-        wrap = Number(item.argument);
-      }
-    }
-    const got = inputs(ctx, files, stdin, 'base64');
-    if (!Array.isArray(got)) return got;
-    const input = got.join('');
-    if (input === '') return '';
-
-    try {
-      if (decode) {
-        const text = ignoreGarbage ? input.replace(/[^A-Za-z0-9+/=]/g, '') : input.replace(/\s+/g, '');
-        const bytes = base64ToBytes(text);
-        const decoded = bytesToFileText(bytes);
-        return /[\udc80-\udcff]/.test(decoded) ? decoded : decoded.replace(/\n$/, '');
-      }
-      const encoded = bytesToBase64(fileTextToBytes(input));
-      if (wrap === 0) return encoded;
-      const lines: string[] = [];
-      for (let at = 0; at < encoded.length; at += wrap) lines.push(encoded.slice(at, at + wrap));
-      return `${lines.join('\n')}\n`;
-    } catch {
-      return 'base64: invalid input';
-    }
-  },
-);
+  () => '',
+), runBase64);
 
 // ─── cksum ──────────────────────────────────────────────────────────
 
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i << 24;
-    for (let k = 0; k < 8; k++) c = (c & 0x80000000) ? ((c << 1) ^ 0x04c11db7) >>> 0 : (c << 1) >>> 0;
-    table[i] = c >>> 0;
-  }
-  return table;
-})();
-
-/** Le CRC-32 de POSIX, celui que `cksum` imprime — pas celui de zlib. */
-function posixCksum(bytes: Uint8Array): number {
-  let crc = 0;
-  for (const b of bytes) crc = ((crc << 8) ^ CRC_TABLE[((crc >>> 24) ^ b) & 0xff]) >>> 0;
-  let len = bytes.length;
-  while (len > 0) {
-    crc = ((crc << 8) ^ CRC_TABLE[((crc >>> 24) ^ (len & 0xff)) & 0xff]) >>> 0;
-    len >>>= 8;
-  }
-  return (~crc) >>> 0;
-}
-
-export const cksumCommand = coreutil(
+export const cksumCommand = viaCoreutils(coreutil(
   'cksum', 'cksum [FILE]...',
   'Print the POSIX CRC checksum and byte count of each file.',
   [],
-  (ctx, args, stdin) => {
-    const files = args.filter(a => !a.startsWith('-') || a === '-');
-    const got = inputs(ctx, files, stdin, 'cksum');
-    if (!Array.isArray(got)) return got;
-    return got.map((content, i) => {
-      const bytes = fileTextToBytes(content);
-      return `${posixCksum(bytes)} ${bytes.length}${files[i] ? ` ${files[i]}` : ''}`;
-    }).join('\n');
-  },
-);
+  () => '',
+), runCksum);
 
 export const lessCommand: LinuxCommand = { package: 'less', ...coreutil(
   'less', 'less [OPTIONS] [FILE]...',

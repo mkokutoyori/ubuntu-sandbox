@@ -51,14 +51,6 @@ describe('KernelInfo', () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe('SystemIdentity', () => {
-  it('renders a hostnamectl report', () => {
-    const out = SystemIdentity.ubuntu().toHostnamectl('myhost');
-    expect(out).toContain('Static hostname: myhost');
-    expect(out).toContain('Operating System: Ubuntu 22.04');
-    expect(out).toContain('Kernel: Linux 5.15.0-130-generic');
-    expect(out).toContain('Machine ID:');
-  });
-
   it('rend le fuseau de la machine comme un type, pas comme une chaine', () => {
     const identity = SystemIdentity.ubuntu();
     expect(identity.getTimeZone().name).toBe('UTC');

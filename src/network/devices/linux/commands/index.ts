@@ -132,7 +132,7 @@ import { hwinfoCommand } from './hw/Hwinfo';
 import { blkidCommand } from './hw/Blkid';
 import { partedCommand } from './hw/Parted';
 import { lsblkCommand } from './hw/Lsblk';
-import { hostnameCommand } from './system/Hostname';
+import { hostnameCommands } from './system/Hostname';
 import { archCommand } from './system/Arch';
 import { dateCommand } from './system/Date';
 import { uptimeCommand } from './system/Uptime';
@@ -299,7 +299,7 @@ export {
   blkidCommand,
   partedCommand,
   lsblkCommand,
-  hostnameCommand,
+  hostnameCommands,
   archCommand,
   dateCommand,
   uptimeCommand,
@@ -479,7 +479,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   blkidCommand,
   partedCommand,
   lsblkCommand,
-  hostnameCommand,
+  ...hostnameCommands,
   archCommand,
   dateCommand,
   uptimeCommand,

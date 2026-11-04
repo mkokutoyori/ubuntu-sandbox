@@ -45,7 +45,6 @@ export interface SystemIdentityInit {
   locale?: string;
   keymap?: string;
   chassis?: ChassisClass;
-  iconName?: string;
   virtualization?: string;
 }
 
@@ -63,7 +62,6 @@ export class SystemIdentity {
   /** Console keymap, e.g. `us`. */
   keymap: string;
   chassis: ChassisClass;
-  iconName: string;
   /** Detected virtualization technology (`kvm`, `none`, …). */
   virtualization: string;
 
@@ -79,7 +77,6 @@ export class SystemIdentity {
     this.locale = init.locale ?? 'en_US.UTF-8';
     this.keymap = init.keymap ?? 'us';
     this.chassis = init.chassis ?? 'vm';
-    this.iconName = init.iconName ?? 'computer-vm';
     this.virtualization = init.virtualization ?? 'kvm';
   }
 
@@ -112,7 +109,6 @@ export class SystemIdentity {
         operatingSystem: 'Windows',
       }),
       chassis: 'desktop',
-      iconName: 'computer',
     });
   }
 
@@ -142,7 +138,6 @@ export class SystemIdentity {
         operatingSystem: 'Windows',
       }),
       chassis: 'server',
-      iconName: 'computer-server',
     });
   }
 
@@ -220,8 +215,8 @@ export class SystemIdentity {
    * conditionnels sont ceux de `print_status_info` (systemd v255,
    * `src/locale/localectl.c`) : `VC Toggle Keymap`, `X11 Variant` et
    * `X11 Options` ne paraissent que renseignes, et un champ vide rend
-   * `(unset)`. L'alignement est celui de `hostnamectl` ci-dessous, la
-   * vue soeur.
+   * `(unset)`. La table est verticale (`table_new_vertical`) : l'intitule,
+   * suivi de deux-points, est cale a droite sur le plus long.
    */
   toLocalectl(): string {
     const champs: Array<[string, string]> = [
@@ -230,24 +225,8 @@ export class SystemIdentity {
       ['X11 Layout', this.keymap],
       ['X11 Model', X11_MODEL],
     ];
-    const largeur = Math.max(...champs.map(([nom]) => nom.length)) + 2;
-    return champs.map(([nom, valeur]) => `${padToWidth(nom, largeur, 'right')}: ${valeur}`).join('\n');
-  }
-
-  /** Render the `hostnamectl` status report. */
-  toHostnamectl(hostname: string, transient: string = hostname): string {
-    return [
-      `   Static hostname: ${hostname}`,
-      ...(transient === hostname ? [] : [`Transient hostname: ${transient}`]),
-      `         Icon name: ${this.iconName}`,
-      `           Chassis: ${this.chassis}`,
-      `        Machine ID: ${this.machineId}`,
-      `           Boot ID: ${this.bootId}`,
-      `    Virtualization: ${this.virtualization}`,
-      `  Operating System: ${this.os.prettyName}`,
-      `            Kernel: ${this.kernel.sysname} ${this.kernel.release}`,
-      `      Architecture: ${this.kernel.machine}`,
-    ].join('\n');
+    const largeur = Math.max(...champs.map(([nom]) => nom.length)) + 1;
+    return champs.map(([nom, valeur]) => `${padToWidth(`${nom}:`, largeur, 'right')} ${valeur}`).join('\n');
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────

@@ -95,7 +95,7 @@ describe('the machine clock moves with what the machine waits for', () => {
   it('root sets the clock with date -s and date reads it back', async () => {
     const { pc } = pair();
     await pc.executeCommand('sudo date -s "2030-01-01 12:00:00"');
-    expect(await pc.executeCommand('date -u +"%F %H"')).toBe('2030-01-01 12');
+    expect(await pc.executeCommand('date -u +"%F %H"')).toBe('2030-01-01 12\n');
   });
 
   it('a non-root user is refused and the clock stays', async () => {
@@ -110,7 +110,7 @@ describe('the machine clock moves with what the machine waits for', () => {
     const { pc } = pair();
     await pc.executeCommand('sudo timedatectl set-timezone Europe/Paris');
     await pc.executeCommand('sudo date -s "2030-07-01 12:00:00"');
-    expect(await pc.executeCommand('date -u +%H')).toBe('10');
+    expect(await pc.executeCommand('date -u +%H')).toBe('10\n');
   });
 
   it('the Windows machine tells the same day in PowerShell and in cmd, the day of its own clock', async () => {

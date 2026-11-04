@@ -1,0 +1,3883 @@
+{
+ "scenarios": [
+  {
+   "runs": [
+    {
+     "argv": [],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: box.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: box.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "box.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "box.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "box.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "box.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "box.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "computer-container\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "container\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=pretty"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\n\t\"Hostname\" : \"box.example\",\n\t\"StaticHostname\" : \"box.example\",\n\t\"PrettyHostname\" : null,\n\t\"DefaultHostname\" : \"localhost\",\n\t\"HostnameSource\" : \"static\",\n\t\"IconName\" : \"computer-container\",\n\t\"Chassis\" : \"container\",\n\t\"Deployment\" : null,\n\t\"Location\" : null,\n\t\"KernelName\" : \"Linux\",\n\t\"KernelRelease\" : \"6.18.44-fc-v233\",\n\t\"KernelVersion\" : \"#1 SMP PREEMPT_DYNAMIC @0\",\n\t\"OperatingSystemPrettyName\" : \"Ubuntu 24.04.5 LTS\",\n\t\"OperatingSystemCPEName\" : null,\n\t\"OperatingSystemHomeURL\" : \"https://www.ubuntu.com/\",\n\t\"HardwareVendor\" : null,\n\t\"HardwareModel\" : null,\n\t\"HardwareSerial\" : null,\n\t\"FirmwareVersion\" : null,\n\t\"FirmwareVendor\" : null,\n\t\"MachineID\" : \"4c398f739c8447eb99d3fe100ad1b0fa\",\n\t\"BootID\" : \"2830043c3d8b403d964eceb8d9dbf52a\",\n\t\"ProductUUID\" : null\n}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"box.example\",\"StaticHostname\":\"box.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"static\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=off"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: box.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--pretty"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--transient"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "--pretty",
+      "--static"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--version"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "systemd 255 (255.4-1ubuntu8.18)\n+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--help"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostnamectl [OPTIONS...] COMMAND ...\n\nQuery or change system hostname.\n\nCommands:\n  status                 Show current hostname settings\n  hostname [NAME]        Get/set system hostname\n  icon-name [NAME]       Get/set icon name for host\n  chassis [NAME]         Get/set chassis type for host\n  deployment [NAME]      Get/set deployment environment for host\n  location [NAME]        Get/set location for host\n\nOptions:\n  -h --help              Show this help\n     --version           Show package version\n     --no-ask-password   Do not prompt for password\n  -H --host=[USER@]HOST  Operate on remote host\n  -M --machine=CONTAINER Operate on local container\n     --transient         Only set transient hostname\n     --static            Only set static hostname\n     --pretty            Only set pretty hostname\n     --json=pretty|short|off\n                         Generate JSON output\n\nSee the hostnamectl(1) man page for details.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-h"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostnamectl [OPTIONS...] COMMAND ...\n\nQuery or change system hostname.\n\nCommands:\n  status                 Show current hostname settings\n  hostname [NAME]        Get/set system hostname\n  icon-name [NAME]       Get/set icon name for host\n  chassis [NAME]         Get/set chassis type for host\n  deployment [NAME]      Get/set deployment environment for host\n  location [NAME]        Get/set location for host\n\nOptions:\n  -h --help              Show this help\n     --version           Show package version\n     --no-ask-password   Do not prompt for password\n  -H --host=[USER@]HOST  Operate on remote host\n  -M --machine=CONTAINER Operate on local container\n     --transient         Only set transient hostname\n     --static            Only set static hostname\n     --pretty            Only set pretty hostname\n     --json=pretty|short|off\n                         Generate JSON output\n\nSee the hostnamectl(1) man page for details.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "help"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostnamectl [OPTIONS...] COMMAND ...\n\nQuery or change system hostname.\n\nCommands:\n  status                 Show current hostname settings\n  hostname [NAME]        Get/set system hostname\n  icon-name [NAME]       Get/set icon name for host\n  chassis [NAME]         Get/set chassis type for host\n  deployment [NAME]      Get/set deployment environment for host\n  location [NAME]        Get/set location for host\n\nOptions:\n  -h --help              Show this help\n     --version           Show package version\n     --no-ask-password   Do not prompt for password\n  -H --host=[USER@]HOST  Operate on remote host\n  -M --machine=CONTAINER Operate on local container\n     --transient         Only set transient hostname\n     --static            Only set static hostname\n     --pretty            Only set pretty hostname\n     --json=pretty|short|off\n                         Generate JSON output\n\nSee the hostnamectl(1) man page for details.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status",
+      "extra"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Too many arguments.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "bogus"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'bogus', did you mean 'status'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--bogus"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: unrecognized option '--bogus'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-x"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: invalid option -- 'x'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=bogus"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown argument to --json= switch: bogus\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: option '--json' requires an argument\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-H"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: option requires an argument -- 'H'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "a",
+      "b"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Too many arguments.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name",
+      "a",
+      "b"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Too many arguments.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Too few arguments.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-hostname",
+      "a",
+      "b"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Too many arguments.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-icon-name"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Too few arguments.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--no-ask-password",
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: box.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "box.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "stat"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'stat', did you mean 'status'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "statu"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'statu', did you mean 'status'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostnam"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'hostnam', did you mean 'hostname'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chass"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'chass', did you mean 'chassis'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "locat"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'locat', did you mean 'location'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'icon', did you mean 'icon-name'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "xyz"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'xyz', did you mean 'help'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'set', did you mean 'set-chassis'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-hostnam"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'set-hostnam', did you mean 'set-hostname'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "Status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'Status', did you mean 'status'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deploy"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'deploy', did you mean 'deployment'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--version",
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "systemd 255 (255.4-1ubuntu8.18)\n+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--help",
+      "bogus"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostnamectl [OPTIONS...] COMMAND ...\n\nQuery or change system hostname.\n\nCommands:\n  status                 Show current hostname settings\n  hostname [NAME]        Get/set system hostname\n  icon-name [NAME]       Get/set icon name for host\n  chassis [NAME]         Get/set chassis type for host\n  deployment [NAME]      Get/set deployment environment for host\n  location [NAME]        Get/set location for host\n\nOptions:\n  -h --help              Show this help\n     --version           Show package version\n     --no-ask-password   Do not prompt for password\n  -H --host=[USER@]HOST  Operate on remote host\n  -M --machine=CONTAINER Operate on local container\n     --transient         Only set transient hostname\n     --static            Only set static hostname\n     --pretty            Only set pretty hostname\n     --json=pretty|short|off\n                         Generate JSON output\n\nSee the hostnamectl(1) man page for details.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=help"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "pretty\nshort\noff\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json="
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown argument to --json= switch: \n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=pretty",
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\n\t\"Hostname\" : \"box.example\",\n\t\"StaticHostname\" : \"box.example\",\n\t\"PrettyHostname\" : null,\n\t\"DefaultHostname\" : \"localhost\",\n\t\"HostnameSource\" : \"static\",\n\t\"IconName\" : \"computer-container\",\n\t\"Chassis\" : \"container\",\n\t\"Deployment\" : null,\n\t\"Location\" : null,\n\t\"KernelName\" : \"Linux\",\n\t\"KernelRelease\" : \"6.18.44-fc-v233\",\n\t\"KernelVersion\" : \"#1 SMP PREEMPT_DYNAMIC @0\",\n\t\"OperatingSystemPrettyName\" : \"Ubuntu 24.04.5 LTS\",\n\t\"OperatingSystemCPEName\" : null,\n\t\"OperatingSystemHomeURL\" : \"https://www.ubuntu.com/\",\n\t\"HardwareVendor\" : null,\n\t\"HardwareModel\" : null,\n\t\"HardwareSerial\" : null,\n\t\"FirmwareVersion\" : null,\n\t\"FirmwareVendor\" : null,\n\t\"MachineID\" : \"4c398f739c8447eb99d3fe100ad1b0fa\",\n\t\"BootID\" : \"2830043c3d8b403d964eceb8d9dbf52a\",\n\t\"ProductUUID\" : null\n}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short",
+      "--static"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"box.example\",\"StaticHostname\":\"box.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"static\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-H"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: option requires an argument -- 'H'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: option '--host' requires an argument\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-h",
+      "-x"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostnamectl [OPTIONS...] COMMAND ...\n\nQuery or change system hostname.\n\nCommands:\n  status                 Show current hostname settings\n  hostname [NAME]        Get/set system hostname\n  icon-name [NAME]       Get/set icon name for host\n  chassis [NAME]         Get/set chassis type for host\n  deployment [NAME]      Get/set deployment environment for host\n  location [NAME]        Get/set location for host\n\nOptions:\n  -h --help              Show this help\n     --version           Show package version\n     --no-ask-password   Do not prompt for password\n  -H --host=[USER@]HOST  Operate on remote host\n  -M --machine=CONTAINER Operate on local container\n     --transient         Only set transient hostname\n     --static            Only set static hostname\n     --pretty            Only set pretty hostname\n     --json=pretty|short|off\n                         Generate JSON output\n\nSee the hostnamectl(1) man page for details.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-x",
+      "-h"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: invalid option -- 'x'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--version",
+      "-x"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "systemd 255 (255.4-1ubuntu8.18)\n+PAM +AUDIT +SELINUX +APPARMOR +IMA +SMACK +SECCOMP +GCRYPT -GNUTLS +OPENSSL +ACL +BLKID +CURL +ELFUTILS +FIDO2 +IDN2 -IDN +IPTC +KMOD +LIBCRYPTSETUP +LIBFDISK +PCRE2 -PWQUALITY +P11KIT +QRENCODE +TPM2 +BZIP2 +LZ4 +XZ +ZLIB +ZSTD -BPF_FRAMEWORK -XKBCOMMON +UTMP +SYSVINIT default-hierarchy=unified\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-M"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "hostnamectl: option requires an argument -- 'M'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-M",
+      "nosuchcontainer",
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Failed to connect to bus: Host is down\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--machine=nosuchcontainer"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Failed to connect to bus: Host is down\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Failed to query system properties: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not get property: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "hostname",
+      "x"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set pretty hostname: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "chassis"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not get property: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "chassis",
+      "vm"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set chassis: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "--json=short"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not get description: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "--static"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not get property: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "--transient",
+      "hostname",
+      "x"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not get property: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "--static",
+      "hostname",
+      "x"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set static hostname: Transport endpoint is not connected\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "bogus"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Unknown command verb 'bogus', did you mean 'status'?\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--host=nosuchhost",
+      "set-hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Too few arguments.\n",
+     "stdout": "",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "box.example\n",
+    "kernel": "box.example",
+    "machine_info": null,
+    "name": "static-and-no-machine-info",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: core\n Pretty hostname: Bank Core Router\n       Icon name: computer-server\n         Chassis: server \ud83d\uddb3\n      Deployment: production\n        Location: Paris DC1\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: kvm\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: core\n Pretty hostname: Bank Core Router\n       Icon name: computer-server\n         Chassis: server \ud83d\uddb3\n      Deployment: production\n        Location: Paris DC1\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: kvm\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "core\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "core\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "core\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "Bank Core Router\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "core\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "Bank Core Router\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "core\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "computer-server\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "server\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "production\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "Paris DC1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=pretty"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\n\t\"Hostname\" : \"core\",\n\t\"StaticHostname\" : \"core\",\n\t\"PrettyHostname\" : \"Bank Core Router\",\n\t\"DefaultHostname\" : \"localhost\",\n\t\"HostnameSource\" : \"static\",\n\t\"IconName\" : \"computer-server\",\n\t\"Chassis\" : \"server\",\n\t\"Deployment\" : \"production\",\n\t\"Location\" : \"Paris DC1\",\n\t\"KernelName\" : \"Linux\",\n\t\"KernelRelease\" : \"6.18.44-fc-v233\",\n\t\"KernelVersion\" : \"#1 SMP PREEMPT_DYNAMIC @0\",\n\t\"OperatingSystemPrettyName\" : \"Ubuntu 24.04.5 LTS\",\n\t\"OperatingSystemCPEName\" : null,\n\t\"OperatingSystemHomeURL\" : \"https://www.ubuntu.com/\",\n\t\"HardwareVendor\" : null,\n\t\"HardwareModel\" : null,\n\t\"HardwareSerial\" : null,\n\t\"FirmwareVersion\" : null,\n\t\"FirmwareVendor\" : null,\n\t\"MachineID\" : \"4c398f739c8447eb99d3fe100ad1b0fa\",\n\t\"BootID\" : \"2830043c3d8b403d964eceb8d9dbf52a\",\n\t\"ProductUUID\" : null\n}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"core\",\"StaticHostname\":\"core\",\"PrettyHostname\":\"Bank Core Router\",\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"static\",\"IconName\":\"computer-server\",\"Chassis\":\"server\",\"Deployment\":\"production\",\"Location\":\"Paris DC1\",\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=off"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: core\n Pretty hostname: Bank Core Router\n       Icon name: computer-server\n         Chassis: server \ud83d\uddb3\n      Deployment: production\n        Location: Paris DC1\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: kvm\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--pretty"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--transient"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "--pretty",
+      "--static"
+     ],
+     "etc_hostname": "core\n",
+     "kernel": "core",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "core\n",
+    "kernel": "core",
+    "machine_info": "PRETTY_HOSTNAME=\"Bank Core Router\"\nICON_NAME=computer-server\nCHASSIS=server\nDEPLOYMENT=production\nLOCATION=\"Paris DC1\"\n",
+    "name": "machine-info-preset",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "kvm"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: (unset)\nTransient hostname: transient.example\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: (unset)\nTransient hostname: transient.example\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "transient.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "transient.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "transient.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "computer-container\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "container\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=pretty"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\n\t\"Hostname\" : \"transient.example\",\n\t\"StaticHostname\" : null,\n\t\"PrettyHostname\" : null,\n\t\"DefaultHostname\" : \"localhost\",\n\t\"HostnameSource\" : \"transient\",\n\t\"IconName\" : \"computer-container\",\n\t\"Chassis\" : \"container\",\n\t\"Deployment\" : null,\n\t\"Location\" : null,\n\t\"KernelName\" : \"Linux\",\n\t\"KernelRelease\" : \"6.18.44-fc-v233\",\n\t\"KernelVersion\" : \"#1 SMP PREEMPT_DYNAMIC @0\",\n\t\"OperatingSystemPrettyName\" : \"Ubuntu 24.04.5 LTS\",\n\t\"OperatingSystemCPEName\" : null,\n\t\"OperatingSystemHomeURL\" : \"https://www.ubuntu.com/\",\n\t\"HardwareVendor\" : null,\n\t\"HardwareModel\" : null,\n\t\"HardwareSerial\" : null,\n\t\"FirmwareVersion\" : null,\n\t\"FirmwareVendor\" : null,\n\t\"MachineID\" : \"4c398f739c8447eb99d3fe100ad1b0fa\",\n\t\"BootID\" : \"2830043c3d8b403d964eceb8d9dbf52a\",\n\t\"ProductUUID\" : null\n}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"transient.example\",\"StaticHostname\":null,\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"transient\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=off"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: (unset)\nTransient hostname: transient.example\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--pretty"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--transient"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "--pretty",
+      "--static"
+     ],
+     "etc_hostname": null,
+     "kernel": "transient.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname",
+      "second.example"
+     ],
+     "etc_hostname": null,
+     "kernel": "second.example",
+     "log": [
+      "Hostname set to <second.example> (transient)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": null,
+     "kernel": "second.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: (unset)\nTransient hostname: second.example\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname",
+      "now-static"
+     ],
+     "etc_hostname": "now-static\n",
+     "kernel": "now-static",
+     "log": [
+      "Hostname set to <now-static> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "now-static\n",
+     "kernel": "now-static",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: now-static\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname",
+      "third.example"
+     ],
+     "etc_hostname": "now-static\n",
+     "kernel": "now-static",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "Hint: static hostname is already set, so the specified transient hostname will not be used.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "now-static\n",
+     "kernel": "now-static",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: now-static\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": null,
+    "kernel": "transient.example",
+    "machine_info": null,
+    "name": "transient-only",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: static.example\nTransient hostname: other.example\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: static.example\nTransient hostname: other.example\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "other.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "static.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "other.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "static.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "other.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "computer-container\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "container\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=pretty"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\n\t\"Hostname\" : \"other.example\",\n\t\"StaticHostname\" : \"static.example\",\n\t\"PrettyHostname\" : null,\n\t\"DefaultHostname\" : \"localhost\",\n\t\"HostnameSource\" : \"transient\",\n\t\"IconName\" : \"computer-container\",\n\t\"Chassis\" : \"container\",\n\t\"Deployment\" : null,\n\t\"Location\" : null,\n\t\"KernelName\" : \"Linux\",\n\t\"KernelRelease\" : \"6.18.44-fc-v233\",\n\t\"KernelVersion\" : \"#1 SMP PREEMPT_DYNAMIC @0\",\n\t\"OperatingSystemPrettyName\" : \"Ubuntu 24.04.5 LTS\",\n\t\"OperatingSystemCPEName\" : null,\n\t\"OperatingSystemHomeURL\" : \"https://www.ubuntu.com/\",\n\t\"HardwareVendor\" : null,\n\t\"HardwareModel\" : null,\n\t\"HardwareSerial\" : null,\n\t\"FirmwareVersion\" : null,\n\t\"FirmwareVendor\" : null,\n\t\"MachineID\" : \"4c398f739c8447eb99d3fe100ad1b0fa\",\n\t\"BootID\" : \"2830043c3d8b403d964eceb8d9dbf52a\",\n\t\"ProductUUID\" : null\n}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"other.example\",\"StaticHostname\":\"static.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"transient\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=off"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: static.example\nTransient hostname: other.example\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--pretty"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--transient"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "--pretty",
+      "--static"
+     ],
+     "etc_hostname": "static.example\n",
+     "kernel": "other.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Cannot query more than one name type at a time\n",
+     "stdout": "",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "static.example\n",
+    "kernel": "other.example",
+    "machine_info": null,
+    "name": "transient-differs",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "hostname",
+      "newname"
+     ],
+     "etc_hostname": "newname\n",
+     "kernel": "newname",
+     "log": [
+      "Hostname set to <newname> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "new-name.example.com"
+     ],
+     "etc_hostname": "new-name.example.com\n",
+     "kernel": "new-name.example.com",
+     "log": [
+      "Hostname set to <new-name.example.com> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-hostname",
+      "obsolete.example"
+     ],
+     "etc_hostname": "obsolete.example\n",
+     "kernel": "obsolete.example",
+     "log": [
+      "Hostname set to <obsolete.example> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "UPPER.Example"
+     ],
+     "etc_hostname": "UPPER.Example\n",
+     "kernel": "UPPER.Example",
+     "log": [
+      "Hostname set to <UPPER.Example> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "trailing.dot."
+     ],
+     "etc_hostname": "trailing.dot\n",
+     "kernel": "trailing.dot",
+     "log": [
+      "Hostname set to <trailing.dot> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "under_score"
+     ],
+     "etc_hostname": "underscore\n",
+     "kernel": "underscore",
+     "log": [
+      "Changed pretty hostname to 'under_score'",
+      "Hostname set to <underscore> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=under_score\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "-lead"
+     ],
+     "etc_hostname": "underscore\n",
+     "kernel": "underscore",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=under_score\n",
+     "rc": 1,
+     "stderr": "hostnamectl: invalid option -- 'l'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "lead-"
+     ],
+     "etc_hostname": "lead\n",
+     "kernel": "lead",
+     "log": [
+      "Changed pretty hostname to 'lead-'",
+      "Hostname set to <lead> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=lead-\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "a..b"
+     ],
+     "etc_hostname": "a.b\n",
+     "kernel": "a.b",
+     "log": [
+      "Changed pretty hostname to 'a..b'",
+      "Hostname set to <a.b> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=a..b\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      ".lead"
+     ],
+     "etc_hostname": "lead\n",
+     "kernel": "lead",
+     "log": [
+      "Changed pretty hostname to '.lead'",
+      "Hostname set to <lead> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=.lead\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "has space"
+     ],
+     "etc_hostname": "hasspace\n",
+     "kernel": "hasspace",
+     "log": [
+      "Changed pretty hostname to 'has space'",
+      "Hostname set to <hasspace> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=\"has space\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "Pretty Name 1!"
+     ],
+     "etc_hostname": "PrettyName1\n",
+     "kernel": "PrettyName1",
+     "log": [
+      "Changed pretty hostname to 'Pretty Name 1!'",
+      "Hostname set to <PrettyName1> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=\"Pretty Name 1!\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "etc_hostname": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+     "kernel": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "log": [
+      "Changed pretty hostname to 'n/a'",
+      "Hostname set to <aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "etc_hostname": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+     "kernel": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "log": [
+      "Changed pretty hostname to 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "\u00e9.example"
+     ],
+     "etc_hostname": "example\n",
+     "kernel": "example",
+     "log": [
+      "Changed pretty hostname to '\u00e9.example'",
+      "Hostname set to <example> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=\u00e9.example\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed pretty hostname to 'n/a'",
+      "Hostname set to <localhost> (default)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname",
+      "static-only"
+     ],
+     "etc_hostname": "static-only\n",
+     "kernel": "static-only",
+     "log": [
+      "Hostname set to <static-only> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname",
+      "transient-only"
+     ],
+     "etc_hostname": "static-only\n",
+     "kernel": "static-only",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "Hint: static hostname is already set, so the specified transient hostname will not be used.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname",
+      "Pretty: Only"
+     ],
+     "etc_hostname": "static-only\n",
+     "kernel": "static-only",
+     "log": [
+      "Changed pretty hostname to 'Pretty: Only'"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=\"Pretty: Only\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "--transient",
+      "hostname",
+      "st-tr"
+     ],
+     "etc_hostname": "st-tr\n",
+     "kernel": "st-tr",
+     "log": [
+      "Hostname set to <st-tr> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=\"Pretty: Only\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "--static",
+      "hostname",
+      "pr-st"
+     ],
+     "etc_hostname": "pr-st\n",
+     "kernel": "pr-st",
+     "log": [
+      "Changed pretty hostname to 'pr-st'",
+      "Hostname set to <pr-st> (static)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=pr-st\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "--transient",
+      "hostname",
+      "pr-tr"
+     ],
+     "etc_hostname": "pr-st\n",
+     "kernel": "pr-st",
+     "log": [
+      "Changed pretty hostname to 'pr-tr'"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=pr-tr\n",
+     "rc": 0,
+     "stderr": "Hint: static hostname is already set, so the specified transient hostname will not be used.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Hostname set to <localhost> (default)"
+     ],
+     "machine_info": "PRETTY_HOSTNAME=pr-tr\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "PRETTY_HOSTNAME=pr-tr\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed pretty hostname to 'n/a'"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname",
+      "bad_static"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set static hostname: Invalid static hostname 'bad_static'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname",
+      "bad_transient"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set transient hostname: Invalid hostname 'bad_transient'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname",
+      "tab\tinside"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set pretty hostname: Invalid pretty hostname 'tab\tinside'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name",
+      "computer-laptop"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed icon name to 'computer-laptop'"
+     ],
+     "machine_info": "ICON_NAME=computer-laptop\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name",
+      "bad/icon"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "ICON_NAME=computer-laptop\n",
+     "rc": 1,
+     "stderr": "Could not set icon: Invalid icon name 'bad/icon'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name",
+      "."
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "ICON_NAME=computer-laptop\n",
+     "rc": 1,
+     "stderr": "Could not set icon: Invalid icon name '.'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "icon-name",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed icon name to 'n/a'"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "laptop"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'laptop'"
+     ],
+     "machine_info": "CHASSIS=laptop\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "server"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'server'"
+     ],
+     "machine_info": "CHASSIS=server\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "vm"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'vm'"
+     ],
+     "machine_info": "CHASSIS=vm\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "container"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'container'"
+     ],
+     "machine_info": "CHASSIS=container\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "desktop"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'desktop'"
+     ],
+     "machine_info": "CHASSIS=desktop\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "convertible"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'convertible'"
+     ],
+     "machine_info": "CHASSIS=convertible\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "tablet"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'tablet'"
+     ],
+     "machine_info": "CHASSIS=tablet\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "handset"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'handset'"
+     ],
+     "machine_info": "CHASSIS=handset\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "watch"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'watch'"
+     ],
+     "machine_info": "CHASSIS=watch\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "embedded"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'embedded'"
+     ],
+     "machine_info": "CHASSIS=embedded\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "bogus"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "CHASSIS=embedded\n",
+     "rc": 1,
+     "stderr": "Could not set chassis: Invalid chassis 'bogus'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "Server"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "CHASSIS=embedded\n",
+     "rc": 1,
+     "stderr": "Could not set chassis: Invalid chassis 'Server'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'n/a'"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "production"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'production'"
+     ],
+     "machine_info": "DEPLOYMENT=production\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "Staging-1"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'Staging-1'"
+     ],
+     "machine_info": "DEPLOYMENT=Staging-1\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "bad deployment"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "DEPLOYMENT=Staging-1\n",
+     "rc": 1,
+     "stderr": "Could not set deployment: Invalid deployment 'bad deployment'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "a.b_c"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "DEPLOYMENT=Staging-1\n",
+     "rc": 1,
+     "stderr": "Could not set deployment: Invalid deployment 'a.b_c'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'n/a'"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location",
+      "Paris DC1, rack 4"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed location to 'Paris DC1, rack 4'"
+     ],
+     "machine_info": "LOCATION=\"Paris DC1, rack 4\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location",
+      "bad\nlocation"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "LOCATION=\"Paris DC1, rack 4\"\n",
+     "rc": 1,
+     "stderr": "Could not set location: Invalid location 'bad\nlocation'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed location to 'n/a'"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "a.b"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'a.b'"
+     ],
+     "machine_info": "DEPLOYMENT=a.b\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "a:b"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'a:b'"
+     ],
+     "machine_info": "DEPLOYMENT=a:b\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "a_b"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "DEPLOYMENT=a:b\n",
+     "rc": 1,
+     "stderr": "Could not set deployment: Invalid deployment 'a_b'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "a-b"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'a-b'"
+     ],
+     "machine_info": "DEPLOYMENT=a-b\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "\u00e9"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [],
+     "machine_info": "DEPLOYMENT=a-b\n",
+     "rc": 1,
+     "stderr": "Could not set deployment: Invalid deployment '\u00e9'\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'n/a'"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-icon-name",
+      "computer-desktop"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed icon name to 'computer-desktop'"
+     ],
+     "machine_info": "ICON_NAME=computer-desktop\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-chassis",
+      "laptop"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'laptop'"
+     ],
+     "machine_info": "ICON_NAME=computer-desktop\nCHASSIS=laptop\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-deployment",
+      "dev"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed deployment to 'dev'"
+     ],
+     "machine_info": "ICON_NAME=computer-desktop\nCHASSIS=laptop\nDEPLOYMENT=dev\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "set-location",
+      "lab"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed location to 'lab'"
+     ],
+     "machine_info": "ICON_NAME=computer-desktop\nCHASSIS=laptop\nDEPLOYMENT=dev\nLOCATION=lab\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "icon-name",
+      "x"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed icon name to 'x'"
+     ],
+     "machine_info": "ICON_NAME=x\nCHASSIS=laptop\nDEPLOYMENT=dev\nLOCATION=lab\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient",
+      "chassis",
+      "vm"
+     ],
+     "etc_hostname": null,
+     "kernel": "localhost",
+     "log": [
+      "Changed chassis to 'vm'"
+     ],
+     "machine_info": "ICON_NAME=x\nCHASSIS=vm\nDEPLOYMENT=dev\nLOCATION=lab\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "newname"
+     ],
+     "etc_hostname": "newname\n",
+     "kernel": "newname",
+     "log": [
+      "Hostname set to <newname> (static)"
+     ],
+     "machine_info": "ICON_NAME=x\nCHASSIS=vm\nDEPLOYMENT=dev\nLOCATION=lab\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "newname"
+     ],
+     "etc_hostname": "newname\n",
+     "kernel": "newname",
+     "log": [],
+     "machine_info": "ICON_NAME=x\nCHASSIS=vm\nDEPLOYMENT=dev\nLOCATION=lab\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "newname\n",
+     "kernel": "newname",
+     "log": [],
+     "machine_info": "ICON_NAME=x\nCHASSIS=vm\nDEPLOYMENT=dev\nLOCATION=lab\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: newname\n       Icon name: x\n         Chassis: vm \ud83d\uddb4\n      Deployment: dev\n        Location: lab\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: kvm\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "newname\n",
+     "kernel": "newname",
+     "log": [],
+     "machine_info": "ICON_NAME=x\nCHASSIS=vm\nDEPLOYMENT=dev\nLOCATION=lab\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"newname\",\"StaticHostname\":\"newname\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"static\",\"IconName\":\"x\",\"Chassis\":\"vm\",\"Deployment\":\"dev\",\"Location\":\"lab\",\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "start.example\n",
+    "kernel": "start.example",
+    "machine_info": null,
+    "name": "writes",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "kvm"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [],
+     "machine_info": "# a comment\nFOO=bar\nPRETTY_HOSTNAME=Old Pretty\nHARDWARE_VENDOR=\"Some Vendor\"\nCHASSIS=laptop\n\nLOCATION='single quoted'\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: keep.example\n Pretty hostname: Old Pretty\n       Icon name: computer-laptop\n         Chassis: laptop \ud83d\udcbb\n        Location: single quoted\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n Hardware Vendor: Some Vendor\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [],
+     "machine_info": "# a comment\nFOO=bar\nPRETTY_HOSTNAME=Old Pretty\nHARDWARE_VENDOR=\"Some Vendor\"\nCHASSIS=laptop\n\nLOCATION='single quoted'\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"keep.example\",\"StaticHostname\":\"keep.example\",\"PrettyHostname\":\"Old Pretty\",\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"static\",\"IconName\":\"computer-laptop\",\"Chassis\":\"laptop\",\"Deployment\":null,\"Location\":\"single quoted\",\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":\"Some Vendor\",\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      "server"
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [
+      "Changed chassis to 'server'"
+     ],
+     "machine_info": "FOO=bar\nPRETTY_HOSTNAME=\"Old Pretty\"\nHARDWARE_VENDOR=\"Some Vendor\"\nCHASSIS=server\nLOCATION=\"single quoted\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname",
+      "New Pretty"
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [
+      "Changed pretty hostname to 'New Pretty'"
+     ],
+     "machine_info": "FOO=bar\nPRETTY_HOSTNAME=\"New Pretty\"\nHARDWARE_VENDOR=\"Some Vendor\"\nCHASSIS=server\nLOCATION=\"single quoted\"\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "deployment",
+      "dev"
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [
+      "Changed deployment to 'dev'"
+     ],
+     "machine_info": "FOO=bar\nPRETTY_HOSTNAME=\"New Pretty\"\nHARDWARE_VENDOR=\"Some Vendor\"\nCHASSIS=server\nLOCATION=\"single quoted\"\nDEPLOYMENT=dev\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "location",
+      ""
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [
+      "Changed location to 'n/a'"
+     ],
+     "machine_info": "FOO=bar\nPRETTY_HOSTNAME=\"New Pretty\"\nHARDWARE_VENDOR=\"Some Vendor\"\nCHASSIS=server\nDEPLOYMENT=dev\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "chassis",
+      ""
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [
+      "Changed chassis to 'n/a'"
+     ],
+     "machine_info": "FOO=bar\nPRETTY_HOSTNAME=\"New Pretty\"\nHARDWARE_VENDOR=\"Some Vendor\"\nDEPLOYMENT=dev\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname",
+      ""
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [
+      "Changed pretty hostname to 'n/a'"
+     ],
+     "machine_info": "FOO=bar\nHARDWARE_VENDOR=\"Some Vendor\"\nDEPLOYMENT=dev\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "keep.example\n",
+     "kernel": "keep.example",
+     "log": [],
+     "machine_info": "FOO=bar\nHARDWARE_VENDOR=\"Some Vendor\"\nDEPLOYMENT=dev\n",
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: keep.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Deployment: dev\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n Hardware Vendor: Some Vendor\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "keep.example\n",
+    "kernel": "keep.example",
+    "machine_info": "# a comment\nFOO=bar\nPRETTY_HOSTNAME=Old Pretty\nHARDWARE_VENDOR=\"Some Vendor\"\nCHASSIS=laptop\n\nLOCATION='single quoted'\n",
+    "name": "machine-info-foreign",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "  spaced.example  \n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "spaced.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "  spaced.example  \n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"kernelname\",\"StaticHostname\":\"spaced.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"transient\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "  spaced.example  \n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: spaced.example\nTransient hostname: kernelname\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "  spaced.example  \n",
+    "kernel": "kernelname",
+    "machine_info": null,
+    "name": "etc-hostname-contents",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "# the name\nreal.example\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "real.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "# the name\nreal.example\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"kernelname\",\"StaticHostname\":\"real.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"transient\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "# the name\nreal.example\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: real.example\nTransient hostname: kernelname\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "# the name\nreal.example\n",
+    "kernel": "kernelname",
+    "machine_info": null,
+    "name": "etc-hostname-comment",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "bad_name\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "badname\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "bad_name\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"kernelname\",\"StaticHostname\":\"badname\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"transient\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "bad_name\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: badname\nTransient hostname: kernelname\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname",
+      "fixed"
+     ],
+     "etc_hostname": "fixed\n",
+     "kernel": "fixed",
+     "log": [
+      "Hostname set to <fixed> (static)"
+     ],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "fixed\n",
+     "kernel": "fixed",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: fixed\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "bad_name\n",
+    "kernel": "kernelname",
+    "machine_info": null,
+    "name": "etc-hostname-invalid",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"kernelname\",\"StaticHostname\":null,\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"transient\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: (unset)\nTransient hostname: kernelname\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "\n",
+    "kernel": "kernelname",
+    "machine_info": null,
+    "name": "etc-hostname-empty",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": "first.example\nsecond.example\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "first.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "first.example\nsecond.example\n",
+     "kernel": "kernelname",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"kernelname\",\"StaticHostname\":\"first.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"transient\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "first.example\nsecond.example\n",
+    "kernel": "kernelname",
+    "machine_info": null,
+    "name": "etc-hostname-long-line",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "etc_hostname": "os.example\n",
+     "kernel": "os.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: os.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n     CPE OS Name: cpe:/o:canonical:ubuntu_linux:24.04\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "os.example\n",
+     "kernel": "os.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: os.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n     CPE OS Name: cpe:/o:canonical:ubuntu_linux:24.04\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "os.example\n",
+     "kernel": "os.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"os.example\",\"StaticHostname\":\"os.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"defaulthost\",\"HostnameSource\":\"static\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":\"cpe:/o:canonical:ubuntu_linux:24.04\",\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86",
+    "dmi": null,
+    "etc_hostname": "os.example\n",
+    "kernel": "os.example",
+    "machine_info": null,
+    "name": "os-release-fields",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\nCPE_NAME=\"cpe:/o:canonical:ubuntu_linux:24.04\"\nDEFAULT_HOSTNAME=defaulthost\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "etc_hostname": null,
+     "kernel": "(none)",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: (unset)\nTransient hostname: defaulthost\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "hostname"
+     ],
+     "etc_hostname": null,
+     "kernel": "(none)",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "defaulthost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static"
+     ],
+     "etc_hostname": null,
+     "kernel": "(none)",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--transient"
+     ],
+     "etc_hostname": null,
+     "kernel": "(none)",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "defaulthost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": null,
+     "kernel": "(none)",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"defaulthost\",\"StaticHostname\":null,\"PrettyHostname\":null,\"DefaultHostname\":\"defaulthost\",\"HostnameSource\":\"static\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname",
+      ""
+     ],
+     "etc_hostname": null,
+     "kernel": "(none)",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": null,
+     "kernel": "(none)",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "   Static hostname: (unset)\nTransient hostname: defaulthost\n         Icon name: computer-container\n           Chassis: container \u2610\n        Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n           Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n    Virtualization: docker\n  Operating System: Ubuntu 24.04.5 LTS\n            Kernel: Linux 6.18.44-fc-v233\n      Architecture: x86-64\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": null,
+    "kernel": "(none)",
+    "machine_info": null,
+    "name": "default-hostname",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\nDEFAULT_HOSTNAME=defaulthost\n",
+    "virt": "docker"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: box.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "hostname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "box.example\n",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "--json=short"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "{\"Hostname\":\"box.example\",\"StaticHostname\":\"box.example\",\"PrettyHostname\":null,\"DefaultHostname\":\"localhost\",\"HostnameSource\":\"static\",\"IconName\":\"computer-container\",\"Chassis\":\"container\",\"Deployment\":null,\"Location\":null,\"KernelName\":\"Linux\",\"KernelRelease\":\"6.18.44-fc-v233\",\"KernelVersion\":\"#1 SMP PREEMPT_DYNAMIC @0\",\"OperatingSystemPrettyName\":\"Ubuntu 24.04.5 LTS\",\"OperatingSystemCPEName\":null,\"OperatingSystemHomeURL\":\"https://www.ubuntu.com/\",\"HardwareVendor\":null,\"HardwareModel\":null,\"HardwareSerial\":null,\"FirmwareVersion\":null,\"FirmwareVendor\":null,\"MachineID\":\"4c398f739c8447eb99d3fe100ad1b0fa\",\"BootID\":\"2830043c3d8b403d964eceb8d9dbf52a\",\"ProductUUID\":null}\n",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "hostname",
+      "newname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set static hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname",
+      "newname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set static hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname",
+      "newname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Hint: static hostname is already set, so the specified transient hostname will not be used.\nCould not set transient hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "--pretty",
+      "hostname",
+      "New Name"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set pretty hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "--no-ask-password",
+      "hostname",
+      "newname"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set static hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "icon-name",
+      "computer-laptop"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set icon: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "chassis",
+      "laptop"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set chassis: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "deployment",
+      "dev"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set deployment: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "location",
+      "lab"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set location: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "hostname",
+      "under_score"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set pretty hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "chassis",
+      "bogus"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set chassis: Invalid chassis 'bogus'\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "hostname",
+      ""
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set static hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "hostname",
+      "box.example"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Could not set transient hostname: Interactive authentication required.\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "--static",
+      "hostname",
+      "box.example"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "icon-name",
+      ""
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "--transient",
+      "hostname",
+      "bad_name"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 1,
+     "stderr": "Hint: static hostname is already set, so the specified transient hostname will not be used.\nCould not set transient hostname: Invalid hostname 'bad_name'\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "status"
+     ],
+     "etc_hostname": "box.example\n",
+     "kernel": "box.example",
+     "log": [],
+     "machine_info": null,
+     "rc": 0,
+     "stderr": "",
+     "stdout": " Static hostname: box.example\n       Icon name: computer-container\n         Chassis: container \u2610\n      Machine ID: 4c398f739c8447eb99d3fe100ad1b0fa\n         Boot ID: 2830043c3d8b403d964eceb8d9dbf52a\n  Virtualization: docker\nOperating System: Ubuntu 24.04.5 LTS\n          Kernel: Linux 6.18.44-fc-v233\n    Architecture: x86-64\n",
+     "uid": 65534
+    }
+   ],
+   "setup": {
+    "arch": "x86-64",
+    "dmi": null,
+    "etc_hostname": "box.example\n",
+    "kernel": "box.example",
+    "machine_info": null,
+    "name": "non-root",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nUBUNTU_CODENAME=noble\n",
+    "virt": "docker"
+   }
+  }
+ ],
+ "tool": "hostnamectl systemd 255 (255.4-1ubuntu8.18)"
+}

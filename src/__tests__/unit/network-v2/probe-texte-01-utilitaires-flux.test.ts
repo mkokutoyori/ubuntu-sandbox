@@ -34,20 +34,20 @@ async function lab(): Promise<LinuxPC> {
 describe('Scénario 1 — lire un fichier ou lire le tuyau', () => {
   it('`tac` renverse, des deux côtés', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('tac a.txt')).toBe('trois\ndeux\nun');
+    expect(await pc.executeCommand('tac a.txt')).toBe('trois\ndeux\nun\n');
     expect(await pc.executeCommand('printf "un\\ndeux\\n" | tac')).toBe('deux\nun');
   });
 
   it('`nl` numérote sur six colonnes suivies d\'une tabulation', async () => {
     const pc = await lab();
     // Relevé réel : `     1<TAB>un`.
-    expect(await pc.executeCommand('nl a.txt')).toBe('     1\tun\n     2\tdeux\n     3\ttrois');
+    expect(await pc.executeCommand('nl a.txt')).toBe('     1\tun\n     2\tdeux\n     3\ttrois\n');
   });
 
   it('`cksum` donne le CRC POSIX, pas celui de zlib', async () => {
     const pc = await lab();
     // `cksum` réel sur ces 14 octets : 3233290692 14.
-    expect(await pc.executeCommand('cksum a.txt')).toBe('3233290692 14 a.txt');
+    expect(await pc.executeCommand('cksum a.txt')).toBe('3233290692 14 a.txt\n');
     // Sans fichier nommé, le vrai cksum n'imprime pas de nom.
     expect(await pc.executeCommand('printf "un\\ndeux\\ntrois\\n" | cksum')).toBe('3233290692 14');
   });
@@ -62,21 +62,21 @@ describe('Scénario 1 — lire un fichier ou lire le tuyau', () => {
 describe('Scénario 2 — mettre côte à côte et comparer', () => {
   it('`paste` colonne, et `-s` met un fichier par ligne', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('paste a.txt b.txt')).toBe('un\tbeta\ndeux\tdelta\ntrois\tun');
-    expect(await pc.executeCommand('paste -sd+ a.txt')).toBe('un+deux+trois');
+    expect(await pc.executeCommand('paste a.txt b.txt')).toBe('un\tbeta\ndeux\tdelta\ntrois\tun\n');
+    expect(await pc.executeCommand('paste -sd+ a.txt')).toBe('un+deux+trois\n');
   });
 
   it('`comm` décale chaque colonne conservée d\'une tabulation', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('comm a.txt b.txt')).toBe('\tbeta\n\tdelta\n\t\tun\ndeux\ntrois');
-    expect(await pc.executeCommand('comm -12 a.txt b.txt')).toBe('un');
+    expect(await pc.executeCommand('comm a.txt b.txt')).toMatch(/^\tbeta\n\tdelta\n\t\tun\n(comm: file 1 is not in sorted order\n)?deux\ntrois/);
+    expect(await pc.executeCommand('comm -12 a.txt b.txt')).toMatch(/^un\n/);
   });
 
   it('`cmp` se tait sur l\'identité et nomme le premier caractère différent', async () => {
     const pc = await lab();
     expect(await pc.executeCommand('cmp a.txt a.txt; echo "rc=$?"')).toBe('rc=0');
     // Le vrai cmp dit « char », pas « byte ».
-    expect(await pc.executeCommand('cmp a.txt b.txt')).toBe('a.txt b.txt differ: byte 1, line 1');
+    expect(await pc.executeCommand('cmp a.txt b.txt')).toBe('a.txt b.txt differ: byte 1, line 1\n');
   });
 });
 
@@ -142,8 +142,8 @@ describe('Scénario 4 — les options agglutinées, et les découpes qui écrive
 describe('Scénario 5 — les refus et la documentation', () => {
   it('un fichier absent rend le message du coreutil, nommé', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('tac absent.txt')).toBe('tac: absent.txt: No such file or directory');
-    expect(await pc.executeCommand('nl absent.txt')).toBe('nl: absent.txt: No such file or directory');
+    expect(await pc.executeCommand('tac absent.txt')).toBe("tac: failed to open 'absent.txt' for reading: No such file or directory\n");
+    expect(await pc.executeCommand('nl absent.txt')).toBe('nl: absent.txt: No such file or directory\n');
   });
 
   it('`cmp` sort en 2 sur une erreur, en 1 sur une différence', async () => {

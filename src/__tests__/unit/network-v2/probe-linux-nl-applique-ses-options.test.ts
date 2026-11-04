@@ -18,7 +18,7 @@ async function nl(args: string, text = 'a\\n\\nb\\nc\\n'): Promise<string> {
   const machine = new LinuxPC('linux-pc', 'PC1', 0, 0) as unknown as Sh & { powerOn(): void };
   machine.powerOn();
   await machine.executeCommand(`printf '${text}' > /tmp/f`);
-  return machine.executeCommand(`nl ${args} /tmp/f`);
+  return (await machine.executeCommand(`nl ${args} /tmp/f`)).replace(/\n$/, '');
 }
 
 describe('witnesses', () => {
@@ -42,7 +42,7 @@ describe('options are evaluated', () => {
     expect(await nl('-h a', text)).toBe('     1\ta\n\n     1\tb');
     expect(await nl('-h a -p', text)).toBe('     1\ta\n\n     2\tb');
   });
-  it('a bad format is refused', async () => { expect(await nl('-n zz')).toContain("nl: invalid line numbering format: 'zz'"); });
-  it('a bad width is refused', async () => { expect(await nl('-w 0')).toContain("nl: invalid line number field width: '0'"); });
-  it('a bad style is refused', async () => { expect(await nl('-b q')).toContain("nl: invalid body numbering style: 'q'"); });
+  it('a bad format is refused', async () => { expect(await nl('-n zz')).toContain("nl: invalid line numbering format: ‘zz’"); });
+  it('a bad width is refused', async () => { expect(await nl('-w 0')).toContain("nl: invalid line number field width: ‘0’: Numerical result out of range"); });
+  it('a bad style is refused', async () => { expect(await nl('-b q')).toContain("nl: invalid body numbering style: ‘q’"); });
 });

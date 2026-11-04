@@ -1,0 +1,6086 @@
+{
+ "scenarios": [
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1 alias1 alias2\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1 alias1 alias2\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 192.168.7.10 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 192.168.7.10 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1-lan.corp.example srv1-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1-lan.corp.example srv1-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-V"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostname 3.23\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--version"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostname 3.23\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-h"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--help"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-?"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-x"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: invalid option -- 'x'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--bogus"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: unrecognized option '--bogus'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--a"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: option '--a' is ambiguous; possibilities: '--all-fqdns' '--alias' '--all-ip-addresses'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--f"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: option '--f' is ambiguous; possibilities: '--file' '--fqdn'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--l"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--lo"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ver"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostname 3.23\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--version=1"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: option '--version' doesn't allow an argument\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: option requires an argument -- 'F'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--file"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: option '--file' requires an argument\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fil"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: option '--file' requires an argument\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-sf"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-fs"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i",
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d",
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--",
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s",
+      "--"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "a",
+      "b"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s",
+      "extra"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f",
+      "extra"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/nonexistent/hostname",
+      "extra"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: No such file or directory\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-bd"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-V",
+      "-x"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostname 3.23\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-x",
+      "-V"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: invalid option -- 'x'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-h",
+      "-V"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-ab"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv1 alias1 alias2\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "(none)\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "ypdomainname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "ypdomainname: Local domain name not set\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "srv1.corp.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "127.0.1.1 srv1.corp.example srv1 alias1 alias2",
+     "10.1.1.5 srv1-lan.corp.example",
+     "192.168.7.9 srv1-mgmt.corp.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.1.1.5/24"
+      ],
+      "name": "br0",
+      "up": true
+     },
+     {
+      "addrs": [
+       "192.168.7.9/24",
+       "192.168.7.10/24"
+      ],
+      "name": "br1",
+      "up": true
+     },
+     {
+      "addrs": [
+       "172.16.0.1/16"
+      ],
+      "name": "br2",
+      "up": false
+     },
+     {
+      "addrs": [],
+      "name": "br3",
+      "up": true
+     }
+    ],
+    "name": "full-names",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "plain\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "plain\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "plain\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "plain\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "plain\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "plain\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.2.2.2 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.2.2.2 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "(none)\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "plain",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "127.0.1.1 plain",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.2.2.2/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "no-domain",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "ghost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "ghost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "ghost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.3.3.3 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.3.3.3 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "dnsdomainname",
+     "rc": 1,
+     "stderr": "dnsdomainname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "ghost",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.3.3.3/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "unresolvable",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "m2 multi.example m3 other.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "m2 multi.example m3 other.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "192.0.2.1 192.0.2.2 10.0.0.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "192.0.2.1 192.0.2.2 10.0.0.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "192.0.2.100 10.0.0.100 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "192.0.2.100 10.0.0.100 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "multi.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "192.0.2.1 multi.example",
+     "192.0.2.2 multi.example m2",
+     "10.0.0.1 other.example multi.example m3",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "192.0.2.100/24",
+       "10.0.0.100/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "several-addresses",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.5.5.1 10.5.5.200 203.0.113.1 198.51.100.7\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.5.5.1 10.5.5.200 203.0.113.1 198.51.100.7\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.5.5.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.5.5.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "order.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "203.0.113.1 order.example",
+     "10.5.5.1 order.example",
+     "198.51.100.7 order.example",
+     "10.5.5.200 order.example",
+     "10.5.5.77 other.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.5.5.9/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "address-order",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "order.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "203.0.113.1 10.5.5.1 198.51.100.7 10.5.5.200 172.16.9.9 192.168.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "203.0.113.1 10.5.5.1 198.51.100.7 10.5.5.200 172.16.9.9 192.168.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.5.5.9 172.16.9.1 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.5.5.9 172.16.9.1 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "order.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "203.0.113.1 order.example",
+     "10.5.5.1 order.example",
+     "198.51.100.7 order.example",
+     "10.5.5.200 order.example",
+     "172.16.9.9 order.example",
+     "192.168.1.1 order.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.5.5.9/24",
+       "172.16.9.1/16"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "address-order-default-route",
+    "nsswitch": "hosts: files",
+    "routes": [
+     [
+      "default",
+      "via",
+      "10.5.5.254",
+      "dev",
+      "br0",
+      "onlink"
+     ]
+    ]
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dup.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dup.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "a1 a2\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "2001:db8::7\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "host_conf": [
+     "multi off"
+    ],
+    "hostname": "dup.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "2001:db8::7 dup.example",
+     "10.0.0.1 dup.example a1 a2",
+     "10.0.0.2 other.example a3 dup.example",
+     "10.0.0.3 third.example dup.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [],
+    "name": "multi-off",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dup.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dup.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "a1 a2\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.0.0.1\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "host_conf": null,
+    "hostname": "dup.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "10.0.0.1 dup.example a1 a2",
+     "10.0.0.2 other.example a3 dup.example",
+     "10.0.0.3 third.example dup.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [],
+    "name": "no-host-conf",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dup.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dup.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "a1 a2 a3 dup.example other.example dup.example third.example al al Dup.Example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.0.0.1 10.0.0.2 10.0.0.3 10.0.0.4 10.0.0.5 10.0.0.5\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "host_conf": [
+     "multi on"
+    ],
+    "hostname": "dup.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "10.0.0.1 dup.example a1 a2",
+     "10.0.0.2 other.example a3 dup.example",
+     "10.0.0.3 third.example dup.example",
+     "10.0.0.4 dup.example al",
+     "10.0.0.5 dup.example al",
+     "10.0.0.5 Dup.Example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [],
+    "name": "multi-on-lines",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "alias1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "alias1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "alias1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "canon.example.org\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "canon.example.org\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "canon.example.org\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example.org\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example.org\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "alias1 alias2 Alias3\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "alias1 alias2 Alias3\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.9.9.9\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.9.9.9\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.9.9.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.9.9.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "canon.example.org \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "canon.example.org \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example.org\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "alias1",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "10.9.9.9 canon.example.org alias1 alias2 Alias3",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.9.9.9/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "hostname-is-an-alias",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "Srv.CORP.Example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "Srv\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "Srv\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "SRV\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "SRV\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.1 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.1 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "srv.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "Srv.CORP.Example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "10.1.1.1 srv.corp.example SRV",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.1.1.1/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "upper-case-hostname",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "v6host.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "v6host\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "v6host\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "v6host.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "v6host.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "v6host.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Unknown host\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Unknown host\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "2001:db8::7\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "2001:db8::7\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "v6host.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "2001:db8::7 v6host.example v6",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [],
+    "name": "ipv6-only",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dual.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dual\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dual\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dual.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dual.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dual.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "d4\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "d4\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "2001:db8::7 10.0.0.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "2001:db8::7 10.0.0.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "dual.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "2001:db8::7 dual.example d6",
+     "10.0.0.1 dual.example d4",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [],
+    "name": "ipv6-and-ipv4",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "short",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.1.1.5/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "dns-refused",
+    "nsswitch": "hosts: files dns",
+    "resolv": [
+     "nameserver 10.77.77.77",
+     "search corp.example",
+     "options timeout:1 attempts:1"
+    ]
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Temporary failure in name resolution\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "short",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.1.1.5/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "dns-no-route",
+    "nsswitch": "hosts: files dns",
+    "resolv": [
+     "nameserver 192.0.2.77",
+     "options timeout:1 attempts:1"
+    ]
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "lo.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "lo\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "lo\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "localhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "localhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "localhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "lo.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "lo.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.0.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.0.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "lo.example",
+    "hosts": [
+     "127.0.0.1 localhost lo.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [],
+    "name": "loopback-line",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [
+      "newhost"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "a1.B2-c3.example"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "a1.B2-c3.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "under_score"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-leading"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "hostname: invalid option -- 'l'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "trailing-"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "a..b"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "a.-b"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "a-.b"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      ".lead"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "trail."
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      ""
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "   "
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "  spaced  "
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "has space"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "UPPER"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "3com"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: name too long\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: name too long\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--file",
+      "/tmp/hn/commented"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/blank-first"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/empty"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/only-comments"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/no-newline"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/spaces"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/invalid"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/crlf"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/nonexistent/file"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: No such file or directory\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/nonexistent/file"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/tmp/hn/empty"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/tmp/hn/only-comments"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/tmp/hn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain",
+      "name"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "name",
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "boot-name"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s",
+      "name"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d",
+      "name"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i",
+      "name"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain",
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s",
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "boot-name\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--",
+      "dashdash"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain",
+      "--",
+      "extra"
+     ],
+     "prog": "hostname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dashdash\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "newhost"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: you must be root to change the host name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "under_score"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: the specified hostname is invalid\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: you must be root to change the host name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: you must be root to change the host name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dashdash\n",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "dashdash\n",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "-y",
+      "nis.example"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: you must be root to change the domain name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 65534
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "before.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "127.0.1.1 before.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.4.4.4/24"
+      ],
+      "name": "br0",
+      "up": true
+     }
+    ],
+    "name": "set-names",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "(none)\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "ypdomainname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "ypdomainname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "nisdomainname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "nisdomainname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-V"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostname 3.23\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-h"
+     ],
+     "prog": "domainname",
+     "rc": 255,
+     "stderr": "",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-x"
+     ],
+     "prog": "domainname",
+     "rc": 255,
+     "stderr": "domainname: invalid option -- 'x'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "domainname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "ypdomainname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "ypdomainname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "nisdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "ypdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "nis.example"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "ypdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "nisdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "under_score"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "under_score\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-leading"
+     ],
+     "prog": "domainname",
+     "rc": 255,
+     "stderr": "domainname: invalid option -- 'l'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "  spaced  "
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "  spaced  \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "domainname: name too long\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "domainname: name too long\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      ""
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "(none)"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "(none)\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "ypdomainname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "ypdomainname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/domain"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "ypdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "nisdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/empty"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/tmp/hn/empty"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/nonexistent/file"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "domainname: No such file or directory\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/nonexistent/file"
+     ],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/domain",
+      "extra"
+     ],
+     "prog": "domainname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "one",
+      "two"
+     ],
+     "prog": "domainname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y",
+      "another.example"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis",
+      "third.example"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "third.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y",
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "x.example"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "domainname: you must be root to change the domain name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "under_score"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "domainname: you must be root to change the domain name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "x.example"
+     ],
+     "prog": "ypdomainname",
+     "rc": 1,
+     "stderr": "ypdomainname: you must be root to change the domain name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "domainname: you must be root to change the domain name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/domain"
+     ],
+     "prog": "domainname",
+     "rc": 1,
+     "stderr": "domainname: you must be root to change the domain name\n",
+     "stdout": "",
+     "uid": 65534
+    },
+    {
+     "argv": [],
+     "prog": "domainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 65534
+    },
+    {
+     "argv": [],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "nis1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "newhost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "127.0.1.1\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-V"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "hostname 3.23\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-h"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 255,
+     "stderr": "",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-x"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 255,
+     "stderr": "dnsdomainname: invalid option -- 'x'\n",
+     "stdout": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "name"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-b",
+      "-F",
+      "/tmp/hn/plain"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "a",
+      "b"
+     ],
+     "prog": "dnsdomainname",
+     "rc": 255,
+     "stderr": "Usage: hostname [-b] {hostname|-F file}         set host name (from file)\n       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name\n       hostname                                 display host name\n\n       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)\n       {yp,nis,}domainname                      display NIS domain name\n\n       dnsdomainname                            display dns domain name\n\n       hostname -V|--version|-h|--help          print info and exit\n\nProgram name:\n       {yp,nis,}domainname=hostname -y\n       dnsdomainname=hostname -d\n\nProgram options:\n    -a, --alias            alias names\n    -A, --all-fqdns        all long host names (FQDNs)\n    -b, --boot             set default hostname if none available\n    -d, --domain           DNS domain name\n    -f, --fqdn, --long     long host name (FQDN)\n    -F, --file             read host name or NIS domain name from given file\n    -i, --ip-address       addresses for the host name\n    -I, --all-ip-addresses all addresses for the host\n    -s, --short            short host name\n    -y, --yp, --nis        NIS/YP domain name\n\nDescription:\n   This command can get or set the host name or the NIS domain name. You can\n   also get the DNS domain or the FQDN (fully qualified domain name).\n   Unless you are using bind or NIS for host lookups you can change the\n   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is\n   part of the FQDN) in the /etc/hosts file.\n",
+     "stdout": "",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "nis1.example",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "127.0.1.1 nis1.example",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [],
+    "name": "nis-domain",
+    "nsswitch": "hosts: files"
+   }
+  },
+  {
+   "runs": [
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.40\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.40\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "app"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "real.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "real.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "real.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.41\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.41\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "app.corp.example"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "real.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "real.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "real.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "app.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.41\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.41\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "multi"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "multi.corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "corp.example\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.50 10.20.30.51\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.20.30.50 10.20.30.51\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "ghost"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "ghost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-s"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "ghost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--short"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "ghost\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-f"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--fqdn"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--long"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-d"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--domain"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-a"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--alias"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-i"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--ip-address"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "hostname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-I"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-ip-addresses"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "10.1.1.5 192.168.7.9 \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-A"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--all-fqdns"
+     ],
+     "prog": "hostname",
+     "rc": 0,
+     "stderr": "",
+     "stdout": "short-lan.corp.example short-mgmt.corp.example \n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "-y"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--yp"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [
+      "--nis"
+     ],
+     "prog": "hostname",
+     "rc": 1,
+     "stderr": "",
+     "stdout": "hostname: Local domain name not set\n",
+     "uid": 0
+    },
+    {
+     "argv": [],
+     "prog": "dnsdomainname",
+     "rc": 1,
+     "stderr": "dnsdomainname: Name or service not known\n",
+     "stdout": "",
+     "uid": 0
+    }
+   ],
+   "setup": {
+    "dns": {
+     "A": {
+      "app.corp.example": [
+       "10.20.30.41"
+      ],
+      "multi.corp.example": [
+       "10.20.30.50",
+       "10.20.30.51"
+      ],
+      "real.corp.example": [
+       "10.20.30.41"
+      ],
+      "short.corp.example": [
+       "10.20.30.40"
+      ]
+     },
+     "CNAME": {
+      "app.corp.example": "real.corp.example"
+     },
+     "PTR": {
+      "5.1.1.10.in-addr.arpa": "short-lan.corp.example",
+      "9.7.168.192.in-addr.arpa": "short-mgmt.corp.example"
+     }
+    },
+    "files": {
+     "/tmp/hn/blank-first": "\n\nafter-blank\n",
+     "/tmp/hn/commented": "# the name of this machine\n\n# another comment\nfrom-file.example\nignored\n",
+     "/tmp/hn/crlf": "crlf-name\r\n",
+     "/tmp/hn/domain": "nis.example\n",
+     "/tmp/hn/empty": "",
+     "/tmp/hn/invalid": "under_score\n",
+     "/tmp/hn/no-newline": "no-newline",
+     "/tmp/hn/only-comments": "# nothing\n# here\n",
+     "/tmp/hn/plain": "newhost\n",
+     "/tmp/hn/spaces": "  padded-name  \n"
+    },
+    "hostname": "short",
+    "hosts": [
+     "127.0.0.1 localhost",
+     "::1 localhost ip6-localhost ip6-loopback",
+     "ff02::1 ip6-allnodes",
+     "ff02::2 ip6-allrouters"
+    ],
+    "interfaces": [
+     {
+      "addrs": [
+       "10.1.1.5/24"
+      ],
+      "name": "br0",
+      "up": true
+     },
+     {
+      "addrs": [
+       "192.168.7.9/24"
+      ],
+      "name": "br1",
+      "up": true
+     }
+    ],
+    "name": "dns",
+    "nsswitch": "hosts: files dns",
+    "resolv": [
+     "nameserver 10.53.53.53",
+     "search corp.example"
+    ]
+   }
+  }
+ ],
+ "tool": "hostname 3.23+nmu2ubuntu2"
+}

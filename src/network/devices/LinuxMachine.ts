@@ -4995,6 +4995,8 @@ export abstract class LinuxMachine extends EndHost
       allocateEchoIdent: (): number => this.allocateEchoIdent(),
       isBroadcastDestination: (target: IPAddress): boolean => this.isBroadcastDestination(target),
       canReach6: (target: IPv6Address): boolean => this.canReach6(target),
+      destinationSelectionPort: () => this.destinationSelectionPort(),
+      destinationPolicy: () => this.destinationPolicy(),
       tcpProbe: (target: string, port: number): boolean => {
         if (target.includes(':')) return this.tcpProbeSyncIPv6(target, port);
         return this.tcpProbeSync(new IPAddress(target), port);

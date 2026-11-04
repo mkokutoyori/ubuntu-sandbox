@@ -123,7 +123,7 @@ describe('hostname NAME changes the name of the kernel and nothing else', () => 
     const machine = pc();
     const answer = await machine.executeCommand('hostname edge');
 
-    expect(answer).toBe('hostname: you must be root to change the host name');
+    expect(answer).toBe('hostname: you must be root to change the host name\n');
     expect(await machine.executeCommand('hostname')).toBe('PC1');
   });
 });

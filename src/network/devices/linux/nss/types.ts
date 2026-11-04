@@ -115,6 +115,14 @@ export interface NssHostEntry {
   aliases: string[];
 }
 
+/** One `struct hostent` as `gethostbyname` returns it: a single name, its aliases, every address. */
+export interface NssHostent {
+  name: string;
+  aliases: string[];
+  family: 2 | 10;
+  addresses: string[];
+}
+
 // ─── services (/etc/services) ──────────────────────────────────────────
 
 /** One `/etc/services` line: `name port/proto [aliases...]`. */

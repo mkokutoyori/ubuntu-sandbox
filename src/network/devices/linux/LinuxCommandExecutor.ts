@@ -63,7 +63,7 @@ import type { SuFrame } from '@/shell/ShellContext';
 import { PamReturn, pamStrError } from './pam/PamReturnCode';
 import { KeyringTable } from './kernel/KeyringTable';
 import { LinuxNetworkConfigManager } from './LinuxNetworkConfigManager';
-import { type ShellContext, cmdTouch, cmdLs, cmdEcho, cmdInstall, installOperands, cmdPwd, cmdTee, expandGlob } from './LinuxFileCommands';
+import { type ShellContext, cmdTouch, cmdLs, cmdEcho, cmdInstall, installOperands, cmdPwd, expandGlob } from './LinuxFileCommands';
 import { cmdGrep, cmdAwk, awkOptionError, cmdSed } from './LinuxTextCommands';
 import { runHead } from './coreutils/HeadCommand';
 import { runWc } from './coreutils/WcCommand';
@@ -76,6 +76,11 @@ import { runBasename, runDirname } from './coreutils/PathNameCommands';
 import { runSeq } from './coreutils/SeqCommand';
 import { runCat } from './coreutils/CatCommand';
 import { runOd } from './coreutils/OdCommand';
+import { runRev } from './coreutils/RevCommand';
+import { runTee } from './coreutils/TeeCommand';
+import type { SplitHost } from './coreutils/SplitCommand';
+import { runMkfifo } from './coreutils/MkfifoCommand';
+import { runReadlink, runRealpath } from './coreutils/RealpathCommands';
 import { useLocaleQuotes } from './coreutils/CoreutilsKit';
 import { runCp, cpOperands } from './coreutils/CpCommand';
 import { runMv, mvOperands } from './coreutils/MvCommand';
@@ -91,7 +96,7 @@ import {
   SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
   type ShellIntrospection, type FileLocation, type WhereisSelector,
 } from './resolve';
-import { cmdChown, cmdChgrp, cmdMkfifo } from './LinuxPermCommands';
+import { runChown, runChgrp } from './coreutils/ChownCommands';
 import { runStat } from './coreutils/StatCommand';
 import { runUmask } from './umask/Umask';
 import {
@@ -488,7 +493,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'diff', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -1278,6 +1283,16 @@ export class LinuxCommandExecutor {
     this.kernelHostnameBinding?.write(name);
   }
 
+  private kernelDomainNameValue = '(none)';
+
+  kernelDomainName(): string {
+    return this.kernelDomainNameValue;
+  }
+
+  setKernelDomainName(name: string): void {
+    this.kernelDomainNameValue = name;
+  }
+
   bootKernelHostname(): void {
     this.setKernelHostname(staticHostname(this.vfs));
   }
@@ -1292,6 +1307,7 @@ export class LinuxCommandExecutor {
     this.ip6tables.resetAll();
     this.serviceMgr.rebootCycle();
     this.bootKernelHostname();
+    this.kernelDomainNameValue = '(none)';
   }
 
   /**
@@ -1321,6 +1337,9 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/random/boot_id', () => `${dashedUuid(this.identity.bootId)}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/random/uuid', () => `${this.randomUuid()}\n`);
     this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
+    this.vfs.registerWritableGeneratedFile('/proc/sys/kernel/domainname',
+      () => `${this.kernelDomainNameValue}\n`,
+      (text) => text.replace(/\n$/, '').length <= 64 && (this.setKernelDomainName(text.replace(/\n$/, '')), true));
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
     // ordre : les deux vues ne peuvent donc pas diverger.
     this.vfs.registerGeneratedFile('/proc/modules', () => this.kernelModules.toProcModules());
@@ -3374,6 +3393,14 @@ export class LinuxCommandExecutor {
     return this._cmdEnv?.['SSH_NO_TTY'] !== '1' && this.env.get('SSH_NO_TTY') !== '1';
   }
 
+  private runClosed(argv: readonly string[], isSudo: boolean): { stdout: string; stderr: string; exitCode: number } {
+    const result = this.dispatch(argv[0], argv.slice(1), undefined, isSudo);
+    const closed = (text: string): string => (text === '' || text.endsWith('\n') ? text : `${text}\n`);
+    const printsNothing = argv[0] === 'echo' && argv.slice(1).some((word) => /^-[neE]*n[neE]*$/.test(word));
+    const echoLine = argv[0] === 'echo' && !printsNothing && result.exitCode === 0;
+    return { stdout: echoLine ? `${result.output}\n` : writesLines(argv) ? closed(result.output) : result.output, stderr: closed(result.stderr ?? ''), exitCode: result.exitCode };
+  }
+
   private sttyHost(standardInputIsTerminal: boolean, outputPiped: boolean): SttyHost {
     const exported = Number.parseInt(this._cmdEnv?.['COLUMNS'] ?? '', 10);
     const fallback = Number.isFinite(exported) && exported > 0 ? exported : 80;
@@ -4169,6 +4196,20 @@ export class LinuxCommandExecutor {
     if (raw === undefined) return this.identity.timezone;
     const name = raw.replace(/^:/, '');
     return name !== '' && TimeZone.parse(name) !== null ? name : undefined;
+  }
+
+  splitHost(): SplitHost {
+    return {
+      runFilter: (command, file, input) => {
+        const previous = this.env.get('FILE');
+        this.env.set('FILE', file);
+        try {
+          return this.dispatch('sh', ['-c', command], input);
+        } finally {
+          if (previous === undefined) this.env.delete('FILE'); else this.env.set('FILE', previous);
+        }
+      },
+    };
   }
 
   ctx(outputPiped = false): ShellContext {
@@ -6262,8 +6303,7 @@ export class LinuxCommandExecutor {
       }
       case 'pwd': return { output: cmdPwd(c), exitCode: 0 };
       case 'tee': {
-        const teed = cmdTee(c, args, stdin ?? '');
-        return { output: teed.output, exitCode: teed.failed ? 1 : 0 };
+        return asDispatch(runTee(c, args, stdin ?? ''));
       }
 
       // cd changes state
@@ -6337,9 +6377,7 @@ export class LinuxCommandExecutor {
           const saved = this.cwd;
           this.cwd = cwd;
           try {
-            const r = this.dispatch(argv[0], argv.slice(1), undefined, isSudo);
-            const closed = (text: string): string => (text === '' || text.endsWith('\n') ? text : `${text}\n`);
-            return { stdout: writesLines(argv) ? closed(r.output) : r.output, stderr: closed(r.stderr ?? ''), exitCode: r.exitCode };
+            return this.runClosed(argv, isSudo);
           } finally {
             this.cwd = saved;
           }
@@ -6361,19 +6399,11 @@ export class LinuxCommandExecutor {
         }
         return asDispatch(runChmod(c, args));
       }
-      case 'chown': {
-        for (const p of args.filter(a => !a.startsWith('-') && !a.includes(':') && a.startsWith('/'))) {
-          const abs = this.vfs.normalizePath(p, this.cwd);
-          this.publishFsAccess(abs, 'a', 'chown');
-          this.publishSyscall('chown', abs);
-        }
-        const out = cmdChown(c, args);
-        return { output: out, exitCode: out.startsWith('chown:') ? 1 : 0 };
-      }
-      case 'chgrp': {
-        const out = cmdChgrp(c, args);
-        return { output: out, exitCode: out.startsWith('chgrp:') ? 1 : 0 };
-      }
+      case 'chown': return asDispatch(runChown(c, args, (abs) => {
+        this.publishFsAccess(abs, 'a', 'chown');
+        this.publishSyscall('chown', abs);
+      }));
+      case 'chgrp': return asDispatch(runChgrp(c, args));
       case 'stat': return asDispatch(runStat({ ...c, mounts: this.mountTable.list(), storage: this.hardware.storage, stdin }, args));
       case 'umask': {
         const result = runUmask(args, this.umask);
@@ -6456,7 +6486,7 @@ export class LinuxCommandExecutor {
       case 'test':
       case '[': return this.handleTest(cmd, args);
       case 'expr': return this.handleExpr(args);
-      case 'mkfifo': return { output: cmdMkfifo(c, args), exitCode: 0 };
+      case 'mkfifo': return asDispatch(runMkfifo(c, args));
       case 'mknod': return asDispatch(runMknod(c, args));
 
       // User commands
@@ -7080,6 +7110,13 @@ export class LinuxCommandExecutor {
           if (!node) return null;
           return { type: node.type === 'directory' ? 'directory' : node.type === 'file' ? 'file' : 'other', mtimeMs: node.mtime };
         },
+        lstat: (p) => {
+          const node = this.vfs.lstat(p);
+          if (!node) return null;
+          return { type: node.type === 'directory' ? 'directory' : node.type === 'file' ? 'file' : node.type === 'symlink' ? 'symlink' : 'other', mtimeMs: node.mtime };
+        },
+        linkTarget: (p) => { const node = this.vfs.lstat(p); return node && node.type === 'symlink' ? this.vfs.linkTarget(node) : null; },
+        now: () => this.simulatedDate().getTime(),
         list: (p) => this.vfs.listDirectory(p)?.map((entry) => entry.name) ?? null,
         formatTime: (ms) => formatStatTime(ms, this.identity.timezone),
       }, this.cwd, args);
@@ -7105,7 +7142,10 @@ export class LinuxCommandExecutor {
       case 'ssh-keygen':  return this.runSshKeygen(args, stdin);
       case 'xargs': {
         const r = runXargs(args, stdin, {
-          run: (argv) => this.dispatch(argv[0], argv.slice(1), undefined, isSudo),
+          run: (argv) => {
+            const closed = this.runClosed(argv, isSudo);
+            return { output: closed.stdout, exitCode: closed.exitCode };
+          },
           readFile: (path) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
         });
         return { output: r.stdout, exitCode: r.exitCode, stderr: r.stderr } as { output: string; exitCode: number };
@@ -7137,32 +7177,7 @@ export class LinuxCommandExecutor {
       case 'od': {
         return asDispatch(runOd(args, coreutilsIO(c, stdin)));
       }
-      case 'rev': {
-        const reverse = (input: string): string => {
-          const body = input.endsWith('\n') ? input.slice(0, -1) : input;
-          const reversed = body.split('\n').map(l => Array.from(l).reverse().join('')).join('\n');
-          return input === '' ? '' : reversed + (input.endsWith('\n') ? '\n' : '');
-        };
-        const files = args.filter((word) => !word.startsWith('-') || word === '-');
-        if (files.length === 0) return { output: reverse(stdin || ''), exitCode: 0 };
-        let output = '';
-        let interleaved = '';
-        const errors: string[] = [];
-        for (const file of files) {
-          const content = file === '-' ? (stdin || '') : this.vfs.readFile(this.vfs.normalizePath(file, this.cwd));
-          if (content === null) {
-            const line = `rev: cannot open ${file}: No such file or directory`;
-            errors.push(line);
-            interleaved += `${line}\n`;
-          } else {
-            const reversed = reverse(content);
-            output += reversed;
-            interleaved += reversed;
-          }
-        }
-        if (errors.length === 0) return { output, exitCode: 0 };
-        return { output, stderr: errors.join('\n'), interleaved, exitCode: 1 };
-      }
+      case 'rev': return asDispatch(runRev(args, coreutilsIO(c, stdin)));
       case 'basename': return asDispatch(runBasename(args));
       case 'dirname': return asDispatch(runDirname(args));
 
@@ -7268,53 +7283,8 @@ export class LinuxCommandExecutor {
           exitCode: 0,
         };
 
-      case 'readlink': {
-        const canon = args.includes('-f') || args.includes('-e') || args.includes('-m');
-        const targets = args.filter(a => !a.startsWith('-'));
-        const out: string[] = [];
-        let failed = false;
-        for (const t of targets) {
-          const p = this.path(t);
-          if (canon) {
-            const r = p.realpath(args.includes('-e'));
-            if (!r) { failed = true; continue; }
-            out.push(r.value);
-          } else {
-            const node = p.lstatNode();
-            if (!node || node.type !== 'symlink') { failed = true; continue; }
-            // Same string `ls -l` prints after the arrow — a link whose
-            // target is computed (`/proc/<pid>/exe`) must not read one way
-            // in `ls` and another in `readlink`.
-            out.push(this.vfs.linkTarget(node));
-          }
-        }
-        return { output: out.join('\n'), exitCode: failed && out.length === 0 ? 1 : 0 };
-      }
-      case 'realpath': {
-        const quiet = args.includes('-q');
-        const noExist = args.includes('-m');
-        const targets = args.filter(a => !a.startsWith('-'));
-        if (targets.length === 0) targets.push('.');
-        const lines: string[] = [];
-        let exit = 0;
-        for (const t of targets) {
-          const parentOnly = !noExist && !args.includes('-e');
-          let r = this.path(t).realpath(!noExist && !parentOnly);
-          if (!r && parentOnly) {
-            const absolute = this.vfs.normalizePath(t, this.cwd);
-            const slash = absolute.lastIndexOf('/');
-            const parent = this.vfs.exists(absolute.slice(0, slash) || '/') ? this.path(absolute.slice(0, slash) || '/').realpath(true) : null;
-            if (parent) r = { value: `${parent.value === '/' ? '' : parent.value}/${absolute.slice(slash + 1)}` } as typeof r;
-          }
-          if (!r) {
-            exit = 1;
-            if (!quiet) lines.push(`realpath: ${t}: No such file or directory`);
-          } else {
-            lines.push(r.value);
-          }
-        }
-        return { output: lines.join('\n'), exitCode: exit };
-      }
+      case 'readlink': return asDispatch(runReadlink(c, args));
+      case 'realpath': return asDispatch(runRealpath(c, args));
       case 'ps': return runPsCommand({ executor: this, outputPiped: c.isPiped }, args);
       case 'mktemp': {
         const result = runMktemp(this, args, (name) => (this._cmdEnv ?? Object.fromEntries(this.env))[name]);

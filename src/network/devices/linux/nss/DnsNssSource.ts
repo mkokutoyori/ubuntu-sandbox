@@ -4,7 +4,7 @@ import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { INssSource } from './INssSource';
 import { nssNotFound as NOTFOUND } from './nssResult';
 import { searchCandidates } from './ResolvConf';
-import type { NssEnumResult, NssHostEntry, NssResult } from './types';
+import type { NssEnumResult, NssHostEntry, NssHostent, NssResult } from './types';
 
 export interface DnsWireStubResolver {
   nameservers(): string[];
@@ -30,6 +30,27 @@ function familyLookups(
     { qtype: 'A', rrType: RRType.A, af: 2 },
     { qtype: 'AAAA', rrType: RRType.AAAA, af: 10 },
   ];
+}
+
+function followCnames(answers: DnsMessage['answers'], question: string): { canonicalName: string; aliases: string[] } {
+  const aliases: string[] = [];
+  let canonicalName = question.toLowerCase();
+  for (let hop = 0; hop < answers.length; hop++) {
+    const link = answers.find((answer) => answer.data.type === RRType.CNAME && answer.name.toLowerCase() === canonicalName);
+    if (link === undefined) break;
+    aliases.push(canonicalName);
+    canonicalName = (link.data as { cname: string }).cname.toLowerCase();
+  }
+  return { canonicalName, aliases };
+}
+
+function asHostent(found: NssResult<NssHostEntry[]>, family: 2 | 10): NssResult<NssHostent> {
+  if (found.status !== 'SUCCESS' || found.entry === undefined || found.entry.length === 0) return { status: found.status };
+  const [first] = found.entry;
+  return {
+    status: 'SUCCESS',
+    entry: { name: first.canonicalName, aliases: [...first.aliases], family, addresses: found.entry.map((entry) => entry.address) },
+  };
 }
 
 export class DnsNssSource implements INssSource {
@@ -64,6 +85,14 @@ export class DnsNssSource implements INssSource {
     // device in the simulation to match a hostname was the old fallback
     // (docs/PRD-Frame-Only-Refactor.md P6).
     return NOTFOUND();
+  }
+
+  gethostbyname3(name: string, family: 2 | 10): NssResult<NssHostent> {
+    return asHostent(this.gethostbyname(name, family), family);
+  }
+
+  async gethostbyname3Async(name: string, family: 2 | 10): Promise<NssResult<NssHostent>> {
+    return asHostent(await this.gethostbynameAsync(name, family), family);
   }
 
   gethostbyaddr(addr: string): NssResult<NssHostEntry> {
@@ -182,14 +211,14 @@ export class DnsNssSource implements INssSource {
     if (resp.flags.rcode !== DnsRcode.NOERROR) {
       return matches.length ? null : { status: 'TRYAGAIN' };
     }
-    const canonicalName = (resp.questions[0]?.qname ?? name).toLowerCase();
+    const { canonicalName, aliases } = followCnames(resp.answers, resp.questions[0]?.qname ?? name);
     for (const answer of resp.answers) {
       if (answer.data.type !== rrType) continue;
       matches.push({
         canonicalName,
         addressFamily: af,
         address: (answer.data as { address: { toString(): string } }).address.toString(),
-        aliases: [],
+        aliases,
       });
     }
     return null;

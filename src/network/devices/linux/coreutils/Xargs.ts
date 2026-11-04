@@ -1,4 +1,5 @@
 import { getoptDiagnostic, shortOptions } from '../commands/Getopt';
+import { docsResult } from './CoreutilsKit';
 
 const OPTSTRING = '+0a:E:e::i::I:l::L:n:oprs:txP:d:';
 const DEFAULT_REPLACE = '{}';
@@ -7,6 +8,8 @@ const EXIT_255 = 124;
 const EXIT_CANNOT_RUN = 126;
 const EXIT_NOT_FOUND = 127;
 const MAX_PROC_MAX = 2147483647;
+const DEFAULT_BUFFER_SIZE = 131072;
+const MAX_CHARS_LIMIT = 2086192;
 
 const LONG_OPTIONS: Readonly<Record<string, { short: string; argument: 'none' | 'required' | 'optional' }>> = {
   'null': { short: '0', argument: 'none' },
@@ -37,7 +40,7 @@ export interface XargsResult {
 }
 
 class XargsExit extends Error {
-  constructor(readonly stderr: string[], readonly exitCode: number) {
+  constructor(readonly stderr: string[], readonly exitCode: number, readonly stdout = '') {
     super(stderr.join('\n'));
   }
 }
@@ -51,6 +54,8 @@ interface XargsOptions {
   runIfEmpty: boolean;
   printCommand: boolean;
   inputFile: string | null;
+  sizeLimit: number;
+  exitIfSizeExceeded: boolean;
   command: string[];
 }
 
@@ -72,6 +77,10 @@ function parseNum(text: string, option: string, min: number, max: number, fatal:
     return max;
   }
   return value;
+}
+
+function exclusiveWarning(previous: string, current: string): string {
+  return `xargs: warning: options ${previous} and ${current} are mutually exclusive, ignoring previous ${previous} value`;
 }
 
 function inputDelimiter(spec: string): string {
@@ -99,8 +108,9 @@ function expandLongOptions(args: readonly string[]): string[] {
     const name = token.slice(2, eq < 0 ? undefined : eq);
     const matches = Object.keys(LONG_OPTIONS).filter((k) => k.startsWith(name));
     const exact = LONG_OPTIONS[name] ? name : matches.length === 1 ? matches[0] : null;
-    if (name === 'help' || name === 'version' || name === 'show-limits' || name === 'process-slot-var') {
-      throw new XargsExit([`xargs: option --${name}: this simulator cannot build the findutils ${name === 'help' || name === 'version' ? 'help and version texts' : name}`], 1);
+    if (name === 'help' || name === 'version') throw new XargsExit([], 0, docsResult('xargs', name).stdout);
+    if (name === 'show-limits' || name === 'process-slot-var') {
+      throw new XargsExit([`xargs: option --${name}: this simulator cannot build the findutils ${name}`], 1);
     }
     if (!exact) {
       throw new XargsExit([matches.length > 1
@@ -113,7 +123,7 @@ function expandLongOptions(args: readonly string[]): string[] {
       if (value !== undefined) throw new XargsExit([`xargs: option '--${exact}' doesn't allow an argument`, TRY_HELP], 1);
       out.push(`-${spec.short}`);
     } else if (spec.argument === 'optional') {
-      out.push(value === undefined ? `-${spec.short}` : `-${spec.short}${value}`);
+      out.push(value === undefined ? (spec.short === 'I' ? '-i' : `-${spec.short}`) : `-${spec.short}${value}`);
     } else if (value !== undefined) {
       out.push(`-${spec.short}`, value);
     } else if (i + 1 < args.length) {
@@ -128,7 +138,7 @@ function expandLongOptions(args: readonly string[]): string[] {
 function parseXargsArgs(args: readonly string[], warnings: string[]): XargsOptions {
   const opts: XargsOptions = {
     delimiter: null, eofString: null, replace: null, linesPerExec: 0, argsPerExec: 0,
-    runIfEmpty: true, printCommand: false, inputFile: null, command: [],
+    runIfEmpty: true, printCommand: false, inputFile: null, sizeLimit: DEFAULT_BUFFER_SIZE, exitIfSizeExceeded: false, command: [],
   };
   for (const token of shortOptions(expandLongOptions(args), OPTSTRING)) {
     if (token.kind === 'operand') { opts.command.push(token.value); continue; }
@@ -139,34 +149,41 @@ function parseXargsArgs(args: readonly string[], warnings: string[]): XargsOptio
       case 'd': opts.delimiter = inputDelimiter(arg!); break;
       case 'E': case 'e': opts.eofString = arg !== undefined && arg !== '' ? arg : null; break;
       case 'I': case 'i':
+        if (opts.linesPerExec > 0) warnings.push(exclusiveWarning('--max-lines', '--replace/-I/-i'));
+        if (opts.argsPerExec > 0) warnings.push(exclusiveWarning('--max-args', '--replace/-I/-i'));
         opts.replace = arg ?? DEFAULT_REPLACE;
+        if (opts.replace === '') throw new XargsExit(['xargs: command too long'], 1);
         opts.argsPerExec = 0;
         opts.linesPerExec = 0;
         break;
-      case 'L':
-        opts.linesPerExec = parseNum(arg!, 'L', 1, -1, true, warnings);
+      case 'L': case 'l': {
+        const name = token.letter === 'L' ? '-L' : '--max-lines/-l';
+        if (opts.replace !== null) warnings.push(exclusiveWarning('--replace', name));
+        if (opts.argsPerExec > 0) warnings.push(exclusiveWarning('--max-args', name));
+        opts.linesPerExec = arg !== undefined ? parseNum(arg, token.letter, 1, -1, true, warnings) : 1;
         opts.argsPerExec = 0;
         opts.replace = null;
         break;
-      case 'l':
-        opts.linesPerExec = arg !== undefined ? parseNum(arg, 'l', 1, -1, true, warnings) : 1;
-        opts.argsPerExec = 0;
-        opts.replace = null;
-        break;
-      case 'n':
-        opts.argsPerExec = parseNum(arg!, 'n', 1, -1, true, warnings);
-        opts.linesPerExec = 0;
+      }
+      case 'n': {
+        const count = parseNum(arg!, 'n', 1, -1, true, warnings);
         if (opts.replace !== null) {
-          if (opts.argsPerExec === 1) opts.argsPerExec = 0;
-          else opts.replace = null;
+          if (count === 1) break;
+          warnings.push(exclusiveWarning('--replace', '--max-args/-n'));
+          opts.replace = null;
         }
+        if (opts.linesPerExec > 0) warnings.push(exclusiveWarning('--max-lines', '--max-args/-n'));
+        opts.argsPerExec = count;
+        opts.linesPerExec = 0;
         break;
-      case 's': parseNum(arg!, 's', 1, -1, false, warnings); break;
+      }
+      case 's': opts.sizeLimit = parseNum(arg!, 's', 1, MAX_CHARS_LIMIT, false, warnings); break;
       case 'P': parseNum(arg!, 'P', 0, MAX_PROC_MAX, true, warnings); break;
       case 'a': opts.inputFile = arg!; break;
       case 'r': opts.runIfEmpty = false; break;
       case 't': opts.printCommand = true; break;
-      case 'o': case 'x': break;
+      case 'x': opts.exitIfSizeExceeded = true; break;
+      case 'o': break;
       case 'p': throw new XargsExit(['xargs: option -p: this simulator cannot build an interactive /dev/tty prompt'], 1);
       default: throw new XargsExit([TRY_HELP], 1);
     }
@@ -183,13 +200,18 @@ interface InputItem {
   readonly endsLine: boolean;
 }
 
-function readDelimited(input: string, delimiter: string): InputItem[] {
-  const parts = input.split(delimiter);
-  if (parts[parts.length - 1] === '') parts.pop();
-  return parts.map((value) => ({ value, endsLine: true }));
+interface ReadOutcome {
+  readonly items: InputItem[];
+  readonly error: string | null;
 }
 
-function readLines(input: string, opts: XargsOptions): InputItem[] {
+function readDelimited(input: string, delimiter: string): ReadOutcome {
+  const parts = input.split(delimiter);
+  if (parts[parts.length - 1] === '') parts.pop();
+  return { items: parts.map((value) => ({ value, endsLine: true })), error: null };
+}
+
+function readLines(input: string, opts: XargsOptions): ReadOutcome {
   const items: InputItem[] = [];
   const lineMode = opts.replace !== null;
   let arg = '';
@@ -208,14 +230,14 @@ function readLines(input: string, opts: XargsOptions): InputItem[] {
     const c = input[i];
     if (escaped) { arg += c; escaped = false; inArg = true; continue; }
     if (quote !== null) {
-      if (c === '\n') throw new XargsExit([unmatched(quote)], 1);
+      if (c === '\n') return { items, error: unmatched(quote) };
       if (c === quote) { quote = null; continue; }
       arg += c;
       continue;
     }
     if (c === '\n') {
       if (inArg || (lineMode && arg !== '')) {
-        if (!push(true)) return items;
+        if (!push(true)) return { items, error: null };
       } else if (lineHasArgs && items.length > 0) {
         items[items.length - 1] = { ...items[items.length - 1], endsLine: input[i - 1] !== ' ' && input[i - 1] !== '\t' };
       }
@@ -224,7 +246,7 @@ function readLines(input: string, opts: XargsOptions): InputItem[] {
     }
     if ((c === ' ' || c === '\t') && !inArg) continue;
     if ((c === ' ' || c === '\t') && !lineMode) {
-      if (!push(false)) return items;
+      if (!push(false)) return { items, error: null };
       lineHasArgs = true;
       continue;
     }
@@ -233,9 +255,9 @@ function readLines(input: string, opts: XargsOptions): InputItem[] {
     arg += c;
     inArg = true;
   }
-  if (quote !== null) throw new XargsExit([unmatched(quote)], 1);
+  if (quote !== null) return { items, error: unmatched(quote) };
   if (inArg) push(true);
-  return items;
+  return { items, error: null };
 }
 
 function unmatched(quote: string): string {
@@ -261,7 +283,7 @@ export function runXargs(args: string[], stdin: string | undefined, host: XargsH
       }
       input = content;
     }
-    const items = opts.delimiter !== null ? readDelimited(input, opts.delimiter) : readLines(input, opts);
+    const { items, error: inputError } = opts.delimiter !== null ? readDelimited(input, opts.delimiter) : readLines(input, opts);
 
     const exec = (argv: string[]): void => {
       if (opts.printCommand) stderr.push(argv.map(shellQuote).join(' '));
@@ -279,30 +301,53 @@ export function runXargs(args: string[], stdin: string | undefined, host: XargsH
       if (result.exitCode !== 0) childError = EXIT_NONZERO;
     };
 
+    const weight = (argv: readonly string[]): number => argv.reduce((total, word) => total + word.length + 1, 0);
+    const limit = opts.sizeLimit;
+    if (opts.replace === null && weight(opts.command) > limit) {
+      throw new XargsExit(['xargs: cannot fit single argument within argument list size limit'], 1);
+    }
     if (opts.replace !== null) {
       const [cmd, ...initial] = opts.command;
-      for (const item of items) exec([cmd, ...initial.map((a) => a.split(opts.replace!).join(item.value))]);
+      for (const item of items) {
+        const argv = [cmd, ...initial.map((a) => a.split(opts.replace!).join(item.value))];
+        if (weight(argv) > limit) throw new XargsExit(['xargs: argument list too long'], 1);
+        exec(argv);
+      }
     } else {
+      const base = weight(opts.command);
+      const strict = opts.exitIfSizeExceeded || opts.linesPerExec > 0;
       let pending: string[] = [];
+      let used = base;
       let lines = 0;
       let executed = 0;
+      const flush = (): void => {
+        exec([...opts.command, ...pending]);
+        executed++;
+        pending = [];
+        used = base;
+        lines = 0;
+      };
       for (const item of items) {
+        const cost = item.value.length + 1;
+        if (used + cost > limit) {
+          if (pending.length === 0) throw new XargsExit(['xargs: argument line too long'], 1);
+          if (strict) throw new XargsExit(['xargs: argument list too long'], 1);
+          flush();
+          if (used + cost > limit) throw new XargsExit(['xargs: argument line too long'], 1);
+        }
         pending.push(item.value);
+        used += cost;
         if (item.endsLine) lines++;
         const full = (opts.argsPerExec > 0 && pending.length >= opts.argsPerExec)
           || (opts.linesPerExec > 0 && lines >= opts.linesPerExec);
-        if (full) {
-          exec([...opts.command, ...pending]);
-          executed++;
-          pending = [];
-          lines = 0;
-        }
+        if (full) flush();
       }
-      if (pending.length > 0 || (opts.runIfEmpty && executed === 0)) exec([...opts.command, ...pending]);
+      if (pending.length > 0 || (opts.runIfEmpty && executed === 0 && inputError === null)) flush();
     }
-    return { stdout: stdout.join('\n'), stderr: stderr.join('\n'), exitCode: childError };
+    if (inputError !== null) throw new XargsExit([inputError], 1);
+    return { stdout: stdout.join(''), stderr: stderr.join('\n'), exitCode: childError };
   } catch (e) {
     if (!(e instanceof XargsExit)) throw e;
-    return { stdout: stdout.join('\n'), stderr: [...stderr, ...e.stderr].join('\n'), exitCode: e.exitCode };
+    return { stdout: [...stdout, e.stdout].join(''), stderr: [...stderr, ...e.stderr].join('\n'), exitCode: e.exitCode };
   }
 }
