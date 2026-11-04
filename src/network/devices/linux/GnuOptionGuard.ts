@@ -356,11 +356,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  base64: {
-    optstring: 'diw:',
-    long: [flag('decode', 'd'), flag('ignore-garbage', 'i'), valued('wrap', 'w'), ...HELP_VERSION],
-    operands: true,
-  },
   du: {
     optstring: '0aB:bcd:DHhklLmPSst:xX:',
     long: [
@@ -484,7 +479,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
   },
   mknod: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
-  cksum: { optstring: '', long: [...HELP_VERSION], operands: true },
   sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },
   nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125 },
   nohup: { optstring: '+', long: [...HELP_VERSION], operands: true, failureStatus: 125 },

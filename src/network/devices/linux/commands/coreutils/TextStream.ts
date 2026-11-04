@@ -27,6 +27,10 @@ import type { LinuxCommand } from '../LinuxCommand';
 import { asDispatch, type CoreutilsIO, type CoreutilsRun } from '../../coreutils/CoreutilsKit';
 import { coreutilsIO } from '../../coreutils/CoreutilsFiles';
 import { runTac } from '../../coreutils/TacCommand';
+import { runFmt } from '../../coreutils/FmtCommand';
+import { runCksum } from '../../coreutils/CksumCommand';
+import { runCmp } from '../../coreutils/CmpCommand';
+import { runBase64 } from '../../coreutils/Base64Command';
 import { runSplit } from '../../coreutils/SplitCommand';
 import { runNl } from '../../coreutils/NlCommand';
 import { runPaste } from '../../coreutils/PasteCommand';
@@ -240,21 +244,7 @@ export const unexpandCommand = viaCoreutils(coreutil(
 
 // ─── fmt ────────────────────────────────────────────────────────────
 
-function wrapWords(line: string, width: number): string[] {
-  const words = line.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [''];
-  const rows: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    if (cur === '') cur = w;
-    else if (cur.length + 1 + w.length <= width) cur += ' ' + w;
-    else { rows.push(cur); cur = w; }
-  }
-  if (cur !== '') rows.push(cur);
-  return rows;
-}
-
-export const fmtCommand = coreutil(
+export const fmtCommand = viaCoreutils(coreutil(
   'fmt', 'fmt [-s] [-w WIDTH] [FILE]...',
   'Reflow paragraphs to WIDTH columns (75 by default). -s only splits\n'
   + 'long lines and never joins two short ones.',
@@ -262,37 +252,8 @@ export const fmtCommand = coreutil(
     { flag: '-w', description: 'Target width', takesArg: true, argName: 'WIDTH' },
     { flag: '-s', description: 'Split long lines only' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'sw', 'w');
-    let width = 75;
-    let splitOnly = false;
-    const files: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-s') { splitOnly = true; continue; }
-      if (a === '-w' && args[i + 1]) { width = parseInt(args[i + 1], 10); i++; continue; }
-      if (/^-\d+$/.test(a)) { width = parseInt(a.slice(1), 10); continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
-    }
-    const got = inputs(ctx, files, stdin, 'fmt');
-    if (!Array.isArray(got)) return got;
-
-    const out: string[] = [];
-    for (const content of got) {
-      if (splitOnly) {
-        for (const line of toLines(content)) out.push(...wrapWords(line, width));
-        continue;
-      }
-      for (const para of content.split(/\n\s*\n/)) {
-        const words = para.split(/\s+/).filter(Boolean);
-        if (words.length === 0) continue;
-        if (out.length > 0) out.push('');
-        out.push(...wrapWords(words.join(' '), width));
-      }
-    }
-    return out.join('\n');
-  },
-);
+  () => '',
+), runFmt);
 
 // ─── pr ─────────────────────────────────────────────────────────────
 
@@ -370,7 +331,7 @@ export const columnCommand = coreutil(
 
 // ─── cmp ────────────────────────────────────────────────────────────
 
-export const cmpCommand: LinuxCommand = {
+export const cmpCommand = viaCoreutils({
   name: 'cmp',
   needsNetworkContext: true,
   readsStdin: true,
@@ -379,62 +340,8 @@ export const cmpCommand: LinuxCommand = {
   help: 'Compare two files byte by byte. Prints nothing and exits 0 when they\n'
     + 'are identical; otherwise names the first differing byte and line.',
   options: [],
-  run(ctx: LinuxCommandContext, args: string[], stdin?: string): string {
-    return cmpRun(ctx, args, stdin).output;
-  },
-  runWithStatusSync(ctx: LinuxCommandContext, args: string[], stdin?: string) {
-    return cmpRun(ctx, args, stdin);
-  },
-};
-
-function cmpRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { output: string; exitCode: number; stderr?: string } {
-  const files = args.filter(a => !a.startsWith('-') || a === '-');
-  if (files.length < 2) return { output: '', stderr: 'cmp: missing operand', exitCode: 2 };
-  const got = inputs(ctx, files.slice(0, 2), stdin, 'cmp');
-  if (!Array.isArray(got)) return { output: '', stderr: got, exitCode: 2 };
-
-  const [a, b] = got;
-  const silent = args.some((argument) => argument === '-s' || argument === '--silent' || argument === '--quiet');
-  if (a === b) return { output: '', exitCode: 0 };
-  const min = Math.min(a.length, b.length);
-  for (let i = 0; i < min; i++) {
-    if (a[i] !== b[i]) {
-      const line = a.slice(0, i).split('\n').length;
-      return { output: silent ? '' : `${files[0]} ${files[1]} differ: byte ${i + 1}, line ${line}`, stderr: '', exitCode: 1 };
-    }
-  }
-  const shorter = a.length < b.length ? a : b;
-  const name = a.length < b.length ? files[0] : files[1];
-  const where = shorter === '' ? 'which is empty' : `after byte ${shorter.length}, line ${shorter.split('\n').length - 1}`;
-  return { output: '', stderr: silent ? '' : `cmp: EOF on ${name} ${where}`, exitCode: 1 };
-}
-
-// ─── split ──────────────────────────────────────────────────────────
-
-/** Les suffixes de `split` : aa, ab, … puis ba, bb, … */
-function suffixes(count: number, length: number, kind: 'alpha' | 'numeric' | 'hex', from: number): string[] | null {
-  const radix = kind === 'alpha' ? 26 : kind === 'hex' ? 16 : 10;
-  if (from + count > radix ** length) return null;
-  const out: string[] = [];
-  for (let i = from; i < from + count; i++) {
-    let rest = i;
-    let text = '';
-    for (let place = 0; place < length; place++) {
-      const digit = rest % radix;
-      text = (kind === 'alpha' ? String.fromCharCode(97 + digit) : digit.toString(radix)) + text;
-      rest = Math.floor(rest / radix);
-    }
-    out.push(text);
-  }
-  return out;
-}
-
-function splitSize(raw: string, what: string): number | string {
-  const match = /^(\d+)([KMGkmg]?)$/.exec(raw);
-  if (match === null || Number(match[1]) < 1) return `split: invalid number of ${what}: '${raw}'`;
-  const units: Record<string, number> = { '': 1, k: 1024, K: 1024, m: 1048576, M: 1048576, g: 1073741824, G: 1073741824 };
-  return Number(match[1]) * units[match[2]];
-}
+  run: () => '',
+}, runCmp);
 
 export const splitCommand = viaCoreutils(coreutil(
   'split', 'split [OPTION]... [FILE [PREFIX]]',
@@ -461,7 +368,7 @@ export const splitCommand = viaCoreutils(coreutil(
 
 // ─── base64 ─────────────────────────────────────────────────────────
 
-export const base64Command = coreutil(
+export const base64Command = viaCoreutils(coreutil(
   'base64', 'base64 [OPTION]... [FILE]',
   'Encode or decode base64. -d decodes; -w wraps encoded lines after COLS\n'
   + 'characters (76 by default, 0 never wraps); -i ignores non-alphabet\n'
@@ -471,82 +378,17 @@ export const base64Command = coreutil(
     { flag: '-i', description: 'When decoding, ignore non-alphabet characters' },
     { flag: '-w', description: 'Wrap encoded lines after COLS characters', takesArg: true, argName: 'COLS' },
   ],
-  (ctx, args, stdin) => {
-    const set = GNU_OPTION_SETS.base64;
-    let decode = false;
-    let ignoreGarbage = false;
-    let wrap = 76;
-    const files: string[] = [];
-    for (const item of shortOptions(args, set.optstring, set.long)) {
-      if (item.kind === 'operand') files.push(item.value);
-      else if (item.kind === 'option' && item.letter === 'd') decode = true;
-      else if (item.kind === 'option' && item.letter === 'i') ignoreGarbage = true;
-      else if (item.kind === 'option' && item.letter === 'w') {
-        if (!/^\d+$/.test(item.argument ?? '')) return `base64: invalid wrap size: '${item.argument}'`;
-        wrap = Number(item.argument);
-      }
-    }
-    const got = inputs(ctx, files, stdin, 'base64');
-    if (!Array.isArray(got)) return got;
-    const input = got.join('');
-    if (input === '') return '';
-
-    try {
-      if (decode) {
-        const text = ignoreGarbage ? input.replace(/[^A-Za-z0-9+/=]/g, '') : input.replace(/\s+/g, '');
-        const bytes = base64ToBytes(text);
-        const decoded = bytesToFileText(bytes);
-        return /[\udc80-\udcff]/.test(decoded) ? decoded : decoded.replace(/\n$/, '');
-      }
-      const encoded = bytesToBase64(fileTextToBytes(input));
-      if (wrap === 0) return encoded;
-      const lines: string[] = [];
-      for (let at = 0; at < encoded.length; at += wrap) lines.push(encoded.slice(at, at + wrap));
-      return `${lines.join('\n')}\n`;
-    } catch {
-      return 'base64: invalid input';
-    }
-  },
-);
+  () => '',
+), runBase64);
 
 // ─── cksum ──────────────────────────────────────────────────────────
 
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i << 24;
-    for (let k = 0; k < 8; k++) c = (c & 0x80000000) ? ((c << 1) ^ 0x04c11db7) >>> 0 : (c << 1) >>> 0;
-    table[i] = c >>> 0;
-  }
-  return table;
-})();
-
-/** Le CRC-32 de POSIX, celui que `cksum` imprime — pas celui de zlib. */
-function posixCksum(bytes: Uint8Array): number {
-  let crc = 0;
-  for (const b of bytes) crc = ((crc << 8) ^ CRC_TABLE[((crc >>> 24) ^ b) & 0xff]) >>> 0;
-  let len = bytes.length;
-  while (len > 0) {
-    crc = ((crc << 8) ^ CRC_TABLE[((crc >>> 24) ^ (len & 0xff)) & 0xff]) >>> 0;
-    len >>>= 8;
-  }
-  return (~crc) >>> 0;
-}
-
-export const cksumCommand = coreutil(
+export const cksumCommand = viaCoreutils(coreutil(
   'cksum', 'cksum [FILE]...',
   'Print the POSIX CRC checksum and byte count of each file.',
   [],
-  (ctx, args, stdin) => {
-    const files = args.filter(a => !a.startsWith('-') || a === '-');
-    const got = inputs(ctx, files, stdin, 'cksum');
-    if (!Array.isArray(got)) return got;
-    return got.map((content, i) => {
-      const bytes = fileTextToBytes(content);
-      return `${posixCksum(bytes)} ${bytes.length}${files[i] ? ` ${files[i]}` : ''}`;
-    }).join('\n');
-  },
-);
+  () => '',
+), runCksum);
 
 export const lessCommand: LinuxCommand = { package: 'less', ...coreutil(
   'less', 'less [OPTIONS] [FILE]...',
