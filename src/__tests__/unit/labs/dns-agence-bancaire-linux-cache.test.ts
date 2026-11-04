@@ -151,6 +151,19 @@ describe('Lab DNS - agence bancaire : the Linux workstation keeps a DNS cache', 
     expect(fromLinux.sent['DC1']).toBe(0);
   });
 
+  it('when DC1 stops answering, the stub moves to DNS-RES, reports it as the current server and goes straight to it for the next name', async () => {
+    const lab = await bench();
+    await lab.asked('DC1', 'ps', 'Stop-Service DNS');
+    const failover = await lab.asked(ASK, 'sh', 'dig api.banquehorizon.com +short');
+    expect(failover.output).toContain('203.0.113.20');
+    expect(failover.sent[ASK]).toBe(2);
+    const status = await lab.asked(ASK, 'sh', 'resolvectl status');
+    expect(status.output).toMatch(/Current DNS Server:\s+10\.20\.20\.53/);
+    const next = await lab.asked(ASK, 'sh', 'dig agences.banquehorizon.com +short');
+    expect(next.output).toContain('203.0.113.20');
+    expect(next.sent[ASK]).toBe(1);
+  });
+
   it('a name under the domain of the lease is completed by the search list the stub publishes', async () => {
     const lab = await bench();
     const short = await lab.asked(ASK, 'sh', 'getent hosts intranet');

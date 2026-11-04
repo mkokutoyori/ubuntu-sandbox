@@ -34,6 +34,10 @@ export interface NamedOptions {
   readonly dnssecValidation: DnssecValidationMode;
   readonly listenOnPort: number;
   readonly servfailTtl: number;
+  readonly maxCacheTtl: number | null;
+  readonly maxNcacheTtl: number;
+  readonly minimalResponses: MinimalResponsesMode;
+  readonly ednsUdpSize: number;
   readonly emptyZonesEnable: boolean;
   readonly listenOn: AddressMatchList;
   readonly allowQuery: AddressMatchList;
@@ -102,6 +106,15 @@ export interface NamedConfig {
 const DEFAULT_DIRECTORY = '/var/cache/bind';
 const DEFAULT_RNDC_PORT = 953;
 const DEFAULT_DNS_PORT = 53;
+export type MinimalResponsesMode = 'yes' | 'no' | 'no-auth' | 'no-auth-recursive';
+
+export const DEFAULT_EDNS_UDP_SIZE = 1232;
+const MIN_EDNS_UDP_SIZE = 512;
+const MAX_EDNS_UDP_SIZE = 4096;
+const DEFAULT_MAX_CACHE_TTL = 604800;
+const DEFAULT_MAX_NCACHE_TTL = 10800;
+const MAX_NCACHE_TTL = 604800;
+const TTL_UNIT_SECONDS: Readonly<Record<string, number>> = { s: 1, m: 60, h: 3600, d: 86400, w: 604800 };
 const DEFAULT_SERVFAIL_TTL = 1;
 const MAX_SERVFAIL_TTL = 30;
 const DEFAULT_SEVERITY = 'info';
@@ -116,6 +129,12 @@ const ZONE_TYPE_ALIASES: Readonly<Record<string, ZoneType>> = {
 
 function fail(statement: NamedConfStatement, detail: string): never {
   throw new NamedConfigError(statement.file, statement.line, detail);
+}
+
+function ttlWord(statement: NamedConfStatement, word: string | undefined): number {
+  const match = /^(\d+)([smhdw]?)$/i.exec(word ?? '');
+  if (match === null) fail(statement, `expected a TTL near '${word ?? ';'}'`);
+  return Number(match[1]) * TTL_UNIT_SECONDS[(match[2] || 's').toLowerCase()];
 }
 
 function keywordOf(statement: NamedConfStatement): string {
@@ -178,6 +197,10 @@ interface MutableOptions {
   dnssecValidation: DnssecValidationMode;
   listenOnPort: number;
   servfailTtl: number;
+  maxCacheTtl: number | null;
+  maxNcacheTtl: number;
+  minimalResponses: MinimalResponsesMode;
+  ednsUdpSize: number;
   emptyZonesEnable: boolean;
   listenOn: AddressMatchList;
   allowQuery: AddressMatchList;
@@ -198,6 +221,10 @@ function defaultOptions(): MutableOptions {
     dnssecValidation: 'auto',
     listenOnPort: DEFAULT_DNS_PORT,
     servfailTtl: DEFAULT_SERVFAIL_TTL,
+    maxCacheTtl: DEFAULT_MAX_CACHE_TTL,
+    maxNcacheTtl: DEFAULT_MAX_NCACHE_TTL,
+    minimalResponses: 'no',
+    ednsUdpSize: DEFAULT_EDNS_UDP_SIZE,
     emptyZonesEnable: true,
     listenOn: AddressMatchList.any(),
     allowQuery: AddressMatchList.any(),
@@ -259,6 +286,24 @@ function parseOptions(
         options.servfailTtl = Math.min(value, MAX_SERVFAIL_TTL);
         break;
       }
+      case 'max-cache-ttl':
+        options.maxCacheTtl = args[0] === 'unlimited' ? null : ttlWord(entry, args[0]);
+        break;
+      case 'max-ncache-ttl':
+        options.maxNcacheTtl = Math.min(ttlWord(entry, args[0]), MAX_NCACHE_TTL);
+        break;
+      case 'edns-udp-size': {
+        const size = Number(args[0]);
+        if (!Number.isInteger(size) || size < 0) fail(entry, `expected a number near '${args[0] ?? ';'}'`);
+        options.ednsUdpSize = Math.min(Math.max(size, MIN_EDNS_UDP_SIZE), MAX_EDNS_UDP_SIZE);
+        break;
+      }
+      case 'minimal-responses':
+        if (args[0] !== 'yes' && args[0] !== 'no' && args[0] !== 'no-auth' && args[0] !== 'no-auth-recursive') {
+          fail(entry, `expected 'yes', 'no', 'no-auth' or 'no-auth-recursive' near '${args[0] ?? ';'}'`);
+        }
+        options.minimalResponses = args[0];
+        break;
       case 'dnssec-validation':
         if (args[0] !== 'auto' && args[0] !== 'yes' && args[0] !== 'no') {
           fail(entry, `expected 'auto', 'yes' or 'no' near '${args[0] ?? ';'}'`);

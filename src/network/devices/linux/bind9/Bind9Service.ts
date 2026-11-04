@@ -1,9 +1,9 @@
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 
-import { ZoneStore } from '@/network/dns/zone/ZoneStore';
+import { ZoneStore, type PositiveTrim } from '@/network/dns/zone/ZoneStore';
 import { AuthoritativeServer } from '@/network/dns/resolver/AuthoritativeServer';
 import { RecursiveResolver, resolutionFromCache } from '@/network/dns/resolver/RecursiveResolver';
-import { DnsCache } from '@/network/dns/resolver/DnsCache';
+import { DEFAULT_CACHE_LIMITS, DnsCache, type DnsCacheLimits } from '@/network/dns/resolver/DnsCache';
 import { parseZoneFile, parseZoneRecords, renderZoneFile, ZoneFileError } from '@/network/dns/zone/ZoneFile';
 import { ZoneError } from '@/network/dns/zone/Zone';
 import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTransferResponse, datagramReply } from '@/network/dns/transfer/ZoneTransferHosting';
@@ -39,7 +39,7 @@ import {
 } from '@/network/dns/transport/DnsTcpTransport';
 import { parseNamedConf } from './NamedConfParser';
 import { NamedConfSyntaxError } from './NamedConfLexer';
-import { buildNamedConfig } from './NamedConfig';
+import { buildNamedConfig, DEFAULT_EDNS_UDP_SIZE } from './NamedConfig';
 import { NamedConfigError } from './NamedConfigError';
 import { Bind9Logging } from './Bind9Logging';
 import { RndcChannel } from './RndcChannel';
@@ -79,7 +79,7 @@ export class Bind9Service {
   private resolvers: RecursiveResolver[] = [];
   private rootHints: { readonly ns: readonly ResourceRecord<NsRecordData>[]; readonly glue: readonly ResourceRecord<ResourceRecordData>[] } | null = null;
   private forwardZones = new Map<string, { readonly mode: ForwardMode; readonly resolver: RecursiveResolver }>();
-  private readonly cache = new DnsCache(() => this.host.getSystemClockMs());
+  private readonly cache = new DnsCache(() => this.host.getSystemClockMs(), () => this.cacheLimits());
   private readonly loadedZones = new Map<string, number>();
   private readonly failedZones = new Set<string>();
   private readonly secondaries: SecondaryZoneRefresher;
@@ -363,11 +363,34 @@ export class Bind9Service {
     }
     this.config = config;
     this.store = store;
-    this.authoritative = new AuthoritativeServer(store);
+    this.authoritative = new AuthoritativeServer(store, {
+      writesApexNs: () => true,
+      trimsPositiveAnswers: (recursionDesired) => this.positiveTrim(recursionDesired),
+      ednsPayloadSize: () => this.config?.options.ednsUdpSize ?? DEFAULT_EDNS_UDP_SIZE,
+    });
     this.resolvers = this.buildResolvers(config);
     this.forwardZones = this.buildForwardZones(config);
     this.queryLogEnabled = config.options.queryLog;
     this.dnssecValidationEnabled = config.options.dnssecValidation !== 'no';
+  }
+
+  private positiveTrim(recursionDesired: boolean): PositiveTrim {
+    switch (this.config?.options.minimalResponses) {
+      case 'yes': return 'authority-and-additional';
+      case 'no-auth': return 'authority';
+      case 'no-auth-recursive': return recursionDesired ? 'authority' : 'none';
+      default: return 'none';
+    }
+  }
+
+  private cacheLimits(): DnsCacheLimits {
+    const options = this.config?.options;
+    return {
+      ...DEFAULT_CACHE_LIMITS,
+      ranksByTrust: true,
+      maxTtlSeconds: options?.maxCacheTtl ?? DEFAULT_CACHE_LIMITS.maxTtlSeconds,
+      maxNegativeTtlSeconds: options?.maxNcacheTtl ?? DEFAULT_CACHE_LIMITS.maxNegativeTtlSeconds,
+    };
   }
 
   private buildResolvers(config: NamedConfig): RecursiveResolver[] {
@@ -399,7 +422,7 @@ export class Bind9Service {
         this.host, forwarders, this.cache, { forwardRecursively: true, servfailTtlSeconds: fallsBack ? 0 : config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
       if (config.options.forwardMode === 'only') return resolvers;
     }
-    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, { servfailTtlSeconds: config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, ...dnssec }));
+    if (hints.length > 0) resolvers.push(new RecursiveResolver(this.host, hints, this.cache, { servfailTtlSeconds: config.options.servfailTtl, resolveSpecialUseNamesUpstream: !config.options.emptyZonesEnable, retainsAuthorityData: true, primesRoot: true, ...dnssec }));
     return resolvers;
   }
 

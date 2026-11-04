@@ -97,7 +97,7 @@ describe('Scénario 1 — le serveur écoute réellement en 853', () => {
     expect(
       await pc.executeCommand('dig +tls @10.0.0.9 +short web.lab.local'),
       'sans cet échec, `+tls` ne serait qu\'un mot accepté',
-    ).toContain('connection timed out');
+    ).toContain('timed out');
     expect(
       await pc.executeCommand('dig @10.0.0.9 +short web.lab.local'),
       'le 53 en clair, lui, répond toujours',

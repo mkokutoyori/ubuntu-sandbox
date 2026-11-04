@@ -21,7 +21,7 @@ describe('dig contre un port UDP fermé', () => {
     const out = await lab.front.executeCommand('dig -p 9999 @10.0.0.2 example.com');
     expect(out.split('\n').filter((l) => l === ';; communications error to 10.0.0.2#9999: connection refused')).toHaveLength(3);
     expect(out).toContain(';; no servers could be reached');
-    expect(out).not.toContain('connection timed out');
+    expect(out).not.toContain('timed out');
   });
 
   it('+tries=1 ne refuse qu\'une fois', async () => {
@@ -33,14 +33,15 @@ describe('dig contre un port UDP fermé', () => {
   it('le banner reprend les arguments tels que tapés', async () => {
     const lab = labo();
     const out = await lab.front.executeCommand('dig -p 9999 @10.0.0.2 example.com +tries=1');
-    expect(out).toContain('; <<>> DiG <<>> -p 9999 @10.0.0.2 example.com +tries=1');
+    expect(out).toMatch(/; <<>> DiG \S+ <<>> -p 9999 @10\.0\.0\.2 example\.com \+tries=1/);
   });
 
   it('témoin : un datagramme jeté par le pare-feu donne le silence, pas un refus', async () => {
     const lab = labo();
     await lab.back.executeCommand('iptables -A INPUT -p udp --dport 9999 -j DROP');
     const out = await lab.front.executeCommand('dig -p 9999 @10.0.0.2 example.com +tries=1 +time=1');
-    expect(out).toContain('connection timed out; no servers could be reached');
+    expect(out).toContain(';; communications error to 10.0.0.2#9999: timed out');
+    expect(out).toContain(';; no servers could be reached');
     expect(out).not.toContain('connection refused');
   }, 20_000);
 });

@@ -310,7 +310,10 @@ function parseDnsServerLiteral(literal: string): IPAddress | IPv6Address | null 
 
 function readUpstreamAnswer(reply: DnsMessage | null): UpstreamAnswer | null {
   if (!reply) return null;
-  return { answers: reply.answers, authorities: reply.authorities, rcode: reply.flags.rcode };
+  return {
+    answers: reply.answers, authorities: reply.authorities,
+    additionals: reply.additionals.filter((rr) => rr.data.type !== RRType.OPT), rcode: reply.flags.rcode,
+  };
 }
 
 const UPSTREAM_TIMEOUT_MS = 2000;
@@ -1669,12 +1672,14 @@ export abstract class LinuxMachine extends EndHost
       ...(outcome.dnssec === 'unset' ? {} : { security: outcome.dnssec }),
     });
     const synthetic = outcome.origin === 'hosts';
+    const positive = outcome.verdict === 'answer';
     const edns = findOpt(query);
     return {
       ...response,
       flags: synthetic ? { ...response.flags, aa: true, ad: true } : response.flags,
+      authorities: positive ? [...outcome.authorities] : response.authorities,
       additionals: [
-        ...response.additionals.filter((rr) => rr.data.type !== RRType.OPT),
+        ...(positive ? outcome.additionals : []),
         ...(edns === null ? [] : [makeOptRecord(STUB_UDP_PAYLOAD_SIZE, { dnssecOk: edns.data.dnssecOk })]),
       ],
     };

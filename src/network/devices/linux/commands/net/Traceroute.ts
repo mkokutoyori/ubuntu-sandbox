@@ -6,7 +6,7 @@ import type { TracerouteHop } from '../../LinuxNetKernel';
 import { isValidIPv4 } from '@/network/core/ip';
 import { unquote } from '@/lib/format';
 import { makeArgCompleter } from '../completionHelpers';
-import { reverseNameOf } from '../../network/ReverseName';
+import { ReverseNames } from '../../network/ReverseName';
 import type { NssProtocolEntry } from '../../nss/types';
 import {
   TRACEROUTE_VERSION_TEXT, tracerouteHeader, tracerouteHopLine,
@@ -394,7 +394,7 @@ export interface TracerouteHost {
   canReach(target: TraceTarget, socket: TraceSocketOptions): boolean;
   protocolNumber(name: string): number | null;
   servicePort(name: string): number | null;
-  reverseName(ip: string): string | null;
+  reverseNames(): ReverseNames;
   trace(
     target: TraceTarget, parsed: ParsedTracerouteArgs, method: TraceProbeMethod, socket: TraceSocketOptions,
     onHop: (hop: TracerouteHop) => void, shouldStop: () => boolean,
@@ -517,10 +517,21 @@ export async function runTraceroute(
   }
 
   emit(header);
-  const render = { numeric: parsed.numeric, nameOf: (ip: string) => host.reverseName(ip), family: targetIsIpv6 ? 6 as const : 4 as const };
+  const names = host.reverseNames();
+  const render = { numeric: parsed.numeric, nameOf: (ip: string) => names.nameOf(ip), family: targetIsIpv6 ? 6 as const : 4 as const };
+  let printing: Promise<void> = Promise.resolve();
+  const showHop = async (hop: TracerouteHop): Promise<void> => {
+    if (!parsed.numeric) {
+      const wanted = new Set<string>();
+      tracerouteHopLine(hop, { ...render, nameOf: (ip: string) => { wanted.add(ip); return null; } });
+      await names.learn(wanted);
+    }
+    emit(tracerouteHopLine(hop, render));
+  };
   await host.trace(
     target, parsed, probeMethod(parsed, protocol), socket,
-    (hop) => emit(tracerouteHopLine(hop, render)), shouldStop);
+    (hop) => { printing = printing.then(() => showHop(hop)); }, shouldStop);
+  await printing;
   return 0;
 }
 
@@ -543,7 +554,7 @@ export function tracerouteHostOf(
       return found.status === 'SUCCESS' && found.entry ? found.entry.number : null;
     },
     servicePort: (name) => ctx.executor.resolveServicePort(name),
-    reverseName: (ip) => reverseNameOf(ctx.executor.nss, ip),
+    reverseNames: () => new ReverseNames(ctx.executor.nss),
     trace: async (target, parsed, method, socket, onHop, shouldStop) => {
       const hooks = { onHop, shouldStop, compressedWaitMs: Math.max(0, parsed.waitMs - PROBE_WAIT_CAP_MS) };
       const timeoutMs = Math.min(parsed.waitMs, PROBE_WAIT_CAP_MS);

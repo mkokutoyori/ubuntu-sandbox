@@ -3,7 +3,7 @@ import { rrTypeName } from '@/network/dns/compat/DnsWireCompat';
 import type { ResourceRecord, ResourceRecordData, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
 import type { CachedNegative, CachedRecordSet, DnsCacheSnapshot, DnsTrust } from '@/network/dns/resolver/DnsCache';
 import { normalizeDnsName } from '@/network/dns/wire/DnsName';
-import { absolute, formatRdata } from '../commands/dns/RecordFormat';
+import { absolute, formatRdata, masterIndent } from '../commands/dns/RecordFormat';
 
 const TTL_COLUMN = 24;
 const TYPE_COLUMN = 32;
@@ -28,16 +28,6 @@ function dumpOrder(type: number): number {
   if (type === RRType.SOA) return 0;
   if (type === RRType.NS) return 1;
   return type + 2;
-}
-
-function indentTo(current: number, target: number): { text: string; column: number } {
-  const to = Math.max(target, current + 1);
-  const tabs = Math.floor(to / TAB_WIDTH) - Math.floor(current / TAB_WIDTH);
-  if (tabs > 0) {
-    const reached = Math.floor(to / TAB_WIDTH) * TAB_WIDTH;
-    return { text: '\t'.repeat(tabs) + ' '.repeat(to - reached), column: to };
-  }
-  return { text: ' '.repeat(to - current), column: to };
 }
 
 function describeInterval(seconds: number): string {
@@ -70,7 +60,7 @@ function recordLine(owner: string | null, ttl: number, className: string | null,
   let text = owner ?? '';
   let column = text.length;
   const put = (target: number, field: string) => {
-    const gap = indentTo(column, target);
+    const gap = masterIndent(column, target);
     text += gap.text + field;
     column = gap.column + field.length;
   };
@@ -173,6 +163,10 @@ const ADDRESS_DATABASE = [
 const BAD_CACHE = [';', '; Bad cache', ';'];
 const SERVFAIL_CACHE = [';', '; SERVFAIL cache', ';'];
 
+function servfailLines(snapshot: DnsCacheSnapshot | null): string[] {
+  return (snapshot?.servfails ?? []).map((entry) => `; ${normalizeDnsName(entry.name)}/${rrTypeName(entry.type)} [ttl ${Math.round(entry.remainingMs)}]`);
+}
+
 export interface DumpSections {
   readonly cache: boolean;
   readonly addressDatabase: boolean;
@@ -188,6 +182,6 @@ export function renderViewDump(name: string, snapshot: DnsCacheSnapshot | null, 
   }
   if (sections.addressDatabase) lines.push(...ADDRESS_DATABASE);
   if (sections.badCache) lines.push(...BAD_CACHE);
-  if (sections.servfailCache) lines.push(...SERVFAIL_CACHE);
+  if (sections.servfailCache) lines.push(...SERVFAIL_CACHE, ...servfailLines(snapshot));
   return lines;
 }

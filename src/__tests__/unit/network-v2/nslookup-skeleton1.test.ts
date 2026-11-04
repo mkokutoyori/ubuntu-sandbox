@@ -499,7 +499,7 @@ describe('nslookup/dig – Error Handling', () => {
   it('should error when server address is invalid', async () => {
     const client = new LinuxPC('linux-pc', 'Client');
     const output = await client.executeCommand('dig @999.999.999.999 example.com');
-    expect(output).toContain('connection timed out');
+    expect(output).toContain('no servers could be reached');
   });
 });
 

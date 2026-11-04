@@ -10,7 +10,7 @@ so the replay test compares what the cache holds after one question, after four,
 """
 import json, os, shutil, subprocess, sys, tempfile, time
 
-ADDRESSES = ["198.51.100.1", "198.51.100.2", "203.0.113.10", "203.0.113.11", "10.20.20.53"]
+ADDRESSES = ["198.51.100.1", "198.51.100.2", "203.0.113.10", "203.0.113.11", "203.0.113.99", "10.20.20.53"]
 KEY = 'key "rndc-key" { algorithm hmac-sha256; secret "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MDE="; };'
 SERIAL = 2026103101
 
@@ -30,6 +30,8 @@ banquehorizon.com. IN NS ns1.banquehorizon.com.
 banquehorizon.com. IN NS ns2.banquehorizon.com.
 ns1.banquehorizon.com. IN A 203.0.113.10
 ns2.banquehorizon.com. IN A 203.0.113.11
+broken.com. IN NS ns.broken.com.
+ns.broken.com. IN A 203.0.113.99
 """
 BANK_ZONE = f"""$TTL 3600
 $ORIGIN banquehorizon.com.
@@ -76,8 +78,17 @@ STEPS = [
     ("ptr", ["-x", "203.0.113.20"]),
     ("srv", ["_imaps._tcp.banquehorizon.com", "SRV"]),
     ("ebanking", ["ebanking.banquehorizon.com"]),
+    ("nosuchtld", ["nosuchtld"]),
+    ("broken", ["www.broken.com"]),
 ]
-CHECKPOINTS = {"www", "mx", "ebanking"}
+CHECKPOINTS = {"www", "mx", "ebanking", "broken"}
+CAPS_OPTIONS = "max-cache-ttl 600; max-ncache-ttl 120;"
+CAPS_STEPS = [
+    ("www", ["www.banquehorizon.com"]),
+    ("nxdomain", ["nexiste.banquehorizon.com"]),
+    ("mx", ["banquehorizon.com", "MX"]),
+]
+SERVFAIL_OPTIONS = "servfail-ttl 30;"
 
 
 def write(directory, name, text):
@@ -85,12 +96,12 @@ def write(directory, name, text):
         handle.write(text)
 
 
-def instance(root, name, address, control, recursion, zones, hints=False):
+def instance(root, name, address, control, recursion, zones, hints=False, extra=""):
     directory = os.path.join(root, name)
     os.makedirs(directory)
     config = [
         f'options {{ directory "{directory}"; listen-on {{ {address}; }}; listen-on-v6 {{ none; }}; pid-file "{directory}/named.pid"; session-keyfile "{directory}/session.key";',
-        f'  dump-file "named_dump.db"; recursion {"yes" if recursion else "no"}; allow-query {{ any; }}; allow-recursion {{ any; }}; allow-transfer {{ none; }}; dnssec-validation no; minimal-responses no; empty-zones-enable no; }};',
+        f'  dump-file "named_dump.db"; recursion {"yes" if recursion else "no"}; allow-query {{ any; }}; allow-recursion {{ any; }}; allow-transfer {{ none; }}; dnssec-validation no; minimal-responses no; empty-zones-enable no; {extra} }};',
         f'controls {{ inet 127.0.0.1 port {control} allow {{ 127.0.0.1; }} keys {{ "rndc-key"; }}; }};',
         KEY,
     ]
@@ -103,12 +114,9 @@ def instance(root, name, address, control, recursion, zones, hints=False):
     return directory, process
 
 
-def main():
-    out = sys.argv[1]
-    root = tempfile.mkdtemp()
+def record(base, resolver_options, steps, checkpoints):
+    root = tempfile.mkdtemp(dir=base)
     os.chmod(root, 0o777)
-    for address in ADDRESSES:
-        subprocess.run(["ip", "addr", "add", f"{address}/32", "dev", "lo"], check=True)
     processes = []
     try:
         for name, address, control, zones in [
@@ -118,7 +126,7 @@ def main():
             ("ns2", "203.0.113.11", 9535, [("banquehorizon.com", "db.bank", BANK_ZONE), ("113.0.203.in-addr.arpa", "db.rev", REVERSE_ZONE)]),
         ]:
             processes.append(instance(root, name, address, control, False, zones)[1])
-        resolver_directory, resolver = instance(root, "res", "10.20.20.53", 9531, True, [(".", "db.hints", HINTS)], hints=True)
+        resolver_directory, resolver = instance(root, "res", "10.20.20.53", 9531, True, [(".", "db.hints", HINTS)], hints=True, extra=resolver_options)
         processes.append(resolver)
         write(root, "rndc.conf", KEY + '\noptions { default-key "rndc-key"; default-server 127.0.0.1; default-port 9531; };\n')
         for _ in range(100):
@@ -128,27 +136,50 @@ def main():
         time.sleep(1)
         dumps = {}
         dump_file = os.path.join(resolver_directory, "named_dump.db")
-        for label, arguments in STEPS:
+        for label, arguments in steps:
             subprocess.run(["dig", "@10.20.20.53", *arguments], capture_output=True, check=True)
-            if label in CHECKPOINTS:
+            if label in checkpoints:
                 if os.path.exists(dump_file):
                     os.remove(dump_file)
                 subprocess.run(["rndc", "-c", os.path.join(root, "rndc.conf"), "dumpdb", "-cache"], check=True)
                 time.sleep(0.5)
                 with open(dump_file) as handle:
                     dumps[label] = handle.read()
-        version = subprocess.run(["named", "-v"], capture_output=True, text=True).stdout.strip()
-        with open(out, "w") as handle:
-            json.dump({"named": version, "steps": [{"label": label, "arguments": arguments} for label, arguments in STEPS], "dumps": dumps}, handle)
-        print(len(dumps), "dumps")
+        return dumps
     finally:
         for process in processes:
             process.terminate()
         for process in processes:
             process.wait()
+
+
+def main():
+    out = sys.argv[1]
+    base = tempfile.mkdtemp()
+    os.chmod(base, 0o777)
+    subprocess.run(["ip", "link", "set", "lo", "up"], check=False)
+    for address in ADDRESSES:
+        subprocess.run(["ip", "addr", "add", f"{address}/32", "dev", "lo"], check=True)
+    try:
+        dumps = record(base, SERVFAIL_OPTIONS, STEPS, CHECKPOINTS)
+        caps = record(base, CAPS_OPTIONS, CAPS_STEPS, {CAPS_STEPS[-1][0]})
+        version = subprocess.run(["named", "-v"], capture_output=True, text=True).stdout.strip()
+        with open(out, "w") as handle:
+            json.dump({
+                "named": version,
+                "steps": [{"label": label, "arguments": arguments} for label, arguments in STEPS],
+                "dumps": dumps,
+                "caps": {
+                    "options": CAPS_OPTIONS,
+                    "steps": [{"label": label, "arguments": arguments} for label, arguments in CAPS_STEPS],
+                    "dump": caps[CAPS_STEPS[-1][0]],
+                },
+            }, handle)
+        print(len(dumps), "dumps")
+    finally:
         for address in ADDRESSES:
             subprocess.run(["ip", "addr", "del", f"{address}/32", "dev", "lo"], capture_output=True)
-        shutil.rmtree(root, ignore_errors=True)
+        shutil.rmtree(base, ignore_errors=True)
 
 
 if __name__ == "__main__":

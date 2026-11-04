@@ -24,7 +24,7 @@ import { describe, it, expect } from 'vitest';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { readResolvedConfig } from '@/network/devices/linux/net/ResolvedConfig';
 import { ResolvedService, type ResolvedDeps, type UpstreamAnswer } from '@/network/devices/linux/net/ResolvedService';
-import { makeARecord, makeCnameRecord, makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
+import { makeARecord, makeCnameRecord, makeNsRecord, makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { discoverNetworkdFiles, getAll } from '@/network/devices/linux/net/NetworkdFiles';
 import { parseUnitFile } from '@/network/devices/linux/LinuxServiceManager';
 import { VirtualFileSystem } from '@/network/devices/linux/VirtualFileSystem';
@@ -280,6 +280,47 @@ describe('what the shared cache keeps, by the rules of resolved-dns-cache.c', ()
     const target = await service.resolve('web.example');
     expect([target.addresses, target.origin]).toEqual([['10.0.0.7'], 'cache']);
     expect(asked).toHaveLength(1);
+  });
+});
+
+const NS_SET = (ttl: number) => [makeNsRecord('example', ttl, 'ns1.example.')];
+const GLUE = (ttl: number) => [makeARecord('ns1.example', ttl, '192.0.2.53')];
+
+describe('what the stub hands over, as the real systemd-resolved 255 did (resolved-stub-oracle)', () => {
+  it('the first reply passes the authority and additional sections of the upstream on, TTLs untouched', async () => {
+    const { service } = fakeService({ upstream: () => ({ answers: [makeARecord('a.example', 3600, '10.0.0.1')], authorities: NS_SET(3579), additionals: GLUE(3579), rcode: 0 }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    const first = await service.resolve('a.example');
+    expect([first.records[0].ttl, first.authorities[0].ttl, first.additionals[0].ttl]).toEqual([3600, 3579, 3579]);
+  });
+
+  it('served from the cache, every record of the reply carries the smallest remaining TTL of the message it was kept with', async () => {
+    const { service, clock } = fakeService({ upstream: () => ({ answers: [makeARecord('a.example', 3600, '10.0.0.1')], authorities: NS_SET(3579), additionals: GLUE(3579), rcode: 0 }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    await service.resolve('a.example');
+    clock.now += 6_000;
+    const again = await service.resolve('a.example');
+    expect(again.origin).toBe('cache');
+    expect([again.records[0].ttl, again.authorities[0].ttl, again.additionals[0].ttl]).toEqual([3573, 3573, 3573]);
+  });
+
+  it('an alias whose target holds nothing is served with one TTL for the CNAME and the SOA', async () => {
+    const { service, clock } = fakeService({ upstream: () => ({ answers: [makeCnameRecord('www.example', 3600, 'web.example.')], authorities: [soaOf(3595, 3600)], rcode: 0 }) });
+    configure(service, 'DNS=192.0.2.1\n');
+    await service.resolve('www.example', 'AAAA');
+    clock.now += 6_000;
+    const again = await service.resolve('www.example', 'AAAA');
+    expect([again.verdict, again.origin, again.records[0].ttl, again.authorities[0].ttl]).toEqual(['nodata', 'cache', 3589, 3589]);
+  });
+
+  it('the server that answered after the first one stayed silent becomes the current server, and the next name goes straight to it', async () => {
+    const { service, asked } = fakeService({ upstream: (server) => (server === '192.0.2.1' ? null : answerWith('10.0.0.2')) });
+    configure(service, 'DNS=192.0.2.1 192.0.2.2\n');
+    expect(service.currentServerOf(null)).toBe('192.0.2.1');
+    await service.resolve('a.example');
+    expect(service.currentServerOf(null)).toBe('192.0.2.2');
+    await service.resolve('b.example');
+    expect(asked).toEqual(['192.0.2.1:a.example', '192.0.2.2:a.example', '192.0.2.2:b.example']);
   });
 });
 

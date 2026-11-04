@@ -84,7 +84,7 @@ function randomLabel(len: number): string {
   return s;
 }
 
-const QUERY_LINE = '(A|AAAA|TXT|MX|CNAME)\\? [A-Za-z0-9.-]+ \\(\\d+\\)';
+const QUERY_LINE = '(A|AAAA|TXT|MX|CNAME)\\? [A-Za-z0-9.-]+( ar: \\. OPT UDPsize=\\d+)? \\(\\d+\\)';
 
 async function captureToFile(pc: LinuxPC, file: string, stimulus: () => Promise<unknown>): Promise<void> {
   const pending = pc.executeCommand(`sudo tcpdump -c 100 -nn -vvv 'port 53' -w ${file}`);

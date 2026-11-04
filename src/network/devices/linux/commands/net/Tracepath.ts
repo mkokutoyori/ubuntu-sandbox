@@ -6,7 +6,7 @@ import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { UdpErrorReport } from '../../../EndHost';
 import { makeArgCompleter } from '../completionHelpers';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
-import { reverseNameOf } from '../../network/ReverseName';
+import { ReverseNames } from '../../network/ReverseName';
 import { INT_MAX, IPUTILS_VERSION_LINE, strtolOrErr } from './IputilsCommon';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
@@ -165,8 +165,10 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
   }
   const sourcePort = ctx.executor.getSocketTable()?.allocateEphemeralPort() ?? 32768;
 
+  const names = new ReverseNames(ctx.executor.nss);
+  const namesWanted = !(parsed.numeric && !parsed.showBoth);
   const hostColumn = (address: string): string => {
-    const name = parsed.numeric && !parsed.showBoth ? '' : reverseNameOf(ctx.executor.nss, address) ?? address;
+    const name = namesWanted ? names.nameOf(address) ?? address : '';
     const shown = parsed.numeric
       ? `${address}${parsed.showBoth ? ` (${name})` : ''}`
       : `${name}${parsed.showBoth ? ` (${address})` : ''}`;
@@ -230,6 +232,7 @@ async function runTracepath(ctx: LinuxCommandContext, args: string[]): Promise<T
       const report = target6 ? await ctx.net.udpErrorProbe6(target6, probe) : await ctx.net.udpErrorProbe(target as IPAddress, probe);
       if (report.origin !== 'local') {
         state.hisptr = (state.hisptr + 1) & (HIS_ARRAY_SIZE - 1);
+        if (namesWanted && report.origin !== 'none') await names.learn([report.from]);
         return recverr(report, state.ttl);
       }
       const res = recverr(report, state.ttl);

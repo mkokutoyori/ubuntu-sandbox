@@ -101,7 +101,7 @@ function renderStatus(ctx: LinuxCommandContext, cible: string | undefined, legen
     lines.push(...protocolLines(svc, null));
     lines.push(`resolv.conf mode: ${resolvConfMode(ctx)}`);
     if (global.dnsServers.length) {
-      lines.push(`  Current DNS Server: ${global.dnsServers[0]}`);
+      lines.push(`  Current DNS Server: ${svc.currentServerOf(null) ?? global.dnsServers[0]}`);
       lines.push(`         DNS Servers: ${global.dnsServers.join(' ')}`);
     }
     if (global.fallbackDns.length) lines.push(`Fallback DNS Servers: ${global.fallbackDns.join(' ')}`);
@@ -121,7 +121,7 @@ function renderStatus(ctx: LinuxCommandContext, cible: string | undefined, legen
     lines.push(`Link ${ctx.net.getIfIndex(iface)} (${iface})`);
     lines.push(...protocolLines(svc, iface));
     if (cfg.dnsServers.length) {
-      lines.push(`  Current DNS Server: ${cfg.dnsServers[0]}`);
+      lines.push(`  Current DNS Server: ${svc.currentServerOf(iface) ?? cfg.dnsServers[0]}`);
       lines.push(`         DNS Servers: ${cfg.dnsServers.join(' ')}`);
     }
     if (cfg.domains.length) lines.push(`          DNS Domain: ${cfg.domains.join(' ')}`);

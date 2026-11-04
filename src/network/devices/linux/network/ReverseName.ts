@@ -62,6 +62,22 @@ export async function forwardAddressOfAsync(
   return (await forwardHostOfAsync(nss, name))?.address ?? null;
 }
 
+export class ReverseNames {
+  private readonly known = new Map<string, string | null>();
+
+  constructor(private readonly nss: NameServiceSwitch) {}
+
+  async learn(addresses: Iterable<string>): Promise<void> {
+    for (const address of addresses) {
+      if (!this.known.has(address)) this.known.set(address, await reverseNameOfAsync(this.nss, address));
+    }
+  }
+
+  nameOf(address: string): string | null {
+    return this.known.get(address) ?? null;
+  }
+}
+
 export async function reverseNameOfAsync(
   nss: NameServiceSwitch, ip: string,
 ): Promise<string | null> {

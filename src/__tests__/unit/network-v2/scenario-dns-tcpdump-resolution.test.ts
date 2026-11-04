@@ -132,7 +132,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
   describe('bascule UDP vers TCP', () => {
     it('un jeu de réponses > 512 octets positionne TC=1 en UDP puis bascule immédiatement vers un handshake TCP/53 avec la même requête retransmise', async () => {
       const { pc } = await buildDnsLab();
-      const dump = await captureDns(pc, `port 53`, () => pc.executeCommand(`dig @${NS1_IP} many.example.com A`));
+      const dump = await captureDns(pc, `port 53`, () => pc.executeCommand(`dig @${NS1_IP} +noedns many.example.com A`));
 
       const lines = dump.split('\n');
       const truncatedUdpIdx = lines.findIndex((l) => /\d+\*-\| /.test(l));
@@ -143,14 +143,14 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
       expect(after).toMatch(/Flags \[S\.\]/);
       expect(after).toMatch(/A\? many\.example\.com/);
 
-      const tcpResponseLine = lines.find((l) => l.includes(`60/0/0`));
+      const tcpResponseLine = lines.find((l) => l.includes(`60/1/1`));
       expect(tcpResponseLine).toBeDefined();
       expect(tcpResponseLine).not.toContain('truncated');
     });
 
     it('une requête ANY sur le même nom déclenche aussi la troncation et la bascule TCP', async () => {
       const { pc } = await buildDnsLab();
-      const dump = await captureDns(pc, `port 53`, () => pc.executeCommand(`dig @${NS1_IP} many.example.com ANY`));
+      const dump = await captureDns(pc, `port 53`, () => pc.executeCommand(`dig @${NS1_IP} +noedns many.example.com ANY`));
 
       expect(dump).toMatch(/ANY\? many\.example\.com/);
       expect(dump).toMatch(/\d+\*-\| /);
@@ -161,7 +161,7 @@ describe('Scénario 2 — Capture et décodage du trafic DNS', () => {
   describe('détection d\'anomalie', () => {
     it('détecte un TTL anormalement bas (< 60s) et une incohérence de TTL au sein du même enregistrement round-robin', async () => {
       const { pc } = await buildDnsLab();
-      const dump = await captureDns(pc, `tcp port 53`, () => pc.executeCommand(`dig @${NS1_IP} many.example.com A`));
+      const dump = await captureDns(pc, `tcp port 53`, () => pc.executeCommand(`dig @${NS1_IP} +noedns many.example.com A`));
 
       const seconds = (text: string): number => Array.from(text.matchAll(/(\d+)([hms])/g)).reduce((sum, m) => sum + Number(m[1]) * { h: 3600, m: 60, s: 1 }[m[2] as 'h' | 'm' | 's'], 0);
       const ttls = Array.from(dump.matchAll(/\[(\w+)\] A 198\.51\.100\.\d+/g)).map((m) => seconds(m[1]));

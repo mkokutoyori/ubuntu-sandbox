@@ -6,7 +6,7 @@
  * PC-GUICHET1 asked DC1 again, DC1 asked DNS-RES again, DNS-RES walked root, com and banquehorizon.com again, each time. Also measured: a name that does not exist was asked again and again, to
  * the preferred server and then to the alternate one; `Resolve-DnsName -Type MX` never read the client cache; every new name went back to ROOT-NS and TLD-NS although the delegation of
  * banquehorizon.com was known; `Resolve-DnsName www.banquehorizon.com` printed one A row with TTL 300 while Get-DnsClientCache held the CNAME and the A with TTL 3600; `rndc dumpdb` wrote the
- * zones and never the cache. The 2 that pass either way are the WITNESS (the tap counts the queries of a cold resolution) and the plain A name (web), which the client cache already answered.
+ * zones and never the cache. Since the resolver primes the root like the real named (`. NS` before its first question, recorded in bind-cache-dump-oracle), a cold resolution reaches ROOT-NS twice. The 2 that pass either way are the WITNESS (the tap counts the queries of a cold resolution) and the plain A name (web), which the client cache already answered.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { bench, resetWorld } from './_dnsLabBench';
@@ -22,7 +22,7 @@ describe('Lab DNS - agence bancaire : the caches answer', () => {
     expect(cold.output).toContain('203.0.113.20');
     expect(cold.sent['PC-GUICHET1']).toBeGreaterThanOrEqual(1);
     expect(cold.sent['DC1']).toBe(1);
-    expect(cold.received['ROOT-NS']).toBe(1);
+    expect(cold.received['ROOT-NS']).toBe(2);
     expect(cold.received['TLD-NS']).toBe(1);
     expect(cold.received['NS1-BANK']).toBe(1);
   });

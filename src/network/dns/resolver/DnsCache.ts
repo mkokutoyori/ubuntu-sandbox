@@ -36,6 +36,7 @@ export interface DnsReply {
   readonly rcode: number;
   readonly answers: readonly ResourceRecord<ResourceRecordData>[];
   readonly authorities: readonly ResourceRecord<ResourceRecordData>[];
+  readonly additionals?: readonly ResourceRecord<ResourceRecordData>[];
 }
 
 export interface DnsReplyDetails {
@@ -73,9 +74,16 @@ export interface CachedNegative {
   readonly storedAtMs: number;
 }
 
+export interface CachedServfail {
+  readonly name: string;
+  readonly type: number;
+  readonly remainingMs: number;
+}
+
 export interface DnsCacheSnapshot {
   readonly recordSets: readonly CachedRecordSet[];
   readonly negatives: readonly CachedNegative[];
+  readonly servfails: readonly CachedServfail[];
   readonly delegations: readonly (DelegationView & { readonly storedAtMs: number })[];
 }
 
@@ -150,6 +158,8 @@ function aliasTarget(qname: string, answers: readonly ResourceRecord<ResourceRec
   return name;
 }
 
+const TRUST_RANK: Readonly<Record<DnsTrust, number>> = { additional: 0, glue: 1, answer: 2, authauthority: 3, authanswer: 4 };
+
 const STALE_ANSWER_TTL_SECONDS = 30;
 const MILLIS_PER_SECOND = 1000;
 
@@ -163,6 +173,7 @@ export interface DnsCacheLimits {
   readonly storeEmptyAuthoritative: boolean;
   readonly maxBytes: number | null;
   readonly admitsUnrelatedRecords: boolean;
+  readonly ranksByTrust?: boolean;
 }
 
 export const DEFAULT_CACHE_LIMITS: DnsCacheLimits = {
@@ -191,7 +202,7 @@ export class DnsCache {
     origin?: DnsOrigin,
   ): void {
     const storedAtMs = this.now();
-    const { maxTtlSeconds, lockingPercent } = this.limits();
+    const { maxTtlSeconds, lockingPercent, ranksByTrust } = this.limits();
     if (maxTtlSeconds === 0) return;
     const grouped = new Map<string, ResourceRecord<ResourceRecordData>[]>();
     for (const rr of records) {
@@ -203,6 +214,7 @@ export class DnsCache {
     }
     for (const [key, set] of grouped) {
       if (this.isLocked(key, storedAtMs, lockingPercent)) continue;
+      if (ranksByTrust && (this.outranked(key, trust, storedAtMs) || this.outrankedByGlue(set, trust))) continue;
       this.positive.set(key, { records: set, storedAtMs, entry: qname ?? set[0].name, security, trust, origin });
       this.negative.delete(key);
       this.negative.delete(nameErrorKeyOf(set[0].name));
@@ -236,6 +248,16 @@ export class DnsCache {
 
   enforceLimits(): void {
     this.evictToFit();
+  }
+
+  private outranked(key: string, trust: DnsTrust, nowMs: number): boolean {
+    const held = this.positive.get(key);
+    if (held === undefined || TRUST_RANK[held.trust] <= TRUST_RANK[trust]) return false;
+    return nowMs < this.expiryOf(held);
+  }
+
+  private outrankedByGlue(set: readonly ResourceRecord<ResourceRecordData>[], trust: DnsTrust): boolean {
+    return TRUST_RANK[trust] < TRUST_RANK.glue && set[0].data.type === RRType.A && this.glueAddresses(set[0].name).length > 0;
   }
 
   private isLocked(key: string, nowMs: number, lockingPercent: number): boolean {
@@ -318,7 +340,17 @@ export class DnsCache {
       const live = this.liveDelegation(zone);
       return live === null ? [] : [{ ...live, storedAtMs: this.delegationEntries.get(zone)!.storedAtMs }];
     });
-    return { recordSets, negatives, delegations };
+    const servfails: CachedServfail[] = [];
+    for (const [key, held] of [...this.servfail]) {
+      const remainingMs = held.expiresAtMs - nowMs;
+      if (remainingMs <= 0) {
+        this.servfail.delete(key);
+        continue;
+      }
+      const at = key.lastIndexOf('|');
+      servfails.push({ name: key.slice(0, at), type: Number(key.slice(at + 1)), remainingMs });
+    }
+    return { recordSets, negatives, servfails, delegations };
   }
 
   size(): number {

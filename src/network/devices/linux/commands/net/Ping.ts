@@ -14,7 +14,7 @@ import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import type { EchoRoute, LocalSocketError, PingResult, TraceSocketOptions } from '../../../EndHost';
 import { strerror } from '@/network/core/Errno';
-import { reverseNameOf } from '../../network/ReverseName';
+import { ReverseNames } from '../../network/ReverseName';
 import { getoptDiagnostic, shortOptions } from '../Getopt';
 import { INT_MAX, IPUTILS_VERSION_LINE, LONG_MAX, parseFlowOrErr, parseTosOrErr, strtolOrErr } from './IputilsCommon';
 import { SIGNAL_NUMBERS, type Signal } from '../../LinuxProcessManager';
@@ -291,7 +291,7 @@ export interface PingHost {
   canReach6(target: IPv6Address): boolean;
   resolveHostname(name: string): Promise<IPAddress | null>;
   resolveHostname6(name: string): Promise<IPv6Address | null>;
-  reverseName(ip: string): string | null;
+  reverseNames(): ReverseNames;
   allocateIdent(): number;
   echo(target: IPAddress, seq: number, probe: EchoProbe): Promise<PingResult>;
   echo6(target: IPv6Address, seq: number, probe: Echo6Probe): Promise<PingResult>;
@@ -327,6 +327,7 @@ interface PingPlan {
   label: string;
   header: string;
   renderAddress: PingAddressRenderer;
+  learn: (addresses: Iterable<string>) => Promise<void>;
   echo: (seq: number) => Promise<PingResult>;
   localErrorText: (error: LocalSocketError) => string;
 }
@@ -392,6 +393,7 @@ export function createPing(
   let dots = '';
   let ewmaUs8: number | undefined;
   const previousRoute = { value: '' };
+  let printing: Promise<void> = Promise.resolve();
 
   const summary = (interrupted = false): number => {
     if (finished || plan === null || parsed === null) return finished ? 0 : 2;
@@ -514,9 +516,10 @@ export function createPing(
     const mtuDisc = args.mtuDisc ?? (broadcast ? 'do' : 'want');
     const packetSize = args.size + IP_AND_ICMP_HEADERS + optionBytes;
     const ident = host.allocateIdent();
+    const names = host.reverseNames();
     const renderAddress: PingAddressRenderer = numeric
       ? (ip) => ip
-      : (ip) => `${host.reverseName(ip) ?? ip} (${ip})`;
+      : (ip) => `${names.nameOf(ip) ?? ip} (${ip})`;
     const bound = args.device !== undefined || args.source !== undefined
       ? { source: (args.source ?? route?.source)!.toString(), device: args.device }
       : undefined;
@@ -524,6 +527,7 @@ export function createPing(
       label: target,
       header: formatPingHeader(address, args.size, target === address.toString() ? undefined : target, bound, optionBytes),
       renderAddress,
+      learn: (addresses) => (numeric ? Promise.resolve() : names.learn(addresses)),
       echo: async (seq) => {
         const path = host.route(address, socket);
         const mtu = path?.mtu ?? Number.MAX_SAFE_INTEGER;
@@ -553,6 +557,7 @@ export function createPing(
       label: target,
       header: formatPing6Header(resolved, args.size, target === resolved.toString() ? undefined : target, args.flowLabel),
       renderAddress: (ip) => ip,
+      learn: () => Promise.resolve(),
       echo: (seq) => host.echo6(resolved, seq, {
         ident, timeoutMs: args.timeoutMs, neverFragment: args.mtuDisc === 'do', hopLimit: args.ttl, trafficClass: args.tos,
         flowLabel: args.flowLabel, dataSize: args.size,
@@ -561,24 +566,34 @@ export function createPing(
     };
   };
 
-  const report = (r: PingResult, args: ParsedPingArgs, current: PingPlan): void => {
+  const account = (r: PingResult, args: ParsedPingArgs): void => {
     if (r.success) {
       const us = Math.round(r.rttMs * 1000);
       ewmaUs8 = ewmaUs8 === undefined ? us * 8 : ewmaUs8 + us - Math.trunc(ewmaUs8 / 8);
     }
-    if (args.flood) {
-      if (!r.success) dots += r.localError !== undefined || (r.error !== undefined && formatPingReplyLine(r, args.size) !== null) ? 'E' : '.';
-      return;
-    }
-    if (args.quiet) return;
+    if (args.flood && !r.success) dots += r.localError !== undefined || (r.error !== undefined && formatPingReplyLine(r, args.size) !== null) ? 'E' : '.';
+  };
+
+  const shownAddresses = (r: PingResult, args: ParsedPingArgs): Set<string> => {
+    const wanted = new Set<string>();
+    const collect: PingAddressRenderer = (ip) => { wanted.add(ip); return ip; };
+    for (const notice of r.redirects ?? []) formatPingRedirectLine(r.seq, notice, collect);
+    formatPingReplyLine(r, args.size, collect);
+    renderReplyOptions(r.replyOptions, collect, { value: '' });
+    return wanted;
+  };
+
+  const print = async (r: PingResult, args: ParsedPingArgs, current: PingPlan, stamp: string): Promise<void> => {
+    if (args.flood || args.quiet) return;
+    await current.learn(shownAddresses(r, args));
     for (const notice of r.redirects ?? []) {
-      emit(`${timestampPrefix(args.timestamp, host.wallClockMs())}${formatPingRedirectLine(r.seq, notice, current.renderAddress)}`);
+      emit(`${stamp}${formatPingRedirectLine(r.seq, notice, current.renderAddress)}`);
     }
     if (r.localError !== undefined) { emit(`${cmd}: ${current.localErrorText(r.localError)}`); return; }
     const line = formatPingReplyLine(r, args.size, current.renderAddress);
     if (line === null) return;
     const shown = renderReplyOptions(r.replyOptions, current.renderAddress, previousRoute);
-    emit(`${timestampPrefix(args.timestamp, host.wallClockMs())}${line}${shown.suffix}`);
+    emit(`${stamp}${line}${shown.suffix}`);
     for (const optionLine of shown.lines) emit(optionLine);
     if (r.sendError !== undefined) emit(`${cmd}: sendmsg: ${strerror(r.sendError)}`);
   };
@@ -596,7 +611,9 @@ export function createPing(
     const settle = (r: PingResult): void => {
       if (finished) return;
       results.push(r);
-      report(r, args, current);
+      account(r, args);
+      const stamp = timestampPrefix(args.timestamp, host.wallClockMs());
+      printing = printing.then(() => (finished ? undefined : print(r, args, current, stamp)));
       const received = results.filter((x) => x.success).length;
       const errors = pingErrorCount(results);
       if (args.count > 0 && received + errors >= args.count) sending = false;
@@ -624,6 +641,7 @@ export function createPing(
     }
     if (failure !== null) throw failure;
     if (!finished && !deadlineHit() && !shouldStop()) await Promise.all(inflight);
+    await printing;
     if (failure !== null) throw failure;
     if (finished) return results.some((r) => r.success) ? 0 : 1;
     return summary();
@@ -658,7 +676,7 @@ export function pingHostOf(
     canReach6: (target) => ctx.net.canReach6(target),
     resolveHostname: (name) => ctx.net.resolveHostname(name),
     resolveHostname6: (name) => ctx.net.resolveHostname6(name),
-    reverseName: (ip) => reverseNameOf(ctx.executor.nss, ip),
+    reverseNames: () => new ReverseNames(ctx.executor.nss),
     allocateIdent: () => ctx.net.allocateEchoIdent(),
     echo: async (target, seq, probe) => {
       const [result] = await ctx.net.pingSequence(target, 1, probe.timeoutMs, probe.ttl, {
