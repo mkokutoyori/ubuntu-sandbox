@@ -4445,3 +4445,8 @@ pr is compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot7-pr). Still
 ## coreutils batch 8: checksums — what is still approximate
 
 md5sum, sha1sum, sha224sum, sha256sum, sha384sum, sha512sum, b2sum, sum and cksum share one engine (see probe-linux-coreutils-lot8-checksums). Still approximate: `md5sum --check` of a line escaped with a leading backslash only un-escapes `\\` and `\n`; the BSD `-b`/`-t` marker of a line read back from a file is accepted but not used to pick the read mode (the simulator has no text/binary distinction); `sum` of a file larger than the simulated read buffer is computed on the whole content at once.
+
+## coreutils batch 9: new commands — what is still approximate
+
+link, unlink, pathchk, hostid, factor, tsort, base32 and basenc are compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot9-nouvelles-commandes). Still approximate: `factor` uses Pollard's rho, so a 128-bit semiprime with two large factors (2^128+1) takes far longer than the real tool; `hostid` derives its value from the host's /etc/hosts entry rather than from /etc/hostid; `basenc --z85` encodes only whole 4-byte groups, as the real tool does, but its decoder does not report the offending character; the default-mode `pathchk` does not consult the file system limits of a mounted file system, it assumes 255/4096.
+Still missing from the simulator although coreutils ships them: numfmt, csplit, shuf, shred, stdbuf, ptx, dircolors, vdir, pinky, chcon, runcon, and strings (binutils).

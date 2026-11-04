@@ -78,6 +78,10 @@ import { runCat } from './coreutils/CatCommand';
 import { runOd } from './coreutils/OdCommand';
 import { runRev } from './coreutils/RevCommand';
 import { runChecksum } from './coreutils/CksumCommand';
+import { runLink, runUnlink } from './coreutils/LinkCommands';
+import { runFactor } from './coreutils/FactorCommand';
+import { runTsort } from './coreutils/TsortCommand';
+import { runHostid, runPathchk } from './coreutils/PathchkCommand';
 import { runTee } from './coreutils/TeeCommand';
 import type { SplitHost } from './coreutils/SplitCommand';
 import { runMkfifo } from './coreutils/MkfifoCommand';
@@ -350,8 +354,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
-  'tac', 'nl', 'paste', 'comm', 'join', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
-  'column', 'split', 'base64', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
+  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'column', 'split', 'base64', 'base32', 'basenc', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
   'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
@@ -421,7 +425,7 @@ const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'rm', 'cp', 'mv',
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
   'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac', 'od',
-  'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum',
+  'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'factor', 'tsort',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
@@ -494,7 +498,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'diff', 'pr', 'join', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -3392,6 +3396,16 @@ export class LinuxCommandExecutor {
 
   private hasControllingTty(): boolean {
     return this._cmdEnv?.['SSH_NO_TTY'] !== '1' && this.env.get('SSH_NO_TTY') !== '1';
+  }
+
+  private hostidAddress(): string {
+    const hosts = this.vfs.readFile('/etc/hosts') ?? '';
+    const name = (this.localDevice as { getHostname?: () => string } | null)?.getHostname?.() ?? 'localhost';
+    for (const line of hosts.split('\n')) {
+      const fields = line.replace(/#.*/, '').trim().split(/\s+/);
+      if (fields.length > 1 && /^\d+\.\d+\.\d+\.\d+$/.test(fields[0]) && fields.slice(1).includes(name)) return fields[0];
+    }
+    return '127.0.0.1';
   }
 
   private runClosed(argv: readonly string[], isSudo: boolean): { stdout: string; stderr: string; exitCode: number } {
@@ -6488,6 +6502,12 @@ export class LinuxCommandExecutor {
       case '[': return this.handleTest(cmd, args);
       case 'expr': return this.handleExpr(args);
       case 'mkfifo': return asDispatch(runMkfifo(c, args));
+      case 'factor': return asDispatch(runFactor(args, coreutilsIO(c, stdin)));
+      case 'tsort': return asDispatch(runTsort(args, coreutilsIO(c, stdin)));
+      case 'link': return asDispatch(runLink(c, args));
+      case 'unlink': return asDispatch(runUnlink(c, args));
+      case 'pathchk': return asDispatch(runPathchk(c, args));
+      case 'hostid': return asDispatch(runHostid(args, this.hostidAddress()));
       case 'mknod': return asDispatch(runMknod(c, args));
 
       // User commands
