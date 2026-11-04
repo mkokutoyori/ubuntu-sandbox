@@ -4466,8 +4466,12 @@ csplit is a port of csplit.c 9.4 for inputs held in one buffer (the whole simula
 ## numfmt
 
 numfmt follows numfmt.c 9.4 but computes in IEEE doubles where the real tool uses long double: integers up to 33 digits pass through as text when no scaling applies, but scaled results of values above 2^53 can differ in the last digit. The simulated `printf` does not read `\000` followed by digits as a NUL plus text (`printf '1\0002'`), which blocks a `-z` probe; `--grouping` has no effect, as in a UTF-8 C locale where the thousands separator is empty.
-Still missing: ptx, dircolors, pinky, chcon, runcon.
+Still missing: ptx, pinky, chcon, runcon.
 
 ## shred
 
 shred overwrites through the VFS write port: no real device, so the overwrite is not synchronous and a file of another user is not checked for write permission beyond what the write port does; `--random-source` only checks that the file exists.
+
+## dircolors
+
+dircolors ports dircolors.c 9.4 with the real compiled database. Not wired: `ls --color` does not read the LS_COLORS that dircolors prints (ls colours use their own table), so editing the database has no effect on listings.

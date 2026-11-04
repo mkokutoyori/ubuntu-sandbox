@@ -82,6 +82,7 @@ import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
 import { runStrings } from './coreutils/StringsCommand';
+import { runDircolors } from './coreutils/DircolorsCommand';
 import { runShred } from './coreutils/ShredCommand';
 import { runNumfmt } from './coreutils/NumfmtCommand';
 import { runCsplit } from './coreutils/CsplitCommand';
@@ -360,7 +361,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
-  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'stdbuf', 'shuf', 'csplit', 'numfmt', 'shred', 'shred', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'stdbuf', 'shuf', 'csplit', 'numfmt', 'shred', 'dircolors', 'shred', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
   'column', 'split', 'base64', 'base32', 'basenc', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
@@ -6524,6 +6525,10 @@ export class LinuxCommandExecutor {
       case 'factor': return asDispatch(runFactor(args, coreutilsIO(c, stdin)));
       case 'tsort': return asDispatch(runTsort(args, coreutilsIO(c, stdin)));
       case 'strings': return asDispatch(runStrings(args, coreutilsIO(c, stdin)));
+      case 'dircolors': {
+        const environment = this.environmentOfCommand();
+        return asDispatch(runDircolors(args, coreutilsIO(c, stdin), { shell: environment.SHELL ?? '', term: environment.TERM ?? '', colorterm: environment.COLORTERM ?? '' }));
+      }
       case 'shred': return asDispatch(runShred(args, coreutilsIO(c, stdin)));
       case 'numfmt': return asDispatch(runNumfmt(args, coreutilsIO(c, stdin)));
       case 'csplit': return asDispatch(runCsplit(args, coreutilsIO(c, stdin)));
