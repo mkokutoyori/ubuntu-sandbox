@@ -4462,3 +4462,8 @@ shuf follows shuf.c 9.4 (fetched from the v9.4 tag) for its options and diagnost
 ## csplit
 
 csplit is a port of csplit.c 9.4 for inputs held in one buffer (the whole simulated file); the multi-buffer paths (inputs above the real read size, where `find_line` can no longer reach consumed buffers) are not modelled. The printf suffix of `-b` goes through the bash printf formatter, so the `'` flag is validated but not rendered.
+
+## numfmt
+
+numfmt follows numfmt.c 9.4 but computes in IEEE doubles where the real tool uses long double: integers up to 33 digits pass through as text when no scaling applies, but scaled results of values above 2^53 can differ in the last digit. The simulated `printf` does not read `\000` followed by digits as a NUL plus text (`printf '1\0002'`), which blocks a `-z` probe; `--grouping` has no effect, as in a UTF-8 C locale where the thousands separator is empty.
+Still missing: shred, ptx, dircolors, vdir, pinky, chcon, runcon.
