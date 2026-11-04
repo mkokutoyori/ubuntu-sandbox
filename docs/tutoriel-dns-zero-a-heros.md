@@ -135,10 +135,10 @@ VII.5 [🧪 TP 25 — Vider le cache, en entier ou en partie](#vii5--tp-25--vide
 VII.6 [🧪 TP 26 — Le cache des échecs (SERVFAIL)](#vii6--tp-26--le-cache-des-échecs-servfail)
 
 ### Partie VIII — Redondance, DNS privé et DHCP
-35. [🧪 TP 27 — NS1-BANK tombe](#35--tp-27--ns1-bank-tombe)
-36. [🧪 TP 28 — DNS interne et redirecteur](#36--tp-28--dns-interne-et-redirecteur)
-37. [🧪 TP 29 — DHCP et enregistrement dynamique](#37--tp-29--dhcp-et-enregistrement-dynamique)
-38. [🧪 TP 30 — La NRPT du poste Windows](#38--tp-30--la-nrpt-du-poste-windows)
+VIII.1 [🧪 TP 27 — NS1-BANK tombe](#viii1--tp-27--ns1-bank-tombe)
+VIII.2 [🧪 TP 28 — DNS interne et redirecteur](#viii2--tp-28--dns-interne-et-redirecteur)
+VIII.3 [🧪 TP 29 — DHCP et enregistrement dynamique](#viii3--tp-29--dhcp-et-enregistrement-dynamique)
+VIII.4 [🧪 TP 30 — La NRPT du poste Windows](#viii4--tp-30--la-nrpt-du-poste-windows)
 
 ### Partie IX — Observer
 39. [🧪 TP 31 — Journaliser les requêtes](#39--tp-31--journaliser-les-requêtes)
@@ -5483,25 +5483,39 @@ Cette fois `NXDOMAIN`, et non plus `SERVFAIL` : `named` a redémarré avec un ca
 
 # Partie VIII — Redondance, DNS privé et DHCP
 
-Un service de noms qui s'arrête arrête **tout** : les sites, la messagerie, l'authentification. Cette partie montre comment le laboratoire reste debout quand un serveur tombe, comment il garde ses noms *internes* hors de la vue publique, et comment les postes obtiennent leur configuration DNS.
+Un service de noms qui s'arrête arrête **tout** : les sites, la messagerie, l'authentification. Cette partie répond à trois questions :
+
+1. Comment le laboratoire reste-t-il debout quand un serveur tombe ? (TP 27)
+2. Comment garde-t-il ses noms *internes* hors de la vue publique, tout en les rendant disponibles aux postes ? (TP 28)
+3. Comment les postes obtiennent-ils leur configuration DNS, et comment leur nom entre-t-il dans la zone ? (TP 29 et 30)
 
 ---
 
-## 35. 🧪 TP 27 — NS1-BANK tombe
+## VIII.1 🧪 TP 27 — NS1-BANK tombe
 
 **🎯 Objectif.** Arrêter un des deux serveurs d'autorité de la banque et constater que les utilisateurs **ne s'en aperçoivent pas** ; puis lire ce que voit un administrateur qui interroge, lui, le serveur arrêté.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal sur `DNS-RES`, un sur `NS1-BANK`, un sur `PC-GUICHET1` et un sur `PC-CONSEILLER`. Durée : environ 25 minutes. Le serveur est remis en marche à la fin.
+
+**Rappel.** La délégation de `banquehorizon.com` (TP 8) désigne **deux** serveurs : `ns1` et `ns2`. L'idée est que si l'un tombe, l'autre répond.
+
+**Étape 1 — Vider le cache du résolveur.** Si `DNS-RES` avait déjà la réponse en mémoire, il répondrait sans interroger personne et l'expérience ne prouverait rien. On le vide donc exprès.
 
 ```
 # sur DNS-RES
 sudo rndc flush
 ```
 
+**Étape 2 — Arrêter `NS1-BANK`.**
+
 ```
 # sur NS1-BANK
 sudo systemctl stop named
 ```
+
+`systemctl` est la commande qui pilote les **services** sous Linux (les programmes qui tournent en permanence). `stop named` arrête le service `named`, c'est-à-dire BIND. La commande n'affiche rien. À partir de maintenant, `NS1-BANK` ne répond plus à aucune question DNS.
+
+**Étape 3 — Résoudre un nom depuis un poste.**
 
 ```powershell
 # sur PC-GUICHET1
@@ -5509,20 +5523,6 @@ Resolve-DnsName mail.banquehorizon.com
 ```
 
 ```
-# sur PC-CONSEILLER
-dig @203.0.113.10 mail.banquehorizon.com +time=1 +tries=1
-dig @203.0.113.11 mail.banquehorizon.com +noall +comments +answer
-```
-
-```
-# sur NS1-BANK
-sudo systemctl start named
-```
-
-**✅ Résultat attendu.** Le résolveur (vidé exprès : il doit tout redemander) trouve `mail` **malgré** l'arrêt de NS1-BANK :
-
-```
-
 Name      : mail.banquehorizon.com
 Type      : A
 TTL       : 3600
@@ -5530,7 +5530,16 @@ Section   : Answer
 IPAddress : 203.0.113.25
 ```
 
-Interrogé directement, le serveur arrêté **refuse** la connexion (rien n'écoute sur le port 53) :
+**Ça marche.** La réponse arrive, comme si de rien n'était. `DNS-RES` a essayé `ns1`, n'a pas eu de réponse, et a essayé `ns2` : **de façon transparente**, sans que l'utilisateur voie quoi que ce soit.
+
+**Étape 4 — Interroger directement le serveur arrêté.**
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 mail.banquehorizon.com +time=1 +tries=1
+```
+
+Deux options nouvelles : `+time=1` (n'attends qu'**une seconde** une réponse) et `+tries=1` (ne fais **qu'un seul essai**). Sans elles, `dig` insisterait plusieurs fois, plusieurs secondes.
 
 ```
 ;; communications error to 203.0.113.10#53: connection refused
@@ -5541,7 +5550,14 @@ Interrogé directement, le serveur arrêté **refuse** la connexion (rien n'éco
 ;; no servers could be reached
 ```
 
-Alors que le deuxième serveur répond normalement :
+`connection refused` : la machine `203.0.113.10` est bien joignable, mais **rien n'écoute sur le port 53** : le service est arrêté. Puis `no servers could be reached` : `dig` n'a trouvé personne pour lui répondre.
+
+**Étape 5 — Interroger le deuxième serveur.**
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.11 mail.banquehorizon.com +noall +comments +answer
+```
 
 ```
 ;; Got answer:
@@ -5555,66 +5571,100 @@ Alors que le deuxième serveur répond normalement :
 mail.banquehorizon.com.	3600	IN	A	203.0.113.25
 ```
 
+`NS2-BANK` répond normalement : `NOERROR`, et `flags: qr aa` — il fait autorité. Il le peut parce qu'il détient **sa copie de la zone** (TP 18).
+
+**Étape 6 — Remettre `NS1-BANK` en marche.**
+
+```
+# sur NS1-BANK
+sudo systemctl start named
+```
+
+🆘 **Si ça ne marche pas.** À l'étape 3, `timed out` : le résolveur n'arrive pas à joindre `ns2` non plus. Vérifie que `NS2-BANK` est bien allumé (`dig @203.0.113.11 …`, étape 5). À l'étape 6, relance `dig @203.0.113.10 …` : `NS1-BANK` doit de nouveau répondre.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- La redondance du DNS est **dans la zone**, pas dans le serveur : la délégation donne **deux** `NS` (`ns1`, `ns2`) ; un résolveur qui n'obtient pas de réponse de l'un **essaie l'autre**, de façon transparente. C'est pour cela qu'un domaine doit avoir **au moins deux** serveurs, idéalement sur des **réseaux et des sites différents** (ici, deux adresses du même `/24` : acceptable pour un laboratoire, pas pour une banque).
-- `connection refused` (le paquet arrive, rien n'écoute — le service est arrêté, ou un pare-feu *rejette*) ne se lit pas comme `timed out` (le paquet n'arrive pas, ou la réponse ne revient pas — panne réseau, pare-feu qui *ignore*). La première cause est locale à la machine, la deuxième ailleurs.
-- NS2-BANK a pu répondre parce qu'il avait **sa copie de la zone** (TP 18). Un secondaire dont la zone a *expiré* (14 jours sans nouvelles du primaire, le champ `expire` du SOA) cesse de répondre plutôt que de servir une donnée trop vieille.
+- La redondance du DNS est **dans la zone**, pas dans le serveur : la délégation donne **deux** `NS` ; un résolveur qui n'obtient pas de réponse de l'un **essaie l'autre**. C'est pourquoi un domaine doit avoir **au moins deux** serveurs, idéalement sur des **réseaux et des sites différents** (ici, deux adresses du même réseau : acceptable pour un laboratoire, pas pour une banque).
+- `connection refused` (le paquet arrive, rien n'écoute : le service est arrêté, ou un pare-feu *rejette*) ne se lit pas comme `timed out` (le paquet n'arrive pas, ou la réponse ne revient pas : panne réseau, pare-feu qui *ignore*). La première cause est locale à la machine, la deuxième est ailleurs.
+- `NS2-BANK` a pu répondre parce qu'il avait **sa copie de la zone**. Un secondaire dont la zone a *expiré* (14 jours sans nouvelles du primaire, le champ `expire` du SOA) cesse de répondre plutôt que de servir une donnée trop vieille.
 
 > 🔍 **Point d'audit** — Teste la bascule **régulièrement** : arrête un serveur d'autorité, vérifie qu'une résolution à travers le résolveur aboutit, remets-le. Un secondaire silencieusement en retard (TP 19) ne se découvre qu'ainsi.
 
+**Vérifie-toi.**
+
+1. Pourquoi l'utilisateur ne voit-il pas la panne de `NS1-BANK` ?
+2. `connection refused` ou `timed out` : lequel indique qu'un service est arrêté sur une machine joignable ?
+
+*Réponses.* (1) Parce que le résolveur interroge l'autre serveur de la zone (`ns2`). (2) `connection refused`.
+
 ---
 
-## 36. 🧪 TP 28 — DNS interne et redirecteur
+## VIII.2 🧪 TP 28 — DNS interne et redirecteur
 
-**🎯 Objectif.** Comprendre comment un **nom interne** (`dc1.horizon.local`) et un **nom public** (`www.banquehorizon.com`) se résolvent à partir du même poste, avec un résolveur qui ne connaît que l'un des deux mondes.
+**🎯 Objectif.** Comprendre comment un **nom interne** (`dc1.horizon.local`) et un **nom public** (`www.banquehorizon.com`) se résolvent à partir du même poste, avec des serveurs qui ne connaissent chacun qu'un seul des deux mondes.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal PowerShell sur `PC-GUICHET1` et un sur `DC1`, plus un terminal sur `PC-CONSEILLER`. Durée : environ 30 minutes.
+
+**Le problème.** L'agence a deux mondes de noms :
+
+- les noms **internes** (`dc1.horizon.local`, `intranet.horizon.local`), qui n'existent dans aucune zone publique et que **seul `DC1`** connaît ;
+- les noms **publics** (`www.banquehorizon.com`), que `DNS-RES` sait résoudre en interrogeant Internet.
+
+Le poste `PC-GUICHET1` doit pouvoir résoudre les deux. Comment ?
+
+```schema
+ nom interne  (dc1.horizon.local)       ─► DC1 le connaît
+ nom public   (www.banquehorizon.com)   ─► DC1 ne le connaît pas : il le TRANSFÈRE à DNS-RES (redirecteur)
+ 
+ DNS-RES, de son côté :
+ nom public   (www.banquehorizon.com)   ─► il le résout lui-même (en descendant l'arbre)
+ nom interne  (dc1.horizon.local)       ─► il ne le connaît pas : il le TRANSFÈRE à DC1 (zone « forward », TP 16)
+```
+
+**Étape 1 — Un nom interne, par le serveur du poste.**
 
 ```powershell
 # sur PC-GUICHET1
 Resolve-DnsName dc1.horizon.local
+```
+
+```
+Name      : dc1.horizon.local
+Type      : A
+TTL       : 3600
+Section   : Answer
+IPAddress : 10.20.20.10
+```
+
+Le poste interroge `DC1` (son premier serveur DNS, TP 5), qui détient la zone `horizon.local` : il répond directement.
+
+**Étape 2 — Le même nom interne, à travers `DNS-RES`.**
+
+```powershell
+# sur PC-GUICHET1
 Resolve-DnsName dc1.horizon.local -Server 10.20.20.53
+```
+
+`-Server 10.20.20.53` impose `DNS-RES` comme serveur à interroger (TP 4).
+
+```
+Name      : dc1.horizon.local
+Type      : A
+TTL       : 3600
+Section   : Answer
+IPAddress : 10.20.20.10
+```
+
+La même réponse. Pourtant `DNS-RES` ne détient pas la zone `horizon.local` ! Il a **transféré** la question à `DC1` grâce au bloc `zone "horizon.local" { type forward; … }` que tu as lu au TP 16.
+
+**Étape 3 — Un nom public, par `DC1`.**
+
+```powershell
+# sur PC-GUICHET1
 Resolve-DnsName www.banquehorizon.com -Server 10.20.20.10
 ```
 
-```powershell
-# sur DC1
-Get-DnsServerForwarder
-reg query HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters
 ```
-
-```
-# sur PC-CONSEILLER
-dig @203.0.113.10 dc1.horizon.local +noall +comments
-```
-
-**✅ Résultat attendu.** Le nom interne se résout, par le serveur DNS du poste (DC1, donné par DHCP) :
-
-```
-
-Name      : dc1.horizon.local
-Type      : A
-TTL       : 3600
-Section   : Answer
-IPAddress : 10.20.20.10
-```
-
-…et aussi **à travers le résolveur DNS-RES**, qui **transfère** la question à DC1 (le bloc `type forward` du TP 16) :
-
-```
-
-Name      : dc1.horizon.local
-Type      : A
-TTL       : 3600
-Section   : Answer
-IPAddress : 10.20.20.10
-```
-
-À l'inverse, DC1 sait répondre pour un **nom public** : il ne le connaît pas, il le fait suivre à DNS-RES. Un seul serveur, deux mondes :
-
-```
-
 Name     : www.banquehorizon.com
 Type     : CNAME
 TTL      : 3600
@@ -5628,26 +5678,45 @@ Section   : Answer
 IPAddress : 203.0.113.20
 ```
 
-La configuration du redirecteur de DC1 :
+`DC1` ne connaît pas `banquehorizon.com`, et pourtant il répond. Il a **transféré** la question à `DNS-RES`, et lui a rendu la réponse. Un seul serveur, deux mondes : voyons la configuration qui fait ça.
 
+**Étape 4 — Le redirecteur de `DC1`.**
+
+```powershell
+# sur DC1
+Get-DnsServerForwarder
 ```
 
+```
 IPAddress     UseRootHint Timeout EnableReordering
 ---------     ----------- ------- ----------------
-{10.20.20.53} True              3 True
+{10.20.20.53} True              3 True            
 ```
 
-…qui est une valeur du registre, comme tout dans Windows :
+Le **redirecteur** (en anglais *forwarder*) est le serveur vers lequel `DC1` envoie tout ce qu'il ne sait pas résoudre : ici `10.20.20.53`, c'est-à-dire `DNS-RES`. Les autres colonnes sont des réglages secondaires.
 
+Sous Windows, tout est enregistré dans le **registre** (la base de configuration du système). Tu peux retrouver cette même valeur ainsi :
+
+```powershell
+# sur DC1
+reg query HKLM\SYSTEM\CurrentControlSet\Services\DNS\Parameters
 ```
 
+```
 HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\DNS\Parameters
     EnableGlobalQueryBlockList    REG_DWORD    0x1
     GlobalQueryBlockList    REG_MULTI_SZ    isatap\0wpad
     Forwarders    REG_MULTI_SZ    10.20.20.53
 ```
 
-Enfin, **depuis l'extérieur**, le nom interne n'existe pas : NS1-BANK n'en sait rien et, n'étant pas récursif, **refuse** :
+La dernière ligne (`Forwarders … 10.20.20.53`) est la même information. C'est le principe du TP 17 : les commandes PowerShell et le registre sont deux interfaces sur **un même réglage**.
+
+**Étape 5 — Et depuis l'extérieur ?** Un nom interne ne doit **pas** être visible de l'extérieur. Pose la question à `NS1-BANK` (le serveur public) :
+
+```
+# sur PC-CONSEILLER
+dig @203.0.113.10 dc1.horizon.local +noall +comments
+```
 
 ```
 ;; Got answer:
@@ -5659,39 +5728,45 @@ Enfin, **depuis l'extérieur**, le nom interne n'existe pas : NS1-BANK n'en sait
 ; EDNS: version: 0, flags:; udp: 1232
 ```
 
+`status: REFUSED` : `NS1-BANK` ne connaît pas ce nom et, n'étant pas un résolveur, refuse de le chercher (TP 9). Le nom interne reste interne.
+
+⚠️ **Attention** — Un redirecteur ne vérifie rien : il fait confiance à la réponse qu'il reçoit. Un redirecteur compromis ou mal configuré (une adresse de fournisseur d'accès inconnue, un résolveur public sans accord) fait passer **toutes** tes questions par un tiers.
+
+🆘 **Si ça ne marche pas.** À l'étape 3, `timed out` : `DNS-RES` ne répond pas à `DC1`, ou l'ACL de `DNS-RES` n'a pas été remise à l'état d'origine (TP 16, étape 8).
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Un **DNS privé** (`horizon.local`, qui n'existe dans aucune zone publique) est une zone qu'**un seul serveur interne** détient, ici DC1. Les noms internes ne doivent **jamais** être publiés dans la zone publique : ils révéleraient l'architecture du réseau.
-- Il y a deux façons de joindre ce serveur depuis le résolveur d'agence : un bloc `forward` **par domaine** (BIND, le TP 16) ou un **redirecteur global** (`Get-DnsServerForwarder`, Windows : « toute question que je ne sais pas résoudre, envoie-la à `10.20.20.53` »). Les deux se complètent ici, dans les deux sens.
-- Les deux serveurs de DNS de l'agence (DC1 et DNS-RES) sont donc **interdépendants** : si l'un tombe, une moitié des résolutions s'arrête. C'est une vraie conception à surveiller.
+- Un **DNS privé** (`horizon.local`) est une zone qu'**un seul serveur interne** détient, ici `DC1`. Les noms internes ne doivent **jamais** être publiés dans la zone publique : ils révéleraient l'architecture du réseau.
+- Il y a deux façons de transférer une question : un bloc `forward` **par domaine** (BIND, TP 16) ou un **redirecteur global** (`Get-DnsServerForwarder`, Windows : « toute question que je ne sais pas résoudre, envoie-la à `10.20.20.53` »). Les deux se complètent ici, dans les deux sens.
+- `DC1` et `DNS-RES` sont donc **interdépendants** : si l'un tombe, une moitié des résolutions s'arrête. C'est une vraie conception à surveiller.
 
-⚠️ **Attention** — Un redirecteur ne vérifie rien : il fait confiance à la réponse qu'il reçoit. Un redirecteur compromis ou mal configuré (une adresse de FAI inconnue, un résolveur public sans accord) fait passer **toutes** vos questions par un tiers.
+**Vérifie-toi.**
+
+1. Pourquoi `DNS-RES` peut-il répondre pour `dc1.horizon.local` alors qu'il ne détient pas la zone ?
+2. Où est stocké le redirecteur de `DC1` ?
+
+*Réponses.* (1) Il transfère la question à `DC1` grâce à son bloc `zone … type forward`. (2) Dans le registre Windows ; `Get-DnsServerForwarder` est l'une des deux interfaces.
 
 ---
 
-## 37. 🧪 TP 29 — DHCP et enregistrement dynamique
+## VIII.3 🧪 TP 29 — DHCP et enregistrement dynamique
 
 **🎯 Objectif.** Voir comment un poste obtient ses serveurs DNS, et comment son nom apparaît **tout seul** dans la zone.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal PowerShell sur `DC1` et un sur `PC-GUICHET2`. Durée : environ 25 minutes.
+
+**Le DHCP, en deux phrases.** Quand un poste démarre, il ne connaît ni son adresse ni son serveur DNS. Il demande à un serveur **DHCP** (ici, `DC1`), qui lui prête une configuration complète pour une certaine durée : c'est un **bail** (en anglais *lease*).
+
+**Étape 1 — Lire les baux accordés.**
 
 ```powershell
 # sur DC1
 Get-DhcpServerv4Lease -ScopeId 10.20.10.0
-Get-DnsServerResourceRecord -ZoneName horizon.local
 ```
 
-```powershell
-# sur PC-GUICHET2
-ipconfig /release
-ipconfig /renew
-ipconfig
-```
-
-**✅ Résultat attendu.** DC1 a distribué trois baux dans le réseau `10.20.10.0/24` :
+`-ScopeId 10.20.10.0` désigne l'**étendue** (*scope*), c'est-à-dire le réseau `10.20.10.0` dans lequel `DC1` distribue des adresses.
 
 ```
-
 IPAddress       : 10.20.10.50
 ClientId        : 02:00:00:00:00:6F
 ScopeId         : 10.20.10.0
@@ -5711,21 +5786,36 @@ LeaseExpiryTime : 11/12/2026 10:26 AM
 AddressState    : Active
 ```
 
-…et le serveur DHCP a inscrit lui-même les postes dans `horizon.local` (les lignes avec un `Timestamp` — c'est un enregistrement **dynamique**, d'une durée de 1200 s) :
+Trois baux, un par poste. Pour chacun : l'`IPAddress` prêtée, le `ClientId` (l'adresse physique de la carte du poste, qui l'identifie), la date de fin du bail (`LeaseExpiryTime`, ici 8 jours plus tard) et son état `Active`.
 
+**Étape 2 — Voir l'enregistrement que le DHCP a fait dans le DNS.**
+
+```powershell
+# sur DC1
+Get-DnsServerResourceRecord -ZoneName horizon.local
 ```
 
-HostName    RecordType Type          Timestamp TimeToLive RecordData
---------    ---------- ----          --------- ---------- ----------
+```
+HostName    RecordType Type          Timestamp TimeToLive RecordData                                                           
+--------    ---------- ----          --------- ---------- ----------                                                           
 @           SOA           6                          3600 [8][900][600][86400][3600] ns1.horizon.local hostmaster.horizon.local
-dc1         A             1                          3600 10.20.20.10
-dns-res     A             1                          3600 10.20.20.53
-intranet    CNAME         5                          3600 dc1.horizon.local
-pc-guichet1 A             1 11/4/2026 10:26 AM       1200 10.20.10.50
-pc-guichet2 A             1 11/4/2026 10:26 AM       1200 10.20.10.51
+dc1         A             1                          3600 10.20.20.10                                                          
+dns-res     A             1                          3600 10.20.20.53                                                          
+intranet    CNAME         5                          3600 dc1.horizon.local                                                    
+pc-guichet1 A             1 11/4/2026 10:26 AM       1200 10.20.10.50                                                          
+pc-guichet2 A             1 11/4/2026 10:26 AM       1200 10.20.10.51                                                          
 ```
 
-`ipconfig /release` rend l'adresse (la carte n'a plus de configuration) :
+Tu as vu cette commande au TP 17. Les deux dernières lignes sont les postes `pc-guichet1` et `pc-guichet2`. Ce n'est pas un administrateur qui les a écrits : le serveur DHCP les a **inscrits lui-même** dans la zone dès qu'il a distribué leurs adresses. Reconnais-les à leur `Timestamp` rempli et à leur TTL court (`1200`). C'est l'**enregistrement dynamique**.
+
+**Étape 3 — Rendre l'adresse du poste.**
+
+```powershell
+# sur PC-GUICHET2
+ipconfig /release
+```
+
+`ipconfig /release` dit au poste : « rends ton bail ».
 
 ```
 Windows IP Configuration
@@ -5740,7 +5830,16 @@ Ethernet adapter Ethernet 0:
    Default Gateway . . . . . . . . . :
 ```
 
-`ipconfig /renew` la redemande — et le serveur, qui se souvient du bail, rend **la même adresse**, avec le suffixe `horizon.local` fourni par DHCP :
+Les trois premières lignes (`No operation can be performed…`) concernent les cartes non branchées : ignore-les. Pour `Ethernet 0`, tu vois que le suffixe DNS et la passerelle sont **vides** : le poste n'a plus de configuration.
+
+**Étape 4 — La redemander.**
+
+```powershell
+# sur PC-GUICHET2
+ipconfig /renew
+```
+
+`ipconfig /renew` dit : « donne-moi une configuration ».
 
 ```
 Windows IP Configuration
@@ -5753,34 +5852,57 @@ Ethernet adapter Ethernet 0:
    Default Gateway . . . . . . . . . : 10.20.10.1
 ```
 
+Le poste a retrouvé sa configuration, avec **la même adresse** : `10.20.10.51`. `DC1` se souvenait du bail et la lui a rendue. Remarque `Connection-specific DNS Suffix : horizon.local` : le suffixe est fourni par le DHCP (c'est ce qui permet de taper `intranet` seul, TP 6).
+
+🆘 **Si ça ne marche pas.** `ipconfig /renew` rend `unable to contact your DHCP server` : `DC1` n'est pas joignable. Refais le TP 1 (partie A) pour contrôler le réseau.
+
 **🧠 Ce que tu viens d'apprendre.**
 
-- Un bail DHCP porte, en plus de l'adresse, le **masque**, la **passerelle**, les **serveurs DNS** (option 6) et le **suffixe de domaine** (option 15) : c'est ce qui fait que `intranet` seul se résout (TP 6) et que le poste interroge DC1 sans rien configurer.
-- L'**enregistrement dynamique** : le serveur DHCP (ou le client) crée l'enregistrement `A` — et le `PTR` — du poste dans DNS. Ils disparaissent à l'expiration (ou par *scavenging*) : la zone se tient à jour sans intervention.
+- Un bail DHCP porte, en plus de l'adresse, le **masque**, la **passerelle**, les **serveurs DNS** (option 6) et le **suffixe de domaine** (option 15) : c'est ce qui fait que `intranet` seul se résout (TP 6) et que le poste interroge `DC1` sans rien configurer.
+- L'**enregistrement dynamique** : le serveur DHCP (ou le client) crée la fiche `A` — et le `PTR` — du poste dans le DNS. Elles disparaissent à l'expiration : la zone se tient à jour sans intervention.
 - Dans une zone *publique* (BIND de la banque), ce n'est **pas** le cas : pas de mise à jour dynamique sans `allow-update` explicite et signé, précisément parce qu'on ne veut pas que n'importe quel poste puisse modifier une zone.
 
 > 🔍 **Point d'audit** — La mise à jour dynamique **non sécurisée** (`DynamicUpdate : NonsecureAndSecure`, comme ici) permet à n'importe quel poste du réseau de créer ou d'écraser un enregistrement. Sur un domaine Active Directory réel, on la règle à *Secure only*.
 
+**Vérifie-toi.**
+
+1. Quelles informations DNS un bail DHCP apporte-t-il à un poste ?
+2. Comment reconnaît-on, dans une zone Windows, une fiche créée automatiquement ?
+
+*Réponses.* (1) Les serveurs DNS (option 6) et le suffixe de domaine (option 15). (2) À son `Timestamp` rempli et à son TTL court.
+
 ---
 
-## 38. 🧪 TP 30 — La NRPT du poste Windows
+## VIII.4 🧪 TP 30 — La NRPT du poste Windows
 
 **🎯 Objectif.** Casser la résolution d'un poste en lui donnant un mauvais serveur DNS, la **réparer pour un seul domaine** par une règle de stratégie de noms (NRPT), puis tout remettre en état.
 
-**🔧 Manipulation.**
+**Ce qu'il te faut.** Un terminal PowerShell sur `PC-GUICHET1`. Durée : environ 30 minutes. Tout est remis en état à la fin (étapes 8 à 10).
+
+**La NRPT, en une phrase.** C'est une table de règles **par suffixe** : « pour tout nom qui se termine par ce domaine, demande à tel serveur ». Elle permet à un poste en VPN de résoudre les noms de l'entreprise par les serveurs de l'entreprise, et tout le reste par son propre réseau.
+
+**Étape 1 — Casser : donner un serveur qui n'existe pas.**
 
 ```powershell
 # sur PC-GUICHET1
 Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ServerAddresses 10.20.20.250
-Clear-DnsClientCache
-Resolve-DnsName dc1.horizon.local
-Add-DnsClientNrptRule -Namespace ".horizon.local" -NameServers 10.20.20.10
-Resolve-DnsName dc1.horizon.local
-Get-DnsClientNrptRule
-Resolve-DnsName www.banquehorizon.com
 ```
 
-**✅ Résultat attendu.** Avec un serveur DNS qui n'existe pas (`10.20.20.250`), le poste n'obtient aucune réponse. L'erreur le dit — « le délai est dépassé », pas « le nom n'existe pas » :
+`Set-DnsClientServerAddress` **remplace** les serveurs DNS de la carte (que le DHCP avait donnés) par `10.20.20.250`, une adresse que personne n'utilise. La commande n'affiche rien.
+
+**Étape 2 — Vider le cache.** Pour que le poste ne réponde pas depuis sa mémoire :
+
+```powershell
+# sur PC-GUICHET1
+Clear-DnsClientCache
+```
+
+**Étape 3 — Constater la panne.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName dc1.horizon.local
+```
 
 ```
 Resolve-DnsName : dc1.horizon.local : This operation returned because the timeout period expired
@@ -5788,10 +5910,25 @@ Resolve-DnsName : dc1.horizon.local : This operation returned because the timeou
     + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName
 ```
 
-La règle NRPT dit : « pour tout nom en `.horizon.local`, **demande à 10.20.20.10** ». Le nom se résout de nouveau :
+L'erreur est `ERROR_TIMEOUT` : « le délai est dépassé ». **Personne n'a répondu.** Ce n'est pas `DNS name does not exist` (TP 13) : ce message-là veut dire qu'un serveur a répondu « ce nom n'existe pas ». Ici, il n'y a pas de serveur.
 
+**Étape 4 — Ajouter une règle NRPT pour un seul domaine.**
+
+```powershell
+# sur PC-GUICHET1
+Add-DnsClientNrptRule -Namespace ".horizon.local" -NameServers 10.20.20.10
 ```
 
+La règle dit : « pour tout nom en `.horizon.local`, **demande à `10.20.20.10`** » (`DC1`). La commande n'affiche rien.
+
+**Étape 5 — Constater que la règle répare ce domaine.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName dc1.horizon.local
+```
+
+```
 Name      : dc1.horizon.local
 Type      : A
 TTL       : 3600
@@ -5799,29 +5936,44 @@ Section   : Answer
 IPAddress : 10.20.20.10
 ```
 
+Le nom se résout de nouveau, alors que le serveur DNS configuré sur la carte est toujours le mauvais : la règle l'emporte pour ce suffixe.
+
+**Étape 6 — Lire la règle.**
+
+```powershell
+# sur PC-GUICHET1
+Get-DnsClientNrptRule
 ```
 
+```
 Name                             : {44137ADA-B847-8475-D19D-3DF0A0619021}
 Version                          : 2
 Namespace                        : {.horizon.local}
-IPsecCARestriction               :
+IPsecCARestriction               : 
 DirectAccessDnsServers           : {}
 DirectAccessEnabled              : False
-DirectAccessProxyType            :
-DirectAccessProxyName            :
-DirectAccessQueryIPsecEncryption :
+DirectAccessProxyType            : 
+DirectAccessProxyName            : 
+DirectAccessQueryIPsecEncryption : 
 DirectAccessQueryIPsecRequired   : False
 NameServers                      : {10.20.20.10}
 DnsSecEnabled                    : False
-DnsSecQueryIPsecEncryption       :
+DnsSecQueryIPsecEncryption       : 
 DnsSecQueryIPsecRequired         : False
 DnsSecValidationRequired         : False
 NameEncoding                     : Utf8WithMapping
-DisplayName                      :
-Comment                          :
+DisplayName                      : 
+Comment                          : 
 ```
 
-Mais la règle ne change rien aux **autres** noms : le poste est toujours privé de DNS public :
+Il y a dix-huit lignes ; trois suffisent : `Namespace : {.horizon.local}` (le suffixe), `NameServers : {10.20.20.10}` (le serveur à interroger) et `Name`, l'identifiant de la règle. Le reste concerne `DirectAccess` et `DNSSEC`, que tu n'as pas à connaître ici.
+
+**Étape 7 — Constater que la règle ne répare rien d'autre.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName www.banquehorizon.com
+```
 
 ```
 Resolve-DnsName : www.banquehorizon.com : This operation returned because the timeout period expired
@@ -5829,25 +5981,49 @@ Resolve-DnsName : www.banquehorizon.com : This operation returned because the ti
     + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName
 ```
 
-On retire la règle et on rend au poste les serveurs que lui donne DHCP :
+Le nom **public** reste en panne : la règle ne concerne que `.horizon.local`. Pour les autres noms, le poste utilise toujours le serveur cassé. C'est l'intérêt d'une règle **par suffixe** : elle ne répare, et ne casse, que ce qu'elle nomme.
+
+**Étape 8 — Retirer la règle.**
 
 ```powershell
 # sur PC-GUICHET1
 Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force
+```
+
+Le tube `|` envoie les règles trouvées à `Remove-DnsClientNrptRule`, qui les supprime (`-Force` évite la demande de confirmation).
+
+**Étape 9 — Rendre au poste les serveurs du DHCP.**
+
+```powershell
+# sur PC-GUICHET1
 Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ResetServerAddresses
+```
+
+`-ResetServerAddresses` supprime ce qui avait été fixé à la main : le poste revient au mode « serveurs donnés par le DHCP ». Contrôle :
+
+```powershell
+# sur PC-GUICHET1
 Get-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -AddressFamily IPv4
-Resolve-DnsName www.banquehorizon.com | Select-Object -First 1
 ```
 
 ```
-
-InterfaceAlias InterfaceIndex AddressFamily ServerAddresses
--------------- -------------- ------------- ---------------
+InterfaceAlias InterfaceIndex AddressFamily ServerAddresses           
+-------------- -------------- ------------- ---------------           
 Ethernet 0                  2 IPv4          {10.20.20.10, 10.20.20.53}
 ```
 
+On retrouve `DC1` puis `DNS-RES`, comme au TP 5.
+
+**Étape 10 — Vérifier que tout marche.**
+
+```powershell
+# sur PC-GUICHET1
+Resolve-DnsName www.banquehorizon.com | Select-Object -First 1
 ```
 
+`Select-Object -First 1` ne garde que **la première** fiche du résultat.
+
+```
 Name     : www.banquehorizon.com
 Type     : CNAME
 TTL      : 3596
@@ -5855,13 +6031,24 @@ Section  : Answer
 NameHost : web.banquehorizon.com
 ```
 
-**🧠 Ce que tu viens d'apprendre.**
-
-- La **NRPT** (*Name Resolution Policy Table*) est une table de règles **par suffixe** : chaque règle associe un domaine à des serveurs. La règle la plus spécifique l'emporte. C'est ce qui permet à un poste en VPN de résoudre les noms de l'entreprise par les serveurs de l'entreprise et le reste par son propre réseau.
-- `Set-DnsClientServerAddress -ServerAddresses` fixe les serveurs **à la main** et **remplace** ce que DHCP donnait ; `-ResetServerAddresses` revient au mode « configuré par DHCP » (les deux serveurs du bail, `10.20.20.10` et `10.20.20.53`). `ipconfig /renew` seul **ne suffit pas** : il ne touche pas une liste fixée à la main.
-- Les deux messages d'erreur à bien distinguer : `ERROR_TIMEOUT` (personne n'a répondu : mauvais serveur, réseau) contre `DNS_ERROR_RCODE_NAME_ERROR` (un serveur a répondu : le nom n'existe pas).
+La résolution publique fonctionne de nouveau.
 
 > 🔍 **Point d'audit** — Les règles NRPT sont stockées dans le registre (`HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig`) : elles sont **posées par stratégie de groupe** dans un domaine, et un attaquant qui peut les écrire peut rediriger la résolution d'un suffixe vers son serveur. À superviser comme n'importe quelle clé de persistance.
+
+🆘 **Si ça ne marche pas.** À l'étape 5, toujours `ERROR_TIMEOUT` : la règle de l'étape 4 n'est pas posée (vérifie avec `Get-DnsClientNrptRule`), ou `DC1` ne répond pas. Si tu es bloqué, ré-importe le laboratoire (§ 0.1) : le poste retrouve ses serveurs d'origine.
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- La **NRPT** est une table de règles **par suffixe** : chaque règle associe un domaine à des serveurs. La règle la plus spécifique l'emporte.
+- `Set-DnsClientServerAddress -ServerAddresses` fixe les serveurs **à la main** et **remplace** ce que DHCP donnait ; `-ResetServerAddresses` revient au mode « configuré par DHCP ». `ipconfig /renew` seul **ne suffit pas** : il ne touche pas une liste fixée à la main.
+- Les deux messages d'erreur à bien distinguer : `ERROR_TIMEOUT` (personne n'a répondu : mauvais serveur, réseau) contre `DNS_ERROR_RCODE_NAME_ERROR` (un serveur a répondu : le nom n'existe pas).
+
+**Vérifie-toi.**
+
+1. Que veut dire `ERROR_TIMEOUT` ? Et `DNS name does not exist` ?
+2. Une règle NRPT sur `.horizon.local` répare-t-elle la résolution de `www.banquehorizon.com` ?
+
+*Réponses.* (1) `ERROR_TIMEOUT` : aucun serveur n'a répondu ; `DNS name does not exist` : un serveur a répondu que le nom n'existe pas. (2) Non : elle ne s'applique qu'aux noms qui se terminent par `.horizon.local`.
 
 ---
 
