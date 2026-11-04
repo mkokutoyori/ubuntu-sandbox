@@ -1,28 +1,30 @@
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
-import { Deny } from '../../iam/policy/CommandPrivilegePolicy';
-import { kernelHostname } from '../../KernelHostname';
+import { runHostname } from '../../hostname/HostnameTool';
+import { linuxHostnameHost } from '../../hostname/LinuxHostnameHost';
+import { commandResultOf, completeLinesResultOf } from '../ToolOutputShape';
 
-export const hostnameCommand: LinuxCommand = {
-  name: 'hostname',
-  needsNetworkContext: true,
-  usage: 'hostname [options] [NEWHOSTNAME]',
-  privilege: {
-    appliesWhen: (args) => args.some((a) => !a.startsWith('-')),
-    deny: Deny.withMessage('hostname: you must be root to change the host name'),
-  },
-  run(ctx: LinuxCommandContext, args: string[]): string {
-    const hn = kernelHostname(ctx.executor.vfs);
-    if (args.includes('-s') || args.includes('--short')) return hn.split('.')[0];
-    if (args.includes('-d') || args.includes('--domain')) return hn.includes('.') ? hn.split('.').slice(1).join('.') : '';
-    if (args.includes('-f') || args.includes('--fqdn')) return hn;
-    if (args.includes('-i') || args.includes('--ip-address')) return '127.0.1.1';
-    if (args.includes('-I') || args.includes('--all-ip-addresses')) return '127.0.1.1';
-    if (args.includes('-A') || args.includes('--all-fqdns')) return hn;
-    if (args.length > 0 && !args[0].startsWith('-')) {
-      ctx.executor.setKernelHostname(args[0]);
-      return '';
-    }
-    return hn;
-  },
-};
+const PROGRAMS: ReadonlyArray<{ name: string; usage: string; help: string }> = [
+  { name: 'hostname', usage: 'hostname [-b] {hostname|-F file}', help: 'hostname - show or set the system host name' },
+  { name: 'domainname', usage: 'domainname [nisdomain|-F file]', help: 'domainname - show or set the system NIS domain name' },
+  { name: 'ypdomainname', usage: 'ypdomainname [nisdomain|-F file]', help: 'ypdomainname - show or set the system NIS domain name' },
+  { name: 'nisdomainname', usage: 'nisdomainname [nisdomain|-F file]', help: 'nisdomainname - show or set the system NIS domain name' },
+  { name: 'dnsdomainname', usage: 'dnsdomainname', help: 'dnsdomainname - show the system DNS domain name' },
+];
+
+function programNamed(program: { name: string; usage: string; help: string }): LinuxCommand {
+  const outcome = (ctx: LinuxCommandContext, args: string[]) => runHostname(ctx.invokedAs ?? program.name, args, linuxHostnameHost(ctx));
+  return {
+    name: program.name,
+    package: 'hostname',
+    needsNetworkContext: true,
+    ownsHelpOption: true,
+    manSection: 1,
+    usage: program.usage,
+    help: program.help,
+    run: async (ctx, args) => commandResultOf(await outcome(ctx, args)).interleaved,
+    runWithStatus: async (ctx, args) => completeLinesResultOf(await outcome(ctx, args)),
+  };
+}
+
+export const hostnameCommands: readonly LinuxCommand[] = PROGRAMS.map(programNamed);

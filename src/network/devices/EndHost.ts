@@ -107,7 +107,7 @@ import {
   type Ipv4SendRequest,
 } from '../layers/internet/Ipv4Egress';
 import { selectIpv6SourceAddress } from '../layers/internet/Ipv6Egress';
-import { RFC6724_POLICY, type DestinationPolicy } from '../layers/internet/DestinationSelection';
+import { RFC6724_POLICY, type DestinationPolicy, type DestinationSelectionPort } from '../layers/internet/DestinationSelection';
 import {
   UDP_OVER_IPV4_HEADER_BYTES, UDP_OVER_IPV6_HEADER_BYTES, udpPayloadLength, type UdpEmissionOptions, type UdpSendRequest,
 } from '../layers/transport/UdpEgress';
@@ -5425,6 +5425,22 @@ export abstract class EndHost extends Equipment {
 
   destinationPolicy(): DestinationPolicy {
     return RFC6724_POLICY;
+  }
+
+  destinationSelectionPort(): DestinationSelectionPort {
+    return {
+      sourceFor: (destination) => {
+        if (destination instanceof IPAddress) {
+          if (this.isLocalAddress(destination)) return { address: destination };
+          const egress = this.getEgressFor(destination);
+          return egress === null ? null : { address: egress.sourceIp };
+        }
+        if (this.isLocalAddress6(destination)) return { address: destination };
+        const route = this.resolveIPv6Route(destination);
+        const source = route === null ? null : selectIpv6SourceAddress(route.port, destination);
+        return source === null ? null : { address: source };
+      },
+    };
   }
 
   canReach6(targetIP: IPv6Address): boolean {

@@ -744,11 +744,13 @@ IPAddress : 10.20.20.10
 ```
 
 ```
-10.20.20.10     intranet.horizon.local
+10.20.20.10     dc1.horizon.local intranet.horizon.local
 10.20.20.10     dc1.horizon.local
 dc1.horizon.local.
 10.20.20.10
 ```
+
+`getent hosts intranet` écrit le nom **canonique** d'abord (`dc1.horizon.local`, le bout du CNAME) puis l'alias qu'on a suivi (`intranet.horizon.local`) : c'est la forme d'un enregistrement `hosts`, nom officiel puis surnoms.
 
 `dig`, lui, ne cherche **pas** dans la liste de suffixes tant qu'on ne le lui demande pas : le nom est cherché tel quel (`intranet.`, la racine) et n'existe pas.
 

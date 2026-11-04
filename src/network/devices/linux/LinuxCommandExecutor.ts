@@ -1278,6 +1278,16 @@ export class LinuxCommandExecutor {
     this.kernelHostnameBinding?.write(name);
   }
 
+  private kernelDomainNameValue = '(none)';
+
+  kernelDomainName(): string {
+    return this.kernelDomainNameValue;
+  }
+
+  setKernelDomainName(name: string): void {
+    this.kernelDomainNameValue = name;
+  }
+
   bootKernelHostname(): void {
     this.setKernelHostname(staticHostname(this.vfs));
   }
@@ -1292,6 +1302,7 @@ export class LinuxCommandExecutor {
     this.ip6tables.resetAll();
     this.serviceMgr.rebootCycle();
     this.bootKernelHostname();
+    this.kernelDomainNameValue = '(none)';
   }
 
   /**
@@ -1321,6 +1332,9 @@ export class LinuxCommandExecutor {
     this.vfs.registerGeneratedFile('/proc/sys/kernel/random/boot_id', () => `${dashedUuid(this.identity.bootId)}\n`);
     this.vfs.registerGeneratedFile('/proc/sys/kernel/random/uuid', () => `${this.randomUuid()}\n`);
     this.vfs.registerGeneratedFile(KERNEL_HOSTNAME_PATH, () => `${this.currentKernelHostname()}\n`);
+    this.vfs.registerWritableGeneratedFile('/proc/sys/kernel/domainname',
+      () => `${this.kernelDomainNameValue}\n`,
+      (text) => text.replace(/\n$/, '').length <= 64 && (this.setKernelDomainName(text.replace(/\n$/, '')), true));
     // `/proc/modules` est la SOURCE et `lsmod` son lecteur, dans cet
     // ordre : les deux vues ne peuvent donc pas diverger.
     this.vfs.registerGeneratedFile('/proc/modules', () => this.kernelModules.toProcModules());

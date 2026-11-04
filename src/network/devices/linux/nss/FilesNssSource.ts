@@ -28,7 +28,7 @@ import type { INssSource } from './INssSource';
 import { parseAliasesFile } from './aliasesFile';
 import type {
   NssEnumResult, NssResult,
-  NssEthersEntry, NssGroupEntry, NssGshadowEntry, NssHostEntry,
+  NssEthersEntry, NssGroupEntry, NssGshadowEntry, NssHostEntry, NssHostent,
   NssAliasEntry,
   NssNetgroupEntry, NssNetworkEntry, NssPasswdEntry, NssProtocolEntry,
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
@@ -224,17 +224,45 @@ export class FilesNssSource implements INssSource {
 
   // ─── hosts ──────────────────────────────────────────────────────────
 
-  gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
-    const matches: NssHostEntry[] = [];
-    const seenFamilies = new Set<2 | 10>();
-    for (const h of this.iterateHosts()) {
-      if (family && h.addressFamily !== family) continue;
-      if (h.canonicalName !== name && !h.aliases.includes(name)) continue;
-      if (seenFamilies.has(h.addressFamily)) continue;
-      seenFamilies.add(h.addressFamily);
-      matches.push(h);
-    }
+  private hostsNamed(name: string, family?: 2 | 10): NssHostEntry[] {
+    const wanted = name.toLowerCase();
+    return [...this.iterateHosts()].filter((h) =>
+      (family === undefined || h.addressFamily === family)
+      && (h.canonicalName.toLowerCase() === wanted || h.aliases.some((alias) => alias.toLowerCase() === wanted)));
+  }
+
+  private hostsNamedUnderMulti(name: string, family?: 2 | 10): NssHostEntry[] {
+    const matches = this.hostsNamed(name, family);
+    return this.hostConfMulti() ? matches : matches.slice(0, 1);
+  }
+
+  gethostbyname4(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
+    const matches = this.hostsNamedUnderMulti(name, family);
     return matches.length ? SUCCESS(matches) : NOTFOUND();
+  }
+
+  gethostbyname3(name: string, family: 2 | 10): NssResult<NssHostent> {
+    const [first, ...rest] = this.hostsNamedUnderMulti(name, family);
+    if (first === undefined) return NOTFOUND();
+    const aliases = [...first.aliases];
+    for (const entry of rest) {
+      aliases.push(...entry.aliases);
+      if (entry.canonicalName !== first.canonicalName) aliases.push(entry.canonicalName);
+    }
+    return SUCCESS({ name: first.canonicalName, aliases, family, addresses: [first, ...rest].map((entry) => entry.address) });
+  }
+
+  private hostConfMulti(): boolean {
+    const text = this.vfs.readFile('/etc/host.conf');
+    if (text == null) return false;
+    const setting = [...text.matchAll(/^\s*multi\s+(\S+)/gm)].pop()?.[1]?.toLowerCase();
+    return setting === 'on';
+  }
+
+  gethostbyname(name: string, family?: 2 | 10): NssResult<NssHostEntry[]> {
+    const seenFamilies = new Set<2 | 10>();
+    const firstPerFamily = this.hostsNamed(name, family).filter((h) => !seenFamilies.has(h.addressFamily) && seenFamilies.add(h.addressFamily));
+    return firstPerFamily.length ? SUCCESS(firstPerFamily) : NOTFOUND();
   }
 
   gethostbyaddr(addr: string): NssResult<NssHostEntry> {

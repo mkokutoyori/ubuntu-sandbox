@@ -70,7 +70,7 @@ describe('user lab — FW1 diagnostics', () => {
 describe('user lab — ssh -J through FW1', () => {
   it('PC1 reaches PC3 through Server1 as a bastion', async () => {
     const lab = await configuredLab();
-    await taper(lab.PC3, ['systemctl start ssh', 'hostnamectl set-hostname PC3-HQ']);
+    await taper(lab.PC3, ['systemctl start ssh', 'sudo hostnamectl set-hostname PC3-HQ']);
     await grantKeyAccess(lab.PC1, lab.Server1);
     await grantKeyAccess(lab.PC1, lab.PC3);
     const out = await lab.PC1.executeCommand('ssh -o PasswordAuthentication=no -J user@192.168.30.4 user@192.168.30.6 hostname; echo EC=$?');

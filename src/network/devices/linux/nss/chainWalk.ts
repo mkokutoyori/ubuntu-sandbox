@@ -57,12 +57,14 @@ export interface NssWalk<T> {
 export function startNssWalk<T>(merge: NssMerge<T> = defaultNssMerge): NssWalk<T> {
   let sawNotFound = false;
   let sawUnavail = false;
+  let lastStatus: NssStatus | null = null;
   let collected: T | undefined;
   /** The previous success said `merge`, so the next one adds to it. */
   let mergePending = false;
 
   return {
     step(spec: NssSourceSpec, r: NssResult<T>): NssResult<T> | null {
+      lastStatus = r.status;
       if (r.status === 'NOTFOUND') sawNotFound = true;
       if (r.status === 'UNAVAIL') sawUnavail = true;
 
@@ -90,6 +92,7 @@ export function startNssWalk<T>(merge: NssMerge<T> = defaultNssMerge): NssWalk<T
     },
     finish(): NssResult<T> {
       if (collected !== undefined) return { status: 'SUCCESS', entry: collected };
+      if (lastStatus === 'TRYAGAIN') return { status: 'TRYAGAIN' };
       const status: NssStatus = sawNotFound ? 'NOTFOUND' : sawUnavail ? 'UNAVAIL' : 'NOTFOUND';
       return { status };
     },

@@ -136,42 +136,6 @@ const FILE_USAGE = [
   "       file [--help]"
 ].join('\n');
 
-const HOSTNAME_USAGE = [
-  "Usage: hostname [-b] {hostname|-F file}         set host name (from file)",
-  "       hostname [-a|-A|-d|-f|-i|-I|-s|-y]       display formatted name",
-  "       hostname                                 display host name",
-  "",
-  "       {yp,nis,}domainname {nisdomain|-F file}  set NIS domain name (from file)",
-  "       {yp,nis,}domainname                      display NIS domain name",
-  "",
-  "       dnsdomainname                            display dns domain name",
-  "",
-  "       hostname -V|--version|-h|--help          print info and exit",
-  "",
-  "Program name:",
-  "       {yp,nis,}domainname=hostname -y",
-  "       dnsdomainname=hostname -d",
-  "",
-  "Program options:",
-  "    -a, --alias            alias names",
-  "    -A, --all-fqdns        all long host names (FQDNs)",
-  "    -b, --boot             set default hostname if none available",
-  "    -d, --domain           DNS domain name",
-  "    -f, --fqdn, --long     long host name (FQDN)",
-  "    -F, --file             read host name or NIS domain name from given file",
-  "    -i, --ip-address       addresses for the host name",
-  "    -I, --all-ip-addresses all addresses for the host",
-  "    -s, --short            short host name",
-  "    -y, --yp, --nis        NIS/YP domain name",
-  "",
-  "Description:",
-  "   This command can get or set the host name or the NIS domain name. You can",
-  "   also get the DNS domain or the FQDN (fully qualified domain name).",
-  "   Unless you are using bind or NIS for host lookups you can change the",
-  "   FQDN (Fully Qualified Domain Name) and the DNS domain name (which is",
-  "   part of the FQDN) in the /etc/hosts file."
-].join('\n');
-
 const GREP_USAGE = 'Usage: grep [OPTION]... PATTERNS [FILE]...';
 
 const GREP_OPTIONS: GnuOptionSet = {
@@ -251,12 +215,6 @@ const LOGINCTL_OPTIONS: GnuOptionSet = {
   operands: true,
 };
 
-const HOSTNAMECTL_OPTIONS: GnuOptionSet = {
-  optstring: 'hH:M:',
-  long: [...SYSTEMD_COMMON, flag('transient'), flag('static'), flag('pretty'), flag('json')],
-  operands: true,
-};
-
 const TIMEDATECTL_OPTIONS: GnuOptionSet = {
   optstring: 'hH:M:p:a',
   long: [
@@ -280,7 +238,6 @@ const PGREP_LONG: readonly LongOption[] = [
 export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   systemctl: SYSTEMCTL_OPTIONS,
   loginctl: LOGINCTL_OPTIONS,
-  hostnamectl: HOSTNAMECTL_OPTIONS,
   timedatectl: TIMEDATECTL_OPTIONS,
   diff: DIFF_OPTIONS,
   grep: GREP_OPTIONS,
@@ -480,18 +437,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
     usage: FILE_USAGE,
     trailer: '',
-  },
-  hostname: {
-    optstring: 'aAbdfF:iIsyhV',
-    long: [
-      flag('alias', 'a'), flag('all-fqdns', 'A'), flag('boot', 'b'), flag('domain', 'd'), flag('fqdn', 'f'),
-      flag('long', 'f'), valued('file', 'F'), flag('ip-address', 'i'), flag('all-ip-addresses', 'I'),
-      flag('short', 's'), flag('yp', 'y'), flag('nis', 'y'), flag('help', 'h'), flag('version', 'V'),
-    ],
-    operands: true,
-    usage: HOSTNAME_USAGE,
-    trailer: '',
-    failureStatus: 255,
   },
   pgrep: {
     optstring: `lad:vw${PGREP_COMMON_SHORT}`,

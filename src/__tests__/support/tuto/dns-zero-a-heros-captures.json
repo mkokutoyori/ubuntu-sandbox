@@ -273,7 +273,7 @@
     "dev": "PC-CONSEILLER",
     "kind": "sh",
     "cmd": "getent hosts intranet",
-    "output": "10.20.20.10     intranet.horizon.local"
+    "output": "10.20.20.10     dc1.horizon.local intranet.horizon.local"
    },
    {
     "id": "6.getent-dc1",

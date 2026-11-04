@@ -176,7 +176,7 @@ export function commonPrefixLength(left: SelectableAddress, right: SelectableAdd
 }
 
 function sameSubnetPrefix(destination: IPAddress, source: IPAddress, prefixLength: number): number {
-  if (!sameIpv4Network(source, destination, prefixLength)) return 0;
+  if (prefixLength === 0 || !sameIpv4Network(source, destination, prefixLength)) return 0;
   return Math.clz32(destination.toUint32() ^ source.toUint32());
 }
 

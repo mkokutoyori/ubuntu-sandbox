@@ -21,7 +21,7 @@
 import type {
   NssResult, NssEnumResult,
   NssPasswdEntry, NssGroupEntry, NssShadowEntry, NssGshadowEntry,
-  NssHostEntry, NssServiceEntry, NssProtocolEntry, NssNetworkEntry,
+  NssHostEntry, NssHostent, NssServiceEntry, NssProtocolEntry, NssNetworkEntry,
   NssEthersEntry, NssRpcEntry, NssNetgroupEntry, NssAliasEntry,
 } from './types';
 
@@ -49,6 +49,8 @@ export interface INssSource {
 
   // ── hosts (gethostbyname/-byaddr) ──────────────────────────────────
   gethostbyname?(name: string, family?: 2 | 10): NssResult<NssHostEntry[]>;
+  gethostbyname4?(name: string, family?: 2 | 10): NssResult<NssHostEntry[]>;
+  gethostbyname3?(name: string, family: 2 | 10): NssResult<NssHostent>;
   gethostbyaddr?(addr: string): NssResult<NssHostEntry>;
   enumHosts?(): NssEnumResult<NssHostEntry>;
 
@@ -65,6 +67,7 @@ export interface INssSource {
    */
   gethostbynameAsync?(name: string, family?: 2 | 10): Promise<NssResult<NssHostEntry[]>>;
   gethostbyaddrAsync?(addr: string): Promise<NssResult<NssHostEntry>>;
+  gethostbyname3Async?(name: string, family: 2 | 10): Promise<NssResult<NssHostent>>;
 
   // ── services / protocols / networks ────────────────────────────────
   getservbyname?(name: string, protocol?: string): NssResult<NssServiceEntry>;

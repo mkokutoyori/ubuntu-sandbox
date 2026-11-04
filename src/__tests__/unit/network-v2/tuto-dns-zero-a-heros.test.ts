@@ -108,7 +108,7 @@ describe('le tutoriel DNS de zero a heros, rejoue sur le laboratoire Banque Hori
         else { blocks.push(current); current = null; }
       } else if (current !== null) current.push(line);
     }
-    const combined = new Set(['10.20.20.10     intranet.horizon.local', '"v=spf1 mx -all"']);
+    const combined = new Set(['10.20.20.10     dc1.horizon.local intranet.horizon.local', '"v=spf1 mx -all"']);
     const uncovered: string[] = [];
     for (const block of blocks) {
       if (block[0]?.startsWith('# sur') || block.some((line) => /[\u2502\u2514\u251c\u250c\u2510\u2518\u252c\u2534\u2571\u2572\u25b6\u25c0\u2190]/.test(line))) continue;
