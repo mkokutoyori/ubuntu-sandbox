@@ -4454,3 +4454,7 @@ Still missing from the simulator although coreutils ships them: numfmt, csplit, 
 ## strings
 
 strings is measured against the real binutils 2.42 (see probe-linux-coreutils-lot10-strings); the binutils source was not reachable, so it is not a port. Not modelled: object-file section selection (`-d` is accepted and scans the whole file, as `-a` does on a non-ELF input), the `-T` target names (accepted and ignored) and `@file` argument files.
+
+## shuf
+
+shuf follows shuf.c 9.4 (fetched from the v9.4 tag) for its options and diagnostics. Not byte-exact: the order produced by `--random-source=FILE`, because gnulib's randperm.c/randint.c (which decide how the bytes of the file are consumed) were unreachable from this environment; the simulator draws uniformly from the bytes of the file with its own rejection rule, reports `end of file` when they run out, and is otherwise random. `shuf -r` without `-n` would never end on a real host; the simulator stops after 10000 lines. Reservoir sampling for large inputs is not modelled (the whole input is read, which gives the same distribution).
