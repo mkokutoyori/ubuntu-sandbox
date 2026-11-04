@@ -81,6 +81,7 @@ import { runChecksum } from './coreutils/CksumCommand';
 import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
+import { runPtx } from './coreutils/PtxCommand';
 import { runStrings } from './coreutils/StringsCommand';
 import { runDircolors } from './coreutils/DircolorsCommand';
 import { runShred } from './coreutils/ShredCommand';
@@ -361,7 +362,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
-  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'stdbuf', 'shuf', 'csplit', 'numfmt', 'shred', 'dircolors', 'shred', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'ptx', 'stdbuf', 'shuf', 'csplit', 'numfmt', 'shred', 'dircolors', 'shred', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
   'column', 'split', 'base64', 'base32', 'basenc', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
@@ -432,7 +433,7 @@ const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'rm', 'cp', 'mv',
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
   'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac', 'od',
-  'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'factor', 'tsort', 'strings', 'shuf', 'numfmt',
+  'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'factor', 'tsort', 'strings', 'ptx', 'shuf', 'numfmt',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
@@ -468,6 +469,7 @@ const OPTIONS_TAKING_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
   od: new Set(['-A', '-j', '-N', '-S', '-t']),
   shuf: new Set(['-i', '-n', '-o', '--input-range', '--head-count', '--output', '--random-source']),
   shred: new Set(['-n', '-s', '--iterations', '--size', '--random-source']),
+  ptx: new Set(['-F', '--flag-truncation', '-M', '--macro-name', '-S', '--sentence-regexp', '-W', '--word-regexp', '-b', '--break-file', '-g', '--gap-size', '-i', '--ignore-file', '-o', '--only-file', '-w', '--width', '--format']),
   numfmt: new Set(['-d', '--from', '--from-unit', '--to', '--to-unit', '--round', '--padding', '--suffix', '--delimiter', '--field', '--format', '--invalid']),
   csplit: new Set(['-f', '-b', '-n', '--prefix', '--suffix-format', '--digits']),
   strings: new Set(['-n', '-t', '-s', '-e', '-T', '--bytes', '--radix', '--encoding', '--output-separator', '--target']),
@@ -510,7 +512,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'shuf', 'csplit', 'numfmt', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+  'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'ptx', 'shuf', 'csplit', 'numfmt', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -6524,6 +6526,7 @@ export class LinuxCommandExecutor {
       case 'mkfifo': return asDispatch(runMkfifo(c, args));
       case 'factor': return asDispatch(runFactor(args, coreutilsIO(c, stdin)));
       case 'tsort': return asDispatch(runTsort(args, coreutilsIO(c, stdin)));
+      case 'ptx': return asDispatch(runPtx(args, coreutilsIO(c, stdin)));
       case 'strings': return asDispatch(runStrings(args, coreutilsIO(c, stdin)));
       case 'dircolors': {
         const environment = this.environmentOfCommand();

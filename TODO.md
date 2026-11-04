@@ -4449,7 +4449,7 @@ md5sum, sha1sum, sha224sum, sha256sum, sha384sum, sha512sum, b2sum, sum and cksu
 ## coreutils batch 9: new commands — what is still approximate
 
 link, unlink, pathchk, hostid, factor, tsort, base32 and basenc are compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot9-nouvelles-commandes). Still approximate: `factor` uses Pollard's rho, so a 128-bit semiprime with two large factors (2^128+1) takes far longer than the real tool; `hostid` derives its value from the host's /etc/hosts entry rather than from /etc/hostid; `basenc --z85` encodes only whole 4-byte groups, as the real tool does, but its decoder does not report the offending character; the default-mode `pathchk` does not consult the file system limits of a mounted file system, it assumes 255/4096.
-Still missing from the simulator although coreutils ships them: numfmt, csplit, shuf, shred, stdbuf, ptx, dircolors, vdir, pinky, chcon, runcon, and strings (binutils).
+Still missing from the simulator although coreutils ships them: numfmt, csplit, shuf, shred, stdbuf, dircolors, vdir, pinky, chcon, runcon, and strings (binutils).
 
 ## strings
 
@@ -4466,7 +4466,7 @@ csplit is a port of csplit.c 9.4 for inputs held in one buffer (the whole simula
 ## numfmt
 
 numfmt follows numfmt.c 9.4 but computes in IEEE doubles where the real tool uses long double: integers up to 33 digits pass through as text when no scaling applies, but scaled results of values above 2^53 can differ in the last digit. The simulated `printf` does not read `\000` followed by digits as a NUL plus text (`printf '1\0002'`), which blocks a `-z` probe; `--grouping` has no effect, as in a UTF-8 C locale where the thousands separator is empty.
-Still missing: ptx, pinky, chcon, runcon.
+Still missing: pinky, chcon, runcon.
 
 ## shred
 
@@ -4475,3 +4475,7 @@ shred overwrites through the VFS write port: no real device, so the overwrite is
 ## dircolors
 
 dircolors ports dircolors.c 9.4 with the real compiled database. Not wired: `ls --color` does not read the LS_COLORS that dircolors prints (ls colours use their own table), so editing the database has no effect on listings.
+
+## ptx (lot 18)
+
+ptx is ported from coreutils 9.4 and measured on 134 cases. Known limits: `-W` with a pattern that matches the empty string loops forever, in the real binary as well, so the simulator does the same and it is not pinned; multibyte locales are not modelled (widths and word characters count bytes, as in the C.UTF-8 locale measured).
