@@ -148,11 +148,15 @@ IX.2 [🧪 TP 32 — Voir le DNS sur le fil : UDP, troncature, TCP](#ix2--tp-32-
 X.1 [🧪 TP 33 — Un nom, une adresse, plusieurs sites](#x1--tp-33--un-nom-une-adresse-plusieurs-sites)
 
 ### Partie XI — Quand ça ne marche pas, et comment le prouver
-42. [La méthode en six questions](#42-la-méthode-en-six-questions)
-43. [🧪 TP 34 — Cinq pannes à diagnostiquer](#43--tp-34--cinq-pannes-à-diagnostiquer)
-44. [Les messages d'erreur et ce qu'ils veulent dire](#44-les-messages-derreur-et-ce-quils-veulent-dire)
-45. [🧪 TP 35 — Auditer le service de noms](#45--tp-35--auditer-le-service-de-noms)
-46. [Aide-mémoire](#46-aide-mémoire)
+XI.1 [La méthode en six questions](#xi1-la-méthode-en-six-questions)
+XI.2 [🧪 TP 34 — Cinq pannes à diagnostiquer](#xi2--tp-34--cinq-pannes-à-diagnostiquer)
+XI.3 [Les messages d'erreur et ce qu'ils veulent dire](#xi3-les-messages-derreur-et-ce-quils-veulent-dire)
+XI.4 [🧪 TP 35 — Auditer le service de noms](#xi4--tp-35--auditer-le-service-de-noms)
+XI.5 [Et maintenant ?](#xi5-et-maintenant-)
+
+### Annexes
+A.1 [Aide-mémoire](#a1-aide-mémoire)
+B.1 [Glossaire](#b1-glossaire)
 
 ---
 
@@ -6645,49 +6649,56 @@ Le DNS n'a servi qu'à l'étape 1. L'étape 3, c'est l'affaire du serveur web.
 
 # Partie XI — Quand ça ne marche pas, et comment le prouver
 
-Tout ce que tu as fait jusqu'ici sert maintenant : dépanner un service de noms, c'est poser les bonnes questions **dans le bon ordre** et lire les réponses sans les interpréter trop vite.
+Tout ce que tu as fait jusqu'ici sert maintenant. **Dépanner un service de noms, c'est poser les bonnes questions dans le bon ordre, et lire les réponses sans les interpréter trop vite.** Cette partie te donne la méthode, puis te fait pratiquer : cinq pannes à diagnostiquer, et un audit.
 
 ---
 
-## 42. La méthode en six questions
+## XI.1 La méthode en six questions
 
-Devant « ça ne résout pas », ne change rien avant d'avoir répondu à ces six questions, dans cet ordre :
+Devant « ça ne résout pas », **ne change rien** avant d'avoir répondu à ces six questions, dans cet ordre. Chaque réponse élimine une famille de causes.
 
 | # | Question | Comment y répondre | Ce que tu cherches |
 |---|---|---|---|
 | 1 | **Qui interroge qui ?** | `resolvectl status`, `cat /etc/resolv.conf` (Linux) ; `Get-DnsClientServerAddress`, `ipconfig /all` (Windows) | Le serveur DNS que le poste utilise *vraiment* (TP 5), et le suffixe de recherche (TP 6) |
 | 2 | **Le serveur répond-il ?** | `dig @serveur nom +time=1 +tries=1` | `connection refused` (service arrêté), `timed out` (réseau, pare-feu, mauvaise adresse), ou une réponse (TP 27, TP 30) |
-| 3 | **Que dit le code de retour ?** | `status:` dans l'en-tête de `dig`, `+noall +comments` | `NXDOMAIN`, `NOERROR` vide (NODATA), `SERVFAIL`, `REFUSED` — quatre pannes différentes (TP 13, TP 26) |
+| 3 | **Que dit le code de retour ?** | `status:` dans l'en-tête de `dig`, avec `+noall +comments` | `NXDOMAIN`, `NOERROR` vide (NODATA), `SERVFAIL`, `REFUSED` : quatre pannes différentes (TP 13, TP 26) |
 | 4 | **Est-ce du cache ?** | TTL qui décroît (TP 21) ; `+norecurse` ; interroger directement le serveur d'autorité | Une réponse ancienne ou négative retenue (TP 22) : vider au bon niveau (TP 25) |
 | 5 | **Les serveurs d'autorité sont-ils d'accord ?** | `dig @ns1 zone SOA +short` puis `@ns2` ; `dig +trace` | Un numéro de série différent (TP 19), une délégation fausse (TP 8, TP 20) |
 | 6 | **Que voit-on réellement sur le fil ?** | `tcpdump -w` puis `-r` ; journal des requêtes | Le paquet part-il ? La réponse revient-elle ? En UDP seulement ? (TP 31, TP 32) |
 
-Deux règles qui évitent les fausses pistes :
+Tu peux imprimer ce tableau et le garder sous les yeux : c'est le résumé de tout le tutoriel.
+
+**Deux règles qui évitent les fausses pistes.**
 
 - **Teste toujours avec l'outil qui ressemble à l'application.** `dig` ignore la liste de suffixes (sauf `+search`) et le cache du système : `getent hosts` (Linux) et `Resolve-DnsName` (Windows) font ce que font les programmes (TP 6).
-- **Change une chose à la fois, et vérifie chaque changement par la commande qui a révélé le symptôme.**
+- **Change une chose à la fois, et vérifie chaque changement par la commande qui a révélé le symptôme.** Si tu changes trois choses et que ça marche, tu ne sais pas laquelle a réparé.
 
 ---
 
-## 43. 🧪 TP 34 — Cinq pannes à diagnostiquer
+## XI.2 🧪 TP 34 — Cinq pannes à diagnostiquer
 
-**🎯 Objectif.** Appliquer la méthode : cinq symptômes, une commande décisive pour chacun, la cause, le remède. Les pannes 3 à 5 reprennent des TP précédents : refais-les **sans relire** le TP, en suivant le tableau du § 42, et ne regarde le TP qu'ensuite.
+**🎯 Objectif.** Appliquer la méthode : cinq symptômes, une commande décisive pour chacun, la cause, le remède.
+
+**Ce qu'il te faut.** Les TP 5 à 30 terminés (la méthode s'appuie sur eux). Un terminal sur `DNS-RES`, un sur `PC-CONSEILLER` et un sur `DC1`. Durée : environ 1 heure 15.
+
+Les deux premières pannes sont **guidées** : tu les provoques, tu les diagnostiques et tu les répares, pas à pas. Les trois dernières sont à **toi de jouer** : essaie de trouver la commande décisive avant de regarder la solution.
 
 ### Panne 1 — « Plus rien ne se résout dans l'agence »
 
-**🔧 Manipulation (pour provoquer).**
+**Étape 1 — Provoquer la panne.**
 
 ```
 # sur DNS-RES
 sudo systemctl stop named
 ```
 
-**Symptômes** (question 1 : le poste utilise le stub, qui s'appuie sur DNS-RES ; question 2 : on interroge le résolveur directement).
+`systemctl stop named` arrête le service DNS du résolveur (TP 27). La commande n'affiche rien.
+
+**Étape 2 — Constater les symptômes.** Applique les questions 1 et 2 : à qui le poste parle-t-il ? Répond-il ?
 
 ```
 # sur PC-CONSEILLER
 dig @10.20.20.53 www.banquehorizon.com +time=1 +tries=1
-dig www.banquehorizon.com +short
 ```
 
 ```
@@ -6699,36 +6710,51 @@ dig www.banquehorizon.com +short
 ;; no servers could be reached
 ```
 
-Interrogé par le stub, le poste n'affiche **rien du tout** : pas d'erreur, pas de réponse (le stub n'a aucun serveur qui réponde et ne dit rien de plus avec `+short`).
+`connection refused` : la machine `10.20.20.53` est joignable, mais **rien n'écoute** sur le port 53 (TP 27).
 
 ```
-
+# sur PC-CONSEILLER
+dig www.banquehorizon.com +short
 ```
 
-**Diagnostic.** `connection refused` : la machine est joignable, **rien n'écoute** sur le port 53. On le confirme sur le serveur :
+Cette commande **n'affiche rien du tout** : ni erreur, ni réponse. Le poste passe par le stub (TP 5), qui s'appuie sur `DNS-RES`, et `+short` ne montre aucune erreur. **C'est la pire sortie à interpréter** : un blanc ne dit pas pourquoi. Repasse en `+noall +comments` pour voir le code de retour.
+
+**Étape 3 — Diagnostiquer sur le serveur.** Trois commandes pour confirmer que `named` ne tourne plus.
 
 ```
 # sur DNS-RES
 sudo rndc status
-ss -ulnp | grep named; echo rc=$?
-systemctl is-active named
 ```
 
 ```
 rndc: connect failed: 127.0.0.1#953: connection refused
 ```
 
-`ss` ne trouve plus aucun processus `named` (`grep` ne trouve rien, code de retour 1) :
+`rndc` ne peut pas se connecter à `named` : il n'est pas là.
+
+```
+# sur DNS-RES
+ss -ulnp | grep named; echo rc=$?
+```
 
 ```
 rc=1
+```
+
+`ss` (TP 14, étape 9) ne trouve plus aucun processus `named` à l'écoute ; `grep` n'a rien trouvé, donc son code de retour est `1` (échec).
+
+```
+# sur DNS-RES
+systemctl is-active named
 ```
 
 ```
 inactive
 ```
 
-**Remède.**
+`inactive` : le service est arrêté. C'est le diagnostic.
+
+**Étape 4 — Réparer, puis vérifier.**
 
 ```
 # sur DNS-RES
@@ -6745,65 +6771,108 @@ web.banquehorizon.com.
 203.0.113.20
 ```
 
-*Leçon* : `rndc: connect failed … connection refused` et un `connection refused` sur le port 53 racontent la même histoire : `named` ne tourne pas. Un `dig +short` qui n'affiche rien est **la pire sortie** à interpréter : repasse en `+noall +comments` pour voir le code de retour.
+Les réponses sont revenues.
+
+*Leçon* : `rndc: connect failed … connection refused` et un `connection refused` sur le port 53 racontent la même histoire : `named` ne tourne pas.
 
 ### Panne 2 — « Le serveur DNS principal du poste est arrêté, et tout marche »
 
-**🔧 Manipulation.** On arrête le service DNS de DC1 (le premier serveur DNS donné au poste par DHCP), après avoir vidé le cache du stub :
+Une panne qui se passe sans que personne ne s'en plaigne est la plus dangereuse. Voyons-la.
+
+**Étape 1 — Vider le cache du stub, puis arrêter `DC1`.**
 
 ```
 # sur PC-CONSEILLER
 sudo resolvectl flush-caches
 ```
 
+`resolvectl flush-caches` vide le cache du stub du poste Linux (TP 25).
+
 ```powershell
 # sur DC1
 Stop-Service DNS
 ```
 
+`Stop-Service DNS` arrête le service DNS de `DC1`, le **premier** serveur DNS donné au poste par le DHCP (TP 5). Aucune des deux commandes n'affiche quoi que ce soit.
+
+**Étape 2 — Résoudre un nom public.**
+
 ```
 # sur PC-CONSEILLER
 dig ebanking.banquehorizon.com +short
-resolvectl status | grep 'Current DNS'
 ```
-
-```powershell
-# sur DC1
-Start-Service DNS
-```
-
-**Résultat.** Le nom public se résout toujours — le poste a **basculé** sur son second serveur DNS (DNS-RES) :
 
 ```
 web.banquehorizon.com.
 203.0.113.20
 ```
 
+Ça marche ! Comment est-ce possible alors que le premier serveur est arrêté ? Regarde quel serveur le poste utilise maintenant :
+
+```
+# sur PC-CONSEILLER
+resolvectl status | grep 'Current DNS'
+```
+
 ```
   Current DNS Server: 10.20.20.53
 ```
 
-*Leçon* : une panne partielle peut être **invisible** pour l'utilisateur, ce qui est le but de deux serveurs — mais elle doit l'être pour toi aussi, par la **supervision**, pas par les plaintes. (Les noms de `horizon.local` n'auraient pas résolu : seul DC1 les connaît, voir TP 28.)
+`Current DNS Server: 10.20.20.53` : le poste a **basculé** sur son deuxième serveur, `DNS-RES`. L'utilisateur n'a rien vu.
+
+**Étape 3 — Remettre `DC1` en marche.**
+
+```powershell
+# sur DC1
+Start-Service DNS
+```
+
+*Leçon* : une panne partielle peut être **invisible** pour l'utilisateur, ce qui est le but de deux serveurs. Mais elle doit être visible pour toi, par la **supervision**, pas par les plaintes. (Les noms de `horizon.local` n'auraient pas résolu : seul `DC1` les connaît, TP 28.)
 
 ### Panne 3 — « J'ai changé l'enregistrement, mais certains voient encore l'ancien »
 
-Commande décisive (question 5) :
+**À toi de jouer.** Quelles sont les deux commandes qui disent si les serveurs d'autorité sont d'accord ?
+
+<details>
+<summary>Voir la solution</summary>
+
+C'est la question 5 de la méthode : compare le SOA des deux serveurs d'autorité.
 
 ```
 # sur PC-CONSEILLER
-dig @203.0.113.10 banquehorizon.com SOA +short
-dig @203.0.113.11 banquehorizon.com SOA +short
+dig @203.0.113.10 banquehorizon.com SOA +short; dig @203.0.113.11 banquehorizon.com SOA +short
 ```
 
-Deux numéros de série **différents** : le secondaire est en retard (le numéro n'a pas été monté, TP 19). Remède : monter le numéro de série **et** recharger. Si les numéros sont identiques et qu'une réponse reste ancienne, c'est un **cache** (questions 4 puis TP 25).
+```
+ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
+```
+
+Ici les deux numéros de série sont identiques : le secondaire est à jour. **S'ils étaient différents**, le secondaire serait en retard (le numéro n'a pas été monté, TP 19) : remède, monter le numéro de série **et** recharger. **Si les numéros sont identiques et qu'une réponse reste ancienne**, c'est un **cache** (question 4, puis TP 25).
+
+</details>
 
 ### Panne 4 — « SERVFAIL sur un domaine »
 
-Commande décisive : `dig +trace @10.20.20.53 domaine` — la chaîne s'arrête à la délégation dont le serveur ne répond pas (TP 26, TP 8). Un `SERVFAIL` n'est jamais réparé en modifiant le résolveur : la cause est **en aval**, chez un serveur d'autorité ou dans la délégation.
+**À toi de jouer.** Quelle commande montre où la chaîne de résolution s'arrête ?
+
+<details>
+<summary>Voir la solution</summary>
+
+`dig +trace @10.20.20.53 domaine` : la chaîne s'arrête à la délégation dont le serveur ne répond pas (TP 26, TP 8). Un `SERVFAIL` n'est **jamais** réparé en modifiant le résolveur : la cause est **en aval**, chez un serveur d'autorité ou dans la délégation.
+
+</details>
 
 ### Panne 5 — « Un seul poste n'arrive plus à résoudre les noms internes »
 
-Commandes décisives (question 1) : `Get-DnsClientServerAddress` sur ce poste, `Get-DnsClientNrptRule`. Un serveur DNS fixé à la main qui n'existe plus (`10.20.20.250` du TP 30), une règle NRPT oubliée : la cause est **locale** au poste, pas dans le service. `Set-DnsClientServerAddress -ResetServerAddresses` rend la main à DHCP.
+**À toi de jouer.** Un seul poste est touché, les autres vont bien. Où cherches-tu ?
+
+<details>
+<summary>Voir la solution</summary>
+
+La cause est **locale** au poste, pas dans le service. Commandes décisives (question 1) : `Get-DnsClientServerAddress` sur ce poste, et `Get-DnsClientNrptRule`. Un serveur DNS fixé à la main qui n'existe plus (le `10.20.20.250` du TP 30), une règle NRPT oubliée. Remède : `Set-DnsClientServerAddress -ResetServerAddresses` rend la main au DHCP.
+
+</details>
 
 **🧠 Ce que tu viens d'apprendre.**
 
@@ -6811,7 +6880,7 @@ Commandes décisives (question 1) : `Get-DnsClientServerAddress` sur ce poste, `
 |---|---|---|
 | `connection refused` | Service arrêté | `systemctl is-active named`, `rndc status` |
 | `timed out` | Réseau, pare-feu, mauvaise adresse du serveur | `ping`, `Get-DnsClientServerAddress` |
-| `REFUSED` | ACL (`allow-query`, `allow-recursion`) ou serveur non récursif | Config du serveur (TP 16) |
+| `REFUSED` | ACL (`allow-query`, `allow-recursion`) ou serveur non récursif | Configuration du serveur (TP 16) |
 | `SERVFAIL` | Serveur d'autorité en aval cassé, DNSSEC | `dig +trace` |
 | `NXDOMAIN` | Nom absent — **ou** absence en cache | Interroger l'autorité avec `+norecurse` |
 | `NOERROR` + 0 réponse | Type absent (NODATA) | `dig nom TYPE` |
@@ -6819,9 +6888,9 @@ Commandes décisives (question 1) : `Get-DnsClientServerAddress` sur ce poste, `
 
 ---
 
-## 44. Les messages d'erreur et ce qu'ils veulent dire
+## XI.3 Les messages d'erreur et ce qu'ils veulent dire
 
-Tous ces messages ont été produits dans ce laboratoire.
+Tous ces messages ont été produits dans ce laboratoire. Garde ce tableau à portée de main : quand tu en vois un, il te dit où commencer à chercher.
 
 | Message | Où | Sens | Premier geste |
 |---|---|---|---|
@@ -6845,13 +6914,17 @@ Tous ces messages ont été produits dans ce laboratoire.
 
 ---
 
-## 45. 🧪 TP 35 — Auditer le service de noms
+## XI.4 🧪 TP 35 — Auditer le service de noms
 
 **🎯 Objectif.** Dérouler la liste de contrôles d'un auditeur sur le laboratoire, **avec la preuve** de chaque point.
 
-**🔧 Manipulation et résultats.**
+**Ce qu'il te faut.** Un terminal sur `PC-CONSEILLER` et un sur `NS1-BANK`. Durée : environ 40 minutes.
 
-**1. Le serveur d'autorité n'est pas un résolveur ouvert.** Une question hors de ses zones est refusée :
+Un **audit** consiste à vérifier qu'un système est configuré comme il doit l'être, et à **garder la preuve** de cette vérification. Chaque contrôle ci-dessous a une commande, un résultat attendu, et une preuve à conserver (la sortie, datée).
+
+**Contrôle 1 — Le serveur d'autorité n'est pas un résolveur ouvert.**
+
+Une question hors de ses zones doit être refusée :
 
 ```
 # sur PC-CONSEILLER
@@ -6868,7 +6941,11 @@ dig @203.0.113.10 www.exemple.test +noall +comments
 ; EDNS: version: 0, flags:; udp: 1232
 ```
 
-**2. Le transfert de zone est restreint.** Un poste ordinaire ne peut pas copier la zone :
+Attendu : `status: REFUSED`. Si le serveur répondait, il serait utilisable par n'importe qui pour des attaques par amplification (TP 9).
+
+**Contrôle 2 — Le transfert de zone est restreint.**
+
+Un poste ordinaire ne doit pas pouvoir copier la zone :
 
 ```
 # sur PC-CONSEILLER
@@ -6876,14 +6953,17 @@ dig @203.0.113.10 banquehorizon.com AXFR
 ```
 
 ```
-
 ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @203.0.113.10 banquehorizon.com AXFR
 ; (1 server found)
 ;; global options: +cmd
 ; Transfer failed.
 ```
 
-**3. La version du serveur n'est pas annoncée à tout le monde.** Par défaut, la requête CHAOS `version.bind` répond :
+Attendu : `Transfer failed.` Sinon, un attaquant obtiendrait la liste complète de tes machines (TP 18).
+
+**Contrôle 3 — La version du serveur n'est pas annoncée à tout le monde.**
+
+Par défaut, la requête `version.bind` (une question de classe spéciale, `CHAOS`) révèle la version du logiciel :
 
 ```
 # sur PC-CONSEILLER
@@ -6894,7 +6974,7 @@ dig @203.0.113.10 version.bind CHAOS TXT +short
 "9.18.12-0ubuntu0.22.04.1-Ubuntu"
 ```
 
-On ajoute `version none;` dans le bloc `options` de NS1-BANK, on vérifie la configuration, on recharge :
+Avec la version, un attaquant sait quelles failles connues exploiter. On la masque en ajoutant `version none;` dans le bloc `options` de `NS1-BANK` :
 
 ```
 # sur NS1-BANK
@@ -6905,12 +6985,12 @@ sudo sed -i 's/recursion no;/recursion no; version none;/' /etc/bind/named.conf;
 rc=0
 ```
 
+`rc=0` : la configuration est valide. Repose la question :
+
 ```
 # sur PC-CONSEILLER
 dig @203.0.113.10 version.bind CHAOS TXT +noall +comments +authority
 ```
-
-Plus de réponse (`ANSWER: 0`), seulement un SOA de la pseudo-zone `version.bind` :
 
 ```
 ;; Got answer:
@@ -6922,14 +7002,20 @@ Plus de réponse (`ANSWER: 0`), seulement un SOA de la pseudo-zone `version.bind
 version.bind.		86400	CH	SOA	version.bind. hostmaster.version.bind. 0 28800 7200 604800 86400
 ```
 
-On remet la configuration d'origine :
+Plus de réponse (`ANSWER: 0`), seulement un SOA de la pseudo-zone `version.bind`. La version n'est plus divulguée. On remet la configuration d'origine :
 
 ```
 # sur NS1-BANK
-sudo sed -i 's/ version none;//' /etc/bind/named.conf; sudo rndc reconfig
+sudo sed -i 's/ version none;//' /etc/bind/named.conf; sudo rndc reconfig; grep -c version /etc/bind/named.conf
 ```
 
-**4. Les deux serveurs d'autorité servent la même version de la zone.**
+```
+0
+```
+
+`grep -c` compte les lignes qui contiennent `version` : `0`, la ligne a bien disparu.
+
+**Contrôle 4 — Les deux serveurs d'autorité servent la même version de la zone.**
 
 ```
 # sur PC-CONSEILLER
@@ -6941,7 +7027,9 @@ ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600
 ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600
 ```
 
-**5. La configuration et les zones se chargent sans erreur.**
+Attendu : le même numéro de série sur les deux lignes (TP 18, TP 19).
+
+**Contrôle 5 — La configuration et les zones se chargent sans erreur.**
 
 ```
 # sur NS1-BANK
@@ -6954,11 +7042,13 @@ zone 113.0.203.in-addr.arpa/IN: loaded serial 2026103101
 rc=0
 ```
 
-**6. Le résolveur n'est offert qu'au réseau de l'agence.** Voir le TP 16 : l'ACL `agence`, le test de sortie de l'ACL (`REFUSED`).
+Attendu : `rc=0` et les numéros de série chargés (TP 15).
 
-**7. La politique de journalisation est écrite et appliquée.** Voir le TP 31.
+**Contrôle 6 — Le résolveur n'est offert qu'au réseau de l'agence.** Voir le TP 16 : l'ACL `agence` et le test de sortie de l'ACL (`REFUSED`).
 
-**🧠 Ce que tu viens d'apprendre.**
+**Contrôle 7 — La politique de journalisation est écrite et appliquée.** Voir le TP 31.
+
+**Synthèse de l'audit.**
 
 | Contrôle | Commande | Attendu | Preuve à conserver |
 |---|---|---|---|
@@ -6968,13 +7058,39 @@ rc=0
 | Cohérence primaire/secondaire | SOA des deux serveurs | Même numéro de série | Les deux lignes |
 | Configuration saine | `named-checkconf -z; echo rc=$?` | `rc=0` | Sortie + somme de `named.conf` |
 | Résolveur restreint | Test hors ACL (TP 16) | `REFUSED` | La sortie, datée |
-| Journalisation | `rndc status | grep query`, fichier de log | Conforme à la politique | Extrait + durée de conservation |
+| Journalisation | `rndc status \| grep query`, fichier de log | Conforme à la politique | Extrait + durée de conservation |
 
 Masquer la version n'est **pas** une protection : c'est une façon de ne pas faciliter le travail de qui cherche une faille connue. Aucun de ces contrôles ne remplace la mise à jour du logiciel.
 
+🆘 **Si ça ne marche pas.** Au contrôle 3, `dig … version.bind` répond encore la version après `version none;` : `named` n'a pas relu sa configuration (vérifie que `rc=0`), ou la ligne n'a pas été ajoutée (`grep version /etc/bind/named.conf`).
+
+**🧠 Ce que tu viens d'apprendre.**
+
+- Un audit, ce sont des **contrôles reproductibles**, chacun avec une commande, un résultat attendu et une preuve datée.
+- Les contrôles du service de noms portent sur : qui peut interroger, qui peut copier, ce qu'on révèle, si les serveurs sont d'accord, si la configuration est saine, ce qui est journalisé.
+
+**Vérifie-toi.**
+
+1. Quel résultat prouve qu'un serveur d'autorité n'est pas un résolveur ouvert ?
+2. Pourquoi masquer la version n'est-il pas une vraie protection ?
+
+*Réponses.* (1) `status: REFUSED` à une question hors de ses zones. (2) Parce qu'elle ne corrige aucune faille : elle ne fait que ne pas faciliter le travail de l'attaquant.
+
 ---
 
-## 46. Aide-mémoire
+## XI.5 Et maintenant ?
+
+Tu as parcouru l'essentiel du DNS tel qu'un administrateur le rencontre : poser une question et lire la réponse, descendre l'arbre, connaître les types de fiches, administrer des serveurs BIND et Windows, comprendre les caches, tolérer une panne, observer, diagnostiquer, auditer.
+
+Le simulateur contient encore d'autres aspects du DNS que ce tutoriel n'aborde pas : la signature des zones (DNSSEC), l'authentification des transferts et des mises à jour (TSIG), les mises à jour dynamiques côté BIND, la résolution sur le réseau local (mDNS, LLMNR) et la découverte de services (DNS-SD). Ce tutoriel t'a donné les bases pour les explorer.
+
+Quand tu seras à l'aise, refais un TP **sans lire** le texte, en t'appuyant seulement sur l'aide-mémoire de l'Annexe A.
+
+---
+
+# Annexes
+
+## A.1 Aide-mémoire
 
 ### `dig`
 
@@ -7040,6 +7156,63 @@ Masquer la version n'est **pas** une protection : c'est une façon de ne pas fac
 | Champ `minimum` du SOA | Plafond de la durée des réponses négatives |
 | `servfail-ttl` ≤ 30 s | Durée de conservation d'un `SERVFAIL` |
 | Port 53 UDP **et** TCP | Les deux sont nécessaires |
+
+---
+
+## B.1 Glossaire
+
+Les mots du DNS, par ordre alphabétique. Le numéro entre parenthèses renvoie à la section où le mot est expliqué.
+
+| Mot | Définition courte |
+|---|---|
+| **A** | Type de fiche qui associe un nom à une adresse IPv4 (§ I.11, TP 10) |
+| **AAAA** | Type de fiche qui associe un nom à une adresse IPv6 (TP 10) |
+| **aa** | Drapeau « *authoritative answer* » : celui qui répond fait autorité sur la zone (TP 2) |
+| **ACL** | Liste d'adresses nommée, utilisée pour décider qui a le droit de faire quoi (TP 16) |
+| **Alias** | Un nom qui en désigne un autre, par une fiche CNAME (TP 10) |
+| **AXFR** | Transfert complet d'une zone d'un serveur à un autre, par TCP (TP 18) |
+| **Autorité (serveur faisant)** | Serveur qui détient la version officielle d'une zone et en répond comme source de vérité (§ I.6) |
+| **Bail (DHCP)** | Configuration réseau prêtée à un poste pour une durée limitée (TP 29) |
+| **Cache** | Mémoire où un résolveur ou un poste garde les réponses déjà obtenues (§ I.10, Partie VII) |
+| **Cache négatif** | Cache de l'absence : « ce nom n'existe pas » est retenu, comme une réponse (TP 22) |
+| **CNAME** | Type de fiche : le nom est un alias d'un autre nom (TP 10) |
+| **Délégation** | Déclaration, dans une zone parente, que la gestion d'un sous-domaine est confiée à d'autres serveurs (§ I.7, TP 8) |
+| **DHCP** | Service qui prête automatiquement une adresse et une configuration à un poste (TP 29) |
+| **dig** | Outil Linux pour poser une question au DNS et lire la réponse entière (TP 2) |
+| **DMARC** | Fiche TXT qui dit quoi faire d'un courrier qui échoue aux contrôles anti-usurpation (TP 11) |
+| **DNSSEC** | Signature cryptographique des zones DNS (non abordé ici) |
+| **EDNS** | Extension du protocole DNS qui permet notamment d'annoncer la taille de réponse acceptée (TP 2, TP 32) |
+| **Flush (vider)** | Effacer tout ou partie d'un cache (TP 25) |
+| **Glue** | Adresse d'un serveur jointe à un renvoi, pour éviter une résolution circulaire (TP 8) |
+| **Hint (zone)** | Zone qui contient les adresses des serveurs racine, point de départ d'un résolveur (TP 16) |
+| **IN** | Classe « Internet » des fiches ; toujours `IN` en pratique (TP 2) |
+| **MX** | Type de fiche : serveur de messagerie d'un domaine, avec sa préférence (TP 11) |
+| **NODATA** | Réponse `NOERROR` sans réponse : le nom existe, pas ce type de fiche (TP 13) |
+| **NOTIFY** | Message d'un primaire à un secondaire : « ma zone a changé » (TP 18) |
+| **NRPT** | Table de règles Windows qui associe un suffixe à des serveurs DNS (TP 30) |
+| **NS** | Type de fiche : serveur qui détient une zone ou à qui elle est déléguée (§ I.11) |
+| **NXDOMAIN** | Code de retour : ce nom n'existe pas (TP 13) |
+| **Primaire / secondaire** | Le primaire détient la copie de référence d'une zone ; le secondaire en détient une copie recopiée (TP 18) |
+| **PTR** | Type de fiche de la résolution inverse : une adresse pointe vers un nom (TP 12) |
+| **ra / rd** | Drapeaux : `rd` = récursion demandée par le client, `ra` = récursion disponible chez le serveur (TP 2, TP 9) |
+| **Récursion** | Fait de parcourir tout l'arbre pour répondre à la place du client (TP 9) |
+| **Redirecteur (forwarder)** | Serveur vers lequel un autre serveur envoie ce qu'il ne sait pas résoudre (TP 28) |
+| **Renvoi (referral)** | Réponse qui n'est pas la réponse mais l'adresse du prochain serveur à interroger (TP 8) |
+| **REFUSED** | Code de retour : le serveur refuse de répondre à cette question (TP 9, TP 16) |
+| **Résolveur** | Serveur qui fait tout le chemin pour répondre à un client, et garde les réponses en cache (§ I.8) |
+| **Racine** | Sommet de l'arbre des noms, désigné par un point `.` (§ I.5) |
+| **SERVFAIL** | Code de retour : le serveur n'a pas réussi à répondre (TP 26) |
+| **SOA** | Type de fiche « identité » d'une zone : serveur primaire, numéro de série, durées (TP 11) |
+| **SPF** | Fiche TXT qui liste les serveurs autorisés à envoyer du courrier pour un domaine (TP 11) |
+| **SRV** | Type de fiche : serveur **et port** d'un service (TP 11) |
+| **Stub** | Petit programme local qui relaie les questions du poste vers le résolveur (§ I.8, TP 5) |
+| **Suffixe de recherche** | Domaine ajouté automatiquement à un nom court (TP 6) |
+| **tc** | Drapeau « tronqué » : la réponse ne tient pas dans un paquet UDP (TP 32) |
+| **TLD** | « *Top-level domain* » : le dernier mot d'un nom (`com`) (§ I.5) |
+| **TTL** | Durée de vie, en secondes, d'une fiche en cache (§ I.10, TP 21) |
+| **TXT** | Type de fiche : texte libre, utilisé pour SPF et DMARC (TP 11) |
+| **UDP / TCP** | Les deux modes d'envoi : UDP rapide et limité en taille, TCP avec connexion et sans limite (TP 32) |
+| **Zone** | Portion de l'arbre des noms gérée par un même ensemble de serveurs (§ I.6) |
 
 ---
 

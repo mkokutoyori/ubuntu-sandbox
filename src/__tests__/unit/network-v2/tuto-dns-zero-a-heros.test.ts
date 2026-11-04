@@ -5,13 +5,14 @@
  * ou le tutoriel la fait taper. Trois tests :
  * 1. chaque groupe d'etapes est rejoue dans un laboratoire neuf et ce que la machine affiche est compare, etape par etape, a la capture, apres avoir masque ce qui change d'une execution a l'autre
  *    (l'identifiant d'une question, la duree, le temps d'aller-retour d'un ping, la date, les horodatages, ports et numeros de sequence d'une capture de paquets, les chiffres d'un vidage de cache, la date d'une page web) ;
- * 2. les parties VI a XI inserent les sorties de la capture : pour chaque etape que le tutoriel montre en entier (la liste `shown` du fichier), la premiere ligne de la sortie figure dans le tutoriel ;
- * 3. les parties 0 a V, ecrites a la main, ne montrent que des lignes de la capture : chaque bloc de resultat est couvert par la sortie d'UNE etape (deux blocs reunissent volontairement les sorties de
- *    plusieurs commandes courtes : la liste de `getent hosts` et les `+short` du TP 11) ; les blocs ```schema (plans, arbres, exemples de syntaxe) ne montrent aucune sortie de machine et sont ignores.
- * Groupes : A = parties 0 a V (poser une question, descendre l'arbre, les enregistrements), H = partie VI, I = partie VII, J = partie VIII, K = parties IX et X, L = partie XI, M = `host` et `dig +search`,
- * N = les sorties de la partie V qui ne sont pas dans A.
+ * 2. pour chaque etape que le tutoriel montre en entier (la liste `shown` du fichier), la premiere ligne de la sortie figure dans le tutoriel ;
+ * 3. chaque bloc de resultat du tutoriel, de la Partie 0 aux annexes, est couvert par la sortie d'UNE etape (deux blocs reunissent volontairement les sorties de plusieurs commandes courtes : la liste de
+ *    `getent hosts` et les `+short` du TP 11) ; les blocs ```schema (plans, arbres, exemples de syntaxe) ne montrent aucune sortie de machine et sont ignores.
+ * Groupes : A = parties 0 a V, H = partie VI, I = partie VII, J = partie VIII, K = parties IX et X, L = partie XI, M = `host` et `dig +search`, N = les sorties des TP 10 a 13 qui ne sont pas dans A.
  * Mesure avant les corrections de la meme livraison (git stash push -- src/network src/powershell) : 6 des 10 tests tombent, les groupes H (23 etapes differentes), I (2), J (2), K (6), L (9) et M (5), soit 47 etapes ;
  * les groupes A et N (parties I a V, qui ne dependent d'aucune correction) et les deux tests qui lisent le tutoriel passent des deux cotes. Chaque correction a son propre decompte dans sa sonde `probe-*` ou son test `*-oracle`.
+ * Reecriture pedagogique du tutoriel (aucune correction du simulateur) : 31 etapes ajoutees aux captures (groupes A, H, I et N). Le troisieme test, etendu aux parties I a XI, tombait sur l'ancien texte pour un seul
+ * bloc, un listing tcpdump dont les lignes longues avaient ete abregees a la main ; il passe sur le nouveau, dont tous les extraits de sortie sont tires des captures par numero de ligne.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'fs';
@@ -83,7 +84,7 @@ describe('le tutoriel DNS de zero a heros, rejoue sur le laboratoire Banque Hori
     }, 900000);
   }
 
-  it('les parties VI a XI montrent la sortie des etapes qu\'elles inserent', () => {
+  it('le tutoriel montre la sortie des etapes marquees comme montrees en entier', () => {
     const shown = new Set(masked(tutorial));
     const byId = new Map<string, Step>();
     for (const steps of Object.values(captures.groups)) for (const step of steps) byId.set(step.id, step);
@@ -98,9 +99,9 @@ describe('le tutoriel DNS de zero a heros, rejoue sur le laboratoire Banque Hori
     expect(missing, missing.join('\n')).toEqual([]);
   });
 
-  it('chaque bloc de resultat des parties 0 a V est couvert par la sortie d\'une seule etape', () => {
+  it('chaque bloc de resultat du tutoriel est couvert par la sortie d\'une seule etape', () => {
     const start = tutorial.indexOf('\n# Partie 0 \u2014');
-    const end = tutorial.indexOf('\n# Partie VI \u2014');
+    const end = tutorial.length;
     const outputs = Object.values(captures.groups).flat().map((step) => new Set(masked(step.output)));
     const blocks: string[][] = [];
     let current: string[] | null = null;
