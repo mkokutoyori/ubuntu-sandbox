@@ -29,6 +29,7 @@ import { coreutilsIO } from '../../coreutils/CoreutilsFiles';
 import { runTac } from '../../coreutils/TacCommand';
 import { runFmt } from '../../coreutils/FmtCommand';
 import { runPr } from '../../coreutils/PrCommand';
+import { runJoin } from '../../coreutils/JoinCommand';
 import { runCksum } from '../../coreutils/CksumCommand';
 import { runCmp } from '../../coreutils/CmpCommand';
 import { runBase64 } from '../../coreutils/Base64Command';
@@ -282,6 +283,28 @@ export const prCommand = viaCoreutils(coreutil(
   });
 });
 
+export const joinCommand = viaCoreutils(coreutil(
+  'join', 'join [OPTION]... FILE1 FILE2',
+  'For each pair of input lines with identical join fields, write a line to\n'
+  + 'standard output. The default join field is the first, delimited by blanks.',
+  [
+    { flag: '-1', description: 'Join on this FIELD of file 1', takesArg: true, argName: 'FIELD' },
+    { flag: '-2', description: 'Join on this FIELD of file 2', takesArg: true, argName: 'FIELD' },
+    { flag: '-a', description: 'Also print unpairable lines from FILENUM', takesArg: true, argName: 'FILENUM' },
+    { flag: '-v', description: 'Like -a, but suppress joined output lines', takesArg: true, argName: 'FILENUM' },
+    { flag: '-e', description: 'Replace missing input fields with EMPTY', takesArg: true, argName: 'EMPTY' },
+    { flag: '-i', description: 'Ignore differences in case when comparing fields' },
+    { flag: '-j', description: 'Equivalent to -1 FIELD -2 FIELD', takesArg: true, argName: 'FIELD' },
+    { flag: '-o', description: 'Obey FORMAT while constructing output line', takesArg: true, argName: 'FORMAT' },
+    { flag: '-t', description: 'Use CHAR as input and output field separator', takesArg: true, argName: 'CHAR' },
+    { flag: '-z', description: 'Line delimiter is NUL, not newline' },
+    { flag: '--check-order', description: 'Check that the input is correctly sorted' },
+    { flag: '--nocheck-order', description: 'Do not check that the input is correctly sorted' },
+    { flag: '--header', description: 'Treat the first line in each file as field headers' },
+  ],
+  () => '',
+), (args, io) => runJoin(args, io));
+
 // ─── column ─────────────────────────────────────────────────────────
 
 export const columnCommand = coreutil(
@@ -408,7 +431,7 @@ export const lessCommand: LinuxCommand = { package: 'less', ...coreutil(
 
 export const TEXT_STREAM_COMMANDS: LinuxCommand[] = [
   lessCommand,
-  tacCommand, nlCommand, pasteCommand, commCommand, foldCommand,
+  tacCommand, nlCommand, pasteCommand, commCommand, joinCommand, foldCommand,
   expandCommand, unexpandCommand, fmtCommand, prCommand, columnCommand,
   cmpCommand, splitCommand, base64Command, cksumCommand,
 ];
