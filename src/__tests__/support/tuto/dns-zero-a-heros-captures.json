@@ -1,0 +1,1946 @@
+{
+ "shown": [
+  "14.checkconf",
+  "14.checkzone",
+  "14.ls",
+  "14.named-conf",
+  "14.pkg-cat",
+  "14.pkg-files",
+  "14.reverse",
+  "14.rndc-status",
+  "14.ss",
+  "14.zone",
+  "15.conf-semicolon",
+  "15.conf-typo",
+  "15.conf-z",
+  "15.hints",
+  "15.log",
+  "15.reload-fixed",
+  "15.reload-ok",
+  "15.reload2",
+  "15.res-conf",
+  "15.root-conf",
+  "16.acl-break",
+  "16.acl-restore",
+  "16.dc1-records",
+  "16.grep",
+  "16.ns2-count",
+  "16.ok-again",
+  "16.refused",
+  "16.refused-local",
+  "16.tld-records",
+  "17.api2-ns2",
+  "17.axfr",
+  "17.ns2-count",
+  "17.reload",
+  "17.soa-ns1",
+  "17.soa-ns2",
+  "18.after",
+  "18.api2-gone",
+  "18.before",
+  "18.checkconf",
+  "18.checkzone",
+  "18.cleanup",
+  "18.own",
+  "18.root-reload",
+  "18.soa-ns2-after",
+  "18.trace",
+  "19.append",
+  "19.bump",
+  "19.ns1",
+  "19.ns2",
+  "19.ns2-after",
+  "19.reload-again",
+  "19.soa-both",
+  "c1.cold",
+  "c1.warm",
+  "c2.nx1",
+  "c2.nx2",
+  "c3.cache",
+  "c3.cache-after",
+  "c3.cache-nx",
+  "c3.displaydns",
+  "c3.flushdns",
+  "c3.nx",
+  "c4.server-cache",
+  "c5.dump-after",
+  "c5.dump-tree",
+  "c7.again",
+  "c7.dig",
+  "c7.dump",
+  "d1.direct",
+  "d1.ns2-direct",
+  "d1.resolve",
+  "d2.forwarder",
+  "d2.local",
+  "d2.public-via-ns1",
+  "d2.reg",
+  "d2.via-dc1",
+  "d2.via-res",
+  "d3.leases",
+  "d3.records",
+  "d3.release",
+  "d3.renew",
+  "d4.fail",
+  "d4.ok",
+  "d4.public-still-broken",
+  "d4.rule",
+  "d5.after",
+  "d5.client",
+  "d5.dig",
+  "d5.rndc",
+  "d5.ss",
+  "d5.systemctl",
+  "e2.bufsize",
+  "e2.plus-tcp",
+  "e2.tc",
+  "e2.tcp",
+  "e4.checkconf",
+  "e4.log",
+  "e4.log2",
+  "e4.query",
+  "e4.reconfig",
+  "e4.restore",
+  "e5.curl-host",
+  "e5.curl-http",
+  "e5.curl-https",
+  "e5.curl-ip",
+  "f1.capture",
+  "f2.read",
+  "f3.resolve",
+  "f3.servers",
+  "f4.dig",
+  "f4.status",
+  "f5.checkzone",
+  "f5.fix",
+  "f5.reload",
+  "g1.bad-ip",
+  "g1.cname-other",
+  "g1.extra",
+  "g1.mx-ip",
+  "g1.no-ns",
+  "g1.no-soa",
+  "g1.typo-type",
+  "l.axfr-denied",
+  "l.chaos-hidden",
+  "l.chaos-shown",
+  "l.checkconf-z",
+  "l.hide",
+  "l.recursion",
+  "l.soa-parity",
+  "m.host-ptr",
+  "m.nosearch",
+  "m.search",
+  "m.search-short"
+ ],
+ "groups": {
+  "A": [
+   {
+    "id": "1.ping-dns-res",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "ping -c 1 -W 1 10.20.20.53",
+    "output": "PING 10.20.20.53 (10.20.20.53) 56(84) bytes of data.\n64 bytes from 10.20.20.53: icmp_seq=1 ttl=63 time=0.118 ms\n\n--- 10.20.20.53 ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss, time 0ms\nrtt min/avg/max/mdev = 0.118/0.118/0.118/0.000 ms"
+   },
+   {
+    "id": "1.ping-web",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "ping -c 1 -W 1 203.0.113.20",
+    "output": "PING 203.0.113.20 (203.0.113.20) 56(84) bytes of data.\n64 bytes from 203.0.113.20: icmp_seq=1 ttl=62 time=0.045 ms\n\n--- 203.0.113.20 ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss, time 0ms\nrtt min/avg/max/mdev = 0.045/0.045/0.045/0.000 ms"
+   },
+   {
+    "id": "1.ping-root",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "ping -c 1 -W 1 198.51.100.1",
+    "output": "PING 198.51.100.1 (198.51.100.1) 56(84) bytes of data.\n64 bytes from 198.51.100.1: icmp_seq=1 ttl=62 time=0.043 ms\n\n--- 198.51.100.1 ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss, time 0ms\nrtt min/avg/max/mdev = 0.043/0.043/0.043/0.000 ms"
+   },
+   {
+    "id": "1.ipconfig",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "ipconfig /all",
+    "output": "Windows IP Configuration\n\n   Host Name . . . . . . . . . . . . : PC-GUICHET1\n   Primary Dns Suffix  . . . . . . . : \n   Node Type . . . . . . . . . . . . : Hybrid\n   IP Routing Enabled. . . . . . . . : No\n   WINS Proxy Enabled. . . . . . . . : No\n   DNS Suffix Search List. . . . . . : horizon.local\n\nEthernet adapter Ethernet 0:\n\n   Connection-specific DNS Suffix  . : horizon.local\n   Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller\n   Physical Address. . . . . . . . . : 02-00-00-00-00-6F\n   DHCP Enabled. . . . . . . . . . . : Yes\n   Autoconfiguration Enabled . . . . : Yes\n   Link-local IPv6 Address. . . . . . : fe80::ff:fe00:6f%2(Preferred)\n   IPv4 Address. . . . . . . . . . . : 10.20.10.50(Preferred)\n   Subnet Mask . . . . . . . . . . . : 255.255.255.0\n   Lease Obtained. . . . . . . . . . : Wednesday, November 4, 2026 11:02:30 AM\n   Lease Expires . . . . . . . . . . : Thursday, November 12, 2026 11:02:30 AM\n   Default Gateway . . . . . . . . . : 10.20.10.1\n   DHCP Server . . . . . . . . . . . : 10.20.20.10\n   DNS Servers . . . . . . . . . . . : 10.20.20.10\n                                       10.20.20.53\n   NetBIOS over Tcpip. . . . . . . . : Enabled\n\nEthernet adapter Ethernet 1:\n\n   Media State . . . . . . . . . . . : Media disconnected\n   Connection-specific DNS Suffix  . :\n   Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #2\n   Physical Address. . . . . . . . . : 02-00-00-00-00-70\n   DHCP Enabled. . . . . . . . . . . : Yes\n   Autoconfiguration Enabled . . . . : Yes\n\nEthernet adapter Ethernet 2:\n\n   Media State . . . . . . . . . . . : Media disconnected\n   Connection-specific DNS Suffix  . :\n   Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #3\n   Physical Address. . . . . . . . . : 02-00-00-00-00-71\n   DHCP Enabled. . . . . . . . . . . : Yes\n   Autoconfiguration Enabled . . . . : Yes\n\nEthernet adapter Ethernet 3:\n\n   Media State . . . . . . . . . . . : Media disconnected\n   Connection-specific DNS Suffix  . :\n   Description . . . . . . . . . . . : Intel(R) 82540EM Gigabit Ethernet Controller #4\n   Physical Address. . . . . . . . . : 02-00-00-00-00-72\n   DHCP Enabled. . . . . . . . . . . : Yes\n   Autoconfiguration Enabled . . . . : Yes\n"
+   },
+   {
+    "id": "1.resolve",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName www.banquehorizon.com",
+    "output": "\nName     : www.banquehorizon.com\nType     : CNAME\nTTL      : 3600\nSection  : Answer\nNameHost : web.banquehorizon.com\n\nName      : web.banquehorizon.com\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 203.0.113.20\n"
+   },
+   {
+    "id": "2.dig",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig www.banquehorizon.com",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> www.banquehorizon.com\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 44\n;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; QUESTION SECTION:\n;www.banquehorizon.com.\t\tIN\tA\n\n;; ANSWER SECTION:\nwww.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)\n;; WHEN: Wed Nov 04 11:05:30 UTC 2026\n;; MSG SIZE  rcvd: 84"
+   },
+   {
+    "id": "3.short",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig www.banquehorizon.com +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "3.noall",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig www.banquehorizon.com +noall +answer",
+    "output": "www.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20"
+   },
+   {
+    "id": "3.stats",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig www.banquehorizon.com +noall +answer +stats",
+    "output": "www.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20\n;; Query time: 0 msec\n;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)\n;; WHEN: Wed Nov 04 11:05:30 UTC 2026\n;; MSG SIZE  rcvd: 84"
+   },
+   {
+    "id": "3.comments",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com MX +norecurse +noall +comments +answer +authority +additional",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 49\n;; flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 5\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nbanquehorizon.com.\t3600\tIN\tMX\t10 mail.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tMX\t20 mail2.banquehorizon.com.\n\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tNS\tns1.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tNS\tns2.banquehorizon.com.\n\n;; ADDITIONAL SECTION:\nmail.banquehorizon.com.\t3600\tIN\tA\t203.0.113.25\nmail2.banquehorizon.com. 3600\tIN\tA\t203.0.113.26\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11"
+   },
+   {
+    "id": "4.nslookup",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "nslookup www.banquehorizon.com",
+    "output": "Server:  dc1.horizon.local\nAddress:  10.20.20.10\n\nNon-authoritative answer:\nName:    web.banquehorizon.com\nAddress:  203.0.113.20\nAliases:  www.banquehorizon.com\n"
+   },
+   {
+    "id": "4.nslookup-mx",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "nslookup -type=MX banquehorizon.com",
+    "output": "Server:  dc1.horizon.local\nAddress:  10.20.20.10\n\nNon-authoritative answer:\nbanquehorizon.com\tMX preference = 20, mail exchanger = mail2.banquehorizon.com\nbanquehorizon.com\tMX preference = 10, mail exchanger = mail.banquehorizon.com\n"
+   },
+   {
+    "id": "4.nslookup-server",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "nslookup www.banquehorizon.com 10.20.20.53",
+    "output": "Server:  UnKnown\nAddress:  10.20.20.53\n\nNon-authoritative answer:\nName:    web.banquehorizon.com\nAddress:  203.0.113.20\nAliases:  www.banquehorizon.com\n"
+   },
+   {
+    "id": "4.resolve-type",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName banquehorizon.com -Type MX",
+    "output": "\nName         : banquehorizon.com\nType         : MX\nTTL          : 3600\nSection      : Answer\nNameExchange : mail2.banquehorizon.com\nPreference   : 20\n\nName         : banquehorizon.com\nType         : MX\nTTL          : 3600\nSection      : Answer\nNameExchange : mail.banquehorizon.com\nPreference   : 10\n"
+   },
+   {
+    "id": "5.resolv",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "cat /etc/resolv.conf",
+    "output": "# This is /run/systemd/resolve/stub-resolv.conf managed by man:systemd-resolved(8).\n# Do not edit.\n\nnameserver 127.0.0.53\nsearch horizon.local"
+   },
+   {
+    "id": "5.resolvectl",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "resolvectl status",
+    "output": "Global\n       LLMNR setting: yes\nMulticastDNS setting: no\n  DNSOverTLS setting: no\n      DNSSEC setting: allow-downgrade\nresolv.conf mode: stub\n\nLink 2 (eth0)\n       LLMNR setting: yes\nMulticastDNS setting: no\n  DNSOverTLS setting: no\n      DNSSEC setting: allow-downgrade\n  Current DNS Server: 10.20.20.10\n         DNS Servers: 10.20.20.10 10.20.20.53\n          DNS Domain: horizon.local"
+   },
+   {
+    "id": "5.getdns",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClientServerAddress -InterfaceAlias \"Ethernet 0\"",
+    "output": "\nInterfaceAlias InterfaceIndex AddressFamily ServerAddresses           \n-------------- -------------- ------------- ---------------           \nEthernet 0                  2 IPv4          {10.20.20.10, 10.20.20.53}\nEthernet 0                  2 IPv6          {}                        \n"
+   },
+   {
+    "id": "5.getdnsclient",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClient",
+    "output": "\nInterfaceAlias InterfaceIndex ConnectionSpecificSuffix ConnectionSpecificSuffixSearchList RegisterThisConnectionsAddress UseSuffixWhenRegistering\n-------------- -------------- ------------------------ ---------------------------------- ------------------------------ ------------------------\nEthernet 0                  2 horizon.local            {}                                 True                           False                   \nEthernet 1                  3                          {}                                 True                           False                   \nEthernet 2                  4                          {}                                 True                           False                   \nEthernet 3                  5                          {}                                 True                           False                   \n"
+   },
+   {
+    "id": "6.short-name",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName intranet",
+    "output": "\nName     : intranet.horizon.local\nType     : CNAME\nTTL      : 3600\nSection  : Answer\nNameHost : dc1.horizon.local\n\nName      : dc1.horizon.local\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 10.20.20.10\n"
+   },
+   {
+    "id": "6.getent",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "getent hosts intranet",
+    "output": "10.20.20.10     intranet.horizon.local"
+   },
+   {
+    "id": "6.getent-dc1",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "getent hosts dc1.horizon.local",
+    "output": "10.20.20.10     dc1.horizon.local"
+   },
+   {
+    "id": "6.dig-suffix",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig intranet.horizon.local +short",
+    "output": "dc1.horizon.local.\n10.20.20.10"
+   },
+   {
+    "id": "7.trace",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig +trace @10.20.20.53 www.banquehorizon.com",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> +trace @10.20.20.53 www.banquehorizon.com\n; (1 server found)\n;; global options: +cmd\n.\t\t\t86400\tIN\tNS\ta.root-servers.net.\n;; Received 48 bytes from 10.20.20.53#53(10.20.20.53) in 0 ms\n\ncom.\t\t\t86400\tIN\tNS\ta.nic.com.\na.nic.com.\t\t86400\tIN\tA\t198.51.100.2\n;; Received 75 bytes from 198.51.100.1#53(198.51.100.1) in 0 ms\n\nbanquehorizon.com.\t3600\tIN\tNS\tns1.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tNS\tns2.banquehorizon.com.\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11\n;; Received 107 bytes from 198.51.100.2#53(198.51.100.2) in 0 ms\n\nwww.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11\n;; Received 141 bytes from 203.0.113.10#53(203.0.113.10) in 0 ms"
+   },
+   {
+    "id": "8.root-norecurse",
+    "dev": "ROOT-NS",
+    "kind": "sh",
+    "cmd": "dig @127.0.0.1 www.banquehorizon.com +norecurse +noall +comments +authority +additional",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 74\n;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 2\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\ncom.\t\t\t86400\tIN\tNS\ta.nic.com.\n\n;; ADDITIONAL SECTION:\na.nic.com.\t\t86400\tIN\tA\t198.51.100.2"
+   },
+   {
+    "id": "8.tld-norecurse",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @198.51.100.2 www.banquehorizon.com +norecurse +noall +comments +authority +additional",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 75\n;; flags: qr; QUERY: 1, ANSWER: 0, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tNS\tns1.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tNS\tns2.banquehorizon.com.\n\n;; ADDITIONAL SECTION:\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11"
+   },
+   {
+    "id": "8.bank-norecurse",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 www.banquehorizon.com +norecurse +noall +comments +answer +authority +additional",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 76\n;; flags: qr aa; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20\n\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tNS\tns1.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tNS\tns2.banquehorizon.com.\n\n;; ADDITIONAL SECTION:\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11"
+   },
+   {
+    "id": "9.flush",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flush",
+    "output": ""
+   },
+   {
+    "id": "9.res-cold",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "dig @127.0.0.1 www.banquehorizon.com +norecurse +noall +comments +authority +additional",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 77\n;; flags: qr ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\n.\t\t\t3600000\tIN\tNS\ta.root-servers.net."
+   },
+   {
+    "id": "9.res-rec",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "dig @127.0.0.1 www.banquehorizon.com +noall +comments +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 78\n;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20"
+   },
+   {
+    "id": "9.res-warm",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "dig @127.0.0.1 www.banquehorizon.com +norecurse +noall +comments +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 79\n;; flags: qr ra; QUERY: 1, ANSWER: 2, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20"
+   },
+   {
+    "id": "9.tld-rd",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @198.51.100.2 www.banquehorizon.com",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @198.51.100.2 www.banquehorizon.com\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 80\n;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 2, ADDITIONAL: 3\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096\n;; QUESTION SECTION:\n;www.banquehorizon.com.\t\tIN\tA\n\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tNS\tns1.banquehorizon.com.\nbanquehorizon.com.\t3600\tIN\tNS\tns2.banquehorizon.com.\n\n;; ADDITIONAL SECTION:\nns1.banquehorizon.com.\t3600\tIN\tA\t203.0.113.10\nns2.banquehorizon.com.\t3600\tIN\tA\t203.0.113.11\n\n;; Query time: 0 msec\n;; SERVER: 198.51.100.2#53(198.51.100.2) (UDP)\n;; WHEN: Wed Nov 04 11:05:30 UTC 2026\n;; MSG SIZE  rcvd: 118"
+   },
+   {
+    "id": "9.refused-root",
+    "dev": "ROOT-NS",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.banquehorizon.com",
+    "output": ";; communications error to 10.20.20.53#53: timed out\n;; communications error to 10.20.20.53#53: timed out\n;; communications error to 10.20.20.53#53: timed out\n\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @10.20.20.53 www.banquehorizon.com\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached"
+   },
+   {
+    "id": "9.refused-bank",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 google.com",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @203.0.113.10 google.com\n; (1 server found)\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 92\n;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; QUESTION SECTION:\n;google.com.\t\t\tIN\tA\n\n;; Query time: 0 msec\n;; SERVER: 203.0.113.10#53(203.0.113.10) (UDP)\n;; WHEN: Wed Nov 04 11:05:45 UTC 2026\n;; MSG SIZE  rcvd: 39"
+   }
+  ],
+  "H": [
+   {
+    "id": "14.ls",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "ls /etc/bind",
+    "output": "db.203.0.113\t      named.conf\tnamed.conf.options\ndb.banquehorizon.com  named.conf.local"
+   },
+   {
+    "id": "14.named-conf",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "cat /etc/bind/named.conf",
+    "output": "options {\n    directory \"/var/cache/bind\";\n    recursion no;\n    allow-query { any; };\n};\nzone \"banquehorizon.com\" {\n    type primary;\n    file \"/etc/bind/db.banquehorizon.com\";\n    allow-transfer { 203.0.113.11; };\n    notify yes;\n};\nzone \"113.0.203.in-addr.arpa\" {\n    type primary;\n    file \"/etc/bind/db.203.0.113\";\n};"
+   },
+   {
+    "id": "14.pkg-files",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "wc -c /etc/bind/named.conf.options /etc/bind/named.conf.local",
+    "output": "94 /etc/bind/named.conf.options\n 0 /etc/bind/named.conf.local\n94 total"
+   },
+   {
+    "id": "14.pkg-cat",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "cat /etc/bind/named.conf.options",
+    "output": "options {\n\tdirectory \"/var/cache/bind\";\n\n\tdnssec-validation auto;\n\n\tlisten-on-v6 { any; };\n};"
+   },
+   {
+    "id": "14.zone",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "cat /etc/bind/db.banquehorizon.com",
+    "output": "$TTL 3600\n$ORIGIN banquehorizon.com.\n@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 2026103101 7200 900 1209600 3600 )\n@ IN NS ns1.banquehorizon.com.\n@ IN NS ns2.banquehorizon.com.\n@ IN A 203.0.113.20\n@ IN MX 10 mail.banquehorizon.com.\n@ IN MX 20 mail2.banquehorizon.com.\n@ IN TXT \"v=spf1 mx -all\"\nns1 IN A 203.0.113.10\nns2 IN A 203.0.113.11\nweb IN A 203.0.113.20\nwww IN CNAME web\nebanking IN CNAME web\nagences IN CNAME web\napi IN CNAME web\nmail IN A 203.0.113.25\nmail2 IN A 203.0.113.26\n_dmarc IN TXT \"v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com\"\n_imaps._tcp IN SRV 0 1 993 mail"
+   },
+   {
+    "id": "14.reverse",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "cat /etc/bind/db.203.0.113",
+    "output": "$TTL 3600\n$ORIGIN 113.0.203.in-addr.arpa.\n@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 2026103101 7200 900 1209600 3600 )\n@ IN NS ns1.banquehorizon.com.\n@ IN NS ns2.banquehorizon.com.\n10 IN PTR ns1.banquehorizon.com.\n11 IN PTR ns2.banquehorizon.com.\n20 IN PTR web.banquehorizon.com.\n25 IN PTR mail.banquehorizon.com."
+   },
+   {
+    "id": "14.checkconf",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkconf; echo rc=$?",
+    "output": "rc=0"
+   },
+   {
+    "id": "14.checkzone",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
+    "output": "zone banquehorizon.com/IN: loaded serial 2026103101\nOK"
+   },
+   {
+    "id": "14.rndc-status",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc status",
+    "output": "version: BIND 9.18.12-0ubuntu0.22.04.1-Ubuntu (Extended Support Version) <id:>\nnumber of zones: 2 (0 automatic)\ndebug level: 0\nxfers running: 0\nxfers deferred: 0\nsoa queries in progress: 0\nquery logging is OFF\nrecursive clients: 0/900/1000\ntcp clients: 0/150\nserver is up and running"
+   },
+   {
+    "id": "14.ss",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "ss -ulnp | grep named",
+    "output": "UNCONN 0      0            0.0.0.0:53         0.0.0.0:*    users:((\"named\",pid=43,fd=3))          "
+   },
+   {
+    "id": "g1.typo-type",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sed 's/^web IN A/web IN AA/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z1 > /dev/null; named-checkzone banquehorizon.com /tmp/z1",
+    "output": "/tmp/z1:12: unknown RR type 'AA'\nzone banquehorizon.com/IN: loading from master file /tmp/z1 failed: unknown class/type\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "g1.bad-ip",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sed 's/^web IN A 203.0.113.20/web IN A 203.0.113.999/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z2 > /dev/null; named-checkzone banquehorizon.com /tmp/z2",
+    "output": "dns_rdata_fromtext: /tmp/z2:12: near '203.0.113.999': bad dotted quad\nzone banquehorizon.com/IN: loading from master file /tmp/z2 failed: bad dotted quad\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "g1.extra",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sed 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.25 oops/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z3 > /dev/null; named-checkzone banquehorizon.com /tmp/z3",
+    "output": "dns_rdata_fromtext: /tmp/z3:17: near 'oops': extra input text\nzone banquehorizon.com/IN: loading from master file /tmp/z3 failed: extra input text\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "g1.cname-other",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "(cat /etc/bind/db.banquehorizon.com; echo 'www IN A 203.0.113.21') | sudo tee /tmp/z4 > /dev/null; named-checkzone banquehorizon.com /tmp/z4",
+    "output": "dns_master_load: /tmp/z4:21: www.banquehorizon.com: CNAME and other data\nzone banquehorizon.com/IN: loading from master file /tmp/z4 failed: CNAME and other data\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "g1.no-soa",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "grep -v SOA /etc/bind/db.banquehorizon.com | sudo tee /tmp/z5 > /dev/null; named-checkzone banquehorizon.com /tmp/z5",
+    "output": "zone banquehorizon.com/IN: has 0 SOA records\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "g1.no-ns",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "grep -v ' NS ' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z6 > /dev/null; named-checkzone banquehorizon.com /tmp/z6",
+    "output": "zone banquehorizon.com/IN: has no NS records\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "g1.mx-ip",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sed 's/^@ IN MX 10 mail.banquehorizon.com./@ IN MX 10 203.0.113.25/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z8 > /dev/null; named-checkzone banquehorizon.com /tmp/z8",
+    "output": "/tmp/z8:7: warning: '203.0.113.25': MX is an address\nzone banquehorizon.com/IN: banquehorizon.com/MX '203.0.113.25.banquehorizon.com' has no address records (A or AAAA)\nzone banquehorizon.com/IN: loaded serial 2026103101\nOK"
+   },
+   {
+    "id": "g1.nodot-fqdn",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sed 's/^www IN CNAME web/www IN CNAME web.banquehorizon.com/' /etc/bind/db.banquehorizon.com | sudo tee /tmp/z9 > /dev/null; named-checkzone banquehorizon.com /tmp/z9; grep -c . /tmp/z9",
+    "output": "zone banquehorizon.com/IN: loaded serial 2026103101\nOK\n20"
+   },
+   {
+    "id": "15.conf-typo",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "cd /tmp; sed 's/recursion no;/recursion nope;/' /etc/bind/named.conf | sudo tee /tmp/bad.conf > /dev/null; named-checkconf bad.conf; echo rc=$?",
+    "output": "bad.conf:3: boolean expected near 'nope'\nrc=1"
+   },
+   {
+    "id": "15.conf-semicolon",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "cd /tmp; sed 's/recursion no;/recursion no/' /etc/bind/named.conf | sudo tee /tmp/bad2.conf > /dev/null; named-checkconf bad2.conf; echo rc=$?",
+    "output": "bad2.conf:4: missing ';' before 'allow-query'\nrc=1"
+   },
+   {
+    "id": "15.conf-z",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkconf -z; echo rc=$?",
+    "output": "zone banquehorizon.com/IN: loaded serial 2026103101\nzone 113.0.203.in-addr.arpa/IN: loaded serial 2026103101\nrc=0"
+   },
+   {
+    "id": "f5.break-zone",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.99 oops/' /etc/bind/db.banquehorizon.com",
+    "output": ""
+   },
+   {
+    "id": "f5.checkzone",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
+    "output": "dns_rdata_fromtext: /etc/bind/db.banquehorizon.com:17: near 'oops': extra input text\nzone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.com failed: extra input text\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "f5.reload",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "15.log",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo grep named /var/log/syslog | tail -4",
+    "output": "Nov  4 10:53:16 NS1-BANK systemd: Started named.service.\nNov  4 11:04:17 NS1-BANK named[43]: dns_rdata_fromtext: /etc/bind/db.banquehorizon.com:17: near 'oops': extra input text\nNov  4 11:04:17 NS1-BANK named[43]: zone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.com failed: extra input text\nNov  4 11:04:17 NS1-BANK named[43]: zone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "15.reload2",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "f5.still",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 mail.banquehorizon.com +noall +comments +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 43\n;; flags: qr aa rd; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 3\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nmail.banquehorizon.com.\t3600\tIN\tA\t203.0.113.25"
+   },
+   {
+    "id": "f5.fix",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/203.0.113.99 oops/203.0.113.25/' /etc/bind/db.banquehorizon.com; named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
+    "output": "zone banquehorizon.com/IN: loaded serial 2026103101\nOK"
+   },
+   {
+    "id": "15.reload-ok",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "15.reload-fixed",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload up-to-date"
+   },
+   {
+    "id": "15.res-conf",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "cat /etc/bind/named.conf",
+    "output": "acl \"agence\" { 10.20.0.0/16; 127.0.0.0/8; };\noptions {\n    directory \"/var/cache/bind\";\n    recursion yes;\n    allow-query { agence; };\n    allow-recursion { agence; };\n    dnssec-validation no;\n    empty-zones-enable no;\n};\nzone \".\" { type hint; file \"/etc/bind/db.root.hints\"; };\nzone \"horizon.local\" {\n    type forward;\n    forward only;\n    forwarders { 10.20.20.10; };\n};"
+   },
+   {
+    "id": "15.hints",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "cat /etc/bind/db.root.hints",
+    "output": ". 3600000 IN NS a.root-servers.net.\na.root-servers.net. 3600000 IN A 198.51.100.1"
+   },
+   {
+    "id": "15.root-conf",
+    "dev": "ROOT-NS",
+    "kind": "sh",
+    "cmd": "cat /etc/bind/db.root",
+    "output": "$TTL 86400\n. IN SOA a.root-servers.net. hostmaster.root-servers.net. ( 2026103101 1800 900 604800 86400 )\n. IN NS a.root-servers.net.\na.root-servers.net. IN A 198.51.100.1\ncom. IN NS a.nic.com.\na.nic.com. IN A 198.51.100.2\n113.0.203.in-addr.arpa. IN NS ns1.banquehorizon.com."
+   },
+   {
+    "id": "16.grep",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "grep -nE 'recursion|allow-|forwarders|listen-on' /etc/bind/named.conf",
+    "output": "4:    recursion yes;\n5:    allow-query { agence; };\n6:    allow-recursion { agence; };\n14:    forwarders { 10.20.20.10; };"
+   },
+   {
+    "id": "16.acl-break",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's#10.20.0.0/16;#10.99.0.0/16;#' /etc/bind/named.conf; sudo rndc reconfig; grep -n acl /etc/bind/named.conf",
+    "output": "1:acl \"agence\" { 10.99.0.0/16; 127.0.0.0/8; };"
+   },
+   {
+    "id": "16.refused",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.banquehorizon.com +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 44\n;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   },
+   {
+    "id": "16.refused-local",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "dig @127.0.0.1 www.banquehorizon.com +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "16.acl-restore",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's#10.99.0.0/16;#10.20.0.0/16;#' /etc/bind/named.conf; sudo rndc reconfig; grep -n acl /etc/bind/named.conf",
+    "output": "1:acl \"agence\" { 10.20.0.0/16; 127.0.0.0/8; };"
+   },
+   {
+    "id": "16.ok-again",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.banquehorizon.com +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "16.tld-zone",
+    "dev": "TLD-NS",
+    "kind": "ps",
+    "cmd": "Get-DnsServerZone",
+    "output": "\nZoneName            : com\nZoneType            : Primary\nDynamicUpdate       : NonsecureAndSecure\nReplicationScope    : None\nIsDsIntegrated      : False\nIsReverseLookupZone : False\nIsAutoCreated       : False\nIsPaused            : False\nIsReadOnly          : False\nIsSigned            : False\nZoneFile            : com.dns\nMasterServers       : {}\nSecureSecondaries   : TransferToZoneNameServer\nSecondaryServers    : {}\nNotify              : Notify\nNotifyServers       : {}\nRecordCount         : 7\n"
+   },
+   {
+    "id": "16.tld-records",
+    "dev": "TLD-NS",
+    "kind": "ps",
+    "cmd": "Get-DnsServerResourceRecord -ZoneName com",
+    "output": "\nHostName          RecordType Type Timestamp TimeToLive RecordData                                       \n--------          ---------- ---- --------- ---------- ----------                                       \n@                 SOA           6                 3600 [7][900][600][86400][3600] ns1.com hostmaster.com\n@                 NS            2                 3600 a.nic.com                                        \na.nic             A             1                 3600 198.51.100.2                                     \nbanquehorizon     NS            2                 3600 ns1.banquehorizon.com                            \nbanquehorizon     NS            2                 3600 ns2.banquehorizon.com                            \nns1.banquehorizon A             1                 3600 203.0.113.10                                     \nns2.banquehorizon A             1                 3600 203.0.113.11                                     \n"
+   },
+   {
+    "id": "16.dc1-zone",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Get-DnsServerZone",
+    "output": "\nZoneName            : horizon.local\nZoneType            : Primary\nDynamicUpdate       : NonsecureAndSecure\nReplicationScope    : None\nIsDsIntegrated      : False\nIsReverseLookupZone : False\nIsAutoCreated       : False\nIsPaused            : False\nIsReadOnly          : False\nIsSigned            : False\nZoneFile            : horizon.local.dns\nMasterServers       : {}\nSecureSecondaries   : TransferToZoneNameServer\nSecondaryServers    : {}\nNotify              : Notify\nNotifyServers       : {}\nRecordCount         : 6\n\nZoneName            : 20.10.in-addr.arpa\nZoneType            : Primary\nDynamicUpdate       : NonsecureAndSecure\nReplicationScope    : None\nIsDsIntegrated      : False\nIsReverseLookupZone : True\nIsAutoCreated       : False\nIsPaused            : False\nIsReadOnly          : False\nIsSigned            : False\nZoneFile            : 20.10.in-addr.arpa.dns\nMasterServers       : {}\nSecureSecondaries   : TransferToZoneNameServer\nSecondaryServers    : {}\nNotify              : Notify\nNotifyServers       : {}\nRecordCount         : 5\n"
+   },
+   {
+    "id": "16.dc1-records",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Get-DnsServerResourceRecord -ZoneName horizon.local",
+    "output": "\nHostName    RecordType Type          Timestamp TimeToLive RecordData                                                           \n--------    ---------- ----          --------- ---------- ----------                                                           \n@           SOA           6                          3600 [8][900][600][86400][3600] ns1.horizon.local hostmaster.horizon.local\ndc1         A             1                          3600 10.20.20.10                                                          \ndns-res     A             1                          3600 10.20.20.53                                                          \nintranet    CNAME         5                          3600 dc1.horizon.local                                                    \npc-guichet1 A             1 11/4/2026 11:01 AM       1200 10.20.10.50                                                          \npc-guichet2 A             1 11/4/2026 11:01 AM       1200 10.20.10.51                                                          \n"
+   },
+   {
+    "id": "16.ns2-zone",
+    "dev": "NS2-BANK",
+    "kind": "ps",
+    "cmd": "Get-DnsServerZone",
+    "output": "\nZoneName            : banquehorizon.com\nZoneType            : Secondary\nDynamicUpdate       : None\nReplicationScope    : None\nIsDsIntegrated      : False\nIsReverseLookupZone : False\nIsAutoCreated       : False\nIsPaused            : False\nIsReadOnly          : True\nIsSigned            : False\nZoneFile            : banquehorizon.com.dns\nMasterServers       : {203.0.113.10}\nSecureSecondaries   : TransferToZoneNameServer\nSecondaryServers    : {}\nNotify              : Notify\nNotifyServers       : {}\nRecordCount         : 18\n\nZoneName            : 113.0.203.in-addr.arpa\nZoneType            : Secondary\nDynamicUpdate       : None\nReplicationScope    : None\nIsDsIntegrated      : False\nIsReverseLookupZone : True\nIsAutoCreated       : False\nIsPaused            : False\nIsReadOnly          : True\nIsSigned            : False\nZoneFile            : 113.0.203.in-addr.arpa.dns\nMasterServers       : {203.0.113.10}\nSecureSecondaries   : TransferToZoneNameServer\nSecondaryServers    : {}\nNotify              : Notify\nNotifyServers       : {}\nRecordCount         : 7\n"
+   },
+   {
+    "id": "16.ns2-count",
+    "dev": "NS2-BANK",
+    "kind": "ps",
+    "cmd": "(Get-DnsServerZone -Name banquehorizon.com).RecordCount",
+    "output": "18"
+   },
+   {
+    "id": "17.serial",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/2026103101/2026103102/' /etc/bind/db.banquehorizon.com",
+    "output": ""
+   },
+   {
+    "id": "17.append",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "echo 'api2 IN A 203.0.113.30' | sudo tee -a /etc/bind/db.banquehorizon.com",
+    "output": "api2 IN A 203.0.113.30"
+   },
+   {
+    "id": "17.reload",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "17.soa-ns1",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103102 7200 900 1209600 3600"
+   },
+   {
+    "id": "17.soa-ns2",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103102 7200 900 1209600 3600"
+   },
+   {
+    "id": "17.api2-ns2",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName api2.banquehorizon.com -Server 203.0.113.11",
+    "output": "\nName      : api2.banquehorizon.com\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 203.0.113.30\n"
+   },
+   {
+    "id": "17.ns2-count",
+    "dev": "NS2-BANK",
+    "kind": "ps",
+    "cmd": "(Get-DnsServerZone -Name banquehorizon.com).RecordCount",
+    "output": "19"
+   },
+   {
+    "id": "17.axfr",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "dig @127.0.0.1 banquehorizon.com AXFR",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @127.0.0.1 banquehorizon.com AXFR\n; (1 server found)\n;; global options: +cmd\n; Transfer failed."
+   },
+   {
+    "id": "18.cleanup",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i '/^api2 /d; s/2026103102/2026103103/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "18.soa-ns2-after",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103103 7200 900 1209600 3600"
+   },
+   {
+    "id": "18.api2-gone",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 api2.banquehorizon.com +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 53\n;; flags: qr aa rd; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096"
+   },
+   {
+    "id": "19.append",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "echo 'novelty IN A 203.0.113.77' | sudo tee -a /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com",
+    "output": "novelty IN A 203.0.113.77\nzone reload queued"
+   },
+   {
+    "id": "19.ns1",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 novelty.banquehorizon.com +short",
+    "output": "203.0.113.77"
+   },
+   {
+    "id": "19.ns2",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 novelty.banquehorizon.com +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 57\n;; flags: qr aa rd; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096"
+   },
+   {
+    "id": "19.soa-both",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com SOA +short; dig @203.0.113.11 banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103103 7200 900 1209600 3600\nns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103103 7200 900 1209600 3600"
+   },
+   {
+    "id": "19.reload-again",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload up-to-date"
+   },
+   {
+    "id": "19.bump",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/2026103103/2026103104/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "19.ns2-after",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 novelty.banquehorizon.com +short",
+    "output": "203.0.113.77"
+   },
+   {
+    "id": "19.cleanup",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i '/^novelty /d; s/2026103104/2026103105/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "19.ns2-gone",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 novelty.banquehorizon.com +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 61\n;; flags: qr aa rd; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096"
+   },
+   {
+    "id": "18.zone-write",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo tee /etc/bind/db.exemple.test <<'EOF'\n$TTL 3600\n@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 1 7200 900 1209600 3600 )\n@ IN NS ns1.banquehorizon.com.\nwww IN A 203.0.113.40\nEOF",
+    "output": "$TTL 3600\n@ IN SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. ( 1 7200 900 1209600 3600 )\n@ IN NS ns1.banquehorizon.com.\nwww IN A 203.0.113.40"
+   },
+   {
+    "id": "18.conf-append",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo tee -a /etc/bind/named.conf <<'EOF'\nzone \"exemple.test\" { type primary; file \"/etc/bind/db.exemple.test\"; };\nEOF",
+    "output": "zone \"exemple.test\" { type primary; file \"/etc/bind/db.exemple.test\"; };"
+   },
+   {
+    "id": "18.checkzone",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkzone exemple.test /etc/bind/db.exemple.test",
+    "output": "zone exemple.test/IN: loaded serial 1\nOK"
+   },
+   {
+    "id": "18.checkconf",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkconf; echo rc=$?",
+    "output": "rc=0"
+   },
+   {
+    "id": "18.reconfig",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reconfig",
+    "output": ""
+   },
+   {
+    "id": "18.own",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 www.exemple.test +norecurse +noall +comments +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 62\n;; flags: qr aa; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.exemple.test.\t3600\tIN\tA\t203.0.113.40"
+   },
+   {
+    "id": "18.before",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.exemple.test +noall +comments +answer +authority",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 63\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\n.\t\t\t10800\tIN\tSOA\ta.root-servers.net. hostmaster.root-servers.net. 2026103101 1800 900 604800 86400"
+   },
+   {
+    "id": "18.root-append",
+    "dev": "ROOT-NS",
+    "kind": "sh",
+    "cmd": "echo 'test. IN NS ns1.banquehorizon.com.' | sudo tee -a /etc/bind/db.root",
+    "output": "test. IN NS ns1.banquehorizon.com."
+   },
+   {
+    "id": "18.root-reload",
+    "dev": "ROOT-NS",
+    "kind": "sh",
+    "cmd": "sudo rndc reload",
+    "output": "server reload successful"
+   },
+   {
+    "id": "18.flush",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flush",
+    "output": ""
+   },
+   {
+    "id": "18.after",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.exemple.test +noall +comments +answer +authority",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 64\n;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 1, ADDITIONAL: 2\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nwww.exemple.test.\t3600\tIN\tA\t203.0.113.40\n\n;; AUTHORITY SECTION:\nexemple.test.\t\t3600\tIN\tNS\tns1.banquehorizon.com."
+   },
+   {
+    "id": "18.trace",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig +trace @10.20.20.53 www.exemple.test",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> +trace @10.20.20.53 www.exemple.test\n; (1 server found)\n;; global options: +cmd\n.\t\t\t86400\tIN\tNS\ta.root-servers.net.\n;; Received 48 bytes from 10.20.20.53#53(10.20.20.53) in 0 ms\n\ntest.\t\t\t86400\tIN\tNS\tns1.banquehorizon.com.\n;; Received 69 bytes from 198.51.100.1#53(198.51.100.1) in 0 ms\n\nwww.exemple.test.\t3600\tIN\tA\t203.0.113.40\n;; Received 85 bytes from 203.0.113.10#53(203.0.113.10) in 0 ms"
+   },
+   {
+    "id": "20.cleanup-root",
+    "dev": "ROOT-NS",
+    "kind": "sh",
+    "cmd": "sudo sed -i '/^test\\. IN NS/d' /etc/bind/db.root; sudo rndc reload",
+    "output": "server reload successful"
+   },
+   {
+    "id": "20.cleanup-ns1",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i '/exemple.test/d' /etc/bind/named.conf; sudo rm /etc/bind/db.exemple.test; sudo rndc reconfig",
+    "output": ""
+   },
+   {
+    "id": "20.flush",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flush",
+    "output": ""
+   },
+   {
+    "id": "20.gone",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.exemple.test +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 70\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   }
+  ],
+  "I": [
+   {
+    "id": "c1.flush",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flush",
+    "output": ""
+   },
+   {
+    "id": "c1.cold",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.banquehorizon.com +noall +answer +stats",
+    "output": "www.banquehorizon.com.\t3600\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3600\tIN\tA\t203.0.113.20\n;; Query time: 0 msec\n;; SERVER: 10.20.20.53#53(10.20.20.53) (UDP)\n;; WHEN: Wed Nov 04 10:28:50 UTC 2026\n;; MSG SIZE  rcvd: 152"
+   },
+   {
+    "id": "c1.sleep",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sleep 5",
+    "output": ""
+   },
+   {
+    "id": "c1.warm",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.banquehorizon.com +noall +answer",
+    "output": "www.banquehorizon.com.\t3595\tIN\tCNAME\tweb.banquehorizon.com.\nweb.banquehorizon.com.\t3595\tIN\tA\t203.0.113.20"
+   },
+   {
+    "id": "c2.nx1",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 nexiste.banquehorizon.com +noall +comments +authority",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 42\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tSOA\tns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+   },
+   {
+    "id": "c2.nodata",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 web.banquehorizon.com AAAA +noall +comments +authority",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 43\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tSOA\tns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+   },
+   {
+    "id": "c2.sleep",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sleep 5",
+    "output": ""
+   },
+   {
+    "id": "c2.nx2",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 nexiste.banquehorizon.com +noall +comments +authority",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 44\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3595\tIN\tSOA\tns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+   },
+   {
+    "id": "c3.clear",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Clear-DnsClientCache",
+    "output": ""
+   },
+   {
+    "id": "c3.resolve",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName www.banquehorizon.com | Out-Null",
+    "output": ""
+   },
+   {
+    "id": "c3.cache",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClientCache | Where-Object Name -like \"*banquehorizon*\"",
+    "output": "\nEntry      : www.banquehorizon.com\nName       : www.banquehorizon.com\nType       : CNAME\nStatus     : Success\nSection    : Answer\nTimeToLive : 3590\nDataLength : 23\nData       : web.banquehorizon.com\n\nEntry      : www.banquehorizon.com\nName       : web.banquehorizon.com\nType       : A\nStatus     : Success\nSection    : Answer\nTimeToLive : 3590\nDataLength : 4\nData       : 203.0.113.20\n"
+   },
+   {
+    "id": "c3.displaydns",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "ipconfig /displaydns",
+    "output": "Windows IP Configuration\n\n    www.banquehorizon.com\n    ----------------------------------------\n    Record Name . . . . . : www.banquehorizon.com\n    Record Type . . . . . : 5\n    Time To Live  . . . . : 3590\n    Data Length . . . . . : 23\n    Section . . . . . . . : Answer\n    CNAME (Host) Data  . . . : web.banquehorizon.com\n\n    www.banquehorizon.com\n    ----------------------------------------\n    Record Name . . . . . : web.banquehorizon.com\n    Record Type . . . . . : 1\n    Time To Live  . . . . : 3590\n    Data Length . . . . . : 4\n    Section . . . . . . . : Answer\n    A (Host) Record  . . . : 203.0.113.20"
+   },
+   {
+    "id": "c3.nx",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName nexiste.banquehorizon.com",
+    "output": "Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist\n    + CategoryInfo          : ResourceUnavailable: (nexiste.banquehorizon.com:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName"
+   },
+   {
+    "id": "c3.cache-nx",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClientCache | Where-Object Name -like \"nexiste*\"",
+    "output": "\nEntry      : nexiste.banquehorizon.com\nName       : nexiste.banquehorizon.com\nType       : \nStatus     : NotExist\nSection    : Authority\nTimeToLive : 900\nDataLength : 0\nData       : \n"
+   },
+   {
+    "id": "c3.flushdns",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "ipconfig /flushdns",
+    "output": "Windows IP Configuration\n\nSuccessfully flushed the DNS Resolver Cache."
+   },
+   {
+    "id": "c3.cache-after",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClientCache | Where-Object Name -like \"*banquehorizon*\"",
+    "output": ""
+   },
+   {
+    "id": "c4.server-cache",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Show-DnsServerCache | Where-Object HostName -like \"*banquehorizon.com\"",
+    "output": "\nHostName              RecordType TimeToLive RecordData           \n--------              ---------- ---------- ----------           \nwww.banquehorizon.com CNAME            3590 web.banquehorizon.com\nweb.banquehorizon.com A                3590 203.0.113.20         \n"
+   },
+   {
+    "id": "c5.dump",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc dumpdb -cache; sudo cat /var/cache/bind/named_dump.db",
+    "output": ";\n; Start view _default\n;\n;\n; Cache dump of view '_default' (cache _default)\n;\n; using a 0 second stale ttl\n$DATE 20261104102900\n; authanswer\n.\t\t\t86390\tIN NS\ta.root-servers.net.\n; glue\ncom.\t\t\t86390\tNS\ta.nic.com.\n; authauthority\nbanquehorizon.com.\t3590\tNS\tns1.banquehorizon.com.\n\t\t\t3590\tNS\tns2.banquehorizon.com.\n; answer\nnexiste.banquehorizon.com. 3595\t\\-ANY\t;-$NXDOMAIN\n; banquehorizon.com. SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\n; glue\nns1.banquehorizon.com.\t3590\tA\t203.0.113.10\n; glue\nns2.banquehorizon.com.\t3590\tA\t203.0.113.11\n; answer\nweb.banquehorizon.com.\t3595\t\\-AAAA\t;-$NXRRSET\n; banquehorizon.com. SOA ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\n; authanswer\n\t\t\t3590\tA\t203.0.113.20\n; authanswer\nwww.banquehorizon.com.\t3590\tCNAME\tweb.banquehorizon.com.\n; glue\na.nic.com.\t\t86390\tA\t198.51.100.2\n;\n; Address database dump\n;\n; [edns success/timeout]\n; [plain success/timeout]\n;\n;\n; Unassociated entries\n;\n;\n; Bad cache\n;\n;\n; SERVFAIL cache\n;\n;\n; Start view _bind\n;\n;\n; Cache dump of view '_bind' (cache _bind)\n;\n; using a 0 second stale ttl\n$DATE 20261104102900\n;\n; Address database dump\n;\n; [edns success/timeout]\n; [plain success/timeout]\n;\n;\n; Unassociated entries\n;\n;\n; Bad cache\n;\n;\n; SERVFAIL cache\n;\n; Dump complete"
+   },
+   {
+    "id": "c5.flushname",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flushname nexiste.banquehorizon.com",
+    "output": ""
+   },
+   {
+    "id": "c5.dump-after",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc dumpdb -cache; sudo grep -c nexiste /var/cache/bind/named_dump.db",
+    "output": "0"
+   },
+   {
+    "id": "c5.flushtree",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flushtree banquehorizon.com",
+    "output": ""
+   },
+   {
+    "id": "c5.dump-tree",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc dumpdb -cache; sudo grep -c banquehorizon /var/cache/bind/named_dump.db",
+    "output": "0"
+   },
+   {
+    "id": "c5.flush",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flush",
+    "output": ""
+   },
+   {
+    "id": "c7.deleg",
+    "dev": "TLD-NS",
+    "kind": "ps",
+    "cmd": "Add-DnsServerZoneDelegation -Name com -ChildZoneName broken -NameServer ns.broken.com -IPAddress 203.0.113.99",
+    "output": ""
+   },
+   {
+    "id": "c7.sed",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/empty-zones-enable no;/empty-zones-enable no; servfail-ttl 30;/' /etc/bind/named.conf",
+    "output": ""
+   },
+   {
+    "id": "c7.restart",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo systemctl restart named",
+    "output": ""
+   },
+   {
+    "id": "c7.dig",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.broken.com +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 50\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   },
+   {
+    "id": "c7.dump",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc dumpdb -cache; sudo grep -A4 'SERVFAIL cache' /var/cache/bind/named_dump.db | head -5",
+    "output": "; SERVFAIL cache\n;\n; www.broken.com/A [ttl 29995]\n;\n; Start view _bind"
+   },
+   {
+    "id": "c7.again",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.broken.com +noall +comments +stats",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: SERVFAIL, id: 59\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; Query time: 0 msec\n;; SERVER: 10.20.20.53#53(10.20.20.53) (UDP)\n;; WHEN: Wed Nov 04 10:29:02 UTC 2026\n;; MSG SIZE  rcvd: 43"
+   },
+   {
+    "id": "c7.cleanup",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/ servfail-ttl 30;//' /etc/bind/named.conf; sudo systemctl restart named",
+    "output": ""
+   },
+   {
+    "id": "c7.cleanup-tld",
+    "dev": "TLD-NS",
+    "kind": "ps",
+    "cmd": "Remove-DnsServerZoneDelegation -Name com -ChildZoneName broken -Force",
+    "output": ""
+   },
+   {
+    "id": "c7.after",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.broken.com +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 60\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   }
+  ],
+  "J": [
+   {
+    "id": "d1.flush",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc flush",
+    "output": ""
+   },
+   {
+    "id": "d1.stop",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo systemctl stop named",
+    "output": ""
+   },
+   {
+    "id": "d1.resolve",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName mail.banquehorizon.com",
+    "output": "\nName      : mail.banquehorizon.com\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 203.0.113.25\n"
+   },
+   {
+    "id": "d1.direct",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 mail.banquehorizon.com +time=1 +tries=1",
+    "output": ";; communications error to 203.0.113.10#53: connection refused\n\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @203.0.113.10 mail.banquehorizon.com +time=1 +tries=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached"
+   },
+   {
+    "id": "d1.ns2-direct",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.11 mail.banquehorizon.com +noall +comments +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 42\n;; flags: qr aa rd; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 4096\n;; ANSWER SECTION:\nmail.banquehorizon.com.\t3600\tIN\tA\t203.0.113.25"
+   },
+   {
+    "id": "d1.start",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo systemctl start named",
+    "output": ""
+   },
+   {
+    "id": "d2.local",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName dc1.horizon.local",
+    "output": "\nName      : dc1.horizon.local\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 10.20.20.10\n"
+   },
+   {
+    "id": "d2.via-res",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName dc1.horizon.local -Server 10.20.20.53",
+    "output": "\nName      : dc1.horizon.local\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 10.20.20.10\n"
+   },
+   {
+    "id": "d2.via-dc1",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName www.banquehorizon.com -Server 10.20.20.10",
+    "output": "\nName     : www.banquehorizon.com\nType     : CNAME\nTTL      : 3600\nSection  : Answer\nNameHost : web.banquehorizon.com\n\nName      : web.banquehorizon.com\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 203.0.113.20\n"
+   },
+   {
+    "id": "d2.forwarder",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Get-DnsServerForwarder",
+    "output": "\nIPAddress     UseRootHint Timeout EnableReordering\n---------     ----------- ------- ----------------\n{10.20.20.53} True              3 True            \n"
+   },
+   {
+    "id": "d2.reg",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "reg query HKLM\\SYSTEM\\CurrentControlSet\\Services\\DNS\\Parameters",
+    "output": "\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\DNS\\Parameters\n    EnableGlobalQueryBlockList    REG_DWORD    0x1\n    GlobalQueryBlockList    REG_MULTI_SZ    isatap\\0wpad\n    Forwarders    REG_MULTI_SZ    10.20.20.53\n"
+   },
+   {
+    "id": "d2.public-via-ns1",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 dc1.horizon.local +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 46\n;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   },
+   {
+    "id": "d3.leases",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Get-DhcpServerv4Lease -ScopeId 10.20.10.0",
+    "output": "\nIPAddress       : 10.20.10.50\nClientId        : 02:00:00:00:00:6F\nScopeId         : 10.20.10.0\nLeaseExpiryTime : 11/12/2026 10:26 AM\nAddressState    : Active\n\nIPAddress       : 10.20.10.51\nClientId        : 02:00:00:00:00:73\nScopeId         : 10.20.10.0\nLeaseExpiryTime : 11/12/2026 10:26 AM\nAddressState    : Active\n\nIPAddress       : 10.20.10.52\nClientId        : 02:00:00:00:00:77\nScopeId         : 10.20.10.0\nLeaseExpiryTime : 11/12/2026 10:26 AM\nAddressState    : Active\n"
+   },
+   {
+    "id": "d3.records",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Get-DnsServerResourceRecord -ZoneName horizon.local",
+    "output": "\nHostName    RecordType Type          Timestamp TimeToLive RecordData                                                           \n--------    ---------- ----          --------- ---------- ----------                                                           \n@           SOA           6                          3600 [8][900][600][86400][3600] ns1.horizon.local hostmaster.horizon.local\ndc1         A             1                          3600 10.20.20.10                                                          \ndns-res     A             1                          3600 10.20.20.53                                                          \nintranet    CNAME         5                          3600 dc1.horizon.local                                                    \npc-guichet1 A             1 11/4/2026 10:26 AM       1200 10.20.10.50                                                          \npc-guichet2 A             1 11/4/2026 10:26 AM       1200 10.20.10.51                                                          \n"
+   },
+   {
+    "id": "d3.release",
+    "dev": "PC-GUICHET2",
+    "kind": "ps",
+    "cmd": "ipconfig /release",
+    "output": "Windows IP Configuration\n\nNo operation can be performed on Ethernet 1 while it has its media disconnected.\nNo operation can be performed on Ethernet 2 while it has its media disconnected.\nNo operation can be performed on Ethernet 3 while it has its media disconnected.\n\nEthernet adapter Ethernet 0:\n\n   Connection-specific DNS Suffix  . :\n   Default Gateway . . . . . . . . . :\n"
+   },
+   {
+    "id": "d3.renew",
+    "dev": "PC-GUICHET2",
+    "kind": "ps",
+    "cmd": "ipconfig /renew",
+    "output": "Windows IP Configuration\n\nEthernet adapter Ethernet 0:\n   Connection-specific DNS Suffix  . : horizon.local\n   Link-local IPv6 Address. . . . . . : fe80::ff:fe00:73%2\n   IPv4 Address. . . . . . . . . . . : 10.20.10.51\n   Subnet Mask . . . . . . . . . . . : 255.255.255.0\n   Default Gateway . . . . . . . . . : 10.20.10.1\n"
+   },
+   {
+    "id": "d3.ip",
+    "dev": "PC-GUICHET2",
+    "kind": "ps",
+    "cmd": "ipconfig",
+    "output": "Windows IP Configuration\n\nEthernet adapter Ethernet 0:\n\n   Connection-specific DNS Suffix  . : horizon.local\n   Link-local IPv6 Address. . . . . . : fe80::ff:fe00:73%2\n   IPv4 Address. . . . . . . . . . . : 10.20.10.51\n   Subnet Mask . . . . . . . . . . . : 255.255.255.0\n   Default Gateway . . . . . . . . . : 10.20.10.1\n\nEthernet adapter Ethernet 1:\n\n   Connection-specific DNS Suffix  . : \n   Media State . . . . . . . . . . . : Media disconnected\n\nEthernet adapter Ethernet 2:\n\n   Connection-specific DNS Suffix  . : \n   Media State . . . . . . . . . . . : Media disconnected\n\nEthernet adapter Ethernet 3:\n\n   Connection-specific DNS Suffix  . : \n   Media State . . . . . . . . . . . : Media disconnected\n"
+   },
+   {
+    "id": "d4.break",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Set-DnsClientServerAddress -InterfaceAlias \"Ethernet 0\" -ServerAddresses 10.20.20.250",
+    "output": ""
+   },
+   {
+    "id": "d4.clear",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Clear-DnsClientCache",
+    "output": ""
+   },
+   {
+    "id": "d4.fail",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName dc1.horizon.local",
+    "output": "Resolve-DnsName : dc1.horizon.local : This operation returned because the timeout period expired\n    + CategoryInfo          : ResourceUnavailable: (dc1.horizon.local:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName"
+   },
+   {
+    "id": "d4.nrpt-add",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Add-DnsClientNrptRule -Namespace \".horizon.local\" -NameServers 10.20.20.10",
+    "output": ""
+   },
+   {
+    "id": "d4.ok",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName dc1.horizon.local",
+    "output": "\nName      : dc1.horizon.local\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 10.20.20.10\n"
+   },
+   {
+    "id": "d4.rule",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClientNrptRule",
+    "output": "\nName                             : {44137ADA-B847-8475-D19D-3DF0A0619021}\nVersion                          : 2\nNamespace                        : {.horizon.local}\nIPsecCARestriction               : \nDirectAccessDnsServers           : {}\nDirectAccessEnabled              : False\nDirectAccessProxyType            : \nDirectAccessProxyName            : \nDirectAccessQueryIPsecEncryption : \nDirectAccessQueryIPsecRequired   : False\nNameServers                      : {10.20.20.10}\nDnsSecEnabled                    : False\nDnsSecQueryIPsecEncryption       : \nDnsSecQueryIPsecRequired         : False\nDnsSecValidationRequired         : False\nNameEncoding                     : Utf8WithMapping\nDisplayName                      : \nComment                          : \n"
+   },
+   {
+    "id": "d4.public-still-broken",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName www.banquehorizon.com",
+    "output": "Resolve-DnsName : www.banquehorizon.com : This operation returned because the timeout period expired\n    + CategoryInfo          : ResourceUnavailable: (www.banquehorizon.com:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName"
+   },
+   {
+    "id": "d4.remove",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClientNrptRule | Remove-DnsClientNrptRule -Force",
+    "output": ""
+   },
+   {
+    "id": "f3.reset-fix",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Set-DnsClientServerAddress -InterfaceAlias \"Ethernet 0\" -ResetServerAddresses",
+    "output": ""
+   },
+   {
+    "id": "f3.servers",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Get-DnsClientServerAddress -InterfaceAlias \"Ethernet 0\" -AddressFamily IPv4",
+    "output": "\nInterfaceAlias InterfaceIndex AddressFamily ServerAddresses           \n-------------- -------------- ------------- ---------------           \nEthernet 0                  2 IPv4          {10.20.20.10, 10.20.20.53}\n"
+   },
+   {
+    "id": "f3.resolve",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName www.banquehorizon.com | Select-Object -First 1",
+    "output": "\nName     : www.banquehorizon.com\nType     : CNAME\nTTL      : 3596\nSection  : Answer\nNameHost : web.banquehorizon.com\n"
+   }
+  ],
+  "K": [
+   {
+    "id": "e4.backup",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo cp /etc/bind/named.conf /tmp/named.conf.orig",
+    "output": ""
+   },
+   {
+    "id": "e4.logging",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo mkdir -p /var/log/named; sudo tee -a /etc/bind/named.conf <<'EOF'\nlogging {\n    channel query_log { file \"/var/log/named/query.log\" versions 3 size 5m; severity info; print-time yes; };\n    category queries { query_log; };\n};\nEOF",
+    "output": "logging {\n    channel query_log { file \"/var/log/named/query.log\" versions 3 size 5m; severity info; print-time yes; };\n    category queries { query_log; };\n};"
+   },
+   {
+    "id": "e4.checkconf",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "named-checkconf; echo rc=$?",
+    "output": "rc=0"
+   },
+   {
+    "id": "e4.reconfig",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc reconfig; sudo rndc querylog on; sudo rndc status | grep query",
+    "output": "query logging is ON"
+   },
+   {
+    "id": "e4.query",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 ebanking.banquehorizon.com +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "e4.log",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo cat /var/log/named/query.log",
+    "output": "04-Nov-2026 10:29:25.476 client @0x0 10.20.10.52#59210 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A +E(0) (10.20.20.53)"
+   },
+   {
+    "id": "e4.query-flags",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 ebanking.banquehorizon.com +norecurse +short; dig @10.20.20.53 ebanking.banquehorizon.com +tcp +short; dig @10.20.20.53 ebanking.banquehorizon.com +noedns +short; dig @10.20.20.53 ebanking.banquehorizon.com +dnssec +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20\nweb.banquehorizon.com.\n203.0.113.20\nweb.banquehorizon.com.\n203.0.113.20\nweb.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "e4.log2",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo tail -4 /var/log/named/query.log",
+    "output": "04-Nov-2026 10:29:25.507 client @0x0 10.20.10.52#57693 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A -E(0) (10.20.20.53)\n04-Nov-2026 10:29:25.517 client @0x0 10.20.10.52#32768 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A +E(0)T (10.20.20.53)\n04-Nov-2026 10:29:25.532 client @0x0 10.20.10.52#35384 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A + (10.20.20.53)\n04-Nov-2026 10:29:25.536 client @0x0 10.20.10.52#45456 (ebanking.banquehorizon.com): query: ebanking.banquehorizon.com IN A +E(0)D (10.20.20.53)"
+   },
+   {
+    "id": "e4.restore",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo cp /tmp/named.conf.orig /etc/bind/named.conf; sudo rndc reconfig; sudo rndc querylog off; sudo rndc status | grep query",
+    "output": "query logging is OFF"
+   },
+   {
+    "id": "f1.many",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "for i in $(seq 1 60); do echo \"many IN A 198.51.100.$i\" | sudo tee -a /etc/bind/db.banquehorizon.com > /dev/null; done; sudo sed -i 's/2026103101/2026103102/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "f1.capture",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sudo tcpdump -ni eth0 -w /tmp/dns.pcap port 53 & sleep 1; dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +noall +comments; sleep 1; sudo pkill tcpdump; sleep 1",
+    "output": "[1] 45\n;; Truncated, retrying in TCP mode.\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52\n;; flags: qr aa; QUERY: 1, ANSWER: 60, AUTHORITY: 2, ADDITIONAL: 2"
+   },
+   {
+    "id": "f1.read",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sudo tcpdump -nr /tmp/dns.pcap",
+    "output": "reading from file /tmp/dns.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n10:29:26.782723 IP 10.20.10.52.50810 > 203.0.113.10.53: 51 A? many.banquehorizon.com. (40)\n10:29:26.788844 IP 203.0.113.10.53 > 10.20.10.52.50810: 51*-| 29/0/0 A 198.51.100.1, A 198.51.100.2, A 198.51.100.3, A 198.51.100.4, A 198.51.100.5, A 198.51.100.6, A 198.51.100.7, A 198.51.100.8, A 198.51.100.9, A 198.51.100.10, A 198.51.100.11, A 198.51.100.12, A 198.51.100.13, A 198.51.100.14, A 198.51.100.15, A 198.51.100.16, A 198.51.100.17, A 198.51.100.18, A 198.51.100.19, A 198.51.100.20, A 198.51.100.21, A 198.51.100.22, A 198.51.100.23, A 198.51.100.24, A 198.51.100.25, A 198.51.100.26, A 198.51.100.27, A 198.51.100.28, A 198.51.100.29 (504)\n10:29:26.792844 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [S], seq 2634807467, win 65535, options [mss 1460,sackOK,TS val 13418 ecr 0,nop,wscale 7], length 0\n10:29:26.795876 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [S.], seq 2871740974, ack 2634807468, win 65535, options [mss 1460,sackOK,TS val 13420 ecr 13418,nop,wscale 7], length 0\n10:29:26.795876 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [.], ack 1, win 511, options [nop,nop,TS val 13421 ecr 13420], length 0\n10:29:26.798891 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [P.], seq 1:43, ack 1, win 511, options [nop,nop,TS val 13424 ecr 13420], length 42 52 A? many.banquehorizon.com. (40)\n10:29:26.801125 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [P.], seq 1:1071, ack 43, win 511, options [nop,nop,TS val 13426 ecr 13424], length 1070 52*- 60/2/2 A 198.51.100.2, A 198.51.100.3, A 198.51.100.4, A 198.51.100.5, A 198.51.100.6, A 198.51.100.7, A 198.51.100.8, A 198.51.100.9, A 198.51.100.10, A 198.51.100.11, A 198.51.100.12, A 198.51.100.13, A 198.51.100.14, A 198.51.100.15, A 198.51.100.16, A 198.51.100.17, A 198.51.100.18, A 198.51.100.19, A 198.51.100.20, A 198.51.100.21, A 198.51.100.22, A 198.51.100.23, A 198.51.100.24, A 198.51.100.25, A 198.51.100.26, A 198.51.100.27, A 198.51.100.28, A 198.51.100.29, A 198.51.100.30, A 198.51.100.31, A 198.51.100.32, A 198.51.100.33, A 198.51.100.34, A 198.51.100.35, A 198.51.100.36, A 198.51.100.37, A 198.51.100.38, A 198.51.100.39, A 198.51.100.40, A 198.51.100.41, A 198.51.100.42, A 198.51.100.43, A 198.51.100.44, A 198.51.100.45, A 198.51.100.46, A 198.51.100.47, A 198.51.100.48, A 198.51.100.49, A 198.51.100.50, A 198.51.100.51, A 198.51.100.52, A 198.51.100.53, A 198.51.100.54, A 198.51.100.55, A 198.51.100.56, A 198.51.100.57, A 198.51.100.58, A 198.51.100.59, A 198.51.100.60, A 198.51.100.1 (1068)\n10:29:26.801125 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [F.], seq 43, ack 1071, win 511, options [nop,nop,TS val 13427 ecr 13426], length 0\n10:29:26.801154 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [.], ack 44, win 511, options [nop,nop,TS val 13429 ecr 13427], length 0\n10:29:26.801154 IP 203.0.113.10.53 > 10.20.10.52.32769: Flags [F.], seq 1071, ack 44, win 511, options [nop,nop,TS val 13429 ecr 13427], length 0\n10:29:26.801154 IP 10.20.10.52.32769 > 203.0.113.10.53: Flags [.], ack 1072, win 511, options [nop,nop,TS val 13430 ecr 13429], length 0"
+   },
+   {
+    "id": "f1.read-v",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sudo tcpdump -nr /tmp/dns.pcap -c 2",
+    "output": "reading from file /tmp/dns.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n10:29:26.782723 IP 10.20.10.52.50810 > 203.0.113.10.53: 51 A? many.banquehorizon.com. (40)\n10:29:26.788844 IP 203.0.113.10.53 > 10.20.10.52.50810: 51*-| 29/0/0 A 198.51.100.1, A 198.51.100.2, A 198.51.100.3, A 198.51.100.4, A 198.51.100.5, A 198.51.100.6, A 198.51.100.7, A 198.51.100.8, A 198.51.100.9, A 198.51.100.10, A 198.51.100.11, A 198.51.100.12, A 198.51.100.13, A 198.51.100.14, A 198.51.100.15, A 198.51.100.16, A 198.51.100.17, A 198.51.100.18, A 198.51.100.19, A 198.51.100.20, A 198.51.100.21, A 198.51.100.22, A 198.51.100.23, A 198.51.100.24, A 198.51.100.25, A 198.51.100.26, A 198.51.100.27, A 198.51.100.28, A 198.51.100.29 (504)"
+   },
+   {
+    "id": "f2.capture-normal",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sudo tcpdump -ni eth0 -w /tmp/dns2.pcap port 53 & sleep 1; dig @10.20.20.53 mail2.banquehorizon.com +short; sleep 1; sudo pkill tcpdump; sleep 1",
+    "output": "[1]+  Done                sudo tcpdump -ni eth0 -w /tmp/dns.pcap port 53\n[2] 47\n203.0.113.26"
+   },
+   {
+    "id": "f2.read",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sudo tcpdump -nr /tmp/dns2.pcap",
+    "output": "reading from file /tmp/dns2.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n10:29:29.844169 IP 10.20.10.52.59334 > 10.20.20.53.53: 53+ [1au] A? mail2.banquehorizon.com. (52)\n10:29:29.851316 IP 10.20.20.53.53 > 10.20.10.52.59334: 53 1/2/3 A 203.0.113.26 (136)"
+   },
+   {
+    "id": "e2.tc",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +ignore +noall +comments +stats",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 54\n;; flags: qr aa tc; QUERY: 1, ANSWER: 29, AUTHORITY: 0, ADDITIONAL: 0\n\n;; Query time: 0 msec\n;; SERVER: 203.0.113.10#53(203.0.113.10) (UDP)\n;; WHEN: Wed Nov 04 10:29:31 UTC 2026\n;; MSG SIZE  rcvd: 504"
+   },
+   {
+    "id": "e2.tcp",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 many.banquehorizon.com +noedns +norecurse +noall +comments +stats",
+    "output": ";; Truncated, retrying in TCP mode.\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 56\n;; flags: qr aa; QUERY: 1, ANSWER: 60, AUTHORITY: 2, ADDITIONAL: 2\n\n;; Query time: 0 msec\n;; SERVER: 203.0.113.10#53(203.0.113.10) (TCP)\n;; WHEN: Wed Nov 04 10:29:31 UTC 2026\n;; MSG SIZE  rcvd: 1068"
+   },
+   {
+    "id": "e2.plus-tcp",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 mail.banquehorizon.com +tcp +noall +comments +answer +stats",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 57\n;; flags: qr aa rd; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 3\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nmail.banquehorizon.com.\t3600\tIN\tA\t203.0.113.25\n\n;; Query time: 0 msec\n;; SERVER: 203.0.113.10#53(203.0.113.10) (TCP)\n;; WHEN: Wed Nov 04 10:29:31 UTC 2026\n;; MSG SIZE  rcvd: 135"
+   },
+   {
+    "id": "e2.bufsize",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 many.banquehorizon.com +bufsize=1232 +norecurse +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 58\n;; flags: qr aa; QUERY: 1, ANSWER: 60, AUTHORITY: 2, ADDITIONAL: 3\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   },
+   {
+    "id": "f1.cleanup",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i '/^many /d; s/2026103102/2026103103/' /etc/bind/db.banquehorizon.com; sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "e5.curl-http",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "curl -sI http://www.banquehorizon.com/",
+    "output": "HTTP/1.1 301 Moved Permanently\nServer: nginx/1.24.0\nContent-Type: text/html\nLocation: https://www.banquehorizon.com/\nContent-Length: 169\n"
+   },
+   {
+    "id": "e5.curl-https",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "curl -skI https://ebanking.banquehorizon.com/",
+    "output": "HTTP/1.1 200 OK\nServer: nginx/1.24.0\nContent-Type: text/html\nStrict-Transport-Security: max-age=31536000; includeSubDomains\nX-Frame-Options: DENY\nCache-Control: no-store\nLast-Modified: Wed, 04 Nov 2026 10:22:24 GMT\nETag: \"6aeb0760-5e4\"\nAccept-Ranges: bytes\nContent-Length: 1508\n"
+   },
+   {
+    "id": "e5.curl-ip",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "curl -s -o /dev/null -w \"%{http_code}\\n\" http://203.0.113.20/",
+    "output": "404"
+   },
+   {
+    "id": "e5.curl-host",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "curl -s -o /dev/null -w \"%{http_code}\\n\" -H \"Host: www.banquehorizon.com\" http://203.0.113.20/",
+    "output": "301"
+   }
+  ],
+  "L": [
+   {
+    "id": "d5.res-stop",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo systemctl stop named",
+    "output": ""
+   },
+   {
+    "id": "d5.dig",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 www.banquehorizon.com +time=1 +tries=1",
+    "output": ";; communications error to 10.20.20.53#53: connection refused\n\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @10.20.20.53 www.banquehorizon.com +time=1 +tries=1\n; (1 server found)\n;; global options: +cmd\n;; no servers could be reached"
+   },
+   {
+    "id": "d5.rndc",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc status",
+    "output": "rndc: connect failed: 127.0.0.1#953: connection refused"
+   },
+   {
+    "id": "d5.ss",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "ss -ulnp | grep named; echo rc=$?",
+    "output": "rc=1"
+   },
+   {
+    "id": "d5.systemctl",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "systemctl is-active named",
+    "output": "inactive"
+   },
+   {
+    "id": "d5.client",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig www.banquehorizon.com +short",
+    "output": ""
+   },
+   {
+    "id": "d5.res-start",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo systemctl start named",
+    "output": ""
+   },
+   {
+    "id": "d5.after",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig www.banquehorizon.com +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "f4.flush-stub",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "sudo resolvectl flush-caches",
+    "output": ""
+   },
+   {
+    "id": "f4.dc1-stop",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Stop-Service DNS",
+    "output": ""
+   },
+   {
+    "id": "f4.dig",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig ebanking.banquehorizon.com +short",
+    "output": "web.banquehorizon.com.\n203.0.113.20"
+   },
+   {
+    "id": "f4.status",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "resolvectl status | grep 'Current DNS'",
+    "output": "  Current DNS Server: 10.20.20.53"
+   },
+   {
+    "id": "f4.dc1-start",
+    "dev": "DC1",
+    "kind": "ps",
+    "cmd": "Start-Service DNS",
+    "output": ""
+   },
+   {
+    "id": "f5.break-zone",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/^mail IN A 203.0.113.25/mail IN A 203.0.113.25 oops/' /etc/bind/db.banquehorizon.com",
+    "output": ""
+   },
+   {
+    "id": "f5.checkzone",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
+    "output": "dns_rdata_fromtext: /etc/bind/db.banquehorizon.com:17: near 'oops': extra input text\nzone banquehorizon.com/IN: loading from master file /etc/bind/db.banquehorizon.com failed: extra input text\nzone banquehorizon.com/IN: not loaded due to errors."
+   },
+   {
+    "id": "f5.reload",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "f5.still",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 mail.banquehorizon.com +noall +comments +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 60\n;; flags: qr aa rd; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 3\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232\n;; ANSWER SECTION:\nmail.banquehorizon.com.\t3600\tIN\tA\t203.0.113.25"
+   },
+   {
+    "id": "f5.fix",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/ oops//' /etc/bind/db.banquehorizon.com; named-checkzone banquehorizon.com /etc/bind/db.banquehorizon.com",
+    "output": "zone banquehorizon.com/IN: loaded serial 2026103101\nOK"
+   },
+   {
+    "id": "f5.reload-fixed",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo rndc reload banquehorizon.com",
+    "output": "zone reload queued"
+   },
+   {
+    "id": "f7.version",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 version.bind CHAOS TXT +short",
+    "output": "\"9.18.12-0ubuntu0.22.04.1-Ubuntu\""
+   },
+   {
+    "id": "f7.any",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com ANY +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 62\n;; flags: qr aa rd; QUERY: 1, ANSWER: 7, AUTHORITY: 0, ADDITIONAL: 5\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   },
+   {
+    "id": "f8.rec-bank",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 www.exemple.test +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 63\n;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   },
+   {
+    "id": "l.axfr-denied",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com AXFR",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @203.0.113.10 banquehorizon.com AXFR\n; (1 server found)\n;; global options: +cmd\n; Transfer failed."
+   },
+   {
+    "id": "l.checkconf-z",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "named-checkconf -z; echo rc=$?",
+    "output": "zone banquehorizon.com/IN: loaded serial 2026103101\nzone 113.0.203.in-addr.arpa/IN: loaded serial 2026103101\nrc=0"
+   },
+   {
+    "id": "l.res-status",
+    "dev": "DNS-RES",
+    "kind": "sh",
+    "cmd": "sudo rndc status",
+    "output": "version: BIND 9.18.12-0ubuntu0.22.04.1-Ubuntu (Extended Support Version) <id:>\nnumber of zones: 0 (0 automatic)\ndebug level: 0\nxfers running: 0\nxfers deferred: 0\nsoa queries in progress: 0\nquery logging is OFF\nrecursive clients: 0/900/1000\ntcp clients: 0/150\nserver is up and running"
+   },
+   {
+    "id": "l.soa-parity",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 banquehorizon.com SOA +short; dig @203.0.113.11 banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\nns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+   },
+   {
+    "id": "l.recursion",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 www.exemple.test +noall +comments",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: REFUSED, id: 67\n;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n;; WARNING: recursion requested but not available\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 1232"
+   },
+   {
+    "id": "l.hide",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/recursion no;/recursion no; version none;/' /etc/bind/named.conf; sudo rndc reconfig; named-checkconf; echo rc=$?",
+    "output": "rc=0"
+   },
+   {
+    "id": "l.chaos-hidden",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 version.bind CHAOS TXT +noall +comments +authority",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 68\n;; flags: qr aa rd; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 0\n;; WARNING: recursion requested but not available\n\n;; AUTHORITY SECTION:\nversion.bind.\t\t86400\tCH\tSOA\tversion.bind. hostmaster.version.bind. 0 28800 7200 604800 86400"
+   },
+   {
+    "id": "l.unhide",
+    "dev": "NS1-BANK",
+    "kind": "sh",
+    "cmd": "sudo sed -i 's/ version none;//' /etc/bind/named.conf; sudo rndc reconfig; grep -c version /etc/bind/named.conf",
+    "output": "0"
+   },
+   {
+    "id": "l.chaos-shown",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @203.0.113.10 version.bind CHAOS TXT +short",
+    "output": "\"9.18.12-0ubuntu0.22.04.1-Ubuntu\""
+   },
+   {
+    "id": "l.res-chaos",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig @10.20.20.53 version.bind CHAOS TXT +short",
+    "output": "\"9.18.12-0ubuntu0.22.04.1-Ubuntu\""
+   }
+  ],
+  "M": [
+   {
+    "id": "m.nosearch",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig intranet +noall +comments +question",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 40\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; QUESTION SECTION:\n;intranet.\t\t\tIN\tA"
+   },
+   {
+    "id": "m.search",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig intranet +search +noall +comments +question +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 53\n;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; QUESTION SECTION:\n;intranet.horizon.local.\t\tIN\tA\n\n;; ANSWER SECTION:\nintranet.horizon.local.\t3600\tIN\tCNAME\tdc1.horizon.local.\ndc1.horizon.local.\t3600\tIN\tA\t10.20.20.10"
+   },
+   {
+    "id": "m.host",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "host www.banquehorizon.com",
+    "output": "www.banquehorizon.com is an alias for web.banquehorizon.com.\nweb.banquehorizon.com has address 203.0.113.20"
+   },
+   {
+    "id": "m.host-mx",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "host -t MX banquehorizon.com",
+    "output": "banquehorizon.com mail is handled by 10 mail.banquehorizon.com.\nbanquehorizon.com mail is handled by 20 mail2.banquehorizon.com."
+   },
+   {
+    "id": "m.host-ptr",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "host 203.0.113.20",
+    "output": "20.113.0.203.in-addr.arpa domain name pointer web.banquehorizon.com."
+   },
+   {
+    "id": "m.host-nx",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "host nexiste.banquehorizon.com",
+    "output": "Host nexiste.banquehorizon.com not found: 3(NXDOMAIN)"
+   },
+   {
+    "id": "m.host-server",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "host -t NS banquehorizon.com 10.20.20.53",
+    "output": "Using domain server:\nName: 10.20.20.53\nAddress: 10.20.20.53#53\nAliases: \n\nbanquehorizon.com name server ns1.banquehorizon.com.\nbanquehorizon.com name server ns2.banquehorizon.com."
+   },
+   {
+    "id": "m.search-short",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig intranet +search +short",
+    "output": "dc1.horizon.local.\n10.20.20.10"
+   },
+   {
+    "id": "m.ps-intranet",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName intranet",
+    "output": "\nName     : intranet.horizon.local\nType     : CNAME\nTTL      : 3600\nSection  : Answer\nNameHost : dc1.horizon.local\n\nName      : dc1.horizon.local\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 10.20.20.10\n"
+   }
+  ],
+  "N": [
+   {
+    "id": "f9.dig-x",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig -x 203.0.113.20 +short",
+    "output": "web.banquehorizon.com."
+   },
+   {
+    "id": "f9.dig-txt",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig banquehorizon.com TXT +short",
+    "output": "\"v=spf1 mx -all\""
+   },
+   {
+    "id": "f9.dig-dmarc",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig _dmarc.banquehorizon.com TXT +short",
+    "output": "\"v=DMARC1; p=reject; rua=mailto:dmarc@banquehorizon.com\""
+   },
+   {
+    "id": "f9.dig-srv",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig _imaps._tcp.banquehorizon.com SRV +short",
+    "output": "0 1 993 mail.banquehorizon.com."
+   },
+   {
+    "id": "f9.dig-soa",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig banquehorizon.com SOA +short",
+    "output": "ns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600"
+   },
+   {
+    "id": "f9.dig-ns",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig banquehorizon.com NS +short",
+    "output": "ns1.banquehorizon.com.\nns2.banquehorizon.com."
+   },
+   {
+    "id": "f9.dig-aaaa",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig web.banquehorizon.com AAAA",
+    "output": "\n; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> web.banquehorizon.com AAAA\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 52\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; QUESTION SECTION:\n;web.banquehorizon.com.\t\tIN\tAAAA\n\n;; AUTHORITY SECTION:\nbanquehorizon.com.\t3600\tIN\tSOA\tns1.banquehorizon.com. hostmaster.banquehorizon.com. 2026103101 7200 900 1209600 3600\n\n;; Query time: 0 msec\n;; SERVER: 127.0.0.53#53(127.0.0.53) (UDP)\n;; WHEN: Wed Nov 04 11:06:00 UTC 2026\n;; MSG SIZE  rcvd: 101"
+   },
+   {
+    "id": "g2.dig-x-full",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "dig -x 203.0.113.20 +noall +comments +answer",
+    "output": ";; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 54\n;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1\n\n;; OPT PSEUDOSECTION:\n; EDNS: version: 0, flags:; udp: 65494\n;; ANSWER SECTION:\n20.113.0.203.in-addr.arpa. 3600\tIN\tPTR\tweb.banquehorizon.com."
+   },
+   {
+    "id": "g5.windows-dig-like",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName www.banquehorizon.com -Type A -DnsOnly -Server 10.20.20.53",
+    "output": "\nName     : www.banquehorizon.com\nType     : CNAME\nTTL      : 3600\nSection  : Answer\nNameHost : web.banquehorizon.com\n\nName      : web.banquehorizon.com\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 203.0.113.20\n"
+   },
+   {
+    "id": "g5.type-any",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName banquehorizon.com -Type SOA",
+    "output": "\nName                   : banquehorizon.com\nType                   : SOA\nTTL                    : 3600\nSection                : Answer\nPrimaryServer          : ns1.banquehorizon.com\nNameAdministrator      : hostmaster.banquehorizon.com\nSerialNumber           : 2026103101\nTimeToZoneRefresh      : 7200\nTimeToZoneFailureRetry : 900\nTimeToExpiration       : 1209600\nDefaultTTL             : 3600\n"
+   },
+   {
+    "id": "g5.type-txt",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName banquehorizon.com -Type TXT",
+    "output": "\nName    : banquehorizon.com\nType    : TXT\nTTL     : 3600\nSection : Answer\nStrings : {v=spf1 mx -all}\n"
+   },
+   {
+    "id": "g5.type-srv",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName _imaps._tcp.banquehorizon.com -Type SRV",
+    "output": "\nName       : _imaps._tcp.banquehorizon.com\nType       : SRV\nTTL        : 3600\nSection    : Answer\nNameTarget : mail.banquehorizon.com\nPriority   : 0\nWeight     : 1\nPort       : 993\n"
+   },
+   {
+    "id": "g5.type-ptr",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName 203.0.113.20",
+    "output": "\nName     : 20.113.0.203.in-addr.arpa\nType     : PTR\nTTL      : 3600\nSection  : Answer\nNameHost : web.banquehorizon.com\n"
+   },
+   {
+    "id": "g5.type-ns",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName banquehorizon.com -Type NS",
+    "output": "\nName     : banquehorizon.com\nType     : NS\nTTL      : 3600\nSection  : Answer\nNameHost : ns1.banquehorizon.com\n\nName     : banquehorizon.com\nType     : NS\nTTL      : 3600\nSection  : Answer\nNameHost : ns2.banquehorizon.com\n"
+   },
+   {
+    "id": "g5.nodata",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName web.banquehorizon.com -Type AAAA",
+    "output": "Resolve-DnsName : web.banquehorizon.com : DNS record does not exist\n    + CategoryInfo          : ResourceUnavailable: (web.banquehorizon.com:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : DNS_ERROR_RECORD_DOES_NOT_EXIST,Microsoft.DnsClient.Commands.ResolveDnsName"
+   },
+   {
+    "id": "n.agences",
+    "dev": "PC-GUICHET1",
+    "kind": "ps",
+    "cmd": "Resolve-DnsName agences.banquehorizon.com",
+    "output": "\nName     : agences.banquehorizon.com\nType     : CNAME\nTTL      : 3600\nSection  : Answer\nNameHost : web.banquehorizon.com\n\nName      : web.banquehorizon.com\nType      : A\nTTL       : 3600\nSection   : Answer\nIPAddress : 203.0.113.20\n"
+   },
+   {
+    "id": "n.ping-name",
+    "dev": "PC-CONSEILLER",
+    "kind": "sh",
+    "cmd": "ping -c 1 www.banquehorizon.com",
+    "output": "PING www.banquehorizon.com (203.0.113.20) 56(84) bytes of data.\n64 bytes from web.banquehorizon.com (203.0.113.20): icmp_seq=1 ttl=62 time=0.043 ms\n\n--- www.banquehorizon.com ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss, time 0ms\nrtt min/avg/max/mdev = 0.043/0.043/0.043/0.000 ms"
+   }
+  ]
+ }
+}

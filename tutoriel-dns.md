@@ -7,6 +7,8 @@ de **serveur DNS** (avec BIND 9, le vrai logiciel utilisé partout dans le monde
 adresses aux machines), et des PC clients qui, sans aucune configuration manuelle,
 obtiennent une adresse et arrivent à joindre un serveur web **par son nom**.
 
+Pour aller plus loin sur le DNS lui-même (l'arbre complet, la récursion, les caches, la redondance, le transfert de zone, le DNS Windows, l'observation sur le fil, le dépannage), le tutoriel [`docs/tutoriel-dns-zero-a-heros.md`](docs/tutoriel-dns-zero-a-heros.md) prend la suite sur un laboratoire de douze équipements.
+
 Aucune connaissance préalable n'est requise. Chaque notion est expliquée avant d'être
 utilisée. Toutes les commandes de ce tutoriel ont été testées dans le simulateur : tu
 peux les recopier telles quelles.
