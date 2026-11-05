@@ -4505,3 +4505,11 @@ tar parses the GNU tar 1.35 grammar and handles create, list, extract, append, u
 ## gzip, gunzip, zcat (lot 24)
 
 The three commands follow gzip 1.12 (probe-linux-gzip-1-12, 73 cases measured). Not equal to the real gzip: the compressed bytes. The simulator's deflate (GzipStreamWriter) produces other output than gzip/zlib, so the sizes shown by `gzip -l` and `gzip -v`, the ratio, and `gzip -c | wc -c` differ (a 18-byte text compresses to 33 bytes here and 34 there; a 200-line file to 904 bytes here and 354 there, because the simulator does not build dynamic Huffman blocks). The level (-1..-9, --fast, --best) is accepted and passed to the compressor, which uses it only to pick between two strategies. `-L`, `--rsyncable` and `--synchronous` are accepted and change nothing.
+
+## bash `enable -n` (builtin disabling)
+
+`enable -n NAME` is stored and honoured for the builtins the interpreter dispatches itself (`bash/runtime/Builtins.ts`:
+echo, printf, cd...). Not closed, measured against bash 5.2.21: a builtin the executor also serves (`type -t true` answers
+`builtin` where bash answers `file`; `enable -n cd; cd /` still changes directory where bash answers `cd: command not found`),
+and the disabled set is not inherited by a pipeline stage (`enable -n cd; enable -n | cat` lists nothing). Needs the
+executor's CommandResolver to read the interpreter environment. `help NAME` is missing altogether (answers `help: command not found`); its texts have to be captured builtin by builtin from the real bash.

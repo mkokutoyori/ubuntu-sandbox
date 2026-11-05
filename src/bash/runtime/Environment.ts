@@ -93,6 +93,7 @@ const READONLY_MESSAGE = (name: string): string => `bash: ${name}: readonly vari
 export class Environment implements ArithmeticScope {
   private readonly variables = new Map<string, Variable>();
   private readonly traps = new Map<string, string>();
+  private readonly disabledBuiltins = new Set<string>();
   private parent: Environment | null = null;
   private _lastExitCode = 0;
   private readonly pid: number;
@@ -311,6 +312,12 @@ export class Environment implements ArithmeticScope {
   setTrap(signal: string, body: string): void { if (this.parent !== null) this.parent.setTrap(signal, body); else this.traps.set(signal, body); }
   clearTrap(signal: string): void { if (this.parent !== null) this.parent.clearTrap(signal); else this.traps.delete(signal); }
   getTrap(signal: string): string | undefined { return this.parent !== null ? this.parent.getTrap(signal) : this.traps.get(signal); }
+  setBuiltinDisabled(name: string, disabled: boolean): void {
+    if (this.parent !== null) { this.parent.setBuiltinDisabled(name, disabled); return; }
+    if (disabled) this.disabledBuiltins.add(name); else this.disabledBuiltins.delete(name);
+  }
+  isBuiltinDisabled(name: string): boolean { return this.parent !== null ? this.parent.isBuiltinDisabled(name) : this.disabledBuiltins.has(name); }
+  listDisabledBuiltins(): string[] { return this.parent !== null ? this.parent.listDisabledBuiltins() : [...this.disabledBuiltins]; }
   listTraps(): Array<[string, string]> { return this.parent !== null ? this.parent.listTraps() : [...this.traps.entries()]; }
 
   setReadonly(name: string, value?: string): void {
