@@ -12,6 +12,7 @@ import { gnuOptionSet } from './GnuOptionGuard';
 import { fnmatch } from './fs/Glob';
 import { versionCompare } from './LinuxTextCommands';
 import { lsColumns, lsCommas, lsEscapeNonPrinting, lsExtension, lsHideControl, lsHumanSize, lsQuoteC, lsQuoteShell, type LsFormat, type LsShellStyle } from './LsLayout';
+import { parseBlockSize, scaledSize, type BlockScale } from './coreutils/BlockSize';
 import { quoteLocale, usesCurlyQuotes } from './coreutils/CoreutilsKit';
 import { shortOptions } from './commands/Getopt';
 import { parseChmodMode } from './ChmodMode';
@@ -189,6 +190,7 @@ interface LsOpts {
   showInode: boolean;
   showSize: boolean;
   human: 1024 | 1000 | null;
+  scale: BlockScale | null;
   indicator: LsIndicator;
   quoting: LsQuoting;
   hideControl: boolean;
@@ -246,7 +248,7 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
   const opts: LsOpts = {
     timing: { field: 'mtime', style: null, reverse: false },
     format: ctx.isPiped === true ? 'single' : 'columns',
-    all: 'none', showInode: false, showSize: false, human: null, indicator: 'none', quoting: 'literal',
+    all: 'none', showInode: false, showSize: false, human: null, scale: null, indicator: 'none', quoting: 'literal',
     hideControl: false, useColor: ctx.color === true, sort: 'name', groupDirectoriesFirst: false,
     recursive: false, ignore: [], hide: [], ignoreBackups: false, width: DEFAULT_LINE_WIDTH, zero: false, tabSize: 8,
     context: false, hideOwner: false, hideGroup: false, numeric: false, author: false, dereference: 'none',
@@ -296,7 +298,7 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
       case 'm': opts.format = 'commas'; break;
       case 'p': opts.indicator = 'slash'; break;
       case 'F': opts.indicator = 'classify'; break;
-      case 'h': opts.human = 1024; break;
+      case 'h': opts.human = 1024; opts.scale = null; break;
       case 'k': opts.human = null; break;
       case 'H': opts.dereference = 'arguments'; break;
       case 'L': opts.dereference = 'all'; break;
@@ -386,9 +388,16 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
       case 'all': opts.all = 'all'; break;
       case 'almost-all': if (opts.all !== 'all') opts.all = 'almost'; break;
       case 'group-directories-first': opts.groupDirectoriesFirst = true; break;
-      case 'human-readable': opts.human = 1024; break;
-      case 'si': opts.human = 1000; break;
+      case 'human-readable': opts.human = 1024; opts.scale = null; break;
+      case 'si': opts.human = 1000; opts.scale = null; break;
       case 'kibibytes': opts.human = null; break;
+      case 'block-size': {
+        const scale = parseBlockSize(argument ?? '');
+        if (scale === null) return `ls: invalid ${/^\d+[^\d]/.test(argument ?? '') ? 'suffix in ' : ''}--block-size argument ${quoteLocale(argument ?? '')}`;
+        opts.scale = scale;
+        opts.human = null;
+        break;
+      }
       case 'inode': opts.showInode = true; break;
       case 'size': opts.showSize = true; break;
       case 'recursive': opts.recursive = true; break;
@@ -582,7 +591,7 @@ function quotedName(name: string, opts: LsOpts, alignUnquoted = false): string {
 
 function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, withTotal: boolean): { lines: string[] } {
   const long = opts.format === 'long';
-  const sizeText = (blocksKiB: number): string => (opts.human === null ? String(blocksKiB) : lsHumanSize(blocksKiB * 1024, opts.human));
+  const sizeText = (blocksKiB: number): string => (opts.scale !== null ? scaledSize(blocksKiB * 1024, opts.scale) : opts.human === null ? String(blocksKiB) : lsHumanSize(blocksKiB * 1024, opts.human));
   const inodeWidth = opts.showInode ? Math.max(...entries.map((e) => String(e.inode.id).length), 1) : 0;
   const blocksWidth = opts.showSize ? Math.max(...entries.map((e) => sizeText(lsBlocksKiB(e.inode)).length), 1) : 0;
   const prefixOf = (e: LsEntry): string => {
@@ -601,7 +610,7 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
     const devices = entries.filter(isDevice);
     const majorWidth = Math.max(0, ...devices.map((e) => String(e.inode.rdev!.major).length));
     const minorWidth = Math.max(0, ...devices.map((e) => String(e.inode.rdev!.minor).length));
-    const plainSize = (e: LsEntry): string => (opts.human === null ? String(lsSize(e.inode)) : lsHumanSize(lsSize(e.inode), opts.human));
+    const plainSize = (e: LsEntry): string => (opts.scale !== null ? scaledSize(lsSize(e.inode), opts.scale) : opts.human === null ? String(lsSize(e.inode)) : lsHumanSize(lsSize(e.inode), opts.human));
     const plainWidth = Math.max(1, ...entries.filter((e) => !isDevice(e)).map((e) => plainSize(e).length));
     const deviceWidth = devices.length === 0 ? 0 : Math.max(plainWidth, majorWidth + 2 + minorWidth);
     const shownMajorWidth = deviceWidth - 2 - minorWidth;

@@ -4,30 +4,11 @@ import { shortOptions } from './commands/Getopt';
 import { fnmatch } from './fs/Glob';
 import { lsHumanSize } from './LsLayout';
 import { formatLocalTime } from './system/SystemInfo';
+import { parseBlockSize, type BlockScale } from './coreutils/BlockSize';
 import { Streams, docsResult, quoteLocale, quotef, type CoreutilsRun } from './coreutils/CoreutilsKit';
 import type { INode } from './VirtualFileSystem';
 
 const BLOCK_BYTES = 4096;
-
-interface DuScale {
-  readonly unit: number;
-  readonly suffix: string;
-}
-
-const UNIT_POWERS: Readonly<Record<string, number>> = { K: 1, M: 2, G: 3, T: 4, P: 5, E: 6, Z: 7, Y: 8, R: 9, Q: 10 };
-
-function parseBlockSize(text: string): DuScale | null {
-  const match = /^(\d*)([KMGTPEZYRQ]?)(i?B)?$/i.exec(text);
-  if (!match || (match[1] === '' && match[2] === '')) return null;
-  const power = match[2] === '' ? 0 : UNIT_POWERS[match[2].toUpperCase()];
-  const decimal = match[3] !== undefined && match[3].toUpperCase() === 'B' && match[2] !== '';
-  const base = decimal ? 1000 : 1024;
-  const count = match[1] === '' ? 1 : Number(match[1]);
-  if (count === 0) return null;
-  const unit = count * base ** power;
-  const suffix = match[1] === '' && power > 0 ? `${match[2].toUpperCase()}${decimal ? 'B' : ''}`.replace(/^K(B)$/, 'k$1') : '';
-  return { unit, suffix };
-}
 
 const THRESHOLD_UNITS: Readonly<Record<string, number>> = { k: 1, K: 1, M: 2, G: 3, T: 4, P: 5, E: 6, Z: 7, Y: 8, R: 9, Q: 10 };
 
@@ -46,7 +27,7 @@ interface DuOptions {
   summarize: boolean;
   maxDepth: number | null;
   apparent: boolean;
-  scale: DuScale | null;
+  scale: BlockScale | null;
   human: 1024 | 1000 | null;
   separate: boolean;
   countLinks: boolean;
