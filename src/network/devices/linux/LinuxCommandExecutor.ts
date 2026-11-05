@@ -2,6 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { nssAddress, resolveHostnameFor } from '../NameResolution';
 import { mountUsageRefusal, umountBadUsage } from './commands/system/MountOptions';
 import { runFindmnt, type FindmntHost, type MountRow } from './commands/system/Findmnt';
 import { dashedUuid, randomUuidBits } from '../host/hardware/HardwareIdentity';
@@ -182,7 +183,7 @@ import {
 } from './nfs/NfsCommands';
 import { FSTAB_PATH, renderFstab } from './fs/FstabFile';
 import { SysfsTree } from './Sysfs';
-import { cmdWget, renderNetstatInterfaces, renderNetstatRoutes } from './LinuxNetCommands';
+import { renderNetstatInterfaces, renderNetstatRoutes } from './LinuxNetCommands';
 import { PacketCaptureLog } from './network/PacketCaptureLog';
 import type { SocketTable } from '../../core/SocketTable';
 import { LinuxAuditLog } from './audit/LinuxAuditLog';
@@ -4632,6 +4633,27 @@ export class LinuxCommandExecutor {
       : { ...outcome, lineOriented: lineOriented || reportsOwnFailure(argv, outcome.exitCode) };
   }
 
+  private readonly resolvedNames = new Map<string, string>();
+
+  resolvedHost(name: string): string | null {
+    const literal = IPAddress.tryParse(name);
+    if (literal !== null) return literal.toString();
+    return this.resolvedNames.get(name) ?? nssAddress(this.nss, name);
+  }
+
+  async withResolvedNames<T>(names: readonly string[], run: () => Promise<T>): Promise<T> {
+    const pending = names.filter((name) => !this.resolvedNames.has(name));
+    for (const name of pending) {
+      const address = await resolveHostnameFor(this.localDevice, name);
+      if (address !== null) this.resolvedNames.set(name, address);
+    }
+    try {
+      return await run();
+    } finally {
+      for (const name of pending) this.resolvedNames.delete(name);
+    }
+  }
+
   private dispatchNetworkAware(
     argv: string[],
     env?: Record<string, string>,
@@ -7069,7 +7091,6 @@ export class LinuxCommandExecutor {
       // 05, constat A8). A `case` here used to shadow that hook with a
       // second, independently-drifted implementation that only a script
       // (`bash script.sh`) could reach.
-      case 'wget': return { output: cmdWget(args), exitCode: 0 };
       case 'dstat': {
         const parsed = parseDstatArgs(args);
         if (parsed.showHelp) return { output: DSTAT_USAGE, exitCode: 0 };

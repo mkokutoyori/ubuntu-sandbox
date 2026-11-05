@@ -1,4 +1,5 @@
 import type { LinuxCommand } from '../LinuxCommand';
+import { hostnamesIn, preResolved } from '@/network/devices/NameResolution';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { ChronycSession } from '../../time/ChronycClient';
 import { ChronyDaemonView } from '../../time/ChronyDaemonView';
@@ -38,6 +39,7 @@ async function runChronyc(ctx: LinuxCommandContext, args: string[], stdin?: stri
     localAddresses: addresses,
     transport: commandTransport(ctx),
     hostsFile: () => ctx.executor.vfs.readFile('/etc/hosts') ?? '',
+    resolved: await preResolved(ctx, hostnamesIn([...args, ...(stdin ?? '').split(/\s+/)])),
     wait: simulatedWait,
   });
   const result = await session.run(args, stdin);

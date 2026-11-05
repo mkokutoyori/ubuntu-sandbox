@@ -52,7 +52,7 @@ export interface NetkitTelnetHost {
   canonicalHostname(name: string): string;
   lookupUser(name: string): { readonly uid: number } | null;
   readFile(path: string): string | null;
-  resolve(host: string, service: string, family: 0 | 4 | 6, numericOnly: boolean): NetkitResolution;
+  resolve(host: string, service: string, family: 0 | 4 | 6, numericOnly: boolean): NetkitResolution | Promise<NetkitResolution>;
   connect(address: NetkitAddress, port: number, source: NetkitAddress | null): Promise<NetkitConnection>;
 }
 

@@ -5,7 +5,6 @@
  * Network info comes from the IpNetworkContext when available.
  */
 
-import { simulationDate } from '@/network/core/SystemClock';
 
 import type { IpInterfaceInfo, IpNetworkContext } from './LinuxIpCommand';
 import { broadcastAddress } from '../../core/ip';
@@ -142,55 +141,6 @@ export function renderNetstatInterfaces(ctx: IpNetworkContext | null): string {
     lines.push(`${padToWidth(name, 11)}${mtu} ${rx}      0      0 0        ${tx}      0      0      0 ${flags}`);
   }
   return lines.join('\n');
-}
-
-// ─── wget ───────────────────────────────────────────────────────────
-
-export function cmdWget(args: string[]): string {
-  const quiet = args.includes('-q') || args.includes('--quiet');
-  const url = args.filter(a => !a.startsWith('-')).pop();
-
-  if (!url) return 'wget: missing URL\nUsage: wget [OPTION]... [URL]...';
-
-  const host = url.replace(/https?:\/\//, '').split('/')[0];
-
-  if (url.includes('localhost') || url.includes('127.0.0.1')) {
-    const filename = url.split('/').pop() || 'index.html';
-    if (quiet) return '';
-    return [
-      `--${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
-      `Resolving ${host}... 127.0.0.1`,
-      `Connecting to ${host}|127.0.0.1|:80... connected.`,
-      'HTTP request sent, awaiting response... 200 OK',
-      'Length: 1024 (1.0K) [text/html]',
-      `Saving to: '${filename}'`,
-      '',
-      `${filename}              100%[===================>]   1.00K  --.-KB/s    in 0s`,
-      '',
-      `${simulationDate().toISOString().replace('T', ' ').slice(0, 19)} (10.0 MB/s) - '${filename}' saved [1024/1024]`,
-    ].join('\n');
-  }
-
-  // Une adresse littérale n'a rien à résoudre : le vrai `wget` passe
-  // directement à « Connecting to ». Annoncer un échec de résolution sur
-  // `wget http://192.168.10.1` envoyait l'opérateur inspecter son DNS
-  // alors que le nom n'était jamais en cause (audit 11, §3).
-  const litterale = /^\[?[0-9a-fA-F:.]+\]?(:\d+)?$/.test(host)
-    && (/^\d{1,3}(\.\d{1,3}){3}(:\d+)?$/.test(host) || host.includes(':'));
-  if (litterale) {
-    const nu = host.replace(/^\[|\]$/g, '').split(/]?:(?=\d+$)/)[0];
-    if (quiet) return '';
-    return [
-      `--${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
-      `Connecting to ${nu}:80... failed: Connection refused.`,
-    ].join('\n');
-  }
-
-  return [
-    `--${simulationDate().toISOString().replace('T', ' ').slice(0, 19)}--  ${url}`,
-    `Resolving ${host}... failed: Temporary failure in name resolution.`,
-    `wget: unable to resolve host address '${host}'`,
-  ].join('\n');
 }
 
 function cidrToMask(cidr: number): string {

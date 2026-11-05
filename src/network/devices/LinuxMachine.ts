@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { hostOperandsOf } from './linux/network/HostOperands';
 import { iputilsEchoData } from '../icmp/EchoPayload';
 import { asStderrResult, refuseUnknownGnuOption } from './linux/GnuOptionGuard';
 import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
@@ -4404,6 +4405,28 @@ export abstract class LinuxMachine extends EndHost
    */
   async executeCommand(command: string, stdin?: string): Promise<string> {
     if (!this.isPoweredOn) return 'Device is powered off';
+    const names = LinuxMachine.hostOperandsInLine(command);
+    if (names.length === 0) return this.executeCommandLine(command, stdin);
+    return this.executor.withResolvedNames(names, () => this.executeCommandLine(command, stdin));
+  }
+
+  private static hostOperandsInLine(line: string): string[] {
+    const names = new Set<string>();
+    for (const segment of line.split(/\|\||&&|[|;&\n]/)) {
+      let words = segment.trim().split(/\s+/).filter((word) => word !== '');
+      if (words[0] === 'sudo') {
+        words = words.slice(1);
+        while (words[0]?.startsWith('-')) words = words.slice(words[0] === '-u' || words[0] === '-g' ? 2 : 1);
+      }
+      if (words.length === 0) continue;
+      for (const name of hostOperandsOf(words[0], words.slice(1).map((word) => word.replace(/^['"]|['"]$/g, '')))) {
+        if (name !== '' && IPAddress.tryParse(name) === null) names.add(name);
+      }
+    }
+    return [...names];
+  }
+
+  private async executeCommandLine(command: string, stdin?: string): Promise<string> {
     settleOrderedDeliveries();
     this.executor._scenarioStdin = stdin;
 
@@ -5133,6 +5156,8 @@ export abstract class LinuxMachine extends EndHost
       // `resolveHostname`.
       resolveHostnameSync: (name: string): IPAddress | null => {
         try { return new IPAddress(name); } catch { /* not a literal address */ }
+        const resolved = this.executor.resolvedHost(name);
+        if (resolved !== null) return new IPAddress(resolved);
         for (const address of this.nssHostAddressesSync(name, 2)) {
           try { return new IPAddress(address); } catch { continue; }
         }

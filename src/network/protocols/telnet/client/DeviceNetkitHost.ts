@@ -13,7 +13,7 @@ export interface DeviceNetkitDeps {
   readonly size: () => { readonly rows: number; readonly cols: number } | null;
   readonly readFile: (path: string) => string | null;
   readonly tty: boolean;
-  readonly lookupHost: (name: string) => string | null;
+  readonly lookupHost: (name: string) => string | null | Promise<string | null>;
   readonly servicePort: (name: string) => number | null;
   readonly reach: (ip: string, port: number) => Promise<TcpWireOutcome>;
   readonly routeFailure?: (ip: string) => string | null;
@@ -43,7 +43,7 @@ export class DeviceNetkitHost implements NetkitTelnetHost {
   canonicalHostname(name: string): string { return name; }
   readFile(path: string): string | null { return this.deps.readFile(path); }
 
-  resolve(host: string, service: string, family: 0 | 4 | 6, numericOnly: boolean): NetkitResolution {
+  async resolve(host: string, service: string, family: 0 | 4 | 6, numericOnly: boolean): Promise<NetkitResolution> {
     const port = /^\d+$/.test(service) ? Number(service) : this.deps.servicePort(service);
     if (port === null) return unresolved('Servname not supported for ai_socktype', false);
     const literal = parseDialAddress(host);
@@ -53,7 +53,7 @@ export class DeviceNetkitHost implements NetkitTelnetHost {
       return resolved([{ text: literal.toString(), family: version }], port, null);
     }
     if (numericOnly) return unresolved('Name or service not known', true);
-    const ip = family === 6 ? null : this.deps.lookupHost(host);
+    const ip = family === 6 ? null : await this.deps.lookupHost(host);
     if (ip === null) return unresolved('Name or service not known', true);
     return resolved([{ text: ip, family: 4 }], port, host);
   }

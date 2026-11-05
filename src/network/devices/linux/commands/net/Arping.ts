@@ -26,9 +26,16 @@ function parseArpingArgs(args: string[]): ParsedArpingArgs {
   return result;
 }
 
+async function resolvedTarget(ctx: LinuxCommandContext, target: string): Promise<string | null> {
+  if (IPAddress.isValid(target)) return target;
+  const address = await ctx.net.resolveHostname(target);
+  return address === null ? null : address.toString();
+}
+
 /** RFC 5227 gratuitous ARP announcement — real `arping -A`/`-U`, distinct from the default unicast-probe mode. */
-function runGratuitous(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): { output: string; exitCode: number } {
-  if (!IPAddress.isValid(parsed.target)) {
+async function runGratuitous(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): Promise<{ output: string; exitCode: number }> {
+  const resolved = await resolvedTarget(ctx, parsed.target);
+  if (resolved === null) {
     return { output: `arping: unknown host ${parsed.target}`, exitCode: 2 };
   }
   const ports = ctx.net.getPorts();
@@ -37,12 +44,12 @@ function runGratuitous(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): { ou
     return { output: `arping: ${parsed.iface ?? iface}: invalid argument — device not found`, exitCode: 2 };
   }
   const probes = parsed.count > 0 ? parsed.count : 1;
-  const targetIP = new IPAddress(parsed.target);
+  const targetIP = new IPAddress(resolved);
   let sent = 0;
   for (let i = 0; i < probes; i++) {
     if (ctx.net.sendGratuitousArp(iface, targetIP, parsed.gratuitous!)) sent++;
   }
-  const lines = [`ARPING ${parsed.target}`, `Sent ${sent} probes (${sent} broadcast(s))`];
+  const lines = [`ARPING ${resolved}`, `Sent ${sent} probes (${sent} broadcast(s))`];
   return { output: lines.join('\n'), exitCode: sent > 0 ? 0 : 1 };
 }
 
@@ -58,10 +65,11 @@ async function runArping(ctx: LinuxCommandContext, args: string[]): Promise<{ ou
 const PROBE_INTERVAL_MS = 1000;
 
 async function runProbe(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): Promise<{ output: string; exitCode: number }> {
-  if (!IPAddress.isValid(parsed.target)) {
+  const resolved = await resolvedTarget(ctx, parsed.target);
+  if (resolved === null) {
     return { output: `arping: unknown host ${parsed.target}`, exitCode: 2 };
   }
-  const targetIP = new IPAddress(parsed.target);
+  const targetIP = new IPAddress(resolved);
   const ports = ctx.net.getPorts();
   const iface = parsed.iface ?? ctx.net.resolveRouteFromTable(targetIP, null)?.iface;
   if (!iface || !ports.has(iface)) {
@@ -70,7 +78,7 @@ async function runProbe(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): Pro
   const source = ports.get(iface)!.getIPAddress();
   const probes = parsed.count > 0 ? parsed.count : 1;
   const scheduler = ctx.net.getScheduler();
-  const lines = [`ARPING ${parsed.target} from ${source?.toString() ?? '0.0.0.0'} ${iface}`];
+  const lines = [`ARPING ${resolved} from ${source?.toString() ?? '0.0.0.0'} ${iface}`];
   let received = 0;
   for (let i = 0; i < probes; i++) {
     const sentAt = scheduler.now();
@@ -78,7 +86,7 @@ async function runProbe(ctx: LinuxCommandContext, parsed: ParsedArpingArgs): Pro
     if (mac) {
       received++;
       const rtt = (scheduler.now() - sentAt).toFixed(3);
-      lines.push(`Unicast reply from ${parsed.target} [${mac.toString().toUpperCase()}]  ${rtt}ms`);
+      lines.push(`Unicast reply from ${resolved} [${mac.toString().toUpperCase()}]  ${rtt}ms`);
     }
   }
   lines.push(`Sent ${probes} probes (${probes} broadcast(s))`);

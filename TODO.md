@@ -4584,3 +4584,11 @@ tput 6.4. Not modelled: bytes above 0x7f (`tput acsc` on ansi/cygwin) leave the 
 print is1/is2/is3 and rs1/rs2/rs3 but skip the tab-stop setting; a terminal the container does not install (only the 19 are carried) answers
 `unknown terminal`; `tput cols`/`lines` use the window size when the terminal comes from $TERM and terminfo when given with -T (measured, not understood in
 ncurses terms); and the capability names known to tput are the union of the installed terminals plus the probed boolean/numeric names.
+
+## DNS: the name-resolution gaps still open after the Linux clients were unified
+
+Linux clients (nc, wget, openssl, arping, logger, chronyc, telnet, ssh, ping) resolve through `LinuxMachine.resolveHostname`, pre-resolved at `executeCommand`.
+Still private or synchronous: `HostLookup.findHostByAddress` still answers names from /etc/hosts and topology device names; `LinuxCommandExecutor.hostidAddress`
+and `fuser` read /etc/hosts or `resolveHostnameSync` and cannot see a DNS answer; NmapProbes, LinuxIpCommand, HuaweiVRPShell and WindowsPC keep their own lookups
+(audit in progress). wget covers -q -nv -O -T -t --spider -S -V -P only: redirect lines, retries and the progress bar are not modelled. The ICMPv6 echo payload is
+not the iputils one. `mtr` prints its header with the typed name, not the resolved one. `ping -i` paces at 0.92 s where iputils paces at 1 s.

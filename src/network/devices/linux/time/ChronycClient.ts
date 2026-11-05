@@ -26,6 +26,7 @@ export interface ChronycHost {
   readonly programName: string;
   readonly localAddresses: readonly string[];
   readonly hostsFile: () => string;
+  readonly resolved?: ReadonlyMap<string, string>;
   readonly wait: (seconds: number) => Promise<void>;
 }
 
@@ -231,6 +232,8 @@ export class ChronycSession {
   private resolveAddress(word: string): string | null {
     if (isValidIPv4(word)) return word;
     if (word === 'localhost') return '127.0.0.1';
+    const viaResolver = this.host.resolved?.get(word);
+    if (viaResolver !== undefined) return viaResolver;
     for (const line of this.host.hostsFile().split('\n')) {
       const fields = line.replace(/#.*$/, '').trim().split(/\s+/);
       if (fields.length > 1 && isValidIPv4(fields[0]) && fields.slice(1).includes(word)) return fields[0];
