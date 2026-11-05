@@ -6273,7 +6273,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
         }
         const { stdout, stderr } = cmdLs(c, args);
-        const exitCode = /^ls: invalid argument/.test(stderr) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(stderr) ? 2 : 0;
+        const exitCode = /^ls: (invalid|ambiguous) argument/.test(stderr) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(stderr) ? 2 : 0;
         if (stderr === '') return { output: stdout, exitCode };
         return { output: stdout, stderr, interleaved: stdout === '' ? stderr : `${stderr}\n${stdout}`, exitCode };
       }

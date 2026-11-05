@@ -252,6 +252,7 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
       flag('zero'), flag('directory', 'd'), flag('dired', 'D'), ...HELP_VERSION,
     ],
     operands: true,
+    failureStatus: 2,
   },
   sha224sum: {
     optstring: 'bctwz',

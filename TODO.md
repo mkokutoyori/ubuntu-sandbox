@@ -4296,7 +4296,7 @@ Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, 
 
 ## ls: options accepted without effect
 
-Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `--block-size`, `-Z` shows `?` instead of a real SELinux context, `--quoting-style=shell*` and `locale` are approximated by literal and c, and `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
+Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `--block-size`, `-Z` shows `?` instead of a real SELinux context, `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
 
 ## du: options accepted without full effect
 
@@ -4487,3 +4487,5 @@ ptx is ported from coreutils 9.4 and measured on 134 cases. Known limits: `-W` w
 ## sync, sleep, nice, nohup (lot 20)
 
 `nice nocmd` and `nohup nocmd` answer with the shell's `bash: nocmd: command not found` instead of `nice: 'nocmd': No such file or directory` / `nohup: failed to run command 'nocmd': No such file or directory`. `nohup` prints its terminal notices ("ignoring input...") whenever the simulated stdout is a terminal, which the capture harness (pipes) cannot compare, so those rows are not pinned. `du` lists directory entries in the order the simulated filesystem stores them, which differs from the host's readdir order; the sizes match.
+
+`ls --quoting-style` is now measured on 109 cases (probe-linux-ls-quoting-styles). Not modelled: the display width of a control character in a literal column listing (a tab counts as one column here, zero in ls), and non-ASCII bytes in the C locale (`\303\251`).

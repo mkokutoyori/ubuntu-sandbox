@@ -82,6 +82,8 @@ export function useLocaleQuotes(locale: string): void {
   curlyQuotes = /utf-?8/i.test(locale);
 }
 
+export const usesCurlyQuotes = (): boolean => curlyQuotes;
+
 const escapeQuoted = (text: string): string => text.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t');
 export const quoteLocale = (text: string): string => (curlyQuotes ? `‘${escapeQuoted(text)}’` : `'${escapeQuoted(text).replace(/'/g, "\\'")}'`);
 export const quoteShell = (text: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? `'${text}'` : `'${text.replace(/'/g, `'\\''`)}'`);

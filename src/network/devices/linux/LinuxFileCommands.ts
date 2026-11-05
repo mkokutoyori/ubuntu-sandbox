@@ -11,7 +11,8 @@ import { argumentFailure } from './coreutils/BackupControl';
 import { gnuOptionSet } from './GnuOptionGuard';
 import { fnmatch } from './fs/Glob';
 import { versionCompare } from './LinuxTextCommands';
-import { lsColumns, lsCommas, lsEscapeNonPrinting, lsExtension, lsHideControl, lsHumanSize, lsQuoteC, type LsFormat } from './LsLayout';
+import { lsColumns, lsCommas, lsEscapeNonPrinting, lsExtension, lsHideControl, lsHumanSize, lsQuoteC, lsQuoteShell, type LsFormat, type LsShellStyle } from './LsLayout';
+import { quoteLocale, usesCurlyQuotes } from './coreutils/CoreutilsKit';
 import { shortOptions } from './commands/Getopt';
 import { parseChmodMode } from './ChmodMode';
 import { interpretEscapes } from './LinuxShellParser';
@@ -172,7 +173,7 @@ const DEFAULT_LINE_WIDTH = 80;
 
 type LsSort = 'name' | 'size' | 'time' | 'extension' | 'version' | 'width' | 'none';
 type LsIndicator = 'none' | 'slash' | 'file-type' | 'classify';
-type LsQuoting = 'literal' | 'c' | 'escape';
+type LsQuoting = 'literal' | 'c' | 'c-maybe' | 'escape' | 'locale' | 'clocale' | LsShellStyle;
 type LsAll = 'none' | 'almost' | 'all';
 
 interface LsTiming {
@@ -233,9 +234,9 @@ const LS_ARGUMENT_CHOICES: Readonly<Record<string, readonly string[]>> = {
   'quoting-style': ["'literal'", "'shell'", "'shell-always'", "'shell-escape'", "'shell-escape-always'", "'c'", "'c-maybe'", "'escape'", "'locale'", "'clocale'"],
 };
 
-function lsInvalidArgument(option: string, value: string): string {
+function lsInvalidArgument(option: string, value: string, kind: 'invalid' | 'ambiguous' = 'invalid'): string {
   const choices = LS_ARGUMENT_CHOICES[option];
-  const lines = [`ls: invalid argument '${value}' for '--${option}'`];
+  const lines = [`ls: ${kind} argument '${value}' for '--${option}'`];
   if (choices !== undefined) lines.push('Valid arguments are:', ...choices.map((choice) => `  - ${choice}`), "Try 'ls --help' for more information.");
   return lines.join('\n');
 }
@@ -366,10 +367,13 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
       case 'file-type': opts.indicator = 'file-type'; break;
       case 'quote-name': opts.quoting = 'c'; break;
       case 'quoting-style': {
-        const styles: Record<string, LsQuoting> = { literal: 'literal', c: 'c', 'c-maybe': 'c', escape: 'escape', locale: 'c', clocale: 'c', shell: 'literal', 'shell-always': 'literal', 'shell-escape': 'literal', 'shell-escape-always': 'literal' };
-        const style = styles[argument ?? ''];
-        if (style === undefined) return lsInvalidArgument('quoting-style', argument ?? '');
-        opts.quoting = style;
+        const styles: Record<string, LsQuoting> = { literal: 'literal', c: 'c', 'c-maybe': 'c-maybe', escape: 'escape', locale: 'locale', clocale: 'clocale', shell: 'shell', 'shell-always': 'shell-always', 'shell-escape': 'shell-escape', 'shell-escape-always': 'shell-escape-always' };
+        const given = argument ?? '';
+        const exact = styles[given];
+        const prefixed = Object.keys(styles).filter((name) => name.startsWith(given));
+        if (exact !== undefined) opts.quoting = exact;
+        else if (given !== '' && prefixed.length === 1) opts.quoting = styles[prefixed[0]];
+        else return lsInvalidArgument('quoting-style', given, prefixed.length > 1 ? 'ambiguous' : 'invalid');
         break;
       }
       case 'literal': opts.quoting = 'literal'; break;
@@ -456,7 +460,7 @@ export function cmdLs(ctx: ShellContext, args: string[]): LsStreams {
   if (listedFiles.length > 0) out.push(...renderEntries(ctx, listedFiles, opts, false).lines);
   const headed = paths.length > 1 && !opts.recursive;
   listedDirectories.forEach((directory, index) => {
-    if (headed) out.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${directory.name}:`);
+    if (headed) out.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${quotedName(directory.name, opts)}:`);
     const listing = listDir(ctx, directory.absPath, directory.name, opts, diagnostics);
     if (listing !== null) out.push(listing);
   });
@@ -526,7 +530,7 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string, opts: 
   const filtered = sortEntries(listed, opts);
 
   const lines: string[] = [];
-  if (opts.recursive) lines.push(`${displayPath}:`);
+  if (opts.recursive) lines.push(`${quotedName(displayPath, opts)}:`);
   const rendered = renderEntries(ctx, filtered, opts, true);
   lines.push(...rendered.lines);
 
@@ -558,9 +562,21 @@ function indicatorOf(inode: INode, style: LsIndicator, long = false): string {
   }
 }
 
-function quotedName(name: string, opts: LsOpts): string {
+function quotedName(name: string, opts: LsOpts, alignUnquoted = false): string {
   if (opts.quoting === 'c') return lsQuoteC(name);
+  if (opts.quoting === 'c-maybe') {
+    const quoted = /["\x00-\x1f\x7f]/.test(name);
+    if (quoted) return lsQuoteC(name);
+    return alignUnquoted ? ` ${name}` : name;
+  }
   if (opts.quoting === 'escape') return lsEscapeNonPrinting(name);
+  if (opts.quoting === 'locale') return quoteLocale(name);
+  if (opts.quoting === 'clocale') return usesCurlyQuotes() ? quoteLocale(name) : lsQuoteC(name);
+  if (opts.quoting !== 'literal') {
+    const shell = lsQuoteShell(name, opts.quoting);
+    const shown = opts.hideControl ? lsHideControl(shell.text) : shell.text;
+    return alignUnquoted && !shell.quoted ? ` ${shown}` : shown;
+  }
   return opts.hideControl ? lsHideControl(name) : name;
 }
 
@@ -577,6 +593,8 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
     return prefix;
   };
   const lines: string[] = [];
+  const shellStyled = opts.quoting === 'c-maybe' || opts.quoting === 'shell' || opts.quoting === 'shell-always' || opts.quoting === 'shell-escape' || opts.quoting === 'shell-escape-always';
+  const alignUnquoted = shellStyled && opts.format !== 'single' && opts.format !== 'commas' && entries.some((e) => (opts.quoting === 'c-maybe' ? quotedName(e.name, opts) !== e.name : lsQuoteShell(e.name, opts.quoting as LsShellStyle).quoted));
 
   if (long) {
     const isDevice = (e: LsEntry): boolean => e.inode.rdev !== undefined && (e.inode.type === 'chardev' || e.inode.type === 'blockdev');
@@ -610,7 +628,7 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
       if (opts.context) cells.push('?');
       cells.push(padToWidth(sizeOf(e), widths.size, 'right'));
       cells.push(formatLsTime(opts.timing.style, e.inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs()));
-      const name = colorName(quotedName(e.name, opts), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator, true);
+      const name = colorName(quotedName(e.name, opts, alignUnquoted), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator, true);
       let line = `${prefixOf(e)}${cells.join(' ')} ${name}`;
       if (e.inode.type === 'symlink' && opts.dereference !== 'all') line += ` -> ${ctx.vfs.linkTarget(e.inode)}`;
       lines.push(line);
@@ -624,9 +642,9 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
   const shown: string[] = [];
   const lengths: number[] = [];
   for (const e of entries) {
-    const base = quotedName(e.name, opts) + indicatorOf(e.inode, opts.indicator);
+    const base = quotedName(e.name, opts, alignUnquoted) + indicatorOf(e.inode, opts.indicator);
     const prefix = prefixOf(e);
-    shown.push(prefix + colorName(quotedName(e.name, opts), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator));
+    shown.push(prefix + colorName(quotedName(e.name, opts, alignUnquoted), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator));
     lengths.push(prefix.length + base.length);
   }
   if (opts.format === 'single' || shown.length === 0) lines.push(...shown);

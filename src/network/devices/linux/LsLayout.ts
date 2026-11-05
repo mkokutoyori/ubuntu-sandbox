@@ -140,9 +140,47 @@ export function lsQuoteC(name: string): string {
 }
 
 export function lsEscapeNonPrinting(name: string): string {
-  return name.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/ /g, '\\ ').replace(/"/g, '\\"');
+  return name.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/ /g, '\\ ');
 }
 
 export function lsHideControl(name: string): string {
   return name.replace(CONTROL_CHARACTERS, '?');
+}
+
+export type LsShellStyle = 'shell' | 'shell-always' | 'shell-escape' | 'shell-escape-always';
+
+const SHELL_ESCAPES: Readonly<Record<string, string>> = { '\x07': '\\a', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t', '\v': '\\v' };
+const SHELL_SPECIAL = /[\s!"$&'()*;<=>?[\\^`|]/;
+const DOUBLE_QUOTE_UNSAFE = /[!"$&()*;<=>?[\\^`|{}\t\n]/;
+
+function isControl(character: string): boolean {
+  const code = character.charCodeAt(0);
+  return code < 0x20 || code === 0x7f;
+}
+
+export function lsQuoteShell(name: string, style: LsShellStyle): { text: string; quoted: boolean } {
+  const escapeControls = style.startsWith('shell-escape');
+  const always = style.endsWith('-always');
+  const hasControl = Array.from(name).some(isControl);
+  const needsQuotes = always || name === '' || SHELL_SPECIAL.test(name) || /^[#~]/.test(name) || (escapeControls && hasControl);
+  if (!needsQuotes) return { text: name, quoted: false };
+  if (name.includes("'") && !(escapeControls && hasControl)) {
+    const interior = name.replace(/^[#~]/, '');
+    if (!DOUBLE_QUOTE_UNSAFE.test(interior) && !/[#~]/.test(interior) && !Array.from(name).some(isControl)) return { text: `"${name}"`, quoted: true };
+  }
+  if (name === '') return { text: "''", quoted: true };
+  let text = '';
+  let run = '';
+  const flush = (): void => { if (run !== '') text += `'${run}'`; run = ''; };
+  for (const character of name) {
+    if (escapeControls && isControl(character)) {
+      flush();
+      text += `$'${SHELL_ESCAPES[character] ?? `\\${character.charCodeAt(0).toString(8).padStart(3, '0')}`}'`;
+    } else if (character === "'") {
+      flush();
+      text += "\\'";
+    } else run += character;
+  }
+  flush();
+  return { text, quoted: true };
 }
