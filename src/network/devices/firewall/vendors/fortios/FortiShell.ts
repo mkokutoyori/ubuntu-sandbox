@@ -69,7 +69,7 @@ import {
   type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
-  renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
+  renderOspfNeighbors, renderRoutingTable, renderRoutingDetails, renderSystemStatus,
   type SystemClusterFacts,
 } from './diag/getViews';
 import {
@@ -974,6 +974,9 @@ export class FortiShell {
     }
     if (path === 'router info ospf interface' || path.startsWith('router info ospf interface ')) {
       return this.ospfInterfaceView(path.slice('router info ospf interface'.length).trim());
+    }
+    if (path === 'router info routing-table details' || path.startsWith('router info routing-table details ')) {
+      return renderRoutingDetails(this.fw.getRouteTable(), path.slice('router info routing-table details'.length).trim());
     }
     if (path.startsWith('router info routing-table ')) {
       const view = path.slice('router info routing-table '.length);

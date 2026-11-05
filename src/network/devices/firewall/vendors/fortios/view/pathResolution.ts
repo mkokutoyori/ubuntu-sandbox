@@ -40,6 +40,7 @@ const VIEWS: readonly GetView[] = Object.freeze([
   { words: ['router', 'info', 'routing-table', 'connected'], help: 'Connected routes only.' },
   { words: ['router', 'info', 'routing-table', 'database'],
     help: 'Routes of every protocol, elected or not.' },
+  { words: ['router', 'info', 'routing-table', 'details'], help: 'One route in full, or every route.' },
   { words: ['router', 'info', 'routing-table', 'ospf'], help: 'OSPF routes only.' },
   { words: ['router', 'info', 'routing-table', 'rip'], help: 'RIP routes only.' },
   { words: ['router', 'info', 'routing-table', 'bgp'], help: 'BGP routes only.' },
