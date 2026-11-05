@@ -697,6 +697,7 @@ export class Firewall extends Equipment {
       managementIdleTimeoutMs: () => this.management.idleTimeoutMs(),
       sshIdentification: () => this.managementSshIdentification(),
       sshAlgorithms: () => this.management.sshAlgorithms(),
+      sshPasswordAllowed: () => this.management.sshPasswordAllowed(),
       sshHostKeyAlgorithm: () => this.managementSshHostKeyAlgorithm(),
       runningConfig: () => this.managementRunningConfig(),
       onManagementLogin: (session) => {
@@ -1826,6 +1827,10 @@ export class Firewall extends Equipment {
 
   allowedAccessOn(iface: string): readonly string[] {
     return this.management.allowedAccessOn(iface);
+  }
+
+  setSshPasswordAllowed(allowed: boolean): void {
+    this.management.setSshPasswordAllowed(allowed);
   }
 
   setSshAlgorithms(algorithms: SshAlgorithmPreferences): void {
