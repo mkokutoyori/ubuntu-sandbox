@@ -111,6 +111,7 @@ export interface FortiInterfacePatch {
   };
   readonly dhcpClient?: { readonly identifier: string; readonly renewTimeSec: number };
   readonly ip?: string;
+  readonly remoteIp?: string;
   readonly mask?: string;
   readonly up?: boolean;
   readonly allowAccess?: readonly string[];

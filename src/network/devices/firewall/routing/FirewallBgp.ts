@@ -21,6 +21,7 @@ export interface FirewallBgpDeps {
   readonly deviceId: string;
   readonly bus: () => IEventBus;
   readonly tcp: () => TcpStack;
+  readonly egressToward?: (ip: string) => { localIp: string; localIface: string } | null;
   readonly ports: () => readonly RoutingPortFacts[];
   readonly connectedRoutes: () => ReadonlyArray<{
     network: string; mask: string; iface: string;
@@ -271,7 +272,7 @@ export class FirewallBgp {
         return { localIp: port.ip, localIface: port.name };
       }
     }
-    return null;
+    return this.deps.egressToward?.(ip) ?? null;
   }
 
   private installRoutes(): void {

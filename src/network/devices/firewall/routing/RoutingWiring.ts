@@ -22,6 +22,7 @@ export interface RoutingWiringHost {
   emitFrame(iface: string, frame: EthernetFrame): void;
   emitArpAware(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
   tcp(): TcpStack;
+  egressToward?(ip: string): { localIp: string; localIface: string } | null;
   listenBgp(accept: (socket: TcpSocket) => void): void;
 }
 
@@ -60,6 +61,7 @@ export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting 
     removeRoutes: (source) => { host.routes().removeStaticsBySource(source); },
     resolvedMac: (ip) => host.resolvedMac(ip),
     tcp: () => host.tcp(),
+    egressToward: host.egressToward === undefined ? undefined : (ip) => host.egressToward!(ip),
     listenBgp: (accept) => { host.listenBgp(accept); },
   });
 }

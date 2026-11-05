@@ -610,6 +610,8 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     ], 'static'),
     { ...addressMask('ip', 'Interface IPv4 address and subnet mask.',
       ['0.0.0.0', '0.0.0.0']), availableWhen: isStatic },
+    { ...addressMask('remote-ip', 'Remote IP address of the tunnel; a host route towards it is installed.',
+      ['0.0.0.0', '0.0.0.0']), availableWhen: isStatic },
     {
       ...enable('defaultgw', 'Enable to get the gateway IP from the DHCP or PPPoE server.', true),
       availableWhen: isDhcpClient,
@@ -719,6 +721,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       } : undefined,
       ip: ip[0],
       mask: ip[1],
+      remoteIp: object.effective('remote-ip')[0] ?? '',
       up: object.effective('status')[0] !== 'down',
       allowAccess: object.effective('allowaccess'),
       type: interfaceType(object),

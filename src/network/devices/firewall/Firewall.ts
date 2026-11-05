@@ -641,6 +641,16 @@ export class Firewall extends Equipment {
         this.sendIpv4FrameArpAware(p, packet, nextHop),
       sendUdpDatagram: (request) => this.sendUdpDatagram(request),
       sourceAddressFor: (destination) => this.sourceAddressFor(destination),
+      resolveRoute: (target) => {
+        const egress = this.localEgress(target, {});
+        return egress === undefined ? null : { iface: egress.iface, nextHopIp: egress.nextHop ?? target };
+      },
+      virtualInterface: (name) => {
+        const entry = this.interfaces.get(name);
+        const ip = entry?.ip ?? this.interfaces.get(this.tunnelBoundInterface(name) ?? '')?.ip;
+        return entry === undefined || ip === undefined ? undefined : { ip, mtu: entry.mtu, up: entry.up };
+      },
+      isLocalAddress: (ip) => this.interfaces.owningInterface(ip.toString()) !== undefined,
       sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
       ...ipsecHostFacts({
         interfaces: this.interfaces,

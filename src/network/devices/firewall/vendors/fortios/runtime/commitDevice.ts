@@ -30,6 +30,7 @@ export function buildCommitDevice(
         if (patch.addressingMode) fw.getDhcp().setClientMode(name, patch.leasePolicy ?? null);
         if (patch.dhcpClient) fw.getDhcp().setClientOptions(name, patch.dhcpClient);
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
+        if (patch.remoteIp !== undefined) fw.configureInterface(name, { remoteIp: patch.remoteIp });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
