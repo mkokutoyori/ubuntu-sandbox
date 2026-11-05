@@ -121,7 +121,7 @@ function gzipHeaderName(bytes: Uint8Array): string {
 const GZIP_MAGIC_AS_BINARY_STRING = bytesToBinaryString(Uint8Array.of(0x1f, 0x8b));
 const GZIP_MAGIC_AS_FILE_TEXT = bytesToFileText(Uint8Array.of(0x1f, 0x8b));
 
-function gzipBytesOf(raw: string): Uint8Array | null {
+export function gzipBytesOf(raw: string): Uint8Array | null {
   if (raw.startsWith(GZIP_MAGIC_AS_BINARY_STRING)) return binaryStringToBytes(raw);
   if (raw.startsWith(GZIP_MAGIC_AS_FILE_TEXT)) return fileTextToBytes(raw);
   return null;

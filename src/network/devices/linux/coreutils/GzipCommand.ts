@@ -1,9 +1,9 @@
-import { binaryStringToBytes, bytesToBinaryString, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
+import { bytesToBinaryString, bytesToFileText, fileTextToBytes } from '@/crypto/encoding';
 import { simulationNowMs } from '@/network/core/SystemClock';
 import { crc32, gzipCompress, gzipDecompressTolerant, isGzip, ZlibError } from '@/network/rsyslog/Zlib';
 import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
 import { formatLocalTime } from '../system/SystemInfo';
-import { basename, type ArchiveCtx, type CmdResult } from './ArchiveCommands';
+import { basename, gzipBytesOf, type ArchiveCtx, type CmdResult } from './ArchiveCommands';
 import { COREUTILS_DOCS } from './CoreutilsDocs';
 
 type Program = 'gzip' | 'gunzip' | 'zcat';
@@ -91,14 +91,9 @@ function parse(program: Program, args: readonly string[]): GzipOptions {
   return o;
 }
 
-const asBytes = (raw: string): Uint8Array => {
-  const binary = binaryStringToBytes(raw);
-  return isGzip(binary) ? binary : fileTextToBytes(raw);
-};
+const asBytes = (raw: string): Uint8Array => gzipBytesOf(raw) ?? fileTextToBytes(raw);
 
-function looksGzip(raw: string): boolean {
-  return isGzip(binaryStringToBytes(raw)) || isGzip(fileTextToBytes(raw));
-}
+const looksGzip = (raw: string): boolean => gzipBytesOf(raw) !== null;
 
 interface Member { name: string; mtime: number; payload: Uint8Array; compressedBytes: number; crc: number; headerBytes: number; trailingGarbage: boolean }
 
@@ -119,7 +114,7 @@ function headerOf(bytes: Uint8Array): { name: string; mtime: number; size: numbe
   return { name, mtime: mtime * 1000, size: at };
 }
 
-type Decoded = { kind: 'ok'; member: Member } | { kind: 'error'; message: string; exitCode: number };
+type Decoded = { kind: 'ok'; member: Member } | { kind: 'error'; message: string; exitCode: number; partial?: Uint8Array };
 
 function decode(raw: string, label: string): Decoded {
   if (raw === '') return { kind: 'error', message: `\ngzip: ${label}: unexpected end of file`, exitCode: 1 };
@@ -128,7 +123,7 @@ function decode(raw: string, label: string): Decoded {
   const header = headerOf(bytes);
   try {
     const result = gzipDecompressTolerant(bytes);
-    if (!result.complete) return { kind: 'error', message: `\ngzip: ${label}: unexpected end of file`, exitCode: 1 };
+    if (!result.complete) return { kind: 'error', message: `\ngzip: ${label}: unexpected end of file`, exitCode: 1, partial: result.output };
     return { kind: 'ok', member: { name: header.name, mtime: header.mtime, payload: result.output, compressedBytes: bytes.length, crc: crc32(result.output), headerBytes: header.size, trailingGarbage: false } };
   } catch (error) {
     if (error instanceof ZlibError) {
@@ -246,7 +241,11 @@ export function cmdGzip(ctx: ArchiveCtx, args: string[], program: Program): CmdR
     if (o.force && !looksGzip(raw) && o.toStdout) { stdout.push(raw); return; }
     if (!o.toStdout && !o.test && !o.list && suffixOf(operand, o) === null) { failure(`gzip: ${shown}: unknown suffix -- ignored`, 2); return; }
     const decoded = decode(raw, shown);
-    if (decoded.kind === 'error') { failure(decoded.message, decoded.exitCode); return; }
+    if (decoded.kind === 'error') {
+      if (o.toStdout && decoded.partial !== undefined) stdout.push(bytesToFileText(decoded.partial));
+      failure(decoded.message, decoded.exitCode);
+      return;
+    }
     const { member } = decoded;
     if (o.list) {
       listed++;
