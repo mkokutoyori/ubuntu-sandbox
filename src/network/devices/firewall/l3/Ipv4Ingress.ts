@@ -1,3 +1,4 @@
+import { IP_PROTO_GRE } from '../../../gre/types';
 import { IP_PROTO_ESP, type EthernetFrame, type IPv4Packet } from '../../../core/types';
 import type { VdomContext } from '../vdom/VdomRegistry';
 import type { CaptivePortalRedirect } from '../auth/CaptivePortalRedirect';
@@ -80,7 +81,7 @@ export function classifyIpv4(
     return { kind: 'consumed' };
   }
 
-  if (packet.protocol === IP_PROTO_ESP
+  if ((packet.protocol === IP_PROTO_ESP || packet.protocol === IP_PROTO_GRE)
     && host.ownsAddress(vdom, packet.destinationIP.toString())) {
     const opened = host.decapsulate(vdom, packet);
     return opened === null

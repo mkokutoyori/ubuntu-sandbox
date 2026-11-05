@@ -5,6 +5,9 @@ import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshT
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
 import { BfdAgent } from '@/network/bfd/BfdAgent';
+import { GreAgent } from '@/network/gre/GreAgent';
+import { IP_PROTO_GRE } from '@/network/gre/types';
+import { ipv4HeaderOptionsOf, type Ipv4SendRequest } from '@/network/layers/internet/Ipv4Egress';
 import { UDP_PORT_BFD_CONTROL } from '@/network/bfd/types';
 import { LldpAgent } from '@/network/lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '@/network/lldp/types';
@@ -2305,6 +2308,82 @@ export class Firewall extends Equipment {
     return true;
   }
 
+  private greAgentInstance: GreAgent | null = null;
+
+  getGreAgent(): GreAgent {
+    if (!this.greAgentInstance) {
+      this.greAgentInstance = new GreAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => [...this.getPorts().values()],
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendIpv4Packet: (request) => this.sendLocalIpv4(request),
+        },
+        () => this.getBus(),
+      );
+      this.greAgentInstance.start();
+    }
+    return this.greAgentInstance;
+  }
+
+  greTunnelNames(): readonly string[] {
+    return this.greAgentInstance === null ? [] : this.greAgentInstance.listTunnels().map(tunnel => tunnel.tunnelId);
+  }
+
+  applyGreTunnel(name: string, tunnel: {
+    boundInterface: string; localGateway: string; remoteGateway: string;
+    keyInbound: number | null; keyOutbound: number | null;
+    checksumTransmission: boolean; checksumReception: boolean;
+    sequenceTransmission: boolean; sequenceReception: boolean;
+  }): string | undefined {
+    const bound = tunnel.boundInterface === '' ? undefined : this.interfaces.get(tunnel.boundInterface);
+    if (tunnel.boundInterface !== '' && bound === undefined) return `interface ${tunnel.boundInterface} does not exist.`;
+    const local = tunnel.localGateway !== '0.0.0.0' ? tunnel.localGateway : bound?.ip;
+    if (local === undefined) return 'a GRE tunnel needs a local-gw or an interface that carries an address.';
+    const agent = this.getGreAgent();
+    const created = agent.addTunnel(name, local, tunnel.remoteGateway, {
+      ...(tunnel.keyOutbound === null ? {} : { key: tunnel.keyOutbound }),
+      keyInbound: tunnel.keyInbound,
+      checksumReception: tunnel.checksumReception,
+      sequenceReception: tunnel.sequenceReception,
+    });
+    created.key = tunnel.keyOutbound;
+    agent.setChecksumEnabled(name, tunnel.checksumTransmission);
+    agent.setSequenceEnabled(name, tunnel.sequenceTransmission);
+    this.interfaces.configure(name, { up: true });
+    this.assignInterfaceToVdom(name, bound === undefined ? ROOT_VDOM : this.vdoms.vdomOfInterface(bound.name));
+    return undefined;
+  }
+
+  removeGreTunnel(name: string): void {
+    this.greAgentInstance?.removeTunnel(name);
+    this.interfaces.remove(name);
+  }
+
+  private sendLocalIpv4(request: Ipv4SendRequest): boolean {
+    const egress = this.localEgress(request.destination.toString(), {
+      iface: request.iface, source: request.source?.toString(),
+    });
+    const iface = egress?.iface;
+    const source = request.source?.toString()
+      ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
+    if (iface === undefined || source === undefined) return false;
+    const packet = createIPv4Packet(
+      new IPAddress(source), request.destination, request.protocol, request.ttl ?? 64,
+      request.payload, request.payloadBytes, ipv4HeaderOptionsOf(request));
+    this.logLocalOut(iface, packet);
+    this.forward(iface, packet, egress?.nextHop);
+    return true;
+  }
+
+  private decapsulateGre(packet: IPv4Packet): { tunnel: string; inner: IPv4Packet } | null {
+    if (this.greAgentInstance === null) return null;
+    const opened = this.greAgentInstance.decapsulate('', packet.sourceIP, packet);
+    return opened === null ? null : { tunnel: opened.tunnelId, inner: opened.inner };
+  }
+
   getLacpAgent(): LacpAgent {
     if (!this.lacpAgentInstance) {
       this.lacpAgentInstance = new LacpAgent(
@@ -3116,6 +3195,10 @@ export class Firewall extends Equipment {
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
   ): void {
+    if (this.greAgentInstance?.getTunnel(egressPort) !== undefined) {
+      this.greAgentInstance.encapsulateAndSend(egressPort, packet);
+      return;
+    }
     if (this.vdoms.contextOfInterface(egressPort).tunnels.isTunnelInterface(egressPort)) {
       this.forwardThroughTunnel(egressPort, packet);
       return;
@@ -3181,7 +3264,9 @@ export class Firewall extends Equipment {
       captivePortal: this.captivePortal,
       interfaces: this.interfaces,
       vdomOf: (iface) => this.vdoms.contextOfInterface(iface),
-      decapsulate: (vdom, p) => decryptFromTunnel(this.ipsec, vdom.tunnels, p) ?? null,
+      decapsulate: (vdom, p) => p.protocol === IP_PROTO_GRE
+        ? this.decapsulateGre(p)
+        : decryptFromTunnel(this.ipsec, vdom.tunnels, p) ?? null,
     });
   }
 }

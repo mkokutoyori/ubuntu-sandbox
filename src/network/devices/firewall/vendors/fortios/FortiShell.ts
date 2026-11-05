@@ -793,6 +793,9 @@ export class FortiShell {
           }
         }
       }
+      if (target === 'system interface') {
+        for (const name of this.fw.greTunnelNames()) push(name, 'GRE tunnel interface.');
+      }
       if (target === 'system zone') {
         for (const zone of this.fw.getZoneTable().list()) push(zone.name, 'Security zone.');
       }
@@ -1034,8 +1037,7 @@ export class FortiShell {
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',
-        type: this.interfaceSetting(iface.name, 'type')
-          ?? (this.fw.tunnelBoundInterface(iface.name) !== undefined ? 'tunnel' : 'physical'),
+        type: this.isTunnelInterface(iface.name) ? 'tunnel' : this.interfaceSetting(iface.name, 'type') ?? 'physical',
         srcCheck: this.interfaceSetting(iface.name, 'src-check') ?? 'enable',
         dropOverlappedFragment:
           this.interfaceSetting(iface.name, 'drop-overlapped-fragment') ?? 'disable',
@@ -1043,6 +1045,10 @@ export class FortiShell {
         physical: port !== undefined,
       };
     });
+  }
+
+  private isTunnelInterface(name: string): boolean {
+    return this.fw.tunnelBoundInterface(name) !== undefined || this.fw.greTunnelNames().includes(name);
   }
 
   private interfaceSetting(name: string, attribute: string): string | undefined {

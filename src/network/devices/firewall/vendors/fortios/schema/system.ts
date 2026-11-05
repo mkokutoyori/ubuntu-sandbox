@@ -1734,6 +1734,54 @@ export const SYSTEM_PROXY_ARP: FortiTableSpec = {
   },
 };
 
+export const SYSTEM_GRE_TUNNEL: FortiTableSpec = {
+  path: ['system', 'gre-tunnel'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 123,
+  help: 'Configure GRE tunnel.',
+  attributes: [
+    { ...word('name', 'Tunnel name.'), readOnly: true },
+    reference('interface', 'Interface name.', INTERFACE_ONLY),
+    choice('ip-version', 'IP version to use for VPN interface.', [
+      { keyword: '4', description: 'Use IPv4 addressing for gateways.' },
+      { keyword: '6', description: 'Use IPv6 addressing for gateways.' },
+    ], '4'),
+    address('local-gw', 'IP address of the local gateway.', '0.0.0.0'),
+    address('remote-gw', 'IP address of the remote gateway.', '0.0.0.0'),
+    count('key-inbound', 'Require received GRE packets to contain this key.', 0, 4294967295, 0),
+    count('key-outbound', 'Include this key in transmitted GRE packets.', 0, 4294967295, 0),
+    enable('checksum-transmission', 'Enable/disable including of checksums in transmitted packets.'),
+    enable('checksum-reception', 'Enable/disable validating checksums in received GRE packets.'),
+    enable('sequence-number-transmission', 'Enable/disable including of sequence numbers in transmitted GRE packets.'),
+    enable('sequence-number-reception', 'Enable/disable validating sequence numbers in received GRE packets.'),
+  ],
+  onCommit(object, context) {
+    if (object.effective('ip-version')[0] === '6') return 'IPv6 GRE gateways are not carried: only ip-version 4 is.';
+    const remote = object.effective('remote-gw')[0] ?? '0.0.0.0';
+    if (remote === '0.0.0.0') return 'a GRE tunnel needs a remote-gw.';
+    const keyIn = Number.parseInt(object.effective('key-inbound')[0] ?? '0', 10);
+    const keyOut = Number.parseInt(object.effective('key-outbound')[0] ?? '0', 10);
+    return context.device.applyGreTunnel(object.key, {
+      boundInterface: object.effective('interface')[0] ?? '',
+      localGateway: object.effective('local-gw')[0] ?? '0.0.0.0',
+      remoteGateway: remote,
+      keyInbound: keyIn === 0 ? null : keyIn,
+      keyOutbound: keyOut === 0 ? null : keyOut,
+      checksumTransmission: object.effective('checksum-transmission')[0] === 'enable',
+      checksumReception: object.effective('checksum-reception')[0] === 'enable',
+      sequenceTransmission: object.effective('sequence-number-transmission')[0] === 'enable',
+      sequenceReception: object.effective('sequence-number-reception')[0] === 'enable',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeGreTunnel(key);
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1754,4 +1802,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_LINK_MONITOR,
   SYSTEM_ARP_TABLE,
   SYSTEM_PROXY_ARP,
+  SYSTEM_GRE_TUNNEL,
 ]);

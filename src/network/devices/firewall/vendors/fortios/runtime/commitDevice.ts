@@ -404,6 +404,12 @@ export function buildCommitDevice(
       removeCommunityList(name) {
         fw.getRouting().removeCommunityList(name);
       },
+      applyGreTunnel(name, tunnel) {
+        return fw.applyGreTunnel(name, tunnel);
+      },
+      removeGreTunnel(name) {
+        fw.removeGreTunnel(name);
+      },
       applyBfdNeighbors(neighbours) {
         return fw.applyBfdNeighbors(neighbours);
       },

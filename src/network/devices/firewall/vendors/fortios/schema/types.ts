@@ -449,6 +449,13 @@ export interface FortiCommitDevice {
   removeRouteMap(name: string): void;
   applyAsPathList(patch: import('../../../routing/DynamicRoutingTypes').AsPathListPatch): void;
   removeAsPathList(name: string): void;
+  applyGreTunnel(name: string, tunnel: {
+    boundInterface: string; localGateway: string; remoteGateway: string;
+    keyInbound: number | null; keyOutbound: number | null;
+    checksumTransmission: boolean; checksumReception: boolean;
+    sequenceTransmission: boolean; sequenceReception: boolean;
+  }): string | void;
+  removeGreTunnel(name: string): void;
   applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | void;
   applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
   removeKeyChain(name: string): void;
