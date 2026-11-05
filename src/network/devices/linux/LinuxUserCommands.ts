@@ -4,6 +4,7 @@
  */
 
 import { ShellContext } from './LinuxFileCommands';
+import { Streams, quoteLocale, type CoreutilsRun } from './coreutils/CoreutilsKit';
 import { parseUseraddArgs } from './iam/useraddOptions';
 
 export function cmdUseradd(ctx: ShellContext, args: string[]): string {
@@ -194,9 +195,25 @@ export function cmdWhoami(ctx: ShellContext): string {
   return ctx.userMgr.whoami();
 }
 
-export function cmdGroups(ctx: ShellContext, args: string[]): string {
-  const username = args.find(a => !a.startsWith('-'));
-  return ctx.userMgr.groupsCmd(username);
+export function cmdGroups(ctx: ShellContext, args: string[]): CoreutilsRun {
+  const separator = args.indexOf('--');
+  const operands = args.filter((word, index) => (separator >= 0 ? index > separator : !word.startsWith('-')));
+  const streams = new Streams();
+  if (operands.length === 0) {
+    const own = ctx.userMgr.groupNamesOf();
+    if (own !== null) streams.stdout(`${own.groups.join(' ')}\n`);
+    return streams.result();
+  }
+  for (const operand of operands) {
+    const found = ctx.userMgr.groupNamesOf(operand);
+    if (found === null) {
+      streams.diagnostic(`groups: ${quoteLocale(operand)}: no such user`);
+      streams.exitCode = 1;
+    } else {
+      streams.stdout(`${found.name} : ${found.groups.join(' ')}\n`);
+    }
+  }
+  return streams.result();
 }
 
 export function cmdWho(ctx: ShellContext): string {

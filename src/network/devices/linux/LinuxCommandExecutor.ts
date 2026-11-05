@@ -6598,7 +6598,7 @@ export class LinuxCommandExecutor {
       case 'finger': return this.handleFinger(args);
       case 'id': return asDispatch(runId(c, args));
       case 'whoami': return { output: cmdWhoami(c), exitCode: 0 };
-      case 'groups': return { output: cmdGroups(c, args), exitCode: 0 };
+      case 'groups': return asDispatch(cmdGroups(c, args));
       case 'who': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);

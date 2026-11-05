@@ -1289,13 +1289,10 @@ export class LinuxUserManager {
     return this.currentUser;
   }
 
-  groupsCmd(username?: string): string {
-    const name = username || this.currentUser;
-    const user = this.getUser(name) ? this.users.get(name) : undefined;
-    if (!user) return `groups: '${name}': no such user`;
-    const groups = this.getUserGroups(name);
-    const groupNames = groups.map(g => g.name).join(' ');
-    return username ? `${name} : ${groupNames}` : groupNames;
+  groupNamesOf(username?: string): { readonly name: string; readonly groups: string[] } | null {
+    const name = username ?? this.currentUser;
+    if (!this.getUser(name) || !this.users.get(name)) return null;
+    return { name, groups: this.getUserGroups(name).map((group) => group.name) };
   }
 
   /**

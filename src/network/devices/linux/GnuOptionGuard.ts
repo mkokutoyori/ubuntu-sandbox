@@ -1,4 +1,5 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
+import { COREUTILS_DOCS } from './coreutils/CoreutilsDocs';
 
 export interface GnuOptionSet {
   readonly optstring: string;
@@ -225,6 +226,8 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   tty: { optstring: 's', long: [flag('silent', 's'), flag('quiet', 's'), ...HELP_VERSION], operands: false, failureStatus: 2 },
   arch: { optstring: '', long: [...HELP_VERSION], operands: false },
   nproc: { optstring: '', long: [flag('all'), valued('ignore'), ...HELP_VERSION], operands: false },
+  logname: { optstring: '', long: HELP_VERSION, operands: false },
+  users: { optstring: '', long: HELP_VERSION, operands: true },
   free: {
     optstring: 'bkmghHlLtvVwc:s:',
     long: [
@@ -416,9 +419,11 @@ export function gnuOptionSet(command: string): GnuOptionSet {
 export interface OptionRefusal {
   readonly output: string;
   readonly exitCode: number;
+  readonly informational?: boolean;
 }
 
-export function asStderrResult(refusal: OptionRefusal): { output: string; stderr: string; interleaved: string; exitCode: number } {
+export function asStderrResult(refusal: OptionRefusal): { output: string; stderr?: string; interleaved?: string; exitCode: number } {
+  if (refusal.informational === true) return { output: refusal.output, exitCode: refusal.exitCode };
   const diagnostic = `${refusal.output}\n`;
   return { output: '', stderr: diagnostic, interleaved: diagnostic, exitCode: refusal.exitCode };
 }
@@ -429,7 +434,11 @@ export function refuseUnknownGnuOption(command: string, args: readonly string[])
   const program = set.program ?? command;
   const trailer = set.trailer ?? `Try '${program} --help' for more information.`;
   const scanned = set.signalOperands ? args.filter((word) => !/^-(\d+|[A-Z][A-Z0-9]+)$/.test(word)) : args;
+  const docs = COREUTILS_DOCS[command];
   for (const item of shortOptions(scanned, set.optstring, set.long)) {
+    if (docs !== undefined && item.kind === 'option' && (item.long === 'help' || item.long === 'version')) {
+      return { output: `${docs[item.long]}\n`, exitCode: 0, informational: true };
+    }
     if (item.kind === 'operand' && !set.operands) {
       return { output: `${command}: extra operand '${item.value}'\n${trailer}`, exitCode: set.failureStatus ?? 1 };
     }
