@@ -229,7 +229,7 @@ const PROTOCOL_CODE: Readonly<Record<string, string>> = Object.freeze({
   bgp: 'B',
 });
 
-function prefixLength(mask: string): number {
+export function prefixLength(mask: string): number {
   return mask.split('.')
     .map(octet => Number.parseInt(octet, 10).toString(2).split('1').length - 1)
     .reduce((total, bits) => total + bits, 0);

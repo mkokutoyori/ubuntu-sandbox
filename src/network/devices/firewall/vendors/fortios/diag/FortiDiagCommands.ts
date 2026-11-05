@@ -1,3 +1,4 @@
+import { renderNetlinkInterfaceList } from './kernelViews';
 import { conserveModeLines, procMeminfoLines } from './systemLoad';
 import { renderArpKernelList } from './getViews';
 import {
@@ -130,6 +131,10 @@ function diagnoseNetlink(rest: readonly string[], deps: FortiDiagDeps): string {
       return renderAggregateDetail(vue);
     }
     return FortiMessages.unknownPath(`netlink aggregate ${tail.join(' ')}`);
+  }
+
+  if (family === 'interface' && tail[0] === 'list' && tail.length === 1) {
+    return renderNetlinkInterfaceList(deps.fw);
   }
 
   if (family === 'port' && tail[0] !== undefined) {

@@ -489,6 +489,10 @@ export class FortiSocle {
         'Show every TLV of the LLDP neighbours heard on one interface.',
         (_session, args) =>
           this.deps.diagnose(['lldprx', 'port', 'neighbor', 'details', ...words(args.rest)])),
+      this.plain('diagnose netlink interface list',
+        ['diagnose', 'netlink', 'interface', 'list'],
+        'List the interfaces with their kernel counters.',
+        () => this.deps.diagnose(['netlink', 'interface', 'list'])),
       this.plain('diagnose netlink aggregate list',
         ['diagnose', 'netlink', 'aggregate', 'list'],
         'List the aggregate interfaces of this virtual domain.',
