@@ -13,6 +13,12 @@
  * Avant la correction (git stash push -- src/network src/powershell) : 9 cas sur 11 tombent (le 53 ecoutait sur toutes les adresses
  * quelle que soit la liste, `listen-on-v6 ... tls` etait lu sans rien ouvrir, un listener `listen-on-v6 { none; }` n'etait pas lu).
  * Passent des deux cotes : les deux temoins (le 53 repond sans declaration, en IPv4 comme en IPv6).
+ *
+ * `ss` (bloc « un socket par adresse ») : le vrai named lie un socket par adresse de la liste, jamais un joker. Sur le commit precedent
+ * (git stash push -- src/network) 3 cas sur 5 tombent : le temoin (aucune ligne `[::]:53`, ni en UDP ni en TCP, et le joker TCP 0.0.0.0:53
+ * absent parce que l'annonce de l'ecoute se taisait des que le port etait lie dans la famille, a cause du stub de systemd-resolved),
+ * la liste de deux adresses (un seul `0.0.0.0:53` UDP, rien en TCP) et la cohabitation avec le stub. Passent des deux cotes : la reponse
+ * par adresse (structurel : le filtre de livraison existait) et `listen-on-v6 { none; }` (le joker v6 n'existait pas).
  */
 import { describe, it, expect } from 'vitest';
 import { lab, SERVER_IP, PKI } from './_bind9-tls-lab';
@@ -74,6 +80,47 @@ describe('listen-on en clair', () => {
     await server.executeCommand('rndc reload');
     expect(await dig('+tries=1 +time=1 www.banquehorizon.com +short')).not.toBe('203.0.113.20');
     expect(await server.executeCommand('dig @127.0.0.1 www.banquehorizon.com +short')).toBe('203.0.113.20');
+  }, LONG);
+});
+
+describe('ss : un socket par adresse de la liste', () => {
+  const lines = (output: string, port: string): string[] => output.split('\n').filter((line) => new RegExp(`:${port}\\s`).test(line) && line.includes('named'));
+
+  it('temoin : sans declaration, ss montre les deux jokers 0.0.0.0:53 et [::]:53', async () => {
+    const { start, server } = await lab();
+    await start('options { recursion no; };');
+    expect(lines(await server.executeCommand('ss -lunp'), '53').map((line) => line.split(/\s+/)[3])).toEqual(['0.0.0.0:53', '[::]:53']);
+    expect(lines(await server.executeCommand('ss -ltnp'), '53').map((line) => line.split(/\s+/)[3])).toEqual(['0.0.0.0:53', '[::]:53']);
+  }, LONG);
+
+  it('une liste de deux adresses ouvre deux sockets, en UDP comme en TCP, et plus de joker', async () => {
+    const { start, server } = await lab();
+    await start(`options { listen-on { 127.0.0.1; ${SERVER_IP}; }; listen-on-v6 { none; }; recursion no; };`);
+    const udp = lines(await server.executeCommand('ss -lunp'), '53').map((line) => line.split(/\s+/)[3]).sort();
+    const tcp = lines(await server.executeCommand('ss -ltnp'), '53').map((line) => line.split(/\s+/)[3]).sort();
+    expect(udp).toEqual([`${SERVER_IP}:53`, '127.0.0.1:53']);
+    expect(tcp).toEqual([`${SERVER_IP}:53`, '127.0.0.1:53']);
+  }, LONG);
+
+  it('chaque adresse repond, une adresse hors liste est refusee', async () => {
+    const { start, server } = await lab();
+    await start('options { listen-on { 127.0.0.1; }; listen-on-v6 { none; }; recursion no; };');
+    expect(await server.executeCommand('dig @127.0.0.1 www.banquehorizon.com +short')).toBe('203.0.113.20');
+    expect(await server.executeCommand(`dig @${SERVER_IP} +tries=1 www.banquehorizon.com +short`)).toContain('connection refused');
+  }, LONG);
+
+  it('plusieurs declarations d\'un meme port a des adresses differentes coexistent avec le stub de systemd-resolved', async () => {
+    const { start, server } = await lab();
+    await start(`options { listen-on { ${SERVER_IP}; }; listen-on-v6 { none; }; recursion no; };`);
+    const sockets = await server.executeCommand('ss -lunp');
+    expect(sockets).toContain('127.0.0.53%lo:53');
+    expect(sockets).toContain(`${SERVER_IP}:53`);
+  }, LONG);
+
+  it('listen-on-v6 { none; } retire le joker IPv6', async () => {
+    const { start, server } = await dualStackLab();
+    await start('options { listen-on-v6 { none; }; recursion no; };');
+    expect(lines(await server.executeCommand('ss -lunp'), '53').map((line) => line.split(/\s+/)[3])).toEqual(['0.0.0.0:53']);
   }, LONG);
 });
 

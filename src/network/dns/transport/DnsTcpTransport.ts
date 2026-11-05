@@ -6,7 +6,7 @@ import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
 import { isDialFailure, type TcpDialFailure } from '@/network/tcp/types';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import { DNS_PORT, queryDnsOverUdp, answersQuestion } from '@/network/dns/transport/DnsUdpTransport';
+import { DNS_PORT, queryDnsOverUdp, answersQuestion, releaseResolvedStub } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
@@ -36,6 +36,7 @@ export function bindDnsTcpServer(
     observer?: DnsPacketObserver; onConnection?: () => void;
   } = {},
 ): void {
+  if (options.address === undefined || options.address === '0.0.0.0') releaseResolvedStub(host, 'tcp', port);
   host.getTcpStack().listen(port, {
     identity: { processName: options.processName ?? 'dnsmasq', pid: options.pid, service: options.service },
     ...(options.boundDevice === undefined ? {} : { boundDevice: options.boundDevice }),

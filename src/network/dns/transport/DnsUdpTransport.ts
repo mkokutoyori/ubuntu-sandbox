@@ -128,6 +128,10 @@ export function negotiatedUdpSize(query: DnsMessage): number {
   );
 }
 
+export function releaseResolvedStub(host: EndHost, protocol: 'udp' | 'tcp', port: number): void {
+  if (port === DNS_PORT) host.getSocketTable().unbind(protocol, '127.0.0.53', port);
+}
+
 export function bindDnsUdpServer(
   host: EndHost,
   handler: DnsDatagramHandler,
@@ -138,7 +142,7 @@ export function bindDnsUdpServer(
   owner: Parameters<EndHost['udpBind']>[3] = {},
   observer?: DnsPacketObserver,
 ): void {
-  if (port === DNS_PORT && address === undefined) host.getSocketTable().unbind('udp', '127.0.0.53', port);
+  if (address === undefined) releaseResolvedStub(host, 'udp', port);
   const bind = (listener: Parameters<EndHost['udpBind']>[1]): void => {
     if (address === undefined) host.udpBind(port, listener, processName, owner);
     else host.udpBindAddress(address, port, listener, processName, boundDevice);

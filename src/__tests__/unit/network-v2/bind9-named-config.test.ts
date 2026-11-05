@@ -34,7 +34,7 @@ describe('NamedConfig — defaults (BIND 9.18)', () => {
   });
 
   it('defaults the listen port to 53', () => {
-    expect(config.options.plainListens.map((listen) => [listen.port, listen.ipv6])).toEqual([[53, false]]);
+    expect(config.options.plainListens.map((listen) => [listen.port, listen.ipv6])).toEqual([[53, false], [53, true]]);
   });
 
   it('defaults allow-query to any', () => {

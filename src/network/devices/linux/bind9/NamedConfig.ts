@@ -815,8 +815,10 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     }
   }
 
-  if (!options.plainListens.some((listen) => !listen.ipv6)) {
-    options.plainListens.push({ port: DEFAULT_DNS_PORT, addresses: AddressMatchList.any(), ipv6: false });
+  for (const ipv6 of [false, true]) {
+    if (!options.plainListens.some((listen) => listen.ipv6 === ipv6)) {
+      options.plainListens.push({ port: DEFAULT_DNS_PORT, addresses: AddressMatchList.any(), ipv6 });
+    }
   }
 
   for (const pending of pendingListeners) {

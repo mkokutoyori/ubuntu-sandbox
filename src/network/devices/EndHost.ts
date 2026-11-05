@@ -2176,8 +2176,7 @@ export abstract class EndHost extends Equipment {
   private attachListenerProjection(): void {
     this.tcpv2.attachSocketSink({
       announce: (localIp, localPort, identity, boundDevice, bound) => {
-        const family = localIp.includes(':') ? 'v6' : 'v4';
-        if (this.socketTable.isPortBound(localPort, 'tcp', family) && identity.reusePort !== true) return;
+        if (this.socketTable.isAddressBound('tcp', localIp, localPort) && identity.reusePort !== true) return;
         try {
           const entry = this.socketTable.bind(
             'tcp', localIp, localPort, identity.pid, identity.processName, identity.banner,

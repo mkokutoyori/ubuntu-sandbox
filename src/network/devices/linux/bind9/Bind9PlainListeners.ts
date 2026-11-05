@@ -25,17 +25,16 @@ const WILDCARD_V6 = '::';
 
 const keyOf = (binding: PlainBinding): string => `${binding.address}#${binding.port}`;
 const isV6 = (address: string): boolean => address.includes(':');
+const isWildcard = (address: string): boolean => address === WILDCARD_V4 || address === WILDCARD_V6;
 const wildcardOf = (address: string): string => (isV6(address) ? WILDCARD_V6 : WILDCARD_V4);
 
 export class Bind9PlainListeners {
   private bindings: PlainBinding[] = [];
-  private declaresIpv6 = false;
 
   constructor(private readonly deps: PlainListenerDeps) {}
 
   rebind(listens: readonly NamedPlainListen[]): OperationResult {
     const wanted = this.wantedBindings(listens);
-    this.declaresIpv6 = listens.some((listen) => listen.ipv6);
     if (wanted.map(keyOf).join(' ') === this.bindings.map(keyOf).join(' ')) return { ok: true };
     this.stop();
     return this.bind(wanted);
@@ -43,8 +42,12 @@ export class Bind9PlainListeners {
 
   stop(): void {
     const { host } = this.deps;
-    for (const port of new Set(this.bindings.map((binding) => binding.port))) unbindDnsUdpServer(host, port);
-    for (const { port, address } of this.bindings.splice(0)) unbindDnsTcpServer(host, port, address);
+    const wildcardPorts = new Set(this.bindings.filter((binding) => isWildcard(binding.address)).map((binding) => binding.port));
+    for (const port of wildcardPorts) unbindDnsUdpServer(host, port);
+    for (const { port, address } of this.bindings.splice(0)) {
+      if (!isWildcard(address)) host.udpCloseAddress(address, port);
+      unbindDnsTcpServer(host, port, address);
+    }
   }
 
   private wantedBindings(listens: readonly NamedPlainListen[]): PlainBinding[] {
@@ -60,24 +63,28 @@ export class Bind9PlainListeners {
 
   private serves(destination: IPAddress | IPv6Address, port: number): boolean {
     const address = destination.toString();
-    if (isV6(address) && !this.declaresIpv6) return true;
     return this.bindings.some((binding) => binding.port === port && (binding.address === address || binding.address === wildcardOf(address)));
   }
 
   private bind(wanted: readonly PlainBinding[]): OperationResult {
     const { host, processName, udpHandler, tcpHandler } = this.deps;
     for (const port of new Set(wanted.map((binding) => binding.port))) {
-      const families = new Set(wanted.filter((binding) => binding.port === port).map((binding) => (isV6(binding.address) ? 'ipv6' : 'ipv4')));
+      const here = wanted.filter((binding) => binding.port === port);
+      const families = new Set(here.filter((binding) => isWildcard(binding.address)).map((binding) => (isV6(binding.address) ? 'ipv6' : 'ipv4')));
       try {
-        bindDnsUdpServer(host, udpHandler, port, processName, undefined, undefined, {
-          families: [...families] as Array<'ipv4' | 'ipv6'>,
-          acceptsDestination: (destination) => this.serves(destination, port),
-        });
+        if (families.size > 0) {
+          bindDnsUdpServer(host, udpHandler, port, processName, undefined, undefined, {
+            families: [...families] as Array<'ipv4' | 'ipv6'>,
+            acceptsDestination: (destination) => this.serves(destination, port),
+          });
+        }
+        for (const binding of here) if (!isWildcard(binding.address)) bindDnsUdpServer(host, udpHandler, port, processName, binding.address);
       } catch {
+        this.bindings.push(...here);
         this.stop();
         return { ok: false, error: 'could not listen on UDP socket: address already in use' };
       }
-      this.bindings.push(...wanted.filter((binding) => binding.port === port));
+      this.bindings.push(...here);
     }
     for (const { port, address } of wanted) {
       try {
