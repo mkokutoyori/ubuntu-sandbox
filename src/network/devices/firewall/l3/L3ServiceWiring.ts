@@ -133,6 +133,20 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     send: (iface, packet, gateway) => { host.forward(iface, packet, gateway); },
     localIp: (iface) => host.interfaces().get(iface)?.ip,
     settle: () => Promise.resolve(),
+    dial: (iface, server, port, request) => {
+      let response = '';
+      const socket = host.tcp().connect(server, port, {
+        iface,
+        onData: (chunk) => { response += typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk); },
+      });
+      if (socket === null || socket.state !== 'established') {
+        socket?.close();
+        return Promise.resolve({ connected: false });
+      }
+      if (request !== undefined) socket.write(request);
+      socket.close();
+      return Promise.resolve({ connected: true, response });
+    },
   });
 
   return Object.freeze({
