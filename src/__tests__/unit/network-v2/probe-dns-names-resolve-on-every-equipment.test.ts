@@ -18,6 +18,9 @@
  * host table only and the Cisco switch telnet found no source address (SVIs ignored) nor a route (ip default-gateway stored, never evaluated by the SVI route
  * lookup). Measured against the commit before: 5 of the 7 added cases fall (Huawei switch ping, tracert and running-config readback, Cisco router and switch telnet);
  * the 2 that pass either way are the non-regressions on a name nobody knows (Huawei switch ping, Cisco router telnet).
+ *
+ * Last three cases, written after reading docs/PRD-DNS-Cisco.md ('no ip domain-lookup' must really stop the resolution; the VRP 'dns resolve' feeds the same store):
+ * guards that the new resolution honours the on/off switch. Not discriminating against the base for the two Huawei ones (the base never resolved at all); they pass on the tree.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
@@ -221,5 +224,25 @@ describe('second pass', () => {
     const { find } = await lab();
     const out = await script(find('R-AGENCE'), ['enable', 'configure terminal', 'ip name-server 10.20.20.10', 'end', `telnet ${UNKNOWN} 80`]);
     expect(out).toContain('unable to find computer address');
+  });
+});
+
+describe('the switches of docs/PRD-DNS-Cisco.md: the lookup switch really decides', () => {
+  it('Cisco switch: no ip domain-lookup stops the resolution of a name', async () => {
+    const device = await ciscoSwitchWithResolver();
+    await script(device, ['enable', 'configure terminal', 'no ip domain-lookup', 'end']);
+    expect(await device.executeCommand(`ping ${KNOWN}`)).toContain('% Unrecognized host or address');
+  });
+
+  it('Huawei switch: undo dns resolve stops the resolution of a name', async () => {
+    const device = await huaweiSwitch();
+    await script(device, ['system-view', 'undo dns resolve', 'return']);
+    expect(await device.executeCommand(`ping ${KNOWN}`)).toContain('Unknown host');
+  });
+
+  it('Huawei router: undo dns resolve stops the resolution of a name', async () => {
+    const device = await huaweiRouter();
+    await script(device, ['system-view', 'undo dns resolve', 'return']);
+    expect(await device.executeCommand(`ping ${KNOWN}`)).toContain('Unknown host');
   });
 });
