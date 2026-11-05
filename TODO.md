@@ -4530,12 +4530,13 @@ images, ELF, PDF are not recognised (the dev container ships a reduced magic fil
 
 ## lsblk, findmnt columns and mount: what is still open
 
-`lsblk -x`, `-V`, `-r`, `-P`, `-J`, `-o` with an unknown column (real: 'lsblk: unknown column: NOSUCH', status 1), `-b`, and a missing device
-(status 32) are ignored or answered with the plain table (measured against util-linux 2.39.3 of the dev container). `findmnt` is done for the
-options of `Findmnt.ts`, but its columns other than TARGET, SOURCE, FSTYPE, OPTIONS, FSROOT, VFS-OPTIONS and FS-OPTIONS (ID, PARENT, LABEL, UUID, SIZE,
-USED, AVAIL, USE%, PROPAGATION...) answer 'unknown column' although the real one knows them, and `-D`, `-d`, `-p`, `-N`, `-R`, `-C`, `-I`, `-L`, `-U` are
-read by the option parser and not evaluated. `mount`/`umount` option grammar and statuses are done; their `--help`/`--version` texts differ between
-util-linux 2.37.2 (simulated) and 2.39.3 (oracle) and are not reproduced.
+`lsblk` reads the util-linux option set through the shared getopt reader (-n, -x, -P, -r, -e, -I, operands, unknown columns, statuses 32/64 are done), but
+-D, -E, -M, -N, -O, -S, -s, -w, -z and -i are accepted without being evaluated, and the columns beyond those of its table (FSAVAIL, FSUSE%, FSVER, ROTA, SCHED,
+RQ-SIZE, WSAME, ZONED...) answer 'unknown column' although the real one knows them (measured against util-linux 2.39.3 of the dev container). `findmnt` is
+done for the options of `Findmnt.ts`, but its columns other than TARGET, SOURCE, FSTYPE, OPTIONS, FSROOT, VFS-OPTIONS and FS-OPTIONS (ID, PARENT, LABEL,
+UUID, SIZE, USED, AVAIL, USE%, PROPAGATION...) answer 'unknown column', and `-D`, `-d`, `-p`, `-N`, `-R`, `-C`, `-I`, `-L`, `-U` are read by the option parser
+and not evaluated. `mount`/`umount` option grammar and statuses are done; their `--help`/`--version` texts differ between util-linux 2.37.2 (simulated) and
+2.39.3 (oracle) and are not reproduced.
 
 ## Commands missing or answering another distribution than the simulated one
 
