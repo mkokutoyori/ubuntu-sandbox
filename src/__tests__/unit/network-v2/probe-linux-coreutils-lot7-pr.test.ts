@@ -160,7 +160,6 @@ const CASES: ReadonlyArray<readonly [string, string]> = [
   ["seq 1 3 | pr -n'' -t", "    1\t1\n    2\t2\n    3\t3\n[0]"],
   ["printf 'a\\n' | pr -D X -h '' -l 11", "\n\nX                                                                 Page 1\n\n\na\n\n\n\n\n\n[0]"],
   ["printf 'a\\n' | pr -D '' -l 11", "\n\n                                                                  Page 1\n\n\na\n\n\n\n\n\n[0]"],
-  ["printf 'a\\n' | pr -D '%A' -l 11", "\n\nWednesday                                                         Page 1\n\n\na\n\n\n\n\n\n[0]"],
   ["printf 'abc def\\n' | pr -t -W 4", "abc \n[0]"],
   ["printf 'abc def\\n' | pr -t -W 4 -J", "abc def\n[0]"],
   ["printf 'abc\\tdef\\n' | pr -t -W 6", "abc\n[0]"],
