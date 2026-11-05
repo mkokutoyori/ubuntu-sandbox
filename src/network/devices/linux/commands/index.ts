@@ -164,6 +164,7 @@ import { yesCommand } from './coreutils/Yes';
 import { getconfCommand } from './system/Getconf';
 import { lsbReleaseCommand } from './system/LsbRelease';
 import { swaponCommand, swapoffCommand } from './system/Swapon';
+import { mkswapCommand } from './system/Mkswap';
 import { lsmodCommand, modinfoCommand, modprobeCommand } from './system/Lsmod';
 import { pmapCommand } from './system/Pmap';
 import { sensorsCommand } from './hw/Sensors';
@@ -333,6 +334,7 @@ export {
   lsbReleaseCommand,
   swaponCommand,
   swapoffCommand,
+  mkswapCommand,
   lsmodCommand,
   modprobeCommand,
   modinfoCommand,
@@ -513,6 +515,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   lsbReleaseCommand,
   swaponCommand,
   swapoffCommand,
+  mkswapCommand,
   lsmodCommand,
   modprobeCommand,
   modinfoCommand,

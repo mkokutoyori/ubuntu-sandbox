@@ -4538,6 +4538,13 @@ UUID, SIZE, USED, AVAIL, USE%, PROPAGATION...) answer 'unknown column', and `-D`
 and not evaluated. `mount`/`umount` option grammar and statuses are done; their `--help`/`--version` texts differ between util-linux 2.37.2 (simulated) and
 2.39.3 (oracle) and are not reproduced.
 
+## Swap areas: what mkswap, swapon and swapoff do not cover
+
+Swap areas are regular files only (`MemoryProfile.swapAreas`, a signature page written by `mkswap`). Block devices (`mkswap /dev/sdb1`, `swapon` on a
+partition, type `partition` in `--show`), `swapon -L/-U` lookup by label or UUID (always 'cannot find the device', as for a file the real blkid cache
+does not know), the permission check of a non-root caller beyond 'Operation not permitted', discard policies (accepted, not evaluated) and the
+`swapon` options `-f`, `-o` are not modelled; `blkid` does not read the swap signature. Used swap stays at the 0 the file starts with: nothing pages.
+
 ## Commands missing or answering another distribution than the simulated one
 
 `bzip2`, `bunzip2`, `xz`, `unxz` and `rnano` do not exist in the simulator where a real Ubuntu has them (`command not found`). `free`, `w`,
