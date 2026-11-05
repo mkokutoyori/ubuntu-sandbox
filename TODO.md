@@ -923,6 +923,12 @@ moteur `bgp/` et `router/policy/RoutePolicy` sont a brancher), `shaping-policy` 
 non porte) ; le LIBELLE de sortie « New API key: <cle> » n'est pas dans la reference (community.fortinet.com et docs.fortinet.com sont injoignables d'ici) : a
 verifier des qu'une capture existe.
 
+### [fortigate] SSL-VPN en mode tunnel et vues d'exploitation sans sortie attestee
+Mesure (lab `labs/entreprise-meridian`, commandes d'un exploitant tapees sur le concentrateur) :
+- `config vpn ssl web portal` / `set tunnel-mode enable` est refuse (« FortiClient ») ; `config vpn ssl settings` n'a ni `tunnel-ip-pools` ni `default-portal`. Un teletravailleur ne peut donc pas joindre le siege. La brique manquante est un client (`openfortivpn`/FortiClient sur LinuxPC et WindowsPC) plus un plan de donnees IP-sur-TLS (interface virtuelle `ssl.root`, pool d'adresses, politique `srcintf "ssl.root"`) ; le portail web, lui, repond pour de bon. Rien ne l'ecrit dans la reference : le protocole (`/remote/logincheck`, `/remote/fortisslvpn_xml`, `/remote/sslvpn-tunnel`) se decrit de memoire, pas par la documentation.
+- Vues documentees dont la reference ne donne AUCUN exemple de sortie (libelle et colonnes non attestables sans capture, regle 8) et qui repondent « Unknown action 0 » : `diagnose firewall iprope lookup`, `diagnose firewall dnat list`, `diagnose firewall ippool list`, `diagnose vpn ike status`, `diagnose vpn ike stats`, `diagnose vpn tunnel stat`, `diagnose vpn tunnel dumpsa`, `diagnose sys vd list`, `diagnose sys last-reboot`, `diagnose sys logdisk status`, `diagnose ip rtcache list`, `diagnose sys mpstat`. Les moteurs sous-jacents existent (politiques, VIP, SA IPsec, journal) ; seule la mise en forme manque.
+- `execute telnet`, `execute ssh`, `execute backup config` ne sont pas portes.
+
 ### [fortigate] ce que `?` et la tabulation ne couvrent pas encore
 Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;
 `probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de `diagnose`
