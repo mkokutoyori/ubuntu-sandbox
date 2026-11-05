@@ -7012,13 +7012,7 @@ export class LinuxCommandExecutor {
         this.rebootCycle();
         return { output: '', exitCode: 0 };
       }
-      case 'df': return {
-        output: cmdDf(
-          { ...c, mounts: this.mountTable.list(), storage: this.hardware.storage },
-          args,
-        ),
-        exitCode: 0,
-      };
+      case 'df': return asDispatch(cmdDf({ ...c, mounts: this.mountTable.list(), storage: this.hardware.storage }, args));
       case 'du': return asDispatch(runDu(c, args, stdin));
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, {

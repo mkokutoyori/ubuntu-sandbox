@@ -5,6 +5,8 @@ import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 import { expandShortOptionClusters } from './LinuxTextCommands';
 import { shortOptions } from './commands/Getopt';
 import { GNU_OPTION_SETS } from './GnuOptionGuard';
+import { runDf } from './coreutils/DfCommand';
+import type { CoreutilsRun } from './coreutils/CoreutilsKit';
 
 export interface DfContext extends ShellContext {
   mounts: readonly MountEntry[];
@@ -172,86 +174,12 @@ function dfTableAll(ctx: DfContext): DfEntry[] {
   return ctx.mounts.map((e) => dfRow(ctx, e, sizes.get(e.source)));
 }
 
-export function cmdDf(ctx: DfContext, rawArgs: string[]): string {
-  const args = expandShortOptionClusters(rawArgs, 'txB');
-  const human = args.includes('-h') || args.includes('--human-readable');
-  const inodes = args.includes('-i');
-  let showType = args.includes('-T') || args.includes('--print-type');
-  const all = args.includes('-a') || args.includes('--all');
-
-  const includeTypes: string[] = [];
-  const excludeTypes: string[] = [];
-  const targets: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-t' || a === '--type') { includeTypes.push(args[++i] ?? ''); continue; }
-    if (a === '-x' || a === '--exclude-type') { excludeTypes.push(args[++i] ?? ''); continue; }
-    if (a.startsWith('-')) {
-      if (!['-h', '--human-readable', '-i', '-T', '--print-type', '-a', '--all', '-H', '-k', '-m', '-l', '--local', '-P', '--portability', '-B', '--block-size'].includes(a)) {
-        return `df: invalid option -- '${a.replace(/^-+/, '')}'`;
-      }
-      continue;
-    }
-    targets.push(a);
-  }
-
-  for (const t of targets) {
-    if (!ctx.vfs.exists(ctx.vfs.normalizePath(t, ctx.cwd))) {
-      return `df: ${t}: No such file or directory`;
-    }
-  }
-
-  if (includeTypes.length > 0) showType = true;
-  let rows = all ? dfTableAll(ctx) : dfTable(ctx);
-  if (includeTypes.length > 0) {
-    rows = rows.filter(r => includeTypes.includes(r.type));
-    if (rows.length === 0) return `df: no file systems processed`;
-  }
-  if (excludeTypes.length > 0) rows = rows.filter(r => !excludeTypes.includes(r.type));
-  if (!all) rows = rows.filter(r => !(r.fs === 'tmpfs' && r.usedKb === 0));
-  if (targets.length > 0) {
-    const annotated = targets.map(t => {
-      const tp = ctx.vfs.normalizePath(t, ctx.cwd);
-      let best: DfEntry | undefined;
-      for (const r of rows) {
-        if (tp === r.mount || tp.startsWith(r.mount === '/' ? '/' : r.mount + '/')) {
-          if (!best || r.mount.length > best.mount.length) best = r;
-        }
-      }
-      return best ? { ...best, mount: tp } : null;
-    }).filter((r): r is DfEntry => r !== null);
-    rows = annotated;
-  }
-
-  if (showType) {
-    const header = human
-      ? 'Filesystem     Type     Size  Used Avail Use% Mounted on'
-      : 'Filesystem     Type    1K-blocks     Used Available Use% Mounted on';
-    const lines = rows.map(r => {
-      if (human) return `${padToWidth(r.fs, 15)} ${padToWidth(r.type, 8)} ${padToWidth(formatKbHuman(r.sizeKb), 4, 'right')} ${padToWidth(formatKbHuman(r.usedKb), 5, 'right')} ${padToWidth(formatKbHuman(r.availKb), 5, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
-      return `${padToWidth(r.fs, 15)} ${padToWidth(r.type, 7)} ${padToWidth(String(r.sizeKb), 9, 'right')} ${padToWidth(String(r.usedKb), 8, 'right')} ${padToWidth(String(r.availKb), 9, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
-    });
-    return [header, ...lines].join('\n');
-  }
-
-  if (inodes) {
-    const header = 'Filesystem      Inodes  IUsed   IFree IUse% Mounted on';
-    const lines = rows.map((r) => {
-      const free = Math.max(0, r.inodesTotal - r.inodesUsed);
-      const pct = Math.min(100, Math.ceil((r.inodesUsed / Math.max(1, r.inodesTotal)) * 100));
-      return `${padToWidth(r.fs, 15)} ${padToWidth(String(r.inodesTotal), 6, 'right')}  ${padToWidth(String(r.inodesUsed), 5, 'right')}  ${padToWidth(String(free), 6, 'right')}  ${padToWidth(String(pct), 3, 'right')}% ${r.mount}`;
-    });
-    return [header, ...lines].join('\n');
-  }
-
-  const header = human
-    ? 'Filesystem      Size  Used Avail Use% Mounted on'
-    : 'Filesystem     1K-blocks     Used Available Use% Mounted on';
-  const lines = rows.map(r => {
-    if (human) return `${padToWidth(r.fs, 15)} ${padToWidth(formatKbHuman(r.sizeKb), 4, 'right')} ${padToWidth(formatKbHuman(r.usedKb), 5, 'right')} ${padToWidth(formatKbHuman(r.availKb), 5, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
-    return `${padToWidth(r.fs, 15)} ${padToWidth(String(r.sizeKb), 9, 'right')} ${padToWidth(String(r.usedKb), 8, 'right')} ${padToWidth(String(r.availKb), 9, 'right')} ${padToWidth(String(r.usePct), 3, 'right')}% ${r.mount}`;
-  });
-  return [header, ...lines].join('\n');
+export function cmdDf(ctx: DfContext, args: string[]): CoreutilsRun {
+  return runDf({
+    filesystems: (showAll) => (showAll ? dfTableAll(ctx) : dfTable(ctx)),
+    filesystemOf: (path) => filesystemRowFor(ctx, ctx.vfs.normalizePath(path, ctx.cwd)),
+    exists: (path) => ctx.vfs.exists(ctx.vfs.normalizePath(path, ctx.cwd)),
+  }, args);
 }
 
 export { runDu } from './DuCommand';
