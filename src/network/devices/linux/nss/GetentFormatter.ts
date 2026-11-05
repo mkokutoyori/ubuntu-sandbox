@@ -63,7 +63,7 @@ export const GetentFormatter = {
     return `${e.mac} ${e.hostname}`;
   },
   rpc(e: NssRpcEntry): string {
-    return `${padToWidth(e.name, 15)} ${e.number}${aliasSuffix(e.aliases)}`;
+    return `${padToWidth(e.name, 15)} ${e.number}${e.aliases.length > 0 ? ' ' : ''}${aliasSuffix(e.aliases)}`;
   },
   netgroup(e: NssNetgroupEntry): string {
     const tris = e.triples
