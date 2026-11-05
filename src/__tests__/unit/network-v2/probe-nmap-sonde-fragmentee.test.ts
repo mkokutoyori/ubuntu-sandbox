@@ -168,7 +168,9 @@ describe('la cible voit passer des fragments, pas un segment', () => {
     const capture = await taper(cible, 'tcpdump -r frag.pcap -nn -v');
 
     // Les trois fragments d'une meme sonde partagent son identifiant.
-    const fragments = capture.split('\n').filter((l) => / id 1, offset /.test(l));
+    const identifier = /\bid (\d+), offset 0,/.exec(capture)?.[1];
+    expect(identifier).toBeDefined();
+    const fragments = capture.split('\n').filter((l) => new RegExp(` id ${identifier}, offset `).test(l));
     expect(fragments).toHaveLength(3);
     // `-f` CLAIRE le bit DF, qu'un datagramme fragmente ne peut porter,
     // et pose « more fragments » sur tout sauf le dernier.
