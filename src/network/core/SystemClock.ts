@@ -32,6 +32,10 @@ export class SystemClock {
     this.notifyStep(deltaMs);
   }
 
+  offsetFromSource(): number {
+    return this.overrideMs === null ? this.skewMs : this.overrideMs - this.setAtMs;
+  }
+
   isSetManually(): boolean { return this.overrideMs !== null; }
 
   release(): void {
