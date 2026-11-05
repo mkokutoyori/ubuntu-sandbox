@@ -91,7 +91,7 @@ export function buildCommitDevice(
         return fw.getRouting().applyOspf(patch);
       },
       applyBgp(patch) {
-        return fw.getRouting().applyBgp(patch);
+        return fw.applyBgpWithBfd(patch);
       },
       applyDhcpScope(scope) {
         return fw.getDhcp().upsertScope(scope) ?? undefined;
@@ -402,6 +402,9 @@ export function buildCommitDevice(
       },
       removeCommunityList(name) {
         fw.getRouting().removeCommunityList(name);
+      },
+      applyBfdNeighbors(neighbours) {
+        return fw.applyBfdNeighbors(neighbours);
       },
       applyKeyChain(patch) {
         fw.getRouting().applyKeyChain(patch);

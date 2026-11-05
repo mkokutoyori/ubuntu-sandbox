@@ -76,3 +76,21 @@ export function renderIpsecCryptoStats(tunnels: IpsecTunnelTable): string {
     ...rows(INTEGRITY_ROWS, integrity),
   ].join('\n');
 }
+
+const BFD_STATE_LABEL: Readonly<Record<string, string>> = { up: 'UP', down: 'DOWN', init: 'INIT', 'admin-down': 'ADMIN DOWN' };
+
+export function renderBfdNeighbors(fw: Firewall): string {
+  const sessions = fw.getBfdAgent().listSessions();
+  if (sessions.length === 0) return '';
+  const rows = sessions.map((session) => [
+    fw.getPort(session.iface)?.getIPAddress()?.toString() ?? '0.0.0.0',
+    session.neighborIp,
+    BFD_STATE_LABEL[session.state] ?? session.state,
+    session.iface,
+    `${session.localDiscriminator}/${session.remoteDiscriminator}`,
+  ]);
+  const header = ['OurAddress', 'NeighAddress', 'State', 'Interface', 'LDesc/RDesc'];
+  const widths = header.map((title, column) => Math.max(title.length, ...rows.map((row) => row[column].length)) + 3);
+  const line = (cells: readonly string[]): string => cells.map((cell, column) => cell.padEnd(widths[column])).join('').trimEnd();
+  return [line(header), ...rows.map(line)].join('\n');
+}

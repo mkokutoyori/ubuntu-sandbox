@@ -448,6 +448,7 @@ export interface FortiCommitDevice {
   removeRouteMap(name: string): void;
   applyAsPathList(patch: import('../../../routing/DynamicRoutingTypes').AsPathListPatch): void;
   removeAsPathList(name: string): void;
+  applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | void;
   applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
   removeKeyChain(name: string): void;
   applyCommunityList(patch: import('../../../routing/DynamicRoutingTypes').CommunityListPatch): void;

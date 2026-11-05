@@ -1,4 +1,4 @@
-import { renderIpsecCryptoStats, renderKernelRoutes } from './diag/kernelViews';
+import { renderBfdNeighbors, renderIpsecCryptoStats, renderKernelRoutes } from './diag/kernelViews';
 import { ipToUint32 } from '../../../../core/ip';
 import { generateApiKey } from '../../identity/AdminAccounts';
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
@@ -933,6 +933,7 @@ export class FortiShell {
     }
     if (path === 'vpn ipsec stats crypto') return renderIpsecCryptoStats(this.fw.getTunnelTable());
     if (path === 'router info kernel') return renderKernelRoutes(this.fw);
+    if (path === 'router info bfd neighbor') return renderBfdNeighbors(this.fw);
     if (path === 'vpn ipsec stats tunnel') {
       return renderIpsecTunnelStats(this.fw.getTunnelTable());
     }
