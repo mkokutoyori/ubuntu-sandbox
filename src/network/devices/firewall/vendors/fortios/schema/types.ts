@@ -264,6 +264,7 @@ export interface FortiGlobalSettings {
   readonly adminLockoutThreshold?: number;
   readonly adminLockoutDurationSec?: number;
   readonly adminLoginMax?: number;
+  readonly adminSshPassword?: boolean;
   readonly adminConcurrent?: boolean;
   readonly preLoginBanner?: boolean;
   readonly postLoginBanner?: boolean;

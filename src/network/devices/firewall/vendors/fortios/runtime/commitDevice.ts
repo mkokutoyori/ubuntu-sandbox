@@ -257,6 +257,7 @@ export function buildCommitDevice(
         if (settings.adminTimeoutMin !== undefined) {
           fw.setAdminIdleTimeout(settings.adminTimeoutMin);
         }
+        if (settings.adminSshPassword !== undefined) fw.setSshPasswordAllowed(settings.adminSshPassword);
         if (settings.adminLoginMax !== undefined) fw.setAdminLoginMax(settings.adminLoginMax);
         if (settings.adminConcurrent !== undefined) fw.setAdminConcurrent(settings.adminConcurrent);
         if (settings.adminLockoutThreshold !== undefined
