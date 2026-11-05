@@ -4513,3 +4513,10 @@ echo, printf, cd...). Not closed, measured against bash 5.2.21: a builtin the ex
 `builtin` where bash answers `file`; `enable -n cd; cd /` still changes directory where bash answers `cd: command not found`),
 and the disabled set is not inherited by a pipeline stage (`enable -n cd; enable -n | cat` lists nothing). Needs the
 executor's CommandResolver to read the interpreter environment. `help` is real (76 captured topics); the overview does not yet put a star before a disabled builtin (`A star (*) next to a name means that the command is disabled.`), and the overview text is fixed at the bash 5.2.21 captured, whatever `BASH_VERSION` says.
+
+## whereis: the simulated tree is poorer than a real Ubuntu
+
+`whereis` is now a port of util-linux `whereis.c` and walks the VFS like the real one. A real Ubuntu 24.04 yields 62 lookup
+directories for `whereis -l` (versioned emacs and multiarch directories, /opt/*/bin, every /usr/share/man/manN); the simulated tree
+carries 14, and /usr/bin lacks many binaries a real box has (`whereis -bg 'ca*'` returns 2 entries where the real one returns 20+).
+Closing it means populating the VFS from the package database, not changing whereis.
