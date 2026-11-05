@@ -5172,6 +5172,10 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     return IPAddress.tryParse((await this.getDnsService().resolve(name)) ?? '');
   }
 
+  private addressOfNamedInterface(name: string | null): IPAddress | null {
+    return name === null ? null : this.ports.get(name)?.getIPAddress() ?? null;
+  }
+
   private dnsService: RouterDnsService | null = null;
   getDnsService(): RouterDnsService {
     if (!this.dnsService) {
@@ -5189,7 +5193,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private dnsTransport(): DnsTransport {
-    return controlPlaneDnsTransport(() => this.getUdpEndpoint());
+    return controlPlaneDnsTransport(() => this.getUdpEndpoint(), () => this.addressOfNamedInterface(this.dnsConfig.lookupSourceInterface));
   }
   /** Outbound-SSH known-hosts store (Cisco `show ip ssh known-hosts`). */
   readonly sshKnownHosts = new RouterSshKnownHosts(this);
@@ -5936,8 +5940,8 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   getUdpEndpoint(): ControlPlaneUdpEndpoint {
     if (!this.udpEndpoint) {
       this.udpEndpoint = new ControlPlaneUdpEndpoint({
-        sendUdpBytes: (dst, dstPort, srcPort, payload) =>
-          this.sendUdpBytesThroughFib(dst, dstPort, srcPort, payload),
+        sendUdpBytes: (dst, dstPort, srcPort, payload, source) =>
+          this.sendUdpBytesThroughFib(dst, dstPort, srcPort, payload, source),
       }, (port) => this.controlPlaneUdpOwner(port));
     }
     return this.udpEndpoint;
@@ -6011,11 +6015,11 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   private sendUdpBytesThroughFib(
     destination: IPAddress, destinationPort: number,
-    sourcePort: number, payload: Uint8Array,
+    sourcePort: number, payload: Uint8Array, source?: IPAddress,
   ): boolean {
     return this.sendUdpDatagram({
       destination, destinationPort, sourcePort,
-      payload, payloadBytes: payload.length,
+      payload, payloadBytes: payload.length, source,
     });
   }
 

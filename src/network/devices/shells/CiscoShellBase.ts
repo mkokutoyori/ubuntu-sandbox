@@ -8264,7 +8264,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _getHostsTable?: () => RouterHostsTable;
       } | null)?._getHostsTable?.() ?? null,
       afterApply: () => { this.syncDnsService(); },
+      canonicalInterface: (typed) => this.canonicalSourceInterface(typed),
     };
+  }
+
+  protected canonicalSourceInterface(typed: string): string | null {
+    const device = this.deviceRef as unknown as { getPortNames?: () => Iterable<string> } | null;
+    const known = resolveCiscoInterfaceName(device?.getPortNames?.() ?? [], typed);
+    if (known !== null) return known;
+    const vlan = /^vl(?:an)?\s*(\d+)$/i.exec(typed.trim());
+    if (vlan !== null) return `Vlan${vlan[1]}`;
+    const loopback = /^lo(?:opback)?\s*(\d+)$/i.exec(typed.trim());
+    return loopback === null ? null : `Loopback${loopback[1]}`;
   }
 
   protected syncDnsService(): void {

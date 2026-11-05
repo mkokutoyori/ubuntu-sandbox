@@ -654,8 +654,8 @@ export abstract class Switch extends Equipment {
   getUdpEndpoint(): ControlPlaneUdpEndpoint {
     if (!this.udpEndpoint) {
       this.udpEndpoint = new ControlPlaneUdpEndpoint({
-        sendUdpBytes: (dst, dstPort, srcPort, payload) =>
-          this.svi.sendUdpBytes(dst, dstPort, srcPort, payload),
+        sendUdpBytes: (dst, dstPort, srcPort, payload, source) =>
+          this.svi.sendUdpBytes(dst, dstPort, srcPort, payload, source),
       });
     }
     return this.udpEndpoint;
@@ -4081,10 +4081,17 @@ export abstract class Switch extends Equipment {
       this.dnsService = new RouterDnsService(
         () => this.dnsConfig,
         () => this.dnsHostsTable,
-        () => controlPlaneDnsTransport(() => this.getUdpEndpoint()),
+        () => controlPlaneDnsTransport(() => this.getUdpEndpoint(), () => this.addressOfNamedInterface(this.dnsConfig.lookupSourceInterface)),
       );
     }
     return this.dnsService;
+  }
+
+  private addressOfNamedInterface(name: string | null): IPAddress | null {
+    const vlan = name === null ? null : /^Vlan(\d+)$/.exec(name);
+    if (vlan !== null && vlan !== undefined) return this.getSvi(Number(vlan[1]))?.ip ?? null;
+    const loopback = name === null ? undefined : [...this.loopbacks.values()].find((l) => l.name.toLowerCase() === name.toLowerCase());
+    return loopback?.ip ?? null;
   }
 
   async resolveHostname(name: string): Promise<IPAddress | null> {

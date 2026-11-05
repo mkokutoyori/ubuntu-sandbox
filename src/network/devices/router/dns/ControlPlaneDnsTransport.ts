@@ -7,7 +7,7 @@ import { DNS_PORT, type DnsTransport } from './RouterDnsService';
 
 const REPLY_POLLS = 40;
 
-function queryOverTheWire(endpoint: ControlPlaneUdpEndpoint, server: string, name: string): Promise<string[]> {
+function queryOverTheWire(endpoint: ControlPlaneUdpEndpoint, server: string, name: string, source: IPAddress | null): Promise<string[]> {
   return new Promise((resolve) => {
     const port = endpoint.allocateEphemeralPort();
     let finished = false;
@@ -34,7 +34,9 @@ function queryOverTheWire(endpoint: ControlPlaneUdpEndpoint, server: string, nam
       questions: [{ qname: `${name}.`, qtype: RRType.A, qclass: 1 }],
       answers: [], authorities: [], additionals: [],
     };
-    endpoint.sendUdpDatagramTo(new IPAddress(server), DNS_PORT, port, encodeDnsMessage(request));
+    const bytes = encodeDnsMessage(request);
+    if (source === null) endpoint.sendUdpDatagramTo(new IPAddress(server), DNS_PORT, port, bytes);
+    else endpoint.sendUdpDatagramFrom(source, new IPAddress(server), DNS_PORT, port, bytes);
     let rounds = 0;
     const wait = () => {
       if (finished) return;
@@ -45,7 +47,7 @@ function queryOverTheWire(endpoint: ControlPlaneUdpEndpoint, server: string, nam
   });
 }
 
-export function controlPlaneDnsTransport(endpoint: () => ControlPlaneUdpEndpoint): DnsTransport {
+export function controlPlaneDnsTransport(endpoint: () => ControlPlaneUdpEndpoint, sourceAddress: () => IPAddress | null = () => null): DnsTransport {
   return {
     bind: (port, onQuery) => endpoint().udpBind(port, (datagram) => {
       onQuery(datagram.sourceIP.toString(), datagram.udp.sourcePort, datagram.udp.payload);
@@ -54,6 +56,6 @@ export function controlPlaneDnsTransport(endpoint: () => ControlPlaneUdpEndpoint
     reply: (destination, destinationPort, payload) => {
       endpoint().sendUdpDatagramTo(new IPAddress(destination), destinationPort, DNS_PORT, payload as Uint8Array);
     },
-    sendQuery: (server, name) => queryOverTheWire(endpoint(), server, name),
+    sendQuery: (server, name) => queryOverTheWire(endpoint(), server, name, sourceAddress()),
   };
 }

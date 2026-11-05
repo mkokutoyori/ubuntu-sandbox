@@ -4600,3 +4600,9 @@ Measured in the DNS lab. PowerShell `[System.Net.Dns]::GetHostAddresses`/`GetHos
 (only `systeminfo`, `getmac`, `tasklist`, `taskkill`, `schtasks` with `/s` cross the wire, and over WinRM 5985 where real Windows uses RPC/DCOM: the target must have WinRM enabled); the ASA shell has no `ping`, `traceroute`, `telnet`, `ssh`, `route` or
 `dns server-group`, so no name can be typed there; the Cisco switch has no `traceroute`; IP SLA reads names from the router's host table only (a name the DNS
 knows resolves at the first `ping`, not for a probe configured before it).
+
+## Cisco `ip domain lookup`: documented forms that change nothing observable
+
+Reference: official_docs/cisco/ios-xe-catalyst-9600 'ip domain lookup [nsap | recursive | source-interface | vrf]'. `source-interface` now sets the source address of the DNS query (router and switch).
+`nsap` (the simulator has no CLNS) and `recursive` (every query already carries RD=1) are accepted, stored and rendered, and change nothing; `vrf NAME source-interface`
+is stored and rendered, and the DNS client has no per-VRF source selection.

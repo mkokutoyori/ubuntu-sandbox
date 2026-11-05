@@ -593,11 +593,11 @@ export class SwitchSvi {
 
   sendUdpBytes(
     destination: IPAddress, destinationPort: number,
-    sourcePort: number, payload: Uint8Array,
+    sourcePort: number, payload: Uint8Array, source?: IPAddress,
   ): boolean {
     return this.sendUdpDatagram({
       destination, destinationPort, sourcePort,
-      payload, payloadBytes: payload.length,
+      payload, payloadBytes: payload.length, source,
     });
   }
 
