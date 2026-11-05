@@ -118,8 +118,8 @@ describe('lsof sur une machine qui sert du web', () => {
     expect(rows[0]).toMatch(/IPv4\s+\d+\s+0t0\s+TCP \*:80 \(LISTEN\)$/);
   });
 
-  it('WITNESS : -p d\'un processus absent garde le message de lsof', async () => {
-    const out = await (await serveur()).executeCommand('lsof -p 999999');
-    expect(out).toBe('lsof: PID 999999: No such process');
+  it('WITNESS : -p d\'un processus absent n\'affiche rien et sort en 1, comme lsof 4.95', async () => {
+    const out = await (await serveur()).executeCommand('lsof -p 999999 2>&1; echo "[$?]"');
+    expect(out).toBe('[1]');
   });
 });
