@@ -10,6 +10,12 @@ export interface ProbeDeps {
   readonly send: (iface: string, packet: IPv4Packet, gateway: string) => void;
   readonly localIp: (iface: string) => string | undefined;
   readonly settle: () => Promise<void>;
+  readonly dial?: (iface: string, server: string, port: number, request?: string) => Promise<DialResult>;
+}
+
+export interface DialResult {
+  readonly connected: boolean;
+  readonly response?: string;
 }
 
 export interface EchoSample {
@@ -70,6 +76,9 @@ export class SdwanHealthProbe {
   private async probeServer(
     check: SdwanHealthCheck, member: SdwanMember, source: string, server: string,
   ): Promise<{ alive: boolean; packetLossPercent: number; latencyMs: number; jitterMs: number }> {
+    if (check.protocol === 'tcp-connect' || check.protocol === 'http') {
+      return this.probeOverTcp(check, member, server);
+    }
     const identifier = this.nextIdentifier++;
     const samples: EchoSample[] = [];
 
@@ -93,6 +102,31 @@ export class SdwanHealthProbe {
       jitterMs: 0,
     };
   }
+
+  private async probeOverTcp(
+    check: SdwanHealthCheck, member: SdwanMember, server: string,
+  ): Promise<{ alive: boolean; packetLossPercent: number; latencyMs: number; jitterMs: number }> {
+    const port = check.port > 0 ? check.port : HTTP_DEFAULT_PORT;
+    const request = check.protocol === 'http'
+      ? `GET ${check.httpGet ?? '/'} HTTP/1.1\r\nHost: ${server}\r\nConnection: close\r\n\r\n`
+      : undefined;
+    let answered = 0;
+    for (let attempt = 0; attempt < check.probeCount; attempt++) {
+      const result = this.deps.dial === undefined
+        ? { connected: false } as DialResult
+        : await this.deps.dial(member.iface, server, port, request);
+      if (result.connected && (request === undefined || httpStatusAccepted(result.response))) answered++;
+    }
+    const loss = ((check.probeCount - answered) / check.probeCount) * 100;
+    return { alive: answered > 0, packetLossPercent: loss, latencyMs: 0, jitterMs: 0 };
+  }
+}
+
+const HTTP_DEFAULT_PORT = 80;
+
+function httpStatusAccepted(response: string | undefined): boolean {
+  const status = /^HTTP\/1\.[01] (\d{3})/.exec(response ?? '')?.[1];
+  return status !== undefined && Number(status) < 400;
 }
 
 function keyOf(identifier: number, sequence: number): string {

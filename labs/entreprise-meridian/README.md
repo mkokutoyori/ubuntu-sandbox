@@ -34,6 +34,9 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `agency-to-dmz-web` | Une agence atteint la DMZ avec l'adresse privée, sans NAT. |
 | `spoke-to-spoke-through-hub` | Deux agences se parlent par le siège : le concentrateur retransmet de tunnel à tunnel. |
 | `tunnels-up` | `get vpn ipsec tunnel summary` montre un sélecteur monté par agence. |
+| `hub-routing-entry-details` | `get router info routing-table details` : la route vers l'agence 1 sort par l'interface IPsec `to-ag1`. |
+| `hub-originates-into-tunnel` | `execute ping` depuis le pare-feu vers la passerelle d'une agence traverse le tunnel. |
+| `ipsec-crypto-counters` | `get vpn ipsec stats crypto` compte le trafic AES-256 / SHA-256 reellement echange. |
 | `visitor-reaches-published-web` | VIP `vip-web` (203.0.113.10:80 → WEB-DMZ) et politique `internet-to-web`. |
 | `visitor-reaches-published-mail` | VIP `vip-mail` (:25 → MAIL-DMZ) ; Exchange écoute dès l'installation (connecteur *Default Frontend*). |
 | `visitor-cannot-reach-oracle` | Seuls les ports publiés par un VIP traversent. |

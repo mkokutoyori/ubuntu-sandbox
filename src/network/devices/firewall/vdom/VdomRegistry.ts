@@ -26,6 +26,7 @@ import { IdentityTable } from '../identity/IdentityTable';
 import { UserDirectory } from '../identity/UserDirectory';
 import { IpsecTunnelTable, type Phase1Tunnel, type TunnelStatus } from '../vpn/IpsecTunnelTable';
 import { CertificateStore } from '../vpn/CertificateStore';
+import { PkiPeerStore } from '../vpn/PkiPeers';
 import { seedFactoryCertificates } from '../vpn/FactoryCertificates';
 import { NetworkOsCredentialStore } from '../../router/aaa/NetworkOsCredentialStore';
 import type { ConnectedRoute } from '../l3/InterfaceTable';
@@ -72,6 +73,7 @@ export interface VdomContext {
   readonly users: UserDirectory;
   readonly tunnels: IpsecTunnelTable;
   readonly certificates: CertificateStore;
+  readonly pkiPeers: PkiPeerStore;
   readonly settings: VdomSettings;
 }
 
@@ -298,6 +300,7 @@ export class VdomRegistry {
         onStatusChange: (tunnel, status) => this.deps.onTunnelStatus?.(name, tunnel, status),
       }),
       certificates: buildCertificateStore(this.deps.now()),
+      pkiPeers: new PkiPeerStore(),
       users: new UserDirectory({
         credentials: new NetworkOsCredentialStore({
           deviceId: `${this.deps.deviceId}:${name}`,

@@ -610,6 +610,14 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     ], 'static'),
     { ...addressMask('ip', 'Interface IPv4 address and subnet mask.',
       ['0.0.0.0', '0.0.0.0']), availableWhen: isStatic },
+    choice('netflow-sampler', 'Enable/disable NetFlow on this interface and set the data that NetFlow collects (rx, tx, or both).', [
+      { keyword: 'disable', description: 'Disable NetFlow protocol on this interface.' },
+      { keyword: 'tx', description: 'Monitor transmitted traffic on this interface.' },
+      { keyword: 'rx', description: 'Monitor received traffic on this interface.' },
+      { keyword: 'both', description: 'Monitor transmitted and received traffic on this interface.' },
+    ], 'disable'),
+    { ...addressMask('remote-ip', 'Remote IP address of the tunnel; a host route towards it is installed.',
+      ['0.0.0.0', '0.0.0.0']), availableWhen: isStatic },
     {
       ...enable('defaultgw', 'Enable to get the gateway IP from the DHCP or PPPoE server.', true),
       availableWhen: isDhcpClient,
@@ -719,6 +727,8 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       } : undefined,
       ip: ip[0],
       mask: ip[1],
+      remoteIp: object.effective('remote-ip')[0] ?? '',
+      netflowSampler: (object.effective('netflow-sampler')[0] ?? 'disable') as 'disable' | 'tx' | 'rx' | 'both',
       up: object.effective('status')[0] !== 'down',
       allowAccess: object.effective('allowaccess'),
       type: interfaceType(object),
@@ -1731,6 +1741,99 @@ export const SYSTEM_PROXY_ARP: FortiTableSpec = {
   },
 };
 
+const NETFLOW_COLLECTOR: FortiTableSpec = {
+  path: ['system', 'netflow', 'collectors'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Netflow collectors.',
+  attributes: [
+    { ...word('id', 'ID.'), readOnly: true },
+    address('collector-ip', 'Collector IP.', '0.0.0.0'),
+    count('collector-port', 'NetFlow collector port number.', 0, 65535, 2055),
+  ],
+};
+
+export const SYSTEM_NETFLOW: FortiTableSpec = {
+  path: ['system', 'netflow'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'netgrp',
+  renderOrder: 124,
+  help: 'Configure NetFlow.',
+  attributes: [
+    count('active-flow-timeout', 'Timeout to report information about ongoing flows, in seconds.', 60, 3600, 1800),
+    count('inactive-flow-timeout', 'Timeout for periodic report of finished flows, in seconds.', 10, 600, 15),
+    count('template-tx-counter', 'Counter of flowset records before resending a template flowset record.', 10, 6000, 20),
+  ],
+  children: [NETFLOW_COLLECTOR],
+  onCommit(object, context) {
+    const collectors = object.childEntries('collectors')
+      .map(entry => ({
+        ip: entry.effective('collector-ip')[0] ?? '0.0.0.0',
+        port: Number.parseInt(entry.effective('collector-port')[0] ?? '2055', 10),
+      }))
+      .filter(collector => collector.ip !== '0.0.0.0');
+    context.device.applyNetflow({
+      activeTimeoutSec: Number.parseInt(object.effective('active-flow-timeout')[0] ?? '1800', 10),
+      inactiveTimeoutSec: Number.parseInt(object.effective('inactive-flow-timeout')[0] ?? '15', 10),
+      templateTxCounter: Number.parseInt(object.effective('template-tx-counter')[0] ?? '20', 10),
+      collectors,
+    });
+  },
+};
+
+export const SYSTEM_GRE_TUNNEL: FortiTableSpec = {
+  path: ['system', 'gre-tunnel'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 123,
+  help: 'Configure GRE tunnel.',
+  attributes: [
+    { ...word('name', 'Tunnel name.'), readOnly: true },
+    reference('interface', 'Interface name.', INTERFACE_ONLY),
+    choice('ip-version', 'IP version to use for VPN interface.', [
+      { keyword: '4', description: 'Use IPv4 addressing for gateways.' },
+      { keyword: '6', description: 'Use IPv6 addressing for gateways.' },
+    ], '4'),
+    address('local-gw', 'IP address of the local gateway.', '0.0.0.0'),
+    address('remote-gw', 'IP address of the remote gateway.', '0.0.0.0'),
+    count('key-inbound', 'Require received GRE packets to contain this key.', 0, 4294967295, 0),
+    count('key-outbound', 'Include this key in transmitted GRE packets.', 0, 4294967295, 0),
+    enable('checksum-transmission', 'Enable/disable including of checksums in transmitted packets.'),
+    enable('checksum-reception', 'Enable/disable validating checksums in received GRE packets.'),
+    enable('sequence-number-transmission', 'Enable/disable including of sequence numbers in transmitted GRE packets.'),
+    enable('sequence-number-reception', 'Enable/disable validating sequence numbers in received GRE packets.'),
+  ],
+  onCommit(object, context) {
+    if (object.effective('ip-version')[0] === '6') return 'IPv6 GRE gateways are not carried: only ip-version 4 is.';
+    const remote = object.effective('remote-gw')[0] ?? '0.0.0.0';
+    if (remote === '0.0.0.0') return 'a GRE tunnel needs a remote-gw.';
+    const keyIn = Number.parseInt(object.effective('key-inbound')[0] ?? '0', 10);
+    const keyOut = Number.parseInt(object.effective('key-outbound')[0] ?? '0', 10);
+    return context.device.applyGreTunnel(object.key, {
+      boundInterface: object.effective('interface')[0] ?? '',
+      localGateway: object.effective('local-gw')[0] ?? '0.0.0.0',
+      remoteGateway: remote,
+      keyInbound: keyIn === 0 ? null : keyIn,
+      keyOutbound: keyOut === 0 ? null : keyOut,
+      checksumTransmission: object.effective('checksum-transmission')[0] === 'enable',
+      checksumReception: object.effective('checksum-reception')[0] === 'enable',
+      sequenceTransmission: object.effective('sequence-number-transmission')[0] === 'enable',
+      sequenceReception: object.effective('sequence-number-reception')[0] === 'enable',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeGreTunnel(key);
+  },
+};
+
 export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_GLOBAL,
   SYSTEM_PASSWORD_POLICY,
@@ -1751,4 +1854,6 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_LINK_MONITOR,
   SYSTEM_ARP_TABLE,
   SYSTEM_PROXY_ARP,
+  SYSTEM_GRE_TUNNEL,
+  SYSTEM_NETFLOW,
 ]);

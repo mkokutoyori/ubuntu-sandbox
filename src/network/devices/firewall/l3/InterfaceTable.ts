@@ -23,6 +23,7 @@ export interface InterfaceConfig {
   mtu?: number;
   description?: string;
   up?: boolean;
+  remoteIp?: string;
 }
 
 export interface ConnectedRoute {
@@ -53,6 +54,7 @@ const DEFAULT_MTU = 1500;
 
 interface InterfaceRecord {
   name: string;
+  remoteIp?: string;
   ip?: string;
   mask?: string;
   up: boolean;
@@ -81,8 +83,13 @@ export class InterfaceTable {
       ? uint32ToIp(prefixLengthToMaskUint32(config.prefixLength))
       : existing?.mask);
 
+    const remoteIp = config.remoteIp === undefined
+      ? this.interfaces.get(name)?.remoteIp
+      : assignedAddress(config.remoteIp === '' ? undefined : config.remoteIp);
+
     const record: InterfaceRecord = {
       name,
+      remoteIp,
       ip,
       mask: ip === undefined ? undefined : mask,
       up: config.up ?? existing?.up ?? true,
@@ -161,6 +168,13 @@ export class InterfaceTable {
         distance: 0 as const,
         priority: 0 as const,
       }));
+      const remote = this.interfaces.get(iface.name)?.remoteIp;
+      if (remote !== undefined) {
+        routes.push(Object.freeze({
+          network: remote, mask: '255.255.255.255', iface: iface.name,
+          kind: 'connected' as const, distance: 0 as const, priority: 0 as const,
+        }));
+      }
     }
     return Object.freeze(routes);
   }

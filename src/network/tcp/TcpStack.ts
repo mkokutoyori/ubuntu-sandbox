@@ -299,6 +299,7 @@ export interface TcpHost {
   isLocalAddress6?(ip: IPv6Address): boolean;
   sendFrame(portName: string, frame: EthernetFrame): void;
   resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
+  virtualInterface?(name: string): { ip: string; mtu: number; up: boolean } | undefined;
   resolveRoute6?(targetIp: string): { iface: string; nextHopIp: string } | null;
   localAddress6?(iface: string, remoteIp: string): string | null;
   /**
@@ -381,6 +382,7 @@ export interface TcpConnectOptions {
   diffServ?: DiffServField;
   ttlFloor?: TtlFloor;
   allowHalfOpen?: boolean;
+  iface?: string;
 }
 
 export interface TcpBindOptions {
@@ -418,6 +420,7 @@ export class TcpSocket {
   ttl: TimeToLive | HopLimit | null = null;
   diffServ: DiffServField = DiffServField.DEFAULT;
   ttlFloor: TtlFloor = TtlFloor.NONE;
+  boundIface?: string;
   readonly ecn = new TcpEcn();
   allowHalfOpen = false;
   writeShutdown = false;
@@ -1304,7 +1307,7 @@ export class TcpStack {
   connect(rawRemoteIp: string, remotePort: number, opts: TcpConnectOptions = {}): TcpSocket | null {
     if (!this.enabled) return null;
     const remoteIp = canonicalIpText(rawRemoteIp);
-    const egress = this.resolveEgress(remoteIp);
+    const egress = this.resolveEgress(remoteIp, opts.iface);
     if (!egress) { this.dropped(remoteIp, remotePort, 'no-egress'); return null; }
     const localIp = opts.localIp ?? egress.srcIp;
     if (opts.localPort && this.bindConflicts(opts.localPort, remoteIp, remotePort, opts.reuseAddress ?? false)) {
@@ -1324,6 +1327,7 @@ export class TcpStack {
     socket.diffServ = opts.diffServ ?? DiffServField.DEFAULT;
     socket.ttlFloor = opts.ttlFloor ?? TtlFloor.NONE;
     socket.allowHalfOpen = opts.allowHalfOpen ?? false;
+    socket.boundIface = opts.iface;
     socket.passive = false;
     socket.mss = mssForMtu(socket.family, this.pathMtuTo(remoteIp, egress));
     socket.sendNext = this.initialSequence(socket);
@@ -3094,7 +3098,7 @@ export class TcpStack {
     socket: TcpSocket, sentFlags: TcpFlags, sequence: number, ackNum: number, payload: unknown,
     extraOptions: TcpOption[] = [], emission: TcpEmission = 'new',
   ): number | undefined {
-    const egress = this.resolveEgress(socket.remoteIp);
+    const egress = this.resolveEgress(socket.remoteIp, socket.boundIface);
     if (!egress) { this.dropped(socket.remoteIp, socket.remotePort, 'no-egress'); return undefined; }
     const marking = socket.ecn.mark(sentFlags, emission, segmentPayloadSize({ payload } as TcpSegment));
     const flags = marking.flags;
@@ -3592,6 +3596,10 @@ export class TcpStack {
         const src = port?.getIPAddress();
         if (port && src && port.getIsUp()) {
           return { name: port.getName(), port, srcIp: src.toString(), nextHopIp: route.nextHopIp };
+        }
+        const virtual = port === undefined ? this.host.virtualInterface?.(route.iface) : undefined;
+        if (virtual?.up === true) {
+          return { name: route.iface, srcIp: virtual.ip, nextHopIp: route.nextHopIp };
         }
       }
     }

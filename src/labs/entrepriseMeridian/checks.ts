@@ -34,6 +34,21 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     lesson: 'Le siege voit ses trois tunnels etablis, un selecteur par agence.',
   },
   {
+    id: 'hub-routing-entry-details', device: 'FGT-HQ', shell: 'bash', command: 'get router info routing-table details 10.1.0.50',
+    expects: [/Routing entry for 10\.1\.0\.0\/24/, /Known via "static", distance 10, metric 0, best/, /directly connected, to-ag1/],
+    lesson: 'La route vers le LAN de l\'agence 1 est une statique qui sort par l\'interface IPsec to-ag1.',
+  },
+  {
+    id: 'hub-originates-into-tunnel', device: 'FGT-HQ', shell: 'bash', command: 'execute ping 10.1.0.1',
+    expects: [/5 packets received/],
+    lesson: 'Le pare-feu atteint lui-meme la passerelle de l\'agence par le tunnel : la source est celle de l\'interface liee a la phase 1.',
+  },
+  {
+    id: 'ipsec-crypto-counters', device: 'FGT-HQ', shell: 'bash', command: 'get vpn ipsec stats crypto',
+    expects: [/aes:\s+[1-9]\d*\s+[1-9]\d*/, /sha256:\s+[1-9]\d*\s+[1-9]\d*/],
+    lesson: 'Les compteurs de chiffrement sont ceux du trafic reellement echange (AES-256 / SHA-256 de la proposition).',
+  },
+  {
     id: 'visitor-reaches-published-web', device: 'PC-VISITEUR', shell: 'bash', command: `curl -s http://${INTERNET.web.replace(/\d+$/, '10')}/`,
     expects: [/Meridian Industries/],
     lesson: 'Le VIP vip-web publie 203.0.113.10:80 vers WEB-DMZ ; la politique internet-to-web l\'autorise.',

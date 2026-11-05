@@ -79,6 +79,11 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
         .filter((port) => inVdom(port.name)),
       resolvedMac: (ip) => host.resolvedMac(ip),
       tcp: () => host.tcp(),
+      egressToward: (ip) => {
+        const route = host.vdomRoutes(vdom).lookup(ip);
+        const local = route === undefined ? undefined : host.interfaces().get(route.iface)?.ip;
+        return route === undefined || local === undefined ? null : { localIp: local, localIface: route.iface };
+      },
       listenBgp: (accept) => { listenBgp(vdom, accept); },
       emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
       emitArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
@@ -128,6 +133,20 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
     send: (iface, packet, gateway) => { host.forward(iface, packet, gateway); },
     localIp: (iface) => host.interfaces().get(iface)?.ip,
     settle: () => Promise.resolve(),
+    dial: (iface, server, port, request) => {
+      let response = '';
+      const socket = host.tcp().connect(server, port, {
+        iface,
+        onData: (chunk) => { response += typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk); },
+      });
+      if (socket === null || socket.state !== 'established') {
+        socket?.close();
+        return Promise.resolve({ connected: false });
+      }
+      if (request !== undefined) socket.write(request);
+      socket.close();
+      return Promise.resolve({ connected: true, response });
+    },
   });
 
   return Object.freeze({

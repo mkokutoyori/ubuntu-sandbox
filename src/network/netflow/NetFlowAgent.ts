@@ -5,6 +5,8 @@ import {
   type NetFlowV5Record, type NetFlowV5Packet, type NetFlowV5Header,
   createDefaultNetFlowConfig, defaultCollector, flowKey, newRecord,
   NETFLOW_V5_MAX_RECORDS, NETFLOW_V5_VERSION, UDP_PORT_NETFLOW,
+  NETFLOW_V9_TEMPLATE_FIELDS, NETFLOW_V9_TEMPLATE_ID, NETFLOW_V9_RECORD_BYTES, NETFLOW_V9_VERSION,
+  type NetFlowV9Packet,
 } from './types';
 import {
   IPAddress,
@@ -79,6 +81,8 @@ export class NetFlowAgent {
   setInactiveTimeoutSec(s: number): void { this.config.inactiveTimeoutSec = Math.max(1, s); }
   setSamplingInterval(n: number): void { this.config.samplingInterval = Math.max(1, n); }
   setSourceInterface(iface: string | null): void { this.config.sourceInterface = iface; }
+  setVersion(version: 5 | 9): void { this.config.version = version; }
+  setTemplateRefreshPackets(count: number): void { this.config.templateRefreshPackets = Math.max(1, count); }
 
   addCollector(ip: string, port = UDP_PORT_NETFLOW): void {
     if (this.config.collectors.has(ip)) {
@@ -200,7 +204,54 @@ export class NetFlowAgent {
     }
   }
 
+  private packetSequenceV9 = 0;
+
+  private exportV9(collector: NetFlowCollector, chunk: NetFlowV5Record[]): void {
+    const source = this.configuredSourceIp();
+    const withTemplate = collector.exportedPackets % this.config.templateRefreshPackets === 0;
+    const flowSets: NetFlowV9Packet['flowSets'] = [];
+    if (withTemplate) {
+      flowSets.push({
+        flowSetId: 0,
+        templates: [{ templateId: NETFLOW_V9_TEMPLATE_ID, fields: NETFLOW_V9_TEMPLATE_FIELDS.map(({ type, length }) => ({ type, length })) }],
+      });
+    }
+    flowSets.push({ flowSetId: NETFLOW_V9_TEMPLATE_ID, records: chunk });
+    const header = {
+      version: NETFLOW_V9_VERSION as 9,
+      count: chunk.length + (withTemplate ? 1 : 0),
+      sysUptimeMs: this.nowMs() - this.startedAtMs,
+      unixSecs: Math.floor(this.nowMs() / 1000),
+      packetSequence: this.packetSequenceV9,
+      sourceId: this.config.engineId,
+    };
+    this.packetSequenceV9 = (this.packetSequenceV9 + 1) >>> 0;
+    const templateBytes = withTemplate ? 4 + 4 + NETFLOW_V9_TEMPLATE_FIELDS.length * 4 : 0;
+    const payload: NetFlowV9Packet = { type: 'netflow-v9', header, flowSets };
+    const request: UdpSendRequest = {
+      destination: new IPAddress(collector.ip),
+      destinationPort: collector.port,
+      sourcePort: 49152 + (this.packetSequenceV9 & 0x3fff),
+      payload,
+      payloadBytes: 20 + templateBytes + 4 + chunk.length * NETFLOW_V9_RECORD_BYTES,
+      ...(source ? { source } : {}),
+    };
+    if (!this.host.sendUdpDatagram(request)) return;
+    collector.exportedPackets++;
+    collector.exportedFlows += chunk.length;
+    collector.lastExportMs = this.nowMs();
+    this.getBus().publish({
+      topic: 'netflow.packet.exported',
+      payload: {
+        deviceId: this.host.id, hostname: this.host.getHostname(),
+        collectorIp: collector.ip, flowCount: chunk.length,
+        flowSequence: header.packetSequence, sysUptimeMs: header.sysUptimeMs,
+      },
+    });
+  }
+
   private exportTo(collector: NetFlowCollector, chunk: NetFlowV5Record[]): void {
+    if (this.config.version === 9) { this.exportV9(collector, chunk); return; }
     const source = this.configuredSourceIp();
     const header: NetFlowV5Header = {
       version: NETFLOW_V5_VERSION,

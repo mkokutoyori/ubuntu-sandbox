@@ -57,9 +57,9 @@
  * entre un identifiant de type ID_IPV4_ADDR, que le protocole remplit
  * tout seul, et un ID_FQDN que l'operateur a choisi.
  *
- * **`peer` et `peergrp` sont REFUSES en nommant la brique qui manque** :
- * ils acceptent un CERTIFICAT de pair, et ce simulateur n'a ni `config
- * user peer` ni `config user peergrp`.
+ * `peer` et `peergrp` acceptent un CERTIFICAT de pair : ils sont evalues par
+ * `config user peer` / `peergrp` (voir fortios-vpn-certificat.test.ts, qui
+ * porte la mesure). Ici ne reste que l'acceptation de la syntaxe.
  *
  * Discrimine par `git stash push -- src/network/` : 6 des 11 cas
  * tombent. Les 5 restants sont nommes ici plutot que laisses a
@@ -226,19 +226,24 @@ describe('l_identite de pair IKE', () => {
     expect(monte(a.fw, PAIR_B)).toBe(false);
   });
 
-  it('peertype peer est refuse en nommant la brique qui manque', () => {
+  it('peertype peer est accepte, avec un objet `user peer` a designer', () => {
     const { a } = paire();
+    run(a.sh, 'config user peer', 'edit "p"', 'set cn "x"', 'next', 'end');
     run(a.sh, 'config vpn ipsec phase1-interface', 'edit "t"');
 
-    expect(a.sh.execute('set peertype peer')).toContain('config user peer');
+    expect(a.sh.execute('set peertype peer')).not.toMatch(/Command fail/);
+    expect(a.sh.execute('set peer "p"')).not.toMatch(/Command fail/);
     a.sh.execute('abort');
   });
 
-  it('peertype peergrp est refuse de meme', () => {
+  it('peertype peergrp est accepte, avec un objet `user peergrp` a designer', () => {
     const { a } = paire();
+    run(a.sh, 'config user peer', 'edit "p"', 'set cn "x"', 'next', 'end',
+      'config user peergrp', 'edit "g"', 'set member "p"', 'next', 'end');
     run(a.sh, 'config vpn ipsec phase1-interface', 'edit "t"');
 
-    expect(a.sh.execute('set peertype peergrp')).toContain('config user peergrp');
+    expect(a.sh.execute('set peertype peergrp')).not.toMatch(/Command fail/);
+    expect(a.sh.execute('set peergrp "g"')).not.toMatch(/Command fail/);
     a.sh.execute('abort');
   });
 
