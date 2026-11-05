@@ -1022,7 +1022,8 @@ export class FortiShell {
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',
-        type: this.interfaceSetting(iface.name, 'type') ?? 'physical',
+        type: this.interfaceSetting(iface.name, 'type')
+          ?? (this.fw.tunnelBoundInterface(iface.name) !== undefined ? 'tunnel' : 'physical'),
         srcCheck: this.interfaceSetting(iface.name, 'src-check') ?? 'enable',
         dropOverlappedFragment:
           this.interfaceSetting(iface.name, 'drop-overlapped-fragment') ?? 'disable',

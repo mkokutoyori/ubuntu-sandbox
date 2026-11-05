@@ -971,7 +971,9 @@ export class Firewall extends Equipment {
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
     const egress = this.routedEgress(destination, this.activeVdom);
-    const source = egress === undefined ? undefined : this.interfaces.get(egress.iface)?.ip;
+    const source = egress === undefined
+      ? undefined
+      : this.interfaces.get(egress.iface)?.ip ?? this.interfaces.get(this.tunnelBoundInterface(egress.iface) ?? '')?.ip;
     if (egress === undefined || source === undefined) {
       this.rememberUnroutable(destination);
       return null;
@@ -1579,6 +1581,14 @@ export class Firewall extends Equipment {
       payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
       ...(iface === undefined ? {} : { iface }),
     });
+  }
+
+  tunnelBoundInterface(tunnelName: string): string | undefined {
+    for (const vdom of this.vdoms.names()) {
+      const tunnel = this.getVdom(vdom).tunnels.all().find((entry) => entry.name === tunnelName);
+      if (tunnel !== undefined && tunnel.boundInterface.length > 0) return tunnel.boundInterface;
+    }
+    return undefined;
   }
 
   private tunnelInterfaceTowards(peer: string): string | undefined {
