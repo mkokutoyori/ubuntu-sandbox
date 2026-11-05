@@ -42,7 +42,7 @@ const ROWS: readonly Row[] = [
  * est donc atteignable depuis les six modes, et non depuis l'EXEC seul.
  */
 const ASA_ALL_MODES = Object.freeze([
-  'privileged', 'config', 'config-if', 'config-object', 'config-group',
+  'privileged', 'config', 'config-if', 'config-object', 'config-group', 'config-dns-server-group',
 ]);
 
 export function asaShowFamily(host: () => AsaShowHost): CommandSpec[] {

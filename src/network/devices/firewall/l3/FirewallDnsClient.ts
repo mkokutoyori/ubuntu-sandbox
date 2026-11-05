@@ -51,7 +51,7 @@ interface PendingQuery {
 }
 
 const LATE_REPLY_BACKLOG = 64;
-const LATE_REPLY_POLLS = 40;
+const LATE_REPLY_POLLS = 2000;
 
 function addressesOf(records: readonly ResourceRecord<ResourceRecordData>[], qtype: number): string[] {
   return records.flatMap(record => {
@@ -133,7 +133,7 @@ export class FirewallDnsClient {
     for (let poll = 0; poll < LATE_REPLY_POLLS; poll++) {
       const outstanding = [...this.inflight.values()].some(query => query.fqdn === fqdn && query.qtype === code);
       if (!outstanding) break;
-      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      await Promise.resolve();
     }
     const cached = this.cache.lookup(fqdn, code);
     return cached.kind === 'hit' ? addressesOf(cached.records, code) : [];

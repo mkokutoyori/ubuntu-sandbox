@@ -8,6 +8,7 @@ export const ASA_MODES: ModeHierarchy = Object.freeze({
   'config-if': { parent: 'config', clearOnExit: ['selectedInterface'] },
   'config-object': { parent: 'config', clearOnExit: ['selectedObject'] },
   'config-group': { parent: 'config', clearOnExit: ['selectedGroup'] },
+  'config-dns-server-group': { parent: 'config', clearOnExit: ['selectedDnsServerGroup'] },
 });
 
 export const ASA_PROMPTS: PromptMap = Object.freeze({
@@ -17,6 +18,7 @@ export const ASA_PROMPTS: PromptMap = Object.freeze({
   'config-if': '{host}(config-if)#',
   'config-object': '{host}(config-network-object)#',
   'config-group': '{host}(config-network-object-group)#',
+  'config-dns-server-group': '{host}(config-dns-server-group)#',
 });
 
 export const ASA_TOP_LEVEL = 'exec';

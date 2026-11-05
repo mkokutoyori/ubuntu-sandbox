@@ -4597,8 +4597,7 @@ not the iputils one. `mtr` prints its header with the typed name, not the resolv
 
 Measured in the DNS lab. PowerShell `[System.Net.Dns]::GetHostAddresses`/`GetHostEntry`/`GetHostByName`, `New-Object System.Net.Sockets.TcpClient(name, port)` and
 `System.Net.WebClient` are not implemented (they answer nothing, silently); `Get-WmiObject -ComputerName` and `Get-Service -ComputerName` still answer locally or refuse
-(only `systeminfo`, `getmac`, `tasklist`, `taskkill`, `schtasks` with `/s` cross the wire, and over WinRM 5985 where real Windows uses RPC/DCOM: the target must have WinRM enabled); the ASA shell has no `ping`, `traceroute`, `telnet`, `ssh`, `route` or
-`dns server-group`, so no name can be typed there; the Cisco switch has no `traceroute`; IP SLA reads names from the router's host table only (a name the DNS
+(only `systeminfo`, `getmac`, `tasklist`, `taskkill`, `schtasks` with `/s` cross the wire, and over WinRM 5985 where real Windows uses RPC/DCOM: the target must have WinRM enabled); the ASA shell has no outbound `telnet`/`ssh` client, no `ping ... size|data|validate|source`, no `names`/`name` mapping and no `dns retries|timeout` (reference: official_docs/cisco/asa); the Cisco switch has no `traceroute`; IP SLA reads names from the router's host table only (a name the DNS
 knows resolves at the first `ping`, not for a probe configured before it).
 
 ## Cisco `ip domain lookup`: documented forms that change nothing observable

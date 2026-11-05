@@ -20,6 +20,16 @@ export function tracerouteHopLine(
     : `${padToWidth(String(hop), 2, 'right')}  ${from}  ${probes.join('  ')}`;
 }
 
+export interface TracedHop {
+  readonly ttl: number;
+  readonly from: string | undefined;
+}
+
+export interface TracedRoute {
+  readonly address: string;
+  readonly hops: readonly TracedHop[];
+}
+
 interface HopAwaited {
   from?: string;
   arrived: boolean;
@@ -59,29 +69,34 @@ export class FirewallTraceroute {
     return false;
   }
 
-  run(target: string, maxHops = TRACEROUTE_MAX_HOPS): string {
+  trace(target: string, maxHops = TRACEROUTE_MAX_HOPS): TracedRoute | null {
     const address = hostAddressOf(target, this.deps);
     const egress = address === null ? null : this.deps.resolve(address);
-    if (address === null || !egress) return 'traceroute: unknown host';
+    if (address === null || !egress) return null;
 
-    const lines = [tracerouteHeader(target, maxHops, 84, address)];
-
+    const hops: TracedHop[] = [];
     for (let ttl = 1; ttl <= maxHops; ttl++) {
       const hop: HopAwaited = { arrived: false };
       this.awaited = hop;
-      const seen: string[] = [];
-
       for (let probe = 0; probe < TRACEROUTE_PROBES; probe++) {
         const request = buildEchoRequest(
           egress.source, address, this.identifier++, ttl, ECHO_DATA_BYTES, ttl);
         this.deps.send(egress.iface, request, egress.gateway);
-        seen.push(hop.from === undefined ? '*' : '0.0 ms');
       }
       this.awaited = null;
-
-      lines.push(tracerouteHopLine(ttl, hop.from, seen));
+      hops.push({ ttl, from: hop.from });
       if (hop.arrived) break;
     }
-    return lines.join('\n');
+    return { address, hops };
+  }
+
+  run(target: string, maxHops = TRACEROUTE_MAX_HOPS): string {
+    const route = this.trace(target, maxHops);
+    if (route === null) return 'traceroute: unknown host';
+    return [
+      tracerouteHeader(target, maxHops, 84, route.address),
+      ...route.hops.map((hop) => tracerouteHopLine(
+        hop.ttl, hop.from, Array.from({ length: TRACEROUTE_PROBES }, () => (hop.from === undefined ? '*' : '0.0 ms')))),
+    ].join('\n');
   }
 }

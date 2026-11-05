@@ -15,6 +15,7 @@ import { IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP, IPAddress } from '../../../.
 import { isValidIPv4 } from '@/network/core/ip';
 import { ASA_NAT_SECTIONS, ASA_PROFILE, asaDefaultSecurityLevel } from './AsaProfile';
 
+const UNKNOWN_HOST_MESSAGE = '% Unrecognized host or address, or protocol not running.';
 const ASA_MANAGEMENT_SERVICES = ['ping', 'ssh', 'telnet', 'http', 'https', 'snmp'] as const;
 import { renderPacketTracer } from './AsaPacketTracer';
 import { ASA_COMMAND_HELP, ASA_VOCABULARY } from './AsaVocabulary';
@@ -37,9 +38,12 @@ import {
   ASA_MODES, ASA_PROMPTS, ASA_TOP_LEVEL, ASA_EXEC_LEVEL,
 } from '@/cli/vendors/asa/asaModes';
 import type { AsaShowHost, AsaShowView } from '@/cli/vendors/asa/asaShowFamily';
+import type { AsaNetworkHost } from '@/cli/vendors/asa/asaNetworkFamily';
+import { ASA_DEFAULT_DNS_GROUP } from './AsaRunningState';
+import { formatCiscoPingSummary, type CiscoPingRow } from '@/network/devices/shells/cisco/ciscoPing';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
-export type AsaMode = 'exec' | 'privileged' | 'config' | 'config-if' | 'config-object' | 'config-group';
+export type AsaMode = 'exec' | 'privileged' | 'config' | 'config-if' | 'config-object' | 'config-group' | 'config-dns-server-group';
 
 function parseTracerFlow(args: string[]): SimulatedFlow | undefined {
   const protocol = args[0];
@@ -225,7 +229,7 @@ function isContiguousMask(mask: string): boolean {
   return ((inverted + 1) & inverted) === 0;
 }
 
-export class AsaShell implements AsaShowHost {
+export class AsaShell implements AsaShowHost, AsaNetworkHost {
   private readonly fsm = new CLIStateMachine<AsaMode>(
     'exec', ASA_MODES, ASA_TOP_LEVEL as AsaMode, ASA_EXEC_LEVEL as AsaMode,
   );
@@ -234,6 +238,8 @@ export class AsaShell implements AsaShowHost {
   private currentInterface?: string;
   private currentObject?: string;
   private currentGroup?: string;
+  private currentDnsGroup?: string;
+  private pendingAsync: Promise<string> | null = null;
 
   private readonly state: AsaRunningState;
 
@@ -431,6 +437,158 @@ export class AsaShell implements AsaShowHost {
     this.currentInterface = undefined;
     this.currentObject = undefined;
     this.currentGroup = undefined;
+    this.currentDnsGroup = undefined;
+  }
+
+  takePendingAsync(): Promise<string> | null {
+    const pending = this.pendingAsync;
+    this.pendingAsync = null;
+    return pending;
+  }
+
+  private nameifs(): string[] {
+    return this.fw.getInterfaceTable().names().map((name) => this.fw.getZoneTable().zoneOf(name)).filter((zone): zone is string => zone !== undefined);
+  }
+
+  private afterResolving(target: string, run: () => string): string {
+    this.fw.applyDnsConfiguration();
+    if (!this.fw.settlesLater(target)) return run();
+    this.pendingAsync = this.fw.awaitHostName(target).then(() => { this.fw.applyDnsConfiguration(); return run(); });
+    return '';
+  }
+
+  ping(words: readonly string[]): string {
+    const tcp = words[0] === 'tcp';
+    const rest = tcp ? words.slice(1) : [...words];
+    const source = rest.length > 1 && this.nameifs().includes(rest[0]) ? rest.shift() : undefined;
+    void source;
+    const target = rest.shift();
+    if (target === undefined) return '% Incomplete command.';
+    const port = tcp ? rest.shift() : undefined;
+    if (tcp && port === undefined) return '% Incomplete command.';
+    let repeat = 5;
+    let timeout = 2;
+    while (rest.length > 0) {
+      const keyword = rest.shift();
+      const value = Number(rest.shift());
+      if (!Number.isInteger(value) || value < 1) return ASA_INVALID_INPUT;
+      if (keyword === 'repeat') repeat = value;
+      else if (keyword === 'timeout') timeout = value;
+      else return ASA_INVALID_INPUT;
+    }
+    return this.afterResolving(target, () => (tcp ? this.tcpPing(target, port as string, repeat, timeout) : this.icmpPing(target, repeat, timeout)));
+  }
+
+  private pingReport(header: string[], rows: CiscoPingRow[], count: number): string {
+    const marks = rows.map((row) => (row.success ? '!' : '?')).join('');
+    return [...header, marks, formatCiscoPingSummary(rows, count)].join('\n');
+  }
+
+  private icmpPing(target: string, repeat: number, timeout: number): string {
+    const run = this.fw.beginPing(target);
+    if ('refusal' in run) return UNKNOWN_HOST_MESSAGE;
+    const rows: CiscoPingRow[] = [];
+    for (let sequence = 0; sequence < repeat; sequence++) {
+      const reply = run.step(sequence);
+      rows.push({ success: reply !== null, rttMs: 0, ttl: 0, seq: sequence, fromIP: target });
+    }
+    return this.pingReport([`Sending ${repeat}, 100-byte ICMP Echos to ${target}, timeout is ${timeout} seconds:`], rows, repeat);
+  }
+
+  private tcpPing(target: string, port: string, repeat: number, timeout: number): string {
+    const address = this.fw.resolvedAddressOf(target);
+    const portNumber = Number(port);
+    if (address === null || !Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) return UNKNOWN_HOST_MESSAGE;
+    const rows: CiscoPingRow[] = [];
+    for (let sequence = 0; sequence < repeat; sequence++) {
+      const socket = this.fw.probeTcp(address, portNumber);
+      rows.push({ success: socket, rttMs: 0, ttl: 0, seq: sequence, fromIP: address });
+    }
+    const local = this.fw.localAddressToward(address) ?? '0.0.0.0';
+    return this.pingReport([
+      'Type escape sequence to abort.',
+      'No source specified. Pinging from identity interface.',
+      `Sending ${repeat} TCP SYN requests to ${address} port ${portNumber}`,
+      `from ${local}, timeout is ${timeout} seconds:`,
+    ], rows, repeat);
+  }
+
+  traceroute(words: readonly string[]): string {
+    const target = words[0];
+    if (target === undefined) return '% Incomplete command.';
+    if (words.length > 1) return ASA_INVALID_INPUT;
+    return this.afterResolving(target, () => {
+      const route = this.fw.traceRoute(target);
+      if (route === null) return UNKNOWN_HOST_MESSAGE;
+      return [`Tracing the route to ${route.address}`, ...route.hops.map((hop) => {
+        const hopAddress = hop.from ?? '*';
+        const times = hop.from === undefined ? '* * *' : '0 msec 0 msec 0 msec';
+        return `${padToWidth(String(hop.ttl), 2, 'right')} ${hopAddress} ${times}`.replace(/ \* \* \*$/, hop.from === undefined ? ' * * *' : '');
+      })].join('\n');
+    });
+  }
+
+  route(words: readonly string[]): string {
+    const [nameif, network, mask, gateway, metricWord] = words;
+    if (gateway === undefined) return '% Incomplete command.';
+    const metric = metricWord === undefined ? 1 : Number(metricWord);
+    if (!this.nameifs().includes(nameif) || !isValidIPv4(network) || !isValidIPv4(mask) || !isValidIPv4(gateway) || !Number.isInteger(metric) || metric < 1 || metric > 255) return ASA_INVALID_INPUT;
+    this.fw.addRoute(nameif, network, mask, gateway, metric);
+    this.state.routeLines.push({ nameif, network, mask, gateway, metric });
+    return '';
+  }
+
+  removeRoute(words: readonly string[]): string {
+    const [nameif, network, mask, gateway] = words;
+    if (gateway === undefined) return '% Incomplete command.';
+    const index = this.state.routeLines.findIndex((line) => line.nameif === nameif && line.network === network && line.mask === mask && line.gateway === gateway);
+    if (index < 0) return ASA_INVALID_INPUT;
+    this.state.routeLines.splice(index, 1);
+    this.fw.removeRoute(network, mask, gateway);
+    return '';
+  }
+
+  dnsDomainLookup(nameif: string, enabled: boolean): string {
+    if (!this.nameifs().includes(nameif)) return ASA_INVALID_INPUT;
+    if (enabled) this.state.dnsLookupInterfaces.add(nameif);
+    else this.state.dnsLookupInterfaces.delete(nameif);
+    return '';
+  }
+
+  dnsServerGroup(name: string): string {
+    if (!this.state.dnsGroups.has(name)) this.state.dnsGroups.set(name, { servers: [], domain: '' });
+    this.currentDnsGroup = name;
+    this.mode = 'config-dns-server-group';
+    return '';
+  }
+
+  nameServer(addresses: readonly string[], present: boolean): string {
+    const group = this.currentDnsGroup === undefined ? undefined : this.state.dnsGroups.get(this.currentDnsGroup);
+    if (group === undefined) return ASA_INVALID_INPUT;
+    for (const address of addresses) {
+      const at = group.servers.indexOf(address);
+      if (present && at < 0) group.servers.push(address);
+      if (!present && at >= 0) group.servers.splice(at, 1);
+    }
+    return group.servers.length > 6 ? ASA_INVALID_INPUT : '';
+  }
+
+  groupDomainName(name: string, present: boolean): string {
+    const group = this.currentDnsGroup === undefined ? undefined : this.state.dnsGroups.get(this.currentDnsGroup);
+    if (group === undefined) return ASA_INVALID_INPUT;
+    group.domain = present ? name : '';
+    return '';
+  }
+
+  private dnsConfigLines(): string[] {
+    const lines: string[] = [];
+    for (const nameif of this.state.dnsLookupInterfaces) lines.push(`dns domain-lookup ${nameif}`);
+    for (const [name, group] of this.state.dnsGroups) {
+      lines.push(`dns server-group ${name}`);
+      for (const server of group.servers) lines.push(` name-server ${server}`);
+      if (group.domain !== '') lines.push(` domain-name ${group.domain}`);
+    }
+    return lines;
   }
 
   private execCommand(tokens: string[]): string {
@@ -1005,6 +1163,8 @@ export class AsaShell implements AsaShowHost {
     if (this.fw.sameSecurityTrafficEnabled('inter-interface')) {
       lines.push('same-security-traffic permit inter-interface');
     }
+    for (const route of this.state.routeLines) lines.push(`route ${route.nameif} ${route.network} ${route.mask} ${route.gateway} ${route.metric}`);
+    lines.push(...this.dnsConfigLines());
     lines.push(...this.managementConfigLines());
     return lines.join('\n');
   }
