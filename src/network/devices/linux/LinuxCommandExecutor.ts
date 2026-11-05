@@ -113,8 +113,8 @@ import { asDispatch, docsResult, quoteLocale } from './coreutils/CoreutilsKit';
 import { coreutilsIO } from './coreutils/CoreutilsFiles';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
-  SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
-  type ShellIntrospection, type FileLocation, type WhereisSelector,
+  SHELL_CATALOG, CommandResolver, runWhereis,
+  type ShellIntrospection, type FileLocation,
 } from './resolve';
 import { runChown, runChgrp } from './coreutils/ChownCommands';
 import { runStat } from './coreutils/StatCommand';
@@ -8645,18 +8645,22 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private handleWhich(args: string[]): { output: string; exitCode: number } {
+  private handleWhich(args: string[]): { output: string; exitCode: number; stderr?: string } {
     let all = false;
-    const names: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
-      if (a === '-a' || a === '--all') { all = true; continue; }
-      if (a === '--version') return { output: 'GNU which v2.21', exitCode: 0 };
-      if (a.startsWith('-') && a.length > 1) { for (const f of a.slice(1)) if (f === 'a') all = true; continue; }
-      names.push(a);
+    let silent = false;
+    let index = 0;
+    for (; index < args.length; index++) {
+      const word = args[index];
+      if (word === '--') { index++; break; }
+      if (!word.startsWith('-') || word === '-') break;
+      for (const letter of word.slice(1)) {
+        if (letter === 'a') all = true;
+        else if (letter === 's') silent = true;
+        else return { output: `Illegal option -${letter}\nUsage: /usr/bin/which [-as] args`, exitCode: 2 };
+      }
     }
-    if (names.length === 0) return { output: '', exitCode: 0 };
+    const names = args.slice(index);
+    if (names.length === 0) return { output: '', exitCode: 1 };
 
     const resolver = new CommandResolver(this.shellIntrospection());
     const out: string[] = [];
@@ -8667,44 +8671,21 @@ export class LinuxCommandExecutor {
       if (all) for (const f of files) out.push(f.path!);
       else out.push(files[0].path!);
     }
-    return { output: out.join('\n'), exitCode: allFound ? 0 : 1 };
+    return { output: silent ? '' : out.join('\n'), exitCode: allFound ? 0 : 1 };
   }
 
-  private handleWhereis(args: string[]): { output: string; exitCode: number } {
-    let b = false, m = false, s = false, listDirs = false;
-    const names: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
-      if (a === '-b') { b = true; continue; }
-      if (a === '-m') { m = true; continue; }
-      if (a === '-s') { s = true; continue; }
-      if (a === '-l') { listDirs = true; continue; }
-      if (a === '-B' || a === '-M' || a === '-S') { while (i + 1 < args.length && args[i + 1] !== '-f') i++; continue; }
-      if (a === '-f') continue;
-      if (a.startsWith('-')) continue;
-      names.push(a);
-    }
+  private handleWhereis(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const known = this.knownCommandSet();
-    const resolver = new WhereisResolver({
-      exists: (p) => this.vfs.exists(p),
-      list: (dir) => {
-        const entries = this.vfs.listDirectory(this.vfs.normalizePath(dir, '/'));
-        return entries ? entries.filter(e => e.name !== '.' && e.name !== '..').map(e => e.name) : null;
+    return asDispatch(runWhereis({
+      providesBinary: (name) => known.has(name),
+      environment: (name) => this.env.get(name),
+      list: (directory) => {
+        const entries = this.vfs.listDirectory(this.vfs.normalizePath(directory, '/'));
+        return entries ? entries.filter((entry) => entry.name !== '.' && entry.name !== '..').map((entry) => entry.name) : null;
       },
-      directoryInode: (dir) => this.vfs.resolveInode(this.vfs.normalizePath(dir, '/'))?.id ?? null,
-      canonicalPath: (dir) => this.vfs.realpath(this.vfs.normalizePath(dir, '/')),
-    });
-    if (listDirs) return { output: resolver.allDirectories().join('\n'), exitCode: 0 };
-
-    const sel: WhereisSelector = (b || m || s) ? { binary: b, manual: m, source: s } : ALL_CATEGORIES;
-    const lines: string[] = [];
-    for (const name of names) {
-      const result = resolver.locate(name, sel);
-      if (sel.binary && result.binaries.length === 0 && known.has(name)) result.binaries.push(`/usr/bin/${name}`);
-      lines.push(WhereisResolver.format(result, sel));
-    }
-    return { output: lines.join('\n'), exitCode: 0 };
+      identity: (directory) => this.vfs.resolveInode(this.vfs.normalizePath(directory, '/'))?.id ?? null,
+      canonical: (directory) => this.vfs.realpath(this.vfs.normalizePath(directory, '/')),
+    }, args));
   }
 
   private handleType(args: string[]): { output: string; exitCode: number; stderr?: string } {
