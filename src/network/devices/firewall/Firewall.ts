@@ -159,7 +159,7 @@ import { SslDeepInspection } from './inspection/SslDeepInspection';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
-import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
+import { FirewallPing, hostAddressOf, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
@@ -924,6 +924,29 @@ export class Firewall extends Equipment {
   });
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
+
+  runTelnet(target: string, rawPort: string | undefined): string {
+    const port = rawPort === undefined ? 23 : Number(rawPort);
+    if (!Number.isInteger(port) || !PortNumber.isValid(port)) return `telnet: ${rawPort}: bad port`;
+    const address = hostAddressOf(target, { resolveName: (name) => this.resolveHostName(name) });
+    if (address === null) return `telnet: ${target}: Name or service not known`;
+    const lines = [`Trying ${address}...`];
+    const socket = this.tcp.connect(address, port);
+    if (socket === null || socket.state !== 'established') {
+      socket?.close();
+      lines.push(socket?.connectRefused === true
+        ? `telnet: Unable to connect to remote host: Connection refused`
+        : `telnet: Unable to connect to remote host: Connection timed out`);
+      return lines.join('\n');
+    }
+    let banner = '';
+    socket.onData((data) => { banner += String(data); });
+    lines.push(`Connected to ${address}.`, `Escape character is '^]'.`);
+    if (banner.length > 0) lines.push(banner.replace(/\r?\n$/, ''));
+    socket.close();
+    lines.push('Connection closed by foreign host.');
+    return lines.join('\n');
+  }
 
   beginPing(target: string) { return this.ping.begin(target); }
 
@@ -2686,6 +2709,10 @@ export class Firewall extends Equipment {
   protected logAdminAccess(kind: AdminAccessKind, facts: AdminLoginFacts): void {
     void kind;
     void facts;
+  }
+
+  recordConfigRevision(admin: string, comment: string, text: string): void {
+    this.revisions.record({ admin, firmware: `v${this.profile.defaultVersion}`, comment, text });
   }
 
   onAdminLogout(admin: string): void {
