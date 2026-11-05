@@ -38,6 +38,15 @@ Three traps break this rule in good faith. **A partial reuse is still a duplicat
 
 **Check before you implement — every time, no exception.** Before adding a function, constant, table, message, command, type or test helper, run the search first and state in your working notes what it returned: grep the name AND the behaviour (the literal message text, the numeric constants, the RFC/section number, the CLI keyword) across `src/`, not only the file you are in. A hit means you delegate or extend it; a miss means you may write it, and only where the subsystem that should carry it lives. Writing first and discovering the twin afterwards is the failure this rule exists to stop (an `isMulticast` copy beside `isMulticastIpv4`, a second `ttl - 1` beside `decrementForForwarding`, a package declared on both the command and the table, a second `SALifetime` string beside the engine's). The commit message names what was searched and what was reused.
 
+### 1b. A host name is resolved by the machine's resolver — never by a private lookup
+
+Any command that takes a host name (ping, telnet, ssh, curl, wget, nc, arping, traceroute, openssl, logger, chronyc, ssh-keyscan, a PowerShell cmdlet, an IOS or
+VRP or FortiOS `execute`) asks the machine's resolver: `LinuxMachine`/`WindowsPC`/`Router`/`Switch` `resolveHostname`, or `resolveHostnameFor(device, name)`
+(`devices/NameResolution.ts`). Never read `/etc/hosts`, the topology or a host table to turn a name into an address: a private lookup does not see what only the DNS
+knows. A synchronous engine resolves ahead of time at the single async entry (`executor.resolvedNames` on Linux, `pendingAsync` on the network OS shells) and
+consumes the answers. `findHostByAddress` locates a DEVICE from an address already resolved; it is not a name resolver. The guard
+`unit/architecture/guard-no-private-name-resolvers.test.ts` is a ratchet: a new direct reader fails it.
+
 ### 2. A duplicate is a defect, and closing it is part of the task
 
 When you meet the same fact written twice — two parsers for one grammar, two stores for one setting, two renderers for one view, two tables of the same constants — remove one **in the same change**. Two writings of one fact do not stay equal: they diverge, and then the machine answers two different things to the same question with nothing to say which is right. Delete the duplicate rather than keep it in sync; a comment asking the reader to update both is not a fix. If a duplicate genuinely cannot be closed in that change, say so in the commit message and open a `TODO.md` entry naming both sites — never leave it silent.
