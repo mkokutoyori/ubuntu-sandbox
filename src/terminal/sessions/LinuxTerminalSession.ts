@@ -18,7 +18,6 @@ import { sshUnreachableReason } from '@/terminal/ssh/wireSshLogin';
 import { IPAddress } from '@/network/core/types';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
-import { HostsFile } from '@/network/devices/HostsFile';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
 import { createPing, type PingRun } from '@/network/devices/linux/commands/net/Ping';
 import { runTraceroute } from '@/network/devices/linux/commands/net/Traceroute';
@@ -2227,7 +2226,7 @@ export class LinuxTerminalSession extends TerminalSession {
     // s'arrête là s'il n'y arrive pas. Sans cette étape, `ssh localhost`
     // descendait jusqu'à la pile TCP avec le mot « localhost » pour
     // adresse, où il levait une exception non rattrapée.
-    const host = this.resolveSshHost(typedHost);
+    const host = await this.resolveSshHost(typedHost);
     if (!host) {
       this.addLine(
         `ssh: Could not resolve hostname ${typedHost}: Name or service not known`,
@@ -2258,7 +2257,7 @@ export class LinuxTerminalSession extends TerminalSession {
     let inheritedUser = this.currentUser;
     const hops = (meta.jumpHosts ?? []).flatMap((spec) => [...parseProxyJumpSpec(spec)]);
     for (const hop of hops) {
-      const hopHost = this.resolveSshHost(hop.host);
+      const hopHost = await this.resolveSshHost(hop.host);
       if (!hopHost) {
         this.addLine(`ssh: Could not resolve hostname ${hop.host}: Name or service not known`, 'error');
         releaseJumps();
@@ -2989,19 +2988,14 @@ export class LinuxTerminalSession extends TerminalSession {
    * `null` signifie « nom inconnu », et l'appelant rend alors le message
    * d'OpenSSH plutôt que d'appeler une adresse qui n'existe pas.
    */
-  private resolveSshHost(host: string): string | null {
+  private async resolveSshHost(host: string): Promise<string | null> {
     if (IPAddress.tryParse(host)) return host;
+    const machine = this.device instanceof LinuxMachine ? this.device : null;
+    const resolved = machine === null ? null : await machine.resolveHostname(host);
+    if (resolved !== null) return resolved.toString();
     const vfs = (this.device as unknown as {
       executor?: { vfs?: { readFile(p: string): string | null } };
     }).executor?.vfs;
-    if (vfs) {
-      const needle = host.toLowerCase();
-      const short = needle.split('.')[0];
-      const raw = vfs.readFile('/etc/hosts');
-      for (const entry of HostsFile.parse(raw).entries) {
-        if (entry.hasName(needle) || entry.hasName(short)) return entry.ip;
-      }
-    }
     const found = findHostByAddress(
       host,
       vfs ? { readFile: (p: string) => vfs.readFile(p) } : undefined,
