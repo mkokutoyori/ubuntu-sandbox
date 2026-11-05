@@ -81,8 +81,8 @@ function parse(program: Program, args: readonly string[]): GzipOptions {
       case 'n': o.storeName = false; o.restoreName = false; break;
       case 'N': o.storeName = true; o.restoreName = true; break;
       case 'S': o.suffix = item.argument ?? '.gz'; break;
-      case 'h': case 'H': throw new Usage({ output: COREUTILS_DOCS.gzip.help, exitCode: 0 });
-      case 'V': throw new Usage({ output: COREUTILS_DOCS.gzip.version, exitCode: 0 });
+      case 'h': case 'H': throw new Usage({ output: COREUTILS_DOCS[item.long === 'help' && program !== 'gzip' ? program : 'gzip'].help, exitCode: 0 });
+      case 'V': throw new Usage({ output: COREUTILS_DOCS[item.long === 'version' && program !== 'gzip' ? program : 'gzip'].version, exitCode: 0 });
       case 'L': throw new Usage({ output: COREUTILS_DOCS.gzip.version, exitCode: 0 });
       default:
         if (/^[1-9]$/.test(item.letter)) o.level = Number(item.letter);
