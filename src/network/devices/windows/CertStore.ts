@@ -4,13 +4,12 @@
  * holds a private key for, whether issued by AD CS (`certreq`/`Get-
  * Certificate`) or self-signed (`New-SelfSignedCertificate`), lands here
  * so `New-WebBinding -CertificateHash <thumbprint>` can look either up the
- * same way. `serialNumber` doubles as the lookup key — this simulator's
- * `X509Certificate` doesn't byte-encode DER, so there's no real SHA-1
- * thumbprint to compute, and the serial is already unique per cert.
+ * same way. The lookup key is the certificate's SHA-1 thumbprint.
  */
 
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
+import { certificateThumbprint } from '@/network/pki/thumbprint';
 
 export interface StoredCertEntry {
   readonly cert: X509Certificate;
@@ -20,14 +19,18 @@ export interface StoredCertEntry {
 export class WindowsCertStore {
   private readonly entries = new Map<string, StoredCertEntry>();
 
-  /** Returns the thumbprint (this simulator's serial-number stand-in) the entry was stored under. */
   add(cert: X509Certificate, privateKey: PkiPrivateKey): string {
-    this.entries.set(cert.serialNumber, { cert, privateKey });
-    return cert.serialNumber;
+    const thumbprint = certificateThumbprint(cert);
+    this.entries.set(thumbprint, { cert, privateKey });
+    return thumbprint;
   }
 
   get(thumbprint: string): StoredCertEntry | null {
-    return this.entries.get(thumbprint) ?? null;
+    return this.entries.get(thumbprint.toUpperCase()) ?? null;
+  }
+
+  remove(thumbprint: string): boolean {
+    return this.entries.delete(thumbprint.toUpperCase());
   }
 
   entriesSnapshot(): StoredCertEntry[] {

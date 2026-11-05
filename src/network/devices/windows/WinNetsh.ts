@@ -2001,13 +2001,16 @@ function handleDnsclientShow(ctx: WinCommandContext, args: string[]): string {
   }
 
   if (sub === 'encryption') {
+    const servers = ctx.getDohServers();
+    const upgrading = servers.filter((server) => server.autoUpgrade);
+    const state = (on: boolean): string => (on ? 'Enabled' : 'Disabled');
     return [
       '',
       'DNS Client Encryption Settings',
       '----------------------------------------------------------------------',
-      '  DNS over HTTPS (DoH):  Disabled',
-      '  Auto-upgrade:          Disabled',
-      '  No encryption fallback: Disabled',
+      `  DNS over HTTPS (DoH):  ${state(upgrading.length > 0)}`,
+      `  Auto-upgrade:          ${state(upgrading.length > 0)}`,
+      `  No encryption fallback: ${state(upgrading.length > 0 && upgrading.every((server) => !server.allowFallbackToUdp))}`,
       '',
     ].join('\n');
   }

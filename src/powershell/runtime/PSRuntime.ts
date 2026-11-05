@@ -702,6 +702,7 @@ export class PSRuntime {
         function: { Name: 'Function', Root: '', Provider: 'Function' },
         hklm:     { Name: 'HKLM',     Root: 'HKLM:\\', Provider: 'Registry' },
         hkcu:     { Name: 'HKCU',     Root: 'HKCU:\\', Provider: 'Registry' },
+        cert:     { Name: 'Cert',     Root: 'Cert:\\', Provider: 'Certificate' },
       } as Record<string, PSValue>);
     }
     this.providers.filesystem?.attachDriveAliases?.(() => this.fileSystemDriveRoots());

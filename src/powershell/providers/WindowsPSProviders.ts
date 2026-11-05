@@ -15,6 +15,7 @@
 
 
 import { pemToCert } from '@/network/pki/pem';
+import { certificateThumbprint } from '@/network/pki/thumbprint';
 import type { DnsLookupFailure } from '@/network/devices/windows/dnsLookupFailure';
 import type { DhcpFailoverChanges, DhcpFailoverRequest } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { findWmiClass } from '@/network/devices/windows/WmiClasses';
@@ -3629,6 +3630,9 @@ class WindowsAdcsAdapter implements IAdcsProvider {
 // Unconditional (no RoleManager gate): the PKI client module ships on every
 // Windows SKU, not just servers with a role installed.
 
+const PKI_LOCATIONS: readonly string[] = ['LocalMachine', 'CurrentUser'];
+const PKI_STORES: readonly string[] = ['CA', 'My', 'Root'];
+
 class WindowsPkiAdapter implements IPkiProvider {
   constructor(private readonly pc: WindowsPC) {}
 
@@ -3641,9 +3645,35 @@ class WindowsPkiAdapter implements IPkiProvider {
 
   listCertificates(): (IssuedCertInfo & { thumbprint: string })[] {
     return this.pc.getCertStore().list().map(c => ({
-      thumbprint: c.serialNumber, serialNumber: c.serialNumber, subject: c.subject, issuer: c.issuer,
+      thumbprint: certificateThumbprint(c), serialNumber: c.serialNumber, subject: c.subject, issuer: c.issuer,
       notBefore: c.notBefore, notAfter: c.notAfter,
     }));
+  }
+
+  certificateStores(location: string): readonly string[] | null {
+    return PKI_LOCATIONS.some((known) => known.toLowerCase() === location.toLowerCase()) ? PKI_STORES : null;
+  }
+
+  certificatesIn(location: string, store: string): readonly (IssuedCertInfo & { thumbprint: string })[] | null {
+    const stores = this.certificateStores(location);
+    const name = stores?.find((known) => known.toLowerCase() === store.toLowerCase());
+    if (name === undefined) return null;
+    if (location.toLowerCase() !== 'localmachine') return [];
+    const certificates = name === 'My' ? this.pc.getCertStore().list()
+      : name === 'Root' ? this.pc.getTrustedCertificateAuthorities() : [];
+    return certificates.map((c) => ({
+      thumbprint: certificateThumbprint(c), serialNumber: c.serialNumber, subject: c.subject, issuer: c.issuer,
+      notBefore: c.notBefore, notAfter: c.notAfter,
+    }));
+  }
+
+  removeCertificate(location: string, store: string, thumbprint: string): boolean {
+    if (location.toLowerCase() !== 'localmachine') return false;
+    const wanted = thumbprint.toUpperCase();
+    if (store.toLowerCase() === 'my') return this.pc.getCertStore().remove(wanted);
+    if (store.toLowerCase() !== 'root') return false;
+    const found = this.pc.getTrustedCertificateAuthorities().find((c) => certificateThumbprint(c) === wanted);
+    return found !== undefined && this.pc.removeTrustedCertificateAuthority(found);
   }
 
   trustRootCertificate(pem: string): (IssuedCertInfo & { thumbprint: string }) | null {
@@ -3654,7 +3684,7 @@ class WindowsPkiAdapter implements IPkiProvider {
     );
     if (!known) this.pc.addTrustedCertificateAuthority(cert);
     return {
-      thumbprint: cert.serialNumber, serialNumber: cert.serialNumber, subject: cert.subject, issuer: cert.issuer,
+      thumbprint: certificateThumbprint(cert), serialNumber: cert.serialNumber, subject: cert.subject, issuer: cert.issuer,
       notBefore: cert.notBefore, notAfter: cert.notAfter,
     };
   }

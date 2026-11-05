@@ -26,6 +26,7 @@
  * vide (fonction neutralisee) il tombe aussi, le compteur d'un chargement neuf reprenant le numero du certificat
  * restaure.
  */
+import { certificateThumbprint } from '@/network/pki/thumbprint';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsServer } from '@/network/devices/WindowsServer';
 import { LinuxPC } from '@/network/devices/LinuxPC';
@@ -143,7 +144,7 @@ describe('the authority and what it issued are back', () => {
     const lab = await buildLab();
     const role = lab.server.getAdcsRole()!;
     const issued = role.listIssuedCertificates()[0];
-    const thumbprint = lab.server.getCertStore().list()[0]?.serialNumber ?? issued.serialNumber;
+    const thumbprint = certificateThumbprint(lab.server.getCertStore().list()[0] ?? issued);
     expect(thumbprint).toBeTruthy();
     await lab.ps(`New-WebBinding -Name "Default Web Site" -Protocol https -Port 8443 -CertificateHash "${thumbprint}"`);
     const { server, client } = await reopen(exportOf(lab.all, lab.connections));

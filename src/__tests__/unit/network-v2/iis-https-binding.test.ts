@@ -51,7 +51,7 @@ describe('New-WebBinding -Protocol https (§5 P14) — certificate issued by AD 
     await run(ps(srv1), 'Install-WindowsFeature AD-Certificate');
     await run(ps(srv1), 'Install-AdcsCertificationAuthority -CACommonName "Lab Root CA"');
     const certOut = await srv1.executeCmdCommand('certreq -submit -template WebServer -subject "CN=srv1.lab.local"');
-    const thumbprint = /Serial Number: (\S+)/.exec(certOut)?.[1];
+    const thumbprint = /Thumbprint: (\S+)/.exec(certOut)?.[1];
     expect(thumbprint).toBeDefined();
 
     const bindOut = await run(ps(srv1), `New-WebBinding -Name "Default Web Site" -Protocol https -Port 8443 -CertificateHash "${thumbprint}"`);
