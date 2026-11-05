@@ -118,7 +118,7 @@ import {
 } from './EventLogCmdlets';
 import {
   IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet, FindstrCmdlet,
-  GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
+  GetmacCmdlet, SysteminfoCmdlet, TasklistCmdlet, TaskkillCmdlet, SchtasksCmdlet, VerCmdlet, NslookupCmdlet,
   NetCmdlet, VolCmdlet, ChcpCmdlet, ScCmdlet,
   SshKeygenCmdlet, SshAgentCmdlet, SshAddCmdlet, SshKeyscanCmdlet,
 } from './NativeShimCmdlets';
@@ -646,6 +646,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(RouteCmdlet);
   registry.register(GetmacCmdlet);
   registry.register(SysteminfoCmdlet);
+  registry.register(TasklistCmdlet);
+  registry.register(TaskkillCmdlet);
+  registry.register(SchtasksCmdlet);
   registry.register(VerCmdlet);
   registry.register(NslookupCmdlet);
   registry.register(NetCmdlet);

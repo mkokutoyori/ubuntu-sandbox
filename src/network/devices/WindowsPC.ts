@@ -172,6 +172,7 @@ import { cmdNetsh } from './windows/WinNetsh';
 import { cmdPing, pingExitCode } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
+import { REMOTE_CAPABLE_COMMANDS, extractRemoteTarget, type RemoteTarget } from './windows/WinRemoteTarget';
 import { findInvalidWindowsArgument, invalidArgumentError, SYSTEMINFO_SWITCHES } from './windows/WinSwitchGuard';
 import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
@@ -1652,6 +1653,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const authentication = this.winRmAuthentication(computerName, credential);
     if (authentication === null) return { ok: false, error: 'Access is denied.' };
     return runWinRmRequest({ tcpStack: this.getTcpStack(), targetIp: target.toString(), request, ...authentication });
+  }
+
+  private runRemoteTool(command: string, remote: RemoteTarget): string {
+    const line = [command, ...remote.rest].join(' ');
+    const outcome = this.runRemoteCommand(remote.host, line, remote.credential);
+    if (outcome.ok) return outcome.output ?? '';
+    this.commandExitStatus = 1;
+    const unreachable = outcome.error === undefined || outcome.error.includes('could not be resolved') || outcome.error.startsWith('WinRM cannot complete');
+    return `ERROR: ${unreachable ? 'The RPC server is unavailable.' : outcome.error}`;
   }
 
   runRemoteCommand(computerName: string, line: string, credential?: { username: string; password: string }): WinRmRunResult {
@@ -3829,7 +3839,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     const stem = this.programStemOf(parts[0]);
     const cmd = stem ?? parts[0].toLowerCase();
-    const args = parts.slice(1);
+    let args = parts.slice(1);
 
     // Bare drive letter (e.g. "D:" or "D:\\path") — change current drive
     // and restore the per-drive last cwd. Real cmd.exe: typing `D:` at the
@@ -3840,6 +3850,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (stem === null && (driveOnly || drivePath) && args.length === 0) {
       const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
       return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
+    }
+
+    if (REMOTE_CAPABLE_COMMANDS.has(cmd)) {
+      const remote = extractRemoteTarget(args);
+      if (remote !== null) {
+        const local = remote.host.toLowerCase() === 'localhost' || remote.host.toLowerCase() === this.hostname.toLowerCase() || remote.host === '127.0.0.1';
+        if (!local) return this.runRemoteTool(cmd, remote);
+        args = [...remote.rest];
+      }
     }
 
     // File commands (use file context)
@@ -3860,10 +3879,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'del':
       case 'erase':   return cmdDel(fileCtx, args);
       case 'tree':    return cmdTree(fileCtx, args);
-      case 'tasklist': return cmdTasklistDynamic(
-        { processManager: this.procMgr, currentUser: this.userMgr.currentUser, hostname: this.hostname }, args);
-      case 'taskkill': return cmdTaskkill(
-        { processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
+      case 'tasklist': return this.cmdTasklist(args);
+      case 'taskkill': return this.cmdTaskkillLocal(args);
       case 'sc':
       case 'sc.exe': return cmdSc(
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser }, args);
@@ -4703,6 +4720,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return this.runOpenSshTool(lower, args);
     }
     if (lower === 'systeminfo') return this.cmdSysteminfoChecked(args);
+    if (lower === 'tasklist') return this.cmdTasklist(args);
+    if (lower === 'taskkill') return this.cmdTaskkillLocal(args);
+    if (lower === 'schtasks') return this.cmdSchtasks(args);
     if (lower === 'ver') return WindowsPC.VER_STRING;
     if (lower === 'hostname') return this.hostname;
     if (lower === 'vol')  return this.cmdVol(args);
@@ -5149,6 +5169,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdSetx(args: string[]): string {
     return WinSys.cmdSetx(this.buildSystemContext(), args);
+  }
+
+  private cmdTasklist(args: string[]): string {
+    return cmdTasklistDynamic({ processManager: this.procMgr, currentUser: this.userMgr.currentUser, hostname: this.hostname }, args);
+  }
+
+  private cmdTaskkillLocal(args: string[]): string {
+    return cmdTaskkill({ processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
   }
 
   private cmdSchtasks(args: string[]): string {
