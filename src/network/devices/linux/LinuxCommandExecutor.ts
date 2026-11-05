@@ -2,6 +2,7 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { mountUsageRefusal, umountBadUsage } from './commands/system/MountOptions';
 import { dashedUuid, randomUuidBits } from '../host/hardware/HardwareIdentity';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
@@ -5298,6 +5299,8 @@ export class LinuxCommandExecutor {
   }
 
   handleMount(args: string[]): { output: string; exitCode: number } {
+    const refused = mountUsageRefusal('mount', args);
+    if (refused) return refused;
     if (args.length === 0 || (args.length === 1 && args[0] === '-l')) {
       return { output: this.mountTable.toMountOutput(), exitCode: 0 };
     }
@@ -5535,25 +5538,36 @@ export class LinuxCommandExecutor {
   }
 
   handleUmount(args: string[]): { output: string; exitCode: number } {
+    const refused = mountUsageRefusal('umount', args);
+    if (refused) return refused;
     const positionals = args.filter((a) => !a.startsWith('-'));
-    if (positionals.length === 0) {
-      return { output: 'umount: bad usage', exitCode: 1 };
-    }
-    const raw = positionals[0];
-    const target = this.vfs.normalizePath(raw, this.cwd);
+    if (positionals.length === 0) return umountBadUsage();
     const lazy = args.includes('-l') || args.includes('--lazy');
-    if (!lazy && (this.cwd === target || this.cwd.startsWith(target + '/'))) {
-      return { output: `umount: ${raw}: target is busy.`, exitCode: 32 };
+    const lines: string[] = [];
+    let failures = 0;
+    for (const raw of positionals) {
+      const target = this.vfs.normalizePath(raw, this.cwd);
+      if (!lazy && (this.cwd === target || this.cwd.startsWith(target + '/'))) {
+        lines.push(`umount: ${raw}: target is busy.`);
+        failures++;
+        continue;
+      }
+      const entry = this.mountTable.find(target) ?? this.mountTable.find(raw);
+      if (!entry) {
+        lines.push(`umount: ${raw}: ${this.vfs.exists(target) ? 'not mounted.' : 'no mount point specified.'}`);
+        failures++;
+        continue;
+      }
+      if (!this.mountTable.umount(entry.target)) {
+        lines.push(`umount: ${raw}: not mounted.`);
+        failures++;
+        continue;
+      }
+      this.processMgr.wakeAllBlockedOn(entry.target);
+      this.publishMountEvent('linux.mount.unmounted', entry);
     }
-    const entry = this.mountTable.find(target) ?? this.mountTable.find(raw);
-    if (!entry || !this.mountTable.umount(entry.target)) {
-      return { output: `umount: ${raw}: not mounted.`, exitCode: 1 };
-    }
-    // `umount -l` détache le montage : tout ce qu'il retenait en `D` est
-    // libéré, et encaisse alors les signaux mis en attente (§F5.7).
-    this.processMgr.wakeAllBlockedOn(entry.target);
-    this.publishMountEvent('linux.mount.unmounted', entry);
-    return { output: '', exitCode: 0 };
+    const exitCode = failures === 0 ? 0 : positionals.length > 1 ? 64 : 32;
+    return { output: lines.join('\n'), exitCode };
   }
 
   private handleFindmnt(args: string[]): { output: string; exitCode: number } {
