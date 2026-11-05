@@ -1,4 +1,4 @@
-import { renderIpsecCryptoStats, renderKernelRoutes } from './diag/kernelViews';
+import { renderBfdNeighbors, renderIpsecCryptoStats, renderKernelRoutes } from './diag/kernelViews';
 import { ipToUint32 } from '../../../../core/ip';
 import { generateApiKey } from '../../identity/AdminAccounts';
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
@@ -933,6 +933,7 @@ export class FortiShell {
     }
     if (path === 'vpn ipsec stats crypto') return renderIpsecCryptoStats(this.fw.getTunnelTable());
     if (path === 'router info kernel') return renderKernelRoutes(this.fw);
+    if (path === 'router info bfd neighbor') return renderBfdNeighbors(this.fw);
     if (path === 'vpn ipsec stats tunnel') {
       return renderIpsecTunnelStats(this.fw.getTunnelTable());
     }
@@ -1154,6 +1155,11 @@ export class FortiShell {
       return rest[0] === undefined
         ? FortiMessages.incomplete('what to back up')
         : FortiMessages.unknownAction(`backup ${rest[0]}`);
+    }
+    if (rest[1] === 'flash') {
+      const text = renderWholeConfig(this.tree, { full: rest[0] === 'full-config' }).join('\n');
+      this.fw.recordConfigRevision(this.fw.getAdminSessions().newest()?.username ?? 'admin', rest.slice(2).join(' '), text);
+      return '';
     }
     const [destination, file, server, password] = rest.slice(1);
     const address = this.tftpTarget(destination, server);
@@ -1779,7 +1785,11 @@ export class FortiShell {
         return this.appliquerAlimentation(resolved.name);
       case 'factoryreset2': return this.appliquerAlimentation('factoryreset2');
       case 'erase-disk': return this.executeEraseDisk(tail);
-      case 'ssh': case 'telnet':
+      case 'telnet':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runTelnet(tail[0], tail[1]);
+      case 'ssh':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
           : FortiMessages.needsConsole(resolved.name);

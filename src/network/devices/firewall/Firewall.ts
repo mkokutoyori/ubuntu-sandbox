@@ -3,6 +3,9 @@ import { Equipment } from '../../equipment/Equipment';
 import type { SshKeyAlgorithm } from '../../protocols/ssh/SshHostKey';
 import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
+import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
+import { BfdAgent } from '@/network/bfd/BfdAgent';
+import { UDP_PORT_BFD_CONTROL } from '@/network/bfd/types';
 import { LldpAgent } from '@/network/lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '@/network/lldp/types';
 import { resolveLldp } from './l2/LldpIntent';
@@ -159,7 +162,7 @@ import { SslDeepInspection } from './inspection/SslDeepInspection';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
-import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
+import { FirewallPing, hostAddressOf, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
@@ -647,6 +650,15 @@ export class Firewall extends Equipment {
     });
     this.tcp = agents.tcp;
     this.ipsec = agents.ipsec;
+    this.getBus().subscribe('ipsec.sa.deleted', (event) => {
+      if (event.payload.reason === 'replaced' || event.payload.deviceId !== this.id) return;
+      for (const vdom of this.vdoms.names()) {
+        const tunnels = this.getVdom(vdom).tunnels;
+        for (const tunnel of tunnels.all()) {
+          if (tunnel.remoteGateway === event.payload.peerIp) tunnels.markDown(tunnel.name, null);
+        }
+      }
+    });
     this.radius = agents.radius;
     this.tacacs = agents.tacacs;
 
@@ -915,6 +927,29 @@ export class Firewall extends Equipment {
   });
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
+
+  runTelnet(target: string, rawPort: string | undefined): string {
+    const port = rawPort === undefined ? 23 : Number(rawPort);
+    if (!Number.isInteger(port) || !PortNumber.isValid(port)) return `telnet: ${rawPort}: bad port`;
+    const address = hostAddressOf(target, { resolveName: (name) => this.resolveHostName(name) });
+    if (address === null) return `telnet: ${target}: Name or service not known`;
+    const lines = [`Trying ${address}...`];
+    const socket = this.tcp.connect(address, port);
+    if (socket === null || socket.state !== 'established') {
+      socket?.close();
+      lines.push(socket?.connectRefused === true
+        ? `telnet: Unable to connect to remote host: Connection refused`
+        : `telnet: Unable to connect to remote host: Connection timed out`);
+      return lines.join('\n');
+    }
+    let banner = '';
+    socket.onData((data) => { banner += String(data); });
+    lines.push(`Connected to ${address}.`, `Escape character is '^]'.`);
+    if (banner.length > 0) lines.push(banner.replace(/\r?\n$/, ''));
+    socket.close();
+    lines.push('Connection closed by foreign host.');
+    return lines.join('\n');
+  }
 
   beginPing(target: string) { return this.ping.begin(target); }
 
@@ -2197,6 +2232,69 @@ export class Firewall extends Equipment {
     return this.lldpAgentInstance;
   }
 
+  private bfdAgentInstance: BfdAgent | null = null;
+
+  getBfdAgent(): BfdAgent {
+    if (!this.bfdAgentInstance) {
+      this.bfdAgentInstance = new BfdAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => [...this.getPorts().values()],
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendIpv4FrameArpAware: (iface, packet, nextHop) => this.sendIpv4FrameArpAware(iface, packet, nextHop),
+        },
+        () => this.getBus(),
+        () => this.getScheduler(),
+      );
+      this.bfdAgentInstance.start();
+      this.getBus().subscribe('bfd.session.changed', (event) => {
+        if (event.payload.deviceId !== this.id) return;
+        const bgp = this.getRouting().getBgp();
+        if (!bgp.bfdNeighbours().includes(event.payload.neighborIp)) return;
+        bgp.holdDown(event.payload.neighborIp, event.payload.newState !== 'up');
+      });
+    }
+    return this.bfdAgentInstance;
+  }
+
+  applyBgpWithBfd(config: BgpConfiguration): string | undefined {
+    const failure = this.getRouting().applyBgp(config);
+    if (failure !== undefined) return failure;
+    const bfdPeers = this.getRouting().getBgp().bfdNeighbours();
+    const agent = bfdPeers.length > 0 ? this.getBfdAgent() : this.bfdAgentInstance;
+    for (const peer of config.neighbours) {
+      if (peer.bfd !== true) this.getRouting().getBgp().holdDown(peer.ip, false);
+    }
+    for (const ip of bfdPeers) {
+      const egress = this.routedEgress(ip, this.activeVdom);
+      if (egress !== undefined && this.getPort(egress.iface) !== undefined) agent?.ensureSession(egress.iface, ip);
+    }
+    return undefined;
+  }
+
+  applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | undefined {
+    const agent = this.getBfdAgent();
+    const wanted = new Set(neighbours.map(entry => `${entry.interface}|${entry.ip}`));
+    for (const session of agent.listSessions()) {
+      if (!wanted.has(`${session.iface}|${session.neighborIp}`)) agent.removeSession(session.iface, session.neighborIp);
+    }
+    for (const entry of neighbours) {
+      if (this.getPort(entry.interface) === undefined) return `interface ${entry.interface} is not a physical port BFD can run on.`;
+      agent.ensureSession(entry.interface, entry.ip);
+    }
+    return undefined;
+  }
+
+  private answeredByBfd(iface: string, packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP || this.bfdAgentInstance === null) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    if (udp?.type !== 'udp' || udp.destinationPort !== UDP_PORT_BFD_CONTROL) return false;
+    this.bfdAgentInstance.handleUdp(iface, packet.sourceIP, udp);
+    return true;
+  }
+
   getLacpAgent(): LacpAgent {
     if (!this.lacpAgentInstance) {
       this.lacpAgentInstance = new LacpAgent(
@@ -2679,6 +2777,10 @@ export class Firewall extends Equipment {
     void facts;
   }
 
+  recordConfigRevision(admin: string, comment: string, text: string): void {
+    this.revisions.record({ admin, firmware: `v${this.profile.defaultVersion}`, comment, text });
+  }
+
   onAdminLogout(admin: string): void {
     const closing = this.adminSessions.list().filter(s => s.username === admin).pop();
     if (closing) {
@@ -2939,6 +3041,7 @@ export class Firewall extends Equipment {
         return udp?.type === 'udp' && this.dnsServer.handleUdp(iface, p, udp);
       },
       answeredByNtp: (iface, p) => this.ntp.observe(iface, p),
+      answeredByBfd: (iface, p) => this.answeredByBfd(iface, p),
       snmpListens: (p) => this.snmpService?.listensOn(p) ?? false,
       allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
       handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },

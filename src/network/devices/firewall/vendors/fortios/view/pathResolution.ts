@@ -36,6 +36,7 @@ const VIEWS: readonly GetView[] = Object.freeze([
   { words: ['router', 'info', 'bgp', 'summary'], help: 'BGP peers and their prefix counts.' },
   { words: ['router', 'info', 'bgp', 'neighbors'], help: 'BGP peers in detail.' },
   { words: ['router', 'info', 'kernel'], help: 'Kernel routing table.' },
+  { words: ['router', 'info', 'bfd', 'neighbor'], help: 'BFD sessions.' },
   { words: ['vpn', 'ipsec', 'stats', 'crypto'], help: 'Crypto counters per algorithm.' },
   { words: ['router', 'info', 'routing-table', 'all'], help: 'Every route.' },
   { words: ['router', 'info', 'routing-table', 'static'], help: 'Static routes only.' },

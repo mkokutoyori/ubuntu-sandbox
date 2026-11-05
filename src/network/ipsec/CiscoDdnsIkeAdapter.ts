@@ -11,7 +11,7 @@ export interface CiscoDdnsIkeAdapterConfig {
 
 interface EngineFacade {
   ipsecSADB: Map<string, unknown[]>;
-  clearSAsForPeer: (peer: string, reason: 'manual' | 'lifetime' | 'dpd' | 'replaced' | 'shutdown') => void;
+  clearSAsForPeer: (peer: string, reason: 'manual' | 'lifetime' | 'dpd' | 'replaced' | 'shutdown' | 'peer') => void;
 }
 
 export class CiscoDdnsIkeAdapter implements IkeInitiator {

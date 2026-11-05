@@ -78,3 +78,35 @@ describe('operator verbs on a tunnel', () => {
     expect(await a.executeCommand('get vpn ipsec tunnel name t')).toContain('name=t ');
   });
 });
+
+describe('the peer is told when a tunnel is torn down (RFC 7296 section 1.4.1, Delete payload)', () => {
+  it('after the hub takes the tunnel down, the spoke renegotiates on its next packet instead of blackholing', async () => {
+    const bench = new LabWorkbench();
+    const hub = bench.place('firewall-fortinet', 'HUB', 0, 0);
+    const spoke = bench.place('firewall-fortinet', 'SPOKE', 0, 0);
+    const pc = bench.place('linux-pc', 'PC', 0, 0);
+    bench.connect(hub, 'wan1', spoke, 'wan1');
+    bench.connect(spoke, 'port1', pc, 'eth0');
+    const side = (wan: string, peer: string, local: string) => [
+      'config system interface', 'edit wan1', 'set mode static', `set ip ${wan} 255.255.255.0`, 'next', 'end',
+      'config vpn ipsec phase1-interface', 'edit "t"', 'set interface "wan1"', 'set ike-version 2', `set remote-gw ${peer}`,
+      'set psksecret sekret123', 'set proposal aes256-sha256', 'next', 'end',
+      'config vpn ipsec phase2-interface', 'edit "t-p2"', 'set phase1name "t"', 'set proposal aes256-sha256',
+      `set src-subnet ${local}`, 'set dst-subnet 0.0.0.0 0.0.0.0', 'next', 'end',
+    ];
+    const policy = (a: string, b: string) => ['config firewall policy', 'edit 1', `set srcintf "${a}"`, `set dstintf "${b}"`, 'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"', 'set action accept', 'set schedule "always"', 'next', 'edit 2', `set srcintf "${b}"`, `set dstintf "${a}"`, 'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"', 'set action accept', 'set schedule "always"', 'next', 'end'];
+    await bench.shell(hub, ...side('203.0.113.1', '203.0.113.2', '0.0.0.0 0.0.0.0'),
+      'config system interface', 'edit port1', 'set mode static', 'set ip 10.0.0.1 255.255.255.0', 'next', 'end',
+      'config router static', 'edit 1', 'set dst 10.1.0.0 255.255.255.0', 'set device "t"', 'next', 'end', ...policy('port1', 't'));
+    await bench.shell(spoke, ...side('203.0.113.2', '203.0.113.1', '10.1.0.0 255.255.255.0'),
+      'config system interface', 'edit port1', 'set mode static', 'set ip 10.1.0.1 255.255.255.0', 'next', 'end',
+      'config router static', 'edit 1', 'set dst 10.0.0.0 255.0.0.0', 'set device "t"', 'next', 'end', ...policy('port1', 't'));
+    await bench.shell(pc, 'ip addr add 10.1.0.50/24 dev eth0', 'ip link set eth0 up', 'ip route add default via 10.1.0.1');
+    await pc.executeCommand('ping -c 2 10.0.0.1');
+    expect(await pc.executeCommand('ping -c 2 10.0.0.1')).toContain('2 received');
+    await hub.executeCommand('diagnose vpn tunnel down t');
+    expect(await spoke.executeCommand('get vpn ipsec tunnel summary')).toMatch(/selectors\(total,up\): 1\/0/);
+    await pc.executeCommand('ping -c 2 10.0.0.1');
+    expect(await pc.executeCommand('ping -c 2 10.0.0.1')).toContain('2 received');
+  });
+});
