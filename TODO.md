@@ -4512,4 +4512,4 @@ The three commands follow gzip 1.12 (probe-linux-gzip-1-12, 73 cases measured). 
 echo, printf, cd...). Not closed, measured against bash 5.2.21: a builtin the executor also serves (`type -t true` answers
 `builtin` where bash answers `file`; `enable -n cd; cd /` still changes directory where bash answers `cd: command not found`),
 and the disabled set is not inherited by a pipeline stage (`enable -n cd; enable -n | cat` lists nothing). Needs the
-executor's CommandResolver to read the interpreter environment. `help NAME` is missing altogether (answers `help: command not found`); its texts have to be captured builtin by builtin from the real bash.
+executor's CommandResolver to read the interpreter environment. `help` is real (76 captured topics); the overview does not yet put a star before a disabled builtin (`A star (*) next to a name means that the command is disabled.`), and the overview text is fixed at the bash 5.2.21 captured, whatever `BASH_VERSION` says.

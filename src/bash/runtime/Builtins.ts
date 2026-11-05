@@ -24,6 +24,7 @@ import { runDeclaration } from './Declare';
 import { runSet, runShopt } from './OptionBuiltins';
 import { signalListing, signalName } from './Signals';
 import { BASH_BUILTIN_NAMES, builtinEnable } from './EnableBuiltin';
+import { builtinHelp } from './HelpBuiltin';
 import type { OptionResult } from './OptionBuiltins';
 import type { DeclarationCommand } from './Declare';
 
@@ -49,7 +50,7 @@ const BUILTIN_NAMES = new Set([
   'local', 'read', 'true', 'false', ':',
   'exit', 'return', 'break', 'continue',
   'shift', 'source', '.', 'declare', 'typeset', 'readonly', 'let', 'shopt', 'builtin', 'hash', 'dirs', 'pushd', 'popd', 'compgen', 'times', 'caller',
-  'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray', 'enable',
+  'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray', 'enable', 'help',
 ]);
 
 export function isBuiltin(name: string): boolean {
@@ -103,6 +104,7 @@ export function executeBuiltin(
     case 'getopts': return builtinGetopts(args, env);
     case 'trap': return builtinTrap(args, env);
     case 'enable': return builtinEnable(args, env);
+    case 'help': return builtinHelp(args);
     case 'mapfile':
     case 'readarray': return builtinMapfile(args, env, stdin, readFd);
     case 'eval': return { output: '', exitCode: 0 }; // handled at higher level
