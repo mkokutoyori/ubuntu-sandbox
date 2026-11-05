@@ -1,8 +1,7 @@
 export { TestEvaluator, runTest, UNARY_OPS, BINARY_OPS } from './TestEvaluator';
 export type { TestFs, TestEnv, TestEvaluation, TestResultKind } from './TestEvaluator';
 
-export { ExprEvaluator, runExpr } from './ExprEvaluator';
-export type { ExprResult } from './ExprEvaluator';
+export { runExpr } from './ExprEvaluator';
 
 
 export { runSleep, parseSleepOperand, SleepError } from './Sleep';

@@ -8773,8 +8773,7 @@ export class LinuxCommandExecutor {
   }
 
   private handleExpr(args: string[]): { output: string; exitCode: number } {
-    const r = runExpr(args);
-    return { output: r.output, exitCode: r.exitCode };
+    return asDispatch(runExpr(args));
   }
 
   private handleTime(args: string[]): { output: string; exitCode: number } {
