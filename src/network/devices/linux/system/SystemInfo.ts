@@ -86,10 +86,6 @@ export function uptimeHeader(users = 1, uptimeSeconds = 0, view?: UptimeClockVie
  */
 export function cmdUptime(args: string[], lifecycle: HostLifecycle, view?: UptimeClockView): string {
   const seconds = lifecycle.uptimeSeconds();
-  const valid = new Set(['-p', '--pretty', '-s', '--since', '-h', '--help', '-V', '--version']);
-  for (const a of args) {
-    if (a.startsWith('-') && !valid.has(a)) return `uptime: unrecognized option '${a}'`;
-  }
   if (args.includes('-p') || args.includes('--pretty')) {
     return prettyUptime(Math.floor(seconds / 60));
   }
