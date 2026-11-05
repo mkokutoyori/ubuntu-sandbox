@@ -4527,3 +4527,10 @@ Closing it means populating the VFS from the package database, not changing wher
 is no magic database to print. `-e encoding` is accepted and has no effect (the real file then falls back to binary data for a script), the
 magic classification is the simulator's own subset (ASCII text, scripts, data, archives, pcap): UTF-8 and ISO-8859 text, HTML, XML, JSON,
 images, ELF, PDF are not recognised (the dev container ships a reduced magic file, so they cannot be measured there either).
+
+## findmnt, lsblk, mount: option grammar and statuses
+
+Measured against util-linux 2.39.3 (dev container), unfixed: `findmnt -x`, `--nosuch`, `-V`, `-o COLUMN`, `-J`, `-P`, `-l`, `-t TYPE`, `-s`,
+a missing target (status 1) are ignored or answered with the plain table; `lsblk -x`, `-V`, `-r`, `-P`, `-J`, `-o` with an unknown column
+('lsblk: unknown column: nosuch', status 1), `-b`, and a missing device (status 32) likewise; `mount -V`, invalid options and a failing mount
+exit with the wrong text/status for an unprivileged caller. `df` shows the same family of fix (done in its own port).
