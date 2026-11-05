@@ -130,6 +130,7 @@ export interface FortiInterfacePatch {
     readonly minLinksDown: 'operational' | 'administrative';
     readonly lacpHaSecondary: boolean;
   };
+  readonly netflowSampler?: 'disable' | 'tx' | 'rx' | 'both';
   readonly lldp?: {
     readonly transmission: LldpSetting;
     readonly reception: LldpSetting;
@@ -460,6 +461,7 @@ export interface FortiCommitDevice {
   removePkiPeer(name: string): void;
   applyPkiPeerGroup(name: string, members: readonly string[]): void;
   removePkiPeerGroup(name: string): void;
+  applyNetflow(settings: { activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; collectors: ReadonlyArray<{ ip: string; port: number }> }): void;
   applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | void;
   applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
   removeKeyChain(name: string): void;

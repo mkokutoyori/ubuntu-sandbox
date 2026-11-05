@@ -610,6 +610,12 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
     ], 'static'),
     { ...addressMask('ip', 'Interface IPv4 address and subnet mask.',
       ['0.0.0.0', '0.0.0.0']), availableWhen: isStatic },
+    choice('netflow-sampler', 'Enable/disable NetFlow on this interface and set the data that NetFlow collects (rx, tx, or both).', [
+      { keyword: 'disable', description: 'Disable NetFlow protocol on this interface.' },
+      { keyword: 'tx', description: 'Monitor transmitted traffic on this interface.' },
+      { keyword: 'rx', description: 'Monitor received traffic on this interface.' },
+      { keyword: 'both', description: 'Monitor transmitted and received traffic on this interface.' },
+    ], 'disable'),
     { ...addressMask('remote-ip', 'Remote IP address of the tunnel; a host route towards it is installed.',
       ['0.0.0.0', '0.0.0.0']), availableWhen: isStatic },
     {
@@ -722,6 +728,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       ip: ip[0],
       mask: ip[1],
       remoteIp: object.effective('remote-ip')[0] ?? '',
+      netflowSampler: (object.effective('netflow-sampler')[0] ?? 'disable') as 'disable' | 'tx' | 'rx' | 'both',
       up: object.effective('status')[0] !== 'down',
       allowAccess: object.effective('allowaccess'),
       type: interfaceType(object),
@@ -1734,6 +1741,51 @@ export const SYSTEM_PROXY_ARP: FortiTableSpec = {
   },
 };
 
+const NETFLOW_COLLECTOR: FortiTableSpec = {
+  path: ['system', 'netflow', 'collectors'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Netflow collectors.',
+  attributes: [
+    { ...word('id', 'ID.'), readOnly: true },
+    address('collector-ip', 'Collector IP.', '0.0.0.0'),
+    count('collector-port', 'NetFlow collector port number.', 0, 65535, 2055),
+  ],
+};
+
+export const SYSTEM_NETFLOW: FortiTableSpec = {
+  path: ['system', 'netflow'],
+  kind: 'object',
+  scope: 'global',
+  accessGroup: 'netgrp',
+  renderOrder: 124,
+  help: 'Configure NetFlow.',
+  attributes: [
+    count('active-flow-timeout', 'Timeout to report information about ongoing flows, in seconds.', 60, 3600, 1800),
+    count('inactive-flow-timeout', 'Timeout for periodic report of finished flows, in seconds.', 10, 600, 15),
+    count('template-tx-counter', 'Counter of flowset records before resending a template flowset record.', 10, 6000, 20),
+  ],
+  children: [NETFLOW_COLLECTOR],
+  onCommit(object, context) {
+    const collectors = object.childEntries('collectors')
+      .map(entry => ({
+        ip: entry.effective('collector-ip')[0] ?? '0.0.0.0',
+        port: Number.parseInt(entry.effective('collector-port')[0] ?? '2055', 10),
+      }))
+      .filter(collector => collector.ip !== '0.0.0.0');
+    context.device.applyNetflow({
+      activeTimeoutSec: Number.parseInt(object.effective('active-flow-timeout')[0] ?? '1800', 10),
+      inactiveTimeoutSec: Number.parseInt(object.effective('inactive-flow-timeout')[0] ?? '15', 10),
+      templateTxCounter: Number.parseInt(object.effective('template-tx-counter')[0] ?? '20', 10),
+      collectors,
+    });
+  },
+};
+
 export const SYSTEM_GRE_TUNNEL: FortiTableSpec = {
   path: ['system', 'gre-tunnel'],
   kind: 'table',
@@ -1803,4 +1855,5 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_ARP_TABLE,
   SYSTEM_PROXY_ARP,
   SYSTEM_GRE_TUNNEL,
+  SYSTEM_NETFLOW,
 ]);

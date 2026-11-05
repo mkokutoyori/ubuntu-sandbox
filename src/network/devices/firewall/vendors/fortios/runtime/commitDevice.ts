@@ -35,6 +35,7 @@ export function buildCommitDevice(
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
         if (patch.macOverride !== undefined) fw.setInterfaceMacOverride(name, patch.macOverride);
+        if (patch.netflowSampler !== undefined) fw.setNetflowSampler(name, patch.netflowSampler);
         if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
         if (patch.deviceIdentification !== undefined) {
           fw.getDeviceInventory().setIdentification(name, patch.deviceIdentification);
@@ -422,6 +423,9 @@ export function buildCommitDevice(
       },
       removePkiPeerGroup(name) {
         fw.getPkiPeers().removeGroup(name);
+      },
+      applyNetflow(settings) {
+        fw.applyNetflow(settings);
       },
       applyBfdNeighbors(neighbours) {
         return fw.applyBfdNeighbors(neighbours);

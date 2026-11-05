@@ -6,6 +6,7 @@ import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
 import { BfdAgent } from '@/network/bfd/BfdAgent';
 import { GreAgent } from '@/network/gre/GreAgent';
+import { NetFlowAgent } from '@/network/netflow/NetFlowAgent';
 import { IP_PROTO_GRE } from '@/network/gre/types';
 import { ipv4HeaderOptionsOf, type Ipv4SendRequest } from '@/network/layers/internet/Ipv4Egress';
 import { UDP_PORT_BFD_CONTROL } from '@/network/bfd/types';
@@ -552,6 +553,7 @@ export class Firewall extends Equipment {
         this.streams.forget(session.c2s);
         if (reason === 'timeout') this.resetExpiredSession(vdom, session);
         this.trafficLogger?.onSessionClosed(session, reason);
+        this.exportNetflow(session);
         this.sessionObserver?.(session, reason);
       },
       realServerPool: (name) => this.serverPools.get(name),
@@ -2310,6 +2312,73 @@ export class Firewall extends Equipment {
     if (udp?.type !== 'udp' || udp.destinationPort !== UDP_PORT_BFD_CONTROL) return false;
     this.bfdAgentInstance.handleUdp(iface, packet.sourceIP, udp);
     return true;
+  }
+
+  private netflowAgentInstance: NetFlowAgent | null = null;
+  private readonly netflowSamplers = new Map<string, 'tx' | 'rx' | 'both'>();
+
+  getNetflowAgent(): NetFlowAgent {
+    if (!this.netflowAgentInstance) {
+      this.netflowAgentInstance = new NetFlowAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => [...this.getPorts().values()],
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+        },
+        () => this.getBus(),
+        () => this.getScheduler(),
+      );
+      this.netflowAgentInstance.setVersion(9);
+      this.netflowAgentInstance.start();
+    }
+    return this.netflowAgentInstance;
+  }
+
+  setNetflowSampler(iface: string, mode: 'disable' | 'tx' | 'rx' | 'both'): void {
+    if (mode === 'disable') this.netflowSamplers.delete(iface); else this.netflowSamplers.set(iface, mode);
+  }
+
+  applyNetflow(settings: {
+    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number;
+    collectors: ReadonlyArray<{ ip: string; port: number }>;
+  }): void {
+    const agent = this.getNetflowAgent();
+    agent.setActiveTimeoutSec(settings.activeTimeoutSec);
+    agent.setInactiveTimeoutSec(settings.inactiveTimeoutSec);
+    agent.setTemplateRefreshPackets(settings.templateTxCounter);
+    const wanted = new Set(settings.collectors.map(collector => collector.ip));
+    for (const present of agent.listCollectors()) if (!wanted.has(present.ip)) agent.removeCollector(present.ip);
+    for (const collector of settings.collectors) agent.addCollector(collector.ip, collector.port);
+    agent.setEnabled(settings.collectors.length > 0);
+  }
+
+  private exportNetflow(session: FirewallSession): void {
+    const agent = this.netflowAgentInstance;
+    if (agent === null || this.netflowSamplers.size === 0) return;
+    const received = this.netflowSamplers.get(session.ingressInterface);
+    const sent = this.netflowSamplers.get(session.egressInterface);
+    const sampled = received === 'rx' || received === 'both' || sent === 'tx' || sent === 'both';
+    if (!sampled) return;
+    const input = this.interfaceIndex(session.ingressInterface);
+    const output = this.interfaceIndex(session.egressInterface);
+    const { counters, c2s, s2c } = session;
+    if (counters.packetsC2S > 0) {
+      agent.recordFlow({
+        sourceIp: c2s.sourceIP, destinationIp: c2s.destIP, sourcePort: c2s.sourcePort, destinationPort: c2s.destPort,
+        protocol: c2s.protocol, bytes: counters.bytesC2S, packets: counters.packetsC2S,
+        inputIfIndex: input, outputIfIndex: output,
+      });
+    }
+    if (counters.packetsS2C > 0) {
+      agent.recordFlow({
+        sourceIp: s2c.sourceIP, destinationIp: s2c.destIP, sourcePort: s2c.sourcePort, destinationPort: s2c.destPort,
+        protocol: s2c.protocol, bytes: counters.bytesS2C, packets: counters.packetsS2C,
+        inputIfIndex: output, outputIfIndex: input,
+      });
+    }
   }
 
   private greAgentInstance: GreAgent | null = null;
