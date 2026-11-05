@@ -113,6 +113,20 @@ simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien 
 `+cookie`, `+subnet` et les autres options sont acceptes et ignores : le vrai dig 9.18 envoie un cookie client par defaut et ecrit la ligne `; COOKIE: ... (good)` sous l'OPT de la reponse, le simulateur n'en envoie
 pas (le drapeau `K` du journal de requetes de named, `+E(0)K`, manque pour la meme raison) ; une reponse UDP tronquee du vrai named porte aussi le drapeau `ad` (`qr aa tc ad`, mesure sous `+ignore`), pas celle du simulateur ; un `REFUSED` du vrai named a un client que `allow-query` exclut porte l'option EDE `18 (Prohibited)` dans l'OPT (`; EDE: 18 (Prohibited)`), le simulateur n'ecrit pas d'option EDE ; `+search` lit la liste de `/etc/resolv.conf` (`search`, `domain`, `ndots`) et prend la reponse du premier candidat qui n'est pas NXDOMAIN, mais quand tous echouent le vrai dig imprime parfois deux fois les statistiques (`web.banquehorizon +search`), ce que le simulateur ne fait pas.
 
+### [dns] DoT et DoH : ce que named et dig 9.18 font encore et que le simulateur ne fait pas
+Mesure contre named et dig 9.18.39 reels (`probe-bind9-dot-doh-listeners`) : `tls`, `http` et `listen-on ... tls ... http ...` font ecouter named en 853 et en 443, `dig +tls`, `+tls-ca`, `+tls-hostname`, `+https`
+et `+https-get` rendent les memes lignes. Restent :
+le DoH est en HTTP/1.1 des deux cotes (ALPN `http/1.1`), alors que le vrai named ne sert que du HTTP/2 et que le vrai dig dit `;; Connection to ...#PORT(...) for NOM failed: ALPN for HTTP/2 failed.` quand
+il tombe sur un serveur qui n'en parle pas (par exemple le 853) ; la pile HTTPS du simulateur n'a pas de session HTTP/2 par TLS ;
+`dig +http-plain` et `+http-plain-get` (DoH en clair) n'existent pas cote client, alors que `listen-on port N tls none http default` est servi ;
+`+tls` et `+https` vers un port ferme ecrivent `communications error ... timed out` au lieu de `;; Connection to ... failed: connection refused.` (meme cause que `+tcp`, plus haut) ;
+`+tls-certfile` et `+tls-keyfile` (certificat client) sont acceptes et ignores comme toute option inconnue de dig ;
+les options `ca-file`, `remote-hostname`, `dhparam-file`, `ciphers`, `prefer-server-ciphers` et `session-tickets` d'un bloc `tls`, `listener-clients` et `streams-per-connection` d'un bloc `http`
+sont lues et rangees, pas evaluees (le vrai named les accepte ; seuls `key-file`, `cert-file` et `protocols` agissent) ; `primaries { ... tls NOM; }` (transfert de zone par TLS) n'existe pas et le
+serveur DoT repond a une question puis ferme la connexion ;
+`listen-on-v6 ... tls` est lu sans ecoute (pas de chemin d'ecoute TCP IPv6 pour ces listeners), et la liste d'adresses de `listen-on` en clair (53) n'est pas evaluee : named ecoute alors sur toutes les adresses,
+alors que les listeners chiffres respectent la liste. Raison du report : chaque point demande une brique propre (HTTP/2 sur TLS, un client HTTP en clair, une ecoute IPv6) que ce changement ne livre pas.
+
 ### [host] ce que host 9.18 fait encore et que le simulateur ne fait pas
 `host` est rejoue contre un vrai host 9.18.39 (`host-oracle`, 431 invocations dont 396 rejouees, les 35 autres ecartees avec leur raison dans le test) : le moteur de `dighost.c` (essais partages entre les
 serveurs, liste de recherche et ndots, requetes AAAA et MX apres le A, repli TCP sur une reponse tronquee, SERVFAIL et absence de RA), `-v -d -a -A -t -c -C -l -T -U -r -s -w -W -R -p -N -4 -6 -V`, le serveur

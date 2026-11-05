@@ -17,8 +17,8 @@ témoins). Les fichiers de sonde sont listés dans la dernière colonne.
 | 6891 | EDNS(0) | Options lues et écrites, FORMERR sur OPT multiple ou non racine, BADVERS, taille négociée. Limite : aucune option n'est interprétée (NSID, cookies, padding absents de l'ensemble). | `dns-wire-edns-probe` |
 | 6895 | Registres IANA DNS | Plages de types méta (128–255) exploitées par la mise à jour ; non mesuré ailleurs. | — |
 | 7766 | DNS sur TCP | Préfixe de longueur, connexion persistante, plusieurs requêtes par connexion, réassemblage, fermeture après 10 s d'inactivité ; octets bruts transmis au gestionnaire (TSIG sur TCP). Limites : le client ouvre une connexion par requête, pas de réponses dans le désordre, pas d'option edns-tcp-keepalive. | `dns-tcp-framing-rfc7766` |
-| 7858 | DNS sur TLS | Préfixe de longueur dans le flux TLS. Limite : pas de bourrage (RFC 7830). | `dns-tcp-framing-rfc7766`, `dns-encrypted-transports` |
-| 8484 | DNS sur HTTPS | GET `?dns=` et POST, 405, 415, 400, `Cache-Control: max-age`, identifiant DNS 0 côté client. Limite : un gestionnaire asynchrone répond 500 (le moteur HTTP est synchrone). | `dns-doh-rfc8484-probe` |
+| 7858 | DNS sur TLS | Préfixe de longueur dans le flux TLS ; `named` écoute en 853 (`tls`, `listen-on port N tls NOM`) avec le certificat de ses fichiers ; `dig +tls` authentifie la chaîne (`+tls-ca`) et le nom (`+tls-hostname`). Limites : pas de bourrage (RFC 7830), une question par connexion, pas de transfert de zone par TLS. | `dns-tcp-framing-rfc7766`, `dns-encrypted-transports`, `probe-bind9-dot-doh-listeners` |
+| 8484 | DNS sur HTTPS | GET `?dns=` et POST, 405, 415, 400, `Cache-Control: max-age`, identifiant DNS 0 côté client ; `named` écoute en 443 (`listen-on port N tls NOM http default`, blocs `http` et leurs `endpoints`), `dig +https` et `+https-get`. Limite : HTTP/1.1 seulement (le vrai named ne sert que du HTTP/2). | `dns-doh-rfc8484-probe`, `probe-bind9-dot-doh-listeners` |
 
 ## Résolveur (RFC 1034 §5, RFC 2308)
 

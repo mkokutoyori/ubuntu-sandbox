@@ -46,6 +46,7 @@ import { RndcChannel } from './RndcChannel';
 import { bindPackageVersion } from './BindVersion';
 import { renderViewDump } from './NamedCacheDump';
 import { RndcServer } from './RndcServer';
+import { Bind9EncryptedListeners } from './Bind9EncryptedListeners';
 import type { Zone } from '@/network/dns/zone/Zone';
 import type { ResourceRecord, ResourceRecordData, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
 import type { ForwardMode, NamedConfig, NamedZone } from './NamedConfig';
@@ -90,6 +91,7 @@ export class Bind9Service {
   private readonly frozenZones = new Set<string>();
   private keyring = new TsigKeyring();
   private readonly logging: Bind9Logging;
+  private encryptedListeners: Bind9EncryptedListeners | null = null;
   private readonly readFile: (path: string) => string | null;
   private queryLogEnabled = false;
   private dnssecValidationEnabled = true;
@@ -279,16 +281,20 @@ export class Bind9Service {
 
     this.cache.flush();
     this.applyConfig(loaded.config);
+    const encrypted = this.replaceEncryptedListeners(loaded.config);
+    if (!encrypted.ok) return encrypted;
     const port = loaded.config.options.listenOnPort;
     try {
       bindDnsUdpServer(this.host, this.handleUdpQuery, port, PROCESS_NAME);
     } catch {
+      this.stopEncryptedListeners();
       return { ok: false, error: `could not listen on UDP socket: address already in use` };
     }
     try {
       bindDnsTcpServer(this.host, this.handleTcpQuery, port);
     } catch {
       unbindDnsUdpServer(this.host, port);
+      this.stopEncryptedListeners();
       return { ok: false, error: `could not listen on TCP socket: address already in use` };
     }
     this.activePort = port;
@@ -302,6 +308,7 @@ export class Bind9Service {
     if (!this.running) return;
     unbindDnsUdpServer(this.host, this.activePort);
     unbindDnsTcpServer(this.host, this.activePort);
+    this.stopEncryptedListeners();
     this.stopRndc();
     this.running = false;
   }
@@ -321,6 +328,8 @@ export class Bind9Service {
       this.stop();
       return this.start();
     }
+    const encrypted = this.replaceEncryptedListeners(loaded.config);
+    if (!encrypted.ok) return encrypted;
     this.stopRndc();
     this.startRndc(loaded.config);
     for (const [name, serial] of this.loadedZones) {
@@ -328,6 +337,32 @@ export class Bind9Service {
     }
     this.refreshAllSecondaryZones();
     return { ok: true };
+  }
+
+  private replaceEncryptedListeners(config: NamedConfig): OperationResult {
+    const next = new Bind9EncryptedListeners({
+      host: this.host,
+      processName: PROCESS_NAME,
+      handler: this.handleTcpQuery,
+      readFile: this.readFile,
+      log: (message) => this.files.log?.(message),
+      environment: () => this.aclEnvironment(),
+    });
+    const prepared = next.prepare(config.options.listeners);
+    if (prepared.ok === false) {
+      for (const line of prepared.lines) this.files.log?.(line);
+      return { ok: false, error: prepared.error };
+    }
+    this.stopEncryptedListeners();
+    const bound = next.bind(prepared);
+    if (!bound.ok) return bound;
+    this.encryptedListeners = next;
+    return { ok: true };
+  }
+
+  private stopEncryptedListeners(): void {
+    this.encryptedListeners?.stop();
+    this.encryptedListeners = null;
   }
 
   private loadConfig(): ConfigLoadResult {

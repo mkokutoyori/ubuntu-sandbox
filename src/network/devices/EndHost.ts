@@ -160,6 +160,8 @@ import {
 import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
 import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
+import { queryDnsOverHttps, DOH_PORT } from '../dns/transport/DnsHttpsTransport';
+import { CertificateVerifier } from '../pki/CertificateVerifier';
 import { HardwareProfile } from './host/hardware';
 import { bootIdFor, machineIdFor } from './host/hardware/HardwareIdentity';
 import { HostLifecycle } from './host/lifecycle';
@@ -4767,6 +4769,26 @@ export abstract class EndHost extends Equipment {
       return queryDnsOverTls(this, serverIP, query, {
         port: options.port ?? DOT_PORT, timeoutMs,
         ...(options.serverName !== undefined ? { serverName: options.serverName } : {}),
+        ...(options.tlsAnchors !== undefined ? { anchors: options.tlsAnchors } : {}),
+        ...(options.tlsVerify !== undefined ? { verifyPeer: options.tlsVerify } : {}),
+        ...(options.onTlsVerifyFailure !== undefined ? { onVerifyFailure: options.onTlsVerifyFailure } : {}),
+      });
+    }
+    if (options.https) {
+      const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
+      if (!query) return null;
+      if (!(serverIP instanceof IPAddress)) return null;
+      const verifier = new CertificateVerifier({
+        trustAnchors: options.tlsAnchors ?? [], clock: () => this.getTcpStack().nowMs(),
+      });
+      return queryDnsOverHttps(this, serverIP, query, {
+        verifier, verifyPeer: options.tlsVerify !== false,
+        ...(options.serverName !== undefined ? { serverName: options.serverName } : {}),
+      }, {
+        port: options.port ?? DOH_PORT, timeoutMs, path: options.https.path, method: options.https.method,
+        ...(options.serverName !== undefined ? { sni: options.serverName } : {}),
+        ...(options.onTlsVerifyFailure !== undefined ? { onVerifyFailure: options.onTlsVerifyFailure } : {}),
+        ...(options.onHttpFailure !== undefined ? { onHttpStatus: options.onHttpFailure } : {}),
       });
     }
     if (options.tcp) {

@@ -50,6 +50,7 @@ export type Http1RequestHandler = (
  */
 export class Http1ServerSession {
   private listener: TcpListener | null = null;
+  private listenAddress = '0.0.0.0';
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -58,18 +59,19 @@ export class Http1ServerSession {
     private readonly eventBus?: IEventBus,
   ) {}
 
-  start(identity?: ListenerIdentity, backlog?: number): void {
+  start(identity?: ListenerIdentity, backlog?: number, address = '0.0.0.0'): void {
     if (this.listener) return;
+    this.listenAddress = address;
     this.listener = this.tcpStack.listen(this.port, {
       onAccept: (socket) => this.handleConnection(socket),
       identity,
       backlog,
-    });
+    }, address);
   }
 
   stop(): void {
     if (!this.listener) return;
-    this.tcpStack.closeListener(this.port);
+    this.tcpStack.closeListener(this.port, this.listenAddress);
     this.listener = null;
   }
 

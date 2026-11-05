@@ -1,6 +1,19 @@
 import { IPAddress } from '@/network/core/types';
 import { AddressMatchList } from './NamedAcl';
 import { NamedConfigError } from './NamedConfigError';
+import { fail, keywordOf, argsOf, requireBlock } from './NamedConfStatements';
+import {
+  parseListenHeader, isEncryptedOrHttpListener, parseTlsProfile, parseHttpProfile, registerProfile, resolveListener,
+  type NamedHttpProfile, type NamedListener, type NamedListenHeader, type NamedTlsProfile,
+} from './NamedTlsConfig';
+
+export type { NamedHttpProfile, NamedListener, NamedTlsProfile } from './NamedTlsConfig';
+
+interface PendingListener {
+  readonly header: NamedListenHeader;
+  readonly addresses: AddressMatchList;
+  readonly statement: NamedConfStatement;
+}
 import type { NamedConfStatement } from './NamedConfParser';
 import { parseUpdatePolicyRule, type UpdatePolicyRule } from './NamedUpdatePolicy';
 import { makeDsRecord, makeDnskeyRecord } from '@/network/dns/wire/ResourceRecord';
@@ -41,6 +54,7 @@ export interface NamedOptions {
   readonly version: VersionOption;
   readonly emptyZonesEnable: boolean;
   readonly listenOn: AddressMatchList;
+  readonly listeners: readonly NamedListener[];
   readonly allowQuery: AddressMatchList;
   readonly allowRecursion: AddressMatchList;
   readonly allowTransfer: AddressMatchList;
@@ -129,29 +143,10 @@ const ZONE_TYPE_ALIASES: Readonly<Record<string, ZoneType>> = {
   hint: 'hint',
 };
 
-function fail(statement: NamedConfStatement, detail: string): never {
-  throw new NamedConfigError(statement.file, statement.line, detail);
-}
-
 function ttlWord(statement: NamedConfStatement, word: string | undefined): number {
   const match = /^(\d+)([smhdw]?)$/i.exec(word ?? '');
   if (match === null) fail(statement, `expected a TTL near '${word ?? ';'}'`);
   return Number(match[1]) * TTL_UNIT_SECONDS[(match[2] || 's').toLowerCase()];
-}
-
-function keywordOf(statement: NamedConfStatement): string {
-  return statement.values[0].text;
-}
-
-function argsOf(statement: NamedConfStatement): string[] {
-  return statement.values.slice(1).map((v) => v.text);
-}
-
-function requireBlock(statement: NamedConfStatement): readonly NamedConfStatement[] {
-  if (statement.block === null) {
-    fail(statement, `expected '{' after '${keywordOf(statement)}'`);
-  }
-  return statement.block;
 }
 
 function rejectExtraWords(statement: NamedConfStatement, allowed: number): void {
@@ -214,6 +209,7 @@ interface MutableOptions {
   version: VersionOption;
   emptyZonesEnable: boolean;
   listenOn: AddressMatchList;
+  listeners: NamedListener[];
   allowQuery: AddressMatchList;
   allowRecursion: AddressMatchList;
   allowTransfer: AddressMatchList;
@@ -239,6 +235,7 @@ function defaultOptions(): MutableOptions {
     version: { kind: 'real' },
     emptyZonesEnable: true,
     listenOn: AddressMatchList.any(),
+    listeners: [],
     allowQuery: AddressMatchList.any(),
     allowRecursion: AddressMatchList.localTrust(),
     allowTransfer: AddressMatchList.any(),
@@ -253,6 +250,7 @@ function parseOptions(
   statement: NamedConfStatement,
   options: MutableOptions,
   acls: ReadonlyMap<string, AddressMatchList>,
+  pendingListeners: PendingListener[],
 ): void {
   for (const entry of requireBlock(statement)) {
     const keyword = keywordOf(entry);
@@ -279,6 +277,11 @@ function parseOptions(
         break;
       case 'listen-on':
       case 'listen-on-v6': {
+        const header = parseListenHeader(entry);
+        if (isEncryptedOrHttpListener(header)) {
+          pendingListeners.push({ header, addresses: AddressMatchList.fromStatements(requireBlock(entry), acls), statement: entry });
+          break;
+        }
         let port = options.listenOnPort;
         if (args[0] === 'port') {
           const parsed = Number(args[1]);
@@ -734,6 +737,9 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const zoneStatements: NamedConfStatement[] = [];
   const controlsStatements: NamedConfStatement[] = [];
   const trustAnchors: ResourceRecord<DsRecordData>[] = [];
+  const tlsProfiles = new Map<string, NamedTlsProfile>();
+  const httpProfiles = new Map<string, NamedHttpProfile>();
+  const pendingListeners: PendingListener[] = [];
   let optionsSeen = false;
 
   for (const statement of statements) {
@@ -749,7 +755,13 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
       case 'options':
         if (optionsSeen) fail(statement, "'options' redefined near 'options'");
         optionsSeen = true;
-        parseOptions(statement, options, acls);
+        parseOptions(statement, options, acls, pendingListeners);
+        break;
+      case 'tls':
+        registerProfile(tlsProfiles, parseTlsProfile(statement), 'tls', statement);
+        break;
+      case 'http':
+        registerProfile(httpProfiles, parseHttpProfile(statement), 'http', statement);
         break;
       case 'zone':
         zoneStatements.push(statement);
@@ -771,6 +783,10 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
       default:
         fail(statement, `unknown option '${keyword}'`);
     }
+  }
+
+  for (const pending of pendingListeners) {
+    options.listeners.push(resolveListener(pending.header, pending.addresses, pending.statement, keywordOf(pending.statement) === 'listen-on-v6', tlsProfiles, httpProfiles));
   }
 
   const zoneMap = new Map<string, NamedZone>();
