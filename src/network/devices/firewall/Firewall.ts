@@ -146,6 +146,7 @@ import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
+import type { PkiPeerStore } from './vpn/PkiPeers';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
@@ -1521,9 +1522,12 @@ export class Firewall extends Equipment {
     const vdom = this.getVdom(v);
     programIpsecEngine(this.ipsec, vdom.tunnels, vdom.certificates, this.services.now, {
       groupMembers: (name) => vdom.users.getGroup(name)?.members ?? [],
+      pkiPeers: vdom.pkiPeers,
     });
     this.ipsec.setConfigMethod((peer, request) => this.answerConfigMethod(peer, request));
   }
+
+  getPkiPeers(v?: string): PkiPeerStore { return this.getVdom(v).pkiPeers; }
 
   getModeCfgPool(): ModeCfgPool { return this.modeCfg; }
 

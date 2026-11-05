@@ -456,6 +456,10 @@ export interface FortiCommitDevice {
     sequenceTransmission: boolean; sequenceReception: boolean;
   }): string | void;
   removeGreTunnel(name: string): void;
+  applyPkiPeer(peer: { name: string; ca: string; subject: string; cn: string }): void;
+  removePkiPeer(name: string): void;
+  applyPkiPeerGroup(name: string, members: readonly string[]): void;
+  removePkiPeerGroup(name: string): void;
   applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | void;
   applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
   removeKeyChain(name: string): void;
@@ -631,6 +635,8 @@ export interface FortiCaCertificatePatch {
 export interface FortiPhase1Patch {
   readonly peerType?: PeerType;
   readonly peerId?: string;
+  readonly peerName?: string;
+  readonly peerGroupName?: string;
   readonly localId?: string;
   readonly name: string;
   readonly boundInterface: string;

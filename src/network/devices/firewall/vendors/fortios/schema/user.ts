@@ -292,7 +292,55 @@ function field(entry: FortiObjectView, name: string): string {
   return entry.effective(name)[0] ?? '';
 }
 
+export const USER_PEER: FortiTableSpec = {
+  path: ['user', 'peer'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'authgrp',
+  renderOrder: 118.5,
+  help: 'Configure peer users.',
+  attributes: [
+    { ...word('name', 'Peer name.'), readOnly: true },
+    reference('ca', 'Name of the CA certificate that must have issued the peer certificate.', ['vpn certificate ca']),
+    text('subject', 'Peer certificate name constraints (the full subject).'),
+    text('cn', 'Peer certificate common name.'),
+  ],
+  onCommit(object, context) {
+    context.device.applyPkiPeer({
+      name: object.key, ca: field(object, 'ca'), subject: field(object, 'subject'), cn: field(object, 'cn'),
+    });
+  },
+  onDelete(key, context) {
+    context.device.removePkiPeer(key);
+  },
+};
+
+export const USER_PEERGRP: FortiTableSpec = {
+  path: ['user', 'peergrp'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'authgrp',
+  renderOrder: 118.6,
+  help: 'Configure peer groups.',
+  attributes: [
+    { ...word('name', 'Peer group name.'), readOnly: true },
+    refList('member', 'Peer group members.', ['user peer']),
+  ],
+  onCommit(object, context) {
+    context.device.applyPkiPeerGroup(object.key, [...object.effective('member')]);
+  },
+  onDelete(key, context) {
+    context.device.removePkiPeerGroup(key);
+  },
+};
+
 export const USER_SPECS: readonly FortiTableSpec[] = Object.freeze([
+  USER_PEER,
+  USER_PEERGRP,
   USER_LOCAL,
   USER_GROUP,
   USER_RADIUS,

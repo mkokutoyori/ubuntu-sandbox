@@ -3982,6 +3982,12 @@ export class IPSecEngine implements IProtocolEngine {
         this.createFailedIKESA(srcIp, '', reason);
         return;
       }
+      const unwanted = this.ikeCertAuth.peerAcceptable?.(srcIp, peerCert) ?? null;
+      if (unwanted !== null) {
+        this.rejectIke(srcIp, unwanted);
+        this.createFailedIKESA(srcIp, '', unwanted);
+        return;
+      }
       const authInput = `${offer.identity}|${dstIp}|${offer.ipsecSpiIn}`;
       if (!PkiKeyPair.verify(peerCert.publicKey, authInput, offer.certPayload.authSignature)) {
         this.rejectIke(srcIp, 'Certificate signature invalid');
@@ -4206,6 +4212,11 @@ export class IPSecEngine implements IProtocolEngine {
       const peerVerdict = this.ikeCertAuth.verifier.verify(peerCert);
       if (!peerVerdict.ok) {
         this.createFailedIKESA(srcIp, pending.egressIface, verificationToIkeReason(peerVerdict));
+        return;
+      }
+      const unwanted = this.ikeCertAuth.peerAcceptable?.(srcIp, peerCert) ?? null;
+      if (unwanted !== null) {
+        this.createFailedIKESA(srcIp, pending.egressIface, unwanted);
         return;
       }
       const localVerdict = this.ikeCertAuth.verifier.verify(this.ikeCertAuth.localCert);

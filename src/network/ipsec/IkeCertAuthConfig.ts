@@ -11,6 +11,7 @@ export interface IkeCertAuthConfig {
   readonly revocationCheck?: RevocationCheckMode;
   readonly clock?: () => number;
   readonly verifier: CertificateVerifier;
+  readonly peerAcceptable?: (peerIp: string, cert: X509Certificate) => string | null;
 }
 
 export function verificationToIkeReason(res: VerificationResult): string {

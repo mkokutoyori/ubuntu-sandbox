@@ -77,12 +77,14 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
         { keyword: 'peer', description: 'Accept this peer certificate.' },
         { keyword: 'peergrp', description: 'Accept this peer certificate group.' },
       ], 'any'),
-      unimplementedValues: {
-        peer: 'this simulator has no `config user peer`, so there is no PKI '
-          + 'peer object whose certificate could be accepted',
-        peergrp: 'this simulator has no `config user peergrp`, so there is no '
-          + 'PKI peer group whose certificates could be accepted',
-      },
+    },
+    {
+      ...reference('peer', 'Accept this peer certificate.', ['user peer']),
+      availableWhen: (view) => view.effective('peertype')[0] === 'peer',
+    },
+    {
+      ...reference('peergrp', 'Accept this peer certificate group.', ['user peergrp']),
+      availableWhen: (view) => view.effective('peertype')[0] === 'peergrp',
     },
     {
       ...text('peerid', 'Accept this peer identity.'),
@@ -191,6 +193,8 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       natTraversal: object.effective('nattraversal')[0] ?? 'enable',
       peerType: peerTypeOf(object.effective('peertype')[0]),
       peerId: object.effective('peerid')[0] || undefined,
+      peerName: object.effective('peer')[0] || undefined,
+      peerGroupName: object.effective('peergrp')[0] || undefined,
       localId: object.effective('localid')[0] || undefined,
       policyBased: false,
       modeCfg: object.effective('mode-cfg')[0] === 'enable',
@@ -320,6 +324,8 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
       natTraversal: 'enable',
       peerType: peerTypeOf(object.effective('peertype')[0]),
       peerId: object.effective('peerid')[0] || undefined,
+      peerName: object.effective('peer')[0] || undefined,
+      peerGroupName: object.effective('peergrp')[0] || undefined,
       localId: object.effective('localid')[0] || undefined,
       policyBased: true,
     });
@@ -330,7 +336,7 @@ export const VPN_PHASE1_POLICY: FortiTableSpec = {
 };
 
 function peerTypeOf(raw: string | undefined): PeerType {
-  if (raw === 'one' || raw === 'dialup') return raw;
+  if (raw === 'one' || raw === 'dialup' || raw === 'peer' || raw === 'peergrp') return raw;
   return 'any';
 }
 

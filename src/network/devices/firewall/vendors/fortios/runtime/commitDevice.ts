@@ -410,6 +410,19 @@ export function buildCommitDevice(
       removeGreTunnel(name) {
         fw.removeGreTunnel(name);
       },
+      applyPkiPeer(peer) {
+        fw.getPkiPeers().setPeer(peer);
+        fw.syncIpsecTunnels();
+      },
+      removePkiPeer(name) {
+        fw.getPkiPeers().removePeer(name);
+      },
+      applyPkiPeerGroup(name, members) {
+        fw.getPkiPeers().setGroup(name, members);
+      },
+      removePkiPeerGroup(name) {
+        fw.getPkiPeers().removeGroup(name);
+      },
       applyBfdNeighbors(neighbours) {
         return fw.applyBfdNeighbors(neighbours);
       },
