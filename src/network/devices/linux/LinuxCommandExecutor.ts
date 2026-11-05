@@ -519,7 +519,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
   return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= allowed;
 }
 
-const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
+const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set(['tput', 
   'du',
   'id', 'printenv',
   'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'ptx', 'shuf', 'csplit', 'numfmt', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
@@ -7132,7 +7132,7 @@ export class LinuxCommandExecutor {
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
       case 'tput': {
-        const result = runTput(args, this.windowSize);
+        const result = runTput(args, this.windowSize, this._cmdEnv?.['TERM'] ?? this.env.get('TERM'), stdin);
         return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
       }
       case 'set':

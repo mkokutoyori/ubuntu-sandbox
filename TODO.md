@@ -4547,3 +4547,11 @@ exit with the wrong text/status for an unprivileged caller. `df` shows the same 
 `Bc.ts` follows GNU bc 1.07.1 (measured, 156 cases). Not modelled: the `adr=` of a runtime error inside a `for`/`while` body (the real compiler counts
 jump offsets; straight-line code is exact), `read()`, the interactive banner, `-s`/`-w` standard-mode diagnostics, and the `limits` figures are fixed to the
 dev container's. `bc -l` with a very large `scale` is as slow as the interpreter (the library is run, not compiled).
+
+## tput: what the terminfo port does not model
+
+`tty/Tput.ts` carries 19 terminals captured from the dev container (`infocmp -1 -x`) and the ncurses tparm machine; 1717 of 1719 sampled cases agree with
+tput 6.4. Not modelled: bytes above 0x7f (`tput acsc` on ansi/cygwin) leave the simulator as UTF-8 where the real tput writes raw bytes; `init` and `reset`
+print is1/is2/is3 and rs1/rs2/rs3 but skip the tab-stop setting; a terminal the container does not install (only the 19 are carried) answers
+`unknown terminal`; `tput cols`/`lines` use the window size when the terminal comes from $TERM and terminfo when given with -T (measured, not understood in
+ncurses terms); and the capability names known to tput are the union of the installed terminals plus the probed boolean/numeric names.
