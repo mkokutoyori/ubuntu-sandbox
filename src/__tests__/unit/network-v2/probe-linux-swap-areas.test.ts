@@ -10,7 +10,8 @@
  * scratch directory, every swap deactivated afterwards; UUIDs are masked as <uuid>. The simulated machine starts with its 2 GiB /swapfile active, so each
  * case begins with 'swapoff -a'. The real machine's free-form /proc/swaps size is the signature-page-less size in KiB (4092 for a 4 MiB file), as here.
  *
- * Measured against the commit before (worktree): see the commit message; the 'echo witness' line passes either way and proves the lab.
+ * Measured against the commit before (worktree): 41 of 42 cases fall (all 42 fell before the setup line silenced 'swapoff -a'); the 'echo witness' line
+ * passes either way and proves the lab.
  */
 import { describe, it, expect } from 'vitest';
 import { LinuxPC } from '@/network/devices/LinuxPC';
