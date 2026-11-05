@@ -4262,6 +4262,7 @@ export class LinuxCommandExecutor {
       zone: this.localZone(),
       nowMs: this.wallNow,
       deviceOf: (absPath: string) => this.mountTable.deviceOf(absPath),
+      hostname: () => kernelHostname(this.vfs),
     };
   }
 

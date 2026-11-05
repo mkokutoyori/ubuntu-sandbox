@@ -4296,7 +4296,7 @@ Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, 
 
 ## ls: options accepted without effect
 
-Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `-Z` shows `?` instead of a real SELinux context, `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
+Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-Z` shows `?` instead of a real SELinux context, `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
 
 ## du: options accepted without full effect
 
@@ -4491,3 +4491,5 @@ ptx is ported from coreutils 9.4 and measured on 134 cases. Known limits: `-W` w
 `ls --quoting-style` is now measured on 109 cases (probe-linux-ls-quoting-styles). Not modelled: the display width of a control character in a literal column listing (a tab counts as one column here, zero in ls), and non-ASCII bytes in the C locale (`\303\251`).
 
 `ls --block-size` is measured on 98 cases (probe-linux-ls-block-size). The `BLOCK_SIZE`, `LS_BLOCK_SIZE` and `POSIXLY_CORRECT` environment variables, which GNU ls reads when no block size is given, are not read.
+
+`ls --dired` and `--hyperlink` are measured on 85 cases (probe-linux-ls-dired-hyperlink). Not modelled: `--hyperlink=auto` is always off (no terminal is attached to a pipe), and the OSC 8 link of a path whose directory components contain symbolic links uses the simulator's canonical path.

@@ -64,6 +64,7 @@ export interface ShellContext {
   zone?: string;
   nowMs?: () => number;
   deviceOf?: (absPath: string) => number;
+  hostname?: () => string;
 }
 
 export function cmdTouch(ctx: ShellContext, args: string[]): string {
@@ -204,6 +205,8 @@ interface LsOpts {
   width: number;
   tabSize: number;
   zero: boolean;
+  dired: boolean;
+  hyperlink: boolean;
   context: boolean;
   hideOwner: boolean;
   hideGroup: boolean;
@@ -227,6 +230,7 @@ export const lsBlocksKiB = (inode: INode): number => {
 };
 
 const LS_ARGUMENT_CHOICES: Readonly<Record<string, readonly string[]>> = {
+  hyperlink: ["'always', 'yes', 'force'", "'never', 'no', 'none'", "'auto', 'tty', 'if-tty'"],
   color: ["'always', 'yes', 'force'", "'never', 'no', 'none'", "'auto', 'tty', 'if-tty'"],
   classify: ["'always', 'yes', 'force'", "'never', 'no', 'none'", "'auto', 'tty', 'if-tty'"],
   sort: ["'none'", "'time'", "'size'", "'extension'", "'version'", "'width'"],
@@ -236,7 +240,8 @@ const LS_ARGUMENT_CHOICES: Readonly<Record<string, readonly string[]>> = {
   'quoting-style': ["'literal'", "'shell'", "'shell-always'", "'shell-escape'", "'shell-escape-always'", "'c'", "'c-maybe'", "'escape'", "'locale'", "'clocale'"],
 };
 
-function lsInvalidArgument(option: string, value: string, kind: 'invalid' | 'ambiguous' = 'invalid'): string {
+function lsInvalidArgument(option: string, value: string, requestedKind: 'invalid' | 'ambiguous' = 'invalid'): string {
+  const kind = value === '' ? 'ambiguous' : requestedKind;
   const choices = LS_ARGUMENT_CHOICES[option];
   const lines = [`ls: ${kind} argument '${value}' for '--${option}'`];
   if (choices !== undefined) lines.push('Valid arguments are:', ...choices.map((choice) => `  - ${choice}`), "Try 'ls --help' for more information.");
@@ -250,7 +255,7 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
     format: ctx.isPiped === true ? 'single' : 'columns',
     all: 'none', showInode: false, showSize: false, human: null, scale: null, indicator: 'none', quoting: 'literal',
     hideControl: false, useColor: ctx.color === true, sort: 'name', groupDirectoriesFirst: false,
-    recursive: false, ignore: [], hide: [], ignoreBackups: false, width: DEFAULT_LINE_WIDTH, zero: false, tabSize: 8,
+    recursive: false, ignore: [], hide: [], ignoreBackups: false, width: DEFAULT_LINE_WIDTH, zero: false, dired: false, hyperlink: false, tabSize: 8,
     context: false, hideOwner: false, hideGroup: false, numeric: false, author: false, dereference: 'none',
   };
   const paths: string[] = [];
@@ -292,7 +297,7 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
       case 'r': opts.timing.reverse = true; break;
       case 'c': opts.timing.field = 'ctime'; break;
       case 'u': opts.timing.field = 'atime'; break;
-      case '1': opts.format = 'single'; break;
+      case '1': if (opts.format !== 'long') opts.format = 'single'; break;
       case 'C': opts.format = 'columns'; break;
       case 'x': opts.format = 'across'; break;
       case 'm': opts.format = 'commas'; break;
@@ -308,6 +313,7 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
       case 'q': opts.hideControl = true; break;
       case 'B': opts.ignoreBackups = true; break;
       case 'Z': opts.context = true; break;
+      case 'D': opts.dired = true; break;
       case 'I': opts.ignore.push(argument ?? ''); break;
       case 'w': {
         if (argument === undefined || !/^\d+$/.test(argument)) return `ls: invalid line width: '${argument ?? ''}'`;
@@ -325,6 +331,14 @@ function parseLsArguments(ctx: ShellContext, args: readonly string[]): { opts: L
         else if (/^(never|no|none)$/.test(when)) opts.useColor = false;
         else if (/^(auto|tty|if-tty)$/.test(when)) opts.useColor = ctx.color === true;
         else return lsInvalidArgument('color', when);
+        break;
+      }
+      case 'dired': opts.dired = true; break;
+      case 'hyperlink': {
+        const when = argument ?? 'always';
+        if (/^(always|yes|force)$/.test(when)) opts.hyperlink = true;
+        else if (/^(never|no|none|auto|tty|if-tty)$/.test(when)) opts.hyperlink = false;
+        else return lsInvalidArgument('hyperlink', when);
         break;
       }
       case 'reverse': opts.timing.reverse = true; break;
@@ -466,15 +480,48 @@ export function cmdLs(ctx: ShellContext, args: string[]): LsStreams {
   }
   const eol = opts.zero ? '\0' : '\n';
   const out: string[] = [];
-  if (listedFiles.length > 0) out.push(...renderEntries(ctx, listedFiles, opts, false).lines);
+  const directoryPeers: LsEntry[] = [];
+  if (opts.format === 'long') {
+    for (const directory of listedDirectories) {
+      const inode = ctx.vfs.resolveInode(directory.absPath, opts.dereference !== 'none') ?? ctx.vfs.resolveInode(directory.absPath, false);
+      if (inode) directoryPeers.push({ name: directory.name, inode, absPath: directory.absPath });
+    }
+  }
+  if (listedFiles.length > 0) out.push(...renderEntries(ctx, listedFiles, opts, false, directoryPeers).lines);
   const headed = paths.length > 1 && !opts.recursive;
   listedDirectories.forEach((directory, index) => {
-    if (headed) out.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${quotedName(directory.name, opts)}:`);
+    if (headed) out.push(`${index > 0 || listedFiles.length > 0 ? '\n' : ''}${headingCell(ctx, directory.name, directory.absPath, opts)}`);
+    else if (opts.recursive && (index > 0 || listedFiles.length > 0)) out.push('');
     const listing = listDir(ctx, directory.absPath, directory.name, opts, diagnostics);
     if (listing !== null) out.push(listing);
   });
   const text = out.join(eol);
+  if (opts.dired && !opts.hyperlink && opts.format === 'long' && !opts.zero) {
+    return { stdout: diredOutput(text.trimEnd(), opts), stderr: [...failures, ...diagnostics].join('\n') };
+  }
   return { stdout: opts.zero ? `${text}\0` : text.trimEnd(), stderr: [...failures, ...diagnostics].join('\n') };
+}
+
+function diredOutput(text: string, opts: LsOpts): string {
+  const indented = text.split('\n').map((line) => (line === '' ? line : `  ${line}`)).join('\n');
+  let result = '';
+  let bytes = 0;
+  const names: number[] = [];
+  const headings: number[] = [];
+  for (const character of indented) {
+    if (character === DIRED_NAME_OPEN) names.push(bytes);
+    else if (character === DIRED_NAME_CLOSE) names.push(bytes);
+    else if (character === DIRED_HEADING_OPEN) headings.push(bytes);
+    else if (character === DIRED_HEADING_CLOSE) headings.push(bytes);
+    else {
+      result += character;
+      bytes += Buffer.byteLength(character, 'utf8');
+    }
+  }
+  const lines = [result, `//DIRED// ${names.join(' ')}`];
+  if (headings.length > 0) lines.push(`//SUBDIRED// ${headings.join(' ')}`);
+  lines.push(`//DIRED-OPTIONS// --quoting-style=${opts.quoting}`);
+  return lines.join('\n');
 }
 
 function lsIgnored(name: string, opts: LsOpts): boolean {
@@ -539,7 +586,7 @@ function listDir(ctx: ShellContext, absPath: string, displayPath: string, opts: 
   const filtered = sortEntries(listed, opts);
 
   const lines: string[] = [];
-  if (opts.recursive) lines.push(`${quotedName(displayPath, opts)}:`);
+  if (opts.recursive) lines.push(headingCell(ctx, displayPath, absPath, opts));
   const rendered = renderEntries(ctx, filtered, opts, true);
   lines.push(...rendered.lines);
 
@@ -589,11 +636,49 @@ function quotedName(name: string, opts: LsOpts, alignUnquoted = false): string {
   return opts.hideControl ? lsHideControl(name) : name;
 }
 
-function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, withTotal: boolean): { lines: string[] } {
+const DIRED_NAME_OPEN = '\u0001';
+const DIRED_NAME_CLOSE = '\u0002';
+const DIRED_HEADING_OPEN = '\u0003';
+const DIRED_HEADING_CLOSE = '\u0004';
+
+function percentEncodePath(path: string): string {
+  return Array.from(Buffer.from(path, 'utf8'), (byte) => {
+    const character = String.fromCharCode(byte);
+    return /[A-Za-z0-9_.~/-]/.test(character) ? character : `%${byte.toString(16).padStart(2, '0')}`;
+  }).join('');
+}
+
+function nameCell(ctx: ShellContext, entry: LsEntry, opts: LsOpts, alignUnquoted: boolean): string {
+  let cell = colorName(quotedName(entry.name, opts, alignUnquoted), entry.inode, opts.useColor);
+  if (opts.hyperlink) cell = hyperlinked(ctx, entry.absPath, cell);
+  if (!opts.dired || opts.hyperlink || opts.format !== 'long') return cell;
+  return cell.startsWith(' ') ? ` ${DIRED_NAME_OPEN}${cell.slice(1)}${DIRED_NAME_CLOSE}` : `${DIRED_NAME_OPEN}${cell}${DIRED_NAME_CLOSE}`;
+}
+
+function hyperlinked(ctx: ShellContext, absPath: string, text: string): string {
+  return `\x1b]8;;file://${ctx.hostname?.() ?? ''}${percentEncodePath(ctx.vfs.realpath(absPath, '/', false) ?? absPath)}\x07${text}\x1b]8;;\x07`;
+}
+
+function headingCell(ctx: ShellContext, name: string, absPath: string, opts: LsOpts): string {
+  let text = quotedName(name, opts);
+  if (opts.hyperlink) text = hyperlinked(ctx, absPath, text);
+  return opts.dired && !opts.hyperlink && opts.format === 'long' ? `${DIRED_HEADING_OPEN}${text}${DIRED_HEADING_CLOSE}:` : `${text}:`;
+}
+
+function linkTargetText(ctx: ShellContext, entry: LsEntry, opts: LsOpts): string {
+  let text = quotedName(ctx.vfs.linkTarget(entry.inode), opts);
+  if (opts.hyperlink) text = hyperlinked(ctx, entry.absPath, text);
+  const resolved = ctx.vfs.realpath(entry.absPath, '/', false);
+  const targetInode = resolved === null ? null : ctx.vfs.resolveInode(resolved, false);
+  return targetInode === null || opts.indicator === 'slash' ? text : text + indicatorOf(targetInode, opts.indicator);
+}
+
+function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, withTotal: boolean, widthPeers: LsEntry[] = []): { lines: string[] } {
+  const measured = [...entries, ...widthPeers];
   const long = opts.format === 'long';
   const sizeText = (blocksKiB: number): string => (opts.scale !== null ? scaledSize(blocksKiB * 1024, opts.scale) : opts.human === null ? String(blocksKiB) : lsHumanSize(blocksKiB * 1024, opts.human));
-  const inodeWidth = opts.showInode ? Math.max(...entries.map((e) => String(e.inode.id).length), 1) : 0;
-  const blocksWidth = opts.showSize ? Math.max(...entries.map((e) => sizeText(lsBlocksKiB(e.inode)).length), 1) : 0;
+  const inodeWidth = opts.showInode ? Math.max(...measured.map((e) => String(e.inode.id).length), 1) : 0;
+  const blocksWidth = opts.showSize ? Math.max(...measured.map((e) => sizeText(lsBlocksKiB(e.inode)).length), 1) : 0;
   const prefixOf = (e: LsEntry): string => {
     let prefix = '';
     if (opts.showInode) prefix += `${padToWidth(String(e.inode.id), inodeWidth, 'right')} `;
@@ -607,11 +692,11 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
 
   if (long) {
     const isDevice = (e: LsEntry): boolean => e.inode.rdev !== undefined && (e.inode.type === 'chardev' || e.inode.type === 'blockdev');
-    const devices = entries.filter(isDevice);
+    const devices = measured.filter(isDevice);
     const majorWidth = Math.max(0, ...devices.map((e) => String(e.inode.rdev!.major).length));
     const minorWidth = Math.max(0, ...devices.map((e) => String(e.inode.rdev!.minor).length));
     const plainSize = (e: LsEntry): string => (opts.scale !== null ? scaledSize(lsSize(e.inode), opts.scale) : opts.human === null ? String(lsSize(e.inode)) : lsHumanSize(lsSize(e.inode), opts.human));
-    const plainWidth = Math.max(1, ...entries.filter((e) => !isDevice(e)).map((e) => plainSize(e).length));
+    const plainWidth = Math.max(1, ...measured.filter((e) => !isDevice(e)).map((e) => plainSize(e).length));
     const deviceWidth = devices.length === 0 ? 0 : Math.max(plainWidth, majorWidth + 2 + minorWidth);
     const shownMajorWidth = deviceWidth - 2 - minorWidth;
     const sizeOf = (e: LsEntry): string => (isDevice(e)
@@ -620,10 +705,10 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
     const ownerOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.uid) : ctx.userMgr.uidToName(e.inode.uid));
     const groupOf = (e: LsEntry): string => (opts.numeric ? String(e.inode.gid) : ctx.userMgr.gidToName(e.inode.gid));
     const widths = {
-      links: Math.max(1, ...entries.map((e) => String(e.inode.linkCount).length)),
-      owner: Math.max(1, ...entries.map((e) => ownerOf(e).length)),
-      group: Math.max(1, ...entries.map((e) => groupOf(e).length)),
-      size: Math.max(1, deviceWidth, ...entries.map((e) => sizeOf(e).length)),
+      links: Math.max(1, ...measured.map((e) => String(e.inode.linkCount).length)),
+      owner: Math.max(1, ...measured.map((e) => ownerOf(e).length)),
+      group: Math.max(1, ...measured.map((e) => groupOf(e).length)),
+      size: Math.max(1, deviceWidth, ...measured.map((e) => sizeOf(e).length)),
     };
     if (withTotal) {
       const total = entries.reduce((sum, e) => sum + lsBlocksKiB(e.inode), 0);
@@ -637,9 +722,9 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
       if (opts.context) cells.push('?');
       cells.push(padToWidth(sizeOf(e), widths.size, 'right'));
       cells.push(formatLsTime(opts.timing.style, e.inode[opts.timing.field], ctx.zone, ctx.nowMs?.() ?? simulationNowMs()));
-      const name = colorName(quotedName(e.name, opts, alignUnquoted), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator, true);
+      const name = nameCell(ctx, e, opts, alignUnquoted) + indicatorOf(e.inode, opts.indicator, true);
       let line = `${prefixOf(e)}${cells.join(' ')} ${name}`;
-      if (e.inode.type === 'symlink' && opts.dereference !== 'all') line += ` -> ${ctx.vfs.linkTarget(e.inode)}`;
+      if (e.inode.type === 'symlink' && opts.dereference !== 'all') line += ` -> ${linkTargetText(ctx, e, opts)}`;
       lines.push(line);
     }
     return { lines };
@@ -653,7 +738,7 @@ function renderEntries(ctx: ShellContext, entries: LsEntry[], opts: LsOpts, with
   for (const e of entries) {
     const base = quotedName(e.name, opts, alignUnquoted) + indicatorOf(e.inode, opts.indicator);
     const prefix = prefixOf(e);
-    shown.push(prefix + colorName(quotedName(e.name, opts, alignUnquoted), e.inode, opts.useColor) + indicatorOf(e.inode, opts.indicator));
+    shown.push(prefix + nameCell(ctx, e, opts, alignUnquoted) + indicatorOf(e.inode, opts.indicator));
     lengths.push(prefix.length + base.length);
   }
   if (opts.format === 'single' || shown.length === 0) lines.push(...shown);
