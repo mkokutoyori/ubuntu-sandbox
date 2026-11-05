@@ -82,6 +82,7 @@ import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
 import { runSync } from './coreutils/SyncCommand';
+import { cmdTar } from './coreutils/TarCommand';
 import { runLsof, type LsofRow } from './process/LsofCommand';
 import { planEnv, runPrintenv } from './coreutils/EnvCommand';
 import { runId } from './coreutils/IdCommand';
@@ -120,7 +121,7 @@ import { runUmask } from './umask/Umask';
 import {
   runTest, runExpr, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
   runTail,
-  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
@@ -7123,7 +7124,7 @@ export class LinuxCommandExecutor {
       }, this.cwd, args);
         return compared.exitCode === 2 ? { output: '', stderr: compared.output, exitCode: 2 } : { ...compared, stderr: '' };
       }
-      case 'tar': return cmdTar(this.archiveCtx(), args);
+      case 'tar': return cmdTar({ ...this.archiveCtx(), stdin }, args);
       case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
       case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');
       case 'zcat': return cmdGzip(this.archiveCtx(), args, 'zcat');
@@ -9384,6 +9385,8 @@ export class LinuxCommandExecutor {
       fs: this.vfs, cwd,
       uid: this.userMgr.currentUid, gid: this.userMgr.currentGid,
       umask: this.umask,
+      userName: (uid: number) => this.userMgr.uidToName(uid),
+      groupName: (gid: number) => this.userMgr.gidToName(gid),
     };
   }
 

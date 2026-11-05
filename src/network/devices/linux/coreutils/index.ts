@@ -22,6 +22,8 @@ export type {
 } from './TailCommand';
 
 export {
-  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
 } from './ArchiveCommands';
 export type { ArchiveFs, ArchiveCtx, CmdResult } from './ArchiveCommands';
+
+export { cmdTar } from './TarCommand';

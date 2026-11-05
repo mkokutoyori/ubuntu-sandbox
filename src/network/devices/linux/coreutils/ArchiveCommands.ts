@@ -37,6 +37,10 @@ export interface ArchiveFs {
   mkdirp(path: string, permissions: number, uid: number, gid: number): boolean;
   chmod(path: string, mode: number): boolean;
   chown(path: string, uid: number, gid?: number): boolean;
+  createSymlink(path: string, target: string, uid: number, gid: number, permissions?: number): boolean;
+  linkTarget(inode: INode): string;
+  setTimes(path: string, times: { atime?: number; mtime?: number }): boolean;
+  rmdir(path: string): boolean;
 }
 
 export interface ArchiveCtx {
@@ -45,19 +49,23 @@ export interface ArchiveCtx {
   uid: number;
   gid: number;
   umask: number;
+  stdin?: string;
+  userName?: (uid: number) => string;
+  groupName?: (gid: number) => string;
 }
 
 export interface CmdResult { output: string; exitCode: number; }
 
 // ── Envelope format ─────────────────────────────────────────────────
 
-const TAR_MAGIC = '!<simtar>';
+export const TAR_MAGIC = '!<simtar>';
 const ZIP_MAGIC = '!<simzip>';
 
-interface ArchiveMember {
+export interface ArchiveMember {
   /** Stored path (always relative — leading `/` stripped like GNU tar). */
   path: string;
-  type: 'file' | 'dir';
+  type: 'file' | 'dir' | 'symlink';
+  link?: string;
   mode: number;
   uid: number;
   gid: number;
@@ -73,11 +81,11 @@ interface GzipBody {
   truncated?: boolean;
 }
 
-function packMembers(magic: string, members: ArchiveMember[]): string {
+export function packMembers(magic: string, members: ArchiveMember[]): string {
   return `${magic}\n${JSON.stringify({ v: 1, members })}`;
 }
 
-function unpackMembers(magic: string, raw: string): ArchiveMember[] | null {
+export function unpackMembers(magic: string, raw: string): ArchiveMember[] | null {
   if (!raw.startsWith(`${magic}\n`)) return null;
   try {
     const body = JSON.parse(raw.slice(magic.length + 1)) as
@@ -96,7 +104,7 @@ export function gunzipText(raw: string): string | null {
 
 const GZIP_DEFAULT_LEVEL = 6;
 
-function packGzip(body: GzipBody): string {
+export function packGzip(body: GzipBody): string {
   return bytesToBinaryString(gzipCompress(fileTextToBytes(body.payload), GZIP_DEFAULT_LEVEL, { name: body.name, mtimeMs: body.mtime }));
 }
 
@@ -129,7 +137,7 @@ function unpackRealGzip(raw: string): GzipBody | null {
   } catch { return null; }
 }
 
-function unpackGzip(raw: string): GzipBody | null {
+export function unpackGzip(raw: string): GzipBody | null {
   return unpackRealGzip(raw);
 }
 
@@ -149,7 +157,7 @@ export function describeArchiveContent(raw: string): string | null {
 
 // ── Shared walking helpers ──────────────────────────────────────────
 
-const basename = (p: string): string => p.split('/').filter(Boolean).pop() ?? p;
+export const basename = (p: string): string => p.split('/').filter(Boolean).pop() ?? p;
 
 /**
  * Collect one operand (file or directory, recursively) into members.
@@ -203,205 +211,6 @@ function restore(ctx: ArchiveCtx, destDir: string,
     names.push(m.path);
   }
   return names;
-}
-
-// ── tar ─────────────────────────────────────────────────────────────
-
-interface TarOptions {
-  modes: string[];               // among 'c' | 'x' | 't'
-  verbose: boolean;
-  compress: boolean;             // -z / -j
-  archive?: string;              // -f value
-  directory?: string;            // -C value
-  operands: string[];
-  error?: CmdResult;
-}
-
-const TAR_FAIL =
-  'tar: Exiting with failure status due to previous errors';
-
-function parseTarArgs(args: string[]): TarOptions {
-  const o: TarOptions = {
-    modes: [], verbose: false, compress: false, operands: [],
-  };
-  const takeBundle = (letters: string, rest: string[], at: number): number => {
-    let consumed = 0;
-    for (const ch of letters) {
-      if (ch === 'c' || ch === 'x' || ch === 't') o.modes.push(ch);
-      else if (ch === 'v') o.verbose = true;
-      else if (ch === 'z' || ch === 'j' || ch === 'J' || ch === 'a') o.compress = true;
-      else if (ch === 'f') { o.archive = rest[at + ++consumed]; }
-      else if (ch === 'C') { o.directory = rest[at + ++consumed]; }
-      else if (ch === 'p' || ch === 'k') { /* accepted, default behaviour */ }
-      else {
-        o.error = {
-          output: `tar: invalid option -- '${ch}'\n` +
-            `Try 'tar --help' or 'tar --usage' for more information.`,
-          exitCode: 64,
-        };
-        return consumed;
-      }
-    }
-    return consumed;
-  };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (o.error) break;
-    if (a === '--create') o.modes.push('c');
-    else if (a === '--extract' || a === '--get') o.modes.push('x');
-    else if (a === '--list') o.modes.push('t');
-    else if (a === '--verbose') o.verbose = true;
-    else if (a === '--gzip' || a === '--bzip2' || a === '--xz' ||
-             a === '--auto-compress') o.compress = true;
-    else if (a === '--file') o.archive = args[++i];
-    else if (a.startsWith('--file=')) o.archive = a.slice(7);
-    else if (a === '--directory') o.directory = args[++i];
-    else if (a.startsWith('--directory=')) o.directory = a.slice(12);
-    else if (a.startsWith('--')) {
-      o.error = {
-        output: `tar: unrecognized option '${a}'\n` +
-          `Try 'tar --help' or 'tar --usage' for more information.`,
-        exitCode: 64,
-      };
-    } else if (a.startsWith('-') && a.length > 1) {
-      i += takeBundle(a.slice(1), args, i);
-    } else if (i === 0 && /^[A-Za-z]+$/.test(a) && /[cxt]/.test(a)) {
-      // Old option style: `tar czf archive.tgz files…`
-      i += takeBundle(a, args, i);
-    } else {
-      o.operands.push(a);
-    }
-  }
-  return o;
-}
-
-export function cmdTar(ctx: ArchiveCtx, args: string[]): CmdResult {
-  const o = parseTarArgs(args);
-  if (o.error) return o.error;
-  const uniqueModes = [...new Set(o.modes)];
-  if (uniqueModes.length === 0) {
-    return {
-      output: "tar: You must specify one of the '-Acdtrux', " +
-        "'--delete' or '--test-label' options\n" +
-        "Try 'tar --help' or 'tar --usage' for more information.",
-      exitCode: 2,
-    };
-  }
-  if (uniqueModes.length > 1) {
-    return {
-      output: "tar: You may not specify more than one '-Acdtrux', " +
-        "'--delete' or '--test-label' option\n" +
-        "Try 'tar --help' or 'tar --usage' for more information.",
-      exitCode: 2,
-    };
-  }
-  const mode = uniqueModes[0];
-  if (!o.archive) {
-    return {
-      output: mode === 'c'
-        ? 'tar: Refusing to write archive contents to terminal (missing -f option?)\ntar: Error is not recoverable: exiting now'
-        : 'tar: Refusing to read archive contents from terminal (missing -f option?)\ntar: Error is not recoverable: exiting now',
-      exitCode: 2,
-    };
-  }
-  const baseDir = o.directory
-    ? ctx.fs.normalizePath(o.directory, ctx.cwd) : ctx.cwd;
-  if (o.directory && ctx.fs.resolveInode(baseDir)?.type !== 'directory') {
-    return {
-      output: `tar: ${o.directory}: Cannot chdir: No such file or directory\n` +
-        'tar: Error is not recoverable: exiting now',
-      exitCode: 2,
-    };
-  }
-  return mode === 'c'
-    ? tarCreate(ctx, o, baseDir)
-    : tarReadArchive(ctx, o, baseDir, mode as 'x' | 't');
-}
-
-function tarCreate(ctx: ArchiveCtx, o: TarOptions, baseDir: string): CmdResult {
-  if (o.operands.length === 0) {
-    return {
-      output: 'tar: Cowardly refusing to create an empty archive\n' +
-        "Try 'tar --help' or 'tar --usage' for more information.",
-      exitCode: 2,
-    };
-  }
-  const lines: string[] = [];
-  if (o.operands.some((s) => s.startsWith('/'))) {
-    lines.push("tar: Removing leading `/' from member names");
-  }
-  const members: ArchiveMember[] = [];
-  let failed = false;
-  for (const src of o.operands) {
-    const before = members.length;
-    if (!collect(ctx, baseDir, src, members, true)) {
-      lines.push(`tar: ${src}: Cannot stat: No such file or directory`);
-      failed = true;
-      continue;
-    }
-    if (o.verbose) {
-      for (const m of members.slice(before)) lines.push(m.path);
-    }
-  }
-  let payload = packMembers(TAR_MAGIC, members);
-  if (o.compress) {
-    payload = packGzip({
-      name: basename(o.archive!).replace(/\.(gz|tgz)$/, (s) =>
-        s === '.tgz' ? '.tar' : ''),
-      mtime: simulationNowMs(), payload,
-    });
-  }
-  const archiveAbs = ctx.fs.normalizePath(o.archive!, ctx.cwd);
-  ctx.fs.writeFile(archiveAbs, payload, ctx.uid, ctx.gid, ctx.umask);
-  if (failed) lines.push(TAR_FAIL);
-  return { output: lines.join('\n'), exitCode: failed ? 2 : 0 };
-}
-
-/** Open + auto-decompress an archive (GNU tar detects compression). */
-function openTar(ctx: ArchiveCtx, archive: string):
-  { members: ArchiveMember[] } | CmdResult {
-  const abs = ctx.fs.normalizePath(archive, ctx.cwd);
-  const raw = ctx.fs.readFile(abs);
-  if (raw === null) {
-    return {
-      output: `tar: ${archive}: Cannot open: No such file or directory\n` +
-        'tar: Error is not recoverable: exiting now',
-      exitCode: 2,
-    };
-  }
-  const inner = unpackGzip(raw)?.payload ?? raw;
-  const members = unpackMembers(TAR_MAGIC, inner);
-  if (!members) {
-    return {
-      output: 'tar: This does not look like a tar archive\n' +
-        `tar: Skipping to next header\n${TAR_FAIL}`,
-      exitCode: 2,
-    };
-  }
-  return { members };
-}
-
-function tarReadArchive(ctx: ArchiveCtx, o: TarOptions, baseDir: string,
-  mode: 'x' | 't'): CmdResult {
-  const opened = openTar(ctx, o.archive!);
-  if ('exitCode' in opened) return opened;
-  if (mode === 't') {
-    const lines = opened.members.map((m) => o.verbose
-      ? `${m.type === 'dir' ? 'd' : '-'}${formatMode(m.mode)} ` +
-        `${m.uid}/${m.gid} ${padToWidth(String((m.content ?? '').length), 7, 'right')} ` +
-        `${formatDate(m.mtime)} ${m.path}`
-      : m.path);
-    return { output: lines.join('\n'), exitCode: 0 };
-  }
-  const names = restore(ctx, baseDir, opened.members);
-  return { output: o.verbose ? names.join('\n') : '', exitCode: 0 };
-}
-
-function formatMode(mode: number): string {
-  const bit = (m: number, r: number, w: number, x: number): string =>
-    `${m & r ? 'r' : '-'}${m & w ? 'w' : '-'}${m & x ? 'x' : '-'}`;
-  return bit(mode, 0o400, 0o200, 0o100) + bit(mode, 0o040, 0o020, 0o010) +
-    bit(mode, 0o004, 0o002, 0o001);
 }
 
 function formatDate(ms: number): string {
