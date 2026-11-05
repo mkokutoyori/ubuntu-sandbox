@@ -4528,12 +4528,14 @@ is no magic database to print. `-e encoding` is accepted and has no effect (the 
 magic classification is the simulator's own subset (ASCII text, scripts, data, archives, pcap): UTF-8 and ISO-8859 text, HTML, XML, JSON,
 images, ELF, PDF are not recognised (the dev container ships a reduced magic file, so they cannot be measured there either).
 
-## findmnt, lsblk, mount: option grammar and statuses
+## lsblk, findmnt columns and mount: what is still open
 
-Measured against util-linux 2.39.3 (dev container), unfixed: `findmnt -x`, `--nosuch`, `-V`, `-o COLUMN`, `-J`, `-P`, `-l`, `-t TYPE`, `-s`,
-a missing target (status 1) are ignored or answered with the plain table; `lsblk -x`, `-V`, `-r`, `-P`, `-J`, `-o` with an unknown column
-('lsblk: unknown column: nosuch', status 1), `-b`, and a missing device (status 32) likewise; `mount -V`, invalid options and a failing mount
-exit with the wrong text/status for an unprivileged caller. `df` shows the same family of fix (done in its own port).
+`lsblk -x`, `-V`, `-r`, `-P`, `-J`, `-o` with an unknown column (real: 'lsblk: unknown column: NOSUCH', status 1), `-b`, and a missing device
+(status 32) are ignored or answered with the plain table (measured against util-linux 2.39.3 of the dev container). `findmnt` is done for the
+options of `Findmnt.ts`, but its columns other than TARGET, SOURCE, FSTYPE, OPTIONS, FSROOT, VFS-OPTIONS and FS-OPTIONS (ID, PARENT, LABEL, UUID, SIZE,
+USED, AVAIL, USE%, PROPAGATION...) answer 'unknown column' although the real one knows them, and `-D`, `-d`, `-p`, `-N`, `-R`, `-C`, `-I`, `-L`, `-U` are
+read by the option parser and not evaluated. `mount`/`umount` option grammar and statuses are done; their `--help`/`--version` texts differ between
+util-linux 2.37.2 (simulated) and 2.39.3 (oracle) and are not reproduced.
 
 ## Commands missing or answering another distribution than the simulated one
 

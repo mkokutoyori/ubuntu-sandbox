@@ -174,7 +174,7 @@ describe('TEMOINS', () => {
     const pc = poste();
 
     expect(await taper(pc, 'mount')).toContain('/dev/sda1 on / type ext4');
-    expect(await taper(pc, 'findmnt')).toContain('/boot /dev/sda2 ext4');
+    expect(await taper(pc, 'findmnt')).toMatch(/\/boot\s+\/dev\/sda2\s+ext4/);
   });
 
   it('la racine rend toujours son usage REEL', async () => {

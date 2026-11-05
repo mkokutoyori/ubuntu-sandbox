@@ -3,6 +3,7 @@
  */
 
 import { mountUsageRefusal, umountBadUsage } from './commands/system/MountOptions';
+import { runFindmnt, type FindmntHost, type MountRow } from './commands/system/Findmnt';
 import { dashedUuid, randomUuidBits } from '../host/hardware/HardwareIdentity';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
@@ -5571,29 +5572,24 @@ export class LinuxCommandExecutor {
   }
 
   private handleFindmnt(args: string[]): { output: string; exitCode: number } {
-    let fstype: string | undefined;
-    const positionals: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-t' || a === '--types') fstype = args[++i];
-      else if (a === '-n' || a === '--noheadings' || a === '-l' || a === '--list') continue;
-      else if (a.startsWith('-')) continue;
-      else positionals.push(a);
-    }
-
-    let entries = this.mountTable.list();
-    if (fstype) entries = entries.filter((e) => e.fstype === fstype);
-    if (positionals.length > 0) {
-      const target = this.vfs.normalizePath(positionals[0], this.cwd);
-      const match = this.mountTable.find(target) ?? this.mountTable.resolve(target);
-      if (!match) return { output: '', exitCode: 1 };
-      entries = [match];
-    }
-
-    const noHeadings = args.includes('-n') || args.includes('--noheadings');
-    const rows = entries.map((e) => `${e.target} ${e.source} ${e.fstype} ${e.optionString()}`);
-    const out = noHeadings ? rows : ['TARGET SOURCE FSTYPE OPTIONS', ...rows];
-    return { output: out.join('\n'), exitCode: 0 };
+    const toRow = (e: MountEntry): MountRow => ({ target: e.target, source: e.source, fstype: e.fstype, options: e.optionString() });
+    const host: FindmntHost = {
+      mounts: () => this.mountTable.list().map(toRow),
+      fstab: () => (this.vfs.readFile('/etc/fstab') ?? '').split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'))
+        .map((line) => line.split(/\s+/))
+        .filter((parts) => parts.length >= 3)
+        .map(([source, target, fstype, options]) => ({ source, target, fstype, options: options ?? 'defaults' })),
+      normalize: (path) => this.vfs.normalizePath(path, this.cwd),
+      resolve: (path) => {
+        const target = this.vfs.normalizePath(path, this.cwd);
+        const found = this.mountTable.find(target) ?? this.mountTable.resolve(target);
+        return found ? toRow(found) : undefined;
+      },
+      versionBanner: 'findmnt from util-linux 2.37.2',
+    };
+    return runFindmnt(args, host);
   }
 
   private publishMountEvent(
