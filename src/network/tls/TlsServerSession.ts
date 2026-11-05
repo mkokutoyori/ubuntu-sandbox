@@ -85,6 +85,8 @@ export interface TlsServerConfig {
   readonly supportedGroups?: readonly string[];
   /** RFC 7301 — protocols this server supports, in preference order. */
   readonly alpnProtocols?: readonly string[];
+  /** `ignore` : a client offer sharing no protocol with `alpnProtocols` continues without ALPN (OpenSSL's default) instead of ending in `no_application_protocol`. */
+  readonly alpnMismatch?: 'reject' | 'ignore';
   /** Shared session-ticket registry (§4.6.1) — set to issue tickets and accept PSK/0-RTT resumption. */
   readonly sessionTicketStore?: SessionTicketStore;
   /** RFC 8446 §2.1.12 observability — publishes `tls.*` events (`events.ts`) if set. */
@@ -434,7 +436,7 @@ export class TlsServerSession {
 
   private alpnRefused(clientHello: ClientHello): boolean {
     const offered = clientHello.extensions.alpn;
-    return this.alpnProtocols.length > 0 && offered !== undefined && offered.length > 0
+    return this.config.alpnMismatch !== 'ignore' && this.alpnProtocols.length > 0 && offered !== undefined && offered.length > 0
       && this.negotiatedAlpnProtocol === null;
   }
 

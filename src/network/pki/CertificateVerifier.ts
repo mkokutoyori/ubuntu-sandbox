@@ -140,7 +140,7 @@ export class CertificateVerifier {
         && !used.includes(candidate)
         && PkiKeyPair.verify(candidate.publicKey, tbsPayload(current), current.signature));
       if (!next) {
-        const forged = intermediates.some((candidate) => candidate.subject === current.issuer);
+        const forged = intermediates.some((candidate) => candidate.subject === current.issuer && candidate !== current && !used.includes(candidate));
         return { ok: false, reason: forged ? 'bad-signature' : 'unknown' };
       }
       if (this.maxDepth !== undefined && used.length + 3 > this.maxDepth + 1) return { ok: false, reason: 'chain-too-long' };

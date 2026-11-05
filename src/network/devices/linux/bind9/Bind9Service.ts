@@ -31,12 +31,6 @@ import type { ResolutionResult } from '@/network/dns/resolver/RecursiveResolver'
 import { buildRecursiveResponse, recursiveResolveOptions, type RecursiveEnvelope } from '@/network/dns/resolver/RecursiveResponse';
 import { makeSoaRecord } from '@/network/dns/wire/ResourceRecord';
 import { updatePolicyPermits } from './NamedUpdatePolicy';
-import {
-  bindDnsUdpServer, unbindDnsUdpServer, DNS_PORT,
-} from '@/network/dns/transport/DnsUdpTransport';
-import {
-  bindDnsTcpServer, unbindDnsTcpServer,
-} from '@/network/dns/transport/DnsTcpTransport';
 import { parseNamedConf } from './NamedConfParser';
 import { NamedConfSyntaxError } from './NamedConfLexer';
 import { buildNamedConfig, DEFAULT_EDNS_UDP_SIZE } from './NamedConfig';
@@ -47,9 +41,14 @@ import { bindPackageVersion } from './BindVersion';
 import { renderViewDump } from './NamedCacheDump';
 import { RndcServer } from './RndcServer';
 import { Bind9EncryptedListeners } from './Bind9EncryptedListeners';
+import { Bind9PlainListeners } from './Bind9PlainListeners';
 import type { Zone } from '@/network/dns/zone/Zone';
 import type { ResourceRecord, ResourceRecordData, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
-import type { ForwardMode, NamedConfig, NamedZone } from './NamedConfig';
+import type { ForwardMode, NamedConfig, NamedPrimary, NamedZone } from './NamedConfig';
+import { DOT_PORT } from '@/network/dns/transport/DnsTlsTransport';
+import type { TransferEndpoint, TransferTls } from '@/network/dns/transfer/TransferEndpoint';
+import { pemToCertChain } from '@/network/pki/pem';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { RndcWireEnvelope } from './RndcWireCodec';
 import type { AclHostEnvironment } from './NamedAcl';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
@@ -61,6 +60,7 @@ export interface Bind9Files {
   append(path: string, content: string): void;
   write(path: string, content: string): void;
   log?(message: string): void;
+  systemAnchors?(): readonly X509Certificate[];
 }
 
 export interface ZoneReloadResult extends OperationResult {
@@ -92,11 +92,11 @@ export class Bind9Service {
   private keyring = new TsigKeyring();
   private readonly logging: Bind9Logging;
   private encryptedListeners: Bind9EncryptedListeners | null = null;
+  private plainListeners: Bind9PlainListeners | null = null;
   private readonly readFile: (path: string) => string | null;
   private queryLogEnabled = false;
   private dnssecValidationEnabled = true;
   private running = false;
-  private activePort = DNS_PORT;
   private readonly rndcChannel: RndcChannel;
   private rndcServer: RndcServer | null = null;
 
@@ -283,21 +283,13 @@ export class Bind9Service {
     this.applyConfig(loaded.config);
     const encrypted = this.replaceEncryptedListeners(loaded.config);
     if (!encrypted.ok) return encrypted;
-    const port = loaded.config.options.listenOnPort;
-    try {
-      bindDnsUdpServer(this.host, this.handleUdpQuery, port, PROCESS_NAME);
-    } catch {
+    const plain = this.newPlainListeners();
+    const plainBound = plain.rebind(loaded.config.options.plainListens);
+    if (!plainBound.ok) {
       this.stopEncryptedListeners();
-      return { ok: false, error: `could not listen on UDP socket: address already in use` };
+      return plainBound;
     }
-    try {
-      bindDnsTcpServer(this.host, this.handleTcpQuery, port);
-    } catch {
-      unbindDnsUdpServer(this.host, port);
-      this.stopEncryptedListeners();
-      return { ok: false, error: `could not listen on TCP socket: address already in use` };
-    }
-    this.activePort = port;
+    this.plainListeners = plain;
     this.running = true;
     this.startRndc(loaded.config);
     this.refreshAllSecondaryZones();
@@ -306,8 +298,8 @@ export class Bind9Service {
 
   stop(): void {
     if (!this.running) return;
-    unbindDnsUdpServer(this.host, this.activePort);
-    unbindDnsTcpServer(this.host, this.activePort);
+    this.plainListeners?.stop();
+    this.plainListeners = null;
     this.stopEncryptedListeners();
     this.stopRndc();
     this.running = false;
@@ -324,10 +316,8 @@ export class Bind9Service {
     if (!loaded.ok) return loaded;
     const previousSerials = new Map(this.loadedZones);
     this.applyConfig(loaded.config);
-    if (loaded.config.options.listenOnPort !== this.activePort) {
-      this.stop();
-      return this.start();
-    }
+    const plainRebound = this.plainListeners?.rebind(loaded.config.options.plainListens) ?? { ok: true as const };
+    if (!plainRebound.ok) return plainRebound;
     const encrypted = this.replaceEncryptedListeners(loaded.config);
     if (!encrypted.ok) return encrypted;
     this.stopRndc();
@@ -337,6 +327,16 @@ export class Bind9Service {
     }
     this.refreshAllSecondaryZones();
     return { ok: true };
+  }
+
+  private newPlainListeners(): Bind9PlainListeners {
+    return new Bind9PlainListeners({
+      host: this.host,
+      processName: PROCESS_NAME,
+      udpHandler: this.handleUdpQuery,
+      tcpHandler: this.handleTcpQuery,
+      environment: () => this.aclEnvironment(),
+    });
   }
 
   private replaceEncryptedListeners(config: NamedConfig): OperationResult {
@@ -929,7 +929,7 @@ export class Bind9Service {
     const qname = normalizeDnsName(query.questions[0]?.qname ?? '');
     const zone = this.config?.zones.find((z) => z.name === qname && z.type === 'secondary');
     const source = sourceIP?.toString();
-    if (zone && source && zone.primaries.includes(source)) {
+    if (zone && source && zone.primaries.some((primary) => primary.address === source)) {
       void this.refreshSecondaryZone(zone);
     }
     return makeNotifyAck(query);
@@ -952,10 +952,10 @@ export class Bind9Service {
   private async refreshSecondaryZone(zone: NamedZone, force = false): Promise<boolean> {
     if (!this.running || this.store === null) return false;
     const primaries = zone.primaries
-      .map((primary) => IPAddress.tryParse(primary))
+      .map((primary) => IPAddress.tryParse(primary.address))
       .filter((ip): ip is IPAddress => ip !== null);
     const { zone: fetched } = await this.secondaries.refresh(
-      this.store, zone.name, primaries, force, this.primaryKeysOf(zone));
+      this.store, zone.name, primaries, force, this.primaryKeysOf(zone), this.transferEndpointsOf(zone));
     if (!fetched) return false;
     this.loadedZones.set(zone.name, fetched.soa.data.serial);
     this.failedZones.delete(zone.name);
@@ -964,11 +964,46 @@ export class Bind9Service {
 
   private primaryKeysOf(zone: NamedZone): Map<string, TsigKey> {
     const keys = new Map<string, TsigKey>();
-    for (const [address, name] of zone.primaryKeys) {
-      const key = this.keyring.get(name);
-      if (key) keys.set(address, key);
+    for (const primary of zone.primaries) {
+      const key = primary.key === null ? undefined : this.keyring.get(primary.key);
+      if (key) keys.set(primary.address, key);
     }
     return keys;
+  }
+
+  private transferEndpointsOf(zone: NamedZone): Map<string, TransferEndpoint> {
+    const endpoints = new Map<string, TransferEndpoint>();
+    for (const primary of zone.primaries) {
+      if (primary.port === null && primary.tls === null) continue;
+      endpoints.set(primary.address, {
+        port: primary.port,
+        tls: primary.tls === null ? null : this.transferTlsOf(zone, primary),
+      });
+    }
+    return endpoints;
+  }
+
+  private transferTlsOf(zone: NamedZone, primary: NamedPrimary): TransferTls {
+    const profile = primary.tls === 'ephemeral' ? undefined : this.config?.tlsProfiles.get(primary.tls!);
+    const caFile = profile?.caFile ?? null;
+    const strict = caFile !== null || (profile?.remoteHostname ?? null) !== null;
+    const caText = caFile === null ? null : this.readFile(caFile);
+    const caChain = caText === null ? [] : pemToCertChain(caText);
+    const origin = `transfer of '${zone.name}/IN' from ${primary.address}#${primary.port ?? DOT_PORT}`;
+    return {
+      anchors: !strict ? null : caFile === null ? this.files.systemAnchors?.() ?? [] : caChain,
+      serverName: strict ? profile?.remoteHostname ?? primary.address : null,
+      setupFailed: caFile !== null && caChain.length === 0,
+      report: (failure) => {
+        if (failure === 'verification') {
+          this.files.log?.(`${origin}: failed to connect: TLS peer certificate verification failed`);
+          this.files.log?.(`${origin}: Transfer status: TLS peer certificate verification failed`);
+        } else {
+          this.files.log?.(`${origin}: Transfer status: failure`);
+          this.files.log?.(`${origin}: zone transfer setup failed`);
+        }
+      },
+    };
   }
 
   private notifySecondaries(zoneName: string): void {

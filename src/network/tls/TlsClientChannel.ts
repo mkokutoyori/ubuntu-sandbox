@@ -11,6 +11,7 @@ export class TlsClientChannel {
   private inbox = new Uint8Array(0);
   private collecting = false;
   private pushHandler: ((text: string) => void) | null = null;
+  private bytePushHandler: ((bytes: Uint8Array) => void) | null = null;
 
   constructor(private readonly socket: TcpSocket, private readonly session: TlsClientSession) {
     socket.onData((data) => {
@@ -20,6 +21,10 @@ export class TlsClientChannel {
 
   onPush(handler: (text: string) => void): void {
     this.pushHandler = handler;
+  }
+
+  onPushBytes(handler: (bytes: Uint8Array) => void): void {
+    this.bytePushHandler = handler;
   }
 
   private write(records: readonly TlsRecord[]): void {
@@ -43,7 +48,9 @@ export class TlsClientChannel {
       if (answer.length > 0) { this.write(answer); this.clientSequence = 0; }
     }
     if (opened.plaintext.length === 0) return;
-    if (this.collecting || this.pushHandler === null) {
+    if (!this.collecting && this.bytePushHandler !== null) {
+      this.bytePushHandler(opened.plaintext);
+    } else if (this.collecting || this.pushHandler === null) {
       const joined = new Uint8Array(this.inbox.length + opened.plaintext.length);
       joined.set(this.inbox); joined.set(opened.plaintext, this.inbox.length);
       this.inbox = joined;

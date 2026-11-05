@@ -1,9 +1,9 @@
-import type { TcpStack, TcpSocket } from '@/network/tcp/TcpStack';
+import type { TcpStack } from '@/network/tcp/TcpStack';
 import {
-  type Http2Frame, encodeFrame, decodeFrames,
+  type Http2Frame, type Http2Settings, encodeFrame, decodeFrames,
   FLAG_END_STREAM, FLAG_END_HEADERS, FLAG_ACK,
   encodeSettingsPayload, decodeSettingsPayload,
-  encodeWindowUpdatePayload, decodeWindowUpdatePayload,
+  encodeWindowUpdatePayload, decodeWindowUpdatePayload, encodeRstStreamPayload,
 } from './Http2Frame';
 import { HpackContext, encodeHeaderBlock, decodeHeaderBlock } from './Hpack';
 import type { IEventBus } from '@/events/EventBus';
@@ -27,13 +27,27 @@ function concatBytes(chunks: Uint8Array[]): Uint8Array {
 
 export type Http2Role = 'client' | 'server';
 
+export const HTTP2_REFUSED_STREAM = 0x7;
+export const HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS = 100;
+
+export interface Http2Transport {
+  write(data: string): unknown;
+  onData(handler: (data: unknown) => void): unknown;
+  close(): unknown;
+}
+
+export interface Http2ConnectionOptions {
+  readonly localSettings?: Http2Settings;
+  readonly maxConcurrentStreams?: number;
+}
+
 export interface Http2RequestResult {
   headers: [string, string][];
   body: Uint8Array;
 }
 
 export interface Http2RequestHandler {
-  (headers: [string, string][], body: Uint8Array): Http2RequestResult;
+  (headers: [string, string][], body: Uint8Array): Http2RequestResult | Promise<Http2RequestResult>;
 }
 
 interface StreamState {
@@ -49,9 +63,9 @@ interface StreamState {
 }
 
 /**
- * Multiplexes HTTP/2 (h2c, "prior knowledge") streams over one TcpSocket
- * (RFC 9113). No ALPN/TLS integration here — that's PRD-HTTP.md/P7, blocked
- * on PRD-TLS.md. Priority is not modeled (single stream-to-stream dependency
+ * Multiplexes HTTP/2 streams (RFC 9113) over any byte transport: a TcpSocket
+ * for h2c "prior knowledge", or a TLS channel once ALPN selected `h2`.
+ * Priority is not modeled (single stream-to-stream dependency
  * tree is out of scope, cf. §2.2); SETTINGS-advertised initial window
  * changes are not retroactively applied to already-open streams (a
  * deliberate simplification — WINDOW_UPDATE itself is fully real).
@@ -67,18 +81,23 @@ export class Http2Connection {
   private prefaceConsumed: boolean;
   private readonly responseWaiters = new Map<number, (result: Http2RequestResult) => void>();
   private readonly connectionId = randomHttpConnectionId();
+  private readonly localSettings: Http2Settings;
+  private readonly maxConcurrentStreams: number | null;
 
   constructor(
-    private readonly socket: TcpSocket,
+    private readonly socket: Http2Transport,
     private readonly role: Http2Role,
     private readonly onRequest?: Http2RequestHandler,
     private readonly eventBus?: IEventBus,
+    options: Http2ConnectionOptions = {},
   ) {
+    this.localSettings = options.localSettings ?? { initialWindowSize: DEFAULT_INITIAL_WINDOW };
+    this.maxConcurrentStreams = options.maxConcurrentStreams ?? this.localSettings.maxConcurrentStreams ?? null;
     this.nextStreamId = role === 'client' ? 1 : 2;
     this.prefaceConsumed = role === 'client';
     socket.onData((data) => this.handleIncoming(binaryStringToBytes(String(data))));
     if (role === 'client') {
-      const settingsFrame = encodeFrame({ type: 'SETTINGS', flags: 0, streamId: 0, payload: encodeSettingsPayload({ initialWindowSize: DEFAULT_INITIAL_WINDOW }) });
+      const settingsFrame = encodeFrame({ type: 'SETTINGS', flags: 0, streamId: 0, payload: encodeSettingsPayload(this.localSettings) });
       this.socket.write(CONNECTION_PREFACE + bytesToBinaryString(settingsFrame));
     }
   }
@@ -103,6 +122,20 @@ export class Http2Connection {
     let result: Http2RequestResult | null = null;
     this.responseWaiters.set(streamId, (r) => { result = r; });
     this.sendHeadersAndData(stream, headers, body);
+    return result;
+  }
+
+  async requestAsync(
+    headers: [string, string][], body: Uint8Array, microtaskBudget: number,
+  ): Promise<Http2RequestResult | null> {
+    if (this.role !== 'client') throw new Error('requestAsync() is only valid for a client-role connection');
+    const streamId = this.nextStreamId;
+    this.nextStreamId += 2;
+    const stream = this.createStream(streamId);
+    let result: Http2RequestResult | null = null;
+    this.responseWaiters.set(streamId, (r) => { result = r; });
+    this.sendHeadersAndData(stream, headers, body);
+    for (let tour = 0; result === null && tour < microtaskBudget; tour++) await Promise.resolve();
     return result;
   }
 
@@ -198,7 +231,7 @@ export class Http2Connection {
       }
       this.incomingBuffer = this.incomingBuffer.slice(CONNECTION_PREFACE.length);
       this.prefaceConsumed = true;
-      const settingsFrame = encodeFrame({ type: 'SETTINGS', flags: 0, streamId: 0, payload: encodeSettingsPayload({ initialWindowSize: DEFAULT_INITIAL_WINDOW }) });
+      const settingsFrame = encodeFrame({ type: 'SETTINGS', flags: 0, streamId: 0, payload: encodeSettingsPayload(this.localSettings) });
       this.socket.write(bytesToBinaryString(settingsFrame));
     }
 
@@ -228,6 +261,12 @@ export class Http2Connection {
       }
 
       case 'HEADERS': {
+        if (this.refusesNewStream(frame.streamId)) {
+          this.socket.write(bytesToBinaryString(encodeFrame({
+            type: 'RST_STREAM', flags: 0, streamId: frame.streamId, payload: encodeRstStreamPayload(HTTP2_REFUSED_STREAM),
+          })));
+          return;
+        }
         const stream = this.streams.get(frame.streamId) ?? this.createStream(frame.streamId);
         stream.headerFragments.push(frame.payload);
         if (frame.flags & FLAG_END_HEADERS) {
@@ -273,6 +312,11 @@ export class Http2Connection {
     }
   }
 
+  private refusesNewStream(streamId: number): boolean {
+    if (this.role !== 'server' || this.maxConcurrentStreams === null || this.streams.has(streamId)) return false;
+    return this.streams.size >= this.maxConcurrentStreams;
+  }
+
   private replenishWindowIfLow(stream: StreamState): void {
     const half = DEFAULT_INITIAL_WINDOW / 2;
     if (stream.recvWindow < half) {
@@ -292,11 +336,17 @@ export class Http2Connection {
     const body = concatBytes(stream.bodyChunks);
 
     if (this.role === 'server') {
-      if (this.onRequest) {
-        const result = this.onRequest(stream.headers, body);
-        this.sendHeadersAndData(stream, result.headers, result.body);
+      if (!this.onRequest) {
+        this.closeStream(stream.id);
+        return;
       }
-      this.closeStream(stream.id);
+      const produced = this.onRequest(stream.headers, body);
+      const respond = (result: Http2RequestResult): void => {
+        this.sendHeadersAndData(stream, result.headers, result.body);
+        this.closeStream(stream.id);
+      };
+      if (produced instanceof Promise) void produced.then(respond, () => this.closeStream(stream.id));
+      else respond(produced);
     } else {
       const waiter = this.responseWaiters.get(stream.id);
       this.closeStream(stream.id);

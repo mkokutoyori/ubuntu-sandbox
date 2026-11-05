@@ -8,7 +8,10 @@
 import type { TcpStack, TcpSocket, TcpListener } from '@/network/tcp/TcpStack';
 import type { ListenerIdentity } from '@/network/tcp/ListenerSocketSink';
 import { createResponse, type HttpMessage } from '../semantics/types';
-import type { Http1RequestHandler } from '../http1/Http1ServerSession';
+import type { Http1RequestHandler, Http1Peer } from '../http1/Http1ServerSession';
+import { Http2Connection, type Http2ConnectionOptions, type Http2Transport } from '../http2/Http2Connection';
+import { http2RequestHandler } from '../http2/Http2ServerSession';
+import type { ConnectionQuota } from '@/network/tcp/ConnectionQuota';
 import { parseRequest, encodeResponse, HttpRequestAssembler } from '../http1/Http1Wire';
 import { TlsServerSession, type TlsServerConfig } from '@/network/tls/TlsServerSession';
 import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
@@ -23,9 +26,17 @@ export interface PathTransportRequirement {
   readonly cipherList?: string;
 }
 
+export interface HttpsHttp2Support {
+  readonly only: boolean;
+  readonly connection?: Http2ConnectionOptions;
+}
+
 export type HttpsServerConfig = Omit<TlsServerConfig, 'alpnProtocols'> & {
   readonly requirePathTransport?: (request: HttpMessage) => PathTransportRequirement | null;
   readonly alpnProtocols?: readonly string[];
+  readonly http2?: HttpsHttp2Support;
+  readonly quota?: ConnectionQuota;
+  readonly silentRejection?: boolean;
   /** RFC 6797 — if set, every response carries `Strict-Transport-Security: max-age=<n>`. */
   readonly hstsMaxAgeSeconds?: number;
   readonly hstsIncludeSubDomains?: boolean;
@@ -53,7 +64,7 @@ export class HttpsServerSession {
   start(identity?: ListenerIdentity, backlog?: number, address = '0.0.0.0'): void {
     this.listenAddress = address;
     this.listener = this.tcpStack.listen(this.port, {
-      onAccept: (socket) => this.handleConnection(socket),
+      onAccept: (socket) => this.admit(socket),
       identity,
       backlog,
     }, address);
@@ -76,9 +87,45 @@ export class HttpsServerSession {
     response.headers.set('Strict-Transport-Security', `max-age=${config.hstsMaxAgeSeconds}${suffix}`);
   }
 
+  private admit(socket: TcpSocket): void {
+    const quota = this.tlsConfig().quota;
+    if (quota === undefined) this.handleConnection(socket);
+    else quota.admit(socket, () => this.handleConnection(socket));
+  }
+
+  private defaultAlpn(config: HttpsServerConfig): readonly string[] {
+    if (config.http2 === undefined) return ['http/1.1'];
+    return config.http2.only ? ['h2'] : ['h2', 'http/1.1'];
+  }
+
   private handleConnection(socket: TcpSocket): void {
     const config = this.tlsConfig();
-    const tls = new TlsServerSession({ ...config, alpnProtocols: config.alpnProtocols ?? ['http/1.1'] });
+    const alpnProtocols = config.alpnProtocols ?? this.defaultAlpn(config);
+    const http2: HttpsHttp2Support | undefined = config.http2 ?? (alpnProtocols.includes('h2') ? { only: false } : undefined);
+    const tls = new TlsServerSession({ ...config, alpnProtocols });
+    let deliverHttp2: ((data: unknown) => void) | null = null;
+    const peerOf = (): Http1Peer => ({
+      ip: socket.remoteIp, port: socket.remotePort,
+      tls: {
+        protocolVersion: tls.negotiatedVersion, cipherSuite: tls.negotiatedCipherSuite,
+        clientCertificate: tls.peerCertificate, clientCertificateChain: tls.peerCertificateChain,
+        serverName: tls.negotiatedServerName, sessionReused: tls.sessionReused, clientVerified: tls.peerVerified,
+        clientVerifyReason: tls.peerVerificationReason,
+      },
+    });
+    const startHttp2 = (http2: HttpsHttp2Support): void => {
+      const transport: Http2Transport = {
+        write: (data) => channel.write(binaryStringToBytes(data)),
+        onData: (handler) => { deliverHttp2 = handler; },
+        close: () => socket.close(),
+      };
+      const respondWithHsts: Http1RequestHandler = (request, peer) => {
+        const produced = this.handler(request, peer);
+        const finish = (response: HttpMessage): HttpMessage => { this.applyHsts(response); return response; };
+        return produced instanceof Promise ? produced.then(finish) : finish(produced);
+      };
+      new Http2Connection(transport, 'server', http2RequestHandler(respondWithHsts, peerOf), this.eventBus, http2.connection);
+    };
     /*
      * File des réponses de CETTE connexion. Un gestionnaire asynchrone ne
      * doit pas pouvoir doubler le précédent : `serverSeq` est le compteur
@@ -139,15 +186,7 @@ export class HttpsServerSession {
       const method = parsed.message.method ?? 'GET';
       const target = parsed.message.target ?? '';
       this.eventBus?.publish({ topic: 'http.request.started', payload: { requestId, method, target } });
-      const produced = this.handler(parsed.message, {
-        ip: socket.remoteIp, port: socket.remotePort,
-        tls: {
-          protocolVersion: tls.negotiatedVersion, cipherSuite: tls.negotiatedCipherSuite,
-          clientCertificate: tls.peerCertificate, clientCertificateChain: tls.peerCertificateChain,
-          serverName: tls.negotiatedServerName, sessionReused: tls.sessionReused, clientVerified: tls.peerVerified,
-          clientVerifyReason: tls.peerVerificationReason,
-        },
-      });
+      const produced = this.handler(parsed.message, peerOf());
       /*
        * Un gestionnaire asynchrone ne doit pas pouvoir doubler le
        * précédent : `serverSeq` est le compteur de séquence des
@@ -201,13 +240,23 @@ export class HttpsServerSession {
     };
 
     const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
+      silentRejection: config.silentRejection === true,
+      onHandshakeRejected: () => { if (config.silentRejection === true) socket.close(); },
+      onHandshakeComplete: () => {
+        if (http2 === undefined) return;
+        if (tls.negotiatedAlpnProtocol === 'h2') startHttp2(http2);
+        else if (http2.only) socket.close();
+      },
       onRenegotiated: () => {
         const waiting = deferred;
         deferred = null;
         if (waiting !== null) runRequest(waiting);
       },
       onEarlyData: (requestBytes) => handleBytes(requestBytes, true),
-      onData: (requestBytes) => handleBytes(requestBytes, false),
+      onData: (requestBytes) => {
+        if (deliverHttp2 !== null) deliverHttp2(bytesToBinaryString(requestBytes));
+        else handleBytes(requestBytes, false);
+      },
     });
     unsubscribe = () => channel.detachOnly();
   }

@@ -4,12 +4,14 @@
  * Mesuré AVANT correctif (git stash push -- src/network) : 4 cas sur 7 tombent.
  *   - le serveur n'implémentait pas GET ?dns= (base64url sans remplissage),
  *     alors que le §4.1 impose GET et POST (réponse 400)
- *   - une méthode non permise recevait 400 au lieu de 405
+ *   - une méthode non permise recevait 400 au lieu de 405 ; le vrai named 9.18.39 répond 501 à PUT et à HEAD (mesuré avec curl --http2),
+ *     le test l'attend donc
  *   - aucune réponse ne portait Cache-Control (§5.1 : durée de vie = plus petit TTL)
  *   - le client envoyait l'identifiant DNS de sa requête au lieu de 0 (§4.1)
  * Passent avant et après (témoins) : POST d'une requête valide, 415 sur un
  * type de contenu étranger, 400 sur un GET sans paramètre ou en base64 invalide
  * (refusés avant parce que GET l'était en bloc, non parce qu'ils étaient lus).
+ * Le serveur ne parle plus que HTTP/2 (ALPN h2) comme named, le client de ces cas aussi.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { IPAddress, SubnetMask, resetCounters } from '@/network/core/types';
@@ -65,7 +67,7 @@ function lab() {
   bindDnsHttpsServer(srv, (q) => { seenIds.push(q.id); return engine.answer(q); },
     { serverCert: issued.cert, serverPrivateKey: issued.privateKey });
   const raw = (method: Parameters<typeof createRequest>[0], target: string, contentType?: string, body?: Uint8Array) => {
-    const client = new HttpsClientSession(pc.getTcpStack(), '10.0.1.10', 443, { verifier, alpn: ['http/1.1'] });
+    const client = new HttpsClientSession(pc.getTcpStack(), '10.0.1.10', 443, { verifier, alpn: ['h2'] });
     const request = createRequest(method, target);
     request.headers.set('Host', '10.0.1.10');
     if (contentType) request.headers.set('Content-Type', contentType);
@@ -111,9 +113,9 @@ describe('DoH — RFC 8484', () => {
     expect(raw('GET', '/dns-query?dns=***')?.statusCode).toBe(400);
   });
 
-  it('une méthode non permise reçoit 405', () => {
+  it('une méthode non permise reçoit 501, comme named 9.18.39', () => {
     const { raw } = lab();
-    expect(raw('PUT', '/dns-query', 'application/dns-message', encodeDnsMessage(query(0)))?.statusCode).toBe(405);
+    expect(raw('PUT', '/dns-query', 'application/dns-message', encodeDnsMessage(query(0)))?.statusCode).toBe(501);
   });
 
   it('la réponse porte Cache-Control max-age égal au plus petit TTL', () => {

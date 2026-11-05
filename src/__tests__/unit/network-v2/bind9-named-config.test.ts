@@ -34,7 +34,7 @@ describe('NamedConfig — defaults (BIND 9.18)', () => {
   });
 
   it('defaults the listen port to 53', () => {
-    expect(config.options.listenOnPort).toBe(53);
+    expect(config.options.plainListens.map((listen) => [listen.port, listen.ipv6])).toEqual([[53, false]]);
   });
 
   it('defaults allow-query to any', () => {
@@ -76,7 +76,7 @@ options {
     expect(config.options.queryLog).toBe(true);
     expect(config.options.forwarders).toEqual(['10.0.9.1', '10.0.9.2']);
     expect(config.options.forwardMode).toBe('only');
-    expect(config.options.listenOnPort).toBe(5353);
+    expect(config.options.plainListens.find((listen) => !listen.ipv6)?.port).toBe(5353);
     expect(config.options.dnssecValidation).toBe('no');
     expect(config.options.allowQuery.matches('10.20.30.40', LAN_ENV)).toBe(true);
     expect(config.options.allowQuery.matches('192.0.2.1', LAN_ENV)).toBe(false);
@@ -118,7 +118,7 @@ zone "b.lan" { type slave; masters { 10.0.1.10; }; file "db.b"; };
 
     expect(config.zones[0].type).toBe('primary');
     expect(config.zones[1].type).toBe('secondary');
-    expect(config.zones[1].primaries).toEqual(['10.0.1.10']);
+    expect(config.zones[1].primaries.map((primary) => primary.address)).toEqual(['10.0.1.10']);
   });
 
   it('parses a secondary zone with primaries and also-notify', () => {
@@ -131,7 +131,7 @@ zone "example.com" {
 };
 `);
 
-    expect(config.zones[0].primaries).toEqual(['10.0.1.10', '10.0.1.11']);
+    expect(config.zones[0].primaries.map((primary) => primary.address)).toEqual(['10.0.1.10', '10.0.1.11']);
     expect(config.zones[0].alsoNotify).toEqual(['10.0.1.12']);
   });
 

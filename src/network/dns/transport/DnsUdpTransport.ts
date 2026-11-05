@@ -135,7 +135,7 @@ export function bindDnsUdpServer(
   processName: string = 'dns',
   address?: string,
   boundDevice?: string,
-  owner: { pid?: number; service?: string } = {},
+  owner: Parameters<EndHost['udpBind']>[3] = {},
   observer?: DnsPacketObserver,
 ): void {
   if (port === DNS_PORT && address === undefined) host.getSocketTable().unbind('udp', '127.0.0.53', port);

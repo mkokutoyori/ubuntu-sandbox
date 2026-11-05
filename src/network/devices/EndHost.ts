@@ -160,7 +160,7 @@ import {
 import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
 import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
-import { queryDnsOverHttps, exchangeDnsOverHttps, DOH_PORT, type DnsHttpsPlan } from '../dns/transport/DnsHttpsTransport';
+import { queryDnsOverHttps, exchangeDnsOverHttps, DOH_PORT, DOH_PLAIN_PORT, type DnsHttpsPlan } from '../dns/transport/DnsHttpsTransport';
 import { CertificateVerifier } from '../pki/CertificateVerifier';
 import { HardwareProfile } from './host/hardware';
 import { bootIdFor, machineIdFor } from './host/hardware/HardwareIdentity';
@@ -3892,7 +3892,10 @@ export abstract class EndHost extends Equipment {
 
   public udpBind(
     port: number, listener: UdpListener, processName?: string,
-    owner: { pid?: number; uid?: number; service?: string; families?: readonly IpFamily[]; reusePort?: boolean } = {},
+    owner: {
+      pid?: number; uid?: number; service?: string; families?: readonly IpFamily[]; reusePort?: boolean;
+      acceptsDestination?: (destination: IPAddress | IPv6Address) => boolean;
+    } = {},
   ): number | false {
     let bound = port;
     const taken: IpFamily[] = [];
@@ -3914,8 +3917,11 @@ export abstract class EndHost extends Equipment {
       this.udpReusePortGroups.set(bound, members);
       this.udpListeners.set(bound, members[0].listener);
     } else this.udpListeners.set(bound, listener);
+    if (owner.acceptsDestination !== undefined) this.udpDestinationFilters.set(bound, owner.acceptsDestination);
     return bound;
   }
+
+  private readonly udpDestinationFilters = new Map<number, (destination: IPAddress | IPv6Address) => boolean>();
 
   private readonly udpReusePortGroups = new Map<number, Array<{ pid: number | undefined; listener: UdpListener }>>();
 
@@ -4249,7 +4255,10 @@ export abstract class EndHost extends Equipment {
     }
     const stillHeld = this.socketTable.getAll().some((entry) => entry.protocol === 'udp'
       && entry.localPort === port && entry.localAddress === wildcardAddressOf(ipFamilyOf(entry.localAddress)));
-    if (!stillHeld) this.udpListeners.delete(port);
+    if (!stillHeld) {
+      this.udpListeners.delete(port);
+      this.udpDestinationFilters.delete(port);
+    }
   }
 
   public reapProcessSockets(pid: number, processName: string | undefined, exit: OwnerExit): number[] {
@@ -4628,6 +4637,8 @@ export abstract class EndHost extends Equipment {
       ? group[reusePortHash(sourceIP.toString(), udp.sourcePort) % group.length].listener
       : this.udpListeners.get(udp.destinationPort);
     if (!listener) return false;
+    const accepts = this.udpDestinationFilters.get(udp.destinationPort);
+    if (accepts !== undefined && !accepts(destinationIP)) return false;
     listener({ inPort: portName, sourceIP, destinationIP, udp, sourceMAC, ipOptions });
     return true;
   }
@@ -4762,7 +4773,7 @@ export abstract class EndHost extends Equipment {
     if (!options.tls && !options.https && !options.tcp) {
       const plan = this.dohPlanFor(serverIP);
       if (plan !== null) {
-        const reply = this.exchangeOverDohPlan(plan, serverIP, name, qtype, timeoutMs, options);
+        const reply = await this.queryOverDohPlan(plan, serverIP, name, qtype, timeoutMs, options);
         if (reply !== null || !plan.allowFallbackToUdp) return reply;
       }
     }
@@ -4772,9 +4783,10 @@ export abstract class EndHost extends Equipment {
       // impose pas un autre.
       const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
       if (!query) return null;
-      if (!(serverIP instanceof IPAddress)) return null;
       return queryDnsOverTls(this, serverIP, query, {
         port: options.port ?? DOT_PORT, timeoutMs,
+        ...(options.onStreamFailure !== undefined ? { onStreamFailure: options.onStreamFailure } : {}),
+        ...(options.tlsClientIdentity !== undefined ? { clientIdentity: options.tlsClientIdentity } : {}),
         ...(options.serverName !== undefined ? { serverName: options.serverName } : {}),
         ...(options.tlsAnchors !== undefined ? { anchors: options.tlsAnchors } : {}),
         ...(options.tlsVerify !== undefined ? { verifyPeer: options.tlsVerify } : {}),
@@ -4784,15 +4796,17 @@ export abstract class EndHost extends Equipment {
     if (options.https) {
       const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
       if (!query) return null;
-      if (!(serverIP instanceof IPAddress)) return null;
       const verifier = new CertificateVerifier({
         trustAnchors: options.tlsAnchors ?? [], clock: () => this.getTcpStack().nowMs(),
       });
       return queryDnsOverHttps(this, serverIP, query, {
         verifier, verifyPeer: options.tlsVerify !== false,
+        ...(options.tlsClientIdentity !== undefined ? { identity: options.tlsClientIdentity } : {}),
         ...(options.serverName !== undefined ? { serverName: options.serverName } : {}),
       }, {
-        port: options.port ?? DOH_PORT, timeoutMs, path: options.https.path, method: options.https.method,
+        port: options.port ?? (options.https.plain === true ? DOH_PLAIN_PORT : DOH_PORT), timeoutMs,
+        path: options.https.path, method: options.https.method, plain: options.https.plain === true,
+        ...(options.onStreamFailure !== undefined ? { onStreamFailure: options.onStreamFailure } : {}),
         ...(options.serverName !== undefined ? { sni: options.serverName } : {}),
         ...(options.onTlsVerifyFailure !== undefined ? { onVerifyFailure: options.onTlsVerifyFailure } : {}),
         ...(options.onHttpFailure !== undefined ? { onHttpStatus: options.onHttpFailure } : {}),
@@ -4801,7 +4815,7 @@ export abstract class EndHost extends Equipment {
     if (options.tcp) {
       const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
       if (!query) return null;
-      return queryDnsOverTcp(this, serverIP, query, port, timeoutMs);
+      return queryDnsOverTcp(this, serverIP, query, port, timeoutMs, undefined, options.onStreamFailure);
     }
     const wire = this.encodeDnsQuery(name, qtype, options);
     if (!wire) return null;
@@ -4893,11 +4907,23 @@ export abstract class EndHost extends Equipment {
     return null;
   }
 
+  private async queryOverDohPlan(
+    plan: DnsHttpsPlan, serverIP: IPAddress | IPv6Address, name: string, qtype: string, timeoutMs: number,
+    options: DnsQueryOptions,
+  ): Promise<DnsMessage | null> {
+    const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
+    if (!query) return null;
+    const verifier = new CertificateVerifier({ trustAnchors: plan.anchors, clock: () => this.getTcpStack().nowMs() });
+    return queryDnsOverHttps(
+      this, serverIP, query, { verifier, serverName: plan.target.host },
+      { port: plan.target.port, path: plan.target.path, sni: plan.target.host, timeoutMs },
+    );
+  }
+
   private exchangeOverDohPlan(
     plan: DnsHttpsPlan, serverIP: IPAddress | IPv6Address, name: string, qtype: string, timeoutMs: number,
     options: DnsQueryOptions,
   ): DnsMessage | null {
-    if (!(serverIP instanceof IPAddress)) return null;
     const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
     if (!query) return null;
     const verifier = new CertificateVerifier({ trustAnchors: plan.anchors, clock: () => this.getTcpStack().nowMs() });

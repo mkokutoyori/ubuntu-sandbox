@@ -7,18 +7,21 @@ import {
 import type { DnsStreamHandler } from '@/network/dns/transport/DnsTcpTransport';
 import type { ServerIdentity } from '@/network/http/https/ServerTlsToolkit';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
-import { pemToCertChain, pemToPrivateKey } from '@/network/pki/pem';
+import { pemToCertChain, pemToDhParameters, pemToPrivateKey } from '@/network/pki/pem';
+import type { DnsTlsServerSettings } from '@/network/dns/transport/DnsTlsServerSettings';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { privateKeyPairsWith } from '@/network/pki/keyPairing';
 import type { OperationResult } from '../LinuxServiceManager';
 import type { AclHostEnvironment } from './NamedAcl';
 import type { NamedListener, NamedTlsProfile } from './NamedConfig';
+import { listenAddresses } from './Bind9ListenAddresses';
+import { DEFAULT_LISTENER_CLIENTS, UNLIMITED_STREAMS_PER_CONNECTION } from './NamedTlsConfig';
 
-const ANY_ADDRESS = '0.0.0.0';
-const LOOPBACK = '127.0.0.1';
 const TLS_ERROR = 'loading configuration: TLS error';
 const NOT_FOUND = 'loading configuration: not found';
 const SYSTEM_LIB = 'error:0A080002:SSL routines::system lib';
 const PEM_LIB = 'error:0A080009:SSL routines::PEM lib';
+const LOADING_FAILURE = 'loading configuration: failure';
 const NO_SUCH_FILE = 'Error initializing TLS context: error:80000002:system library::No such file or directory';
 
 export interface EncryptedListenerDeps {
@@ -33,6 +36,7 @@ export interface EncryptedListenerDeps {
 interface BoundListener {
   readonly listener: NamedListener;
   readonly identity: ServerIdentity | null;
+  readonly settings: DnsTlsServerSettings | undefined;
   readonly addresses: readonly string[];
 }
 
@@ -49,8 +53,20 @@ export interface PreparedListeners {
 
 export type PreparedEncryptedListeners = PreparedListeners | PreparedFailure;
 
-function isFailure(value: ServerIdentity | PreparedFailure | null): value is PreparedFailure {
-  return value !== null && 'ok' in value;
+function withIssuers(identity: ServerIdentity, anchors: readonly X509Certificate[]): ServerIdentity {
+  const chain = [...identity.chain];
+  let current = chain.length > 0 ? chain[chain.length - 1] : identity.cert;
+  while (current.subject !== current.issuer) {
+    const issuer = anchors.find((anchor) => anchor.subject === current.issuer);
+    if (issuer === undefined || chain.includes(issuer)) break;
+    chain.push(issuer);
+    current = issuer;
+  }
+  return { ...identity, chain };
+}
+
+function isFailure(value: ServerIdentity | DnsTlsServerSettings | PreparedFailure | null | undefined): value is PreparedFailure {
+  return value !== null && value !== undefined && 'ok' in value;
 }
 
 function tlsFailure(lines: readonly string[]): PreparedFailure {
@@ -89,18 +105,21 @@ export class Bind9EncryptedListeners {
   prepare(listeners: readonly NamedListener[]): PreparedEncryptedListeners {
     const bound: BoundListener[] = [];
     for (const listener of listeners) {
-      if (listener.ipv6) continue;
       const identity = this.identityOf(listener);
       if (isFailure(identity)) return identity;
-      bound.push({ listener, identity, addresses: this.addressesOf(listener) });
+      const settings = this.settingsOf(listener);
+      if (isFailure(settings)) return settings;
+      const anchors = settings?.clientTrustAnchors;
+      const presented = identity !== null && anchors !== undefined ? withIssuers(identity, anchors) : identity;
+      bound.push({ listener, identity: presented, settings, addresses: listenAddresses(listener.addresses, listener.ipv6, this.deps.environment()) });
     }
     return { ok: true as const, bound };
   }
 
   bind(prepared: PreparedListeners): OperationResult {
     try {
-      for (const { listener, identity, addresses } of prepared.bound) {
-        for (const address of addresses) this.bindOne(listener, identity, address);
+      for (const { listener, identity, settings, addresses } of prepared.bound) {
+        for (const address of addresses) this.bindOne(listener, identity, settings, address);
       }
     } catch {
       this.stop();
@@ -113,32 +132,31 @@ export class Bind9EncryptedListeners {
     for (const undo of this.undo.splice(0)) undo();
   }
 
-  private bindOne(listener: NamedListener, identity: ServerIdentity | null, address: string): void {
+  private bindOne(listener: NamedListener, identity: ServerIdentity | null, settings: DnsTlsServerSettings | undefined, address: string): void {
     const { host, handler, processName } = this.deps;
     const common = { port: listener.port, address, processName };
-    const protocols = listener.tls.kind === 'profile' ? listener.tls.profile.protocols ?? undefined : undefined;
     if (listener.http === null) {
-      bindDnsTlsServer(host, handler, { ...common, identity: identity!, ...(protocols ? { protocols } : {}) });
+      bindDnsTlsServer(host, handler, { ...common, identity: identity!, settings, requireAlpn: false, silentRejection: true });
       this.undo.push(() => unbindDnsTlsServer(host, listener.port, address));
-    } else if (identity === null) {
-      bindDnsHttpServer(host, handler, { ...common, paths: listener.http.endpoints });
+      return;
+    }
+    const http = {
+      ...common, paths: listener.http.endpoints,
+      listenerClients: listener.http.listenerClients ?? DEFAULT_LISTENER_CLIENTS,
+      ...(listener.http.streamsPerConnection === null ? {}
+        : { streamsPerConnection: listener.http.streamsPerConnection === 0 ? UNLIMITED_STREAMS_PER_CONNECTION : listener.http.streamsPerConnection }),
+    };
+    if (identity === null) {
+      bindDnsHttpServer(host, handler, http);
       this.undo.push(() => unbindDnsHttpServer(host, listener.port, address));
     } else {
       bindDnsHttpsServer(
         host, handler,
-        { serverCert: identity.cert, serverPrivateKey: identity.key, serverChain: identity.chain, ...(protocols ? { protocols } : {}) },
-        { ...common, paths: listener.http.endpoints },
+        { serverCert: identity.cert, serverPrivateKey: identity.key, serverChain: identity.chain, settings },
+        { ...http, silentRejection: true },
       );
       this.undo.push(() => unbindDnsHttpsServer(host, listener.port, address));
     }
-  }
-
-  private addressesOf(listener: NamedListener): readonly string[] {
-    if (listener.addresses.matchesEveryAddress()) return [ANY_ADDRESS];
-    const environment = this.deps.environment();
-    return [LOOPBACK, ...environment.localAddresses].filter(
-      (address, index, all) => all.indexOf(address) === index && listener.addresses.matches(address, environment),
-    );
   }
 
   private identityOf(listener: NamedListener): ServerIdentity | PreparedFailure | null {
@@ -148,6 +166,35 @@ export class Bind9EncryptedListeners {
       return { cert: generated.cert, key: generated.privateKey, chain: [] };
     }
     return this.profileIdentity(listener.tls.profile);
+  }
+
+  private settingsOf(listener: NamedListener): DnsTlsServerSettings | PreparedFailure | undefined {
+    if (listener.tls.kind === 'none') return undefined;
+    if (listener.tls.kind === 'ephemeral') return {};
+    const profile = listener.tls.profile;
+    const loadingFailure: PreparedFailure = { ok: false, error: LOADING_FAILURE, lines: [] };
+    let clientTrustAnchors: DnsTlsServerSettings['clientTrustAnchors'];
+    if (profile.caFile !== null) {
+      const text = this.deps.readFile(profile.caFile);
+      const anchors = text === null ? [] : pemToCertChain(text);
+      if (anchors.length === 0) return loadingFailure;
+      clientTrustAnchors = anchors;
+    }
+    let dhParameters: DnsTlsServerSettings['dhParameters'];
+    if (profile.dhparamFile !== null) {
+      const text = this.deps.readFile(profile.dhparamFile);
+      const parsed = text === null ? null : pemToDhParameters(text);
+      if (parsed === null) return loadingFailure;
+      dhParameters = parsed;
+    }
+    return {
+      ...(profile.protocols === null ? {} : { protocols: profile.protocols }),
+      ciphers: profile.ciphers,
+      preferServerCiphers: profile.preferServerCiphers === true,
+      sessionTickets: profile.sessionTickets !== false,
+      ...(dhParameters === undefined ? {} : { dhParameters }),
+      ...(clientTrustAnchors === undefined ? {} : { clientTrustAnchors }),
+    };
   }
 
   private profileIdentity(profile: NamedTlsProfile): ServerIdentity | PreparedFailure {
