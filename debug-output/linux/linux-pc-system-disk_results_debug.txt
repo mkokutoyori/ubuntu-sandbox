@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-system-disk
-Generated: 2026-11-05T08:36:50.493Z
+Generated: 2026-10-31T20:15:57.248Z
 Engine: linux
 host=L-PC-SYS-DBG (linux-pc) — focus: système, disque, noyau & paquets
 Total commands: 300
@@ -86,99 +86,91 @@ $ [20/300]> hostname -s
   L-PC-SYS-DBG
 
 $ [21/300]> hostnamectl
-   Static hostname: L-PC-SYS-DBG
-         Icon name: computer-vm
-           Chassis: vm 🖴
-        Machine ID: 5093026292b88733a8d09f07cdfbbe39
-           Boot ID: 41042745906648c5aacd092c616676a9
-    Virtualization: kvm
-  Operating System: Ubuntu 22.04.4 LTS
-            Kernel: Linux 5.15.0-130-generic
-      Architecture: x86-64
+     Static hostname: L-PC-SYS-DBG
+           Icon name: computer-vm
+             Chassis: vm
+          Machine ID: 5093026292b88733a8d09f07cdfbbe39
+             Boot ID: f9e8d7c6b5a4039281706f5e4d3c2b1a
+      Virtualization: kvm
+    Operating System: Ubuntu 22.04.4 LTS
+              Kernel: Linux 5.15.0-130-generic
+        Architecture: x86_64
 
 $ [22/300]> hostnamectl status
-   Static hostname: L-PC-SYS-DBG
-         Icon name: computer-vm
-           Chassis: vm 🖴
-        Machine ID: 5093026292b88733a8d09f07cdfbbe39
-           Boot ID: 41042745906648c5aacd092c616676a9
-    Virtualization: kvm
-  Operating System: Ubuntu 22.04.4 LTS
-            Kernel: Linux 5.15.0-130-generic
-      Architecture: x86-64
+     Static hostname: L-PC-SYS-DBG
+           Icon name: computer-vm
+             Chassis: vm
+          Machine ID: 5093026292b88733a8d09f07cdfbbe39
+             Boot ID: f9e8d7c6b5a4039281706f5e4d3c2b1a
+      Virtualization: kvm
+    Operating System: Ubuntu 22.04.4 LTS
+              Kernel: Linux 5.15.0-130-generic
+        Architecture: x86_64
 
 $ [23/300]> cat /etc/hostname
   L-PC-SYS-DBG
 
 $ [24/300]> date
-  Thu Nov  5 08:36:50 UTC 2026
-  
+  Sat Oct 31 20:15:57 UTC 2026
 
 $ [25/300]> date -u
-  Thu Nov  5 08:36:50 UTC 2026
-  
+  Sat Oct 31 20:15:57 UTC 2026
 
 $ [26/300]> date +%Y-%m-%d
-  2026-11-05
-  
+  2026-10-31
 
 $ [27/300]> date "+%H:%M:%S"
-  08:36:50
-  
+  20:15:57
 
 $ [28/300]> date +%s
-  1793867810
-  
+  1793477757
 
 $ [29/300]> date -d "2026-01-01"
-  Thu Jan  1 00:00:00 UTC 2026
-  
+  Thu Jan 01 00:00:00 UTC 2026
 
 $ [30/300]> date --iso-8601=seconds
-  2026-11-05T08:36:50+00:00
-  
+  Sat Oct 31 20:15:57 UTC 2026
 
 $ [31/300]> timedatectl
-                 Local time: Thu 2026-11-05 08:36:50 UTC
-             Universal time: Thu 2026-11-05 08:36:50 UTC
-                   RTC time: Thu 2026-11-05 08:36:50
+                 Local time: Sat 2026-10-31 20:15:57 UTC
+             Universal time: Sat 2026-10-31 20:15:57 UTC
+                   RTC time: Sat 2026-10-31 20:15:57
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: no
                 NTP service: active
             RTC in local TZ: no
 
 $ [32/300]> timedatectl status
-                 Local time: Thu 2026-11-05 08:36:50 UTC
-             Universal time: Thu 2026-11-05 08:36:50 UTC
-                   RTC time: Thu 2026-11-05 08:36:50
+                 Local time: Sat 2026-10-31 20:15:57 UTC
+             Universal time: Sat 2026-10-31 20:15:57 UTC
+                   RTC time: Sat 2026-10-31 20:15:57
                   Time zone: Etc/UTC (UTC, +0000)
   System clock synchronized: no
                 NTP service: active
             RTC in local TZ: no
 
 $ [33/300]> cal
-     November 2026      
+      October 2026      
   Su Mo Tu We Th Fr Sa  
-   1  2  3  4  5  6  7  
-   8  9 10 11 12 13 14  
-  15 16 17 18 19 20 21  
-  22 23 24 25 26 27 28  
-  29 30                 
+               1  2  3  
+   4  5  6  7  8  9 10  
+  11 12 13 14 15 16 17  
+  18 19 20 21 22 23 24  
+  25 26 27 28 29 30 31  
                         
 
 $ [34/300]> uptime
-   08:36:50 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   20:15:57 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [35/300]> uptime -p
   up 0 minutes
 
 $ [36/300]> uptime -s
-  2026-11-05 08:36:49
+  2026-10-31 20:15:56
 
 $ [37/300]> date --truc
   date: unrecognized option '--truc'
   Try 'date --help' for more information.
-  
 
 
 --- [38] § CPU — lscpu/nproc/proc ---
@@ -268,7 +260,7 @@ $ [44/300]> cat /proc/loadavg
   0.00 0.00 0.00 1/39 39
 
 $ [45/300]> cat /proc/stat | head -1
-  cpu  0 0 0 0 0 0 0 0 0 0
+  cpu  0 0 0 200 0 0 0 0 0 0
 
 $ [46/300]> lscpu | grep -E "^CPU|Model|MHz"
   CPU op-mode(s):                  32-bit, 64-bit
@@ -382,68 +374,53 @@ $ [65/300]> swapon -s
 
 --- [66] § disques — df/du ---
 $ [66/300]> df
-  Filesystem     1K-blocks   Used Available Use% Mounted on
-  /dev/sda1       50331648   8688  50322960   1% /
-  /dev/sda2        2097152 335544   1761608  16% /boot
-  tmpfs             512000      0    512000   0% /dev/shm
-  tmpfs               5120      4      5116   1% /run/lock
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1        50331648     8682  50322966   1% /
+  /dev/sda2         2097152   335544   1761608  16% /boot
+  tmpfs                5120        4      5116   1% /run/lock
 
 $ [67/300]> df -h
   Filesystem      Size  Used Avail Use% Mounted on
   /dev/sda1        48G  8.5M   48G   1% /
   /dev/sda2       2.0G  328M  1.7G  16% /boot
-  tmpfs           500M     0  500M   0% /dev/shm
-  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+  tmpfs           5.0M    4K  5.0M   1% /run/lock
 
 $ [68/300]> df -h /
   Filesystem      Size  Used Avail Use% Mounted on
   /dev/sda1        48G  8.5M   48G   1% /
 
 $ [69/300]> df -i
-  Filesystem     Inodes IUsed  IFree IUse% Mounted on
-  /dev/sda1      655360  2193 653167    1% /
-  /dev/sda2      131072 20972 110100   17% /boot
-  tmpfs          128000     1 127999    1% /dev/shm
-  tmpfs            1280    13   1267    2% /run/lock
+  Filesystem      Inodes  IUsed   IFree IUse% Mounted on
+  /dev/sda1       655360   1978  653382    1% /
+  /dev/sda2       131072  20972  110100   17% /boot
+  tmpfs             1280     13    1267    2% /run/lock
 
 $ [70/300]> df -T
-  Filesystem     Type  1K-blocks   Used Available Use% Mounted on
-  /dev/sda1      ext4   50331648   8688  50322960   1% /
-  /dev/sda2      ext4    2097152 335544   1761608  16% /boot
-  tmpfs          tmpfs    512000      0    512000   0% /dev/shm
-  tmpfs          tmpfs      5120      4      5116   1% /run/lock
+  Filesystem     Type    1K-blocks     Used Available Use% Mounted on
+  /dev/sda1       ext4     50331648     8682  50322966   1% /
+  /dev/sda2       ext4      2097152   335544   1761608  16% /boot
+  tmpfs           tmpfs        5120        4      5116   1% /run/lock
 
 $ [71/300]> df -k
-  Filesystem     1K-blocks   Used Available Use% Mounted on
-  /dev/sda1       50331648   8688  50322960   1% /
-  /dev/sda2        2097152 335544   1761608  16% /boot
-  tmpfs             512000      0    512000   0% /dev/shm
-  tmpfs               5120      4      5116   1% /run/lock
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1        50331648     8682  50322966   1% /
+  /dev/sda2         2097152   335544   1761608  16% /boot
+  tmpfs                5120        4      5116   1% /run/lock
 
 $ [72/300]> df -m
-  Filesystem     1M-blocks  Used Available Use% Mounted on
-  /dev/sda1          49152     9     49144   1% /
-  /dev/sda2           2048   328      1721  16% /boot
-  tmpfs                500     0       500   0% /dev/shm
-  tmpfs                  5     1         5   1% /run/lock
+  Filesystem     1K-blocks     Used Available Use% Mounted on
+  /dev/sda1        50331648     8682  50322966   1% /
+  /dev/sda2         2097152   335544   1761608  16% /boot
+  tmpfs                5120        4      5116   1% /run/lock
 
 $ [73/300]> df -h --total
-  Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        48G  8.5M   48G   1% /
-  /dev/sda2       2.0G  328M  1.7G  16% /boot
-  tmpfs           500M     0  500M   0% /dev/shm
-  tmpfs           5.0M  4.0K  5.0M   1% /run/lock
-  total            51G  337M   51G   1% -
+  df: invalid option -- 'total'
 
 $ [74/300]> df --output=source,size,used,avail,target
-  Filesystem     1K-blocks   Used    Avail Mounted on
-  /dev/sda1       50331648   8688 50322960 /
-  /dev/sda2        2097152 335544  1761608 /boot
-  tmpfs             512000      0   512000 /dev/shm
-  tmpfs               5120      4     5116 /run/lock
+  df: invalid option -- 'output=source,size,used,avail,target'
 
 $ [75/300]> du -sh /etc
-  948K	/etc
+  908K	/etc
 
 $ [76/300]> du -sh /var
   8.5M	/var
@@ -468,16 +445,15 @@ $ [78/300]> du -h --max-depth=1 /var
 $ [79/300]> du -ch /etc/*.conf
   4.0K	/etc/adduser.conf
   4.0K	/etc/gai.conf
-  4.0K	/etc/host.conf
   4.0K	/etc/logrotate.conf
   4.0K	/etc/nsswitch.conf
   0	/etc/resolv.conf
   4.0K	/etc/rsyslog.conf
   4.0K	/etc/sysctl.conf
-  28K	total
+  24K	total
 
 $ [80/300]> du -a /etc | sort -rn | head -5
-  948	/etc
+  908	/etc
   188	/etc/apache2
   148	/etc/apache2/mods-available
   92	/etc/pam.d
@@ -490,39 +466,39 @@ $ [81/300]> df /chemin/inexistant_xyz
 --- [82] § blocs & montages — lsblk/mount ---
 $ [82/300]> lsblk
   NAME   MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
-  sda    8:0     0  50G  0  disk
-  ├─sda1 8:1     0  48G  0  part /
-  ├─sda2 8:2     0  2G   0  part /boot
-  loop0  7:0     0  0    1  loop
+  sda    8:0     0  50G  0  disk           
+  ├─sda1 8:1     0  48G  0  part /         
+  ├─sda2 8:2     0  2G   0  part /boot     
+  loop0  7:0     0  0    1  loop           
 
 $ [83/300]> lsblk -f
   NAME   FSTYPE LABEL UUID                                 MOUNTPOINT
-  sda
-  ├─sda1 ext4         8677d1c7-9c59-e805-4ca8-76662ac0ec63 /
-  ├─sda2 ext4         8777d35a-badc-cec9-d849-a2be84f9db1b /boot
-  loop0
+  sda                                                                
+  ├─sda1 ext4         8677d1c7-9c59-e805-4ca8-76662ac0ec63 /         
+  ├─sda2 ext4         8777d35a-badc-cec9-d849-a2be84f9db1b /boot     
+  loop0                                                              
 
 $ [84/300]> lsblk -a
   NAME   MAJ:MIN RM SIZE  RO TYPE MOUNTPOINT
-  sda    8:0     0  50G   0  disk
-  ├─sda1 8:1     0  48G   0  part /
-  ├─sda2 8:2     0  2G    0  part /boot
-  loop0  7:0     0  0     1  loop
-  sr0    11:0    1  1024M 0  rom
+  sda    8:0     0  50G   0  disk           
+  ├─sda1 8:1     0  48G   0  part /         
+  ├─sda2 8:2     0  2G    0  part /boot     
+  loop0  7:0     0  0     1  loop           
+  sr0    11:0    1  1024M 0  rom            
 
 $ [85/300]> lsblk -o NAME,SIZE,TYPE,MOUNTPOINT
   NAME   SIZE TYPE MOUNTPOINT
-  sda    50G  disk
-  ├─sda1 48G  part /
-  ├─sda2 2G   part /boot
-  loop0  0    loop
+  sda    50G  disk           
+  ├─sda1 48G  part /         
+  ├─sda2 2G   part /boot     
+  loop0  0    loop           
 
 $ [86/300]> lsblk -p
   NAME      MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
-  /dev/sda  8:0     0  50G  0  disk
-  /dev/sda1 8:1     0  48G  0  part /
-  /dev/sda2 8:2     0  2G   0  part /boot
-  loop0     7:0     0  0    1  loop
+  /dev/sda  8:0     0  50G  0  disk           
+  /dev/sda1 8:1     0  48G  0  part /         
+  /dev/sda2 8:2     0  2G   0  part /boot     
+  loop0     7:0     0  0    1  loop           
 
 $ [87/300]> blkid
   blkid: error: Permission denied
@@ -566,18 +542,18 @@ $ [91/300]> cat /etc/fstab
   UUID=8777d35a-badc-cec9-d849-a2be84f9db1b /boot ext4 defaults 0 2
 
 $ [92/300]> findmnt
-  TARGET       SOURCE    FSTYPE   OPTIONS
-  /            /dev/sda1 ext4     rw,relatime,errors=remount-ro
-  ├─/boot      /dev/sda2 ext4     rw,relatime
-  ├─/dev       udev      devtmpfs rw,nosuid,relatime
-  │ └─/dev/shm tmpfs     tmpfs    rw,nosuid,nodev
-  ├─/proc      proc      proc     rw,nosuid,nodev,noexec,relatime
-  ├─/run/lock  tmpfs     tmpfs    rw,nosuid,nodev,noexec,relatime,size=5120k
-  └─/sys       sysfs     sysfs    rw,nosuid,nodev,noexec,relatime
+  TARGET SOURCE FSTYPE OPTIONS
+  / /dev/sda1 ext4 rw,relatime,errors=remount-ro
+  /boot /dev/sda2 ext4 rw,relatime
+  /dev udev devtmpfs rw,nosuid,relatime
+  /dev/shm tmpfs tmpfs rw,nosuid,nodev
+  /proc proc proc rw,nosuid,nodev,noexec,relatime
+  /run/lock tmpfs tmpfs rw,nosuid,nodev,noexec,relatime,size=5120k
+  /sys sysfs sysfs rw,nosuid,nodev,noexec,relatime
 
 $ [93/300]> findmnt /
-  TARGET SOURCE    FSTYPE OPTIONS
-  /      /dev/sda1 ext4   rw,relatime,errors=remount-ro
+  TARGET SOURCE FSTYPE OPTIONS
+  / /dev/sda1 ext4 rw,relatime,errors=remount-ro
 
 $ [94/300]> umount /chemin/inexistant_xyz
   umount: only root can do that: Permission denied
@@ -588,26 +564,26 @@ $ [95/300]> mount /dev/inexistant_xyz /mnt
 
 --- [96] § noyau — sysctl/dmesg/modules ---
 $ [96/300]> sysctl -a | head -20
-  fs.protected_fifos = 1
-  fs.protected_hardlinks = 1
-  fs.protected_regular = 2
-  kernel.dmesg_restrict = 1
-  kernel.domainname = (none)
   kernel.hostname = L-PC-SYS-DBG
-  kernel.kptr_restrict = 1
   kernel.osrelease = 5.15.0-130-generic
   kernel.ostype = Linux
-  kernel.pid_max = 4194304
-  kernel.printk = 4	4	1	7
-  kernel.random.boot_id = 41042745-9066-48c5-aacd-092c616676a9
-  kernel.random.uuid = 6d2f44f4-a195-4479-a0b5-71968a394eb5
-  kernel.sysrq = 176
   kernel.version = #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
-  kernel.yama.ptrace_scope = 1
-  net.core.default_qdisc = fq_codel
   net.core.rmem_default = 212992
   net.core.rmem_max = 212992
   net.core.somaxconn = 4096
+  net.core.wmem_default = 212992
+  net.core.wmem_max = 212992
+  net.ipv4.arp_cache_size = 1024
+  net.ipv4.conf.all.accept_redirects = 1
+  net.ipv4.conf.all.arp_accept = 0
+  net.ipv4.conf.all.arp_announce = 0
+  net.ipv4.conf.all.arp_ignore = 0
+  net.ipv4.conf.all.arp_notify = 0
+  net.ipv4.conf.all.proxy_arp = 0
+  net.ipv4.conf.all.secure_redirects = 1
+  net.ipv4.conf.all.send_redirects = 1
+  net.ipv4.conf.all.shared_media = 1
+  net.ipv4.conf.default.accept_redirects = 1
 
 $ [97/300]> sysctl kernel.hostname
   kernel.hostname = L-PC-SYS-DBG
@@ -622,7 +598,7 @@ $ [100/300]> sysctl kernel.version
   kernel.version = #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
 
 $ [101/300]> sysctl kernel.pid_max
-  kernel.pid_max = 4194304
+  sysctl: cannot stat /proc/sys/kernel/pid_max: No such file or directory
 
 $ [102/300]> sysctl vm.swappiness
   sysctl: cannot stat /proc/sys/vm/swappiness: No such file or directory
@@ -640,16 +616,34 @@ $ [106/300]> cat /proc/sys/kernel/hostname
   L-PC-SYS-DBG
 
 $ [107/300]> cat /proc/sys/kernel/pid_max
-  4194304
+  cat: /proc/sys/kernel/pid_max: No such file or directory
 
 $ [108/300]> dmesg | head
-  dmesg: read kernel buffer failed: Operation not permitted
+  [    0.000000] Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+  [    0.000000] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
+  [    0.010000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.0-1 04/01/2014
+  [    0.050000] Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
+  [    0.100000] PCI: Using configuration type 1 for base access
+  [    0.110000] pci 0000:00:01.0: PIIX/ICH IDE controller
+  [    0.200000] smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  [    0.300000] NET: Registered PF_INET protocol family
+  [    0.310000] NET: Registered PF_INET6 protocol family
+  [    0.400000] usbcore: registered new interface driver usbfs
 
 $ [109/300]> dmesg -T | head
-  dmesg: read kernel buffer failed: Operation not permitted
+  [Sat Oct 31 20:15:26 2026] Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+  [Sat Oct 31 20:15:26 2026] Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
+  [Sat Oct 31 20:15:26 2026] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.0-1 04/01/2014
+  [Sat Oct 31 20:15:26 2026] Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
+  [Sat Oct 31 20:15:26 2026] PCI: Using configuration type 1 for base access
+  [Sat Oct 31 20:15:26 2026] pci 0000:00:01.0: PIIX/ICH IDE controller
+  [Sat Oct 31 20:15:26 2026] smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  [Sat Oct 31 20:15:26 2026] NET: Registered PF_INET protocol family
+  [Sat Oct 31 20:15:26 2026] NET: Registered PF_INET6 protocol family
+  [Sat Oct 31 20:15:26 2026] usbcore: registered new interface driver usbfs
 
 $ [110/300]> dmesg --level=err
-  dmesg: read kernel buffer failed: Operation not permitted
+<empty>
 
 $ [111/300]> lsmod
   Module                  Size  Used by
@@ -1181,7 +1175,7 @@ $ [161/300]> tar -cf arch.tar arch_src
 <empty>
 
 $ [162/300]> ls -l arch.tar
-  -rw-r--r-- 1 user user 348 Nov  5 08:36 arch.tar
+  -rw-r--r-- 1 user user 348 Oct 31 20:15 arch.tar
 
 $ [163/300]> tar -tf arch.tar
   arch_src/
@@ -1192,7 +1186,7 @@ $ [164/300]> tar -czf arch.tar.gz arch_src
 <empty>
 
 $ [165/300]> ls -l arch.tar.gz
-  -rw-r--r-- 1 user user 181 Nov  5 08:36 arch.tar.gz
+  -rw-r--r-- 1 user user 186 Oct 31 20:15 arch.tar.gz
 
 $ [166/300]> tar -tzf arch.tar.gz
   arch_src/
@@ -1214,25 +1208,25 @@ $ [169/300]> gzip arch_src/a.txt
 
 $ [170/300]> ls -l arch_src
   total 8
-  -rw-r--r-- 1 user user 32 Nov  5 08:36 a.txt.gz
-  -rw-r--r-- 1 user user  6 Nov  5 08:36 b.txt
+  -rw-r--r-- 1 user user 32 Oct 31 20:15 a.txt.gz
+  -rw-r--r-- 1 user user  6 Oct 31 20:15 b.txt
 
 $ [171/300]> gunzip arch_src/a.txt.gz
 <empty>
 
 $ [172/300]> ls -l arch_src
   total 8
-  -rw-r--r-- 1 user user 6 Nov  5 08:36 a.txt
-  -rw-r--r-- 1 user user 6 Nov  5 08:36 b.txt
+  -rw-r--r-- 1 user user 6 Oct 31 20:15 a.txt
+  -rw-r--r-- 1 user user 6 Oct 31 20:15 b.txt
 
 $ [173/300]> gzip -k arch_src/b.txt
 <empty>
 
 $ [174/300]> ls -l arch_src
   total 12
-  -rw-r--r-- 1 user user  6 Nov  5 08:36 a.txt
-  -rw-r--r-- 1 user user  6 Nov  5 08:36 b.txt
-  -rw-r--r-- 1 user user 32 Nov  5 08:36 b.txt.gz
+  -rw-r--r-- 1 user user  6 Oct 31 20:15 a.txt
+  -rw-r--r-- 1 user user  6 Oct 31 20:15 b.txt
+  -rw-r--r-- 1 user user 32 Oct 31 20:15 b.txt.gz
 
 $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/ (stored 0%)
@@ -1241,16 +1235,16 @@ $ [175/300]> zip -r arch.zip arch_src
     adding: arch_src/b.txt.gz (deflated 82%)
 
 $ [176/300]> ls -l arch.zip
-  -rw-r--r-- 1 user user 549 Nov  5 08:36 arch.zip
+  -rw-r--r-- 1 user user 548 Oct 31 20:15 arch.zip
 
 $ [177/300]> unzip -l arch.zip
   Archive:  arch.zip
     Length      Date    Time    Name
   ---------  ---------- -----   ----
-          0  2026-11-05 08:36   arch_src/
-          6  2026-11-05 08:36   arch_src/b.txt
-          6  2026-11-05 08:36   arch_src/a.txt
-         32  2026-11-05 08:36   arch_src/b.txt.gz
+          0  2026-10-31 20:15   arch_src/
+          6  2026-10-31 20:15   arch_src/b.txt
+          6  2026-10-31 20:15   arch_src/a.txt
+         32  2026-10-31 20:15   arch_src/b.txt.gz
   ---------                     -------
          44                     4 files
 
@@ -1275,7 +1269,6 @@ $ [182/300]> sha256sum /etc/hostname /etc/os-release
 
 $ [183/300]> cksum /etc/hostname
   1790753974 13 /etc/hostname
-  
 
 $ [184/300]> sha256sum /etc/hostname > /tmp/sums.txt && sha256sum -c /tmp/sums.txt
   /etc/hostname: OK
@@ -1295,88 +1288,97 @@ $ [188/300]> logger -t debugtag "tag debug"
 <empty>
 
 $ [189/300]> journalctl -n 10 --no-pager
-  Nov 05 08:36:50 L-PC-SYS-DBG rsyslogd[26]: imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2610.0]
-  Nov 05 08:36:50 L-PC-SYS-DBG rsyslogd[26]: [origin software="rsyslogd" swVersion="8.2610.0" x-pid="26" x-info="https://www.rsyslog.com"] start
-  Nov 05 08:36:50 L-PC-SYS-DBG chrony[100]: Listening on UDP 0.0.0.0:123
-  Nov 05 08:36:50 L-PC-SYS-DBG sshd[22]: Server listening on 0.0.0.0 port 22.
-  Nov 05 08:36:50 L-PC-SYS-DBG sshd[22]: Server listening on :: port 22.
-  Nov 05 08:36:50 L-PC-SYS-DBG systemd-resolved[101]: Listening on UDP 127.0.0.53:53
-  Nov 05 08:36:50 L-PC-SYS-DBG systemd-resolved[102]: Listening on TCP 127.0.0.53:53
-  Nov 05 08:36:50 L-PC-SYS-DBG user[103]: message de test debug
-  Nov 05 08:36:50 L-PC-SYS-DBG user[104]: info debug
-  Nov 05 08:36:50 L-PC-SYS-DBG debugtag[105]: tag debug
+  Oct 31 20:15:57 L-PC-SYS-DBG rsyslogd[26]: imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2610.0]
+  Oct 31 20:15:57 L-PC-SYS-DBG rsyslogd[26]: [origin software="rsyslogd" swVersion="8.2610.0" x-pid="26" x-info="https://www.rsyslog.com"] start
+  Oct 31 20:15:57 L-PC-SYS-DBG chrony[100]: Listening on UDP 0.0.0.0:123
+  Oct 31 20:15:57 L-PC-SYS-DBG sshd[22]: Server listening on 0.0.0.0 port 22.
+  Oct 31 20:15:57 L-PC-SYS-DBG sshd[22]: Server listening on :: port 22.
+  Oct 31 20:15:57 L-PC-SYS-DBG systemd-resolved[101]: Listening on UDP 127.0.0.53:53
+  Oct 31 20:15:57 L-PC-SYS-DBG systemd-resolved[102]: Listening on TCP 127.0.0.53:53
+  Oct 31 20:15:57 L-PC-SYS-DBG user[103]: message de test debug
+  Oct 31 20:15:57 L-PC-SYS-DBG user[104]: info debug
+  Oct 31 20:15:57 L-PC-SYS-DBG debugtag[105]: tag debug
 
 $ [190/300]> journalctl -p err -n 5
   -- No entries --
 
 $ [191/300]> journalctl -b
-  Nov 05 08:36:20 localhost kernel: Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
-  Nov 05 08:36:20 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
-  Nov 05 08:36:20 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.0-1 04/01/2014
-  Nov 05 08:36:20 localhost kernel: Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
-  Nov 05 08:36:20 localhost kernel: PCI: Using configuration type 1 for base access
-  Nov 05 08:36:20 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
-  Nov 05 08:36:20 localhost kernel: smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
-  Nov 05 08:36:20 localhost kernel: NET: Registered PF_INET protocol family
-  Nov 05 08:36:20 localhost kernel: NET: Registered PF_INET6 protocol family
-  Nov 05 08:36:20 localhost kernel: usbcore: registered new interface driver usbfs
-  Nov 05 08:36:20 localhost kernel: usbcore: registered new interface driver hub
-  Nov 05 08:36:20 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
-  Nov 05 08:36:20 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
-  Nov 05 08:36:21 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
-  Nov 05 08:36:21 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
-  Nov 05 08:36:22 localhost systemd-journald: Journal started
-  Nov 05 08:36:22 localhost systemd-journald: System Journal (/var/log/journal/5093026292b88733a8d09f07cdfbbe39) is 8.0M, max 4.0G, 3.9G free.
-  Nov 05 08:36:22 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
-  Nov 05 08:36:22 localhost systemd[1]: Started systemd-journald.service - Journal Service.
-  Nov 05 08:36:22 localhost systemd[1]: Started systemd-logind.service - User Login Management.
-  Nov 05 08:36:22 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
-  Nov 05 08:36:22 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
-  Nov 05 08:36:22 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
-  Nov 05 08:36:22 localhost systemd-logind[456]: New seat seat0.
-  Nov 05 08:36:22 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
-  Nov 05 08:36:50 L-PC-SYS-DBG auditd[27]: No plugins found, not dispatching events
-  Nov 05 08:36:50 L-PC-SYS-DBG auditd[27]: Init complete, auditd 3.1.2 listening for events (startup state enable)
-  Nov 05 08:36:50 L-PC-SYS-DBG rsyslogd[26]: imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2610.0]
-  Nov 05 08:36:50 L-PC-SYS-DBG rsyslogd[26]: [origin software="rsyslogd" swVersion="8.2610.0" x-pid="26" x-info="https://www.rsyslog.com"] start
-  Nov 05 08:36:50 L-PC-SYS-DBG chrony[100]: Listening on UDP 0.0.0.0:123
-  Nov 05 08:36:50 L-PC-SYS-DBG sshd[22]: Server listening on 0.0.0.0 port 22.
-  Nov 05 08:36:50 L-PC-SYS-DBG sshd[22]: Server listening on :: port 22.
-  Nov 05 08:36:50 L-PC-SYS-DBG systemd-resolved[101]: Listening on UDP 127.0.0.53:53
-  Nov 05 08:36:50 L-PC-SYS-DBG systemd-resolved[102]: Listening on TCP 127.0.0.53:53
-  Nov 05 08:36:50 L-PC-SYS-DBG user[103]: message de test debug
-  Nov 05 08:36:50 L-PC-SYS-DBG user[104]: info debug
-  Nov 05 08:36:50 L-PC-SYS-DBG debugtag[105]: tag debug
+  Oct 31 20:15:26 localhost kernel: Linux version 5.15.0-130-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0, GNU ld (GNU Binutils for Ubuntu) 2.38) #140-Ubuntu SMP Wed Apr 16 12:00:00 UTC 2025
+  Oct 31 20:15:26 localhost kernel: Command line: BOOT_IMAGE=/vmlinuz-5.15.0-130-generic root=/dev/sda1 ro quiet splash
+  Oct 31 20:15:26 localhost kernel: DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.0-1 04/01/2014
+  Oct 31 20:15:26 localhost kernel: Memory: 3948633K/4194304K available (14339K kernel code, 5992K rwdata, 8384K rodata, 3168K init, 796K bss, 212992K reserved, 0K cma-reserved)
+  Oct 31 20:15:26 localhost kernel: PCI: Using configuration type 1 for base access
+  Oct 31 20:15:26 localhost kernel: pci 0000:00:01.0: PIIX/ICH IDE controller
+  Oct 31 20:15:26 localhost kernel: smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  Oct 31 20:15:26 localhost kernel: NET: Registered PF_INET protocol family
+  Oct 31 20:15:26 localhost kernel: NET: Registered PF_INET6 protocol family
+  Oct 31 20:15:26 localhost kernel: usbcore: registered new interface driver usbfs
+  Oct 31 20:15:26 localhost kernel: usbcore: registered new interface driver hub
+  Oct 31 20:15:26 localhost kernel: e1000: Intel(R) PRO/1000 Network Driver
+  Oct 31 20:15:26 localhost kernel: e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
+  Oct 31 20:15:27 localhost kernel: EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  Oct 31 20:15:27 localhost kernel: EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+  Oct 31 20:15:28 localhost systemd-journald: Journal started
+  Oct 31 20:15:28 localhost systemd-journald: System Journal (/var/log/journal/5093026292b88733a8d09f07cdfbbe39) is 8.0M, max 4.0G, 3.9G free.
+  Oct 31 20:15:28 localhost systemd[1]: systemd 249.11-0ubuntu3 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)
+  Oct 31 20:15:28 localhost systemd[1]: Started systemd-journald.service - Journal Service.
+  Oct 31 20:15:28 localhost systemd[1]: Started systemd-logind.service - User Login Management.
+  Oct 31 20:15:28 localhost systemd[1]: Started cron.service - Regular background program processing daemon.
+  Oct 31 20:15:28 localhost systemd[1]: Started ssh.service - OpenBSD Secure Shell server.
+  Oct 31 20:15:29 localhost systemd[1]: Reached target multi-user.target - Multi-User System.
+  Oct 31 20:15:29 localhost systemd-logind[456]: New seat seat0.
+  Oct 31 20:15:29 localhost systemd-logind[456]: Watching system buttons on /dev/input/event0.
+  Oct 31 20:15:57 L-PC-SYS-DBG auditd[27]: No plugins found, not dispatching events
+  Oct 31 20:15:57 L-PC-SYS-DBG auditd[27]: Init complete, auditd 3.1.2 listening for events (startup state enable)
+  Oct 31 20:15:57 L-PC-SYS-DBG rsyslogd[26]: imuxsock: Acquired UNIX socket '/run/systemd/journal/syslog' (fd 3) from systemd.  [v8.2610.0]
+  Oct 31 20:15:57 L-PC-SYS-DBG rsyslogd[26]: [origin software="rsyslogd" swVersion="8.2610.0" x-pid="26" x-info="https://www.rsyslog.com"] start
+  Oct 31 20:15:57 L-PC-SYS-DBG chrony[100]: Listening on UDP 0.0.0.0:123
+  Oct 31 20:15:57 L-PC-SYS-DBG sshd[22]: Server listening on 0.0.0.0 port 22.
+  Oct 31 20:15:57 L-PC-SYS-DBG sshd[22]: Server listening on :: port 22.
+  Oct 31 20:15:57 L-PC-SYS-DBG systemd-resolved[101]: Listening on UDP 127.0.0.53:53
+  Oct 31 20:15:57 L-PC-SYS-DBG systemd-resolved[102]: Listening on TCP 127.0.0.53:53
+  Oct 31 20:15:57 L-PC-SYS-DBG user[103]: message de test debug
+  Oct 31 20:15:57 L-PC-SYS-DBG user[104]: info debug
+  Oct 31 20:15:57 L-PC-SYS-DBG debugtag[105]: tag debug
 
 $ [192/300]> journalctl --disk-usage
   Archived and active journals take up 16.0M in the file system.
 
 $ [193/300]> dmesg | tail
-  dmesg: read kernel buffer failed: Operation not permitted
+  [    0.110000] pci 0000:00:01.0: PIIX/ICH IDE controller
+  [    0.200000] smpboot: CPU0: Intel(R) Xeon(R) CPU E5-2686 v4 @ 2.30GHz (family: 0x6, model: 0x4f, stepping: 0x1)
+  [    0.300000] NET: Registered PF_INET protocol family
+  [    0.310000] NET: Registered PF_INET6 protocol family
+  [    0.400000] usbcore: registered new interface driver usbfs
+  [    0.410000] usbcore: registered new interface driver hub
+  [    0.500000] e1000: Intel(R) PRO/1000 Network Driver
+  [    0.501000] e1000 0000:00:03.0 eth0: (PCI:33MHz:32-bit) link up
+  [    1.000000] EXT4-fs (sda1): mounted filesystem with ordered data mode. Opts: (null)
+  [    1.200000] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
 
 $ [194/300]> tail -n 5 /var/log/syslog
-  Nov  5 08:36:50 L-PC-SYS-DBG systemd-resolved[101]: Listening on UDP 127.0.0.53:53
-  Nov  5 08:36:50 L-PC-SYS-DBG systemd-resolved[102]: Listening on TCP 127.0.0.53:53
-  Nov  5 08:36:50 L-PC-SYS-DBG user: message de test debug
-  Nov  5 08:36:50 L-PC-SYS-DBG user: info debug
-  Nov  5 08:36:50 L-PC-SYS-DBG debugtag: tag debug
+  Oct 31 20:15:57 L-PC-SYS-DBG systemd-resolved[101]: Listening on UDP 127.0.0.53:53
+  Oct 31 20:15:57 L-PC-SYS-DBG systemd-resolved[102]: Listening on TCP 127.0.0.53:53
+  Oct 31 20:15:57 L-PC-SYS-DBG user: message de test debug
+  Oct 31 20:15:57 L-PC-SYS-DBG user: info debug
+  Oct 31 20:15:57 L-PC-SYS-DBG debugtag: tag debug
 
 $ [195/300]> ls -l /var/log
   total 336
-  drwxr-xr-x 2 root root   4096 Nov  5 08:36 apache2
-  drwxr-x--- 2 root adm    4096 Nov  5 08:36 audit
-  -rw-r----- 1 root adm     309 Nov  5 08:36 auth.log
-  -rw-r----- 1 root adm    2148 Nov  5 08:36 boot.log
-  -rw-rw---- 1 root utmp      0 Nov  5 08:36 btmp
-  drwxr-xr-x 2 root root   4096 Nov  5 08:36 chrony
-  drwxr-sr-x 3 root adm    4096 Nov  5 08:36 journal
-  -rw-r----- 1 root adm    1615 Nov  5 08:36 kern.log
-  -rw-rw-r-- 1 root utmp 292292 Nov  5 08:36 lastlog
-  -rw-r--r-- 1 root root    245 Nov  5 08:36 messages
-  drwxr-xr-x 2 root root   4096 Nov  5 08:36 nginx
-  -rw-r----- 1 root adm    3275 Nov  5 08:36 syslog
-  -rw-r----- 1 root adm     152 Nov  5 08:36 user.log
-  -rw-rw-r-- 1 root utmp   1152 Nov  5 08:36 wtmp
+  drwxr-xr-x 2 root root   4096 Oct 31 20:15 apache2
+  drwxr-x--- 2 root adm    4096 Oct 31 20:15 audit
+  -rw-r----- 1 root adm     309 Oct 31 20:15 auth.log
+  -rw-r----- 1 root adm    2148 Oct 31 20:15 boot.log
+  -rw-rw---- 1 root utmp      0 Oct 31 20:15 btmp
+  drwxr-xr-x 2 root root   4096 Oct 31 20:15 chrony
+  drwxr-sr-x 3 root adm    4096 Oct 31 20:15 journal
+  -rw-r----- 1 root adm    1615 Oct 31 20:15 kern.log
+  -rw-rw-r-- 1 root utmp 292292 Oct 31 20:15 lastlog
+  -rw-r--r-- 1 root root    245 Oct 31 20:15 messages
+  drwxr-xr-x 2 root root   4096 Oct 31 20:15 nginx
+  -rw-r----- 1 root adm    3275 Oct 31 20:15 syslog
+  -rw-r----- 1 root adm     152 Oct 31 20:15 user.log
+  -rw-rw-r-- 1 root utmp   1152 Oct 31 20:15 wtmp
 
 
 --- [196] § utilitaires divers ---
@@ -1419,7 +1421,7 @@ $ [204/300]> yes | head -3
   y
 
 $ [205/300]> watch -n 1 -c 1 date
-  Every 1.0s: 1 date                        L-PC-SYS-DBG: Thu Nov  5 08:36:50 2026
+  Every 1.0s: 1 date                        L-PC-SYS-DBG: Sat Oct 31 20:15:57 2026
   
   bash: 1: command not found
 
@@ -1454,7 +1456,7 @@ $ [209/300]> echo "=== HOST ==="; hostname; uname -r
 $ [210/300]> echo "=== CPU ==="; nproc; uptime
   === CPU ===
   2
-   08:36:50 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   20:15:57 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [211/300]> echo "=== MEM ==="; free -h | head -2
   === MEM ===
@@ -1463,11 +1465,11 @@ $ [211/300]> echo "=== MEM ==="; free -h | head -2
 
 $ [212/300]> echo "=== DISK ==="; df -h / | tail -1
   === DISK ===
-  /dev/sda1        48G   17M   48G   1% /
+  /dev/sda1        48G   16M   48G   1% /
 
 $ [213/300]> echo "=== TOP DIRS ==="; du -sh /etc /var /tmp 2>/dev/null
   === TOP DIRS ===
-  948K	/etc
+  908K	/etc
   17M	/var
   52K	/tmp
 
@@ -1476,7 +1478,7 @@ $ [214/300]> echo "kernel=$(uname -r) host=$(hostname)"
 
 $ [215/300]> df -h | awk 'NR==1 || /\/$/'
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        48G   17M   48G   1% /
+  /dev/sda1        48G   16M   48G   1% /
 
 $ [216/300]> free -m | awk '/Mem/ {printf "RAM: %d/%d MB\n", $3, $2}'
   RAM: 1229/3888 MB
@@ -1490,7 +1492,7 @@ $ [217/300]> ls /proc
   12  16	2   23	27  30	34  38	6   cmdline  meminfo  self     uptime
 
 $ [218/300]> cat /proc/uptime
-  0.00 0.00
+  1.00 1.00
 
 $ [219/300]> cat /proc/loadavg
   0.00 0.00 0.00 1/39 39
@@ -1586,61 +1588,50 @@ $ [241/300]> cat /sys/kernel/hostname 2>/dev/null || hostname
 
 --- [242] § formats de date avancés ---
 $ [242/300]> date "+%A %d %B %Y"
-  Thursday 05 November 2026
-  
+  Saturday 31 October 2026
 
 $ [243/300]> date "+%j"
-  309
-  
+  304
 
 $ [244/300]> date "+%V"
-  45
-  
+  44
 
 $ [245/300]> date "+%u"
-  4
-  
+  6
 
 $ [246/300]> date "+%Z %z"
   UTC +0000
-  
 
 $ [247/300]> date -u "+%Y-%m-%dT%H:%M:%SZ"
-  2026-11-05T08:36:50Z
-  
+  2026-10-31T20:15:57Z
 
 $ [248/300]> date -d "next monday"
-  Mon Nov  9 00:00:00 UTC 2026
-  
+  Mon Nov 02 00:00:00 UTC 2026
 
 $ [249/300]> date -d "yesterday"
-  Wed Nov  4 08:36:50 UTC 2026
-  
+  Fri Oct 30 20:15:57 UTC 2026
 
 $ [250/300]> date -d "1 hour ago"
-  Thu Nov  5 07:36:50 UTC 2026
-  
+  Sat Oct 31 19:15:57 UTC 2026
 
 $ [251/300]> date -d "@0"
-  Thu Jan  1 00:00:00 UTC 1970
-  
+  Thu Jan 01 00:00:00 UTC 1970
 
 $ [252/300]> date -d "@1700000000"
   Tue Nov 14 22:13:20 UTC 2023
-  
 
 $ [253/300]> TZ=UTC date
-  Thu Nov  5 08:36:50 UTC 2026
+  Sat Oct 31 20:15:57 UTC 2026
 
 $ [254/300]> cal -3
                               2026
-        October               November              December        
+       September              October               November        
   Su Mo Tu We Th Fr Sa  Su Mo Tu We Th Fr Sa  Su Mo Tu We Th Fr Sa  
-               1  2  3   1  2  3  4  5  6  7         1  2  3  4  5  
-   4  5  6  7  8  9 10   8  9 10 11 12 13 14   6  7  8  9 10 11 12  
-  11 12 13 14 15 16 17  15 16 17 18 19 20 21  13 14 15 16 17 18 19  
-  18 19 20 21 22 23 24  22 23 24 25 26 27 28  20 21 22 23 24 25 26  
-  25 26 27 28 29 30 31  29 30                 27 28 29 30 31        
+         1  2  3  4  5               1  2  3   1  2  3  4  5  6  7  
+   6  7  8  9 10 11 12   4  5  6  7  8  9 10   8  9 10 11 12 13 14  
+  13 14 15 16 17 18 19  11 12 13 14 15 16 17  15 16 17 18 19 20 21  
+  20 21 22 23 24 25 26  18 19 20 21 22 23 24  22 23 24 25 26 27 28  
+  27 28 29 30           25 26 27 28 29 30 31  29 30                 
                                                                     
 
 
@@ -1767,38 +1758,38 @@ $ [276/300]> getconf -a | head
   CHAR_BIT                           8
   CLK_TCK                            100
   CS_PATH                            /bin:/usr/bin
-  FILESIZEBITS                       64
-  GNU_LIBC_VERSION                   glibc 2.35
-  GNU_LIBPTHREAD_VERSION             NPTL 2.35
+  GNU_LIBC_VERSION                   glibc 2.39
+  GNU_LIBPTHREAD_VERSION             NPTL 2.39
   HOST_NAME_MAX                      64
   INT_MAX                            2147483647
   LEVEL1_DCACHE_LINESIZE             64
+  LEVEL1_ICACHE_LINESIZE             64
 
 
 --- [277] § snapshot processus & charge ---
 $ [277/300]> ps aux | head
   USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
-  root           1  0.0  0.3 169000 13000 ?        Ss   08:36   0:00 /sbin/init
-  root           2  0.0  0.0      0     0 ?        S    08:36   0:00 [kthreadd]
-  root           3  0.0  0.0      0     0 ?        S    08:36   0:00 [rcu_gp]
-  root           4  0.0  0.0      0     0 ?        S    08:36   0:00 [rcu_par_gp]
-  root           5  0.0  0.0      0     0 ?        I    08:36   0:00 [slub_flushwq]
-  root           6  0.0  0.0      0     0 ?        S    08:36   0:00 [netns]
-  root           7  0.0  0.0      0     0 ?        I    08:36   0:00 [kworker/0:0-events]
-  root           8  0.0  0.0      0     0 ?        I    08:36   0:00 [kworker/0:1-events]
-  root           9  0.0  0.0      0     0 ?        I    08:36   0:00 [kworker/1:0-events]
+  root           1  0.0  0.3 169000 13000 ?        Ss   20:15   0:00 /sbin/init
+  root           2  0.0  0.0      0     0 ?        S    20:15   0:00 [kthreadd]
+  root           3  0.0  0.0      0     0 ?        S    20:15   0:00 [rcu_gp]
+  root           4  0.0  0.0      0     0 ?        S    20:15   0:00 [rcu_par_gp]
+  root           5  0.0  0.0      0     0 ?        I    20:15   0:00 [slub_flushwq]
+  root           6  0.0  0.0      0     0 ?        S    20:15   0:00 [netns]
+  root           7  0.0  0.0      0     0 ?        I    20:15   0:00 [kworker/0:0-events]
+  root           8  0.0  0.0      0     0 ?        I    20:15   0:00 [kworker/0:1-events]
+  root           9  0.0  0.0      0     0 ?        I    20:15   0:00 [kworker/1:0-events]
 
 $ [278/300]> ps -ef | head
   UID          PID    PPID  C STIME TTY          TIME CMD
-  root           1       0  0 08:36 ?        00:00:00 /sbin/init
-  root           2       0  0 08:36 ?        00:00:00 [kthreadd]
-  root           3       2  0 08:36 ?        00:00:00 [rcu_gp]
-  root           4       2  0 08:36 ?        00:00:00 [rcu_par_gp]
-  root           5       2  0 08:36 ?        00:00:00 [slub_flushwq]
-  root           6       2  0 08:36 ?        00:00:00 [netns]
-  root           7       2  0 08:36 ?        00:00:00 [kworker/0:0-events]
-  root           8       2  0 08:36 ?        00:00:00 [kworker/0:1-events]
-  root           9       2  0 08:36 ?        00:00:00 [kworker/1:0-events]
+  root           1       0  0 20:15 ?        00:00:00 /sbin/init
+  root           2       0  0 20:15 ?        00:00:00 [kthreadd]
+  root           3       2  0 20:15 ?        00:00:00 [rcu_gp]
+  root           4       2  0 20:15 ?        00:00:00 [rcu_par_gp]
+  root           5       2  0 20:15 ?        00:00:00 [slub_flushwq]
+  root           6       2  0 20:15 ?        00:00:00 [netns]
+  root           7       2  0 20:15 ?        00:00:00 [kworker/0:0-events]
+  root           8       2  0 20:15 ?        00:00:00 [kworker/0:1-events]
+  root           9       2  0 20:15 ?        00:00:00 [kworker/1:0-events]
 
 $ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
       PID    PPID %CPU %MEM COMMAND
@@ -1808,7 +1799,7 @@ $ [279/300]> ps -eo pid,ppid,pcpu,pmem,comm --sort=-pcpu | head -5
         4       2  0.0  0.0 rcu_par_gp
 
 $ [280/300]> top -b -n 1 | head -12
-  top - 08:36:50 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
+  top - 20:15:57 up  0 min,  1 user,  load average: 0.00, 0.00, 0.00
   Tasks: 40 total,  1 running, 39 sleeping,  0 stopped,  0 zombie
   %Cpu(s):  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
   MiB Mem :  3888.0 total,  1434.0 free,  1229.0 used,  1225.0 buff/cache
@@ -1822,7 +1813,7 @@ $ [280/300]> top -b -n 1 | head -12
         5 root      20   0       0      0      0 I   0.0   0.0   0:00.00 slub_flus+
 
 $ [281/300]> uptime
-   08:36:50 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
+   20:15:57 up 0 min,  1 user,  load average: 0.00, 0.00, 0.00
 
 $ [282/300]> cat /proc/loadavg
   0.00 0.00 0.00 1/39 39
@@ -1842,7 +1833,7 @@ $ [285/300]> free -m && df -h /
   Mem:            3888        1229        1434          24        1225        2460
   Swap:           2048           0        2048
   Filesystem      Size  Used Avail Use% Mounted on
-  /dev/sda1        48G   17M   48G   1% /
+  /dev/sda1        48G   16M   48G   1% /
 
 
 --- [286] § horloge & disponibilité ---
@@ -1852,12 +1843,11 @@ $ [286/300]> timedatectl show
   CanNTP=yes
   NTP=yes
   NTPSynchronized=no
-  TimeUSec=1793867810995000
+  TimeUSec=1793477757957000
   TimezoneOffset=0
 
 $ [287/300]> date +%s
-  1793867810
-  
+  1793477757
 
 $ [288/300]> cat /proc/uptime | awk '{print $1" secondes"}'
   1.00 secondes
@@ -1866,12 +1856,12 @@ $ [289/300]> uptime -p
   up 0 minutes
 
 $ [290/300]> who -b
-  system boot  2026-11-05 08:36
+  system boot  2026-10-31 20:15
 
 $ [291/300]> last reboot 2>/dev/null | head
-  reboot   system boot  5.15.0-130-gener Thu Nov  5 08:36   still running
+  reboot   system boot  5.15.0-130-gener Sat Oct 31 20:15   still running
   
-  wtmp begins Thu Nov  5 08:36:49 2026
+  wtmp begins Sat Oct 31 20:15:56 2026
 
 
 --- [292] § mal formées — fin de transcript ---
