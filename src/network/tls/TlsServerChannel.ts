@@ -7,6 +7,8 @@ import { encryptApplicationData, decryptApplicationData } from '../http/https/Ap
 
 export interface TlsServerChannelHandlers {
   onHandshakeComplete?(): void;
+  onHandshakeRejected?(): void;
+  readonly silentRejection?: boolean;
   onData(plaintext: Uint8Array): void;
   onEarlyData?(plaintext: Uint8Array): void;
   onRenegotiated?(): void;
@@ -37,7 +39,9 @@ export class TlsServerChannel {
     let records = arrived;
     if (this.tls.result !== 'accept') {
       const reply = this.tls.handle(records);
-      if (reply && reply.length > 0) this.emit(reply);
+      const rejected = (this.tls.result as string | null) === 'reject';
+      if (reply && reply.length > 0 && !(rejected && this.handlers.silentRejection)) this.emit(reply);
+      if (rejected) this.handlers.onHandshakeRejected?.();
       if ((this.tls.result as string | null) !== 'accept') return;
       this.handlers.onHandshakeComplete?.();
       const early = this.tls.receivedEarlyData;

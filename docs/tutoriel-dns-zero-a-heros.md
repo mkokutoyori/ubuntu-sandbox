@@ -3261,9 +3261,10 @@ Cette ligne combine deux commandes avec le symbole `|` (le « tube », *pipe*) :
 
 ```
 UNCONN 0      0            0.0.0.0:53         0.0.0.0:*    users:(("named",pid=43,fd=3))          
+UNCONN 0      0               [::]:53            [::]:*    users:(("named",pid=43,fd=4))          
 ```
 
-`UNCONN` : en écoute (UDP n'a pas de connexion). `0.0.0.0:53` : sur **toutes** les interfaces de la machine, au port `53`, celui du DNS. `users:(("named",…))` : c'est le programme `named` qui y écoute.
+`UNCONN` : en écoute (UDP n'a pas de connexion). `0.0.0.0:53` : sur **toutes** les adresses IPv4 de la machine, au port `53`, celui du DNS. `[::]:53` : la même chose pour l'IPv6 (les crochets entourent une adresse IPv6, qui contient elle-même des deux-points). `users:(("named",…))` : c'est le programme `named` qui écoute sur les deux.
 
 > 🔍 **Point d'audit** — Garde une copie datée de `named.conf` et des fichiers de zone avec leur somme `sha256sum` : c'est la « configuration de référence » à laquelle un auditeur comparera. `allow-transfer` doit nommer des adresses, **jamais `any`** (TP 35).
 

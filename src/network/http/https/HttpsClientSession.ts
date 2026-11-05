@@ -16,6 +16,9 @@ import { TlsClientSession, type TlsClientConfig } from '@/network/tls/TlsClientS
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { runTlsHandshakeOverSocket } from './TlsRecordWire';
 import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
+import { synchronousDialFailure } from '@/network/tcp/dial';
+import { Http2Connection, type Http2Transport } from '../http2/Http2Connection';
+import { requestToHttp2, http2ToResponse } from '../http2/Http2Messages';
 import { HstsStore } from './HstsStore';
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import type { IEventBus } from '@/events/EventBus';
@@ -30,7 +33,13 @@ export interface HttpsSendResult {
   alpnProtocol?: string | null;
 }
 
-export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn' | 'earlyData'> & { readonly alpn?: readonly string[]; readonly earlyData?: boolean | Uint8Array };
+export type HttpsClientConfig = Omit<TlsClientConfig, 'alpn' | 'earlyData'> & {
+  readonly alpn?: readonly string[];
+  readonly earlyData?: boolean | Uint8Array;
+  readonly requireAlpn?: string;
+};
+
+export type HttpsConnectFailure = 'refused' | 'timeout' | 'unreachable' | 'tls' | 'alpn';
 
 /**
  * RFC 9112 §9.3 — persistent by default, exactly like `Http1ClientSession`;
@@ -43,6 +52,8 @@ export class HttpsClientSession {
   private lastTls: TlsClientSession | null = null;
   private handshakeCompletedMs: number | null = null;
   private channel: TlsClientChannel | null = null;
+  private http2: Http2Connection | null = null;
+  private failure: HttpsConnectFailure | null = null;
   readonly hstsStore: HstsStore;
 
   constructor(
@@ -69,7 +80,10 @@ export class HttpsClientSession {
 
     const adopted = this.socket?.state === 'established' && this.tls === null ? this.socket : null;
     const socket = adopted ?? this.tcpStack.connect(this.targetIp, this.port);
-    if (!socket || socket.state !== 'established') return false;
+    if (!socket || socket.state !== 'established') {
+      this.failure = synchronousDialFailure(this.tcpStack, this.targetIp, socket);
+      return false;
+    }
 
     const { earlyData: sendEarly, ...tlsConfig } = this.tlsConfig;
     const tls = new TlsClientSession({
@@ -82,15 +96,34 @@ export class HttpsClientSession {
     this.handshakeCompletedMs = simulationNowMs();
 
     if (tls.result !== 'success') {
+      this.failure = 'tls';
+      socket.close();
+      this.socket = null;
+      this.tls = null;
+      return false;
+    }
+    if (this.tlsConfig.requireAlpn !== undefined && tls.negotiatedAlpnProtocol !== this.tlsConfig.requireAlpn) {
+      this.failure = 'alpn';
       socket.close();
       this.socket = null;
       this.tls = null;
       return false;
     }
 
+    this.failure = null;
     this.socket = socket;
     this.tls = tls;
     this.channel = new TlsClientChannel(socket, tls);
+    this.http2 = null;
+    if (tls.negotiatedAlpnProtocol === 'h2') {
+      const channel = this.channel;
+      const transport: Http2Transport = {
+        write: (data) => channel.send(binaryStringToBytes(data)),
+        onData: (handler) => channel.onPushBytes((bytes) => handler(bytesToBinaryString(bytes))),
+        close: () => socket.close(),
+      };
+      this.http2 = new Http2Connection(transport, 'client', undefined, this.eventBus);
+    }
     this.earlyPending = tls.earlyDataAccepted === true;
     if (trailing.length > 0) this.channel.receiveRecords(trailing);
     return true;
@@ -113,12 +146,18 @@ export class HttpsClientSession {
     }
     const tls = this.tls;
 
-    const answeredEarly = this.earlyPending;
-    this.earlyPending = false;
-    const plaintext = answeredEarly ? this.channel!.takeBuffered() : this.channel!.exchange(requestBytes);
-    if (plaintext.length === 0) return fail('Empty reply from server');
-
-    const parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
+    let parsed: ReturnType<typeof parseResponse>;
+    if (this.http2 !== null) {
+      const answer = this.http2.request(requestToHttp2(request, 'https'), request.body ?? new Uint8Array(0));
+      if (answer === null) return fail('Empty reply from server');
+      parsed = { ok: true, message: http2ToResponse(answer) };
+    } else {
+      const answeredEarly = this.earlyPending;
+      this.earlyPending = false;
+      const plaintext = answeredEarly ? this.channel!.takeBuffered() : this.channel!.exchange(requestBytes);
+      if (plaintext.length === 0) return fail('Empty reply from server');
+      parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
+    }
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
@@ -158,12 +197,18 @@ export class HttpsClientSession {
     }
     const tls = this.tls;
 
-    const answeredEarly = this.earlyPending;
-    this.earlyPending = false;
-    const plaintext = answeredEarly ? this.channel!.takeBuffered() : await this.channel!.exchangeAsync(requestBytes, TLS_MICROTASK_BUDGET);
-    if (plaintext.length === 0) return fail('Empty reply from server');
-
-    const parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
+    let parsed: ReturnType<typeof parseResponse>;
+    if (this.http2 !== null) {
+      const answer = await this.http2.requestAsync(requestToHttp2(request, 'https'), request.body ?? new Uint8Array(0), TLS_MICROTASK_BUDGET);
+      if (answer === null) return fail('Empty reply from server');
+      parsed = { ok: true, message: http2ToResponse(answer) };
+    } else {
+      const answeredEarly = this.earlyPending;
+      this.earlyPending = false;
+      const plaintext = answeredEarly ? this.channel!.takeBuffered() : await this.channel!.exchangeAsync(requestBytes, TLS_MICROTASK_BUDGET);
+      if (plaintext.length === 0) return fail('Empty reply from server');
+      parsed = parseResponse(bytesToBinaryString(plaintext), { suppressBody: request.method === 'HEAD' });
+    }
     if (parsed.ok === false) return fail(parsed.reason);
 
     const hsts = parsed.message.headers.get('Strict-Transport-Security');
@@ -182,6 +227,11 @@ export class HttpsClientSession {
     this.socket?.close();
     this.socket = null;
     this.tls = null;
+    this.http2 = null;
+  }
+
+  get connectFailure(): HttpsConnectFailure | null {
+    return this.failure;
   }
 
   get peerCertificate(): X509Certificate | null {

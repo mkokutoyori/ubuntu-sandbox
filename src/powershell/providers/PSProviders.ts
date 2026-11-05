@@ -837,6 +837,12 @@ export interface IPkiProvider {
   listCertificates(): (IssuedCertInfo & { thumbprint: string })[];
   /** `Import-Certificate -CertStoreLocation Cert:\LocalMachine\Root` — adds a trusted root authority from certificate text; null when the text holds no certificate. */
   trustRootCertificate(pem: string): (IssuedCertInfo & { thumbprint: string }) | null;
+  /** `Get-ChildItem Cert:\<location>` — the store names of a location, null for an unknown location. */
+  certificateStores(location: string): readonly string[] | null;
+  /** `Get-ChildItem Cert:\<location>\<store>` — the certificates of one store, null for an unknown store. */
+  certificatesIn(location: string, store: string): readonly (IssuedCertInfo & { thumbprint: string })[] | null;
+  /** `Remove-Item Cert:\<location>\<store>\<thumbprint>`. */
+  removeCertificate(location: string, store: string, thumbprint: string): boolean;
 }
 
 // ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────

@@ -9,6 +9,7 @@
 
 import type { WindowsAdcsRole } from '../windows/server/adcs/CaRole';
 import type { WindowsCertStore } from './CertStore';
+import { certificateThumbprint } from '@/network/pki/thumbprint';
 
 export interface CertReqContext {
   adcs: WindowsAdcsRole | null;
@@ -44,5 +45,5 @@ export function cmdCertreq(ctx: CertReqContext, args: string[]): string {
   const res = ctx.adcs.submitRequest(subject, template, { requestedEku: eku });
   if (!res.ok) return res.message;
   ctx.certStore.add(res.certificate!, res.privateKey!);
-  return `CertReq: Certificate Retrieved\nSerial Number: ${res.certificate!.serialNumber}\nSubject: ${res.certificate!.subject}\nIssuer: ${res.certificate!.issuer}`;
+  return `CertReq: Certificate Retrieved\nSerial Number: ${res.certificate!.serialNumber}\nThumbprint: ${certificateThumbprint(res.certificate!)}\nSubject: ${res.certificate!.subject}\nIssuer: ${res.certificate!.issuer}`;
 }

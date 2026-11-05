@@ -11,20 +11,17 @@
  * DoT resolver's certificate already being signed by a publicly-trusted
  * root, so no enrollment step is needed before `bindDnsTlsServer`/
  * `queryDnsOverTls` can be used, matching the pre-migration API exactly.
- *
- * Each TLS flight is exchanged as a single `TcpSocket.send()`/`onData()`
- * message (this simulator passes JS values through TCP sockets rather
- * than a real byte stream), so the handshake drives one-for-one like the
- * unit tests in `tls-*.test.ts` — just glued to async socket events
- * instead of a synchronous loop.
  */
 
-import type { IPAddress } from '@/network/core/types';
+import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import { addressOf, type DnsStreamHandler, type DnsStreamReply } from '@/network/dns/transport/DnsTcpTransport';
+import {
+  addressOf, connectDnsStream, type DnsStreamFailure, type DnsStreamHandler, type DnsStreamReply,
+} from '@/network/dns/transport/DnsTcpTransport';
+import { answersQuestion } from '@/network/dns/transport/DnsUdpTransport';
 import { tlsVerifyFailureText } from '@/network/dns/transport/DnsTlsVerification';
 import { getOrCreateCA } from '@/network/pki/PkiCaRegistry';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
@@ -33,8 +30,13 @@ import type { ServerIdentity } from '@/network/http/https/ServerTlsToolkit';
 import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { TlsClientSession } from '@/network/tls/TlsClientSession';
-import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
+import { TlsServerChannel } from '@/network/tls/TlsServerChannel';
+import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
+import type { TlsRecord } from '@/network/tls/recordLayer';
+import { runTlsHandshakeOverSocket } from '@/network/http/https/TlsRecordWire';
 import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
+import type { DohClientIdentity } from '@/network/dns/transport/DnsHttpsTransport';
+import { dnsTlsServerOptions, type DnsTlsServerSettings } from '@/network/dns/transport/DnsTlsServerSettings';
 
 export const DOT_PORT = 853;
 export const DOT_ALPN = 'dot';
@@ -57,6 +59,11 @@ export interface DotOptions {
   readonly anchors?: readonly X509Certificate[];
   readonly verifyPeer?: boolean;
   readonly onVerifyFailure?: (text: string) => void;
+  readonly settings?: DnsTlsServerSettings;
+  readonly requireAlpn?: boolean;
+  readonly silentRejection?: boolean;
+  readonly onStreamFailure?: (failure: DnsStreamFailure) => void;
+  readonly clientIdentity?: DohClientIdentity;
 }
 
 function concatenated(parts: readonly Uint8Array[]): Uint8Array {
@@ -83,57 +90,47 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsStreamHandler, optio
     });
     return { cert: issued.cert, key: issued.privateKey, chain: [] };
   })();
+  const tlsOptions = dnsTlsServerOptions(options.settings, () => host.getTcpStack().nowMs());
+  const protocols = options.protocols ?? tlsOptions.protocols;
 
   host.getTcpStack().listen(options.port ?? DOT_PORT, {
     identity: { processName: options.processName ?? 'dnsmasq', pid: options.pid, service: options.service },
     onAccept: (socket: TcpSocket) => {
-      const server = new TlsServerSession({
+      const tls = new TlsServerSession({
         serverCert: identity.cert, serverPrivateKey: identity.key, serverChain: identity.chain, alpnProtocols: [alpn],
-        ...(options.protocols === undefined ? {} : { protocols: options.protocols }),
+        ...(options.requireAlpn === false ? { alpnMismatch: 'ignore' as const } : {}),
+        ...tlsOptions, ...(protocols === undefined ? {} : { protocols }),
       });
-
-      socket.onData((data) => {
-        const incoming = data as readonly TlsRecord[];
-
-        if (server.result === 'accept') {
-          let query: DnsMessage;
-          let raw: Uint8Array;
+      const reader = new DnsStreamReader();
+      const serve = (raw: Uint8Array): void => {
+        let query: DnsMessage;
+        try {
+          query = decodeDnsMessage(raw);
+        } catch {
+          socket.close();
+          return;
+        }
+        const send = (reply: DnsStreamReply): void => channel.write(framedReply(reply));
+        const answer = handler(query, addressOf(socket.remoteIp), socket.remotePort, raw, addressOf(socket.localIp));
+        if (answer instanceof Promise) void answer.then(send, () => socket.close());
+        else send(answer);
+      };
+      const channel: TlsServerChannel = new TlsServerChannel(socket, tls, {
+        silentRejection: options.silentRejection === true,
+        onHandshakeRejected: () => socket.close(),
+        onHandshakeComplete: () => {
+          if (options.requireAlpn !== false && tls.negotiatedAlpnProtocol !== alpn) socket.close();
+        },
+        onData: (plaintext) => {
+          let messages: Uint8Array[];
           try {
-            const { plaintext } = reassembleRecords(incoming, true);
-            [raw] = new DnsStreamReader().push(plaintext);
-            query = decodeDnsMessage(raw);
+            messages = reader.push(plaintext);
           } catch {
             socket.close();
             return;
           }
-          const send = (reply: DnsStreamReply): void => {
-            socket.send(fragmentAsRecords('application_data', framedReply(reply), true));
-            socket.close();
-          };
-          const answer = handler(
-            query, addressOf(socket.remoteIp), socket.remotePort, raw, addressOf(socket.localIp),
-          );
-          if (answer instanceof Promise) void answer.then(send, () => socket.close());
-          else send(answer);
-          return;
-        }
-        if (server.result === 'reject') return;
-
-        const reply = server.handle(incoming);
-        if (server.result === 'reject') {
-          socket.close();
-          return;
-        }
-        // RFC 7301 — this DoT deployment requires exactly `alpn`; a
-        // negotiated mismatch (or no match at all) is a hard failure, even
-        // though the generic TLS engine treats ALPN as informational.
-        // `negotiatedCipherSuite` only becomes non-null once negotiation
-        // has actually happened (not yet, mid-HelloRetryRequest).
-        if (server.negotiatedCipherSuite !== null && server.negotiatedAlpnProtocol !== alpn) {
-          socket.close();
-          return;
-        }
-        if (reply) socket.send(reply);
+          for (const raw of messages) serve(raw);
+        },
       });
     },
   }, options.address ?? '0.0.0.0');
@@ -143,13 +140,19 @@ export function unbindDnsTlsServer(host: EndHost, port: number = DOT_PORT, addre
   host.getTcpStack().closeListener(port, address);
 }
 
-export async function queryDnsOverTls(
+export interface DnsStreamExchange {
+  readonly messages: DnsMessage[];
+  readonly frames: Uint8Array[];
+}
+
+async function exchangeOverTls(
   host: EndHost,
-  serverIP: IPAddress,
+  serverIP: IPAddress | IPv6Address,
   query: DnsMessage,
-  options: DotOptions = {},
-): Promise<DnsMessage | null> {
-  const socket = await host.tcpConnect(serverIP.toString(), options.port ?? DOT_PORT);
+  isComplete: (messages: readonly DnsMessage[]) => boolean,
+  options: DotOptions,
+): Promise<DnsStreamExchange | null> {
+  const socket = await connectDnsStream(host, serverIP.toString(), options.port ?? DOT_PORT, options.onStreamFailure);
   if (!socket) return null;
 
   const alpn = options.alpn ?? DOT_ALPN;
@@ -159,54 +162,76 @@ export async function queryDnsOverTls(
   const client = new TlsClientSession({
     verifier, alpn: [alpn], allowUntrustedPeer: options.verifyPeer === false,
     ...(options.serverName !== undefined ? { serverName: options.serverName } : {}),
+    ...(options.clientIdentity === undefined ? {} : {
+      clientCert: options.clientIdentity.certificate, clientChain: options.clientIdentity.chain,
+      clientPrivateKey: options.clientIdentity.privateKey,
+    }),
   });
 
-  return new Promise<DnsMessage | null>((resolve) => {
+  const trailing: TlsRecord[] = [];
+  runTlsHandshakeOverSocket(socket, client, (records) => { trailing.push(...records); });
+  if (client.result !== 'success') {
+    if (client.peerVerificationReason !== null) {
+      options.onVerifyFailure?.(tlsVerifyFailureText(client.peerVerificationReason, client.peerCertificate, client.peerCertificateChain));
+    } else {
+      options.onStreamFailure?.('tls');
+    }
+    socket.close();
+    return null;
+  }
+
+  return new Promise<DnsStreamExchange | null>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let settled = false;
-    const finish = (result: DnsMessage | null): void => {
+    const finish = (result: DnsStreamExchange | null, failure?: DnsStreamFailure): void => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (result === null && failure !== undefined) options.onStreamFailure?.(failure);
       resolve(result);
+      socket.close();
     };
 
-    socket.onData((data) => {
-      const incoming = data as readonly TlsRecord[];
-
-      if (client.result === 'success') {
-        try {
-          const { plaintext } = reassembleRecords(incoming, true);
-          const [raw] = new DnsStreamReader().push(plaintext);
-          const response = decodeDnsMessage(raw);
-          finish(response.id === query.id ? response : null);
-        } catch {
-          finish(null);
+    const messages: DnsMessage[] = [];
+    const frames: Uint8Array[] = [];
+    const reader = new DnsStreamReader();
+    const channel = new TlsClientChannel(socket, client);
+    channel.onPushBytes((plaintext) => {
+      try {
+        for (const raw of reader.push(plaintext)) {
+          const message = decodeDnsMessage(raw);
+          if (!answersQuestion(query, message)) continue;
+          messages.push(message);
+          frames.push(raw);
+          if (isComplete(messages)) { finish({ messages, frames }); return; }
         }
-        socket.close();
-        return;
-      }
-
-      const reply = client.handle(incoming);
-      if (client.result === 'failure') {
-        if (client.peerVerificationReason !== null) {
-          options.onVerifyFailure?.(tlsVerifyFailureText(client.peerVerificationReason, client.peerCertificate));
-        }
+      } catch {
         finish(null);
-        socket.close();
-        return;
-      }
-      if (reply) socket.send(reply);
-      if (client.result === 'success') {
-        socket.send(fragmentAsRecords('application_data', frameDnsMessage(encodeDnsMessage(query)), true));
       }
     });
-    socket.onClose(() => finish(null));
-
-    socket.send(client.start());
-    timer = setTimeout(() => {
-      finish(null);
-      socket.close();
-    }, timeoutMs);
+    socket.onClose(() => finish(null, 'eof'));
+    timer = setTimeout(() => finish(null), timeoutMs);
+    if (trailing.length > 0) channel.receiveRecords(trailing);
+    channel.send(frameDnsMessage(encodeDnsMessage(query)));
   });
+}
+
+export async function queryDnsOverTls(
+  host: EndHost,
+  serverIP: IPAddress | IPv6Address,
+  query: DnsMessage,
+  options: DotOptions = {},
+): Promise<DnsMessage | null> {
+  const exchange = await exchangeOverTls(host, serverIP, query, (messages) => messages.length > 0, options);
+  return exchange === null ? null : exchange.messages[0];
+}
+
+export function queryDnsOverTlsStream(
+  host: EndHost,
+  serverIP: IPAddress | IPv6Address,
+  query: DnsMessage,
+  isComplete: (messages: readonly DnsMessage[]) => boolean,
+  options: DotOptions = {},
+): Promise<DnsStreamExchange | null> {
+  return exchangeOverTls(host, serverIP, query, isComplete, options);
 }

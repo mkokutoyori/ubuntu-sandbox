@@ -571,7 +571,7 @@ les `.dnssd` et l'analyseur des fichiers d'unité (continuations de ligne). `lin
 - **Réinterrogation continue** (RFC 6762 §5.2) : rafraîchir un
   enregistrement à 80–95 % de son TTL suppose un parcours actif inscrit
   dans la durée, que rien n'expose aujourd'hui.
-- **DoQ** : `DnsQuicTransport` repose encore sur `SimulatedTls` et migre sous `PRD-QUIC.md`. DoH, lui, est sur le moteur HTTPS (TLS 1.3 reel) et `resolved` ne le parle pas.
+- **DoQ** : `DnsQuicTransport` repose encore sur `SimulatedTls` et migre sous `PRD-QUIC.md`. DoH, lui, est sur le moteur HTTPS (TLS 1.3 reel, HTTP/2) et `resolved` ne le parle pas.
 - **`resolvectl log-level`, `reset-server-features`,
   `show-server-state`** : diagnostics internes sans état à refléter.
 - **`nss-resolve`** (la source NSS `resolve`) : `nsswitch.conf` porte

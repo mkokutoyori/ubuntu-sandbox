@@ -113,23 +113,18 @@ simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien 
 `+cookie`, `+subnet` et les autres options sont acceptes et ignores : le vrai dig 9.18 envoie un cookie client par defaut et ecrit la ligne `; COOKIE: ... (good)` sous l'OPT de la reponse, le simulateur n'en envoie
 pas (le drapeau `K` du journal de requetes de named, `+E(0)K`, manque pour la meme raison) ; une reponse UDP tronquee du vrai named porte aussi le drapeau `ad` (`qr aa tc ad`, mesure sous `+ignore`), pas celle du simulateur ; un `REFUSED` du vrai named a un client que `allow-query` exclut porte l'option EDE `18 (Prohibited)` dans l'OPT (`; EDE: 18 (Prohibited)`), le simulateur n'ecrit pas d'option EDE ; `+search` lit la liste de `/etc/resolv.conf` (`search`, `domain`, `ndots`) et prend la reponse du premier candidat qui n'est pas NXDOMAIN, mais quand tous echouent le vrai dig imprime parfois deux fois les statistiques (`web.banquehorizon +search`), ce que le simulateur ne fait pas.
 
-### [dns] DoT et DoH : ce que named et dig 9.18 font encore et que le simulateur ne fait pas
-Mesure contre named et dig 9.18.39 reels (`probe-bind9-dot-doh-listeners`) : `tls`, `http` et `listen-on ... tls ... http ...` font ecouter named en 853 et en 443, `dig +tls`, `+tls-ca`, `+tls-hostname`, `+https`
-et `+https-get` rendent les memes lignes. Restent :
-le DoH est en HTTP/1.1 des deux cotes (ALPN `http/1.1`), alors que le vrai named ne sert que du HTTP/2 et que le vrai dig dit `;; Connection to ...#PORT(...) for NOM failed: ALPN for HTTP/2 failed.` quand
-il tombe sur un serveur qui n'en parle pas (par exemple le 853) ; la pile HTTPS du simulateur n'a pas de session HTTP/2 par TLS ;
-`dig +http-plain` et `+http-plain-get` (DoH en clair) n'existent pas cote client, alors que `listen-on port N tls none http default` est servi ;
-`+tls` et `+https` vers un port ferme ecrivent `communications error ... timed out` au lieu de `;; Connection to ... failed: connection refused.` (meme cause que `+tcp`, plus haut) ;
-`+tls-certfile` et `+tls-keyfile` (certificat client) sont acceptes et ignores comme toute option inconnue de dig ;
-les options `ca-file`, `remote-hostname`, `dhparam-file`, `ciphers`, `prefer-server-ciphers` et `session-tickets` d'un bloc `tls`, `listener-clients` et `streams-per-connection` d'un bloc `http`
-sont lues et rangees, pas evaluees (le vrai named les accepte ; seuls `key-file`, `cert-file` et `protocols` agissent) ; `primaries { ... tls NOM; }` (transfert de zone par TLS) n'existe pas et le
-serveur DoT repond a une question puis ferme la connexion ;
-`listen-on-v6 ... tls` est lu sans ecoute (pas de chemin d'ecoute TCP IPv6 pour ces listeners), et la liste d'adresses de `listen-on` en clair (53) n'est pas evaluee : named ecoute alors sur toutes les adresses,
-alors que les listeners chiffres respectent la liste. Cote client Windows, `Add-DnsClientDohServerAddress -AutoUpgrade` et `-AllowFallbackToUdp` agissent (`probe-windows-client-doh` : le client interroge en HTTPS, verifie le nom du modele dans le certificat contre
-`Cert:\LocalMachine\Root`, et ne retombe sur l'UDP que si le repli est autorise) et `Import-Certificate` range une autorite dans cette racine. Restent : le lecteur `Cert:` (`Get-ChildItem Cert:\LocalMachine\Root`)
-et `certutil -addstore` n'existent pas, `Import-Certificate` ne sait viser que la racine locale (un magasin personnel sans cle privee est refuse en le disant), les drapeaux DoH propres a une interface
-(`DohFlags`, `netsh dns add encryption`) n'existent pas, et un serveur IPv6 n'est pas interroge en DoH.
-Raison du report : chaque point demande une brique propre (HTTP/2 sur TLS, un client HTTP en clair, une ecoute IPv6, un lecteur de magasins de certificats) que ce changement ne livre pas.
+### [dns] DoT, DoH et XoT : ce que named, dig et Windows font encore et que le simulateur ne fait pas
+Mesure contre named et dig 9.18.39 reels (`probe-bind9-dot-doh-listeners`, `probe-bind9-tls-http-options`, `probe-bind9-listen-addresses`, `probe-bind9-xot`) : `tls`, `http`, `listen-on ... tls ... http ...` (v4 et v6),
+les options `ciphers`, `prefer-server-ciphers`, `session-tickets`, `dhparam-file`, `ca-file`, `listener-clients`, `streams-per-connection` agissent, le DoH ne parle que HTTP/2 (h2 sur TLS, h2c sur `tls none http`),
+`dig +tls`, `+https`, `+http-plain` (et `-get`), `+tls-ca`, `+tls-hostname`, `+tls-certfile`, `+tls-keyfile` rendent les memes lignes, `primaries { ... tls NOM; }` transfere la zone par TLS (RFC 9103). Restent :
+- `remote-hostname` d'un bloc `tls` ne sert qu'aux `primaries` ; named l'accepte sur un listener sans rien en faire, le simulateur aussi (mesure : aucune difference d'effet).
+- `also-notify { ADRESSE tls NOM; }` (NOTIFY par TLS) n'est pas lu : le NOTIFY part en clair.
+- Le serveur DoT garde la connexion ouverte apres une reponse mais n'a pas de delai d'inactivite (`tcp-idle-timeout`) ; le client DoT la ferme apres sa reponse.
+- L'IPv6 de named n'a pas pu etre mesure : le noyau du banc n'a pas d'interface IPv6 (named dit « no IPv6 interfaces found »). `listen-on-v6` suit les memes regles que `listen-on`, ce que dit le manuel de reference de BIND .
+- `dig` : le journal horodate ecrit sur stderr avant `;; TLS context cannot be created` n'est pas rejoue, le code de sortie 9 n'est pas rendu.
+- Windows : `certutil -addstore`, `-store` et `-delstore` ne sont pas implementes. Le texte de leurs sorties (ligne du magasin, « Signature matches Public Key », « added to store ») n'a pu etre ni mesure (pas de Windows) ni retrouve dans la documentation de Microsoft (elle ne donne que la syntaxe) ; ecrire un transcript de memoire serait deviner. `netsh dns add encryption`, `netsh dns show encryption` et le drapeau `DohFlags` du registre par interface sont dans le meme cas : syntaxe et valeurs non sourcables ici. `netsh dnsclient show encryption` rend maintenant l'etat de `Add-DnsClientDohServerAddress` (il rendait un texte fige).
+- Windows : `Cert:` couvre `LocalMachine\My`, `LocalMachine\Root` et `LocalMachine\CA` en lecture, `Remove-Item` sur My et Root ; `CurrentUser\*` existe mais reste vide, il n'y a pas d'`Import-Certificate` vers My (une cle privee est necessaire), ni `Set-Location Cert:`, ni `Cert:\` en pipeline objet pour `CA`.
+- Windows : le resolveur de `Resolve-DnsName -Server` n'accepte qu'un serveur IPv4 et la pile TCP IPv6 de Windows ne joint pas un voisin sur le lien (`Test-NetConnection fd00::20 -Port 443` echoue) ; le DoH en IPv6 est servi et interroge par `EndHost` (couvert par `dig @fd00:1::1 +https` depuis un Linux), mais pas encore depuis Windows.
 
 ### [host] ce que host 9.18 fait encore et que le simulateur ne fait pas
 `host` est rejoue contre un vrai host 9.18.39 (`host-oracle`, 431 invocations dont 396 rejouees, les 35 autres ecartees avec leur raison dans le test) : le moteur de `dighost.c` (essais partages entre les

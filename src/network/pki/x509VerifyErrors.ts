@@ -19,6 +19,7 @@ export function x509VerifyError(
   raison: VerificationReason,
   cert: X509Certificate,
   listes: readonly CertificateRevocationList[],
+  chaine: readonly X509Certificate[] = [],
 ): { n: number; texte: string } {
   switch (raison) {
     case 'expired': return { n: 10, texte: 'certificate has expired' };
@@ -40,10 +41,13 @@ export function x509VerifyError(
       return listes.some((l) => l.issuer === cert.issuer)
         ? { n: 12, texte: 'CRL has expired' }
         : { n: 3, texte: 'unable to get certificate CRL' };
-    default:
+    default: {
+      const sommet = chaine[chaine.length - 1];
+      if (chaine.length > 1 && sommet.subject === sommet.issuer) return { n: 19, texte: 'self-signed certificate in certificate chain' };
       return cert.subject === cert.issuer
         ? { n: 18, texte: 'self-signed certificate' }
         : { n: 20, texte: 'unable to get local issuer certificate' };
+    }
   }
 }
 

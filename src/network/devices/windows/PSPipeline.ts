@@ -746,6 +746,10 @@ export function formatDefault(objects: PSObject[]): string {
   const defaultCols = pickDefaultColumns(keys);
   if (defaultCols) {
     const columns = defaultCols.join(', ');
+    const certificates = certificateParents(objects);
+    if (certificates !== null) {
+      return certificates.map(group => `\n\n   PSParentPath: ${group.parent}\n${formatTable(group.rows, columns)}`).join('');
+    }
     const directories = filesystemDirectories(objects);
     if (directories === null) return formatTable(objects, columns);
     return directories.map(group => `\n\n    Directory: ${group.directory}\n${formatTable(group.rows, columns)}`).join('');
@@ -817,6 +821,18 @@ function partitionDiskGroups(objects: PSObject[]): string | null {
   return [...groups.entries()]
     .map(([disk, rows]) => `\nDisk Number: ${disk}\n${formatTable(rows, columns)}`)
     .join('\n');
+}
+
+function certificateParents(objects: PSObject[]): Array<{ parent: string; rows: PSObject[] }> | null {
+  const key = Object.keys(objects[0]).find(candidate => candidate.toLowerCase() === 'psparentpath');
+  const lower = new Set(Object.keys(objects[0]).map(candidate => candidate.toLowerCase()));
+  if (key === undefined || !lower.has('thumbprint') || !lower.has('subject')) return null;
+  const groups = new Map<string, PSObject[]>();
+  for (const object of objects) {
+    const parent = String((object as Record<string, unknown>)[key] ?? '');
+    groups.set(parent, [...(groups.get(parent) ?? []), object]);
+  }
+  return [...groups].map(([parent, rows]) => ({ parent, rows }));
 }
 
 function filesystemDirectories(objects: PSObject[]): Array<{ directory: string; rows: PSObject[] }> | null {
@@ -913,6 +929,9 @@ function pickDefaultColumns(keys: string[]): string[] | null {
   if (lower.has('connectionspecificsuffix') && lower.has('registerthisconnectionsaddress')) {
     return ['InterfaceAlias', 'InterfaceIndex', 'ConnectionSpecificSuffix', 'ConnectionSpecificSuffixSearchList',
             'RegisterThisConnectionsAddress', 'UseSuffixWhenRegistering'];
+  }
+  if (lower.has('thumbprint') && lower.has('subject') && lower.has('psparentpath')) {
+    return ['Thumbprint', 'Subject'];
   }
   if (lower.has('serveraddress') && lower.has('dohtemplate')) {
     return ['ServerAddress', 'AllowFallbackToUdp', 'AutoUpgrade', 'DohTemplate'];

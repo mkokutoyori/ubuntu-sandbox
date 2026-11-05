@@ -6,7 +6,7 @@
  * material (a server certificate/key to bind, a `CertificateVerifier` to
  * query) — `SimulatedTls.ts`'s stand-in handshake had none.
  */
-import type { IPAddress } from '@/network/core/types';
+import type { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type { PkiPrivateKey } from '@/network/pki/PkiKeyPair';
@@ -15,17 +15,22 @@ import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessag
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import { base64ToBytes, bytesToBase64 } from '@/crypto/encoding';
 import { RRType } from '@/network/dns/wire/RRType';
-import { addressOf, type DnsStreamHandler } from '@/network/dns/transport/DnsTcpTransport';
+import { addressOf, connectDnsStream, type DnsStreamFailure, type DnsStreamHandler } from '@/network/dns/transport/DnsTcpTransport';
 import { tlsVerifyFailureText } from '@/network/dns/transport/DnsTlsVerification';
 import { createRequest, createResponse } from '@/network/http/semantics/types';
-import { HttpsClientSession } from '@/network/http/https/HttpsClientSession';
+import { HttpsClientSession, type HttpsSendResult } from '@/network/http/https/HttpsClientSession';
 import { HttpsServerSession } from '@/network/http/https/HttpsServerSession';
-import { Http1ServerSession, type Http1RequestHandler } from '@/network/http/http1/Http1ServerSession';
+import type { Http1RequestHandler } from '@/network/http/http1/Http1ServerSession';
+import { Http2ServerSession } from '@/network/http/http2/Http2ServerSession';
+import { Http2ClientSession, type Http2SendResult } from '@/network/http/http2/Http2ClientSession';
+import { HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS } from '@/network/http/http2/Http2Connection';
+import { ConnectionQuota } from '@/network/tcp/ConnectionQuota';
 import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
+import { dnsTlsServerOptions, type DnsTlsServerSettings } from '@/network/dns/transport/DnsTlsServerSettings';
 
 export const DOH_PORT = 443;
 export const DOH_PLAIN_PORT = 80;
-export const DOH_ALPN = 'http/1.1';
+export const DOH_ALPN = 'h2';
 export const DOH_PATH = '/dns-query';
 export const DOH_CONTENT_TYPE = 'application/dns-message';
 
@@ -42,6 +47,11 @@ export interface DohOptions {
   readonly service?: string;
   readonly onVerifyFailure?: (text: string) => void;
   readonly onHttpStatus?: (status: number) => void;
+  readonly onStreamFailure?: (failure: DnsStreamFailure) => void;
+  readonly plain?: boolean;
+  readonly listenerClients?: number;
+  readonly streamsPerConnection?: number;
+  readonly silentRejection?: boolean;
 }
 
 export interface DohServerTlsConfig {
@@ -49,9 +59,17 @@ export interface DohServerTlsConfig {
   readonly serverPrivateKey: PkiPrivateKey;
   readonly serverChain?: readonly X509Certificate[];
   readonly protocols?: readonly TlsProtocolVersion[];
+  readonly settings?: DnsTlsServerSettings;
+}
+
+export interface DohClientIdentity {
+  readonly certificate: X509Certificate;
+  readonly chain: readonly X509Certificate[];
+  readonly privateKey: PkiPrivateKey;
 }
 
 export interface DohClientTlsConfig {
+  readonly identity?: DohClientIdentity;
   readonly verifier: CertificateVerifier;
   readonly verifyPeer?: boolean;
   readonly serverName?: string;
@@ -72,14 +90,20 @@ function freshnessLifetime(message: DnsMessage): number {
 
 const runningServers = new Map<string, HttpsServerSession>();
 
+function streamLimits(options: DohOptions): { localSettings: { maxConcurrentStreams: number } } {
+  return { localSettings: { maxConcurrentStreams: options.streamsPerConnection ?? HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS } };
+}
+
+function quotaOf(options: DohOptions): ConnectionQuota | undefined {
+  return options.listenerClients === undefined || options.listenerClients === 0 ? undefined : new ConnectionQuota(options.listenerClients);
+}
+
 function dohRequestHandler(handler: DnsStreamHandler, paths: readonly string[]): Http1RequestHandler {
   return (request, peer) => {
     const [targetPath, queryString = ''] = request.target.split('?');
     if (!paths.includes(targetPath)) return createResponse(404, 'Not Found');
     if (request.method !== 'GET' && request.method !== 'POST') {
-      const refused = createResponse(405, 'Method Not Allowed');
-      refused.headers.set('Allow', 'GET, POST');
-      return refused;
+      return createResponse(501, 'Not Implemented');
     }
 
     let wire: Uint8Array;
@@ -129,13 +153,19 @@ export function bindDnsHttpsServer(
 ): void {
   const port = options.port ?? DOH_PORT;
   const address = options.address ?? '0.0.0.0';
+  const quota = quotaOf(options);
   const server = new HttpsServerSession(
     host.getTcpStack(), port,
     {
       serverCert: tlsConfig.serverCert, serverPrivateKey: tlsConfig.serverPrivateKey,
       ...(tlsConfig.serverChain === undefined ? {} : { serverChain: tlsConfig.serverChain }),
+      ...dnsTlsServerOptions(tlsConfig.settings, () => host.getTcpStack().nowMs()),
       ...(tlsConfig.protocols === undefined ? {} : { protocols: tlsConfig.protocols }),
       alpnProtocols: [DOH_ALPN],
+      alpnMismatch: 'ignore',
+      http2: { only: true, connection: streamLimits(options) },
+      silentRejection: options.silentRejection === true,
+      ...(quota === undefined ? {} : { quota }),
     },
     dohRequestHandler(handler, options.paths ?? [options.path ?? DOH_PATH]),
   );
@@ -143,13 +173,14 @@ export function bindDnsHttpsServer(
   runningServers.set(`${host.id}:${port}:${address}`, server);
 }
 
-const runningPlainServers = new Map<string, Http1ServerSession>();
+const runningPlainServers = new Map<string, Http2ServerSession>();
 
 export function bindDnsHttpServer(host: EndHost, handler: DnsStreamHandler, options: DohOptions = {}): void {
   const port = options.port ?? DOH_PLAIN_PORT;
   const address = options.address ?? '0.0.0.0';
-  const server = new Http1ServerSession(
+  const server = new Http2ServerSession(
     host.getTcpStack(), port, dohRequestHandler(handler, options.paths ?? [options.path ?? DOH_PATH]),
+    streamLimits(options), quotaOf(options),
   );
   server.start(listenerIdentity(options), undefined, address);
   runningPlainServers.set(`${host.id}:${port}:${address}`, server);
@@ -187,48 +218,83 @@ export function parseDohTemplate(template: string): DohTarget | null {
   return { host: match[1], port, path: match[3] ?? DOH_PATH };
 }
 
-export async function queryDnsOverHttps(
-  host: EndHost, serverIP: IPAddress, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions = {},
-): Promise<DnsMessage | null> {
-  return exchangeDnsOverHttps(host, serverIP, query, tlsConfig, options);
+interface DohExchange {
+  readonly request: ReturnType<typeof createRequest>;
+  readonly session: HttpsClientSession | Http2ClientSession;
+  finish(result: HttpsSendResult | Http2SendResult): DnsMessage | null;
 }
 
-export function exchangeDnsOverHttps(
-  host: EndHost, serverIP: IPAddress, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions = {},
-): DnsMessage | null {
-  const client = new HttpsClientSession(
-    host.getTcpStack(), serverIP.toString(), options.port ?? DOH_PORT,
-    {
-      verifier: tlsConfig.verifier, alpn: [DOH_ALPN], allowUntrustedPeer: tlsConfig.verifyPeer === false,
-      ...(tlsConfig.serverName === undefined ? {} : { serverName: tlsConfig.serverName }),
-    },
-  );
+function prepareExchange(
+  host: EndHost, serverIP: IPAddress | IPv6Address, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions,
+): DohExchange {
+  const address = serverIP.toString();
+  const session = options.plain === true
+    ? new Http2ClientSession(host.getTcpStack(), address, options.port ?? DOH_PLAIN_PORT)
+    : new HttpsClientSession(
+      host.getTcpStack(), address, options.port ?? DOH_PORT,
+      {
+        verifier: tlsConfig.verifier, alpn: [DOH_ALPN], requireAlpn: DOH_ALPN, allowUntrustedPeer: tlsConfig.verifyPeer === false,
+        ...(tlsConfig.identity === undefined ? {} : {
+          clientCert: tlsConfig.identity.certificate, clientChain: tlsConfig.identity.chain, clientPrivateKey: tlsConfig.identity.privateKey,
+        }),
+        ...(tlsConfig.serverName === undefined ? {} : { serverName: tlsConfig.serverName }),
+      },
+    );
 
   const wire = encodeDnsMessage({ ...query, id: 0 });
   const path = options.path ?? DOH_PATH;
   const request = options.method === 'GET'
     ? createRequest('GET', `${path}?dns=${base64Url(wire)}`)
     : createRequest('POST', path);
-  request.headers.set('Host', options.sni ?? serverIP.toString());
+  request.headers.set('Host', options.sni ?? (address.includes(':') ? `[${address}]` : address));
   request.headers.set('Accept', DOH_CONTENT_TYPE);
   if (options.method !== 'GET') {
     request.headers.set('Content-Type', DOH_CONTENT_TYPE);
     request.body = wire;
   }
 
-  const result = client.send(request);
-  const handshake = client.handshake;
-  client.close();
-  if (!result.ok && handshake?.peerVerificationReason != null) {
-    options.onVerifyFailure?.(tlsVerifyFailureText(handshake.peerVerificationReason, handshake.peerCertificate));
-  }
-  if (result.ok && result.response?.statusCode !== 200) options.onHttpStatus?.(result.response?.statusCode ?? 0);
-  if (!result.ok || result.response?.statusCode !== 200) return null;
+  const finish = (result: HttpsSendResult | Http2SendResult): DnsMessage | null => {
+    const handshake = session instanceof HttpsClientSession ? session.handshake : null;
+    const failure = session.connectFailure;
+    session.close();
+    if (!result.ok) {
+      if (failure === 'tls' && handshake?.peerVerificationReason != null) {
+        options.onVerifyFailure?.(tlsVerifyFailureText(handshake.peerVerificationReason, handshake.peerCertificate, handshake.peerCertificateChain));
+      } else if (failure === 'refused' || failure === 'alpn' || failure === 'tls') {
+        options.onStreamFailure?.(failure);
+      } else if (failure === null) {
+        options.onStreamFailure?.('eof');
+      }
+      return null;
+    }
+    if (result.response?.statusCode !== 200) {
+      options.onHttpStatus?.(result.response?.statusCode ?? 0);
+      return null;
+    }
+    try {
+      const message = decodeDnsMessage(result.response.body ?? new Uint8Array());
+      return message.id === 0 ? { ...message, id: query.id } : null;
+    } catch {
+      return null;
+    }
+  };
+  return { request, session, finish };
+}
 
-  try {
-    const message = decodeDnsMessage(result.response.body ?? new Uint8Array());
-    return message.id === 0 ? { ...message, id: query.id } : null;
-  } catch {
-    return null;
-  }
+export async function queryDnsOverHttps(
+  host: EndHost, serverIP: IPAddress | IPv6Address, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions = {},
+): Promise<DnsMessage | null> {
+  const exchange = prepareExchange(host, serverIP, query, tlsConfig, options);
+  const port = options.port ?? (options.plain === true ? DOH_PLAIN_PORT : DOH_PORT);
+  const socket = await connectDnsStream(host, serverIP.toString(), port, options.onStreamFailure);
+  if (socket === null) return null;
+  exchange.session.adopt(socket);
+  return exchange.finish(await exchange.session.sendAsync(exchange.request));
+}
+
+export function exchangeDnsOverHttps(
+  host: EndHost, serverIP: IPAddress | IPv6Address, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions = {},
+): DnsMessage | null {
+  const exchange = prepareExchange(host, serverIP, query, tlsConfig, options);
+  return exchange.finish(exchange.session.send(exchange.request));
 }

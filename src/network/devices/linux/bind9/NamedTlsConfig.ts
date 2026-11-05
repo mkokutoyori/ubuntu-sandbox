@@ -1,10 +1,13 @@
 import type { NamedConfStatement } from './NamedConfParser';
 import type { AddressMatchList } from './NamedAcl';
 import { fail, keywordOf, argsOf, requireBlock } from './NamedConfStatements';
+import { createCipherList } from '@/network/tls/legacy/cipherString';
 
 export const DEFAULT_TLS_PORT = 853;
 export const DEFAULT_HTTPS_PORT = 443;
 export const DEFAULT_DOH_ENDPOINT = '/dns-query';
+export const DEFAULT_LISTENER_CLIENTS = 300;
+export const UNLIMITED_STREAMS_PER_CONNECTION = 2147483647;
 
 const RESERVED_TLS_NAMES = new Set(['ephemeral', 'none']);
 const TLS_PROTOCOLS: Readonly<Record<string, '1.2' | '1.3'>> = { 'TLSv1.2': '1.2', 'TLSv1.3': '1.3' };
@@ -128,7 +131,13 @@ export function parseTlsProfile(statement: NamedConfStatement): NamedTlsProfile 
       case 'ca-file': caFile = stringValue(entry); break;
       case 'remote-hostname': remoteHostname = stringValue(entry); break;
       case 'dhparam-file': dhparamFile = stringValue(entry); break;
-      case 'ciphers': ciphers = stringValue(entry); break;
+      case 'ciphers': {
+        ciphers = stringValue(entry);
+        if (createCipherList(ciphers).ok === false) {
+          fail(entry, `'ciphers' in the 'tls' clause '${name}' is not a valid cipher list string`);
+        }
+        break;
+      }
       case 'prefer-server-ciphers': preferServerCiphers = booleanValue(entry); break;
       case 'session-tickets': sessionTickets = booleanValue(entry); break;
       case 'protocols': {

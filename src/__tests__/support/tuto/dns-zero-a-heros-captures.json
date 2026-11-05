@@ -583,7 +583,7 @@
     "dev": "NS1-BANK",
     "kind": "sh",
     "cmd": "ss -ulnp | grep named",
-    "output": "UNCONN 0      0            0.0.0.0:53         0.0.0.0:*    users:((\"named\",pid=43,fd=3))          "
+    "output": "UNCONN 0      0            0.0.0.0:53         0.0.0.0:*    users:((\"named\",pid=43,fd=3))          \nUNCONN 0      0               [::]:53            [::]:*    users:((\"named\",pid=43,fd=4))          "
    },
    {
     "id": "g1.typo-type",

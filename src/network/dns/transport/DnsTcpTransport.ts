@@ -1,9 +1,12 @@
 import { IPAddress, IPv6Address } from '@/network/core/types';
 import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
+import { PortNumber } from '@/network/core/ports/PortNumber';
+import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
+import { isDialFailure, type TcpDialFailure } from '@/network/tcp/types';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import { DNS_PORT, queryDnsOverUdp, answersQuestion } from '@/network/dns/transport/DnsUdpTransport';
+import { DNS_PORT, queryDnsOverUdp, answersQuestion, releaseResolvedStub } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
@@ -33,6 +36,7 @@ export function bindDnsTcpServer(
     observer?: DnsPacketObserver; onConnection?: () => void;
   } = {},
 ): void {
+  if (options.address === undefined || options.address === '0.0.0.0') releaseResolvedStub(host, 'tcp', port);
   host.getTcpStack().listen(port, {
     identity: { processName: options.processName ?? 'dnsmasq', pid: options.pid, service: options.service },
     ...(options.boundDevice === undefined ? {} : { boundDevice: options.boundDevice }),
@@ -84,17 +88,32 @@ export function unbindDnsTcpServer(host: EndHost, port: number = DNS_PORT, addre
   host.getTcpStack().closeListener(port, address);
 }
 
+export type DnsStreamFailure = 'refused' | 'alpn' | 'tls' | 'eof';
+
 export interface DnsTcpClient {
   tcpConnect(destination: string, port: number): Promise<TcpSocket | null>;
+  tcpDial?(destination: DialAddress, port: PortNumber): Promise<TcpSocket | TcpDialFailure>;
+}
+
+export async function connectDnsStream(
+  host: DnsTcpClient, destination: string, port: number, onFailure?: (failure: DnsStreamFailure) => void,
+): Promise<TcpSocket | null> {
+  const address = parseDialAddress(destination);
+  if (host.tcpDial === undefined || address === null || !PortNumber.isValid(port)) return host.tcpConnect(destination, port);
+  const outcome = await host.tcpDial(address, PortNumber.of(port));
+  if (!isDialFailure(outcome)) return outcome;
+  if (outcome.dialFailed === 'refused') onFailure?.('refused');
+  return null;
 }
 
 function connectWithin(
   host: DnsTcpClient, destination: string, port: number, timeoutMs: number,
+  onFailure?: (failure: DnsStreamFailure) => void,
 ): Promise<TcpSocket | null> {
   return new Promise((resolve) => {
     let settled = false;
     const timer = setTimeout(() => { settled = true; resolve(null); }, timeoutMs);
-    host.tcpConnect(destination, port).then(
+    connectDnsStream(host, destination, port, onFailure).then(
       (socket) => {
         if (settled) { socket?.close(); return; }
         settled = true;
@@ -118,8 +137,9 @@ export async function queryDnsOverTcp(
   port: number = DNS_PORT,
   timeoutMs: number = 2000,
   observer?: DnsPacketObserver,
+  onFailure?: (failure: DnsStreamFailure) => void,
 ): Promise<DnsMessage | null> {
-  const socket = await connectWithin(host, serverIP.toString(), port, timeoutMs);
+  const socket = await connectWithin(host, serverIP.toString(), port, timeoutMs, onFailure);
   if (!socket) return null;
   const exchange = {};
   const remote = serverIP.toString();

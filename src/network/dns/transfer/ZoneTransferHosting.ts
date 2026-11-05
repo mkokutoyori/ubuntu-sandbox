@@ -8,6 +8,8 @@ import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserve
 import { buildAxfrAnswers, buildTransferMessages } from '@/network/dns/transfer/AxfrSession';
 import { sendNotify } from '@/network/dns/transfer/NotifyProtocol';
 import { ZoneTransferClient, transferTransportOf } from '@/network/dns/transfer/ZoneTransferClient';
+import { secureTransferClientOf } from '@/network/dns/transfer/SecureTransferClient';
+import type { TransferEndpoint } from '@/network/dns/transfer/TransferEndpoint';
 import { normalizeDnsName } from '@/network/dns/wire/DnsName';
 import { RRType } from '@/network/dns/wire/RRType';
 import type { SoaRecordData } from '@/network/dns/wire/ResourceRecord';
@@ -56,7 +58,7 @@ export interface SecondaryRefreshOutcome {
 }
 
 export class SecondaryZoneRefresher {
-  private readonly clients = new Map<string, ZoneTransferClient>();
+  private readonly clients = new Map<string, { readonly client: ZoneTransferClient; readonly signature: string }>();
   private readonly inFlight = new Set<string>();
   private readonly queued = new Map<string, boolean>();
 
@@ -69,6 +71,7 @@ export class SecondaryZoneRefresher {
   async refresh(
     store: ZoneStore, zoneName: string, primaries: readonly IPAddress[], force = false,
     keys: ReadonlyMap<string, TsigKey> = new Map(),
+    endpoints: ReadonlyMap<string, TransferEndpoint> = new Map(),
   ): Promise<SecondaryRefreshOutcome> {
     if (this.inFlight.has(zoneName)) {
       this.queued.set(zoneName, force || this.queued.get(zoneName) === true);
@@ -76,7 +79,7 @@ export class SecondaryZoneRefresher {
     }
     this.inFlight.add(zoneName);
     try {
-      return await this.transfer(store, zoneName, primaries, force, keys);
+      return await this.transfer(store, zoneName, primaries, force, keys, endpoints);
     } finally {
       this.inFlight.delete(zoneName);
       const again = this.queued.get(zoneName);
@@ -94,11 +97,11 @@ export class SecondaryZoneRefresher {
 
   private async transfer(
     store: ZoneStore, zoneName: string, primaries: readonly IPAddress[], force: boolean,
-    keys: ReadonlyMap<string, TsigKey>,
+    keys: ReadonlyMap<string, TsigKey>, endpoints: ReadonlyMap<string, TransferEndpoint>,
   ): Promise<SecondaryRefreshOutcome> {
     const failure = { succeeded: false, deferred: false, zone: null };
     if (primaries.length === 0) return failure;
-    const client = this.clientFor(zoneName, primaries, keys);
+    const client = this.clientFor(zoneName, primaries, keys, endpoints);
     client.adopt(store.getZone(zoneName));
     if (!await client.refresh(force)) return failure;
     const fetched = client.currentZone();
@@ -110,12 +113,21 @@ export class SecondaryZoneRefresher {
 
   private clientFor(
     zoneName: string, primaries: readonly IPAddress[], keys: ReadonlyMap<string, TsigKey>,
+    endpoints: ReadonlyMap<string, TransferEndpoint>,
   ): ZoneTransferClient {
+    const signature = JSON.stringify([
+      primaries.map(String),
+      [...endpoints].map(([address, endpoint]) => [
+        address, endpoint.port,
+        endpoint.tls === null ? null : [endpoint.tls.anchors?.map((anchor) => anchor.serialNumber) ?? null, endpoint.tls.serverName, endpoint.tls.setupFailed],
+      ]),
+    ]);
     const existing = this.clients.get(zoneName);
-    if (existing) return existing;
+    if (existing && existing.signature === signature) return existing.client;
     const client = new ZoneTransferClient(zoneName, primaries,
-      transferTransportOf(udpClientOf(this.host), this.host, undefined, this.observer), { keys });
-    this.clients.set(zoneName, client);
+      transferTransportOf(udpClientOf(this.host), this.host, undefined, this.observer, secureTransferClientOf(this.host)),
+      { keys, endpoints });
+    this.clients.set(zoneName, { client, signature });
     return client;
   }
 }
