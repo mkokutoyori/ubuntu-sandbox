@@ -154,7 +154,7 @@ import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
-import { cmdDf, cmdDu, cmdFree } from './LinuxSystemCommands';
+import { cmdDf, runDu, cmdFree } from './LinuxSystemCommands';
 import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
@@ -516,6 +516,7 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
 }
 
 const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
+  'du',
   'id', 'printenv',
   'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'ptx', 'shuf', 'csplit', 'numfmt', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
@@ -7044,10 +7045,7 @@ export class LinuxCommandExecutor {
         ),
         exitCode: 0,
       };
-      case 'du': {
-        const out = cmdDu(c, args);
-        return { output: out, exitCode: /(^|\n)du: (cannot|invalid|warning|\S+: No such)/.test(out) ? 1 : 0 };
-      }
+      case 'du': return asDispatch(runDu(c, args, stdin));
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, {
         pm: this.processMgr,

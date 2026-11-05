@@ -254,7 +254,7 @@ export function cmdDf(ctx: DfContext, rawArgs: string[]): string {
   return [header, ...lines].join('\n');
 }
 
-export { cmdDu } from './DuCommand';
+export { runDu } from './DuCommand';
 
 /**
  * `free` — report memory usage. Rendered from the host's {@link MemoryProfile}
