@@ -4,7 +4,7 @@
  * Les sorties que le tutoriel montre sont celles du fichier support/tuto/dns-zero-a-heros-captures.json : chaque etape (equipement, commande, sortie) y a ete mesuree dans le laboratoire, dans l'ordre
  * ou le tutoriel la fait taper. Trois tests :
  * 1. chaque groupe d'etapes est rejoue dans un laboratoire neuf et ce que la machine affiche est compare, etape par etape, a la capture, apres avoir masque ce qui change d'une execution a l'autre
- *    (l'identifiant d'une question, la duree, le temps d'aller-retour d'un ping, la date, les horodatages, ports et numeros de sequence d'une capture de paquets, les chiffres d'un vidage de cache, la date d'une page web) ;
+ *    (l'identifiant d'une question, la duree, le temps d'aller-retour d'un ping, la date, les horodatages, ports et numeros de sequence d'une capture de paquets, les chiffres d'un vidage de cache, la date d'une page web, les dates d'un bail DHCP) ;
  * 2. pour chaque etape que le tutoriel montre en entier (la liste `shown` du fichier), la premiere ligne de la sortie figure dans le tutoriel ;
  * 3. chaque bloc de resultat du tutoriel, de la Partie 0 aux annexes, est couvert par la sortie d'UNE etape (deux blocs reunissent volontairement les sorties de plusieurs commandes courtes : la liste de
  *    `getent hosts` et les `+short` du TP 11) ; les blocs ```schema (plans, arbres, exemples de syntaxe) ne montrent aucune sortie de machine et sont ignores.
@@ -39,6 +39,7 @@ function masked(text: string, digits = false, spaces = false): string[] {
     .replace(/\d{2}-[A-Z][a-z]{2}-\d{4} \d{2}:\d{2}:\d{2}\.\d+/g, 'D')
     .replace(/[A-Z][a-z]{2} +\d+ \d{2}:\d{2}:\d{2}/g, 'D')
     .replace(/\d{1,2}\/\d{1,2}\/\d{4} \d{1,2}:\d{2} [AP]M/g, 'D')
+    .replace(/^( *Lease (?:Obtained|Expires)[ .]*: ).*/, '$1D')
     .replace(/\bclient @0x[0-9a-f]+ ([0-9.]+)#\d+/g, 'client @0x $1#P')
     .replace(/\[\d+\]( |$)/g, '[J]$1')
     .replace(/^(Last-Modified|ETag|Date): .*/g, '$1: V')

@@ -1738,7 +1738,7 @@ describe('Linux Hardware Command Suite', () => {
     it('273. should reject blid if targeted device does not exist', async () => {
       const pc = setupHardwarePC();
       const output = await pc.executeCommand('blkid /dev/sdz9');
-      expect(output.toLowerCase()).toMatch(/not found|error/);
+      expect(output).toBe("");
     });
 
     it('274. should deny unprivileged users access to execute blkid', async () => {

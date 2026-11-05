@@ -83,6 +83,11 @@ export class LinuxServer extends LinuxMachine {
       read: (path) => this.executor.vfs.readFile(path),
     });
     this.seedDefaultRadiusdConfig();
+    this.executor.serviceMgr.onLifecycle((event, name) => {
+      if (name !== 'postfix') return;
+      if (event === 'stop') this.disableSmtpService();
+      else this.enableSmtpService();
+    });
     this.executor.serviceMgr.registerConfigCheck('freeradius', () => this.radiusd.checkConfig());
     this.executor.serviceMgr.onLifecycle((event, name) => {
       if (name !== 'freeradius') return;
@@ -278,6 +283,12 @@ export class LinuxServer extends LinuxMachine {
     this.smtpSubmissionServer.start();
     this.smtpImplicitTlsServer.start();
     this.logSmtpConnections();
+  }
+
+  disableSmtpService(): void {
+    this.smtpServer.stop();
+    this.smtpSubmissionServer.stop();
+    this.smtpImplicitTlsServer.stop();
   }
 
   private smtpConnectionLogging = false;

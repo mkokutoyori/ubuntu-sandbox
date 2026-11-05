@@ -394,7 +394,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'pkill', 'pgrep', 'pstree', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'rscryutil', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'nohup', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
-  'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
+  'getconf', 'lsb_release', 'swapon', 'swapoff', 'mkswap', 'lsmod', 'modinfo', 'pmap', 'sensors',
   'conntrack',
   'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
   'mkfs', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs', 'lvdisplay', 'vgdisplay', 'pvdisplay',

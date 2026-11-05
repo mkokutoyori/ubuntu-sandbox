@@ -41,7 +41,10 @@ export class GreAgent {
   setEnabled(on: boolean): void { this.config.enabled = on; }
 
   addTunnel(tunnelId: string, sourceIp: string, destinationIp: string,
-            opts: { overlayIp?: string; overlayMask?: string; key?: number; ttl?: number } = {}): GreTunnel {
+            opts: {
+              overlayIp?: string; overlayMask?: string; key?: number; keyInbound?: number | null;
+              ttl?: number; checksumReception?: boolean; sequenceReception?: boolean;
+            } = {}): GreTunnel {
     const existing = this.config.tunnels.get(tunnelId);
     if (existing) {
       existing.sourceIp = sourceIp;
@@ -49,6 +52,9 @@ export class GreAgent {
       if (opts.overlayIp !== undefined) existing.overlayIp = opts.overlayIp;
       if (opts.overlayMask !== undefined) existing.overlayMask = opts.overlayMask;
       if (opts.key !== undefined) existing.key = opts.key;
+      if (opts.keyInbound !== undefined) existing.keyInbound = opts.keyInbound;
+      if (opts.checksumReception !== undefined) existing.checksumReception = opts.checksumReception;
+      if (opts.sequenceReception !== undefined) existing.sequenceReception = opts.sequenceReception;
       if (opts.ttl !== undefined) existing.ttl = opts.ttl;
       return existing;
     }
@@ -56,6 +62,9 @@ export class GreAgent {
     if (opts.overlayIp !== undefined) t.overlayIp = opts.overlayIp;
     if (opts.overlayMask !== undefined) t.overlayMask = opts.overlayMask;
     if (opts.key !== undefined) t.key = opts.key;
+    if (opts.keyInbound !== undefined) t.keyInbound = opts.keyInbound;
+    if (opts.checksumReception !== undefined) t.checksumReception = opts.checksumReception;
+    if (opts.sequenceReception !== undefined) t.sequenceReception = opts.sequenceReception;
     if (opts.ttl !== undefined) t.ttl = opts.ttl;
     this.config.tunnels.set(tunnelId, t);
     this.getBus().publish({
@@ -156,6 +165,14 @@ export class GreAgent {
     return true;
   }
 
+  decapsulate(inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): { tunnelId: string; inner: IPv4Packet } | null {
+    const gre = ipPkt.payload as GrePacket | undefined;
+    if (!gre || gre.type !== 'gre') return null;
+    const tunnel = matchTunnel(this.config.tunnels.values(), srcIp.toString(), ipPkt.destinationIP.toString(), gre.key);
+    const inner = this.handleIp(inPort, srcIp, ipPkt);
+    return tunnel === null || inner === null ? null : { tunnelId: tunnel.tunnelId, inner };
+  }
+
   handleIp(_inPort: string, srcIp: IPAddress, ipPkt: IPv4Packet): IPv4Packet | null {
     if (!this.config.enabled) return null;
     if (ipPkt.protocol !== IP_PROTO_GRE) return null;
@@ -165,11 +182,17 @@ export class GreAgent {
                                srcIp.toString(), ipPkt.destinationIP.toString(), gre.key);
     if (!tunnel) {
       const peer = this.tunnelByPeer(srcIp.toString(), ipPkt.destinationIP.toString());
-      const reason = peer && peer.key !== gre.key ? 'key-mismatch' : 'no-tunnel';
+      const reason = peer && (peer.keyInbound === undefined ? peer.key : peer.keyInbound) !== gre.key ? 'key-mismatch' : 'no-tunnel';
       this.dropped(srcIp.toString(), ipPkt.destinationIP.toString(), reason);
       return null;
     }
-    if (tunnel.checksumEnabled && gre.checksumPresent) {
+    const verifyChecksum = tunnel.checksumReception ?? tunnel.checksumEnabled;
+    if (verifyChecksum && !gre.checksumPresent) {
+      tunnel.checksumDrops++;
+      this.dropped(tunnel.sourceIp, tunnel.destinationIp, 'checksum-mismatch');
+      return null;
+    }
+    if (verifyChecksum && gre.checksumPresent) {
       const wireChecksum = gre.checksum;
       const recomputed = computeGreChecksum(gre);
       if (wireChecksum !== recomputed) {
@@ -178,7 +201,8 @@ export class GreAgent {
         return null;
       }
     }
-    if (tunnel.sequenceEnabled && gre.sequencePresent && gre.sequence !== null) {
+    const verifySequence = tunnel.sequenceReception ?? tunnel.sequenceEnabled;
+    if (verifySequence && gre.sequencePresent && gre.sequence !== null) {
       if (((gre.sequence - tunnel.expectedRecvSeq) | 0) < 0) {
         tunnel.outOfOrderDrops++;
         this.dropped(tunnel.sourceIp, tunnel.destinationIp, 'out-of-order');

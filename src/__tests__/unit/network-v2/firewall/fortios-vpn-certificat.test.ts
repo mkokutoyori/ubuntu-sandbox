@@ -35,6 +35,11 @@
  * `set certificate` n'existait pas du tout ; et « la cle partagee reste
  * utilisable » est le temoin de non-regression, dont c'est l'objet de
  * passer des deux cotes.
+ *
+ * `peertype peer` / `peergrp` (config user peer, user peergrp ; CLI Reference 7.4.12 p.2120) : le dernier bloc. 3 des 6
+ * cas tombent avant correctif (CN different, autorite etrangere, rendu par `show`). Les trois autres passent des deux
+ * cotes et sont nommes : le pair conforme et le groupe dont un membre correspond (sans restriction le tunnel monte
+ * aussi) sont des temoins ; la reference a un objet absent etait deja refusee par la validation des references.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -313,5 +318,71 @@ describe('authmethod signature', () => {
     expect(rendu).toMatch(/set authmethod signature/);
     expect(rendu).toMatch(/set certificate "FGT_A"/);
     expect(rendu).not.toMatch(/set psksecret/);
+  });
+});
+
+describe('peertype peer / peergrp (config user peer, user peergrp)', () => {
+  const restrict = (sh: FortiShell, ...peerLines: string[]) => run(sh,
+    'config user peer', ...peerLines, 'end',
+    'config vpn ipsec phase1-interface', 'edit "vers_b"', 'set peertype peer', 'set peer "p"', 'next', 'end');
+
+  it('un pair dont l\'emetteur et le CN correspondent est accepte', async () => {
+    const { a } = await laboratoire();
+    restrict(a.sh, 'edit "p"', 'set ca "CA_Cert_1"', 'set cn "fgt-b.labo"', 'next');
+
+    const sortie = await pingOnSimulatedClock(a.pc, 'ping -c 2 192.168.2.10');
+
+    expect(sortie).toMatch(/, 0% packet loss/);
+  });
+
+  it('un CN qui ne correspond pas fait echouer le tunnel', async () => {
+    const { a } = await laboratoire();
+    restrict(a.sh, 'edit "p"', 'set ca "CA_Cert_1"', 'set cn "quelqu-un-d-autre"', 'next');
+
+    const sortie = await pingOnSimulatedClock(a.pc, 'ping -c 1 192.168.2.10');
+
+    expect(sortie).toMatch(/, 100% packet loss/);
+    expect(a.sh.execute('get vpn ipsec tunnel summary')).toMatch(/selectors\(total,up\): \d+\/0/);
+  });
+
+  it('une autorite qui n\'a pas emis le certificat du pair fait echouer le tunnel', async () => {
+    const { a, intruse } = await laboratoire();
+    run(a.sh, 'config vpn certificate ca', 'edit "AUTRE"',
+      `set certificate "${flat(certToPem(intruse.rootCertificate))}"`, 'next', 'end');
+    restrict(a.sh, 'edit "p"', 'set ca "AUTRE"', 'next');
+
+    const sortie = await pingOnSimulatedClock(a.pc, 'ping -c 1 192.168.2.10');
+
+    expect(sortie).toMatch(/, 100% packet loss/);
+  });
+
+  it('un groupe de pairs accepte le tunnel des qu\'un membre correspond', async () => {
+    const { a } = await laboratoire();
+    run(a.sh, 'config user peer',
+      'edit "faux"', 'set cn "inconnu"', 'next',
+      'edit "bon"', 'set cn "fgt-b.labo"', 'next', 'end',
+      'config user peergrp', 'edit "g"', 'set member "faux" "bon"', 'next', 'end',
+      'config vpn ipsec phase1-interface', 'edit "vers_b"', 'set peertype peergrp', 'set peergrp "g"', 'next', 'end');
+
+    const sortie = await pingOnSimulatedClock(a.pc, 'ping -c 2 192.168.2.10');
+
+    expect(sortie).toMatch(/, 0% packet loss/);
+  });
+
+  it('`peertype peer` sans objet `user peer` existant est refuse', async () => {
+    const { a } = await laboratoire();
+
+    const sortie = run(a.sh, 'config vpn ipsec phase1-interface', 'edit "vers_b"', 'set peertype peer', 'set peer "absent"');
+
+    expect(sortie).toMatch(/Command fail/);
+    run(a.sh, 'abort');
+  });
+
+  it('`show` rend le pair et la reference', async () => {
+    const { a } = await laboratoire();
+    restrict(a.sh, 'edit "p"', 'set ca "CA_Cert_1"', 'set cn "fgt-b.labo"', 'next');
+
+    expect(a.sh.execute('show user peer')).toMatch(/set cn "fgt-b.labo"/);
+    expect(a.sh.execute('show vpn ipsec phase1-interface')).toMatch(/set peer "p"/);
   });
 });

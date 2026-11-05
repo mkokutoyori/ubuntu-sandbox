@@ -14,6 +14,7 @@
  */
 
 
+import { pemToCert } from '@/network/pki/pem';
 import type { DnsLookupFailure } from '@/network/devices/windows/dnsLookupFailure';
 import type { DhcpFailoverChanges, DhcpFailoverRequest } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { findWmiClass } from '@/network/devices/windows/WmiClasses';
@@ -3359,6 +3360,11 @@ class WindowsExchangeAdapter implements IExchangeProvider {
     return this.pc.newReceiveConnector(def);
   }
 
+  removeReceiveConnector(name: string): ExchangeOpResult {
+    this.requireOrg('Remove-ReceiveConnector');
+    return this.pc.removeReceiveConnector(name);
+  }
+
   getReceiveConnector(name: string): ReceiveConnectorInfo | null {
     this.requireOrg('Get-ReceiveConnector');
     return this.pc.getReceiveConnector(name);
@@ -3638,6 +3644,19 @@ class WindowsPkiAdapter implements IPkiProvider {
       thumbprint: c.serialNumber, serialNumber: c.serialNumber, subject: c.subject, issuer: c.issuer,
       notBefore: c.notBefore, notAfter: c.notAfter,
     }));
+  }
+
+  trustRootCertificate(pem: string): (IssuedCertInfo & { thumbprint: string }) | null {
+    const cert = pemToCert(pem);
+    if (cert === null) return null;
+    const known = this.pc.getTrustedCertificateAuthorities().some(
+      (anchor) => anchor.serialNumber === cert.serialNumber && anchor.subject === cert.subject,
+    );
+    if (!known) this.pc.addTrustedCertificateAuthority(cert);
+    return {
+      thumbprint: cert.serialNumber, serialNumber: cert.serialNumber, subject: cert.subject, issuer: cert.issuer,
+      notBefore: cert.notBefore, notAfter: cert.notAfter,
+    };
   }
 }
 

@@ -111,6 +111,7 @@ export interface FortiInterfacePatch {
   };
   readonly dhcpClient?: { readonly identifier: string; readonly renewTimeSec: number };
   readonly ip?: string;
+  readonly remoteIp?: string;
   readonly mask?: string;
   readonly up?: boolean;
   readonly allowAccess?: readonly string[];
@@ -129,6 +130,7 @@ export interface FortiInterfacePatch {
     readonly minLinksDown: 'operational' | 'administrative';
     readonly lacpHaSecondary: boolean;
   };
+  readonly netflowSampler?: 'disable' | 'tx' | 'rx' | 'both';
   readonly lldp?: {
     readonly transmission: LldpSetting;
     readonly reception: LldpSetting;
@@ -264,6 +266,7 @@ export interface FortiGlobalSettings {
   readonly adminLockoutThreshold?: number;
   readonly adminLockoutDurationSec?: number;
   readonly adminLoginMax?: number;
+  readonly adminSshPassword?: boolean;
   readonly adminConcurrent?: boolean;
   readonly preLoginBanner?: boolean;
   readonly postLoginBanner?: boolean;
@@ -390,6 +393,8 @@ export interface FortiCommitDevice {
   removeStaticArp(id: string): void;
   applyProxyArp(id: string, entry: { readonly interface: string; readonly ip: string; readonly endIp: string }): void;
   removeProxyArp(id: string): void;
+  applyShapingPolicy(draft: import('../../../model/PolicyStore').RuleDraft, position: number): void;
+  removeShapingPolicy(id: string): void;
   applyVip(vip: FortiVipPatch): void;
   applyFqdnVip(vip: FortiFqdnVipPatch): string | void;
   removeVip(name: string): void;
@@ -445,6 +450,19 @@ export interface FortiCommitDevice {
   removeRouteMap(name: string): void;
   applyAsPathList(patch: import('../../../routing/DynamicRoutingTypes').AsPathListPatch): void;
   removeAsPathList(name: string): void;
+  applyGreTunnel(name: string, tunnel: {
+    boundInterface: string; localGateway: string; remoteGateway: string;
+    keyInbound: number | null; keyOutbound: number | null;
+    checksumTransmission: boolean; checksumReception: boolean;
+    sequenceTransmission: boolean; sequenceReception: boolean;
+  }): string | void;
+  removeGreTunnel(name: string): void;
+  applyPkiPeer(peer: { name: string; ca: string; subject: string; cn: string }): void;
+  removePkiPeer(name: string): void;
+  applyPkiPeerGroup(name: string, members: readonly string[]): void;
+  removePkiPeerGroup(name: string): void;
+  applyNetflow(settings: { activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; collectors: ReadonlyArray<{ ip: string; port: number }> }): void;
+  applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | void;
   applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
   removeKeyChain(name: string): void;
   applyCommunityList(patch: import('../../../routing/DynamicRoutingTypes').CommunityListPatch): void;
@@ -619,6 +637,8 @@ export interface FortiCaCertificatePatch {
 export interface FortiPhase1Patch {
   readonly peerType?: PeerType;
   readonly peerId?: string;
+  readonly peerName?: string;
+  readonly peerGroupName?: string;
   readonly localId?: string;
   readonly name: string;
   readonly boundInterface: string;

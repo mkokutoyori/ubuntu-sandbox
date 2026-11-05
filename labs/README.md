@@ -8,6 +8,7 @@ Ce répertoire est le **hub des laboratoires** du simulateur. Chaque sous-réper
 | Lab | Thème | Équipements | Dossier |
 |-----|-------|-------------|---------|
 | DNS — Agence bancaire (Banque Horizon) | DNS multi-éditeurs (Windows Server + BIND9) : arbre racine → `com` → domaine de la banque, récursion, redirection, transfert de zone, DHCP + mise à jour dynamique, site web nginx en HTTPS | 15 | [`dns-agence-bancaire/`](dns-agence-bancaire/README.md) |
+| Entreprise Meridian | FortiGate au siège et dans trois agences, IPsec IKEv2 en étoile (agence ↔ agence via le siège), VIP et SNAT, DMZ (nginx, Exchange), AD/DNS, listener Oracle, Internet simulé | 16 | [`entreprise-meridian/`](entreprise-meridian/README.md) |
 
 ## Importer un lab
 

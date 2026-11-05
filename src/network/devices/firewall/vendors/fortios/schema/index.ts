@@ -6,6 +6,7 @@ import {
   FIREWALL_SERVICE_CATEGORY, FIREWALL_SERVICE_CUSTOM, FIREWALL_SERVICE_GROUP,
 } from './firewallObjects';
 import { FIREWALL_POLICY } from './firewallPolicy';
+import { FIREWALL_SHAPING_POLICY } from './firewallShaping';
 import {
   FIREWALL_LOCAL_IN_POLICY, FIREWALL_LOCAL_IN_POLICY6,
 } from './firewallLocalIn';
@@ -55,6 +56,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...VPN_SPECS,
   ...ROUTER_SPECS,
   FIREWALL_POLICY,
+  FIREWALL_SHAPING_POLICY,
   FIREWALL_LOCAL_IN_POLICY,
   FIREWALL_LOCAL_IN_POLICY6,
   FIREWALL_DOS_POLICY,

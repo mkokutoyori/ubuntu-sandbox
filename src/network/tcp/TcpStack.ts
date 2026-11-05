@@ -299,6 +299,7 @@ export interface TcpHost {
   isLocalAddress6?(ip: IPv6Address): boolean;
   sendFrame(portName: string, frame: EthernetFrame): void;
   resolveRoute?(targetIp: string): { iface: string; nextHopIp: string } | null;
+  virtualInterface?(name: string): { ip: string; mtu: number; up: boolean } | undefined;
   resolveRoute6?(targetIp: string): { iface: string; nextHopIp: string } | null;
   localAddress6?(iface: string, remoteIp: string): string | null;
   /**
@@ -3592,6 +3593,10 @@ export class TcpStack {
         const src = port?.getIPAddress();
         if (port && src && port.getIsUp()) {
           return { name: port.getName(), port, srcIp: src.toString(), nextHopIp: route.nextHopIp };
+        }
+        const virtual = port === undefined ? this.host.virtualInterface?.(route.iface) : undefined;
+        if (virtual?.up === true) {
+          return { name: route.iface, srcIp: virtual.ip, nextHopIp: route.nextHopIp };
         }
       }
     }

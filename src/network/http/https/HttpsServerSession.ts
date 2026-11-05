@@ -33,6 +33,7 @@ export type HttpsServerConfig = Omit<TlsServerConfig, 'alpnProtocols'> & {
 
 export class HttpsServerSession {
   private listener: TcpListener | null = null;
+  private listenAddress = '0.0.0.0';
 
   constructor(
     private readonly tcpStack: TcpStack,
@@ -49,17 +50,18 @@ export class HttpsServerSession {
    * owner while the cleartext port next to it has one — the two views of
    * the same machine disagreeing about the same server.
    */
-  start(identity?: ListenerIdentity, backlog?: number): void {
+  start(identity?: ListenerIdentity, backlog?: number, address = '0.0.0.0'): void {
+    this.listenAddress = address;
     this.listener = this.tcpStack.listen(this.port, {
       onAccept: (socket) => this.handleConnection(socket),
       identity,
       backlog,
-    });
+    }, address);
   }
 
   stop(): void {
     if (!this.listener) return;
-    this.tcpStack.closeListener(this.port);
+    this.tcpStack.closeListener(this.port, this.listenAddress);
     this.listener = null;
   }
 

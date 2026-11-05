@@ -78,6 +78,7 @@ describe('getMailboxContentsAsUser() (docs/PRD-Exchange.md §8 — emblematic P9
     const client = new LinuxPC('linux-pc', 'CLIENT1');
     client.configureInterface('eth0', new IPAddress('10.0.4.2'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(client.getPort('eth0')!, dc.getPort('eth0')!);
+    await run(ps(dc), 'Remove-ReceiveConnector -Identity "Default Frontend DC01"');
     await run(ps(dc), 'New-ReceiveConnector -Name MainReceive -Bindings "0.0.0.0:25"');
 
     const smtp = new SmtpClientSession(client.getTcpStack(), '10.0.4.10', '10.0.4.2', SMTP_PORT);
@@ -104,6 +105,7 @@ describe('Add/Get-RecipientPermission -AccessRights SendAs — real SMTP-level e
     const client = new LinuxPC('linux-pc', 'CLIENT1');
     client.configureInterface('eth0', new IPAddress('10.0.4.2'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(client.getPort('eth0')!, dc.getPort('eth0')!);
+    await run(ps(dc), 'Remove-ReceiveConnector -Identity "Default Frontend DC01"');
     await run(ps(dc), 'New-ReceiveConnector -Name MainReceive -Bindings "0.0.0.0:25" -AuthMechanism BasicAuth');
     return { dc, client };
   }

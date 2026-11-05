@@ -20,7 +20,7 @@ export type DnsStreamHandler = (
   destinationIP?: IPAddress | IPv6Address,
 ) => DnsStreamReply | Promise<DnsStreamReply>;
 
-function addressOf(text: string): IPAddress | IPv6Address | undefined {
+export function addressOf(text: string): IPAddress | IPv6Address | undefined {
   return IPAddress.tryParse(text) ?? IPv6Address.tryParse(text) ?? undefined;
 }
 

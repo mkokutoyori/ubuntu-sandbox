@@ -66,6 +66,16 @@ export interface MemoryProfileInit {
 const FREE_LABEL_WIDTH = 8;
 const FREE_COLUMN_WIDTH = 12;
 
+export interface SwapArea {
+  path: string;
+  type: 'file' | 'partition';
+  sizeKib: number;
+  usedKib: number;
+  priority: number;
+  uuid: string;
+  label: string;
+}
+
 export class MemoryProfile {
   /** Kernel-visible RAM (`MemTotal`) — below installed RAM by firmware reserve. */
   totalKib: number;
@@ -75,8 +85,7 @@ export class MemoryProfile {
   buffersKib: number;
   cacheKib: number;
   availableKib: number;
-  swapTotalKib: number;
-  swapUsedKib: number;
+  swapAreas: SwapArea[];
   /** Physically installed DIMMs. */
   modules: MemoryModule[];
 
@@ -88,8 +97,10 @@ export class MemoryProfile {
     this.buffersKib = init.buffersKib ?? 204800;
     this.cacheKib = init.cacheKib ?? 1049600;
     this.availableKib = init.availableKib ?? 2519040;
-    this.swapTotalKib = init.swapTotalKib ?? 2097152;
-    this.swapUsedKib = init.swapUsedKib ?? 0;
+    const swapTotalKib = init.swapTotalKib ?? 2097152;
+    this.swapAreas = swapTotalKib === 0 ? [] : [{
+      path: '/swapfile', type: 'file', sizeKib: swapTotalKib, usedKib: init.swapUsedKib ?? 0, priority: -2, uuid: '', label: '',
+    }];
     this.modules = init.modules ?? [
       new MemoryModule({ sizeMib: 4096, locator: 'DIMM 0' }),
     ];
@@ -117,6 +128,37 @@ export class MemoryProfile {
     this.usedKib = Math.max(0, this.usedKib - amount);
     this.freeKib += amount;
     this.availableKib += amount;
+  }
+
+  get swapTotalKib(): number {
+    return this.swapAreas.reduce((sum, area) => sum + area.sizeKib, 0);
+  }
+
+  get swapUsedKib(): number {
+    return this.swapAreas.reduce((sum, area) => sum + area.usedKib, 0);
+  }
+
+  findSwap(path: string): SwapArea | undefined {
+    return this.swapAreas.find((area) => area.path === path);
+  }
+
+  nextAutomaticSwapPriority(): number {
+    const automatic = this.swapAreas.map((area) => area.priority).filter((priority) => priority < 0);
+    return automatic.length === 0 ? -2 : Math.min(...automatic) - 1;
+  }
+
+  addSwap(area: SwapArea): void {
+    this.swapAreas.push(area);
+  }
+
+  removeSwap(path: string): boolean {
+    const removed = this.findSwap(path);
+    if (!removed) return false;
+    this.swapAreas = this.swapAreas.filter((area) => area.path !== path);
+    if (removed.priority < 0) {
+      for (const area of this.swapAreas) if (area.priority < removed.priority) area.priority += 1;
+    }
+    return true;
   }
 
   /** Free swap. */

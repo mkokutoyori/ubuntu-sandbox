@@ -40,7 +40,7 @@ export interface IpsecIkeSaInstalledPayload extends IpsecDeviceRef {
 
 export interface IpsecIkeSaDeletedPayload extends IpsecDeviceRef {
   peerIp: string;
-  reason: 'lifetime' | 'manual' | 'dpd' | 'replaced' | 'shutdown';
+  reason: 'lifetime' | 'manual' | 'dpd' | 'replaced' | 'shutdown' | 'peer';
 }
 
 // ── IPSec (Phase 2) Security Associations ──────────────────────────────
@@ -60,7 +60,7 @@ export interface IpsecChildSaInstalledPayload extends IpsecDeviceRef {
 export interface IpsecChildSaDeletedPayload extends IpsecDeviceRef {
   peerIp: string;
   spiInbound: number;
-  reason: 'lifetime' | 'manual' | 'replaced' | 'shutdown' | 'dpd';
+  reason: 'lifetime' | 'manual' | 'replaced' | 'shutdown' | 'dpd' | 'peer';
 }
 
 // ── DPD (Dead Peer Detection) ──────────────────────────────────────────

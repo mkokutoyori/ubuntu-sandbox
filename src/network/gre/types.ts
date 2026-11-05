@@ -26,6 +26,9 @@ export interface GreTunnel {
   overlayIp: string | null;
   overlayMask: string | null;
   key: number | null;
+  keyInbound?: number | null;
+  checksumReception?: boolean;
+  sequenceReception?: boolean;
   ttl: number;
   enabled: boolean;
   bytesIn: number;
@@ -80,7 +83,7 @@ export function matchTunnel(tunnels: Iterable<GreTunnel>, srcIp: string, dstIp: 
     if (!t.enabled) continue;
     if (t.sourceIp !== dstIp) continue;
     if (t.destinationIp !== srcIp) continue;
-    if (t.key !== key) continue;
+    if ((t.keyInbound === undefined ? t.key : t.keyInbound) !== key) continue;
     return t;
   }
   return null;

@@ -26,7 +26,7 @@ import {
   DynamicCryptoMapEntry, IKEv2Proposal, IKEv2Policy, IKEv2Keyring, IKEv2Profile,
   ISAKMPKeyring, ISAKMPProfile,
   IPSecProfile, TunnelProtection,
-  IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig, IsakmpDpdMessage, NatTraversalPolicy,
+  IKE_SA, IKEv2_SA, IPSec_SA, DPDConfig, IsakmpDpdMessage, IsakmpDeleteMessage, NatTraversalPolicy,
   SecurityPolicy, SPDAction, SPDDirection,
   SACryptoKeys, SATrafficSelector, SADscpEcnConfig,
   MulticastIPSecSA,
@@ -1902,7 +1902,12 @@ export class IPSecEngine implements IProtocolEngine {
       this.handleGdoiMessage(payload, srcIp);
       return;
     }
-    const msg = payload as IsakmpDpdMessage | undefined;
+    const received = payload as IsakmpDpdMessage | IsakmpDeleteMessage | undefined;
+    if (received?.type === 'isakmp-delete') {
+      this.clearSAsForPeer(srcIp, 'peer');
+      return;
+    }
+    const msg = received as IsakmpDpdMessage | undefined;
     if (!msg || msg.type !== 'isakmp-dpd') return;
 
     if (msg.notify === 'R-U-THERE') {
@@ -2220,7 +2225,10 @@ export class IPSecEngine implements IProtocolEngine {
     }
   }
 
-  clearSAsForPeer(peerIP: string, reason: 'manual' | 'lifetime' | 'dpd' | 'replaced' | 'shutdown' = 'manual'): void {
+  clearSAsForPeer(peerIP: string, reason: 'manual' | 'lifetime' | 'dpd' | 'replaced' | 'shutdown' | 'peer' = 'manual'): void {
+    if (reason === 'manual' && (this.ikeSADB.has(peerIP) || this.ikev2SADB.has(peerIP) || (this.ipsecSADB.get(peerIP)?.length ?? 0) > 0)) {
+      this.router._sendIkeUdp(peerIP, { type: 'isakmp-delete' } satisfies IsakmpDeleteMessage);
+    }
     this.cancelNatTKeepalive(peerIP);
     const ikeSA = this.ikeSADB.get(peerIP);
     if (ikeSA) {
@@ -3974,6 +3982,12 @@ export class IPSecEngine implements IProtocolEngine {
         this.createFailedIKESA(srcIp, '', reason);
         return;
       }
+      const unwanted = this.ikeCertAuth.peerAcceptable?.(srcIp, peerCert) ?? null;
+      if (unwanted !== null) {
+        this.rejectIke(srcIp, unwanted);
+        this.createFailedIKESA(srcIp, '', unwanted);
+        return;
+      }
       const authInput = `${offer.identity}|${dstIp}|${offer.ipsecSpiIn}`;
       if (!PkiKeyPair.verify(peerCert.publicKey, authInput, offer.certPayload.authSignature)) {
         this.rejectIke(srcIp, 'Certificate signature invalid');
@@ -4198,6 +4212,11 @@ export class IPSecEngine implements IProtocolEngine {
       const peerVerdict = this.ikeCertAuth.verifier.verify(peerCert);
       if (!peerVerdict.ok) {
         this.createFailedIKESA(srcIp, pending.egressIface, verificationToIkeReason(peerVerdict));
+        return;
+      }
+      const unwanted = this.ikeCertAuth.peerAcceptable?.(srcIp, peerCert) ?? null;
+      if (unwanted !== null) {
+        this.createFailedIKESA(srcIp, pending.egressIface, unwanted);
         return;
       }
       const localVerdict = this.ikeCertAuth.verifier.verify(this.ikeCertAuth.localCert);

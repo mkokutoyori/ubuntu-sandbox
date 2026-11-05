@@ -1,3 +1,4 @@
+import { IPAddress } from '@/network/core/types';
 import { fortiFirmwareVersion } from '../FortiFirmware';
 import { ospfRouteCode } from '@/network/ospf/routeCodes';
 import { cpuStatesLines, memoryLine } from './systemLoad';
@@ -228,7 +229,7 @@ const PROTOCOL_CODE: Readonly<Record<string, string>> = Object.freeze({
   bgp: 'B',
 });
 
-function prefixLength(mask: string): number {
+export function prefixLength(mask: string): number {
   return mask.split('.')
     .map(octet => Number.parseInt(octet, 10).toString(2).split('1').length - 1)
     .reduce((total, bits) => total + bits, 0);
@@ -267,6 +268,35 @@ export function renderRoutingTable(routes: RouteTable, view: RoutingView, now: n
   ], FIXED_TABLE).filter(line => line.trim().length > 0));
 
   return lines.join('\n');
+}
+
+const KNOWN_VIA: Readonly<Record<string, string>> = { connected: 'connected', static: 'static', default: 'static' };
+
+function knownVia(route: FirewallRoute): string {
+  return route.protocol ?? KNOWN_VIA[route.kind] ?? 'static';
+}
+
+function routeEntryLines(routes: RouteTable, route: FirewallRoute): string[] {
+  const onLink = route.nextHop === undefined || route.nextHop.length === 0 || route.nextHop === route.network;
+  return [
+    `Routing entry for ${route.network}/${prefixLength(route.mask)}`,
+    `  Known via "${knownVia(route)}", distance ${route.distance}, metric ${route.metric ?? 0}${routes.isSelected(route) ? ', best' : ''}`,
+    onLink ? `  * is directly connected, ${route.iface}` : `  * ${route.nextHop}, via ${route.iface}`,
+    '',
+  ];
+}
+
+export function renderRoutingDetails(routes: RouteTable, address: string | undefined): string | null {
+  if (address === undefined || address.length === 0) {
+    return routes.selected().flatMap(route => routeEntryLines(routes, route)).join('\n');
+  }
+  const [host, length] = address.split('/');
+  if (IPAddress.tryParse(host) === null) return null;
+  const wanted = length === undefined ? undefined : Number(length);
+  const route = wanted === undefined
+    ? routes.lookup(host)
+    : routes.selected().find(candidate => candidate.network === host && prefixLength(candidate.mask) === wanted);
+  return route === undefined ? '% Network not in table' : routeEntryLines(routes, route).join('\n');
 }
 
 export function renderRoutingDatabase(routes: RouteTable, now: number): string {

@@ -1,3 +1,4 @@
+import type { PkiPeerStore } from './PkiPeers';
 import type { IPSecEngine } from '../../../ipsec/IPSecEngine';
 import type { CryptoMapEntry, SATrafficSelector } from '../../../ipsec/IPSecTypes';
 import type {
@@ -69,6 +70,7 @@ function espTransform(cipher: string): string {
 
 export interface IpsecIdentitySources {
   groupMembers(name: string): readonly string[];
+  readonly pkiPeers?: PkiPeerStore;
 }
 
 export function programIpsecEngine(
@@ -77,7 +79,7 @@ export function programIpsecEngine(
   identities?: IpsecIdentitySources,
 ): void {
   let priority = 10;
-  if (certificates) programCertificateAuth(engine, tunnels, certificates, now);
+  if (certificates) programCertificateAuth(engine, tunnels, certificates, now, identities?.pkiPeers);
   programLiveness(engine, tunnels);
 
   for (const tunnel of tunnels.all()) {
@@ -164,7 +166,7 @@ function programLiveness(engine: IPSecEngine, tunnels: IpsecTunnelTable): void {
 
 function programCertificateAuth(
   engine: IPSecEngine, tunnels: IpsecTunnelTable,
-  certificates: CertificateStore, now?: () => number,
+  certificates: CertificateStore, now?: () => number, peers?: PkiPeerStore,
 ): void {
   const signing = tunnels.all().find(tunnel => tunnel.authMethod === 'signature');
   const local = signing ? certificates.local(signing.certificate) : undefined;
@@ -181,6 +183,17 @@ function programCertificateAuth(
     verifier: new CertificateVerifier({
       trustAnchors, revocationCheck: 'none', clock: now,
     }),
+    peerAcceptable: (peerIp, cert) => {
+      const restricting = tunnels.all().filter(tunnel => tunnel.authMethod === 'signature'
+        && (tunnel.peerType === 'peer' || tunnel.peerType === 'peergrp')
+        && (tunnel.remoteGateway === peerIp || tunnel.type === 'dynamic'));
+      if (restricting.length === 0) return null;
+      const issuerOf = (ca: string): string | undefined => certificates.authority(ca)?.certificate.subject;
+      const accepted = restricting.some(tunnel => peers?.accepts(
+        tunnel.peerType === 'peer' ? tunnel.peerName : undefined,
+        tunnel.peerType === 'peergrp' ? tunnel.peerGroupName : undefined, cert, issuerOf) === true);
+      return accepted ? null : 'Peer certificate not accepted';
+    },
   });
 }
 

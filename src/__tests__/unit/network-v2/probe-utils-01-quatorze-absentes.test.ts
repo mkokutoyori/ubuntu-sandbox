@@ -219,17 +219,17 @@ describe('Scénario 5 — `swapon` lit le swap que `free` affiche déjà', () =>
   it('`--show` et `free` s\'accordent sur la taille', async () => {
     const m = pc();
     const show = await m.executeCommand('swapon --show');
-    expect(show).toContain('NAME       TYPE      SIZE USED PRIO');
+    expect(show).toMatch(/^NAME\s+TYPE\s+SIZE\s+USED\s+PRIO\n\/swapfile\s+file\s+2G\s+0B\s+-2$/);
     expect(show).toContain('/swapfile');
     const somme = await m.executeCommand('swapon -s');
     const total = somme.split('\n')[1].split(/\s+/)[2];
     expect(await m.executeCommand('free -k')).toContain(total);
   });
 
-  it('activer un espace est refusé plutôt que feint', async () => {
+  it('un espace déjà actif ne se réactive pas', async () => {
     const m = pc();
     expect(await m.executeCommand('swapon /swapfile'))
-      .toContain('swap areas cannot be activated on this system');
+      .toContain('swapon failed: Device or resource busy');
   });
 });
 

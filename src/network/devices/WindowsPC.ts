@@ -64,6 +64,7 @@ import { simulatedWait } from '../core/SimulatedWait';
 import { DEFAULT_CACHE_LIMITS, DnsCache, type DnsCacheLimits } from '../dns/resolver/DnsCache';
 import { RRType } from '../dns/wire/RRType';
 import { WindowsDnsClientSettings } from './windows/dnsClientSettings';
+import { parseDohTemplate, type DnsHttpsPlan } from '../dns/transport/DnsHttpsTransport';
 import { devolvedSuffixes, nrptRuleFor } from './windows/dnsClient';
 import type { DnsMessage } from '../dns/wire/DnsMessage';
 import type { ARecordData, AaaaRecordData, PtrRecordData, ResourceRecord } from '../dns/wire/ResourceRecord';
@@ -473,6 +474,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.trustedCAs.push(cert);
   }
   getTrustedCertificateAuthorities(): readonly X509Certificate[] { return this.trustedCAs; }
+
+  protected override dohPlanFor(server: IPAddress | IPv6Address): DnsHttpsPlan | null {
+    const address = server.toString().toLowerCase();
+    const entry = this.dnsClientSettings.dohServers().find(
+      (candidate) => candidate.autoUpgrade && candidate.serverAddress.toLowerCase() === address,
+    );
+    const target = entry === undefined ? null : parseDohTemplate(entry.dohTemplate);
+    return entry === undefined || target === null
+      ? null
+      : { target, allowFallbackToUdp: entry.allowFallbackToUdp, anchors: this.trustedCAs };
+  }
   /** LSA account policy mirrored by `net accounts`. */
   readonly accountsPolicy: WindowsAccountsPolicy = new WindowsAccountsPolicy();
   /** cmd.exe doskey macro table. */
@@ -5752,6 +5764,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   newReceiveConnector(_def: import('./windows/server/exchange/TransportConnector').ReceiveConnectorDef): { ok: boolean; message: string } {
     return { ok: false, message: 'New-ReceiveConnector : Exchange Server has not been installed on this computer.' };
+  }
+
+  removeReceiveConnector(_name: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Remove-ReceiveConnector : Exchange Server has not been installed on this computer.' };
   }
 
   getReceiveConnector(_name: string): import('./windows/server/exchange/TransportConnector').ReceiveConnectorDef | null { return null; }

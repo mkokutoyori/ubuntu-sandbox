@@ -324,6 +324,24 @@ function rootAdduserPlan(
   };
 }
 
+const SUDO_NEVER_PROMPTS = /^-[a-zA-Z]*[nSkKVh]|^--(non-interactive|stdin|reset-timestamp|remove-timestamp|version|help)$/;
+
+function pipelinedSudoPlan(
+  device: LinuxPlannerDevice,
+  fullCommand: string,
+  currentUser: string,
+): CommandInteractionPlan | null {
+  if (!device.canSudo()) return null;
+  const unquoted = fullCommand.replace(/'[^']*'|"[^"]*"/g, "''");
+  const segments = unquoted.split(/\|\||&&|[|;&]/).map((segment) => segment.trim());
+  const asksForPassword = segments.some((segment) => {
+    const words = segment.split(/\s+/);
+    return words[0] === 'sudo' && !words.slice(1).some((word) => SUDO_NEVER_PROMPTS.test(word));
+  });
+  if (!asksForPassword) return null;
+  return { steps: [sudoPasswordStep(device, currentUser, fullCommand), executeCommandStep(fullCommand)] };
+}
+
 // ─── Entry point ────────────────────────────────────────────────────
 
 export function buildLinuxInteractionPlan(
@@ -349,6 +367,11 @@ export function buildLinuxInteractionPlan(
 
   if (parts[0] === 'sudo' && !isRoot) {
     return sudoPlan(device, parts, trimmed, ctx.currentUser);
+  }
+
+  if (parts[0] !== 'sudo' && !isRoot) {
+    const piped = pipelinedSudoPlan(device, trimmed, ctx.currentUser);
+    if (piped) return piped;
   }
 
   if (parts[0] === 'su' && !isRoot) {

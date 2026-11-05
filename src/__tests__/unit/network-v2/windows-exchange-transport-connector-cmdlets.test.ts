@@ -38,6 +38,7 @@ describe('New/Get-ReceiveConnector — a connector really is an SMTP binding (do
     client.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(client.getPort('eth0')!, dc.getPort('eth0')!);
 
+    await run(ps(dc), 'Remove-ReceiveConnector -Identity "Default Frontend DC01"');
     await run(ps(dc), 'New-ReceiveConnector -Name MainReceive -Bindings "0.0.0.0:25"');
 
     const smtp = new SmtpClientSession(client.getTcpStack(), '10.0.2.10', '10.0.2.2', SMTP_PORT);
@@ -60,6 +61,7 @@ describe('New/Get-ReceiveConnector — a connector really is an SMTP binding (do
     client.configureInterface('eth0', new IPAddress('10.0.2.2'), new SubnetMask('255.255.255.0'));
     new Cable('c1').connect(client.getPort('eth0')!, dc.getPort('eth0')!);
 
+    await run(ps(dc), 'Remove-ReceiveConnector -Identity "Default Frontend DC01"');
     await run(ps(dc), 'New-ReceiveConnector -Name Restricted -Bindings "0.0.0.0:25" -RemoteIPRanges "203.0.113.0/24"');
 
     const smtp = new SmtpClientSession(client.getTcpStack(), '10.0.2.10', '10.0.2.2', SMTP_PORT);
@@ -69,6 +71,7 @@ describe('New/Get-ReceiveConnector — a connector really is an SMTP binding (do
 
   it('Get-ReceiveConnector reflects the created connector', async () => {
     const dc = await exchangeServerWithMailbox('bob');
+    await run(ps(dc), 'Remove-ReceiveConnector -Identity "Default Frontend DC01"');
     await run(ps(dc), 'New-ReceiveConnector -Name MainReceive -Bindings "0.0.0.0:25"');
     const out = await run(ps(dc), 'Get-ReceiveConnector MainReceive');
     expect(out).toContain('MainReceive');

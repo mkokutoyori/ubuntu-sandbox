@@ -5,6 +5,7 @@ import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { IPAddress } from '@/network/core/types';
+import { parseDohTemplate } from '@/network/dns/transport/DnsHttpsTransport';
 import type { DnsClientInterfaceRow, IDnsClientProvider } from '@/powershell/providers/PSProviders';
 import type { DohServerAddress, NrptRule, NrptRuleDraft } from '@/network/devices/windows/dnsClientSettings';
 import { remoteCimRefusal, notInSet } from '../cimCommon';
@@ -562,7 +563,7 @@ function serverAddressProblem(ctx: CmdletContext, cmdlet: string, address: strin
 }
 
 function templateProblem(ctx: CmdletContext, cmdlet: string, template: string | undefined): boolean {
-  if (template === undefined || /^https:\/\/[^/\s]+/i.test(template)) return false;
+  if (template === undefined || parseDohTemplate(template) !== null) return false;
   fail(ctx, cmdlet, `Cannot validate argument on parameter 'DohTemplate'. "${template}" is not a valid URI template: a DoH server is reached over https.`);
   return true;
 }

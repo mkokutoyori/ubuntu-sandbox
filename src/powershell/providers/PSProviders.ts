@@ -699,6 +699,7 @@ export interface IExchangeProvider {
   getGlobalAddressList(): GalEntryInfo[];
 
   newReceiveConnector(def: ReceiveConnectorInfo): ExchangeOpResult;
+  removeReceiveConnector(name: string): ExchangeOpResult;
   getReceiveConnector(name: string): ReceiveConnectorInfo | null;
   listReceiveConnectors(): ReceiveConnectorInfo[];
   newSendConnector(def: SendConnectorInfo): ExchangeOpResult;
@@ -834,6 +835,8 @@ export interface IPkiProvider {
   newSelfSignedCertificate(dnsName: string): IssuedCertInfo & { thumbprint: string };
   /** `Get-ChildItem Cert:\LocalMachine\My` — every certificate this device holds a private key for. */
   listCertificates(): (IssuedCertInfo & { thumbprint: string })[];
+  /** `Import-Certificate -CertStoreLocation Cert:\LocalMachine\Root` — adds a trusted root authority from certificate text; null when the text holds no certificate. */
+  trustRootCertificate(pem: string): (IssuedCertInfo & { thumbprint: string }) | null;
 }
 
 // ── DFS Namespaces + DFSR (PRD-Windows-Server-Advanced.md §5 P16) ──────────

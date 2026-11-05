@@ -3,8 +3,8 @@ import type {
 } from '../../../vpn/IpsecTunnelTable';
 import { renderProposal } from '../../../vpn/IpsecProposals';
 
-export function renderVpnTunnelList(tunnels: IpsecTunnelTable, now: number): string {
-  const all = tunnels.all();
+export function renderVpnTunnelList(tunnels: IpsecTunnelTable, now: number, only?: string): string {
+  const all = tunnels.all().filter(tunnel => only === undefined || tunnel.name === only);
   if (all.length === 0) return '';
 
   const blocks = all.map(tunnel => renderTunnel(tunnels, tunnel, now));

@@ -84,6 +84,12 @@ export class ManagementPlane {
     this.adminServer?.refresh();
   }
 
+  private adminSshPassword = true;
+
+  sshPasswordAllowed(): boolean { return this.adminSshPassword; }
+
+  setSshPasswordAllowed(allowed: boolean): void { this.adminSshPassword = allowed; }
+
   sshAlgorithms(): SshAlgorithmPreferences { return this.sshAlgorithmPreferences; }
 
   setSshAlgorithms(algorithms: SshAlgorithmPreferences): void {

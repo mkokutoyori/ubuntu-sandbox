@@ -33,6 +33,8 @@ export function vpnCommitHandlers(fw: Firewall): VpnHandlers {
         natTraversal: asNatTraversalMode(tunnel.natTraversal),
         peerType: tunnel.peerType,
         peerId: tunnel.peerId,
+        peerName: tunnel.peerName,
+        peerGroupName: tunnel.peerGroupName,
         localId: tunnel.localId,
         policyBased: tunnel.policyBased,
         modeCfg: tunnel.modeCfg,
