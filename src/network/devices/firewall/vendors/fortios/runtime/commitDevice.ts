@@ -30,10 +30,12 @@ export function buildCommitDevice(
         if (patch.addressingMode) fw.getDhcp().setClientMode(name, patch.leasePolicy ?? null);
         if (patch.dhcpClient) fw.getDhcp().setClientOptions(name, patch.dhcpClient);
         if (patch.ip && patch.mask) fw.configureInterface(name, { ip: patch.ip, mask: patch.mask });
+        if (patch.remoteIp !== undefined) fw.configureInterface(name, { remoteIp: patch.remoteIp });
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
         if (patch.macOverride !== undefined) fw.setInterfaceMacOverride(name, patch.macOverride);
+        if (patch.netflowSampler !== undefined) fw.setNetflowSampler(name, patch.netflowSampler);
         if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
         if (patch.deviceIdentification !== undefined) {
           fw.getDeviceInventory().setIdentification(name, patch.deviceIdentification);
@@ -91,7 +93,7 @@ export function buildCommitDevice(
         return fw.getRouting().applyOspf(patch);
       },
       applyBgp(patch) {
-        return fw.getRouting().applyBgp(patch);
+        return fw.applyBgpWithBfd(patch);
       },
       applyDhcpScope(scope) {
         return fw.getDhcp().upsertScope(scope) ?? undefined;
@@ -402,6 +404,31 @@ export function buildCommitDevice(
       },
       removeCommunityList(name) {
         fw.getRouting().removeCommunityList(name);
+      },
+      applyGreTunnel(name, tunnel) {
+        return fw.applyGreTunnel(name, tunnel);
+      },
+      removeGreTunnel(name) {
+        fw.removeGreTunnel(name);
+      },
+      applyPkiPeer(peer) {
+        fw.getPkiPeers().setPeer(peer);
+        fw.syncIpsecTunnels();
+      },
+      removePkiPeer(name) {
+        fw.getPkiPeers().removePeer(name);
+      },
+      applyPkiPeerGroup(name, members) {
+        fw.getPkiPeers().setGroup(name, members);
+      },
+      removePkiPeerGroup(name) {
+        fw.getPkiPeers().removeGroup(name);
+      },
+      applyNetflow(settings) {
+        fw.applyNetflow(settings);
+      },
+      applyBfdNeighbors(neighbours) {
+        return fw.applyBfdNeighbors(neighbours);
       },
       applyKeyChain(patch) {
         fw.getRouting().applyKeyChain(patch);

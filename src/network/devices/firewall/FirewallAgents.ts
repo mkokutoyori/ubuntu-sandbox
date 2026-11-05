@@ -27,6 +27,9 @@ export interface FirewallAgentDeps {
   readonly localIps: () => string[];
   readonly interfaceDown: (iface: string) => boolean;
   readonly egressFor: (peerIp: string) => string | undefined;
+  readonly resolveRoute?: (targetIp: string) => { iface: string; nextHopIp: string } | null;
+  readonly virtualInterface?: (name: string) => { ip: string; mtu: number; up: boolean } | undefined;
+  readonly isLocalAddress?: (ip: IPAddress) => boolean;
 }
 
 export interface FirewallAgents {
@@ -63,6 +66,9 @@ export function buildFirewallAgents(deps: FirewallAgentDeps): FirewallAgents {
     sendIpv4FrameArpAware: deps.sendArpAware,
     sendUdpDatagram: deps.sendUdpDatagram,
     sourceAddressFor: deps.sourceAddressFor,
+    resolveRoute: deps.resolveRoute,
+    virtualInterface: deps.virtualInterface,
+    isLocalAddress: deps.isLocalAddress,
   };
 
   const tcp = new TcpStack(host, deps.bus);

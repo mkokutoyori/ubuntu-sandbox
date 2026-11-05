@@ -21,6 +21,7 @@ export interface FirewallBgpDeps {
   readonly deviceId: string;
   readonly bus: () => IEventBus;
   readonly tcp: () => TcpStack;
+  readonly egressToward?: (ip: string) => { localIp: string; localIface: string } | null;
   readonly ports: () => readonly RoutingPortFacts[];
   readonly connectedRoutes: () => ReadonlyArray<{
     network: string; mask: string; iface: string;
@@ -62,6 +63,20 @@ export class FirewallBgp {
   private engine: BGPEngine | null = null;
   private config: BgpConfiguration = BGP_DEFAULTS;
   private listening = false;
+  private readonly heldDown = new Set<string>();
+
+  holdDown(ip: string, held: boolean): void {
+    if (held === this.heldDown.has(ip)) return;
+    if (held) this.heldDown.add(ip); else this.heldDown.delete(ip);
+    const engine = this.engine;
+    if (engine === null) return;
+    engine.enable(this.engineConfig(this.config));
+    engine.resetPeers((peer) => peer === ip);
+  }
+
+  bfdNeighbours(): readonly string[] {
+    return this.config.neighbours.filter(peer => peer.bfd === true).map(peer => peer.ip);
+  }
 
   constructor(private readonly deps: FirewallBgpDeps) {}
 
@@ -127,7 +142,7 @@ export class FirewallBgp {
       })),
       neighbors: new Map(config.neighbours.map(peer => [peer.ip, {
         ip: peer.ip, remoteAs: peer.remoteAs, activated: true, weight: peer.weight,
-        shutdown: peer.shutdown === true,
+        shutdown: peer.shutdown === true || this.heldDown.has(peer.ip),
         ...this.filtersOf(peer),
       }])),
       defaultLocalPref: config.defaultLocalPreference ?? BGP_DEFAULT_LOCAL_PREF,
@@ -167,6 +182,7 @@ export class FirewallBgp {
   getConfig(): BgpConfiguration { return this.config; }
 
   neighbours(): readonly ProtocolNeighborView[] {
+    this.engine?.refreshFromCache();
     return this.engine?.getNeighbors() ?? [];
   }
 
@@ -256,7 +272,7 @@ export class FirewallBgp {
         return { localIp: port.ip, localIface: port.name };
       }
     }
-    return null;
+    return this.deps.egressToward?.(ip) ?? null;
   }
 
   private installRoutes(): void {

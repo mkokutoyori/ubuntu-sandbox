@@ -2091,6 +2091,22 @@ export class WindowsDnsServerRole {
     return { ok: true, message: '' };
   }
 
+  private readonly provisionedRecords = new Set<string>();
+
+  private static provisionedKey(zoneName: string, record: DnsRecordInfo): string {
+    return `${zoneName.toLowerCase()}|${record.name.toLowerCase()}|${record.type}|${JSON.stringify(record.data)}`;
+  }
+
+  sealProvisionedRecords(): void {
+    for (const zone of this.listZones()) {
+      for (const record of this.getRecords(zone.name) ?? []) this.provisionedRecords.add(WindowsDnsServerRole.provisionedKey(zone.name, record));
+    }
+  }
+
+  isProvisionedRecord(zoneName: string, record: DnsRecordInfo): boolean {
+    return this.provisionedRecords.has(WindowsDnsServerRole.provisionedKey(zoneName, record));
+  }
+
   getRecords(zoneName: string, recordName?: string, type?: string, scope?: string): DnsRecordInfo[] | null {
     const found = this.store.getZone(zoneName);
     if (!found) return null;

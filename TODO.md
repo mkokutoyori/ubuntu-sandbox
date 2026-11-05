@@ -113,6 +113,24 @@ simule ne distingue pas un refus d'un silence en TCP) ; `+trace` garde l'ancien 
 `+cookie`, `+subnet` et les autres options sont acceptes et ignores : le vrai dig 9.18 envoie un cookie client par defaut et ecrit la ligne `; COOKIE: ... (good)` sous l'OPT de la reponse, le simulateur n'en envoie
 pas (le drapeau `K` du journal de requetes de named, `+E(0)K`, manque pour la meme raison) ; une reponse UDP tronquee du vrai named porte aussi le drapeau `ad` (`qr aa tc ad`, mesure sous `+ignore`), pas celle du simulateur ; un `REFUSED` du vrai named a un client que `allow-query` exclut porte l'option EDE `18 (Prohibited)` dans l'OPT (`; EDE: 18 (Prohibited)`), le simulateur n'ecrit pas d'option EDE ; `+search` lit la liste de `/etc/resolv.conf` (`search`, `domain`, `ndots`) et prend la reponse du premier candidat qui n'est pas NXDOMAIN, mais quand tous echouent le vrai dig imprime parfois deux fois les statistiques (`web.banquehorizon +search`), ce que le simulateur ne fait pas.
 
+### [dns] DoT et DoH : ce que named et dig 9.18 font encore et que le simulateur ne fait pas
+Mesure contre named et dig 9.18.39 reels (`probe-bind9-dot-doh-listeners`) : `tls`, `http` et `listen-on ... tls ... http ...` font ecouter named en 853 et en 443, `dig +tls`, `+tls-ca`, `+tls-hostname`, `+https`
+et `+https-get` rendent les memes lignes. Restent :
+le DoH est en HTTP/1.1 des deux cotes (ALPN `http/1.1`), alors que le vrai named ne sert que du HTTP/2 et que le vrai dig dit `;; Connection to ...#PORT(...) for NOM failed: ALPN for HTTP/2 failed.` quand
+il tombe sur un serveur qui n'en parle pas (par exemple le 853) ; la pile HTTPS du simulateur n'a pas de session HTTP/2 par TLS ;
+`dig +http-plain` et `+http-plain-get` (DoH en clair) n'existent pas cote client, alors que `listen-on port N tls none http default` est servi ;
+`+tls` et `+https` vers un port ferme ecrivent `communications error ... timed out` au lieu de `;; Connection to ... failed: connection refused.` (meme cause que `+tcp`, plus haut) ;
+`+tls-certfile` et `+tls-keyfile` (certificat client) sont acceptes et ignores comme toute option inconnue de dig ;
+les options `ca-file`, `remote-hostname`, `dhparam-file`, `ciphers`, `prefer-server-ciphers` et `session-tickets` d'un bloc `tls`, `listener-clients` et `streams-per-connection` d'un bloc `http`
+sont lues et rangees, pas evaluees (le vrai named les accepte ; seuls `key-file`, `cert-file` et `protocols` agissent) ; `primaries { ... tls NOM; }` (transfert de zone par TLS) n'existe pas et le
+serveur DoT repond a une question puis ferme la connexion ;
+`listen-on-v6 ... tls` est lu sans ecoute (pas de chemin d'ecoute TCP IPv6 pour ces listeners), et la liste d'adresses de `listen-on` en clair (53) n'est pas evaluee : named ecoute alors sur toutes les adresses,
+alors que les listeners chiffres respectent la liste. Cote client Windows, `Add-DnsClientDohServerAddress -AutoUpgrade` et `-AllowFallbackToUdp` agissent (`probe-windows-client-doh` : le client interroge en HTTPS, verifie le nom du modele dans le certificat contre
+`Cert:\LocalMachine\Root`, et ne retombe sur l'UDP que si le repli est autorise) et `Import-Certificate` range une autorite dans cette racine. Restent : le lecteur `Cert:` (`Get-ChildItem Cert:\LocalMachine\Root`)
+et `certutil -addstore` n'existent pas, `Import-Certificate` ne sait viser que la racine locale (un magasin personnel sans cle privee est refuse en le disant), les drapeaux DoH propres a une interface
+(`DohFlags`, `netsh dns add encryption`) n'existent pas, et un serveur IPv6 n'est pas interroge en DoH.
+Raison du report : chaque point demande une brique propre (HTTP/2 sur TLS, un client HTTP en clair, une ecoute IPv6, un lecteur de magasins de certificats) que ce changement ne livre pas.
+
 ### [host] ce que host 9.18 fait encore et que le simulateur ne fait pas
 `host` est rejoue contre un vrai host 9.18.39 (`host-oracle`, 431 invocations dont 396 rejouees, les 35 autres ecartees avec leur raison dans le test) : le moteur de `dighost.c` (essais partages entre les
 serveurs, liste de recherche et ndots, requetes AAAA et MX apres le A, repli TCP sur une reponse tronquee, SERVFAIL et absence de RA), `-v -d -a -A -t -c -C -l -T -U -r -s -w -W -R -p -N -4 -6 -V`, le serveur
@@ -922,6 +940,12 @@ moteur `bgp/` et `router/policy/RoutePolicy` sont a brancher), `shaping-policy` 
 `execute api-user generate-key <name>` existe (syntaxe de la reference 7.4.12 p.3733 ; 7.6.7 p.3882 y ajoute `<expiry>` reserve a l'utilisateur « Fortinet Support Tool »,
 non porte) ; le LIBELLE de sortie « New API key: <cle> » n'est pas dans la reference (community.fortinet.com et docs.fortinet.com sont injoignables d'ici) : a
 verifier des qu'une capture existe.
+
+### [fortigate] SSL-VPN en mode tunnel et vues d'exploitation sans sortie attestee
+Mesure (lab `labs/entreprise-meridian`, commandes d'un exploitant tapees sur le concentrateur) :
+- `config vpn ssl web portal` / `set tunnel-mode enable` est refuse (« FortiClient ») ; `config vpn ssl settings` n'a ni `tunnel-ip-pools` ni `default-portal`. Un teletravailleur ne peut donc pas joindre le siege. La brique manquante est un client (`openfortivpn`/FortiClient sur LinuxPC et WindowsPC) plus un plan de donnees IP-sur-TLS (interface virtuelle `ssl.root`, pool d'adresses, politique `srcintf "ssl.root"`) ; le portail web, lui, repond pour de bon. Rien ne l'ecrit dans la reference : le protocole (`/remote/logincheck`, `/remote/fortisslvpn_xml`, `/remote/sslvpn-tunnel`) se decrit de memoire, pas par la documentation.
+- Vues documentees dont la reference ne donne AUCUN exemple de sortie (libelle et colonnes non attestables sans capture, regle 8) et qui repondent « Unknown action 0 » : `diagnose firewall iprope lookup`, `diagnose firewall dnat list`, `diagnose firewall ippool list`, `diagnose vpn ike status`, `diagnose vpn ike stats`, `diagnose vpn tunnel stat`, `diagnose vpn tunnel dumpsa`, `diagnose sys vd list`, `diagnose sys last-reboot`, `diagnose sys logdisk status`, `diagnose ip rtcache list`, `diagnose sys mpstat`. Les moteurs sous-jacents existent (politiques, VIP, SA IPsec, journal) ; seule la mise en forme manque.
+- `execute ssh` reste refuse (« console ») : une connexion interactive ne tient pas dans un `executeCommand` synchrone. `execute telnet <dest> [port]` (sonde TCP reelle) et `execute backup config flash [commentaire]` existent ; le libelle de sortie de telnet suit le client BSD, la reference n'en donne pas.
 
 ### [fortigate] ce que `?` et la tabulation ne couvrent pas encore
 Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;

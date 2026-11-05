@@ -42,7 +42,7 @@ export function x509VerifyError(
         : { n: 3, texte: 'unable to get certificate CRL' };
     default:
       return cert.subject === cert.issuer
-        ? { n: 18, texte: 'self signed certificate' }
+        ? { n: 18, texte: 'self-signed certificate' }
         : { n: 20, texte: 'unable to get local issuer certificate' };
   }
 }

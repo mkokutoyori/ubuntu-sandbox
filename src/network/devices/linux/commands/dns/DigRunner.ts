@@ -8,6 +8,8 @@ import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
 import { rrTypeFromName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn, DnsQueryOptions } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import { pemToCertChain } from '@/network/pki/pem';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type {
   ARecordData, NsRecordData, ResourceRecord, ResourceRecordData,
 } from '@/network/dns/wire/ResourceRecord';
@@ -45,6 +47,12 @@ interface DigInvocation {
   search: boolean;
   /** `+tls` — DNS-over-TLS (RFC 7858), port 853 par défaut. */
   tls: boolean;
+  /** `+https[=chemin]`, `+https-get[=chemin]` — DNS-over-HTTPS (RFC 8484), port 443 par défaut. */
+  https: { readonly path: string; readonly method: 'GET' | 'POST' } | null;
+  /** `+tls-ca[=fichier]` — authentifie le serveur ; sans fichier, les ancres du système. */
+  tlsCa: { readonly file: string | null } | null;
+  /** `+tls-hostname=nom` — nom présenté (SNI) et vérifié dans le certificat. */
+  tlsHostname: string | null;
   recurse: boolean;
   dnssec: boolean;
   bufsize: number | null;
@@ -55,6 +63,7 @@ interface DigInvocation {
   typedArguments: string;
 }
 
+const DEFAULT_DOH_PATH = '/dns-query';
 const DEFAULT_TIMEOUT_SECONDS = 5;
 const DEFAULT_TRIES = 3;
 
@@ -77,6 +86,9 @@ function newInvocation(): DigInvocation {
     ignoreTruncation: false,
     search: false,
     tls: false,
+    https: null,
+    tlsCa: null,
+    tlsHostname: null,
     recurse: true,
     dnssec: false,
     bufsize: null,
@@ -107,6 +119,9 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
   let ignoreTruncation = false;
   let search = false;
   let tls = false;
+  let https: DigInvocation['https'] = null;
+  let tlsCa: DigInvocation['tlsCa'] = null;
+  let tlsHostname: string | null = null;
   let recurse = true;
   let dnssec = false;
   let bufsize: number | null = null;
@@ -142,6 +157,13 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     else if (arg === '+noignore') ignoreTruncation = false;
     else if (arg === '+tls') tls = true;
     else if (arg === '+notls') tls = false;
+    else if (/^\+https(-post)?(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'POST' };
+    else if (/^\+https-get(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'GET' };
+    else if (arg === '+nohttps') https = null;
+    else if (/^\+tls-ca(=|$)/.test(arg)) tlsCa = { file: optionValue(arg) };
+    else if (arg === '+notls-ca') tlsCa = null;
+    else if (arg.startsWith('+tls-hostname=')) tlsHostname = optionValue(arg);
+    else if (arg === '+notls-hostname') tlsHostname = null;
     else if (arg === '+norecurse') recurse = false;
     else if (arg === '+recurse') recurse = true;
     else if (arg === '+dnssec') dnssec = true;
@@ -190,6 +212,9 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     g.ignoreTruncation = ignoreTruncation;
     g.search = search;
     g.tls = tls;
+    g.https = https;
+    g.tlsCa = tlsCa;
+    g.tlsHostname = tlsHostname;
     g.recurse = recurse;
     g.dnssec = dnssec;
     g.bufsize = bufsize;
@@ -207,9 +232,14 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
   return groups;
 }
 
-/** Le port réellement interrogé : 853 sous `+tls`, 53 sinon. */
+function optionValue(arg: string): string | null {
+  const separator = arg.indexOf('=');
+  return separator === -1 ? null : arg.slice(separator + 1);
+}
+
+/** Le port réellement interrogé : 443 sous `+https`, 853 sous `+tls`, 53 sinon. */
 function digPort(invocation: DigInvocation): number {
-  return invocation.port ?? (invocation.tls ? 853 : 53);
+  return invocation.port ?? (invocation.https !== null ? 443 : invocation.tls ? 853 : 53);
 }
 
 function commandLines(invocation: DigInvocation): string[] {
@@ -277,6 +307,7 @@ function pushSection(
 }
 
 function transportName(invocation: DigInvocation): string {
+  if (invocation.https !== null) return invocation.https.method === 'GET' ? 'HTTPS-GET' : 'HTTPS';
   return invocation.tls ? 'TLS' : invocation.tcp ? 'TCP' : 'UDP';
 }
 
@@ -434,6 +465,7 @@ interface Exchange {
   readonly startedAt: number;
   readonly communications: readonly string[];
   readonly retriedOverTcp: boolean;
+  readonly tlsFailure: string | null;
 }
 
 async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, options: DnsQueryOptions): Promise<Exchange> {
@@ -441,27 +473,35 @@ async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, option
   let startedAt = PathClock.now();
   const communications: string[] = [];
   let refused = false;
+  let answeredWithError = false;
+  let tlsFailure: string | null = null;
   const attemptOptions: DnsQueryOptions = {
     ...options,
     onTransportFailure: () => {
       refused = true;
       communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: connection refused`);
     },
+    onTlsVerifyFailure: (text) => { tlsFailure = text; },
+    onHttpFailure: () => {
+      answeredWithError = true;
+      communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: failure`);
+    },
   };
   for (let attempt = 0; attempt < Math.max(1, invocation.tries); attempt++) {
     startedAt = PathClock.now();
     refused = false;
+    answeredWithError = false;
     message = await query(
       invocation.server, invocation.domain, invocation.qtype,
       invocation.timeoutSeconds * 1000, attemptOptions,
     );
-    if (message) break;
-    if (!refused) communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: timed out`);
+    if (message || tlsFailure !== null) break;
+    if (!refused && !answeredWithError) communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: timed out`);
   }
-  if (!message) return { message, startedAt, communications, retriedOverTcp: false };
+  if (!message) return { message, startedAt, communications, retriedOverTcp: false, tlsFailure };
 
   let retriedOverTcp = false;
-  if (message.flags.tc && !options.tcp && !options.tls && !invocation.ignoreTruncation) {
+  if (message.flags.tc && !options.tcp && !options.tls && !options.https && !invocation.ignoreTruncation) {
     const tcpMessage = await query(
       invocation.server, invocation.domain, invocation.qtype,
       invocation.timeoutSeconds * 1000, { ...options, tcp: true },
@@ -471,10 +511,12 @@ async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, option
       retriedOverTcp = true;
     }
   }
-  return { message, startedAt, communications, retriedOverTcp };
+  return { message, startedAt, communications, retriedOverTcp, tlsFailure };
 }
 
-async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn, searchList: ResolvConfOptions): Promise<string> {
+async function executeSingleQuery(
+  invocation: DigInvocation, query: DnsQueryFn, searchList: ResolvConfOptions, tls: DigTlsContext,
+): Promise<string> {
   if (!invocation.server || !isIpLiteral(invocation.server)) {
     return noServersLine(invocation);
   }
@@ -483,10 +525,15 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn, 
     return traceOutput(invocation, query);
   }
 
+  const authentication = tlsAuthentication(invocation, tls);
+  if (authentication === 'context') return TLS_CONTEXT_FAILURE;
+
   const options: DnsQueryOptions = {
     recursionDesired: invocation.recurse,
     tcp: invocation.tcp,
-    tls: invocation.tls,
+    tls: invocation.tls && invocation.https === null,
+    ...(invocation.https === null ? {} : { https: invocation.https }),
+    ...(authentication === null ? { tlsVerify: false } : { tlsVerify: true, tlsAnchors: authentication.anchors, serverName: authentication.serverName }),
     dnssecOk: invocation.dnssec,
     udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : invocation.noEdns ? undefined : DEFAULT_EDNS_BUFFER),
     port: invocation.port ?? undefined,
@@ -501,6 +548,9 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn, 
   }
   const { startedAt, retriedOverTcp } = exchange;
   const message = exchange.message;
+  if (!message && exchange.tlsFailure !== null) {
+    return `;; TLS peer certificate verification for ${asked.server}#${digPort(asked)} failed: ${exchange.tlsFailure}`;
+  }
   if (!message) return noServersLine(asked, exchange.communications);
   if (asked.qtype === 'AXFR' || asked.qtype === 'IXFR') {
     return transferOutput(asked, message, PathClock.now() - startedAt);
@@ -508,6 +558,30 @@ async function executeSingleQuery(invocation: DigInvocation, query: DnsQueryFn, 
   if (asked.short) return asked.display.answer ? shortOutput(message.answers) : '';
   const printed = fullOutput(retriedOverTcp ? { ...asked, tcp: true } : asked, message, PathClock.now() - startedAt);
   return retriedOverTcp && asked.display.comments ? `;; Truncated, retrying in TCP mode.\n${printed}` : printed;
+}
+
+export interface DigTlsContext {
+  readonly readFile?: (path: string) => string | null;
+  readonly systemAnchors?: () => readonly X509Certificate[];
+}
+
+const TLS_CONTEXT_FAILURE = ';; TLS context cannot be created';
+
+function tlsAuthentication(
+  invocation: DigInvocation, tls: DigTlsContext,
+): { anchors: readonly X509Certificate[]; serverName: string } | 'context' | null {
+  const secure = invocation.tls || invocation.https !== null;
+  if (!secure || (invocation.tlsCa === null && invocation.tlsHostname === null)) return null;
+  const file = invocation.tlsCa?.file ?? null;
+  let anchors: readonly X509Certificate[];
+  if (file === null) {
+    anchors = tls.systemAnchors?.() ?? [];
+  } else {
+    const text = tls.readFile?.(file) ?? null;
+    anchors = text === null ? [] : pemToCertChain(text);
+    if (anchors.length === 0) return 'context';
+  }
+  return { anchors, serverName: invocation.tlsHostname ?? invocation.server };
 }
 
 /** Reads a `dig -f <file>` batch file: one query per non-empty, non-comment line. */
@@ -522,6 +596,7 @@ export async function executeDig(
   query: DnsQueryFn,
   resolverIP?: string,
   readFile?: (path: string) => string | null,
+  systemAnchors?: () => readonly X509Certificate[],
 ): Promise<string> {
   const fIndex = args.findIndex((a) => a === '-f');
   if (fIndex !== -1 && args[fIndex + 1] !== undefined) {
@@ -533,7 +608,7 @@ export async function executeDig(
     const globalArgs = [...args.slice(0, fIndex), ...args.slice(fIndex + 2)];
     const outputs: string[] = [];
     for (const line of batchLines(content)) {
-      outputs.push(await executeDig([...globalArgs, ...line.split(/\s+/)], query, resolverIP, readFile));
+      outputs.push(await executeDig([...globalArgs, ...line.split(/\s+/)], query, resolverIP, readFile, systemAnchors));
     }
     return outputs.join('\n');
   }
@@ -542,7 +617,7 @@ export async function executeDig(
   const searchList = parseResolvConf(readFile?.('/etc/resolv.conf') ?? '');
   const outputs: string[] = [];
   for (const invocation of invocations) {
-    outputs.push(await executeSingleQuery(invocation, query, searchList));
+    outputs.push(await executeSingleQuery(invocation, query, searchList, { readFile, systemAnchors }));
   }
   return outputs.join('\n');
 }

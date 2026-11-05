@@ -57,6 +57,7 @@ export interface FirewallRoutingDeps {
   readonly removeRoutes: (source: RoutingSource) => void;
   readonly resolvedMac: (ip: string) => MACAddress | undefined;
   readonly tcp: () => TcpStack;
+  readonly egressToward?: (ip: string) => { localIp: string; localIface: string } | null;
   readonly listenBgp: (accept: (socket: TcpSocket) => void) => void;
 }
 
@@ -108,6 +109,7 @@ export class FirewallRouting {
       deviceId: deps.deviceId,
       bus: deps.bus,
       tcp: deps.tcp,
+      egressToward: deps.egressToward,
       ports: deps.ports,
       connectedRoutes: deps.connectedRoutes,
       replaceRoutes: (routes) => {

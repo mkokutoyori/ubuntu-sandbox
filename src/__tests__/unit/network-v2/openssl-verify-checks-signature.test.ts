@@ -110,7 +110,7 @@ describe('le nom ne suffit pas', () => {
     await racine(srv, 'seul', 'tout.seul');
 
     expect(await srv.executeCommand('openssl verify /tmp/seul.crt'))
-      .toContain('error 18 at 0 depth lookup: self signed certificate');
+      .toContain('error 18 at 0 depth lookup: self-signed certificate');
   });
 
   it('mais un auto-signé PRÉSENT dans le faisceau est approuvé', async () => {

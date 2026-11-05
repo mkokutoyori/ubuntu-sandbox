@@ -272,7 +272,7 @@ import {
   NewWebAppPoolCmdlet, GetIISAppPoolCmdlet, RemoveWebAppPoolCmdlet, StartWebAppPoolCmdlet, StopWebAppPoolCmdlet,
   RestartWebAppPoolCmdlet, GetWebGlobalModuleCmdlet,
 } from './WebAdminCmdlets';
-import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
+import { NewSelfSignedCertificateCmdlet, ImportCertificateCmdlet } from './PkiCmdlets';
 import {
   InstallExchangeServerCmdlet, GetExchangeServerCmdlet,
   EnableMailboxCmdlet, NewMailboxCmdlet, GetMailboxCmdlet, SetMailboxCmdlet,
@@ -280,7 +280,7 @@ import {
   NewDistributionGroupCmdlet, SetDistributionGroupCmdlet, GetDistributionGroupCmdlet,
   AddDistributionGroupMemberCmdlet, GetDistributionGroupMemberCmdlet,
   GetGlobalAddressListCmdlet,
-  NewReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
+  NewReceiveConnectorCmdlet, RemoveReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
   NewTransportRuleCmdlet, GetTransportRuleCmdlet,
   GetQueueCmdlet, RetryQueueCmdlet, SuspendQueueCmdlet, ResumeQueueCmdlet,
   AddMailboxPermissionCmdlet, GetMailboxPermissionCmdlet, AddRecipientPermissionCmdlet, GetRecipientPermissionCmdlet,
@@ -608,6 +608,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   // ── Client-side PKI (Get-Certificate enrollment, self-signed certs) ──────
   registry.register(new GetCertificateCmdlet());
   registry.register(new NewSelfSignedCertificateCmdlet());
+  registry.register(new ImportCertificateCmdlet());
 
   // ── Domain join (a workstation joins a domain with Add-Computer) ─────────
   registry.register(new AddComputerCmdlet());
@@ -757,6 +758,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDistributionGroupMemberCmdlet());
   registry.register(new GetGlobalAddressListCmdlet());
   registry.register(new NewReceiveConnectorCmdlet());
+  registry.register(new RemoveReceiveConnectorCmdlet());
   registry.register(new GetReceiveConnectorCmdlet());
   registry.register(new NewSendConnectorCmdlet());
   registry.register(new GetSendConnectorCmdlet());

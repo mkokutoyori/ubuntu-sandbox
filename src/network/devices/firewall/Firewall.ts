@@ -3,6 +3,13 @@ import { Equipment } from '../../equipment/Equipment';
 import type { SshKeyAlgorithm } from '../../protocols/ssh/SshHostKey';
 import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshTransport';
 import { LacpAgent } from '@/network/lacp/LacpAgent';
+import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
+import { BfdAgent } from '@/network/bfd/BfdAgent';
+import { GreAgent } from '@/network/gre/GreAgent';
+import { NetFlowAgent } from '@/network/netflow/NetFlowAgent';
+import { IP_PROTO_GRE } from '@/network/gre/types';
+import { ipv4HeaderOptionsOf, type Ipv4SendRequest } from '@/network/layers/internet/Ipv4Egress';
+import { UDP_PORT_BFD_CONTROL } from '@/network/bfd/types';
 import { LldpAgent } from '@/network/lldp/LldpAgent';
 import { ETHERTYPE_LLDP } from '@/network/lldp/types';
 import { resolveLldp } from './l2/LldpIntent';
@@ -140,6 +147,7 @@ import type { IdentityTable } from './identity/IdentityTable';
 import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
+import type { PkiPeerStore } from './vpn/PkiPeers';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
@@ -159,7 +167,7 @@ import { SslDeepInspection } from './inspection/SslDeepInspection';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
-import { FirewallPing, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
+import { FirewallPing, hostAddressOf, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
@@ -545,6 +553,7 @@ export class Firewall extends Equipment {
         this.streams.forget(session.c2s);
         if (reason === 'timeout') this.resetExpiredSession(vdom, session);
         this.trafficLogger?.onSessionClosed(session, reason);
+        this.exportNetflow(session);
         this.sessionObserver?.(session, reason);
       },
       realServerPool: (name) => this.serverPools.get(name),
@@ -638,6 +647,16 @@ export class Firewall extends Equipment {
         this.sendIpv4FrameArpAware(p, packet, nextHop),
       sendUdpDatagram: (request) => this.sendUdpDatagram(request),
       sourceAddressFor: (destination) => this.sourceAddressFor(destination),
+      resolveRoute: (target) => {
+        const egress = this.localEgress(target, {});
+        return egress === undefined ? null : { iface: egress.iface, nextHopIp: egress.nextHop ?? target };
+      },
+      virtualInterface: (name) => {
+        const entry = this.interfaces.get(name);
+        const ip = entry?.ip ?? this.interfaces.get(this.tunnelBoundInterface(name) ?? '')?.ip;
+        return entry === undefined || ip === undefined ? undefined : { ip, mtu: entry.mtu, up: entry.up };
+      },
+      isLocalAddress: (ip) => this.interfaces.owningInterface(ip.toString()) !== undefined,
       sendUdp: (destIp, port, payload) => this.sendUdpToPeer(destIp, port, payload),
       ...ipsecHostFacts({
         interfaces: this.interfaces,
@@ -647,6 +666,15 @@ export class Firewall extends Equipment {
     });
     this.tcp = agents.tcp;
     this.ipsec = agents.ipsec;
+    this.getBus().subscribe('ipsec.sa.deleted', (event) => {
+      if (event.payload.reason === 'replaced' || event.payload.deviceId !== this.id) return;
+      for (const vdom of this.vdoms.names()) {
+        const tunnels = this.getVdom(vdom).tunnels;
+        for (const tunnel of tunnels.all()) {
+          if (tunnel.remoteGateway === event.payload.peerIp) tunnels.markDown(tunnel.name, null);
+        }
+      }
+    });
     this.radius = agents.radius;
     this.tacacs = agents.tacacs;
 
@@ -916,6 +944,29 @@ export class Firewall extends Equipment {
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
 
+  runTelnet(target: string, rawPort: string | undefined): string {
+    const port = rawPort === undefined ? 23 : Number(rawPort);
+    if (!Number.isInteger(port) || !PortNumber.isValid(port)) return `telnet: ${rawPort}: bad port`;
+    const address = hostAddressOf(target, { resolveName: (name) => this.resolveHostName(name) });
+    if (address === null) return `telnet: ${target}: Name or service not known`;
+    const lines = [`Trying ${address}...`];
+    const socket = this.tcp.connect(address, port);
+    if (socket === null || socket.state !== 'established') {
+      socket?.close();
+      lines.push(socket?.connectRefused === true
+        ? `telnet: Unable to connect to remote host: Connection refused`
+        : `telnet: Unable to connect to remote host: Connection timed out`);
+      return lines.join('\n');
+    }
+    let banner = '';
+    socket.onData((data) => { banner += String(data); });
+    lines.push(`Connected to ${address}.`, `Escape character is '^]'.`);
+    if (banner.length > 0) lines.push(banner.replace(/\r?\n$/, ''));
+    socket.close();
+    lines.push('Connection closed by foreign host.');
+    return lines.join('\n');
+  }
+
   beginPing(target: string) { return this.ping.begin(target); }
 
   private answersEcho(address: string): boolean {
@@ -971,7 +1022,9 @@ export class Firewall extends Equipment {
 
   private resolveEgress(destination: string): FirewallPingEgress | null {
     const egress = this.routedEgress(destination, this.activeVdom);
-    const source = egress === undefined ? undefined : this.interfaces.get(egress.iface)?.ip;
+    const source = egress === undefined
+      ? undefined
+      : this.interfaces.get(egress.iface)?.ip ?? this.interfaces.get(this.tunnelBoundInterface(egress.iface) ?? '')?.ip;
     if (egress === undefined || source === undefined) {
       this.rememberUnroutable(destination);
       return null;
@@ -1471,9 +1524,12 @@ export class Firewall extends Equipment {
     const vdom = this.getVdom(v);
     programIpsecEngine(this.ipsec, vdom.tunnels, vdom.certificates, this.services.now, {
       groupMembers: (name) => vdom.users.getGroup(name)?.members ?? [],
+      pkiPeers: vdom.pkiPeers,
     });
     this.ipsec.setConfigMethod((peer, request) => this.answerConfigMethod(peer, request));
   }
+
+  getPkiPeers(v?: string): PkiPeerStore { return this.getVdom(v).pkiPeers; }
 
   getModeCfgPool(): ModeCfgPool { return this.modeCfg; }
 
@@ -1579,6 +1635,14 @@ export class Firewall extends Equipment {
       payloadBytes: payload instanceof Uint8Array ? payload.length : 64,
       ...(iface === undefined ? {} : { iface }),
     });
+  }
+
+  tunnelBoundInterface(tunnelName: string): string | undefined {
+    for (const vdom of this.vdoms.names()) {
+      const tunnel = this.getVdom(vdom).tunnels.all().find((entry) => entry.name === tunnelName);
+      if (tunnel !== undefined && tunnel.boundInterface.length > 0) return tunnel.boundInterface;
+    }
+    return undefined;
   }
 
   private tunnelInterfaceTowards(peer: string): string | undefined {
@@ -2187,6 +2251,212 @@ export class Firewall extends Equipment {
     return this.lldpAgentInstance;
   }
 
+  private bfdAgentInstance: BfdAgent | null = null;
+
+  getBfdAgent(): BfdAgent {
+    if (!this.bfdAgentInstance) {
+      this.bfdAgentInstance = new BfdAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => [...this.getPorts().values()],
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendIpv4FrameArpAware: (iface, packet, nextHop) => this.sendIpv4FrameArpAware(iface, packet, nextHop),
+        },
+        () => this.getBus(),
+        () => this.getScheduler(),
+      );
+      this.bfdAgentInstance.start();
+      this.getBus().subscribe('bfd.session.changed', (event) => {
+        if (event.payload.deviceId !== this.id) return;
+        const bgp = this.getRouting().getBgp();
+        if (!bgp.bfdNeighbours().includes(event.payload.neighborIp)) return;
+        bgp.holdDown(event.payload.neighborIp, event.payload.newState !== 'up');
+      });
+    }
+    return this.bfdAgentInstance;
+  }
+
+  applyBgpWithBfd(config: BgpConfiguration): string | undefined {
+    const failure = this.getRouting().applyBgp(config);
+    if (failure !== undefined) return failure;
+    const bfdPeers = this.getRouting().getBgp().bfdNeighbours();
+    const agent = bfdPeers.length > 0 ? this.getBfdAgent() : this.bfdAgentInstance;
+    for (const peer of config.neighbours) {
+      if (peer.bfd !== true) this.getRouting().getBgp().holdDown(peer.ip, false);
+    }
+    for (const ip of bfdPeers) {
+      const egress = this.routedEgress(ip, this.activeVdom);
+      if (egress !== undefined && this.getPort(egress.iface) !== undefined) agent?.ensureSession(egress.iface, ip);
+    }
+    return undefined;
+  }
+
+  applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | undefined {
+    const agent = this.getBfdAgent();
+    const wanted = new Set(neighbours.map(entry => `${entry.interface}|${entry.ip}`));
+    for (const session of agent.listSessions()) {
+      if (!wanted.has(`${session.iface}|${session.neighborIp}`)) agent.removeSession(session.iface, session.neighborIp);
+    }
+    for (const entry of neighbours) {
+      if (this.getPort(entry.interface) === undefined) return `interface ${entry.interface} is not a physical port BFD can run on.`;
+      agent.ensureSession(entry.interface, entry.ip);
+    }
+    return undefined;
+  }
+
+  private answeredByBfd(iface: string, packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP || this.bfdAgentInstance === null) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    if (udp?.type !== 'udp' || udp.destinationPort !== UDP_PORT_BFD_CONTROL) return false;
+    this.bfdAgentInstance.handleUdp(iface, packet.sourceIP, udp);
+    return true;
+  }
+
+  private netflowAgentInstance: NetFlowAgent | null = null;
+  private readonly netflowSamplers = new Map<string, 'tx' | 'rx' | 'both'>();
+
+  getNetflowAgent(): NetFlowAgent {
+    if (!this.netflowAgentInstance) {
+      this.netflowAgentInstance = new NetFlowAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => [...this.getPorts().values()],
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendUdpDatagram: (request) => this.sendUdpDatagram(request),
+        },
+        () => this.getBus(),
+        () => this.getScheduler(),
+      );
+      this.netflowAgentInstance.setVersion(9);
+      this.netflowAgentInstance.start();
+    }
+    return this.netflowAgentInstance;
+  }
+
+  setNetflowSampler(iface: string, mode: 'disable' | 'tx' | 'rx' | 'both'): void {
+    if (mode === 'disable') this.netflowSamplers.delete(iface); else this.netflowSamplers.set(iface, mode);
+  }
+
+  applyNetflow(settings: {
+    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number;
+    collectors: ReadonlyArray<{ ip: string; port: number }>;
+  }): void {
+    const agent = this.getNetflowAgent();
+    agent.setActiveTimeoutSec(settings.activeTimeoutSec);
+    agent.setInactiveTimeoutSec(settings.inactiveTimeoutSec);
+    agent.setTemplateRefreshPackets(settings.templateTxCounter);
+    const wanted = new Set(settings.collectors.map(collector => collector.ip));
+    for (const present of agent.listCollectors()) if (!wanted.has(present.ip)) agent.removeCollector(present.ip);
+    for (const collector of settings.collectors) agent.addCollector(collector.ip, collector.port);
+    agent.setEnabled(settings.collectors.length > 0);
+  }
+
+  private exportNetflow(session: FirewallSession): void {
+    const agent = this.netflowAgentInstance;
+    if (agent === null || this.netflowSamplers.size === 0) return;
+    const received = this.netflowSamplers.get(session.ingressInterface);
+    const sent = this.netflowSamplers.get(session.egressInterface);
+    const sampled = received === 'rx' || received === 'both' || sent === 'tx' || sent === 'both';
+    if (!sampled) return;
+    const input = this.interfaceIndex(session.ingressInterface);
+    const output = this.interfaceIndex(session.egressInterface);
+    const { counters, c2s, s2c } = session;
+    if (counters.packetsC2S > 0) {
+      agent.recordFlow({
+        sourceIp: c2s.sourceIP, destinationIp: c2s.destIP, sourcePort: c2s.sourcePort, destinationPort: c2s.destPort,
+        protocol: c2s.protocol, bytes: counters.bytesC2S, packets: counters.packetsC2S,
+        inputIfIndex: input, outputIfIndex: output,
+      });
+    }
+    if (counters.packetsS2C > 0) {
+      agent.recordFlow({
+        sourceIp: s2c.sourceIP, destinationIp: s2c.destIP, sourcePort: s2c.sourcePort, destinationPort: s2c.destPort,
+        protocol: s2c.protocol, bytes: counters.bytesS2C, packets: counters.packetsS2C,
+        inputIfIndex: output, outputIfIndex: input,
+      });
+    }
+  }
+
+  private greAgentInstance: GreAgent | null = null;
+
+  getGreAgent(): GreAgent {
+    if (!this.greAgentInstance) {
+      this.greAgentInstance = new GreAgent(
+        {
+          id: this.id, name: this.name,
+          getHostname: () => this.getHostname(),
+          getPort: (n: string) => this.getPort(n),
+          getPorts: () => [...this.getPorts().values()],
+          sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+          sendIpv4Packet: (request) => this.sendLocalIpv4(request),
+        },
+        () => this.getBus(),
+      );
+      this.greAgentInstance.start();
+    }
+    return this.greAgentInstance;
+  }
+
+  greTunnelNames(): readonly string[] {
+    return this.greAgentInstance === null ? [] : this.greAgentInstance.listTunnels().map(tunnel => tunnel.tunnelId);
+  }
+
+  applyGreTunnel(name: string, tunnel: {
+    boundInterface: string; localGateway: string; remoteGateway: string;
+    keyInbound: number | null; keyOutbound: number | null;
+    checksumTransmission: boolean; checksumReception: boolean;
+    sequenceTransmission: boolean; sequenceReception: boolean;
+  }): string | undefined {
+    const bound = tunnel.boundInterface === '' ? undefined : this.interfaces.get(tunnel.boundInterface);
+    if (tunnel.boundInterface !== '' && bound === undefined) return `interface ${tunnel.boundInterface} does not exist.`;
+    const local = tunnel.localGateway !== '0.0.0.0' ? tunnel.localGateway : bound?.ip;
+    if (local === undefined) return 'a GRE tunnel needs a local-gw or an interface that carries an address.';
+    const agent = this.getGreAgent();
+    const created = agent.addTunnel(name, local, tunnel.remoteGateway, {
+      ...(tunnel.keyOutbound === null ? {} : { key: tunnel.keyOutbound }),
+      keyInbound: tunnel.keyInbound,
+      checksumReception: tunnel.checksumReception,
+      sequenceReception: tunnel.sequenceReception,
+    });
+    created.key = tunnel.keyOutbound;
+    agent.setChecksumEnabled(name, tunnel.checksumTransmission);
+    agent.setSequenceEnabled(name, tunnel.sequenceTransmission);
+    this.interfaces.configure(name, { up: true });
+    this.assignInterfaceToVdom(name, bound === undefined ? ROOT_VDOM : this.vdoms.vdomOfInterface(bound.name));
+    return undefined;
+  }
+
+  removeGreTunnel(name: string): void {
+    this.greAgentInstance?.removeTunnel(name);
+    this.interfaces.remove(name);
+  }
+
+  private sendLocalIpv4(request: Ipv4SendRequest): boolean {
+    const egress = this.localEgress(request.destination.toString(), {
+      iface: request.iface, source: request.source?.toString(),
+    });
+    const iface = egress?.iface;
+    const source = request.source?.toString()
+      ?? (iface === undefined ? undefined : this.interfaces.get(iface)?.ip);
+    if (iface === undefined || source === undefined) return false;
+    const packet = createIPv4Packet(
+      new IPAddress(source), request.destination, request.protocol, request.ttl ?? 64,
+      request.payload, request.payloadBytes, ipv4HeaderOptionsOf(request));
+    this.logLocalOut(iface, packet);
+    this.forward(iface, packet, egress?.nextHop);
+    return true;
+  }
+
+  private decapsulateGre(packet: IPv4Packet): { tunnel: string; inner: IPv4Packet } | null {
+    if (this.greAgentInstance === null) return null;
+    const opened = this.greAgentInstance.decapsulate('', packet.sourceIP, packet);
+    return opened === null ? null : { tunnel: opened.tunnelId, inner: opened.inner };
+  }
+
   getLacpAgent(): LacpAgent {
     if (!this.lacpAgentInstance) {
       this.lacpAgentInstance = new LacpAgent(
@@ -2669,6 +2939,10 @@ export class Firewall extends Equipment {
     void facts;
   }
 
+  recordConfigRevision(admin: string, comment: string, text: string): void {
+    this.revisions.record({ admin, firmware: `v${this.profile.defaultVersion}`, comment, text });
+  }
+
   onAdminLogout(admin: string): void {
     const closing = this.adminSessions.list().filter(s => s.username === admin).pop();
     if (closing) {
@@ -2929,6 +3203,7 @@ export class Firewall extends Equipment {
         return udp?.type === 'udp' && this.dnsServer.handleUdp(iface, p, udp);
       },
       answeredByNtp: (iface, p) => this.ntp.observe(iface, p),
+      answeredByBfd: (iface, p) => this.answeredByBfd(iface, p),
       snmpListens: (p) => this.snmpService?.listensOn(p) ?? false,
       allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
       handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },
@@ -2993,6 +3268,10 @@ export class Firewall extends Equipment {
   private forward(
     egressPort: string, packet: IPv4Packet, gateway?: string, bridged?: BridgedFrame,
   ): void {
+    if (this.greAgentInstance?.getTunnel(egressPort) !== undefined) {
+      this.greAgentInstance.encapsulateAndSend(egressPort, packet);
+      return;
+    }
     if (this.vdoms.contextOfInterface(egressPort).tunnels.isTunnelInterface(egressPort)) {
       this.forwardThroughTunnel(egressPort, packet);
       return;
@@ -3058,7 +3337,9 @@ export class Firewall extends Equipment {
       captivePortal: this.captivePortal,
       interfaces: this.interfaces,
       vdomOf: (iface) => this.vdoms.contextOfInterface(iface),
-      decapsulate: (vdom, p) => decryptFromTunnel(this.ipsec, vdom.tunnels, p) ?? null,
+      decapsulate: (vdom, p) => p.protocol === IP_PROTO_GRE
+        ? this.decapsulateGre(p)
+        : decryptFromTunnel(this.ipsec, vdom.tunnels, p) ?? null,
     });
   }
 }

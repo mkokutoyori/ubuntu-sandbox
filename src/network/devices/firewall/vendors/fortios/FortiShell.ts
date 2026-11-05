@@ -1,3 +1,4 @@
+import { renderBfdNeighbors, renderIpsecCryptoStats, renderKernelRoutes } from './diag/kernelViews';
 import { ipToUint32 } from '../../../../core/ip';
 import { generateApiKey } from '../../identity/AdminAccounts';
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
@@ -69,7 +70,7 @@ import {
   type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
-  renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
+  renderOspfNeighbors, renderRoutingTable, renderRoutingDetails, renderSystemStatus,
   type SystemClusterFacts,
 } from './diag/getViews';
 import {
@@ -792,6 +793,9 @@ export class FortiShell {
           }
         }
       }
+      if (target === 'system interface') {
+        for (const name of this.fw.greTunnelNames()) push(name, 'GRE tunnel interface.');
+      }
       if (target === 'system zone') {
         for (const zone of this.fw.getZoneTable().list()) push(zone.name, 'Security zone.');
       }
@@ -913,6 +917,11 @@ export class FortiShell {
     if (path === 'vpn ipsec tunnel summary') {
       return renderVpnTunnelSummary(this.fw.getTunnelTable());
     }
+    if (path.startsWith('vpn ipsec tunnel name ')) {
+      const wanted = path.slice('vpn ipsec tunnel name '.length).trim();
+      if (this.fw.getTunnelTable().getPhase1(wanted) === undefined) return null;
+      return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now(), wanted);
+    }
     if (path === 'vpn ipsec tunnel details' || path === 'vpn ipsec tunnel name') {
       return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now());
     }
@@ -925,6 +934,9 @@ export class FortiShell {
     if (path === 'system session status') {
       return renderSessionCount(this.fw.getSessionTable().view().count());
     }
+    if (path === 'vpn ipsec stats crypto') return renderIpsecCryptoStats(this.fw.getTunnelTable());
+    if (path === 'router info kernel') return renderKernelRoutes(this.fw);
+    if (path === 'router info bfd neighbor') return renderBfdNeighbors(this.fw);
     if (path === 'vpn ipsec stats tunnel') {
       return renderIpsecTunnelStats(this.fw.getTunnelTable());
     }
@@ -975,6 +987,9 @@ export class FortiShell {
     if (path === 'router info ospf interface' || path.startsWith('router info ospf interface ')) {
       return this.ospfInterfaceView(path.slice('router info ospf interface'.length).trim());
     }
+    if (path === 'router info routing-table details' || path.startsWith('router info routing-table details ')) {
+      return renderRoutingDetails(this.fw.getRouteTable(), path.slice('router info routing-table details'.length).trim());
+    }
     if (path.startsWith('router info routing-table ')) {
       const view = path.slice('router info routing-table '.length);
       if (view !== 'all' && view !== 'static' && view !== 'connected'
@@ -1022,7 +1037,7 @@ export class FortiShell {
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',
-        type: this.interfaceSetting(iface.name, 'type') ?? 'physical',
+        type: this.isTunnelInterface(iface.name) ? 'tunnel' : this.interfaceSetting(iface.name, 'type') ?? 'physical',
         srcCheck: this.interfaceSetting(iface.name, 'src-check') ?? 'enable',
         dropOverlappedFragment:
           this.interfaceSetting(iface.name, 'drop-overlapped-fragment') ?? 'disable',
@@ -1030,6 +1045,10 @@ export class FortiShell {
         physical: port !== undefined,
       };
     });
+  }
+
+  private isTunnelInterface(name: string): boolean {
+    return this.fw.tunnelBoundInterface(name) !== undefined || this.fw.greTunnelNames().includes(name);
   }
 
   private interfaceSetting(name: string, attribute: string): string | undefined {
@@ -1142,6 +1161,11 @@ export class FortiShell {
       return rest[0] === undefined
         ? FortiMessages.incomplete('what to back up')
         : FortiMessages.unknownAction(`backup ${rest[0]}`);
+    }
+    if (rest[1] === 'flash') {
+      const text = renderWholeConfig(this.tree, { full: rest[0] === 'full-config' }).join('\n');
+      this.fw.recordConfigRevision(this.fw.getAdminSessions().newest()?.username ?? 'admin', rest.slice(2).join(' '), text);
+      return '';
     }
     const [destination, file, server, password] = rest.slice(1);
     const address = this.tftpTarget(destination, server);
@@ -1767,7 +1791,11 @@ export class FortiShell {
         return this.appliquerAlimentation(resolved.name);
       case 'factoryreset2': return this.appliquerAlimentation('factoryreset2');
       case 'erase-disk': return this.executeEraseDisk(tail);
-      case 'ssh': case 'telnet':
+      case 'telnet':
+        return tail.length === 0
+          ? FortiMessages.incomplete('a destination')
+          : this.fw.runTelnet(tail[0], tail[1]);
+      case 'ssh':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
           : FortiMessages.needsConsole(resolved.name);

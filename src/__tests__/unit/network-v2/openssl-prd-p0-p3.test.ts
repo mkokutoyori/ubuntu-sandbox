@@ -241,9 +241,9 @@ describe('§P3 — clés, CSR et certificats', () => {
 
     const out = await srv.executeCommand('openssl verify /tmp/seul.crt');
 
-    // 18 = self signed certificate. Le code exact compte : c'est ce
+    // 18 = self-signed certificate. Le code exact compte : c'est ce
     // qu'un opérateur cherche dans un moteur de recherche.
-    expect(out).toContain('error 18 at 0 depth lookup: self signed certificate');
+    expect(out).toContain('error 18 at 0 depth lookup: self-signed certificate');
     expect(out).toContain('verification failed');
   });
 

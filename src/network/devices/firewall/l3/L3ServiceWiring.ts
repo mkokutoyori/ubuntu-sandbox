@@ -79,6 +79,11 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
         .filter((port) => inVdom(port.name)),
       resolvedMac: (ip) => host.resolvedMac(ip),
       tcp: () => host.tcp(),
+      egressToward: (ip) => {
+        const route = host.vdomRoutes(vdom).lookup(ip);
+        const local = route === undefined ? undefined : host.interfaces().get(route.iface)?.ip;
+        return route === undefined || local === undefined ? null : { localIp: local, localIface: route.iface };
+      },
       listenBgp: (accept) => { listenBgp(vdom, accept); },
       emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
       emitArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },

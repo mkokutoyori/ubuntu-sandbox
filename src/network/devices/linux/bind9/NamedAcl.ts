@@ -77,6 +77,10 @@ export class AddressMatchList {
     return new AddressMatchList(elements);
   }
 
+  matchesEveryAddress(): boolean {
+    return this.elements.length === 1 && this.elements[0].kind === 'any' && !this.elements[0].negated;
+  }
+
   grantsNothing(): boolean {
     return this.elements.every((element) => element.kind === 'none');
   }

@@ -399,6 +399,7 @@ const BGP_NEIGHBOR: FortiTableSpec = {
     count('weight', 'Weight applied to routes learned from this neighbor.',
       0, 65535, 0),
     enable('shutdown', 'Enable/disable shutdown this neighbor.'),
+    enable('bfd', 'Enable/disable BFD for this neighbor.'),
     reference('prefix-list-in', 'Inbound filter for updates from this neighbor.', ['router prefix-list']),
     reference('prefix-list-out', 'Outbound filter for updates to this neighbor.', ['router prefix-list']),
     reference('route-map-in', 'Inbound route map filter.', ['router route-map']),
@@ -457,6 +458,7 @@ export const ROUTER_BGP: FortiTableSpec = {
         remoteAs: Number.parseInt(entry.effective('remote-as')[0] ?? '0', 10),
         weight: Number.parseInt(entry.effective('weight')[0] ?? '0', 10),
         shutdown: entry.effective('shutdown')[0] === 'enable',
+        bfd: entry.effective('bfd')[0] === 'enable',
         prefixListIn: entry.effective('prefix-list-in')[0] || undefined,
         prefixListOut: entry.effective('prefix-list-out')[0] || undefined,
         routeMapIn: entry.effective('route-map-in')[0] || undefined,
@@ -688,7 +690,43 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
   },
 };
 
+const BFD_NEIGHBOR: FortiTableSpec = {
+  path: ['router', 'bfd', 'neighbor'],
+  kind: 'table',
+  keyType: 'address',
+  quotedKey: true,
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Neighbor.',
+  attributes: [
+    { ...word('ip', 'Neighbor address.'), readOnly: true },
+    reference('interface', 'Interface the neighbor is reached on.', ['system interface']),
+  ],
+};
+
+export const ROUTER_BFD: FortiTableSpec = {
+  path: ['router', 'bfd'],
+  kind: 'object',
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 246,
+  help: 'Configure BFD.',
+  attributes: [],
+  children: [BFD_NEIGHBOR],
+  onCommit(object, context) {
+    const neighbours = object.childEntries('neighbor');
+    for (const entry of neighbours) {
+      if ((entry.effective('interface')[0] ?? '') === '') return `neighbor ${entry.key} has no interface.`;
+    }
+    return context.device.applyBfdNeighbors(neighbours.map(entry => ({
+      ip: entry.key, interface: entry.effective('interface')[0] ?? '',
+    })));
+  },
+};
+
 export const ROUTER_DYNAMIC_SPECS: readonly FortiTableSpec[] =
   Object.freeze([
-    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_COMMUNITY_LIST, ROUTER_KEY_CHAIN, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP,
+    ROUTER_ACCESS_LIST, ROUTER_PREFIX_LIST, ROUTER_ASPATH_LIST, ROUTER_COMMUNITY_LIST, ROUTER_KEY_CHAIN, ROUTER_ROUTE_MAP, ROUTER_RIP, ROUTER_OSPF, ROUTER_BGP, ROUTER_BFD,
   ]);

@@ -2,10 +2,9 @@
  * DNS over TLS (RFC 7858, TCP/853) — bridges DNS query/response framing
  * onto a real RFC 8446 1-RTT handshake (`TlsClientSession`/
  * `TlsServerSession`, `@/network/tls`) instead of `SimulatedTls.ts`'s
- * symmetric-key stand-in (`PRD-TLS.md` §2.1.14). `DnsHttpsTransport.ts`
- * (DoH) and `DnsQuicTransport.ts` (DoQ) still use `SimulatedTls.ts` — they
- * migrate under `PRD-HTTP.md`/`PRD-QUIC.md` instead, once those engines
- * are ready to carry TLS 1.3 themselves.
+ * symmetric-key stand-in (`PRD-TLS.md` §2.1.14). `DnsQuicTransport.ts`
+ * (DoQ) still uses `SimulatedTls.ts` — it migrates under `PRD-QUIC.md`
+ * once that engine is ready to carry TLS 1.3 itself.
  *
  * Both sides trust a single well-known CA (`getOrCreateCA(DOT_TRUST_ANCHOR_KEY)`,
  * `@/network/pki/PkiCaRegistry`) — the simulator's equivalent of a public
@@ -25,9 +24,13 @@ import type { EndHost } from '@/network/devices/EndHost';
 import type { TcpSocket } from '@/network/tcp/TcpStack';
 import { encodeDnsMessage, decodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
+import { addressOf, type DnsStreamHandler, type DnsStreamReply } from '@/network/dns/transport/DnsTcpTransport';
+import { tlsVerifyFailureText } from '@/network/dns/transport/DnsTlsVerification';
 import { getOrCreateCA } from '@/network/pki/PkiCaRegistry';
 import { CertificateVerifier } from '@/network/pki/CertificateVerifier';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
+import type { ServerIdentity } from '@/network/http/https/ServerTlsToolkit';
+import type { TlsProtocolVersion } from '@/network/tls/legacy/legacyCipherSuites';
 import { TlsServerSession } from '@/network/tls/TlsServerSession';
 import { TlsClientSession } from '@/network/tls/TlsClientSession';
 import { fragmentAsRecords, reassembleRecords, type TlsRecord } from '@/network/tls/recordLayer';
@@ -45,24 +48,48 @@ export interface DotOptions {
   readonly sni?: string;
   readonly serverName?: string;
   readonly timeoutMs?: number;
+  readonly identity?: ServerIdentity;
+  readonly protocols?: readonly TlsProtocolVersion[];
+  readonly address?: string;
+  readonly processName?: string;
+  readonly pid?: number;
+  readonly service?: string;
+  readonly anchors?: readonly X509Certificate[];
+  readonly verifyPeer?: boolean;
+  readonly onVerifyFailure?: (text: string) => void;
 }
 
-export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, options: DotOptions = {}): void {
+function concatenated(parts: readonly Uint8Array[]): Uint8Array {
+  const joined = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    joined.set(part, offset);
+    offset += part.length;
+  }
+  return joined;
+}
+
+function framedReply(reply: DnsStreamReply): Uint8Array {
+  const messages = reply === null ? [] : Array.isArray(reply) ? reply : [reply as DnsMessage];
+  return concatenated(messages.map((message) => frameDnsMessage(encodeDnsMessage(message))));
+}
+
+export function bindDnsTlsServer(host: EndHost, handler: DnsStreamHandler, options: DotOptions = {}): void {
   const alpn = options.alpn ?? DOT_ALPN;
-  const ca = getOrCreateCA(DOT_TRUST_ANCHOR_KEY);
   const now = host.getTcpStack().nowMs();
-  const issued = ca.issueCertificate({
-    subject: `CN=${options.sni ?? host.getHostname()}`, notBefore: now - 1000, notAfter: now + ONE_YEAR_MS,
-  });
+  const identity: ServerIdentity = options.identity ?? (() => {
+    const issued = getOrCreateCA(DOT_TRUST_ANCHOR_KEY).issueCertificate({
+      subject: `CN=${options.sni ?? host.getHostname()}`, notBefore: now - 1000, notAfter: now + ONE_YEAR_MS,
+    });
+    return { cert: issued.cert, key: issued.privateKey, chain: [] };
+  })();
 
   host.getTcpStack().listen(options.port ?? DOT_PORT, {
-    // DNS-over-TLS (RFC 7858) écoute vraiment ; c'est ce nom qui le dit
-    // à `ss`, à la place du `socketTable.bind()` manuel que
-    // `bindDnsServerPort()` posait à côté.
-    identity: { processName: 'dnsmasq' },
+    identity: { processName: options.processName ?? 'dnsmasq', pid: options.pid, service: options.service },
     onAccept: (socket: TcpSocket) => {
       const server = new TlsServerSession({
-        serverCert: issued.cert, serverPrivateKey: issued.privateKey, alpnProtocols: [alpn],
+        serverCert: identity.cert, serverPrivateKey: identity.key, serverChain: identity.chain, alpnProtocols: [alpn],
+        ...(options.protocols === undefined ? {} : { protocols: options.protocols }),
       });
 
       socket.onData((data) => {
@@ -70,21 +97,24 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, opti
 
         if (server.result === 'accept') {
           let query: DnsMessage;
+          let raw: Uint8Array;
           try {
             const { plaintext } = reassembleRecords(incoming, true);
-            const [raw] = new DnsStreamReader().push(plaintext);
+            [raw] = new DnsStreamReader().push(plaintext);
             query = decodeDnsMessage(raw);
           } catch {
             socket.close();
             return;
           }
-          const answer = handler(query);
-          // This socket callback is synchronous-only — same constraint as
-          // DnsQuicTransport/DnsUdpTransport, an async handler result can't
-          // be awaited here.
-          if (answer instanceof Promise) { socket.close(); return; }
-          socket.send(fragmentAsRecords('application_data', frameDnsMessage(encodeDnsMessage(answer)), true));
-          socket.close();
+          const send = (reply: DnsStreamReply): void => {
+            socket.send(fragmentAsRecords('application_data', framedReply(reply), true));
+            socket.close();
+          };
+          const answer = handler(
+            query, addressOf(socket.remoteIp), socket.remotePort, raw, addressOf(socket.localIp),
+          );
+          if (answer instanceof Promise) void answer.then(send, () => socket.close());
+          else send(answer);
           return;
         }
         if (server.result === 'reject') return;
@@ -106,11 +136,11 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsMessageHandler, opti
         if (reply) socket.send(reply);
       });
     },
-  });
+  }, options.address ?? '0.0.0.0');
 }
 
-export function unbindDnsTlsServer(host: EndHost, port: number = DOT_PORT): void {
-  host.getTcpStack().closeListener(port);
+export function unbindDnsTlsServer(host: EndHost, port: number = DOT_PORT, address = '0.0.0.0'): void {
+  host.getTcpStack().closeListener(port, address);
 }
 
 export async function queryDnsOverTls(
@@ -124,9 +154,12 @@ export async function queryDnsOverTls(
 
   const alpn = options.alpn ?? DOT_ALPN;
   const timeoutMs = options.timeoutMs ?? 2000;
-  const ca = getOrCreateCA(DOT_TRUST_ANCHOR_KEY);
-  const verifier = new CertificateVerifier({ trustAnchors: [ca.rootCertificate], clock: () => host.getTcpStack().nowMs() });
-  const client = new TlsClientSession({ verifier, alpn: [alpn], ...(options.serverName !== undefined ? { serverName: options.serverName } : {}) });
+  const anchors = options.anchors ?? [getOrCreateCA(DOT_TRUST_ANCHOR_KEY).rootCertificate];
+  const verifier = new CertificateVerifier({ trustAnchors: anchors, clock: () => host.getTcpStack().nowMs() });
+  const client = new TlsClientSession({
+    verifier, alpn: [alpn], allowUntrustedPeer: options.verifyPeer === false,
+    ...(options.serverName !== undefined ? { serverName: options.serverName } : {}),
+  });
 
   return new Promise<DnsMessage | null>((resolve) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -156,6 +189,9 @@ export async function queryDnsOverTls(
 
       const reply = client.handle(incoming);
       if (client.result === 'failure') {
+        if (client.peerVerificationReason !== null) {
+          options.onVerifyFailure?.(tlsVerifyFailureText(client.peerVerificationReason, client.peerCertificate));
+        }
         finish(null);
         socket.close();
         return;

@@ -2,6 +2,7 @@ import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { RR_TYPE_NAMES as REGISTERED_RR_TYPE_NAMES, rrTypeNumber } from '@/network/dns/wire/RRTypeNames';
 import { DnsRcode as WireRcode, DnsOpcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { IPv6Address } from '@/network/core/types';
 import {
   makeARecord,
@@ -48,6 +49,14 @@ export interface DnsQueryOptions {
   readonly port?: number;
   /** Name the server certificate must carry (DNS-over-TLS, `systemd-resolved` `ADDRESS#NAME`). */
   readonly serverName?: string;
+  /** DNS-over-HTTPS (RFC 8484) : le chemin du point d'accès et la méthode (`dig +https[=chemin]`, `+https-get`). */
+  readonly https?: { readonly path: string; readonly method: 'GET' | 'POST' };
+  /** Ancres de confiance du client TLS ; absentes, le client n'approuve que la racine publique du simulateur. */
+  readonly tlsAnchors?: readonly X509Certificate[];
+  /** `false` : la chaîne et le nom du serveur ne sont pas vérifiés (`dig +tls` sans `+tls-ca` ni `+tls-hostname`). */
+  readonly tlsVerify?: boolean;
+  readonly onTlsVerifyFailure?: (text: string) => void;
+  readonly onHttpFailure?: (status: number) => void;
   /** Query class override (`dig -c CH`/bare `chaos` keyword), e.g. `DnsClass.CH`. Defaults to IN. */
   readonly qclass?: number;
   readonly onTransportFailure?: (failure: 'refused') => void;

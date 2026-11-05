@@ -46,6 +46,7 @@ export const digCommand: LinuxCommand = {
       (s, n, t, ms, opts) => ctx.net.queryDns(s, n, t, ms, opts),
       readResolverIP(ctx.executor),
       (path) => ctx.executor.readFile(path),
+      () => ctx.tlsTrustAnchors,
     );
   },
 
