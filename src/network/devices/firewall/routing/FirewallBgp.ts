@@ -181,6 +181,7 @@ export class FirewallBgp {
   getConfig(): BgpConfiguration { return this.config; }
 
   neighbours(): readonly ProtocolNeighborView[] {
+    this.engine?.refreshFromCache();
     return this.engine?.getNeighbors() ?? [];
   }
 

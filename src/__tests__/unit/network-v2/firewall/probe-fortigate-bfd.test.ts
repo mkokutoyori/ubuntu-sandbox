@@ -5,9 +5,7 @@
  * The column layout of the view follows what a FortiGate prints ; the reference has no sample (no transcript).
  * `router bgp` > `neighbor` > `set bfd enable` (p.1053) provisions the session and holds the BGP session down while
  * the BFD session is not up. Discriminated with git stash on src/network: 7 of 9 fall before the fix; the two
- * witnesses (the units reach each other; the BGP pair establishes) pass either way. The pair is configured
- * 1.1.1.1 first: the reverse order does not establish, recorded in TODO.md.
- */
+ * witnesses (the units reach each other; the BGP pair establishes) pass either way. */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { loadAllDevicePlatforms } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
@@ -92,8 +90,8 @@ describe('router bgp neighbor bfd', () => {
       'config system interface', 'edit port1', 'set mode static', `set ip ${ip} 255.255.255.0`, 'set allowaccess ping', 'next', 'end',
       'config router bgp', `set as ${asn}`, `set router-id ${id}`, 'config neighbor', `edit ${peer}`, `set remote-as ${peerAsn}`, 'set bfd enable', 'next', 'end', 'end',
     ];
-    await bench.shell(b, ...side('10.6.0.2', '10.6.0.1', 65002, 65001, '1.1.1.1'));
-    await bench.shell(a, ...side('10.6.0.1', '10.6.0.2', 65001, 65002, '2.2.2.2'));
+    await bench.shell(a, ...side('10.6.0.1', '10.6.0.2', 65001, 65002, '1.1.1.1'));
+    await bench.shell(b, ...side('10.6.0.2', '10.6.0.1', 65002, 65001, '2.2.2.2'));
     clock.advance(120_000);
     return { a, b, clock };
   }
