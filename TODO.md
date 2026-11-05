@@ -4534,3 +4534,10 @@ Measured against util-linux 2.39.3 (dev container), unfixed: `findmnt -x`, `--no
 a missing target (status 1) are ignored or answered with the plain table; `lsblk -x`, `-V`, `-r`, `-P`, `-J`, `-o` with an unknown column
 ('lsblk: unknown column: nosuch', status 1), `-b`, and a missing device (status 32) likewise; `mount -V`, invalid options and a failing mount
 exit with the wrong text/status for an unprivileged caller. `df` shows the same family of fix (done in its own port).
+
+## Commands missing or answering another distribution than the simulated one
+
+`bzip2`, `bunzip2`, `xz`, `unxz` and `rnano` do not exist in the simulator where a real Ubuntu has them (`command not found`). `free`, `w`,
+`findmnt`, `swapon`, `pmap` and `apt` print the usage/version of their commands without `--version`/`--help` (measured against procps-ng
+4.0.4, util-linux 2.39.3, apt 2.8.3 of the dev container, whereas the simulator imitates Ubuntu 22.04: 3.3.17, 2.37.2, 2.4.x). `runlevel`,
+`gpasswd`, `clear` and `reset` accept `--version` silently where the real ones refuse the option.
