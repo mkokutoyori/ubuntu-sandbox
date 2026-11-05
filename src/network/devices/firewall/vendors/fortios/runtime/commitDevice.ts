@@ -601,6 +601,14 @@ export function buildCommitDevice(
       removeProxyArp(id) {
         fw.clearProxyArpEntries(proxyOwnerKey('proxy-arp', id));
       },
+      applyShapingPolicy(draft, position) {
+        const store = fw.getVdom().shapers.shapingPolicies;
+        store.remove(draft.id);
+        store.insertAt(position < 0 ? Number.MAX_SAFE_INTEGER : position, { ...draft, action: 'allow' });
+      },
+      removeShapingPolicy(id) {
+        fw.getVdom().shapers.shapingPolicies.remove(id);
+      },
       applyVip(vip) {
         applyVipToFirewall(fw, vip);
       },
