@@ -46,6 +46,7 @@ import {
   displayPatchInformation, displayDiagnosticInformation,
 } from './huawei/HuaweiCommonDisplay';
 import { registerHuaweiCommonMgmt } from './huawei/HuaweiCommonConfig';
+import { huaweiDnsConfigLines, registerHuaweiDnsConfigCommands, registerHuaweiDnsDisplayCommands, withTargetResolved } from './huawei/HuaweiDnsCommands';
 import { huaweiHeaderHost, headerConfigLines } from './huawei/HuaweiHeaders';
 import { huaweiCaptureHost } from './huawei/CapturePacket';
 import type { HuaweiDebugService } from '../router/diag/HuaweiDebugService';
@@ -979,6 +980,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
     // `system-view` from system view is an idempotent no-op (robustness:
     // re-issuing it must not error mid-sequence).
     this.systemTrie.register('system-view', 'Already in system view', () => '');
+    registerHuaweiDnsConfigCommands(this.systemTrie, { config: () => this.swRef!._getDnsConfig(), hosts: () => this.swRef!._getHostsTable() });
 
     // display + common management commands (available in system view too)
     this.registerDisplayCommands(this.systemTrie);
@@ -3154,26 +3156,30 @@ export class HuaweiSwitchShell implements ISwitchShell {
   private handlePing(args: string[], line: string | undefined): string {
     const sw = this.swRef;
     if (!sw) return '';
-    const request = parseHuaweiPing(args);
-    if (typeof request === 'string') return request;
-    const refusal = this.refuseIpv6Echo(args, line, request.ipv6);
-    if (refusal !== null) return refusal;
-    const { target, count, timeoutMs, sourceIP } = request;
-    this.pendingAsync = sw.executePingSequence(new IPAddress(target), count, timeoutMs, sourceIP ?? undefined)
-      .then((results) => formatHuaweiPing(target, count, results));
+    this.pendingAsync = withTargetResolved(sw, args).then((resolved) => {
+      const request = parseHuaweiPing(resolved);
+      if (typeof request === 'string') return request;
+      const refusal = this.refuseIpv6Echo(resolved, line, request.ipv6);
+      if (refusal !== null) return refusal;
+      const { target, count, timeoutMs, sourceIP } = request;
+      return sw.executePingSequence(new IPAddress(target), count, timeoutMs, sourceIP ?? undefined)
+        .then((results) => formatHuaweiPing(target, count, results));
+    });
     return '';
   }
 
   private handleTracert(args: string[], line: string | undefined): string {
     const sw = this.swRef;
     if (!sw) return '';
-    const request = parseHuaweiTracert(args);
-    if (typeof request === 'string') return request;
-    const refusal = this.refuseIpv6Echo(args, line, request.ipv6);
-    if (refusal !== null) return refusal;
-    const { target, maxHops, timeoutMs, probesPerHop } = request;
-    this.pendingAsync = sw.executeTraceroute(new IPAddress(target), maxHops, timeoutMs, probesPerHop)
-      .then((hops) => formatHuaweiTracert(target, maxHops, hops));
+    this.pendingAsync = withTargetResolved(sw, args).then((resolved) => {
+      const request = parseHuaweiTracert(resolved);
+      if (typeof request === 'string') return request;
+      const refusal = this.refuseIpv6Echo(resolved, line, request.ipv6);
+      if (refusal !== null) return refusal;
+      const { target, maxHops, timeoutMs, probesPerHop } = request;
+      return sw.executeTraceroute(new IPAddress(target), maxHops, timeoutMs, probesPerHop)
+        .then((hops) => formatHuaweiTracert(target, maxHops, hops));
+    });
     return '';
   }
 
@@ -3184,6 +3190,7 @@ export class HuaweiSwitchShell implements ISwitchShell {
    */
   private registerCommonMgmt(trie: CommandTrie): void {
     this.registerEchoCommands(trie);
+    registerHuaweiDnsDisplayCommands(trie, { config: () => this.swRef!._getDnsConfig(), hosts: () => this.swRef!._getHostsTable() });
     registerHuaweiCommonMgmt(
       trie,
       { service: () => this.debugService(), platform: 'switch' },
@@ -4653,6 +4660,9 @@ export class HuaweiSwitchShell implements ISwitchShell {
       '#',
       ...(headers.length > 0 ? [...headers, '#'] : []),
     ];
+
+    const dnsLines = huaweiDnsConfigLines({ config: () => sw._getDnsConfig(), hosts: () => sw._getHostsTable() });
+    if (dnsLines.length > 0) lines.push(...dnsLines, '#');
 
     const batch = [...sw.getVLANs().keys()].filter((id) => id !== 1);
     if (batch.length > 0) lines.push(`vlan batch ${formatVrpVlanList(batch)}`, '#');

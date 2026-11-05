@@ -586,6 +586,7 @@ export abstract class Switch extends Equipment {
     getBridgeMac: () => this.getBridgeMac(),
     egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
     vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+    defaultGateway: () => IPAddress.tryParse(this._ipDefaultGateway),
     dhcpClientDeliver: (vlan, pkt) => {
       const iface = this.sviClientIface(vlan);
       if (iface === null) return false;
@@ -3375,10 +3376,9 @@ export abstract class Switch extends Equipment {
       getPorts: () => [...this.getPorts(), ...this.sviPorts()],
       sendFrame: (portName: string, frame: EthernetFrame) => { this.sendFrame(portName, frame); },
       resolveRoute: (targetIp: string) => {
-        const source = this.svi.sourceAddressFor(new IPAddress(targetIp));
-        if (!source) return null;
-        const svi = this.getSvis().find((s) => s.ip?.toString() === source.toString());
-        return svi ? { iface: `Vlan${svi.vlan}`, nextHopIp: targetIp } : null;
+        const target = IPAddress.tryParse(targetIp);
+        const route = target === null ? null : this.svi.lookupRoute(target);
+        return route === null ? null : { iface: `Vlan${route.egress.vlan}`, nextHopIp: route.nextHop.toString() };
       },
       sendIpv4FrameArpAware: (_outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) => {
         this.svi.sendIpv4FrameArpAware(ipPkt, nextHopIP);

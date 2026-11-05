@@ -13,6 +13,11 @@
  * Measured against the commit before (worktree): 11 of the 17 cases fall (Windows telnet and ssh-keyscan, the Cisco switch ping with a known and with an unknown name
  * because it threw, the four Huawei router commands, the three FortiGate commands). The 6 that pass either way: the three WITNESSES (Windows ping, Cisco router ping and
  * traceroute prove the lab is sound and that a configured resolver is honoured) and the three non-regressions on a name nobody knows (Windows telnet, Huawei ping, FortiGate ping).
+ *
+ * Second pass (the commit after): the Huawei switch had no 'dns resolve' / 'dns server' (refused) and its ping/tracert did not resolve; the Cisco router telnet read the
+ * host table only and the Cisco switch telnet found no source address (SVIs ignored) nor a route (ip default-gateway stored, never evaluated by the SVI route
+ * lookup). Measured against the commit before: 5 of the 7 added cases fall (Huawei switch ping, tracert and running-config readback, Cisco router and switch telnet);
+ * the 2 that pass either way are the non-regressions on a name nobody knows (Huawei switch ping, Cisco router telnet).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
@@ -161,5 +166,60 @@ describe('FortiGate', () => {
 
   it('execute ping still fails on a name nobody knows', async () => {
     expect(await (await fortigate()).executeCommand(`execute ping ${UNKNOWN}`)).toContain('cannot resolve');
+  });
+});
+
+async function huaweiSwitch() {
+  const { built, switchAgency } = await lab();
+  for (const command of ['enable', 'configure terminal', 'interface FastEthernet0/10', 'switchport mode access', 'switchport access vlan 20', 'end']) {
+    await switchAgency.executeCommand(command);
+  }
+  const device = built.bench.place('switch-huawei', 'HSW', 100, 400) as unknown as Shell;
+  built.bench.connect(device as never, 'GigabitEthernet0/0/1', switchAgency as never, 'FastEthernet0/10');
+  await script(device, ['system-view', 'vlan 20', 'quit', 'interface GigabitEthernet0/0/1', 'port link-type access', 'port default vlan 20', 'quit',
+    'interface Vlanif20', 'ip address 10.20.20.91 255.255.255.0', 'quit', 'ip route-static 0.0.0.0 0.0.0.0 10.20.20.1', 'dns resolve', 'dns server 10.20.20.10']);
+  return device;
+}
+
+async function ciscoSwitchWithResolver() {
+  const { switchAgency } = await lab();
+  await script(switchAgency, ['enable', 'configure terminal', 'interface vlan 20', 'ip address 10.20.20.90 255.255.255.0', 'no shutdown', 'exit',
+    'ip default-gateway 10.20.20.1', 'ip name-server 10.20.20.10', 'end']);
+  return switchAgency;
+}
+
+describe('second pass', () => {
+  it('Huawei switch ping resolves the name', async () => {
+    expect(await (await huaweiSwitch()).executeCommand(`ping ${KNOWN}`)).toContain('Reply from 203.0.113.20');
+  });
+
+  it('Huawei switch tracert resolves the name', async () => {
+    expect(await (await huaweiSwitch()).executeCommand(`tracert ${KNOWN}`)).toContain('203.0.113.20');
+  });
+
+  it('Huawei switch shows its DNS configuration back', async () => {
+    const out = await (await huaweiSwitch()).executeCommand('display current-configuration');
+    expect(out).toContain('dns server 10.20.20.10');
+    expect(out).toContain('dns resolve');
+  });
+
+  it('Huawei switch ping still fails on a name nobody knows', async () => {
+    expect(await (await huaweiSwitch()).executeCommand(`ping ${UNKNOWN}`)).toContain('Unknown host');
+  });
+
+  it('Cisco router telnet resolves a name through ip name-server', async () => {
+    const { find } = await lab();
+    const out = await script(find('R-AGENCE'), ['enable', 'configure terminal', 'ip name-server 10.20.20.10', 'end', `telnet ${KNOWN} 80`]);
+    expect(out).toContain('Open');
+  });
+
+  it('Cisco switch telnet resolves a name through ip name-server', async () => {
+    expect(await (await ciscoSwitchWithResolver()).executeCommand(`telnet ${KNOWN} 80`)).toContain('Open');
+  });
+
+  it('Cisco router telnet still fails on a name nobody knows', async () => {
+    const { find } = await lab();
+    const out = await script(find('R-AGENCE'), ['enable', 'configure terminal', 'ip name-server 10.20.20.10', 'end', `telnet ${UNKNOWN} 80`]);
+    expect(out).toContain('unable to find computer address');
   });
 });

@@ -9,6 +9,7 @@
 
 import { huaweiHeaderHost, headerConfigLines } from './HuaweiHeaders';
 import type { Router } from '../../Router';
+import { huaweiDnsConfigLines } from './HuaweiDnsCommands';
 import type { CommandTrie } from '../CommandTrie';
 import { vrpRenderOffset } from '@/cli/vendors/vrp/vrpClockFamily';
 import { HuaweiDebugService } from '../../router/diag/HuaweiDebugService';
@@ -515,14 +516,7 @@ export function displayCurrentConfig(
     ...(headers.length > 0 ? [...headers, '#'] : []),
   ];
 
-  const dnsCfg = router._getDnsConfig();
-  const dnsLignes: string[] = [];
-  if (dnsCfg.lookupEnabled) dnsLignes.push('dns resolve');
-  for (const s of dnsCfg.nameServers) dnsLignes.push(`dns server ${s}`);
-  for (const d of dnsCfg.domainList) dnsLignes.push(`dns domain ${d}`);
-  for (const e of router._getHostsTable().entries()) {
-    if (e.permanent) dnsLignes.push(`ip host ${e.name} ${e.ips.join(' ')}`);
-  }
+  const dnsLignes = huaweiDnsConfigLines({ config: () => router._getDnsConfig(), hosts: () => router._getHostsTable() });
   if (dnsLignes.length > 0) {
     lines.push(...dnsLignes);
     lines.push('#');

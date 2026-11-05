@@ -9403,24 +9403,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private runOutboundTelnet(args: string[]): string {
     const positional = args.filter((a) => !a.startsWith('-'));
     if (positional.length === 0) return '% Incomplete command.';
+    const device = this.d();
+    this._pendingAsync = resolveHostnameFor(device, positional[0])
+      .then((address) => this.telnetTo(device, positional, address));
+    return '';
+  }
+
+  private telnetTo(device: TDevice, positional: string[], address: string | null): string {
     const display = positional[0];
     const port = positional[1] ? parseInt(positional[1], 10) : 23;
-    const router = this.d() as unknown as {
-      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
-      _getHostsTable?: () => { resolve: (n: string) => string | null };
+    const host = address ?? display;
+    const holder = device as unknown as {
+      _getPortsInternal?: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      getSvis?: () => ReadonlyArray<{ ip?: { toString: () => string } | null; adminUp?: boolean }>;
     };
-    let host = display;
-    const resolved = router._getHostsTable?.().resolve(host);
-    if (resolved) host = resolved;
-
     let sourceIp: string | null = null;
-    for (const [, p] of router._getPortsInternal()) {
+    for (const [, p] of holder._getPortsInternal?.() ?? []) {
       const ip = p.getIPAddress();
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
+    if (!sourceIp) sourceIp = holder.getSvis?.().find((svi) => svi.ip && svi.adminUp)?.ip?.toString() ?? null;
     if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
-    const stack = (this.d() as unknown as { getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'> }).getTcpStack?.();
+    const stack = (device as unknown as { getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'> }).getTcpStack?.();
     const target = positional[1] ? `${display}, ${port}` : display;
     if (!IPAddress.tryParse(host)) {
       return `Translating "${display}"\n\n% Unknown command or computer name, or unable to find computer address`;

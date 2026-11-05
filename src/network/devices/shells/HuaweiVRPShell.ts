@@ -46,6 +46,7 @@ import { EquipmentParamResolver } from './EquipmentParamResolver';
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { findHostByAddress } from '../linux/network/HostLookup';
 import { resolveHostnameFor } from '../NameResolution';
+import { registerHuaweiDnsConfigCommands, registerHuaweiDnsDisplayCommands, withTargetResolved } from './huawei/HuaweiDnsCommands';
 import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
@@ -1780,34 +1781,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       renderHuaweiTcpStatus(this.r()));
     t.register('display sockets', 'Display open sockets', () =>
       renderHuaweiSockets(this.r()));
-    t.register('display dns server', 'Display DNS servers', () => {
-      const servers = this.r()._getDnsConfig().nameServers;
-      if (servers.length === 0) return 'No DNS server configured.';
-      return [
-        ' Type: D:Dynamic  S:Static',
-        ' Domain-name-server           Type',
-        ...servers.map((s) => ` ${padToWidth(s, 29)}S`),
-      ].join('\n');
-    });
-    t.register('display dns domain', 'Display DNS domain suffixes', () => {
-      const cfg = this.r()._getDnsConfig();
-      const suffixes = cfg.suffixesDeRecherche();
-      if (suffixes.length === 0) return 'No domain name configured.';
-      return [
-        ' Type: D:Dynamic  S:Static',
-        ' No.   Domain-name                             Type',
-        ...suffixes.map((s, i) => ` ${padToWidth(String(i + 1), 6)}${padToWidth(s, 40)}S`),
-      ].join('\n');
-    });
-    t.register('display dns dynamic-host', 'Display the dynamic DNS cache', () => {
-      const entrees = this.r()._getHostsTable().entries().filter((e) => !e.permanent);
-      if (entrees.length === 0) return 'No dynamic host resolved.';
-      return [
-        ' No.  Host                     TTL         IpAddress',
-        ...entrees.map((e, i) =>
-          ` ${padToWidth(String(i + 1), 5)}${padToWidth(e.name, 25)}${padToWidth(String(86400 - e.ageSeconds), 12)}${e.ips.join(' ')}`),
-      ].join('\n');
-    });
+    registerHuaweiDnsDisplayCommands(t, { config: () => this.r()._getDnsConfig(), hosts: () => this.r()._getHostsTable() });
 
     registerDhcpDisplayCommands(t, getRouter);
     registerDhcpDebugCommands(t, getRouter);
@@ -1876,33 +1850,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.register('dns resolve', 'Enable dynamic DNS resolution', () => {
-      this.r()._getDnsConfig().lookupEnabled = true;
-      return '';
-    });
-    t.register('undo dns resolve', 'Disable dynamic DNS resolution', () => {
-      this.r()._getDnsConfig().lookupEnabled = false;
-      return '';
-    });
-    t.registerGreedy('dns server', 'Configure a DNS server', (args) => {
-      const err = this.r()._getDnsConfig().setNameServers(args);
-      if (!err) return '';
-      return err.kind === 'incomplete'
-        ? 'Error: Incomplete command found at \'^\' position.'
-        : 'Error: Wrong parameter found at \'^\' position.';
-    });
-    t.registerGreedy('undo dns server', 'Remove a DNS server', (args) => {
-      this.r()._getDnsConfig().removeNameServers(args);
-      return '';
-    });
-    t.registerGreedy('dns domain', 'Configure a DNS domain suffix', (args) => {
-      const err = this.r()._getDnsConfig().addDomainToList(args[0]);
-      return err ? 'Error: Incomplete command found at \'^\' position.' : '';
-    });
-    t.registerGreedy('undo dns domain', 'Remove a DNS domain suffix', (args) => {
-      this.r()._getDnsConfig().removeDomainFromList(args[0]);
-      return '';
-    });
+    registerHuaweiDnsConfigCommands(t, { config: () => this.r()._getDnsConfig(), hosts: () => this.r()._getHostsTable() });
 
     t.registerGreedy('ip host', 'Configure a static host entry', (args) => {
       if (args.length < 2) return 'Error: Incomplete command.';
@@ -3226,17 +3174,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   private withResolvedTarget(args: string[], run: (router: Router, resolved: string[]) => string | Promise<string>): string {
     const router = this.r();
-    const name = args[args.length - 1];
-    if (name === undefined || name.startsWith('-') || IPAddress.tryParse(name) !== null || IPv6Address.tryParse(name) !== null) {
-      const outcome = run(router, args);
-      if (typeof outcome === 'string') return outcome;
-      this._pendingAsync = outcome;
-      return '';
-    }
-    this._pendingAsync = resolveHostnameFor(router, name).then((address) => {
-      const resolved = address === null ? args : [...args.slice(0, -1), address];
-      return run(router, resolved);
-    });
+    this._pendingAsync = withTargetResolved(router, args).then((resolved) => run(router, resolved));
     return '';
   }
 
