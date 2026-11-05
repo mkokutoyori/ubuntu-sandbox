@@ -914,6 +914,11 @@ export class FortiShell {
     if (path === 'vpn ipsec tunnel summary') {
       return renderVpnTunnelSummary(this.fw.getTunnelTable());
     }
+    if (path.startsWith('vpn ipsec tunnel name ')) {
+      const wanted = path.slice('vpn ipsec tunnel name '.length).trim();
+      if (this.fw.getTunnelTable().getPhase1(wanted) === undefined) return null;
+      return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now(), wanted);
+    }
     if (path === 'vpn ipsec tunnel details' || path === 'vpn ipsec tunnel name') {
       return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now());
     }
