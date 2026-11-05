@@ -82,6 +82,7 @@ import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
 import { runSync } from './coreutils/SyncCommand';
+import { cmdGzip } from './coreutils/GzipCommand';
 import { cmdTar } from './coreutils/TarCommand';
 import { runLsof, type LsofRow } from './process/LsofCommand';
 import { planEnv, runPrintenv } from './coreutils/EnvCommand';
@@ -121,7 +122,7 @@ import { runUmask } from './umask/Umask';
 import {
   runTest, runExpr, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
   runTail,
-  cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
@@ -7125,9 +7126,9 @@ export class LinuxCommandExecutor {
         return compared.exitCode === 2 ? { output: '', stderr: compared.output, exitCode: 2 } : { ...compared, stderr: '' };
       }
       case 'tar': return cmdTar({ ...this.archiveCtx(), stdin }, args);
-      case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
-      case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');
-      case 'zcat': return cmdGzip(this.archiveCtx(), args, 'zcat');
+      case 'gzip': return cmdGzip({ ...this.archiveCtx(), stdin }, args, 'gzip');
+      case 'gunzip': return cmdGzip({ ...this.archiveCtx(), stdin }, args, 'gunzip');
+      case 'zcat': return cmdGzip({ ...this.archiveCtx(), stdin }, args, 'zcat');
       case 'zip': return cmdZip(this.archiveCtx(), args);
       case 'unzip': return cmdUnzip(this.archiveCtx(), args);
       // `scp`/`sftp` ne sont plus ici : ce sont des commandes du registre,
