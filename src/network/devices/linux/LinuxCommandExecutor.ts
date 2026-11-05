@@ -82,6 +82,7 @@ import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
 import { runSync } from './coreutils/SyncCommand';
+import { runLsof, type LsofRow } from './process/LsofCommand';
 import { planEnv, runPrintenv } from './coreutils/EnvCommand';
 import { runId } from './coreutils/IdCommand';
 import { runPtx } from './coreutils/PtxCommand';
@@ -341,7 +342,7 @@ import { cwdLinkOf, exeLinkOf, rootLinkOf, type ProcessLinkSources } from './pro
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
 import { applyRcfiles, type RcHost } from './editors/nano/NanoRc';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './editors/nano/NanoOperatingDirectory';
-import { padToWidth, renderTableText, LSOF_TABLE, type TableColumn } from '@/network/devices/shells/cli/TextTable';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Commands that commonly read from stdin when piped. */
 const PROXY_COMMAND_CLOSED = 'Connection closed by UNKNOWN port 65535';
@@ -723,37 +724,6 @@ function printsResultOnFailure(cmd: string, args: readonly string[], exitCode: n
   if (exitCode === 0) return false;
   if (cmd === 'cmp' || cmd === 'grep' || cmd === 'egrep' || cmd === 'fgrep') return exitCode === 1;
   return cmd === 'systemctl' && args.some((arg) => SYSTEMCTL_STATE_QUERIES.has(arg));
-}
-
-interface LsofRow {
-  readonly command: string;
-  readonly pid: string;
-  readonly user: string;
-  readonly fd: string;
-  readonly access: string;
-  readonly type: string;
-  readonly device: string;
-  readonly sizeOff: string;
-  readonly node: string;
-  readonly name: string;
-}
-
-const LSOF_COMMAND_WIDTH = 9;
-
-function renderLsof(rows: readonly LsofRow[]): string {
-  const fdWidth = Math.max(2, ...rows.map((r) => r.fd.length + 2));
-  const columns: TableColumn<LsofRow>[] = [
-    { header: 'COMMAND', value: (r) => r.command.slice(0, LSOF_COMMAND_WIDTH) },
-    { header: 'PID', align: 'right', value: (r) => r.pid },
-    { header: 'USER', align: 'right', value: (r) => r.user },
-    { header: `${'FD'.padStart(fdWidth - 2)}  `, value: (r) => `${r.fd.padStart(fdWidth - 2)}${r.access} ` },
-    { header: 'TYPE', align: 'right', value: (r) => r.type },
-    { header: 'DEVICE', align: 'right', value: (r) => r.device },
-    { header: 'SIZE/OFF', align: 'right', value: (r) => r.sizeOff },
-    { header: 'NODE', align: 'right', value: (r) => r.node },
-    { header: 'NAME', value: (r) => r.name },
-  ];
-  return renderTableText(rows, columns, LSOF_TABLE);
 }
 
 export class LinuxCommandExecutor {
@@ -7110,7 +7080,7 @@ export class LinuxCommandExecutor {
         return { output: `${cmd} ${args.join(' ')}\nWriting superblocks and filesystem accounting information: done`, exitCode: 0 };
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         return { output: `  No volume groups found`, exitCode: 0 };
-      case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
+      case 'lsof': return this.cmdLsof(args);
       case 'file': {
         const targets: string[] = [];
         let brief = false;
@@ -9102,86 +9072,59 @@ export class LinuxCommandExecutor {
     return best;
   }
 
-  private cmdLsof(args: string[]): string {
-    const filterPid = ((): number | null => {
-      const i = args.indexOf('-p');
-      return i >= 0 && args[i + 1] ? parseInt(args[i + 1], 10) || null : null;
-    })();
-    const filterUser = ((): string | null => {
-      const i = args.indexOf('-u');
-      return i >= 0 ? args[i + 1] ?? null : null;
-    })();
-    const filterInet = ((): { proto?: string; port?: number } | null => {
-      const i = args.indexOf('-i');
-      if (i < 0) return null;
-      const spec = args[i + 1] ?? '';
-      // -i :22  |  -i tcp:22  |  -i tcp
-      const portMatch = spec.match(/:(\d+)$/);
-      const protoMatch = spec.match(/^(tcp|udp)/i);
-      return {
-        proto: protoMatch ? protoMatch[1].toLowerCase() : undefined,
-        port: portMatch ? parseInt(portMatch[1], 10) : undefined,
-      };
-    })();
-
+  private lsofRows(): LsofRow[] {
     const rows: LsofRow[] = [];
     const procs = this.processMgr.list();
     let nodeSeq = 10_000;
-
     for (const p of procs) {
-      if (filterPid !== null && p.pid !== filterPid) continue;
-      if (filterUser !== null && p.user !== filterUser) continue;
-      if (filterInet === null) {
-        rows.push({
-          command: p.comm, pid: String(p.pid), user: p.user, fd: 'cwd', access: ' ',
-          type: 'DIR', device: '8,1', sizeOff: '4096', node: '2', name: p.cwd ?? '/',
-        });
-      }
+      rows.push({
+        command: p.comm, pid: p.pid, uid: p.uid, user: p.user, fd: 'cwd', access: ' ',
+        type: 'DIR', device: '8,1', sizeOff: '4096', node: '2', name: p.cwd ?? '/',
+      });
     }
-
     for (const row of this.kernelSocketRows()) {
       const { entry, owner } = row;
       if (owner === null || owner.fd === null) continue;
       if (row.state === 'TIME_WAIT' || row.state === 'SYN_RECEIVED') continue;
-      if (filterPid !== null && owner.pid !== filterPid) continue;
       const user = this.userMgr.uidToName(owner.uid);
-      if (filterUser !== null && user !== filterUser) continue;
-      if (filterInet) {
-        if (filterInet.proto && entry.protocol !== filterInet.proto) continue;
-        if (filterInet.port !== undefined && entry.localPort !== filterInet.port) continue;
-      }
       const local = entry.localAddress === '0.0.0.0' || entry.localAddress === '::' ? '*' : entry.localAddress;
+      const ipv6 = entry.localAddress.includes(':');
       rows.push({
-        command: owner.name, pid: String(owner.pid), user, fd: String(owner.fd), access: 'u',
-        type: entry.localAddress.includes(':') ? 'IPv6' : 'IPv4', device: String(entry.id), sizeOff: '0t0',
+        command: owner.name, pid: owner.pid, uid: owner.uid, user, fd: String(owner.fd), access: 'u',
+        type: ipv6 ? 'IPv6' : 'IPv4', device: String(entry.id), sizeOff: '0t0',
         node: entry.protocol.toUpperCase(),
         name: entry.remoteAddress === '*'
           ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
           : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`,
+        inet: {
+          protocol: entry.protocol === 'udp' ? 'udp' : 'tcp', family: ipv6 ? 6 : 4, localAddress: entry.localAddress, localPort: entry.localPort,
+          remoteAddress: entry.remoteAddress, remotePort: entry.remotePort, state: entry.remoteAddress === '*' && entry.protocol === 'tcp' ? 'LISTEN' : row.state,
+        },
       });
     }
-
-    if (filterInet === null) {
-      const rsyslog = procs.find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
-      for (const held of this.logMgr.deletedLogHandles()) {
-        if (filterPid !== null && rsyslog?.pid !== filterPid) continue;
-        if (filterUser !== null && (rsyslog?.user ?? 'root') !== filterUser) continue;
-        const heldFd = (rsyslog === undefined ? undefined
-          : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
-            .find((d) => d.target === held.path)?.fd) ?? 7;
-        rows.push({
-          command: 'rsyslogd', pid: String(rsyslog?.pid ?? 0), user: rsyslog?.user ?? 'root',
-          fd: String(heldFd), access: 'w', type: 'REG', device: '8,1', sizeOff: String(held.lostBytes),
-          node: String(nodeSeq++), name: `${held.path} (deleted)`,
-        });
-      }
+    const rsyslog = procs.find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
+    for (const held of this.logMgr.deletedLogHandles()) {
+      const heldFd = (rsyslog === undefined ? undefined
+        : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
+          .find((d) => d.target === held.path)?.fd) ?? 7;
+      rows.push({
+        command: 'rsyslogd', pid: rsyslog?.pid ?? 0, uid: rsyslog?.uid ?? 0, user: rsyslog?.user ?? 'root',
+        fd: String(heldFd), access: 'w', type: 'REG', device: '8,1', sizeOff: String(held.lostBytes),
+        node: String(nodeSeq++), name: `${held.path} (deleted)`,
+      });
     }
+    return rows;
+  }
 
-    if (rows.length === 0) {
-      if (filterPid !== null) return `lsof: PID ${filterPid}: No such process`;
-      return '';
-    }
-    return renderLsof(rows);
+  private cmdLsof(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const run = runLsof(args, this.lsofRows(), {
+      uidOf: (name) => this.userMgr.getUser(name)?.uid ?? null,
+      fileExists: (path) => this.vfs.lstat(this.vfs.normalizePath(path, this.cwd)) !== null,
+      absolute: (path) => this.vfs.normalizePath(path, this.cwd),
+    });
+    return run.stderr === ''
+      ? { output: run.stdout, exitCode: run.exitCode }
+      : { output: run.stdout, exitCode: run.exitCode, stderr: run.stderr, interleaved: run.stderr + run.stdout };
   }
 
   private getEnvVarNames(prefix: string): string[] {

@@ -4493,3 +4493,7 @@ ptx is ported from coreutils 9.4 and measured on 134 cases. Known limits: `-W` w
 `ls --block-size` is measured on 98 cases (probe-linux-ls-block-size). The `BLOCK_SIZE`, `LS_BLOCK_SIZE` and `POSIXLY_CORRECT` environment variables, which GNU ls reads when no block size is given, are not read.
 
 `ls --dired` and `--hyperlink` are measured on 85 cases (probe-linux-ls-dired-hyperlink). Not modelled: `--hyperlink=auto` is always off (no terminal is attached to a pipe), and the OSC 8 link of a path whose directory components contain symbolic links uses the simulator's canonical path.
+
+## lsof (lot 22)
+
+lsof now parses the lsof 4.95 grammar and selects rows by OR (default) or AND (-a) over -p, -u, -c, -d, -i, -s, +d/+D and file operands, with -t, -F and exit status 1 for an empty selection (probe-linux-lsof-grammar measured on 69 cases against the real lsof; probe-linux-lsof-selection pins the semantics). Still not listed or honoured: the real lsof prints many more rows per process (txt, mem, rtd, 0u...), the simulator lists cwd, sockets and deleted log handles only; `-R`, `-g` (accepted, nothing printed), `-o`, `-r` repeat mode, `-w`, `+L` link counts, `-U` (no Unix sockets are listed), NFS and the hostname/service resolution of `-i @host` beyond IP literals and localhost.
