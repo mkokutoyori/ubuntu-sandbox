@@ -430,7 +430,10 @@ export function asStderrResult(refusal: OptionRefusal): { output: string; stderr
 
 export function refuseUnknownGnuOption(command: string, args: readonly string[]): OptionRefusal | null {
   const set = GNU_OPTION_SETS[command];
-  if (!set) return null;
+  if (!set) {
+    const soleDocs = args.length === 1 && (args[0] === '--help' || args[0] === '--version') ? COREUTILS_DOCS[command] : undefined;
+    return soleDocs === undefined ? null : { output: `${soleDocs[args[0] === '--help' ? 'help' : 'version']}\n`, exitCode: 0, informational: true };
+  }
   const program = set.program ?? command;
   const trailer = set.trailer ?? `Try '${program} --help' for more information.`;
   const scanned = set.signalOperands ? args.filter((word) => !/^-(\d+|[A-Z][A-Z0-9]+)$/.test(word)) : args;
