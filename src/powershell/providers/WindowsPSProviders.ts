@@ -3359,6 +3359,11 @@ class WindowsExchangeAdapter implements IExchangeProvider {
     return this.pc.newReceiveConnector(def);
   }
 
+  removeReceiveConnector(name: string): ExchangeOpResult {
+    this.requireOrg('Remove-ReceiveConnector');
+    return this.pc.removeReceiveConnector(name);
+  }
+
   getReceiveConnector(name: string): ReceiveConnectorInfo | null {
     this.requireOrg('Get-ReceiveConnector');
     return this.pc.getReceiveConnector(name);

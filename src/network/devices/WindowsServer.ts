@@ -602,7 +602,20 @@ export class WindowsServer extends WindowsPC {
     this.exchangeOrgName = organizationName;
     this.startAutodiscoverService();
     this.startExchangeRoleServices(roles);
+    if (roles.includes('Mailbox')) this.createDefaultReceiveConnectors();
     return { ok: true, message: '' };
+  }
+
+  private createDefaultReceiveConnectors(): void {
+    const host = this.getHostname();
+    this.newReceiveConnector({
+      name: `Default Frontend ${host}`, bindings: ['0.0.0.0:25'], remoteIpRanges: [],
+      authMechanisms: ['TLS', 'ExchangeServer'],
+    });
+    this.newReceiveConnector({
+      name: `Client Frontend ${host}`, bindings: ['0.0.0.0:587'], remoteIpRanges: [],
+      authMechanisms: ['TLS', 'BasicAuth'],
+    });
   }
 
   private startExchangeRoleServices(roles: readonly string[]): void {
@@ -1002,6 +1015,16 @@ export class WindowsServer extends WindowsPC {
     }
     this.receiveConnectors.set(key, { def, servers });
     this.reconcileListeners();
+    return { ok: true, message: '' };
+  }
+
+  removeReceiveConnector(name: string): AdDsOpResult {
+    if (this.exchangeOrgName === null) return { ok: false, message: 'Remove-ReceiveConnector : Exchange Server has not been installed on this computer.' };
+    const key = name.toLowerCase();
+    const connector = this.receiveConnectors.get(key);
+    if (!connector) return { ok: false, message: `Remove-ReceiveConnector : The operation couldn't be performed because object '${name}' couldn't be found.` };
+    for (const server of connector.servers) server.stop();
+    this.receiveConnectors.delete(key);
     return { ok: true, message: '' };
   }
 
@@ -1655,6 +1678,7 @@ export class WindowsServer extends WindowsPC {
         if (reverseZone && !existing) dns.addPtrRecord(reverseZone, octets.slice(networkOctets).join('.'), dcTarget);
       }
     }
+    dns.sealProvisionedRecords();
   }
 
   /** Real DC promotion registers `NTDS`/`Netlogon`/`Kdc`/`ADWS` with the SCM (PRD §5 P6) — `dcdiag`/`nltest` read their state. */

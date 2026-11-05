@@ -430,6 +430,22 @@ export class NewReceiveConnectorCmdlet implements ICmdlet {
   }
 }
 
+export class RemoveReceiveConnectorCmdlet implements ICmdlet {
+  readonly name = 'remove-receiveconnector';
+  readonly displayName = 'Remove-ReceiveConnector';
+  readonly aliases = [] as const;
+  readonly parameters = ['Identity', 'Confirm'] as const;
+
+  execute(ctx: CmdletContext): PSValue {
+    const exchange = requireExchange(ctx, 'Remove-ReceiveConnector');
+    const identity = identityFrom(ctx);
+    if (!identity) { ctx.emitError('Remove-ReceiveConnector : Cannot process command because of one or more missing mandatory parameters: Identity.'); return null; }
+    const res = exchange.removeReceiveConnector(identity);
+    if (!res.ok) ctx.emitError(res.message);
+    return null;
+  }
+}
+
 export class GetReceiveConnectorCmdlet implements ICmdlet {
   readonly name = 'get-receiveconnector';
   readonly displayName = 'Get-ReceiveConnector';

@@ -53,7 +53,7 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'vpngrp',
-  renderOrder: 600,
+  renderOrder: 119,
   help: 'Configure VPN remote gateway.',
   attributes: [
     { ...word('name', 'IPsec remote gateway name.'), readOnly: true },
@@ -237,7 +237,7 @@ export const VPN_PHASE2_INTERFACE: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'vpngrp',
-  renderOrder: 610,
+  renderOrder: 121,
   help: 'Configure VPN autokey tunnel.',
   attributes: [
     { ...word('name', 'IPsec tunnel name.'), readOnly: true },

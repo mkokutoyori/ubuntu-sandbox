@@ -699,6 +699,7 @@ export interface IExchangeProvider {
   getGlobalAddressList(): GalEntryInfo[];
 
   newReceiveConnector(def: ReceiveConnectorInfo): ExchangeOpResult;
+  removeReceiveConnector(name: string): ExchangeOpResult;
   getReceiveConnector(name: string): ReceiveConnectorInfo | null;
   listReceiveConnectors(): ReceiveConnectorInfo[];
   newSendConnector(def: SendConnectorInfo): ExchangeOpResult;

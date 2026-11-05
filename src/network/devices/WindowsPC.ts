@@ -5754,6 +5754,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     return { ok: false, message: 'New-ReceiveConnector : Exchange Server has not been installed on this computer.' };
   }
 
+  removeReceiveConnector(_name: string): { ok: boolean; message: string } {
+    return { ok: false, message: 'Remove-ReceiveConnector : Exchange Server has not been installed on this computer.' };
+  }
+
   getReceiveConnector(_name: string): import('./windows/server/exchange/TransportConnector').ReceiveConnectorDef | null { return null; }
 
   listReceiveConnectors(): import('./windows/server/exchange/TransportConnector').ReceiveConnectorDef[] { return []; }

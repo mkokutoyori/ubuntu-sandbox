@@ -486,6 +486,16 @@ const SERVER_UNITS: DefaultUnit[] = [
     enabledByDefault: false,
   },
   {
+    name: 'postfix',
+    description: 'Postfix Mail Transport Agent',
+    type: 'forking',
+    execStart: '/usr/sbin/postfix start',
+    execReload: '/usr/sbin/postfix reload',
+    user: 'root',
+    after: ['network.target'],
+    enabledByDefault: false,
+  },
+  {
     name: 'nginx',
     description: 'A high performance web server and a reverse proxy server',
     type: 'forking',
@@ -578,6 +588,10 @@ export const SERVICE_LISTENERS: Readonly<Record<string, ServiceListenerSpec>> = 
   chrony: { processName: 'chronyd', sockets: [{ port: 123, protocol: 'udp' }] },
   lldpd: { processName: 'lldpd', sockets: [] },
   radvd: { processName: 'radvd', sockets: [] },
+  postfix: {
+    processName: 'master',
+    sockets: [{ port: 25, protocol: 'tcp' }, { port: 587, protocol: 'tcp' }, { port: 465, protocol: 'tcp' }],
+  },
   nginx: {
     processName: 'nginx',
     sockets: [{ port: 80, protocol: 'tcp' }, { port: 443, protocol: 'tcp' }],
