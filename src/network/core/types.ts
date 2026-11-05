@@ -1184,6 +1184,7 @@ export interface ICMPPacket extends NetworkPdu {
    * 84 bytes total with IPv4 header).
    */
   dataSize: number;
+  data?: readonly number[];
   /**
    * Next-Hop MTU — included in ICMP Type 3, Code 4 (Fragmentation Needed
    * and Don't Fragment was Set) per RFC 1191 §4.

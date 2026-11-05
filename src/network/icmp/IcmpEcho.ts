@@ -45,6 +45,7 @@ export function buildEchoReply(
   const reply: ICMPPacket = {
     type: 'icmp', icmpType: 'echo-reply', code: 0,
     id: requestIcmp.id, sequence: requestIcmp.sequence, dataSize: requestIcmp.dataSize,
+    ...(requestIcmp.data === undefined ? {} : { data: requestIcmp.data }),
   };
 
   const returnRoute = reverseSourceRoute(request, request.sourceIP);

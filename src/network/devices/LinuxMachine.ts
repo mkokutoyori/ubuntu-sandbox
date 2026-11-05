@@ -22,6 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────
  */
 
+import { iputilsEchoData } from '../icmp/EchoPayload';
 import { asStderrResult, refuseUnknownGnuOption } from './linux/GnuOptionGuard';
 import type { UnixStreamConnectOutcome, UnixStreamHandlers } from './linux/syslog/LocalDatagramSockets';
 import type { AgentPort } from '@/network/protocols/ssh/agent/AgentService';
@@ -329,6 +330,10 @@ const sideOf = (translation: NatTranslation): 'src' | 'dst' => translation.side 
 
 export abstract class LinuxMachine extends EndHost
   implements UserAccountHost, ShellIdentityHost, FileEditorHost {
+  protected override echoPayload(dataSize: number): readonly number[] {
+    return iputilsEchoData(dataSize, this.observationMicros());
+  }
+
   private readonly ipv4Settings = new LinuxIpv4Settings();
   private readonly ipv4Vectors = new KernelVectorStore(LINUX_IPV4_VECTOR_KNOBS);
   private readonly coreSettings = new LinuxCoreSettings();

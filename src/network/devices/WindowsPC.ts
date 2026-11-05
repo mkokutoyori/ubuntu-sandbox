@@ -14,6 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { windowsEchoData } from '../icmp/EchoPayload';
 import { synProbeSegment, type TcpSegment } from '../tcp/types';
 import { INTERNATIONAL_KEY, regionalFormatsFrom } from './windows/WindowsRegionalSettings';
 import { ScriptedTerminalIO } from '@/network/protocols/ssh/session/ScriptedTerminalIO';
@@ -380,6 +381,10 @@ const WINDOWS_CLIENT_CACHE_LIMITS: DnsCacheLimits = {
 };
 
 export class WindowsPC extends EndHost implements UserAccountHost {
+  protected override echoPayload(dataSize: number): readonly number[] {
+    return windowsEchoData(dataSize);
+  }
+
   protected readonly defaultTTL = 128;
 
   protected override registersOwnForwardDns(): boolean { return true; }
