@@ -134,6 +134,8 @@ import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
+import { RouterDnsService } from './router/dns/RouterDnsService';
+import { controlPlaneDnsTransport } from './router/dns/ControlPlaneDnsTransport';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
 import type { AccountServiceType, CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
@@ -4072,6 +4074,24 @@ export abstract class Switch extends Equipment {
   private readonly dnsConfig = new CiscoDnsConfig();
   _getDnsConfig(): CiscoDnsConfig { return this.dnsConfig; }
   _syncDnsService(): void { /* un commutateur n'a pas de pile UDP a lier */ }
+
+  private dnsService: RouterDnsService | null = null;
+  getDnsService(): RouterDnsService {
+    if (!this.dnsService) {
+      this.dnsService = new RouterDnsService(
+        () => this.dnsConfig,
+        () => this.dnsHostsTable,
+        () => controlPlaneDnsTransport(() => this.getUdpEndpoint()),
+      );
+    }
+    return this.dnsService;
+  }
+
+  async resolveHostname(name: string): Promise<IPAddress | null> {
+    const literal = IPAddress.tryParse(name);
+    if (literal !== null) return literal;
+    return IPAddress.tryParse((await this.getDnsService().resolve(name)) ?? '');
+  }
 
   private readonly dnsHostsTable = new RouterHostsTable();
   _getHostsTable(): RouterHostsTable { return this.dnsHostsTable; }

@@ -204,6 +204,13 @@ export class FortiShell {
 
   private nextLocalSessionId = 1;
 
+  private afterResolving(name: string, family: 'ipv4' | 'ipv6', run: (target: string) => string): string {
+    const fw = this.fw;
+    if (!fw.settlesLater(name, family)) return run(name);
+    this.pendingAsync = fw.awaitHostName(name, family).then(() => run(name));
+    return '';
+  }
+
   takePendingAsync(): Promise<string> | null {
     const pending = this.pendingAsync;
     this.pendingAsync = null;
@@ -1745,11 +1752,11 @@ export class FortiShell {
       case 'traceroute':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
-          : this.fw.runTraceroute(tail[0]);
+          : this.afterResolving(tail[0], 'ipv4', (target) => this.fw.runTraceroute(target));
       case 'tracert6':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
-          : this.fw.runTraceroute6(tail[tail.length - 1]);
+          : this.afterResolving(tail[tail.length - 1], 'ipv6', (target) => this.fw.runTraceroute6(target));
       case 'vpn':
         if (tail.length === 0) return FortiMessages.incomplete('a VPN operation');
         if (tail[0] === 'certificate') return this.executeCertificate(tail.slice(1));
@@ -1761,11 +1768,11 @@ export class FortiShell {
       case 'ping':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
-          : this.fw.runPing(tail[0]);
+          : this.afterResolving(tail[0], 'ipv4', (target) => this.fw.runPing(target));
       case 'ping6':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
-          : this.fw.getPing6().run(tail[0]);
+          : this.afterResolving(tail[0], 'ipv6', (target) => this.fw.getPing6().run(target));
       case 'ping-options':
         return this.executePingOptions(this.fw.getPingOptions(), 'ping-options', tail);
       case 'ping6-options':
@@ -1794,7 +1801,7 @@ export class FortiShell {
       case 'telnet':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')
-          : this.fw.runTelnet(tail[0], tail[1]);
+          : this.afterResolving(tail[0], 'ipv4', (target) => this.fw.runTelnet(target, tail[1]));
       case 'ssh':
         return tail.length === 0
           ? FortiMessages.incomplete('a destination')

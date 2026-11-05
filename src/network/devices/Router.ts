@@ -82,10 +82,8 @@ import { ControlPlaneUdpEndpoint } from './udp/ControlPlaneUdpEndpoint';
 import { addressAnswersOnLink } from '../arp/AddressProbe';
 import { ArpCache, ARP_TIMEOUT_DEFAULT_SEC } from '../arp/ArpCache';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
-import { RouterDnsService, DNS_PORT, type DnsTransport } from './router/dns/RouterDnsService';
-import { encodeDnsMessage, decodeDnsMessage } from '../dns/wire/DnsMessageCodec';
-import { RRType } from '../dns/wire/RRType';
-import type { DnsMessage } from '../dns/wire/DnsMessage';
+import { RouterDnsService, type DnsTransport } from './router/dns/RouterDnsService';
+import { controlPlaneDnsTransport } from './router/dns/ControlPlaneDnsTransport';
 import { Port, LOOPBACK_MTU, LOOPBACK_BW_KBPS, LOOPBACK_DELAY_US } from '../hardware/Port';
 import { CliShellSession } from './shells/vty/CliShellSession';
 import { TimerSet } from '@/events/TimerSet';
@@ -5168,6 +5166,12 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   _getDnsStats() { return this.getDnsService().stats; }
   _syncDnsService(): void { this.getDnsService().sync(); }
 
+  async resolveHostname(name: string): Promise<IPAddress | null> {
+    const literal = IPAddress.tryParse(name);
+    if (literal !== null) return literal;
+    return IPAddress.tryParse((await this.getDnsService().resolve(name)) ?? '');
+  }
+
   private dnsService: RouterDnsService | null = null;
   getDnsService(): RouterDnsService {
     if (!this.dnsService) {
@@ -5185,56 +5189,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
   }
 
   private dnsTransport(): DnsTransport {
-    const ep = this.getUdpEndpoint();
-    return {
-      bind: (port, onQuery) => ep.udpBind(port, (d) => {
-        onQuery(d.sourceIP.toString(), d.udp.sourcePort, d.udp.payload);
-      }) !== false,
-      unbind: (port) => { ep.udpClose(port); },
-      reply: (dst, dstPort, charge) => {
-        ep.sendUdpDatagramTo(new IPAddress(dst), dstPort, DNS_PORT, charge as Uint8Array);
-      },
-      sendQuery: (serveur, nom) => this.dnsQuerySurLeFil(serveur, nom),
-    };
-  }
-
-  private dnsQuerySurLeFil(serveur: string, nom: string): Promise<string[]> {
-    return new Promise((resolve) => {
-      const ep = this.getUdpEndpoint();
-      const port = ep.allocateEphemeralPort();
-      let fini = false;
-      const terminer = (adresses: string[]) => {
-        if (fini) return;
-        fini = true;
-        ep.udpClose(port);
-        resolve(adresses);
-      };
-      ep.udpBind(port, (d) => {
-        try {
-          const msg = decodeDnsMessage(d.udp.payload as unknown as Uint8Array);
-          const ips: string[] = [];
-          for (const rr of msg.answers) {
-            const data = rr.data as { type: number; address?: { toString(): string } };
-            if (data.type === RRType.A && data.address) ips.push(data.address.toString());
-          }
-          terminer(ips);
-        } catch { terminer([]); }
-      });
-      const requete: DnsMessage = {
-        id: Math.floor(Math.random() * 65535),
-        flags: { qr: false, opcode: 0, aa: false, tc: false, rd: true, ra: false, ad: false, cd: false, rcode: 0 },
-        questions: [{ qname: `${nom}.`, qtype: RRType.A, qclass: 1 }],
-        answers: [], authorities: [], additionals: [],
-      };
-      ep.sendUdpDatagramTo(new IPAddress(serveur), DNS_PORT, port, encodeDnsMessage(requete));
-      let tours = 0;
-      const attendre = () => {
-        if (fini) return;
-        if (tours++ > 40) { terminer([]); return; }
-        queueMicrotask(attendre);
-      };
-      queueMicrotask(attendre);
-    });
+    return controlPlaneDnsTransport(() => this.getUdpEndpoint());
   }
   /** Outbound-SSH known-hosts store (Cisco `show ip ssh known-hosts`). */
   readonly sshKnownHosts = new RouterSshKnownHosts(this);

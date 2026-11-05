@@ -107,7 +107,6 @@ import {
 } from '@/network/protocols/ssh/SshAgentCommands';
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
-import { findHostByAddress } from './linux/network/HostLookup';
 import { SftpLocalPort } from '@/network/protocols/ssh/sftp/client/SftpLocalPort';
 import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { runSftpCommand, SftpClientSession, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
@@ -3170,13 +3169,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!sourceIp) {
       return WINDOWS_TELNET.unreachable(host, host, port).join('\n');
     }
-    const reach = await wireReachOutcomeRetransmitting(this, host, port);
-    if (reach !== 'open') {
-      return telnetWireFailure(WINDOWS_TELNET, reach, host, host, port).join('\n');
+    const address = (await this.resolveHostname(host))?.toString();
+    if (address === undefined) {
+      return WINDOWS_TELNET.unresolved(host, port).join('\n');
     }
-    const sock = await this.tcpConnect(host, port);
+    const reach = await wireReachOutcomeRetransmitting(this, address, port);
+    if (reach !== 'open') {
+      return telnetWireFailure(WINDOWS_TELNET, reach, host, address, port).join('\n');
+    }
+    const sock = await this.tcpConnect(address, port);
     if (!sock) {
-      return WINDOWS_TELNET.refused(host, host, port).join('\n');
+      return WINDOWS_TELNET.refused(host, address, port).join('\n');
     }
     const header = `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
     const session = new TelnetClientSession(sock as unknown as TelnetClientTransport);
@@ -4671,7 +4674,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       default:
         return runSshKeyscanCommand(args, {
-          resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
+          resolve: (target: string) => this.resolveHostnameSync(target)?.toString() ?? null,
           probe: (ip, port, hostKeyAlgorithms) =>
             probeSshHostKey(this.getTcpStack().connect(ip, port) as unknown as TcpStream | null, hostKeyAlgorithms),
         }).lines.map((line) => line.text).join('\n');

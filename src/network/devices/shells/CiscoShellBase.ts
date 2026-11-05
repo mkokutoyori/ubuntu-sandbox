@@ -181,6 +181,7 @@ const NTP_SOUS_COMMANDES: ReadonlyArray<{
 ];
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
+import { resolveHostnameFor } from '../NameResolution';
 import { LLDP_OPTIONAL_TLVS, type LldpOptionalTlv } from '@/network/lldp/types';
 
 const LLDP_TLV_DESCRIPTIONS: Readonly<Record<LldpOptionalTlv, string>> = {
@@ -9500,12 +9501,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
-    if (isValidIPv4(cible)) return Promise.resolve(cible);
-    const svc = (appareil as {
-      getDnsService?: () => { resolve(n: string): Promise<string | null> };
-    }).getDnsService?.();
-    if (!svc) return Promise.resolve(null);
-    return svc.resolve(cible);
+    return resolveHostnameFor(appareil, cible);
   }
 
   private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {

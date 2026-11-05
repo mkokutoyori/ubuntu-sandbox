@@ -4592,3 +4592,14 @@ Still private or synchronous: `HostLookup.findHostByAddress` still answers names
 and `fuser` read /etc/hosts or `resolveHostnameSync` and cannot see a DNS answer; NmapProbes, LinuxIpCommand, HuaweiVRPShell and WindowsPC keep their own lookups
 (audit in progress). wget covers -q -nv -O -T -t --spider -S -V -P only: redirect lines, retries and the progress bar are not modelled. The ICMPv6 echo payload is
 not the iputils one. `mtr` prints its header with the typed name, not the resolved one. `ping -i` paces at 0.92 s where iputils paces at 1 s.
+
+## DNS: gaps found auditing the other equipment (Windows, Cisco, Huawei, FortiGate, ASA)
+
+The commands that take a host name now ask the machine's resolver on Windows, the Cisco and Huawei routers, the Cisco switch ping and the FortiGate execute ping,
+traceroute and telnet. Still open, each measured in the DNS lab: PowerShell `[System.Net.Dns]::GetHostAddresses`/`GetHostEntry`/`GetHostByName`, `New-Object
+System.Net.Sockets.TcpClient(name, port)` and `System.Net.WebClient` are not implemented (they answer nothing, silently), so a script that resolves through .NET
+gets an empty result; `getmac /s`, `tasklist /s`, `schtasks /query /s` and `Get-WmiObject -ComputerName` accept any host and print the LOCAL machine's data
+(rule 4: no frame leaves the machine); the Huawei switch refuses `dns resolve` and `dns server` (honest, but a Huawei switch resolves names too); the ASA shell has no
+`ping`, `traceroute`, `telnet`, `ssh`, `route` or `dns server-group`, so no name can be typed there; the Cisco switch `telnet` answers `no source interface for
+outbound Telnet` even with an SVI addressed, and it has no `traceroute`; IP SLA reads names from the router's host table only (a name the DNS knows resolves at the
+first `ping`, not for a probe configured before it); FortiGate `execute ping` prints the resolved address in its banner where FortiOS prints the name.

@@ -79,7 +79,8 @@ import { CLIStateMachine, CISCO_SWITCH_MODES } from './CLIStateMachine';
 import { MACAddress, IPAddress, SubnetMask } from '../../core/types';
 import { decouperPlages, completerBorne, etendreEntre } from './cli/interfaceRange';
 import { renderSecretField, renderPasswordField, renderCiscoUsernameLines } from './cisco/ciscoPasswordRender';
-import { formatCiscoPing, type ParsedPing } from './cisco/ciscoPing';
+import { formatCiscoPing, UNKNOWN_TARGET, type ParsedPing } from './cisco/ciscoPing';
+import { resolveHostnameFor } from '../NameResolution';
 import { echoSpecs, type EchoHost } from './cisco/echoSpecs';
 import {
   showInterface, consoleAndAuxLineConfigLines, enableLevelSecretConfigLines,
@@ -3064,11 +3065,14 @@ export class CiscoSwitchShell extends CiscoShellBase<CiscoSwitch> implements ISw
       if (typeof resolved !== 'string') return resolved.refus;
       sourceIP = resolved;
     }
-    const target = new IPAddress(parsed.target);
-    this._pendingAsync = this.d()
-      .executePingSequence(target, parsed.count, parsed.timeoutMs, sourceIP ?? undefined,
-        { sizeBytes: parsed.sizeBytes })
-      .then(results => formatCiscoPing(parsed.target, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+    const device = this.d();
+    this._pendingAsync = resolveHostnameFor(device, parsed.target).then((address) => {
+      if (address === null) return UNKNOWN_TARGET;
+      return device
+        .executePingSequence(new IPAddress(address), parsed.count, parsed.timeoutMs, sourceIP ?? undefined,
+          { sizeBytes: parsed.sizeBytes })
+        .then(results => formatCiscoPing(address, parsed.count, parsed.timeoutMs, results, parsed.sizeBytes));
+    });
     return '';
   }
 

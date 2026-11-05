@@ -1036,6 +1036,17 @@ export class Firewall extends Equipment {
     return this.dnsClient.resolve(name).find(isValidIPv4) ?? null;
   }
 
+  settlesLater(name: string, family: 'ipv4' | 'ipv6' = 'ipv4'): boolean {
+    const literal = family === 'ipv4' ? isValidIPv4(name) : isValidIPv6(name);
+    if (literal) return false;
+    const answered = family === 'ipv4' ? this.resolveHostName(name) : this.resolveHostName6(name);
+    return answered === null && this.dnsClient.awaitingReply(name, family);
+  }
+
+  async awaitHostName(name: string, family: 'ipv4' | 'ipv6' = 'ipv4'): Promise<void> {
+    await this.dnsClient.resolveAwaiting(name, family);
+  }
+
   private resolveHostName6(name: string): string | null {
     return this.dnsClient.resolve(name, 'ipv6').find(isValidIPv6) ?? null;
   }
