@@ -13,22 +13,34 @@ import { isDeltaTransfer, applyIxfrDeltas } from '@/network/dns/transfer/IxfrSes
 import { askOverUdp, DNS_PORT, type DnsUdpClient } from '@/network/dns/transport/DnsUdpTransport';
 import { queryDnsOverTcpStream, type DnsTcpClient } from '@/network/dns/transport/DnsTcpTransport';
 import { observedExchange, type DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
+import type { TransferEndpoint } from '@/network/dns/transfer/TransferEndpoint';
 
 export interface ZoneTransferTransport {
-  askOverUdp(server: IPAddress, query: DnsMessage, timeoutMs: number): Promise<DnsMessage | null>;
+  askOverUdp(server: IPAddress, query: DnsMessage, timeoutMs: number, endpoint?: TransferEndpoint): Promise<DnsMessage | null>;
   askTransfer(
-    server: IPAddress, query: DnsMessage, timeoutMs: number,
+    server: IPAddress, query: DnsMessage, timeoutMs: number, endpoint?: TransferEndpoint,
+  ): Promise<{ messages: DnsMessage[]; frames: Uint8Array[] } | null>;
+}
+
+export interface SecureTransferClient {
+  single(server: IPAddress, query: DnsMessage, timeoutMs: number, endpoint: TransferEndpoint): Promise<DnsMessage | null>;
+  stream(
+    server: IPAddress, query: DnsMessage, timeoutMs: number, endpoint: TransferEndpoint,
   ): Promise<{ messages: DnsMessage[]; frames: Uint8Array[] } | null>;
 }
 
 export function transferTransportOf(
   udp: DnsUdpClient, tcp: DnsTcpClient, port: number = DNS_PORT, observer?: DnsPacketObserver,
+  secure?: SecureTransferClient,
 ): ZoneTransferTransport {
   return {
-    askOverUdp: (server, query, timeoutMs) =>
-      observedExchange(observer, 'udp', server.toString(), query, () => askOverUdp(udp, server, query, port, timeoutMs)),
-    askTransfer: (server, query, timeoutMs) =>
-      queryDnsOverTcpStream(tcp, server, query, transferComplete, port, timeoutMs, observer),
+    askOverUdp: (server, query, timeoutMs, endpoint) => endpoint?.tls && secure
+      ? secure.single(server, query, timeoutMs, endpoint)
+      : observedExchange(observer, 'udp', server.toString(), query,
+        () => askOverUdp(udp, server, query, endpoint?.port ?? port, timeoutMs)),
+    askTransfer: (server, query, timeoutMs, endpoint) => endpoint?.tls && secure
+      ? secure.stream(server, query, timeoutMs, endpoint)
+      : queryDnsOverTcpStream(tcp, server, query, transferComplete, endpoint?.port ?? port, timeoutMs, observer),
   };
 }
 
@@ -36,6 +48,7 @@ export interface ZoneTransferClientOptions {
   readonly timeoutMs?: number;
   readonly key?: TsigKey;
   readonly keys?: ReadonlyMap<string, TsigKey>;
+  readonly endpoints?: ReadonlyMap<string, TransferEndpoint>;
 }
 
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -45,6 +58,7 @@ export class ZoneTransferClient {
   private readonly timeoutMs: number;
   private readonly key: TsigKey | null;
   private readonly keys: ReadonlyMap<string, TsigKey>;
+  private readonly endpoints: ReadonlyMap<string, TransferEndpoint>;
   private zone: Zone | null = null;
   private refreshing = false;
   private nextId = 1;
@@ -58,6 +72,7 @@ export class ZoneTransferClient {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.key = options.key ?? null;
     this.keys = options.keys ?? new Map();
+    this.endpoints = options.endpoints ?? new Map();
   }
 
   currentZone(): Zone | null { return this.zone; }
@@ -117,7 +132,7 @@ export class ZoneTransferClient {
     const sent = key ? signedDnsMessage(query, { key, timeSigned: now }) : query;
     const requestMac = key
       ? (sent.additionals[sent.additionals.length - 1].data as TsigRecordData).mac : null;
-    const result = await this.transport.askTransfer(primary, sent, this.timeoutMs);
+    const result = await this.transport.askTransfer(primary, sent, this.timeoutMs, this.endpoints.get(primary.toString()));
     if (!result) return null;
     if (result.messages[0].flags.rcode !== DnsRcode.NOERROR) return null;
     if (key) {
@@ -131,7 +146,7 @@ export class ZoneTransferClient {
 
   private async fetchPrimarySerial(primary: IPAddress): Promise<number | null> {
     const reply = await this.transport.askOverUdp(
-      primary, this.buildQuery(RRType.SOA), this.timeoutMs);
+      primary, this.buildQuery(RRType.SOA), this.timeoutMs, this.endpoints.get(primary.toString()));
     const soa = reply?.answers.find((rr) => rr.data.type === RRType.SOA);
     return soa ? (soa.data as SoaRecordData).serial : null;
   }

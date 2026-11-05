@@ -1,4 +1,4 @@
-export type SdwanProtocol = 'ping' | 'http' | 'dns' | 'tcp-echo' | 'udp-echo';
+export type SdwanProtocol = 'ping' | 'http' | 'dns' | 'tcp-echo' | 'udp-echo' | 'tcp-connect';
 
 export type SdwanServiceMode = 'auto' | 'manual' | 'priority' | 'sla' | 'load-balance';
 
@@ -31,6 +31,7 @@ export interface SdwanHealthCheck {
   readonly servers: readonly string[];
   readonly protocol: SdwanProtocol;
   readonly port: number;
+  readonly httpGet?: string;
   readonly intervalMs: number;
   readonly probeCount: number;
   readonly failtime: number;

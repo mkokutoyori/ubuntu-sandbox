@@ -168,6 +168,7 @@ export interface WinCommandContext {
 
   // DNS management
   getDnsServers(ifName: string): string[];
+  getDohServers(): ReadonlyArray<{ readonly autoUpgrade: boolean; readonly allowFallbackToUdp: boolean }>;
   setDnsServers(ifName: string, servers: string[]): void;
   getDnsMode(ifName: string): 'static' | 'dhcp';
   setDnsMode(ifName: string, mode: 'static' | 'dhcp'): void;

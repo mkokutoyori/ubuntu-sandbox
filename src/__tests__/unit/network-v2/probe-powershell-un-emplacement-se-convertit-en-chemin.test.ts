@@ -297,7 +297,7 @@ describe('a wildcard directly under a drive root', () => {
 describe('Get-PSDrive', () => {
   it('lists the drives in the order of their names', async () => {
     const shell = await powershell();
-    expect(await shell.run('(Get-PSDrive).Name -join ","')).toBe('Alias,C,D,Env,Function,HKCU,HKLM,Variable');
+    expect(await shell.run('(Get-PSDrive).Name -join ","')).toBe('Alias,C,Cert,D,Env,Function,HKCU,HKLM,Variable');
   });
 
   it('keeps the drives of one provider', async () => {

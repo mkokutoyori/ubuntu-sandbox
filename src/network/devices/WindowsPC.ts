@@ -474,6 +474,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.trustedCAs.push(cert);
   }
   getTrustedCertificateAuthorities(): readonly X509Certificate[] { return this.trustedCAs; }
+  removeTrustedCertificateAuthority(cert: X509Certificate): boolean {
+    const index = this.trustedCAs.indexOf(cert);
+    if (index < 0) return false;
+    this.trustedCAs.splice(index, 1);
+    return true;
+  }
 
   protected override dohPlanFor(server: IPAddress | IPv6Address): DnsHttpsPlan | null {
     const address = server.toString().toLowerCase();
@@ -4458,6 +4464,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
       // DNS management
       getDnsServers: (ifName: string) => this.effectiveDnsServers(ifName),
+      getDohServers: () => this.dnsClientSettings.dohServers(),
       setDnsServers: (ifName: string, servers: string[]) => {
         this.dnsConfig.set(ifName, { servers: [...servers], mode: 'static' });
       },

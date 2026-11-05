@@ -120,17 +120,20 @@ const SDWAN_HEALTH_CHECK: FortiTableSpec = {
     {
       ...choice('protocol', 'Protocol used to determine if the server is up.', [
         { keyword: 'ping', description: 'ICMP echo.' },
+        { keyword: 'tcp-connect', description: 'TCP three-way handshake.' },
         { keyword: 'http', description: 'HTTP GET.' },
         { keyword: 'dns', description: 'DNS query.' },
       ], 'ping'),
       unimplementedValues: {
-        http: 'only `ping` probes the server in this build; an HTTP probe would '
-          + 'need a health-check target that serves HTTP.',
-        dns: 'only `ping` probes the server in this build; a DNS probe would '
+        dns: '`ping`, `tcp-connect` and `http` probe the server in this build; a DNS probe would '
           + 'need a health-check target that answers queries.',
       },
     },
     count('port', 'Port the check connects to.', 0, 65535, 0),
+    {
+      ...text('http-get', 'URL used to communicate with the server (HTTP health checks).'),
+      availableWhen: (view) => view.effective('protocol')[0] === 'http',
+    },
     count('interval', 'Milliseconds between probes.', 20, 3600000, 500),
     count('probe-count', 'Probes sent per round.', 5, 30, 5),
     count('failtime', 'Consecutive failures before the member is dead.', 1, 3600, 5),
@@ -260,6 +263,7 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
         servers: [...check.effective('server')],
         protocol: (check.effective('protocol')[0] ?? 'ping') as SdwanProtocol,
         port: Number.parseInt(check.effective('port')[0] ?? '0', 10),
+        httpGet: check.effective('http-get')[0] || undefined,
         intervalMs: Number.parseInt(check.effective('interval')[0] ?? '500', 10),
         probeCount: Number.parseInt(check.effective('probe-count')[0] ?? '5', 10),
         failtime: Number.parseInt(check.effective('failtime')[0] ?? '5', 10),

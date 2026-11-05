@@ -8,7 +8,12 @@
  * si bien que seul un echange HTTPS peut aboutir. Le nom du modele est verifie dans le certificat, et le client n'approuve que
  * `Cert:\LocalMachine\Root` : `Import-Certificate` (qui n'existait pas) y range l'autorite.
  *
- * Avant la correction (git stash push -- src/network src/powershell) : 4 cas sur 9 tombent : l'echange DoH avec autorite importee (rien ne
+ * Cinq cas ajoutes pour le lecteur `Cert:` (Get-ChildItem, Get-Item, Test-Path, Remove-Item sur LocalMachine\\Root et \\My, avec la vraie
+ * empreinte SHA-1) et un pour `netsh dnsclient show encryption`, qui rendait un texte fige « Disabled » quel que soit le registre : avant
+ * (git stash push -- src/network src/powershell sur le commit qui livre le client DoH) 6 cas sur 16 tombent, les dix autres sont les cas
+ * du client DoH deja livres et leurs temoins.
+ *
+ * Premiere livraison (git stash push -- src/network src/powershell) : 4 cas sur 9 tombent : l'echange DoH avec autorite importee (rien ne
  * partait en HTTPS), l'autorite non importee sans repli (l'UDP ouvert repondait quand meme), le modele au nom etranger sans repli (idem),
  * et Import-Certificate (la cmdlet n'existait pas). Passent des deux cotes : les deux temoins (UDP ouvert sans entree, la resolution
  * aboutit ; UDP ferme sans entree, rien n'aboutit), l'entree sans AutoUpgrade (elle n'agit pas), le repli autorise sur un UDP ouvert
@@ -138,5 +143,77 @@ describe('client DNS de Windows en DNS sur HTTPS', () => {
     expect(await trustAuthority()).toMatch(/Subject\s+:\s+CN=Test CA/);
     expect(await ps('Import-Certificate -FilePath C:\\absent.pem -CertStoreLocation Cert:\\LocalMachine\\Root')).toContain("Cannot find path 'C:\\absent.pem'");
     expect(await ps(`Import-Certificate -FilePath ${CA_PATH} -CertStoreLocation Cert:\\CurrentUser\\My`)).toContain('cannot receive a certificate without a private key');
+  }, LONG);
+});
+
+describe('Cert: lecteur de magasins de certificats', () => {
+  const THUMBPRINT = /^[0-9A-F]{40}$/m;
+
+  it('temoin : la racine locale est vide avant l\'import, puis porte l\'autorite importee avec sa vraie empreinte', async () => {
+    const { ps, trustAuthority } = await lab({ udpOpen: true });
+    expect(await ps('Get-ChildItem Cert:\\LocalMachine\\Root')).not.toContain('CN=Test CA');
+    await trustAuthority();
+    const listing = await ps('Get-ChildItem Cert:\\LocalMachine\\Root');
+    expect(listing).toContain('PSParentPath: Microsoft.PowerShell.Security\\Certificate::LocalMachine\\Root');
+    expect(listing).toMatch(/Thumbprint\s+Subject/);
+    expect(listing).toMatch(/^[0-9A-F]{40}\s+CN=Test CA$/m);
+  }, LONG);
+
+  it('la meme empreinte sort de Import-Certificate, du lecteur Cert: et de Get-Item', async () => {
+    const { ps, trustAuthority } = await lab({ udpOpen: true });
+    const imported = await trustAuthority();
+    const thumbprint = /Thumbprint\s+:\s+([0-9A-F]{40})/.exec(imported)?.[1];
+    expect(thumbprint).toMatch(/^[0-9A-F]{40}$/);
+    expect(await ps(`Get-Item Cert:\\LocalMachine\\Root\\${thumbprint}`)).toContain('CN=Test CA');
+    expect(await ps(`Test-Path Cert:\\LocalMachine\\Root\\${thumbprint}`)).toBe('True');
+    expect(await ps(`Test-Path Cert:\\LocalMachine\\Root\\${'0'.repeat(40)}`)).toBe('False');
+    expect(await ps('Test-Path Cert:\\LocalMachine\\Root')).toBe('True');
+    expect(await ps('Test-Path Cert:\\LocalMachine\\Nope')).toBe('False');
+  }, LONG);
+
+  it('Remove-Item retire l\'autorite : le client DoH cesse de lui faire confiance', async () => {
+    const { ps, resolve, configure, trustAuthority } = await lab({ udpOpen: false });
+    const thumbprint = /Thumbprint\s+:\s+([0-9A-F]{40})/.exec(await trustAuthority())?.[1];
+    await configure('-AutoUpgrade');
+    expect(await resolve()).toContain('203.0.113.20');
+    await ps(`Remove-Item Cert:\\LocalMachine\\Root\\${thumbprint}`);
+    expect(await ps(`Test-Path Cert:\\LocalMachine\\Root\\${thumbprint}`)).toBe('False');
+    expect(await resolve()).not.toContain('203.0.113.20');
+  }, LONG);
+
+  it('le magasin personnel montre le certificat de New-SelfSignedCertificate sous la meme empreinte', async () => {
+    const { ps } = await lab({ udpOpen: true });
+    const created = await ps('New-SelfSignedCertificate -DnsName web.banquehorizon.com');
+    const thumbprint = /Thumbprint\s+:\s+([0-9A-F]{40})/.exec(created)?.[1];
+    expect(thumbprint).toMatch(THUMBPRINT);
+    const listing = await ps('Get-ChildItem Cert:\\LocalMachine\\My');
+    expect(listing).toContain(thumbprint);
+    expect(listing).toContain('CN=web.banquehorizon.com');
+  }, LONG);
+
+  it('un magasin inconnu est refuse comme un chemin inexistant, et les magasins se listent', async () => {
+    const { ps } = await lab({ udpOpen: true });
+    expect(await ps('Get-ChildItem Cert:\\LocalMachine\\Nope')).toContain("Cannot find path 'Cert:\\LocalMachine\\Nope' because it does not exist.");
+    const stores = await ps('Get-ChildItem Cert:\\LocalMachine');
+    for (const name of ['CA', 'My', 'Root']) expect(stores).toContain(name);
+  }, LONG);
+});
+
+describe('netsh dnsclient show encryption', () => {
+  it('rend l\'etat que Add-DnsClientDohServerAddress a range, au lieu d\'un texte fige', async () => {
+    const { ps, configure } = await lab({ udpOpen: true });
+    const before = await ps('netsh dnsclient show encryption');
+    expect(before).toContain('Auto-upgrade:          Disabled');
+    await configure('-AutoUpgrade');
+    const after = await ps('netsh dnsclient show encryption');
+    expect(after).toContain('DNS over HTTPS (DoH):  Enabled');
+    expect(after).toContain('Auto-upgrade:          Enabled');
+    expect(after).toContain('No encryption fallback: Enabled');
+  }, LONG);
+
+  it('un repli sur l\'UDP autorise leve « No encryption fallback »', async () => {
+    const { ps, configure } = await lab({ udpOpen: true });
+    await configure('-AutoUpgrade -AllowFallbackToUdp');
+    expect(await ps('netsh dnsclient show encryption')).toContain('No encryption fallback: Disabled');
   }, LONG);
 });

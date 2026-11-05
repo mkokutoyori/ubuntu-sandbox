@@ -48,6 +48,13 @@ function dialFailureOf(socket: { connectRefused?: boolean; everEstablished?: boo
   return { dialFailed: socket.connectRefused || socket.everEstablished ? 'refused' : 'timeout' };
 }
 
+export function synchronousDialFailure(
+  stack: TcpStack, destination: string, socket: TcpSocket | null,
+): TcpDialFailure['dialFailed'] {
+  if (socket === null) return stack.hasEgressTo(destination) ? 'timeout' : 'unreachable';
+  return socket.closed ? dialFailureOf(socket).dialFailed : 'timeout';
+}
+
 export function socketStream(socket: TcpSocket): TcpStream {
   return {
     localIp: socket.localIp,

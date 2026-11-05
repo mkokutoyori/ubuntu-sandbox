@@ -39,13 +39,26 @@ export interface NamedDns64 {
   readonly breakDnssec: boolean;
 }
 
+export interface NamedPrimary {
+  readonly address: string;
+  readonly port: number | null;
+  readonly key: string | null;
+  readonly tls: string | null;
+}
+
+export interface NamedPlainListen {
+  readonly port: number;
+  readonly addresses: AddressMatchList;
+  readonly ipv6: boolean;
+}
+
 export interface NamedOptions {
   readonly dns64: readonly NamedDns64[];
   readonly directory: string;
   readonly recursion: boolean;
   readonly queryLog: boolean;
   readonly dnssecValidation: DnssecValidationMode;
-  readonly listenOnPort: number;
+  readonly plainListens: readonly NamedPlainListen[];
   readonly servfailTtl: number;
   readonly maxCacheTtl: number | null;
   readonly maxNcacheTtl: number;
@@ -53,7 +66,6 @@ export interface NamedOptions {
   readonly ednsUdpSize: number;
   readonly version: VersionOption;
   readonly emptyZonesEnable: boolean;
-  readonly listenOn: AddressMatchList;
   readonly listeners: readonly NamedListener[];
   readonly allowQuery: AddressMatchList;
   readonly allowRecursion: AddressMatchList;
@@ -68,8 +80,7 @@ export interface NamedZone {
   readonly name: string;
   readonly type: ZoneType;
   readonly file: string | null;
-  readonly primaries: readonly string[];
-  readonly primaryKeys: ReadonlyMap<string, string>;
+  readonly primaries: readonly NamedPrimary[];
   readonly alsoNotify: readonly string[];
   readonly notify: NotifyMode | null;
   readonly notifyToSoa: boolean | null;
@@ -116,6 +127,7 @@ export interface NamedConfig {
   readonly keys: ReadonlyMap<string, NamedKey>;
   readonly controls: readonly NamedControls[];
   readonly trustAnchors: readonly ResourceRecord<DsRecordData>[];
+  readonly tlsProfiles: ReadonlyMap<string, NamedTlsProfile>;
 }
 
 const DEFAULT_DIRECTORY = '/var/cache/bind';
@@ -200,7 +212,7 @@ interface MutableOptions {
   recursion: boolean;
   queryLog: boolean;
   dnssecValidation: DnssecValidationMode;
-  listenOnPort: number;
+  plainListens: NamedPlainListen[];
   servfailTtl: number;
   maxCacheTtl: number | null;
   maxNcacheTtl: number;
@@ -208,7 +220,6 @@ interface MutableOptions {
   ednsUdpSize: number;
   version: VersionOption;
   emptyZonesEnable: boolean;
-  listenOn: AddressMatchList;
   listeners: NamedListener[];
   allowQuery: AddressMatchList;
   allowRecursion: AddressMatchList;
@@ -226,7 +237,7 @@ function defaultOptions(): MutableOptions {
     recursion: true,
     queryLog: false,
     dnssecValidation: 'auto',
-    listenOnPort: DEFAULT_DNS_PORT,
+    plainListens: [],
     servfailTtl: DEFAULT_SERVFAIL_TTL,
     maxCacheTtl: DEFAULT_MAX_CACHE_TTL,
     maxNcacheTtl: DEFAULT_MAX_NCACHE_TTL,
@@ -234,7 +245,6 @@ function defaultOptions(): MutableOptions {
     ednsUdpSize: DEFAULT_EDNS_UDP_SIZE,
     version: { kind: 'real' },
     emptyZonesEnable: true,
-    listenOn: AddressMatchList.any(),
     listeners: [],
     allowQuery: AddressMatchList.any(),
     allowRecursion: AddressMatchList.localTrust(),
@@ -282,16 +292,13 @@ function parseOptions(
           pendingListeners.push({ header, addresses: AddressMatchList.fromStatements(requireBlock(entry), acls), statement: entry });
           break;
         }
-        let port = options.listenOnPort;
+        let port = DEFAULT_DNS_PORT;
         if (args[0] === 'port') {
           const parsed = Number(args[1]);
           if (!Number.isInteger(parsed)) fail(entry, `expected port number near '${args[1] ?? ';'}'`);
           port = parsed;
         }
-        if (keyword === 'listen-on') {
-          options.listenOnPort = port;
-          options.listenOn = AddressMatchList.fromStatements(requireBlock(entry), acls);
-        }
+        options.plainListens.push({ port, addresses: AddressMatchList.fromStatements(requireBlock(entry), acls), ipv6: keyword === 'listen-on-v6' });
         break;
       }
       case 'servfail-ttl': {
@@ -413,8 +420,7 @@ function parseDns64(
 interface ZoneDraft {
   type: ZoneType | null;
   file: string | null;
-  primaries: string[];
-  primaryKeys: Map<string, string>;
+  primaries: NamedPrimary[];
   alsoNotify: string[];
   notify: NotifyMode | null;
   notifyToSoa: boolean | null;
@@ -429,13 +435,43 @@ interface ZoneDraft {
 
 const AUTHORITATIVE_ONLY_OPTIONS: readonly string[] = ['notify', 'notify-to-soa', 'allow-query'];
 
+function parsePrimary(item: NamedConfStatement, tlsNames: ReadonlySet<string>): NamedPrimary {
+  const words = item.values.map((value) => value.text);
+  if (!IPAddress.isValid(words[0])) fail(item, `expected IP address near '${words[0]}'`);
+  let port: number | null = null;
+  let key: string | null = null;
+  let tls: string | null = null;
+  let index = 1;
+  if (words[index] === 'port') {
+    const parsed = Number(words[index + 1]);
+    if (!Number.isInteger(parsed)) fail(item, `expected port number or '*' near '${words[index + 1] ?? ';'}'`);
+    if (parsed < 0 || parsed > 65535) fail(item, `port number out of range near '${words[index + 1]}'`);
+    port = parsed;
+    index += 2;
+  }
+  if (words[index] === 'key') {
+    if (words[index + 1] === undefined) fail(item, "unexpected token near ';'");
+    key = words[index + 1];
+    index += 2;
+  }
+  if (words[index] === 'tls') {
+    if (words[index + 1] === undefined) fail(item, "unexpected token near ';'");
+    tls = words[index + 1];
+    if (tls !== 'ephemeral' && !tlsNames.has(tls)) fail(item, `tls '${tls}' is not defined`);
+    index += 2;
+  }
+  if (index < words.length) fail(item, `unexpected '${words[index]}'`);
+  return { address: words[0], port, key, tls };
+}
+
 function parseZoneEntries(
   statement: NamedConfStatement,
   zoneName: string,
   acls: ReadonlyMap<string, AddressMatchList>,
+  tlsNames: ReadonlySet<string>,
 ): ZoneDraft {
   const draft: ZoneDraft = {
-    type: null, file: null, primaries: [], primaryKeys: new Map(), alsoNotify: [], notify: null, notifyToSoa: null,
+    type: null, file: null, primaries: [], alsoNotify: [], notify: null, notifyToSoa: null,
     allowQuery: null, allowTransfer: null, allowUpdate: null, updatePolicy: null, forwarders: [], forward: null,
     authoritativeOnly: new Map(),
   };
@@ -457,13 +493,7 @@ function parseZoneEntries(
         break;
       case 'primaries':
       case 'masters': {
-        for (const item of requireBlock(entry)) {
-          const words = item.values.map((value) => value.text);
-          if (!IPAddress.isValid(words[0])) fail(item, `expected IP address near '${words[0]}'`);
-          if (words.length === 3 && words[1] === 'key') draft.primaryKeys.set(words[0], words[2]);
-          else if (words.length !== 1) fail(item, `unexpected '${words[1]}'`);
-          draft.primaries.push(words[0]);
-        }
+        for (const item of requireBlock(entry)) draft.primaries.push(parsePrimary(item, tlsNames));
         break;
       }
       case 'also-notify':
@@ -535,6 +565,7 @@ function parseZone(
   directory: string,
   acls: ReadonlyMap<string, AddressMatchList>,
   seen: Map<string, NamedZone>,
+  tlsNames: ReadonlySet<string>,
 ): NamedZone {
   const nameValue = statement.values[1];
   if (!nameValue) fail(statement, "expected zone name after 'zone'");
@@ -545,7 +576,7 @@ function parseZone(
     fail(statement, `zone '${name}': already exists previous definition: ${previous.declaredAt.file}:${previous.declaredAt.line}`);
   }
 
-  const draft = parseZoneEntries(statement, name, acls);
+  const draft = parseZoneEntries(statement, name, acls, tlsNames);
   const type = validateZone(statement, name, draft);
 
   return {
@@ -553,7 +584,6 @@ function parseZone(
     type,
     file: resolveZoneFile(draft.file, directory),
     primaries: draft.primaries,
-    primaryKeys: draft.primaryKeys,
     alsoNotify: draft.alsoNotify,
     notify: draft.notify,
     notifyToSoa: draft.notifyToSoa,
@@ -785,6 +815,12 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     }
   }
 
+  for (const ipv6 of [false, true]) {
+    if (!options.plainListens.some((listen) => listen.ipv6 === ipv6)) {
+      options.plainListens.push({ port: DEFAULT_DNS_PORT, addresses: AddressMatchList.any(), ipv6 });
+    }
+  }
+
   for (const pending of pendingListeners) {
     options.listeners.push(resolveListener(pending.header, pending.addresses, pending.statement, keywordOf(pending.statement) === 'listen-on-v6', tlsProfiles, httpProfiles));
   }
@@ -792,7 +828,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const zoneMap = new Map<string, NamedZone>();
   const zones: NamedZone[] = [];
   for (const statement of zoneStatements) {
-    const zone = parseZone(statement, options.directory, acls, zoneMap);
+    const zone = parseZone(statement, options.directory, acls, zoneMap, new Set(tlsProfiles.keys()));
     zoneMap.set(zone.name, zone);
     zones.push(zone);
   }
@@ -810,5 +846,6 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     keys,
     controls,
     trustAnchors,
+    tlsProfiles,
   };
 }

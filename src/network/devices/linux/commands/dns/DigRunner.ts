@@ -8,7 +8,8 @@ import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
 import { rrTypeFromName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn, DnsQueryOptions } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
-import { pemToCertChain } from '@/network/pki/pem';
+import { pemToCertChain, pemToPrivateKey } from '@/network/pki/pem';
+import { privateKeyPairsWith } from '@/network/pki/keyPairing';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import type {
   ARecordData, NsRecordData, ResourceRecord, ResourceRecordData,
@@ -48,11 +49,13 @@ interface DigInvocation {
   /** `+tls` — DNS-over-TLS (RFC 7858), port 853 par défaut. */
   tls: boolean;
   /** `+https[=chemin]`, `+https-get[=chemin]` — DNS-over-HTTPS (RFC 8484), port 443 par défaut. */
-  https: { readonly path: string; readonly method: 'GET' | 'POST' } | null;
+  https: { readonly path: string; readonly method: 'GET' | 'POST'; readonly plain: boolean } | null;
   /** `+tls-ca[=fichier]` — authentifie le serveur ; sans fichier, les ancres du système. */
   tlsCa: { readonly file: string | null } | null;
   /** `+tls-hostname=nom` — nom présenté (SNI) et vérifié dans le certificat. */
   tlsHostname: string | null;
+  tlsCertFile: string | null;
+  tlsKeyFile: string | null;
   recurse: boolean;
   dnssec: boolean;
   bufsize: number | null;
@@ -89,6 +92,8 @@ function newInvocation(): DigInvocation {
     https: null,
     tlsCa: null,
     tlsHostname: null,
+    tlsCertFile: null,
+    tlsKeyFile: null,
     recurse: true,
     dnssec: false,
     bufsize: null,
@@ -122,6 +127,8 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
   let https: DigInvocation['https'] = null;
   let tlsCa: DigInvocation['tlsCa'] = null;
   let tlsHostname: string | null = null;
+  let tlsCertFile: string | null = null;
+  let tlsKeyFile: string | null = null;
   let recurse = true;
   let dnssec = false;
   let bufsize: number | null = null;
@@ -157,13 +164,19 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     else if (arg === '+noignore') ignoreTruncation = false;
     else if (arg === '+tls') tls = true;
     else if (arg === '+notls') tls = false;
-    else if (/^\+https(-post)?(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'POST' };
-    else if (/^\+https-get(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'GET' };
-    else if (arg === '+nohttps') https = null;
-    else if (/^\+tls-ca(=|$)/.test(arg)) tlsCa = { file: optionValue(arg) };
+    else if (/^\+https(-post)?(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'POST', plain: false };
+    else if (/^\+https-get(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'GET', plain: false };
+    else if (/^\+http-plain(-post)?(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'POST', plain: true };
+    else if (/^\+http-plain-get(=|$)/.test(arg)) https = { path: optionValue(arg) ?? DEFAULT_DOH_PATH, method: 'GET', plain: true };
+    else if (arg === '+nohttps' || arg === '+nohttp-plain') https = null;
+    else if (/^\+tls-ca(=|$)/.test(arg)) { tlsCa = { file: optionValue(arg) }; tls = true; }
     else if (arg === '+notls-ca') tlsCa = null;
-    else if (arg.startsWith('+tls-hostname=')) tlsHostname = optionValue(arg);
+    else if (arg.startsWith('+tls-hostname=')) { tlsHostname = optionValue(arg); tls = true; }
     else if (arg === '+notls-hostname') tlsHostname = null;
+    else if (arg.startsWith('+tls-certfile=')) { tlsCertFile = optionValue(arg); tls = true; }
+    else if (arg === '+notls-certfile') tlsCertFile = null;
+    else if (arg.startsWith('+tls-keyfile=')) { tlsKeyFile = optionValue(arg); tls = true; }
+    else if (arg === '+notls-keyfile') tlsKeyFile = null;
     else if (arg === '+norecurse') recurse = false;
     else if (arg === '+recurse') recurse = true;
     else if (arg === '+dnssec') dnssec = true;
@@ -215,6 +228,8 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     g.https = https;
     g.tlsCa = tlsCa;
     g.tlsHostname = tlsHostname;
+    g.tlsCertFile = tlsCertFile;
+    g.tlsKeyFile = tlsKeyFile;
     g.recurse = recurse;
     g.dnssec = dnssec;
     g.bufsize = bufsize;
@@ -237,9 +252,8 @@ function optionValue(arg: string): string | null {
   return separator === -1 ? null : arg.slice(separator + 1);
 }
 
-/** Le port réellement interrogé : 443 sous `+https`, 853 sous `+tls`, 53 sinon. */
 function digPort(invocation: DigInvocation): number {
-  return invocation.port ?? (invocation.https !== null ? 443 : invocation.tls ? 853 : 53);
+  return invocation.port ?? (invocation.https !== null ? (invocation.https.plain ? 80 : 443) : invocation.tls ? 853 : 53);
 }
 
 function commandLines(invocation: DigInvocation): string[] {
@@ -307,7 +321,10 @@ function pushSection(
 }
 
 function transportName(invocation: DigInvocation): string {
-  if (invocation.https !== null) return invocation.https.method === 'GET' ? 'HTTPS-GET' : 'HTTPS';
+  if (invocation.https !== null) {
+    const base = invocation.https.plain ? 'HTTP' : 'HTTPS';
+    return invocation.https.method === 'GET' ? `${base}-GET` : base;
+  }
   return invocation.tls ? 'TLS' : invocation.tcp ? 'TCP' : 'UDP';
 }
 
@@ -460,7 +477,14 @@ async function traceOutput(invocation: DigInvocation, query: DnsQueryFn): Promis
   return lines.join('\n');
 }
 
+const STREAM_FAILURE_TEXT: Readonly<Record<'refused' | 'alpn' | 'tls', string>> = {
+  refused: 'connection refused',
+  alpn: 'ALPN for HTTP/2 failed',
+  tls: 'TLS error',
+};
+
 interface Exchange {
+  readonly bareFailure: boolean;
   readonly message: DnsMessage | null;
   readonly startedAt: number;
   readonly communications: readonly string[];
@@ -474,6 +498,7 @@ async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, option
   const communications: string[] = [];
   let refused = false;
   let answeredWithError = false;
+  let bareFailure = false;
   let tlsFailure: string | null = null;
   const attemptOptions: DnsQueryOptions = {
     ...options,
@@ -482,6 +507,19 @@ async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, option
       communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: connection refused`);
     },
     onTlsVerifyFailure: (text) => { tlsFailure = text; },
+    onStreamFailure: (failure) => {
+      answeredWithError = true;
+      const where = `${invocation.server}#${digPort(invocation)}`;
+      if (failure === 'eof') {
+        communications.push(`;; communications error to ${where}: end of file`);
+        return;
+      }
+      bareFailure = true;
+      communications.push(
+        `;; Connection to ${where}(${invocation.server}) for ${invocation.domain} failed: ${STREAM_FAILURE_TEXT[failure]}.`,
+        DIG_NO_SERVERS,
+      );
+    },
     onHttpFailure: () => {
       answeredWithError = true;
       communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: failure`);
@@ -498,7 +536,7 @@ async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, option
     if (message || tlsFailure !== null) break;
     if (!refused && !answeredWithError) communications.push(`;; communications error to ${invocation.server}#${digPort(invocation)}: timed out`);
   }
-  if (!message) return { message, startedAt, communications, retriedOverTcp: false, tlsFailure };
+  if (!message) return { message, startedAt, communications, retriedOverTcp: false, tlsFailure, bareFailure };
 
   let retriedOverTcp = false;
   if (message.flags.tc && !options.tcp && !options.tls && !options.https && !invocation.ignoreTruncation) {
@@ -511,7 +549,7 @@ async function exchangeWith(invocation: DigInvocation, query: DnsQueryFn, option
       retriedOverTcp = true;
     }
   }
-  return { message, startedAt, communications, retriedOverTcp, tlsFailure };
+  return { message, startedAt, communications, retriedOverTcp, tlsFailure, bareFailure };
 }
 
 async function executeSingleQuery(
@@ -525,8 +563,11 @@ async function executeSingleQuery(
     return traceOutput(invocation, query);
   }
 
+  if ((invocation.tlsCertFile === null) !== (invocation.tlsKeyFile === null)) return TLS_IDENTITY_INCOMPLETE;
   const authentication = tlsAuthentication(invocation, tls);
   if (authentication === 'context') return TLS_CONTEXT_FAILURE;
+  const identity = tlsClientIdentity(invocation, tls);
+  if (identity === 'context') return TLS_CONTEXT_FAILURE;
 
   const options: DnsQueryOptions = {
     recursionDesired: invocation.recurse,
@@ -534,6 +575,7 @@ async function executeSingleQuery(
     tls: invocation.tls && invocation.https === null,
     ...(invocation.https === null ? {} : { https: invocation.https }),
     ...(authentication === null ? { tlsVerify: false } : { tlsVerify: true, tlsAnchors: authentication.anchors, serverName: authentication.serverName }),
+    ...(identity === null ? {} : { tlsClientIdentity: identity }),
     dnssecOk: invocation.dnssec,
     udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : invocation.noEdns ? undefined : DEFAULT_EDNS_BUFFER),
     port: invocation.port ?? undefined,
@@ -551,6 +593,7 @@ async function executeSingleQuery(
   if (!message && exchange.tlsFailure !== null) {
     return `;; TLS peer certificate verification for ${asked.server}#${digPort(asked)} failed: ${exchange.tlsFailure}`;
   }
+  if (!message && exchange.bareFailure) return exchange.communications.join('\n');
   if (!message) return noServersLine(asked, exchange.communications);
   if (asked.qtype === 'AXFR' || asked.qtype === 'IXFR') {
     return transferOutput(asked, message, PathClock.now() - startedAt);
@@ -566,12 +609,22 @@ export interface DigTlsContext {
 }
 
 const TLS_CONTEXT_FAILURE = ';; TLS context cannot be created';
+const TLS_IDENTITY_INCOMPLETE = ';; both TLS client certificate and key file must be specified a the same time';
+
+function tlsClientIdentity(invocation: DigInvocation, tls: DigTlsContext): NonNullable<DnsQueryOptions['tlsClientIdentity']> | 'context' | null {
+  const secure = invocation.tls || invocation.https !== null;
+  if (!secure || invocation.tlsCertFile === null || invocation.tlsKeyFile === null) return null;
+  const certificates = pemToCertChain(tls.readFile?.(invocation.tlsCertFile) ?? '');
+  const key = pemToPrivateKey(tls.readFile?.(invocation.tlsKeyFile) ?? '');
+  if (certificates.length === 0 || key === null || !privateKeyPairsWith(certificates[0].publicKey, key)) return 'context';
+  return { certificate: certificates[0], chain: certificates.slice(1), privateKey: key };
+}
 
 function tlsAuthentication(
   invocation: DigInvocation, tls: DigTlsContext,
 ): { anchors: readonly X509Certificate[]; serverName: string } | 'context' | null {
   const secure = invocation.tls || invocation.https !== null;
-  if (!secure || (invocation.tlsCa === null && invocation.tlsHostname === null)) return null;
+  if (!secure || (invocation.tlsCa === null && invocation.tlsHostname === null && invocation.tlsCertFile === null)) return null;
   const file = invocation.tlsCa?.file ?? null;
   let anchors: readonly X509Certificate[];
   if (file === null) {

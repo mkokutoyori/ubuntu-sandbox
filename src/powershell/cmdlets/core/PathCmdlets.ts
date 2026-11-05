@@ -25,10 +25,30 @@ import {
 } from './NamespaceDrives';
 import { pathInfoOf, providerPathOf } from './ProviderPaths';
 import { registryProviderPath } from '@/network/devices/windows/PSRegistryProvider';
+import {
+  certificateProviderPath, isCertificatePath, listCertificatePath, parseCertificatePath, type CertificateListing,
+} from '@/network/devices/windows/PSCertificatePaths';
 import type { DirEntry } from '@/powershell/providers/PSProviders';
 
 function isRegistryPath(path: string): boolean {
   return /^(HKLM|HKCU|HKCR|HKU|HKCC):/i.test(path) || /^HKEY_/i.test(path);
+}
+
+function certificateObjects(ctx: CmdletContext, path: string): PSValue {
+  const pki = ctx.providers.pki;
+  const listing: CertificateListing | null = pki === undefined ? null : listCertificatePath(pki, path);
+  if (listing === null) {
+    ctx.emitFailure(pathNotFound(path));
+    return [];
+  }
+  if (listing.kind !== 'certificates') {
+    return listing.names.map((name) => ({ Name: name, PSChildName: name })) as PSValue;
+  }
+  const parent = certificateProviderPath(listing.location, listing.store);
+  return listing.entries.map((entry) => ({
+    Thumbprint: entry.thumbprint, Subject: entry.subject, Issuer: entry.issuer, NotBefore: new Date(entry.notBefore).toISOString(),
+    NotAfter: new Date(entry.notAfter).toISOString(), PSParentPath: parent,
+  })) as PSValue;
 }
 
 const CONTENT_NOT_SUPPORTED = 'Cannot use interface. The IContentCmdletProvider interface is not implemented by this provider.';
@@ -251,6 +271,10 @@ export class TestPathCmdlet implements ICmdlet {
   private exists(ctx: CmdletContext, path: string): boolean {
     if (!path) return false;
 
+    if (isCertificatePath(path)) {
+      return ctx.providers.pki !== undefined && listCertificatePath(ctx.providers.pki, path) !== null;
+    }
+
     const namespace = namespaceTarget(path);
     if (namespace !== null) return namespaceExists(ctx, namespace);
 
@@ -354,6 +378,7 @@ export class GetChildItemCmdlet implements ICmdlet {
       // transparently so callers see a familiar Get-ChildItem output.
       return ctx.providers.registry.getChildItem(path);
     }
+    if (isCertificatePath(path)) return certificateObjects(ctx, path);
 
     const namespace = namespaceTarget(path);
     if (namespace !== null) return listNamespace(ctx, namespace, nameOnly);
@@ -960,6 +985,10 @@ export class RemoveItemCmdlet implements ICmdlet {
         ctx.emitError("Remove-Item : Cannot bind argument to parameter 'Path' because it is an empty string.");
         continue;
       }
+      if (isCertificatePath(path)) {
+        this.removeCertificate(ctx, path);
+        continue;
+      }
       const namespace = namespaceTarget(path);
       if (namespace !== null) {
         removeNamespaceItems(ctx, namespace);
@@ -977,6 +1006,19 @@ export class RemoveItemCmdlet implements ICmdlet {
       this.removeFromFileSystem(ctx, fs, path, recurse);
     }
     return null;
+  }
+
+  private removeCertificate(ctx: CmdletContext, path: string): void {
+    const pki = ctx.providers.pki;
+    const listing = pki === undefined ? null : listCertificatePath(pki, path);
+    if (pki === undefined || listing === null || listing.kind !== 'certificates' || parseCertificatePath(path).thumbprint === null) {
+      ctx.emitFailure(pathNotFound(path));
+      return;
+    }
+    for (const entry of listing.entries) {
+      if (!ctx.shouldProcess(`Item: ${certificateProviderPath(listing.location, listing.store)}\\${entry.thumbprint}`, 'Remove Certificate')) continue;
+      pki.removeCertificate(listing.location, listing.store, entry.thumbprint);
+    }
   }
 
   private removeFromFileSystem(ctx: CmdletContext, fs: FileSystem, path: string, recurse: boolean): void {
@@ -1701,6 +1743,10 @@ export class GetItemCmdlet implements ICmdlet {
     if (isRegistryPath(path)) {
       if (!ctx.providers.registry) requireRegistryProvider(path);
       return ctx.providers.registry.getItem(path);
+    }
+    if (isCertificatePath(path)) {
+      const entries = listOf(certificateObjects(ctx, path));
+      return entries.length === 0 ? null : entries.length === 1 ? entries[0] : entries;
     }
     const namespace = namespaceTarget(path);
     if (namespace !== null) {

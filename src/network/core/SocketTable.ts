@@ -92,6 +92,32 @@ export class SocketTable {
     return addr.includes(':');
   }
 
+  private static isWildcardAddress(addr: string): boolean {
+    return addr === '0.0.0.0' || addr === '::';
+  }
+
+  private bindConflicts(protocol: SocketProtocol, port: number, localAddress: string): boolean {
+    const v6 = SocketTable.isV6Address(localAddress);
+    let held = false;
+    for (const other of this.sockets.values()) {
+      if (other.protocol !== protocol || other.localPort !== port || SocketTable.isV6Address(other.localAddress) !== v6) continue;
+      if (other.remoteAddress !== '*') continue;
+      held = true;
+      if (other.localAddress === localAddress || SocketTable.isWildcardAddress(other.localAddress)
+        || SocketTable.isWildcardAddress(localAddress)) return true;
+    }
+    return !held;
+  }
+
+  private releaseKey(entry: SocketEntry): void {
+    const v6 = SocketTable.isV6Address(entry.localAddress);
+    for (const other of this.sockets.values()) {
+      if (other !== entry && other.remoteAddress === '*' && other.protocol === entry.protocol && other.localPort === entry.localPort
+        && SocketTable.isV6Address(other.localAddress) === v6) return;
+    }
+    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
+  }
+
   private bindKey(protocol: SocketProtocol, port: number, localAddress: string): string {
     const family = SocketTable.isV6Address(localAddress) ? 'v6' : 'v4';
     return `${protocol}:${family}:${port}`;
@@ -117,7 +143,8 @@ export class SocketTable {
       throw new Error(`EACCES: Permission denied binding port ${localPort}/${protocol}`);
     }
     const key = this.bindKey(protocol, localPort, localAddress);
-    if (this.bindings.has(key) && !this.joinsReusePortGroup(protocol, localPort, localAddress, options)) {
+    if (this.bindings.has(key) && this.bindConflicts(protocol, localPort, localAddress)
+      && !this.joinsReusePortGroup(protocol, localPort, localAddress, options)) {
       const holder = this.findByBinding(protocol, localPort, localAddress);
       const timeWaitOnly = holder !== undefined && holder.state === 'TIME_WAIT';
       const reuse = options?.reuseAddr === true || this.twReuseEnabled;
@@ -296,12 +323,7 @@ export class SocketTable {
   }
 
   private releaseBinding(entry: SocketEntry): void {
-    for (const other of this.sockets.values()) {
-      if (other !== entry && other.reusePort === true && entry.reusePort === true
-        && other.protocol === entry.protocol && other.localPort === entry.localPort
-        && other.localAddress === entry.localAddress) return;
-    }
-    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
+    this.releaseKey(entry);
   }
 
   private findByBinding(protocol: SocketProtocol, port: number, localAddress: string): SocketEntry | undefined {
@@ -317,8 +339,8 @@ export class SocketTable {
   private evictTimeWait(entry: SocketEntry): void {
     const timer = this.twTimers.get(entry.id);
     if (timer) { clearTimeout(timer); this.twTimers.delete(entry.id); }
-    this.bindings.delete(this.bindKey(entry.protocol, entry.localPort, entry.localAddress));
     this.drop(entry);
+    this.releaseKey(entry);
   }
 
   /**
@@ -474,6 +496,10 @@ export class SocketTable {
   }
 
   // ─── Queries ────────────────────────────────────────────────────────
+
+  isAddressBound(protocol: SocketProtocol, localAddress: string, port: number): boolean {
+    return this.bindings.has(this.bindKey(protocol, port, localAddress)) && this.bindConflicts(protocol, port, localAddress);
+  }
 
   isPortBound(port: number, protocol: SocketProtocol, family: 'v4' | 'v6' | 'any' = 'any'): boolean {
     if (family === 'any') {
