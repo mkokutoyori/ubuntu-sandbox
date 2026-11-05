@@ -4543,7 +4543,7 @@ and not evaluated. `mount`/`umount` option grammar and statuses are done; their 
 Swap areas are regular files only (`MemoryProfile.swapAreas`, a signature page written by `mkswap`). Block devices (`mkswap /dev/sdb1`, `swapon` on a
 partition, type `partition` in `--show`), `swapon -L/-U` lookup by label or UUID (always 'cannot find the device', as for a file the real blkid cache
 does not know), the permission check of a non-root caller beyond 'Operation not permitted', discard policies (accepted, not evaluated) and the
-`swapon` options `-f`, `-o` are not modelled; `blkid` does not read the swap signature. Used swap stays at the 0 the file starts with: nothing pages.
+`swapon` options `-f`, `-o` are not modelled. `blkid` reads the swap signature of a regular file and the hardware partitions, but its `-p`, `-i`, `-c`, `-w`, `-d`, `-g`, `-O`, `-S`, `-n`, `-u` are read by the option parser and not evaluated, and its `-h`/`-V` texts (util-linux 2.37.2 date of libblkid not sourceable) are the old ones. Used swap stays at the 0 the file starts with: nothing pages.
 
 ## Commands missing or answering another distribution than the simulated one
 
