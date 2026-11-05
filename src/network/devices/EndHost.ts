@@ -160,7 +160,7 @@ import {
 import type { DnsQueryOptions } from '../dns/compat/DnsWireCompat';
 import { queryDnsOverTcp } from '../dns/transport/DnsTcpTransport';
 import { queryDnsOverTls, DOT_PORT } from '../dns/transport/DnsTlsTransport';
-import { queryDnsOverHttps, DOH_PORT } from '../dns/transport/DnsHttpsTransport';
+import { queryDnsOverHttps, exchangeDnsOverHttps, DOH_PORT, type DnsHttpsPlan } from '../dns/transport/DnsHttpsTransport';
 import { CertificateVerifier } from '../pki/CertificateVerifier';
 import { HardwareProfile } from './host/hardware';
 import { bootIdFor, machineIdFor } from './host/hardware/HardwareIdentity';
@@ -4759,6 +4759,13 @@ export abstract class EndHost extends Equipment {
     options: DnsQueryOptions = {},
   ): Promise<DnsMessage | null> {
     const port = options.port ?? DNS_PORT;
+    if (!options.tls && !options.https && !options.tcp) {
+      const plan = this.dohPlanFor(serverIP);
+      if (plan !== null) {
+        const reply = this.exchangeOverDohPlan(plan, serverIP, name, qtype, timeoutMs, options);
+        if (reply !== null || !plan.allowFallbackToUdp) return reply;
+      }
+    }
     if (options.tls) {
       // RFC 7858 : port propre, poignée de main TLS 1.3 réelle. Le port 53
       // par défaut ne vaut pas ici — c'est 853 tant que l'appelant n'en
@@ -4882,11 +4889,34 @@ export abstract class EndHost extends Equipment {
     };
   }
 
+  protected dohPlanFor(_server: IPAddress | IPv6Address): DnsHttpsPlan | null {
+    return null;
+  }
+
+  private exchangeOverDohPlan(
+    plan: DnsHttpsPlan, serverIP: IPAddress | IPv6Address, name: string, qtype: string, timeoutMs: number,
+    options: DnsQueryOptions,
+  ): DnsMessage | null {
+    if (!(serverIP instanceof IPAddress)) return null;
+    const query = buildLegacyQueryMessage(nextDnsTransactionId(), name, qtype, options);
+    if (!query) return null;
+    const verifier = new CertificateVerifier({ trustAnchors: plan.anchors, clock: () => this.getTcpStack().nowMs() });
+    return exchangeDnsOverHttps(
+      this, serverIP, query, { verifier, serverName: plan.target.host },
+      { port: plan.target.port, path: plan.target.path, sni: plan.target.host, timeoutMs },
+    );
+  }
+
   public queryDnsServerSync(
     serverIP: IPAddress | IPv6Address,
     name: string,
     qtype: string,
   ): DnsMessage | null {
+    const plan = this.dohPlanFor(serverIP);
+    if (plan !== null) {
+      const reply = this.exchangeOverDohPlan(plan, serverIP, name, qtype, 2000, {});
+      if (reply !== null || !plan.allowFallbackToUdp) return reply;
+    }
     const exchange = this.openDnsExchange(serverIP, name, qtype);
     if (exchange === null) return null;
     const reply = exchange.immediate();

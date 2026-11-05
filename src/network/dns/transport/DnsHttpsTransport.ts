@@ -167,9 +167,35 @@ export function unbindDnsHttpsServer(host: EndHost, port: number = DOH_PORT, add
   runningServers.delete(key);
 }
 
+export interface DohTarget {
+  readonly host: string;
+  readonly port: number;
+  readonly path: string;
+}
+
+export interface DnsHttpsPlan {
+  readonly target: DohTarget;
+  readonly allowFallbackToUdp: boolean;
+  readonly anchors: readonly X509Certificate[];
+}
+
+export function parseDohTemplate(template: string): DohTarget | null {
+  const match = /^https:\/\/([^/:?#\s]+)(?::(\d{1,5}))?(\/[^?#\s{]*)?/i.exec(template);
+  if (match === null) return null;
+  const port = match[2] === undefined ? DOH_PORT : Number(match[2]);
+  if (port < 1 || port > 65535) return null;
+  return { host: match[1], port, path: match[3] ?? DOH_PATH };
+}
+
 export async function queryDnsOverHttps(
   host: EndHost, serverIP: IPAddress, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions = {},
 ): Promise<DnsMessage | null> {
+  return exchangeDnsOverHttps(host, serverIP, query, tlsConfig, options);
+}
+
+export function exchangeDnsOverHttps(
+  host: EndHost, serverIP: IPAddress, query: DnsMessage, tlsConfig: DohClientTlsConfig, options: DohOptions = {},
+): DnsMessage | null {
   const client = new HttpsClientSession(
     host.getTcpStack(), serverIP.toString(), options.port ?? DOH_PORT,
     {

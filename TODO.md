@@ -125,7 +125,11 @@ les options `ca-file`, `remote-hostname`, `dhparam-file`, `ciphers`, `prefer-ser
 sont lues et rangees, pas evaluees (le vrai named les accepte ; seuls `key-file`, `cert-file` et `protocols` agissent) ; `primaries { ... tls NOM; }` (transfert de zone par TLS) n'existe pas et le
 serveur DoT repond a une question puis ferme la connexion ;
 `listen-on-v6 ... tls` est lu sans ecoute (pas de chemin d'ecoute TCP IPv6 pour ces listeners), et la liste d'adresses de `listen-on` en clair (53) n'est pas evaluee : named ecoute alors sur toutes les adresses,
-alors que les listeners chiffres respectent la liste. Raison du report : chaque point demande une brique propre (HTTP/2 sur TLS, un client HTTP en clair, une ecoute IPv6) que ce changement ne livre pas.
+alors que les listeners chiffres respectent la liste. Cote client Windows, `Add-DnsClientDohServerAddress -AutoUpgrade` et `-AllowFallbackToUdp` agissent (`probe-windows-client-doh` : le client interroge en HTTPS, verifie le nom du modele dans le certificat contre
+`Cert:\LocalMachine\Root`, et ne retombe sur l'UDP que si le repli est autorise) et `Import-Certificate` range une autorite dans cette racine. Restent : le lecteur `Cert:` (`Get-ChildItem Cert:\LocalMachine\Root`)
+et `certutil -addstore` n'existent pas, `Import-Certificate` ne sait viser que la racine locale (un magasin personnel sans cle privee est refuse en le disant), les drapeaux DoH propres a une interface
+(`DohFlags`, `netsh dns add encryption`) n'existent pas, et un serveur IPv6 n'est pas interroge en DoH.
+Raison du report : chaque point demande une brique propre (HTTP/2 sur TLS, un client HTTP en clair, une ecoute IPv6, un lecteur de magasins de certificats) que ce changement ne livre pas.
 
 ### [host] ce que host 9.18 fait encore et que le simulateur ne fait pas
 `host` est rejoue contre un vrai host 9.18.39 (`host-oracle`, 431 invocations dont 396 rejouees, les 35 autres ecartees avec leur raison dans le test) : le moteur de `dighost.c` (essais partages entre les

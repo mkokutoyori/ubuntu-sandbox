@@ -272,7 +272,7 @@ import {
   NewWebAppPoolCmdlet, GetIISAppPoolCmdlet, RemoveWebAppPoolCmdlet, StartWebAppPoolCmdlet, StopWebAppPoolCmdlet,
   RestartWebAppPoolCmdlet, GetWebGlobalModuleCmdlet,
 } from './WebAdminCmdlets';
-import { NewSelfSignedCertificateCmdlet } from './PkiCmdlets';
+import { NewSelfSignedCertificateCmdlet, ImportCertificateCmdlet } from './PkiCmdlets';
 import {
   InstallExchangeServerCmdlet, GetExchangeServerCmdlet,
   EnableMailboxCmdlet, NewMailboxCmdlet, GetMailboxCmdlet, SetMailboxCmdlet,
@@ -608,6 +608,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   // ── Client-side PKI (Get-Certificate enrollment, self-signed certs) ──────
   registry.register(new GetCertificateCmdlet());
   registry.register(new NewSelfSignedCertificateCmdlet());
+  registry.register(new ImportCertificateCmdlet());
 
   // ── Domain join (a workstation joins a domain with Add-Computer) ─────────
   registry.register(new AddComputerCmdlet());
