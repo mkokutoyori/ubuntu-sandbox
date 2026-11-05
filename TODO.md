@@ -4520,3 +4520,10 @@ executor's CommandResolver to read the interpreter environment. `help` is real (
 directories for `whereis -l` (versioned emacs and multiarch directories, /opt/*/bin, every /usr/share/man/manN); the simulated tree
 carries 14, and /usr/bin lacks many binaries a real box has (`whereis -bg 'ca*'` returns 2 entries where the real one returns 20+).
 Closing it means populating the VFS from the package database, not changing whereis.
+
+## file: listings and debug options, encodings
+
+`file -c`, `-C`, `-l` and `-d` (parsed magic dump, strength listing, debug trace of the real libmagic) are refused with the usage; there
+is no magic database to print. `-e encoding` is accepted and has no effect (the real file then falls back to binary data for a script), the
+magic classification is the simulator's own subset (ASCII text, scripts, data, archives, pcap): UTF-8 and ISO-8859 text, HTML, XML, JSON,
+images, ELF, PDF are not recognised (the dev container ships a reduced magic file, so they cannot be measured there either).

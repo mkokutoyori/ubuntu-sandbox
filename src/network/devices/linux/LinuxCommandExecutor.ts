@@ -111,6 +111,7 @@ import { runSort } from './coreutils/SortCommand';
 import { COREUTILS_DOCS } from './coreutils/CoreutilsDocs';
 import { asDispatch, docsResult, quoteLocale } from './coreutils/CoreutilsKit';
 import { coreutilsIO } from './coreutils/CoreutilsFiles';
+import { runFile, scriptDescription, type FileDescribeOptions, type FileHost } from './coreutils/FileCommand';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
   SHELL_CATALOG, CommandResolver, runWhereis,
@@ -7083,27 +7084,7 @@ export class LinuxCommandExecutor {
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         return { output: `  No volume groups found`, exitCode: 0 };
       case 'lsof': return this.cmdLsof(args);
-      case 'file': {
-        const targets: string[] = [];
-        let brief = false;
-        let mime: 'none' | 'type' | 'full' = 'none';
-        for (const item of shortOptions(args, gnuOptionSet('file').optstring, gnuOptionSet('file').long)) {
-          if (item.kind === 'operand') targets.push(item.value);
-          else if (item.kind === 'option') {
-            if (item.letter === 'b') brief = true;
-            else if (item.letter === 'i') mime = 'full';
-            else if (item.long === 'mime-type') mime = 'type';
-          }
-        }
-        if (!targets.length) return { output: 'Usage: file [-bcCdEhikLlNnprsSvzZ0] [--apple] [--extension] [--mime-encoding]\n            [--mime-type] [-e <testname>] [-F <separator>]  [-f <namefile>]\n            [-m <magicfiles>] [-P <parameter=value>] [--exclude-quiet]\n            <file> ...\n       file -C [-m <magicfiles>]\n       file [--help]', exitCode: 1 };
-        const render = (target: string): string => {
-          const described = this.describeFile(target);
-          const description = described.slice(target.length + 2);
-          const shown = mime === 'none' ? description : mimeOfDescription(description, mime === 'full');
-          return brief ? shown : `${target}: ${shown}`;
-        };
-        return { output: targets.map(render).join('\n'), exitCode: 0 };
-      }
+      case 'file': return asDispatch(runFile(this.fileHost(), args, stdin));
       case 'diff': {
         const compared = cmdDiff({
         readFile: (p) => this.vfs.readFile(p),
@@ -9380,50 +9361,57 @@ export class LinuxCommandExecutor {
    * bind9 without also having to author the top-level include file itself.
    */
   /** `file` — classify from the REAL inode/content, never canned. */
-  private describeFile(target: string): string {
-    const abs = this.vfs.normalizePath(target, this.cwd);
-    const lstat = this.vfs.resolveInode(abs, false);
-    if (!lstat) {
-      return `${target}: cannot open \`${target}' (No such file or directory)`;
-    }
-    if (lstat.type === 'symlink') {
-      return `${target}: symbolic link to ${lstat.target}`;
-    }
-    if (lstat.type === 'directory') return `${target}: directory`;
-    if (lstat.type === 'chardev' || lstat.type === 'blockdev') {
-      const numbers = lstat.rdev === undefined ? '' : ` (${lstat.rdev.major}/${lstat.rdev.minor})`;
-      return `${target}: ${lstat.type === 'chardev' ? 'character' : 'block'} special${numbers}`;
-    }
-    if (lstat.type === 'socket') return `${target}: socket`;
-    const content = this.vfs.readFile(abs) ?? lstat.content;
-    if (content.length === 0) return `${target}: empty`;
-    const archive = describeArchiveContent(content);
-    if (archive) return `${target}: ${archive}`;
-    const capture = describePcapFile(fileTextToBytes(content));
-    if (capture) return `${target}: ${capture}`;
-    if (content.startsWith('#!')) {
-      const interp = content.slice(2, content.indexOf('\n') > 0
-        ? content.indexOf('\n') : undefined).trim();
-      return `${target}: ${interp} script, ASCII text executable`;
-    }
-    // eslint-disable-next-line no-control-regex
-    if (/[\x00-\x08\x0e-\x1f]/.test(content)) return `${target}: data`;
-    return `${target}: ASCII text`;
+  private fileHost(): FileHost {
+    return {
+      describe: (target, options) => this.describeFile(target, options),
+      describeStream: (content, options) => this.describeFileContent(content, options),
+      readFile: (path) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
+      exists: (path) => this.vfs.exists(this.vfs.normalizePath(path, this.cwd)),
+    };
   }
-}
 
-function mimeOfDescription(description: string, withCharset: boolean): string {
-  let type = 'application/octet-stream';
-  let text = false;
-  if (description === 'ASCII text') { type = 'text/plain'; text = true; }
-  else if (description === 'empty') type = 'inode/x-empty';
-  else if (description === 'directory') type = 'inode/directory';
-  else if (description.startsWith('symbolic link')) type = 'inode/symlink';
-  else if (description.startsWith('character special')) type = 'inode/chardevice';
-  else if (description.startsWith('block special')) type = 'inode/blockdevice';
-  else if (description === 'socket') type = 'inode/socket';
-  else if (description.endsWith('script, ASCII text executable')) { type = 'text/x-shellscript'; text = true; }
-  return withCharset ? `${type}; charset=${text ? 'us-ascii' : 'binary'}` : type;
+  private describeFile(target: string, options: FileDescribeOptions): string | null {
+    const abs = this.vfs.normalizePath(target, this.cwd);
+    const entry = this.vfs.resolveInode(abs, false);
+    if (!entry) return null;
+    if (entry.type === 'symlink') {
+      const resolved = this.vfs.resolveInode(abs, true);
+      if (options.follow) return resolved ? this.describeFile(this.vfs.realpath(abs) ?? abs, options) : null;
+      return `${resolved ? '' : 'broken '}symbolic link to ${entry.target}`;
+    }
+    if (entry.type === 'directory') return 'directory';
+    if (entry.type === 'chardev' || entry.type === 'blockdev') {
+      if (options.special) return this.describeFileContent(this.vfs.readFile(abs) ?? '', options);
+      const numbers = entry.rdev === undefined ? '' : ` (${entry.rdev.major}/${entry.rdev.minor})`;
+      return `${entry.type === 'chardev' ? 'character' : 'block'} special${numbers}`;
+    }
+    if (entry.type === 'socket') return 'socket';
+    if (entry.type === 'fifo') return 'fifo (named pipe)';
+    return this.describeFileContent(this.vfs.readFile(abs) ?? entry.content, options);
+  }
+
+  private describeFileContent(whole: string, options: FileDescribeOptions): string {
+    const content = options.byteLimit === null ? whole : whole.slice(0, options.byteLimit);
+    if (content.length === 0) return 'empty';
+    const archive = describeArchiveContent(content);
+    if (archive) return archive;
+    const capture = describePcapFile(fileTextToBytes(content));
+    if (capture) return capture;
+    const textual = !options.excluded.has('ascii') && !options.excluded.has('text');
+    // eslint-disable-next-line no-control-regex
+    if (/[\x00-\x08\x0e-\x1f]/.test(content)) return 'data';
+    if (!textual) return 'data';
+    if (content.startsWith('#!')) {
+      if (options.excluded.has('soft')) return 'ASCII text';
+      return scriptDescription(content.slice(2, content.indexOf('\n') > 0 ? content.indexOf('\n') : undefined));
+    }
+    const attributes: string[] = [];
+    const longest = Math.max(...content.split('\n').map((line) => line.replace(/\r$/, '').length));
+    if (longest > 299) attributes.push(`with very long lines (${longest})`);
+    if (/\r\n/.test(content)) attributes.push('with CRLF line terminators');
+    if (!content.includes('\n')) attributes.push('with no line terminators');
+    return ['ASCII text', ...attributes].join(', ');
+  }
 }
 
 // ─── small parsing helpers (kept private to this file) ────────────────
