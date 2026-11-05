@@ -45,29 +45,65 @@ import type {
   NssRpcEntry, NssServiceEntry, NssShadowEntry,
 } from './types';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { getoptDiagnostic, shortOptions, type LongOption } from '../commands/Getopt';
 
 export interface GetentResult {
   output: string;
   exitCode: number;
 }
 
-const VERSION_LINE = 'getent (Ubuntu GLIBC 2.35-0ubuntu3.4) 2.35';
+const VERSION_TEXT = [
+  'getent (Ubuntu GLIBC 2.35-0ubuntu3.4) 2.35',
+  'Copyright (C) 2022 Free Software Foundation, Inc.',
+  'This is free software; see the source for copying conditions.  There is NO',
+  'warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.',
+  'Written by Thorsten Kukuk.',
+].join('\n');
 
 const USAGE = [
   'Usage: getent [OPTION...] database [key ...]',
   'Get entries from administrative database.',
   '',
+  '  -A, --no-addrconfig        do not filter out unsupported IPv4/IPv6 addresses',
+  '                             (with ahosts*)',
   '  -i, --no-idn               disable IDN encoding',
   '  -s, --service=CONFIG       Service configuration to be used',
   '  -?, --help                 Give this help list',
   '      --usage                Give a short usage message',
   '  -V, --version              Print program version',
   '',
+  'Mandatory or optional arguments to long options are also mandatory or optional',
+  'for any corresponding short options.',
+  '',
   'Supported databases:',
   'ahosts ahostsv4 ahostsv6 aliases ethers group gshadow hosts initgroups',
   'netgroup networks passwd protocols rpc services shadow',
   '',
+  'For bug reporting instructions, please see:',
+  '<https://bugs.launchpad.net/ubuntu/+source/glibc/+bugs>.',
 ].join('\n');
+
+const SHORT_USAGE = [
+  'Usage: getent [-Ai?V] [-s CONFIG] [--no-addrconfig] [--no-idn]',
+  '            [--service=CONFIG] [--help] [--usage] [--version]',
+  '            database [key ...]',
+].join('\n');
+
+const TRY_HELP = "Try `getent --help' or `getent --usage' for more information.";
+
+const LONG_OPTIONS: readonly LongOption[] = [
+  { name: 'no-addrconfig', letter: 'A', takesArgument: false },
+  { name: 'no-idn', letter: 'i', takesArgument: false },
+  { name: 'service', letter: 's', takesArgument: true },
+  { name: 'help', letter: '?', takesArgument: false },
+  { name: 'usage', letter: 'U', takesArgument: false },
+  { name: 'version', letter: 'V', takesArgument: false },
+];
+
+const SERVICE_DATABASES: ReadonlySet<string> = new Set([
+  '', 'aliases', 'ethers', 'group', 'gshadow', 'hosts', 'initgroups', 'netgroup', 'networks', 'passwd', 'protocols', 'rpc', 'services',
+  'shadow', 'ahosts', 'ahostsv4', 'ahostsv6',
+]);
 
 /**
  * Parse the argument list. Returns `{ ok, options, args }` or
@@ -91,44 +127,28 @@ function parseArgs(argv: string[]):
   | { ok: true; service: ParsedServiceOverride; database: string; keys: string[] }
   | { ok: false; output: string; exitCode: number } {
   const service: ParsedServiceOverride = { global: null, perDb: new Map() };
-  let i = 0;
-  while (i < argv.length) {
-    const a = argv[i];
-    if (a === '-h' || a === '--help' || a === '-?') {
-      return { ok: false, output: USAGE, exitCode: 0 };
+  const operands: string[] = [];
+  for (const item of shortOptions(argv, 'Ais:V?', LONG_OPTIONS)) {
+    if (item.kind === 'operand') { operands.push(item.value); continue; }
+    if (item.kind !== 'option') {
+      return { ok: false, output: `${getoptDiagnostic('getent', item)}\n${TRY_HELP}`, exitCode: 64 };
     }
-    if (a === '--usage') {
-      return { ok: false, output: 'Usage: getent [-Vh?] [-i] [-s CONFIG] [--service=CONFIG] [--no-idn] [--help] [--usage] [--version] database [key ...]', exitCode: 0 };
-    }
-    if (a === '-V' || a === '--version') {
-      return { ok: false, output: VERSION_LINE, exitCode: 0 };
-    }
-    if (a === '-i' || a === '--no-idn') { i++; continue; }
-    if (a === '-s' || a === '--service') {
-      if (i + 1 >= argv.length) {
-        return { ok: false, output: USAGE, exitCode: 1 };
+    if (item.letter === '?') return { ok: false, output: USAGE, exitCode: 0 };
+    if (item.letter === 'U') return { ok: false, output: SHORT_USAGE, exitCode: 0 };
+    if (item.letter === 'V') return { ok: false, output: VERSION_TEXT, exitCode: 0 };
+    if (item.letter === 's') {
+      const config = item.argument ?? '';
+      const colon = config.indexOf(':');
+      if (colon !== -1 && !SERVICE_DATABASES.has(config.slice(0, colon))) {
+        return { ok: false, output: 'getent: Unknown database name', exitCode: 1 };
       }
-      applyServiceConfig(argv[i + 1], service);
-      i += 2;
-      continue;
+      applyServiceConfig(config, service);
     }
-    if (a.startsWith('--service=')) {
-      applyServiceConfig(a.slice('--service='.length), service);
-      i++;
-      continue;
-    }
-    if (a.startsWith('-')) {
-      return { ok: false, output: `getent: unrecognized option '${a}'`, exitCode: 1 };
-    }
-    break;
   }
-
-  if (i >= argv.length) {
-    return { ok: false, output: USAGE, exitCode: 1 };
+  if (operands.length === 0) {
+    return { ok: false, output: `getent: wrong number of arguments\n${TRY_HELP}`, exitCode: 1 };
   }
-  const database = argv[i].toLowerCase();
-  const keys = argv.slice(i + 1);
-  return { ok: true, service, database, keys };
+  return { ok: true, service, database: operands[0], keys: operands.slice(1) };
 }
 
 /**
@@ -184,7 +204,7 @@ export function runGetent(
     case 'initgroups':return handleInitgroups(resolveSingle, parsed.keys);
     case 'aliases':   return handleAliases(resolveSingle, resolveEnum, parsed.keys);
     default:
-      return { output: `Unknown database: ${parsed.database}`, exitCode: 1 };
+      return { output: `Unknown database: ${parsed.database}\n${TRY_HELP}`, exitCode: 1 };
   }
 }
 

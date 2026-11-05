@@ -1,5 +1,6 @@
 import type { HardwareProfile } from '@/network/devices/host/hardware/HardwareProfile';
 import type { StorageDevice, DiskPartition } from '@/network/devices/host/hardware/StorageDevice';
+import { getoptDiagnostic, shortOptions, type LongOption } from '../Getopt';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 import { renderTableText } from '@/network/devices/shells/cli/TextTable';
@@ -46,6 +47,7 @@ interface Row {
   model: string;
   serial: string;
   vendor: string;
+  bytes: number;
 }
 
 interface Options {
@@ -59,77 +61,153 @@ interface Options {
   diskOnly: boolean;
   topology: boolean;
   perms: boolean;
+  pairs: boolean;
   columns: string[] | null;
+  noHeadings: boolean;
+  sortColumn: string | null;
 }
 
-const SHORT_FLAGS = new Set(['a', 'f', 'p', 'b', 'l', 'r', 'J', 'd', 't', 'm', 'o', 'h', 'V', 'P', 'i']);
+const DEFAULT_COLUMNS = ['NAME', 'MAJ:MIN', 'RM', 'SIZE', 'RO', 'TYPE', 'MOUNTPOINT'];
+
+const OPTSTRING = 'abdDzE:e:fhiI:JlLmMnNo:OPprsStTVwx:y';
+
+const LONG_OPTIONS: readonly LongOption[] = [
+  { name: 'all', letter: 'a', takesArgument: false },
+  { name: 'bytes', letter: 'b', takesArgument: false },
+  { name: 'nodeps', letter: 'd', takesArgument: false },
+  { name: 'discard', letter: 'D', takesArgument: false },
+  { name: 'zoned', letter: 'z', takesArgument: false },
+  { name: 'dedup', letter: 'E', takesArgument: true },
+  { name: 'exclude', letter: 'e', takesArgument: true },
+  { name: 'fs', letter: 'f', takesArgument: false },
+  { name: 'help', letter: 'h', takesArgument: false },
+  { name: 'ascii', letter: 'i', takesArgument: false },
+  { name: 'include', letter: 'I', takesArgument: true },
+  { name: 'json', letter: 'J', takesArgument: false },
+  { name: 'list', letter: 'l', takesArgument: false },
+  { name: 'perms', letter: 'm', takesArgument: false },
+  { name: 'noheadings', letter: 'n', takesArgument: false },
+  { name: 'nvme', letter: 'N', takesArgument: false },
+  { name: 'output', letter: 'o', takesArgument: true },
+  { name: 'output-all', letter: 'O', takesArgument: false },
+  { name: 'pairs', letter: 'P', takesArgument: false },
+  { name: 'paths', letter: 'p', takesArgument: false },
+  { name: 'raw', letter: 'r', takesArgument: false },
+  { name: 'inverse', letter: 's', takesArgument: false },
+  { name: 'scsi', letter: 'S', takesArgument: false },
+  { name: 'topology', letter: 't', takesArgument: false },
+  { name: 'version', letter: 'V', takesArgument: false },
+  { name: 'width', letter: 'w', takesArgument: true },
+  { name: 'sort', letter: 'x', takesArgument: true },
+];
+
+const TRY_HELP = "Try 'lsblk --help' for more information.";
+
+function unknownColumn(name: string): { output: string; exitCode: number } {
+  return { output: `lsblk: unknown column: ${name}`, exitCode: 1 };
+}
 
 export function cmdLsblk(profile: HardwareProfile, args: string[]): { output: string; exitCode: number } {
   const opts: Options = {
     all: false, fs: false, pathPrefix: false, bytes: false, list: false,
     raw: false, json: false, diskOnly: false, topology: false, perms: false,
-    columns: null,
+    columns: null, noHeadings: false, sortColumn: null, pairs: false,
   };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (a === '--help') return { output: helpText(), exitCode: 0 };
-    if (a === '--version') return { output: 'lsblk from util-linux 2.37', exitCode: 0 };
-    if (a === '-a' || a === '--all') { opts.all = true; continue; }
-    if (a === '-f' || a === '--fs') { opts.fs = true; continue; }
-    if (a === '-p' || a === '--paths') { opts.pathPrefix = true; continue; }
-    if (a === '-b' || a === '--bytes') { opts.bytes = true; continue; }
-    if (a === '-l' || a === '--list') { opts.list = true; continue; }
-    if (a === '-r' || a === '--raw') { opts.raw = true; continue; }
-    if (a === '-J' || a === '--json') { opts.json = true; continue; }
-    if (a === '-d' || a === '--nodeps') { opts.diskOnly = true; continue; }
-    if (a === '-t' || a === '--topology') { opts.topology = true; continue; }
-    if (a === '-m' || a === '--perms') { opts.perms = true; continue; }
-    if (a === '-o' || a === '--output') {
-      const v = args[++i];
-      if (!v) return { output: `lsblk: option requires an argument -- 'o'`, exitCode: 1 };
-      const cols = v.toUpperCase().split(',');
-      for (const c of cols) {
-        if (!COLUMNS.has(c)) return { output: `lsblk: invalid column name: ${c}`, exitCode: 1 };
+  const operands: string[] = [];
+  const majorsExcluded = new Set<string>();
+  let majorsIncluded: Set<string> | null = null;
+  for (const item of shortOptions(args, OPTSTRING, LONG_OPTIONS)) {
+    if (item.kind === 'operand') { operands.push(item.value); continue; }
+    if (item.kind !== 'option') return { output: `${getoptDiagnostic('lsblk', item)}\n${TRY_HELP}`, exitCode: 1 };
+    const value = item.argument ?? '';
+    switch (item.letter) {
+      case 'h': return { output: helpText(), exitCode: 0 };
+      case 'V': return { output: 'lsblk from util-linux 2.37.2', exitCode: 0 };
+      case 'a': opts.all = true; break;
+      case 'f': opts.fs = true; break;
+      case 'p': opts.pathPrefix = true; break;
+      case 'b': opts.bytes = true; break;
+      case 'l': opts.list = true; break;
+      case 'r': opts.raw = true; break;
+      case 'J': opts.json = true; break;
+      case 'P': opts.pairs = true; break;
+      case 'd': opts.diskOnly = true; break;
+      case 't': opts.topology = true; break;
+      case 'm': opts.perms = true; break;
+      case 'n': opts.noHeadings = true; break;
+      case 'e': for (const m of value.split(',')) majorsExcluded.add(m); break;
+      case 'I': majorsIncluded = new Set(value.split(',')); break;
+      case 'x': {
+        const column = value.toUpperCase();
+        if (!COLUMNS.has(column)) return { output: `${unknownColumn(value).output}\n${TRY_HELP}`, exitCode: 1 };
+        opts.sortColumn = column;
+        break;
       }
-      opts.columns = cols;
-      continue;
-    }
-    if (a.startsWith('--')) return { output: `lsblk: unrecognized option '${a}'`, exitCode: 1 };
-    if (a.startsWith('-')) {
-      for (const ch of a.slice(1)) {
-        if (!SHORT_FLAGS.has(ch)) return { output: `lsblk: invalid option -- '${ch}'`, exitCode: 1 };
+      case 'o': {
+        const spec = value.toUpperCase();
+        const names = spec.replace(/^\+/, '').split(',').filter((c) => c !== '');
+        const unknown = names.find((c) => !COLUMNS.has(c));
+        if (unknown !== undefined) return unknownColumn(unknown);
+        opts.columns = spec.startsWith('+') ? [...(opts.columns ?? DEFAULT_COLUMNS), ...names] : names;
+        break;
       }
-      continue;
+      default: break;
     }
   }
 
+  const listLike = opts.list || opts.raw || opts.json || opts.sortColumn !== null || opts.pairs;
   const rows: Row[] = [];
   let maj = 8;
+  const known = new Set<string>(['loop0']);
   for (const d of profile.storage) {
-    rows.push(diskRow(d, opts, maj, 0));
-    if (!opts.diskOnly) {
-      for (let i = 0; i < d.partitions.length; i++) {
-        rows.push(partitionRow(d.partitions[i], opts, maj, i + 1));
+    known.add(d.name);
+    for (const part of d.partitions) known.add(part.name);
+  }
+  const wanted = operands.map((operand) => operand.replace(/^\/dev\//, ''));
+  const refusals: string[] = [];
+  for (const [index, name] of wanted.entries()) {
+    if (!operands[index].startsWith('/dev/') || !known.has(name)) refusals.push(`lsblk: ${operands[index]}: not a block device`);
+  }
+  const selected = (name: string, parent: string | null): boolean =>
+    wanted.length === 0 || wanted.includes(name) || (!opts.diskOnly && parent !== null && wanted.includes(parent));
+  const kept = (major: number): boolean =>
+    !majorsExcluded.has(String(major)) && (majorsIncluded === null || majorsIncluded.has(String(major)));
+  for (const d of profile.storage) {
+    if (kept(maj)) {
+      if (selected(d.name, null)) rows.push(diskRow(d, opts, maj, 0));
+      if (!opts.diskOnly) {
+        for (let i = 0; i < d.partitions.length; i++) {
+          if (selected(d.partitions[i].name, d.name)) rows.push(partitionRow(d.partitions[i], opts, maj, i + 1, listLike || !selected(d.name, null)));
+        }
       }
     }
     maj += 16;
   }
-  rows.push(loopRow());
-  if (opts.all) rows.push(romRow());
+  if (wanted.length === 0 && kept(7)) rows.push(loopRow());
+  if (opts.all && wanted.length === 0 && kept(11)) rows.push(romRow());
+  if (opts.sortColumn !== null) {
+    const key = opts.sortColumn;
+    const read = COLUMNS.get(key)!;
+    rows.sort((x, y) => (key === 'SIZE' ? x.bytes - y.bytes : read(x).localeCompare(read(y), 'en', { numeric: true })));
+  }
 
   if (opts.fs && !opts.columns) opts.columns = ['NAME', 'FSTYPE', 'LABEL', 'UUID', 'MOUNTPOINT'];
   if (opts.topology && !opts.columns) opts.columns = ['NAME', 'ALIGNMENT', 'MIN-IO', 'OPT-IO', 'PHY-SEC', 'LOG-SEC', 'SSZ', 'RA'];
   if (opts.perms && !opts.columns) opts.columns = ['NAME', 'SIZE', 'OWNER', 'GROUP', 'MODE'];
 
-  const columns = opts.columns ?? ['NAME', 'MAJ:MIN', 'RM', 'SIZE', 'RO', 'TYPE', 'MOUNTPOINT'];
+  const columns = opts.columns ?? DEFAULT_COLUMNS;
 
-  const formats = [opts.json, opts.raw, opts.list].filter(Boolean).length;
+  const formats = [opts.json, opts.raw, opts.list, opts.pairs].filter(Boolean).length;
   if (formats + (opts.pathPrefix ? 1 : 0) > 2) return { output: `lsblk: invalid combination of options`, exitCode: 1 };
 
-  if (opts.json) return { output: renderJson(rows, columns), exitCode: 0 };
-  if (opts.raw) return { output: renderRaw(rows, columns), exitCode: 0 };
-
-  return { output: renderTable(rows, columns, opts.list), exitCode: 0 };
+  let body: string;
+  if (opts.json) body = renderJson(rows, columns);
+  else if (opts.pairs) body = rows.map((r) => columns.map((c) => `${c}="${COLUMNS.get(c)!(r)}"`).join(' ')).join('\n');
+  else if (opts.raw) body = renderRaw(rows, columns, opts.noHeadings);
+  else body = renderTable(rows, columns, opts.noHeadings);
+  if (refusals.length === 0) return { output: body, exitCode: 0 };
+  const exitCode = rows.length === 0 ? 32 : 64;
+  return { output: [...refusals, ...(rows.length === 0 ? [] : [body])].join('\n'), exitCode };
 }
 
 function diskRow(d: StorageDevice, opts: Options, maj: number, min: number): Row {
@@ -147,11 +225,12 @@ function diskRow(d: StorageDevice, opts: Options, maj: number, min: number): Row
     model: d.model,
     serial: d.serial,
     vendor: d.vendor,
+    bytes: d.sizeBytes,
   };
 }
 
-function partitionRow(p: DiskPartition, opts: Options, maj: number, min: number): Row {
-  const prefix = opts.raw || opts.list || opts.json ? '' : '├─';
+function partitionRow(p: DiskPartition, opts: Options, maj: number, min: number, listLike: boolean): Row {
+  const prefix = listLike ? '' : '├─';
   return {
     name: opts.pathPrefix ? `/dev/${p.name}` : `${prefix}${p.name}`,
     majMin: `${maj}:${min}`,
@@ -166,15 +245,16 @@ function partitionRow(p: DiskPartition, opts: Options, maj: number, min: number)
     model: '',
     serial: '',
     vendor: '',
+    bytes: p.sizeBytes,
   };
 }
 
 function romRow(): Row {
-  return { name: 'sr0', majMin: '11:0', removable: '1', size: '1024M', readOnly: '0', type: 'rom', mountPoint: '', uuid: '', fsType: '', label: '', model: 'QEMU DVD-ROM', serial: '', vendor: 'QEMU' };
+  return { name: 'sr0', majMin: '11:0', removable: '1', size: '1024M', readOnly: '0', type: 'rom', mountPoint: '', uuid: '', fsType: '', label: '', model: 'QEMU DVD-ROM', serial: '', vendor: 'QEMU', bytes: 1024 * 1024 ** 2 };
 }
 
 function loopRow(): Row {
-  return { name: 'loop0', majMin: '7:0', removable: '0', size: '0', readOnly: '1', type: 'loop', mountPoint: '', uuid: '', fsType: '', label: '', model: '', serial: '', vendor: '' };
+  return { name: 'loop0', majMin: '7:0', removable: '0', size: '0', readOnly: '1', type: 'loop', mountPoint: '', uuid: '', fsType: '', label: '', model: '', serial: '', vendor: '', bytes: 0 };
 }
 
 function humanSize(bytes: number): string {
@@ -191,14 +271,15 @@ function synthUuid(seed: string): string {
   return `${u}-${u.slice(0, 4)}-${u.slice(4, 8)}-${u.slice(0, 4)}-${u}${u.slice(0, 4)}`;
 }
 
-function renderTable(rows: Row[], columns: string[], _list: boolean): string {
+function renderTable(rows: Row[], columns: string[], noHeadings: boolean): string {
   return renderTableText(rows, columns.map((header) => ({ header, value: COLUMNS.get(header)! })), {
-    gap: 1, rule: false, padTrailing: true,
+    gap: 1, rule: false, padTrailing: false, header: !noHeadings,
   });
 }
 
-function renderRaw(rows: Row[], columns: string[]): string {
-  return rows.map(r => columns.map(c => COLUMNS.get(c)!(r)).join(' ')).join('\n');
+function renderRaw(rows: Row[], columns: string[], noHeadings: boolean): string {
+  const lines = rows.map(r => columns.map(c => COLUMNS.get(c)!(r).replace(/ /g, '\\x20')).join(' '));
+  return (noHeadings ? lines : [columns.join(' '), ...lines]).join('\n');
 }
 
 function renderJson(rows: Row[], columns: string[]): string {

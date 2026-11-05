@@ -4,38 +4,21 @@ import { shortOptions } from './commands/Getopt';
 import { fnmatch } from './fs/Glob';
 import { lsHumanSize } from './LsLayout';
 import { formatLocalTime } from './system/SystemInfo';
+import { parseBlockSize, type BlockScale } from './coreutils/BlockSize';
+import { Streams, docsResult, quoteLocale, quotef, type CoreutilsRun } from './coreutils/CoreutilsKit';
 import type { INode } from './VirtualFileSystem';
 
 const BLOCK_BYTES = 4096;
 
-interface DuScale {
-  readonly unit: number;
-  readonly suffix: string;
-}
-
-const UNIT_POWERS: Readonly<Record<string, number>> = { K: 1, M: 2, G: 3, T: 4, P: 5, E: 6, Z: 7, Y: 8, R: 9, Q: 10 };
-
-function parseBlockSize(text: string): DuScale | null {
-  const match = /^(\d*)([KMGTPEZYRQ]?)(i?B)?$/i.exec(text);
-  if (!match || (match[1] === '' && match[2] === '')) return null;
-  const power = match[2] === '' ? 0 : UNIT_POWERS[match[2].toUpperCase()];
-  const decimal = match[3] !== undefined && match[3].toUpperCase() === 'B' && match[2] !== '';
-  const base = decimal ? 1000 : 1024;
-  const count = match[1] === '' ? 1 : Number(match[1]);
-  if (count === 0) return null;
-  const unit = count * base ** power;
-  const suffix = match[1] === '' && power > 0 ? `${match[2].toUpperCase()}${decimal ? 'B' : ''}`.replace(/^K(B)$/, 'k$1') : '';
-  return { unit, suffix };
-}
+const THRESHOLD_UNITS: Readonly<Record<string, number>> = { k: 1, K: 1, M: 2, G: 3, T: 4, P: 5, E: 6, Z: 7, Y: 8, R: 9, Q: 10 };
 
 function parseThreshold(text: string): number | null {
-  const negative = text.startsWith('-');
-  const scale = parseBlockSize(negative ? text.slice(1) : text);
-  if (scale === null) return null;
-  const digits = /^\d+/.exec(negative ? text.slice(1) : text);
-  const count = digits === null ? 1 : Number(digits[0]);
-  const bytes = digits === null ? scale.unit : scale.unit;
-  return (negative ? -1 : 1) * (count === 0 ? 0 : bytes);
+  const match = /^([+-]?)(0[xX][0-9a-fA-F]+|\d+)([kKMGTPEZYRQ]?)(i?B|0)?$/.exec(text.trim());
+  if (match === null) return null;
+  const count = /^0[xX]/.test(match[2]) ? Number.parseInt(match[2], 16) : Number(match[2]);
+  const decimal = match[3] !== '' && match[4] !== undefined && match[4] === 'B';
+  const bytes = count * (match[3] === '' ? 1 : (decimal ? 1000 : 1024) ** THRESHOLD_UNITS[match[3]]);
+  return match[1] === '-' ? -bytes : bytes;
 }
 
 interface DuOptions {
@@ -44,7 +27,7 @@ interface DuOptions {
   summarize: boolean;
   maxDepth: number | null;
   apparent: boolean;
-  scale: DuScale | null;
+  scale: BlockScale | null;
   human: 1024 | 1000 | null;
   separate: boolean;
   countLinks: boolean;
@@ -61,8 +44,8 @@ interface DuOptions {
 
 const TRY_HELP = "Try 'du --help' for more information.";
 
-function timeArgumentError(option: string, value: string, choices: readonly string[]): string {
-  return [`du: invalid argument '${value}' for '${option}'`, 'Valid arguments are:', ...choices.map((c) => `  - ${c}`), TRY_HELP].join('\n');
+function timeArgumentError(option: string, value: string, choices: readonly string[], kind: 'invalid' | 'ambiguous' = 'invalid'): string {
+  return [`du: ${kind} argument '${value}' for '${option}'`, 'Valid arguments are:', ...choices.map((c) => `  - ${c}`), TRY_HELP].join('\n');
 }
 
 function parseDuArguments(ctx: ShellContext, args: readonly string[]): { opts: DuOptions; targets: string[] } | string {
@@ -79,6 +62,8 @@ function parseDuArguments(ctx: ShellContext, args: readonly string[]): { opts: D
     if (item.kind !== 'option') continue;
     const argument = item.argument;
     switch (item.long ?? item.letter) {
+      case 'help': return 'help';
+      case 'version': return 'version';
       case '0': case 'null': opts.nul = true; break;
       case 'a': case 'all': opts.all = true; break;
       case 'apparent-size': opts.apparent = true; break;
@@ -110,16 +95,17 @@ function parseDuArguments(ctx: ShellContext, args: readonly string[]): { opts: D
       case 's': case 'summarize': opts.summarize = true; break;
       case 't': case 'threshold': {
         const threshold = parseThreshold(argument ?? '');
-        if (threshold === null) return `du: invalid -t argument '${argument ?? ''}'`;
+        if (threshold === null) return `du: invalid ${item.long === undefined ? '-t' : '--threshold'} argument ${quoteLocale(argument ?? '')}`;
+        if (threshold === 0 && (argument ?? '').startsWith('-')) return "du: invalid --threshold argument '-0'";
         opts.threshold = threshold;
         break;
       }
       case 'time': {
         const which = argument ?? 'mtime';
-        if (/^(atime|access|use)$/.test(which)) opts.time = 'atime';
+        if (argument === undefined) opts.time = 'mtime';
+        else if (/^(atime|access|use)$/.test(which)) opts.time = 'atime';
         else if (/^(ctime|status)$/.test(which)) opts.time = 'ctime';
-        else if (which === 'mtime') opts.time = 'mtime';
-        else return timeArgumentError('--time', which, ["'atime', 'access', 'use'", "'ctime', 'status'"]);
+        else return timeArgumentError('--time', which, ["'atime', 'access', 'use'", "'ctime', 'status'"], which === '' ? 'ambiguous' : 'invalid');
         break;
       }
       case 'time-style': {
@@ -154,22 +140,47 @@ interface DuNode {
   readonly size: number;
 }
 
-export function cmdDu(ctx: ShellContext, args: string[]): string {
+export function runDu(ctx: ShellContext, args: string[], stdin: string | undefined): CoreutilsRun {
+  const streams = new Streams();
   const parsed = parseDuArguments(ctx, args);
-  if (typeof parsed === 'string') return parsed;
+  if (parsed === 'help' || parsed === 'version') return docsResult('du', parsed);
+  if (typeof parsed === 'string') {
+    streams.diagnostic(parsed);
+    streams.exitCode = 1;
+    return streams.result();
+  }
   const { opts } = parsed;
   let targets = parsed.targets;
-  const errors: string[] = [];
+  const fail = (line: string): void => {
+    streams.diagnostic(line);
+    streams.exitCode = 1;
+  };
+  if (opts.inodes && opts.apparent) streams.diagnostic('du: warning: options --apparent-size and -b are ineffective with --inodes');
+  const sources: { name: string; record: number | null }[] = [];
   if (opts.files0From !== null) {
-    const text = ctx.vfs.readFile(ctx.vfs.normalizePath(opts.files0From, ctx.cwd));
-    if (text === null) return `du: cannot open '${opts.files0From}' for reading: No such file or directory`;
-    targets = text.split('\0').filter((name) => name !== '');
+    if (targets.length > 0) {
+      fail(`du: extra operand ${quoteLocale(targets[0])}\nfile operands cannot be combined with --files0-from\n${TRY_HELP}`);
+      return streams.result();
+    }
+    let text: string | null;
+    if (opts.files0From === '-') text = stdin ?? '';
+    else text = ctx.vfs.readFile(ctx.vfs.normalizePath(opts.files0From, ctx.cwd));
+    if (text === null) {
+      fail(`du: cannot open ${quoteLocale(opts.files0From)} for reading: No such file or directory`);
+      return streams.result();
+    }
+    const names = text.split('\0');
+    if (names[names.length - 1] === '') names.pop();
+    names.forEach((name, index) => sources.push({ name, record: index + 1 }));
+  } else if (targets.length === 0) {
+    sources.push({ name: '.', record: null });
+  } else {
+    targets.forEach((name) => sources.push({ name, record: null }));
   }
-  if (targets.length === 0 && opts.files0From === null) targets = ['.'];
+  targets = sources.map((entry) => entry.name);
 
   const eol = opts.nul ? '\0' : '\n';
   const seen = new Set<number>();
-  const lines: string[] = [];
   let grand = 0;
 
   const usage = (inode: INode): number => {
@@ -192,11 +203,10 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
 
   const emit = (amount: number, display: string, newest: number): void => {
     if (opts.threshold !== null) {
-      const bytes = opts.inodes ? amount : amount;
-      if (opts.threshold >= 0 ? bytes < opts.threshold : bytes > -opts.threshold) return;
+      if (opts.threshold < 0 ? amount > -opts.threshold : amount < opts.threshold) return;
     }
     const time = opts.time === null ? '' : `\t${formatLocalTime(opts.timeStyle === 'iso' ? '%Y-%m-%d' : opts.timeStyle === 'full-iso' ? '%Y-%m-%d %H:%M:%S.%N %z' : opts.timeStyle === 'long-iso' ? '%Y-%m-%d %H:%M' : opts.timeStyle.slice(1), newest, ctx.zone)}`;
-    lines.push(`${render(amount)}${time}\t${display}`);
+    streams.stdout(`${render(amount)}${time}\t${display}${eol}`);
   };
 
   const stampOf = (inode: INode): number => inode[opts.time ?? 'mtime'];
@@ -211,7 +221,7 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
       seen.add(node.id);
       const amount = counted ? usage(node) : 0;
       const show = depth === 0 || (opts.all && (opts.maxDepth === null || depth <= opts.maxDepth));
-      if (show && (counted || depth === 0)) emit(amount, display, stampOf(node));
+      if (show && counted) emit(amount, display, stampOf(node));
       return { amount, newest: stampOf(node) };
     }
     let subtotal = usage(node);
@@ -234,16 +244,24 @@ export function cmdDu(ctx: ShellContext, args: string[]): string {
     return { amount: subtotal, newest };
   };
 
-  for (const target of targets) {
+  for (const { name: target, record } of sources) {
+    if (target === '') {
+      fail(record === null ? 'du: invalid zero-length file name' : `du: ${quotef(opts.files0From ?? '')}:${record}: invalid zero-length file name`);
+      continue;
+    }
+    if (opts.files0From === '-' && target === '-') {
+      fail(`du: when reading file names from stdin, no file name of ${quoteLocale('-')} allowed`);
+      continue;
+    }
+    if (excluded(target.split('/').pop() ?? target, target)) continue;
     const absPath = ctx.vfs.normalizePath(target, ctx.cwd);
     if (!ctx.vfs.lstat(absPath)) {
-      errors.push(`du: cannot access '${target}': No such file or directory`);
+      fail(`du: cannot access ${quoteLocale(target)}: No such file or directory`);
       continue;
     }
     const result = visit(absPath, target, 0, ctx.deviceOf?.(absPath), true);
     grand += result.amount;
   }
   if (opts.total) emit(grand, 'total', 0);
-  const body = [...errors.map((e) => e), ...lines].join(eol);
-  return opts.nul && lines.length > 0 ? `${body}\0` : body;
+  return streams.result();
 }

@@ -20,6 +20,7 @@ export interface CoreutilsIO {
   read(name: string): FileRead;
   readBytes?(name: string, count: number): string | null;
   write?(name: string, text: string): boolean;
+  remove?(name: string): boolean;
 }
 
 export class Streams {
@@ -81,7 +82,10 @@ export function useLocaleQuotes(locale: string): void {
   curlyQuotes = /utf-?8/i.test(locale);
 }
 
-export const quoteLocale = (text: string): string => (curlyQuotes ? `‘${text}’` : `'${text}'`);
+export const usesCurlyQuotes = (): boolean => curlyQuotes;
+
+const escapeQuoted = (text: string): string => text.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/\t/g, '\\t');
+export const quoteLocale = (text: string): string => (curlyQuotes ? `‘${escapeQuoted(text)}’` : `'${escapeQuoted(text).replace(/'/g, "\\'")}'`);
 export const quoteShell = (text: string): string => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text) ? `'${text}'` : `'${text.replace(/'/g, `'\\''`)}'`);
 
 export const quotef = (text: string): string => (/^[A-Za-z0-9_@%+,./{}\]-][A-Za-z0-9_@%+,./{}\]~#-]*$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`);

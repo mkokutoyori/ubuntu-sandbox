@@ -472,10 +472,10 @@ describe('getent column layout (glibc widths)', () => {
     expect(line).toMatch(/^.{22}6 TCP$/);
   });
 
-  it('rpc name column is %-15s with single-space aliases', async () => {
+  it('rpc name column is %-15s with two spaces before the first alias', async () => {
     const r = await getent(pc, 'rpc portmapper');
     const line = r.output.split('\n').find(l => l.startsWith('portmapper'))!;
-    expect(line).toMatch(/^.{16}100000 portmap sunrpc rpcbind$/);
+    expect(line).toMatch(/^.{16}100000  portmap sunrpc rpcbind$/);
   });
 });
 

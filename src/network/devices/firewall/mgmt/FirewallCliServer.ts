@@ -66,6 +66,7 @@ export interface FirewallCliServerDeps {
   idleTimeoutMs(): number | null;
   sshIdentification(): string | undefined;
   sshAlgorithms(): SshAlgorithmPreferences;
+  sshPasswordAllowed(): boolean;
   sshHostKeyAlgorithm(): SshKeyAlgorithm;
   runningConfig(): string;
   onLogin(session: AdminLoginFacts): void;
@@ -246,6 +247,7 @@ class FirewallSshServerContext implements ISshServerContext {
     return {
       checkPassword: (user, password) => {
         attemptsLeft = Math.max(0, attemptsLeft - 1);
+        if (!this.deps.sshPasswordAllowed()) return false;
         return this.deps.authenticate(user, password, this.peer.remote.ip);
       },
       checkPublicKey: (user, material) => {
@@ -253,7 +255,7 @@ class FirewallSshServerContext implements ISshServerContext {
         return this.deps.acceptsPublicKey(user, material, this.peer.remote.ip);
       },
       getAttemptsRemaining: () => attemptsLeft,
-      getAvailableMethods: (): readonly AuthMethodType[] => ['publickey', 'password'],
+      getAvailableMethods: (): readonly AuthMethodType[] => (this.deps.sshPasswordAllowed() ? ['publickey', 'password'] : ['publickey']),
     };
   }
 }

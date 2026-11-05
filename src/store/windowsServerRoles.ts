@@ -1,4 +1,6 @@
 import { WindowsServer } from '@/network/devices/WindowsServer';
+import type { ReceiveConnectorDef, SendConnectorDef } from '@/network/devices/windows/server/exchange/TransportConnector';
+import type { TransportRule } from '@/network/devices/windows/server/exchange/TransportRuleEngine';
 import type { DhcpKeptLease } from '@/network/devices/windows/server/dhcp/WindowsDhcpServerRole';
 import { certToPem, pemToCert, pemToPrivateKey, privateKeyToPem } from '@/network/pki/pem';
 import { reserveCertificateSerial } from '@/network/pki/serialReservation';
@@ -31,8 +33,27 @@ interface DhcpScopeState {
   options: Array<{ optionId: number; values: string[] }>;
 }
 
+interface DsDnsRecordState {
+  zone: string;
+  name: string;
+  type: string;
+  ttl: number;
+  data: Record<string, string | number>;
+}
+
+interface ExchangeState {
+  organization: string;
+  roles: string[];
+  receiveConnectors: ReceiveConnectorDef[];
+  sendConnectors: SendConnectorDef[];
+  transportRules: TransportRule[];
+  mailboxes: Array<{ adIdentity: string; primarySmtpAddress: string; quotaBytes: number | null }>;
+}
+
 export interface WindowsServerRolesState {
+  exchange?: ExchangeState;
   dnsZones?: DnsZoneState[];
+  dsDnsRecords?: DsDnsRecordState[];
   iis?: IisStateDelta;
   adcs?: AdcsPersistedState;
   nps?: NpsState;
@@ -92,6 +113,76 @@ const dnsZones: RolePersister = {
       } else {
         role.addConditionalForwarderZone(zone.name, zone.masters, undefined, undefined, zone.zoneFile);
       }
+    }
+  },
+};
+
+const relativeName = (fqdn: string, origin: string): string => {
+  const name = fqdn.toLowerCase().replace(/\.$/, '');
+  const zone = origin.toLowerCase().replace(/\.$/, '');
+  return name === zone ? '@' : name.endsWith(`.${zone}`) ? name.slice(0, -zone.length - 1) : name;
+};
+
+const dsDnsRecords: RolePersister = {
+  capture(server) {
+    const role = server.getDnsServerRole();
+    if (!role) return {};
+    const records: DsDnsRecordState[] = [];
+    for (const zone of role.listZones().filter((z) => z.isDsIntegrated)) {
+      for (const record of role.getRecords(zone.name) ?? []) {
+        if (record.type === 'SOA' || record.type === 'NS' || role.isProvisionedRecord(zone.name, record)) continue;
+        records.push({ zone: zone.name, name: relativeName(record.name, zone.name), type: record.type, ttl: record.ttl, data: record.data });
+      }
+    }
+    return records.length > 0 ? { dsDnsRecords: records } : {};
+  },
+  restore(server, state) {
+    const role = server.getDnsServerRole();
+    if (!role) return;
+    for (const record of state.dsDnsRecords ?? []) {
+      const present = (role.getRecords(record.zone, record.name === '@' ? undefined : record.name, record.type) ?? [])
+        .some((existing) => JSON.stringify(existing.data) === JSON.stringify(record.data));
+      if (!present) role.addRecord(record.zone, record.name, { type: record.type, data: record.data }, record.ttl);
+    }
+  },
+};
+
+const exchange: RolePersister = {
+  capture(server) {
+    const organization = server.getExchangeOrganizationName();
+    const record = server.getExchangeServer();
+    if (organization === null || record === null) return {};
+    return {
+      exchange: {
+        organization,
+        roles: [...record.roles],
+        receiveConnectors: server.listReceiveConnectors(),
+        sendConnectors: server.listSendConnectors(),
+        transportRules: server.listTransportRules(),
+        mailboxes: (server.getMailboxStore()?.list() ?? []).map((m) => ({
+          adIdentity: m.adIdentity, primarySmtpAddress: m.primarySmtpAddress, quotaBytes: m.quotaBytes,
+        })),
+      },
+    };
+  },
+  restore(server, state) {
+    const saved = state.exchange;
+    if (!saved) return;
+    server.installExchangeServer(saved.organization, saved.roles);
+    const keptReceive = new Set(saved.receiveConnectors.map((c) => c.name.toLowerCase()));
+    for (const present of server.listReceiveConnectors()) {
+      if (!keptReceive.has(present.name.toLowerCase())) server.removeReceiveConnector(present.name);
+    }
+    for (const connector of saved.receiveConnectors) {
+      if (server.getReceiveConnector(connector.name) === null) server.newReceiveConnector(connector);
+    }
+    for (const connector of saved.sendConnectors) server.newSendConnector(connector);
+    for (const rule of saved.transportRules) server.newTransportRule(rule);
+    const store = server.getMailboxStore();
+    for (const mailbox of saved.mailboxes) {
+      if (store?.get(mailbox.adIdentity)) continue;
+      store?.enable(mailbox.adIdentity, mailbox.primarySmtpAddress);
+      if (mailbox.quotaBytes !== null) store?.setQuota(mailbox.adIdentity, mailbox.quotaBytes);
     }
   },
 };
@@ -200,7 +291,7 @@ const npsPolicies: RolePersister = {
   },
 };
 
-const PERSISTERS: readonly RolePersister[] = [dnsZones, dhcpScopes, iisSites, adcsAuthority, npsPolicies];
+const PERSISTERS: readonly RolePersister[] = [exchange, dnsZones, dsDnsRecords, dhcpScopes, iisSites, adcsAuthority, npsPolicies];
 
 export function captureWindowsServerRoles(server: WindowsServer, twin: WindowsServer): WindowsServerRolesState | undefined {
   const state = Object.assign({}, ...PERSISTERS.map((p) => p.capture(server, twin))) as WindowsServerRolesState;

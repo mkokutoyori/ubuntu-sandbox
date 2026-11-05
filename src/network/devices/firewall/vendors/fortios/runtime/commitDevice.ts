@@ -257,6 +257,7 @@ export function buildCommitDevice(
         if (settings.adminTimeoutMin !== undefined) {
           fw.setAdminIdleTimeout(settings.adminTimeoutMin);
         }
+        if (settings.adminSshPassword !== undefined) fw.setSshPasswordAllowed(settings.adminSshPassword);
         if (settings.adminLoginMax !== undefined) fw.setAdminLoginMax(settings.adminLoginMax);
         if (settings.adminConcurrent !== undefined) fw.setAdminConcurrent(settings.adminConcurrent);
         if (settings.adminLockoutThreshold !== undefined
@@ -600,6 +601,14 @@ export function buildCommitDevice(
       },
       removeProxyArp(id) {
         fw.clearProxyArpEntries(proxyOwnerKey('proxy-arp', id));
+      },
+      applyShapingPolicy(draft, position) {
+        const store = fw.getVdom().shapers.shapingPolicies;
+        store.remove(draft.id);
+        store.insertAt(position < 0 ? Number.MAX_SAFE_INTEGER : position, { ...draft, action: 'allow' });
+      },
+      removeShapingPolicy(id) {
+        fw.getVdom().shapers.shapingPolicies.remove(id);
       },
       applyVip(vip) {
         applyVipToFirewall(fw, vip);

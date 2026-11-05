@@ -291,6 +291,7 @@ async function exchangeLab(): Promise<Lab> {
   await run(bench.windows, 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools');
   await run(bench.windows, 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
   await run(bench.windows, 'Install-ExchangeServer -Roles Mailbox -OrganizationName "Mandeng"');
+  await run(bench.windows, 'Remove-ReceiveConnector -Identity "Default Frontend SRV"');
   await run(bench.windows, 'New-ReceiveConnector -Name MainReceive -Bindings "0.0.0.0:25"');
   return bench;
 }

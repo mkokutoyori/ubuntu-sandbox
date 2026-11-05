@@ -1,3 +1,4 @@
+import { renderNetlinkInterfaceList } from './kernelViews';
 import { conserveModeLines, procMeminfoLines } from './systemLoad';
 import { renderArpKernelList } from './getViews';
 import {
@@ -130,6 +131,10 @@ function diagnoseNetlink(rest: readonly string[], deps: FortiDiagDeps): string {
       return renderAggregateDetail(vue);
     }
     return FortiMessages.unknownPath(`netlink aggregate ${tail.join(' ')}`);
+  }
+
+  if (family === 'interface' && tail[0] === 'list' && tail.length === 1) {
+    return renderNetlinkInterfaceList(deps.fw);
   }
 
   if (family === 'port' && tail[0] !== undefined) {
@@ -871,14 +876,31 @@ function diagnoseAuth(rest: readonly string[], deps: FortiDiagDeps): string {
   return FortiMessages.unknownPath(`firewall auth ${rest.join(' ')}`);
 }
 
+function tunnelNameOf(rest: readonly string[]): string | undefined {
+  return rest.length >= 5 ? rest[3] : rest[2];
+}
+
 function diagnoseVpn(rest: readonly string[], deps: FortiDiagDeps): string {
   if (rest[0] === 'ike') return diagnoseIke(rest.slice(1), deps);
   if (rest[0] !== 'tunnel') return FortiMessages.unknownPath(`vpn ${rest.join(' ')}`);
 
   const tunnels = deps.fw.getTunnelTable();
+  if (rest[1] === 'list' && rest[2] === 'name') {
+    const wanted = rest[3];
+    if (wanted === undefined) return FortiMessages.incomplete('a tunnel name');
+    if (!tunnels.getPhase1(wanted)) return FortiMessages.unknownKey(wanted);
+    return renderVpnTunnelList(tunnels, deps.fw.now(), wanted);
+  }
   if (rest[1] === 'list') return renderVpnTunnelList(tunnels, deps.fw.now());
+  if (rest[1] === 'down') {
+    const name = tunnelNameOf(rest);
+    if (name === undefined) return FortiMessages.incomplete('the tunnel name');
+    if (!tunnels.getPhase1(name)) return FortiMessages.unknownKey(name);
+    deps.fw.bringDownIpsecTunnel(name);
+    return '';
+  }
   if (rest[1] === 'up') {
-    const name = rest[2];
+    const name = tunnelNameOf(rest);
     if (name === undefined) return FortiMessages.incomplete('the tunnel name');
     if (!tunnels.getPhase1(name)) return FortiMessages.unknownKey(name);
     if (deps.fw.bringUpIpsecTunnel(name)) return '';

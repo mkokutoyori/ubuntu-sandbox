@@ -32,7 +32,7 @@ import { runPr } from '../../coreutils/PrCommand';
 import { runJoin } from '../../coreutils/JoinCommand';
 import { runCksum, runSum } from '../../coreutils/CksumCommand';
 import { runCmp } from '../../coreutils/CmpCommand';
-import { runBase64 } from '../../coreutils/Base64Command';
+import { runBase64, runBaseEncoding } from '../../coreutils/Base64Command';
 import { runSplit } from '../../coreutils/SplitCommand';
 import { runNl } from '../../coreutils/NlCommand';
 import { runPaste } from '../../coreutils/PasteCommand';
@@ -395,6 +395,19 @@ export const base64Command = viaCoreutils(coreutil(
   () => '',
 ), runBase64);
 
+const baseEncodingProgram = (program: string, description: string): LinuxCommand => viaCoreutils(coreutil(
+  program, `${program} [OPTION]... [FILE]`, description,
+  [
+    { flag: '-d', description: 'Decode instead of encoding' },
+    { flag: '-i', description: 'When decoding, ignore non-alphabet characters' },
+    { flag: '-w', description: 'Wrap encoded lines after COLS characters', takesArg: true, argName: 'COLS' },
+  ],
+  () => '',
+), (args, io) => runBaseEncoding(program, args, io));
+
+export const base32Command = baseEncodingProgram('base32', 'Base32 encode or decode FILE, or standard input, to standard output.');
+export const basencCommand = baseEncodingProgram('basenc', 'basenc encode or decode FILE, or standard input, to standard output.');
+
 // ─── cksum ──────────────────────────────────────────────────────────
 
 export const cksumCommand = viaCoreutils(coreutil(
@@ -443,6 +456,6 @@ export const TEXT_STREAM_COMMANDS: LinuxCommand[] = [
   lessCommand,
   tacCommand, nlCommand, pasteCommand, commCommand, joinCommand, foldCommand,
   expandCommand, unexpandCommand, fmtCommand, prCommand, columnCommand,
-  cmpCommand, splitCommand, base64Command, cksumCommand,
+  cmpCommand, splitCommand, base64Command, base32Command, basencCommand, cksumCommand,
   sumCommand,
 ];

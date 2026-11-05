@@ -559,8 +559,11 @@ export class LinuxUserManager {
     const user = this.users.get(username);
     if (!user) return [];
     const result: GroupEntry[] = [];
+    const seenGids = new Set<number>();
     for (const g of this.groups.values()) {
       if (g.gid === user.gid || g.members.includes(username)) {
+        if (seenGids.has(g.gid)) continue;
+        seenGids.add(g.gid);
         result.push(g);
       }
     }
@@ -1286,13 +1289,10 @@ export class LinuxUserManager {
     return this.currentUser;
   }
 
-  groupsCmd(username?: string): string {
-    const name = username || this.currentUser;
-    const user = this.getUser(name) ? this.users.get(name) : undefined;
-    if (!user) return `groups: '${name}': no such user`;
-    const groups = this.getUserGroups(name);
-    const groupNames = groups.map(g => g.name).join(' ');
-    return username ? `${name} : ${groupNames}` : groupNames;
+  groupNamesOf(username?: string): { readonly name: string; readonly groups: string[] } | null {
+    const name = username ?? this.currentUser;
+    if (!this.getUser(name) || !this.users.get(name)) return null;
+    return { name, groups: this.getUserGroups(name).map((group) => group.name) };
   }
 
   /**

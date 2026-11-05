@@ -12,6 +12,7 @@ import { simulationDate } from '@/network/core/SystemClock';
 
 import type { LinuxProcessManager, ProcessInfo, Signal } from './LinuxProcessManager';
 import { SIGNAL_NUMBERS } from './LinuxProcessManager';
+import { convertSignalSpecs, signalListing } from '@/bash/runtime/Signals';
 import type { LinuxServiceManager, ServiceUnit } from './LinuxServiceManager';
 import type { LinuxJobTable } from './jobs/LinuxJobTable';
 import { memPercent, sharedKib, topCommand, taskBucketOf, type TaskBucket } from './system/ProcFormat';
@@ -317,14 +318,11 @@ export function cmdKill(args: string[], ctx: ProcessCmdContext): KillResult {
     };
   }
 
-  // kill -l → list signals
-  if (args[0] === '-l') {
-    const list: string[] = [];
-    const entries = Object.entries(SIGNAL_NUMBERS).sort((a, b) => a[1] - b[1]);
-    for (const [name, num] of entries) {
-      list.push(`${num}) ${name}`);
-    }
-    return { output: list.join('\n'), exitCode: 0 };
+  if (args[0] === '-l' || args[0] === '-L') {
+    const specs = args.slice(1).filter((spec, index) => !(index === 0 && spec === '--'));
+    if (specs.length === 0) return { output: signalListing().replace(/\n$/, ''), exitCode: 0 };
+    const converted = convertSignalSpecs(specs);
+    return { output: converted.output.replace(/\n$/, ''), ...(converted.diagnostics === '' ? {} : { stderr: converted.diagnostics }), exitCode: converted.exitCode };
   }
 
   let signal: Signal = 'SIGTERM';

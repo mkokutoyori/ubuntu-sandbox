@@ -195,7 +195,7 @@ export const STANDARD_BIN_PATHS: Readonly<Record<string, string>> = {
   // commande, sinon la machine se contredit sur l'emplacement.
   lsmod: '/usr/sbin/lsmod', modinfo: '/usr/sbin/modinfo',
   modprobe: '/usr/sbin/modprobe',
-  swapon: '/usr/sbin/swapon', swapoff: '/usr/sbin/swapoff',
+  swapon: '/usr/sbin/swapon', swapoff: '/usr/sbin/swapoff', mkswap: '/usr/sbin/mkswap',
   lid: '/usr/sbin/lid', conntrack: '/usr/sbin/conntrack',
   vsftpd: '/usr/sbin/vsftpd',
   // The two HTTP servers and their control tool. They are here for two

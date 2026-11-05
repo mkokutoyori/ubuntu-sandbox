@@ -1256,7 +1256,7 @@ export class BashInterpreter {
       this.env.lastExitCode = 2;
     } else if (cmdName === 'exit' && args.length > 1 && !this.exitArgumentsValid(args.slice(1))) {
       return undefined;
-    } else if (isBuiltin(cmdName)) {
+    } else if (this.builtinActive(cmdName)) {
       const aliasesBefore = cmdName === 'alias' ? new Map(this.aliases.list().map((alias) => [alias.name, alias.value])) : null;
       const result = executeBuiltin(
         cmdName, args.slice(1), this.env, this.functions, this.io ?? undefined,
@@ -1459,7 +1459,7 @@ export class BashInterpreter {
     }
 
     // Execute, skipping function and alias resolution.
-    if (isBuiltin(name)) {
+    if (this.builtinActive(name)) {
       const r = executeBuiltin(
         name, target.slice(1), this.env, this.functions,
         this.io ?? undefined, this.stdin ?? undefined, this.aliases, (fd) => this.fdInputs.get(fd),
@@ -1485,7 +1485,7 @@ export class BashInterpreter {
    * registry and the VFS.
    */
   private *describeResolution(name: string, verbose: boolean): Effects<string | null> {
-    if (isBuiltin(name)) {
+    if (this.builtinActive(name)) {
       return verbose ? `${name} is a shell builtin` : name;
     }
     if (this.functions.has(name)) {
@@ -1900,13 +1900,17 @@ export class BashInterpreter {
     }
   }
 
+  private builtinActive(name: string): boolean {
+    return isBuiltin(name) && !this.env.isBuiltinDisabled(name);
+  }
+
   private *runBuiltinWord(rest: string[]): Effects<void> {
     const name = rest[0];
     if (name === undefined) {
       this.env.lastExitCode = 0;
       return;
     }
-    if (!isBuiltin(name) && name !== 'hash' && name !== 'builtin') {
+    if (!this.builtinActive(name) && name !== 'hash' && name !== 'builtin') {
       this.emitError(`bash: builtin: ${name}: not a shell builtin`);
       this.env.lastExitCode = 1;
       return;

@@ -114,6 +114,8 @@ const CATALOGUE: readonly PackageEntry[] = [
     arch: 'amd64', summary: 'NET-3 networking toolkit', },
   { name: 'nginx', version: `${NGINX_VERSION}-1~jammy`, arch: 'amd64',
     summary: 'small, powerful, scalable web/proxy server', units: ['nginx'] },
+  { name: 'postfix', version: '3.6.4-1ubuntu1.3', arch: 'amd64',
+    summary: 'High-performance mail transport agent', units: ['postfix'], programFiles: ['/usr/sbin/postfix'] },
   { name: 'ntpsec', version: '1.2.1+dfsg1-4', arch: 'amd64',
     summary: 'Network Time Protocol daemon and utility programs', },
   { name: 'inetutils-telnet', version: '2:2.2-2', arch: 'amd64',

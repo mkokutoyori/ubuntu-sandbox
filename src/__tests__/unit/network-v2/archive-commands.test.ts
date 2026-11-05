@@ -208,7 +208,7 @@ describe('file — classification from real content', () => {
       .toBe('/root/empty: empty');
     await h.executeCommand('printf "#!/bin/bash\\necho hi\\n" > /root/s.sh');
     expect(await h.executeCommand('file /root/s.sh'))
-      .toContain('/bin/bash script');
+      .toContain('Bourne-Again shell script');
   });
 });
 

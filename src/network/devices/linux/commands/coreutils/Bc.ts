@@ -1,46 +1,17 @@
-/**
- * `bc` — la calculatrice à précision arbitraire de POSIX.
- *
- * Dernier refus des transcripts `linux-text-pipes`, et le seul de la
- * famille qui ne soit pas un filtre de flux : `bc` a une grammaire, des
- * variables, et une arithmétique qui lui est propre.
- *
- * Cette arithmétique est le cœur du sujet et n'est pas celle des nombres
- * flottants : `bc` calcule sur des entiers de taille libre accompagnés
- * d'une échelle décimale. Les valeurs sont donc portées ici par des
- * `bigint` — `10/3` à `scale=2` doit rendre `3.33`, pas `3.3333333333`,
- * et `2^200` doit rendre ses soixante-et-un chiffres.
- *
- * Les règles d'échelle sont celles de POSIX, relevées sur `bc 1.07.1` :
- *
- *   a+b, a-b   échelle = max(échelle(a), échelle(b))
- *   a*b        échelle = min(échelle(a)+échelle(b), max(scale, échelles))
- *   a/b        échelle = scale
- *   a%b        a - (a/b)*b, la division faite à l'échelle courante
- *   a^b        b entier ; échelle bornée par le même minimum que le produit
- *
- * Les troncatures vont vers zéro, jamais à l'arrondi.
- */
-
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
+import { BC_MATH_LIBRARY } from './BcMathLibrary';
 
-/** Une valeur bc : `v` divisé par dix puissance `s`. */
 interface Num { v: bigint; s: number }
 
-const TEN = 10n;
+const pow10 = (n: number): bigint => 10n ** BigInt(n);
+const ZERO: Num = { v: 0n, s: 0 };
+const ONE: Num = { v: 1n, s: 0 };
 
-function pow10(n: number): bigint {
-  return TEN ** BigInt(n);
-}
-
-/** Ramène une valeur à une échelle donnée, en tronquant vers zéro. */
 function rescale(n: Num, s: number): Num {
   if (s === n.s) return n;
   if (s > n.s) return { v: n.v * pow10(s - n.s), s };
-  const d = pow10(n.s - s);
-  const q = n.v / d;
-  return { v: q, s };
+  return { v: n.v / pow10(n.s - s), s };
 }
 
 function align(a: Num, b: Num): [bigint, bigint, number] {
@@ -48,284 +19,679 @@ function align(a: Num, b: Num): [bigint, bigint, number] {
   return [rescale(a, s).v, rescale(b, s).v, s];
 }
 
-function cmp(a: Num, b: Num): number {
+function compare(a: Num, b: Num): number {
   const [x, y] = align(a, b);
   return x < y ? -1 : x > y ? 1 : 0;
 }
 
-const ZERO: Num = { v: 0n, s: 0 };
-const ONE: Num = { v: 1n, s: 0 };
-
 class BcError extends Error {}
-
-/** L'erreur d'exécution de bc, dans sa forme réelle. */
-function runtimeError(message: string): BcError {
-  return new BcError(`Runtime error (func=(main), adr=3): ${message}`);
+class SyntaxFailure extends Error {
+  constructor(readonly line: number) { super('syntax error'); }
 }
-
-// ─── Analyse lexicale ───────────────────────────────────────────────
+class BreakSignal extends Error {}
+class ContinueSignal extends Error {}
+class ReturnSignal extends Error { constructor(readonly value: Num) { super('return'); } }
+class HaltSignal extends Error {}
 
 type Tok =
-  | { k: 'num'; text: string }
-  | { k: 'name'; text: string }
-  | { k: 'op'; text: string }
-  | { k: 'nl' }
-  | { k: 'end' };
+  | { k: 'num'; text: string; line: number }
+  | { k: 'name'; text: string; line: number }
+  | { k: 'str'; text: string; line: number }
+  | { k: 'op'; text: string; line: number }
+  | { k: 'nl'; line: number }
+  | { k: 'end'; line: number };
 
-const OPS3 = ['<<=', '>>='];
 const OPS2 = ['==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '^=', '++', '--'];
 
 function lex(src: string): Tok[] {
   const out: Tok[] = [];
   let i = 0;
+  let line = 1;
   while (i < src.length) {
     const c = src[i];
-    if (c === '\\' && src[i + 1] === '\n') { i += 2; continue; }
-    if (c === '\n') { out.push({ k: 'nl' }); i++; continue; }
+    if (c === '\\' && src[i + 1] === '\n') { i += 2; line++; continue; }
+    if (c === '\n') { out.push({ k: 'nl', line }); line++; i++; continue; }
     if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
     if (c === '#') { while (i < src.length && src[i] !== '\n') i++; continue; }
     if (c === '/' && src[i + 1] === '*') {
       const end = src.indexOf('*/', i + 2);
-      i = end === -1 ? src.length : end + 2;
+      const stop = end === -1 ? src.length : end + 2;
+      for (const ch of src.slice(i, stop)) if (ch === '\n') line++;
+      i = stop;
       continue;
     }
-    if (/[0-9.]/.test(c)) {
+    if (c === '"') {
+      const end = src.indexOf('"', i + 1);
+      const stop = end === -1 ? src.length : end;
+      const text = src.slice(i + 1, stop);
+      out.push({ k: 'str', text, line });
+      for (const ch of text) if (ch === '\n') line++;
+      i = stop + 1;
+      continue;
+    }
+    if (/[0-9A-F.]/.test(c)) {
       let j = i;
       while (j < src.length && /[0-9A-F.]/.test(src[j])) j++;
-      out.push({ k: 'num', text: src.slice(i, j) });
+      out.push({ k: 'num', text: src.slice(i, j), line });
       i = j;
       continue;
     }
     if (/[a-z_]/.test(c)) {
       let j = i;
       while (j < src.length && /[a-z0-9_]/.test(src[j])) j++;
-      out.push({ k: 'name', text: src.slice(i, j) });
+      out.push({ k: 'name', text: src.slice(i, j), line });
       i = j;
       continue;
     }
-    const three = src.slice(i, i + 3);
-    if (OPS3.includes(three)) { out.push({ k: 'op', text: three }); i += 3; continue; }
     const two = src.slice(i, i + 2);
-    if (OPS2.includes(two)) { out.push({ k: 'op', text: two }); i += 2; continue; }
-    out.push({ k: 'op', text: c });
+    if (OPS2.includes(two)) { out.push({ k: 'op', text: two, line }); i += 2; continue; }
+    out.push({ k: 'op', text: c, line });
     i++;
   }
-  out.push({ k: 'end' });
+  out.push({ k: 'end', line });
   return out;
 }
 
-// ─── Évaluation ─────────────────────────────────────────────────────
+type Expr =
+  | { t: 'num'; text: string }
+  | { t: 'last' }
+  | { t: 'var'; name: string }
+  | { t: 'elem'; name: string; index: Expr }
+  | { t: 'assign'; op: string; target: Expr; value: Expr }
+  | { t: 'bin'; op: string; l: Expr; r: Expr }
+  | { t: 'neg'; e: Expr }
+  | { t: 'not'; e: Expr }
+  | { t: 'step'; target: Expr; delta: 1 | -1; prefix: boolean }
+  | { t: 'call'; name: string; args: Arg[] }
+  | { t: 'paren'; e: Expr };
 
-/**
- * Le mot-clé d'un langage d'instructions que ce bc n'a pas. Les nommer
- * vaut mieux que rendre « syntax error » : l'opérateur saurait que sa
- * ligne est refusée, pas qu'elle est correcte et non prise en charge.
- */
-const UNSUPPORTED = ['define', 'if', 'while', 'for', 'return', 'break', 'continue', 'auto', 'read'];
+type Arg = { array: string } | { expr: Expr };
 
-class Interp {
-  vars = new Map<string, Num>();
-  scale = 0;
-  ibase = 10;
-  obase = 10;
-  last: Num = ZERO;
-  out: string[] = [];
-  quit = false;
+type Stmt =
+  | { t: 'expr'; e: Expr }
+  | { t: 'str'; text: string }
+  | { t: 'print'; items: Array<{ str: string } | { expr: Expr }> }
+  | { t: 'if'; cond: Expr; then: Stmt; otherwise: Stmt | null }
+  | { t: 'while'; cond: Expr; body: Stmt }
+  | { t: 'for'; init: Expr | null; cond: Expr | null; step: Expr | null; body: Stmt }
+  | { t: 'break' } | { t: 'continue' } | { t: 'halt' } | { t: 'quit' } | { t: 'limits' }
+  | { t: 'return'; e: Expr | null }
+  | { t: 'block'; body: Stmt[] };
 
-  private toks: Tok[] = [];
+interface FunctionDef {
+  readonly params: ReadonlyArray<{ name: string; array: boolean }>;
+  readonly autos: ReadonlyArray<{ name: string; array: boolean }>;
+  readonly body: Stmt[];
+}
+
+type Item = { stmt: Stmt; line: number } | { define: string; fn: FunctionDef; line: number } | { error: number; line: number };
+
+class Parser {
   private p = 0;
+
+  constructor(private readonly toks: Tok[]) {}
 
   private peek(): Tok { return this.toks[this.p]; }
   private next(): Tok { return this.toks[this.p++]; }
-  private atOp(text: string): boolean {
+  private isOp(text: string): boolean { const t = this.peek(); return t.k === 'op' && t.text === text; }
+  private isName(text: string): boolean { const t = this.peek(); return t.k === 'name' && t.text === text; }
+  private eatOp(text: string): boolean { if (!this.isOp(text)) return false; this.p++; return true; }
+  private fail(): never {
     const t = this.peek();
-    return t.k === 'op' && t.text === text;
+    throw new SyntaxFailure(t.k === 'nl' ? t.line + 1 : t.line);
   }
-  private eatOp(text: string): boolean {
-    if (!this.atOp(text)) return false;
-    this.p++;
-    return true;
-  }
+  private expectOp(text: string): void { if (!this.eatOp(text)) this.fail(); }
+  private skipNewlines(): void { while (this.peek().k === 'nl') this.p++; }
 
-  run(src: string): void {
-    this.toks = lex(src);
-    this.p = 0;
-    while (this.peek().k !== 'end' && !this.quit) {
-      if (this.peek().k === 'nl' || this.eatOp(';')) { if (this.peek().k === 'nl') this.p++; continue; }
-      this.statement();
-    }
-  }
-
-  private statement(): void {
-    const t = this.peek();
-    if (t.k === 'name' && UNSUPPORTED.includes(t.text)) {
-      throw new BcError(`bc: '${t.text}' is not supported by this bc`);
-    }
-    if (t.k === 'name' && t.text === 'quit') { this.quit = true; return; }
-    if (t.k === 'op' && t.text === '"') { throw new BcError('(standard_in) 1: syntax error'); }
-
-    const before = this.p;
-    const value = this.expr();
-    // Une affectation seule n'imprime rien — c'est ce que fait le vrai bc.
-    const wasAssignment = this.assignmentAt(before);
-    this.last = value;
-    if (!wasAssignment) this.out.push(this.format(value));
-  }
-
-  /** Vrai si l'expression commencée à `from` était une affectation nue. */
-  private assignmentAt(from: number): boolean {
-    let depth = 0;
-    for (let i = from; i < this.p; i++) {
-      const t = this.toks[i];
-      if (t.k !== 'op') continue;
-      if (t.text === '(') depth++;
-      else if (t.text === ')') depth--;
-      else if (depth === 0 && (t.text === '=' || /^[-+*/%^]=$/.test(t.text))) return true;
-    }
-    return false;
-  }
-
-  // expr := assignment
-  private expr(): Num { return this.assign(); }
-
-  private assign(): Num {
-    const save = this.p;
-    const t = this.peek();
-    if (t.k === 'name' && !UNSUPPORTED.includes(t.text)) {
-      const name = t.text;
-      this.p++;
-      const op = this.peek();
-      if (op.k === 'op' && (op.text === '=' || /^[-+*/%^]=$/.test(op.text))) {
-        this.p++;
-        const rhs = this.assign();
-        const value = op.text === '='
-          ? rhs
-          : this.binary(op.text[0], this.read(name), rhs);
-        this.write(name, value);
-        return this.read(name);
+  parseAll(): Item[] {
+    const items: Item[] = [];
+    while (this.peek().k !== 'end') {
+      const t = this.peek();
+      if (t.k === 'nl' || this.isOp(';')) { this.p++; continue; }
+      const line = t.line;
+      try {
+        if (this.isName('define')) {
+          this.p++;
+          const nameTok = this.next();
+          if (nameTok.k !== 'name') this.fail();
+          items.push({ define: nameTok.text, fn: this.parseFunction(), line });
+        } else {
+          items.push({ stmt: this.statement(), line });
+          this.terminator();
+        }
+      } catch (error) {
+        if (!(error instanceof SyntaxFailure)) throw error;
+        items.push({ error: error.line, line });
+        while (this.peek().k !== 'end' && this.peek().k !== 'nl') this.p++;
       }
-      this.p = save;
     }
-    return this.orExpr();
+    return items;
   }
 
-  private orExpr(): Num {
+  private terminator(): void {
+    const t = this.peek();
+    if (t.k === 'nl' || t.k === 'end' || this.isOp(';') || this.isOp('}')) return;
+    this.fail();
+  }
+
+  private parseFunction(): FunctionDef {
+    this.expectOp('(');
+    const params: Array<{ name: string; array: boolean }> = [];
+    if (!this.isOp(')')) {
+      do {
+        const t = this.next();
+        if (t.k !== 'name') this.fail();
+        let array = false;
+        if (this.eatOp('[')) { this.expectOp(']'); array = true; }
+        params.push({ name: t.text, array });
+      } while (this.eatOp(','));
+    }
+    this.expectOp(')');
+    this.skipNewlines();
+    this.expectOp('{');
+    this.skipNewlines();
+    const autos: Array<{ name: string; array: boolean }> = [];
+    while (this.isName('auto')) {
+      this.p++;
+      do {
+        const t = this.next();
+        if (t.k !== 'name') this.fail();
+        let array = false;
+        if (this.eatOp('[')) { this.expectOp(']'); array = true; }
+        autos.push({ name: t.text, array });
+      } while (this.eatOp(','));
+      if (!(this.eatOp(';') || this.peek().k === 'nl')) this.fail();
+      this.skipNewlines();
+    }
+    const body = this.statementList();
+    this.expectOp('}');
+    return { params, autos, body };
+  }
+
+  private statementList(): Stmt[] {
+    const body: Stmt[] = [];
+    for (;;) {
+      this.skipNewlines();
+      while (this.eatOp(';')) this.skipNewlines();
+      if (this.isOp('}') || this.peek().k === 'end') return body;
+      body.push(this.statement());
+      this.terminator();
+    }
+  }
+
+  private statement(): Stmt {
+    const t = this.peek();
+    if (t.k === 'str') { this.p++; return { t: 'str', text: t.text }; }
+    if (t.k === 'op' && t.text === '{') {
+      this.p++;
+      const body = this.statementList();
+      this.expectOp('}');
+      return { t: 'block', body };
+    }
+    if (t.k === 'name') {
+      switch (t.text) {
+        case 'if': {
+          this.p++;
+          this.expectOp('(');
+          const cond = this.expression();
+          this.expectOp(')');
+          this.skipNewlines();
+          const then = this.statement();
+          const save = this.p;
+          this.skipNewlines();
+          while (this.isOp(';')) { this.p++; this.skipNewlines(); }
+          if (this.isName('else')) {
+            this.p++;
+            this.skipNewlines();
+            return { t: 'if', cond, then, otherwise: this.statement() };
+          }
+          this.p = save;
+          return { t: 'if', cond, then, otherwise: null };
+        }
+        case 'while': {
+          this.p++;
+          this.expectOp('(');
+          const cond = this.expression();
+          this.expectOp(')');
+          this.skipNewlines();
+          return { t: 'while', cond, body: this.statement() };
+        }
+        case 'for': {
+          this.p++;
+          this.expectOp('(');
+          const init = this.isOp(';') ? null : this.expression();
+          this.expectOp(';');
+          const cond = this.isOp(';') ? null : this.expression();
+          this.expectOp(';');
+          const step = this.isOp(')') ? null : this.expression();
+          this.expectOp(')');
+          this.skipNewlines();
+          return { t: 'for', init, cond, step, body: this.statement() };
+        }
+        case 'break': this.p++; return { t: 'break' };
+        case 'continue': this.p++; return { t: 'continue' };
+        case 'halt': this.p++; return { t: 'halt' };
+        case 'quit': this.p++; return { t: 'quit' };
+        case 'limits': this.p++; return { t: 'limits' };
+        case 'return': {
+          this.p++;
+          const n = this.peek();
+          if (n.k === 'nl' || n.k === 'end' || this.isOp(';') || this.isOp('}')) return { t: 'return', e: null };
+          return { t: 'return', e: this.expression() };
+        }
+        case 'print': {
+          this.p++;
+          const items: Array<{ str: string } | { expr: Expr }> = [];
+          do {
+            const s = this.peek();
+            if (s.k === 'str') { this.p++; items.push({ str: s.text }); } else items.push({ expr: this.expression() });
+          } while (this.eatOp(','));
+          return { t: 'print', items };
+        }
+        default: break;
+      }
+    }
+    return { t: 'expr', e: this.expression() };
+  }
+
+  expression(): Expr {
+    const left = this.orExpr();
+    const t = this.peek();
+    if (t.k === 'op' && (t.text === '=' || /^[-+*/%^]=$/.test(t.text))) {
+      if (left.t !== 'var' && left.t !== 'elem') this.fail();
+      this.p++;
+      return { t: 'assign', op: t.text, target: left, value: this.expression() };
+    }
+    return left;
+  }
+
+  private orExpr(): Expr {
     let left = this.andExpr();
-    while (this.atOp('||')) {
-      this.p++;
-      const right = this.andExpr();
-      left = (left.v !== 0n || right.v !== 0n) ? ONE : ZERO;
-    }
+    while (this.eatOp('||')) left = { t: 'bin', op: '||', l: left, r: this.andExpr() };
     return left;
   }
 
-  private andExpr(): Num {
+  private andExpr(): Expr {
     let left = this.notExpr();
-    while (this.atOp('&&')) {
-      this.p++;
-      const right = this.notExpr();
-      left = (left.v !== 0n && right.v !== 0n) ? ONE : ZERO;
-    }
+    while (this.eatOp('&&')) left = { t: 'bin', op: '&&', l: left, r: this.notExpr() };
     return left;
   }
 
-  private notExpr(): Num {
-    if (this.eatOp('!')) return this.notExpr().v === 0n ? ONE : ZERO;
+  private notExpr(): Expr {
+    if (this.eatOp('!')) return { t: 'not', e: this.notExpr() };
     return this.relExpr();
   }
 
-  private relExpr(): Num {
-    const left = this.addExpr();
-    const t = this.peek();
-    if (t.k === 'op' && ['==', '!=', '<', '<=', '>', '>='].includes(t.text)) {
-      this.p++;
-      const right = this.addExpr();
-      const c = cmp(left, right);
-      const ok = t.text === '==' ? c === 0
-        : t.text === '!=' ? c !== 0
-        : t.text === '<' ? c < 0
-        : t.text === '<=' ? c <= 0
-        : t.text === '>' ? c > 0
-        : c >= 0;
-      return ok ? ONE : ZERO;
+  private relExpr(): Expr {
+    let left = this.addExpr();
+    for (;;) {
+      const t = this.peek();
+      if (t.k === 'op' && ['==', '!=', '<', '<=', '>', '>='].includes(t.text)) {
+        this.p++;
+        left = { t: 'bin', op: t.text, l: left, r: this.addExpr() };
+      } else return left;
     }
-    return left;
   }
 
-  private addExpr(): Num {
+  private addExpr(): Expr {
     let left = this.mulExpr();
     for (;;) {
-      if (this.atOp('+')) { this.p++; left = this.binary('+', left, this.mulExpr()); continue; }
-      if (this.atOp('-')) { this.p++; left = this.binary('-', left, this.mulExpr()); continue; }
+      if (this.isOp('+')) { this.p++; left = { t: 'bin', op: '+', l: left, r: this.mulExpr() }; continue; }
+      if (this.isOp('-')) { this.p++; left = { t: 'bin', op: '-', l: left, r: this.mulExpr() }; continue; }
       return left;
     }
   }
 
-  private mulExpr(): Num {
-    let left = this.unary();
+  private mulExpr(): Expr {
+    let left = this.power();
     for (;;) {
       const t = this.peek();
       if (t.k === 'op' && (t.text === '*' || t.text === '/' || t.text === '%')) {
         this.p++;
-        left = this.binary(t.text, left, this.unary());
-        continue;
-      }
-      return left;
+        left = { t: 'bin', op: t.text, l: left, r: this.power() };
+      } else return left;
     }
   }
 
-  private unary(): Num {
-    if (this.eatOp('-')) { const n = this.unary(); return { v: -n.v, s: n.s }; }
-    if (this.eatOp('+')) return this.unary();
-    return this.powExpr();
+  private negation(): Expr {
+    if (this.eatOp('-')) return { t: 'neg', e: this.negation() };
+    return this.postfix();
   }
 
-  private powExpr(): Num {
-    const base = this.primary();
-    // `^` associe à droite, et son exposant peut être signé : 2^-2.
-    if (this.eatOp('^')) return this.binary('^', base, this.unary());
+  private power(): Expr {
+    const base = this.negation();
+    if (this.eatOp('^')) return { t: 'bin', op: '^', l: base, r: this.power() };
     return base;
   }
 
-  private primary(): Num {
-    const t = this.next();
-    if (t.k === 'num') return this.parseNumber(t.text);
-    if (t.k === 'op' && t.text === '(') {
-      const v = this.expr();
-      if (!this.eatOp(')')) throw new BcError('(standard_in) 1: syntax error');
-      return v;
+  private postfix(): Expr {
+    if (this.isOp('++') || this.isOp('--')) {
+      const delta = (this.next() as { text: string }).text === '++' ? 1 : -1;
+      const target = this.primary();
+      if (target.t !== 'var' && target.t !== 'elem') this.fail();
+      return { t: 'step', target, delta, prefix: true };
     }
-    if (t.k === 'op' && t.text === '.') return this.last;
-    if (t.k === 'name') {
-      if (this.atOp('(')) {
-        this.p++;
-        const args: Num[] = [this.expr()];
-        while (this.eatOp(',')) args.push(this.expr());
-        if (!this.eatOp(')')) throw new BcError('(standard_in) 1: syntax error');
-        return this.call(t.text, args);
-      }
-      return this.read(t.text);
+    const e = this.primary();
+    if ((e.t === 'var' || e.t === 'elem') && (this.isOp('++') || this.isOp('--'))) {
+      const delta = (this.next() as { text: string }).text === '++' ? 1 : -1;
+      return { t: 'step', target: e, delta, prefix: false };
     }
-    throw new BcError('(standard_in) 1: syntax error');
+    return e;
   }
 
-  private call(name: string, args: Num[]): Num {
-    if (name === 'sqrt') return this.sqrt(args[0]);
-    if (name === 'length') {
-      const digits = (args[0].v < 0n ? -args[0].v : args[0].v).toString().length;
-      return { v: BigInt(Math.max(digits, args[0].s)), s: 0 };
+  private primary(): Expr {
+    const t = this.next();
+    if (t.k === 'num') return t.text === '.' ? { t: 'last' } : { t: 'num', text: t.text };
+    if (t.k === 'op' && t.text === '(') {
+      const e = this.expression();
+      this.expectOp(')');
+      return { t: 'paren', e };
     }
-    if (name === 'scale') return { v: BigInt(args[0].s), s: 0 };
-    // Message exact du vrai bc lorsque la bibliothèque n'est pas chargée.
-    throw runtimeError(`Function ${name} not defined.`);
+    if (t.k === 'name') {
+      if (this.isOp('(')) {
+        this.p++;
+        const args: Arg[] = [];
+        if (!this.isOp(')')) {
+          do {
+            const n = this.peek();
+            const after = this.toks[this.p + 1];
+            const closing = this.toks[this.p + 2];
+            if (n.k === 'name' && after.k === 'op' && after.text === '[' && closing.k === 'op' && closing.text === ']') {
+              this.p += 3;
+              args.push({ array: n.text });
+            } else args.push({ expr: this.expression() });
+          } while (this.eatOp(','));
+        }
+        this.expectOp(')');
+        return { t: 'call', name: t.text, args };
+      }
+      if (this.isOp('[')) {
+        this.p++;
+        const index = this.expression();
+        this.expectOp(']');
+        return { t: 'elem', name: t.text, index };
+      }
+      if (t.text === 'last') return { t: 'last' };
+      return { t: 'var', name: t.text };
+    }
+    this.p--;
+    return this.fail();
+  }
+}
+
+type ArrayStore = Map<number, Num>;
+
+function constantCost(text: string): number {
+  const normal = text.replace(/^0+(?=[0-9])/, '').replace(/^0(?=\.)/, '');
+  return normal === '0' || normal === '1' ? 1 : normal.length + 2;
+}
+
+interface Frame {
+  pc: number;
+  readonly name: string;
+  readonly scalars: Map<string, Num>;
+  readonly arrays: Map<string, ArrayStore>;
+}
+
+const WRAP_COLUMN = 68;
+
+class Interp {
+  scale = 0;
+  ibase = 10;
+  obase = 10;
+  last: Num = ZERO;
+  readonly out: string[] = [];
+  readonly err: string[] = [];
+  readonly interleaved: string[] = [];
+  private column = 0;
+  private readonly globals: Frame = { pc: 0, name: '(main)', scalars: new Map(), arrays: new Map() };
+  private readonly functions = new Map<string, FunctionDef>();
+  private frames: Frame[] = [this.globals];
+  private halted = false;
+
+  get stopped(): boolean { return this.halted; }
+
+  private emit(text: string): void {
+    this.out.push(text);
+    this.interleaved.push(text);
+    const at = text.lastIndexOf('\n');
+    this.column = at === -1 ? this.column + text.length : text.length - at - 1;
+  }
+
+  private emitError(text: string): void {
+    this.err.push(`${text}\n`);
+    this.interleaved.push(`${text}\n`);
+  }
+
+  private emitDigits(text: string): void {
+    for (const ch of text) {
+      if (this.column === WRAP_COLUMN) this.emit('\\\n');
+      this.emit(ch);
+    }
+  }
+
+  run(source: string): void {
+    const items = new Parser(lex(source)).parseAll();
+    let failedLine = -1;
+    let currentLine = -1;
+    for (const item of items) {
+      if (item.line !== currentLine) { currentLine = item.line; this.globals.pc = 0; }
+      if (this.halted) return;
+      if ('error' in item) {
+        this.emitError(`(standard_in) ${item.error}: syntax error`);
+        continue;
+      }
+      if (item.line === failedLine) continue;
+      if ('define' in item) { this.functions.set(item.define, item.fn); continue; }
+      try {
+        this.exec(item.stmt, true);
+      } catch (error) {
+        if (error instanceof HaltSignal) { this.halted = true; return; }
+        if (error instanceof BcError) {
+          this.emitError(error.message);
+          this.frames = [this.globals];
+          failedLine = item.line;
+          continue;
+        }
+        if (error instanceof BreakSignal || error instanceof ContinueSignal || error instanceof ReturnSignal) continue;
+        throw error;
+      }
+    }
+  }
+
+  private runtime(message: string): BcError {
+    return new BcError(`Runtime error (func=${this.frame().name}, adr=${this.frame().pc}): ${message}`);
+  }
+
+  private frame(): Frame { return this.frames[this.frames.length - 1]; }
+
+  private exec(s: Stmt, top = false): void {
+    switch (s.t) {
+      case 'expr': {
+        const value = this.eval(s.e);
+        this.charge(1);
+        if (s.e.t !== 'assign') {
+          this.emitDigits(this.format(value));
+          this.emit('\n');
+          this.last = value;
+        }
+        return;
+      }
+      case 'str': this.emit(s.text); return;
+      case 'print':
+        for (const item of s.items) {
+          if ('str' in item) this.emit(item.str.replace(/\\(.)/g, (_m, c: string) => ({ n: '\n', t: '\t', a: '\x07', b: '\b', f: '\f', r: '\r', q: '"', '\\': '\\' } as Record<string, string>)[c] ?? c));
+          else this.emitDigits(this.format(this.eval(item.expr)));
+        }
+        return;
+      case 'if':
+        if (this.eval(s.cond).v !== 0n) this.exec(s.then);
+        else if (s.otherwise !== null) this.exec(s.otherwise);
+        return;
+      case 'while':
+        while (this.eval(s.cond).v !== 0n) {
+          try { this.exec(s.body); } catch (e) { if (e instanceof BreakSignal) break; if (!(e instanceof ContinueSignal)) throw e; }
+        }
+        return;
+      case 'for':
+        if (s.init !== null) this.eval(s.init);
+        while (s.cond === null || this.eval(s.cond).v !== 0n) {
+          try { this.exec(s.body); } catch (e) { if (e instanceof BreakSignal) break; if (!(e instanceof ContinueSignal)) throw e; }
+          if (s.step !== null) this.eval(s.step);
+        }
+        return;
+      case 'break': throw new BreakSignal('break');
+      case 'continue': throw new ContinueSignal('continue');
+      case 'halt': case 'quit': throw new HaltSignal('halt');
+      case 'limits':
+        this.emit('BC_BASE_MAX     = 2147483647\nBC_DIM_MAX      = 16777215\nBC_SCALE_MAX    = 2147483647\nBC_STRING_MAX   = 2147483647\nMAX Exponent    = 9223372036854775807\nNumber of vars  = 32767\n');
+        return;
+      case 'return': throw new ReturnSignal(s.e === null ? ZERO : this.eval(s.e));
+      case 'block':
+        for (const inner of s.body) this.exec(inner, top);
+        return;
+    }
+  }
+
+  private lookupScalar(name: string): Num {
+    if (name === 'scale') return { v: BigInt(this.scale), s: 0 };
+    if (name === 'ibase') return { v: BigInt(this.ibase), s: 0 };
+    if (name === 'obase') return { v: BigInt(this.obase), s: 0 };
+    const frame = this.frame();
+    return frame.scalars.get(name) ?? this.globals.scalars.get(name) ?? ZERO;
+  }
+
+  private storeScalar(name: string, value: Num): void {
+    const whole = (): number => Number(rescale(value, 0).v);
+    if (name === 'scale') { this.scale = whole(); return; }
+    if (name === 'ibase') { this.ibase = whole(); return; }
+    if (name === 'obase') { this.obase = whole(); return; }
+    const frame = this.frame();
+    if (frame.scalars.has(name)) frame.scalars.set(name, value);
+    else this.globals.scalars.set(name, value);
+  }
+
+  private arrayOf(name: string, create = true): ArrayStore {
+    const frame = this.frame();
+    const local = frame.arrays.get(name);
+    if (local !== undefined) return local;
+    let store = this.globals.arrays.get(name);
+    if (store === undefined && create) { store = new Map(); this.globals.arrays.set(name, store); }
+    return store ?? new Map();
+  }
+
+  private indexOf(e: Expr): number {
+    const n = this.eval(e);
+    const i = rescale(n, 0).v;
+    if (i < 0n) throw this.runtime('Array subscript out of bounds');
+    return Number(i);
+  }
+
+  private read(target: Expr): Num {
+    if (target.t === 'var') return this.lookupScalar(target.name);
+    if (target.t === 'elem') return this.arrayOf(target.name).get(this.indexOf(target.index)) ?? ZERO;
+    return ZERO;
+  }
+
+  private write(target: Expr, value: Num): void {
+    if (target.t === 'var') this.storeScalar(target.name, value);
+    else if (target.t === 'elem') this.arrayOf(target.name).set(this.indexOf(target.index), value);
+  }
+
+  private charge(bytes: number): void { this.frame().pc += bytes; }
+
+  private eval(e: Expr): Num {
+    switch (e.t) {
+      case 'num': this.charge(constantCost(e.text)); return this.parseNumber(e.text);
+      case 'last': this.charge(1); return this.last;
+      case 'var': this.charge(2); return this.read(e);
+      case 'elem': this.charge(2); return this.read(e);
+      case 'paren': return this.eval(e.e);
+      case 'neg': { const n = this.eval(e.e); this.charge(1); return { v: -n.v, s: n.s }; }
+      case 'not': { const n = this.eval(e.e); this.charge(1); return n.v === 0n ? ONE : ZERO; }
+      case 'assign': {
+        const rhs = this.eval(e.value);
+        if (e.op !== '=') this.charge(3);
+        this.charge(2);
+        const value = e.op === '=' ? rhs : this.binary(e.op[0], this.read(e.target), rhs);
+        this.write(e.target, value);
+        return value;
+      }
+      case 'step': {
+        this.charge(4);
+        const before = this.read(e.target);
+        const after = this.binary('+', before, { v: BigInt(e.delta), s: 0 });
+        this.write(e.target, after);
+        return e.prefix ? after : before;
+      }
+      case 'bin': return this.evalBinary(e);
+      case 'call': return this.call(e.name, e.args);
+    }
+  }
+
+  private evalBinary(e: Extract<Expr, { t: 'bin' }>): Num {
+    if (e.op === '&&') return this.eval(e.l).v !== 0n && this.eval(e.r).v !== 0n ? ONE : ZERO;
+    if (e.op === '||') return this.eval(e.l).v !== 0n || this.eval(e.r).v !== 0n ? ONE : ZERO;
+    const a = this.eval(e.l);
+    const b = this.eval(e.r);
+    this.charge(1);
+    if (['==', '!=', '<', '<=', '>', '>='].includes(e.op)) {
+      const c = compare(a, b);
+      const ok = e.op === '==' ? c === 0 : e.op === '!=' ? c !== 0 : e.op === '<' ? c < 0 : e.op === '<=' ? c <= 0 : e.op === '>' ? c > 0 : c >= 0;
+      return ok ? ONE : ZERO;
+    }
+    return this.binary(e.op, a, b);
+  }
+
+  private call(name: string, args: Arg[]): Num {
+    if (name === 'sqrt' || name === 'length' || name === 'scale') {
+      const first = args[0];
+      if (first === undefined || !('expr' in first)) throw this.runtime('Parameter number mismatch');
+      const value = this.eval(first.expr);
+      this.charge(2);
+      if (name === 'sqrt') return this.sqrt(value);
+      if (name === 'scale') return { v: BigInt(value.s), s: 0 };
+      const digits = (value.v < 0n ? -value.v : value.v).toString().length;
+      return { v: BigInt(Math.max(digits, value.s)), s: 0 };
+    }
+    const fn = this.functions.get(name);
+    const values = args.map((arg) => { if ('expr' in arg) return this.eval(arg.expr); this.charge(2); return null; });
+    this.charge(2);
+    if (fn === undefined) throw this.runtime(`Function ${name} not defined.`);
+    this.charge(args.length === 0 ? 1 : 2);
+    if (fn.params.length !== args.length) throw this.runtime('Parameter number mismatch');
+    const frame: Frame = { pc: 0, name, scalars: new Map(), arrays: new Map() };
+    fn.params.forEach((param, index) => {
+      const arg = args[index];
+      if (param.array) {
+        if (!('array' in arg)) throw this.runtime('Parameter type mismatch');
+        frame.arrays.set(param.name, this.arrayOf(arg.array));
+      } else {
+        if (!('expr' in arg)) throw this.runtime('Parameter type mismatch');
+        frame.scalars.set(param.name, values[index] ?? ZERO);
+      }
+    });
+    for (const local of fn.autos) {
+      if (local.array) frame.arrays.set(local.name, new Map());
+      else frame.scalars.set(local.name, ZERO);
+    }
+    this.frames.push(frame);
+    try {
+      for (const s of fn.body) this.exec(s);
+      return ZERO;
+    } catch (error) {
+      if (error instanceof ReturnSignal) return error.value;
+      throw error;
+    } finally {
+      this.frames.pop();
+    }
   }
 
   private sqrt(n: Num): Num {
-    if (n.v < 0n) throw runtimeError('Square root of a negative number');
+    if (n.v < 0n) throw this.runtime('Square root of a negative number');
     const s = Math.max(this.scale, n.s);
     const target = rescale(n, s * 2).v;
     if (target === 0n) return { v: 0n, s };
-    // Racine entière par Newton — le résultat est déjà à l'échelle s.
     let x = target;
     let y = (x + 1n) / 2n;
     while (y < x) { x = y; y = (x + target / x) / 2n; }
@@ -336,21 +702,17 @@ class Interp {
     const dot = text.indexOf('.');
     const intPart = dot === -1 ? text : text.slice(0, dot);
     const fracPart = dot === -1 ? '' : text.slice(dot + 1);
-    if (fracPart.includes('.')) throw new BcError('(standard_in) 1: syntax error');
-    if (this.ibase === 10) {
-      const digits = (intPart || '0') + fracPart;
-      if (!/^[0-9]*$/.test(digits)) throw new BcError('(standard_in) 1: syntax error');
-      return { v: BigInt(digits || '0'), s: fracPart.length };
-    }
-    // Base non décimale : bc ne lit que la partie entière, chiffre à chiffre.
-    let v = 0n;
+    if (text.length === 1 && text !== '.') return { v: BigInt(parseInt(text, 16)), s: 0 };
     const base = BigInt(this.ibase);
-    for (const ch of intPart) {
-      const d = parseInt(ch, 16);
-      if (Number.isNaN(d)) throw new BcError('(standard_in) 1: syntax error');
-      v = v * base + BigInt(d);
-    }
-    return { v, s: 0 };
+    const digit = (ch: string): bigint => { const d = BigInt(parseInt(ch, 16)); return d >= base ? base - 1n : d; };
+    let v = 0n;
+    for (const ch of intPart) v = v * base + digit(ch);
+    if (fracPart === '') return { v, s: 0 };
+    let f = 0n;
+    for (const ch of fracPart) f = f * base + digit(ch);
+    const s = fracPart.length;
+    const scaled = (v * base ** BigInt(s) + f) * pow10(s) / base ** BigInt(s);
+    return { v: scaled, s };
   }
 
   private binary(op: string, a: Num, b: Num): Num {
@@ -364,29 +726,23 @@ class Interp {
     }
     if (op === '/') return this.divide(a, b, this.scale);
     if (op === '%') {
+      if (b.v === 0n) throw this.runtime('Modulo by zero');
       const q = this.divide(a, b, this.scale);
       const prod = this.binary('*', q, b);
       const [x, y, s] = align(a, prod);
       return { v: x - y, s };
     }
-    if (op === '^') return this.power(a, b);
-    throw new BcError('(standard_in) 1: syntax error');
+    return this.power(a, b);
   }
 
   private divide(a: Num, b: Num, s: number): Num {
-    if (b.v === 0n) throw runtimeError('Divide by zero');
-    // (a.v/10^a.s) / (b.v/10^b.s) tronqué à s décimales.
-    const num = a.v * pow10(b.s + s);
-    const den = b.v * pow10(a.s);
-    let q = num / den;
-    // BigInt tronque déjà vers zéro ; rien à corriger sur le signe.
-    if (q === 0n && num !== 0n && (num < 0n) !== (den < 0n)) q = 0n;
-    return { v: q, s };
+    if (b.v === 0n) throw this.runtime('Divide by zero');
+    return { v: (a.v * pow10(b.s + s)) / (b.v * pow10(a.s)), s };
   }
 
   private power(a: Num, b: Num): Num {
-    if (b.s !== 0) throw new BcError('(standard_in) 1: syntax error');
-    const e = b.v;
+    if (b.s !== 0 && rescale(b, 0).v * pow10(b.s) !== b.v) this.emitError(`Runtime warning (func=${this.frame().name}, adr=${this.frame().pc}): non-zero scale in exponent`);
+    const e = rescale(b, 0).v;
     if (e === 0n) return ONE;
     const negative = e < 0n;
     const n = negative ? -e : e;
@@ -402,107 +758,102 @@ class Interp {
     return rescale(acc, Math.min(a.s * Number(n), Math.max(this.scale, a.s)));
   }
 
-  private read(name: string): Num {
-    if (name === 'scale') return { v: BigInt(this.scale), s: 0 };
-    if (name === 'ibase') return { v: BigInt(this.ibase), s: 0 };
-    if (name === 'obase') return { v: BigInt(this.obase), s: 0 };
-    // Une variable jamais affectée vaut zéro, elle n'est pas une erreur.
-    return this.vars.get(name) ?? ZERO;
-  }
-
-  private write(name: string, value: Num): void {
-    if (name === 'scale') { this.scale = Number(rescale(value, 0).v); return; }
-    if (name === 'ibase') { this.ibase = Number(rescale(value, 0).v); return; }
-    if (name === 'obase') { this.obase = Number(rescale(value, 0).v); return; }
-    this.vars.set(name, value);
+  private digitText(d: number): string {
+    if (this.obase <= 16) return d.toString(16).toUpperCase();
+    return ` ${String(d).padStart(String(this.obase - 1).length, '0')}`;
   }
 
   format(n: Num): string {
+    if (n.v === 0n) return '0';
     const negative = n.v < 0n;
     const abs = negative ? -n.v : n.v;
     const d = pow10(n.s);
     const intPart = abs / d;
-    const frac = abs % d;
-
-    let head: string;
-    if (this.obase === 10) {
-      head = intPart.toString();
-    } else if (this.obase < 2) {
-      head = intPart.toString();
-    } else {
-      head = intPart === 0n ? '0' : intPart.toString(this.obase).toUpperCase();
+    let frac = abs % d;
+    let head = '';
+    if (this.obase === 10) head = intPart === 0n ? '' : intPart.toString();
+    else if (intPart !== 0n) {
+      const base = BigInt(this.obase);
+      const digits: number[] = [];
+      let rest = intPart;
+      while (rest > 0n) { digits.unshift(Number(rest % base)); rest /= base; }
+      head = digits.map((x) => this.digitText(x)).join('');
     }
-
-    let text: string;
-    if (n.s === 0) {
-      text = head;
-    } else {
-      const fracDigits = frac.toString().padStart(n.s, '0');
-      // bc n'écrit pas le zéro de tête : `.250`, pas `0.250`.
-      text = (head === '0' ? '' : head) + '.' + fracDigits;
+    let tail = '';
+    if (n.s > 0) {
+      if (this.obase === 10) tail = `.${frac.toString().padStart(n.s, '0')}`;
+      else {
+        const base = BigInt(this.obase);
+        const limit = pow10(n.s);
+        let weight = 1n;
+        let digits = '';
+        do {
+          frac *= base;
+          const digit = frac / d;
+          frac %= d;
+          digits += this.digitText(Number(digit));
+          weight *= base;
+        } while (weight <= limit);
+        tail = `.${digits}`;
+      }
     }
-    return (negative && (abs !== 0n) ? '-' : '') + text;
+    return `${negative ? '-' : ''}${head === '' && tail === '' ? '0' : head}${tail}`;
   }
-}
-
-// ─── La commande ────────────────────────────────────────────────────
-
-function evaluate(source: string): { output: string; exitCode: number } {
-  const interp = new Interp();
-  try {
-    interp.run(source);
-  } catch (e) {
-    const message = e instanceof BcError ? e.message : '(standard_in) 1: syntax error';
-    const lines = [...interp.out, message];
-    // Le vrai bc sort en 0 même après une erreur d'exécution lue sur
-    // l'entrée standard — vérifié sur bc 1.07.1.
-    return { output: lines.join('\n'), exitCode: 0 };
-  }
-  return { output: interp.out.join('\n'), exitCode: 0 };
 }
 
 const VERSION = [
   'bc 1.07.1',
   'Copyright 1991-1994, 1997, 1998, 2000, 2004, 2006, 2008, 2012-2017 Free Software Foundation, Inc.',
-  'This is free software with ABSOLUTELY NO WARRANTY.',
 ].join('\n');
 
-function bcRun(ctx: LinuxCommandContext, args: string[], stdin?: string): { output: string; exitCode: number } {
+const USAGE = [
+  'usage: bc [options] [file ...]',
+  '  -h  --help         print this usage and exit',
+  '  -i  --interactive  force interactive mode',
+  '  -l  --mathlib      use the predefined math routines',
+  '  -q  --quiet        don\'t print initial banner',
+  '  -s  --standard     non-standard bc constructs are errors',
+  '  -w  --warn         warn about non-standard bc constructs',
+  '  -v  --version      print version information and exit',
+].join('\n');
+
+interface BcOutcome { output: string; exitCode: number; stderr?: string; interleaved?: string }
+
+function bcRun(ctx: LinuxCommandContext, args: string[], stdin?: string): BcOutcome {
   const files: string[] = [];
+  let mathlib = false;
   for (const a of args) {
     if (a === '-v' || a === '--version') return { output: VERSION, exitCode: 0 };
-    if (a === '-h' || a === '--help') {
-      return { output: 'usage: bc [options] [file ...]\n  -l  define the standard math library\n  -q  do not print the initial banner\n  -v  print version', exitCode: 0 };
+    if (a === '-h' || a === '--help') return { output: USAGE, exitCode: 0 };
+    if (a === '-l' || a === '--mathlib') { mathlib = true; continue; }
+    if (['-q', '--quiet', '-s', '--standard', '-w', '--warn', '-i', '--interactive'].includes(a)) continue;
+    if (a.startsWith('-') && a !== '-') {
+      const text = a.startsWith('--') ? `bc: unrecognized option '${a}'` : `bc: invalid option -- '${a[1]}'`;
+      return { output: '', stderr: `${text}\n${USAGE}\n`, interleaved: `${text}\n${USAGE}\n`, exitCode: 1 };
     }
-    if (a === '-q' || a === '--quiet' || a === '-s' || a === '--standard' || a === '-w' || a === '--warn') continue;
-    if (a === '-l' || a === '--mathlib') {
-      // Accepter -l en ne fournissant que scale=20 laisserait croire que
-      // s(), c(), a(), l(), e() et j() répondent. Elles ne sont pas là.
-      return { output: 'bc: the math library (-l) is not available in this bc', exitCode: 1 };
-    }
-    if (a.startsWith('-')) return { output: `bc: unrecognized option '${a}'`, exitCode: 1 };
     files.push(a);
   }
-
-  if (files.length > 0) {
-    const parts: string[] = [];
-    for (const f of files) {
-      const content = ctx.executor.vfs.readFile(
-        ctx.executor.vfs.normalizePath(f, ctx.executor.getCwd()),
-      );
-      if (content === null) return { output: `bc: file '${f}' is unavailable.`, exitCode: 1 };
-      parts.push(content);
+  const interp = new Interp();
+  if (mathlib) {
+    interp.scale = 20;
+    interp.run(BC_MATH_LIBRARY);
+  }
+  const sources: string[] = [];
+  for (const f of files) {
+    const content = ctx.executor.vfs.readFile(ctx.executor.vfs.normalizePath(f, ctx.executor.getCwd()));
+    if (content === null) {
+      const text = `File ${f} is unavailable.`;
+      return { output: '', stderr: `${text}\n`, interleaved: `${text}\n`, exitCode: 1 };
     }
-    if (stdin !== undefined) parts.push(stdin);
-    return evaluate(parts.join('\n'));
+    sources.push(content);
   }
-
-  if (stdin === undefined) {
-    // Sans entrée ni fichier, le vrai bc attend au terminal. Ici rien ne
-    // peut arriver : le dire vaut mieux que rendre une ligne vide.
-    return { output: VERSION, exitCode: 0 };
+  if (stdin !== undefined) sources.push(stdin);
+  if (sources.length === 0) return { output: VERSION, exitCode: 0 };
+  for (const source of sources) {
+    if (interp.stopped) break;
+    interp.run(source);
   }
-  return evaluate(stdin);
+  return { output: interp.out.join(''), stderr: interp.err.join(''), interleaved: interp.interleaved.join(''), exitCode: 0 };
 }
 
 export const bcCommand: LinuxCommand = {
@@ -512,20 +863,14 @@ export const bcCommand: LinuxCommand = {
   readsStdin: true,
   manSection: 1,
   usage: 'bc [-l] [-q] [file ...]',
-  help: 'An arbitrary precision calculator language. Reads expressions from\n'
-    + 'the given files then from standard input, and prints the value of\n'
-    + 'each one that is not an assignment.\n\n'
-    + 'Arithmetic follows POSIX scale rules: a division keeps `scale`\n'
-    + 'digits (0 by default, so 10/3 is 3), an addition keeps the larger\n'
-    + 'scale of its operands, and every truncation goes toward zero.\n\n'
-    + 'Expressions, variables, comparisons, assignments, sqrt(), length()\n'
-    + 'and scale() are available, as are ibase and obase. The statement\n'
-    + 'language — define, if, while, for — is not, and says so rather than\n'
-    + 'reporting a syntax error. The math library (-l) is not available.',
+  help: 'An arbitrary precision calculator language. Reads expressions and statements from\n'
+    + 'the given files then from standard input, and prints the value of each one that is\n'
+    + 'not an assignment. The language has variables, arrays, define, if, while, for,\n'
+    + 'print, ibase, obase, scale and sqrt(); -l loads the math library (s, c, a, l, e, j).',
   options: [
-    { flag: '-l', description: 'Use the standard math library (not available here)' },
-    { flag: '-q', description: 'Do not print the initial banner' },
-    { flag: '-v', description: 'Print the version and exit' },
+    { flag: '-l', aliases: ['--mathlib'], dest: 'mathlib', description: 'Use the standard math library' },
+    { flag: '-q', aliases: ['--quiet'], dest: 'quiet', description: 'Do not print the initial banner' },
+    { flag: '-v', aliases: ['--version'], dest: 'version', description: 'Print the version and exit' },
   ],
   run(ctx: LinuxCommandContext, args: string[], stdin?: string): string {
     return bcRun(ctx, args, stdin).output;

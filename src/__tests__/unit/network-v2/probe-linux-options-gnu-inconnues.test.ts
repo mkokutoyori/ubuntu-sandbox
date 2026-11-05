@@ -111,7 +111,7 @@ describe('du evaluates the options it accepts', () => {
   it('every target is reported', async () => { expect(await du('du -sb /tmp/d/a /tmp/d/e')).toBe('2\t/tmp/d/a\n5\t/tmp/d/e'); });
   it('a bad depth is refused', async () => { expect(await du('du -d x /tmp/d')).toContain("du: invalid maximum depth 'x'"); });
   it('a missing target is reported and the others still run', async () => {
-    expect(await du('du -sb /tmp/nope /tmp/d/e')).toBe("du: cannot access '/tmp/nope': No such file or directory\n5\t/tmp/d/e");
+    expect(await du('du -sb /tmp/nope /tmp/d/e')).toBe("du: cannot access ‘/tmp/nope’: No such file or directory\n5\t/tmp/d/e");
   });
 });
 

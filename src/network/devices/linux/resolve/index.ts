@@ -1,3 +1,3 @@
 export * from './ShellCatalog';
 export * from './CommandResolver';
-export * from './WhereisResolver';
+export { runWhereis, type WhereisHost } from './Whereis';

@@ -1,4 +1,5 @@
 import { getoptDiagnostic, shortOptions, type LongOption } from './commands/Getopt';
+import { COREUTILS_DOCS } from './coreutils/CoreutilsDocs';
 
 export interface GnuOptionSet {
   readonly optstring: string;
@@ -222,8 +223,11 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   fgrep: GREP_OPTIONS,
   whoami: { optstring: '', long: HELP_VERSION, operands: false },
   groups: { optstring: '', long: HELP_VERSION, operands: true },
-  tty: { optstring: 's', long: [flag('silent', 's'), flag('quiet', 's'), ...HELP_VERSION], operands: false },
+  tty: { optstring: 's', long: [flag('silent', 's'), flag('quiet', 's'), ...HELP_VERSION], operands: false, failureStatus: 2 },
+  arch: { optstring: '', long: [...HELP_VERSION], operands: false },
   nproc: { optstring: '', long: [flag('all'), valued('ignore'), ...HELP_VERSION], operands: false },
+  logname: { optstring: '', long: HELP_VERSION, operands: false },
+  users: { optstring: '', long: HELP_VERSION, operands: true },
   free: {
     optstring: 'bkmghHlLtvVwc:s:',
     long: [
@@ -233,14 +237,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
       valued('seconds', 's'), valued('count', 'c'), flag('help'), flag('version', 'V'),
     ],
     operands: false,
-  },
-  env: {
-    optstring: '+i0u:C:S:vh',
-    long: [
-      flag('ignore-environment', 'i'), flag('null', '0'), valued('unset', 'u'), valued('chdir', 'C'),
-      valued('split-string', 'S'), flag('debug', 'v'), ...HELP_VERSION,
-    ],
-    operands: true,
   },
   ls: {
     optstring: 'aAbBcCdDfFgGhHI:iklLmnNopqQrRsStT:uUvw:xXZ1',
@@ -259,8 +255,8 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
       flag('zero'), flag('directory', 'd'), flag('dired', 'D'), ...HELP_VERSION,
     ],
     operands: true,
+    failureStatus: 2,
   },
-  printenv: { optstring: '0', long: [flag('null', '0'), ...HELP_VERSION], operands: true },
   sha224sum: {
     optstring: 'bctwz',
     long: [
@@ -307,14 +303,6 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     ],
     operands: true,
   },
-  id: {
-    optstring: 'agGnruzZ',
-    long: [
-      flag('context', 'Z'), flag('group', 'g'), flag('groups', 'G'), flag('name', 'n'), flag('real', 'r'),
-      flag('user', 'u'), flag('zero', 'z'), ...HELP_VERSION,
-    ],
-    operands: true,
-  },
   sleep: { optstring: '', long: [...HELP_VERSION], operands: true },
   yes: { optstring: '', long: [...HELP_VERSION], operands: true },
   lsattr: {
@@ -328,12 +316,12 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     optstring: 'bcCdEhikLlNnprsSvzZ0e:F:f:m:P:',
     long: [
       flag('brief', 'b'), flag('checking-printout', 'c'), flag('compile', 'C'), flag('debug', 'd'),
-      valued('exclude', 'e'), flag('exclude-quiet'), flag('extension'), valued('files-from', 'f'),
+      valued('exclude', 'e'), valued('exclude-quiet'), flag('extension'), valued('files-from', 'f'),
       valued('separator', 'F'), flag('keep-going', 'k'), flag('list', 'l'), valued('magic-file', 'm'),
       flag('mime', 'i'), flag('mime-encoding'), flag('mime-type'), flag('no-buffer', 'n'),
       flag('no-dereference', 'h'), flag('dereference', 'L'), flag('no-pad', 'N'), valued('parameter', 'P'),
       flag('preserve-date', 'p'), flag('print0', '0'), flag('raw', 'r'), flag('special-files', 's'),
-      flag('uncompress', 'z'), flag('uncompress-noreport', 'Z'), flag('apple'), flag('help'), flag('version', 'v'),
+      flag('uncompress', 'z'), flag('uncompress-noreport', 'Z'), flag('apple'), flag('help'), flag('version', 'v'), flag('no-sandbox', 'S'),
     ],
     operands: true,
     usage: FILE_USAGE,
@@ -409,8 +397,7 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
   },
   mknod: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
-  sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },
-  nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125 },
+  nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125, signalOperands: true },
   nohup: { optstring: '+', long: [...HELP_VERSION], operands: true, failureStatus: 125 },
   uname: {
     optstring: 'asnrvmpio',
@@ -432,20 +419,29 @@ export function gnuOptionSet(command: string): GnuOptionSet {
 export interface OptionRefusal {
   readonly output: string;
   readonly exitCode: number;
+  readonly informational?: boolean;
 }
 
-export function asStderrResult(refusal: OptionRefusal): { output: string; stderr: string; interleaved: string; exitCode: number } {
+export function asStderrResult(refusal: OptionRefusal): { output: string; stderr?: string; interleaved?: string; exitCode: number } {
+  if (refusal.informational === true) return { output: refusal.output, exitCode: refusal.exitCode };
   const diagnostic = `${refusal.output}\n`;
   return { output: '', stderr: diagnostic, interleaved: diagnostic, exitCode: refusal.exitCode };
 }
 
 export function refuseUnknownGnuOption(command: string, args: readonly string[]): OptionRefusal | null {
   const set = GNU_OPTION_SETS[command];
-  if (!set) return null;
+  if (!set) {
+    const soleDocs = args.length === 1 && (args[0] === '--help' || args[0] === '--version') ? COREUTILS_DOCS[command] : undefined;
+    return soleDocs === undefined ? null : { output: `${soleDocs[args[0] === '--help' ? 'help' : 'version']}\n`, exitCode: 0, informational: true };
+  }
   const program = set.program ?? command;
   const trailer = set.trailer ?? `Try '${program} --help' for more information.`;
   const scanned = set.signalOperands ? args.filter((word) => !/^-(\d+|[A-Z][A-Z0-9]+)$/.test(word)) : args;
+  const docs = COREUTILS_DOCS[command];
   for (const item of shortOptions(scanned, set.optstring, set.long)) {
+    if (docs !== undefined && item.kind === 'option' && (item.long === 'help' || item.long === 'version')) {
+      return { output: `${docs[item.long]}\n`, exitCode: 0, informational: true };
+    }
     if (item.kind === 'operand' && !set.operands) {
       return { output: `${command}: extra operand '${item.value}'\n${trailer}`, exitCode: set.failureStatus ?? 1 };
     }

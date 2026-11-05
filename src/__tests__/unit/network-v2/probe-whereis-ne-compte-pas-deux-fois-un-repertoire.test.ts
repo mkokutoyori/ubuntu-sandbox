@@ -73,14 +73,16 @@ describe('whereis deduplique ses repertoires par inode', () => {
 
   it('un binaire de /usr/sbin echappe aussi au doublon via /sbin', () => {
     const out = run('whereis -b iptables');
-    expect(out).toBe('iptables: /usr/sbin/iptables');
+    expect(out.startsWith('iptables: /usr/sbin/iptables')).toBe(true);
+    expect(out).not.toContain(' /sbin/iptables');
+    expect(out.split('/usr/sbin/iptables').length).toBe(2);
   });
 
   it('whereis -l ne montre plus les orthographes fusionnees', () => {
     const dirs = run('whereis -l').split('\n');
-    expect(dirs).toContain('/usr/bin');
-    expect(dirs).not.toContain('/bin');
-    expect(dirs).not.toContain('/sbin');
+    expect(dirs).toContain('bin: /usr/bin');
+    expect(dirs).not.toContain('bin: /bin');
+    expect(dirs).not.toContain('bin: /sbin');
   });
 
   it('TEMOIN : which -a garde ses deux lignes, lui qui ne deduplique pas', () => {
@@ -91,9 +93,11 @@ describe('whereis deduplique ses repertoires par inode', () => {
   });
 
   it('NON-REGRESSION : whereis -l annonce toujours binaires, manuels et sources', () => {
+    exec.vfs.mkdirp('/usr/share/man/man1', 0o755, 0, 0);
+    exec.vfs.mkdirp('/usr/src/pkg', 0o755, 0, 0);
     const out = run('whereis -l');
-    expect(out).toContain('/usr/bin');
-    expect(out).toContain('/usr/share/man');
-    expect(out).toContain('/usr/src');
+    expect(out).toContain('bin: /usr/bin');
+    expect(out).toContain('man: /usr/share/man/man1');
+    expect(out).toContain('src: /usr/src/pkg');
   });
 });

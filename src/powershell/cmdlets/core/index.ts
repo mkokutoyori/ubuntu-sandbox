@@ -280,7 +280,7 @@ import {
   NewDistributionGroupCmdlet, SetDistributionGroupCmdlet, GetDistributionGroupCmdlet,
   AddDistributionGroupMemberCmdlet, GetDistributionGroupMemberCmdlet,
   GetGlobalAddressListCmdlet,
-  NewReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
+  NewReceiveConnectorCmdlet, RemoveReceiveConnectorCmdlet, GetReceiveConnectorCmdlet, NewSendConnectorCmdlet, GetSendConnectorCmdlet,
   NewTransportRuleCmdlet, GetTransportRuleCmdlet,
   GetQueueCmdlet, RetryQueueCmdlet, SuspendQueueCmdlet, ResumeQueueCmdlet,
   AddMailboxPermissionCmdlet, GetMailboxPermissionCmdlet, AddRecipientPermissionCmdlet, GetRecipientPermissionCmdlet,
@@ -757,6 +757,7 @@ export function registerServerCmdlets(registry: CmdletRegistry): void {
   registry.register(new GetDistributionGroupMemberCmdlet());
   registry.register(new GetGlobalAddressListCmdlet());
   registry.register(new NewReceiveConnectorCmdlet());
+  registry.register(new RemoveReceiveConnectorCmdlet());
   registry.register(new GetReceiveConnectorCmdlet());
   registry.register(new NewSendConnectorCmdlet());
   registry.register(new GetSendConnectorCmdlet());

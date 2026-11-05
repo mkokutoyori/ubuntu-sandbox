@@ -2,6 +2,8 @@
  * Linux command executor - orchestrates parsing and dispatching to command modules.
  */
 
+import { mountUsageRefusal, umountBadUsage } from './commands/system/MountOptions';
+import { runFindmnt, type FindmntHost, type MountRow } from './commands/system/Findmnt';
 import { dashedUuid, randomUuidBits } from '../host/hardware/HardwareIdentity';
 import { simulatedDigest } from '@/network/dns/dnssec/Digest';
 import { asStderrResult, gnuOptionSet, refuseUnknownGnuOption } from './GnuOptionGuard';
@@ -78,6 +80,24 @@ import { runCat } from './coreutils/CatCommand';
 import { runOd } from './coreutils/OdCommand';
 import { runRev } from './coreutils/RevCommand';
 import { runChecksum } from './coreutils/CksumCommand';
+import { runLink, runUnlink } from './coreutils/LinkCommands';
+import { runFactor } from './coreutils/FactorCommand';
+import { runTsort } from './coreutils/TsortCommand';
+import { runSync } from './coreutils/SyncCommand';
+import { cmdGzip } from './coreutils/GzipCommand';
+import { cmdTar } from './coreutils/TarCommand';
+import { runLsof, type LsofRow } from './process/LsofCommand';
+import { planEnv, runPrintenv } from './coreutils/EnvCommand';
+import { runId } from './coreutils/IdCommand';
+import { runPtx } from './coreutils/PtxCommand';
+import { runStrings } from './coreutils/StringsCommand';
+import { runDircolors } from './coreutils/DircolorsCommand';
+import { runShred } from './coreutils/ShredCommand';
+import { runNumfmt } from './coreutils/NumfmtCommand';
+import { runCsplit } from './coreutils/CsplitCommand';
+import { generatorFromMath, runShuf } from './coreutils/ShufCommand';
+import { planStdbuf } from './coreutils/StdbufCommand';
+import { runHostid, runPathchk } from './coreutils/PathchkCommand';
 import { runTee } from './coreutils/TeeCommand';
 import type { SplitHost } from './coreutils/SplitCommand';
 import { runMkfifo } from './coreutils/MkfifoCommand';
@@ -90,12 +110,14 @@ import { runMkdir, mkdirOperands } from './coreutils/MkdirCommand';
 import { runMknod } from './coreutils/MknodCommand';
 import { runRmdir } from './coreutils/RmdirCommand';
 import { runSort } from './coreutils/SortCommand';
-import { asDispatch } from './coreutils/CoreutilsKit';
+import { COREUTILS_DOCS } from './coreutils/CoreutilsDocs';
+import { asDispatch, docsResult, quoteLocale } from './coreutils/CoreutilsKit';
 import { coreutilsIO } from './coreutils/CoreutilsFiles';
+import { runFile, scriptDescription, type FileDescribeOptions, type FileHost } from './coreutils/FileCommand';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
 import {
-  SHELL_CATALOG, CommandResolver, WhereisResolver, ALL_CATEGORIES,
-  type ShellIntrospection, type FileLocation, type WhereisSelector,
+  SHELL_CATALOG, CommandResolver, runWhereis,
+  type ShellIntrospection, type FileLocation,
 } from './resolve';
 import { runChown, runChgrp } from './coreutils/ChownCommands';
 import { runStat } from './coreutils/StatCommand';
@@ -103,14 +125,14 @@ import { runUmask } from './umask/Umask';
 import {
   runTest, runExpr, runSleep, runWatch, measure, formatTimes, chooseTimeFormat,
   runTail,
-  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdZip, cmdUnzip, describeArchiveContent,
   type TestFs, type TestEnv, type TailFs, type TailSink, type TailFollowHandle, type TailRunResult,
   type ArchiveCtx,
 } from './coreutils';
 import { cmdDiff } from './coreutils/DiffCommand';
 import { formatStatTime } from './time/FileTimes';
 import { runXargs } from './coreutils/Xargs';
-import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdId, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
+import { cmdUseradd, cmdUsermod, cmdUserdel, cmdPasswd, cmdGroupadd, cmdGroupmod, cmdGroupdel, cmdGpasswd, cmdWhoami, cmdGroups, cmdWho, cmdW, cmdSudoCheck } from './LinuxUserCommands';
 import { parseUseraddArgs } from './iam/useraddOptions';
 import {
   CommandPrivilegePolicy,
@@ -138,7 +160,7 @@ import { RedirectWriteError } from '@/bash/interpreter/RedirectWriteError';
 import { ExitSignal, DaemonParkSignal } from '@/bash/errors/BashError';
 import { AliasTable } from '@/bash/runtime/AliasTable';
 import { type IpNetworkContext } from './LinuxIpCommand';
-import { cmdDf, cmdDu, cmdFree } from './LinuxSystemCommands';
+import { cmdDf, runDu, cmdFree } from './LinuxSystemCommands';
 import { cmdVmstat } from './system/Vmstat';
 import { cmdMpstat } from './system/Mpstat';
 import { cmdIostat } from './system/Iostat';
@@ -325,7 +347,7 @@ import { cwdLinkOf, exeLinkOf, rootLinkOf, type ProcessLinkSources } from './pro
 import { parseNanoCommandLine } from './editors/nano/NanoCommandLine';
 import { applyRcfiles, type RcHost } from './editors/nano/NanoRc';
 import { invalidOperatingDirectoryMessage, operatingDirectoryRoot, type OperatingDirectoryHost } from './editors/nano/NanoOperatingDirectory';
-import { padToWidth, renderTableText, LSOF_TABLE, type TableColumn } from '@/network/devices/shells/cli/TextTable';
+import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 /** Commands that commonly read from stdin when piped. */
 const PROXY_COMMAND_CLOSED = 'Connection closed by UNKNOWN port 65535';
@@ -350,8 +372,8 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'expr', 'seq', 'od', '[',
   'less', 'more', 'diff', 'cmp', 'patch',
   // Text streams
-  'tac', 'nl', 'paste', 'comm', 'join', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
-  'column', 'split', 'base64', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
+  'tac', 'nl', 'paste', 'comm', 'join', 'factor', 'tsort', 'strings', 'ptx', 'stdbuf', 'shuf', 'csplit', 'numfmt', 'shred', 'dircolors', 'shred', 'link', 'unlink', 'pathchk', 'hostid', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'sum', 'fold', 'expand', 'unexpand', 'fmt', 'pr',
+  'column', 'split', 'base64', 'base32', 'basenc', 'cksum', 'xxd', 'bc', 'yes', 'tree', 'cal',
   // Shell builtins and basics
   'echo', 'printf', 'pwd', 'bash', 'sh', 'export', 'unset', 'source',
   'alias', 'unalias', 'set', 'shift', 'declare', 'readonly', 'local',
@@ -372,7 +394,7 @@ const KNOWN_LINUX_COMMANDS: readonly string[] = [
   'pkill', 'pgrep', 'pstree', 'pidof', 'killall', 'pgid',
   'systemctl', 'service', 'journalctl', 'rscryutil', 'dmesg', 'logrotate', 'lsof', 'fuser', 'nice', 'reboot', 'shutdown',
   'renice', 'timeout', 'nohup', 'watch', 'env', 'printenv', 'lscpu', 'nproc',
-  'getconf', 'lsb_release', 'swapon', 'swapoff', 'lsmod', 'modinfo', 'pmap', 'sensors',
+  'getconf', 'lsb_release', 'swapon', 'swapoff', 'mkswap', 'lsmod', 'modinfo', 'pmap', 'sensors',
   'conntrack',
   'arch', 'lspci', 'lsusb', 'dmidecode', 'lshw', 'hwinfo', 'lsblk', 'fdisk', 'parted', 'blkid', 'hdparm',
   'mkfs', 'mkfs.ext4', 'mkfs.xfs', 'mkfs.btrfs', 'lvdisplay', 'vgdisplay', 'pvdisplay',
@@ -421,7 +443,7 @@ const ALWAYS_READ_STDIN: ReadonlySet<string> = new Set(['tee', 'rm', 'cp', 'mv',
 
 const READ_STDIN_WITHOUT_OPERAND: ReadonlySet<string> = new Set([
   'cat', 'wc', 'sort', 'uniq', 'head', 'tail', 'cut', 'base64', 'dd', 'less', 'more', 'rev', 'nl', 'xxd', 'tac', 'od',
-  'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum',
+  'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'factor', 'tsort', 'strings', 'ptx', 'shuf', 'numfmt',
 ]);
 
 const READ_STDIN_WITH_ONE_OPERAND: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'sed', 'awk', 'tr']);
@@ -455,6 +477,12 @@ const OPTIONS_TAKING_VALUE: Readonly<Record<string, ReadonlySet<string>>> = {
   sed: new Set(['-e', '-f', '-l', '--expression', '--file', '--line-length']),
   awk: new Set(['-F', '-v', '-f', '--field-separator', '--assign', '--file']),
   od: new Set(['-A', '-j', '-N', '-S', '-t']),
+  shuf: new Set(['-i', '-n', '-o', '--input-range', '--head-count', '--output', '--random-source']),
+  shred: new Set(['-n', '-s', '--iterations', '--size', '--random-source']),
+  ptx: new Set(['-F', '--flag-truncation', '-M', '--macro-name', '-S', '--sentence-regexp', '-W', '--word-regexp', '-b', '--break-file', '-g', '--gap-size', '-i', '--ignore-file', '-o', '--only-file', '-w', '--width', '--format']),
+  numfmt: new Set(['-d', '--from', '--from-unit', '--to', '--to-unit', '--round', '--padding', '--suffix', '--delimiter', '--field', '--format', '--invalid']),
+  csplit: new Set(['-f', '-b', '-n', '--prefix', '--suffix-format', '--digits']),
+  strings: new Set(['-n', '-t', '-s', '-e', '-T', '--bytes', '--radix', '--encoding', '--output-separator', '--target']),
 };
 
 const OPTIONS_GIVING_THE_PROGRAM: Readonly<Record<string, ReadonlySet<string>>> = {
@@ -493,8 +521,10 @@ function readsStandardInput(command: string, args: readonly string[]): boolean {
   return READ_STDIN_WITH_ONE_OPERAND.has(command) && operands <= allowed;
 }
 
-const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set([
-  'find', 'diff', 'pr', 'join', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
+const RAW_STDOUT_COMMANDS: ReadonlySet<string> = new Set(['tput', 
+  'du',
+  'id', 'printenv',
+  'find', 'diff', 'pr', 'join', 'factor', 'tsort', 'strings', 'ptx', 'shuf', 'csplit', 'numfmt', 'base32', 'basenc', 'md5sum', 'sha1sum', 'sha224sum', 'sha256sum', 'sha384sum', 'sha512sum', 'b2sum', 'cut', 'uniq', 'sort', 'basename', 'dirname', 'seq', 'od', 'date', 'split', 'base64', 'cmp', 'cksum', 'fmt', 'readlink', 'realpath', 'rev', 'paste', 'comm', 'fold', 'expand', 'unexpand', 'nl', 'cat', 'head', 'tail', 'tee', 'tr', 'sed', 'awk', 'gawk', 'dd', 'base64', 'rev', 'tac', 'basenc', 'xxd', 'fold',
   'gzip', 'gunzip', 'zcat', 'bzip2', 'bunzip2', 'bzcat', 'xz', 'unxz', 'xzcat', 'zstd',
   'curl', 'wget', 'openssl', 'nc', 'ncat', 'ssh', 'scp', 'sftp', 'telnet',
   'perl', 'python', 'python3', 'node', 'ruby', 'lua', 'jq', 'yes', 'printf',
@@ -699,37 +729,6 @@ function printsResultOnFailure(cmd: string, args: readonly string[], exitCode: n
   if (exitCode === 0) return false;
   if (cmd === 'cmp' || cmd === 'grep' || cmd === 'egrep' || cmd === 'fgrep') return exitCode === 1;
   return cmd === 'systemctl' && args.some((arg) => SYSTEMCTL_STATE_QUERIES.has(arg));
-}
-
-interface LsofRow {
-  readonly command: string;
-  readonly pid: string;
-  readonly user: string;
-  readonly fd: string;
-  readonly access: string;
-  readonly type: string;
-  readonly device: string;
-  readonly sizeOff: string;
-  readonly node: string;
-  readonly name: string;
-}
-
-const LSOF_COMMAND_WIDTH = 9;
-
-function renderLsof(rows: readonly LsofRow[]): string {
-  const fdWidth = Math.max(2, ...rows.map((r) => r.fd.length + 2));
-  const columns: TableColumn<LsofRow>[] = [
-    { header: 'COMMAND', value: (r) => r.command.slice(0, LSOF_COMMAND_WIDTH) },
-    { header: 'PID', align: 'right', value: (r) => r.pid },
-    { header: 'USER', align: 'right', value: (r) => r.user },
-    { header: `${'FD'.padStart(fdWidth - 2)}  `, value: (r) => `${r.fd.padStart(fdWidth - 2)}${r.access} ` },
-    { header: 'TYPE', align: 'right', value: (r) => r.type },
-    { header: 'DEVICE', align: 'right', value: (r) => r.device },
-    { header: 'SIZE/OFF', align: 'right', value: (r) => r.sizeOff },
-    { header: 'NODE', align: 'right', value: (r) => r.node },
-    { header: 'NAME', value: (r) => r.name },
-  ];
-  return renderTableText(rows, columns, LSOF_TABLE);
 }
 
 export class LinuxCommandExecutor {
@@ -3394,6 +3393,16 @@ export class LinuxCommandExecutor {
     return this._cmdEnv?.['SSH_NO_TTY'] !== '1' && this.env.get('SSH_NO_TTY') !== '1';
   }
 
+  private hostidAddress(): string {
+    const hosts = this.vfs.readFile('/etc/hosts') ?? '';
+    const name = (this.localDevice as { getHostname?: () => string } | null)?.getHostname?.() ?? 'localhost';
+    for (const line of hosts.split('\n')) {
+      const fields = line.replace(/#.*/, '').trim().split(/\s+/);
+      if (fields.length > 1 && /^\d+\.\d+\.\d+\.\d+$/.test(fields[0]) && fields.slice(1).includes(name)) return fields[0];
+    }
+    return '127.0.0.1';
+  }
+
   private runClosed(argv: readonly string[], isSudo: boolean): { stdout: string; stderr: string; exitCode: number } {
     const result = this.dispatch(argv[0], argv.slice(1), undefined, isSudo);
     const closed = (text: string): string => (text === '' || text.endsWith('\n') ? text : `${text}\n`);
@@ -4228,6 +4237,7 @@ export class LinuxCommandExecutor {
       zone: this.localZone(),
       nowMs: this.wallNow,
       deviceOf: (absPath: string) => this.mountTable.deviceOf(absPath),
+      hostname: () => kernelHostname(this.vfs),
     };
   }
 
@@ -5140,7 +5150,8 @@ export class LinuxCommandExecutor {
     interpreterStdin?: string,
   ): { output: string; exitCode: number; backgroundPid?: number; lineOriented?: boolean } {
     const result = this.dispatchResolved(argv, env, background, outputPiped, interpreterStdin);
-    return { ...result, lineOriented: writesLines(argv) || reportsOwnFailure(argv, result.exitCode) };
+    const innerLineOriented = (result as { lineOriented?: boolean }).lineOriented === true;
+    return { ...result, lineOriented: innerLineOriented || writesLines(argv) || reportsOwnFailure(argv, result.exitCode) };
   }
 
   private dispatchResolved(
@@ -5289,6 +5300,8 @@ export class LinuxCommandExecutor {
   }
 
   handleMount(args: string[]): { output: string; exitCode: number } {
+    const refused = mountUsageRefusal('mount', args);
+    if (refused) return refused;
     if (args.length === 0 || (args.length === 1 && args[0] === '-l')) {
       return { output: this.mountTable.toMountOutput(), exitCode: 0 };
     }
@@ -5526,51 +5539,57 @@ export class LinuxCommandExecutor {
   }
 
   handleUmount(args: string[]): { output: string; exitCode: number } {
+    const refused = mountUsageRefusal('umount', args);
+    if (refused) return refused;
     const positionals = args.filter((a) => !a.startsWith('-'));
-    if (positionals.length === 0) {
-      return { output: 'umount: bad usage', exitCode: 1 };
-    }
-    const raw = positionals[0];
-    const target = this.vfs.normalizePath(raw, this.cwd);
+    if (positionals.length === 0) return umountBadUsage();
     const lazy = args.includes('-l') || args.includes('--lazy');
-    if (!lazy && (this.cwd === target || this.cwd.startsWith(target + '/'))) {
-      return { output: `umount: ${raw}: target is busy.`, exitCode: 32 };
+    const lines: string[] = [];
+    let failures = 0;
+    for (const raw of positionals) {
+      const target = this.vfs.normalizePath(raw, this.cwd);
+      if (!lazy && (this.cwd === target || this.cwd.startsWith(target + '/'))) {
+        lines.push(`umount: ${raw}: target is busy.`);
+        failures++;
+        continue;
+      }
+      const entry = this.mountTable.find(target) ?? this.mountTable.find(raw);
+      if (!entry) {
+        lines.push(`umount: ${raw}: ${this.vfs.exists(target) ? 'not mounted.' : 'no mount point specified.'}`);
+        failures++;
+        continue;
+      }
+      if (!this.mountTable.umount(entry.target)) {
+        lines.push(`umount: ${raw}: not mounted.`);
+        failures++;
+        continue;
+      }
+      this.processMgr.wakeAllBlockedOn(entry.target);
+      this.publishMountEvent('linux.mount.unmounted', entry);
     }
-    const entry = this.mountTable.find(target) ?? this.mountTable.find(raw);
-    if (!entry || !this.mountTable.umount(entry.target)) {
-      return { output: `umount: ${raw}: not mounted.`, exitCode: 1 };
-    }
-    // `umount -l` détache le montage : tout ce qu'il retenait en `D` est
-    // libéré, et encaisse alors les signaux mis en attente (§F5.7).
-    this.processMgr.wakeAllBlockedOn(entry.target);
-    this.publishMountEvent('linux.mount.unmounted', entry);
-    return { output: '', exitCode: 0 };
+    const exitCode = failures === 0 ? 0 : positionals.length > 1 ? 64 : 32;
+    return { output: lines.join('\n'), exitCode };
   }
 
   private handleFindmnt(args: string[]): { output: string; exitCode: number } {
-    let fstype: string | undefined;
-    const positionals: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '-t' || a === '--types') fstype = args[++i];
-      else if (a === '-n' || a === '--noheadings' || a === '-l' || a === '--list') continue;
-      else if (a.startsWith('-')) continue;
-      else positionals.push(a);
-    }
-
-    let entries = this.mountTable.list();
-    if (fstype) entries = entries.filter((e) => e.fstype === fstype);
-    if (positionals.length > 0) {
-      const target = this.vfs.normalizePath(positionals[0], this.cwd);
-      const match = this.mountTable.find(target) ?? this.mountTable.resolve(target);
-      if (!match) return { output: '', exitCode: 1 };
-      entries = [match];
-    }
-
-    const noHeadings = args.includes('-n') || args.includes('--noheadings');
-    const rows = entries.map((e) => `${e.target} ${e.source} ${e.fstype} ${e.optionString()}`);
-    const out = noHeadings ? rows : ['TARGET SOURCE FSTYPE OPTIONS', ...rows];
-    return { output: out.join('\n'), exitCode: 0 };
+    const toRow = (e: MountEntry): MountRow => ({ target: e.target, source: e.source, fstype: e.fstype, options: e.optionString() });
+    const host: FindmntHost = {
+      mounts: () => this.mountTable.list().map(toRow),
+      fstab: () => (this.vfs.readFile('/etc/fstab') ?? '').split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'))
+        .map((line) => line.split(/\s+/))
+        .filter((parts) => parts.length >= 3)
+        .map(([source, target, fstype, options]) => ({ source, target, fstype, options: options ?? 'defaults' })),
+      normalize: (path) => this.vfs.normalizePath(path, this.cwd),
+      resolve: (path) => {
+        const target = this.vfs.normalizePath(path, this.cwd);
+        const found = this.mountTable.find(target) ?? this.mountTable.resolve(target);
+        return found ? toRow(found) : undefined;
+      },
+      versionBanner: 'findmnt from util-linux 2.37.2',
+    };
+    return runFindmnt(args, host);
   }
 
   private publishMountEvent(
@@ -6177,6 +6196,14 @@ export class LinuxCommandExecutor {
 
   private dispatchCommand(cmd: string, args: string[], stdin?: string, isSudo = false, outputPiped = false): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     stdin ??= this.takeExecInput(cmd, args);
+    if (cmd === 'vdir' || cmd === 'dir') {
+      if (args.includes('--help')) return asDispatch(docsResult(cmd, 'help'));
+      if (args.includes('--version')) return asDispatch(docsResult(cmd, 'version'));
+      const renamed = (text: string | undefined): string | undefined => text?.replace(/^ls: /gm, `${cmd}: `).replace(/Try 'ls --help'/g, `Try '${cmd} --help'`);
+      const listed = this.dispatchCommand('ls', [cmd === 'vdir' ? '-l' : '-C', '-b', ...args], stdin, isSudo, outputPiped);
+      const refused = /unrecognized option|invalid option/.test(listed.stderr ?? '');
+      return { ...listed, exitCode: refused ? 2 : listed.exitCode, output: renamed(listed.output) ?? '', stderr: renamed(listed.stderr), interleaved: renamed(listed.interleaved) };
+    }
     const c = this.ctx(outputPiped);
     useLocaleQuotes(this.env.get('LC_ALL') || this.env.get('LC_CTYPE') || this.env.get('LANG') || '');
     if (!cmd.startsWith('/') && !cmd.startsWith('.')) this.currentCommandHead = cmd;
@@ -6230,7 +6257,7 @@ export class LinuxCommandExecutor {
           this.publishFsAccess(this.vfs.normalizePath(p, this.cwd), 'r');
         }
         const { stdout, stderr } = cmdLs(c, args);
-        const exitCode = /^ls: invalid argument/.test(stderr) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size)/.test(stderr) ? 2 : 0;
+        const exitCode = /^ls: (invalid|ambiguous) argument/.test(stderr) ? 1 : /(^|\n)ls: (cannot|invalid line width|invalid tab size|invalid (suffix in )?--block-size)/.test(stderr) ? 2 : 0;
         if (stderr === '') return { output: stdout, exitCode };
         return { output: stdout, stderr, interleaved: stdout === '' ? stderr : `${stderr}\n${stdout}`, exitCode };
       }
@@ -6488,6 +6515,32 @@ export class LinuxCommandExecutor {
       case '[': return this.handleTest(cmd, args);
       case 'expr': return this.handleExpr(args);
       case 'mkfifo': return asDispatch(runMkfifo(c, args));
+      case 'factor': return asDispatch(runFactor(args, coreutilsIO(c, stdin)));
+      case 'tsort': return asDispatch(runTsort(args, coreutilsIO(c, stdin)));
+      case 'ptx': return asDispatch(runPtx(args, coreutilsIO(c, stdin)));
+      case 'strings': return asDispatch(runStrings(args, coreutilsIO(c, stdin)));
+      case 'dircolors': {
+        const environment = this.environmentOfCommand();
+        return asDispatch(runDircolors(args, coreutilsIO(c, stdin), { shell: environment.SHELL ?? '', term: environment.TERM ?? '', colorterm: environment.COLORTERM ?? '' }));
+      }
+      case 'shred': return asDispatch(runShred(args, coreutilsIO(c, stdin)));
+      case 'numfmt': return asDispatch(runNumfmt(args, coreutilsIO(c, stdin)));
+      case 'csplit': return asDispatch(runCsplit(args, coreutilsIO(c, stdin)));
+      case 'shuf': return asDispatch(runShuf(args, coreutilsIO(c, stdin), generatorFromMath()));
+      case 'stdbuf': {
+        const inherited = this.environmentOfCommand();
+        const plan = planStdbuf('stdbuf', args, inherited);
+        if (!('command' in plan)) return asDispatch(plan);
+        const result = this.dispatchFromInterpreter(plan.command, { ...inherited, ...plan.env });
+        if (result.exitCode === 127 && /command not found|No such file or directory/.test(`${result.output}${(result as { stderr?: string }).stderr ?? ''}`)) {
+          return { output: '', stderr: `stdbuf: failed to run command ${quoteLocale(plan.command[0])}: No such file or directory`, exitCode: 127 };
+        }
+        return result;
+      }
+      case 'link': return asDispatch(runLink(c, args));
+      case 'unlink': return asDispatch(runUnlink(c, args));
+      case 'pathchk': return asDispatch(runPathchk(c, args));
+      case 'hostid': return asDispatch(runHostid(args, this.hostidAddress()));
       case 'mknod': return asDispatch(runMknod(c, args));
 
       // User commands
@@ -6554,12 +6607,9 @@ export class LinuxCommandExecutor {
       case 'gpasswd': return this.handleGpasswd(args);
       case 'chfn': return this.handleChfn(args);
       case 'finger': return this.handleFinger(args);
-      case 'id': {
-        const out = cmdId(c, args);
-        return { output: out, exitCode: out.includes('no such user') ? 1 : 0 };
-      }
+      case 'id': return asDispatch(runId(c, args));
       case 'whoami': return { output: cmdWhoami(c), exitCode: 0 };
-      case 'groups': return { output: cmdGroups(c, args), exitCode: 0 };
+      case 'groups': return asDispatch(cmdGroups(c, args));
       case 'who': {
         if (this.sessionTable) {
           this.sessionTable.ensureConsoleSession(this.userMgr.currentUser, this.userMgr.currentUid);
@@ -6651,43 +6701,42 @@ export class LinuxCommandExecutor {
         return { output: '', exitCode: 0 };
       }
 
-      // env — print the environment, or run a command in a modified one.
-      //   env                       → print every variable
-      //   env -i [VAR=v…] cmd       → run cmd with an empty base environment
-      //   env -u NAME … cmd         → run cmd with NAME removed
-      //   env VAR=v … cmd args      → run cmd with VAR overlaid
       case 'env': {
-        const { env: resultEnv, command: cmdline } = parseEnvInvocation(args, this.environmentOfCommand());
-        if (cmdline.length === 0) {
-          return {
-            output: Object.entries(resultEnv).map(([k, v]) => `${k}=${v}`).join('\n'),
-            exitCode: 0,
-          };
+        const plan = planEnv(args, this.environmentOfCommand());
+        if (plan.kind === 'docs') return asDispatch(docsResult('env', plan.which));
+        if (plan.kind === 'failure') {
+          return { output: '', exitCode: plan.exitCode, stderr: `${plan.lines.join('\n')}\n`, interleaved: `${plan.lines.join('\n')}\n` };
         }
-        // Run the supplied command line under the computed environment.
-        return this.dispatchFromInterpreter(cmdline, resultEnv);
+        const notes = plan.debug.map((line) => `${line}\n`).join('');
+        if (plan.kind === 'print') {
+          return notes === '' ? { output: plan.text, exitCode: 0 } : { output: plan.text, exitCode: 0, stderr: notes, interleaved: notes + plan.text };
+        }
+        const previousCwd = this.cwd;
+        if (plan.directory !== null) {
+          const target = this.vfs.normalizePath(plan.directory, this.cwd);
+          const inode = this.vfs.resolveInode(target);
+          if (!inode || inode.type !== 'directory') {
+            const reason = !inode ? 'No such file or directory' : 'Not a directory';
+            const line = `${notes}env: cannot change directory to ${quoteLocale(plan.directory)}: ${reason}\n`;
+            return { output: '', exitCode: 125, stderr: line, interleaved: line };
+          }
+          this.cwd = target;
+          plan.env['PWD'] = target;
+        }
+        let result: { output: string; exitCode: number };
+        try {
+          result = this.dispatchFromInterpreter([...plan.command], plan.env);
+        } finally {
+          this.cwd = previousCwd;
+        }
+        if (result.exitCode === 127 && /command not found/.test(result.output)) {
+          const line = `${notes}env: ${quoteLocale(plan.command[0])}: No such file or directory\n${/\s/.test(plan.command[0]) ? 'env: use -[v]S to pass options in shebang lines\n' : ''}`;
+          return { output: '', exitCode: 127, stderr: line, interleaved: line };
+        }
+        return notes === '' ? result : { ...result, stderr: notes, interleaved: notes + result.output };
       }
 
-      // printenv — print the whole environment, or specific variables.
-      // With names, one value per line; exit 1 if any name is unset.
-      case 'printenv': {
-        const envView = this.environmentOfCommand();
-        const names = args.filter((a) => !a.startsWith('-'));
-        if (names.length === 0) {
-          return {
-            output: Object.entries(envView).map(([k, v]) => `${k}=${v}`).join('\n'),
-            exitCode: 0,
-          };
-        }
-        const out: string[] = [];
-        let missing = false;
-        for (const name of names) {
-          const v = envView[name];
-          if (v === undefined) missing = true;
-          else out.push(v);
-        }
-        return { output: out.join('\n'), exitCode: missing ? 1 : 0 };
-      }
+      case 'printenv': return asDispatch(runPrintenv(args, this.environmentOfCommand()));
 
       // time — run a command and report its elapsed wall/user/sys time
       case 'time': return this.handleTime(args);
@@ -6890,7 +6939,7 @@ export class LinuxCommandExecutor {
       case 'truncate': return runTruncate(this, args);
       case 'dd': return runDd(this, args);
       case 'fallocate': return runFallocate(this, args);
-      case 'sync': return { output: '', exitCode: 0 };
+      case 'sync': return asDispatch(runSync(c, args));
       // kill — send signal via process manager
       case 'kill': {
         this.publishSyscall('kill');
@@ -6938,9 +6987,9 @@ export class LinuxCommandExecutor {
         // `not a tty` (exit 1) when running without a controlling terminal —
         // e.g. ssh exec-mode without -t. The SSH client overlays SSH_NO_TTY=1.
         if (this._cmdEnv?.['SSH_NO_TTY'] === '1' || this.env.get('SSH_NO_TTY') === '1') {
-          return { output: 'not a tty', exitCode: 1 };
+          return { output: args.some((a) => /^-[a-z]*s|^--(silent|quiet)$/.test(a)) ? '' : 'not a tty', exitCode: 1 };
         }
-        return { output: cmdTty(this.ttyDevice.name), exitCode: 0 };
+        return { output: args.some((a) => /^-[a-z]*s|^--(silent|quiet)$/.test(a)) ? '' : cmdTty(this.ttyDevice.name), exitCode: 0 };
       }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
 
@@ -6973,17 +7022,8 @@ export class LinuxCommandExecutor {
         this.rebootCycle();
         return { output: '', exitCode: 0 };
       }
-      case 'df': return {
-        output: cmdDf(
-          { ...c, mounts: this.mountTable.list(), storage: this.hardware.storage },
-          args,
-        ),
-        exitCode: 0,
-      };
-      case 'du': {
-        const out = cmdDu(c, args);
-        return { output: out, exitCode: /(^|\n)du: (cannot|invalid|warning|\S+: No such)/.test(out) ? 1 : 0 };
-      }
+      case 'df': return asDispatch(cmdDf({ ...c, mounts: this.mountTable.list(), storage: this.hardware.storage }, args));
+      case 'du': return asDispatch(runDu(c, args, stdin));
       case 'free': return { output: cmdFree(args, this.hardware.memory), exitCode: 0 };
       case 'vmstat': return cmdVmstat(args, {
         pm: this.processMgr,
@@ -7047,28 +7087,8 @@ export class LinuxCommandExecutor {
         return { output: `${cmd} ${args.join(' ')}\nWriting superblocks and filesystem accounting information: done`, exitCode: 0 };
       case 'lvdisplay': case 'vgdisplay': case 'pvdisplay':
         return { output: `  No volume groups found`, exitCode: 0 };
-      case 'lsof': return { output: this.cmdLsof(args), exitCode: 0 };
-      case 'file': {
-        const targets: string[] = [];
-        let brief = false;
-        let mime: 'none' | 'type' | 'full' = 'none';
-        for (const item of shortOptions(args, gnuOptionSet('file').optstring, gnuOptionSet('file').long)) {
-          if (item.kind === 'operand') targets.push(item.value);
-          else if (item.kind === 'option') {
-            if (item.letter === 'b') brief = true;
-            else if (item.letter === 'i') mime = 'full';
-            else if (item.long === 'mime-type') mime = 'type';
-          }
-        }
-        if (!targets.length) return { output: 'Usage: file [-bcCdEhikLlNnprsSvzZ0] [--apple] [--extension] [--mime-encoding]\n            [--mime-type] [-e <testname>] [-F <separator>]  [-f <namefile>]\n            [-m <magicfiles>] [-P <parameter=value>] [--exclude-quiet]\n            <file> ...\n       file -C [-m <magicfiles>]\n       file [--help]', exitCode: 1 };
-        const render = (target: string): string => {
-          const described = this.describeFile(target);
-          const description = described.slice(target.length + 2);
-          const shown = mime === 'none' ? description : mimeOfDescription(description, mime === 'full');
-          return brief ? shown : `${target}: ${shown}`;
-        };
-        return { output: targets.map(render).join('\n'), exitCode: 0 };
-      }
+      case 'lsof': return this.cmdLsof(args);
+      case 'file': return asDispatch(runFile(this.fileHost(), args, stdin));
       case 'diff': {
         const compared = cmdDiff({
         readFile: (p) => this.vfs.readFile(p),
@@ -7090,10 +7110,10 @@ export class LinuxCommandExecutor {
       }, this.cwd, args);
         return compared.exitCode === 2 ? { output: '', stderr: compared.output, exitCode: 2 } : { ...compared, stderr: '' };
       }
-      case 'tar': return cmdTar(this.archiveCtx(), args);
-      case 'gzip': return cmdGzip(this.archiveCtx(), args, 'gzip');
-      case 'gunzip': return cmdGzip(this.archiveCtx(), args, 'gunzip');
-      case 'zcat': return cmdGzip(this.archiveCtx(), args, 'zcat');
+      case 'tar': return cmdTar({ ...this.archiveCtx(), stdin }, args);
+      case 'gzip': return cmdGzip({ ...this.archiveCtx(), stdin }, args, 'gzip');
+      case 'gunzip': return cmdGzip({ ...this.archiveCtx(), stdin }, args, 'gunzip');
+      case 'zcat': return cmdGzip({ ...this.archiveCtx(), stdin }, args, 'zcat');
       case 'zip': return cmdZip(this.archiveCtx(), args);
       case 'unzip': return cmdUnzip(this.archiveCtx(), args);
       // `scp`/`sftp` ne sont plus ici : ce sont des commandes du registre,
@@ -7122,7 +7142,7 @@ export class LinuxCommandExecutor {
       // are shell builtins resolved inside the bash interpreter; they only
       // reach this dispatcher when the interpreter is bypassed.
       case 'tput': {
-        const result = runTput(args, this.windowSize);
+        const result = runTput(args, this.windowSize, this._cmdEnv?.['TERM'] ?? this.env.get('TERM'), stdin);
         return { output: result.stdout, exitCode: result.exitCode, stderr: result.stderr } as { output: string; exitCode: number };
       }
       case 'set':
@@ -8610,18 +8630,22 @@ export class LinuxCommandExecutor {
     };
   }
 
-  private handleWhich(args: string[]): { output: string; exitCode: number } {
+  private handleWhich(args: string[]): { output: string; exitCode: number; stderr?: string } {
     let all = false;
-    const names: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
-      if (a === '-a' || a === '--all') { all = true; continue; }
-      if (a === '--version') return { output: 'GNU which v2.21', exitCode: 0 };
-      if (a.startsWith('-') && a.length > 1) { for (const f of a.slice(1)) if (f === 'a') all = true; continue; }
-      names.push(a);
+    let silent = false;
+    let index = 0;
+    for (; index < args.length; index++) {
+      const word = args[index];
+      if (word === '--') { index++; break; }
+      if (!word.startsWith('-') || word === '-') break;
+      for (const letter of word.slice(1)) {
+        if (letter === 'a') all = true;
+        else if (letter === 's') silent = true;
+        else return { output: `Illegal option -${letter}\nUsage: /usr/bin/which [-as] args`, exitCode: 2 };
+      }
     }
-    if (names.length === 0) return { output: '', exitCode: 0 };
+    const names = args.slice(index);
+    if (names.length === 0) return { output: '', exitCode: 1 };
 
     const resolver = new CommandResolver(this.shellIntrospection());
     const out: string[] = [];
@@ -8632,44 +8656,21 @@ export class LinuxCommandExecutor {
       if (all) for (const f of files) out.push(f.path!);
       else out.push(files[0].path!);
     }
-    return { output: out.join('\n'), exitCode: allFound ? 0 : 1 };
+    return { output: silent ? '' : out.join('\n'), exitCode: allFound ? 0 : 1 };
   }
 
-  private handleWhereis(args: string[]): { output: string; exitCode: number } {
-    let b = false, m = false, s = false, listDirs = false;
-    const names: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const a = args[i];
-      if (a === '--') { for (let j = i + 1; j < args.length; j++) names.push(args[j]); break; }
-      if (a === '-b') { b = true; continue; }
-      if (a === '-m') { m = true; continue; }
-      if (a === '-s') { s = true; continue; }
-      if (a === '-l') { listDirs = true; continue; }
-      if (a === '-B' || a === '-M' || a === '-S') { while (i + 1 < args.length && args[i + 1] !== '-f') i++; continue; }
-      if (a === '-f') continue;
-      if (a.startsWith('-')) continue;
-      names.push(a);
-    }
+  private handleWhereis(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
     const known = this.knownCommandSet();
-    const resolver = new WhereisResolver({
-      exists: (p) => this.vfs.exists(p),
-      list: (dir) => {
-        const entries = this.vfs.listDirectory(this.vfs.normalizePath(dir, '/'));
-        return entries ? entries.filter(e => e.name !== '.' && e.name !== '..').map(e => e.name) : null;
+    return asDispatch(runWhereis({
+      providesBinary: (name) => known.has(name),
+      environment: (name) => this.env.get(name),
+      list: (directory) => {
+        const entries = this.vfs.listDirectory(this.vfs.normalizePath(directory, '/'));
+        return entries ? entries.filter((entry) => entry.name !== '.' && entry.name !== '..').map((entry) => entry.name) : null;
       },
-      directoryInode: (dir) => this.vfs.resolveInode(this.vfs.normalizePath(dir, '/'))?.id ?? null,
-      canonicalPath: (dir) => this.vfs.realpath(this.vfs.normalizePath(dir, '/')),
-    });
-    if (listDirs) return { output: resolver.allDirectories().join('\n'), exitCode: 0 };
-
-    const sel: WhereisSelector = (b || m || s) ? { binary: b, manual: m, source: s } : ALL_CATEGORIES;
-    const lines: string[] = [];
-    for (const name of names) {
-      const result = resolver.locate(name, sel);
-      if (sel.binary && result.binaries.length === 0 && known.has(name)) result.binaries.push(`/usr/bin/${name}`);
-      lines.push(WhereisResolver.format(result, sel));
-    }
-    return { output: lines.join('\n'), exitCode: 0 };
+      identity: (directory) => this.vfs.resolveInode(this.vfs.normalizePath(directory, '/'))?.id ?? null,
+      canonical: (directory) => this.vfs.realpath(this.vfs.normalizePath(directory, '/')),
+    }, args));
   }
 
   private handleType(args: string[]): { output: string; exitCode: number; stderr?: string } {
@@ -8738,8 +8739,7 @@ export class LinuxCommandExecutor {
   }
 
   private handleExpr(args: string[]): { output: string; exitCode: number } {
-    const r = runExpr(args);
-    return { output: r.output, exitCode: r.exitCode };
+    return asDispatch(runExpr(args));
   }
 
   private handleTime(args: string[]): { output: string; exitCode: number } {
@@ -9039,86 +9039,59 @@ export class LinuxCommandExecutor {
     return best;
   }
 
-  private cmdLsof(args: string[]): string {
-    const filterPid = ((): number | null => {
-      const i = args.indexOf('-p');
-      return i >= 0 && args[i + 1] ? parseInt(args[i + 1], 10) || null : null;
-    })();
-    const filterUser = ((): string | null => {
-      const i = args.indexOf('-u');
-      return i >= 0 ? args[i + 1] ?? null : null;
-    })();
-    const filterInet = ((): { proto?: string; port?: number } | null => {
-      const i = args.indexOf('-i');
-      if (i < 0) return null;
-      const spec = args[i + 1] ?? '';
-      // -i :22  |  -i tcp:22  |  -i tcp
-      const portMatch = spec.match(/:(\d+)$/);
-      const protoMatch = spec.match(/^(tcp|udp)/i);
-      return {
-        proto: protoMatch ? protoMatch[1].toLowerCase() : undefined,
-        port: portMatch ? parseInt(portMatch[1], 10) : undefined,
-      };
-    })();
-
+  private lsofRows(): LsofRow[] {
     const rows: LsofRow[] = [];
     const procs = this.processMgr.list();
     let nodeSeq = 10_000;
-
     for (const p of procs) {
-      if (filterPid !== null && p.pid !== filterPid) continue;
-      if (filterUser !== null && p.user !== filterUser) continue;
-      if (filterInet === null) {
-        rows.push({
-          command: p.comm, pid: String(p.pid), user: p.user, fd: 'cwd', access: ' ',
-          type: 'DIR', device: '8,1', sizeOff: '4096', node: '2', name: p.cwd ?? '/',
-        });
-      }
+      rows.push({
+        command: p.comm, pid: p.pid, uid: p.uid, user: p.user, fd: 'cwd', access: ' ',
+        type: 'DIR', device: '8,1', sizeOff: '4096', node: '2', name: p.cwd ?? '/',
+      });
     }
-
     for (const row of this.kernelSocketRows()) {
       const { entry, owner } = row;
       if (owner === null || owner.fd === null) continue;
       if (row.state === 'TIME_WAIT' || row.state === 'SYN_RECEIVED') continue;
-      if (filterPid !== null && owner.pid !== filterPid) continue;
       const user = this.userMgr.uidToName(owner.uid);
-      if (filterUser !== null && user !== filterUser) continue;
-      if (filterInet) {
-        if (filterInet.proto && entry.protocol !== filterInet.proto) continue;
-        if (filterInet.port !== undefined && entry.localPort !== filterInet.port) continue;
-      }
       const local = entry.localAddress === '0.0.0.0' || entry.localAddress === '::' ? '*' : entry.localAddress;
+      const ipv6 = entry.localAddress.includes(':');
       rows.push({
-        command: owner.name, pid: String(owner.pid), user, fd: String(owner.fd), access: 'u',
-        type: entry.localAddress.includes(':') ? 'IPv6' : 'IPv4', device: String(entry.id), sizeOff: '0t0',
+        command: owner.name, pid: owner.pid, uid: owner.uid, user, fd: String(owner.fd), access: 'u',
+        type: ipv6 ? 'IPv6' : 'IPv4', device: String(entry.id), sizeOff: '0t0',
         node: entry.protocol.toUpperCase(),
         name: entry.remoteAddress === '*'
           ? `${local}:${entry.localPort}${entry.protocol === 'tcp' ? ' (LISTEN)' : ''}`
           : `${local}:${entry.localPort}->${entry.remoteAddress}:${entry.remotePort} (${row.state})`,
+        inet: {
+          protocol: entry.protocol === 'udp' ? 'udp' : 'tcp', family: ipv6 ? 6 : 4, localAddress: entry.localAddress, localPort: entry.localPort,
+          remoteAddress: entry.remoteAddress, remotePort: entry.remotePort, state: entry.remoteAddress === '*' && entry.protocol === 'tcp' ? 'LISTEN' : row.state,
+        },
       });
     }
-
-    if (filterInet === null) {
-      const rsyslog = procs.find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
-      for (const held of this.logMgr.deletedLogHandles()) {
-        if (filterPid !== null && rsyslog?.pid !== filterPid) continue;
-        if (filterUser !== null && (rsyslog?.user ?? 'root') !== filterUser) continue;
-        const heldFd = (rsyslog === undefined ? undefined
-          : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
-            .find((d) => d.target === held.path)?.fd) ?? 7;
-        rows.push({
-          command: 'rsyslogd', pid: String(rsyslog?.pid ?? 0), user: rsyslog?.user ?? 'root',
-          fd: String(heldFd), access: 'w', type: 'REG', device: '8,1', sizeOff: String(held.lostBytes),
-          node: String(nodeSeq++), name: `${held.path} (deleted)`,
-        });
-      }
+    const rsyslog = procs.find((p) => /^(rsyslogd?|syslogd)$/.test(p.comm));
+    for (const held of this.logMgr.deletedLogHandles()) {
+      const heldFd = (rsyslog === undefined ? undefined
+        : openDescriptors(this.descriptorSourcesFor(rsyslog.pid))
+          .find((d) => d.target === held.path)?.fd) ?? 7;
+      rows.push({
+        command: 'rsyslogd', pid: rsyslog?.pid ?? 0, uid: rsyslog?.uid ?? 0, user: rsyslog?.user ?? 'root',
+        fd: String(heldFd), access: 'w', type: 'REG', device: '8,1', sizeOff: String(held.lostBytes),
+        node: String(nodeSeq++), name: `${held.path} (deleted)`,
+      });
     }
+    return rows;
+  }
 
-    if (rows.length === 0) {
-      if (filterPid !== null) return `lsof: PID ${filterPid}: No such process`;
-      return '';
-    }
-    return renderLsof(rows);
+  private cmdLsof(args: string[]): { output: string; exitCode: number; stderr?: string; interleaved?: string } {
+    const run = runLsof(args, this.lsofRows(), {
+      uidOf: (name) => this.userMgr.getUser(name)?.uid ?? null,
+      fileExists: (path) => this.vfs.lstat(this.vfs.normalizePath(path, this.cwd)) !== null,
+      absolute: (path) => this.vfs.normalizePath(path, this.cwd),
+    });
+    return run.stderr === ''
+      ? { output: run.stdout, exitCode: run.exitCode }
+      : { output: run.stdout, exitCode: run.exitCode, stderr: run.stderr, interleaved: run.stderr + run.stdout };
   }
 
   private getEnvVarNames(prefix: string): string[] {
@@ -9146,6 +9119,9 @@ export class LinuxCommandExecutor {
   private runNohup(args: string[], stdin: string | undefined, outputPiped: boolean): { output: string; exitCode: number } {
     if (args.length === 0) {
       return nohupResult('', 125, "nohup: missing operand\nTry 'nohup --help' for more information.");
+    }
+    if (args.length === 1 && (args[0] === '--help' || args[0] === '--version')) {
+      return { output: COREUTILS_DOCS.nohup[args[0] === '--help' ? 'help' : 'version'], exitCode: 0 };
     }
     const target = outputPiped ? null : this.nohupOutputFile();
     if (!outputPiped && target === null) {
@@ -9184,8 +9160,8 @@ export class LinuxCommandExecutor {
         return this.runSupervised(parsed, () => run(parsed.command, env, outputPiped));
       }
       case 'env': {
-        const parsed = parseEnvInvocation(args, env ?? Object.fromEntries(this.env));
-        return run(parsed.command, parsed.env, outputPiped);
+        const plan = planEnv(args, env ?? Object.fromEntries(this.env));
+        return plan.kind === 'run' ? run([...plan.command], plan.env, outputPiped) : null;
       }
       case 'nohup': {
         const target = outputPiped ? null : this.nohupOutputFile();
@@ -9375,6 +9351,8 @@ export class LinuxCommandExecutor {
       fs: this.vfs, cwd,
       uid: this.userMgr.currentUid, gid: this.userMgr.currentGid,
       umask: this.umask,
+      userName: (uid: number) => this.userMgr.uidToName(uid),
+      groupName: (gid: number) => this.userMgr.gidToName(gid),
     };
   }
 
@@ -9387,50 +9365,57 @@ export class LinuxCommandExecutor {
    * bind9 without also having to author the top-level include file itself.
    */
   /** `file` — classify from the REAL inode/content, never canned. */
-  private describeFile(target: string): string {
-    const abs = this.vfs.normalizePath(target, this.cwd);
-    const lstat = this.vfs.resolveInode(abs, false);
-    if (!lstat) {
-      return `${target}: cannot open \`${target}' (No such file or directory)`;
-    }
-    if (lstat.type === 'symlink') {
-      return `${target}: symbolic link to ${lstat.target}`;
-    }
-    if (lstat.type === 'directory') return `${target}: directory`;
-    if (lstat.type === 'chardev' || lstat.type === 'blockdev') {
-      const numbers = lstat.rdev === undefined ? '' : ` (${lstat.rdev.major}/${lstat.rdev.minor})`;
-      return `${target}: ${lstat.type === 'chardev' ? 'character' : 'block'} special${numbers}`;
-    }
-    if (lstat.type === 'socket') return `${target}: socket`;
-    const content = this.vfs.readFile(abs) ?? lstat.content;
-    if (content.length === 0) return `${target}: empty`;
-    const archive = describeArchiveContent(content);
-    if (archive) return `${target}: ${archive}`;
-    const capture = describePcapFile(fileTextToBytes(content));
-    if (capture) return `${target}: ${capture}`;
-    if (content.startsWith('#!')) {
-      const interp = content.slice(2, content.indexOf('\n') > 0
-        ? content.indexOf('\n') : undefined).trim();
-      return `${target}: ${interp} script, ASCII text executable`;
-    }
-    // eslint-disable-next-line no-control-regex
-    if (/[\x00-\x08\x0e-\x1f]/.test(content)) return `${target}: data`;
-    return `${target}: ASCII text`;
+  private fileHost(): FileHost {
+    return {
+      describe: (target, options) => this.describeFile(target, options),
+      describeStream: (content, options) => this.describeFileContent(content, options),
+      readFile: (path) => this.vfs.readFile(this.vfs.normalizePath(path, this.cwd)),
+      exists: (path) => this.vfs.exists(this.vfs.normalizePath(path, this.cwd)),
+    };
   }
-}
 
-function mimeOfDescription(description: string, withCharset: boolean): string {
-  let type = 'application/octet-stream';
-  let text = false;
-  if (description === 'ASCII text') { type = 'text/plain'; text = true; }
-  else if (description === 'empty') type = 'inode/x-empty';
-  else if (description === 'directory') type = 'inode/directory';
-  else if (description.startsWith('symbolic link')) type = 'inode/symlink';
-  else if (description.startsWith('character special')) type = 'inode/chardevice';
-  else if (description.startsWith('block special')) type = 'inode/blockdevice';
-  else if (description === 'socket') type = 'inode/socket';
-  else if (description.endsWith('script, ASCII text executable')) { type = 'text/x-shellscript'; text = true; }
-  return withCharset ? `${type}; charset=${text ? 'us-ascii' : 'binary'}` : type;
+  private describeFile(target: string, options: FileDescribeOptions): string | null {
+    const abs = this.vfs.normalizePath(target, this.cwd);
+    const entry = this.vfs.resolveInode(abs, false);
+    if (!entry) return null;
+    if (entry.type === 'symlink') {
+      const resolved = this.vfs.resolveInode(abs, true);
+      if (options.follow) return resolved ? this.describeFile(this.vfs.realpath(abs) ?? abs, options) : null;
+      return `${resolved ? '' : 'broken '}symbolic link to ${entry.target}`;
+    }
+    if (entry.type === 'directory') return 'directory';
+    if (entry.type === 'chardev' || entry.type === 'blockdev') {
+      if (options.special) return this.describeFileContent(this.vfs.readFile(abs) ?? '', options);
+      const numbers = entry.rdev === undefined ? '' : ` (${entry.rdev.major}/${entry.rdev.minor})`;
+      return `${entry.type === 'chardev' ? 'character' : 'block'} special${numbers}`;
+    }
+    if (entry.type === 'socket') return 'socket';
+    if (entry.type === 'fifo') return 'fifo (named pipe)';
+    return this.describeFileContent(this.vfs.readFile(abs) ?? entry.content, options);
+  }
+
+  private describeFileContent(whole: string, options: FileDescribeOptions): string {
+    const content = options.byteLimit === null ? whole : whole.slice(0, options.byteLimit);
+    if (content.length === 0) return 'empty';
+    const archive = describeArchiveContent(content);
+    if (archive) return archive;
+    const capture = describePcapFile(fileTextToBytes(content));
+    if (capture) return capture;
+    const textual = !options.excluded.has('ascii') && !options.excluded.has('text');
+    // eslint-disable-next-line no-control-regex
+    if (/[\x00-\x08\x0e-\x1f]/.test(content)) return 'data';
+    if (!textual) return 'data';
+    if (content.startsWith('#!')) {
+      if (options.excluded.has('soft')) return 'ASCII text';
+      return scriptDescription(content.slice(2, content.indexOf('\n') > 0 ? content.indexOf('\n') : undefined));
+    }
+    const attributes: string[] = [];
+    const longest = Math.max(...content.split('\n').map((line) => line.replace(/\r$/, '').length));
+    if (longest > 299) attributes.push(`with very long lines (${longest})`);
+    if (/\r\n/.test(content)) attributes.push('with CRLF line terminators');
+    if (!content.includes('\n')) attributes.push('with no line terminators');
+    return ['ASCII text', ...attributes].join(', ');
+  }
 }
 
 // ─── small parsing helpers (kept private to this file) ────────────────
@@ -9655,30 +9640,6 @@ function timeoutNotice(invocation: TimeoutInvocation, signal: Signal): string {
 
 function timedOutStatus(invocation: TimeoutInvocation, killedBy: Signal, commandStatus: number): number {
   return invocation.preserveStatus || killedBy === 'SIGKILL' ? commandStatus : TIMEOUT_EXIT_TIMEDOUT;
-}
-
-function parseEnvInvocation(
-  args: readonly string[], inherited: Record<string, string>,
-): { env: Record<string, string>; command: string[] } {
-  let i = 0;
-  let ignoreEnv = false;
-  const unset: string[] = [];
-  const overlay: Record<string, string> = {};
-  for (; i < args.length; i++) {
-    const a = args[i];
-    if (a === '-i' || a === '--ignore-environment' || a === '-') { ignoreEnv = true; continue; }
-    if (a === '-u' || a === '--unset') { if (args[i + 1] !== undefined) unset.push(args[++i]); continue; }
-    if (a.startsWith('-')) continue;
-    const eq = a.indexOf('=');
-    if (eq > 0 && /^[A-Za-z_][A-Za-z_0-9]*$/.test(a.slice(0, eq))) {
-      overlay[a.slice(0, eq)] = a.slice(eq + 1);
-      continue;
-    }
-    break;
-  }
-  const base = ignoreEnv ? {} : { ...inherited };
-  for (const u of unset) delete base[u];
-  return { env: { ...base, ...overlay }, command: args.slice(i) };
 }
 
 function nohupResult(output: string, exitCode: number, stderr: string): { output: string; exitCode: number } {

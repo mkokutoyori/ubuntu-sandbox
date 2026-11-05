@@ -937,6 +937,12 @@ moteur `bgp/` et `router/policy/RoutePolicy` sont a brancher), `shaping-policy` 
 non porte) ; le LIBELLE de sortie « New API key: <cle> » n'est pas dans la reference (community.fortinet.com et docs.fortinet.com sont injoignables d'ici) : a
 verifier des qu'une capture existe.
 
+### [fortigate] SSL-VPN en mode tunnel et vues d'exploitation sans sortie attestee
+Mesure (lab `labs/entreprise-meridian`, commandes d'un exploitant tapees sur le concentrateur) :
+- `config vpn ssl web portal` / `set tunnel-mode enable` est refuse (« FortiClient ») ; `config vpn ssl settings` n'a ni `tunnel-ip-pools` ni `default-portal`. Un teletravailleur ne peut donc pas joindre le siege. La brique manquante est un client (`openfortivpn`/FortiClient sur LinuxPC et WindowsPC) plus un plan de donnees IP-sur-TLS (interface virtuelle `ssl.root`, pool d'adresses, politique `srcintf "ssl.root"`) ; le portail web, lui, repond pour de bon. Rien ne l'ecrit dans la reference : le protocole (`/remote/logincheck`, `/remote/fortisslvpn_xml`, `/remote/sslvpn-tunnel`) se decrit de memoire, pas par la documentation.
+- Vues documentees dont la reference ne donne AUCUN exemple de sortie (libelle et colonnes non attestables sans capture, regle 8) et qui repondent « Unknown action 0 » : `diagnose firewall iprope lookup`, `diagnose firewall dnat list`, `diagnose firewall ippool list`, `diagnose vpn ike status`, `diagnose vpn ike stats`, `diagnose vpn tunnel stat`, `diagnose vpn tunnel dumpsa`, `diagnose sys vd list`, `diagnose sys last-reboot`, `diagnose sys logdisk status`, `diagnose ip rtcache list`, `diagnose sys mpstat`. Les moteurs sous-jacents existent (politiques, VIP, SA IPsec, journal) ; seule la mise en forme manque.
+- `execute telnet`, `execute ssh`, `execute backup config` ne sont pas portes.
+
 ### [fortigate] ce que `?` et la tabulation ne couvrent pas encore
 Mesure (parcours de `?` sous `diagnose`, `execute`, `get`, `fnsysctl` : 500 chemins, tous executables ;
 `probe-fortigate-l-aide-couvre-ce-qui-s-execute`) : `execute` est un arbre a plusieurs niveaux, les queues de `diagnose`
@@ -4310,7 +4316,7 @@ Measured with `<cmd> zorglub` in system-view: `local-user a password cipher b`, 
 
 ## ls: options accepted without effect
 
-Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-D`/`--dired`, `--hyperlink`, `--block-size`, `-Z` shows `?` instead of a real SELinux context, `--quoting-style=shell*` and `locale` are approximated by literal and c, and `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
+Evaluated and compared with GNU ls 9.4: the display, sort, indicator, column, width, tab, ignore/hide, quoting-literal/c/escape, human-size, inode, context-placeholder and long-column options (see probe-linux-ls-evalue-ses-options). Still accepted and ignored: `--time=birth` (no birth time is modelled; it sorts like mtime), `-Z` shows `?` instead of a real SELinux context, `LS_COLORS` extension colours are not read. Directory-order listings (`-U`, `-f`) follow the simulator's insertion order, which a real file system does not promise.
 
 ## du: options accepted without full effect
 
@@ -4459,3 +4465,123 @@ pr is compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot7-pr). Still
 ## coreutils batch 8: checksums — what is still approximate
 
 md5sum, sha1sum, sha224sum, sha256sum, sha384sum, sha512sum, b2sum, sum and cksum share one engine (see probe-linux-coreutils-lot8-checksums). Still approximate: `md5sum --check` of a line escaped with a leading backslash only un-escapes `\\` and `\n`; the BSD `-b`/`-t` marker of a line read back from a file is accepted but not used to pick the read mode (the simulator has no text/binary distinction); `sum` of a file larger than the simulated read buffer is computed on the whole content at once.
+
+## coreutils batch 9: new commands — what is still approximate
+
+link, unlink, pathchk, hostid, factor, tsort, base32 and basenc are compared with GNU coreutils 9.4 (see probe-linux-coreutils-lot9-nouvelles-commandes). Still approximate: `factor` uses Pollard's rho, so a 128-bit semiprime with two large factors (2^128+1) takes far longer than the real tool; `hostid` derives its value from the host's /etc/hosts entry rather than from /etc/hostid; `basenc --z85` encodes only whole 4-byte groups, as the real tool does, but its decoder does not report the offending character; the default-mode `pathchk` does not consult the file system limits of a mounted file system, it assumes 255/4096.
+Still missing from the simulator although coreutils ships them: numfmt, csplit, shuf, shred, stdbuf, dircolors, vdir, pinky, chcon, runcon, and strings (binutils).
+
+## strings
+
+strings is measured against the real binutils 2.42 (see probe-linux-coreutils-lot10-strings); the binutils source was not reachable, so it is not a port. Not modelled: object-file section selection (`-d` is accepted and scans the whole file, as `-a` does on a non-ELF input), the `-T` target names (accepted and ignored) and `@file` argument files.
+
+## shuf
+
+shuf follows shuf.c 9.4 (fetched from the v9.4 tag) for its options and diagnostics. Not byte-exact: the order produced by `--random-source=FILE`, because gnulib's randperm.c/randint.c (which decide how the bytes of the file are consumed) were unreachable from this environment; the simulator draws uniformly from the bytes of the file with its own rejection rule, reports `end of file` when they run out, and is otherwise random. `shuf -r` without `-n` would never end on a real host; the simulator stops after 10000 lines. Reservoir sampling for large inputs is not modelled (the whole input is read, which gives the same distribution).
+
+## csplit
+
+csplit is a port of csplit.c 9.4 for inputs held in one buffer (the whole simulated file); the multi-buffer paths (inputs above the real read size, where `find_line` can no longer reach consumed buffers) are not modelled. The printf suffix of `-b` goes through the bash printf formatter, so the `'` flag is validated but not rendered.
+
+## numfmt
+
+numfmt follows numfmt.c 9.4 but computes in IEEE doubles where the real tool uses long double: integers up to 33 digits pass through as text when no scaling applies, but scaled results of values above 2^53 can differ in the last digit. The simulated `printf` does not read `\000` followed by digits as a NUL plus text (`printf '1\0002'`), which blocks a `-z` probe; `--grouping` has no effect, as in a UTF-8 C locale where the thousands separator is empty.
+Still missing: pinky, chcon, runcon. They are not measurable here: the dev container has no login session (pinky answers only its header) and its kernel answers chcon/runcon in ways a stock Ubuntu host does not (runcon with no command prints `kernel` and exits 0, `chcon u:r:t file` succeeds silently), so any output would be a guess. They get implemented from a capture taken on a real host, with the session table (`SshSessionTable`, as `who` uses it) behind pinky.
+
+## shred
+
+shred overwrites through the VFS write port: no real device, so the overwrite is not synchronous and a file of another user is not checked for write permission beyond what the write port does; `--random-source` only checks that the file exists.
+
+## dircolors
+
+dircolors ports dircolors.c 9.4 with the real compiled database. Not wired: `ls --color` does not read the LS_COLORS that dircolors prints (ls colours use their own table), so editing the database has no effect on listings.
+
+## ptx (lot 18)
+
+ptx is ported from coreutils 9.4 and measured on 134 cases. Known limits: `-W` with a pattern that matches the empty string loops forever, in the real binary as well, so the simulator does the same and it is not pinned; multibyte locales are not modelled (widths and word characters count bytes, as in the C.UTF-8 locale measured).
+
+## id, env, printenv (lot 19)
+
+`env ./missing` and `env /absent/x` still answer with the shell's `bash: ./missing: No such file or directory` instead of env's own `env: './missing': No such file or directory`: wrapped path commands are refused before the env handler runs. `env echo -n hi` ends the output with a newline that the real command does not print (the wrapper takes `echo` for a line-oriented command). The `--default-signal`, `--ignore-signal`, `--block-signal` and `--list-signal-handling` options are accepted and validated but change nothing: the simulated processes have no signal disposition to set.
+
+## sync, sleep, nice, nohup (lot 20)
+
+`nice nocmd` and `nohup nocmd` answer with the shell's `bash: nocmd: command not found` instead of `nice: 'nocmd': No such file or directory` / `nohup: failed to run command 'nocmd': No such file or directory`. `nohup` prints its terminal notices ("ignoring input...") whenever the simulated stdout is a terminal, which the capture harness (pipes) cannot compare, so those rows are not pinned. `du` lists directory entries in the order the simulated filesystem stores them, which differs from the host's readdir order; the sizes match.
+
+`ls --quoting-style` is now measured on 109 cases (probe-linux-ls-quoting-styles). Not modelled: the display width of a control character in a literal column listing (a tab counts as one column here, zero in ls), and non-ASCII bytes in the C locale (`\303\251`).
+
+`ls --block-size` is measured on 98 cases (probe-linux-ls-block-size). The `BLOCK_SIZE`, `LS_BLOCK_SIZE` and `POSIXLY_CORRECT` environment variables, which GNU ls reads when no block size is given, are not read.
+
+`ls --dired` and `--hyperlink` are measured on 85 cases (probe-linux-ls-dired-hyperlink). Not modelled: `--hyperlink=auto` is always off (no terminal is attached to a pipe), and the OSC 8 link of a path whose directory components contain symbolic links uses the simulator's canonical path.
+
+## lsof (lot 22)
+
+lsof now parses the lsof 4.95 grammar and selects rows by OR (default) or AND (-a) over -p, -u, -c, -d, -i, -s, +d/+D and file operands, with -t, -F and exit status 1 for an empty selection (probe-linux-lsof-grammar measured on 69 cases against the real lsof; probe-linux-lsof-selection pins the semantics). Still not listed or honoured: the real lsof prints many more rows per process (txt, mem, rtd, 0u...), the simulator lists cwd, sockets and deleted log handles only; `-R`, `-g` (accepted, nothing printed), `-o`, `-r` repeat mode, `-w`, `+L` link counts, `-U` (no Unix sockets are listed), NFS and the hostname/service resolution of `-i @host` beyond IP literals and localhost.
+
+## tar (lot 23)
+
+tar parses the GNU tar 1.35 grammar and handles create, list, extract, append, update, compare and delete on the simulator's own archive envelope (probe-linux-tar-gnu-1-35, 112 cases measured against the real tar). Not modelled: the archive is not a ustar byte stream, so `tar cf x.tar` is not readable by a real tar and block counts are not exact (`--totals` is accepted and prints nothing); hard links are stored as files; `--remove-files`, `--checkpoint`, `--sparse`, `--acls`, `--xattrs`, `--same-owner` and multi-volume archives are refused; `-j`/`-J`/`-a` compress with gzip, as the earlier implementation did, and `-z` on an archive that is not gzip reads it as is instead of failing with `gzip: stdin: not in gzip format`; `-h` stores a second hard-linked path as a plain file.
+
+## gzip, gunzip, zcat (lot 24)
+
+The three commands follow gzip 1.12 (probe-linux-gzip-1-12, 73 cases measured). Not equal to the real gzip: the compressed bytes. The simulator's deflate (GzipStreamWriter) produces other output than gzip/zlib, so the sizes shown by `gzip -l` and `gzip -v`, the ratio, and `gzip -c | wc -c` differ (a 18-byte text compresses to 33 bytes here and 34 there; a 200-line file to 904 bytes here and 354 there, because the simulator does not build dynamic Huffman blocks). The level (-1..-9, --fast, --best) is accepted and passed to the compressor, which uses it only to pick between two strategies. `-L`, `--rsyncable` and `--synchronous` are accepted and change nothing.
+
+## bash `enable -n` (builtin disabling)
+
+`enable -n NAME` is stored and honoured for the builtins the interpreter dispatches itself (`bash/runtime/Builtins.ts`:
+echo, printf, cd...). Not closed, measured against bash 5.2.21: a builtin the executor also serves (`type -t true` answers
+`builtin` where bash answers `file`; `enable -n cd; cd /` still changes directory where bash answers `cd: command not found`),
+and the disabled set is not inherited by a pipeline stage (`enable -n cd; enable -n | cat` lists nothing). Needs the
+executor's CommandResolver to read the interpreter environment. `help` is real (76 captured topics); the overview does not yet put a star before a disabled builtin (`A star (*) next to a name means that the command is disabled.`), and the overview text is fixed at the bash 5.2.21 captured, whatever `BASH_VERSION` says.
+
+## whereis: the simulated tree is poorer than a real Ubuntu
+
+`whereis` is now a port of util-linux `whereis.c` and walks the VFS like the real one. A real Ubuntu 24.04 yields 62 lookup
+directories for `whereis -l` (versioned emacs and multiarch directories, /opt/*/bin, every /usr/share/man/manN); the simulated tree
+carries 14, and /usr/bin lacks many binaries a real box has (`whereis -bg 'ca*'` returns 2 entries where the real one returns 20+).
+Closing it means populating the VFS from the package database, not changing whereis.
+
+## file: listings and debug options, encodings
+
+`file -c`, `-C`, `-l` and `-d` (parsed magic dump, strength listing, debug trace of the real libmagic) are refused with the usage; there
+is no magic database to print. `-e encoding` is accepted and has no effect (the real file then falls back to binary data for a script), the
+magic classification is the simulator's own subset (ASCII text, scripts, data, archives, pcap): UTF-8 and ISO-8859 text, HTML, XML, JSON,
+images, ELF, PDF are not recognised (the dev container ships a reduced magic file, so they cannot be measured there either).
+
+## lsblk, findmnt columns and mount: what is still open
+
+`lsblk` reads the util-linux option set through the shared getopt reader (-n, -x, -P, -r, -e, -I, operands, unknown columns, statuses 32/64 are done), but
+-D, -E, -M, -N, -O, -S, -s, -w, -z and -i are accepted without being evaluated, and the columns beyond those of its table (FSAVAIL, FSUSE%, FSVER, ROTA, SCHED,
+RQ-SIZE, WSAME, ZONED...) answer 'unknown column' although the real one knows them (measured against util-linux 2.39.3 of the dev container). `findmnt` is
+done for the options of `Findmnt.ts`, but its columns other than TARGET, SOURCE, FSTYPE, OPTIONS, FSROOT, VFS-OPTIONS and FS-OPTIONS (ID, PARENT, LABEL,
+UUID, SIZE, USED, AVAIL, USE%, PROPAGATION...) answer 'unknown column', and `-D`, `-d`, `-p`, `-N`, `-R`, `-C`, `-I`, `-L`, `-U` are read by the option parser
+and not evaluated. `mount`/`umount` option grammar and statuses are done; their `--help`/`--version` texts differ between util-linux 2.37.2 (simulated) and
+2.39.3 (oracle) and are not reproduced.
+
+## Swap areas: what mkswap, swapon and swapoff do not cover
+
+Swap areas are regular files only (`MemoryProfile.swapAreas`, a signature page written by `mkswap`). Block devices (`mkswap /dev/sdb1`, `swapon` on a
+partition, type `partition` in `--show`), `swapon -L/-U` lookup by label or UUID (always 'cannot find the device', as for a file the real blkid cache
+does not know), the permission check of a non-root caller beyond 'Operation not permitted', discard policies (accepted, not evaluated) and the
+`swapon` options `-f`, `-o` are not modelled. `blkid` reads the swap signature of a regular file and the hardware partitions, but its `-p`, `-i`, `-c`, `-w`, `-d`, `-g`, `-O`, `-S`, `-n`, `-u` are read by the option parser and not evaluated, and its `-h`/`-V` texts (util-linux 2.37.2 date of libblkid not sourceable) are the old ones. Used swap stays at the 0 the file starts with: nothing pages.
+
+## Commands missing or answering another distribution than the simulated one
+
+`bzip2`, `bunzip2`, `xz`, `unxz` and `rnano` do not exist in the simulator where a real Ubuntu has them (`command not found`). `free`, `w`,
+`findmnt`, `swapon`, `pmap` and `apt` print the usage/version of their commands without `--version`/`--help` (measured against procps-ng
+4.0.4, util-linux 2.39.3, apt 2.8.3 of the dev container, whereas the simulator imitates Ubuntu 22.04: 3.3.17, 2.37.2, 2.4.x). `runlevel`,
+`gpasswd`, `clear` and `reset` accept `--version` silently where the real ones refuse the option.
+
+## bc: what the interpreter does not model
+
+`Bc.ts` follows GNU bc 1.07.1 (measured, 156 cases). Not modelled: the `adr=` of a runtime error inside a `for`/`while` body (the real compiler counts
+jump offsets; straight-line code is exact), `read()`, the interactive banner, `-s`/`-w` standard-mode diagnostics, and the `limits` figures are fixed to the
+dev container's. `bc -l` with a very large `scale` is as slow as the interpreter (the library is run, not compiled).
+
+## tput: what the terminfo port does not model
+
+`tty/Tput.ts` carries 19 terminals captured from the dev container (`infocmp -1 -x`) and the ncurses tparm machine; 1717 of 1719 sampled cases agree with
+tput 6.4. Not modelled: bytes above 0x7f (`tput acsc` on ansi/cygwin) leave the simulator as UTF-8 where the real tput writes raw bytes; `init` and `reset`
+print is1/is2/is3 and rs1/rs2/rs3 but skip the tab-stop setting; a terminal the container does not install (only the 19 are carried) answers
+`unknown terminal`; `tput cols`/`lines` use the window size when the terminal comes from $TERM and terminfo when given with -T (measured, not understood in
+ncurses terms); and the capability names known to tput are the union of the installed terminals plus the probed boolean/numeric names.

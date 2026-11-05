@@ -1,3 +1,4 @@
+import { renderIpsecCryptoStats, renderKernelRoutes } from './diag/kernelViews';
 import { ipToUint32 } from '../../../../core/ip';
 import { generateApiKey } from '../../identity/AdminAccounts';
 import { renderTable, FIXED_TABLE } from '../../../shells/cli/TextTable';
@@ -69,7 +70,7 @@ import {
   type InterfaceStatusFacts,
   renderBgpNeighbors, renderBgpSummary, renderDhcpLeases, renderDhcp6Leases,
   renderSslVpnLoginUsers, renderSslVpnSessions, type SslVpnListRow,
-  renderOspfNeighbors, renderRoutingTable, renderSystemStatus,
+  renderOspfNeighbors, renderRoutingTable, renderRoutingDetails, renderSystemStatus,
   type SystemClusterFacts,
 } from './diag/getViews';
 import {
@@ -913,6 +914,11 @@ export class FortiShell {
     if (path === 'vpn ipsec tunnel summary') {
       return renderVpnTunnelSummary(this.fw.getTunnelTable());
     }
+    if (path.startsWith('vpn ipsec tunnel name ')) {
+      const wanted = path.slice('vpn ipsec tunnel name '.length).trim();
+      if (this.fw.getTunnelTable().getPhase1(wanted) === undefined) return null;
+      return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now(), wanted);
+    }
     if (path === 'vpn ipsec tunnel details' || path === 'vpn ipsec tunnel name') {
       return renderVpnTunnelList(this.fw.getTunnelTable(), this.fw.now());
     }
@@ -925,6 +931,8 @@ export class FortiShell {
     if (path === 'system session status') {
       return renderSessionCount(this.fw.getSessionTable().view().count());
     }
+    if (path === 'vpn ipsec stats crypto') return renderIpsecCryptoStats(this.fw.getTunnelTable());
+    if (path === 'router info kernel') return renderKernelRoutes(this.fw);
     if (path === 'vpn ipsec stats tunnel') {
       return renderIpsecTunnelStats(this.fw.getTunnelTable());
     }
@@ -975,6 +983,9 @@ export class FortiShell {
     if (path === 'router info ospf interface' || path.startsWith('router info ospf interface ')) {
       return this.ospfInterfaceView(path.slice('router info ospf interface'.length).trim());
     }
+    if (path === 'router info routing-table details' || path.startsWith('router info routing-table details ')) {
+      return renderRoutingDetails(this.fw.getRouteTable(), path.slice('router info routing-table details'.length).trim());
+    }
     if (path.startsWith('router info routing-table ')) {
       const view = path.slice('router info routing-table '.length);
       if (view !== 'all' && view !== 'static' && view !== 'connected'
@@ -1022,7 +1033,8 @@ export class FortiShell {
         speed: linked && port !== undefined
           ? `${port.getNegotiatedSpeed()}Mbps (Duplex: ${port.getNegotiatedDuplex()})`
           : 'n/a',
-        type: this.interfaceSetting(iface.name, 'type') ?? 'physical',
+        type: this.interfaceSetting(iface.name, 'type')
+          ?? (this.fw.tunnelBoundInterface(iface.name) !== undefined ? 'tunnel' : 'physical'),
         srcCheck: this.interfaceSetting(iface.name, 'src-check') ?? 'enable',
         dropOverlappedFragment:
           this.interfaceSetting(iface.name, 'drop-overlapped-fragment') ?? 'disable',

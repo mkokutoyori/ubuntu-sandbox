@@ -58,6 +58,7 @@ export interface ManagementHost {
   managementPorts(): ManagementPorts;
   sshIdentification(): string | undefined;
   sshAlgorithms(): SshAlgorithmPreferences;
+  sshPasswordAllowed(): boolean;
   sshHostKeyAlgorithm(): SshKeyAlgorithm;
   createManagementCli(user: string, origin: string): ManagementCli | null;
   authenticateAdmin(user: string, password: string, source: string): boolean;
@@ -187,6 +188,7 @@ export function buildManagementServices(host: ManagementHost): ManagementService
     idleTimeoutMs: () => host.managementIdleTimeoutMs(),
     sshIdentification: () => host.sshIdentification(),
     sshAlgorithms: () => host.sshAlgorithms(),
+    sshPasswordAllowed: () => host.sshPasswordAllowed(),
     sshHostKeyAlgorithm: () => host.sshHostKeyAlgorithm(),
     runningConfig: () => host.runningConfig(),
     onLogin: (session) => { host.onManagementLogin(session); },

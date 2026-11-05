@@ -37,6 +37,7 @@ import type { DosFinding, DosSensor } from '../../dos/DosSensor';
 import { icmpErrorFlowKey, flowKeyFromPacket, reverseFlowKey, type FlowKey } from '../../session/FlowKey';
 import type { AssembledStream } from '../../inspection/StreamAssembler';
 import type { FirewallSession, SessionTable, SessionTranslation } from '../../session/SessionTable';
+import type { PolicyProbe } from '../../policy/PolicyProbe';
 import type { FlowDirection } from '../../session/TcpStateMachine';
 import { segmentPayloadSize } from '../../../../tcp/TcpStack';
 import { ftpExpectedDataFlow } from '../../session/FtpSessionHelper';
@@ -706,7 +707,7 @@ function sessionLookupStage(services: FirewallServices): PipelineStage {
 
       clampMss(context, carried);
       rewriteDiffserv(context, carried, found.direction, found.session.originalTos);
-      const shaped = shapeTraffic(services, context, carried, found.direction);
+      const shaped = shapeTraffic(services, context, withShapingPolicy(services, context, carried, sessionProbe(found.session)), found.direction);
       if (shaped) return shaped;
       const perIp = shapePerIp(services, context, carried, found.direction, found.session.c2s.sourceIP, false);
       if (perIp) return perIp;
@@ -1061,21 +1062,7 @@ function policyLookupStage(services: FirewallServices): PipelineStage {
 
       const decision = vdom(services, context).evaluator.evaluate(
         vdom(services, context).policy.ordered(),
-        {
-          ingressZone: context.ingressZone ?? '',
-          egressZone: context.egressZone ?? '',
-          ingressInterface: context.ingressPort,
-          egressInterface: context.egressPort ?? '',
-          sourceIP: policySource(context, packet, services).sourceIP.toString(),
-          sourceMac: context.ingressFrameSource?.toString(),
-          destIP: policyDestination(context, packet, services).destinationIP.toString(),
-          protocol: packet.protocol,
-          tos: packet.tos,
-          ...transportPorts(policyDestination(context, packet, services)),
-          application: context.identifiedApplication,
-          destinationTranslated: context.destinationTranslated === true,
-          destinationNatRuleId: context.destinationNatRuleId,
-        },
+        policyProbe(services, context, packet),
         packet.totalLength,
       );
 
@@ -1216,7 +1203,8 @@ function shaperStage(services: FirewallServices): PipelineStage {
     name: 'shaper',
     apply(context) {
       const packet = ipv4(context);
-      return shapeTraffic(services, context, context.matchedPolicy, 'c2s')
+      return shapeTraffic(services, context,
+        packet === undefined ? context.matchedPolicy : withShapingPolicy(services, context, context.matchedPolicy, policyProbe(services, context, packet)), 'c2s')
         ?? (packet === undefined ? undefined : shapePerIp(services, context, context.matchedPolicy,
           'c2s', packet.sourceIP.toString(), context.isFirstPacket))
         ?? proceed(context, 'shaper', 'unset');
@@ -1316,6 +1304,54 @@ function installDiscard(
     timeoutSec: services.discardTimeoutSec ?? DISCARD_TIMEOUT_SEC,
     policyId: context.matchedPolicy?.id,
   });
+}
+
+function policyProbe(services: FirewallServices, context: PacketContext, packet: IPv4Packet): PolicyProbe {
+  return {
+    ingressZone: context.ingressZone ?? '',
+    egressZone: context.egressZone ?? '',
+    ingressInterface: context.ingressPort,
+    egressInterface: context.egressPort ?? '',
+    sourceIP: policySource(context, packet, services).sourceIP.toString(),
+    sourceMac: context.ingressFrameSource?.toString(),
+    destIP: policyDestination(context, packet, services).destinationIP.toString(),
+    protocol: packet.protocol,
+    tos: packet.tos,
+    ...transportPorts(policyDestination(context, packet, services)),
+    application: context.identifiedApplication,
+    destinationTranslated: context.destinationTranslated === true,
+    destinationNatRuleId: context.destinationNatRuleId,
+  };
+}
+
+function withShapingPolicy(
+  services: FirewallServices, context: PacketContext, rule: SecurityRule | undefined, probe: PolicyProbe,
+): SecurityRule | undefined {
+  if (rule === undefined || (rule.trafficShaper !== undefined && rule.trafficShaperReverse !== undefined)) return rule;
+  const scope = vdom(services, context);
+  const classes = scope.shapers?.shapingPolicies?.ordered() ?? [];
+  if (classes.length === 0) return rule;
+  const found = scope.evaluator.evaluateExplicit(classes, probe)?.rule;
+  if (found === undefined) return rule;
+  return {
+    ...rule,
+    trafficShaper: rule.trafficShaper ?? found.trafficShaper,
+    trafficShaperReverse: rule.trafficShaperReverse ?? found.trafficShaperReverse,
+  };
+}
+
+function sessionProbe(session: FirewallSession): PolicyProbe {
+  return {
+    ingressZone: session.ingressZone,
+    egressZone: session.egressZone,
+    ingressInterface: session.ingressInterface,
+    egressInterface: session.egressInterface,
+    sourceIP: session.c2s.sourceIP,
+    destIP: session.c2s.destIP,
+    protocol: session.c2s.protocol,
+    sourcePort: session.c2s.sourcePort,
+    destPort: session.c2s.destPort,
+  };
 }
 
 function policySource(
