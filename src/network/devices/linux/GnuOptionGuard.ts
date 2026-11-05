@@ -222,7 +222,8 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
   fgrep: GREP_OPTIONS,
   whoami: { optstring: '', long: HELP_VERSION, operands: false },
   groups: { optstring: '', long: HELP_VERSION, operands: true },
-  tty: { optstring: 's', long: [flag('silent', 's'), flag('quiet', 's'), ...HELP_VERSION], operands: false },
+  tty: { optstring: 's', long: [flag('silent', 's'), flag('quiet', 's'), ...HELP_VERSION], operands: false, failureStatus: 2 },
+  arch: { optstring: '', long: [...HELP_VERSION], operands: false },
   nproc: { optstring: '', long: [flag('all'), valued('ignore'), ...HELP_VERSION], operands: false },
   free: {
     optstring: 'bkmghHlLtvVwc:s:',
@@ -392,8 +393,7 @@ export const GNU_OPTION_SETS: Readonly<Record<string, GnuOptionSet>> = {
     operands: true,
   },
   mknod: { optstring: 'm:Z', long: [valued('mode', 'm'), optional('context', 'Z'), ...HELP_VERSION], operands: true },
-  sync: { optstring: 'df', long: [flag('data', 'd'), flag('file-system', 'f'), ...HELP_VERSION], operands: true },
-  nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125 },
+  nice: { optstring: '+n:', long: [valued('adjustment', 'n'), ...HELP_VERSION], operands: true, failureStatus: 125, signalOperands: true },
   nohup: { optstring: '+', long: [...HELP_VERSION], operands: true, failureStatus: 125 },
   uname: {
     optstring: 'asnrvmpio',

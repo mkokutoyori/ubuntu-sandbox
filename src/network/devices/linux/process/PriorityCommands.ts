@@ -73,14 +73,14 @@ export function cmdNice(args: string[], ctx: ProcessCmdContext): CmdResult {
     adj = Number(args[0].replace(/^(-n|--adjustment=)/, ''));
     i = 1;
     donne = true;
-  } else if (/^-\d+$/.test(args[0])) {
-    adj = Number(args[0]);
+  } else if (/^-[-+]?\d+$/.test(args[0])) {
+    adj = Number(args[0].slice(1));
     i = 1;
     donne = true;
   }
   if (Number.isNaN(adj)) {
     return {
-      output: `nice: invalid adjustment '${args[1] ?? args[0]}'\n${NICE_TRY_HELP}`,
+      output: `nice: invalid adjustment '${args[0] === '-n' || args[0] === '--adjustment' ? args[1] : args[0].replace(/^(-n|--adjustment=)/, '')}'`,
       exitCode: NICE_USAGE_EXIT,
     };
   }

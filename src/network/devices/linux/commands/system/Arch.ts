@@ -1,3 +1,4 @@
+import { COREUTILS_DOCS } from '../../coreutils/CoreutilsDocs';
 import type { LinuxCommand } from '../LinuxCommand';
 import type { LinuxCommandContext } from '../LinuxCommandContext';
 
@@ -6,11 +7,10 @@ export const archCommand: LinuxCommand = {
   needsNetworkContext: true,
   usage: 'arch',
   run(ctx: LinuxCommandContext, args: string[]): string {
-    if (args.length > 0) return `arch: extra operand '${args[0]}'`;
+    if (args[0] === '--help' || args[0] === '--version') return COREUTILS_DOCS.arch[args[0] === '--help' ? 'help' : 'version'];
     return ctx.executor.hardware.cpu.architecture;
   },
   runWithStatus(ctx: LinuxCommandContext, args: string[]): Promise<{ output: string; exitCode: number }> {
-    if (args.length > 0) return Promise.resolve({ output: `arch: extra operand '${args[0]}'`, exitCode: 1 });
-    return Promise.resolve({ output: ctx.executor.hardware.cpu.architecture, exitCode: 0 });
+    return Promise.resolve({ output: this.run(ctx, args), exitCode: 0 });
   },
 };

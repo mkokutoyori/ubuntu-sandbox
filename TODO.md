@@ -4483,3 +4483,7 @@ ptx is ported from coreutils 9.4 and measured on 134 cases. Known limits: `-W` w
 ## id, env, printenv (lot 19)
 
 `env ./missing` and `env /absent/x` still answer with the shell's `bash: ./missing: No such file or directory` instead of env's own `env: './missing': No such file or directory`: wrapped path commands are refused before the env handler runs. `env echo -n hi` ends the output with a newline that the real command does not print (the wrapper takes `echo` for a line-oriented command). The `--default-signal`, `--ignore-signal`, `--block-signal` and `--list-signal-handling` options are accepted and validated but change nothing: the simulated processes have no signal disposition to set.
+
+## sync, sleep, nice, nohup (lot 20)
+
+`nice nocmd` and `nohup nocmd` answer with the shell's `bash: nocmd: command not found` instead of `nice: 'nocmd': No such file or directory` / `nohup: failed to run command 'nocmd': No such file or directory`. `nohup` prints its terminal notices ("ignoring input...") whenever the simulated stdout is a terminal, which the capture harness (pipes) cannot compare, so those rows are not pinned. `du` lists directory entries in the order the simulated filesystem stores them, which differs from the host's readdir order; the sizes match.

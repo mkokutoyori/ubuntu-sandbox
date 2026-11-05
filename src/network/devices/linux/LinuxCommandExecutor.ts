@@ -81,6 +81,7 @@ import { runChecksum } from './coreutils/CksumCommand';
 import { runLink, runUnlink } from './coreutils/LinkCommands';
 import { runFactor } from './coreutils/FactorCommand';
 import { runTsort } from './coreutils/TsortCommand';
+import { runSync } from './coreutils/SyncCommand';
 import { planEnv, runPrintenv } from './coreutils/EnvCommand';
 import { runId } from './coreutils/IdCommand';
 import { runPtx } from './coreutils/PtxCommand';
@@ -104,6 +105,7 @@ import { runMkdir, mkdirOperands } from './coreutils/MkdirCommand';
 import { runMknod } from './coreutils/MknodCommand';
 import { runRmdir } from './coreutils/RmdirCommand';
 import { runSort } from './coreutils/SortCommand';
+import { COREUTILS_DOCS } from './coreutils/CoreutilsDocs';
 import { asDispatch, docsResult, quoteLocale } from './coreutils/CoreutilsKit';
 import { coreutilsIO } from './coreutils/CoreutilsFiles';
 import { cmdFind, cmdLocate, cmdCommand, cmdUpdatedb } from './LinuxSearchCommands';
@@ -6952,7 +6954,7 @@ export class LinuxCommandExecutor {
       case 'truncate': return runTruncate(this, args);
       case 'dd': return runDd(this, args);
       case 'fallocate': return runFallocate(this, args);
-      case 'sync': return { output: '', exitCode: 0 };
+      case 'sync': return asDispatch(runSync(c, args));
       // kill — send signal via process manager
       case 'kill': {
         this.publishSyscall('kill');
@@ -7000,9 +7002,9 @@ export class LinuxCommandExecutor {
         // `not a tty` (exit 1) when running without a controlling terminal —
         // e.g. ssh exec-mode without -t. The SSH client overlays SSH_NO_TTY=1.
         if (this._cmdEnv?.['SSH_NO_TTY'] === '1' || this.env.get('SSH_NO_TTY') === '1') {
-          return { output: 'not a tty', exitCode: 1 };
+          return { output: args.some((a) => /^-[a-z]*s|^--(silent|quiet)$/.test(a)) ? '' : 'not a tty', exitCode: 1 };
         }
-        return { output: cmdTty(this.ttyDevice.name), exitCode: 0 };
+        return { output: args.some((a) => /^-[a-z]*s|^--(silent|quiet)$/.test(a)) ? '' : cmdTty(this.ttyDevice.name), exitCode: 0 };
       }
       case 'runlevel': return { output: cmdRunlevel(this.isServer), exitCode: 0 };
 
@@ -9208,6 +9210,9 @@ export class LinuxCommandExecutor {
   private runNohup(args: string[], stdin: string | undefined, outputPiped: boolean): { output: string; exitCode: number } {
     if (args.length === 0) {
       return nohupResult('', 125, "nohup: missing operand\nTry 'nohup --help' for more information.");
+    }
+    if (args.length === 1 && (args[0] === '--help' || args[0] === '--version')) {
+      return { output: COREUTILS_DOCS.nohup[args[0] === '--help' ? 'help' : 'version'], exitCode: 0 };
     }
     const target = outputPiped ? null : this.nohupOutputFile();
     if (!outputPiped && target === null) {
