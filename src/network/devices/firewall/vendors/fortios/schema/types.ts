@@ -390,6 +390,8 @@ export interface FortiCommitDevice {
   removeStaticArp(id: string): void;
   applyProxyArp(id: string, entry: { readonly interface: string; readonly ip: string; readonly endIp: string }): void;
   removeProxyArp(id: string): void;
+  applyShapingPolicy(draft: import('../../../model/PolicyStore').RuleDraft, position: number): void;
+  removeShapingPolicy(id: string): void;
   applyVip(vip: FortiVipPatch): void;
   applyFqdnVip(vip: FortiFqdnVipPatch): string | void;
   removeVip(name: string): void;

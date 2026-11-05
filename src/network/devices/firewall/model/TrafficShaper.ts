@@ -1,4 +1,5 @@
 import { CarPolicer, type CarRule } from '../../../qos/CarPolicer';
+import { PolicyStore } from './PolicyStore';
 
 export type ShaperBand = 'guaranteed' | 'exceed' | 'maximum' | 'dropped';
 export type BandwidthUnit = 'kbps' | 'mbps' | 'gbps';
@@ -117,6 +118,8 @@ export class ShaperStore {
   }
 
   get(name: string): TrafficShaper | undefined { return this.shapers.get(name); }
+
+  readonly shapingPolicies = new PolicyStore();
 
   meterOf(name: string): ShaperMeter | undefined { return this.meters.get(name); }
 
