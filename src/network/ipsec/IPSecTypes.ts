@@ -433,7 +433,11 @@ export interface GdoiGroupConfig {
   isKeyServer: boolean;
 }
 
-export type IkeWirePayload = IsakmpDpdMessage | IkeMessage | GdoiMessage;
+export interface IsakmpDeleteMessage {
+  type: 'isakmp-delete';
+}
+
+export type IkeWirePayload = IsakmpDpdMessage | IsakmpDeleteMessage | IkeMessage | GdoiMessage;
 
 export function isIkeMessage(p: unknown): p is IkeMessage {
   if (!p || typeof p !== 'object') return false;

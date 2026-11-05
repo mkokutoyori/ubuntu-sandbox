@@ -647,6 +647,15 @@ export class Firewall extends Equipment {
     });
     this.tcp = agents.tcp;
     this.ipsec = agents.ipsec;
+    this.getBus().subscribe('ipsec.sa.deleted', (event) => {
+      if (event.payload.reason === 'replaced' || event.payload.deviceId !== this.id) return;
+      for (const vdom of this.vdoms.names()) {
+        const tunnels = this.getVdom(vdom).tunnels;
+        for (const tunnel of tunnels.all()) {
+          if (tunnel.remoteGateway === event.payload.peerIp) tunnels.markDown(tunnel.name, null);
+        }
+      }
+    });
     this.radius = agents.radius;
     this.tacacs = agents.tacacs;
 
