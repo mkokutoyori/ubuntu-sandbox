@@ -33,6 +33,7 @@ import { useLocale } from '@/i18n/useLocale';
 import { saveTopologyToBrowser, loadTopologyFromBrowser } from '@/store/localStorageTopology';
 import { cn } from '@/lib/utils';
 import { lazyTerminalManager } from '@/terminal/lazyTerminalManager';
+import { reportChunkFailure } from '@/deploymentSkewBrowser';
 
 const TerminalModal = lazy(() => import('./TerminalModal').then((module) => ({ default: module.TerminalModal })));
 const loadTopologySerializer = () => import('@/store/topologySerializer');
@@ -188,7 +189,13 @@ export function NetworkDesigner() {
   const handleOpenTerminal = useCallback(async (device: Equipment, line?: 'console' | 'vty') => {
     if (!device.getIsPoweredOn()) return;
 
-    const sessionId = await manager.openTerminal(device, line);
+    let sessionId: string | null;
+    try {
+      sessionId = await manager.openTerminal(device, line);
+    } catch (error) {
+      if (reportChunkFailure(error)) return;
+      throw error;
+    }
     if (sessionId) {
       // Opening a terminal should surface it, even if the user was
       // peeking at the desktop.

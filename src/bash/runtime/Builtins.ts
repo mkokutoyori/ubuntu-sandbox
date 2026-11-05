@@ -23,6 +23,8 @@ import { formatPrintf } from './Printf';
 import { runDeclaration } from './Declare';
 import { runSet, runShopt } from './OptionBuiltins';
 import { signalListing, signalName } from './Signals';
+import { BASH_BUILTIN_NAMES, builtinEnable } from './EnableBuiltin';
+import { builtinHelp } from './HelpBuiltin';
 import type { OptionResult } from './OptionBuiltins';
 import type { DeclarationCommand } from './Declare';
 
@@ -48,7 +50,7 @@ const BUILTIN_NAMES = new Set([
   'local', 'read', 'true', 'false', ':',
   'exit', 'return', 'break', 'continue',
   'shift', 'source', '.', 'declare', 'typeset', 'readonly', 'let', 'shopt', 'builtin', 'hash', 'dirs', 'pushd', 'popd', 'compgen', 'times', 'caller',
-  'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray',
+  'eval', 'alias', 'unalias', 'getopts', 'trap', 'mapfile', 'readarray', 'enable', 'help',
 ]);
 
 export function isBuiltin(name: string): boolean {
@@ -101,6 +103,8 @@ export function executeBuiltin(
     case 'let': return builtinLet(args, env);
     case 'getopts': return builtinGetopts(args, env);
     case 'trap': return builtinTrap(args, env);
+    case 'enable': return builtinEnable(args, env);
+    case 'help': return builtinHelp(args);
     case 'mapfile':
     case 'readarray': return builtinMapfile(args, env, stdin, readFd);
     case 'eval': return { output: '', exitCode: 0 }; // handled at higher level
@@ -200,14 +204,6 @@ function optionResult(result: OptionResult, env: Environment): BuiltinResult {
   if (result.positional !== undefined) env.setPositionalArgs(result.positional);
   return { output: result.output, exitCode: result.exitCode, ...(result.stderr === '' ? {} : { stderr: result.stderr }) };
 }
-
-const BASH_BUILTIN_NAMES = [
-  '.', ':', '[', 'alias', 'bg', 'bind', 'break', 'builtin', 'caller', 'cd', 'command', 'compgen', 'complete', 'compopt',
-  'continue', 'declare', 'dirs', 'disown', 'echo', 'enable', 'eval', 'exec', 'exit', 'export', 'false', 'fc', 'fg', 'getopts',
-  'hash', 'help', 'history', 'jobs', 'kill', 'let', 'local', 'logout', 'mapfile', 'popd', 'printf', 'pushd', 'pwd', 'read',
-  'readarray', 'readonly', 'return', 'set', 'shift', 'shopt', 'source', 'suspend', 'test', 'times', 'trap', 'true', 'type',
-  'typeset', 'ulimit', 'umask', 'unalias', 'unset', 'wait',
-];
 
 export function isShellBuiltinName(name: string): boolean {
   return BASH_BUILTIN_NAMES.includes(name);

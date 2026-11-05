@@ -150,23 +150,18 @@ describe('Scénario 5 — les erreurs, dans leur forme réelle', () => {
 
   it('une expression tronquée rend l\'erreur de syntaxe du vrai', async () => {
     const pc = lab();
-    expect(await calc(pc, '2 +')).toBe('(standard_in) 1: syntax error');
+    expect(await calc(pc, '2 +')).toBe('(standard_in) 2: syntax error');
   });
 
-  it('ce qui n\'est pas implémenté le dit, plutôt que de crier syntaxe', async () => {
+  it('une fonction définie par `define` répond', async () => {
     const pc = lab();
-    // Répondre « syntax error » à un `define` valide laisserait croire que
-    // la ligne est fausse, alors que c'est ce bc qui ne va pas jusque-là.
-    const out = await calc(pc, 'define f(x){return(x)}');
-    expect(out).toContain("'define' is not supported");
-    expect(out).not.toContain('syntax error');
+    expect(await pc.executeCommand('printf "define f(x){return(x*2)}\\nf(21)\\n" | bc')).toBe('42');
   });
 
-  it('`-l` est refusé plutôt qu\'à moitié tenu', async () => {
+  it('`-l` charge la bibliothèque mathématique et fixe scale à 20', async () => {
     const pc = lab();
-    // Accepter -l pour son seul scale=20 laisserait croire que s(), c(),
-    // a(), l(), e() et j() répondent.
-    expect(await pc.executeCommand('bc -l')).toContain('math library (-l) is not available');
+    expect(await pc.executeCommand('echo "s(1)" | bc -l')).toBe('.84147098480789650665');
+    expect(await pc.executeCommand('echo "scale" | bc -l')).toBe('20');
   });
 });
 
@@ -181,7 +176,7 @@ describe('Scénario 6 — au bout du tuyau et depuis un fichier', () => {
   it('un fichier passé en argument est lu', async () => {
     const pc = lab();
     await pc.executeCommand('echo "1+1" > e.bc');
-    expect(await pc.executeCommand('bc e.bc')).toBe('2');
+    expect((await pc.executeCommand('bc e.bc')).trimEnd()).toBe('2');
     expect(await pc.executeCommand('bc absent.bc')).toContain('is unavailable');
   });
 });

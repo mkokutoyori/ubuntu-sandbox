@@ -1,223 +1,264 @@
-/**
- * POSIX `expr` evaluator with full operator precedence, regex match,
- * and the GNU string-function set (`length`, `substr`, `index`, `match`).
- *
- * Precedence (lowest → highest), all left-associative:
- *   1. `|`            — first non-empty/non-zero of left or right
- *   2. `&`            — both non-empty/non-zero ? left : 0
- *   3. `= != < <= > >=` — string-or-int comparison
- *   4. `+ -`
- *   5. `* / %`
- *   6. `: REGEX`      — BRE anchored at start; returns capture or length
- *
- * Exit codes mirror coreutils `expr(1)`:
- *   0 → result is non-zero and non-empty
- *   1 → result is zero or the empty string
- *   2 → invalid expression (syntax)
- *   3 → invalid argument or runtime error
- */
-
+import { PosixRegexError, MESSAGES } from '../regex/PosixEre';
 import { posixToJsSource } from '../regex/PosixRegex';
+import { Streams, docsResult, quoteLocale, type CoreutilsRun } from './CoreutilsKit';
 
-export interface ExprResult {
-  output: string;
-  exitCode: number;
+const EXPR_INVALID = 2;
+
+type Value = { readonly kind: 'integer'; readonly number: bigint } | { readonly kind: 'string'; readonly text: string };
+
+class ExprError extends Error {
+  constructor(message: string, readonly exitCode: number) {
+    super(message);
+  }
 }
 
-interface Value {
-  raw: string;
-  asInt(): number;
-  isTrue(): boolean;
+const integerValue = (number: bigint): Value => ({ kind: 'integer', number });
+const stringValue = (text: string): Value => ({ kind: 'string', text });
+const flagValue = (flag: boolean): Value => integerValue(flag ? 1n : 0n);
+
+function textOf(value: Value): string {
+  return value.kind === 'integer' ? value.number.toString() : value.text;
 }
 
-const makeStr = (s: string): Value => ({
-  raw: s,
-  asInt() {
-    if (!/^-?\d+$/.test(s)) throw new ExprRuntimeError(`non-integer argument: ${s}`);
-    return Number.parseInt(s, 10);
-  },
-  isTrue() { return s !== '' && s !== '0'; },
-});
-const makeInt = (n: number): Value => makeStr(String(n));
+function looksLikeInteger(text: string): boolean {
+  return /^-?\d+$/.test(text);
+}
 
-class ExprSyntaxError extends Error {}
-class ExprRuntimeError extends Error {}
+function isNull(value: Value): boolean {
+  if (value.kind === 'integer') return value.number === 0n;
+  return /^-?0*$/.test(value.text);
+}
 
-/**
- * Recursive-descent parser over the argv. Each operator/operand is one
- * argv token, so there is no lexing step — argv *is* the token stream.
- */
-export class ExprEvaluator {
-  private tokens: readonly string[] = [];
-  private pos = 0;
+function integerOf(value: Value): bigint | null {
+  if (value.kind === 'integer') return value.number;
+  return looksLikeInteger(value.text) ? BigInt(value.text) : null;
+}
 
-  /** Evaluate `expr arg1 arg2 …` (argv already split). */
-  run(args: readonly string[]): ExprResult {
-    if (args.length === 1 && (args[0] === '--help' || args[0] === '--version')) {
-      return { output: '', exitCode: 0 };
+function compareCodePoints(left: string, right: string): number {
+  const a = Array.from(left);
+  const b = Array.from(right);
+  const common = Math.min(a.length, b.length);
+  for (let index = 0; index < common; index++) {
+    const difference = a[index].codePointAt(0)! - b[index].codePointAt(0)!;
+    if (difference !== 0) return difference < 0 ? -1 : 1;
+  }
+  return a.length === b.length ? 0 : a.length < b.length ? -1 : 1;
+}
+
+function compareIntegerText(left: string, right: string): number {
+  const a = BigInt(left);
+  const b = BigInt(right);
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
+function matchPattern(subject: string, pattern: string): Value {
+  let source: string;
+  try {
+    source = posixToJsSource(pattern, { extended: false });
+  } catch (error) {
+    if (error instanceof PosixRegexError) throw new ExprError(error.message, EXPR_INVALID);
+    throw error;
+  }
+  let expression: RegExp;
+  let groups: number;
+  try {
+    expression = new RegExp(`^(?:${source})`, 'su');
+    groups = (new RegExp(`${source}|`, 'su').exec('') ?? []).length - 1;
+  } catch {
+    throw new ExprError(MESSAGES.pattern, EXPR_INVALID);
+  }
+  const found = expression.exec(subject);
+  if (found === null) return groups > 0 ? stringValue('') : integerValue(0n);
+  if (groups > 0) return stringValue(found[1] ?? '');
+  return integerValue(BigInt(Array.from(found[0]).length));
+}
+
+class Evaluation {
+  private position = 0;
+
+  constructor(private readonly args: readonly string[]) {}
+
+  finished(): boolean {
+    return this.position >= this.args.length;
+  }
+
+  unexpectedArgument(): string {
+    return this.args[this.position];
+  }
+
+  private nextArgument(token: string): boolean {
+    if (this.finished()) return false;
+    const same = this.args[this.position] === token;
+    if (same) this.position++;
+    return same;
+  }
+
+  private requireMoreArguments(): void {
+    if (this.finished()) {
+      throw new ExprError(`syntax error: missing argument after ${quoteLocale(this.args[this.position - 1])}`, EXPR_INVALID);
     }
-    if (args.length === 0) {
-      return { output: 'expr: syntax error: missing argument', exitCode: 2 };
+  }
+
+  evaluate(evaluating: boolean): Value {
+    let left = this.conjunction(evaluating);
+    while (this.nextArgument('|')) {
+      const right = this.conjunction(evaluating && isNull(left));
+      if (isNull(left)) left = isNull(right) ? integerValue(0n) : right;
     }
-    this.tokens = args;
-    this.pos = 0;
-    try {
-      const v = this.parseOr();
-      if (this.pos !== this.tokens.length) {
-        throw new ExprSyntaxError(`unexpected argument: ${this.tokens[this.pos]}`);
+    return left;
+  }
+
+  private conjunction(evaluating: boolean): Value {
+    let left = this.comparison(evaluating);
+    while (this.nextArgument('&')) {
+      const right = this.comparison(evaluating && !isNull(left));
+      if (isNull(left) || isNull(right)) left = integerValue(0n);
+    }
+    return left;
+  }
+
+  private comparison(evaluating: boolean): Value {
+    let left = this.additive(evaluating);
+    for (;;) {
+      let operator: string;
+      if (this.nextArgument('<')) operator = '<';
+      else if (this.nextArgument('<=')) operator = '<=';
+      else if (this.nextArgument('=') || this.nextArgument('==')) operator = '=';
+      else if (this.nextArgument('!=')) operator = '!=';
+      else if (this.nextArgument('>=')) operator = '>=';
+      else if (this.nextArgument('>')) operator = '>';
+      else return left;
+      const right = this.additive(evaluating);
+      let outcome = false;
+      if (evaluating) {
+        const a = textOf(left);
+        const b = textOf(right);
+        const order = looksLikeInteger(a) && looksLikeInteger(b) ? compareIntegerText(a, b) : compareCodePoints(a, b);
+        outcome = operator === '<' ? order < 0 : operator === '<=' ? order <= 0 : operator === '=' ? order === 0
+          : operator === '!=' ? order !== 0 : operator === '>=' ? order >= 0 : order > 0;
       }
-      return { output: v.raw, exitCode: v.isTrue() ? 0 : 1 };
-    } catch (e) {
-      if (e instanceof ExprSyntaxError) return { output: `expr: ${e.message}`, exitCode: 2 };
-      if (e instanceof ExprRuntimeError) return { output: `expr: ${e.message}`, exitCode: 3 };
-      return { output: 'expr: internal error', exitCode: 3 };
+      left = flagValue(outcome);
     }
   }
 
-  private parseOr(): Value {
-    let v = this.parseAnd();
-    while (this.peek() === '|') { this.pos++; const r = this.parseAnd(); if (!v.isTrue()) v = r.isTrue() ? r : makeInt(0); }
-    return v;
-  }
-
-  private parseAnd(): Value {
-    let v = this.parseRel();
-    while (this.peek() === '&') { this.pos++; const r = this.parseRel(); v = v.isTrue() && r.isTrue() ? v : makeInt(0); }
-    return v;
-  }
-
-  private parseRel(): Value {
-    let v = this.parseAdd();
-    while (this.isRel(this.peek())) {
-      const op = this.tokens[this.pos++];
-      const r = this.parseAdd();
-      v = makeInt(this.cmp(v, op, r) ? 1 : 0);
-    }
-    return v;
-  }
-
-  private parseAdd(): Value {
-    let v = this.parseMul();
-    while (this.peek() === '+' || this.peek() === '-') {
-      const op = this.tokens[this.pos++];
-      const r = this.parseMul();
-      v = makeInt(op === '+' ? v.asInt() + r.asInt() : v.asInt() - r.asInt());
-    }
-    return v;
-  }
-
-  private parseMul(): Value {
-    let v = this.parseMatch();
-    while (this.peek() === '*' || this.peek() === '/' || this.peek() === '%') {
-      const op = this.tokens[this.pos++];
-      const r = this.parseMatch();
-      const a = v.asInt(), b = r.asInt();
-      if ((op === '/' || op === '%') && b === 0) throw new ExprRuntimeError('division by zero');
-      v = makeInt(op === '*' ? a * b : op === '/' ? Math.trunc(a / b) : a - Math.trunc(a / b) * b);
-    }
-    return v;
-  }
-
-  private parseMatch(): Value {
-    let v = this.parseAtom();
-    while (this.peek() === ':') {
-      this.pos++;
-      const pat = this.parseAtom().raw;
-      v = makeStr(this.matchBre(v.raw, pat));
-    }
-    return v;
-  }
-
-  private parseAtom(): Value {
-    const t = this.tokens[this.pos];
-    if (t === undefined) throw new ExprSyntaxError('argument expected');
-
-    if (t === '(') {
-      this.pos++;
-      const v = this.parseOr();
-      if (this.peek() !== ')') throw new ExprSyntaxError("missing `)'");
-      this.pos++;
-      return v;
-    }
-
-    if (t === 'length' && this.tokens.length - this.pos >= 2) {
-      this.pos++;
-      const s = this.parseAtom().raw;
-      return makeInt(s.length);
-    }
-    if (t === 'substr' && this.tokens.length - this.pos >= 4) {
-      this.pos++;
-      const s = this.parseAtom().raw;
-      const p = this.parseAtom().asInt();
-      const n = this.parseAtom().asInt();
-      if (p <= 0 || n <= 0 || p > s.length) return makeStr('');
-      return makeStr(s.slice(p - 1, p - 1 + n));
-    }
-    if (t === 'index' && this.tokens.length - this.pos >= 3) {
-      this.pos++;
-      const s = this.parseAtom().raw;
-      const chars = this.parseAtom().raw;
-      let best = 0;
-      for (const c of chars) {
-        const idx = s.indexOf(c);
-        if (idx >= 0 && (best === 0 || idx + 1 < best)) best = idx + 1;
+  private additive(evaluating: boolean): Value {
+    let left = this.multiplicative(evaluating);
+    for (;;) {
+      const plus = this.nextArgument('+');
+      if (!plus && !this.nextArgument('-')) return left;
+      const right = this.multiplicative(evaluating);
+      if (evaluating) {
+        const a = integerOf(left);
+        const b = integerOf(right);
+        if (a === null || b === null) throw new ExprError('non-integer argument', EXPR_INVALID);
+        left = integerValue(plus ? a + b : a - b);
       }
-      return makeInt(best);
     }
-    if (t === 'match' && this.tokens.length - this.pos >= 3) {
-      this.pos++;
-      const s = this.parseAtom().raw;
-      const re = this.parseAtom().raw;
-      return makeStr(this.matchBre(s, re));
-    }
-    if (t === '+') {                // GNU `+ TOKEN` — force literal
-      this.pos++;
-      const lit = this.tokens[this.pos++];
-      if (lit === undefined) throw new ExprSyntaxError("syntax error: '+' expects argument");
-      return makeStr(lit);
-    }
-
-    this.pos++;
-    return makeStr(t);
   }
 
-  private peek(): string | undefined { return this.tokens[this.pos]; }
-  private isRel(t: string | undefined): boolean {
-    return t === '=' || t === '!=' || t === '<' || t === '<=' || t === '>' || t === '>=';
-  }
-
-  private cmp(l: Value, op: string, r: Value): boolean {
-    const isNum = /^-?\d+$/.test(l.raw) && /^-?\d+$/.test(r.raw);
-    const a: number | string = isNum ? l.asInt() : l.raw;
-    const b: number | string = isNum ? r.asInt() : r.raw;
-    switch (op) {
-      case '=':  return a === b;
-      case '!=': return a !== b;
-      case '<':  return a <   b;
-      case '<=': return a <=  b;
-      case '>':  return a >   b;
-      case '>=': return a >=  b;
+  private multiplicative(evaluating: boolean): Value {
+    let left = this.matching(evaluating);
+    for (;;) {
+      const operator = this.nextArgument('*') ? '*' : this.nextArgument('/') ? '/' : this.nextArgument('%') ? '%' : null;
+      if (operator === null) return left;
+      const right = this.matching(evaluating);
+      if (evaluating) {
+        const a = integerOf(left);
+        const b = integerOf(right);
+        if (a === null || b === null) throw new ExprError('non-integer argument', EXPR_INVALID);
+        if (operator !== '*' && b === 0n) throw new ExprError('division by zero', EXPR_INVALID);
+        left = integerValue(operator === '*' ? a * b : operator === '/' ? a / b : a % b);
+      }
     }
-    return false;
   }
 
-  /**
-   * `STR : BRE` — POSIX expr applies the BRE anchored at the start of
-   * STR. With a capturing group, returns the first capture (or "" if
-   * the match failed). Without one, returns the length of the match
-   * (0 on no-match).
-   */
-  private matchBre(str: string, bre: string): string {
-    const js = posixToJsSource(bre, { extended: false });
-    let re: RegExp;
-    try { re = new RegExp('^(?:' + js + ')'); }
-    catch { throw new ExprRuntimeError(`bad regular expression: ${bre}`); }
-    const m = re.exec(str);
-    if (!m) return /\(/.test(bre) ? '' : '0';
-    return m.length > 1 && m[1] !== undefined ? m[1] : String(m[0].length);
+  private matching(evaluating: boolean): Value {
+    let left = this.keyword(evaluating);
+    while (this.nextArgument(':')) {
+      const right = this.keyword(evaluating);
+      if (evaluating) left = matchPattern(textOf(left), textOf(right));
+    }
+    return left;
+  }
+
+  private keyword(evaluating: boolean): Value {
+    if (this.nextArgument('+')) {
+      this.requireMoreArguments();
+      return stringValue(this.args[this.position++]);
+    }
+    if (this.nextArgument('length')) {
+      return integerValue(BigInt(Array.from(textOf(this.keyword(evaluating))).length));
+    }
+    if (this.nextArgument('match')) {
+      const subject = this.keyword(evaluating);
+      const pattern = this.keyword(evaluating);
+      return evaluating ? matchPattern(textOf(subject), textOf(pattern)) : subject;
+    }
+    if (this.nextArgument('index')) {
+      const subject = Array.from(textOf(this.keyword(evaluating)));
+      const characters = new Set(Array.from(textOf(this.keyword(evaluating))));
+      const found = subject.findIndex((character) => characters.has(character));
+      return integerValue(BigInt(found + 1));
+    }
+    if (this.nextArgument('substr')) {
+      const subject = Array.from(textOf(this.keyword(evaluating)));
+      const start = integerOf(this.keyword(evaluating));
+      const length = integerOf(this.keyword(evaluating));
+      if (start === null || length === null || start < 1n || length < 1n || start > BigInt(subject.length)) return stringValue('');
+      const from = Number(start) - 1;
+      const count = length > BigInt(subject.length) ? subject.length : Number(length);
+      return stringValue(subject.slice(from, from + count).join(''));
+    }
+    return this.operand();
+  }
+
+  private operand(): Value {
+    this.requireMoreArguments();
+    if (this.nextArgument('(')) {
+      const inner = this.evaluate(true);
+      if (this.finished()) {
+        throw new ExprError(`syntax error: expecting ')' after ${quoteLocale(this.args[this.position - 1])}`, EXPR_INVALID);
+      }
+      if (!this.nextArgument(')')) {
+        throw new ExprError(`syntax error: expecting ')' instead of ${quoteLocale(this.args[this.position])}`, EXPR_INVALID);
+      }
+      return inner;
+    }
+    if (this.nextArgument(')')) throw new ExprError("syntax error: unexpected ')'", EXPR_INVALID);
+    return stringValue(this.args[this.position++]);
   }
 }
 
-export function runExpr(args: readonly string[]): ExprResult {
-  return new ExprEvaluator().run(args);
+function docsRequest(args: readonly string[]): 'help' | 'version' | null {
+  if (args.length !== 1) return null;
+  if (/^--h(e(l(p)?)?)?$/.test(args[0])) return 'help';
+  if (/^--v(e(r(s(i(o(n)?)?)?)?)?)?$/.test(args[0])) return 'version';
+  return null;
+}
+
+export function runExpr(args: readonly string[]): CoreutilsRun {
+  const request = docsRequest(args);
+  if (request !== null) return docsResult('expr', request);
+  const operands = args[0] === '--' ? args.slice(1) : args;
+  const streams = new Streams();
+  if (operands.length === 0) {
+    streams.diagnostic('expr: missing operand');
+    streams.diagnostic("Try 'expr --help' for more information.");
+    streams.exitCode = EXPR_INVALID;
+    return streams.result();
+  }
+  const evaluation = new Evaluation(operands);
+  try {
+    const value = evaluation.evaluate(true);
+    if (!evaluation.finished()) {
+      throw new ExprError(`syntax error: unexpected argument ${quoteLocale(evaluation.unexpectedArgument())}`, EXPR_INVALID);
+    }
+    streams.stdout(`${textOf(value)}\n`);
+    streams.exitCode = isNull(value) ? 1 : 0;
+  } catch (error) {
+    if (!(error instanceof ExprError)) throw error;
+    streams.diagnostic(`expr: ${error.message}`);
+    streams.exitCode = error.exitCode;
+  }
+  return streams.result();
 }

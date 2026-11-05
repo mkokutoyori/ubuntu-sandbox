@@ -1,4 +1,5 @@
 import { shortOptions, getoptDiagnostic, type LongOption } from '../commands/Getopt';
+import { paginateLines } from './PrCommand';
 import { defaultFormats, ifdefFormats, renderEd, renderGroupFormat, renderSideBySide, withMarker, type DiffLine, type DiffOp, type GroupFormats } from './DiffFormats';
 import { docsResult, quoteLocale } from './CoreutilsKit';
 
@@ -482,14 +483,8 @@ class Differ {
   }
 
   private paginate(body: string[], title: string): string[] {
-    const stamp = new Date(this.fs.now()).toISOString().slice(0, 16).replace('T', ' ');
-    const free = Math.max(2, 72 - stamp.length - title.length - 6);
-    const header = `${stamp}${' '.repeat(Math.floor(free / 2))}${title}${' '.repeat(Math.ceil(free / 2))}Page 1`;
-    const page = ['', '', header, '', ''];
-    page.push(...body);
-    while (page.length < 61) page.push('');
-    while (page.length < 66) page.push('');
-    return page;
+    const dateText = new Date(this.fs.now()).toISOString().slice(0, 16).replace('T', ' ');
+    return paginateLines(body, { dateText, title, width: 72 });
   }
 
   compare(pathA: string, pathB: string, announce: boolean): void {

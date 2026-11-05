@@ -151,4 +151,3 @@ export class DnsService {
 export { executeDig } from './commands/dns/DigRunner';
 export { executeNslookup } from './commands/dns/NslookupRunner';
 
-export { executeHost } from './commands/dns/HostRunner';

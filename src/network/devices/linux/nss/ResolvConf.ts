@@ -2,6 +2,7 @@ export interface ResolvConfOptions {
   nameservers: string[];
   search: string[];
   ndots: number;
+  timeout?: number;
 }
 
 export function parseResolvConf(content: string): ResolvConfOptions {
@@ -14,12 +15,15 @@ export function parseResolvConf(content: string): ResolvConfOptions {
     : domainLine ? [domainLine[1]] : [];
 
   let ndots = 1;
+  let timeout: number | undefined;
   for (const m of content.matchAll(/^\s*options\s+(.+)$/gm)) {
     const nd = /ndots:(\d+)/.exec(m[1]);
     if (nd) ndots = parseInt(nd[1], 10);
+    const wait = /timeout:(\d+)/.exec(m[1]);
+    if (wait) timeout = parseInt(wait[1], 10);
   }
 
-  return { nameservers, search, ndots };
+  return timeout === undefined ? { nameservers, search, ndots } : { nameservers, search, ndots, timeout };
 }
 
 export function searchCandidates(name: string, search: readonly string[], ndots: number): string[] {

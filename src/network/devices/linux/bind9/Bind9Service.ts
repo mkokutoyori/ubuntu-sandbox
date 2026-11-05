@@ -10,7 +10,7 @@ import { SecondaryZoneRefresher, notifyZoneTargets, serveZoneTransfer, signTrans
 import { DnsOpcode, DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { DnsClass } from '@/network/dns/wire/RRType';
 import { IPAddress, IPv6Address } from '@/network/core/types';
-import { makeTxtRecord, makeCnameRecord } from '@/network/dns/wire/ResourceRecord';
+import { makeTxtRecord, makeCnameRecord, makeNsRecord } from '@/network/dns/wire/ResourceRecord';
 import { formatRecordLine } from '../commands/dns/RecordFormat';
 import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
@@ -559,6 +559,14 @@ export class Bind9Service {
     };
   }
 
+  private unservedClassAnswer(query: DnsMessage, recursionAllowed: boolean): DnsMessage | null {
+    const question = query.questions[0];
+    if (!question || question.qclass === DnsClass.IN) return null;
+    const refused = this.refuse(query, recursionAllowed);
+    const malformed = question.qclass === DnsClass.ANY || question.qclass === DnsClass.NONE;
+    return { ...refused, flags: { ...refused.flags, rcode: malformed ? DnsRcode.FORMERR : DnsRcode.REFUSED } };
+  }
+
   private chaosAnswer(query: DnsMessage): DnsMessage | null {
     const question = query.questions[0];
     if (!question || question.qclass !== DnsClass.CH) return null;
@@ -580,7 +588,7 @@ export class Bind9Service {
       },
       questions: query.questions,
       answers: [{ ...makeTxtRecord(question.qname, 0, [text]), rrClass: DnsClass.CH }],
-      authorities: [],
+      authorities: [{ ...makeNsRecord(question.qname, 0, question.qname), rrClass: DnsClass.CH }],
       additionals: [],
     };
   }
@@ -724,6 +732,8 @@ export class Bind9Service {
 
     const chaos = this.chaosAnswer(query);
     if (chaos) return chaos;
+    const unservedClass = this.unservedClassAnswer(query, recursionAllowed);
+    if (unservedClass) return unservedClass;
 
     const question = query.questions[0];
     if (this.queryLogEnabled && question) {
@@ -744,6 +754,10 @@ export class Bind9Service {
       if (auth.rcode !== DnsRcode.NOERROR) {
         const refused = this.refuse(query, recursionAllowed);
         return signIfKeyed({ ...refused, flags: { ...refused.flags, rcode: auth.rcode } }, auth, now);
+      }
+      if (!config.zones.some((zone) => zone.name === normalizeDnsName(question.qname))) {
+        const refused = this.refuse(query, recursionAllowed);
+        return { ...refused, flags: { ...refused.flags, rcode: DnsRcode.NOTAUTH } };
       }
       const signer = auth.key ? canonicalKeyName(auth.key.name) : null;
       if (!transferAcl.matches(source, env, signer)) {

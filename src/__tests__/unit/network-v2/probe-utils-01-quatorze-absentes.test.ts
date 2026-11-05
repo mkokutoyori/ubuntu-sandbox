@@ -173,13 +173,13 @@ describe('Scénario 3 — `getconf` lit le matériel, pas une table figée', () 
   it('les constantes glibc sont celles relevées', async () => {
     const m = pc();
     expect(await m.executeCommand('getconf LONG_BIT')).toBe('64');
-    expect(await m.executeCommand('getconf PATH_MAX')).toBe('4096');
+    expect(await m.executeCommand('getconf PATH_MAX /')).toBe('4096');
     expect(await m.executeCommand('getconf ARG_MAX')).toBe('2097152');
   });
 
   it('une variable inconnue est signalée, jamais devinée', async () => {
     const m = pc();
-    expect(await m.executeCommand('getconf ZZZ'))
+    expect((await m.executeCommand('getconf ZZZ')).trimEnd())
       .toBe('getconf: Unrecognized variable `ZZZ\'');
   });
 

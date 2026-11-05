@@ -9,6 +9,9 @@ import { buildAxfrAnswers, buildTransferMessages } from '@/network/dns/transfer/
 import { sendNotify } from '@/network/dns/transfer/NotifyProtocol';
 import { ZoneTransferClient, transferTransportOf } from '@/network/dns/transfer/ZoneTransferClient';
 import { normalizeDnsName } from '@/network/dns/wire/DnsName';
+import { RRType } from '@/network/dns/wire/RRType';
+import type { SoaRecordData } from '@/network/dns/wire/ResourceRecord';
+import { serialGreaterThan } from '@/network/dns/zone/SerialNumber';
 import { signMessageStream, type TsigKey } from '@/network/dns/tsig/Tsig';
 import type { UpdateAuthorization } from '@/network/dns/update/UpdateResponder';
 
@@ -16,7 +19,13 @@ export function serveZoneTransfer(store: ZoneStore | null, query: DnsMessage): D
   const qname = normalizeDnsName(query.questions[0].qname);
   const zone = store?.findZone(qname);
   if (!zone || zone.origin !== qname) return null;
-  return buildTransferMessages(query, buildAxfrAnswers(zone));
+  return buildTransferMessages(query, clientHoldsZone(query, zone) ? [zone.soa] : buildAxfrAnswers(zone));
+}
+
+function clientHoldsZone(query: DnsMessage, zone: Zone): boolean {
+  if (query.questions[0].qtype !== RRType.IXFR) return false;
+  const held = query.authorities.find((record) => record.data.type === RRType.SOA);
+  return held !== undefined && !serialGreaterThan(zone.soa.data.serial, (held.data as SoaRecordData).serial);
 }
 
 export function datagramReply(

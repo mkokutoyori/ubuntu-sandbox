@@ -1359,7 +1359,9 @@ describe('Linux Hardware Command Suite', () => {
     it('208. should restrict df output to specific targets directory (df /tmp)', async () => {
       const pc = setupHardwarePC();
       const output = await pc.executeCommand('df /tmp');
-      expect(output).toContain('/tmp');
+      const rows = output.split('\n');
+      expect(rows).toHaveLength(2);
+      expect(rows[1]).toMatch(/ \/$/);
     });
 
     it('209. should reject df if target path does not exist', async () => {
@@ -1495,7 +1497,7 @@ describe('Linux Hardware Command Suite', () => {
 
     it('226. should support df filesystem type filtering via df -t ext4', async () => {
       const pc = setupHardwarePC();
-      const output = await pc.executeCommand('df -t ext4');
+      const output = await pc.executeCommand('df -T -t ext4');
       expect(output).toContain('ext4');
     });
 

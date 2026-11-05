@@ -4797,6 +4797,7 @@ export abstract class EndHost extends Equipment {
         },
       });
       if (typeof opened === 'string') {
+        if (opened === 'ENETUNREACH') options.onUnreachable?.();
         resolve(null);
         return;
       }

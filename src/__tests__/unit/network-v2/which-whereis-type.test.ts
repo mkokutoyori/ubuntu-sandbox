@@ -69,10 +69,12 @@ describe('whereis', () => {
     expect(run('whereis -b ls')).toBe('ls: /usr/bin/ls');
   });
   it('B3 -l lists the configured search directories', () => {
+    exec.vfs.mkdirp('/usr/share/man/man1', 0o755, 0, 0);
+    exec.vfs.mkdirp('/usr/src/pkg', 0o755, 0, 0);
     const out = run('whereis -l');
-    expect(out).toContain('/usr/bin');
-    expect(out).toContain('/usr/share/man');
-    expect(out).toContain('/usr/src');
+    expect(out).toContain('bin: /usr/bin');
+    expect(out).toContain('man: /usr/share/man/man1');
+    expect(out).toContain('src: /usr/src/pkg');
   });
   it('B4 surfaces a synthesised location for a known simulator command', () => {
     expect(run('whereis -b cd')).toBe('cd: /usr/bin/cd');
@@ -83,9 +85,9 @@ describe('whereis', () => {
     expect(out[1]).toContain('iptables: /usr/sbin/iptables');
   });
   it('B6 -s reports source files when present', () => {
-    exec.vfs.mkdirp('/usr/src', 0o755, 0, 0);
-    write('/usr/src/foo', '/* foo source */');
-    expect(run('whereis -s foo')).toBe('foo: /usr/src/foo');
+    exec.vfs.mkdirp('/usr/src/pkg', 0o755, 0, 0);
+    write('/usr/src/pkg/foo', '/* foo source */');
+    expect(run('whereis -s foo')).toBe('foo: /usr/src/pkg/foo');
   });
   it('B7 -m finds a man page laid out as manN/name.N', () => {
     exec.vfs.mkdirp('/usr/share/man/man1', 0o755, 0, 0);

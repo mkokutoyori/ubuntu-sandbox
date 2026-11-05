@@ -103,7 +103,7 @@ describe('Scénario 3 — mettre en forme', () => {
 
   it('`pr -tn` numérote avec une tabulation, comme le vrai', async () => {
     const pc = await lab();
-    expect(await pc.executeCommand('pr -tn a.txt')).toBe('    1\tun\n    2\tdeux\n    3\ttrois');
+    expect(await pc.executeCommand('pr -tn a.txt')).toBe('    1\tun\n    2\tdeux\n    3\ttrois\n');
   });
 
   it('`column -t` aligne les colonnes du séparateur demandé', async () => {

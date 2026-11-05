@@ -28,9 +28,11 @@ import { asDispatch, type CoreutilsIO, type CoreutilsRun } from '../../coreutils
 import { coreutilsIO } from '../../coreutils/CoreutilsFiles';
 import { runTac } from '../../coreutils/TacCommand';
 import { runFmt } from '../../coreutils/FmtCommand';
-import { runCksum } from '../../coreutils/CksumCommand';
+import { runPr } from '../../coreutils/PrCommand';
+import { runJoin } from '../../coreutils/JoinCommand';
+import { runCksum, runSum } from '../../coreutils/CksumCommand';
 import { runCmp } from '../../coreutils/CmpCommand';
-import { runBase64 } from '../../coreutils/Base64Command';
+import { runBase64, runBaseEncoding } from '../../coreutils/Base64Command';
 import { runSplit } from '../../coreutils/SplitCommand';
 import { runNl } from '../../coreutils/NlCommand';
 import { runPaste } from '../../coreutils/PasteCommand';
@@ -260,39 +262,48 @@ export const fmtCommand = viaCoreutils(coreutil(
 
 // ─── pr ─────────────────────────────────────────────────────────────
 
-export const prCommand = coreutil(
-  'pr', 'pr [-t] [-n] [FILE]...',
-  'Paginate files for printing. -t omits the page headers and footers,\n'
-  + '-n numbers the lines. Only these two forms are available: full\n'
-  + 'pagination would need a page geometry this host does not model.',
+export const prCommand = viaCoreutils(coreutil(
+  'pr', 'pr [OPTION]... [FILE]...',
+  'Paginate or columnate FILE(s) for printing.',
   [
     { flag: '-t', description: 'Omit headers and footers' },
     { flag: '-n', description: 'Number the lines' },
+    { flag: '-l', description: 'Page length', takesArg: true, argName: 'PAGE_LENGTH' },
+    { flag: '-w', description: 'Page width for multi-column output', takesArg: true, argName: 'PAGE_WIDTH' },
+    { flag: '-m', description: 'Print all files in parallel, one in each column' },
+    { flag: '-h', description: 'Header text', takesArg: true, argName: 'HEADER' },
   ],
-  (ctx, rawArgs, stdin) => {
-    const args = explodeShorts(rawArgs, 'tn', '');
-    let omitHeader = false;
-    let numbered = false;
-    const files: string[] = [];
-    for (const a of args) {
-      if (a === '-t') { omitHeader = true; continue; }
-      if (a === '-n') { numbered = true; continue; }
-      if (!a.startsWith('-') || a === '-') files.push(a);
-    }
-    const got = inputs(ctx, files, stdin, 'pr');
-    if (!Array.isArray(got)) return got;
+  () => '',
+), (args, io, ctx) => {
+  const executor = ctx.executor;
+  return runPr(args, io, {
+    nowMs: executor.simulatedDate().getTime(),
+    timezone: executor.localZone(),
+    fileMtimeMs: (name) => executor.vfs.resolveInode(executor.vfs.normalizePath(name, executor.getCwd()))?.mtime ?? null,
+  });
+});
 
-    const out: string[] = [];
-    for (let f = 0; f < got.length; f++) {
-      const body = toLines(got[f]).map((l, i) => (numbered ? `${padToWidth(String(i + 1), 5, 'right')}\t${l}` : l));
-      if (omitHeader) { out.push(...body); continue; }
-      out.push('', '', `${simulationDate().toDateString()}  ${files[f] ?? ''}  Page 1`, '', '');
-      out.push(...body);
-      out.push('', '', '', '', '');
-    }
-    return out.join('\n');
-  },
-);
+export const joinCommand = viaCoreutils(coreutil(
+  'join', 'join [OPTION]... FILE1 FILE2',
+  'For each pair of input lines with identical join fields, write a line to\n'
+  + 'standard output. The default join field is the first, delimited by blanks.',
+  [
+    { flag: '-1', description: 'Join on this FIELD of file 1', takesArg: true, argName: 'FIELD' },
+    { flag: '-2', description: 'Join on this FIELD of file 2', takesArg: true, argName: 'FIELD' },
+    { flag: '-a', description: 'Also print unpairable lines from FILENUM', takesArg: true, argName: 'FILENUM' },
+    { flag: '-v', description: 'Like -a, but suppress joined output lines', takesArg: true, argName: 'FILENUM' },
+    { flag: '-e', description: 'Replace missing input fields with EMPTY', takesArg: true, argName: 'EMPTY' },
+    { flag: '-i', description: 'Ignore differences in case when comparing fields' },
+    { flag: '-j', description: 'Equivalent to -1 FIELD -2 FIELD', takesArg: true, argName: 'FIELD' },
+    { flag: '-o', description: 'Obey FORMAT while constructing output line', takesArg: true, argName: 'FORMAT' },
+    { flag: '-t', description: 'Use CHAR as input and output field separator', takesArg: true, argName: 'CHAR' },
+    { flag: '-z', description: 'Line delimiter is NUL, not newline' },
+    { flag: '--check-order', description: 'Check that the input is correctly sorted' },
+    { flag: '--nocheck-order', description: 'Do not check that the input is correctly sorted' },
+    { flag: '--header', description: 'Treat the first line in each file as field headers' },
+  ],
+  () => '',
+), (args, io) => runJoin(args, io));
 
 // ─── column ─────────────────────────────────────────────────────────
 
@@ -384,6 +395,19 @@ export const base64Command = viaCoreutils(coreutil(
   () => '',
 ), runBase64);
 
+const baseEncodingProgram = (program: string, description: string): LinuxCommand => viaCoreutils(coreutil(
+  program, `${program} [OPTION]... [FILE]`, description,
+  [
+    { flag: '-d', description: 'Decode instead of encoding' },
+    { flag: '-i', description: 'When decoding, ignore non-alphabet characters' },
+    { flag: '-w', description: 'Wrap encoded lines after COLS characters', takesArg: true, argName: 'COLS' },
+  ],
+  () => '',
+), (args, io) => runBaseEncoding(program, args, io));
+
+export const base32Command = baseEncodingProgram('base32', 'Base32 encode or decode FILE, or standard input, to standard output.');
+export const basencCommand = baseEncodingProgram('basenc', 'basenc encode or decode FILE, or standard input, to standard output.');
+
 // ─── cksum ──────────────────────────────────────────────────────────
 
 export const cksumCommand = viaCoreutils(coreutil(
@@ -392,6 +416,16 @@ export const cksumCommand = viaCoreutils(coreutil(
   [],
   () => '',
 ), runCksum);
+
+export const sumCommand = viaCoreutils(coreutil(
+  'sum', 'sum [OPTION]... [FILE]...',
+  'Print checksum and block counts for each FILE.',
+  [
+    { flag: '-r', description: 'Use the BSD sum algorithm (the default), 1K blocks' },
+    { flag: '-s', description: 'Use the System V sum algorithm, 512-byte blocks' },
+  ],
+  () => '',
+), runSum);
 
 export const lessCommand: LinuxCommand = { package: 'less', ...coreutil(
   'less', 'less [OPTIONS] [FILE]...',
@@ -420,7 +454,8 @@ export const lessCommand: LinuxCommand = { package: 'less', ...coreutil(
 
 export const TEXT_STREAM_COMMANDS: LinuxCommand[] = [
   lessCommand,
-  tacCommand, nlCommand, pasteCommand, commCommand, foldCommand,
+  tacCommand, nlCommand, pasteCommand, commCommand, joinCommand, foldCommand,
   expandCommand, unexpandCommand, fmtCommand, prCommand, columnCommand,
-  cmpCommand, splitCommand, base64Command, cksumCommand,
+  cmpCommand, splitCommand, base64Command, base32Command, basencCommand, cksumCommand,
+  sumCommand,
 ];

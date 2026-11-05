@@ -1,8 +1,7 @@
 export { TestEvaluator, runTest, UNARY_OPS, BINARY_OPS } from './TestEvaluator';
 export type { TestFs, TestEnv, TestEvaluation, TestResultKind } from './TestEvaluator';
 
-export { ExprEvaluator, runExpr } from './ExprEvaluator';
-export type { ExprResult } from './ExprEvaluator';
+export { runExpr } from './ExprEvaluator';
 
 
 export { runSleep, parseSleepOperand, SleepError } from './Sleep';
@@ -22,6 +21,9 @@ export type {
 } from './TailCommand';
 
 export {
-  cmdTar, cmdGzip, cmdZip, cmdUnzip, describeArchiveContent,
+  cmdZip, cmdUnzip, describeArchiveContent,
 } from './ArchiveCommands';
 export type { ArchiveFs, ArchiveCtx, CmdResult } from './ArchiveCommands';
+
+export { cmdTar } from './TarCommand';
+export { cmdGzip } from './GzipCommand';

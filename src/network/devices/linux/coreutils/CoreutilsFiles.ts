@@ -17,6 +17,7 @@ export function coreutilsIO(ctx: ShellContext, stdin: string | undefined): Coreu
       const path = ctx.vfs.normalizePath(name, ctx.cwd);
       return ctx.vfs.exists(path) ? ctx.vfs.readFileBytes(path, count) : null;
     },
+    remove: (name) => ctx.vfs.deleteFile(ctx.vfs.normalizePath(name, ctx.cwd)),
     write: (name, text) => ctx.vfs.writeFile(ctx.vfs.normalizePath(name, ctx.cwd), text, ctx.uid, ctx.gid, ctx.umask, false, undefined, false),
   };
 }
