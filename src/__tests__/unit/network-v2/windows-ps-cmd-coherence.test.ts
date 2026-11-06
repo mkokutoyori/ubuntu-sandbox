@@ -313,9 +313,7 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
     // PS Test-Connection format
     expect(psOutput).toContain('Source');
     expect(psOutput).toContain('Destination');
-    expect(psOutput).toContain('DisplayAddress');
-    expect(psOutput).toContain('BufferSize');
-    expect(psOutput).toContain('Latency');
+    expect(psOutput).toMatch(/Ping Source +Address +Latency +BufferSize +Status/);
 
     // Should NOT have CMD ping format
     expect(psOutput).not.toContain('Pinging');

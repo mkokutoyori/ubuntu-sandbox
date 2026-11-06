@@ -146,7 +146,7 @@ describe('a non-native PowerShell cmdlet is unaffected by the streaming fix', ()
     await typePsLine('Test-Connection -Count 1 192.168.1.20');
     await waitFor(session, (l) => l.some((t) => t.includes('Destination')));
     const out = texts(session).join('\n');
-    expect(out).toContain('DisplayAddress');
+    expect(out).toMatch(/Ping Source +Address +Latency +BufferSize +Status/);
     expect(out).not.toContain('Pinging 192.168.1.20');
   });
 });

@@ -81,6 +81,7 @@ import type { NetAddressFamily } from '@/network/devices/windows/netIpAddress';
 import { applyCimCriteria, cimNotFound } from '@/network/devices/windows/cimQuery';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { pingStatusObject } from '@/network/devices/windows/TestConnectionProbe';
 import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
 
 function lifetimeSeconds(raw: PSValue | undefined): number | undefined {
@@ -407,23 +408,27 @@ export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
   readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
-  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'BufferSize', 'TimeoutSeconds', 'MaxHops', 'Ttl', 'TimeToLive', 'Hops', 'DontFragment'] as const;
-  readonly switchParameters = ['Quiet', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'DontFragment'] as const;
+  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'BufferSize', 'TimeoutSeconds', 'MaxHops', 'Ttl', 'TimeToLive', 'Hops', 'DontFragment', 'Repeat', 'Source'] as const;
+  readonly closedParameterSet = true as const;
+  readonly switchParameters = ['Quiet', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'DontFragment', 'Repeat'] as const;
 
   private readonly ranged = [
-    { parameter: 'BufferSize', keys: ['buffersize'], minimum: 0, maximum: 65500 },
-    { parameter: 'TimeoutSeconds', keys: ['timeoutseconds'], minimum: 1, maximum: undefined },
-    { parameter: 'Delay', keys: ['delay'], minimum: 1, maximum: undefined },
-    { parameter: 'MaxHops', keys: ['maxhops', 'ttl', 'timetolive', 'hops'], minimum: 1, maximum: 128 },
+    { parameter: 'BufferSize', keys: ['buffersize'], minimum: 0, maximum: 65500, positive: false },
+    { parameter: 'TimeoutSeconds', keys: ['timeoutseconds'], minimum: 1, maximum: undefined, positive: true },
+    { parameter: 'Delay', keys: ['delay'], minimum: 1, maximum: undefined, positive: true },
+    { parameter: 'Count', keys: ['count'], minimum: 1, maximum: undefined, positive: true },
+    { parameter: 'MaxHops', keys: ['maxhops', 'ttl', 'timetolive', 'hops'], minimum: 1, maximum: 128, positive: false },
   ] as const;
 
   private probeOptions(ctx: CmdletContext): PingProbeOptions | null {
     const values: Record<string, number | undefined> = {};
-    for (const { parameter, keys, minimum, maximum } of this.ranged) {
+    for (const { parameter, keys, minimum, maximum, positive } of this.ranged) {
       const key = keys.find((candidate) => ctx.named[candidate] !== undefined);
       if (key === undefined) continue;
       const value = Number(ctx.named[key]);
-      const violation = rangeViolation(String(ctx.named[key]), value, minimum, maximum);
+      const violation = positive
+        ? (value > 0 ? null : `The argument "${String(ctx.named[key])}" cannot be validated because its value is not greater than zero.`)
+        : rangeViolation(String(ctx.named[key]), value, minimum, maximum);
       if (violation !== null) {
         ctx.emitError(`Cannot validate argument on parameter '${parameter}'. ${violation}`);
         return null;
@@ -438,15 +443,20 @@ export class TestConnectionCmdlet implements ICmdlet {
     const target = psValueToString(
       ctx.named['computername'] ?? ctx.named['targetname'] ?? ctx.positional[0] ?? '',
     );
-    const count  = Math.max(1, Number(ctx.named['count'] ?? 4));
+    const options = this.probeOptions(ctx);
+    if (options === null) return null;
     if (!target) {
       ctx.emitError('Test-Connection requires -ComputerName or a positional target');
       return null;
     }
-    return this.runTest(ctx, net, target, count);
+    if (ctx.named['repeat'] === true) {
+      ctx.emitError('-Repeat sends echoes until it is stopped and needs an interactive terminal to be stopped from.');
+      return null;
+    }
+    return this.runTest(ctx, net, target, Number(ctx.named['count'] ?? 4), options);
   }
 
-  private runTest(ctx: CmdletContext, net: INetworkProvider, target: string, countGiven: number): PSValue {
+  private runTest(ctx: CmdletContext, net: INetworkProvider, target: string, countGiven: number, options: PingProbeOptions): PSValue {
     const quiet = ctx.named['quiet'] === true;
     const source = net.getHostname();
     const tcpPort = ctx.named['tcpport'];
@@ -474,24 +484,11 @@ export class TestConnectionCmdlet implements ICmdlet {
     }
     if (tcpPort !== undefined) return this.tcpPortTest(ctx, net, target, probe.resolvedIp, source, Number(tcpPort), count);
     if (tracing) {
-      const traceOptions = this.probeOptions(ctx);
-      if (traceOptions === null) return null;
-      return this.traceRouteTest(ctx, net, target, probe.resolvedIp, source, quiet, traceOptions.ttl ?? 128);
+      return this.traceRouteTest(ctx, net, target, probe.resolvedIp, source, quiet, options.ttl ?? 128);
     }
-    const options = this.probeOptions(ctx);
-    if (options === null) return null;
     const results = net.testPingProbe?.(target, count, options)?.probes ?? [];
     if (quiet) return results.every((attempt) => attempt.success);
-    return results.map((attempt, index) => ({
-      Ping: index + 1,
-      Source: source,
-      Destination: target,
-      Address: attempt.success ? probe.resolvedIp : attempt.replyFrom,
-      DisplayAddress: attempt.success ? probe.resolvedIp : attempt.replyFrom ?? '*',
-      Latency: attempt.success ? Math.max(1, Math.round(attempt.rttMs)) : 0,
-      Status: attempt.status,
-      BufferSize: options.bufferSize ?? 32,
-    } as Record<string, PSValue>)) as PSValue;
+    return results.map((attempt, index) => pingStatusObject(index + 1, source, target, probe.resolvedIp, attempt, options.bufferSize) as Record<string, PSValue>) as PSValue;
   }
 
   private tcpPortTest(

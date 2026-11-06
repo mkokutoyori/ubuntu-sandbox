@@ -174,7 +174,7 @@ describe('les refus nomment la brique absente', () => {
 describe('Test-Connection: la forme de l echec reste celle du simulateur', () => {
   it('un hote injoignable rend une LIGNE par tentative portant Status TimedOut, et -Quiet rend False', async () => {
     const { ps } = lab();
-    expect(await ps('Test-Connection 10.255.255.1 -Count 1')).toMatch(/Status\s*:\s*TimedOut/);
+    expect(await ps('Test-Connection 10.255.255.1 -Count 1')).toMatch(/ +\* +\* +TimedOut/);
     expect((await ps('Test-Connection 10.255.255.1 -Count 1 -Quiet')).trim()).toBe('False');
   });
 });

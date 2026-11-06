@@ -1573,14 +1573,14 @@ describe('18. Test‑Connection', () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Test-Connection localhost -Count 2');
-    expect(out).toMatch(/Source.*Destination/s);
+    expect(out).toMatch(/Destination: localhost[\s\S]*Ping Source +Address/);
   });
 
   it('unreachable host: one line per attempt carrying Status TimedOut, and -Quiet False', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Test-Connection 10.255.255.1 -Count 1');
-    expect(out).toMatch(/Status\s*:\s*TimedOut/);
+    expect(out).toMatch(/ +\* +\* +TimedOut/);
     expect((await ps.execute('Test-Connection 10.255.255.1 -Count 1 -Quiet')).trim()).toBe('False');
   });
 });

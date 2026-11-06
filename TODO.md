@@ -4598,20 +4598,8 @@ is stored and rendered, and the DNS client has no per-VRF source selection.
 
 ## PowerShell 7 Test-Connection: what the real source holds and is not reproduced
 
-Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects and errors of PowerShell 7 (PingStatus, TcpPortStatus, TraceStatus,
-'Cannot resolve the target name.'), but: the table view of the real format file (columns Ping, Source, Address, Latency(ms), BufferSize(B), Status with the widths 4/16/25/7/10/16 and a '*' latency
-for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -Repeat, -MtuSizeDetect
-are not evaluated (-TimeoutSeconds, -BufferSize, -MaxHops, -Delay and -DontFragment are); -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
-boolean, the real code carries the SocketError code).
-
-### [nat] Le NAT d'un `CiscoRouter` ne traduit que le premier fragment d'une reponse
-
-**Mesure** : depuis `PC-GUICHET1` (derriere `R-AGENCE`, qui fait du PAT), `ping -n 1 -l 1500 web.banquehorizon.com` rend `Request timed out.`
-(`-l 1472` repond, `-l 1500` vers un routeur repond : le routeur reassemble ce qui lui est destine). Le journal montre les deux fragments de la demande
-traduits (source 192.0.2.2), les deux fragments de la reponse transmis par `R-ISP`, puis un SEUL `router:forward R-AGENCE: 203.0.113.20 -> 10.20.10.50` :
-`NATEngine.translateInboundPacket` cherche la session par (protocole, destination, identifiant ICMP) ; le second fragment ne porte pas l'en-tete ICMP, la session n'est pas
-trouvee, il reste adresse a 192.0.2.2 et le routeur le prend pour lui. `Test-Connection -BufferSize 1500` et `ping -l 1500` lisent ce meme resultat.
-
-**Non corrige ici** : aucune page de `official_docs/` ne decrit le traitement des fragments par le NAT d'IOS (table de fragments, reassemblage virtuel) ; sans source, le
-comportement n'est pas implemente de memoire. Le NAT iptables, lui, reassemble avant les hooks (voir les limites connues). La sonde
-`probe-powershell-7-test-connection-evaluates-its-options` n'affirme que ce qui est vrai : sans `-DontFragment`, l'echo n'est pas refuse en `PacketTooBig`.
+Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects, the table views (PingStatus, TcpPortStatus, TraceStatus) and errors of PowerShell 7,
+and evaluates -Count, -Delay, -BufferSize, -TimeoutSeconds, -MaxHops, -DontFragment, -Repeat (interactive terminal only) and -Traceroute. The parameter set is closed: `-ResolveDestination` and `-MtuSizeDetect` are
+refused with the binding error until their bricks exist (a reverse lookup whose failure semantics are read from the source, and the PingMtuStatus view); `-Source` is accepted and ignored, as in the source ("Remoting is
+not yet implemented internally in the cmdlet"). The intermediate hops of a -Traceroute answer `Success` where the real code reads `TtlExpired`; -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the
+simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a boolean, the real code carries the SocketError code).

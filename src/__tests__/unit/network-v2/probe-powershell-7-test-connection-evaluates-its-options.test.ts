@@ -102,7 +102,9 @@ describe('Test-Connection evaluates what it accepts', () => {
     ['-MaxHops 0', 'MaxHops', 'The 0 argument is less than the minimum allowed range of 1.'],
     ['-MaxHops 129', 'MaxHops', 'The 129 argument is greater than the maximum allowed range of 128.'],
     ['-BufferSize 70000', 'BufferSize', 'The 70000 argument is greater than the maximum allowed range of 65500.'],
-    ['-TimeoutSeconds 0', 'TimeoutSeconds', 'The 0 argument is less than the minimum allowed range of 1.'],
+    ['-TimeoutSeconds 0', 'TimeoutSeconds', 'The argument "0" cannot be validated because its value is not greater than zero.'],
+    ['-Delay 0', 'Delay', 'The argument "0" cannot be validated because its value is not greater than zero.'],
+    ['-Count 0', 'Count', 'The argument "0" cannot be validated because its value is not greater than zero.'],
   ])('%s is refused by the range of the parameter', async (option, parameter, message) => {
     const { run } = await lab();
     const out = await run(`Test-Connection ${TARGET} -Count 1 ${option}`);

@@ -72,7 +72,7 @@ describe('Test-Connection met sur le fil ce qu il annonce', () => {
     const before = echoes();
     const out = await ps('Test-Connection 10.0.0.2 -Count 4');
     expect(echoes() - before).toBe(4);
-    expect(out.split('\n').filter(l => /Destination\s*:/.test(l))).toHaveLength(4);
+    expect(out.split('\n').filter(l => /^ +\d+ .*Success$/.test(l))).toHaveLength(4);
   });
 
   it('-Count 1 n en emet qu un, et le defaut en emet quatre', async () => {
@@ -101,8 +101,8 @@ describe('Test-Connection met sur le fil ce qu il annonce', () => {
   it('chaque ligne porte SA mesure : un hote injoignable ne rend aucun temps', async () => {
     const { ps } = lab();
     const out = await ps('Test-Connection 10.255.255.7 -Count 2');
-    const lignes = out.split('\n').filter(l => /Latency\s*:/.test(l));
+    const lignes = out.split('\n').filter(l => /^ +\d+ .*TimedOut$/.test(l));
     expect(lignes).toHaveLength(2);
-    for (const l of lignes) expect(l).toMatch(/Latency\s*:\s*0\s*$/);
+    for (const l of lignes) expect(l).toMatch(/ \* +\* +TimedOut$/);
   });
 });
