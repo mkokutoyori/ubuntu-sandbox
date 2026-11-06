@@ -4603,3 +4603,11 @@ knows resolves at the first `ping`, not for a probe configured before it).
 Reference: official_docs/cisco/ios-xe-catalyst-9600 'ip domain lookup [nsap | recursive | source-interface | vrf]'. `source-interface` now sets the source address of the DNS query (router and switch).
 `nsap` (the simulator has no CLNS) and `recursive` (every query already carries RD=1) are accepted, stored and rendered, and change nothing; `vrf NAME source-interface`
 is stored and rendered, and the DNS client has no per-VRF source selection.
+
+## PowerShell 7 Test-Connection: what the real source holds and is not reproduced
+
+Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects and errors of PowerShell 7 (PingStatus, TcpPortStatus, TraceStatus,
+'Cannot resolve the target name.'), but: the table view of the real format file (columns Ping, Source, Address, Latency(ms), BufferSize(B), Status with the widths 4/16/25/7/10/16 and a '*' latency
+for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -TimeoutSeconds, -BufferSize, -MaxHops, -DontFragment, -Repeat, -MtuSizeDetect
+are not evaluated; -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
+boolean, the real code carries the SocketError code).
