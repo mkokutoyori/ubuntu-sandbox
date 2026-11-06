@@ -648,6 +648,7 @@ export function buildCommitDevice(
       },
       removeVip(name) {
         fw.getNatPolicy().remove(vipRuleId(name));
+        fw.setSslOffload(vipRuleId(name), name, undefined);
         fw.getObjectStore().removeAddress(name);
         fw.clearProxyArpEntries(proxyOwnerKey('vip', name));
       },

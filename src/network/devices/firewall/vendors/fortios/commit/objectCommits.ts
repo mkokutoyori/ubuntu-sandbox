@@ -1,3 +1,4 @@
+import { IP_PROTO_TCP } from '../../../../../core/types';
 import { vipAddress } from '../../../model/AddressObject';
 import { proxyOwnerKey, type Firewall } from '../../../Firewall';
 import type {
@@ -85,6 +86,7 @@ export function applyFqdnVipToFirewall(
 
 export function applyVipToFirewall(fw: Firewall, vip: FortiVipPatch): void {
   const interfaces = vip.externalInterfaces.filter(name => name !== 'any');
+  fw.setSslOffload(vipRuleId(vip.name), vip.name, undefined);
 
   fw.getNatPolicy().upsert({
     id: vipRuleId(vip.name),
@@ -127,6 +129,9 @@ export function applyBalancedVipToFirewall(
 ): string | void {
   const interfaces = vip.externalInterfaces.filter(name => name !== 'any');
   fw.applyRealServerPool(vip.name, vip.method, vip.servers, vip.monitors);
+  fw.setSslOffload(vipRuleId(vip.name), vip.name, vip.protocol === IP_PROTO_TCP && vip.externalPort > 0
+    ? vip.sslOffload && { ...vip.sslOffload, port: vip.externalPort }
+    : undefined);
 
   fw.getNatPolicy().upsert({
     id: vipRuleId(vip.name),

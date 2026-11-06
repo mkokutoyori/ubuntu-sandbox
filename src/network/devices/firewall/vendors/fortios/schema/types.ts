@@ -338,6 +338,7 @@ export interface FortiBalancedVipPatch {
   readonly method: LdbMethod;
   readonly monitors: readonly string[];
   readonly servers: readonly FortiRealServerPatch[];
+  readonly sslOffload?: { readonly mode: 'half' | 'full'; readonly certificate: string };
   readonly comment?: string;
 }
 

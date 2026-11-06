@@ -165,6 +165,7 @@ import { ManagementPlane, type ManagementSource, type PasswordExpiryPolicy } fro
 import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
+import { SslOffload, type SslOffloadMode } from './inspection/SslOffload';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
@@ -417,6 +418,16 @@ export class Firewall extends Equipment {
     claimPort: (port) => { this.adminServer?.yieldPort(port); },
     releasePort: (port) => { this.adminServer?.reclaimPort(port); },
   });
+  private readonly sslOffload = new SslOffload({
+    tcp: () => this.tcp,
+    localCertificate: (name) => this.getCertificateStore().local(name),
+    trustAnchors: () => this.getCertificateStore().trustAnchors(),
+    claimPort: (port) => { this.adminServer?.yieldPort(port); },
+    releasePort: (port) => { this.adminServer?.reclaimPort(port); },
+  });
+  private readonly sslOffloadVips = new Map<string, {
+    name: string; mode: SslOffloadMode; certificate: string; port: number;
+  }>();
   private adminServer: AdminHttpServer | null = null;
   private readonly management: ManagementPlane;
   private readonly load: SystemLoad;
@@ -3078,6 +3089,10 @@ export class Firewall extends Equipment {
       this.deepInspection.resume(portName, packet);
       return;
     }
+    if (this.sslOffload.owns(packet)) {
+      this.sslOffload.resume(portName, packet);
+      return;
+    }
 
     const context = makePacketContext({
       ingressPort: portName, packet, arrivedAt: this.services.now(),
@@ -3106,6 +3121,7 @@ export class Firewall extends Equipment {
 
     const forwarded = outcome.payload ?? context;
     if (this.interceptForDeepInspection(portName, packet, context)) return;
+    if (this.interceptForSslOffload(portName, packet, context)) return;
     if (forwarded.egressPort === undefined) return;
     const recorded = this.recordRouteOnEgress(
       forwarded.egressPort, forwarded.packet as IPv4Packet);
@@ -3205,6 +3221,30 @@ export class Firewall extends Equipment {
   }
 
   getDeepInspection(): SslDeepInspection { return this.deepInspection; }
+
+  setSslOffload(
+    ruleId: string, name: string,
+    config: { mode: SslOffloadMode; certificate: string; port: number } | undefined,
+  ): void {
+    if (config === undefined) this.sslOffloadVips.delete(ruleId);
+    else this.sslOffloadVips.set(ruleId, { name, ...config });
+  }
+
+  private interceptForSslOffload(
+    portName: string, packet: IPv4Packet, context: PacketContext,
+  ): boolean {
+    const ruleId = context.destinationNatRuleId;
+    const vip = ruleId === undefined ? undefined : this.sslOffloadVips.get(ruleId);
+    if (vip === undefined) return false;
+
+    return this.sslOffload.capture(portName, packet, {
+      name: vip.name,
+      ports: [vip.port],
+      mode: vip.mode,
+      certificate: vip.certificate,
+      pickServer: () => this.serverPools.get(vip.name)?.pick(),
+    });
+  }
 
   private interceptForDeepInspection(
     portName: string, packet: IPv4Packet, context: PacketContext,
