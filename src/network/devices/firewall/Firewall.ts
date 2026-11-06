@@ -1485,12 +1485,35 @@ export class Firewall extends Equipment {
   getSdwanTable(): SdwanTable { return this.sdwan.getTable(); }
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
 
+  private readonly bfdStaticRoutes = new Map<string, DeclaredStaticRoute>();
+  private readonly bfdDownGateways = new Set<string>();
+
+  private trackStaticRouteBfd(route: DeclaredStaticRoute): boolean {
+    this.bfdStaticRoutes.delete(route.id);
+    const watched = route.bfd === true && route.gateway !== '0.0.0.0'
+      && route.iface !== '' && this.getPort(route.iface) !== undefined;
+    if (!watched) return false;
+
+    this.bfdStaticRoutes.set(route.id, route);
+    this.getBfdAgent().ensureSession(route.iface, route.gateway);
+    return this.bfdDownGateways.has(`${route.iface}|${route.gateway}`);
+  }
+
+  private onBfdSessionChanged(iface: string, neighborIp: string, up: boolean): void {
+    const key = `${iface}|${neighborIp}`;
+    if (up) this.bfdDownGateways.delete(key); else this.bfdDownGateways.add(key);
+    for (const route of [...this.bfdStaticRoutes.values()]) {
+      if (route.iface === iface && route.gateway === neighborIp) this.applySdwanStaticRoute(route);
+    }
+  }
+
   applySdwanStaticRoute(route: DeclaredStaticRoute): void {
     this.sdwanRoutes.delete(route.id);
     const routes = this.getRouteTable();
     routes.removeStaticById(route.id);
     routes.removeStaticsBySource(route.id);
-    if (!route.enabled || route.blackhole) return;
+    const withdrawn = this.trackStaticRouteBfd(route);
+    if (!route.enabled || route.blackhole || withdrawn) return;
 
     if (this.sdwan.getTable().membersOfZone(route.iface).length > 0) {
       this.sdwanRoutes.set(route.id, route);
@@ -1506,7 +1529,10 @@ export class Firewall extends Equipment {
       });
   }
 
-  forgetSdwanStaticRoute(id: string): void { this.sdwanRoutes.delete(id); }
+  forgetSdwanStaticRoute(id: string): void {
+    this.sdwanRoutes.delete(id);
+    this.bfdStaticRoutes.delete(id);
+  }
 
   private installSdwanRoute(route: DeclaredStaticRoute): void {
     const table = this.sdwan.getTable();
@@ -2338,9 +2364,11 @@ export class Firewall extends Equipment {
       this.bfdAgentInstance.start();
       this.getBus().subscribe('bfd.session.changed', (event) => {
         if (event.payload.deviceId !== this.id) return;
+        const up = event.payload.newState === 'up';
+        this.onBfdSessionChanged(event.payload.iface, event.payload.neighborIp, up);
         const bgp = this.getRouting().getBgp();
         if (!bgp.bfdNeighbours().includes(event.payload.neighborIp)) return;
-        bgp.holdDown(event.payload.neighborIp, event.payload.newState !== 'up');
+        bgp.holdDown(event.payload.neighborIp, !up);
       });
     }
     return this.bfdAgentInstance;

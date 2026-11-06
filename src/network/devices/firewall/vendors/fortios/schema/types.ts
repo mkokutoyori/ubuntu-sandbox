@@ -147,6 +147,7 @@ export interface FortiStaticRoute {
   readonly priority: number;
   readonly blackhole: boolean;
   readonly enabled: boolean;
+  readonly bfd: boolean;
 }
 
 export interface FortiSchedulePatch {
