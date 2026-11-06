@@ -4627,3 +4627,11 @@ tient les limites de `ip virtual-reassembly` (max-reassemblies, max-fragments, t
 de reordonnancement) ; (2) la « tiny fragment attack » (VFR-3-TINY_FRAGMENTS) n'est pas detectee : aucune page du depot ne donne la taille en dessous de laquelle un fragment est « minuscule » ; (3) VFR ne
 fait pas encore partie de l'inspection (`ip inspect`) ni du pare-feu a zones, seul NAT l'active ; (4) `debug ip virtual-reassembly` n'existe pas ; (5) un switch L3 avec `NATEngine` suit les fragments mais n'a ni
 `ip virtual-reassembly` ni limites.
+
+### [linux] La convention « stdin ajoute en dernier mot » reste le defaut du registre
+
+**Mesure** : `splitRegistryStdin` ajoute le contenu d'un tube en dernier mot de `argv` pour toute commande du registre qui ne declare pas `readsStdin`. Sur 50 commandes d'administration, huit
+en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatectl, hostnamectl, route, dpkg) et portent maintenant `ignoresStdin`. Toute autre commande qui ignore son tube
+(un programme du registre qui n'a ni `readsStdin` ni `ignoresStdin`) recoit encore le mot en trop.
+
+**Non corrige ici** : inverser le defaut demande de classer chaque commande du registre (lit son tube, l'ignore, ou lit un mot de fin comme fichier) ; ce n'est pas faisable sans une mesure commande par commande.
