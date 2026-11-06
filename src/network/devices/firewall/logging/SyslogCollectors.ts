@@ -1,7 +1,11 @@
 import type { SyslogAgent } from '../../../syslog/SyslogAgent';
-import type {
-  SyslogFacilityName, SyslogSeverityName,
+import {
+  SYSLOG_FACILITY, SYSLOG_SEVERITY,
+  type SyslogFacilityName, type SyslogSeverityName,
 } from '../../../syslog/types';
+import {
+  logLevelAtLeast, type FirewallLogLevel, type FirewallLogRecord,
+} from './FirewallLogStore';
 
 export interface SyslogCollectorSettings {
   readonly collector: string;
@@ -10,6 +14,7 @@ export interface SyslogCollectorSettings {
   readonly port: number;
   readonly transport: 'udp' | 'tcp';
   readonly facility: string;
+  readonly format: string;
   readonly sourceInterface: string;
 }
 
@@ -22,6 +27,18 @@ export interface SyslogFilterSettings {
 }
 
 const DEFAULT_SEVERITY: SyslogSeverityName = 'informational';
+
+const RECORD_SEVERITY: Readonly<Record<FirewallLogLevel, SyslogSeverityName>> = Object.freeze({
+  emergency: 'emergency', alert: 'alert', critical: 'critical', error: 'error',
+  warning: 'warning', notice: 'notification', information: 'informational', debug: 'debugging',
+});
+
+const FILTER_LEVEL: Readonly<Record<string, FirewallLogLevel>> = Object.freeze({
+  emergency: 'emergency', alert: 'alert', critical: 'critical', error: 'error',
+  warning: 'warning', notification: 'notice', information: 'information', debug: 'debug',
+});
+
+export type RecordRenderer = (format: string, facility: number) => string;
 
 export class SyslogCollectorTable {
   private readonly settings = new Map<string, SyslogCollectorSettings>();
@@ -41,6 +58,32 @@ export class SyslogCollectorTable {
 
   filterOf(collector: string): SyslogFilterSettings | undefined {
     return this.filters.get(collector);
+  }
+
+  forwardRecord(record: FirewallLogRecord, render: RecordRenderer): void {
+    const severity = RECORD_SEVERITY[record.level];
+    for (const entry of this.active()) {
+      if (!this.accepts(entry.collector, record)) continue;
+
+      const facility = SYSLOG_FACILITY[facilityOf(entry.facility)];
+      const text = render(entry.format, facility);
+      const line = text.startsWith('<') ? text
+        : `<${facility * 8 + SYSLOG_SEVERITY[severity]}>${text}`;
+      this.agent().sendVerbatim(entry.server, severity, line);
+    }
+  }
+
+  private accepts(collector: string, record: FirewallLogRecord): boolean {
+    const filter = this.filters.get(collector);
+    const threshold = FILTER_LEVEL[filter?.severity ?? 'information'] ?? 'information';
+    if (!logLevelAtLeast(record.level, threshold)) return false;
+    if (record.type !== 'traffic') return true;
+
+    switch (record.subtype) {
+      case 'local': return filter?.localTraffic === true;
+      case 'multicast': return filter?.multicastTraffic !== false;
+      default: return filter?.forwardTraffic !== false;
+    }
   }
 
   active(): readonly SyslogCollectorSettings[] {
@@ -65,6 +108,7 @@ export class SyslogCollectorTable {
         severityThreshold: severityOf(this.filters.get(entry.collector)?.severity),
         port: entry.port,
         transport: entry.transport,
+        delimiter: true,
       });
     }
 

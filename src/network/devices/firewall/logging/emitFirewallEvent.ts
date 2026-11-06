@@ -14,6 +14,7 @@ export interface FirewallEventSink {
   readonly osName: string;
   readonly logging: LoggingConfig;
   readonly syslog: SyslogAgent;
+  readonly relayToSyslog?: boolean;
 }
 
 export function emitFirewallEvent(
@@ -24,6 +25,7 @@ export function emitFirewallEvent(
 
   const text = firewallLogText(event, facts);
   sink.logging.append(message.severity, sink.osName, text, false, message.id);
+  if (sink.relayToSyslog === false) return;
   sink.syslog.sendImmediate(
     syslogSeverityOf(message.severity), sink.osName,
     `%${sink.osName.toUpperCase()}-${message.id}: ${text}`);

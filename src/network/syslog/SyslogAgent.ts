@@ -197,6 +197,16 @@ export class SyslogAgent {
     }
   }
 
+  sendVerbatim(serverIp: string, severity: SyslogSeverityName, line: string): void {
+    const s = this.config.servers.get(serverIp);
+    if (!s || !this.config.enabled) return;
+    if (!shouldForward(s.severityThreshold, severity)) {
+      this.dropped(s.ip, 'threshold');
+      return;
+    }
+    this.deliver(s, severity, '', line, line);
+  }
+
   private installSubscribers(): void {
     const localBus = this.getBus();
     const once = new DuplicateEventFilter();
@@ -249,18 +259,18 @@ export class SyslogAgent {
    */
   private enLivraison = false;
 
-  private deliver(s: SyslogServer, severity: SyslogSeverityName, tag: string, message: string): void {
+  private deliver(s: SyslogServer, severity: SyslogSeverityName, tag: string, message: string, verbatim?: string): void {
     if (this.enLivraison) return;
     this.enLivraison = true;
     try {
-      this.deliverInterne(s, severity, tag, message);
+      this.deliverInterne(s, severity, tag, message, verbatim);
     } finally {
       this.enLivraison = false;
     }
   }
 
-  private deliverInterne(s: SyslogServer, severity: SyslogSeverityName, tag: string, message: string): void {
-    if (s.transport === 'tcp') { this.deliverTcp(s, severity, tag, message); return; }
+  private deliverInterne(s: SyslogServer, severity: SyslogSeverityName, tag: string, message: string, verbatim?: string): void {
+    if (s.transport === 'tcp') { this.deliverTcp(s, severity, tag, message, verbatim); return; }
     const egress = this.resolveEgress(s.ip);
     if (egress && (!egress.port.getIsUp() || !egress.port.isConnected())) {
       this.dropped(s.ip, 'link-down'); return;
@@ -276,6 +286,7 @@ export class SyslogAgent {
       hostname: this.host.getHostname(),
       tag, message,
       timestamp: bsdTimestamp(this.horloge().localMs),
+      ...(verbatim !== undefined ? { verbatim } : {}),
     };
     const request: UdpSendRequest = {
       destination: new IPAddress(s.ip),
@@ -328,9 +339,9 @@ export class SyslogAgent {
    * qui vient d'arriver, serait le seul à manquer.
    */
   private deliverTcp(s: SyslogServer, severity: SyslogSeverityName,
-                     tag: string, message: string): void {
+                     tag: string, message: string, verbatim?: string): void {
     if (!this.host.openTcpStream) { this.dropped(s.ip, 'no-tcp'); return; }
-    const ligne = this.ligneRfc3164(s, severity, tag, message) + (s.delimiter ? '\n' : '');
+    const ligne = (verbatim ?? this.ligneRfc3164(s, severity, tag, message)) + (s.delimiter ? '\n' : '');
     let lien = this.liens.get(s.ip);
     if (!lien) {
       lien = { socket: null, attente: [], ouverture: false, enPanne: false, retente: null };

@@ -62,6 +62,7 @@ function syslogSetting(
         port: Number.parseInt(object.effective('port')[0] ?? '514', 10),
         transport: object.effective('mode')[0] === 'udp' ? 'udp' : 'tcp',
         facility: object.effective('facility')[0] ?? 'local7',
+        format: object.effective('format')[0] ?? 'default',
         sourceInterface: object.effective('interface')[0] ?? '',
       });
     },

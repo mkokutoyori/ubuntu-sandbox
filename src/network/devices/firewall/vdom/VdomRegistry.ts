@@ -19,7 +19,7 @@ import { DosPolicyStore } from '../dos/DosPolicyStore';
 import { DosSensor } from '../dos/DosSensor';
 import { ScheduleStore } from '../model/ScheduleObject';
 import type { TimeZone } from '../../../core/time/TimeZone';
-import { FirewallLogStore } from '../logging/FirewallLogStore';
+import { FirewallLogStore, type FirewallLogRecord } from '../logging/FirewallLogStore';
 import { LogSettings } from '../logging/LogSettings';
 import { UtmProfileStore } from '../inspection/UtmProfiles';
 import { IdentityTable } from '../identity/IdentityTable';
@@ -111,6 +111,7 @@ export interface VdomRegistryDeps {
     vdom: string, session: FirewallSession, reason: SessionCloseReason) => void;
   readonly onSessionCountChanged?: (count: number, created: boolean) => void;
   readonly realServerPool?: (name: string) => RealServerPool | undefined;
+  readonly onLogRecord?: (record: FirewallLogRecord) => void;
   readonly tcpSessionWithoutSyn: boolean;
 }
 
@@ -127,6 +128,13 @@ export class VdomRegistry {
 
   constructor(private readonly deps: VdomRegistryDeps) {
     this.create(ROOT_VDOM);
+  }
+
+  private logStoreOf(name: string): FirewallLogStore {
+    const store = new FirewallLogStore(name);
+    const relay = this.deps.onLogRecord;
+    if (relay) store.addSink(relay);
+    return store;
   }
 
   create(name: string): VdomContext {
@@ -290,7 +298,7 @@ export class VdomRegistry {
       evaluator,
       schedules,
       shapers,
-      logs: new FirewallLogStore(name),
+      logs: this.logStoreOf(name),
       logSettings: new LogSettings(),
       utm: new UtmProfileStore(),
       identities,

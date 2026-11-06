@@ -208,7 +208,7 @@ import { bringUpTunnel, programIpsecEngine } from './vpn/IpsecProgramming';
 import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
-import { FirewallLogStore } from './logging/FirewallLogStore';
+import { FirewallLogStore, type FirewallLogRecord } from './logging/FirewallLogStore';
 import { PolicyCaptureStore } from './diag/PolicyCaptureStore';
 import type { LocalTrafficKind, LogSettings } from './logging/LogSettings';
 import { flowKeyFromPacket, type FlowKey } from './session/FlowKey';
@@ -539,6 +539,7 @@ export class Firewall extends Equipment {
           local: new IPAddress(local), remote: new IPAddress(tunnel.remoteGateway),
         });
       },
+      onLogRecord: (record) => { this.logRecordRelay?.(record); },
       policyKeyedBy: profile.policyKeyedBy,
       policyNamesZones: profile.policyNamesZones,
       implicitPolicy: profile.implicitPolicy,
@@ -1914,6 +1915,12 @@ export class Firewall extends Equipment {
   getSyslogAgent(): SyslogAgent { return this.syslog; }
   getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
 
+  private logRecordRelay: ((record: FirewallLogRecord) => void) | undefined;
+
+  bindLogRecordRelay(relay: (record: FirewallLogRecord) => void): void {
+    this.logRecordRelay = relay;
+  }
+
   syncSyslogAgent(): void { projectLoggingOntoSyslogAgent(this.logging, this.syslog); }
 
   logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
@@ -1922,6 +1929,7 @@ export class Firewall extends Equipment {
       osName: this.profile.osName,
       logging: this.logging,
       syslog: this.syslog,
+      relayToSyslog: this.profile.structuredRemoteSyslog !== true,
     }, event, facts);
   }
 
