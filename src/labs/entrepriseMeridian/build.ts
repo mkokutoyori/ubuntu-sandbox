@@ -4,7 +4,7 @@ import { useNetworkStore } from '@/store/networkStore';
 import { LabWorkbench } from '../LabWorkbench';
 import { configureAuditWorkstation } from './assessment';
 import { configureAgency, configureHeadquarters } from './fortigates';
-import { configureDomainController, joinDomainAndInstallExchange, configureLinux, configureWindows, publishWebSite } from './hosts';
+import { configureDomainController, configureSiem, joinDomainAndInstallExchange, configureLinux, configureWindows, publishWebSite } from './hosts';
 import { AUDITOR, HQ, INTERNET, INTERNAL_DOMAIN, SITES } from './plan';
 
 export interface MeridianLab {
@@ -33,6 +33,7 @@ export async function buildMeridian(): Promise<MeridianLab> {
   const dc1 = place('windows-server', 'DC1', 160, 460);
   const oracle = place('linux-server', 'ORA-DB', 300, 460);
   const workstation = place('linux-pc', 'PC-HQ', 440, 460);
+  const siem = place('linux-server', 'SIEM', 220, 540);
   const web = place('linux-server', 'WEB-DMZ', 640, 460);
   const mail = place('windows-server', 'MAIL-DMZ', 780, 460);
 
@@ -45,6 +46,7 @@ export async function buildMeridian(): Promise<MeridianLab> {
   bench.connect(dc1, 'eth0', swLan, 'eth1');
   bench.connect(oracle, 'eth0', swLan, 'eth2');
   bench.connect(workstation, 'eth0', swLan, 'eth3');
+  bench.connect(siem, 'eth0', swLan, 'eth4');
   bench.connect(web, 'eth0', swDmz, 'eth1');
   bench.connect(mail, 'eth0', swDmz, 'eth2');
 
@@ -70,6 +72,8 @@ export async function buildMeridian(): Promise<MeridianLab> {
   });
   await configureLinux(bench, oracle, HQ.oracle, HQ.lanGateway, HQ.dc1);
   await configureLinux(bench, workstation, HQ.workstation, HQ.lanGateway, HQ.dc1);
+  await configureLinux(bench, siem, HQ.siem, HQ.lanGateway, HQ.dc1);
+  await configureSiem(bench, siem);
   await configureLinux(bench, web, HQ.web, HQ.dmzGateway, HQ.dc1);
   await publishWebSite(bench, web, `Meridian Industries - ${INTERNAL_DOMAIN}`);
   await configureWindows(bench, mail, HQ.mail, HQ.dmzGateway, HQ.dc1);

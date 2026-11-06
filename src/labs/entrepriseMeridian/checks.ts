@@ -69,6 +69,16 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     lesson: 'Seuls les ports publies par un VIP traversent : 1521 n\'est pas publie.',
   },
   {
+    id: 'siem-receives-denied-probe', device: 'SIEM', shell: 'bash', command: `grep 'dstport=1521' /var/log/syslog`,
+    expects: [/logid="0000000015" type="traffic" subtype="forward" level="warning"/, new RegExp(`srcip=${INTERNET.visitor.replace(/\./g, '\\.')} `), /action="deny"/],
+    lesson: 'Le pare-feu envoie au SIEM l\'enregistrement de journal lui-meme (format key=value de FortiOS), pas un message libre : la sonde refusee du visiteur vers 1521 y est lisible avec sa source, sa destination et son action.',
+  },
+  {
+    id: 'visitor-reaches-published-web-over-tls', device: 'PC-VISITEUR', shell: 'bash', command: `curl -k -s -m 10 https://${HQ.wanVip.web}/`,
+    expects: [/Meridian Industries/],
+    lesson: 'Le VIP vip-web-https (server-load-balance, ssl-mode half, certificat Fortinet_Factory) termine le TLS sur le pare-feu et relaie du HTTP en clair vers WEB-DMZ : le serveur web n\'a aucun certificat a gerer.',
+  },
+  {
     id: 'visitor-cannot-reach-lan', device: 'PC-VISITEUR', shell: 'bash', command: `ping -c 2 ${HQ.workstation}`,
     expects: [/100% packet loss|Network is unreachable/],
     lesson: 'Le LAN prive n\'est pas routable depuis Internet.',
