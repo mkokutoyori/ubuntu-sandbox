@@ -456,20 +456,22 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       await taper(siem as unknown as Cli, ['systemctl start flow-collector']);
       await taper(fw, [
         'config system netflow',
-        'set collector-ip 203.0.113.50', 'set collector-port 2055', 'set active-flow-timeout 1', 'end',
+        'config collectors', 'edit 1', 'set collector-ip 203.0.113.50', 'set collector-port 2055', 'next', 'end',
+        'set active-flow-timeout 60', 'end',
         'config firewall policy', 'edit 182',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await pc.executeCommand('curl -s http://10.10.10.5/');
-      const status = await fw.executeCommand('diagnose test application netflow 1');
-      expect(refuse(status)).toBe(false);
+      const shown = await fw.executeCommand('show system netflow');
+      expect(shown).toContain('set collector-ip 203.0.113.50');
+      expect(shown).toContain('set active-flow-timeout 60');
     });
 
     it('183. Export IPFIX (RFC 7011) préservant les identifiants de templates et de champs', async () => {
       const { fw } = await creerLaboSupervision();
       await taper(fw, [
-        'config system netflow', 'set template-tx-timeout 1', 'end',
+        'config system netflow', 'set template-tx-timeout 60', 'end',
       ]);
       const conf = await fw.executeCommand('show system netflow');
       expect(conf).toContain('template-tx-timeout');
@@ -489,10 +491,10 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
     it('185. Active Flow Timeout : Export forcé d\'un flux long-terme (ex: gros export Oracle SQL)', async () => {
       const { fw } = await creerLaboSupervision();
       await taper(fw, [
-        'config system netflow', 'set active-flow-timeout 30', 'end',
+        'config system netflow', 'set active-flow-timeout 60', 'end',
       ]);
       const conf = await fw.executeCommand('get system netflow');
-      expect(conf).toContain('30');
+      expect(conf).toMatch(/active-flow-timeout\s*:\s*60\b/);
     });
 
     it('186. Inactive Flow Timeout : Export immédiat du paquet de fin dès la fermeture de connexion', async () => {
@@ -514,14 +516,15 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       ]);
       await pc.executeCommand('curl -s http://10.10.10.5/');
       const session = await fw.executeCommand('diagnose sys session list');
-      expect(session).toMatch(/bytes=\d+/);
+      expect(session).toMatch(/statistic\(bytes\/packets\/allow_err\): org=[1-9]\d*\/[1-9]\d*\/\d+/);
     });
 
     it('188. Translation NAT appliquée au port de collecte de flux NetFlow (Port Forwarding 2055)', async () => {
       const { fw } = await creerLaboSupervision();
       await taper(fw, [
         'config firewall vip', 'edit "VIP_NETFLOW"',
-        'set extip 203.0.113.1', 'set mappedip "203.0.113.50"', 'set extport 2055', 'set mappedport 2055',
+        'set extip 203.0.113.1', 'set mappedip "203.0.113.50"', 'set portforward enable', 'set protocol udp',
+        'set extport 2055', 'set mappedport 2055',
         'next', 'end',
       ]);
       const vip = await fw.executeCommand('show firewall vip VIP_NETFLOW');

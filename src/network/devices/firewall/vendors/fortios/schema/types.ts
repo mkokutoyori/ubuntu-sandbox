@@ -464,7 +464,7 @@ export interface FortiCommitDevice {
   removePkiPeer(name: string): void;
   applyPkiPeerGroup(name: string, members: readonly string[]): void;
   removePkiPeerGroup(name: string): void;
-  applyNetflow(settings: { activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; collectors: ReadonlyArray<{ ip: string; port: number }> }): void;
+  applyNetflow(settings: { activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; templateTxTimeoutSec: number; collectors: ReadonlyArray<{ ip: string; port: number }> }): void;
   applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | void;
   applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
   removeKeyChain(name: string): void;

@@ -83,6 +83,9 @@ export class NetFlowAgent {
   setSourceInterface(iface: string | null): void { this.config.sourceInterface = iface; }
   setVersion(version: 5 | 9): void { this.config.version = version; }
   setTemplateRefreshPackets(count: number): void { this.config.templateRefreshPackets = Math.max(1, count); }
+  setTemplateRefreshSeconds(seconds: number | null): void {
+    this.config.templateRefreshSeconds = seconds === null ? null : Math.max(1, seconds);
+  }
 
   addCollector(ip: string, port = UDP_PORT_NETFLOW): void {
     if (this.config.collectors.has(ip)) {
@@ -206,9 +209,16 @@ export class NetFlowAgent {
 
   private packetSequenceV9 = 0;
 
+  private templateTimedOut(collector: NetFlowCollector): boolean {
+    const seconds = this.config.templateRefreshSeconds;
+    if (seconds === null || collector.lastTemplateMs === null) return false;
+    return this.nowMs() - collector.lastTemplateMs >= seconds * 1000;
+  }
+
   private exportV9(collector: NetFlowCollector, chunk: NetFlowV5Record[]): void {
     const source = this.configuredSourceIp();
-    const withTemplate = collector.exportedPackets % this.config.templateRefreshPackets === 0;
+    const withTemplate = collector.exportedPackets % this.config.templateRefreshPackets === 0
+      || this.templateTimedOut(collector);
     const flowSets: NetFlowV9Packet['flowSets'] = [];
     if (withTemplate) {
       flowSets.push({
@@ -240,6 +250,7 @@ export class NetFlowAgent {
     collector.exportedPackets++;
     collector.exportedFlows += chunk.length;
     collector.lastExportMs = this.nowMs();
+    if (withTemplate) collector.lastTemplateMs = this.nowMs();
     this.getBus().publish({
       topic: 'netflow.packet.exported',
       payload: {

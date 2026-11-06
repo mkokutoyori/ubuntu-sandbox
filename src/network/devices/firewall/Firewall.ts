@@ -2410,13 +2410,14 @@ export class Firewall extends Equipment {
   }
 
   applyNetflow(settings: {
-    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number;
+    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; templateTxTimeoutSec: number;
     collectors: ReadonlyArray<{ ip: string; port: number }>;
   }): void {
     const agent = this.getNetflowAgent();
     agent.setActiveTimeoutSec(settings.activeTimeoutSec);
     agent.setInactiveTimeoutSec(settings.inactiveTimeoutSec);
     agent.setTemplateRefreshPackets(settings.templateTxCounter);
+    agent.setTemplateRefreshSeconds(settings.templateTxTimeoutSec);
     const wanted = new Set(settings.collectors.map(collector => collector.ip));
     for (const present of agent.listCollectors()) if (!wanted.has(present.ip)) agent.removeCollector(present.ip);
     for (const collector of settings.collectors) agent.addCollector(collector.ip, collector.port);
