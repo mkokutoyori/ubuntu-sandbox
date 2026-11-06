@@ -215,6 +215,7 @@ import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 import { CrossVendorSshHost, type CrossVendorSshVendor } from '../protocols/ssh/server/CrossVendorSshHost';
 export type { OSPFExtraConfig, OSPFRouterContext } from './router/RouterOSPFIntegration';
 export { RouterOSPFIntegration } from './router/RouterOSPFIntegration';
+import { VirtualReassembly } from './router/VirtualReassembly';
 import { NATEngine } from './router/NATEngine';
 import { RouterDebugService } from './router/diag/RouterDebugService';
 import { NhrpService } from './router/nhrp/NhrpService';
@@ -580,6 +581,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
   // ── NAT Engine ───────────────────────────────────────────────
   private natEngine = new NATEngine();
+  readonly virtualReassembly = new VirtualReassembly();
 
   private ipPrefixListStore = new IpPrefixListStore();
   private routePolicyStore = new RoutePolicyStore();
@@ -715,6 +717,7 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
     this.attachLoggingBus(this.getBus());
     this.attachSnmpStatistics();
     this.natEngine.setDeviceId(this.id, this.name);
+    this.natEngine.attachVirtualReassembly(this.virtualReassembly);
     // An engine left on the process-wide default bus meets every other
     // router's events there, and its actors then have to filter by device
     // id to ignore them. The bus boundary is the guarantee that filtering
@@ -2876,6 +2879,14 @@ export abstract class Router extends Equipment implements CredentialAuthenticato
 
     if (this.nat64?.ownsPoolAddress(ipPkt.destinationIP)) {
       this.nat64Forward4(ipPkt);
+      return;
+    }
+
+    const reassembly = this.virtualReassembly.observe(inPort, ipPkt);
+    if (reassembly.pass === false) {
+      if (reassembly.alert !== undefined) {
+        Logger.warn(this.id, 'vfr:alert', `${this.name}: %${reassembly.alert}: fragment from ${ipPkt.sourceIP} to ${ipPkt.destinationIP} dropped on ${inPort}`);
+      }
       return;
     }
 

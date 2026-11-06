@@ -139,7 +139,8 @@ import {
 // Extracted command modules
 import * as Show from './cisco/CiscoShowCommands';
 import { showProcessesCpu, ciscoClockReading } from './cisco/CiscoCommonShow';
-import { showNATTranslations, showNATStatistics, natHostOf } from './cisco/CiscoNATCommands';
+import { showNATTranslations, showNATStatistics, natHostOf, vfrHostOf } from './cisco/CiscoNATCommands';
+import { vfrShowFamily } from '@/cli/commands/vfr/vfrFamily';
 import {
   natConfigFamily, natStaticErrorMessage, networkPrefixLength,
 } from '@/cli/commands/nat/natConfigFamily';
@@ -675,6 +676,7 @@ export class CiscoIOSShell extends CiscoShellBase<Router> implements IRouterShel
       ...ipSlaShowSpecs(this),
       ...ospfShowSpecs(() => this.d()),
       ...natShowFamily(() => natHostOf(this)),
+      ...vfrShowFamily(() => vfrHostOf(this)),
       ...cryptoShowSpecs(() => this.d()),
       ...routingProtoShowSpecs(this, this.routingCfg),
       ...ospfClearSpecs(() => this.d()),

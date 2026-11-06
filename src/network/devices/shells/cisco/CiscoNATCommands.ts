@@ -5,6 +5,8 @@ import type { Router } from '../../Router';
 import type { CommandSpec } from '@/cli/CommandTable';
 import type { NatHost } from '@/cli/commands/nat/natHost';
 import { natInterfaceFamily } from '@/cli/commands/nat/natInterfaceFamily';
+import type { VfrHost } from '@/cli/commands/vfr/vfrFamily';
+import { vfrInterfaceFamily, vfrRunningConfigLines } from '@/cli/commands/vfr/vfrFamily';
 import { NAT_TIMEOUT_KEYWORDS } from '@/cli/commands/nat/natConfigFamily';
 import { DEFAULT_NAT_TIMEOUTS } from '../../router/NATEngine';
 import type { CiscoShellContext } from './CiscoConfigCommands';
@@ -14,6 +16,14 @@ import { vrfInterfaceSpecs } from './vrfSpecs';
 
 function cidrToMask(cidr: number): string {
   return uint32ToIp(prefixLengthToMaskUint32(cidr));
+}
+
+export function vfrHostOf(ctx: CiscoShellContext): VfrHost {
+  return {
+    reassembly: () => ctx.r().virtualReassembly,
+    selectedInterface: () => ctx.getSelectedInterface(),
+    resolveInterface: (name) => ctx.resolveInterfaceName(name),
+  };
 }
 
 export function natHostOf(ctx: CiscoShellContext): NatHost {
@@ -46,6 +56,7 @@ export function interfaceVrfName(router: Router, iface: string): string | undefi
 export function natInterfaceSpecs(ctx: CiscoShellContext): CommandSpec[] {
   return [
     ...natInterfaceFamily(() => natHostOf(ctx), MODES_INTERFACE),
+    ...vfrInterfaceFamily(() => vfrHostOf(ctx), MODES_INTERFACE),
     ...vrfInterfaceSpecs(() => ({
       vrfHost: () => ctx.r() as unknown as VrfHost,
       selectedInterface: () => ctx.getSelectedInterface(),
@@ -284,5 +295,6 @@ export function runningConfigInterfaceNAT(router: Router, ifName: string): strin
   const lines: string[] = [];
   if (engine.isInsideInterface(ifName)) lines.push(' ip nat inside');
   if (engine.isOutsideInterface(ifName)) lines.push(' ip nat outside');
+  lines.push(...vfrRunningConfigLines(router.virtualReassembly, ifName));
   return lines;
 }
