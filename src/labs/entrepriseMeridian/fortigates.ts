@@ -14,10 +14,13 @@ const tunnelPhase2 = (name: string, source: string, destination: string): string
   `set src-subnet ${source}`, `set dst-subnet ${destination}`, 'next', 'end',
 ];
 
-const interfaceBlock = (port: string, address: string, extra: string[] = []): string[] => [
-  'config system interface', `edit ${port}`, 'set mode static', `set ip ${address} 255.255.255.0`,
-  'set allowaccess ping https ssh', ...extra, 'next', 'end',
-];
+const interfaceBlock = (port: string, address: string, extra: string[] = []): string[] => {
+  const wan = port === 'wan1' || port === 'wan2';
+  return [
+    'config system interface', `edit ${port}`, 'set mode static', `set ip ${address} 255.255.255.0`,
+    `set allowaccess ${wan ? 'ping' : 'ping https ssh'}`, ...extra, 'next', 'end',
+  ];
+};
 
 const policy = (id: number, name: string, source: string, destination: string, extra: string[] = []): string[] => [
   'config firewall policy', `edit ${id}`, `set name "${name}"`,

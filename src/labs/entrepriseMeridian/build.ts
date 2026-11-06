@@ -2,9 +2,10 @@ import { loadDevicePlatform } from '@/network';
 import type { Equipment } from '@/network';
 import { useNetworkStore } from '@/store/networkStore';
 import { LabWorkbench } from '../LabWorkbench';
+import { configureAuditWorkstation } from './assessment';
 import { configureAgency, configureHeadquarters } from './fortigates';
 import { configureDomainController, joinDomainAndInstallExchange, configureLinux, configureWindows, publishWebSite } from './hosts';
-import { HQ, INTERNET, INTERNAL_DOMAIN, SITES } from './plan';
+import { AUDITOR, HQ, INTERNET, INTERNAL_DOMAIN, SITES } from './plan';
 
 export interface MeridianLab {
   readonly bench: LabWorkbench;
@@ -25,6 +26,7 @@ export async function buildMeridian(): Promise<MeridianLab> {
   const internet = place('switch-generic', 'SW-INTERNET', 520, 40);
   const webInet = place('linux-server', 'WEB-INTERNET', 760, 40);
   const visitor = place('linux-pc', 'PC-VISITEUR', 900, 40);
+  const auditor = place('linux-pc', 'PC-AUDIT', 900, 120);
   const hq = place('firewall-fortinet', 'FGT-HQ', 520, 180);
   const swLan = place('switch-generic', 'SW-HQ-LAN', 300, 320);
   const swDmz = place('switch-generic', 'SW-HQ-DMZ', 700, 320);
@@ -36,6 +38,7 @@ export async function buildMeridian(): Promise<MeridianLab> {
 
   bench.connect(webInet, 'eth0', internet, 'eth0');
   bench.connect(visitor, 'eth0', internet, 'eth1');
+  bench.connect(auditor, 'eth0', internet, 'eth6');
   bench.connect(hq, 'wan1', internet, 'eth2');
   bench.connect(hq, 'port1', swLan, 'eth0');
   bench.connect(hq, 'port2', swDmz, 'eth0');
@@ -55,6 +58,7 @@ export async function buildMeridian(): Promise<MeridianLab> {
 
   await configureLinux(bench, webInet, INTERNET.web, '203.0.113.254', '127.0.0.53');
   await configureLinux(bench, visitor, INTERNET.visitor, '203.0.113.254', '127.0.0.53');
+  await configureLinux(bench, auditor, AUDITOR.address, '203.0.113.254', '127.0.0.53');
   await publishWebSite(bench, webInet, 'Internet - site de demonstration');
 
   await configureHeadquarters(bench, hq);
@@ -73,6 +77,8 @@ export async function buildMeridian(): Promise<MeridianLab> {
   for (const { site, client } of agencies) {
     await configureLinux(bench, client, site.lanGateway.replace(/\.1$/, '.50'), site.lanGateway, HQ.dc1);
   }
+
+  await configureAuditWorkstation(bench, auditor);
 
   return { bench, devices };
 }

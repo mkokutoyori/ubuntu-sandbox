@@ -78,6 +78,16 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     expects: [/172\.16\.0\.10/],
     lesson: 'Les postes du siege resolvent les noms internes aupres de DC1.',
   },
+  {
+    id: 'external-security-assessment', device: 'PC-AUDIT', shell: 'bash', command: 'bash /opt/audit/run-all.sh',
+    expects: [/PASS: site identified/, /PASS: SMTP reachable as scoped/, /PASS: SSH not exposed/, /PASS: database port not exposed/, /PASS: internal LAN not routable/],
+    lesson: 'Le prestataire d\'audit mandate par la banque verifie depuis Internet que seul le perimetre publie (VIP web et mail) repond, et que rien d\'autre n\'est expose.',
+  },
+  {
+    id: 'management-plane-not-on-wan', device: 'PC-AUDIT', shell: 'bash', command: 'bash /opt/audit/check-mgmt-exposure.sh',
+    expects: [/PASS: admin HTTPS not exposed on WAN/, /PASS: admin SSH not exposed on WAN/],
+    lesson: 'Suite au constat d\'audit, le plan d\'administration (GUI HTTPS, SSH) est retire de allowaccess sur wan1 : seul ping reste, l\'admin passe par le LAN ou le VPN.',
+  },
 ];
 
 export function runMeridianChecks(devices: ReadonlyMap<string, Equipment>): Promise<LabCheckResult[]> {

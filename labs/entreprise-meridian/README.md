@@ -6,13 +6,14 @@ Meridian Industries a un siège et trois agences. Chaque site est protégé par 
 
 Barre d'outils → **Importer** → `topology.json`. Le fichier est généré par `src/labs/entrepriseMeridian/` : chaque équipement est configuré en tapant les mêmes commandes qu'un utilisateur (CLI FortiOS, PowerShell, bash).
 
-## Équipements (16)
+## Équipements (17)
 
 | Site | Équipement | Rôle | Adresse |
 |------|-----------|------|---------|
 | Internet | SW-INTERNET | commutateur d'Internet simulé | — |
 | Internet | WEB-INTERNET | serveur web public (nginx) | 203.0.113.80 |
 | Internet | PC-VISITEUR | client externe | 203.0.113.99 |
+| Internet | PC-AUDIT | poste du prestataire d'audit de sécurité mandaté par la banque (scripts dans `/opt/audit`) | 203.0.113.90 |
 | Siège | FGT-HQ | FortiGate : WAN `wan1`, LAN `port1`, DMZ `port2` | 203.0.113.1 / 10.0.0.1 / 172.16.0.1 |
 | Siège | DC1 | Windows Server : AD DS + DNS `meridian.local` | 10.0.0.10 |
 | Siège | ORA-DB | Linux : listener Oracle (1521) | 10.0.0.30 |
@@ -37,6 +38,8 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `hub-routing-entry-details` | `get router info routing-table details` : la route vers l'agence 1 sort par l'interface IPsec `to-ag1`. |
 | `hub-originates-into-tunnel` | `execute ping` depuis le pare-feu vers la passerelle d'une agence traverse le tunnel. |
 | `ipsec-crypto-counters` | `get vpn ipsec stats crypto` compte le trafic AES-256 / SHA-256 reellement echange. |
+| `external-security-assessment` | Le prestataire d'audit déroule `/opt/audit/run-all.sh` depuis Internet : seuls les VIP web (80) et mail (25) répondent, ni SSH sur le VIP mail, ni Oracle 1521, ni le LAN privé. |
+| `management-plane-not-on-wan` | Constat d'audit corrigé : le plan d'administration (GUI HTTPS, SSH) est retiré de `allowaccess` sur `wan1` ; seul `ping` reste. Sans ce durcissement, le script échoue. |
 | `visitor-reaches-published-web` | VIP `vip-web` (203.0.113.10:80 → WEB-DMZ) et politique `internet-to-web`. |
 | `visitor-reaches-published-mail` | VIP `vip-mail` (:25 → MAIL-DMZ) ; Exchange écoute dès l'installation (connecteur *Default Frontend*). |
 | `visitor-cannot-reach-oracle` | Seuls les ports publiés par un VIP traversent. |
