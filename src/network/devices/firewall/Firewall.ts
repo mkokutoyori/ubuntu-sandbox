@@ -225,7 +225,7 @@ import {
 import { anomalyDefaultThresholds, anomalyIndex } from './dos/AnomalyCatalog';
 import type { DosPolicyStore } from './dos/DosPolicyStore';
 import { DOS_DETECTION_WINDOW_MS, type AnomalyAction, type DosFinding } from './dos/DosSensor';
-import { dosFinding, type DosTraffic } from './dos/DosGate';
+import { dosFinding, dosTrafficOfIpv4, type DosTraffic } from './dos/DosGate';
 import { LoggingConfig } from '../inspection/config/LoggingConfig';
 import { SyslogAgent } from '../../syslog/SyslogAgent';
 import { SyslogCollectorTable } from './logging/SyslogCollectors';
@@ -3217,6 +3217,7 @@ export class Firewall extends Equipment {
   }
 
   private deliverLocally(portName: string, packet: IPv4Packet): void {
+    if (this.dosVerdict4(portName, packet) === 'block') return;
     deliverLocally({
       ikeDatagram: (p) => ikeDatagram(p),
       msOfDay: () => millisecondsSinceUtcMidnight(this.getSystemClockMs()),
@@ -3282,6 +3283,21 @@ export class Firewall extends Equipment {
       policies: context.dos6,
       evaluator: context.evaluator,
       sensor: context.dosSensor6,
+      zoneOf: (name) => context.zones.zoneOf(name) ?? '',
+    }, iface, traffic);
+    if (!finding) return 'none';
+    this.raiseAnomalyTrap(finding, traffic);
+    if (finding.log) this.trafficLogger?.onDosAnomaly?.(finding, iface, traffic);
+    return finding.action;
+  }
+
+  private dosVerdict4(iface: string, packet: IPv4Packet): AnomalyAction | 'none' {
+    const context = this.vdoms.contextOfInterface(iface);
+    const traffic = dosTrafficOfIpv4(packet);
+    const finding = dosFinding({
+      policies: context.dos,
+      evaluator: context.evaluator,
+      sensor: context.dosSensor,
       zoneOf: (name) => context.zones.zoneOf(name) ?? '',
     }, iface, traffic);
     if (!finding) return 'none';
