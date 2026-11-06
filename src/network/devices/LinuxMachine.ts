@@ -2224,6 +2224,11 @@ export abstract class LinuxMachine extends EndHost
     service.stop();
     service.start();
   }
+  restartSyslogDaemonFromFiles(): void {
+    const manager = this.executor.serviceMgr;
+    if (manager.status('rsyslog')?.state !== 'active') return;
+    manager.restart('rsyslog');
+  }
   private ntpPortsBound = new Set<number>();
 
   /**

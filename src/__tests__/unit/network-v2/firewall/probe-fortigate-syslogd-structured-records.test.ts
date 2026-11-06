@@ -10,7 +10,7 @@
  * rsyslog stamps the receive time and the sender address on a line that carries no header, which is what the
  * collector's /var/log/syslog shows here as it does on a real host.
  *
- * Discriminated with git stash on src/network: 6 of 7 fall before the fix; the witness (a collector that is
+ * Discriminated with git stash on src/network: 8 of 9 fall before the fix (six measured against the tree before the forwarding, two against the tree before the facility and refusal work); the witness (a collector that is
  * declared receives the deny of a `logtraffic all` policy) passes either way, in the old text and the new record.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -23,6 +23,9 @@ import { resetCounters, MACAddress } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
 import { Logger } from '@/network/core/Logger';
 import { EquipmentRegistry } from '@/network/equipment/EquipmentRegistry';
+import { SyslogCollectorTable } from '@/network/devices/firewall/logging/SyslogCollectors';
+import type { SyslogAgent } from '@/network/syslog/SyslogAgent';
+import type { FirewallLogRecord } from '@/network/devices/firewall/logging/FirewallLogStore';
 
 beforeEach(() => {
   resetCounters(); resetDeviceCounters(); MACAddress.resetCounter(); Logger.reset(); EquipmentRegistry.resetInstance();
@@ -108,5 +111,51 @@ describe('config log syslogd setting forwards the structured log records', () =>
     await collector.executeCommand('truncate -s 0 /var/log/syslog');
     await pc.executeCommand('ping -c 1 -W 1 203.0.113.11');
     expect(await received(collector)).not.toMatch(/type="traffic"/);
+  });
+
+  it('every documented facility is accepted, not only the five that were listed', async () => {
+    const { fgt } = await lab();
+    const outcomes: string[] = [];
+    for (const facility of ['mail', 'auth', 'lpr', 'authpriv', 'ntp', 'audit', 'alert', 'clock', 'local0', 'local6']) {
+      outcomes.push(await fgt.executeCommand(`config log syslogd setting`));
+      outcomes.push(await fgt.executeCommand(`set facility ${facility}`));
+      outcomes.push(await fgt.executeCommand('end'));
+    }
+    expect(outcomes.join('\n')).not.toMatch(/Command fail|Unknown action|invalid/i);
+  });
+
+  it('TLS and a per-collector source address are refused, naming what is missing', async () => {
+    const { fgt } = await lab();
+    await fgt.executeCommand('config log syslogd setting');
+    const outcome = [
+      await fgt.executeCommand('set enc-algorithm high'),
+      await fgt.executeCommand('set source-ip 10.0.0.1'),
+      await fgt.executeCommand('set format json'),
+    ];
+    await fgt.executeCommand('end');
+    expect(outcome[0]).toMatch(/TLS syslog listener/);
+    expect(outcome[1]).toMatch(/per-collector source address/);
+    expect(outcome[2]).toMatch(/JSON layout/);
+  });
+
+  it.each([
+    ['audit', 13 * 8 + 4], ['ntp', 12 * 8 + 4], ['clock', 15 * 8 + 4], ['local0', 16 * 8 + 4], ['kernel', 4],
+  ])('facility %s puts PRI %i on the wire for a warning record', (facility, priority) => {
+    const lines: string[] = [];
+    const agent = {
+      listServers: () => [], removeServer: () => undefined, setEnabled: () => undefined, addServer: () => undefined,
+      setSourceInterface: () => undefined, start: () => undefined,
+      sendVerbatim: (_ip: string, _severity: string, line: string) => { lines.push(line); },
+    } as unknown as SyslogAgent;
+    const table = new SyslogCollectorTable(() => agent);
+    table.applySettings({
+      collector: 'syslogd', enabled: true, server: '10.0.0.1', port: 514, transport: 'udp',
+      facility, format: 'default', sourceInterface: '',
+    });
+    const record: FirewallLogRecord = {
+      at: 0, type: 'traffic', subtype: 'forward', level: 'warning', id: '0000000015', vdom: 'root', fields: new Map(),
+    };
+    table.forwardRecord(record, () => 'date=2026-01-01');
+    expect(lines).toEqual([`<${priority}>date=2026-01-01`]);
   });
 });

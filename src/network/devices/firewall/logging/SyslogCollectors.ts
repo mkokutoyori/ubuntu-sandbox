@@ -38,6 +38,12 @@ const FILTER_LEVEL: Readonly<Record<string, FirewallLogLevel>> = Object.freeze({
   warning: 'warning', notification: 'notice', information: 'information', debug: 'debug',
 });
 
+const FORTIOS_FACILITY: Readonly<Record<string, number>> = Object.freeze({
+  kernel: 0, user: 1, mail: 2, daemon: 3, auth: 4, syslog: 5, lpr: 6, news: 7, uucp: 8, cron: 9,
+  authpriv: 10, ftp: 11, ntp: 12, audit: 13, alert: 14, clock: 15,
+  local0: 16, local1: 17, local2: 18, local3: 19, local4: 20, local5: 21, local6: 22, local7: 23,
+});
+
 export type RecordRenderer = (format: string, facility: number) => string;
 
 export class SyslogCollectorTable {
@@ -65,7 +71,7 @@ export class SyslogCollectorTable {
     for (const entry of this.active()) {
       if (!this.accepts(entry.collector, record)) continue;
 
-      const facility = SYSLOG_FACILITY[facilityOf(entry.facility)];
+      const facility = FORTIOS_FACILITY[entry.facility] ?? FORTIOS_FACILITY.local7;
       const text = render(entry.format, facility);
       const line = text.startsWith('<') ? text
         : `<${facility * 8 + SYSLOG_SEVERITY[severity]}>${text}`;
@@ -133,9 +139,6 @@ export function severityOf(declared: string | undefined): SyslogSeverityName {
 }
 
 function facilityOf(declared: string): SyslogFacilityName {
-  return declared === 'kernel' ? 'kern'
-    : declared === 'user' ? 'user'
-      : declared === 'daemon' ? 'daemon'
-        : declared === 'syslog' ? 'syslog'
-          : 'local7';
+  if (declared === 'kernel') return 'kern';
+  return declared in SYSLOG_FACILITY ? declared as SyslogFacilityName : 'local7';
 }
