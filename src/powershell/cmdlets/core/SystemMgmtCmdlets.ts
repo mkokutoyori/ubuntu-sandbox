@@ -617,6 +617,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
   // an object pipeline (Where-Object/Select-Object/…) needs the real cmdlet,
   // not the legacy string-formatting executor.
   readonly aliases = ['get-wmiobject', 'gwmi'] as const;
+  readonly desktopOnlyAliases = ['get-wmiobject', 'gwmi'] as const;
   readonly parameters = ['ClassName', 'ComputerName', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {

@@ -79,6 +79,8 @@ A RFC is not automatically the reference. What governs is the **officially adopt
 
 **The official documentation is in the repository, under `official_docs/`** — Cisco command references (IOS security, management, IP routing, IOS XE Catalyst 9600, ASA), Microsoft `windows-commands` and PowerShell 7.6. It is the authority of this rule for CLI syntax, defaults, keywords and error wording: read the page of the command you touch (`pdftotext -layout`, extracted into your scratchpad, not committed) before changing its grammar, and align on it. `docs/rfc/` holds the adopted standards.
 
+**For PowerShell 7 and the .NET behaviour behind a cmdlet, the real source on GitHub (`github.com/PowerShell/PowerShell`, read-only shallow clone, outside the repository) is a reference too**: parameter sets, aliases under `#if !CORECLR`, error resources (`*Resources.resx`). Windows PowerShell 5.1 is closed-source: for it, only the Microsoft documentation applies.
+
 ### 9. Do not write comments — absolute
 
 No inline `//`, no new `/** */`, no file headers, no section banners, no `// ─── … ───` separators, in any language, in production code and tests alike. Zero new comment lines per diff. Say it with the name instead. **The reasoning, the measurement, the defect found and the limit accepted go in the COMMIT MESSAGE and in the PRD — never in the source file.** The one established exception is a probe/test file's own header, which states what was measured and how the probe discriminates. Existing comments stay; do not add to them, and delete one whose behaviour you changed. The abundant commentary in older files is legacy, not a house style to imitate.

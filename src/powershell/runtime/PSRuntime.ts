@@ -724,7 +724,10 @@ export class PSRuntime {
     for (const c of this.registry.cmdlets()) {
       if (c.coreOnly === true && this.edition === 'desktop') continue;
       out.add(c.displayName ?? this.titleCase(c.name));
-      for (const a of c.aliases) out.add(a);
+      for (const a of c.aliases) {
+        if (this.edition === 'core' && c.desktopOnlyAliases?.includes(a.toLowerCase()) === true) continue;
+        out.add(a);
+      }
     }
     return [...out].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   }
@@ -3892,6 +3895,19 @@ export class PSRuntime {
     return this.typedParameterNames.get(key) ?? key;
   }
 
+  private rejectDesktopOnlyParameters(cmdlet: ICmdlet, named: Record<string, PSValue>): void {
+    if (this.edition === 'desktop' || cmdlet.desktopOnlyParameters === undefined) return;
+    for (const key of Object.keys(named)) {
+      const hit = cmdlet.desktopOnlyParameters.find(parameter => parameter.toLowerCase().startsWith(key));
+      if (hit !== undefined && !(cmdlet.parameters ?? []).some(p => p.toLowerCase().startsWith(key) && !cmdlet.desktopOnlyParameters?.includes(p))) {
+        throw new PSRuntimeError(
+          `A parameter cannot be found that matches parameter name '${this.typedParameterName(key)}'.`,
+          'System.Management.Automation.ParameterBindingException',
+        );
+      }
+    }
+  }
+
   private rejectCoreOnlyParameters(cmdlet: ICmdlet, named: Record<string, PSValue>): void {
     if (this.edition === 'core' || cmdlet.coreOnlyParameters === undefined) return;
     for (const key of Object.keys(named)) {
@@ -4021,9 +4037,13 @@ export class PSRuntime {
       return this.dispatchResolved('set-location', [name], named, cmdletNamed, common, pipeInput, env, produced);
     }
     const resolved = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
-    const cmdlet = resolved && resolved.coreOnly === true && this.edition === 'desktop' ? undefined : resolved;
+    const absentFromEdition = resolved !== undefined && resolved !== null && (
+      (resolved.coreOnly === true && this.edition === 'desktop')
+      || (this.edition === 'core' && resolved.desktopOnlyAliases?.includes(name.toLowerCase()) === true));
+    const cmdlet = absentFromEdition ? undefined : resolved;
     if (cmdlet) {
       this.rejectCoreOnlyParameters(cmdlet, cmdletNamed);
+      this.rejectDesktopOnlyParameters(cmdlet, cmdletNamed);
       this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed, cmdlet.closedParameterSet === true);
       positional = this.returnSwitchArguments(cmdlet, cmdletNamed, positional);
       const declared = new Set(
