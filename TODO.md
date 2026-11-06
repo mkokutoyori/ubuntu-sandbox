@@ -699,21 +699,26 @@ depuis un LinuxPC.
 colonnes est partage par tout le moteur SQL*Plus et merite sa propre
 mesure.
 
-### [fortigate] l'assistant de session FTP ne couvre que le mode passif sans DNAT
-L'assistant `ftp` (lecture de `227`/`229` sur une session vers le port 21,
-connexion de donnees admise sous la politique parente et rattachee a la
-session de controle) est pose. Il ne couvre pas encore :
-- le mode ACTIF (`PORT`/`EPRT`) : le serveur ouvre la connexion de donnees
-  vers le client, qu'il faudrait attendre dans l'autre sens et, sous SNAT,
-  reecrire l'adresse annoncee ;
+### [fortigate] l'assistant de session FTP ne reecrit pas le flux sous NAT
+L'assistant `ftp` (lecture de `227`/`229` ET, desormais, de `PORT`/`EPRT` sur
+une session vers le port 21, connexion de donnees admise dans le sens
+correspondant et rattachee a la session de controle ;
+`probe-fortigate-ftp-mode-actif.test.ts`) couvre le mode passif et le mode
+actif sous une politique routee (pas de traduction du cote qui annonce
+l'adresse). `config system session-helper` est deja une table CLI
+(`SYSTEM_SESSION_HELPER`, probee par `fortigate-session-helper-table.test.ts`).
+Il ne couvre pas encore, et ne peut pas sans reecrire les octets du flux
+(ajuster les numeros de sequence TCP a une longueur de commande qui change) :
+- une session de controle traduite en SOURCE (SNAT) : le client annonce par
+  `PORT`/`EPRT` son adresse privee, que le serveur ne peut pas atteindre —
+  l'assistant le detecte (`activeDataFlow` refuse si `translatedSource !==
+  originalSource`) et n'admet rien plutot que d'admettre sur une mauvaise
+  attente ; mesure par le cas « boundary » de la sonde ;
 - une session de controle traduite en DESTINATION (VIP) : l'adresse privee
   annoncee par `227` devrait etre reecrite et le port de donnees traduit ;
-- la table `config system session-helper` en CLI : ses valeurs par defaut
-  (numeros, protocoles, ports de chaque assistant) n'ont pas pu etre
-  consultees depuis cet environnement ; l'assistant ftp est donc toujours
-  actif, comme sur un boitier par defaut, mais ni affiche ni configurable.
-**Mesure** : batterie 1, test 28 (PASV sous politique `service "FTP"`),
-vert ; batterie 2, test 547 (`curl --no-pasv`) non couvert.
+  meme garde cote passif (`passiveDataFlow`), meme limite.
+**Mesure** : batterie 1, test 28 (PASV sous politique `service "FTP"`), vert ;
+batterie 2, test 547 (`curl --no-pasv`) non couvert.
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
 Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie
