@@ -1,10 +1,10 @@
 {
   "version": 1,
   "projectName": "Entreprise Meridian - siege, trois agences, Internet simule",
-  "exportedAt": "2026-11-05T08:43:25.761Z",
+  "exportedAt": "2026-11-06T08:21:53.895Z",
   "devices": [
     {
-      "id": "1793868201258-1",
+      "id": "1793953309282-1",
       "type": "switch-generic",
       "name": "SW-INTERNET",
       "x": 520,
@@ -110,7 +110,7 @@
       ]
     },
     {
-      "id": "1793868201345-2",
+      "id": "1793953309315-2",
       "type": "linux-server",
       "name": "WEB-INTERNET",
       "x": 760,
@@ -257,7 +257,7 @@
       ]
     },
     {
-      "id": "1793868201775-3",
+      "id": "1793953309369-3",
       "type": "linux-pc",
       "name": "PC-VISITEUR",
       "x": 900,
@@ -351,7 +351,151 @@
       ]
     },
     {
-      "id": "1793868201878-4",
+      "id": "1793953309409-4",
+      "type": "linux-pc",
+      "name": "PC-AUDIT",
+      "x": 900,
+      "y": 120,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:21",
+          "ipAddress": "203.0.113.90",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:22"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:23"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:24"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "203.0.113.254",
+      "files": [
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAlk1pHyJX+o4zv2KpkZcsyTywwVQTE6R2u96C5HaXoO1eR+R2BBM/V9eRPFsjo1NIPNdeQJ9L5MnIkOOR0lvf4= root@PC2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQQJZNaR8iV/qOM79iqZGXLMk8sMFUEx\nOkdrveguR2l6DtXkfkdgQTP1fXkTxbI6NTSDzXXkCfS+TJyJDjkdJb3+AAAAqPc8CWP3PA\nljAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAlk1pHyJX+o4zv2\nKpkZcsyTywwVQTE6R2u96C5HaXoO1eR+R2BBM/V9eRPFsjo1NIPNdeQJ9L5MnIkOOR0lvf\n4AAAAhAL4hfV7dNF+TYagdt8XTSLNX7QgVeOK6xpxHHgdxDGC1AAAACHJvb3RAUEMyAQID\nBAUGBw==\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICz6hpO6JcCBL6eIVD4kAtaUw3A90KMKS7jPZJbD5dH+ root@PC2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACAs+oaTuiXAgS+niFQ+JALWlMNwPdCjCku4z2SWw+XR/gAAAJB4VIh7eFSI\newAAAAtzc2gtZWQyNTUxOQAAACAs+oaTuiXAgS+niFQ+JALWlMNwPdCjCku4z2SWw+XR/g\nAAAECNWf0gmh6iu9785IL6P6+5Q5Dfe+bnsXhJ8aYvNFEdZyz6hpO6JcCBL6eIVD4kAtaU\nw3A90KMKS7jPZJbD5dH+AAAACHJvb3RAUEMyAQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 127.0.0.53\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/fstab",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=26162e9c-d81d-bb37-b675-5e475627dd80 / ext4 relatime,errors=remount-ro 0 1\nUUID=29163355-7f07-b845-4e9b-0b20a476f9a6 /boot ext4 defaults 0 2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/machine-id",
+          "content": "58f6ead7ce254a6dd4421661f97b0b27\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/netplan/01-lab.yaml",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [203.0.113.90/24]\n      routes:\n        - to: default\n          via: 203.0.113.254\n      nameservers:\n        addresses: [127.0.0.53]\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/opt/audit/check-web-vip.sh",
+          "content": "#!/bin/bash\necho \"Scope item 1: the published web VIP accepts HTTP and names the site\"\nTARGET=\"203.0.113.10\"\ncurl -sS -o /tmp/audit-web.html -w \"HTTP_STATUS=%{http_code}\\n\" \"http://$TARGET/\"\ngrep -q \"Meridian Industries\" /tmp/audit-web.html && echo \"PASS: site identified\"\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/opt/audit/check-mail-vip.sh",
+          "content": "#!/bin/bash\necho \"Scope item 2: the published mail VIP accepts SMTP on 25 and nothing else\"\nTARGET=\"203.0.113.25\"\nnc -zv -w 3 \"$TARGET\" 25 && echo \"PASS: SMTP reachable as scoped\"\nnc -zv -w 3 \"$TARGET\" 22 2>&1 | grep -qi \"refused\\|timed out\" && echo \"PASS: SSH not exposed\"\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/opt/audit/check-out-of-scope.sh",
+          "content": "#!/bin/bash\necho \"Scope item 3: nothing outside the two published VIPs answers from the Internet\"\nnc -zv -w 3 \"203.0.113.10\" 1521 2>&1 | grep -qi \"refused\\|timed out\" && echo \"PASS: database port not exposed\"\nping -c 2 \"10.0.0.50\" | grep -q \"100% packet loss\" && echo \"PASS: internal LAN not routable\"\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/opt/audit/check-mgmt-exposure.sh",
+          "content": "#!/bin/bash\necho \"Scope item 4: the firewall management plane (HTTPS GUI, SSH) must not answer from the Internet\"\nnc -zv -w 3 \"203.0.113.1\" 443 2>&1 | grep -qi \"refused\\|timed out\" && echo \"PASS: admin HTTPS not exposed on WAN\"\nnc -zv -w 3 \"203.0.113.1\" 22 2>&1 | grep -qi \"refused\\|timed out\" && echo \"PASS: admin SSH not exposed on WAN\"\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/opt/audit/check-flood-resistance.sh",
+          "content": "#!/bin/bash\necho \"Scope item 5: a burst of echo requests at the firewall WAN address must be throttled by the DoS policy\"\nRECEIVED=$(ping -c 120 -i 0.005 \"203.0.113.1\" | grep -o \"[0-9]* received\" | cut -d\" \" -f1)\necho \"echoes answered out of 120: $RECEIVED\"\n[ \"$RECEIVED\" -lt 120 ] && echo \"PASS: ICMP flood throttled\"\ncurl -s -o /dev/null -w \"%{http_code}\\n\" \"http://203.0.113.10/\" | grep -q 200 && echo \"PASS: published site still served after the burst\"\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/opt/audit/run-all.sh",
+          "content": "#!/bin/bash\nfor script in check-web-vip.sh check-mail-vip.sh check-out-of-scope.sh check-mgmt-exposure.sh; do\n  echo \"== $script ==\"\n  bash \"/opt/audit/$script\"\ndone\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        }
+      ],
+      "directories": [
+        {
+          "path": "/opt/audit",
+          "uid": 0,
+          "gid": 0,
+          "mode": 493
+        }
+      ]
+    },
+    {
+      "id": "1793953309450-5",
       "type": "firewall-fortinet",
       "name": "FGT-HQ",
       "x": 520,
@@ -360,55 +504,55 @@
       "interfaces": [
         {
           "name": "port1",
-          "mac": "02:00:00:00:00:21",
+          "mac": "02:00:00:00:00:25",
           "ipAddress": "10.0.0.1",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "port2",
-          "mac": "02:00:00:00:00:22",
+          "mac": "02:00:00:00:00:26",
           "ipAddress": "172.16.0.1",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "port3",
-          "mac": "02:00:00:00:00:23"
-        },
-        {
-          "name": "port4",
-          "mac": "02:00:00:00:00:24"
-        },
-        {
-          "name": "port5",
-          "mac": "02:00:00:00:00:25"
-        },
-        {
-          "name": "port6",
-          "mac": "02:00:00:00:00:26"
-        },
-        {
-          "name": "port7",
           "mac": "02:00:00:00:00:27"
         },
         {
+          "name": "port4",
+          "mac": "02:00:00:00:00:28"
+        },
+        {
+          "name": "port5",
+          "mac": "02:00:00:00:00:29"
+        },
+        {
+          "name": "port6",
+          "mac": "02:00:00:00:00:2a"
+        },
+        {
+          "name": "port7",
+          "mac": "02:00:00:00:00:2b"
+        },
+        {
           "name": "wan1",
-          "mac": "02:00:00:00:00:28",
+          "mac": "02:00:00:00:00:2c",
           "ipAddress": "203.0.113.1",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "wan2",
-          "mac": "02:00:00:00:00:29"
+          "mac": "02:00:00:00:00:2d"
         },
         {
           "name": "dmz",
-          "mac": "02:00:00:00:00:2a"
+          "mac": "02:00:00:00:00:2e"
         }
       ],
-      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-HQ\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.0.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 172.16.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEAEwDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDUwODQzMjFaFw0zNjExMDIwODQz\nMjFaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBAMal9PYIfERpJiR2U8Kj1gDQ9KdbpFvy/ynzjeQP\nKoSyU26T9TLT3z2u1DVJHyAWX8YJ1kFrbx9cUWad3LbxECO2wLeCo7AZE2KLyZ/P\ngu4klyASAdXk5MWggusUwe0HqcZx2V//98c1JFp9ZO5dC5j9/OO3cgYgpHkMJ9hr\nCf7DAgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBAFWfp0zZSU4RlmnAD/5v4UWbbXic6lX3mQZCNzEe2LvzKmHsh0gD\nv7/rwgbFHGzw0StnfyyxP8pCpDEiIhTrbKpGDOLBKKzcZ8z93SU6cpwVbiYuG9vv\nfgy4f3zSnM5YjT/qXfaV2Sou6dFhiPpCLWn1r/e4nZMSSaWQYLSa33hi\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAMal9PYIfERpJiR2\nU8Kj1gDQ9KdbpFvy/ynzjeQPKoSyU26T9TLT3z2u1DVJHyAWX8YJ1kFrbx9cUWad\n3LbxECO2wLeCo7AZE2KLyZ/Pgu4klyASAdXk5MWggusUwe0HqcZx2V//98c1JFp9\nZO5dC5j9/OO3cgYgpHkMJ9hrCf7DAgMBAAECgYBVXIcxGmBb/Vs4m+hOYZzaaPBY\n4lZ0dK0VV+WHNMUulHqpr8bT+puZpADojO1lGng5X4zEO+hab49DK17m9hvamx3P\nfjgPzr5ZBhd0dyJRmhG/lCCsX6cETwHlaFEMI51fDfU29IB5x+kAZEMS+zvwK1o6\nNrSTGwSRMHTtvwIskQJBAOUvQqA99z7LfRl3jIDgjmaP4spTCU7TsSDoBMXEpvvZ\n2pg4X3cvoyZfXOpDpTKp7Pk7JyjS6HJTIqTsBJ2Kih0CQQDd5AuQdjYp6P78eFci\nI69124S2Yboz5bzw2YcdBm61wAHayj7SyB6+1z20QoItSDTaB2iEq20GQolj7HxW\nN1ZfAkEAsTVTvPds358UAccQWu5G7ULAR1ThU5QX16vPVOPzgbU3co/UMSIicp82\nBuV7LKt7UlLMuqIpnYxuszrTbsUaeQJAYaCroeUREcGNJ0I/fCrdUWrDaod3KMxl\nJEdhVlj1LwyLBFvF5nHcbTVA1eYJZqkFcASgbPcL4hw2XPu4/Sod2wJACpvpkXZC\njvxZg8A7wJSjzM5noil4BcwbVo1Z1PRXJfzHm0TaCu3XF33WkA3BlUHcGv4+KjGC\n9XVtuyqiRQHtZw==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEAIwDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA1MDg0MzIxWhcN\nMzYxMTAyMDg0MzIxWjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAlvZYAkOlfKkF\nvq1rkKJV3yTPNPU3Bevs+xZABGt7ZiV7i0kSHA0Pu+jytHtmyJUOFeUF/uGiOWkx\nlils32QZsu7NSIg1OjRQd09rMBrH3Xccjkbgv6KCy+NPw5PltNOKXGS+0ADxPP9g\nwyGmPADMfQ+TWw3Wfv/XWw66onz+BvUCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAZAiQd2l7/vXdkiTs1439oRDK\nmqI3u2B0O0qGz+WZZuJ2PxwrmYtV67Nqet/jdhtq1NiCjrZAtPrdkchNYZ9vuoND\nlk0Uvb0QR9L/A7zGg+T0uJgQ6b9CDsKlGtxXo4MGJxik5Mj0yGyArCSoVa1LBqmn\nY0wL2hJHbjFriEBxYPA=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAJb2WAJDpXypBb6t\na5CiVd8kzzT1NwXr7PsWQARre2Yle4tJEhwND7vo8rR7ZsiVDhXlBf7hojlpMZYp\nbN9kGbLuzUiINTo0UHdPazAax913HI5G4L+igsvjT8OT5bTTilxkvtAA8Tz/YMMh\npjwAzH0Pk1sN1n7/11sOuqJ8/gb1AgMBAAECgYEAhzyMPwsGtxRb1yNYVyt2Lf61\nuUVrU1y04YJfOxZmZ21wrah6FrMEw1u+AT0DKPGOusJ+ioTrZO79wv29UKpF8gt2\nMViIm4jD6a3tXYdKEy328Pn0mM2fjbNdYbxTZXlth48WKn+UGmlWIWuAAESJ7KTy\nNhFJ/Osnxka86574QkkCQQDJQMAcOtwMmZTQlK7Wv5QjzlPpG8G5jD5fvBYeKUKl\n0tvW+iodCNaiLO6OACoIxgKl19Eo2wTlmkx2ukYjSU/fAkEAwAdagx1UTacFBZ0i\nCkaqG+kLeHCNrkC+bNQGF0sVtUBn/AkZgOFRjwE4WDx4fRQENz5zi48GF8+jo6Ww\nTmvzqwJBAJJe/ppJkNu1I8/kI5lasvKr0Mmc/3Pk9USJtohvN+MFDhE310NQt1Iy\nXbp3khrZcPmPkrclPFWFuJEtf2+QlX8CQFxvbb9tj9YtTrqMEAW4TExRGudn7ptx\nqPiD+0adKx7rmOJ2kuM6EuNup+u5eBplVz4sfrwwJbOyjMfKixrE1i8CQGLX2wqc\nbj4mXIv9z3R7Zgf9CM2kGhlWLeBXzxTWkIxbVDXovMPrdmSooosNc0c/iX51JFDw\nM+snClHVbnueBAw=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEAMwDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA1MDg0MzIxWhcNMzYxMTAyMDg0MzIxWjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAz25kAtHtlWss\naUu4GFRJH7bAVx38dsw0QxyZS9G7C7FzlOQ5MbOKzjyhAA11yjh89OkDbLmQTTCi\nmVtXAL1b8X924D4H0LEB/Hm+gMXhnvahcZ/+52Hz9lbW7Kv2QBAlRldgcjpL0M1T\nRaT6igwTZv+slQJwHt4Ih6H+PN0Lsk8CAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEATOtzpM/ISDuP8O5BJjk2VowG\nLMDbyAtJFHik4KPY9EY077tCDr5ZSeWiPQYl2jVKw1zaWXpOwbWoeQX316REX1i3\ngrlvtbuBc/4KPa41v+p6eH3u++aWplWSjB84HfYK+lK6BllreZ5RswXqIJtqMthb\n9pR+4Z2vQRif/oDX+Tk=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICeAIBADANBgkqhkiG9w0BAQEFAASCAmIwggJeAgEAAoGBAM9uZALR7ZVrLGlL\nuBhUSR+2wFcd/HbMNEMcmUvRuwuxc5TkOTGzis48oQANdco4fPTpA2y5kE0woplb\nVwC9W/F/duA+B9CxAfx5voDF4Z72oXGf/udh8/ZW1uyr9kAQJUZXYHI6S9DNU0Wk\n+ooME2b/rJUCcB7eCIeh/jzdC7JPAgMBAAECgYEApUQHjLOjPhPoi3AXmdK1e/4H\n2qD6f9AMp5fGj0DnbNaSBwOaif3JTq3BfKA8w8Qj0qE/6EUkMkvYkKTUebNk52HP\nfM2Qtc8SkC0CQF9cqH2/U77NF/eEe1Jrf/IAEnXW3F3i6hWf0BN2/atgZiwHXOrx\nfwCRD/DUJ5FT9g6TRmECQQDtiTDjEk6E0A6I+NEL49c0cvZRzwAqbW07prxo57Fr\n2/5yLMF5WyQ+1gpA992sO+FdTEICVKrBrTYmUcyq2qf/AkEA344i1zQSRGS56L1E\nNbur7Z8OtmloykdtbOn6gpFWV9/cFXf6E9ARJCWiBjHmPXc3adXH79qn1LxuXjmI\nwup1sQJBAIZKKGxHvkJRydXgLXc2YUVStTU8/Q//e2Dc++mnC2Q6JJjx+pOcVlp7\n8aIXP6iO1fNEGJFuwnbqcRGq7zWslosCQQC4wO0GUaBvKZeDQzfl+G3Eedlc44yY\n76L9iflgguCKyxVGINtqGGCyMO/QktinH6mKLAWKsnhVlkzYTlA6Vi5hAkADZOLA\nsIwFyy8PQ+lbkquj3IZvAy8E8lVpyLIR68Xx00oZDiyYt8Tga8BqjQlEuMMnZJom\nofBc1ch/j6aw3sus\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICEAQwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNTA4NDMyMVoXDTM2MTEwMjA4NDMyMVowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDWfydqOslqDVZWvEIf\nh8OQX+D1JAEiMJPSjtzAG7x0ixCwuHXfRZ+lYKk2rY3Ue6OkTFOT0zSL4HZbOJWI\nArVd+m1qz4CfRFQh6B43QhH8mnRcXpQNEe7DHLxmo9lVGBB/BOOKhe1cb4CyNqSe\nH73ZWJVF/qTkG3kdBkorbcT3UwIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQCM/oWPOKGCfDUR9fThK7xxh6A2NQi8\nQGp68TUPgK3ucdwWSp0Tz78lXeBsqlIb3VUV8SDSTPoCrA1rsqshTcYggTkiThlI\nFa8ODYkP3AgeWIqgrExNobSWsnTwr9y66F8U5eQ0QgB7BdzzEqQSgMU0M8hOivGk\nNoOgeOqiy3Ft1g==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBANZ/J2o6yWoNVla8\nQh+Hw5Bf4PUkASIwk9KO3MAbvHSLELC4dd9Fn6VgqTatjdR7o6RMU5PTNIvgdls4\nlYgCtV36bWrPgJ9EVCHoHjdCEfyadFxelA0R7sMcvGaj2VUYEH8E44qF7VxvgLI2\npJ4fvdlYlUX+pOQbeR0GSittxPdTAgMBAAECgYBR42Fs0NysPENGAcFMwEwNBk2f\nyQsVvm3w6NGmFfCwnZbVoNZ/UtlMDccMNN38zOcAhpMx0GQzMpJ86PFNZ5tNfpUf\njbwLlJE6xq+xHuQ4nlRM4N94YUi024H90qB8sLMXmwSFla8sm9AOwF+gMLaJpL1C\nKWfDMgPb0oZe9+thgQJBAPIXHZrD1uy9LZJ74YVNaV4Oq+zBmvz7VqNIPZ3dzOo2\n0KduRg7eDOTfX6w1+T+eg92p24MP+YD62GfZGvgbHeMCQQDi0iqiWEB1FwXFN64y\nF7QTDSF5RGpMRf421gDzAnSlCGBBGBxf7ZqnRb3t8WafJJbjqecUOH8cPgjMv7YR\nnPvRAkEApaTfYsfhRTbj+bi9xGIFWJAdXu/RxouK6kpBrsTWsuMyvX0cfou8stWM\nNt7vXnJts7vHMNQ7Wd9JNzU72MtlFQJATKuwH6pnN20t1SlqJ6KdiycQHpbCu7+Z\nG94g+gPle/el2bsVtFNzyIEpn2nPP5I1swU2iD5EsT5C6TsQh0miUQJAToe9aIXR\nzwASKGCIH0sZ2XZKRJ/kQLCXzcQ0NFjHB6JHJqf1LB8xbhaDE1FcpYsqxXtsmnNB\nm6cySQb1DmjzqQ==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-ag1\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.2\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\n    edit \"to-ag2\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.3\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\n    edit \"to-ag3\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.4\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-ag1\"\n        set phase1name \"to-ag1\"\n        set proposal aes256-sha256\n        set src-subnet 0.0.0.0 0.0.0.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\n    edit \"to-ag2\"\n        set phase1name \"to-ag2\"\n        set proposal aes256-sha256\n        set src-subnet 0.0.0.0 0.0.0.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\n    edit \"to-ag3\"\n        set phase1name \"to-ag3\"\n        set proposal aes256-sha256\n        set src-subnet 0.0.0.0 0.0.0.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall vip\n    edit \"vip-web\"\n        set extip 203.0.113.10\n        set mappedip \"172.16.0.10\"\n        set extintf \"wan1\"\n        set portforward enable\n        set protocol tcp\n        set extport 80\n        set mappedport 80\n    next\n    edit \"vip-mail\"\n        set extip 203.0.113.25\n        set mappedip \"172.16.0.25\"\n        set extintf \"wan1\"\n        set portforward enable\n        set protocol tcp\n        set extport 25\n        set mappedport 25\n    next\nend\nconfig router static\n    edit 100\n        set dst 10.1.0.0 255.255.255.0\n        set device \"to-ag1\"\n    next\n    edit 101\n        set dst 10.2.0.0 255.255.255.0\n        set device \"to-ag2\"\n    next\n    edit 102\n        set dst 10.3.0.0 255.255.255.0\n        set device \"to-ag3\"\n    next\nend\nconfig firewall policy\n    edit 10\n        set name \"internet-to-web\"\n        set srcintf \"wan1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"vip-web\"\n        set service \"HTTP\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 11\n        set name \"internet-to-mail\"\n        set srcintf \"wan1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"vip-mail\"\n        set service \"SMTP\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 20\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\n    edit 21\n        set name \"dmz-to-internet\"\n        set srcintf \"port2\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\n    edit 22\n        set name \"lan-to-dmz\"\n        set srcintf \"port1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 23\n        set name \"dmz-to-lan\"\n        set srcintf \"port2\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 30\n        set name \"lan-to-to-ag1\"\n        set srcintf \"port1\"\n        set dstintf \"to-ag1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 31\n        set name \"to-ag1-to-lan\"\n        set srcintf \"to-ag1\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 32\n        set name \"to-ag1-to-dmz\"\n        set srcintf \"to-ag1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 101\n        set name \"to-ag1-to-to-ag2\"\n        set srcintf \"to-ag1\"\n        set dstintf \"to-ag2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 102\n        set name \"to-ag1-to-to-ag3\"\n        set srcintf \"to-ag1\"\n        set dstintf \"to-ag3\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 40\n        set name \"lan-to-to-ag2\"\n        set srcintf \"port1\"\n        set dstintf \"to-ag2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 41\n        set name \"to-ag2-to-lan\"\n        set srcintf \"to-ag2\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 42\n        set name \"to-ag2-to-dmz\"\n        set srcintf \"to-ag2\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 110\n        set name \"to-ag2-to-to-ag1\"\n        set srcintf \"to-ag2\"\n        set dstintf \"to-ag1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 112\n        set name \"to-ag2-to-to-ag3\"\n        set srcintf \"to-ag2\"\n        set dstintf \"to-ag3\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 50\n        set name \"lan-to-to-ag3\"\n        set srcintf \"port1\"\n        set dstintf \"to-ag3\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 51\n        set name \"to-ag3-to-lan\"\n        set srcintf \"to-ag3\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 52\n        set name \"to-ag3-to-dmz\"\n        set srcintf \"to-ag3\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 120\n        set name \"to-ag3-to-to-ag1\"\n        set srcintf \"to-ag3\"\n        set dstintf \"to-ag1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 121\n        set name \"to-ag3-to-to-ag2\"\n        set srcintf \"to-ag3\"\n        set dstintf \"to-ag2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
+      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-HQ\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.0.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 172.16.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.1 255.255.255.0\n        set allowaccess ping\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEBEwDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDYwODIxNDlaFw0zNjExMDMwODIx\nNDlaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBANQmttvv6rtpoEOnnSFMLcWzkB0v92GsKm6u/5jN\nswAE3YttvQBl1C3hK3AdfYAr0AdJLXYm7MIAkaEtVd7tkttu6QLR3ad9Yr73/mqi\nJWArkLDxtvo9GhqrlnxpH1iyGu494EHY60OVqoPmYLj474eiMmpnsFXT1Ed4YVX5\nH85hAgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBAC/ExMaAxJffrixQ2eVI4x+Tr+78BLWH3LXL5n+Soi9LI+GDQOY/\naKknR2oIcw5Ch4yOihMnXH1CEmt/l6lvuPQ4KIaaLL1SQh/YdhhZ2EUb3WNhEEcw\nKhA48rW9+BYdRnL8PC+OcoF1pCgec8sNDmFuk6lVBJS79UlC74vhhAUq\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICeAIBADANBgkqhkiG9w0BAQEFAASCAmIwggJeAgEAAoGBANQmttvv6rtpoEOn\nnSFMLcWzkB0v92GsKm6u/5jNswAE3YttvQBl1C3hK3AdfYAr0AdJLXYm7MIAkaEt\nVd7tkttu6QLR3ad9Yr73/mqiJWArkLDxtvo9GhqrlnxpH1iyGu494EHY60OVqoPm\nYLj474eiMmpnsFXT1Ed4YVX5H85hAgMBAAECgYEAzsBwAsW8sCqPSn/GLVYtYXfO\nYfOGFkUQEVAwvjzxTnpvYltvDz0t3AyOJbRHw6pvETqquHPU1nhxdG9XOWu0aqjs\n4AnIgs4DoTCKARu9BmzXsiIQnBW88beIaSOT9SjlsIjBmj9A3+3aM+6nyhEJZ5Ke\nfmNE38juCkd2YO5Hk8ECQQDzkmXyZNCgbGAQ8NWghE6wV84YiUDXP6P/720xFpqU\n72ESyCPiQoJNR0Oh0sw/w8HzyeiYob1snhvy5a/lPrc5AkEA3vnkIdVrH9+ktGqo\ncXQahTbUe+FzlOGrIco1bdwk9w19/9+JhzwRXBl6FjJVlzYqwpTNPHS1R3Bz1NfC\nfDPoaQJAcZi0jTDxj/Abeasopr0uCdZZm13f7MOUlBexIDS/kXh3GJBZE/wa0znK\nVB2A/rgoq69eGFlOg+rVdBolR9BRGQJBAKxtojVnzMeBMuUx9cCGgFuz4u1Jkw/2\n01f1/wtNymgiTuWn/7pMgUAvk3HGytl8UeTXHT87IVR1aZ2WnBdgLMECQQCA6pH9\nRhaV4uCI3o2Dr+V9WspPgyisM7BDFJAqGZWje8C1bsrfIE7zkqGgCX2Ph+p8QPhA\nK/elBrIMfkB12kxh\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEBIwDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA2MDgyMTQ5WhcN\nMzYxMTAzMDgyMTQ5WjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAtitVimXRoAbg\nI9y0KmDciTGE/aPvF5qdGVLZLOVMsJdAiFxm4QXo8gonodlX0nGqUWmMA6PWkrz3\nbCoYxFGNk6HZcEwEFIpbaShttlEt9zyIZ7jCoSM3sU6Tb3Zdrn/FsG00hwr/C+8l\nNRnNzcupjBnFZxjJZcidVu6wgxqfe3ECAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEArZUpuHlgdFNViJlWE+DTlBsw\n8SyESDUIlr9CvLTjM/DkM2oUgGj7TELMc6gyWi/l0ejLFi3f5ugW5quTp4HsSXHP\ng/8vBtLhw7u416n5gU6sGI9nlZTGRhefJeVH/2Nh43DHTYPGd3OlEglAe7EpvlM5\n9hD38qMBVnPFWdHeSEs=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBALYrVYpl0aAG4CPc\ntCpg3IkxhP2j7xeanRlS2SzlTLCXQIhcZuEF6PIKJ6HZV9JxqlFpjAOj1pK892wq\nGMRRjZOh2XBMBBSKW2kobbZRLfc8iGe4wqEjN7FOk292Xa5/xbBtNIcK/wvvJTUZ\nzc3LqYwZxWcYyWXInVbusIMan3txAgMBAAECgYBWJYf+Osg29Qlp7CUHJWclOdW6\nXJvkfaltIFCzenwZxm0uDwRXxYOzcjnrv+xYCIiSl2cvEXuXSOV4sS+lJyvbqI71\nkSHSpZZSSp8/yiyykKw+L3arB9dz6tT7hZIjPL9+YAOm9LWgA6NXnLYYjvesAkeH\nsnUlWUFBhuF2V1ATQQJBAN1WFOd2/0pkzx7571EmLrevnnVuXPUE97ZW7AXXTYrt\nUN/boVyMLDZptBEzfmf3nS/39MQ/ojawNzp6XwBc75sCQQDSsvODBQ5Q8DFbHckJ\ncWiXGF23uYx8aw+/BNH9TElO9TmgGQE8BhCLoxfU0FJBVKrmNHORwXjpO0Z+Ic+T\n7d/jAkAEJpIbyRp+fad4sD0xq2Ki5TM2hoxNt/shOz4P2frFSTAEEq1S+/n0R0Uu\nMWYEcxtKg/7eE0dqeSGAAj1310ZTAkEAxp4ApUqX0z6JGD58q5Unpf9HIREdWI/H\n+SZ/GQrXtEHAf6XynvWMlUU6CtgSIhnBPF7Hbuf1pc7FxdLzjZxYRwJAcY9uWlCp\nhfBnk3+9yU4JvN6y3WMO70Lg3CeLgVVkc+LyitHUdgoKlrHk1d4R1TNNK4INgPIr\nqL4SwO4Q67MIFw==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEBMwDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA2MDgyMTQ5WhcNMzYxMTAzMDgyMTQ5WjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAv4S/967LYrWe\nnhaPSofImXbUriZSdg57EmnhDsSYGW/wZq3Na9nj1cvanxkyO2qqMvvxKI17OfaY\nn5S1ioMGMTN5dDXC3Zt/LjErYHqXszsx8bUt7UXzH8Cg9Cv4xE/zZStu/oorzNXN\nax2E53/4yGmbEKHKLjo/gXXSoAl4+5UCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAn5W29DRyexN/LaZJtdYn7mGH\n25S9w+y6qEuTltJxP1zf9QMFTVFbxOKFa12U3j2WooVLYXaBaIKovIPloGcAWY4L\ndiuEi/MnhHJP6nO8Ve2wfO2KavT8G72RTI+/UWVLpOMKlTC4D4h1gvypMaPpnyFR\nOb6XTDNn4C06g+8hIKU=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAL+Ev/euy2K1np4W\nj0qHyJl21K4mUnYOexJp4Q7EmBlv8GatzWvZ49XL2p8ZMjtqqjL78SiNezn2mJ+U\ntYqDBjEzeXQ1wt2bfy4xK2B6l7M7MfG1Le1F8x/AoPQr+MRP82Urbv6KK8zVzWsd\nhOd/+MhpmxChyi46P4F10qAJePuVAgMBAAECgYEAq57iB6nzR/lIspG0xiz3bc42\nt/hPXMuNLesDaqBxTBora1fEBSm0KRoMRxXlFal360gpyxU9n6uDCT3RkNXo7RAd\nFbZJZ7NVlzjNeysD2m8bfm87zT+8eNdpu8bq8VVaWxNkzYI1fKyQbu0tYj/2QegN\nb4DWZYB5772FJS6pHOECQQDu7VweYhnnbtm8ZW4UnOEJNZRkB373uYheIdO1hx9S\nymA8VhDeyHRunIdJvv/wPgPjZQZ7XpmOONCZ6FtLxg+nAkEAzTQnoTu9DpHwujgR\nVAZOJ5Fi0KJ8+LWzVe5kN6TWH4dQIRIFCdhQIRwORxP8otZp3N9ZJOUeflhubdX1\n+2ViYwJBAIwLmOk+O0zKTtn84g82/Ti2rSoMssFlgKccUMmgUB3o/YugLvdGq+iB\n21LAn6gj0YeiGbCKfJs+dhcgeRLrHxUCQGdqFV7IQGsLWYo/n1v9IX4HYwlKGjkt\nOQfhcFgqlk6lXtiLwEZJ4XgOL5PamsNl00wgs0hIv6lk36Iy5hif64kCQHbk0V9t\nxYCOmyYrRsH+e5LYPxjeP1cQfC15B2pZ/Wn2BVZEf2zDWDOScOFpWq1vln7wUTpu\nRVJOw3PB6OSnfuo=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICEBQwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNjA4MjE0OVoXDTM2MTEwMzA4MjE0OVowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDHIl2sXBxB8BTCUWgh\nOMhsMS0WxvqEgBDZ0rVn0P50MSwlKx77FLNLVbXTRRaK1kDxJbBgMbNF/qva28Wk\nAPEO8/38wtngnm2HOqRRIpHBW9A5Sd+1b8BQFsJo/ingp+fs9WUWHBCKgvQix69C\nIjuZ96cRSsUKn9js0yz/6nz3HwIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQAC+rDjhtngXy4wD/V31ccmm9Uz1kKl\nx9GQnj0ERhknt/gqbRkkd2cbcyq2oywNK7OySejvSuPX2gZh1TKqdvyD1ZuZY02M\nfykyQuC5ofYNLWyOyctVNxiHhMQBIObab2FBYxbFRf0SCvpgmohOwZDDGZthikxM\nNK4Be52DI44Bdg==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAMciXaxcHEHwFMJR\naCE4yGwxLRbG+oSAENnStWfQ/nQxLCUrHvsUs0tVtdNFForWQPElsGAxs0X+q9rb\nxaQA8Q7z/fzC2eCebYc6pFEikcFb0DlJ37VvwFAWwmj+KeCn5+z1ZRYcEIqC9CLH\nr0IiO5n3pxFKxQqf2OzTLP/qfPcfAgMBAAECgYB0/D51tIMxRX6cjcCTy80KqnUn\nrWudDbNYlA3YWJIz5nNdvpBrxsRyHH8+B5dvpuDuCkssp+X+19dUMspQR/FU4yj9\nFG8XsXqudlc2GYyTHvKE+Yh04659vBi7MP+ARD0fqDML3/dgQjJt09Q111mCtciX\nHOlUzR14LX+1G4BioQJBAOeWtD4JnkRsn1BIgoBlimVBXls5rCIgK6HXANG2ub32\nJDeoVASoHz+KVbfcg9RX/1s8AOchW/0Uq2C0bjmwcHECQQDcH+VnQbuzsRpWBjdM\nvwmShgaOn/uXebbLaLIKiM5+q7IjcfRVIWrmhQrkC3aK5/+oF5j63YZ4yCuJz3Mr\nZKiPAkAd7GcVrQB6Lt7W7MeP947OTof2mZkYP7fjjXhZoJaXaPp9Bo70mxSOjT1O\nKHwQL96a10H2m2TbapRKRoYHhjjBAkEAoegkB8rlkMnXISb5Tc3F8Kv77rPljgjM\nVtju+6icmbcYE9IhcOxfgKai2BFGY+04sh6JOxvtaLFytK6Ne4FSKQJAYv3ZfB5r\n3X6pCDx1TaNlPcsnOkIcCuUrXm5bwhNVvfWlO61Xr20oMQCYPEh3FK4+3IjlvjOR\nHI+F+UwlUXvANQ==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-ag1\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.2\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\n    edit \"to-ag2\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.3\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\n    edit \"to-ag3\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.4\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-ag1\"\n        set phase1name \"to-ag1\"\n        set proposal aes256-sha256\n        set src-subnet 0.0.0.0 0.0.0.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\n    edit \"to-ag2\"\n        set phase1name \"to-ag2\"\n        set proposal aes256-sha256\n        set src-subnet 0.0.0.0 0.0.0.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\n    edit \"to-ag3\"\n        set phase1name \"to-ag3\"\n        set proposal aes256-sha256\n        set src-subnet 0.0.0.0 0.0.0.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall vip\n    edit \"vip-web\"\n        set extip 203.0.113.10\n        set mappedip \"172.16.0.10\"\n        set extintf \"wan1\"\n        set portforward enable\n        set protocol tcp\n        set extport 80\n        set mappedport 80\n    next\n    edit \"vip-mail\"\n        set extip 203.0.113.25\n        set mappedip \"172.16.0.25\"\n        set extintf \"wan1\"\n        set portforward enable\n        set protocol tcp\n        set extport 25\n        set mappedport 25\n    next\nend\nconfig router static\n    edit 100\n        set dst 10.1.0.0 255.255.255.0\n        set device \"to-ag1\"\n    next\n    edit 101\n        set dst 10.2.0.0 255.255.255.0\n        set device \"to-ag2\"\n    next\n    edit 102\n        set dst 10.3.0.0 255.255.255.0\n        set device \"to-ag3\"\n    next\nend\nconfig firewall DoS-policy\n    edit 1\n        set comments \"wan-flood-protection\"\n        set interface \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        config anomaly\n            edit \"icmp_flood\"\n                set status enable\n                set action block\n                set threshold 50\n            next\n            edit \"tcp_syn_flood\"\n                set status enable\n                set action block\n                set threshold 500\n            next\n        end\n    next\nend\nconfig firewall policy\n    edit 10\n        set name \"internet-to-web\"\n        set srcintf \"wan1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"vip-web\"\n        set service \"HTTP\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 11\n        set name \"internet-to-mail\"\n        set srcintf \"wan1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"vip-mail\"\n        set service \"SMTP\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 20\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\n    edit 21\n        set name \"dmz-to-internet\"\n        set srcintf \"port2\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\n    edit 22\n        set name \"lan-to-dmz\"\n        set srcintf \"port1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 23\n        set name \"dmz-to-lan\"\n        set srcintf \"port2\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 30\n        set name \"lan-to-to-ag1\"\n        set srcintf \"port1\"\n        set dstintf \"to-ag1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 31\n        set name \"to-ag1-to-lan\"\n        set srcintf \"to-ag1\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 32\n        set name \"to-ag1-to-dmz\"\n        set srcintf \"to-ag1\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 101\n        set name \"to-ag1-to-to-ag2\"\n        set srcintf \"to-ag1\"\n        set dstintf \"to-ag2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 102\n        set name \"to-ag1-to-to-ag3\"\n        set srcintf \"to-ag1\"\n        set dstintf \"to-ag3\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 40\n        set name \"lan-to-to-ag2\"\n        set srcintf \"port1\"\n        set dstintf \"to-ag2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 41\n        set name \"to-ag2-to-lan\"\n        set srcintf \"to-ag2\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 42\n        set name \"to-ag2-to-dmz\"\n        set srcintf \"to-ag2\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 110\n        set name \"to-ag2-to-to-ag1\"\n        set srcintf \"to-ag2\"\n        set dstintf \"to-ag1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 112\n        set name \"to-ag2-to-to-ag3\"\n        set srcintf \"to-ag2\"\n        set dstintf \"to-ag3\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 50\n        set name \"lan-to-to-ag3\"\n        set srcintf \"port1\"\n        set dstintf \"to-ag3\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 51\n        set name \"to-ag3-to-lan\"\n        set srcintf \"to-ag3\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 52\n        set name \"to-ag3-to-dmz\"\n        set srcintf \"to-ag3\"\n        set dstintf \"port2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 120\n        set name \"to-ag3-to-to-ag1\"\n        set srcintf \"to-ag3\"\n        set dstintf \"to-ag1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 121\n        set name \"to-ag3-to-to-ag2\"\n        set srcintf \"to-ag3\"\n        set dstintf \"to-ag2\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
     },
     {
-      "id": "1793868201890-5",
+      "id": "1793953309453-6",
       "type": "switch-generic",
       "name": "SW-HQ-LAN",
       "x": 300,
@@ -417,104 +561,104 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:2b"
-        },
-        {
-          "name": "eth1",
-          "mac": "02:00:00:00:00:2c"
-        },
-        {
-          "name": "eth2",
-          "mac": "02:00:00:00:00:2d"
-        },
-        {
-          "name": "eth3",
-          "mac": "02:00:00:00:00:2e"
-        },
-        {
-          "name": "eth4",
           "mac": "02:00:00:00:00:2f"
         },
         {
-          "name": "eth5",
+          "name": "eth1",
           "mac": "02:00:00:00:00:30"
         },
         {
-          "name": "eth6",
+          "name": "eth2",
           "mac": "02:00:00:00:00:31"
         },
         {
-          "name": "eth7",
+          "name": "eth3",
           "mac": "02:00:00:00:00:32"
         },
         {
-          "name": "eth8",
+          "name": "eth4",
           "mac": "02:00:00:00:00:33"
         },
         {
-          "name": "eth9",
+          "name": "eth5",
           "mac": "02:00:00:00:00:34"
         },
         {
-          "name": "eth10",
+          "name": "eth6",
           "mac": "02:00:00:00:00:35"
         },
         {
-          "name": "eth11",
+          "name": "eth7",
           "mac": "02:00:00:00:00:36"
         },
         {
-          "name": "eth12",
+          "name": "eth8",
           "mac": "02:00:00:00:00:37"
         },
         {
-          "name": "eth13",
+          "name": "eth9",
           "mac": "02:00:00:00:00:38"
         },
         {
-          "name": "eth14",
+          "name": "eth10",
           "mac": "02:00:00:00:00:39"
         },
         {
-          "name": "eth15",
+          "name": "eth11",
           "mac": "02:00:00:00:00:3a"
         },
         {
-          "name": "eth16",
+          "name": "eth12",
           "mac": "02:00:00:00:00:3b"
         },
         {
-          "name": "eth17",
+          "name": "eth13",
           "mac": "02:00:00:00:00:3c"
         },
         {
-          "name": "eth18",
+          "name": "eth14",
           "mac": "02:00:00:00:00:3d"
         },
         {
-          "name": "eth19",
+          "name": "eth15",
           "mac": "02:00:00:00:00:3e"
         },
         {
-          "name": "eth20",
+          "name": "eth16",
           "mac": "02:00:00:00:00:3f"
         },
         {
-          "name": "eth21",
+          "name": "eth17",
           "mac": "02:00:00:00:00:40"
         },
         {
-          "name": "eth22",
+          "name": "eth18",
           "mac": "02:00:00:00:00:41"
         },
         {
-          "name": "eth23",
+          "name": "eth19",
           "mac": "02:00:00:00:00:42"
+        },
+        {
+          "name": "eth20",
+          "mac": "02:00:00:00:00:43"
+        },
+        {
+          "name": "eth21",
+          "mac": "02:00:00:00:00:44"
+        },
+        {
+          "name": "eth22",
+          "mac": "02:00:00:00:00:45"
+        },
+        {
+          "name": "eth23",
+          "mac": "02:00:00:00:00:46"
         }
       ]
     },
     {
-      "id": "1793868201924-6",
+      "id": "1793953309483-7",
       "type": "switch-generic",
       "name": "SW-HQ-DMZ",
       "x": 700,
@@ -523,104 +667,104 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:43"
-        },
-        {
-          "name": "eth1",
-          "mac": "02:00:00:00:00:44"
-        },
-        {
-          "name": "eth2",
-          "mac": "02:00:00:00:00:45"
-        },
-        {
-          "name": "eth3",
-          "mac": "02:00:00:00:00:46"
-        },
-        {
-          "name": "eth4",
           "mac": "02:00:00:00:00:47"
         },
         {
-          "name": "eth5",
+          "name": "eth1",
           "mac": "02:00:00:00:00:48"
         },
         {
-          "name": "eth6",
+          "name": "eth2",
           "mac": "02:00:00:00:00:49"
         },
         {
-          "name": "eth7",
+          "name": "eth3",
           "mac": "02:00:00:00:00:4a"
         },
         {
-          "name": "eth8",
+          "name": "eth4",
           "mac": "02:00:00:00:00:4b"
         },
         {
-          "name": "eth9",
+          "name": "eth5",
           "mac": "02:00:00:00:00:4c"
         },
         {
-          "name": "eth10",
+          "name": "eth6",
           "mac": "02:00:00:00:00:4d"
         },
         {
-          "name": "eth11",
+          "name": "eth7",
           "mac": "02:00:00:00:00:4e"
         },
         {
-          "name": "eth12",
+          "name": "eth8",
           "mac": "02:00:00:00:00:4f"
         },
         {
-          "name": "eth13",
+          "name": "eth9",
           "mac": "02:00:00:00:00:50"
         },
         {
-          "name": "eth14",
+          "name": "eth10",
           "mac": "02:00:00:00:00:51"
         },
         {
-          "name": "eth15",
+          "name": "eth11",
           "mac": "02:00:00:00:00:52"
         },
         {
-          "name": "eth16",
+          "name": "eth12",
           "mac": "02:00:00:00:00:53"
         },
         {
-          "name": "eth17",
+          "name": "eth13",
           "mac": "02:00:00:00:00:54"
         },
         {
-          "name": "eth18",
+          "name": "eth14",
           "mac": "02:00:00:00:00:55"
         },
         {
-          "name": "eth19",
+          "name": "eth15",
           "mac": "02:00:00:00:00:56"
         },
         {
-          "name": "eth20",
+          "name": "eth16",
           "mac": "02:00:00:00:00:57"
         },
         {
-          "name": "eth21",
+          "name": "eth17",
           "mac": "02:00:00:00:00:58"
         },
         {
-          "name": "eth22",
+          "name": "eth18",
           "mac": "02:00:00:00:00:59"
         },
         {
-          "name": "eth23",
+          "name": "eth19",
           "mac": "02:00:00:00:00:5a"
+        },
+        {
+          "name": "eth20",
+          "mac": "02:00:00:00:00:5b"
+        },
+        {
+          "name": "eth21",
+          "mac": "02:00:00:00:00:5c"
+        },
+        {
+          "name": "eth22",
+          "mac": "02:00:00:00:00:5d"
+        },
+        {
+          "name": "eth23",
+          "mac": "02:00:00:00:00:5e"
         }
       ]
     },
     {
-      "id": "1793868201953-7",
+      "id": "1793953309513-8",
       "type": "windows-server",
       "name": "DC1",
       "x": 160,
@@ -629,21 +773,21 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:5b",
+          "mac": "02:00:00:00:00:5f",
           "ipAddress": "10.0.0.10",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "eth1",
-          "mac": "02:00:00:00:00:5c"
+          "mac": "02:00:00:00:00:60"
         },
         {
           "name": "eth2",
-          "mac": "02:00:00:00:00:5d"
+          "mac": "02:00:00:00:00:61"
         },
         {
           "name": "eth3",
-          "mac": "02:00:00:00:00:5e"
+          "mac": "02:00:00:00:00:62"
         }
       ],
       "defaultGateway": "10.0.0.1",
@@ -663,8 +807,8 @@
           "forestMode": "WinThreshold",
           "domainMode": "WinThreshold",
           "installDns": true,
-          "invocationId": "invocation-1793868683596-y",
-          "promotedAt": 1793868683602
+          "invocationId": "invocation-1793954030780-10",
+          "promotedAt": 1793954030782
         },
         "delta": {
           "entries": [
@@ -688,20 +832,20 @@
                   "4096"
                 ],
                 "userpassword": [
-                  "0fee5068c0bdde01"
+                  "9e40756c4eb9394a"
                 ],
                 "serviceprincipalname": [
                   "HOST/MAIL-DMZ",
                   "HOST/MAIL-DMZ.meridian.local"
                 ],
                 "objectguid": [
-                  "0757e30c-89dc-4915-9e78-bce60028797f"
+                  "db79f363-d3bf-4160-a284-4d517954eb26"
                 ]
               },
               "replMeta": {
-                "originatingInvocationId": "invocation-1793868683596-y",
+                "originatingInvocationId": "invocation-1793954030780-10",
                 "originatingUsn": 53,
-                "timestamp": 1793869404,
+                "timestamp": 1793954751,
                 "version": 1
               }
             }
@@ -791,8 +935,8 @@
       ],
       "windowsCertificates": {
         "ldapIdentity": {
-          "certificate": "-----BEGIN CERTIFICATE-----\nMIIC1jCCAb6gAwIBAgIBATANBgkqhkiG9w0BAQsFADAdMRswGQYDVQQDDBJkYzEu\nbWVyaWRpYW4ubG9jYWwwHhcNMjYxMTA1MDkwMzIyWhcNMjcxMTA1MDkwMzIzWjAd\nMRswGQYDVQQDDBJkYzEubWVyaWRpYW4ubG9jYWwwggEiMA0GCSqGSIb3DQEBAQUA\nA4IBDwAwggEKAoIBAQDf7fti1FTQm9W6wwcsPSjrTdOjB/QQPHDv/9ZPLMdtOQkN\nD5Lpu9Y9p79KwnvgZ1WmGMTC6hxGB2R2TUX1oCkSRWKsRE6gffKmr4AQYxd5jx3s\nBRf3R2GFV0WG4WW383daKhoWZYnsSWW9Nl330fkoNrqWJ7FnQIFxldSMkKVNy4+m\nxaiKcD3n1gNp7sAt1jFYlEpo7KRfmmEK76ML2z0VL2x6s4MQ6/u0pr+5z2c7/wO4\np+AUbGBOokCNRENV0EKnvdtWfXOWJEKy0rFf+XdmcP0AYoDeU3TI98mpDwW3EPJ+\nDbmES49DyLP19ps/pPSkp+TJTHNLVtiO1UnXBDzjAgMBAAGjITAfMB0GA1UdEQQW\nMBSCEmRjMS5tZXJpZGlhbi5sb2NhbDANBgkqhkiG9w0BAQsFAAOCAQEA11I+WgKr\nWsKbvsa+ulAHiIHVitgnc65ZqZHni4nrNcyjiMnB+0SyvR50Qia+ZOqZs2w/ZAke\nC9AXIaJBcd8S8LtmdIEKCqhPyMWC1mFWq6FvnF0YdhsFGoJiGOlKIktHHnE+9RbK\nfa9DHS6TywsfBNB75pnnDk3iHwdl8V5qmEM6KAEkaJCBHTMfYT6W8HFl6+Q7hKuw\nKvHMwd77E5dmCj3Dfu6sGNTC6hQAQQAEY/TWp4hIdq2DQsisFzZQeHtvSEqHFeW1\n4i9WSDkKanbWAoGxzIpqg/nAXOnwTWO9j4I7hyI3xN0jyKNBukSG0MGMo0alz8sc\nuuJCYbtXorW4Kg==\n-----END CERTIFICATE-----\n",
-          "privateKey": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDf7fti1FTQm9W6\nwwcsPSjrTdOjB/QQPHDv/9ZPLMdtOQkND5Lpu9Y9p79KwnvgZ1WmGMTC6hxGB2R2\nTUX1oCkSRWKsRE6gffKmr4AQYxd5jx3sBRf3R2GFV0WG4WW383daKhoWZYnsSWW9\nNl330fkoNrqWJ7FnQIFxldSMkKVNy4+mxaiKcD3n1gNp7sAt1jFYlEpo7KRfmmEK\n76ML2z0VL2x6s4MQ6/u0pr+5z2c7/wO4p+AUbGBOokCNRENV0EKnvdtWfXOWJEKy\n0rFf+XdmcP0AYoDeU3TI98mpDwW3EPJ+DbmES49DyLP19ps/pPSkp+TJTHNLVtiO\n1UnXBDzjAgMBAAECggEAS+C5IQjv4GwdpRY21P+4YNtTTlgAlIvWfQyE0vlKbjE4\nZuuTDY5vjx7LTArQrP524DxeV+m6QOR6XzfZ79wgbqeCQvs2ZV2oHmEzlNnu92rO\nac5kC49tdSBYV9cCf62JEM1ZX6Nyc9V/GvlUKAhHVCAPY5f5nhIWiqWJi0PsL4qb\nEhnGbejp6hFlUc9n9A+V0rv6Bm7lkm5IPn/gc6LIMDpteOLE9F/H4Fvl53KHrzm4\n4ZtOpSc3xChVNX8n7XTkH4isjXn0iUaeU+kjRWJQx1UV1aqX3LTO2UwYVG9ui6bL\nG3Qn/BaZGSYDJZ4Fhma3g6fKnqkmZX5K+HhdWSyyAQKBgQD9XlH8D8WWpgkQ45wy\nIqhgNEYEJThmL0qsb9k7QAX+OfnAbtEh2B8+36Y8n6kTuyQ0IOIycuTpZho+oK2Q\nWP6hiHIoC8nt8i1X/mKAbPKMiHgNOnsEdUIpXAFjFIIvhz+Afv/a4naZHrWDMowG\nOz7DlJAWQcMiDG8l0ziIX5nXAQKBgQDiQWMUOOtH4BwPEL24jZxk1WNZqUQHwwFp\naW97aSm8SozuHucM57oj5r78CY5aNyQDBsuQ69P531enwUM7eIbdQiWZg4E/rM38\nXvoBT17H/NtyQpusJNxdGMB6PaHu1RzdE3qD2N7xSHD3bYgUkYhNvW84OTfw+AYL\nuCxThMmX4wKBgAYL5jD5v2Fk/PpmNCgOI66IENOwf7QQlNugn7KGSJ5Ui91Hx73j\nBnvdon334XUTFj4YOs2xaD0Zrq6n7vxu40S/mNnTzjHbgbGD5J3j+7XW2+aU6rKk\nibuq8m2G48R2mdFbNofmt6XX0cUbw7OyXkEUnoupbhq16UEh1UuL3IQBAoGBALxy\n7c1YI0/4cCZ0MTFYcdzihx+VBl7Yo4JjGUHXM7Xq+jsTbiqnj7h7ZrOSWgj2SH5k\n2ITah/JlfiLxq8gK+XmssJiOmcapbeA4U09oBm/YQgeHRxY4lXrNNPQcBZZh1uqk\nYLUUm4yoY78Scfd/x+HIWKyhq+B/FLoKKpFd1nM1AoGBAIOo9RbxiGpgkTzCnIm+\n0NNG/3HHdJV2BfFke3FTGsECxL0E9dCWpl32YwKV+pEbB66vHqunJGCRzSIHw7oo\nF4Nrr2C/N6GLJBL5xx5e5Uu63JxFYZ5jslKxfFHH8rN3wYfM0qQEwdm6Apilk5xK\nAIHnCq/BOhwTAeGp3UYF85tZ\n-----END PRIVATE KEY-----\n"
+          "certificate": "-----BEGIN CERTIFICATE-----\nMIIC1jCCAb6gAwIBAgIBATANBgkqhkiG9w0BAQsFADAdMRswGQYDVQQDDBJkYzEu\nbWVyaWRpYW4ubG9jYWwwHhcNMjYxMTA2MDg0NTUwWhcNMjcxMTA2MDg0NTUxWjAd\nMRswGQYDVQQDDBJkYzEubWVyaWRpYW4ubG9jYWwwggEiMA0GCSqGSIb3DQEBAQUA\nA4IBDwAwggEKAoIBAQDZmrH20edsWFPsH3+8EShQNPrS9VhLYwjjTORlzsbox1ND\nNUvap3hbjB725dMthGD8SM6f8uLubdq3y42MRtjRNdl//2/Kcr51CiO0tpVrpnlh\nhlqWzrbuxCfa7h1Ek+9Fui/suPHajx2raC2RIvVW7pagZcdpbHFleanQm3Xxn+pT\n/aBTAiXWKIUkwBXCVt2TmkDiMaRiCl3Ff7XCoNixJ6no751y+gEPOlYrWF5y06RS\nxwYAneup/nWMunvyia+6B18wisc45cNck4aoA+2ZreE8Z9XMyZgtwx0tCczSybL3\nKbnF7951iAUBZKZlZIUrtcBYL6GCJlYHwvqsDc5DAgMBAAGjITAfMB0GA1UdEQQW\nMBSCEmRjMS5tZXJpZGlhbi5sb2NhbDANBgkqhkiG9w0BAQsFAAOCAQEAzdeT6XuM\nFxvMO64e2E5vC9PCC4N5rzcqVwXcEtxThUBVpt4rBERSZ+TqejJvy3XEsTT0vu3z\n4OWJQWTDMqgT+Ok6Z8zfyiu4UG6k2u9mTL/Gh/xSWD8YVh/tXMS5KLYNvM3NsqKQ\nxaDPdkfRnJH8eiFcG5f0EiXRhJ2K3wUrSsxk358ibwuMQerHWDW+mhGx2RJhSOYQ\n93GQn2uindoxfrOssRh6qrdlxYnZ3z4tgoYQJgL5eTEzn3VTcWC+AEi8Sf0APePc\nCaRqFAhXzzKos5VCDQEt2IHtLfyUK7TA1t+g9FGs9Lb2tmCAJT7BfGjXi0WiErUv\nPW7RrzhPyuicsw==\n-----END CERTIFICATE-----\n",
+          "privateKey": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDZmrH20edsWFPs\nH3+8EShQNPrS9VhLYwjjTORlzsbox1NDNUvap3hbjB725dMthGD8SM6f8uLubdq3\ny42MRtjRNdl//2/Kcr51CiO0tpVrpnlhhlqWzrbuxCfa7h1Ek+9Fui/suPHajx2r\naC2RIvVW7pagZcdpbHFleanQm3Xxn+pT/aBTAiXWKIUkwBXCVt2TmkDiMaRiCl3F\nf7XCoNixJ6no751y+gEPOlYrWF5y06RSxwYAneup/nWMunvyia+6B18wisc45cNc\nk4aoA+2ZreE8Z9XMyZgtwx0tCczSybL3KbnF7951iAUBZKZlZIUrtcBYL6GCJlYH\nwvqsDc5DAgMBAAECggEBAI1AAldSJ6PHriouxC6jAIUX7tzzT24YChPpvLRtReai\nRGTy+psjbFgYm5zu0GbScFYzOJTRCAd3HauCoQ42itU63EVe3QUP+JtmiojqoBFx\nzYbFvJX59vsEL07IlA0I7h9X3XYPE0co8TxrcnCsvY7BbtsNViUTtIQHNnjoAOZn\nEjy9pjaFzNoiyZQHM5OfvQp939TZmHPdGg5E6s28vear95B7DiEWERy7eG3EX8xz\n6XGiiR16BG0MsYH/1efCWaCrzcqj5isqRWORWetXnr62bkR6cQWmCSU5o69iTdVe\nL2o+Mm4tuYYeVKCGLZ3afXfeDEaZ9yx+7LbBMqttqEkCgYEA7Lh31Dnp/jriGnbY\nPBa4AxT11kAHgfPGoslHy7tdzzG5mJl4SMJHSzXdUB5uDyv5I8WBWaArvt3ORiym\n/fZhlwFomEGudO4bM78n63dYo0sLZ5kLek4JKuqmO210S2clD/EpFU/hfx0tWwFo\nvhxQPW4fHN5HZ6Jg2tQoQpJ2/m0CgYEA61Oo3/YksYJT53bFyUwWVmFUluhSmhQP\nwwdYaNFgOalBAWci2a/lhEzjXMIm+hparJ3I8IDZw8IBaXXQ7LUgvZawkAx5yEmM\niHFZHF5Q+cm7b9FYDT13DERUZuJlh+vtyJbq65/fU+HfP4Lb0GIEGkfRhvRM2AFN\nNCiDpQapUW8CgYEAwTBG8xeUpJuPnUNyc4+i+zjm7MRynBbD/GRCSL2P8KFHM4fE\nR7TuFC5QgKtk7NLZT91HFEsIiItiZZjZbBfgSymmH+QyqVENOC0AOkW7PADpvNGF\nMXpwNusrYQKRz1vNPnZ1LeR0RpYcRtIellBrF8dAcwHgym4Vl2FfvfzkSf0CgYBA\nHcslOitFMf0qU3IQJmrvnhUuCJ543H5u5NFxvZo6G6Nafn9AUGx4X3qTC1MTUZri\n7RqSbIjojTNVSIRj+fWxshzpIn0L1P41LqzYzdnCNPScwqz67oRBE1zrq0N+hQmE\nXZokGKsAb8ojw8OgQxRbFLZBzs4hDDm8vE0h6W64gQKBgQDAgB9e15MDoRCem1WG\nqA4HayVybRg2/l/we0bwqDt7jVvIwcSuANkTd/7bxIfaTU8yEZrs0VCKryhrrVaB\nIg1kikhL6HqlevOLVkjknC8U/NStRZ/0ADBkR5g/wBjBT6l5J9nA7/BgfkB2XsLi\n4qFqz6S+RmRi+AgYMm26itMzJw==\n-----END PRIVATE KEY-----\n"
         }
       },
       "windowsDnsServers": [
@@ -805,7 +949,7 @@
       ]
     },
     {
-      "id": "1793868201985-8",
+      "id": "1793953309520-9",
       "type": "linux-server",
       "name": "ORA-DB",
       "x": 300,
@@ -814,21 +958,21 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:5f",
+          "mac": "02:00:00:00:00:63",
           "ipAddress": "10.0.0.30",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "eth1",
-          "mac": "02:00:00:00:00:60"
+          "mac": "02:00:00:00:00:64"
         },
         {
           "name": "eth2",
-          "mac": "02:00:00:00:00:61"
+          "mac": "02:00:00:00:00:65"
         },
         {
           "name": "eth3",
-          "mac": "02:00:00:00:00:62"
+          "mac": "02:00:00:00:00:66"
         },
         {
           "name": "lo",
@@ -899,7 +1043,7 @@
       ]
     },
     {
-      "id": "1793868202054-9",
+      "id": "1793953309563-a",
       "type": "linux-pc",
       "name": "PC-HQ",
       "x": 440,
@@ -908,21 +1052,21 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:63",
+          "mac": "02:00:00:00:00:67",
           "ipAddress": "10.0.0.50",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "eth1",
-          "mac": "02:00:00:00:00:64"
+          "mac": "02:00:00:00:00:68"
         },
         {
           "name": "eth2",
-          "mac": "02:00:00:00:00:65"
+          "mac": "02:00:00:00:00:69"
         },
         {
           "name": "eth3",
-          "mac": "02:00:00:00:00:66"
+          "mac": "02:00:00:00:00:6a"
         },
         {
           "name": "lo",
@@ -936,28 +1080,28 @@
       "files": [
         {
           "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
-          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAlk1pHyJX+o4zv2KpkZcsyTywwVQTE6R2u96C5HaXoO1eR+R2BBM/V9eRPFsjo1NIPNdeQJ9L5MnIkOOR0lvf4= root@PC2\n",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMEXMzVt3fc0ScWE4wv/ENRW/NAzazvMlqPzcSMBGYLgiu9eBaf8qBhw7FlVIwVdWEdj52QzMSwuFz51NtnhWpc= root@PC3\n",
           "uid": 0,
           "gid": 0,
           "mode": 420
         },
         {
           "path": "/etc/ssh/ssh_host_ecdsa_key",
-          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQQJZNaR8iV/qOM79iqZGXLMk8sMFUEx\nOkdrveguR2l6DtXkfkdgQTP1fXkTxbI6NTSDzXXkCfS+TJyJDjkdJb3+AAAAqPc8CWP3PA\nljAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBAlk1pHyJX+o4zv2\nKpkZcsyTywwVQTE6R2u96C5HaXoO1eR+R2BBM/V9eRPFsjo1NIPNdeQJ9L5MnIkOOR0lvf\n4AAAAhAL4hfV7dNF+TYagdt8XTSLNX7QgVeOK6xpxHHgdxDGC1AAAACHJvb3RAUEMyAQID\nBAUGBw==\n-----END OPENSSH PRIVATE KEY-----\n",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTBFzM1bd33NEnFhOML/xDUVvzQM2s7\nzJaj83EjARmC4IrvXgWn/KgYcOxZVSMFXVhHY+dkMzEsLhc+dTbZ4VqXAAAAoEG3sMpBt7\nDKAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMEXMzVt3fc0ScWE\n4wv/ENRW/NAzazvMlqPzcSMBGYLgiu9eBaf8qBhw7FlVIwVdWEdj52QzMSwuFz51NtnhWp\ncAAAAgVC/eE3tbCEL/I8cJam+7J1tRrPh7zcS+17n6EN8R6sQAAAAIcm9vdEBQQzM=\n-----END OPENSSH PRIVATE KEY-----\n",
           "uid": 0,
           "gid": 0,
           "mode": 384
         },
         {
           "path": "/etc/ssh/ssh_host_ed25519_key.pub",
-          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICz6hpO6JcCBL6eIVD4kAtaUw3A90KMKS7jPZJbD5dH+ root@PC2\n",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUgsDUsT/qYWWs1NNXS1tKDHECb4vEackn0AFVvPUGO root@PC3\n",
           "uid": 0,
           "gid": 0,
           "mode": 420
         },
         {
           "path": "/etc/ssh/ssh_host_ed25519_key",
-          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACAs+oaTuiXAgS+niFQ+JALWlMNwPdCjCku4z2SWw+XR/gAAAJB4VIh7eFSI\newAAAAtzc2gtZWQyNTUxOQAAACAs+oaTuiXAgS+niFQ+JALWlMNwPdCjCku4z2SWw+XR/g\nAAAECNWf0gmh6iu9785IL6P6+5Q5Dfe+bnsXhJ8aYvNFEdZyz6hpO6JcCBL6eIVD4kAtaU\nw3A90KMKS7jPZJbD5dH+AAAACHJvb3RAUEMyAQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACBVILA1LE/6mFlrNTTV0tbSgxxAm+LxGnJJ9ABVbz1BjgAAAJCpPxRQqT8U\nUAAAAAtzc2gtZWQyNTUxOQAAACBVILA1LE/6mFlrNTTV0tbSgxxAm+LxGnJJ9ABVbz1Bjg\nAAAEDZGcN6IFKgn2xGb91rGB2FAKij6egQmvLxh2v5V+4DRlUgsDUsT/qYWWs1NNXS1tKD\nHECb4vEackn0AFVvPUGOAAAACHJvb3RAUEMzAQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n",
           "uid": 0,
           "gid": 0,
           "mode": 384
@@ -971,14 +1115,14 @@
         },
         {
           "path": "/etc/fstab",
-          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=26162e9c-d81d-bb37-b675-5e475627dd80 / ext4 relatime,errors=remount-ro 0 1\nUUID=29163355-7f07-b845-4e9b-0b20a476f9a6 /boot ext4 defaults 0 2\n",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=01c7465d-5a37-4a65-0710-5dcb09c2cf4d / ext4 relatime,errors=remount-ro 0 1\nUUID=fec741a4-03a6-c27b-0cb0-a09165452304 /boot ext4 defaults 0 2\n",
           "uid": 0,
           "gid": 0,
           "mode": 420
         },
         {
           "path": "/etc/machine-id",
-          "content": "58f6ead7ce254a6dd4421661f97b0b27\n",
+          "content": "57f6e944cc8ef489d8846797d9c778c8\n",
           "uid": 0,
           "gid": 0,
           "mode": 420
@@ -993,7 +1137,7 @@
       ]
     },
     {
-      "id": "1793868202109-a",
+      "id": "1793953309599-b",
       "type": "linux-server",
       "name": "WEB-DMZ",
       "x": 640,
@@ -1002,21 +1146,21 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:67",
+          "mac": "02:00:00:00:00:6b",
           "ipAddress": "172.16.0.10",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "eth1",
-          "mac": "02:00:00:00:00:68"
+          "mac": "02:00:00:00:00:6c"
         },
         {
           "name": "eth2",
-          "mac": "02:00:00:00:00:69"
+          "mac": "02:00:00:00:00:6d"
         },
         {
           "name": "eth3",
-          "mac": "02:00:00:00:00:6a"
+          "mac": "02:00:00:00:00:6e"
         },
         {
           "name": "lo",
@@ -1140,7 +1284,7 @@
       ]
     },
     {
-      "id": "1793868202159-b",
+      "id": "1793953309635-c",
       "type": "windows-server",
       "name": "MAIL-DMZ",
       "x": 780,
@@ -1149,21 +1293,21 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:6b",
+          "mac": "02:00:00:00:00:6f",
           "ipAddress": "172.16.0.25",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "eth1",
-          "mac": "02:00:00:00:00:6c"
+          "mac": "02:00:00:00:00:70"
         },
         {
           "name": "eth2",
-          "mac": "02:00:00:00:00:6d"
+          "mac": "02:00:00:00:00:71"
         },
         {
           "name": "eth3",
-          "mac": "02:00:00:00:00:6e"
+          "mac": "02:00:00:00:00:72"
         }
       ],
       "defaultGateway": "172.16.0.1",
@@ -1225,7 +1369,7 @@
           "dnsName": "meridian.local",
           "netbiosName": "MERIDIAN",
           "dcAddress": "10.0.0.10",
-          "machineSecret": "0fee5068c0bdde01"
+          "machineSecret": "9e40756c4eb9394a"
         }
       },
       "windowsDnsServers": [
@@ -1328,7 +1472,7 @@
       ]
     },
     {
-      "id": "1793868202190-m",
+      "id": "1793953309650-o",
       "type": "firewall-fortinet",
       "name": "FGT-AGENCE1",
       "x": 1000,
@@ -1337,53 +1481,53 @@
       "interfaces": [
         {
           "name": "port1",
-          "mac": "02:00:00:00:00:6f",
+          "mac": "02:00:00:00:00:73",
           "ipAddress": "10.1.0.1",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "port2",
-          "mac": "02:00:00:00:00:70"
-        },
-        {
-          "name": "port3",
-          "mac": "02:00:00:00:00:71"
-        },
-        {
-          "name": "port4",
-          "mac": "02:00:00:00:00:72"
-        },
-        {
-          "name": "port5",
-          "mac": "02:00:00:00:00:73"
-        },
-        {
-          "name": "port6",
           "mac": "02:00:00:00:00:74"
         },
         {
-          "name": "port7",
+          "name": "port3",
           "mac": "02:00:00:00:00:75"
         },
         {
+          "name": "port4",
+          "mac": "02:00:00:00:00:76"
+        },
+        {
+          "name": "port5",
+          "mac": "02:00:00:00:00:77"
+        },
+        {
+          "name": "port6",
+          "mac": "02:00:00:00:00:78"
+        },
+        {
+          "name": "port7",
+          "mac": "02:00:00:00:00:79"
+        },
+        {
           "name": "wan1",
-          "mac": "02:00:00:00:00:76",
+          "mac": "02:00:00:00:00:7a",
           "ipAddress": "203.0.113.2",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "wan2",
-          "mac": "02:00:00:00:00:77"
+          "mac": "02:00:00:00:00:7b"
         },
         {
           "name": "dmz",
-          "mac": "02:00:00:00:00:78"
+          "mac": "02:00:00:00:00:7c"
         }
       ],
-      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-AGENCE1\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.1.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.2 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEAUwDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDUwODQzMjJaFw0zNjExMDIwODQz\nMjJaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBANMRG9M0fJLT748AyOYzGiI4VDsUlnNjYcKBk/W+\n2MKsDTq8M4rFXtql2RujIJ0ckzAkg9szhFpi2OMAvPnkliYNn1trpdIFajhl8fMD\nVdcXPgpAbi4rREOEMzBf6C/9g56Hsm/U6s2V+yQaFV4POae25uLXmDGpuH40TG7G\nUE3ZAgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBAGPXi/5HLFS9oqV54O5RbZBntRVnWqPLL9EFBnVHVpoNxisNLumc\nt7FU/rbk7QDMeEMCWQmzI5r6P1Inew7T5b9KdhaFEww7tmajpJZtJP6o6FL+b+a6\nqJBHNyBaLe9OOTJL0JTpao0owkWvhHpaYANPTJVq34pl0y2dbKcGUrku\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBANMRG9M0fJLT748A\nyOYzGiI4VDsUlnNjYcKBk/W+2MKsDTq8M4rFXtql2RujIJ0ckzAkg9szhFpi2OMA\nvPnkliYNn1trpdIFajhl8fMDVdcXPgpAbi4rREOEMzBf6C/9g56Hsm/U6s2V+yQa\nFV4POae25uLXmDGpuH40TG7GUE3ZAgMBAAECgYBeErAOMMSdRKzvVfA0+e3Z9rVE\nJ+buwwrdgJeL3mYKTlkPJrbqURH37heYQ9rTa9sGiB/k4U9KYeg9NSUFVCa/O082\nDZ/DCBVgq47AgXL7CukZPvNqB1z7gEvYDMYj1kbfIewZf0IIhazK6CpdNyfU5W6C\nb/mvobT+KIJYwvzQqQJBAPvSdK3nG1Fvry+vzC+wGagUIR/OPaAQ5lFJqqzOu6YA\nXGBy5rugr66dv2sPQbUtAaJvRM/SId02n8cIpNWJPVsCQQDWkY5ot5Lt421Z83MF\nL84+qW1gqsxtwwkWT9TjBR3IokDm36lAT77MTqWeEBt2RzpJpzUnlhueQydrNaZh\nrkPbAkEA7S6xJSZ6jX5y86hR2ky0LaIf/NQFKSEhvUh0T+U7ysOmPlWayvgy4HXF\n2DF7gwjL9FF274MM0E1lulKC5nkn5wJBAI8SIUX72fHbasfGx9QWi0xHBtKlMIij\nusRw2L/DYpescOBBFIb4ZX2vl0ks7lLQrbH81zmdIq9FkdwvutB5NW8CQDukgIAI\nnFwXI1ouR/UoBsKHLXqxcCgfZLXmN1nwz7T/F3Ef0qvDS60dJvamS0hxsOe4z//c\nccQfnFyZdZgoqRs=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEAYwDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA1MDg0MzIyWhcN\nMzYxMTAyMDg0MzIyWjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAuOSP/ZrVirNm\n4lL8LwnjPGrRK7uZB5wuLGPUjLFGgxjpQi43lNyQmpM5CnFfuxuSriYk/aoMZR18\nZlfekPWuzRk1TrYpV+3IvQED2rKN9IhWPv2oCOcebiKSfTsxZK21X521LyZCWKwS\niZIOAc5FuTyhll+8iP09EollwBnLgwcCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAGYuolrCPR9cIyja30A0J8apg\nivnpeatAs67uUhNcBVjxLP5JG/VAEqVr4sp30IvrgHmjKlZYz3oWGGCebf07n8Nf\nZCAIgPb326Qi/GkF2ucsVKfOzsgjBbNIeTq9bhEOEo+QM3zpZz/MiZ7R5Gt8lEQx\nSBdXJQE3TnG3xsuM6ZM=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBALjkj/2a1YqzZuJS\n/C8J4zxq0Su7mQecLixj1IyxRoMY6UIuN5TckJqTOQpxX7sbkq4mJP2qDGUdfGZX\n3pD1rs0ZNU62KVftyL0BA9qyjfSIVj79qAjnHm4ikn07MWSttV+dtS8mQlisEomS\nDgHORbk8oZZfvIj9PRKJZcAZy4MHAgMBAAECgYBZjOpozJts6GOGbucR6VoUIzBY\nXC5MT0rV2SxTUHF0gZZIpZXqFcI7+95+vla9iydKDdOQwNHsD5H3B8wWrcgRX6tu\nM2jCo4FFEmDFDZAQxEoQwQ1mEoUcvCWArPj/zUL8lvBj/3WliHfb4tNDtJTjBHYW\ndThx0hLL53j3VsQLYQJBAOEWuafTCtPsXjjt/9a1xJ4mvlPz23b9eTnFHebrt9Rt\nhAXKzJ7N470X4I7atZGey1hkf+yCK0nmdTo2rxvR/1kCQQDSSLLn7Hi263q84FLp\ne0JhfikRVpDU/xsQG/esdTAlLq4TNKwdmKUEKa0rJS4CrQeXjCZYAmLoB70dl9MS\nLKlfAkEAlqNy1JI06OeDl24Qjk1PrNgZAG5vLg8tFjCJdoXCnXQ9qvKyRoVcKKzW\nKETOxwoS5LE9u7bR6b9GLRNz1ZaQ4QJBAJaq6i0MnO2LSXT9Ucriuww5pdk7aiiC\n5HQlZc9WY/mwOZ+fNNc74Lhb2Cy6xf261l66V1rl0tIngVQrzVsPTwcCQBQeqQv2\n4OD7WheCoOwkj8zSmz4Bcjan8VHRWrAo5VvYXmeAoHIMLiUFq06F/FKwzxMMe/3H\nKht1/95IqcGeIPA=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEAcwDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA1MDg0MzIyWhcNMzYxMTAyMDg0MzIyWjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAm0BgreJQF4by\n/O+VNpDXzwpm6XfpMldFvBFr0NU8hRHV/JVipFUlTszI5nxELDHE64kAckcuVwGw\nucf9NvFAoeYJT8/9ueTjyTBH4I3GQUB4TLCXmTP5gzDSNjjectP8A+mqpheE9m25\nstaZKn1zL46HfExwWsTkOIzpPdAq2xcCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAYGrPfQ88+bcwPuNehmiRTmER\nTgUA4Tx54XFxwJ/UqksimKweVj27EBUUkKcEjO326dD7CbpPkDzs7mU6pQOPlFEJ\nZh8fU7xyLCZtF0JukcLMX4sa6gmUpbZ7JXs0LW5TxwdoG1S08Itgm4OejW/yVTZB\nf4qj+Bbp8fq8UfbyT4s=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAJtAYK3iUBeG8vzv\nlTaQ188KZul36TJXRbwRa9DVPIUR1fyVYqRVJU7MyOZ8RCwxxOuJAHJHLlcBsLnH\n/TbxQKHmCU/P/bnk48kwR+CNxkFAeEywl5kz+YMw0jY43nLT/APpqqYXhPZtubLW\nmSp9cy+Oh3xMcFrE5DiM6T3QKtsXAgMBAAECgYAyRLIJG1IbjBJ5W4nQ1S1LWG7i\nAXV8W021C18Bi0nBPHkxA52g4ADodt5F4s6gEK1WJlICrpGOknmKbfrLI2ptgFTG\nZ4ZWMKFRHSvcJ7RYrojX8sXPmidgGffkxlnB9FtqycZGo6rkmalwuQQjOmeWR04z\na0mrz1J9S49uG6ZsgQJBAMpCc43/1GaUauPaF6bddTxriEtlFFnfIRGq+wqVIFZm\nA+Fl1FBAt1kYboWO9HgihdCoQ6oQJSfKNxiL85VHmEcCQQDEgHg3/mgWa4duY7tA\nLXYJVvSbqFUUHppGoIO7NnNHhbMlQhBX67FYTxsTdFLlSYNLc0mBjF/4hQfla5oa\n+96xAkBqo+K9Sde5RiOdgw3ZYwY/FwtDhUXXpLeQ0y+NgtcL9rmxC7mHnreM+D69\nmIP5G2qmezFB50VP12R5QsDpQlhdAkEAxCLTXFiUfqRv9vCXLBT0d5gS6ffYjA+L\nwClhs5FC+cXrLapGc+uvBc1X4lA+mdyJr9rwKN37wSzP1+BSXtK+0QJAdbMvs3f3\npj5dE8y2fItlf9qC3EcvMOCGZ7NXpw9lV2PFu5moxA+xS14oQFhbxwpVF4m2IYTp\nu6u046+hq5+jog==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICEAgwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNTA4NDMyMloXDTM2MTEwMjA4NDMyMlowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCmds1uwZOdfD6GYc6s\nkA7cdPLoTCaZKI3ADPvPP4e/A1BFHSrHyknjPWAsR0Gzz1mAPpmV2wQUVYFwFeBr\njidZuVfAY7DYGk428Zub6qO3NYK98LUmQqJshRi63TLqftqqd4f+2UWmenlC8Ljq\n2I0aGN2kDEe0Lk/yDWbEUkN1/QIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQCNOgVfdeQbTPwXsyAXksR/7WlmSm1H\nOdFAljLx4rGF9BjVVNmJnlu0doZ2lHMWcTPbKMLPujx9JqVb8GElv19lwTJymA68\nnrA6oJigWd/S/X4PktSazWQFCfKvELjVUXsEWx1x8KK7zPMNfNATfLKu6a8wEnU5\nzLqJGZ6w5bD4Lg==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAKZ2zW7Bk518PoZh\nzqyQDtx08uhMJpkojcAM+88/h78DUEUdKsfKSeM9YCxHQbPPWYA+mZXbBBRVgXAV\n4GuOJ1m5V8BjsNgaTjbxm5vqo7c1gr3wtSZComyFGLrdMup+2qp3h/7ZRaZ6eULw\nuOrYjRoY3aQMR7QuT/INZsRSQ3X9AgMBAAECgYEAhRK+IYdgYWpcdYMk/DBhoP1g\n3jFaPd/8iYYXm1M3Soz0k3vAolzlemKrSlpgfMUK0Im6r+CZP0QnqJnkgTbv3vFM\nhb82D1P6uL1um6hfWqej50pGC0Y9Z+sl24+UqtCUNNA1YTpG2B6FSFAJhUAWJ8zH\nHjO2e+PjlZNlRG0EswUCQQDO1SEFaGJBSmkG1u4rS8UZaT46tzyWBuIj6w5Ai9DH\nT6H8NkCbfso7PXRxnK4WIayQLI8O+qnFV8gS7qbvxuCrAkEAzgkJHqJ0SK1aD7FP\nD2Q0lqBqcxil7H97gL2HhwKSGvSa+hbmVds3AkeN34h+IXn3G+rbra89B9ilFHcb\n7BwT9wJBAL492vmWYYmcX64i0z6PmuMcolhvYhK8khRnh9xmvcoVvPC3FgXwQSLs\nC8bUTmuc3ZRe59bnSHBzpVuEl5fEXbECQBk7bgx8ZLVJ1Y+6bS47XV1dA+xYhmly\nK1PW4jQcknwOnLQn/clh8VisHqnTc27yGtsmZgTdQyIk3AKnm5nMzn0CQDvvqTg8\njUd536NFVdOZo9CdTLezy5/qZcCj8uigrvrZDlxpTgL2ehYVyy8zN8rzsDdloRFy\nPM65rnMru6AKZfg=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-hq\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.1\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-hq\"\n        set phase1name \"to-hq\"\n        set proposal aes256-sha256\n        set src-subnet 10.1.0.0 255.255.255.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig router static\n    edit 1\n        set dst 10.0.0.0 255.0.0.0\n        set device \"to-hq\"\n    next\n    edit 2\n        set dst 172.16.0.0 255.255.255.0\n        set device \"to-hq\"\n    next\nend\nconfig firewall policy\n    edit 1\n        set name \"lan-to-hq\"\n        set srcintf \"port1\"\n        set dstintf \"to-hq\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 2\n        set name \"hq-to-lan\"\n        set srcintf \"to-hq\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 3\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
+      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-AGENCE1\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.1.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.2 255.255.255.0\n        set allowaccess ping\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEBUwDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDYwODIxNDlaFw0zNjExMDMwODIx\nNDlaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBALM54BGaTmvmohxpfQKohH1FLQ4kWNB79HfrXQTD\nj1DypG5bO3srIQdcwES+J8kkrUcVXtZKx8pN/Xqvm+7QtsmhIXfLnxvcAjJH/Db6\ntXo7g5LLK1oVnnZi6Y4Xl/Ak4biXg7UXR5S/DhKmbQ5lof020Y9U9NzHcDyzntkb\n0JH9AgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBAEsJqyFxxEclNQh+yO2nGG4fYRhoyMupXBO6qVrrZo4WvKwoDNe6\ntp7wulS6OZ6NMwVIuPC107EO2xEYCngShC+UqK72zb786CdFqkRVaOALsVJ/jq8R\neJL2OYF+D4UjdU1Bvyd/NjUO+0pETnjTzfX5H/rXAZ9UWMyeki+9iJla\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBALM54BGaTmvmohxp\nfQKohH1FLQ4kWNB79HfrXQTDj1DypG5bO3srIQdcwES+J8kkrUcVXtZKx8pN/Xqv\nm+7QtsmhIXfLnxvcAjJH/Db6tXo7g5LLK1oVnnZi6Y4Xl/Ak4biXg7UXR5S/DhKm\nbQ5lof020Y9U9NzHcDyzntkb0JH9AgMBAAECgYBBDytFeIwrIweJ5MkaY+3kQ249\nifgrhjOSLIARsKOfsNT7smZ/KYLN1198FMMAgy3bdeh9RZwM1g7DsGecY2tWXcfn\nXEW1snNYQPx9AauxjkION+BStIS9DUvnzJM16ObC4X4N/mCTKtpfaIsAiVFOuD7s\n+01V4inVujxKiAHDwQJBAOv0TpfPXTMb8dJzUbfZfemHdmVsIBiIfTPLxoTTSB2z\n0ar7/UlFuaTYj0X9M583yPPmbx1kpbJPaz71iR+o9/UCQQDCc83iVy5Kc4MmsWY9\nGwJjzxUfta+o8TKPdVxj7RyhkYGu8ld9niamRuDbXToMRptgXSfl15x59cwuoTZI\n8NTpAkEAuGpr+u8Rst6GdKu5FO6iIKHFgaOuuj4DTTZZZHsWBFEE8JSe9GPQouy3\nnkY10J1zLF3QPrLpZqH3+m9By0Lu+QJAMademICImoxaniPIpqvh9Vio3TsIywwk\nTAu89utSV1OPmPvbKYGb/vO0cW+h5gaVoIrJKGDhXSdN505VTVTqGQJAY/qKWtNy\n5eHtZVbck2NShDgL2JICq3IXlmKC/gjB8dO9ETKnaSgCnPgdfEbYaTlOSCRB4HHZ\nhBYSd18YrVgchw==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEBYwDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA2MDgyMTQ5WhcN\nMzYxMTAzMDgyMTQ5WjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA9y9uV6d/h753\nTriSPuhzCfJq5uau3fdGL4ernKCYm9eoZQ4Y8zmHI4Ehd/pPQOwsg5NDXfJAs1jj\n79M7Nc3jBdwS97MkvPeezHxEfffeNxk0+KSJsaa5Sq/1xD9jWyAro2yQcH+q5mKT\ninpULHJjCwis4zLB9DSyY3cdcpCgB5kCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAHL+wd+tsGEUt4ijBI214msdG\ns1mI/qcLO7lnD426V3ZVs1p7btNR1XvyFd3UC9GoXudTwUQQ01gxQYWHTTTps3TP\n+MbjNpuz8wTxQV9Lik//jqE0nF11Zy5zGiEwg5j1Hm2qneFF+bKsfHjzcPKntaZr\ni84Sj68pG+xzX2kmvN0=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAPcvblenf4e+d064\nkj7ocwnyaubmrt33Ri+Hq5ygmJvXqGUOGPM5hyOBIXf6T0DsLIOTQ13yQLNY4+/T\nOzXN4wXcEvezJLz3nsx8RH333jcZNPikibGmuUqv9cQ/Y1sgK6NskHB/quZik4p6\nVCxyYwsIrOMywfQ0smN3HXKQoAeZAgMBAAECgYEA5lk0GclEpipPonOMDcWu1rkq\n+AxHLyBtLoPe3/Ik5S3ehnXRuG+GyQZgOx9vVdABV4gXgmfr9XZDy81r4yL/iDSK\nXrRcavYFIRWfavjdBi6spFIuFCOnp+AG8ZiS3ftgiQ0SnVsODfYM3ymaxLjozGvl\nuk6r9qsWJkZ1hAvyGnUCQQD7uUZMGB8+jUDhHjx0tfzEFHl0DvoyYBcDN1FmcM4a\n0ei+ETPOuPbpRTQyQJnsIzls6KnEnXBm20EWo2UJlKQnAkEA+2JrSOojUsPxoQYr\ni+9BBydRFvmwvqOOaOXTu3tmOcP+2275xI9+QWXSgC/ZJcmft0NyJ6hxcsjjrL7n\nVtKOPwJAHdQopl+9ZBYs+AAzPclK+JlMgxo7P7jvQSxO8wqvAbKaF9vF/dshNydC\nNio9kyPhbCxt4aSeazHUFrCqCmaYxQJBAJkMBn1R70eIfCeo9gIwG8sbKMdwJScr\ntJwwsIPIUSiCJzu5iN8e7aMrNslMWEwlQNP2gB2c89UKcXLOl1HIx0kCQHo+0zAg\nYtT0xznIjeJWak+of/P8Z4RdmiBKKVUuttxx35m6fAWeBww6ZEk/RDRc5E6RdXq2\nRp5mTUNy/xTYBHc=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEBcwDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA2MDgyMTQ5WhcNMzYxMTAzMDgyMTQ5WjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAuo3w/l6uvqRA\njok4e+Rap4VDYH7KIWmeCCgIIviAkfNu1qS6+obaPFwSYTpMX+bWU1U5Bi8N+9Lx\nVWdz+sDTi0yvIzQ/TUzHXyF/hwLsN0Tdo9ZEo+SpP43o6TiVGA887QswRAzNV91F\nnb/QNmm2pZ0Bp4nu3FSdYJtUUDGXsI8CAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAjqVxDq3+Yef+o9AxIljxk44X\nRfJ3runmMSWpMLQ8UwnxWjIWVTU1Ds9VYRwFT/5e5tu2g8HGzmK+NehwD+NZCKwN\nIcv+71DME22svhmPQWOBhZy04ZOQHeuo5X2LOgfzjq1KJgWgP1JMM/EI1JJCZjGR\nA98FLb9rB2x+JiPqw0s=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBALqN8P5err6kQI6J\nOHvkWqeFQ2B+yiFpnggoCCL4gJHzbtakuvqG2jxcEmE6TF/m1lNVOQYvDfvS8VVn\nc/rA04tMryM0P01Mx18hf4cC7DdE3aPWRKPkqT+N6Ok4lRgPPO0LMEQMzVfdRZ2/\n0DZptqWdAaeJ7txUnWCbVFAxl7CPAgMBAAECgYA78VPYSBAaDaj4o7rUhEFkxnsp\nzFOifM9ci5BhvDuDqhaZPYEe8qm471SwjQzxW7jOOfoCtKfnnJYS/RTVI5RVB5gz\nIXZ6tJL2cHO9OSoGlZt8DIwjOa+Gu/MlXkRbuC1jZ3db6ZzGCue9rjQcVivBEOJc\n26UxyEghrXjVuDvDwQJBAONX94d1fCruMOFnzKFsEo3oIwthi7bk6SFCwSenB7WG\n8JhLUm1xVizHU4mXuI9JYBKY85skHrjtJ4Rsq3WRghECQQDSEcUsDTA8KPEh8QAH\nZxpvNUhJcCp3A+m/gw5Ag+8uDdx9didFcEnbUAN7zy6WObxUgyKVtJ8/IHS8bU5o\nUWifAkEAxGTOsdddP5zq3x4TWXOKB8r80y0eTA4uEwye3gleEIQUvgt7lo3tGtvK\nn7dQuX9ynj5BW8l1PN2qYKyb5gGgcQJAKRH6V6N4c7qZckZY+BmLTITBTkJUuxIT\nyDKKPcjNoVZqbkkEYooSloMtOy6FcC93h5pfz58Rp1jkGdbRBoosBwJAKrGGTCQ+\nyDdz3MLD/3t6VPXbl9xdXN6U4r4mYQlF1BPve6Ynnvqf39sw0e4h3Zkl5u0KjFWn\njyvW+OdJfbdA1A==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICEBgwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNjA4MjE0OVoXDTM2MTEwMzA4MjE0OVowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDU2NhWOg7euyEM2LX/\nA8p5WrixGHksBrY7YA+6V9+KbKUmAU0wrhuQUHvQRWfWkSZPcGI0RQTAzJdhQrxG\nSUA1KuD6sEW2j/ABzVxvdVzzp5icIqaBlnBgtX8Xpugjc/5ZpCrKVc/KlyIG7qpx\n6Ky80D/TpS6o8gTVwxXxC38RHQIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQCz7zn+fOHXsx0HQs3BlYHOzFWDSABx\nhyUup6tav6YggYhZqeJk0DaU1D86msJjY8VvaOsjkPPH0+P+C1gcyjqKgtKxQ4yU\ngtsAW+O96vRMtcZzVlXmknBvUyFvjWQybvrgh9E3eS2B2ymoP09R1yhkvJBL3qkd\n/dmhGYuvNChrTg==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBANTY2FY6Dt67IQzY\ntf8DynlauLEYeSwGtjtgD7pX34pspSYBTTCuG5BQe9BFZ9aRJk9wYjRFBMDMl2FC\nvEZJQDUq4PqwRbaP8AHNXG91XPOnmJwipoGWcGC1fxem6CNz/lmkKspVz8qXIgbu\nqnHorLzQP9OlLqjyBNXDFfELfxEdAgMBAAECgYEAl1uMm+S1ZlYT7pq88Re1CA8n\nf2gz4sbzF8374TtTz4/q8NfEGHX3S+yv3y875C1b3OnCLAFYm/HhRFy8ng7BBMEP\nUuWl12Vzs/VuKr8OQAS/Z4kB20uPoSyNxbsKMxkHFcEW/75gs7INP/zQzIJFN4pj\nxOeG+5qhYPX7t0LAYoECQQD7U5NTq82vIYHGFl1g71qaSO35jetPvW1Lv4uhrBHN\nKnpR2JeUQ4m6yuy/LllW9hh53T/IsxBKWeomDWqp1kyFAkEA2M4XM4JC/Z4LFdRo\nGEou+ZVPJleDosTl8WlQmkuoV6Yy0Mo07Hq64U0BeiocHKKde/YreXQ35trShkQm\nraRBuQJBAJo9JEFJQqWkDpyexRfkTNo6v7FTo4IAYr8GAo9pplMfKopoPj5DZJc6\nSijaLQHtbf/8BFULb4fxvn0z5q3sUnECQAgJ7DZOuCkrOQIANDPiXEeIz7x+NjVM\n07HV09VExOMrGGtBdCDolBFSh6F9+jjdlrVH9Wi1dHUs2+16jWyW0JECQGpqbYE+\n7ZRiE9R9CcSaGsdMqxDbzCb5Wt3OVvZcrvwQ97DKMqcbc1EWBKdVvRF31LpuGxzz\ng05+w0eeNwcmC7o=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-hq\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.1\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-hq\"\n        set phase1name \"to-hq\"\n        set proposal aes256-sha256\n        set src-subnet 10.1.0.0 255.255.255.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig router static\n    edit 1\n        set dst 10.0.0.0 255.0.0.0\n        set device \"to-hq\"\n    next\n    edit 2\n        set dst 172.16.0.0 255.255.255.0\n        set device \"to-hq\"\n    next\nend\nconfig firewall policy\n    edit 1\n        set name \"lan-to-hq\"\n        set srcintf \"port1\"\n        set dstintf \"to-hq\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 2\n        set name \"hq-to-lan\"\n        set srcintf \"to-hq\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 3\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
     },
     {
-      "id": "1793868202193-n",
+      "id": "1793953309652-p",
       "type": "linux-pc",
       "name": "PC-AGENCE1",
       "x": 1180,
@@ -1392,21 +1536,21 @@
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:79",
+          "mac": "02:00:00:00:00:7d",
           "ipAddress": "10.1.0.50",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "eth1",
-          "mac": "02:00:00:00:00:7a"
+          "mac": "02:00:00:00:00:7e"
         },
         {
           "name": "eth2",
-          "mac": "02:00:00:00:00:7b"
+          "mac": "02:00:00:00:00:7f"
         },
         {
           "name": "eth3",
-          "mac": "02:00:00:00:00:7c"
+          "mac": "02:00:00:00:00:80"
         },
         {
           "name": "lo",
@@ -1417,155 +1561,6 @@
         }
       ],
       "defaultGateway": "10.1.0.1",
-      "files": [
-        {
-          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
-          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMEXMzVt3fc0ScWE4wv/ENRW/NAzazvMlqPzcSMBGYLgiu9eBaf8qBhw7FlVIwVdWEdj52QzMSwuFz51NtnhWpc= root@PC3\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 420
-        },
-        {
-          "path": "/etc/ssh/ssh_host_ecdsa_key",
-          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTBFzM1bd33NEnFhOML/xDUVvzQM2s7\nzJaj83EjARmC4IrvXgWn/KgYcOxZVSMFXVhHY+dkMzEsLhc+dTbZ4VqXAAAAoEG3sMpBt7\nDKAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBMEXMzVt3fc0ScWE\n4wv/ENRW/NAzazvMlqPzcSMBGYLgiu9eBaf8qBhw7FlVIwVdWEdj52QzMSwuFz51NtnhWp\ncAAAAgVC/eE3tbCEL/I8cJam+7J1tRrPh7zcS+17n6EN8R6sQAAAAIcm9vdEBQQzM=\n-----END OPENSSH PRIVATE KEY-----\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 384
-        },
-        {
-          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
-          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFUgsDUsT/qYWWs1NNXS1tKDHECb4vEackn0AFVvPUGO root@PC3\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 420
-        },
-        {
-          "path": "/etc/ssh/ssh_host_ed25519_key",
-          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACBVILA1LE/6mFlrNTTV0tbSgxxAm+LxGnJJ9ABVbz1BjgAAAJCpPxRQqT8U\nUAAAAAtzc2gtZWQyNTUxOQAAACBVILA1LE/6mFlrNTTV0tbSgxxAm+LxGnJJ9ABVbz1Bjg\nAAAEDZGcN6IFKgn2xGb91rGB2FAKij6egQmvLxh2v5V+4DRlUgsDUsT/qYWWs1NNXS1tKD\nHECb4vEackn0AFVvPUGOAAAACHJvb3RAUEMzAQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 384
-        },
-        {
-          "path": "/etc/resolv.conf",
-          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 10.0.0.10\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 420
-        },
-        {
-          "path": "/etc/fstab",
-          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=01c7465d-5a37-4a65-0710-5dcb09c2cf4d / ext4 relatime,errors=remount-ro 0 1\nUUID=fec741a4-03a6-c27b-0cb0-a09165452304 /boot ext4 defaults 0 2\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 420
-        },
-        {
-          "path": "/etc/machine-id",
-          "content": "57f6e944cc8ef489d8846797d9c778c8\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 420
-        },
-        {
-          "path": "/etc/netplan/01-lab.yaml",
-          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [10.1.0.50/24]\n      routes:\n        - to: default\n          via: 10.1.0.1\n      nameservers:\n        addresses: [10.0.0.10]\n",
-          "uid": 0,
-          "gid": 0,
-          "mode": 384
-        }
-      ]
-    },
-    {
-      "id": "1793868202244-q",
-      "type": "firewall-fortinet",
-      "name": "FGT-AGENCE2",
-      "x": 1000,
-      "y": 320,
-      "isPoweredOn": true,
-      "interfaces": [
-        {
-          "name": "port1",
-          "mac": "02:00:00:00:00:7d",
-          "ipAddress": "10.2.0.1",
-          "subnetMask": "255.255.255.0"
-        },
-        {
-          "name": "port2",
-          "mac": "02:00:00:00:00:7e"
-        },
-        {
-          "name": "port3",
-          "mac": "02:00:00:00:00:7f"
-        },
-        {
-          "name": "port4",
-          "mac": "02:00:00:00:00:80"
-        },
-        {
-          "name": "port5",
-          "mac": "02:00:00:00:00:81"
-        },
-        {
-          "name": "port6",
-          "mac": "02:00:00:00:00:82"
-        },
-        {
-          "name": "port7",
-          "mac": "02:00:00:00:00:83"
-        },
-        {
-          "name": "wan1",
-          "mac": "02:00:00:00:00:84",
-          "ipAddress": "203.0.113.3",
-          "subnetMask": "255.255.255.0"
-        },
-        {
-          "name": "wan2",
-          "mac": "02:00:00:00:00:85"
-        },
-        {
-          "name": "dmz",
-          "mac": "02:00:00:00:00:86"
-        }
-      ],
-      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-AGENCE2\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.2.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.3 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEAkwDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDUwODQzMjJaFw0zNjExMDIwODQz\nMjJaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBALkodeHiTtpwUWbRULDm/IsebXqWH6bpaaIZsd0L\nBFyN2wd/3cxHgcOKx+X9Ch0VL7D6rrGWwr+YX/TN68ZUArLARkaOwNrb8MUmBZN9\n6yy8MSiXPBsZ2MHjzPsDM6hYS68xtdf/xmbo3QMmBxBtyoR3kFCQYM7hCB5Kro2G\nVrCXAgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBADLjSvJxoNRUPllJ4fc0NQT2QUSp9Pb8FjIfxDifsPXvp1S0V25d\n1tXlnNnJ3e/e+rH3pE37QO5v7SkaSGwkItcm4Dx2lJ1fl+AlR74Y2Ev7WbBnEzML\n0aheoc+xGn+vOg5lg6KHLgFLPpzVB4FvTwHdvQAr/cXe8Oiuilba+mt0\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICeAIBADANBgkqhkiG9w0BAQEFAASCAmIwggJeAgEAAoGBALkodeHiTtpwUWbR\nULDm/IsebXqWH6bpaaIZsd0LBFyN2wd/3cxHgcOKx+X9Ch0VL7D6rrGWwr+YX/TN\n68ZUArLARkaOwNrb8MUmBZN96yy8MSiXPBsZ2MHjzPsDM6hYS68xtdf/xmbo3QMm\nBxBtyoR3kFCQYM7hCB5Kro2GVrCXAgMBAAECgYAvUqX+W4bn0XkcnDbRX9f//oDg\nqenhERsMcSDCbARrW141pnqbsVL7FUdOAsRI9pc/1nI7tVqE+X7c5Jx0Dhi6A0tz\npMrChFrDmytXEzrX29vmDv2S72EjkTmSU1iKQbpMIEpj9GDq/lyTU9o9reqg0wUJ\n5cfR/nlAf4e5GMvmoQJBAOq82cVniAnEa5KDRZ5PqeHb5L6OB4bWiTJfZzfvDzvg\ngV+D8heNzMYoeGeaQ/XEeNwbog1xxjX9sb05wg4rYP8CQQDJ7fItirsJuYpNIQFT\nF2nuDXbJzKUPM7H6X9wKb+Mj/ai4/+rBawRWP4FKw/Ptu6oC/SZp9vRGfHxf2L1m\njBhpAkEAnrRB9AI0ao4fQLZ6Gje4HtkBxYfXNOXVanYwHhQF07DNJ1vZEO2xFgSE\nq18UNZS5Ne+E19wla5lzUwE630Oa1wJBAMYIJUmklGmlHI0noTTr8WcUrTqbCAUw\nnYr+F73knM3fJmjIEmI9obMz9IhuQ/sR4FmuCs5A8q9txkv5M0YufoECQQDEPRRz\nWuqLtkE/vv0V10cCXhD466JU98bGYHKeIEgj+FPrg4iW8pG2yjFUdvYhgyWehtTa\njDr2trNkGGTZb5Pg\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEAowDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA1MDg0MzIyWhcN\nMzYxMTAyMDg0MzIyWjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAqpwMGjsCdJYq\nWUV47R7LrvGy6R2wQb1HkR7DXUUHr5o38NKtyu/EN4f/jGoVXGn6N6DESlewC3+p\n3EZi+EfiJL0H7M+25ZHb2rdGtuQ4Sty+GkB7IiEVuESp/c5wtBeMSvUEVLZ1RvcW\nAtcANW3XfpFbsJmOZQPd54rcu41weu0CAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAoiPhM2jJhP0xfEnFdVGoeSiE\nqU870zbTpQVzBBLxVMiIg5z5ih8wSaefbFbIzOjNNtrkcUzlATWATKvfkCZtWnIJ\nIvFJjo1CQw6QBxJH8VAVWwVckdplgxxXerXJ6BJXbAsucNYNpBGQ2PGXDapwgviK\ntBY6rMqdV7DT2cYi1UM=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAKqcDBo7AnSWKllF\neO0ey67xsukdsEG9R5Eew11FB6+aN/DSrcrvxDeH/4xqFVxp+jegxEpXsAt/qdxG\nYvhH4iS9B+zPtuWR29q3RrbkOErcvhpAeyIhFbhEqf3OcLQXjEr1BFS2dUb3FgLX\nADVt136RW7CZjmUD3eeK3LuNcHrtAgMBAAECgYBy57Ry+ilWMkkFZPfj4+jUw652\nuOsb64pG4Aw+Rh6+E0T36jzowAFMUUk43b3TRwEh9CIf290ScYIKfFFt3KQedmkw\ndMXItwKuA9kxkwgzg9Res1uJji0zkxNqxhf6MjVALhQnte/lrxQWLqjy0ymDeOyZ\nlI/qNhgJP5yQ7BlB9QJBANsztLLQb+kfAUrf9QQomU2RZ7IfVZTJPZT6yUIg2TLb\nKJp1a1J+GNyTBXfvT3NHxXlSflm1W6B/OCkkvS1BzlMCQQDHQBADTFrBOO/piDtO\nOx6pBnY0Tv/NlVglgLbnHDSjp8/DB3gCLSfhZV/Hbwh2zdX5gsab3w1swKp6IaQL\neum/AkBTGxxkOxBi0wV7bMOJKxdMSFeHOcgJm+6EIDzTnH6cgGi5ftEMupAUeI03\nNnzp2QkugS80NcUiaXlSaAJtOSjPAkAebVIEruxNBXzdlMg5sh2EglAavNWjd2L2\nlylXMZ94PnAjwEg7TNoCOZDey73nJpe+epIJy44pRWLDM8/xUNvRAkEAllgcvS2I\nEW5QAnkiZQMKECaI5EIFiYuw3kr0/2LL9LJWP2MiT1K3psAy2BgoetGlzcYBwD9x\nBli4hkFUZaWaSA==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEAswDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA1MDg0MzIyWhcNMzYxMTAyMDg0MzIyWjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAms6H7dl37K0u\nswwCTrmaVazUJEWkxmV8XSgAPKi9ilfVTdM8L+EPHXh6/YXVS6HDMFbVVIB+tzXi\nyKnPbz198SPYeCtWd81LfSzDVeBMwwKBiGlAu+cCh0kFA46rMEGipvutYbN4w54O\n6g3+yfUSy/gAtJ1oQB2PUlcaq1/whKsCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAi5QvMOq/nTw2NRdXzatAFKbj\nlCdSCO+nn3eS5hPR1HFefM9UWiyKk6T6HokyiKywYPE12UyX0hSfRL2QBZ1tGzwY\n5APZUL75eqWtQzplahNBP/OyjVCcyOfXUlbGzBAzXkOgLLai7C4D4KriMdRTKP9U\nW/VDSp7Sju6JzATBjSc=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAJrOh+3Zd+ytLrMM\nAk65mlWs1CRFpMZlfF0oADyovYpX1U3TPC/hDx14ev2F1UuhwzBW1VSAfrc14sip\nz289ffEj2HgrVnfNS30sw1XgTMMCgYhpQLvnAodJBQOOqzBBoqb7rWGzeMOeDuoN\n/sn1Esv4ALSdaEAdj1JXGqtf8ISrAgMBAAECgYAix6v6YBV1cyM+zr/l+AUYoo+2\n5n6ypDJgq5ACENcksb8WkRLAnwvKTzsyolLdfyZfQeMD7SqK9uxQsPYNw/77SNS8\nllu9E0G9Qv921pCRDbiYhg9jovqemgjHUGfUlPNkWJV5ypk86iJifUDr4kX2mZNI\nmXY/LoBYY14JFdT6wQJBAM4iXx6rtsUi+gW+K3s9z56OvV+xwsZRnZEGVYYJGoct\n+A53p2RCcKTgmZhXxHyEMxeGWlh6PS1s1Ua28nhBHNkCQQDAQYN4mOP2Kpb11ptx\nGariJXQO6kIKZaLowfFDsV4umT372juqDnuHn7vGnVWr/TrthRgv8mG3dnNDUymS\nhksjAkAdTG9eqaNxw7XryQrfGnr/G2S5TEfV7lXJ/i97vKGDozoFvGYTbwoZtT6/\nk4H+/L9SUatXthAp+7UYtvohs4eJAkEAlSf+tOiBK7G9LvuR2zxbrFn8YbnzBJf3\nvPcClE8eT67KPQQB+ByGUCFoEF5uYiHzvuTccA5vK2P1Zs01Wp1f2wJAFi9cDXyW\n8SHHbnlOIVVQsuhJ5xrh8mxX9P0L2hnjUwGcdEzgwowelAeE1Jc6Ct59coUs6FbE\nLgP2WSItVfs1jw==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICEAwwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNTA4NDMyMloXDTM2MTEwMjA4NDMyMlowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCfhDrPph9bgMUV48bm\nhHUNVKXLSUI46bQClJHdYwod+zU5utKRDmwDAiVo6rNNpI5D+kmhwj8bhUORI3UM\n39ssOMMNogYkvwVfohEQqLd2aIlFNxfMSQmChiSCWX7MDDfkU02fRMdn+1YFkhEA\nQccE5B0aPZ+K7HFvDYM7kTJgAwIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQA3ntuhTljySCAiUgju1S0LOYi18HGL\n1ciuaVPKhJHWXTaVPcfElxKbLxLrqZ34TOyZ1jzdhYWitSILLNJQzcj6pbgLzI1X\nVK7tMwgq/wQTaGv5y1f1hrnxcglZVHj5xvebO7OOVxQUwzeW9sP/UC4lYSPUSNEJ\nYbbd8Ckhybc2CA==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAJ+EOs+mH1uAxRXj\nxuaEdQ1UpctJQjjptAKUkd1jCh37NTm60pEObAMCJWjqs02kjkP6SaHCPxuFQ5Ej\ndQzf2yw4ww2iBiS/BV+iERCot3ZoiUU3F8xJCYKGJIJZfswMN+RTTZ9Ex2f7VgWS\nEQBBxwTkHRo9n4rscW8NgzuRMmADAgMBAAECgYBfmtHgyHD816XH49e/K144WiZw\nO30cPT2tWjw+UvCqXXheHFG9rMYh23RueFR00Y6OwYDGGXTXWrzPTVAHIlfqK8gv\n1SL1tPKAPHT92RpiKRuAdU0UEbk6hWXH7JtjbRcyYqbXsSU1WYs8CQl2+wnbTu6l\nd2VB/oWlOgVZsNOnOQJBANHDWXf3P0TBJMmmM6i4v0t08SA/HAPSJDyM2O1rjw5f\nfyXC6cGRI8GV+NhA5OEWJ5PbbfOLe5d9yojs6SX9hZ0CQQDCrYivIHtITVwSXo5p\nX+Of8ISMSAfd1zOKsYwQnq+cgLFk7rEApeNboXjyX/XpdhFtupbTuQcaCTyXp1Cc\nvlofAkBFMg7qfxpU4O30wynZZ5BbIOmF/KuOKx0fCEtrDoczc5cq6sBXxTwpWQKs\nu8OE6N0HbmQ36fRMRgew4Y4LpTUVAkEAmtNaRjUl9t2XYQCUcBeTt0qYj9xlbTfO\nRPppM3qQnX34FxaB7MsBo4kq4FATCgYdXFAtzdp0XG+GIfIt+Uql7wJALVTRV9Jk\nb3fCDtKLfpqSfiTy5xoRQDRUT0X6mARUKPPG9ykK5T8aGfNIuR3vME6DpGUDz3EN\nr/2DJvCsf6TCgg==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-hq\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.1\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-hq\"\n        set phase1name \"to-hq\"\n        set proposal aes256-sha256\n        set src-subnet 10.2.0.0 255.255.255.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig router static\n    edit 1\n        set dst 10.0.0.0 255.0.0.0\n        set device \"to-hq\"\n    next\n    edit 2\n        set dst 172.16.0.0 255.255.255.0\n        set device \"to-hq\"\n    next\nend\nconfig firewall policy\n    edit 1\n        set name \"lan-to-hq\"\n        set srcintf \"port1\"\n        set dstintf \"to-hq\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 2\n        set name \"hq-to-lan\"\n        set srcintf \"to-hq\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 3\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
-    },
-    {
-      "id": "1793868202247-r",
-      "type": "linux-pc",
-      "name": "PC-AGENCE2",
-      "x": 1180,
-      "y": 320,
-      "isPoweredOn": true,
-      "interfaces": [
-        {
-          "name": "eth0",
-          "mac": "02:00:00:00:00:87",
-          "ipAddress": "10.2.0.50",
-          "subnetMask": "255.255.255.0"
-        },
-        {
-          "name": "eth1",
-          "mac": "02:00:00:00:00:88"
-        },
-        {
-          "name": "eth2",
-          "mac": "02:00:00:00:00:89"
-        },
-        {
-          "name": "eth3",
-          "mac": "02:00:00:00:00:8a"
-        },
-        {
-          "name": "lo",
-          "mac": "00:00:00:00:00:00",
-          "mtu": 65536,
-          "ipAddress": "127.0.0.1",
-          "subnetMask": "255.0.0.0"
-        }
-      ],
-      "defaultGateway": "10.2.0.1",
       "files": [
         {
           "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
@@ -1618,7 +1613,7 @@
         },
         {
           "path": "/etc/netplan/01-lab.yaml",
-          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [10.2.0.50/24]\n      routes:\n        - to: default\n          via: 10.2.0.1\n      nameservers:\n        addresses: [10.0.0.10]\n",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [10.1.0.50/24]\n      routes:\n        - to: default\n          via: 10.1.0.1\n      nameservers:\n        addresses: [10.0.0.10]\n",
           "uid": 0,
           "gid": 0,
           "mode": 384
@@ -1626,85 +1621,85 @@
       ]
     },
     {
-      "id": "1793868202312-u",
+      "id": "1793953309752-s",
       "type": "firewall-fortinet",
-      "name": "FGT-AGENCE3",
+      "name": "FGT-AGENCE2",
       "x": 1000,
-      "y": 460,
+      "y": 320,
       "isPoweredOn": true,
       "interfaces": [
         {
           "name": "port1",
-          "mac": "02:00:00:00:00:8b",
-          "ipAddress": "10.3.0.1",
+          "mac": "02:00:00:00:00:81",
+          "ipAddress": "10.2.0.1",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "port2",
-          "mac": "02:00:00:00:00:8c"
+          "mac": "02:00:00:00:00:82"
         },
         {
           "name": "port3",
-          "mac": "02:00:00:00:00:8d"
+          "mac": "02:00:00:00:00:83"
         },
         {
           "name": "port4",
-          "mac": "02:00:00:00:00:8e"
+          "mac": "02:00:00:00:00:84"
         },
         {
           "name": "port5",
-          "mac": "02:00:00:00:00:8f"
+          "mac": "02:00:00:00:00:85"
         },
         {
           "name": "port6",
-          "mac": "02:00:00:00:00:90"
+          "mac": "02:00:00:00:00:86"
         },
         {
           "name": "port7",
-          "mac": "02:00:00:00:00:91"
+          "mac": "02:00:00:00:00:87"
         },
         {
           "name": "wan1",
-          "mac": "02:00:00:00:00:92",
-          "ipAddress": "203.0.113.4",
+          "mac": "02:00:00:00:00:88",
+          "ipAddress": "203.0.113.3",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "wan2",
-          "mac": "02:00:00:00:00:93"
+          "mac": "02:00:00:00:00:89"
         },
         {
           "name": "dmz",
-          "mac": "02:00:00:00:00:94"
+          "mac": "02:00:00:00:00:8a"
         }
       ],
-      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-AGENCE3\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.3.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.4 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEA0wDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDUwODQzMjJaFw0zNjExMDIwODQz\nMjJaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBAMt29LeNzEBb5k33W406AS4WoMKOITqQMI1yeVes\nplVemtqUJ6d77qzbCiuoOK1GcBuuXontj4MIrTetU1cAEoSIkP6K+qsIvubpjYHT\nV7dz/LHz6aQoduAkIM6dUYRpSqyZTxmMmdZshhpEfp5ZJ+Tbt3b44gRQ6UoTeks2\nE1rZAgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBAIJVwwmvBR8yiCLvB+hCraWUAWa5oHVw5BwFbACnRgrISye9KUsk\n3lW8sYRmvXQVxYA2jPjkhhfpIoJf4WkIJkgO+n0y2pLO/GOiNmjIN1YA6LHpPyRr\n3+EfZsTPzt/bkmXMB/BcQt8W3foQYwXkkXAhBRdUYPA1zUo9tsZ/Qo9o\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAMt29LeNzEBb5k33\nW406AS4WoMKOITqQMI1yeVesplVemtqUJ6d77qzbCiuoOK1GcBuuXontj4MIrTet\nU1cAEoSIkP6K+qsIvubpjYHTV7dz/LHz6aQoduAkIM6dUYRpSqyZTxmMmdZshhpE\nfp5ZJ+Tbt3b44gRQ6UoTeks2E1rZAgMBAAECgYEAyzNme9sV3kDp5Xvg507C1vCq\nZSPlc8OFef6VyUYYaLIvHZVRdSeE2wV3RtqeoA707/BZYo7rAQatWCm2TfE4i3N5\nNeN8fAH0Le8iSWOJGcLPAYC06dkN7F0l2NWaeTJnQNv4fKI4IEmnQAZUpqg7uLG4\nUnqIImnvbHm+E7e0DsECQQD1WuLmHG/8juPY3RY1FPlr7BJrNkUb2DJhADpR7GY2\nY4pwGk2dXrSsE93NwrmxiBTygsZQVMvPD4qcGefZ0y2FAkEA1ErNEmPLYRuwgkl5\nUO7hN7N8qYu7fPvG5E1A+Jqk9j7HqEkmAhSOlmDlGHxKzEF0BZz+r0zSbkl9uKM/\n1tCeRQJAWaAtqmlQ7y0zRhDc/979jdLal5dnf1hmbtCqfSqh29RYycKR/56M2R8Y\nswUi2Bshq8ThtI6FNMo0k/lSnFtsEQJBAMkTGG4Eq8wMqACfixLHT/asQLVuLmVR\nLK9tJM7T2s+J4x5YOnHZ+rwghp3MjCQvEq+GZgywHNhtL3FE3uCetGkCQCDI7FXo\nXImlV3NBnL6k1NJbZ1ji9KHr4XgePWrcYj7ACmN+A3fdL9CIgym278uX/AIp3/Rl\n66aDqdKxDyuYnOU=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEA4wDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA1MDg0MzIyWhcN\nMzYxMTAyMDg0MzIyWjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAr2SiLPZjGJwV\n+n+1wTakrUmeHfKbCDFtHBSf2T5EwjEHr3M/Gxeh0Vq3Eg9ADF9pWSFyV7+B2H2K\nxB1PZqv3e6MpJ0ohWsdPaJV+vhOnp/PdjpX75E9/CPYUxBeDShMcRljSKNC5EsBv\n0+p9YUN0Xxj6+45DugqHNat9czuBZQkCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAS9ueMCcx810aqI40/HA4q9SS\n/PmmP5yoFaU8a/pwMJZ9E3mtMsPAYlmqmd0XrHKJN3/Pa8K8fkQRcA8I6Gd6bEiu\nqJkmjmS322JiUddspqoVtXtAP4uuy4fVvakq2kXrptD6KwFrlMHB9am3nHQaSCPn\n5saGUVlRqY8f2MGfDDU=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICeAIBADANBgkqhkiG9w0BAQEFAASCAmIwggJeAgEAAoGBAK9koiz2YxicFfp/\ntcE2pK1Jnh3ymwgxbRwUn9k+RMIxB69zPxsXodFatxIPQAxfaVkhcle/gdh9isQd\nT2ar93ujKSdKIVrHT2iVfr4Tp6fz3Y6V++RPfwj2FMQXg0oTHEZY0ijQuRLAb9Pq\nfWFDdF8Y+vuOQ7oKhzWrfXM7gWUJAgMBAAECgYEAnr6CWheWkUuUSOkV5A5E9eJP\njeNqlfvGOUghdUp6iRg/UHkKgMbe2tE0KNBMs+YXP2iaSPk32G2oDuBIYTD8CBdZ\nrRE1d7W4rid23Ly6n0M/bIcVNgKowG6on2H0X9fXkxuAXZXnwDE5jAGIWWI3Tjz6\n5/JzMGEAWlZA+iKe9tECQQDa7q8JBcm72brqv8mDiesjNTBwtEDEDuNWAGwFMJTd\nQ8U+3rD0lr9Ppd6btGh+QevFWxsPIx3PsBkWtG0j6vSDAkEAzRbNNnH3Xm0dwhCB\n0H6Rgp1+JCrfiSolxBYl27hC1sLTb1I5AtVAtJwMonoQq0yEMRwiqV/0etmeId2D\njCnCgwJBANYnwoo14jbh7ahxwIHuKFeBUQf+Gpht480djoypEAU8pLYyCbDHwQ39\nN7rhh5FxlFqyGs78z813+aKvDU+kJlcCQHvBxaWUEfyWBb4EbgFdTvsthF/Yyzkf\nCNkRsFitERA9Uo87Y5G1E62o+OrWk9Z6fs6Pts7US1gSl5zB6c6bqHcCQQCnu/qf\nGADa0GfZpRS+cjMgi/9xIVH7ZLPiydHfhLybDiYz+tLBaNmbhd1o8O0+fbZ8q3fQ\nDpRpDA+KXUniNSNV\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEA8wDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA1MDg0MzIyWhcNMzYxMTAyMDg0MzIyWjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAx68Ypi1/PPKp\nNz5U1ftQ1bwSEgV56hLq6JPsaMk9XRBmKSyyhbWm45al1wLVZXPYcxiQ5yEaJLm/\n/BtShUjlehDXCw0C3SnBtPeqDpXLybB/HtdYv8djRETYqO09Q8HM4Fiq08AGdM2z\nE9Np9R+Iqgi+Vuy2OwgUFAnHDMBxwPUCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAIgoA2OliCpAwnUqPxCjnu6kQ\nUgbaSRPCzkzUZAxfH8SYtThJ45QqBzKEkiCfWuGWDjwVEvrKr0e12mtBcCHQEmWE\nMlUzCVLicFCWK6X1I+A+suKzorrsiPBnZ86gTG9Xb2xboy6C/JXdafBjpLCkJ1eW\nwXd5ZqYg4Dek4QxErFk=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICeAIBADANBgkqhkiG9w0BAQEFAASCAmIwggJeAgEAAoGBAMevGKYtfzzyqTc+\nVNX7UNW8EhIFeeoS6uiT7GjJPV0QZikssoW1puOWpdcC1WVz2HMYkOchGiS5v/wb\nUoVI5XoQ1wsNAt0pwbT3qg6Vy8mwfx7XWL/HY0RE2KjtPUPBzOBYqtPABnTNsxPT\nafUfiKoIvlbstjsIFBQJxwzAccD1AgMBAAECgYEAjKBJUa607u1OMnOZN2FYGk3q\nw/pLU4ejG8whL+KZbpL//3tU9klpkNolTPjX5CzjgJsKYVu0l6yhAiETyn397Opd\nk3y5MWvJw5C5Q7/SYVIgeIjFOK244jZkD48JMi84b0xgUkCK2E1rIJsIw4MvC1pQ\nEToU/Ax831anR+8KnQECQQD/dcDofO1oTfiR3iOkX0H2xuhUmJENwknXFfBNzJpR\n/JwgXGGPrjESPHz+1o6o5l8RgaQaeBu4FzIqFlmYlmHVAkEAyBsomyECSYE6nU2E\nonjkktPgPg0g8Sc39MlmTfHNocNiYMyP76/dGHvTOKyRYjgdrOd1zqthJJug283c\nYGhSoQJALxdU3UaSOQUOik0pwtYwgb4++8E4FBI5rGWF68GIvQ5U9X4yGdthflwa\nKpwApk/5PG/qgVqcuX3FKI8AKymllQJBAJsXQY+KM+WYfT9x1zy9ihqqkIBHWKLP\njLTya5I5uPCJKHRx15Ujrq7NOdYRGdUQPR/HfS0i8vWWkUQK96TY9kECQQCyEFvc\ndhiZ6tla4NTRpyltt2mIuCELrlSemRsJ98/onqL1+1Zy+VpUaeooL59T3emwABIU\nZJNdLns/TIpQqgtG\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICEBAwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNTA4NDMyMloXDTM2MTEwMjA4NDMyMlowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDBn3c/RqJ0vrltvNlC\nDJAIrB71ujnFXg2bh3ZXOSGFO3SEAGxSGa4f5CfyUf+A35IJ/HGM/ahJESeFQosE\n37tjSqHidXAP/QUJ1ALRektA6ByACTkTqqJYgko4IhaIhlL4PoLaydLu9Ou6HDUQ\n97oEPxNUjW5gN/hY3V6kqSVFZQIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQBYVYw+23o+iY61FivgK+RpBxuGLC+W\nVeYU004sKLpVyJwvmSB56Fj4CNGDPNO0uvGT/xCbAQCMBU0eGyTbO/NfSpKXAn4e\nSUxaG1rEYLLtGkBHSZBsFOu8Mp7/ZV5G00dohpdDYs1R3eIsB5Yr34TMg46KKmkt\nmDnKpLIh+UJ3LQ==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAMGfdz9GonS+uW28\n2UIMkAisHvW6OcVeDZuHdlc5IYU7dIQAbFIZrh/kJ/JR/4Dfkgn8cYz9qEkRJ4VC\niwTfu2NKoeJ1cA/9BQnUAtF6S0DoHIAJOROqoliCSjgiFoiGUvg+gtrJ0u7067oc\nNRD3ugQ/E1SNbmA3+FjdXqSpJUVlAgMBAAECgYEAhjKvZMThLkdOn/eHIVcxsUES\nyD+FcP0qM0TlSbkIOZ6muCLO8OxpmiL5aONaUokiYBd+4DijHdls6djgH8WtywQt\nvJqEzPRKe2KHKY6ixYEcE9R3uVyGnl1yXK1K+qoNtejdf4Cky3ctmSgVWmXs6SQM\ndp6GUXxVlBEuKMK05RUCQQDjIe6tpgz/emRfRSupnnR7aXFAfzovTOWLkr8jakXF\npRsKq9CxeMAMpZ3s0m0hIQ7RevfNgGt9Yq13KbYcj91HAkEA2jtAcbzcRWtnE+Pl\n7i7KP/Ph4TSLVqTkvEptptPwFEwMIpeA9KiLWQI2Xw/vmDkeoepiMyC9uWxcloiO\nzSlt8wJAQXiHf0CNIJtcEWYz5snJE8XaIlhKIlZNGIVtWT0J7aXg/Jt4JaAD4+Fd\ne2VQlascxV9nzLHGyjbGf8HjP6psgwJACfkZOdlqq5V78XHByT/EKGYJ1ZPkJkKE\n3YH9PtmCqDrNdys7TnMBY0DxoSiGR4uctcOTV0jQws+L76kv9XpGNwJAV9SzZV+q\nKenbu6fTDg2xqvOWV/vhehnXp56dNvrW/Mz8gZDyE3k0mmpZxC2teZk70BvVzxv2\nig/RYzgKF162Mg==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-hq\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.1\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-hq\"\n        set phase1name \"to-hq\"\n        set proposal aes256-sha256\n        set src-subnet 10.3.0.0 255.255.255.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig router static\n    edit 1\n        set dst 10.0.0.0 255.0.0.0\n        set device \"to-hq\"\n    next\n    edit 2\n        set dst 172.16.0.0 255.255.255.0\n        set device \"to-hq\"\n    next\nend\nconfig firewall policy\n    edit 1\n        set name \"lan-to-hq\"\n        set srcintf \"port1\"\n        set dstintf \"to-hq\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 2\n        set name \"hq-to-lan\"\n        set srcintf \"to-hq\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 3\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
+      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-AGENCE2\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.2.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.3 255.255.255.0\n        set allowaccess ping\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEBkwDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDYwODIxNDlaFw0zNjExMDMwODIx\nNDlaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBAL07t62kpjhq1zdaBe+I2hE9LpFBKdaXvm0FwCmC\nfMlF0/uryN5e6oGMb+knQ7zVaPtTjJifDGL32jw00vQGYaafjCnkStjPwmfbYErG\ngcDkHYWMz/D2TM5YLPdxltKtSKHysqwuhHb+UrNO3Qjp9A+G+xBAa2QFh4Tm7FOw\nqCo/AgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBAANb8wvmv2u+lDbAgKBKMbsR18IL8TVZ96opBz2vd1YWyteBRQrV\ncbzPzv5dtXVweGL67sr+QGnPLrrR0Ojm3xTKZhXoxUEMMy9HT2YBfzh5EXG88MT+\nbt6se1NZ/UK7cxpV/ePH80kHGLwosSnmu7cNrR3IAOrGyNvdh4IYPMnw\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAL07t62kpjhq1zda\nBe+I2hE9LpFBKdaXvm0FwCmCfMlF0/uryN5e6oGMb+knQ7zVaPtTjJifDGL32jw0\n0vQGYaafjCnkStjPwmfbYErGgcDkHYWMz/D2TM5YLPdxltKtSKHysqwuhHb+UrNO\n3Qjp9A+G+xBAa2QFh4Tm7FOwqCo/AgMBAAECgYAn/+CCjuQn1sWpSJkqmdXmgPU/\n9PNADhFNgEKvQ4rXDLCTaStrfcq6GZJqSUdzOfUX8wAsHqqCnPt/cHcK5/Jp5WN5\n2GE2FVpyB71e7TasOGEqO/JvuaJIkBDO9VYnilgvryZcNdrH5q3aHyOwRByzla5V\nrxzJhW3sFfnKv6DoMQJBAPhUnceuiVBsPUfaG/S1crCjZ3v3GdpGYo8CUSmiEZoQ\n9H6IXuwwliZ8Rmj0CmSq/p/Twurubm6mS02bpt9lHicCQQDDE9vMkuCXCU1L2i31\nanvwABWU31noaTXMzN1GLg/rQDb0lIkExZH7RJGBsqy7oozzUI+FKDyHdaBZIyCo\nwropAkEAlLqBAP4MqYkaLrV3ttkRhq9nJDy7VBqBnushVxEE/8QV2s6sI0N6OjSG\nKwe2TdKHy4uVmwUQSN76DNIjYHp8UwJAMnHJLb5xaz0RiuLRbZvqjqZG7mdPRYUn\nT11Oft5caXYCf/6E7AH2/OW/Rq2gcyjWj/iuFD3SYSjunP4zbNBl+QJBAKxHbmQd\nmCA2/l3YJcNOUPOBRAY9FmAQDM5AppLZs+GJXCdUiX0ectXSMpYcrlcXNTp5dxOF\ngn2XNC4WZUtGjDc=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEBowDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA2MDgyMTQ5WhcN\nMzYxMTAzMDgyMTQ5WjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAqM9ESEm1kw0A\nL3ozEOTq9yb+YQRW+TeKWNT10Uu9jlp8nJcQLtN+dolk+LGupx2ZxeD0kbrPPlEL\nWP94/b6Ngzh+8UYR+0w6ajuTJLDxo9YYkuGjfZx3Seub6OMA1i5iOc3rRbhykJoc\nao8Csr1pOgMvfr6zDOGBs30bNRnGOLkCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAaXyvqdYNBN+Cs43rMJ6PSPHY\nnGSwVPFl527TzeFDrBDxfww4jAjvzCg3gMhvvolWy9IzOJBrMdMW/U4zuV7KHti/\nTXWPK/ZgheJ0H/nwIY11gEwZ9p6Y9NXZ6B4NFTap5wXkqBsXr7Q/6MvaPqkMfzaS\nU7SY1J+t5lszCTja7/I=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAKjPREhJtZMNAC96\nMxDk6vcm/mEEVvk3iljU9dFLvY5afJyXEC7TfnaJZPixrqcdmcXg9JG6zz5RC1j/\neP2+jYM4fvFGEftMOmo7kySw8aPWGJLho32cd0nrm+jjANYuYjnN60W4cpCaHGqP\nArK9aToDL36+swzhgbN9GzUZxji5AgMBAAECgYATbTbYctMYhyh8Tj3ONensY2pm\n088GgyPCsU9QtLytwzAP/Tp5iRFGpu0dyaTlynxFz2uV0b/D1iPOLChKW0GBpmLL\nrhOaEOidtaAl/o3v7wFVQkjx+qpg/durk21QuImIP6GaXslmG6MAaknOGT8uet+T\nzc4xSNmRjlenxOgc4QJBAOC2LFcrCxGEvWAbITZFoAso4MA2pYJob9JQsoADnE2k\nRw6WAWyiqR8MWkCNlQ3nMGMf5SOjhsgyvppUc4UoPo0CQQDAUHje57+JkhTrSorj\njxQfEpSc517NRCeMnEnD1TxlC0/qg5C5HgLfKF2EfNeF6v/ZBAlMyaGxeyMNO3ME\nS13dAkBlNQeBdwx0JnHYsD9kHzW28QFQ8QvYUUtT0S6kA3xJZ9ztD9iyYgyDxF99\nxYbFjUO40Wu1gng5AMnh3nltFrQdAkAMyEyAZF7ywebqDLZWkbgAqLeABlDiy9jl\nG647efzdqnbRW5VO+JOwSXqNx857dDc1MXN8yxoYNdsKkhz++BNxAkBneiG8/lpH\njBc6sVZXJ+hcPe33EUd79fvin+Ie9EEych7CsdPtUL8cj8okyXrAcrBr2d+yYJAC\n4rHd3SqLTXvH\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEBswDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA2MDgyMTQ5WhcNMzYxMTAzMDgyMTQ5WjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAmZLeSAXGFe1z\nBkod9fEmUsHKqBr3D/LUhR5GAAuPo9MaesXUtJTEEkH74rGgoyXkU3Iuy4ysatBR\nmSHvcd2e69/Q5mJgyXvpLeA+ECJoBeBQl2stt2P0Xwys0zY8Ui3lkG+PqJL4zz8z\neWSEMAlBe5EM8Jeg486dUQoXvck2SccCAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAMWnWSACm6jE2zXfaNPrwQwHQ\nuej/Y19ZbLADSg8kWfDQNdBoFha+1fLaWdrh406WIuXrEf8eAcevtvZUDNGQ+N6/\nKfkrZDBr/gZ4rBEeYojQltpaD2CAP6/q+BbWeO4j/07vDP39zllyeQicY27/UMcG\nhziQIMTtpswvXm/hVUg=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAJmS3kgFxhXtcwZK\nHfXxJlLByqga9w/y1IUeRgALj6PTGnrF1LSUxBJB++KxoKMl5FNyLsuMrGrQUZkh\n73Hdnuvf0OZiYMl76S3gPhAiaAXgUJdrLbdj9F8MrNM2PFIt5ZBvj6iS+M8/M3lk\nhDAJQXuRDPCXoOPOnVEKF73JNknHAgMBAAECgYAyhZaKqxuXax5EG23v0v2AjDBX\nTUep/4DaqjLtIOCITJKRgTOQlMBMIVj0IuttwLF0okOywvyVxyKQ9hEHrJjzDZ9X\neNEcGYeeV+E8KPvtlRgz7m5BGuJGC4zUTXZK8HN16osl6N8+qk/YSe18CYfbZ9/0\nuV3L7QR/t1TLQKRiwQJBAMgT7t5msqF3jn/d42rTC5pHaB8dHG1TzkGEVO9AdZnb\nZrIx5IrxmMTm7630FbrAIntrNEYP05i3Vh/t8RoBnUUCQQDEf3KG0dmNjVyCStlJ\n9iuPxmTjW/BAZRci5T3YqzWxynGTjsaMYlB8mLCLFWYe9rKp96XKRRpXVH49y+sE\nUl2bAkEAgdSleX4MxkhNmN3EeApRCiDyCNacHrl2Kv+TGdmrNlav0kwb8KmLp6Hv\nv+KWwyNwfMP5HMmiVgQKCBggDu8jPQJBAK7lMS7GwXi4hcqCjHzEW2mREGM9hc4L\nLFim6jFb0mL46baIsjhpmXINBbYFyettcQDPqAUtFJD+Z47hXcFu/lkCQEdktVEQ\no+tOQsWDobKQW1m2kq/bQX/3QEIJ73RqGAThtgN9dE4PVhPZy7AV1KvCJcbE2Bv5\nRUClCauemEDl3TI=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICEBwwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNjA4MjE0OVoXDTM2MTEwMzA4MjE0OVowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDidEyh6WToJihQwCmm\n4w2r+IB/3Vpxsb+lYs3/NzNtPtyoRAOKAGXWx3n/p+B9UZT59mMZY1voFDwImXuN\n4Hi5RSUdZm4YjyTl7P9prT7tLf8WmjXh2ZX/RoJI/rYCQpujDACmIc2Jj9iMIvok\nRnYAYyCMtpbsfDUenyj8WXuCpQIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQAxHk9JEQBO2of8GHKmQn/AAFBOE1oc\no4uydd1gM3CV7QEiXmL+AOlI9L9Bxs5BJx+UjlJjVWQAGvTMoZgpRtCmJ7+rB1m1\nq3Vv+f1bgI/GOa5F3r9PwFdCibbZiH1YTdehip6UCLGwxyOx4SFMAyXn/WmMdwfF\nQr3siKpc7Gbq3w==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAOJ0TKHpZOgmKFDA\nKabjDav4gH/dWnGxv6Vizf83M20+3KhEA4oAZdbHef+n4H1RlPn2YxljW+gUPAiZ\ne43geLlFJR1mbhiPJOXs/2mtPu0t/xaaNeHZlf9Ggkj+tgJCm6MMAKYhzYmP2Iwi\n+iRGdgBjIIy2lux8NR6fKPxZe4KlAgMBAAECgYEApuhxUyVjang1Xs9D4+2WNhqD\nG7ta3lHUn2Gj02gsT2j12k/HDAAfD58XHIfvvm5TD6m6gQvqwbOoS+5UUs4QK5q0\ncOcQiP6lHqwNGIaY9dB+5CWt18Tfk26djlm2YHGkHB0aYAUX++KMwRq72otiSi9B\n//FtjqlWVfmuRvQsfEECQQD7o7aOt8GMx5TU6wJyc7hmAKpW1UEQeysifOAVb+zF\nvhe6h+6ilL5daUspDYQirfQ+l9ru9pYigm7pFTZ9tphfAkEA5mDc/NhtfA6j2VpV\n/xbdDT9aLWeYSqJ1bs5kogUTfrTwTeAu+k27tVB0EZk+KWUPhr+P19XtlyYZBzRq\nhRbTewJBAKZw/ssfV/IaAKNkXlX9nLY7MnAE1ehkz38cQctsIJwaw+8pAfqfj9qR\nTpl0yzV1Adx07OaqS1vAEkQxN72nDNkCQG78mVpCljRfBTbQW3/CLwqTy8j2EJtc\nOwD/8+FOWr7/QonyCA/UZSsLsG9OCXF924YKQa00xfq8gvBCo1Ks1YMCQHIj4kLl\nTBMpyLtkJ/OwZZxYpOIsCmBgLDIONZ1oK9MtciyC9bGFcCN2V50jzk3sEYEDx5k+\nmW5CMz6k2RnOYwg=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-hq\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.1\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-hq\"\n        set phase1name \"to-hq\"\n        set proposal aes256-sha256\n        set src-subnet 10.2.0.0 255.255.255.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig router static\n    edit 1\n        set dst 10.0.0.0 255.0.0.0\n        set device \"to-hq\"\n    next\n    edit 2\n        set dst 172.16.0.0 255.255.255.0\n        set device \"to-hq\"\n    next\nend\nconfig firewall policy\n    edit 1\n        set name \"lan-to-hq\"\n        set srcintf \"port1\"\n        set dstintf \"to-hq\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 2\n        set name \"hq-to-lan\"\n        set srcintf \"to-hq\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 3\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
     },
     {
-      "id": "1793868202314-v",
+      "id": "1793953309755-t",
       "type": "linux-pc",
-      "name": "PC-AGENCE3",
+      "name": "PC-AGENCE2",
       "x": 1180,
-      "y": 460,
+      "y": 320,
       "isPoweredOn": true,
       "interfaces": [
         {
           "name": "eth0",
-          "mac": "02:00:00:00:00:95",
-          "ipAddress": "10.3.0.50",
+          "mac": "02:00:00:00:00:8b",
+          "ipAddress": "10.2.0.50",
           "subnetMask": "255.255.255.0"
         },
         {
           "name": "eth1",
-          "mac": "02:00:00:00:00:96"
+          "mac": "02:00:00:00:00:8c"
         },
         {
           "name": "eth2",
-          "mac": "02:00:00:00:00:97"
+          "mac": "02:00:00:00:00:8d"
         },
         {
           "name": "eth3",
-          "mac": "02:00:00:00:00:98"
+          "mac": "02:00:00:00:00:8e"
         },
         {
           "name": "lo",
@@ -1714,7 +1709,7 @@
           "subnetMask": "255.0.0.0"
         }
       ],
-      "defaultGateway": "10.3.0.1",
+      "defaultGateway": "10.2.0.1",
       "files": [
         {
           "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
@@ -1767,6 +1762,155 @@
         },
         {
           "path": "/etc/netplan/01-lab.yaml",
+          "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [10.2.0.50/24]\n      routes:\n        - to: default\n          via: 10.2.0.1\n      nameservers:\n        addresses: [10.0.0.10]\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        }
+      ]
+    },
+    {
+      "id": "1793953309788-w",
+      "type": "firewall-fortinet",
+      "name": "FGT-AGENCE3",
+      "x": 1000,
+      "y": 460,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "port1",
+          "mac": "02:00:00:00:00:8f",
+          "ipAddress": "10.3.0.1",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "port2",
+          "mac": "02:00:00:00:00:90"
+        },
+        {
+          "name": "port3",
+          "mac": "02:00:00:00:00:91"
+        },
+        {
+          "name": "port4",
+          "mac": "02:00:00:00:00:92"
+        },
+        {
+          "name": "port5",
+          "mac": "02:00:00:00:00:93"
+        },
+        {
+          "name": "port6",
+          "mac": "02:00:00:00:00:94"
+        },
+        {
+          "name": "port7",
+          "mac": "02:00:00:00:00:95"
+        },
+        {
+          "name": "wan1",
+          "mac": "02:00:00:00:00:96",
+          "ipAddress": "203.0.113.4",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "wan2",
+          "mac": "02:00:00:00:00:97"
+        },
+        {
+          "name": "dmz",
+          "mac": "02:00:00:00:00:98"
+        }
+      ],
+      "runningConfigText": "config vdom\n    edit \"root\"\n    next\nend\nconfig system global\n    set hostname \"FGT-AGENCE3\"\nend\nconfig system interface\n    edit \"port1\"\n        set vdom \"root\"\n        set role lan\n        set mode static\n        set ip 10.3.0.1 255.255.255.0\n        set allowaccess ping https ssh\n    next\n    edit \"port2\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port3\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port4\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port5\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port6\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"port7\"\n        set vdom \"root\"\n        set role lan\n    next\n    edit \"wan1\"\n        set vdom \"root\"\n        set role wan\n        set mode static\n        set ip 203.0.113.4 255.255.255.0\n        set allowaccess ping\n    next\n    edit \"wan2\"\n        set vdom \"root\"\n        set role wan\n    next\n    edit \"dmz\"\n        set vdom \"root\"\n        set role dmz\n    next\nend\nconfig system session-helper\n    edit 1\n        set name pptp\n        set protocol 6\n        set port 1723\n    next\n    edit 2\n        set name h323\n        set protocol 6\n        set port 1720\n    next\n    edit 3\n        set name ras\n        set protocol 17\n        set port 1719\n    next\n    edit 4\n        set name tns\n        set protocol 6\n        set port 1521\n    next\n    edit 5\n        set name tftp\n        set protocol 17\n        set port 69\n    next\n    edit 6\n        set name rtsp\n        set protocol 6\n        set port 554\n    next\n    edit 7\n        set name rtsp\n        set protocol 6\n        set port 7070\n    next\n    edit 8\n        set name rtsp\n        set protocol 6\n        set port 8554\n    next\n    edit 9\n        set name ftp\n        set protocol 6\n        set port 21\n    next\n    edit 10\n        set name mms\n        set protocol 6\n        set port 1863\n    next\n    edit 11\n        set name pmap\n        set protocol 6\n        set port 111\n    next\n    edit 12\n        set name pmap\n        set protocol 17\n        set port 111\n    next\n    edit 13\n        set name sip\n        set protocol 17\n        set port 5060\n    next\n    edit 14\n        set name dns-udp\n        set protocol 17\n        set port 53\n    next\n    edit 15\n        set name rsh\n        set protocol 6\n        set port 514\n    next\n    edit 16\n        set name rsh\n        set protocol 6\n        set port 512\n    next\n    edit 17\n        set name dcerpc\n        set protocol 6\n        set port 135\n    next\n    edit 18\n        set name dcerpc\n        set protocol 17\n        set port 135\n    next\n    edit 19\n        set name mgcp\n        set protocol 17\n        set port 2427\n    next\n    edit 20\n        set name mgcp\n        set protocol 17\n        set port 2727\n    next\nend\nconfig firewall address\n    edit \"all\"\n        set type ipmask\n        set subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig firewall address6\n    edit \"all6\"\n        set type ipprefix\n        set ip6 ::/0\n    next\nend\nconfig firewall service custom\n    edit \"ALL\"\n        set protocol IP\n        set protocol-number 0\n    next\n    edit \"ALL_TCP\"\n        set tcp-portrange 1-65535\n    next\n    edit \"ALL_UDP\"\n        set udp-portrange 1-65535\n    next\n    edit \"ALL_ICMP\"\n        set protocol ICMP\n    next\n    edit \"PING\"\n        set protocol ICMP\n        set icmptype 8\n    next\n    edit \"HTTP\"\n        set tcp-portrange 80\n    next\n    edit \"HTTPS\"\n        set tcp-portrange 443\n    next\n    edit \"SSH\"\n        set tcp-portrange 22\n    next\n    edit \"TELNET\"\n        set tcp-portrange 23\n    next\n    edit \"FTP\"\n        set tcp-portrange 21\n    next\n    edit \"TFTP\"\n        set udp-portrange 69\n    next\n    edit \"DNS\"\n        set tcp-portrange 53\n        set udp-portrange 53\n    next\n    edit \"DHCP\"\n        set udp-portrange 67-68\n    next\n    edit \"NTP\"\n        set udp-portrange 123\n    next\n    edit \"SMTP\"\n        set tcp-portrange 25\n    next\n    edit \"POP3\"\n        set tcp-portrange 110\n    next\n    edit \"IMAP\"\n        set tcp-portrange 143\n    next\n    edit \"SNMP\"\n        set udp-portrange 161-162\n    next\n    edit \"SYSLOG\"\n        set udp-portrange 514\n    next\n    edit \"LDAP\"\n        set tcp-portrange 389\n    next\n    edit \"RADIUS\"\n        set udp-portrange 1812-1813\n    next\n    edit \"TACACS+\"\n        set tcp-portrange 49\n    next\n    edit \"SMB\"\n        set tcp-portrange 445\n    next\n    edit \"RDP\"\n        set tcp-portrange 3389\n    next\n    edit \"MYSQL\"\n        set tcp-portrange 3306\n    next\n    edit \"SQL\"\n        set tcp-portrange 1433\n    next\n    edit \"ORACLE\"\n        set tcp-portrange 1521\n    next\n    edit \"IKE\"\n        set udp-portrange 500 4500\n    next\n    edit \"ESP\"\n        set protocol IP\n        set protocol-number 50\n    next\n    edit \"AH\"\n        set protocol IP\n        set protocol-number 51\n    next\n    edit \"GRE\"\n        set protocol IP\n        set protocol-number 47\n    next\n    edit \"L2TP\"\n        set udp-portrange 1701\n    next\n    edit \"PPTP\"\n        set tcp-portrange 1723\n    next\n    edit \"SIP\"\n        set tcp-portrange 5060\n        set udp-portrange 5060\n    next\n    edit \"TRACEROUTE\"\n        set udp-portrange 33434-33534\n    next\nend\nconfig vpn certificate local\n    edit \"Fortinet_CA_SSL\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICljCCAf+gAwIBAgICEB0wDQYJKoZIhvcNAQELBQAwgYAxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxFTAT\nBgNVBAMMDEZvcnRpR2F0ZSBDQTAeFw0yNjExMDYwODIxNDlaFw0zNjExMDMwODIx\nNDlaMIGAMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UE\nBwwJU3Vubnl2YWxlMREwDwYDVQQKDAhGb3J0aW5ldDEeMBwGA1UECwwVQ2VydGlm\naWNhdGUgQXV0aG9yaXR5MRUwEwYDVQQDDAxGb3J0aUdhdGUgQ0EwgZ8wDQYJKoZI\nhvcNAQEBBQADgY0AMIGJAoGBAPCRAIelSCfJglnlwXPlra8lA2ABINOC57rY8uTR\noFPwSqVeBC2ZDYCjs1Rp9V+IK1CiL3CpBOlF8s1QEZr29FQEwlL6+aYBA9DVVHeS\nN+OyTxmC47yUaWoRkJ4A8WLQkFTMZ5ZQY5xSu8lfARC9HPIltTlqXuScW6HZdnCW\nRDn9AgMBAAGjHTAbMAwGA1UdEwQFMAMBAf8wCwYDVR0PBAQDAgEGMA0GCSqGSIb3\nDQEBCwUAA4GBANhyPwOlrdv8X8galrUlCaDBqJZATe/TQ2E1Ldnzzvnt6UwyBDG7\nElTQIYoUipHsWbl9ci/Gj6VfUQV26vvol38QwfDmwLJTjc3BY5GRn+Vh3kVDQMin\nZSUZGsvFX909SBDQyHwndFW/4gK0HtzY9jhzB7nhE4VpgghCJoYQxnGi\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAPCRAIelSCfJglnl\nwXPlra8lA2ABINOC57rY8uTRoFPwSqVeBC2ZDYCjs1Rp9V+IK1CiL3CpBOlF8s1Q\nEZr29FQEwlL6+aYBA9DVVHeSN+OyTxmC47yUaWoRkJ4A8WLQkFTMZ5ZQY5xSu8lf\nARC9HPIltTlqXuScW6HZdnCWRDn9AgMBAAECgYBYq1mipc0+vQuKzyDK8zFdiSsB\nS+kpjOqU+DovFQUfa0ZYRZsMo4lSjQQgbR3AJJSyl9UclW/1+45PFuAmWjgbuNYG\nbbEN4lRPbM2eGP6JlueN2lhF4+7/1FuixoQbZd11TUvCK/VGLhGl4ES6J6+8AszC\n9pAxudR3IXAUZbkFkQJBAP5c1Kp0vzK+I+EKfmWHiRBg0VN0VdVOtM3dRk6QfOyL\nqgioI1hZfv3/9orWZY3umeku/CJX4YxGgGo/R7FQEK8CQQDyHW+xTbZ8hNHdeLMz\nl4cgwL7x8gxdzqkwlnu/s39+x3aNTnCj8P8SGL7XnXsGCqeQ1QaanT44KUxw9j1O\nyhMTAkEA3+Mr2UFbjblo8UsASDONRFpDxZYvesqFQHKU0NBC9R5Vsrr0KW7U5ZNo\nGXpu9wfedy5BBaWexI7Ftz8txnd3xwJARFdgxrh78UwAfTZrxv1XrDwb6el76iLC\niS+BAMynCV8+LIberrgBF9eaTvxp1Hu/btdixNPr0yh9JkmrZokNtwJAcV6EV0fP\nSgv1tcRGJWQN/uHKcHc8ia25Zu74dHIg2EdFOI2ndbVX+SbRiCJ8XVS3OzltEkqK\noyvxHipi3M66Zw==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_CA_Untrusted\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICqjCCAhOgAwIBAgICEB4wDQYJKoZIhvcNAQELBQAwgYoxCzAJBgNVBAYTAlVT\nMRMwEQYDVQQIDApDYWxpZm9ybmlhMRIwEAYDVQQHDAlTdW5ueXZhbGUxETAPBgNV\nBAoMCEZvcnRpbmV0MR4wHAYDVQQLDBVDZXJ0aWZpY2F0ZSBBdXRob3JpdHkxHzAd\nBgNVBAMMFkZvcnRpR2F0ZSBVbnRydXN0ZWQgQ0EwHhcNMjYxMTA2MDgyMTQ5WhcN\nMzYxMTAzMDgyMTQ5WjCBijELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3Ju\naWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UECgwIRm9ydGluZXQxHjAcBgNV\nBAsMFUNlcnRpZmljYXRlIEF1dGhvcml0eTEfMB0GA1UEAwwWRm9ydGlHYXRlIFVu\ndHJ1c3RlZCBDQTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAx0nbsFywNqx+\nHsf9no1mihnlCUdDkWooxCXjCShHLiPr8A7HslKez0Y3Y2cJImIja4tqbg6fZ5eR\nsz4hBIGnasLNxRJ/OftkP8mxWjVUytjHHdiEw573xVpPCNZ7VPz4mTo8+Ajv8/mf\nfUGTOcvYIlvmqHIzAXMzsjMwhnXCRm0CAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAV3cAdA3Cbi5d7rmdAp7BBGmr\nMQFRbO3IrcuxO+L9QPIugV61AitIMlXVQ9vEG0yw1IIy0avQgk/lgLtfTthF+vbU\nXpKGYB1f2ClryPYg/uMivhG4Jd5gEjJKcreE4hagFuMw17d8PtpCrlHZM8gKGqpN\nyZo8nWlicYosemY3QP8=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAMdJ27BcsDasfh7H\n/Z6NZooZ5QlHQ5FqKMQl4wkoRy4j6/AOx7JSns9GN2NnCSJiI2uLam4On2eXkbM+\nIQSBp2rCzcUSfzn7ZD/JsVo1VMrYxx3YhMOe98VaTwjWe1T8+Jk6PPgI7/P5n31B\nkznL2CJb5qhyMwFzM7IzMIZ1wkZtAgMBAAECgYBGo5lpdBFJ7+5sfrsZPknAXdlf\nZpE+tABrNnq5Pjus0TLKTpLeVIbSNbNgWp9UPrELZ8l75Vb/YyxT+ou9iy+J+cWZ\nEyNEAcfekICBaYIed+37qZ+Ltlr6jfiF8uiiAhSA6H27NPFkVG6Wdvu49+8gIk9n\nzDysN4IwkidfMGuwQQJBAO/IN368X56DM0x+m/foanQRi+9SWaS5uyqDTsKuIYpn\nKqYeE5AFoRUlgOmykGQ/3ZyZRjcXFQm/ikNE4VA7xdkCQQDUxICWVgxzAlN6MF0b\nghvTMXEeejqoYF5qNpR15bMqBvwiL7wWNiaowj8byxAHYxsvZ7iLmH2+qF52JcXm\nqAS1AkA900AL24JEGswlUxfgCfs4xjVwlakrggAya/zo0YEwcH1cq7Cbl/f6vdrJ\nZxM35ge8EwE5vyfbhZme0qnNyDuxAkEAiQoDlFDZ9d2CrMmnvob/qvhGVo39Z+Oi\nDCEZYBJRYnlbPh2mtFuubLWn9hvFOCzSHqdcirTuELXbGZfcrmJ7nQJAWyNNqaoq\nc33NtfMC0cm3rXZ19xf0kpXSQSZuivK/HGZreeNBhfEf521hQ3hqCfX7SYcvdCW8\n7DGsjzi5tjuqpw==\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"Fortinet_Factory\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICejCCAeOgAwIBAgICEB8wDQYJKoZIhvcNAQELBQAwczELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTEUMBIGA1UEAwwLRkdULWZh\nY3RvcnkwHhcNMjYxMTA2MDgyMTQ5WhcNMzYxMTAzMDgyMTQ5WjBzMQswCQYDVQQG\nEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTESMBAGA1UEBwwJU3Vubnl2YWxlMREw\nDwYDVQQKDAhGb3J0aW5ldDESMBAGA1UECwwJRm9ydGlHYXRlMRQwEgYDVQQDDAtG\nR1QtZmFjdG9yeTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEAuvDbO/rHovf4\nCZX6+b38GiLcxV3shYeLisNsimmvMNY+bNkwAIQw5FXzVAScYp4nPUvbJ56vdhrF\n4y0OJtM/1C18jcCzA2ePhCe+IsfxD32aXaZ3ywogym6IxKQ0Yl5nhrJ7mudLcmUG\n0L0aFWEw/6eIB7C1vIvY85AQDotdE10CAwEAAaMdMBswDAYDVR0TBAUwAwEB/zAL\nBgNVHQ8EBAMCAQYwDQYJKoZIhvcNAQELBQADgYEAmUpYDec92hFM5UyjNyhpHjeJ\nWUc6ty7JljGZSQYQOz9wqlpCbIRtFTpKxaq9HzCfl84mo8GBzj4a9mX8qrOZwpH9\ny8Ljg0BvVmuCHuKn7aQD2XrN4/GNaqy1UXrErrnZHv7cG3Yty6NTdEIJTBguqXEF\nv0+q9/qv1jbt/ryN6ZM=\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBALrw2zv6x6L3+AmV\n+vm9/Boi3MVd7IWHi4rDbIpprzDWPmzZMACEMORV81QEnGKeJz1L2yeer3YaxeMt\nDibTP9QtfI3AswNnj4QnviLH8Q99ml2md8sKIMpuiMSkNGJeZ4aye5rnS3JlBtC9\nGhVhMP+niAewtbyL2POQEA6LXRNdAgMBAAECgYEAp3v7L3WzPtMjKpNw1Cfeohvx\n5/IKYmfaIWyM5kVhbEPGkgbT9uJ4W1qWMwQeiExho40+v/RwB0RdXveS4j4JxCgS\n4AjDrtxigzle21oYI4m0RFQztu29FImrjSylEhhttq6m3CPHFYpx3JsBDMvejKt6\nxRWEbItu8CqCALakQZECQQD4GGLyAyQF+oJPgsmc9UxFZXg1SrgPdGYfUC4b0fWF\nMBVg/uXyjQ1qc6z7fykY9IMKXoqfM3m1z+Jf78JrmcWfAkEAwOWoaTSgZ81W+B7L\ny8x+TnprkfZ9uOzOCRPUbRBXVq4OHmGuKREWrzyxv3zbhLh7Yl/qfCWp7IAPqhda\nphAtgwJBAJ2euLYzQp69wi6L1FVxDu0EA3QwLXI8LGl2gmTQZuEgZGTEbQlFjiF0\nrpD2AAFHzz02RXHRvWDCW3tCE05TWtcCQHiGBffV/fNdhV16QHORzclTDCsjC+Kj\ncwiQ70VF1IxALGonNh5KoxXSomy2oqIGcnFA5M206rruONtZxDXGHekCQF3j9pvC\n/LH5BjNfbwIhAGcT6ba0R2VV9Dp5Ss7rLYt5aAsORTGZUjjxwDqhumiseTJgCIw9\nM64C9R8BxoaCRtQ=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\n    edit \"self-sign\"\n        set certificate \"-----BEGIN CERTIFICATE-----\nMIICdjCCAd+gAwIBAgICECAwDQYJKoZIhvcNAQELBQAwcTELMAkGA1UEBhMCVVMx\nEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8GA1UE\nCgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9ydGlH\nYXRlMB4XDTI2MTEwNjA4MjE0OVoXDTM2MTEwMzA4MjE0OVowcTELMAkGA1UEBhMC\nVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExEjAQBgNVBAcMCVN1bm55dmFsZTERMA8G\nA1UECgwIRm9ydGluZXQxEjAQBgNVBAsMCUZvcnRpR2F0ZTESMBAGA1UEAwwJRm9y\ndGlHYXRlMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCpgMmmndvb35aa3ejj\nG2hdT2MsZxl1gVOIIC2Fy4SG/9HZYe9LpCI51LkIljRoh42N9z8unVzGfTFq5oKY\nNCNLBAcJUcLOljyg5c0nMqLKrh9Jj1j4DQtI4AZEwmsLilt9lBhHD6JMMsBkcPLh\nVeDvvLsYgBQrz77vs9/iEPNMKQIDAQABox0wGzAMBgNVHRMEBTADAQH/MAsGA1Ud\nDwQEAwIBBjANBgkqhkiG9w0BAQsFAAOBgQCNMVxl5QdtY4S8/MmMgGMfoGxbHGme\ncQWE+q8Y+eHt3++47sEj+GGu3SY/m8fmOkyyqu1SouS1khd2GQ0c9RnRnXrLu5XN\n4KR1AsbthaDGdBVo6BY6cGvpCH6R9DojuFKduOnu3HCtB+7a9M7RL9HN3it4JfP7\nanchNoMW9bzkcQ==\n-----END CERTIFICATE-----\n\"\n        set private-key \"-----BEGIN PRIVATE KEY-----\nMIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAKmAyaad29vflprd\n6OMbaF1PYyxnGXWBU4ggLYXLhIb/0dlh70ukIjnUuQiWNGiHjY33Py6dXMZ9MWrm\ngpg0I0sEBwlRws6WPKDlzScyosquH0mPWPgNC0jgBkTCawuKW32UGEcPokwywGRw\n8uFV4O+8uxiAFCvPvu+z3+IQ80wpAgMBAAECgYEAilj+vcqsr6qv7xlewzcUmMx6\nIrzHz9vNxRaWcVTqh5F3w1knCnMeKFuS5wpKHmM9S3lZjX+NQMjgM+OPBhHQF08h\nZirszEkMhmYRtm9fxUuf4NYVVugmH+UHs/ods2BT7M6PRiNuFGhXs/L6u/jhB3q9\nH6hJtJECVi3nxtIjTPECQQDXwRNDGRlzBN42SMDcthlFqD7ZDPP7VEKYRad15eiq\n3IQ6kFBhyuVo+6eWQwMEWE9KYxMDr8wgekzmVVPwkyGFAkEAyR8UWGr4BUTUGTZS\nKbFYYTfo0tupzQh0obgBMeIwodkWEAF0MbldxQQAIC3Xg83lPBzKMmHGl2WRBbVM\nhvbvVQJANmKtAFTrXVr0yKo+M2STqkNm1D+3oLr0rn2gYM+7fpZnnnuSR5Rlj7kf\n3Xi24fmAwzeGK3+87NLnX4hSyGnOIQJAIxbDC/INt42cm5F4oEGKs9t3SWJ9q4Hw\nJ07dFoDqDzK6wKwgQ5SdoYPjKboVwa8ocWZseIHKjhtwQ9ivs1RdyQJBAMBoj3he\nUFlxE8bXQ5fHvjXlZXekdsetnfWHVMZGBJ5JGxcygHwyB9dZJecj6nOT0hqW15bV\neOZxuLEcqv9thY0=\n-----END PRIVATE KEY-----\n\"\n        set source factory\n    next\nend\nconfig vpn ipsec phase1-interface\n    edit \"to-hq\"\n        set interface \"wan1\"\n        set ike-version 2\n        set remote-gw 203.0.113.1\n        set psksecret ENC CwoARQ0mMkNePz07QVNEV1I=\n        set proposal aes256-sha256\n        set dhgrp 14\n    next\nend\nconfig vpn ipsec phase2-interface\n    edit \"to-hq\"\n        set phase1name \"to-hq\"\n        set proposal aes256-sha256\n        set src-subnet 10.3.0.0 255.255.255.0\n        set dst-subnet 0.0.0.0 0.0.0.0\n    next\nend\nconfig router static\n    edit 1\n        set dst 10.0.0.0 255.0.0.0\n        set device \"to-hq\"\n    next\n    edit 2\n        set dst 172.16.0.0 255.255.255.0\n        set device \"to-hq\"\n    next\nend\nconfig firewall policy\n    edit 1\n        set name \"lan-to-hq\"\n        set srcintf \"port1\"\n        set dstintf \"to-hq\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 2\n        set name \"hq-to-lan\"\n        set srcintf \"to-hq\"\n        set dstintf \"port1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n    next\n    edit 3\n        set name \"lan-to-internet\"\n        set srcintf \"port1\"\n        set dstintf \"wan1\"\n        set srcaddr \"all\"\n        set dstaddr \"all\"\n        set service \"ALL\"\n        set schedule \"always\"\n        set action accept\n        set nat enable\n    next\nend\nconfig system admin\n    edit \"admin\"\n        set accprofile \"super_admin\"\n    next\nend"
+    },
+    {
+      "id": "1793953309789-x",
+      "type": "linux-pc",
+      "name": "PC-AGENCE3",
+      "x": 1180,
+      "y": 460,
+      "isPoweredOn": true,
+      "interfaces": [
+        {
+          "name": "eth0",
+          "mac": "02:00:00:00:00:99",
+          "ipAddress": "10.3.0.50",
+          "subnetMask": "255.255.255.0"
+        },
+        {
+          "name": "eth1",
+          "mac": "02:00:00:00:00:9a"
+        },
+        {
+          "name": "eth2",
+          "mac": "02:00:00:00:00:9b"
+        },
+        {
+          "name": "eth3",
+          "mac": "02:00:00:00:00:9c"
+        },
+        {
+          "name": "lo",
+          "mac": "00:00:00:00:00:00",
+          "mtu": 65536,
+          "ipAddress": "127.0.0.1",
+          "subnetMask": "255.0.0.0"
+        }
+      ],
+      "defaultGateway": "10.3.0.1",
+      "files": [
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key.pub",
+          "content": "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOQg5k0PnTV/opBB4JEcXgv2arcVz6zLcx4oKnG8TGYjUFfD8YTW5LN6lX0q9BiyAF8GYLzrsCiDFXui0KA5ENs= root@PC6\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ecdsa_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAaAAAABNlY2RzYS\n1zaGEyLW5pc3RwMjU2AAAACG5pc3RwMjU2AAAAQQTkIOZND501f6KQQeCRHF4L9mq3Fc+s\ny3MeKCpxvExmI1BXw/GE1uSzepV9KvQYsgBfBmC867AogxV7otCgORDbAAAAoK69Qx2uvU\nMdAAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBOQg5k0PnTV/opBB\n4JEcXgv2arcVz6zLcx4oKnG8TGYjUFfD8YTW5LN6lX0q9BiyAF8GYLzrsCiDFXui0KA5EN\nsAAAAgPQ/5STMHd3Stqot9uthrGb3PdovpiB+mG0i1eH7tWpcAAAAIcm9vdEBQQzY=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key.pub",
+          "content": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL6yuPFJE48F1MkVWmz9+QBF6WDCBuKocQy4mJaGXA+L root@PC6\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/ssh/ssh_host_ed25519_key",
+          "content": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACC+srjxSROPBdTJFVps/fkARelgwgbiqHEMuJiWhlwPiwAAAJC4b7AJuG+w\nCQAAAAtzc2gtZWQyNTUxOQAAACC+srjxSROPBdTJFVps/fkARelgwgbiqHEMuJiWhlwPiw\nAAAEA2l7E7FFn37uOa5zF66miHL5+5gH3oNb1ysf6qGVHtFb6yuPFJE48F1MkVWmz9+QBF\n6WDCBuKocQy4mJaGXA+LAAAACHJvb3RAUEM2AQIDBAU=\n-----END OPENSSH PRIVATE KEY-----\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 384
+        },
+        {
+          "path": "/etc/resolv.conf",
+          "content": "# This file is managed by systemd-networkd.\n# Do not edit.\nnameserver 10.0.0.10\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/fstab",
+          "content": "# /etc/fstab: static file system information.\n#\n# Use 'blkid' to print the universally unique identifier for a\n# device; this may be used with UUID= as a more robust way to name devices\n# that works even if disks are added and removed. See fstab(5).\n#\n# <file system> <mount point>   <type>  <options>       <dump>  <pass>\nUUID=68797588-c259-155f-46b2-c27ed0ed1043 / ext4 relatime,errors=remount-ro 0 1\nUUID=6b797a41-66e9-3355-d0f3-6bff020997e2 /boot ext4 defaults 0 2\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/machine-id",
+          "content": "54f6e48b0741528539f9055dbb79be8f\n",
+          "uid": 0,
+          "gid": 0,
+          "mode": 420
+        },
+        {
+          "path": "/etc/netplan/01-lab.yaml",
           "content": "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: false\n      addresses: [10.3.0.50/24]\n      routes:\n        - to: default\n          via: 10.3.0.1\n      nameservers:\n        addresses: [10.0.0.10]\n",
           "uid": 0,
           "gid": 0,
@@ -1777,114 +1921,121 @@
   ],
   "connections": [
     {
-      "sourceDeviceId": "1793868201345-2",
+      "sourceDeviceId": "1793953309315-2",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793868201258-1",
+      "targetDeviceId": "1793953309282-1",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868201775-3",
+      "sourceDeviceId": "1793953309369-3",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793868201258-1",
+      "targetDeviceId": "1793953309282-1",
       "targetInterfaceId": "eth1",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868201878-4",
+      "sourceDeviceId": "1793953309409-4",
+      "sourceInterfaceId": "eth0",
+      "targetDeviceId": "1793953309282-1",
+      "targetInterfaceId": "eth6",
+      "type": "ethernet"
+    },
+    {
+      "sourceDeviceId": "1793953309450-5",
       "sourceInterfaceId": "wan1",
-      "targetDeviceId": "1793868201258-1",
+      "targetDeviceId": "1793953309282-1",
       "targetInterfaceId": "eth2",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868201878-4",
+      "sourceDeviceId": "1793953309450-5",
       "sourceInterfaceId": "port1",
-      "targetDeviceId": "1793868201890-5",
+      "targetDeviceId": "1793953309453-6",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868201878-4",
+      "sourceDeviceId": "1793953309450-5",
       "sourceInterfaceId": "port2",
-      "targetDeviceId": "1793868201924-6",
+      "targetDeviceId": "1793953309483-7",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868201953-7",
+      "sourceDeviceId": "1793953309513-8",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793868201890-5",
+      "targetDeviceId": "1793953309453-6",
       "targetInterfaceId": "eth1",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868201985-8",
+      "sourceDeviceId": "1793953309520-9",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793868201890-5",
+      "targetDeviceId": "1793953309453-6",
       "targetInterfaceId": "eth2",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202054-9",
+      "sourceDeviceId": "1793953309563-a",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793868201890-5",
+      "targetDeviceId": "1793953309453-6",
       "targetInterfaceId": "eth3",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202109-a",
+      "sourceDeviceId": "1793953309599-b",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793868201924-6",
+      "targetDeviceId": "1793953309483-7",
       "targetInterfaceId": "eth1",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202159-b",
+      "sourceDeviceId": "1793953309635-c",
       "sourceInterfaceId": "eth0",
-      "targetDeviceId": "1793868201924-6",
+      "targetDeviceId": "1793953309483-7",
       "targetInterfaceId": "eth2",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202190-m",
+      "sourceDeviceId": "1793953309650-o",
       "sourceInterfaceId": "wan1",
-      "targetDeviceId": "1793868201258-1",
+      "targetDeviceId": "1793953309282-1",
       "targetInterfaceId": "eth3",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202190-m",
+      "sourceDeviceId": "1793953309650-o",
       "sourceInterfaceId": "port1",
-      "targetDeviceId": "1793868202193-n",
+      "targetDeviceId": "1793953309652-p",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202244-q",
+      "sourceDeviceId": "1793953309752-s",
       "sourceInterfaceId": "wan1",
-      "targetDeviceId": "1793868201258-1",
+      "targetDeviceId": "1793953309282-1",
       "targetInterfaceId": "eth4",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202244-q",
+      "sourceDeviceId": "1793953309752-s",
       "sourceInterfaceId": "port1",
-      "targetDeviceId": "1793868202247-r",
+      "targetDeviceId": "1793953309755-t",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202312-u",
+      "sourceDeviceId": "1793953309788-w",
       "sourceInterfaceId": "wan1",
-      "targetDeviceId": "1793868201258-1",
+      "targetDeviceId": "1793953309282-1",
       "targetInterfaceId": "eth5",
       "type": "ethernet"
     },
     {
-      "sourceDeviceId": "1793868202312-u",
+      "sourceDeviceId": "1793953309788-w",
       "sourceInterfaceId": "port1",
-      "targetDeviceId": "1793868202314-v",
+      "targetDeviceId": "1793953309789-x",
       "targetInterfaceId": "eth0",
       "type": "ethernet"
     }

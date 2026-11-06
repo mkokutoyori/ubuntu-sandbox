@@ -14,10 +14,13 @@ const tunnelPhase2 = (name: string, source: string, destination: string): string
   `set src-subnet ${source}`, `set dst-subnet ${destination}`, 'next', 'end',
 ];
 
-const interfaceBlock = (port: string, address: string, extra: string[] = []): string[] => [
-  'config system interface', `edit ${port}`, 'set mode static', `set ip ${address} 255.255.255.0`,
-  'set allowaccess ping https ssh', ...extra, 'next', 'end',
-];
+const interfaceBlock = (port: string, address: string, extra: string[] = []): string[] => {
+  const wan = port === 'wan1' || port === 'wan2';
+  return [
+    'config system interface', `edit ${port}`, 'set mode static', `set ip ${address} 255.255.255.0`,
+    `set allowaccess ${wan ? 'ping' : 'ping https ssh'}`, ...extra, 'next', 'end',
+  ];
+};
 
 const policy = (id: number, name: string, source: string, destination: string, extra: string[] = []): string[] => [
   'config firewall policy', `edit ${id}`, `set name "${name}"`,
@@ -33,6 +36,15 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     ...interfaceBlock('wan1', `${HQ.wan}`),
     ...interfaceBlock('port1', HQ.lanGateway),
     ...interfaceBlock('port2', HQ.dmzGateway),
+  );
+  await bench.shell(
+    hq,
+    'config firewall DoS-policy', 'edit 1', 'set comments "wan-flood-protection"', 'set interface "wan1"',
+    'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
+    'config anomaly',
+    'edit "icmp_flood"', 'set status enable', 'set action block', 'set threshold 50', 'next',
+    'edit "tcp_syn_flood"', 'set status enable', 'set action block', 'set threshold 500', 'next',
+    'end', 'next', 'end',
   );
   for (const site of SITES) {
     await bench.shell(
