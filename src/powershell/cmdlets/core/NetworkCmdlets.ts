@@ -13,7 +13,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
-  NetAdapterEntry, IPAddressInfo, INetworkProvider, NetIPAddressUpdate, RouteInfo,
+  NetAdapterEntry, IPAddressInfo, INetworkProvider, PingProbeOptions, NetIPAddressUpdate, RouteInfo,
   NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
@@ -81,6 +81,7 @@ import type { NetAddressFamily } from '@/network/devices/windows/netIpAddress';
 import { applyCimCriteria, cimNotFound } from '@/network/devices/windows/cimQuery';
 import { PortNumber } from '@/network/core/ports/PortNumber';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
+import { rangeViolation } from '@/powershell/runtime/semantics/rangeViolation';
 
 function lifetimeSeconds(raw: PSValue | undefined): number | undefined {
   if (raw === undefined) return undefined;
@@ -406,7 +407,30 @@ export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
   readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
-  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute'] as const;
+  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'BufferSize', 'TimeoutSeconds', 'MaxHops', 'Ttl', 'TimeToLive', 'Hops'] as const;
+
+  private readonly ranged = [
+    { parameter: 'BufferSize', keys: ['buffersize'], minimum: 0, maximum: 65500 },
+    { parameter: 'TimeoutSeconds', keys: ['timeoutseconds'], minimum: 1, maximum: undefined },
+    { parameter: 'Delay', keys: ['delay'], minimum: 1, maximum: undefined },
+    { parameter: 'MaxHops', keys: ['maxhops', 'ttl', 'timetolive', 'hops'], minimum: 1, maximum: 128 },
+  ] as const;
+
+  private probeOptions(ctx: CmdletContext): PingProbeOptions | null {
+    const values: Record<string, number | undefined> = {};
+    for (const { parameter, keys, minimum, maximum } of this.ranged) {
+      const key = keys.find((candidate) => ctx.named[candidate] !== undefined);
+      if (key === undefined) continue;
+      const value = Number(ctx.named[key]);
+      const violation = rangeViolation(String(ctx.named[key]), value, minimum, maximum);
+      if (violation !== null) {
+        ctx.emitError(`Cannot validate argument on parameter '${parameter}'. ${violation}`);
+        return null;
+      }
+      values[parameter] = value;
+    }
+    return { ttl: values['MaxHops'], bufferSize: values['BufferSize'], timeoutSeconds: values['TimeoutSeconds'], delaySeconds: values['Delay'] };
+  }
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -448,18 +472,24 @@ export class TestConnectionCmdlet implements ICmdlet {
       return quiet ? false : null;
     }
     if (tcpPort !== undefined) return this.tcpPortTest(ctx, net, target, probe.resolvedIp, source, Number(tcpPort), count);
-    if (tracing) return this.traceRouteTest(net, target, probe.resolvedIp, source, quiet);
-    const results = net.testPingProbe?.(target, count)?.probes ?? [];
+    if (tracing) {
+      const traceOptions = this.probeOptions(ctx);
+      if (traceOptions === null) return null;
+      return this.traceRouteTest(ctx, net, target, probe.resolvedIp, source, quiet, traceOptions.ttl ?? 128);
+    }
+    const options = this.probeOptions(ctx);
+    if (options === null) return null;
+    const results = net.testPingProbe?.(target, count, options)?.probes ?? [];
     if (quiet) return results.every((attempt) => attempt.success);
     return results.map((attempt, index) => ({
       Ping: index + 1,
       Source: source,
       Destination: target,
-      Address: attempt.success ? probe.resolvedIp : null,
-      DisplayAddress: attempt.success ? probe.resolvedIp : '*',
+      Address: attempt.success ? probe.resolvedIp : attempt.replyFrom,
+      DisplayAddress: attempt.success ? probe.resolvedIp : attempt.replyFrom ?? '*',
       Latency: attempt.success ? Math.max(1, Math.round(attempt.rttMs)) : 0,
-      Status: attempt.success ? 'Success' : 'TimedOut',
-      BufferSize: 32,
+      Status: attempt.status,
+      BufferSize: options.bufferSize ?? 32,
     } as Record<string, PSValue>)) as PSValue;
   }
 
@@ -479,10 +509,23 @@ export class TestConnectionCmdlet implements ICmdlet {
     return rows as PSValue;
   }
 
-  private traceRouteTest(net: INetworkProvider, target: string, address: string, source: string, quiet: boolean): PSValue {
-    if (quiet) return null;
+  private traceRouteTest(
+    ctx: CmdletContext, net: INetworkProvider, target: string, address: string, source: string, quiet: boolean, maxHops: number,
+  ): PSValue {
+    const path = net.traceRoute?.(target) ?? [];
+    const exceeded = path.length > maxHops;
+    if (quiet) return !exceeded;
+    if (exceeded) {
+      ctx.emitErrorRecord(newErrorRecord({
+        message: `Cannot complete traceroute to destination '${target}': Number of hops required to reach host exceeds MaxHops (${maxHops}).`,
+        exceptionType: 'System.Net.NetworkInformation.PingException',
+        fullyQualifiedErrorId: 'TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand',
+        category: 'ConnectionError',
+        targetObject: address,
+      }) as unknown as PSValue);
+    }
     const rows: PSValue[] = [];
-    (net.traceRoute?.(target) ?? []).forEach((hop, index) => {
+    path.slice(0, maxHops).forEach((hop, index) => {
       const answered = hop !== '0.0.0.0';
       for (let ping = 1; ping <= 3; ping++) {
         rows.push({

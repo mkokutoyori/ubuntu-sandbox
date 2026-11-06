@@ -4600,6 +4600,6 @@ is stored and rendered, and the DNS client has no per-VRF source selection.
 
 Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects and errors of PowerShell 7 (PingStatus, TcpPortStatus, TraceStatus,
 'Cannot resolve the target name.'), but: the table view of the real format file (columns Ping, Source, Address, Latency(ms), BufferSize(B), Status with the widths 4/16/25/7/10/16 and a '*' latency
-for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -TimeoutSeconds, -BufferSize, -MaxHops, -DontFragment, -Repeat, -MtuSizeDetect
-are not evaluated; -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
+for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -DontFragment, -Repeat, -MtuSizeDetect
+are not evaluated (-TimeoutSeconds, -BufferSize, -MaxHops and -Delay are); -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
 boolean, the real code carries the SocketError code).

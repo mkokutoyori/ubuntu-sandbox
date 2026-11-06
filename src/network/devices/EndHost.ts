@@ -5563,7 +5563,7 @@ export abstract class EndHost extends Equipment {
     return { sourceIp, interfaceName: route.port.getName(), nextHopIP: route.nextHopIP };
   }
 
-  sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number }): { success: boolean; rttMs: number; ttl: number } {
+  sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number; dataSize?: number }): { success: boolean; rttMs: number; ttl: number; error?: string } {
     if (this.isLocalAddress(targetIP)) {
       return { success: true, rttMs: 0.02, ttl: this.defaultTTL };
     }
@@ -5577,9 +5577,10 @@ export abstract class EndHost extends Equipment {
     const targetIpStr = targetIP.toString();
     const seq = 1;
     const useTtl = opts?.ttl ?? this.defaultTTL;
+    const dataSize = opts?.dataSize ?? 56;
 
     let reply: { rttMs: number; ttl: number } | null = null;
-    let failed = false;
+    let failed: string | null = null;
     const unsubReply = this.getBus().subscribe('host.icmp.echo-reply', (e) => {
       const p = e.payload;
       if (p.deviceId === this.id && p.fromIp === targetIpStr && p.id === id && p.seq === seq) {
@@ -5590,17 +5591,17 @@ export abstract class EndHost extends Equipment {
       const p = e.payload;
       if (p.deviceId === this.id && (p.id === -1 || (p.id === id && p.seq === seq))
           && (p.toIp === targetIpStr || p.toIp === '')) {
-        failed = true;
+        failed = p.reason;
       }
     });
 
-    const icmp: ICMPPacket = { type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize: 56 };
-    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, 64);
+    const icmp: ICMPPacket = { type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize };
+    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, dataSize + 8);
     const sentAt = PathClock.now();
 
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
-      id, seq, ttl: useTtl, size: 64,
+      id, seq, ttl: useTtl, size: dataSize + 8,
     });
 
     const origin = this.originate(ipPkt, route);
@@ -5613,7 +5614,8 @@ export abstract class EndHost extends Equipment {
 
     unsubReply(); unsubFailed();
     if (reply) return { success: true, rttMs: (reply as { rttMs: number }).rttMs, ttl: (reply as { ttl: number }).ttl };
-    if (failed) return { success: false, rttMs: 0, ttl: 0 };
+    const failure = failed as string | null;
+    if (failure !== null) return { success: false, rttMs: 0, ttl: 0, error: failure };
     return { success: false, rttMs: 0, ttl: 0 };
   }
 
