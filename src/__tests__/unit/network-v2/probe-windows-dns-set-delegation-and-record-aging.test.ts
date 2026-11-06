@@ -25,7 +25,7 @@ const AGING = 'Set-DnsServerResourceRecordAging';
 const SET_DELEGATION = 'Set-DnsServerZoneDelegation';
 const ADD_DELEGATION = 'Add-DnsServerZoneDelegation';
 const GET_DELEGATION = 'Get-DnsServerZoneDelegation';
-const NON_INTERACTIVE = 'Windows PowerShell is in NonInteractive mode.';
+const NON_INTERACTIVE = 'PowerShell is in NonInteractive mode.';
 const NO_ZONE = (name: string): string => `Zone "${name}" does not exist on this server.`;
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -114,15 +114,15 @@ describe('Set-DnsServerResourceRecordAging', () => {
 
   it('asks before it ages unless -Force is given, and names its target under -WhatIf', async () => {
     const { cmd } = await agingLab();
-    expect(await cmd(`${AGING} -ZoneName corp.test`)).toContain(`${AGING} : ${NON_INTERACTIVE}`);
+    expect(await cmd(`${AGING} -ZoneName corp.test`)).toContain(`${AGING}: ${NON_INTERACTIVE}`);
     expect(await cmd(`${AGING} -ZoneName corp.test -WhatIf`)).toContain(`What if: Performing the operation "${AGING}" on target "corp.test".`);
     expect(await stampOf(cmd, 'corp.test', 'two')).toBe('');
   });
 
   it('refuses a zone that is not on the server and asks for the zone that is missing', async () => {
     const { cmd } = await agingLab();
-    expect(await cmd(`${AGING} -ZoneName nope.test -Force`)).toContain(`${AGING} : ${NO_ZONE('nope.test')}`);
-    expect(await cmd(`${AGING} -Force`)).toContain(`${AGING} : Cannot process command because of one or more missing mandatory parameters: ZoneName.`);
+    expect(await cmd(`${AGING} -ZoneName nope.test -Force`)).toContain(`${AGING}: ${NO_ZONE('nope.test')}`);
+    expect(await cmd(`${AGING} -Force`)).toContain(`${AGING}: Cannot process command because of one or more missing mandatory parameters: ZoneName.`);
   });
 });
 
@@ -189,10 +189,10 @@ describe('Set-DnsServerZoneDelegation', () => {
   it('refuses a delegation that is not there, a name server the delegation does not name and a zone that is not on the server', async () => {
     const { cmd } = await delegated();
     expect(await cmd(`${SET_DELEGATION} -Name corp.test -ChildZoneName east01 -NameServer wserver.east01.corp.test -IPAddress 10.1.1.1`))
-      .toContain(`${SET_DELEGATION} : Cannot find the delegation "east01" of zone "corp.test" to the name server "wserver.east01.corp.test".`);
+      .toContain(`${SET_DELEGATION}: Cannot find the delegation "east01" of zone "corp.test" to the name server "wserver.east01.corp.test".`);
     expect(await cmd(`${SET_DELEGATION} -Name corp.test -ChildZoneName west01 -NameServer other.west01.corp.test -IPAddress 10.1.1.1`))
-      .toContain(`${SET_DELEGATION} : Cannot find the delegation "west01" of zone "corp.test" to the name server "other.west01.corp.test".`);
-    expect(await cmd(`${SET_DELEGATION} -Name nope.test -ChildZoneName west01 -NameServer wserver.west01.nope.test -IPAddress 10.1.1.1`)).toContain(`${SET_DELEGATION} : ${NO_ZONE('nope.test')}`);
+      .toContain(`${SET_DELEGATION}: Cannot find the delegation "west01" of zone "corp.test" to the name server "other.west01.corp.test".`);
+    expect(await cmd(`${SET_DELEGATION} -Name nope.test -ChildZoneName west01 -NameServer wserver.west01.nope.test -IPAddress 10.1.1.1`)).toContain(`${SET_DELEGATION}: ${NO_ZONE('nope.test')}`);
     expect(await glueOf(cmd, 'wserver.west01')).toBe('172.23.90.136');
   });
 
@@ -200,11 +200,11 @@ describe('Set-DnsServerZoneDelegation', () => {
     const { cmd } = await governed();
     await cmd(`${ADD_DELEGATION} -Name corp.test -ChildZoneName far -NameServer ns.elsewhere.example -IPAddress 10.2.2.2`);
     expect(await cmd(`${SET_DELEGATION} -Name corp.test -ChildZoneName far -NameServer ns.elsewhere.example -IPAddress 10.3.3.3`))
-      .toContain(`${SET_DELEGATION} : The name server "ns.elsewhere.example" is not in zone "corp.test": it has no address in this zone to change.`);
+      .toContain(`${SET_DELEGATION}: The name server "ns.elsewhere.example" is not in zone "corp.test": it has no address in this zone to change.`);
   });
 
   it('asks for what is missing', async () => {
     const { cmd } = await delegated();
-    expect(await cmd(`${SET_DELEGATION} -Name corp.test -ChildZoneName west01`)).toContain(`${SET_DELEGATION} : Cannot process command because of one or more missing mandatory parameters: Name ChildZoneName NameServer IPAddress.`);
+    expect(await cmd(`${SET_DELEGATION} -Name corp.test -ChildZoneName west01`)).toContain(`${SET_DELEGATION}: Cannot process command because of one or more missing mandatory parameters: Name ChildZoneName NameServer IPAddress.`);
   });
 });

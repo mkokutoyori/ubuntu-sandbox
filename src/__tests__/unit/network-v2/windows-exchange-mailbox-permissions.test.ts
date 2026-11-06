@@ -68,7 +68,7 @@ describe('Add/Get-MailboxPermission (docs/PRD-Exchange.md §2.1 P9) — reuses t
     await run(ps(dc), 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools');
     await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     const out = await run(ps(dc), 'Add-MailboxPermission -Identity bob -User alice -AccessRights FullAccess');
-    expect(out).toContain('is not recognized as the name of a cmdlet');
+    expect(out).toContain('is not recognized as a name of a cmdlet');
   });
 });
 

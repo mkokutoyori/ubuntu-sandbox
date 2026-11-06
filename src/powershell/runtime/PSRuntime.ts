@@ -48,7 +48,7 @@ import { StreamHub, actionPreferenceOf, displayLine, informationRecord, messageR
 import { parseVariableTarget, preferenceAssignments, takeCommonParameters, type VariableTarget } from './semantics/PSCommonParameters';
 import { exceptionMatches, exceptionShortName, resolveExceptionType, makeExceptionObject, defaultExceptionMessage } from './semantics/PSExceptions';
 import { PSChar, PSNumber, ArithmeticFault, boxInteger, compareNumbers, integerRange, kindName, numericKindOf, type IntegerKind, type NumericKind } from './semantics/PSNumber';
-import { PSConversionError, castToChar, castToNumeric, truthiness, type ConversionOptions } from './semantics/PSConvert';
+import { PSConversionError, castToChar, castToNumeric, truthiness } from './semantics/PSConvert';
 import { bitwise, multiply, negateValue, numericArithmetic } from './semantics/PSOperators';
 import { PASS_THROUGH_CMDLETS, unboxDeep } from './semantics/PSUnbox';
 import { mathStatics } from './semantics/MathStatics';
@@ -484,9 +484,7 @@ function replaySafe(cmdlet: { readonly name: string; readonly nativeProgram?: tr
 export class PSRuntime {
   private readonly lexer: PSLexer;
   private readonly parser: PSParser;
-  readonly edition: 'desktop' | 'core';
   readonly locations = new PSLocationState();
-  private readonly conversion: ConversionOptions;
   readonly global: PSEnvironment;
   private outputLines: string[] = [];
   private nativeReplay: { results: NativeResult[]; cursor: number } | null = null;
@@ -660,8 +658,8 @@ export class PSRuntime {
     if (this.providers.users?.isAdmin(user) ?? true) return null;
     const leaf = path.replace(/^.*[\\/]/, '');
     return `The script '${leaf}' cannot be run because it contains a "#requires" statement for running as Administrator. `
-      + 'The current Windows PowerShell session is not running as Administrator. '
-      + 'Start Windows PowerShell by using the Run as Administrator option, and then try running the script again.';
+      + 'The current PowerShell session is not running as Administrator. '
+      + 'Start PowerShell by using the Run as Administrator option, and then try running the script again.';
   }
 
   private scriptPolicyRefusal(path: string, content: string): string | null {
@@ -682,17 +680,14 @@ export class PSRuntime {
     registry: CmdletRegistry,
     providers: PSProviders = nullProviders(),
     globalEnv?: PSEnvironment,
-    edition: 'desktop' | 'core' = 'desktop',
   ) {
     this.registry  = registry;
     this.providers = providers;
-    this.edition   = edition;
-    this.conversion = { core: edition === 'core' };
-    this.lexer     = new PSLexer({ core: edition === 'core' });
-    this.parser    = new PSParser({ core: edition === 'core' });
+    this.lexer     = new PSLexer();
+    this.parser    = new PSParser();
     this.global    = globalEnv ?? new PSEnvironment();
     if (!globalEnv) {
-      seedBuiltins(this.global, edition);
+      seedBuiltins(this.global);
       this.global.set('__drives__', {
         c:        { Name: 'C',        Root: 'C:\\', Provider: 'FileSystem' },
         d:        { Name: 'D',        Root: 'D:\\', Provider: 'FileSystem' },
@@ -722,12 +717,8 @@ export class PSRuntime {
   listCommandNames(): string[] {
     const out = new Set<string>();
     for (const c of this.registry.cmdlets()) {
-      if (c.coreOnly === true && this.edition === 'desktop') continue;
       out.add(c.displayName ?? this.titleCase(c.name));
-      for (const a of c.aliases) {
-        if (this.edition === 'core' && c.desktopOnlyAliases?.includes(a.toLowerCase()) === true) continue;
-        out.add(a);
-      }
+      for (const a of c.aliases) out.add(a);
     }
     return [...out].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   }
@@ -946,7 +937,7 @@ export class PSRuntime {
       ? (error.errorRecord?.Exception as Record<string, PSValue> | undefined)?.Message
       : undefined;
     const message = typeof original === 'string' ? original : error.message;
-    return this.edition === 'core' ? `${error.conciseReason()}: ${message}` : message;
+    return `${error.conciseReason()}: ${message}`;
   }
 
   private isStatementTerminating(error: unknown): error is PSRuntimeError {
@@ -1130,7 +1121,7 @@ export class PSRuntime {
   }
 
   private openHostSession(): PSRuntime {
-    return new PSRuntime(this.registry, this.providers, undefined, this.edition);
+    return new PSRuntime(this.registry, this.providers, undefined);
   }
 
   errorRecord(error: unknown): PSValue {
@@ -1844,7 +1835,6 @@ export class PSRuntime {
         return this.consumingValues(() => this.aggregateCaptured(this.runBlockCapture(ast.body, env)));
       },
       (token, scope) => this.resolveExpansionVar(token, scope),
-      this.edition === 'core',
     );
   }
 
@@ -1889,11 +1879,7 @@ export class PSRuntime {
     const currentVersion = String(values['CurrentVersion'] ?? '10.0');
     const build = String(values['CurrentBuildNumber'] ?? '');
     if (!build) return;
-    if (this.edition === 'core') {
-      table['OS'] = `Microsoft Windows ${currentVersion}.${build}`;
-      return;
-    }
-    table['BuildVersion'] = `${currentVersion}.${build}.1`;
+    table['OS'] = `Microsoft Windows ${currentVersion}.${build}`;
   }
 
   private fileSystemDriveRoots(): ReadonlyMap<string, string> {
@@ -2196,21 +2182,19 @@ export class PSRuntime {
   private evalRange(node: PSRangeExpression, env: PSEnvironment): PSValue {
     const startValue = this.evalExpr(node.start, env);
     const endValue   = this.evalExpr(node.end,   env);
-    if (this.edition === 'core') {
-      const asChar = (value: PSValue): number | null => {
-        if (value instanceof PSChar) return value.code;
-        return typeof value === 'string' && value.length === 1 && !/\d/.test(value) ? value.charCodeAt(0) : null;
-      };
-      const first = asChar(startValue);
-      const last = asChar(endValue);
-      if (first !== null && last !== null) {
-        const chars: PSValue[] = [];
-        if (first <= last) for (let i = first; i <= last; i++) chars.push(new PSChar(i) as PSValue);
-        else for (let i = first; i >= last; i--) chars.push(new PSChar(i) as PSValue);
-        return chars;
-      }
+    const asChar = (value: PSValue): number | null => {
+      if (value instanceof PSChar) return value.code;
+      return typeof value === 'string' && value.length === 1 && !/\d/.test(value) ? value.charCodeAt(0) : null;
+    };
+    const first = asChar(startValue);
+    const last = asChar(endValue);
+    if (first !== null && last !== null) {
+      const chars: PSValue[] = [];
+      if (first <= last) for (let i = first; i <= last; i++) chars.push(new PSChar(i) as PSValue);
+      else for (let i = first; i >= last; i--) chars.push(new PSChar(i) as PSValue);
+      return chars;
     }
-    const toInt = (value: PSValue): number => Number(this.guarded(() => castToNumeric('int32', value, this.conversion)));
+    const toInt = (value: PSValue): number => Number(this.guarded(() => castToNumeric('int32', value)));
     const start = toInt(startValue);
     const end   = toInt(endValue);
     const arr: number[] = [];
@@ -2445,7 +2429,7 @@ export class PSRuntime {
 
   private indexSequence(items: PSValue[], idx: PSValue): PSValue {
     const position = (key: PSValue): number => {
-      const raw = typeof key === 'number' || key instanceof PSNumber ? key : this.guarded(() => castToNumeric('int32', key, this.conversion));
+      const raw = typeof key === 'number' || key instanceof PSNumber ? key : this.guarded(() => castToNumeric('int32', key));
       const n = Math.trunc(Number(raw instanceof PSNumber ? raw.toNumber() : raw));
       return n < 0 ? items.length + n : n;
     };
@@ -3879,7 +3863,7 @@ export class PSRuntime {
 
   private notFound(name: string): PSRuntimeError {
     const typed = this.typedCommandName(name);
-    const error = new PSRuntimeError(commandNotFoundMessage(typed, this.edition === 'core'), 'System.Management.Automation.CommandNotFoundException');
+    const error = new PSRuntimeError(commandNotFoundMessage(typed), 'System.Management.Automation.CommandNotFoundException');
     error.commandName = typed;
     return error;
   }
@@ -3895,24 +3879,11 @@ export class PSRuntime {
     return this.typedParameterNames.get(key) ?? key;
   }
 
-  private rejectDesktopOnlyParameters(cmdlet: ICmdlet, named: Record<string, PSValue>): void {
-    if (this.edition === 'desktop' || cmdlet.desktopOnlyParameters === undefined) return;
+  private rejectAbsentParameters(cmdlet: ICmdlet, named: Record<string, PSValue>): void {
+    if (cmdlet.absentParameters === undefined) return;
     for (const key of Object.keys(named)) {
-      const hit = cmdlet.desktopOnlyParameters.find(parameter => parameter.toLowerCase().startsWith(key));
-      if (hit !== undefined && !(cmdlet.parameters ?? []).some(p => p.toLowerCase().startsWith(key) && !cmdlet.desktopOnlyParameters?.includes(p))) {
-        throw new PSRuntimeError(
-          `A parameter cannot be found that matches parameter name '${this.typedParameterName(key)}'.`,
-          'System.Management.Automation.ParameterBindingException',
-        );
-      }
-    }
-  }
-
-  private rejectCoreOnlyParameters(cmdlet: ICmdlet, named: Record<string, PSValue>): void {
-    if (this.edition === 'core' || cmdlet.coreOnlyParameters === undefined) return;
-    for (const key of Object.keys(named)) {
-      const hit = cmdlet.coreOnlyParameters.find(parameter => parameter.toLowerCase().startsWith(key));
-      if (hit !== undefined && !(cmdlet.parameters ?? []).some(p => p.toLowerCase() === key && !cmdlet.coreOnlyParameters?.includes(p))) {
+      const hit = cmdlet.absentParameters.find(parameter => parameter.toLowerCase().startsWith(key));
+      if (hit !== undefined && !(cmdlet.parameters ?? []).some(p => p.toLowerCase().startsWith(key) && !cmdlet.absentParameters?.includes(p))) {
         throw new PSRuntimeError(
           `A parameter cannot be found that matches parameter name '${this.typedParameterName(key)}'.`,
           'System.Management.Automation.ParameterBindingException',
@@ -4036,14 +4007,9 @@ export class PSRuntime {
     if (programStem === null && DRIVE_NAME.test(name) && positional.length === 0) {
       return this.dispatchResolved('set-location', [name], named, cmdletNamed, common, pipeInput, env, produced);
     }
-    const resolved = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
-    const absentFromEdition = resolved !== undefined && resolved !== null && (
-      (resolved.coreOnly === true && this.edition === 'desktop')
-      || (this.edition === 'core' && resolved.desktopOnlyAliases?.includes(name.toLowerCase()) === true));
-    const cmdlet = absentFromEdition ? undefined : resolved;
+    const cmdlet = programStem === null ? this.registry.resolve(name) : this.registry.resolveProgram(programStem);
     if (cmdlet) {
-      this.rejectCoreOnlyParameters(cmdlet, cmdletNamed);
-      this.rejectDesktopOnlyParameters(cmdlet, cmdletNamed);
+      this.rejectAbsentParameters(cmdlet, cmdletNamed);
       this.resolveParameterPrefixes(cmdlet.parameters as readonly string[] | undefined, cmdletNamed, cmdlet.closedParameterSet === true);
       positional = this.returnSwitchArguments(cmdlet, cmdletNamed, positional);
       const declared = new Set(
@@ -4214,13 +4180,7 @@ export class PSRuntime {
     }
     this.streams.recordError(record);
     if (errorAction === 'silentlycontinue') return;
-    const lines = this.edition === 'core'
-      ? [`${source.displayName}: ${message}`]
-      : [
-          `${source.invocationName} : ${message}`,
-          `    + CategoryInfo          : ${category}: (${targetText}) [${activity}], ${exceptionName}`,
-          `    + FullyQualifiedErrorId : ${fullyQualifiedErrorId}`,
-        ];
+    const lines = [`${source.displayName}: ${message}`];
     this.streams.deliver('error', record, lines);
   }
 
@@ -4298,7 +4258,7 @@ export class PSRuntime {
 
   private nonInteractiveError(): PSRuntimeError {
     return new PSRuntimeError(
-      `${this.edition === 'core' ? '' : 'Windows '}PowerShell is in NonInteractive mode. Read and Prompt functionality is not available.`,
+      `PowerShell is in NonInteractive mode. Read and Prompt functionality is not available.`,
       'System.Management.Automation.Host.HostException');
   }
 
@@ -4412,7 +4372,6 @@ export class PSRuntime {
     if (!PASS_THROUGH_CMDLETS.has(cmdletDisplayName.toLowerCase())) pipeInput = unboxDeep(pipeInput);
 
     const runtimeRef: IRuntimeRef = {
-      edition:            self.edition,
       locations:          self.locations,
       execute:            (code) => self.execute(code),
       executeInteractive: (code) => self.executeInteractive(code),
@@ -4628,8 +4587,8 @@ export class PSRuntime {
 
   private castScalar(val: PSValue, spec: TypeSpec): PSValue | undefined {
     switch (spec.kind) {
-      case 'numeric': return this.guarded(() => castToNumeric(spec.numeric, val, this.conversion));
-      case 'char': return this.guarded(() => castToChar(val, this.conversion));
+      case 'numeric': return this.guarded(() => castToNumeric(spec.numeric, val));
+      case 'char': return this.guarded(() => castToChar(val));
       case 'string': return psValueToString(val);
       case 'bool': return this.isTruthy(val);
       case 'object': return val;
@@ -4830,9 +4789,9 @@ export class PSRuntime {
   private numericConversionMethod(value: number | PSNumber, member: string): PSValue {
     const target = NUMERIC_CONVERSION_METHODS[member];
     if (target !== undefined) {
-      return ((_provider?: PSValue) => this.guarded(() => castToNumeric(target, value, this.conversion))) as unknown as PSValue;
+      return ((_provider?: PSValue) => this.guarded(() => castToNumeric(target, value))) as unknown as PSValue;
     }
-    if (member !== 'tostring' || !this.conversion.core) return null;
+    if (member !== 'tostring') return null;
     const single = value instanceof PSNumber && value.kind === 'single';
     const real = typeof value === 'number' ? !Number.isInteger(value) : single;
     if (!real) return null;

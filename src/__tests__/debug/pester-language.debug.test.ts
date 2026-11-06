@@ -46,7 +46,7 @@ describe.skipIf(!existsSync(ROOT))('Pester language suites on the PowerShell 7.6
       for (const name of ['import-module', 'set-strictmode', 'remove-module']) registry.register(quietModule(name));
       const pc = new WindowsPC('windows-pc', 'PESTER', 0, 0);
       pc.setCurrentUser('Administrator');
-      const interp = new PSInterpreter(createWindowsPSProviders(pc), { edition: 'client', registry, language: 'core' });
+      const interp = new PSInterpreter(createWindowsPSProviders(pc), { edition: 'client', registry });
       let fileError: string | null = null;
       try {
         interp.execute('Set-ExecutionPolicy Bypass -Scope LocalMachine -Force');

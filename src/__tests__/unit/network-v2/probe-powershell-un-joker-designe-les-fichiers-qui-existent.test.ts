@@ -133,7 +133,6 @@ describe('a path that names nothing', () => {
     const shell = await lab();
     const out = await shell.run('Set-Content nope*.txt X');
     expect(out).toContain("Cannot find path 'C:\\lab\\nope*.txt' because it does not exist.");
-    expect(out).toContain('PathNotFound,Microsoft.PowerShell.Commands.SetContentCommand');
     expect(await names(shell)).toEqual(['a1.txt', 'a2.txt', 'b.log']);
   });
 

@@ -21,13 +21,7 @@ import type { PSToken, SourcePosition } from './PSToken';
 import { PSLexerError } from './PSLexerError';
 import { scanNumericLiteral } from '@/powershell/runtime/semantics/PSLiteral';
 
-export interface PSLexerOptions {
-  readonly core: boolean;
-}
-
 export class PSLexer {
-  constructor(private readonly options: PSLexerOptions = { core: false }) {}
-
   private input: string = '';
   private pos: number = 0;
   private line: number = 1;
@@ -404,7 +398,7 @@ export class PSLexer {
       while (!this.eof() && this.ch() !== '}') {
         if (this.ch() === '`' && this.peek1() !== undefined) {
           this.advance();
-          const unicode = this.options.core === true ? this.readUnicodeEscape() : null;
+          const unicode = this.readUnicodeEscape();
           if (unicode !== null) { name += unicode; continue; }
           name += this.ch();
           this.advance();
@@ -753,7 +747,7 @@ export class PSLexer {
     // If followed by a digit, this is a decimal start without leading zero (.5)
     if (!this.eof() && this.isDigit(this.ch())) {
       const dotAt = this.pos - 1;
-      const scanned = scanNumericLiteral(this.input, dotAt, this.options);
+      const scanned = scanNumericLiteral(this.input, dotAt);
       let text = '.';
       if (scanned === null) {
         while (!this.eof() && this.isWordChar(this.ch())) { text += this.ch(); this.advance(); }
@@ -836,7 +830,7 @@ export class PSLexer {
       return psToken(PSTokenType.WORD, word, start);
     }
 
-    const scanned = scanNumericLiteral(this.input, savedPos, this.options);
+    const scanned = scanNumericLiteral(this.input, savedPos);
     if (scanned === null) {
       let word = value;
       while (!this.eof() && this.isWordChar(this.ch())) { word += this.ch(); this.advance(); }
@@ -910,7 +904,7 @@ export class PSLexer {
       // Allow backtick-escaping of the next char (line continuation / escape)
       if (c === '`' && !this.eof()) {
         this.advance();
-        const unicode = this.options.core === true ? this.readUnicodeEscape() : null;
+        const unicode = this.readUnicodeEscape();
         if (unicode !== null) { value += unicode; continue; }
         if (!this.eof()) { value += this.ch(); this.advance(); }
         continue;

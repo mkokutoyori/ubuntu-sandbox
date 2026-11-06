@@ -102,7 +102,7 @@ describe('the commands that take -Path read a list of paths', () => {
   it('reports a missing path of a list by its full path and goes on with the others', async () => {
     const shell = await twoFolders();
     const out = await shell.run('Get-Item da\\a.txt,da\\nope.txt,db\\b.txt');
-    expect(out).toContain("Get-Item : Cannot find path 'C:\\Users\\User\\da\\nope.txt' because it does not exist.");
+    expect(out).toContain("Get-Item: Cannot find path 'C:\\Users\\User\\da\\nope.txt' because it does not exist.");
     expect(rowsNamed(out, 'a.txt')).toBe(1);
     expect(rowsNamed(out, 'b.txt')).toBe(1);
   });
@@ -159,7 +159,7 @@ describe('the commands that take -Path read a list of paths', () => {
   it('reports a missing source of a copy by its full path', async () => {
     const shell = await twoFolders();
     const out = await shell.run('Copy-Item da\\nope.txt -Destination db');
-    expect(out).toContain("Copy-Item : Cannot find path 'C:\\Users\\User\\da\\nope.txt' because it does not exist.");
+    expect(out).toContain("Copy-Item: Cannot find path 'C:\\Users\\User\\da\\nope.txt' because it does not exist.");
   });
 
   it('hashes every file of a list', async () => {
@@ -277,8 +277,6 @@ describe('mkdir is New-Item -ItemType Directory', () => {
     const shell = await powershell();
     await shell.run('mkdir md4');
     const out = await shell.run('mkdir md4');
-    expect(out).toContain('mkdir : An item with the specified name C:\\Users\\User\\md4 already exists.');
-    expect(out).toContain('ResourceExists: (C:\\Users\\User\\md4:String) [New-Item], IOException');
-    expect(out).toContain('DirectoryExist,Microsoft.PowerShell.Commands.NewItemCommand');
+    expect(out).toContain('mkdir: An item with the specified name C:\\Users\\User\\md4 already exists.');
   });
 });

@@ -116,9 +116,9 @@ function asPSObjects(list: ServiceInfo[]): PSValue {
 export class GetServiceCmdlet implements ICmdlet {
   readonly name = 'get-service';
   readonly aliases = ['gsv'] as const;
-  readonly parameters = ['Name', 'DisplayName', 'Include', 'Exclude', 'InputObject', 'DependentServices', 'RequiredServices', 'ComputerName'] as const;
+  readonly parameters = ['Name', 'DisplayName', 'Include', 'Exclude', 'InputObject', 'DependentServices', 'RequiredServices'] as const;
   readonly closedParameterSet = true as const;
-  readonly desktopOnlyParameters = ['ComputerName'] as const;
+  readonly absentParameters = ['ComputerName'] as const;
   readonly parameterValues = { Name: 'serviceName' } as const;
 
   execute(ctx: CmdletContext): PSValue {

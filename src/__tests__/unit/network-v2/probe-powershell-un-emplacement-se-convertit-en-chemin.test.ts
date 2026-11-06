@@ -212,11 +212,6 @@ describe('Split-Path', () => {
     expect(await shell.run('Split-Path C:\\nothing -Resolve')).toContain("Cannot find path 'C:\\nothing' because it does not exist.");
   });
 
-  it('refuses -Extension and -LeafBase in Windows PowerShell', async () => {
-    const shell = await powershell();
-    expect(await shell.run('Split-Path -Extension a.txt')).toContain("A parameter cannot be found that matches parameter name 'Extension'.");
-  });
-
   it('splits the extension and the base name in PowerShell 7', async () => {
     const shell = await powershell('pwsh');
     expect(await shell.run('Split-Path -Extension C:\\a\\b.txt')).toBe('.txt');
@@ -566,7 +561,7 @@ describe('Remove-Item reads its targets as the other path commands do', () => {
 
   it('refuses an empty path, given or piped, as the binder does', async () => {
     const shell = await powershell();
-    const refusal = "Remove-Item : Cannot bind argument to parameter 'Path' because it is an empty string.";
+    const refusal = "Remove-Item: Cannot bind argument to parameter 'Path' because it is an empty string.";
     expect(await shell.run("Remove-Item ''")).toContain(refusal);
     expect(await shell.run("'' | Remove-Item")).toContain(refusal);
   });
@@ -684,7 +679,7 @@ describe('Test-Path', () => {
     const shell = await powershell();
     expect(await shell.run("Test-Path ' '")).toBe('False');
     expect(await shell.run("Test-Path ''")).toBe('False');
-    const refusal = "Test-Path : Cannot bind argument to parameter 'Path' because it is null.";
+    const refusal = "Test-Path: Cannot bind argument to parameter 'Path' because it is null.";
     expect(await shell.run('Test-Path $null')).toContain(refusal);
     expect(await shell.run('Test-Path $null,$null')).toContain(refusal);
     expect(await shell.run('Test-Path @()')).toContain(refusal);

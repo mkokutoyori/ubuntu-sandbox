@@ -3,7 +3,7 @@
  * so `nslookup -type=MX host` reaches nslookup with the option it was given.
  *
  * Measured first (a Windows PC in PowerShell, the same lab in cmd): `nslookup -type=MX example.com` printed the
- * usage line and then "The term '=' is not recognized as the name of a cmdlet" — the parser cut the argument into
+ * usage line and then "The term '=' is not recognized as a name of a cmdlet" — the parser cut the argument into
  * the parameter `-type`, the operator `=` and the word `MX`, and tried to run `= MX example.com` as a second
  * command. In cmd the same line answered with the MX record. `echo -type=MX` failed the same way, so the defect
  * is the parser's, not nslookup's.

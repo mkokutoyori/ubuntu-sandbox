@@ -7,12 +7,6 @@
 export const PWSH_BANNER = `PowerShell 7.6.0
 `;
 
-export const PS_BANNER = `Windows PowerShell
-Copyright (C) Microsoft Corporation. All rights reserved.
-
-Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
-`;
-
 /**
  * Tab-completion list for the PowerShell sub-shell. Static rather than
  * generated from the cmdlet registry so it stays predictable across

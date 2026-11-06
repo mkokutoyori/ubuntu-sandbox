@@ -703,7 +703,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // Detect PowerShell launch from root cmd
     const lower = trimmed.toLowerCase();
     if (lower === 'powershell' || lower === 'powershell.exe' || lower === 'pwsh' || lower === 'pwsh.exe') {
-      this.enterPowerShell(lower.startsWith('pwsh') ? 'core' : 'desktop');
+      this.enterPowerShell();
       return;
     }
 
@@ -720,7 +720,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // returns straight to cmd (no banner, no nested sub-shell).
     const psExecMatch = /^(powershell(?:\.exe)?|pwsh(?:\.exe)?)\s+(.+)$/i.exec(trimmed);
     if (psExecMatch) {
-      await this.runPowerShellOneShot(psExecMatch[2], psExecMatch[1].toLowerCase().startsWith('pwsh') ? 'core' : 'desktop');
+      await this.runPowerShellOneShot(psExecMatch[2]);
       return;
     }
 
@@ -1144,7 +1144,7 @@ export class WindowsTerminalSession extends TerminalSession {
    * `WindowsPowerShellShell` through a single `processLine()` instead of
    * pushing it onto the sub-shell stack.
    */
-  private async runPowerShellOneShot(argsText: string, language: 'desktop' | 'core' = 'desktop'): Promise<void> {
+  private async runPowerShellOneShot(argsText: string): Promise<void> {
     let command = argsText.trim();
     const commandFlag = /^-(?:command|c)\b\s*(.*)$/is.exec(command);
     if (commandFlag) command = commandFlag[1].trim();
@@ -1153,7 +1153,7 @@ export class WindowsTerminalSession extends TerminalSession {
       command = command.slice(1, -1);
     }
     if (!command) {
-      this.enterPowerShell(language);
+      this.enterPowerShell();
       return;
     }
 
@@ -1171,7 +1171,7 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinNetstatStream(command)) return;
 
     installDefaultShells();
-    const shell = ShellFactory.create(language === 'core' ? 'pwsh' : 'powershell', {
+    const shell = ShellFactory.create('powershell', {
       device: this.device,
       user: 'User',
       cwd: this.shell?.cwd,
@@ -1192,14 +1192,14 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── Sub-shell management ───────────────────────────────────────
 
-  private enterPowerShell(language: 'desktop' | 'core' = 'desktop'): void {
+  private enterPowerShell(): void {
     // Build a real `WindowsPowerShellShell` through the new shell layer
     // and wrap it in the adapter so it plugs into the existing sub-shell
     // stack mechanics (history, completion, special keys). The per-
     // terminal `WindowsShellSession` travels via `extras` so cwd / env
     // isolation between sibling terminals is preserved.
     installDefaultShells();
-    const shell = ShellFactory.create(language === 'core' ? 'pwsh' : 'powershell', {
+    const shell = ShellFactory.create('powershell', {
       device: this.device,
       user: 'User',
       cwd: this.shell?.cwd,
@@ -1399,7 +1399,7 @@ export class WindowsTerminalSession extends TerminalSession {
         };
         const maybePromise = this.holdSubShellForeground(processSubShellLine(this.activeSubShell, line, onProgress));
 
-        const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _powerShellLanguage?: 'desktop' | 'core'; _enterCmd?: boolean; childShell?: IShell }) => {
+        const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
           if (result.clearScreen) {
             this.clear();
             this.bannerCleared = true;
@@ -1427,7 +1427,7 @@ export class WindowsTerminalSession extends TerminalSession {
           }
 
           if (result._enterPowerShell) {
-            this.enterPowerShell(result._powerShellLanguage ?? 'desktop');
+            this.enterPowerShell();
             return;
           }
           if (result._enterCmd) {

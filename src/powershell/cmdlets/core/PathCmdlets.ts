@@ -190,7 +190,6 @@ export class SplitPathCmdlet implements ICmdlet {
   readonly parameters = ['Path', 'LiteralPath', 'Qualifier', 'NoQualifier', 'Parent', 'Leaf', 'LeafBase', 'Extension', 'Resolve', 'IsAbsolute'] as const;
   readonly parameterValues = { Path: 'path', LiteralPath: 'path' } as const;
   readonly switchParameters = ['Qualifier', 'NoQualifier', 'Parent', 'Leaf', 'LeafBase', 'Extension', 'Resolve', 'IsAbsolute'] as const;
-  readonly coreOnlyParameters = ['LeafBase', 'Extension'] as const;
   readonly aliases = [] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -771,14 +770,12 @@ function providerFailure(ctx: CmdletContext, command: string, failure: ProviderF
   return null;
 }
 
-function alreadyExistsText(ctx: CmdletContext, target: string): string {
-  return ctx.runtime.edition === 'core'
-    ? `Cannot create '${target}' because a file or directory with the same name already exists.`
-    : 'Cannot create a file when that file already exists.';
+function alreadyExistsText(target: string): string {
+  return `Cannot create '${target}' because a file or directory with the same name already exists.`;
 }
 
-function argumentNameSuffix(ctx: CmdletContext, parameter: string): string {
-  return ctx.runtime.edition === 'core' ? ` (Parameter '${parameter}')` : `\nParameter name: ${parameter}`;
+function argumentNameSuffix(parameter: string): string {
+  return ` (Parameter '${parameter}')`;
 }
 
 const IO_FAILURE = { exceptionType: 'System.IO.IOException', category: 'WriteError', errorId: 'NewItemIOError' } as const;
@@ -836,7 +833,7 @@ function createItem(ctx: CmdletContext, path: string, typedType: string): PSValu
   const kind = fileSystemItemType(typedType);
   if (kind === null) {
     return providerFailure(ctx, 'New-Item', {
-      message: `${UNKNOWN_ITEM_TYPE}${argumentNameSuffix(ctx, 'type')}`,
+      message: `${UNKNOWN_ITEM_TYPE}${argumentNameSuffix('type')}`,
       exceptionType: 'System.Management.Automation.ParentContainsErrorRecordException',
       errorId: 'Argument',
       category: 'InvalidArgument',
@@ -1071,7 +1068,7 @@ function branchesOf(fs: FileSystem, path: string): Branch[] {
 }
 
 const copyArgumentFailure = (ctx: CmdletContext, message: string, errorId: string, target: string): ProviderFailure => ({
-  message: `${message}${argumentNameSuffix(ctx, 'path')}`,
+  message: `${message}${argumentNameSuffix('path')}`,
   exceptionType: 'System.ArgumentException',
   errorId,
   category: 'InvalidArgument',
@@ -1366,7 +1363,7 @@ function moveItem(ctx: CmdletContext, fs: FileSystem, source: string, destinatio
   if (fs.exists(to) && from.toLowerCase() !== to.toLowerCase()) {
     if (ctx.named['force'] !== true || fs.isDirectory(to)) {
       return providerFailure(ctx, 'Move-Item', {
-        message: alreadyExistsText(ctx, to),
+        message: alreadyExistsText(to),
         exceptionType: 'System.IO.IOException',
         errorId: directory ? 'MoveDirectoryItemIOError' : 'MoveFileInfoItemIOError',
         category: 'WriteError',
@@ -1426,7 +1423,7 @@ function renameItem(ctx: CmdletContext, fs: FileSystem, typed: string, name: str
   }
   if (/[\\/:]/.test(name)) {
     return providerFailure(ctx, 'Rename-Item', {
-      message: `Cannot rename the specified target, because it represents a path or device name.${argumentNameSuffix(ctx, 'newName')}`,
+      message: `Cannot rename the specified target, because it represents a path or device name.${argumentNameSuffix('newName')}`,
       exceptionType: 'System.ArgumentException',
       errorId: 'RenameItemArgumentError',
       category: 'InvalidArgument',
@@ -1437,7 +1434,7 @@ function renameItem(ctx: CmdletContext, fs: FileSystem, typed: string, name: str
   if (!ctx.shouldProcess(`Item: ${source} Destination: ${target}`, fs.isDirectory(source) ? 'Rename Directory' : 'Rename File')) return null;
   if (fs.exists(target) && target.toLowerCase() !== source.toLowerCase()) {
     return providerFailure(ctx, 'Rename-Item', {
-      message: alreadyExistsText(ctx, target),
+      message: alreadyExistsText(target),
       exceptionType: 'System.IO.IOException',
       errorId: 'RenameItemIOError',
       category: 'WriteError',

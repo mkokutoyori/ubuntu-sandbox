@@ -137,9 +137,7 @@ describe('Remove-Item refuses what is in use', () => {
     const shell = await lab();
     await shell.run('Set-Location t');
     const out = await shell.run('Remove-Item . -Recurse');
-    expect(out).toContain(`Remove-Item : Cannot remove the item at '${HERE}' because it is in use.`);
-    expect(out).toContain('InvalidOperation: (:) [Remove-Item], PSInvalidOperationException');
-    expect(out).toContain('FullyQualifiedErrorId : InvalidOperation,Microsoft.PowerShell.Commands.RemoveItemCommand');
+    expect(out).toContain(`Remove-Item: Cannot remove the item at '${HERE}' because it is in use.`);
     expect(await names(shell, '.')).toEqual(['a.txt', 'b.txt', 'c.log', 'sub']);
   });
 
@@ -164,9 +162,8 @@ describe('Remove-Item needs -Force for a hidden, system or read-only item', () =
     const shell = await lab();
     await shell.run(`attrib ${flag} t\\a.txt`);
     const out = await shell.run('Remove-Item t\\a.txt');
-    expect(out).toContain(`Remove-Item : Cannot remove item ${HERE}\\a.txt: You do not have sufficient access rights to perform this operation or the item is hidden, system, or read only.`);
-    expect(out).toContain('PermissionDenied');
-    expect(out).toContain('RemoveFileSystemItemUnAuthorizedAccess,Microsoft.PowerShell.Commands.RemoveItemCommand');
+    expect(out).toContain(`Remove-Item: Cannot remove item ${HERE}\\a.txt: You do not have sufficient access rights to perform this operation or the item is hidden, system, or read only.`);
+    expect(out).toContain('You do not have sufficient access rights');
     expect(await shell.run('Test-Path t\\a.txt')).toBe('True');
     expect(await shell.run('Remove-Item t\\a.txt -Force')).toBe('');
     expect(await shell.run('Test-Path t\\a.txt')).toBe('False');

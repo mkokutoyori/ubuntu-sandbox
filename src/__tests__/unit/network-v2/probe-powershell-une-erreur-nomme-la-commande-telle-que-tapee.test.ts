@@ -1,6 +1,6 @@
 /**
- * Sonde : l'erreur d'une commande PowerShell nomme la commande TELLE QUE TAPEE
- * dans Windows PowerShell 5.1 (`cd : Cannot find path ...`, `ls : ...`,
+ * Sonde : PowerShell 7 est la seule version du projet ; l'erreur d'une commande nomme le cmdlet resolu.
+ * (Historique : Windows PowerShell 5.1, retire, nommait la commande TELLE QUE TAPEE (`cd : Cannot find path ...`, `ls : ...`,
  * `md : ...`), alors que la categorie garde le cmdlet (`[Set-Location]`) ;
  * PowerShell 7 nomme le cmdlet resolu (`Set-Location: ...`) ; l'enregistrement
  * d'erreur porte l'InvocationInfo de la commande fautive.
@@ -31,10 +31,10 @@ import { describe, it, expect } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 
-function shellFor(language: 'desktop' | 'core'): PowerShellSubShell {
+function shellFor(): PowerShellSubShell {
   const pc = new WindowsPC('windows-pc', 'WIN', 0, 0);
   pc.setCurrentUser('Administrator');
-  return PowerShellSubShell.create(pc, { language }).subShell;
+  return PowerShellSubShell.create(pc).subShell;
 }
 
 async function run(sub: PowerShellSubShell, line: string): Promise<string[]> {
@@ -43,100 +43,18 @@ async function run(sub: PowerShellSubShell, line: string): Promise<string[]> {
 
 const missing = "Cannot find path 'C:\\nope' because it does not exist.";
 
-describe('Windows PowerShell 5.1 names the command as it was typed', () => {
-  it.each([
-    ['cd', 'Set-Location'],
-    ['chdir', 'Set-Location'],
-    ['sl', 'Set-Location'],
-    ['ls', 'Get-ChildItem'],
-    ['dir', 'Get-ChildItem'],
-    ['gci', 'Get-ChildItem'],
-    ['GCI', 'Get-ChildItem'],
-    ['get-childitem', 'Get-ChildItem'],
-    ['Get-ChildItem', 'Get-ChildItem'],
-  ])('%s fails with its own name and the cmdlet in the category', async (typed, cmdlet) => {
-    const out = await run(shellFor('desktop'), `${typed} C:\\nope`);
-    expect(out[0]).toBe(`${typed} : ${missing}`);
-    expect(out[1]).toContain(`[${cmdlet}], ItemNotFoundException`);
-    expect(out[2]).toBe(`    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.${cmdlet.replace('-', '')}Command`);
-  });
-
-  it('writes the full name of a cmdlet that was typed in full', async () => {
-    const out = await run(shellFor('desktop'), 'Get-Item C:\\nope');
-    expect(out[0]).toBe(`Get-Item : ${missing}`);
-  });
-
-  it('writes the cmdlet, not the alias, for a call made with the call operator', async () => {
-    const out = await run(shellFor('desktop'), '& cd C:\\nope');
-    expect(out[0]).toBe(`Set-Location : ${missing}`);
-  });
-
-  it('writes the alias the user defined', async () => {
-    const sub = shellFor('desktop');
-    await run(sub, 'Set-Alias goto Set-Location');
-    const out = await run(sub, 'goto C:\\nope');
-    expect(out[0]).toBe(`goto : ${missing}`);
-    expect(out[1]).toContain('[Set-Location]');
-  });
-
-  it('names md and mkdir as typed while the category says New-Item', async () => {
-    const sub = shellFor('desktop');
-    for (const typed of ['md', 'mkdir']) {
-      const out = await run(sub, `${typed} C:\\Users`);
-      expect(out[0]).toBe(`${typed} : An item with the specified name C:\\Users already exists.`);
-      expect(out[1]).toContain('[New-Item], IOException');
-    }
-  });
-
-  it('names the command as typed inside Invoke-Expression', async () => {
-    const out = await run(shellFor('desktop'), "Invoke-Expression 'cd C:\\nope'");
-    expect(out[0]).toBe(`cd : ${missing}`);
-  });
-
-  it('names the command as typed inside a function', async () => {
-    const sub = shellFor('desktop');
-    await run(sub, 'function Enter-Nope { cd C:\\nope }');
-    const out = await run(sub, 'Enter-Nope');
-    expect(out[0]).toBe(`cd : ${missing}`);
-  });
-
-  it('keeps the invocation of the failing command on the record caught by try/catch', async () => {
-    const sub = shellFor('desktop');
-    const out = await run(sub, 'try { cd C:\\nope -ErrorAction Stop } catch { $_.InvocationInfo.InvocationName; $_.InvocationInfo.MyCommand.Name; $_.CategoryInfo.Activity }');
-    expect(out).toEqual(['cd', 'Set-Location', 'Set-Location']);
-  });
-
-  it('keeps the invocation of the failing command on the record stored by -ErrorVariable', async () => {
-    const sub = shellFor('desktop');
-    await run(sub, 'ls C:\\nope -ErrorVariable ev');
-    expect(await run(sub, '$ev[0].InvocationInfo.InvocationName')).toEqual(['ls']);
-    expect(await run(sub, '$ev[0].InvocationInfo.MyCommand.CommandType')).toEqual(['Cmdlet']);
-    expect(await run(sub, '$ev[0].CategoryInfo.Activity')).toEqual(['Get-ChildItem']);
-  });
-
-  it('keeps the call operator out of InvocationName', async () => {
-    const sub = shellFor('desktop');
-    await run(sub, '& cd C:\\nope -ErrorVariable ev');
-    expect(await run(sub, '$ev[0].InvocationInfo.MyCommand.Name')).toEqual(['Set-Location']);
-  });
-
-  it('prints nothing when the command succeeds', async () => {
-    expect(await run(shellFor('desktop'), 'cd C:\\Windows')).toEqual([]);
-  });
-});
-
 describe('PowerShell 7 names the resolved cmdlet whatever was typed', () => {
   it.each([
     ['cd', 'Set-Location'],
     ['ls', 'Get-ChildItem'],
     ['gci', 'Get-ChildItem'],
   ])('%s fails as %s', async (typed, cmdlet) => {
-    const out = await run(shellFor('core'), `${typed} C:\\nope`);
+    const out = await run(shellFor(), `${typed} C:\\nope`);
     expect(out).toEqual([`${cmdlet}: ${missing}`]);
   });
 
   it('still records the name that was typed', async () => {
-    const sub = shellFor('core');
+    const sub = shellFor();
     await run(sub, 'cd C:\\nope -ErrorVariable ev');
     expect(await run(sub, '$ev[0].InvocationInfo.InvocationName')).toEqual(['cd']);
   });

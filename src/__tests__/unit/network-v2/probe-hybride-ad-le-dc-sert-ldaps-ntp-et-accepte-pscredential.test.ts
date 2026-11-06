@@ -156,28 +156,28 @@ describe('Add-Computer reads the credential the way PowerShell passes it', () =>
     const { shell } = await joinedLab();
     const out = await shell(`${CREDENTIAL('CORP\\Administrator')} Add-Computer -DomainName corp.local -Credential $cred -Restart:$false`);
     expect(out).not.toMatch(/failed|error/i);
-    expect(await shell('(Get-WmiObject Win32_ComputerSystem).Domain')).toBe('corp.local');
+    expect(await shell('(Get-CimInstance Win32_ComputerSystem).Domain')).toBe('corp.local');
   });
 
   it('joins with a PSCredential named user@dns.name', async () => {
     const { shell } = await joinedLab();
     const out = await shell(`${CREDENTIAL('Administrator@corp.local')} Add-Computer -DomainName corp.local -Credential $cred -Restart:$false`);
     expect(out).not.toMatch(/failed|error/i);
-    expect(await shell('(Get-WmiObject Win32_ComputerSystem).Domain')).toBe('corp.local');
+    expect(await shell('(Get-CimInstance Win32_ComputerSystem).Domain')).toBe('corp.local');
   });
 
   it('still joins with the historical "user:password" string', async () => {
     const { shell } = await joinedLab();
     const out = await shell('Add-Computer -DomainName corp.local -Credential "Administrator:P@ssw0rd!" -Restart:$false');
     expect(out).not.toMatch(/failed|error/i);
-    expect(await shell('(Get-WmiObject Win32_ComputerSystem).Domain')).toBe('corp.local');
+    expect(await shell('(Get-CimInstance Win32_ComputerSystem).Domain')).toBe('corp.local');
   });
 
   it('does not join with a wrong password', async () => {
     const { shell } = await joinedLab();
     const out = await shell(`${CREDENTIAL('CORP\\Administrator', 'wrong')} Add-Computer -DomainName corp.local -Credential $cred -Restart:$false`);
     expect(out).toMatch(/Logon failure/);
-    expect(await shell('(Get-WmiObject Win32_ComputerSystem).Domain')).toBe('WORKGROUP');
+    expect(await shell('(Get-CimInstance Win32_ComputerSystem).Domain')).toBe('WORKGROUP');
   });
 });
 

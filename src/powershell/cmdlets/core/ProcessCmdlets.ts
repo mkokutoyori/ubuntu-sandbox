@@ -66,8 +66,8 @@ function asPSObjects(list: ProcessInfo[], withUserName = false): PSValue {
 export class GetProcessCmdlet implements ICmdlet {
   readonly name = 'get-process';
   readonly aliases = ['gps', 'ps'] as const;
-  readonly parameters = ['Name', 'Id', 'IncludeUserName', 'ComputerName', 'Module', 'FileVersionInfo'] as const;
-  readonly desktopOnlyParameters = ['ComputerName'] as const;
+  readonly parameters = ['Name', 'Id', 'IncludeUserName', 'Module', 'FileVersionInfo'] as const;
+  readonly absentParameters = ['ComputerName'] as const;
   readonly parameterValues = { Name: 'processName' } as const;
 
   execute(ctx: CmdletContext): PSValue {

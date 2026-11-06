@@ -164,7 +164,7 @@ describe('the settings surface', () => {
   it('a value the protocol document bounds is refused as a whole, nothing is written', async () => {
     const { server, change } = await lab();
     const out = await change('$s.RoundRobin = $false; $s.TcpReceivePacketSize = 100');
-    expect(out).toContain('Set-DnsServerSetting : The parameter is incorrect.');
+    expect(out).toContain('Set-DnsServerSetting: The parameter is incorrect.');
     expect(await run(server, '(Get-DnsServerSetting -All).RoundRobin')).toBe('True');
   });
 });

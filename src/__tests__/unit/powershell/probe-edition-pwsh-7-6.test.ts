@@ -1,11 +1,12 @@
 /**
- * Probe — edition PowerShell 7.6 (core) contre Windows PowerShell 5.1 (desktop), mesuree sur le
+ * Probe — PowerShell 7.6, seule version du projet (Windows PowerShell 5.1 est retire), mesuree sur le
  * code de PowerShell : Parser.cs/ParserStrings.resx (pipeline chains, ternaire, ??, ?., messages),
- * PSVersionInfo.cs ($PSVersionTable), Join-String.cs, PowerShellCore_format_ps1xml.cs (ConciseView).
- * Discrimination : sur la base b39208474, 31 cas rouges sur 39.
- * Temoins (8, verts avant et apres) : core `$v ?? 'dflt'` (valeur non nulle), core `${a}?[0]` (nul), core `&&` (les deux
- * cotes s'executent deja), core ConvertFrom-Json -AsHashtable (ignore), desktop PSEdition, desktop $IsWindows,
- * desktop 1/0, desktop 0b101.
+ * PSVersionInfo.cs ($PSVersionTable), Join-String.cs, PowerShell_format_ps1xml (ConciseView).
+ * Discrimination : sur le commit qui precede le retrait de la 5.1, `powershell` ouvrait Windows PowerShell 5.1
+ * (PSEdition Desktop, 5.1.0, erreurs a trois lignes CategoryInfo) : les 2 cas de lanceurs et les cas qui lisent
+ * la version, l'edition, la forme des erreurs (Get-Item, 1/0, throw, [int]'x', Get-Nope, ValidateSet) tombaient
+ * sous `powershell` ; les cas de langage (ternaire, ??, ?., &&, ||, 0b, 5uy, -Parallel, Join-String) passaient
+ * deja en `pwsh` et sont les TEMOINS que le moteur 7 etait sain avant le retrait.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WindowsPC } from '@/network/devices/WindowsPC';
@@ -44,38 +45,16 @@ const CORE: Array<[string, string]> = [
   ["$null ?? 'x' ? 'y' : 'z'", "y"],
 ];
 
-const DESKTOP: Array<[string, string]> = [
-  ["$null ?? 'x'", "At line:1 char:7\n+ $null ?? 'x'\n+       ~~\nUnexpected token '??' in expression or statement.\n    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException\n    + FullyQualifiedErrorId : UnexpectedToken"],
-  ["Write-Output a && Write-Output b", "At line:1 char:16\n+ Write-Output a && Write-Output b\n+                ~~\nThe token '&&' is not a valid statement separator in this version.\n    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException\n    + FullyQualifiedErrorId : InvalidEndOfLine"],
-  ["$true ? 'y' : 'n'", "At line:1 char:7\n+ $true ? 'y' : 'n'\n+       ~\nUnexpected token '?' in expression or statement.\n    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException\n    + FullyQualifiedErrorId : UnexpectedToken"],
-  ["1,2,3 | Join-String", "The term 'Join-String' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again."],
-  ["1..3 | ForEach-Object -Parallel { $_ }", "A parameter cannot be found that matches parameter name 'Parallel'."],
-  ["$PSVersionTable.PSEdition", "Desktop"],
-  ["$IsWindows", ""],
-  ["'a'..'e'", "Cannot convert value \"a\" to type \"System.Int32\". Error: \"Input string was not in a correct format.\""],
-  ["0b101", "The term '0b101' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again."],
-  ["1/0", "Attempted to divide by zero."],
-  ["'{\"a\":1}' | ConvertFrom-Json -AsHashtable", "A parameter cannot be found that matches parameter name 'AsHashtable'."],
-];
 
-function shellFor(language: 'desktop' | 'core'): PowerShellSubShell {
+function shellFor(): PowerShellSubShell {
   const pc = new WindowsPC('windows-pc', 'WIN', 0, 0);
   pc.setCurrentUser('Administrator');
-  return PowerShellSubShell.create(pc, { language }).subShell;
+  return PowerShellSubShell.create(pc).subShell;
 }
 
 describe('PowerShell 7.6 (core)', () => {
-  const sub = shellFor('core');
+  const sub = shellFor();
   for (const [code, expected] of CORE) {
-    it(code, async () => {
-      expect((await sub.processLine(code)).output.join('\n')).toBe(expected);
-    });
-  }
-});
-
-describe('Windows PowerShell 5.1 (desktop) refuses PowerShell 7 syntax', () => {
-  const sub = shellFor('desktop');
-  for (const [code, expected] of DESKTOP) {
     it(code, async () => {
       expect((await sub.processLine(code)).output.join('\n')).toBe(expected);
     });
@@ -100,7 +79,7 @@ describe('pwsh and powershell launchers', () => {
     await new Promise(resolve => setTimeout(resolve, 60));
   }
 
-  it('pwsh opens PowerShell 7.6 and powershell opens Windows PowerShell 5.1', async () => {
+  it('pwsh and powershell both open PowerShell 7.6', async () => {
     const pc = new WindowsPC('windows-pc', 'PC1', 0, 0);
     pc.setEventBus(bus);
     const session = manager.getSession(manager.openTerminal(pc)!) as WindowsTerminalSession;
@@ -110,20 +89,20 @@ describe('pwsh and powershell launchers', () => {
     await typeInto(session, 'powershell', false);
     await typeInto(session, '$PSVersionTable.PSEdition', false);
     const text = session.lines.map(line => line.text);
-    expect(text).toContain('PowerShell 7.6.0');
-    expect(text).toContain('Core');
-    expect(text).toContain('Windows PowerShell');
-    expect(text).toContain('Desktop');
+    expect(text.filter(line => line === 'PowerShell 7.6.0')).toHaveLength(2);
+    expect(text.filter(line => line === 'Core')).toHaveLength(2);
+    expect(text).not.toContain('Windows PowerShell');
+    expect(text).not.toContain('Desktop');
   });
 
-  it('one-shot pwsh -Command reports 7.6.0, powershell -Command reports 5.1.0', async () => {
+  it('one-shot pwsh -Command and powershell -Command both report 7.6.0', async () => {
     const pc = new WindowsPC('windows-pc', 'PC2', 0, 0);
     pc.setEventBus(bus);
     const session = manager.getSession(manager.openTerminal(pc)!) as WindowsTerminalSession;
     await typeInto(session, 'pwsh -Command "$PSVersionTable.PSVersion.ToString()"', true);
     await typeInto(session, 'powershell -Command "$PSVersionTable.PSVersion.ToString()"', false);
     const text = session.lines.map(line => line.text);
-    expect(text).toContain('7.6.0');
-    expect(text).toContain('5.1.0');
+    expect(text.filter(line => line === '7.6.0')).toHaveLength(2);
+    expect(text).not.toContain('5.1.0');
   });
 });

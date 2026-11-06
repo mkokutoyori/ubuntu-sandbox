@@ -51,7 +51,7 @@ async function buildBaseline(pc: WindowsPC): Promise<{ execute: (l: string) => P
   );
 
   await ps.execute(
-    '$baseline = Get-WmiObject Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" } | ' +
+    '$baseline = Get-CimInstance Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" } | ' +
     'Select-Object Name, StartName, PathName',
   );
   await ps.execute('$baseline | ConvertTo-Json | Out-File "C:\\Scripts\\baseline-services.json"');
@@ -66,12 +66,12 @@ async function buildBaseline(pc: WindowsPC): Promise<{ execute: (l: string) => P
 
 describe('Scénario 3 — Sécurité des comptes de service, audit des privilèges et détection de dérive', () => {
   describe('Baseline des comptes et privilèges', () => {
-    it('Get-WmiObject Win32_Service établit StartName/PathName pour tous les services', async () => {
+    it('Get-CimInstance Win32_Service établit StartName/PathName pour tous les services', async () => {
       const pc = createPC();
       const ps = await buildBaseline(pc);
 
       const out = await ps.execute(
-        'Get-WmiObject Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" } | ' +
+        'Get-CimInstance Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" } | ' +
         'Select-Object Name, StartName, PathName',
       );
       expect(out).toContain('MonServiceSecurise');
@@ -112,7 +112,7 @@ describe('Scénario 3 — Sécurité des comptes de service, audit des privilèg
 
       const out = await ps.execute(
         '$baseline = Get-Content "C:\\Scripts\\baseline-services.json" | ConvertFrom-Json\n' +
-        '$current = Get-WmiObject Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" }\n' +
+        '$current = Get-CimInstance Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" }\n' +
         'if ($current.StartName -ne $baseline.StartName) { ' +
         '"DRIFT: StartName changed from $($baseline.StartName) to $($current.StartName)" }',
       );
@@ -239,7 +239,7 @@ Write-EventLog -LogName Security -Source "remediation" -EventId 5001 -EntryType 
       await ps.execute(remediationScript);
 
       const restored = await ps.execute(
-        'Get-WmiObject Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" } | Select-Object -ExpandProperty StartName',
+        'Get-CimInstance Win32_Service | Where-Object { $_.Name -eq "MonServiceSecurise" } | Select-Object -ExpandProperty StartName',
       );
       expect(restored.trim()).toContain('svc-monservice');
 

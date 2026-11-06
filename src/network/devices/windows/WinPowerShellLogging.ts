@@ -110,7 +110,7 @@ export function scriptBlockId(text: string): string {
 export function transcriptHeader(hostname: string, user: string, startedAt: Date): string {
   return [
     '**********************',
-    'Windows PowerShell transcript start',
+    'PowerShell transcript start',
     `Start time: ${startedAt.toISOString()}`,
     `Username: ${user}`,
     `Machine: ${hostname.toUpperCase()}`,

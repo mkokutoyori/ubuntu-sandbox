@@ -73,7 +73,7 @@ describe('Split-Path', () => {
   });
 
   it('-Extension returns the extension in PowerShell 7', () => {
-    const interp = new PSInterpreter(undefined, { language: 'core' });
+    const interp = new PSInterpreter();
     interp.execute('$r = Split-Path "C:\\x\\file.txt" -Extension');
     expect(interp.getVariable('r')).toBe('.txt');
   });

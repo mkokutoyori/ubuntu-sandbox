@@ -37,7 +37,7 @@ const MONITOR_SCRIPT = String.raw`
 $targets = @("ServiceNominal","ServiceFuite")
 
 foreach ($svcName in $targets) {
-  $svcWmi = Get-WmiObject Win32_Service | Where-Object { $_.Name -eq $svcName }
+  $svcWmi = Get-CimInstance Win32_Service | Where-Object { $_.Name -eq $svcName }
   if (-not $svcWmi) { continue }
   $procId = $svcWmi.ProcessId
   $proc = Get-Process -Id $procId
@@ -48,7 +48,7 @@ foreach ($svcName in $targets) {
   $wsBytes = $wsSample.CounterSamples[0].CookedValue
   $cpuPct = $cpuSample.CounterSamples[0].CookedValue
 
-  $wmiPerf = Get-WmiObject Win32_PerfFormattedData_PerfProc_Process | Where-Object { $_.Name -eq $procName }
+  $wmiPerf = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process | Where-Object { $_.Name -eq $procName }
 
   $sample = [PSCustomObject]@{
     Timestamp    = Get-Date
@@ -142,14 +142,14 @@ describe('Scénario 4 — Analyse de la consommation de ressources et détection
       expect(Number(cpuOut)).toBeGreaterThanOrEqual(0);
 
       const perfOut = await ps.execute(
-        'Get-WmiObject Win32_PerfFormattedData_PerfProc_Process | Where-Object { $_.Name -eq "ServiceFuite" } | Select-Object HandleCount, ThreadCount, WorkingSetPrivate',
+        'Get-CimInstance Win32_PerfFormattedData_PerfProc_Process | Where-Object { $_.Name -eq "ServiceFuite" } | Select-Object HandleCount, ThreadCount, WorkingSetPrivate',
       );
       expect(perfOut).toMatch(/HandleCount/);
       expect(perfOut).toMatch(/ThreadCount/);
       expect(perfOut).toMatch(/WorkingSetPrivate/);
 
       const wmiPid = (await ps.execute(
-        '(Get-WmiObject Win32_Service | Where-Object { $_.Name -eq "ServiceFuite" } | Select-Object -ExpandProperty ProcessId)',
+        '(Get-CimInstance Win32_Service | Where-Object { $_.Name -eq "ServiceFuite" } | Select-Object -ExpandProperty ProcessId)',
       )).trim();
       expect(Number(wmiPid)).toBe(pid);
 

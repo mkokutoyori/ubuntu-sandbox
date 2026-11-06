@@ -43,7 +43,7 @@ const IS_DEFAULT = 'The scope is the same as the default zone scope.';
 const INVALID_NAME = 'The scope name contains invalid characters.';
 const MISSING = 'The scope does not exist.';
 const REFERENCED = 'The zone scope cannot be deleted because it is referenced by a DNS Policy.';
-const NON_INTERACTIVE = 'Windows PowerShell is in NonInteractive mode.';
+const NON_INTERACTIVE = 'PowerShell is in NonInteractive mode.';
 const SCOPE_FOLDER = 'C:\\Windows\\System32\\dns\\corp.test';
 
 const tidy = (text: string): string => text.split('\n').map(line => line.trimEnd()).join('\n');
@@ -90,26 +90,26 @@ describe('Add-DnsServerZoneScope', () => {
 
   it('refuses the zone name itself, whatever its case: the default scope exists', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -ZoneName corp.test -Name corp.test`)).toContain(`${ADD} : ${IS_DEFAULT}`);
-    expect(await cmd(`${ADD} -ZoneName corp.test -Name CORP.TEST`)).toContain(`${ADD} : ${IS_DEFAULT}`);
+    expect(await cmd(`${ADD} -ZoneName corp.test -Name corp.test`)).toContain(`${ADD}: ${IS_DEFAULT}`);
+    expect(await cmd(`${ADD} -ZoneName corp.test -Name CORP.TEST`)).toContain(`${ADD}: ${IS_DEFAULT}`);
   });
 
   it('refuses a scope that exists, whatever its case', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -ZoneName corp.test -Name Europe`);
-    expect(await cmd(`${ADD} -ZoneName corp.test -Name EUROPE`)).toContain(`${ADD} : ${EXISTS}`);
+    expect(await cmd(`${ADD} -ZoneName corp.test -Name EUROPE`)).toContain(`${ADD}: ${EXISTS}`);
     expect(await cmd(names(`${GET} -ZoneName corp.test`))).toBe('corp.test,Europe');
   });
 
   it('refuses a name a zone name cannot carry', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -ZoneName corp.test -Name "bad name!"`)).toContain(`${ADD} : ${INVALID_NAME}`);
+    expect(await cmd(`${ADD} -ZoneName corp.test -Name "bad name!"`)).toContain(`${ADD}: ${INVALID_NAME}`);
     expect(await cmd(names(`${GET} -ZoneName corp.test`))).toBe('corp.test');
   });
 
   it('refuses a zone that is not on the server', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -ZoneName nope.test -Name X`)).toContain(`${ADD} : Zone "nope.test" does not exist on this server.`);
+    expect(await cmd(`${ADD} -ZoneName nope.test -Name X`)).toContain(`${ADD}: Zone "nope.test" does not exist on this server.`);
   });
 
   it('refuses a reverse lookup zone', async () => {
@@ -121,8 +121,8 @@ describe('Add-DnsServerZoneScope', () => {
 
   it('asks for what is missing and names its target under -WhatIf', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -ZoneName corp.test`)).toContain(`${ADD} : Cannot process command because of one or more missing mandatory parameters: Name.`);
-    expect(await cmd(`${ADD} -Name X`)).toContain(`${ADD} : Cannot process command because of one or more missing mandatory parameters: ZoneName.`);
+    expect(await cmd(`${ADD} -ZoneName corp.test`)).toContain(`${ADD}: Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${ADD} -Name X`)).toContain(`${ADD}: Cannot process command because of one or more missing mandatory parameters: ZoneName.`);
     expect(await cmd(`${ADD} -ZoneName corp.test -Name X -WhatIf`)).toContain(`What if: Performing the operation "${ADD}" on target "X".`);
     expect(await cmd(names(`${GET} -ZoneName corp.test`))).toBe('corp.test');
   });
@@ -161,9 +161,9 @@ describe('Get-DnsServerZoneScope', () => {
 
   it('says when the scope is not in the zone and when the zone is not on the server', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${GET} -ZoneName corp.test -Name nope`)).toContain(`${GET} : ${ABSENT}`);
-    expect(await cmd(`${GET} -ZoneName nope.test`)).toContain(`${GET} : Zone "nope.test" does not exist on this server.`);
-    expect(await cmd(GET)).toContain(`${GET} : Cannot process command because of one or more missing mandatory parameters: ZoneName.`);
+    expect(await cmd(`${GET} -ZoneName corp.test -Name nope`)).toContain(`${GET}: ${ABSENT}`);
+    expect(await cmd(`${GET} -ZoneName nope.test`)).toContain(`${GET}: Zone "nope.test" does not exist on this server.`);
+    expect(await cmd(GET)).toContain(`${GET}: Cannot process command because of one or more missing mandatory parameters: ZoneName.`);
   });
 
   it('keeps the scopes of a zone apart from the scopes of another zone', async () => {
@@ -202,7 +202,7 @@ describe('Remove-DnsServerZoneScope', () => {
     await cmd(`${ADD} -ZoneName corp.test -Name corp_NorthAmerica`);
     await cmd(`${ADD} -ZoneName corp.test -Name corp_Europe`);
     const output = await cmd(`${GET} -ZoneName corp.test | ${REMOVE} -Force -PassThru`);
-    expect(output).toContain(`${REMOVE} : ${IS_DEFAULT}`);
+    expect(output).toContain(`${REMOVE}: ${IS_DEFAULT}`);
     expect(output).toContain('corp_NorthAmerica.dns');
     expect(output).toContain('corp_Europe.dns');
     expect(await cmd(names(`${GET} -ZoneName corp.test`))).toBe('corp.test');
@@ -210,15 +210,15 @@ describe('Remove-DnsServerZoneScope', () => {
 
   it('refuses the default scope, an absent scope and an absent zone', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name corp.test -Force`)).toContain(`${REMOVE} : ${IS_DEFAULT}`);
-    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name nope -Force`)).toContain(`${REMOVE} : ${MISSING}`);
-    expect(await cmd(`${REMOVE} -ZoneName nope.test -Name X -Force`)).toContain(`${REMOVE} : Zone "nope.test" does not exist on this server.`);
+    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name corp.test -Force`)).toContain(`${REMOVE}: ${IS_DEFAULT}`);
+    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name nope -Force`)).toContain(`${REMOVE}: ${MISSING}`);
+    expect(await cmd(`${REMOVE} -ZoneName nope.test -Name X -Force`)).toContain(`${REMOVE}: Zone "nope.test" does not exist on this server.`);
   });
 
   it('asks before it removes and names its target under -WhatIf', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -ZoneName corp.test -Name S`);
-    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name S`)).toContain(`${REMOVE} : ${NON_INTERACTIVE}`);
+    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name S`)).toContain(`${REMOVE}: ${NON_INTERACTIVE}`);
     expect(await cmd(`${REMOVE} -ZoneName corp.test -Name S -WhatIf`)).toContain(`What if: Performing the operation "${REMOVE}" on target "S".`);
     expect(await cmd(names(`${GET} -ZoneName corp.test`))).toBe('corp.test,S');
   });
@@ -226,8 +226,8 @@ describe('Remove-DnsServerZoneScope', () => {
   it('refuses a scope that a zone level policy names, until the policy goes (9989)', async () => {
     const { cmd } = await scoped();
     await cmd(`${POLICY} -Name P -Action ALLOW -ClientSubnet "EQ,Lan" -ZoneScope "ScopeA,1" -ZoneName corp.test`);
-    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name ScopeA -Force`)).toContain(`${REMOVE} : ${REFERENCED}`);
-    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name SCOPEA -Force`)).toContain(`${REMOVE} : ${REFERENCED}`);
+    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name ScopeA -Force`)).toContain(`${REMOVE}: ${REFERENCED}`);
+    expect(await cmd(`${REMOVE} -ZoneName corp.test -Name SCOPEA -Force`)).toContain(`${REMOVE}: ${REFERENCED}`);
     expect(await cmd(`${REMOVE} -ZoneName corp.test -Name ScopeB -Force`)).toBe('');
     await cmd('Remove-DnsServerQueryResolutionPolicy -Name P -ZoneName corp.test -Force');
     expect(await cmd(`${REMOVE} -ZoneName corp.test -Name ScopeA -Force`)).toBe('');
@@ -263,19 +263,19 @@ describe('the records of a scope', () => {
 
   it('are refused, written, read, replaced and removed, under an absent scope, with the text of 9952', async () => {
     const { cmd } = await scoped();
-    expect(await cmd('Add-DnsServerResourceRecordA -ZoneName corp.test -Name x -IPv4Address 10.1.1.1 -ZoneScope Nope')).toContain(`Add-DnsServerResourceRecordA : ${ABSENT}`);
-    expect(await cmd('Add-DnsServerResourceRecord -ZoneName corp.test -Name x -A -IPv4Address 10.1.1.1 -ZoneScope Nope')).toContain(`Add-DnsServerResourceRecord : ${ABSENT}`);
-    expect(await cmd('Get-DnsServerResourceRecord -ZoneName corp.test -ZoneScope Nope')).toContain(`Get-DnsServerResourceRecord : ${ABSENT}`);
-    expect(await cmd('Remove-DnsServerResourceRecord -ZoneName corp.test -Name www -RRType A -ZoneScope Nope -Force')).toContain(`Remove-DnsServerResourceRecord : ${ABSENT}`);
-    expect(await cmd('Get-DnsServerZoneDelegation -Name corp.test -ZoneScope Nope')).toContain(`Get-DnsServerZoneDelegation : ${ABSENT}`);
+    expect(await cmd('Add-DnsServerResourceRecordA -ZoneName corp.test -Name x -IPv4Address 10.1.1.1 -ZoneScope Nope')).toContain(`Add-DnsServerResourceRecordA: ${ABSENT}`);
+    expect(await cmd('Add-DnsServerResourceRecord -ZoneName corp.test -Name x -A -IPv4Address 10.1.1.1 -ZoneScope Nope')).toContain(`Add-DnsServerResourceRecord: ${ABSENT}`);
+    expect(await cmd('Get-DnsServerResourceRecord -ZoneName corp.test -ZoneScope Nope')).toContain(`Get-DnsServerResourceRecord: ${ABSENT}`);
+    expect(await cmd('Remove-DnsServerResourceRecord -ZoneName corp.test -Name www -RRType A -ZoneScope Nope -Force')).toContain(`Remove-DnsServerResourceRecord: ${ABSENT}`);
+    expect(await cmd('Get-DnsServerZoneDelegation -Name corp.test -ZoneScope Nope')).toContain(`Get-DnsServerZoneDelegation: ${ABSENT}`);
     expect(await cmd('(Get-DnsServerResourceRecord -ZoneName corp.test -Name x).Count')).toBe('0');
   });
 
   it('(CONTROL) say that the zone cannot be found, not that a scope is missing, when none was asked for on a secondary zone that has not transferred yet', async () => {
     const { master } = await governed();
     await run(master, 'Add-DnsServerSecondaryZone -Name corp.test -MasterServers 10.0.1.10');
-    expect(await run(master, 'Get-DnsServerResourceRecord -ZoneName corp.test')).toContain('Get-DnsServerResourceRecord : Cannot find zone "corp.test" on this server.');
-    expect(await run(master, 'Get-DnsServerZoneDelegation -Name corp.test')).toContain('Get-DnsServerZoneDelegation : Zone "corp.test" does not exist on this server.');
+    expect(await run(master, 'Get-DnsServerResourceRecord -ZoneName corp.test')).toContain('Get-DnsServerResourceRecord: Cannot find zone "corp.test" on this server.');
+    expect(await run(master, 'Get-DnsServerZoneDelegation -Name corp.test')).toContain('Get-DnsServerZoneDelegation: Zone "corp.test" does not exist on this server.');
   });
 
   it('are written through every Add cmdlet of the family', async () => {
@@ -396,10 +396,10 @@ describe('the file of a scope', () => {
 
   it('is refused by -LoadExisting when there is none, and when it is not a zone file of the zone', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -ZoneName corp.test -Name Ghost -LoadExisting`)).toContain(`${ADD} : The zone file "corp.test\\Ghost.dns" does not exist in C:\\Windows\\System32\\dns.`);
+    expect(await cmd(`${ADD} -ZoneName corp.test -Name Ghost -LoadExisting`)).toContain(`${ADD}: The zone file "corp.test\\Ghost.dns" does not exist in C:\\Windows\\System32\\dns.`);
     await cmd(`New-Item -ItemType Directory -Force -Path ${SCOPE_FOLDER} | Out-Null`);
     await cmd(`Set-Content -Path ${SCOPE_FOLDER}\\Alien.dns -Value "$ORIGIN other.test."`);
-    expect(await cmd(`${ADD} -ZoneName corp.test -Name Alien -LoadExisting`)).toContain(`${ADD} : The zone file "corp.test\\Alien.dns"`);
+    expect(await cmd(`${ADD} -ZoneName corp.test -Name Alien -LoadExisting`)).toContain(`${ADD}: The zone file "corp.test\\Alien.dns"`);
     expect(await cmd(names(`${GET} -ZoneName corp.test`))).toBe('corp.test');
   });
 });
@@ -457,7 +457,7 @@ describe('a zone level policy that ALLOWs', () => {
 
   it('refuses a scope that is not in the zone (9959) and accepts it once it is', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${POLICY} -Name P -Action ALLOW -ClientSubnet "EQ,Lan" -ZoneScope "ScopeA,1" -ZoneName corp.test`)).toContain(`${POLICY} : ${MISSING}`);
+    expect(await cmd(`${POLICY} -Name P -Action ALLOW -ClientSubnet "EQ,Lan" -ZoneScope "ScopeA,1" -ZoneName corp.test`)).toContain(`${POLICY}: ${MISSING}`);
     await cmd(`${ADD} -ZoneName corp.test -Name ScopeA`);
     expect(await cmd(`${POLICY} -Name P -Action ALLOW -ClientSubnet "EQ,Lan" -ZoneScope "ScopeA,1" -ZoneName corp.test`)).toBe('');
   });

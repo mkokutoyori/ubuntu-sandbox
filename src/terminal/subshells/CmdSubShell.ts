@@ -60,8 +60,7 @@ export class CmdSubShell implements ISubShell {
         exit: false,
         prompt: this.getPrompt(),
         _enterPowerShell: true,
-        _powerShellLanguage: lower.startsWith('pwsh') ? 'core' : 'desktop',
-      } as SubShellResult & { _enterPowerShell: boolean; _powerShellLanguage: 'desktop' | 'core' };
+      } as SubShellResult & { _enterPowerShell: boolean };
     }
 
     // cls → clear screen

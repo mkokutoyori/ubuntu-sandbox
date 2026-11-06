@@ -616,8 +616,7 @@ export class GetCimInstanceCmdlet implements ICmdlet {
   // Get-WmiObject/gwmi are the legacy WMI names for the same query surface —
   // an object pipeline (Where-Object/Select-Object/…) needs the real cmdlet,
   // not the legacy string-formatting executor.
-  readonly aliases = ['get-wmiobject', 'gwmi'] as const;
-  readonly desktopOnlyAliases = ['get-wmiobject', 'gwmi'] as const;
+  readonly aliases = [] as const;
   readonly parameters = ['ClassName', 'ComputerName', 'Credential'] as const;
 
   execute(ctx: CmdletContext): PSValue {

@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 
 function interactive(code: string): string {
-  const interp = new PSInterpreter(undefined, { language: 'core' });
+  const interp = new PSInterpreter();
   interp.beginInteractive(code);
   return interp.resumeInteractive().replace(/\r?\n/g, '|');
 }

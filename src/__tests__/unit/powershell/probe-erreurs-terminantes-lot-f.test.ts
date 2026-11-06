@@ -14,7 +14,7 @@ import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 import { NativeCommandNeedsAsync } from '@/powershell/nativeAsync';
 
 function interactive(code: string): string {
-  const interp = new PSInterpreter(undefined, { language: 'core' });
+  const interp = new PSInterpreter();
   try {
     interp.beginInteractive(code);
     for (;;) {
@@ -61,7 +61,7 @@ describe('erreurs terminantes d\'instruction (shell interactif)', () => {
   }
 
   it('execute() (API hote) leve toujours la premiere erreur', () => {
-    const interp = new PSInterpreter(undefined, { language: 'core' });
+    const interp = new PSInterpreter();
     expect(() => interp.execute("1/0; 'after'")).toThrow();
   });
 });

@@ -36,10 +36,10 @@ import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 
 const HOME = 'C:\\Users\\User';
 
-function shellFor(language: 'desktop' | 'core'): PowerShellSubShell {
+function shellFor(): PowerShellSubShell {
   const pc = new WindowsPC('windows-pc', 'WIN', 0, 0);
   pc.setCurrentUser('Administrator');
-  return PowerShellSubShell.create(pc, { language }).subShell;
+  return PowerShellSubShell.create(pc).subShell;
 }
 
 async function run(sub: PowerShellSubShell, line: string): Promise<string[]> {
@@ -63,62 +63,43 @@ describe('a missing path is reported by its absolute path', () => {
     ['Get-FileHash nope', 'Get-FileHash', 'Get-FileHash'],
     ['Get-AuthenticodeSignature nope', 'Get-AuthenticodeSignature', 'Get-AuthenticodeSignature'],
   ])('%s', async (line, typed, cmdlet) => {
-    const out = await run(shellFor('desktop'), line);
-    expect(out[0]).toBe(`${typed} : Cannot find path '${HOME}\\nope' because it does not exist.`);
-    expect(out[1]).toContain(`ObjectNotFound: (${HOME}\\nope:String) [${cmdlet}], ItemNotFoundException`);
-    expect(out[2]).toBe(`    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.${cmdlet.replace('-', '')}Command`);
+    const out = await run(shellFor(), line);
+    expect(out).toEqual([`${cmdlet}: Cannot find path '${HOME}\\nope' because it does not exist.`]);
   });
 
   it('resolves the missing name against the current location, not the home', async () => {
-    const sub = shellFor('desktop');
+    const sub = shellFor();
     await run(sub, 'cd C:\\Windows');
-    expect((await run(sub, 'cd nope'))[0]).toBe("cd : Cannot find path 'C:\\Windows\\nope' because it does not exist.");
-    expect((await run(sub, 'cd ..\\nope'))[0]).toBe("cd : Cannot find path 'C:\\nope' because it does not exist.");
-    expect((await run(sub, 'cd .\\a\\b'))[0]).toBe("cd : Cannot find path 'C:\\Windows\\a\\b' because it does not exist.");
+    expect((await run(sub, 'cd nope'))[0]).toBe("Set-Location: Cannot find path 'C:\\Windows\\nope' because it does not exist.");
+    expect((await run(sub, 'cd ..\\nope'))[0]).toBe("Set-Location: Cannot find path 'C:\\nope' because it does not exist.");
+    expect((await run(sub, 'cd .\\a\\b'))[0]).toBe("Set-Location: Cannot find path 'C:\\Windows\\a\\b' because it does not exist.");
   });
 
   it('keeps an absolute path as it was typed', async () => {
-    const out = await run(shellFor('desktop'), 'Get-Item C:\\Users\\nope');
-    expect(out[0]).toBe("Get-Item : Cannot find path 'C:\\Users\\nope' because it does not exist.");
-  });
-
-  it('reads cd - as a path of that name', async () => {
-    const out = await run(shellFor('desktop'), 'cd -');
-    expect(out[0]).toBe(`cd : Cannot find path '${HOME}\\-' because it does not exist.`);
+    const out = await run(shellFor(), 'Get-Item C:\\Users\\nope');
+    expect(out[0]).toBe("Get-Item: Cannot find path 'C:\\Users\\nope' because it does not exist.");
   });
 
   it('names a file that exists but is not a container as it was typed', async () => {
-    const sub = shellFor('desktop');
+    const sub = shellFor();
     await run(sub, "Set-Content afile.txt 'x'");
-    expect((await run(sub, 'cd afile.txt'))[0]).toBe("cd : Cannot find path 'afile.txt' because it does not exist.");
+    expect((await run(sub, 'cd afile.txt'))[0]).toBe("Set-Location: Cannot find path 'afile.txt' because it does not exist.");
   });
 
   it('names a wildcard that matches nothing as it was typed', async () => {
-    expect((await run(shellFor('desktop'), 'cd nope*'))[0]).toBe("cd : Cannot find path 'nope*' because it does not exist.");
+    expect((await run(shellFor(), 'cd nope*'))[0]).toBe("Set-Location: Cannot find path 'nope*' because it does not exist.");
   });
 
   it('keeps the drive-qualified path of a provider that is not the file system', async () => {
-    const sub = shellFor('desktop');
-    expect((await run(sub, 'cd HKCU:\\nope'))[0]).toBe("cd : Cannot find path 'HKCU:\\nope' because it does not exist.");
-    expect((await run(sub, 'cd Env:\\nope'))[0]).toBe("cd : Cannot find path 'Env:\\nope' because it does not exist.");
-  });
-
-  it('keeps the absolute path under PowerShell 7 too', async () => {
-    const out = await run(shellFor('core'), 'cd nope');
-    expect(out).toEqual([`Set-Location: Cannot find path '${HOME}\\nope' because it does not exist.`]);
+    const sub = shellFor();
+    expect((await run(sub, 'cd HKCU:\\nope'))[0]).toBe("Set-Location: Cannot find path 'HKCU:\\nope' because it does not exist.");
+    expect((await run(sub, 'cd Env:\\nope'))[0]).toBe("Set-Location: Cannot find path 'Env:\\nope' because it does not exist.");
   });
 });
 
 describe('a missing drive is a DriveNotFoundException', () => {
   it('names the drive and records the exception', async () => {
-    const out = await run(shellFor('desktop'), 'cd Z:\\x');
-    expect(out[0]).toBe("cd : Cannot find drive. A drive with the name 'Z' does not exist.");
-    expect(out[1]).toContain('ObjectNotFound: (Z:String) [Set-Location], DriveNotFoundException');
-    expect(out[2]).toBe('    + FullyQualifiedErrorId : DriveNotFound,Microsoft.PowerShell.Commands.SetLocationCommand');
-  });
-
-  it('says the same under PowerShell 7', async () => {
-    const out = await run(shellFor('core'), 'cd Z:\\x');
+    const out = await run(shellFor(), 'cd Z:\\x');
     expect(out).toEqual(["Set-Location: Cannot find drive. A drive with the name 'Z' does not exist."]);
   });
 });

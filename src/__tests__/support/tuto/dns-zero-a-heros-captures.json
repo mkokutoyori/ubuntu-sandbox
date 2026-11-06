@@ -1194,7 +1194,7 @@
     "dev": "PC-GUICHET1",
     "kind": "ps",
     "cmd": "Resolve-DnsName nexiste.banquehorizon.com",
-    "output": "Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist\n    + CategoryInfo          : ResourceUnavailable: (nexiste.banquehorizon.com:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName"
+    "output": "Resolve-DnsName: nexiste.banquehorizon.com : DNS name does not exist"
    },
    {
     "id": "c3.cache-nx",
@@ -1483,7 +1483,7 @@
     "dev": "PC-GUICHET1",
     "kind": "ps",
     "cmd": "Resolve-DnsName dc1.horizon.local",
-    "output": "Resolve-DnsName : dc1.horizon.local : This operation returned because the timeout period expired\n    + CategoryInfo          : ResourceUnavailable: (dc1.horizon.local:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName"
+    "output": "Resolve-DnsName: dc1.horizon.local : This operation returned because the timeout period expired"
    },
    {
     "id": "d4.nrpt-add",
@@ -1511,7 +1511,7 @@
     "dev": "PC-GUICHET1",
     "kind": "ps",
     "cmd": "Resolve-DnsName www.banquehorizon.com",
-    "output": "Resolve-DnsName : www.banquehorizon.com : This operation returned because the timeout period expired\n    + CategoryInfo          : ResourceUnavailable: (www.banquehorizon.com:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName"
+    "output": "Resolve-DnsName: www.banquehorizon.com : This operation returned because the timeout period expired"
    },
    {
     "id": "d4.remove",
@@ -2142,7 +2142,7 @@
     "dev": "PC-GUICHET1",
     "kind": "ps",
     "cmd": "Resolve-DnsName web.banquehorizon.com -Type AAAA",
-    "output": "Resolve-DnsName : web.banquehorizon.com : DNS record does not exist\n    + CategoryInfo          : ResourceUnavailable: (web.banquehorizon.com:String) [Resolve-DnsName], Win32Exception\n    + FullyQualifiedErrorId : DNS_ERROR_RECORD_DOES_NOT_EXIST,Microsoft.DnsClient.Commands.ResolveDnsName"
+    "output": "Resolve-DnsName: web.banquehorizon.com : DNS record does not exist"
    },
    {
     "id": "n.agences",

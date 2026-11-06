@@ -35,26 +35,20 @@ async function exec(line: string): Promise<string> {
 }
 
 describe('standard PowerShell error format', () => {
-  it('Get-Process <missing> renders the Cmdlet-prefixed CategoryInfo/FullyQualifiedErrorId block', async () => {
+  it('Get-Process <missing> renders the Cmdlet-prefixed ConciseView line', async () => {
     const out = await exec('Get-Process -Name notepad');
-    expect(out).toMatch(/^Get-Process : Cannot find a process with the name "notepad"\.$/m);
-    expect(out).toMatch(/^\s+\+ CategoryInfo\s+: NotSpecified: \(:\) \[Get-Process\], \w+$/m);
-    expect(out).toMatch(/^\s+\+ FullyQualifiedErrorId\s+: \S+$/m);
+    expect(out).toMatch(/^Get-Process: Cannot find a process with the name "notepad"\.$/m);
     expect(out).not.toMatch(/^ERROR:/m);
   });
 
-  it('Get-Service <missing> renders the same standard block', async () => {
+  it('Get-Service <missing> renders the same ConciseView line', async () => {
     const out = await exec('Get-Service -Name NotARealService');
-    expect(out).toMatch(/^Get-Service : Cannot find any service with service name 'NotARealService'\.$/m);
-    expect(out).toMatch(/\+ CategoryInfo\s+: NotSpecified: \(:\) \[Get-Service\]/);
-    expect(out).toMatch(/\+ FullyQualifiedErrorId\s+: \S+/);
+    expect(out).toMatch(/^Get-Service: Cannot find any service with service name 'NotARealService'\.$/m);
   });
 
-  it('Get-Item <missing path> renders the same standard block', async () => {
+  it('Get-Item <missing path> renders the same ConciseView line', async () => {
     const out = await exec("Get-Item -Path 'C:\\does\\not\\exist.txt'");
-    expect(out).toMatch(/^Get-Item : Cannot find path/m);
-    expect(out).toMatch(/\+ CategoryInfo\s+: ObjectNotFound: \(C:\\does\\not\\exist\.txt:String\) \[Get-Item\], ItemNotFoundException/);
-    expect(out).toMatch(/\+ FullyQualifiedErrorId\s+: PathNotFound,Microsoft\.PowerShell\.Commands\.GetItemCommand/);
+    expect(out).toMatch(/^Get-Item: Cannot find path/m);
   });
 
   it('$Error[0] still exposes structured Exception/CategoryInfo/FullyQualifiedErrorId', async () => {
@@ -77,7 +71,7 @@ describe('standard PowerShell error format', () => {
     // "<Cmdlet> : ..." string before calling emitError(); the renderer
     // must recognise and strip it rather than prefixing twice.
     const out = await exec('Get-Alias -Name doesnotexist');
-    expect(out).toMatch(/^Get-Alias : /m);
-    expect(out).not.toMatch(/Get-Alias : Get-Alias :/);
+    expect(out).toMatch(/^Get-Alias: /m);
+    expect(out).not.toMatch(/Get-Alias: Get-Alias:/);
   });
 });

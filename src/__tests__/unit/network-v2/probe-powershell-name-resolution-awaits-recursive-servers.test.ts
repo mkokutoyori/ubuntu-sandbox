@@ -161,7 +161,7 @@ describe('PowerShell name resolution through a recursive server', () => {
   it('Test-Connection reaches the host behind the name', async () => {
     const { ps } = await lab();
     const out = await ps('Test-Connection t6.corp.test -Count 1');
-    expect(out).toMatch(/IPV4Address\s*:\s*10\.0\.0\.20/);
+    expect(out).toMatch(/Address\s*:\s*10\.0\.0\.20/);
     expect(out).toMatch(/Status\s*:\s*Success/);
   });
 

@@ -1315,12 +1315,11 @@ describe('11. Get‑Process – extended', () => {
     expect(out).toContain('UserName');
   });
 
-  it('Get-Process -ComputerName localhost is served LOCALLY, another machine is REFUSED', async () => {
+  it('Get-Process has no -ComputerName in PowerShell 7', async () => {
     const pc = createPC();
     const ps = createPS(pc);
-    expect(await ps.execute('Get-Process -ComputerName localhost')).toContain('ProcessName');
-    expect(await ps.execute('Get-Process -ComputerName AUTRE-PC'))
-      .toContain('Cannot connect to');
+    expect(await ps.execute('Get-Process -ComputerName localhost'))
+      .toContain("A parameter cannot be found that matches parameter name 'ComputerName'.");
   });
 
   it('Get-Process with multiple -Name values', async () => {
@@ -1577,11 +1576,11 @@ describe('18. Test‑Connection', () => {
     expect(out).toMatch(/Source.*Destination/s);
   });
 
-  it('unreachable host: one line per attempt carrying Status Failure, and -Quiet False', async () => {
+  it('unreachable host: one line per attempt carrying Status TimedOut, and -Quiet False', async () => {
     const pc = createPC();
     const ps = createPS(pc);
     const out = await ps.execute('Test-Connection 10.255.255.1 -Count 1');
-    expect(out).toMatch(/Status\s*:\s*Failure/);
+    expect(out).toMatch(/Status\s*:\s*TimedOut/);
     expect((await ps.execute('Test-Connection 10.255.255.1 -Count 1 -Quiet')).trim()).toBe('False');
   });
 });
@@ -2766,11 +2765,10 @@ describe('21. Get-Service', () => {
     const help = await ps.execute('Get-Help Get-Service');
     expect(help).toContain('SYNOPSIS');
   });
-  it('-ComputerName localhost is served LOCALLY, another machine is REFUSED', async () => {
+  it('Get-Service has no -ComputerName in PowerShell 7', async () => {
     const pc = createPC(); const ps = createPS(pc);
-    expect(await ps.execute('Get-Service -ComputerName localhost')).toContain('Spooler');
-    expect(await ps.execute('Get-Service -ComputerName AUTRE-PC'))
-      .toContain('Cannot connect to');
+    expect(await ps.execute('Get-Service -ComputerName localhost'))
+      .toContain("A parameter cannot be found that matches parameter name 'ComputerName'.");
   });
   it('unknown service name returns error', async () => {
     const pc = createPC(); const ps = createPS(pc);

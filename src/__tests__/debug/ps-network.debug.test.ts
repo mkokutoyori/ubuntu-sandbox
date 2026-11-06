@@ -129,7 +129,7 @@ describe('debug — PowerShell networking', () => {
 
       // ── 9. WMI / CIM ─────────────────────────────────────────────
       { section: 'WMI / CIM (best-effort)',
-        cmd: 'Get-WmiObject -Class Win32_NetworkAdapter -ErrorAction SilentlyContinue | Select-Object -First 3 Name, Speed' },
+        cmd: 'Get-CimInstance -ClassName Win32_NetworkAdapter -ErrorAction SilentlyContinue | Select-Object -First 3 Name, Speed' },
       'Get-CimInstance -ClassName Win32_NetworkAdapter -ErrorAction SilentlyContinue | Select-Object -First 3 Name, MACAddress',
       'Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue | Select-Object -First 3 Description, IPAddress',
 

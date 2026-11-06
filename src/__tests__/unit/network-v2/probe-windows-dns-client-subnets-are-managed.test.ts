@@ -88,14 +88,14 @@ describe('Add-DnsServerClientSubnet', () => {
     const server = await lab();
     await run(server, 'Add-DnsServerClientSubnet -Name Asia -IPv4Subnet 10.0.0.0/8');
     const out = await run(server, 'Add-DnsServerClientSubnet -Name ASIA -IPv4Subnet 192.168.0.0/16');
-    expect(out).toContain('Add-DnsServerClientSubnet : The client subnet already exists on the DNS server.');
+    expect(out).toContain('Add-DnsServerClientSubnet: The client subnet already exists on the DNS server.');
     expect(await run(server, SUBNETS('Asia'))).toBe('10.0.0.0/8|');
   });
 
   it.each(['10.0.0.0', '10.0.0.0/33', '300.0.0.0/8', '0db8::1/28'])('refuses the IPv4 subnet "%s" and creates nothing', async (subnet) => {
     const server = await lab();
     const out = await run(server, `Add-DnsServerClientSubnet -Name Bad -IPv4Subnet ${subnet}`);
-    expect(out).toContain('Add-DnsServerClientSubnet : The parameter is incorrect.');
+    expect(out).toContain('Add-DnsServerClientSubnet: The parameter is incorrect.');
     expect(await run(server, NAMES)).toBe('');
   });
 
@@ -124,7 +124,7 @@ describe('Get-DnsServerClientSubnet', () => {
 
   it('refuses a record that does not exist', async () => {
     const server = await lab();
-    expect(await run(server, 'Get-DnsServerClientSubnet -Name nosuch')).toContain('Get-DnsServerClientSubnet : The client subnet does not exist on the DNS server.');
+    expect(await run(server, 'Get-DnsServerClientSubnet -Name nosuch')).toContain('Get-DnsServerClientSubnet: The client subnet does not exist on the DNS server.');
   });
 
   it('shows nothing on a server without records', async () => {
@@ -178,7 +178,7 @@ describe('Set-DnsServerClientSubnet', () => {
     expect(await run(server, 'Set-DnsServerClientSubnet -Name Nosuch -Action ADD -IPv4Subnet 1.0.0.0/8')).toContain('The client subnet does not exist on the DNS server.');
     const bogus = await run(server, 'Set-DnsServerClientSubnet -Name Asia -Action BOGUS -IPv4Subnet 1.0.0.0/8');
     expect(bogus).toContain('does not belong to the set "ADD,REMOVE,REPLACE"');
-    expect(bogus.match(/Set-DnsServerClientSubnet :/g)).toHaveLength(1);
+    expect(bogus.match(/Set-DnsServerClientSubnet:/g)).toHaveLength(1);
     expect(await run(server, 'Set-DnsServerClientSubnet -Name Asia -IPv4Subnet 1.0.0.0/8')).toContain('missing mandatory parameters: Action');
     expect(await run(server, SUBNETS('Asia'))).toBe('10.0.0.0/8|');
   });
@@ -252,7 +252,7 @@ describe('Remove-DnsServerClientSubnet', () => {
 
   it('refuses a record that does not exist', async () => {
     const server = await lab();
-    expect(await run(server, 'Remove-DnsServerClientSubnet -Name Nosuch -Force')).toContain('Remove-DnsServerClientSubnet : The client subnet does not exist on the DNS server.');
+    expect(await run(server, 'Remove-DnsServerClientSubnet -Name Nosuch -Force')).toContain('Remove-DnsServerClientSubnet: The client subnet does not exist on the DNS server.');
   });
 
   it('asks for the confirmation before it looks for the record', async () => {

@@ -77,8 +77,8 @@ describe('New/Get-TransportRule cmdlets (docs/PRD-Exchange.md §2.1 P6)', () => 
     await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     const n = await run(ps(dc), 'New-TransportRule -Name R1 -SubjectContainsWords "x" -RejectMessageReasonText "no"');
     const g = await run(ps(dc), 'Get-TransportRule');
-    expect(n).toContain('is not recognized as the name of a cmdlet');
-    expect(g).toContain('is not recognized as the name of a cmdlet');
+    expect(n).toContain('is not recognized as a name of a cmdlet');
+    expect(g).toContain('is not recognized as a name of a cmdlet');
   });
 });
 

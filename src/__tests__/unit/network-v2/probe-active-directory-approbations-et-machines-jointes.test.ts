@@ -148,7 +148,7 @@ describe('a machine joined to the domain is still joined after reopening', () =>
     const lab = await buildLab();
     const { pc, ps } = await reopen(exportOf(lab.all, lab.connections));
     expect(pc.getDomainMembership()).toEqual(lab.pc.getDomainMembership());
-    expect(await ps.pc('(Get-WmiObject Win32_ComputerSystem).PartOfDomain')).toContain('True');
+    expect(await ps.pc('(Get-CimInstance Win32_ComputerSystem).PartOfDomain')).toContain('True');
     expect(await ps.pc('Test-ComputerSecureChannel')).toContain('True');
   });
 

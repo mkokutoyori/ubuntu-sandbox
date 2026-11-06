@@ -4,7 +4,7 @@
  * Bug from debug-output/ps-pipelines_results_debug.txt:
  *
  *     PS> 5 -is [int]
- *       5 : The term '5' is not recognized as the name of a cmdlet ...
+ *       5 : The term '5' is not recognized as a name of a cmdlet ...
  *
  * Two distinct bugs surfaced:
  * 1. The parser treated `[int]` as a type cast (which needs an operand),

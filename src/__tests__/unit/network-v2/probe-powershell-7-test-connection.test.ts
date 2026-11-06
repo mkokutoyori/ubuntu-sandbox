@@ -38,13 +38,8 @@ async function pc() {
 const KNOWN = 'web.banquehorizon.com';
 const UNKNOWN = 'nobody.banquehorizon.com';
 const core = (code: string) => `pwsh -NoProfile -Command "${code}"`;
-const windows = (code: string) => `powershell -NoProfile -Command "${code}"`;
 
 describe('Test-Connection in PowerShell 7 (real PowerShell source)', () => {
-  it('WITNESS 5.1 keeps the Win32_PingStatus shape', async () => {
-    expect(await (await pc()).executeCommand(windows(`Test-Connection ${KNOWN} -Count 1`))).toContain('IPV4Address');
-  });
-
   it('WITNESS a resolvable name succeeds in 7', async () => {
     expect(await (await pc()).executeCommand(core(`(Test-Connection ${KNOWN} -Count 1).Status`))).toContain('Success');
   });

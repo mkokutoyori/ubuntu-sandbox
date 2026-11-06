@@ -68,7 +68,7 @@ beforeEach(() => {
 
 describe('le tutoriel DNS de zero a heros, rejoue sur le laboratoire Banque Horizon', () => {
   for (const [group, steps] of Object.entries(captures.groups)) {
-    it(`groupe ${group} : les ${steps.length} etapes affichent ce que le tutoriel montre`, async () => {
+    it(`groupe ${group}: les ${steps.length} etapes affichent ce que le tutoriel montre`, async () => {
       const lab = await buildDnsAgenceBancaire();
       const devices = new Map<string, Equipment>([...useNetworkStore.getState().deviceInstances.values()].map((device) => [device.getName(), device]));
       const differing: string[] = [];
@@ -94,7 +94,7 @@ describe('le tutoriel DNS de zero a heros, rejoue sur le laboratoire Banque Hori
       const step = byId.get(id)!;
       const digits = step.cmd.includes('named_dump');
       const first = masked(step.output, digits).find((line) => line.trim() !== '');
-      if (first !== undefined && !(digits ? new Set(masked(tutorial, true)) : shown).has(first)) missing.push(`${id} : ${first}`);
+      if (first !== undefined && !(digits ? new Set(masked(tutorial, true)) : shown).has(first)) missing.push(`${id}: ${first}`);
     }
     expect(captures.shown.length).toBeGreaterThan(100);
     expect(missing, missing.join('\n')).toEqual([]);

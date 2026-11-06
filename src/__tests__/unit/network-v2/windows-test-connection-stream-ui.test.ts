@@ -56,13 +56,13 @@ describe('PowerShell Test-Connection — real RTT via the sync probe', () => {
     const out = r.output.join('\n');
     expect(out).toContain('Success');
     expect(out).toContain('192.168.1.20');
-    expect(out).toMatch(/192\.168\.1\.10/);
+    expect(out).toContain(`Source         : ${win.getHostname()}`);
   });
 
-  it('unreachable host: Status Failure', async () => {
+  it('unreachable host: Status TimedOut', async () => {
     const sh = PowerShellSubShell.create(win).subShell;
     const r = await sh.processLine('Test-Connection 192.168.99.99 -Count 1');
-    expect(r.output.join('\n')).toContain('Failure');
+    expect(r.output.join('\n')).toContain('TimedOut');
   });
 
   it('-Quiet returns just True/False', async () => {

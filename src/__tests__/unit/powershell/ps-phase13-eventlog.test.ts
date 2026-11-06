@@ -134,7 +134,7 @@ describe('Phase 13 — Write-EventLog', () => {
   it('Write-EventLog without required params returns error', async () => {
     const sh = createShell(true);
     const out = await run(sh, 'Write-EventLog -LogName Application');
-    expect(out.toLowerCase()).toMatch(/error|required|missing|parameter/i);
+    expect(out.toLowerCase()).toMatch(/error|required|requires|missing|parameter/i);
   });
 });
 

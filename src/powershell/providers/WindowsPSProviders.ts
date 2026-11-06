@@ -1745,7 +1745,7 @@ class WindowsRegistryAdapter implements IRegistryProvider {
   private refused(cmdlet: string, path: string, mustExist: boolean): string | null {
     if (!this.reg.targetsMachineHive(path) || this.mayWriteMachineHive()) return null;
     if (mustExist && !this.reg.testPath(path)) return null;
-    return `${cmdlet} : Requested registry access is not allowed.`;
+    return `${cmdlet}: Requested registry access is not allowed.`;
   }
 
   testPath(path: string): boolean              { return this.reg.testPath(path); }
@@ -2465,7 +2465,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;
     const probes: Array<{ success: boolean; rttMs: number }> = [];
-    for (let sent = 0; sent < Math.max(1, count); sent++) {
+    for (let sent = 0; sent < Math.max(0, count); sent++) {
       const r = this.pc.sendPingProbeSync(ip);
       probes.push({ success: r.success, rttMs: r.rttMs });
     }

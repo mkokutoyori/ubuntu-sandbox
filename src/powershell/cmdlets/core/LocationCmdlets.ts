@@ -114,9 +114,8 @@ function relocate(ctx: CmdletContext, typed: string, literal: boolean): boolean 
 
 function setLocation(ctx: CmdletContext, typed: string, literal: boolean): boolean {
   const state = ctx.runtime.locations;
-  const core = ctx.runtime.edition === 'core';
   let target = typed;
-  if (core && !literal && (typed === '-' || typed === '+')) {
+  if (!literal && (typed === '-' || typed === '+')) {
     const backwards = typed === '-';
     if (!(backwards ? state.canUndo() : state.canRedo())) {
       ctx.emitError(backwards ? NO_HISTORY_BACKWARDS : NO_HISTORY_FORWARDS);
@@ -124,7 +123,7 @@ function setLocation(ctx: CmdletContext, typed: string, literal: boolean): boole
     }
     const here = currentLocation(ctx);
     target = (backwards ? state.undo(here) : state.redo(here)) ?? here;
-  } else if (core) {
+  } else {
     state.record(currentLocation(ctx));
   }
   return relocate(ctx, target, literal);
@@ -165,7 +164,6 @@ export class SetLocationCmdlet implements ICmdlet {
     }
     const typed = pathArgument(ctx);
     const literal = ctx.named['literalpath'] !== undefined;
-    if (typed === '' && ctx.runtime.edition !== 'core') return null;
     if (!setLocation(ctx, typed === '' ? homeOf(ctx) : typed, literal)) return null;
     return ctx.named['passthru'] === true ? pathInfoOf(ctx, currentLocation(ctx)) : null;
   }

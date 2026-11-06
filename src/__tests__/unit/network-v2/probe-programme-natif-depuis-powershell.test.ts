@@ -34,7 +34,7 @@
  * pour la raison inverse — rien ne le routait nulle part.
  *
  * TEMOIN : `Get-Date`, une cmdlet vivante, prouve que le laboratoire
- * repond. NON-REGRESSION : `ipconfig`, deja declare comme cmdlet native,
+ * repond. NON-REGRESSION: `ipconfig`, deja declare comme cmdlet native,
  * ne doit pas changer de chemin.
  */
 
@@ -56,7 +56,7 @@ describe('un programme de cmd tape dans PowerShell', () => {
     expect(await ps('Get-Date')).not.toBe('');
   });
 
-  it('NON-REGRESSION : ipconfig reste servi par sa cmdlet native', async () => {
+  it('NON-REGRESSION: ipconfig reste servi par sa cmdlet native', async () => {
     const { ps } = lab();
     expect(await ps('ipconfig')).toContain('Windows IP Configuration');
   });
@@ -82,14 +82,14 @@ describe('un programme de cmd tape dans PowerShell', () => {
   it('un nom que personne ne porte recoit le refus de POWERSHELL', async () => {
     const { ps } = lab();
     const out = await ps('Get-Zorglub');
-    expect(out).toContain('is not recognized as the name of a cmdlet');
+    expect(out).toContain('is not recognized as a name of a cmdlet');
     expect(out).not.toContain('internal or external command');
   });
 
   it('un CHEMIN absent est refuse par PowerShell, sans passer par cmd', async () => {
     const { ps } = lab();
     const out = await ps('& C:\\NuellePart\\absent.ps1');
-    expect(out).toContain('is not recognized as the name of a cmdlet');
+    expect(out).toContain('is not recognized as a name of a cmdlet');
     expect(out).not.toContain('The system cannot find the path specified');
   });
 });

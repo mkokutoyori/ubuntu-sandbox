@@ -407,7 +407,6 @@ export class TestConnectionCmdlet implements ICmdlet {
   readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
   readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute'] as const;
-  readonly coreOnlyParameters = ['TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -419,32 +418,10 @@ export class TestConnectionCmdlet implements ICmdlet {
       ctx.emitError('Test-Connection requires -ComputerName or a positional target');
       return null;
     }
-    if (ctx.runtime.edition === 'core') return this.executeCore(ctx, net, target, count);
-
-    const probe = net.testPingProbe?.(target, count) ?? null;
-    const probes = probe?.probes ?? [];
-    const resolvedIp = probe?.resolvedIp ?? (target.includes(':') ? '' : target);
-    const sourceIp = probe ? (net.egressInfoFor?.(target)?.sourceIp ?? 'localhost') : 'localhost';
-
-    if (ctx.named['quiet'] === true) return probes.some((p) => p.success);
-
-    const out: PSValue[] = [];
-    for (let i = 0; i < count; i++) {
-      const attempt = probes[i];
-      const answered = attempt?.success ?? false;
-      out.push({
-        Source: sourceIp,
-        Destination: target,
-        IPV4Address: resolvedIp,
-        Bytes: 32,
-        'Time(ms)': answered ? Math.max(1, Math.round(attempt!.rttMs)) : 0,
-        Status: answered ? 'Success' : 'Failure',
-      } as Record<string, PSValue>);
-    }
-    return out as PSValue;
+    return this.runTest(ctx, net, target, count);
   }
 
-  private executeCore(ctx: CmdletContext, net: INetworkProvider, target: string, countGiven: number): PSValue {
+  private runTest(ctx: CmdletContext, net: INetworkProvider, target: string, countGiven: number): PSValue {
     const quiet = ctx.named['quiet'] === true;
     const source = net.getHostname();
     const tcpPort = ctx.named['tcpport'];
@@ -459,7 +436,7 @@ export class TestConnectionCmdlet implements ICmdlet {
       }) as unknown as PSValue);
       return null;
     };
-    const probe = net.testPingProbe?.(target, 1) ?? null;
+    const probe = net.testPingProbe?.(target, 0) ?? null;
     const tracing = ctx.named['traceroute'] === true;
     if (probe === null) {
       if (!quiet) failWith('Cannot resolve the target name.');

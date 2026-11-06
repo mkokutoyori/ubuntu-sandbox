@@ -167,35 +167,6 @@ describe('PowerShell stores the leaf with the case of the disk', () => {
   });
 });
 
-describe('Windows PowerShell location rules', () => {
-  it('reads cd - as a path of that name', async () => {
-    const shell = await windowsPowerShell();
-    const output = await shell.run('cd -');
-    expect(output).toContain("Cannot find path 'C:\\Users\\User\\-' because it does not exist.");
-    expect(shell.prompt).toBe(PS('C:\\Users\\User'));
-  });
-
-  it('reads cd + as a path of that name', async () => {
-    const shell = await windowsPowerShell();
-    expect(await shell.run('cd +')).toContain("Cannot find path 'C:\\Users\\User\\+' because it does not exist.");
-  });
-
-  it('stays in place for Set-Location without a path', async () => {
-    const shell = await windowsPowerShell();
-    await shell.run('cd C:\\Windows');
-    expect(await shell.run('Set-Location')).toBe('');
-    expect(await shell.run('cd')).toBe('');
-    expect(shell.prompt).toBe(PS('C:\\Windows'));
-  });
-
-  it('stays in place for an empty or null path', async () => {
-    const shell = await windowsPowerShell();
-    await shell.run('cd C:\\Windows');
-    await shell.runAll('cd ""', 'cd $null');
-    expect(shell.prompt).toBe(PS('C:\\Windows'));
-  });
-});
-
 describe('PowerShell 7 location rules', () => {
   it('goes home for Set-Location without a path', async () => {
     const shell = await corePowerShell();

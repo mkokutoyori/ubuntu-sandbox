@@ -42,7 +42,7 @@ const MISSING = 'No policy with this name exists on this level (server level or 
 const EXISTS = 'A policy with the same name already exists on this level (server level or zone level) on the DNS server.';
 const NOT_ALLOWED = 'At least one of the settings of this policy is invalid.';
 const NO_CRITERIA = 'The policy is missing criteria.';
-const NON_INTERACTIVE = 'Windows PowerShell is in NonInteractive mode.';
+const NON_INTERACTIVE = 'PowerShell is in NonInteractive mode.';
 
 const tidy = (text: string): string => text.split('\n').map(line => line.trimEnd()).join('\n');
 
@@ -87,7 +87,7 @@ describe('the cmdlets of the examples', () => {
 
   it('refuse a zone that is not on the server', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -Name P -Action DENY -ClientSubnet "EQ,Lan" -ZoneName nope.test`)).toContain(`${ADD} : Zone "nope.test" does not exist on this server.`);
+    expect(await cmd(`${ADD} -Name P -Action DENY -ClientSubnet "EQ,Lan" -ZoneName nope.test`)).toContain(`${ADD}: Zone "nope.test" does not exist on this server.`);
   });
 
   it('get the policies of the server, those of a zone and one policy by name, whatever its case', async () => {
@@ -99,14 +99,14 @@ describe('the cmdlets of the examples', () => {
     expect(await cmd(`(${GET} -ZoneName corp.test).Name -join ","`)).toBe('Zone1');
     expect(await cmd(`(${GET} server2).Action`)).toBe('Ignore');
     expect(await cmd(`(${GET} Zone1 corp.test).Level`)).toBe('Zone');
-    expect(await cmd(`${GET} -Name Nope`)).toContain(`${GET} : ${MISSING}`);
-    expect(await cmd(`${GET} -ZoneName nope.test`)).toContain(`${GET} : Zone "nope.test" does not exist on this server.`);
+    expect(await cmd(`${GET} -Name Nope`)).toContain(`${GET}: ${MISSING}`);
+    expect(await cmd(`${GET} -ZoneName nope.test`)).toContain(`${GET}: Zone "nope.test" does not exist on this server.`);
   });
 
   it('share the names of their level with the query resolution policies: a name that is taken is refused whatever the family (9971)', async () => {
     const { cmd } = await governed();
     await cmd('Add-DnsServerQueryResolutionPolicy -Name Same -Action DENY -ClientSubnet "EQ,Lan"');
-    expect(await cmd(`${ADD} -Name same -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD} : ${EXISTS}`);
+    expect(await cmd(`${ADD} -Name same -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD}: ${EXISTS}`);
     expect(await cmd(`${ADD} -Name Same -Action DENY -ClientSubnet "EQ,Lan" -ZoneName corp.test`)).toBe('');
     expect(await cmd('(Get-DnsServerQueryResolutionPolicy).Name -join ","')).toBe('Same');
     expect(await cmd(`(${GET}).Count`)).toBe('0');
@@ -160,10 +160,10 @@ describe('the cmdlets of the examples', () => {
 
   it('refuse what a zone transfer policy cannot be: an ALLOW, a policy with no criterion, a name that is taken, the criteria of a query policy', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -Name P -Action ALLOW -ClientSubnet "EQ,Lan"`)).toContain(`${ADD} : ${NOT_ALLOWED}`);
-    expect(await cmd(`${ADD} -Name P -Action DENY`)).toContain(`${ADD} : ${NO_CRITERIA}`);
+    expect(await cmd(`${ADD} -Name P -Action ALLOW -ClientSubnet "EQ,Lan"`)).toContain(`${ADD}: ${NOT_ALLOWED}`);
+    expect(await cmd(`${ADD} -Name P -Action DENY`)).toContain(`${ADD}: ${NO_CRITERIA}`);
     await cmd(`${ADD} -Name P -Action DENY -ClientSubnet "EQ,Lan"`);
-    expect(await cmd(`${ADD} -Name p -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD} : ${EXISTS}`);
+    expect(await cmd(`${ADD} -Name p -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD}: ${EXISTS}`);
     expect(await cmd(`${ADD} -Name Q -Action DENY -Fqdn "EQ,*.corp.test"`)).toContain("A parameter cannot be found that matches parameter name 'Fqdn'.");
     expect(await cmd(`${ADD} -Name Q -Action DENY -QType "EQ,AXFR"`)).toContain("A parameter cannot be found that matches parameter name 'QType'.");
     expect(await cmd(`(${GET}).Name -join ","`)).toBe('P');
@@ -171,9 +171,9 @@ describe('the cmdlets of the examples', () => {
 
   it('ask for the name that is missing and refuse the parameters of a query policy on every cmdlet', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${ADD} -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD} : Cannot process command because of one or more missing mandatory parameters: Name.`);
-    expect(await cmd(`${SET} -ClientSubnet "EQ,Lan"`)).toContain(`${SET} : Cannot process command because of one or more missing mandatory parameters: Name.`);
-    expect(await cmd(`${REMOVE} -Force`)).toContain(`${REMOVE} : Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${ADD} -Action DENY -ClientSubnet "EQ,Lan"`)).toContain(`${ADD}: Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${SET} -ClientSubnet "EQ,Lan"`)).toContain(`${SET}: Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${REMOVE} -Force`)).toContain(`${REMOVE}: Cannot process command because of one or more missing mandatory parameters: Name.`);
     expect(await cmd(`${GET} -Fqdn "EQ,x"`)).toContain("A parameter cannot be found that matches parameter name 'Fqdn'.");
     expect(await cmd(`${REMOVE} -Name P -QType "EQ,A" -Force`)).toContain("A parameter cannot be found that matches parameter name 'QType'.");
     expect(await cmd(`${ADD} -Name P -Action DENY -ClientSubnet "EQ,Lan" -ApplyOnRecursion`)).toContain("A parameter cannot be found that matches parameter name 'ApplyOnRecursion'.");
@@ -187,19 +187,19 @@ describe('the cmdlets of the examples', () => {
     expect(await cmd(`(${GET} | Sort-Object ProcessingOrder).Name -join ","`)).toBe('B,A');
     await cmd(`${ADD} -Name Z -Action DENY -ClientSubnet "EQ,Lan" -ZoneName corp.test`);
     expect(await cmd(`${SET} Z corp.test -TransportProtocol "EQ,TCP" -PassThru | ForEach-Object { $_.Criteria.CriteriaType -join "," }`)).toBe('ClientSubnet,TransportProtocol');
-    expect(await cmd(`${SET} -Name Nope -ClientSubnet "EQ,Lan"`)).toContain(`${SET} : ${MISSING}`);
+    expect(await cmd(`${SET} -Name Nope -ClientSubnet "EQ,Lan"`)).toContain(`${SET}: ${MISSING}`);
     expect(await cmd(`${SET} -Name A -Fqdn "EQ,x"`)).toContain("A parameter cannot be found that matches parameter name 'Fqdn'.");
   });
 
   it('remove a policy, asking before unless -Force, and print it under -PassThru', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name P -Action DENY -ClientSubnet "EQ,Lan"`);
-    expect(await cmd(`${REMOVE} -Name P`)).toContain(`${REMOVE} : ${NON_INTERACTIVE}`);
+    expect(await cmd(`${REMOVE} -Name P`)).toContain(`${REMOVE}: ${NON_INTERACTIVE}`);
     expect(await cmd(`${REMOVE} -Name P -WhatIf`)).toContain(`What if: Performing the operation "${REMOVE}" on target "P".`);
     expect(await cmd(`(${GET}).Name -join ","`)).toBe('P');
     expect(await cmd(`${REMOVE} -Name p -Force -PassThru | ForEach-Object { $_.Name }`)).toBe('P');
     expect(await cmd(`${GET}`)).toBe('');
-    expect(await cmd(`${REMOVE} -Name P -Force`)).toContain(`${REMOVE} : ${MISSING}`);
+    expect(await cmd(`${REMOVE} -Name P -Force`)).toContain(`${REMOVE}: ${MISSING}`);
   });
 
   it('go with the zone: a zone that comes back has none of the policies of the zone that went', async () => {

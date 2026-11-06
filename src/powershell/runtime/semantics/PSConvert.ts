@@ -10,12 +10,6 @@ export class PSConversionError extends Error {
   }
 }
 
-export interface ConversionOptions {
-  readonly core: boolean;
-}
-
-export const DESKTOP_CONVERSION: ConversionOptions = { core: false };
-
 const HEX = /^[+-]?0[xX][0-9a-fA-F]+$/;
 const DECIMAL_INTEGER = /^[+-]?\d+$/;
 const FLOAT = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
@@ -70,10 +64,8 @@ export function conversionFailure(value: unknown, fullName: string, detail: stri
   );
 }
 
-function badFormat(value: string, kind: NumericKind, options: ConversionOptions): PSConversionError {
-  const detail = options.core
-    ? `The input string '${value}' was not in a correct format.`
-    : 'Input string was not in a correct format.';
+function badFormat(value: string, kind: NumericKind): PSConversionError {
+  const detail = `The input string '${value}' was not in a correct format.`;
   return conversionFailure(value, typeLabel(kind), detail);
 }
 
@@ -94,7 +86,7 @@ function numericSource(value: unknown): number | PSNumber | null {
 }
 
 export function castToNumeric(
-  kind: NumericKind, value: unknown, options: ConversionOptions = DESKTOP_CONVERSION,
+  kind: NumericKind, value: unknown,
 ): number | PSNumber {
   if (kind === 'bigint' && typeof value === 'string' && DECIMAL_INTEGER.test(value.trim())) {
     return boxInteger('bigint', BigInt(value.trim()));
@@ -102,7 +94,7 @@ export function castToNumeric(
   let source = numericSource(value);
   if (source === null && typeof value === 'string') {
     source = parseNumericString(value);
-    if (source === null) throw badFormat(value, kind, options);
+    if (source === null) throw badFormat(value, kind);
   }
   if (source === null) {
     throw conversionFailure(value, typeLabel(kind), `Cannot convert the "${formatValueForError(value)}" value of type "${describeType(value)}" to type "${typeLabel(kind)}".`);
@@ -149,14 +141,12 @@ function castToDecimal(source: number | PSNumber, original: unknown): number | P
   return boxAs('decimal', source);
 }
 
-export function castToChar(value: unknown, options: ConversionOptions = DESKTOP_CONVERSION): PSChar {
+export function castToChar(value: unknown): PSChar {
   if (value instanceof PSChar) return value;
   if (value === null || value === undefined) return new PSChar(0);
   if (typeof value === 'string') {
     if (value.length !== 1) {
-      throw conversionFailure(value, 'System.Char', options.core
-        ? 'String must be exactly one character long.'
-        : 'String must be exactly one character long.');
+      throw conversionFailure(value, 'System.Char', 'String must be exactly one character long.');
     }
     return new PSChar(value.charCodeAt(0));
   }

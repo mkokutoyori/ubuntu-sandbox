@@ -651,7 +651,7 @@ describe('clearing', () => {
   it('refuses to clear a zone that does not exist', async () => {
     const { server } = await lab();
     const out = await run(server, 'Clear-DnsServerStatistics -ZoneName nosuch.test -Force');
-    expect(out).toContain('Clear-DnsServerStatistics : Zone "nosuch.test" does not exist on this server.');
+    expect(out).toContain('Clear-DnsServerStatistics: Zone "nosuch.test" does not exist on this server.');
   });
 
   it('starts counting again from zero when the service is restarted', async () => {

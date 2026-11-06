@@ -3550,19 +3550,6 @@ services du DC distant comptent comme inaccessibles.
 machines, sur le fil, comme le reste du projet — pas un raccourci qui
 appellerait la methode de l'objet distant.
 
-### [powershell] `Test-Connection` sur un hote injoignable : ligne ou erreur ?
-
-**Mesure** : le simulateur rend UNE LIGNE par tentative, portant
-`Status : Failure`, et `-Quiet` rend `False`. Un vrai PowerShell 5.1
-semble plutot lever `Test-Connection : Testing connection to computer 'x'
-failed: Error due to lack of resources` et ne rien rendre. La bascule a
-ete essayee : elle casse les ateliers AD qui lisent les lignes
-(`scenario-ad-fsmo-roles`), et surtout **aucune transcription n'a pu etre
-atteinte** pour trancher — la documentation de Microsoft ne publie pas la
-sortie d'echec, et les pages qui la portent sont bloquees par le proxy de
-sortie. Le contrat en place est donc conserve, et la question reste
-ouverte.
-
 ### [powershell] quatre criteres REFUSES faute de la brique en dessous
 
 **Mesure** : ce lot a ferme quatre parametres qui etaient ACCEPTES et

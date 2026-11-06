@@ -64,10 +64,6 @@ export function installDefaultShells(): void {
     device: a.device, user: a.user, context: a.context,
     parent: a.parent ?? null, ...windowsSessionsOf(a),
   }));
-  ShellFactory.register('pwsh', (a) => new WindowsPowerShellShell({
-    device: a.device, user: a.user, context: a.context,
-    parent: a.parent ?? null, ...windowsSessionsOf(a), language: 'core',
-  }));
   // Interpreters reachable from a POSIX login shell. The `launcher`
   // pattern is what makes `sqlplus` open a real REPL both at the local
   // console and over the SSH wire — a future `python3`, `psql` or

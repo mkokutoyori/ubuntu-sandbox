@@ -438,7 +438,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetPSProviderCmdlet());
 
   // ── Services (provider-backed) ────────────────────────────────────────────
-  registry.register(remotable('Get-Service', new GetServiceCmdlet()));
+  registry.register(new GetServiceCmdlet());
   registry.register(new StartServiceCmdlet());
   registry.register(new StopServiceCmdlet());
   registry.register(new RestartServiceCmdlet());
@@ -450,7 +450,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new RegisterWmiEventCmdlet());
 
   // ── Processes (provider-backed) ───────────────────────────────────────────
-  registry.register(remotable('Get-Process', new GetProcessCmdlet()));
+  registry.register(new GetProcessCmdlet());
   registry.register(new StopProcessCmdlet());
   registry.register(new StartProcessCmdlet());
 
