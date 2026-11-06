@@ -126,16 +126,28 @@ export function ldapBind(
   return bound.ok;
 }
 
+export type RadiusRound = 'accept' | 'reject' | 'timeout';
+
 export interface RemoteAuthDeps {
   readonly tcp: TcpStack;
   readonly server: (name: string) => DeclaredAuthServer | undefined;
-  readonly radius: AuthenticatingAgent;
+  readonly radiusRound: (
+    address: string, user: string, password: string, authType: string | undefined,
+  ) => Promise<RadiusRound>;
   readonly tacacs: AuthenticatingAgent;
 }
 
 export interface DeclaredAuthServer extends LdapBindTarget {
   readonly kind: IdentitySource;
   readonly address: string;
+  readonly authType?: string;
+  readonly secondaryAddress?: string;
+  readonly tertiaryAddress?: string;
+}
+
+function radiusAddresses(server: DeclaredAuthServer): readonly string[] {
+  return [server.address, server.secondaryAddress, server.tertiaryAddress]
+    .filter((address): address is string => address !== undefined && address !== '' && address !== '0.0.0.0');
 }
 
 export interface AuthenticatingAgent {
@@ -160,8 +172,15 @@ export async function remoteAuthenticate(
     return { accepted: ldapBind(deps.tcp, declared, user, password), server, source: 'ldap' };
   }
 
-  const agent = declared.kind === 'radius' ? deps.radius : deps.tacacs;
-  const outcome = await agent.authenticate(user, password, declared.address);
+  if (declared.kind === 'radius') {
+    for (const address of radiusAddresses(declared)) {
+      const round = await deps.radiusRound(address, user, password, declared.authType);
+      if (round !== 'timeout') return { accepted: round === 'accept', server, source: 'radius' };
+    }
+    return { accepted: false, server, source: 'radius' };
+  }
+
+  const outcome = await deps.tacacs.authenticate(user, password, declared.address);
   const accepted = typeof outcome === 'boolean' ? outcome : outcome.status === 'pass';
   return { accepted, server, source: declared.kind };
 }

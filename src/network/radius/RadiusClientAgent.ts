@@ -264,6 +264,12 @@ export class RadiusClientAgent {
     return this.run(username, password, 'pap', serverIp);
   }
 
+  authenticateChapWithOutcome(
+    username: string, password: string, serverIp?: string,
+  ): Promise<RadiusRoundResult> {
+    return this.run(username, password, 'chap', serverIp);
+  }
+
   /**
    * MS-CHAPv2 authentication (RFC 2759, carried as Microsoft VSAs per RFC
    * 2548 §2.3): generates the AuthenticatorChallenge/PeerChallenge/NT-Response
@@ -625,7 +631,8 @@ export class RadiusClientAgent {
 
   handleUdp(_inPort: string, srcIp: IPAddress, udp: UDPPacket): void {
     if (!this.config.enabled) return;
-    if (udp.sourcePort !== UDP_PORT_RADIUS_AUTH && udp.destinationPort !== UDP_PORT_RADIUS_AUTH) return;
+    const fromConfiguredPort = this.config.servers.some((s) => s.ip === srcIp.toString() && s.authPort === udp.sourcePort);
+    if (udp.sourcePort !== UDP_PORT_RADIUS_AUTH && udp.destinationPort !== UDP_PORT_RADIUS_AUTH && !fromConfiguredPort) return;
     const payload = udp.payload as RadiusPacket | undefined;
     if (!payload || payload.type !== 'radius') return;
     if (payload.code !== 'access-accept' && payload.code !== 'access-reject' && payload.code !== 'access-challenge') return;

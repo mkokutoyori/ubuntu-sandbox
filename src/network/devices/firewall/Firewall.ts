@@ -144,7 +144,7 @@ import type { Ipv6Counters } from '../router/IPv6DataPlane';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
-import type { UserDirectory } from './identity/UserDirectory';
+import type { RemoteServer, UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { PkiPeerStore } from './vpn/PkiPeers';
@@ -1805,9 +1805,54 @@ export class Firewall extends Equipment {
     return remoteAuthenticate({
       tcp: this.tcp,
       server: (n) => this.getVdom(vdom).users.getServer(n),
-      radius: this.radius,
+      radiusRound: (address, name, secret, authType) => this.radiusRound(address, name, secret, authType),
       tacacs: this.tacacs,
     }, server, user, password);
+  }
+
+  private async radiusRound(
+    address: string, user: string, password: string, authType: string | undefined,
+  ): Promise<'accept' | 'reject' | 'timeout'> {
+    const methods = authType === 'pap' ? ['pap']
+      : authType === 'chap' ? ['chap']
+        : authType === 'ms_chap_v2' ? ['ms_chap_v2']
+          : ['pap', 'ms_chap_v2', 'chap'];
+    for (const method of methods) {
+      const round = method === 'pap' ? await this.radius.authenticateWithOutcome(user, password, address)
+        : method === 'chap' ? await this.radius.authenticateChapWithOutcome(user, password, address)
+          : (await this.radius.authenticateMsChapV2(user, password, address)).kind;
+      if (round !== 'reject') return round;
+    }
+    return 'reject';
+  }
+
+  registerRadiusServer(server: Pick<RemoteServer,
+    'address' | 'secret' | 'port' | 'secondaryAddress' | 'secondarySecret' | 'tertiaryAddress' | 'tertiarySecret'>,
+  ): void {
+    const declared: ReadonlyArray<readonly [string | undefined, string | undefined]> = [
+      [server.address, server.secret],
+      [server.secondaryAddress, server.secondarySecret],
+      [server.tertiaryAddress, server.tertiarySecret],
+    ];
+    for (const [address, secret] of declared) {
+      if (address === undefined || address === '' || address === '0.0.0.0') continue;
+      this.radius.addServer(address, secret ?? '', { port: server.port });
+    }
+  }
+
+  forgetRadiusServer(server: Pick<RemoteServer, 'address' | 'secondaryAddress' | 'tertiaryAddress'>): void {
+    const stillDeclared = new Set<string>();
+    const directory = this.getUserDirectory();
+    for (const name of directory.serverNames()) {
+      const other = directory.getServer(name);
+      if (other?.kind !== 'radius') continue;
+      for (const address of [other.address, other.secondaryAddress, other.tertiaryAddress]) {
+        if (address !== undefined) stillDeclared.add(address);
+      }
+    }
+    for (const address of [server.address, server.secondaryAddress, server.tertiaryAddress]) {
+      if (address !== undefined && !stillDeclared.has(address)) this.radius.removeServer(address);
+    }
   }
 
   setAuthPortalPorts(httpPort: number, httpsPort: number): void {
@@ -2400,6 +2445,16 @@ export class Firewall extends Equipment {
       agent.ensureSession(entry.interface, entry.ip);
     }
     return undefined;
+  }
+
+  private answeredByRadius(packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    const reply = udp?.payload as { type?: string; code?: string } | undefined;
+    if (udp?.type !== 'udp' || reply?.type !== 'radius') return false;
+    if (reply.code !== 'access-accept' && reply.code !== 'access-reject' && reply.code !== 'access-challenge') return false;
+    this.radius.handleUdp('', packet.sourceIP, udp);
+    return true;
   }
 
   private answeredByBfd(iface: string, packet: IPv4Packet): boolean {
@@ -3321,7 +3376,7 @@ export class Firewall extends Equipment {
       ikeDatagram: (p) => ikeDatagram(p),
       msOfDay: () => millisecondsSinceUtcMidnight(this.getSystemClockMs()),
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
-      observedBySdwan: (p) => this.dnsClient.observe(p) || this.ddns.observe(p)
+      observedBySdwan: (p) => this.answeredByRadius(p) || this.dnsClient.observe(p) || this.ddns.observe(p)
         || this.traceroute.observe(p) || this.ping.observeReply(p)
         || this.sdwan.observeReply(p) || this.deliverToUdpSocket(p),
       answeredByDnsServer: (iface, p) => {
