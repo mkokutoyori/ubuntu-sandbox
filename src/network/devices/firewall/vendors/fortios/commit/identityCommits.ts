@@ -50,7 +50,12 @@ export function identityCommitHandlers(fw: Firewall): IdentityHandlers {
       secret: server.secret,
       port: server.port,
       authType: server.authType,
+      secondaryAddress: server.secondaryAddress,
+      secondarySecret: server.secondarySecret,
+      tertiaryAddress: server.tertiaryAddress,
+      tertiarySecret: server.tertiarySecret,
     });
+    if (server.kind === 'radius') fw.registerRadiusServer(server);
   },
   applyLdapServer(server) {
     fw.getUserDirectory().setServer({
@@ -66,7 +71,9 @@ export function identityCommitHandlers(fw: Firewall): IdentityHandlers {
     });
   },
   removeRemoteAuthServer(name) {
+    const declared = fw.getUserDirectory().getServer(name);
     fw.getUserDirectory().removeServer(name);
+    if (declared?.kind === 'radius') fw.forgetRadiusServer(declared);
   },
   applyAuthSetting(setting) {
     const seconds = setting.timeoutMinutes * 60;
