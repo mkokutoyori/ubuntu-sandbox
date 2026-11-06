@@ -82,6 +82,39 @@ describe('Test-Connection prints the table views of PowerShell 7', () => {
     expect(out).toContain('Hop Hostname                  Ping Latency Status           Source       TargetAddress');
   });
 
+  it('-MtuSize bisects with DF between 68 and 10000 and answers the largest echo that fits', async () => {
+    const run = await lab();
+    expect((await run(`Test-Connection ${TARGET} -MtuSize -Quiet`)).trim()).toBe('1472');
+    expect((await run(`Test-Connection ${TARGET} -MtuSizeDetect -Quiet`)).trim()).toBe('1472');
+  });
+
+  it('-MtuSize prints the PingMtuStatus view', async () => {
+    const run = await lab();
+    const out = await run(`Test-Connection ${TARGET} -MtuSize`);
+    expect(out).toContain(`   Destination: ${TARGET}`);
+    expect(out).toContain('Source           Address                   Latency Status           MtuSize');
+    expect(out).toMatch(/^PC-GUICHET1 +203\.0\.113\.20 +\d+ Success +1472$/m);
+  });
+
+  it('-MtuSize -Quiet answers -1 for a name that does not resolve', async () => {
+    const run = await lab();
+    expect((await run('Test-Connection nobody.banquehorizon.com -MtuSize -Quiet')).trim()).toBe('-1');
+  });
+
+  it('-ResolveDestination names the destination by its PTR record for an address, and by its canonical name for a name', async () => {
+    const run = await lab();
+    expect(await run('Test-Connection 203.0.113.20 -Count 1 -ResolveDestination')).toContain(`   Destination: ${TARGET}`);
+    expect(await run(`Test-Connection ${TARGET} -Count 1 -ResolveDestination`)).toContain(`   Destination: ${TARGET}`);
+    expect(await run('Test-Connection 203.0.113.20 -Count 1')).toContain('   Destination: 203.0.113.20');
+  });
+
+  it('-ResolveDestination on an address without PTR fails like getnameinfo with NI_NAMEREQD', async () => {
+    const run = await lab();
+    const out = await run('Test-Connection 10.20.10.1 -Count 1 -ResolveDestination');
+    expect(out).toContain('Test-Connection: No such host is known.');
+    expect(out).not.toContain('Destination:');
+  });
+
   it('refuses -Continuous, which is not a parameter of PowerShell 7', async () => {
     const run = await lab();
     expect(await run(`Test-Connection ${TARGET} -Continuous`)).toContain("A parameter cannot be found that matches parameter name 'Continuous'.");

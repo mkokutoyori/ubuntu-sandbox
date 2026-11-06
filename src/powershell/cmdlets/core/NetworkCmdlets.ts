@@ -13,7 +13,7 @@ import { PSRuntimeError } from '@/powershell/runtime/PSRuntime';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { IPAddress, MACAddress } from '@/network/core/types';
 import type {
-  NetAdapterEntry, IPAddressInfo, INetworkProvider, PingProbeOptions, NetIPAddressUpdate, RouteInfo,
+  NetAdapterEntry, IPAddressInfo, INetworkProvider, PingProbeAnswer, PingProbeOptions, NetIPAddressUpdate, RouteInfo,
   NeighborInfo,
 } from '@/powershell/providers/PSProviders';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
@@ -408,9 +408,9 @@ export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
   readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
-  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'BufferSize', 'TimeoutSeconds', 'MaxHops', 'Ttl', 'TimeToLive', 'Hops', 'DontFragment', 'Repeat', 'Source'] as const;
+  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'BufferSize', 'TimeoutSeconds', 'MaxHops', 'Ttl', 'TimeToLive', 'Hops', 'DontFragment', 'Repeat', 'Source', 'MtuSize', 'MtuSizeDetect', 'ResolveDestination'] as const;
   readonly closedParameterSet = true as const;
-  readonly switchParameters = ['Quiet', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'DontFragment', 'Repeat'] as const;
+  readonly switchParameters = ['Quiet', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'DontFragment', 'Repeat', 'MtuSize', 'MtuSizeDetect', 'ResolveDestination'] as const;
 
   private readonly ranged = [
     { parameter: 'BufferSize', keys: ['buffersize'], minimum: 0, maximum: 65500, positive: false },
@@ -461,38 +461,100 @@ export class TestConnectionCmdlet implements ICmdlet {
     const source = net.getHostname();
     const tcpPort = ctx.named['tcpport'];
     const count = tcpPort !== undefined && ctx.named['count'] === undefined ? 1 : countGiven;
-    const failWith = (reason: string): PSValue => {
-      ctx.emitErrorRecord(newErrorRecord({
-        message: `Testing connection to computer '${target}' failed: ${reason}`,
-        exceptionType: 'System.Net.NetworkInformation.PingException',
-        fullyQualifiedErrorId: 'TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand',
-        category: 'ResourceUnavailable',
-        targetObject: target,
-      }) as unknown as PSValue);
-      return null;
-    };
+    const failWith = (reason: string): PSValue => this.pingFailure(ctx, target, reason);
+    const measuringMtu = ctx.named['mtusize'] === true || ctx.named['mtusizedetect'] === true;
     const probe = net.testPingProbe?.(target, 0) ?? null;
     const tracing = ctx.named['traceroute'] === true;
     if (probe === null) {
       if (!quiet) failWith('Cannot resolve the target name.');
+      if (measuringMtu) return quiet ? -1 : null;
       if (tracing) return quiet ? null : false;
       return quiet ? false : null;
     }
+    const shown = ctx.named['resolvedestination'] === true ? this.destinationName(net, target) : target;
     if (ctx.named['ipv6'] === true && !target.includes(':')) {
       if (!quiet) failWith('Target IPv4/IPv6 address absent.');
       return quiet ? false : null;
     }
-    if (tcpPort !== undefined) return this.tcpPortTest(ctx, net, target, probe.resolvedIp, source, Number(tcpPort), count);
+    if (measuringMtu) return this.mtuTest(ctx, net, target, probe.resolvedIp, source, quiet, options, countGiven, shown);
+    if (tcpPort !== undefined) return this.tcpPortTest(ctx, net, target, probe.resolvedIp, source, Number(tcpPort), count, shown);
     if (tracing) {
-      return this.traceRouteTest(ctx, net, target, probe.resolvedIp, source, quiet, options.ttl ?? 128);
+      return this.traceRouteTest(ctx, net, target, probe.resolvedIp, source, quiet, options.ttl ?? 128, shown);
     }
     const results = net.testPingProbe?.(target, count, options)?.probes ?? [];
     if (quiet) return results.every((attempt) => attempt.success);
-    return results.map((attempt, index) => pingStatusObject(index + 1, source, target, probe.resolvedIp, attempt, options.bufferSize) as Record<string, PSValue>) as PSValue;
+    return results.map((attempt, index) => pingStatusObject(index + 1, source, shown, probe.resolvedIp, attempt, options.bufferSize) as Record<string, PSValue>) as PSValue;
+  }
+
+  private destinationName(net: INetworkProvider, target: string): string {
+    if (net.resolveDnsRecords === undefined) return target;
+    if (IPAddress.tryParse(target) !== null) {
+      const host = net.resolveDnsRecords(target, 'PTR')?.find((row) => row.type === 'PTR')?.fields['NameHost'];
+      if (host === undefined) throw new PSRuntimeError('No such host is known.', 'System.Net.Sockets.SocketException');
+      return String(host).replace(/\.$/, '');
+    }
+    const canonical = net.resolveDnsRecords(target, 'A')?.find((row) => row.type === 'A')?.name;
+    return canonical === undefined ? target : canonical.replace(/\.$/, '');
+  }
+
+  private pingFailure(ctx: CmdletContext, subject: string, reason: string): null {
+    ctx.emitErrorRecord(newErrorRecord({
+      message: `Testing connection to computer '${subject}' failed: ${reason}`,
+      exceptionType: 'System.Net.NetworkInformation.PingException',
+      fullyQualifiedErrorId: 'TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand',
+      category: 'ResourceUnavailable',
+      targetObject: subject,
+    }) as unknown as PSValue);
+    return null;
+  }
+
+  private mtuTest(
+    ctx: CmdletContext, net: INetworkProvider, target: string, address: string, source: string, quiet: boolean,
+    options: PingProbeOptions, retryLimit: number, shown: string,
+  ): PSValue {
+    let high = 10000;
+    let current = 1473;
+    let low = 68;
+    let retry = 1;
+    let succeeded: PingProbeAnswer | null = null;
+    let timedOut = false;
+    while (low < high - 1) {
+      const answer = net.testPingProbe?.(target, 1, { ...options, bufferSize: current, dontFragment: true, ttl: options.ttl ?? 128 })?.probes[0];
+      if (answer === undefined) return null;
+      if (answer.status === 'PacketTooBig' || answer.status === 'TimedOut') {
+        high = current;
+        timedOut = true;
+        retry = 1;
+      } else if (answer.status === 'Success') {
+        low = current;
+        succeeded = answer;
+        retry = 1;
+      } else if (retry >= retryLimit) {
+        return this.pingFailure(ctx, address, answer.status);
+      } else {
+        retry++;
+        continue;
+      }
+      current = Math.floor((low + high) / 2);
+    }
+    if (quiet) return current;
+    if (succeeded === null) {
+      if (timedOut) {
+        ctx.emitErrorRecord(newErrorRecord({
+          message: address,
+          exceptionType: 'System.TimeoutException',
+          fullyQualifiedErrorId: 'TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand',
+          category: 'ResourceUnavailable',
+          targetObject: address,
+        }) as unknown as PSValue);
+      }
+      return null;
+    }
+    return { ...pingStatusObject(1, source, shown, address, succeeded, low), MtuSize: current } as Record<string, PSValue>;
   }
 
   private tcpPortTest(
-    ctx: CmdletContext, net: INetworkProvider, target: string, address: string, source: string, port: number, count: number,
+    ctx: CmdletContext, net: INetworkProvider, target: string, address: string, source: string, port: number, count: number, shown: string,
   ): PSValue {
     const detailed = ctx.named['detailed'] === true;
     const rows: PSValue[] = [];
@@ -500,7 +562,7 @@ export class TestConnectionCmdlet implements ICmdlet {
       const connected = net.testTcpProbe?.(target, port) ?? false;
       if (!detailed) return connected;
       rows.push({
-        Id: attempt, Source: source, Target: target, TargetAddress: address, Port: port,
+        Id: attempt, Source: source, Target: shown, TargetAddress: address, Port: port,
         Latency: connected ? 1 : 0, Connected: connected, Status: connected ? 'Success' : 'SocketError',
       } as Record<string, PSValue>);
     }
@@ -508,7 +570,7 @@ export class TestConnectionCmdlet implements ICmdlet {
   }
 
   private traceRouteTest(
-    ctx: CmdletContext, net: INetworkProvider, target: string, address: string, source: string, quiet: boolean, maxHops: number,
+    ctx: CmdletContext, net: INetworkProvider, target: string, address: string, source: string, quiet: boolean, maxHops: number, shown: string,
   ): PSValue {
     const path = net.traceRoute?.(target) ?? [];
     const exceeded = path.length > maxHops;
@@ -528,7 +590,7 @@ export class TestConnectionCmdlet implements ICmdlet {
       for (let ping = 1; ping <= 3; ping++) {
         rows.push({
           Hop: index + 1, Hostname: answered ? hop : null, Ping: ping, HopAddress: answered ? hop : null,
-          Latency: answered ? 1 : 0, Status: answered ? 'Success' : 'TimedOut', Source: source, Target: target, TargetAddress: address,
+          Latency: answered ? 1 : 0, Status: answered ? 'Success' : 'TimedOut', Source: source, Target: shown, TargetAddress: address,
         } as Record<string, PSValue>);
       }
     });

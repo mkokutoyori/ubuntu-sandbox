@@ -28,6 +28,17 @@ const PING_STATUS: TableView = {
   ],
 };
 
+const PING_MTU_STATUS: TableView = {
+  groupBy: 'Destination',
+  columns: [
+    { label: 'Source', width: 16, align: 'left', cell: (row) => text(row.Source) },
+    { label: 'Address', width: 25, align: 'left', cell: (row) => text(row.DisplayAddress) },
+    { label: 'Latency(ms)', width: 7, align: 'right', cell: timedOutOr('Latency') },
+    { label: 'Status', width: 16, align: 'left', cell: (row) => text(row.Status) },
+    { label: 'MtuSize(B)', width: 7, align: 'right', cell: (row) => text(row.MtuSize) },
+  ],
+};
+
 const TCP_PORT_STATUS: TableView = {
   groupBy: 'Target',
   columns: [
@@ -90,6 +101,7 @@ function viewOf(row: PSObject): TableView | null {
   const keys = new Set(Object.keys(row).map((key) => key.toLowerCase()));
   if (keys.has('hop') && keys.has('hopaddress') && keys.has('targetaddress')) return TRACE_STATUS;
   if (keys.has('connected') && keys.has('targetaddress') && keys.has('port')) return TCP_PORT_STATUS;
+  if (keys.has('mtusize') && keys.has('displayaddress')) return PING_MTU_STATUS;
   if (keys.has('displayaddress') && keys.has('buffersize') && keys.has('destination') && keys.has('ping')) return PING_STATUS;
   return null;
 }

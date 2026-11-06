@@ -4598,8 +4598,8 @@ is stored and rendered, and the DNS client has no per-VRF source selection.
 
 ## PowerShell 7 Test-Connection: what the real source holds and is not reproduced
 
-Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects, the table views (PingStatus, TcpPortStatus, TraceStatus) and errors of PowerShell 7,
-and evaluates -Count, -Delay, -BufferSize, -TimeoutSeconds, -MaxHops, -DontFragment, -Repeat (interactive terminal only) and -Traceroute. The parameter set is closed: `-ResolveDestination` and `-MtuSizeDetect` are
-refused with the binding error until their bricks exist (a reverse lookup whose failure semantics are read from the source, and the PingMtuStatus view); `-Source` is accepted and ignored, as in the source ("Remoting is
-not yet implemented internally in the cmdlet"). The intermediate hops of a -Traceroute answer `Success` where the real code reads `TtlExpired`; -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the
-simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a boolean, the real code carries the SocketError code).
+Reference: PowerShell/PowerShell TestConnectionCommand.cs, PowerShellCore_format_ps1xml.cs and dotnet/runtime Dns.cs / NameResolutionPal.Windows.cs. The simulated pwsh answers the objects, the table views (PingStatus, PingMtuStatus,
+TcpPortStatus, TraceStatus) and the errors of PowerShell 7, and evaluates every parameter of its closed set: -Count, -Delay, -BufferSize, -TimeoutSeconds, -MaxHops, -DontFragment, -MtuSize, -ResolveDestination, -Traceroute and
+-Repeat (interactive terminal only, where it can be stopped). `-Source` is accepted and ignored, as in the source ("Remoting is not yet implemented internally in the cmdlet"). -IPv6 always answers 'Target IPv4/IPv6 address
+absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a boolean, the real code carries the SocketError code). The hostname column of a -Traceroute
+hop is the address, where the real code reverse-resolves the router first.
