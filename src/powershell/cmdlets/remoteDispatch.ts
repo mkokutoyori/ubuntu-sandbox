@@ -2,6 +2,7 @@ import type { ICmdlet } from './ICmdlet';
 import type { CmdletContext } from './CmdletContext';
 import type { PSValue } from '@/powershell/runtime/PSEnvironment';
 import { psValueToString } from '@/powershell/runtime/PSExpansion';
+import { namedCredential } from './core/RemotingCmdlets';
 
 const LOCAL_TARGETS = ['.', 'localhost', '127.0.0.1', '::1'];
 
@@ -24,7 +25,7 @@ function literal(value: PSValue): string | null {
 function commandLine(displayName: string, ctx: CmdletContext, parameter: string): string | null {
   const parts = [displayName];
   for (const [key, value] of Object.entries(ctx.named)) {
-    if (key === parameter.toLowerCase()) continue;
+    if (key === parameter.toLowerCase() || key === 'credential') continue;
     const text = literal(value);
     if (text === null) return null;
     parts.push(`-${key}:${text.includes(',') ? `(${text})` : text}`);
@@ -73,9 +74,10 @@ export function remotable(displayName: string, cmdlet: ICmdlet, parameter = 'Com
         ctx.emitError(`${displayName} : an object argument cannot be marshalled to another computer; pipe or run it on that computer.`);
         return null;
       }
+      const credential = namedCredential(ctx, 'credential');
       const results: PSValue[] = [];
       for (const computer of remote) {
-        const outcome = remoting.runCommand(computer, `${line} | ConvertTo-Json -Depth 6 -Compress`);
+        const outcome = remoting.runCommand(computer, `${line} | ConvertTo-Json -Depth 6 -Compress`, credential);
         if (!outcome.ok) {
           ctx.emitError(`${displayName} : Cannot connect to ${computer}: ${outcome.error ?? 'Access is denied.'}`);
           continue;

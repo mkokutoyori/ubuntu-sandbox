@@ -40,14 +40,6 @@ function normalizeStartupType(raw: string): string {
   return raw;
 }
 
-export function namesThisMachine(ctx: CmdletContext, value: PSValue): boolean {
-  const asked = psValueToString(value).toLowerCase();
-  if (asked === '' || asked === '.' || asked === 'localhost' || asked === '127.0.0.1') return true;
-  const hostname = (ctx.providers.network?.getHostname?.() ?? '').toLowerCase();
-  if (hostname === '') return false;
-  return asked === hostname || asked.split('.')[0] === hostname;
-}
-
 function requireServices(ctx: CmdletContext): IServiceProvider {
   if (!ctx.providers.services) {
     // PowerShellSubShell.isFallbackError catches "not recognized" and falls
@@ -129,12 +121,6 @@ export class GetServiceCmdlet implements ICmdlet {
   readonly parameterValues = { Name: 'serviceName' } as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const remote = ctx.named['computername'];
-    if (remote !== undefined && !namesThisMachine(ctx, remote)) {
-      ctx.emitError(`Get-Service : Cannot open Service Control Manager on computer `
-        + `'${psValueToString(remote)}'. There is no remote service control channel in this simulator.`);
-      return null;
-    }
     const svc = requireServices(ctx);
     // -DisplayName filter (wildcard-capable). Applied before -Name so the
     // two parameters compose cleanly when both are present.

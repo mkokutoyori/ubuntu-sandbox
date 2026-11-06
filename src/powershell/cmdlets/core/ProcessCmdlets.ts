@@ -16,7 +16,6 @@ import { psValueToString } from '@/powershell/runtime/PSExpansion';
 import { namedCredential } from './RemotingCmdlets';
 import { commandNotFoundMessage } from '@/powershell/commandNotFound';
 import { wildcardToRegex, hasWildcard } from '@/powershell/runtime/PSWildcard';
-import { namesThisMachine } from './ServiceCmdlets';
 
 function requireProcesses(ctx: CmdletContext): IProcessProvider {
   if (!ctx.providers.processes) {
@@ -71,12 +70,6 @@ export class GetProcessCmdlet implements ICmdlet {
   readonly parameterValues = { Name: 'processName' } as const;
 
   execute(ctx: CmdletContext): PSValue {
-    const remote = ctx.named['computername'];
-    if (remote !== undefined && !namesThisMachine(ctx, remote)) {
-      ctx.emitError(`Get-Process : Couldn't connect to remote machine `
-        + `'${psValueToString(remote)}'. There is no remote process channel in this simulator.`);
-      return null;
-    }
     if (ctx.named['module'] === true || ctx.named['fileversioninfo'] === true) {
       ctx.emitError('Get-Process : -Module and -FileVersionInfo are not supported in this '
         + 'simulator: a process carries no loaded-module list.');

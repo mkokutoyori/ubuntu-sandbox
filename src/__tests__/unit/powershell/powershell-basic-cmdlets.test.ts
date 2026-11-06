@@ -1320,7 +1320,7 @@ describe('11. Get‑Process – extended', () => {
     const ps = createPS(pc);
     expect(await ps.execute('Get-Process -ComputerName localhost')).toContain('ProcessName');
     expect(await ps.execute('Get-Process -ComputerName AUTRE-PC'))
-      .toContain('no remote process channel');
+      .toContain('Cannot connect to');
   });
 
   it('Get-Process with multiple -Name values', async () => {
@@ -2770,7 +2770,7 @@ describe('21. Get-Service', () => {
     const pc = createPC(); const ps = createPS(pc);
     expect(await ps.execute('Get-Service -ComputerName localhost')).toContain('Spooler');
     expect(await ps.execute('Get-Service -ComputerName AUTRE-PC'))
-      .toContain('no remote service control');
+      .toContain('Cannot connect to');
   });
   it('unknown service name returns error', async () => {
     const pc = createPC(); const ps = createPS(pc);
