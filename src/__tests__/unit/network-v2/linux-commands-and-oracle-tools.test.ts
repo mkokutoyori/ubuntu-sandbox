@@ -300,10 +300,9 @@ describe('curl', () => {
 
 describe('wget', () => {
 
-  it('wget localhost shows download', async () => {
+  it('wget localhost with no web server listening says so', async () => {
     const out = await server.executeCommand('wget localhost/index.html');
-    expect(out).toContain('200 OK');
-    expect(out).toContain('saved');
+    expect(out).toContain('Connecting to localhost (localhost)|127.0.0.1|:80... failed: Connection refused.');
   });
 
   it('wget external shows DNS failure', async () => {

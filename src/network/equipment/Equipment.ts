@@ -218,15 +218,10 @@ export abstract class Equipment {
     return false;
   }
 
-  private frozenWall: { readonly cascade: number; readonly ms: number } | null = null;
-
   protected observationMicros(): number {
-    const cascade = PathClock.cascadeId();
-    if (cascade === null) return Math.round(this.systemClock.now() * 1000);
-    if (this.frozenWall?.cascade !== cascade) {
-      this.frozenWall = { cascade, ms: this.systemClock.now() - PathClock.horizon() };
-    }
-    return Math.round((this.frozenWall.ms + PathClock.now()) * 1000);
+    const offset = this.systemClock.offsetFromSource();
+    const real = this.systemClock.now() - offset - PathClock.horizon();
+    return Math.round((PathClock.wallAnchor(real) + offset + PathClock.now()) * 1000);
   }
 
   protected observationTime(): Date {

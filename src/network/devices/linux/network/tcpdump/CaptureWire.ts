@@ -113,6 +113,7 @@ export interface IcmpWireInput {
   readonly gateway?: readonly number[];
   readonly timestamps?: { readonly originate: number; readonly receive: number; readonly transmit: number };
   readonly quoted?: readonly number[];
+  readonly data?: readonly number[];
   readonly dataSize: number;
 }
 
@@ -134,6 +135,8 @@ export function icmpWireBytes(input: IcmpWireInput): number[] {
     body = [...u32(input.timestamps.originate), ...u32(input.timestamps.receive), ...u32(input.timestamps.transmit)];
   } else if (QUOTING_TYPES.has(input.type) && input.quoted !== undefined) {
     body = [...input.quoted];
+  } else if (input.data !== undefined && input.data.length === input.dataSize) {
+    body = [...input.data];
   } else {
     body = Array.from({ length: input.dataSize }, (_, i) => i & 0xff);
   }

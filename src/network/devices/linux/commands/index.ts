@@ -41,6 +41,7 @@ import { snmpwalkCommand } from './net/Snmpwalk';
 import { ldapsearchCommand } from './net/Ldapsearch';
 import { kdestroyCommand, kinitCommand, klistCommand } from './net/Kinit';
 import { curlCommand } from './net/Curl';
+import { wgetCommand } from './net/Wget';
 import { scpCommand } from './net/Scp';
 import { sshCopyIdCommand } from './net/SshCopyId';
 import { rsyncCommand } from './net/Rsync';
@@ -201,6 +202,7 @@ export {
   klistCommand,
   kdestroyCommand,
   curlCommand,
+  wgetCommand,
   scpCommand,
   sshCopyIdCommand,
   rsyncCommand,
@@ -382,6 +384,7 @@ export const CORE_LINUX_COMMANDS: readonly LinuxCommand[] = [
   klistCommand,
   kdestroyCommand,
   curlCommand,
+  wgetCommand,
   scpCommand,
   sshCopyIdCommand,
   rsyncCommand,

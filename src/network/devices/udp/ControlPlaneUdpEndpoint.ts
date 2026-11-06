@@ -5,7 +5,7 @@ import { UdpPortTable, type PortClaim } from '@/network/layers/transport/UdpPort
 export interface ControlPlaneUdpTransport {
   sendUdpBytes(
     destinationIP: IPAddress, destinationPort: number,
-    sourcePort: number, payload: Uint8Array,
+    sourcePort: number, payload: Uint8Array, sourceIP?: IPAddress,
   ): boolean;
 }
 
@@ -42,6 +42,13 @@ export class ControlPlaneUdpEndpoint implements TftpEndpoint {
     sourcePort: number, payload: Uint8Array,
   ): boolean {
     return this.transport.sendUdpBytes(destinationIP, destinationPort, sourcePort, payload);
+  }
+
+  sendUdpDatagramFrom(
+    sourceIP: IPAddress, destinationIP: IPAddress, destinationPort: number,
+    sourcePort: number, payload: Uint8Array,
+  ): boolean {
+    return this.transport.sendUdpBytes(destinationIP, destinationPort, sourcePort, payload, sourceIP);
   }
 
   udpConnect(

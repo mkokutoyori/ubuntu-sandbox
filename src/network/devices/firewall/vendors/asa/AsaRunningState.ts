@@ -27,7 +27,25 @@ export const ASA_KEY_EXCHANGE_GROUPS: Readonly<Record<string, string>> = {
   'curve25519-sha256': 'curve25519-sha256',
 };
 
+export interface AsaRouteLine {
+  readonly nameif: string;
+  readonly network: string;
+  readonly mask: string;
+  readonly gateway: string;
+  readonly metric: number;
+}
+
+export interface AsaDnsServerGroup {
+  readonly servers: string[];
+  domain: string;
+}
+
+export const ASA_DEFAULT_DNS_GROUP = 'DefaultDNS';
+
 export class AsaRunningState {
+  readonly routeLines: AsaRouteLine[] = [];
+  readonly dnsLookupInterfaces = new Set<string>();
+  readonly dnsGroups = new Map<string, AsaDnsServerGroup>();
   readonly objectNatLines = new Map<string, string>();
   readonly manualNatLines = new Map<string, string>();
   readonly loggingHostInterfaces = new Map<string, string>();

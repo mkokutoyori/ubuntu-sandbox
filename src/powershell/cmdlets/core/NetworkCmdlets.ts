@@ -406,7 +406,8 @@ export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
   readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
-    readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName'] as const;
+  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute'] as const;
+  readonly coreOnlyParameters = ['TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const net = requireNetwork(ctx);
@@ -418,6 +419,7 @@ export class TestConnectionCmdlet implements ICmdlet {
       ctx.emitError('Test-Connection requires -ComputerName or a positional target');
       return null;
     }
+    if (ctx.runtime.edition === 'core') return this.executeCore(ctx, net, target, count);
 
     const probe = net.testPingProbe?.(target, count) ?? null;
     const probes = probe?.probes ?? [];
@@ -440,6 +442,79 @@ export class TestConnectionCmdlet implements ICmdlet {
       } as Record<string, PSValue>);
     }
     return out as PSValue;
+  }
+
+  private executeCore(ctx: CmdletContext, net: INetworkProvider, target: string, countGiven: number): PSValue {
+    const quiet = ctx.named['quiet'] === true;
+    const source = net.getHostname();
+    const tcpPort = ctx.named['tcpport'];
+    const count = tcpPort !== undefined && ctx.named['count'] === undefined ? 1 : countGiven;
+    const failWith = (reason: string): PSValue => {
+      ctx.emitErrorRecord(newErrorRecord({
+        message: `Testing connection to computer '${target}' failed: ${reason}`,
+        exceptionType: 'System.Net.NetworkInformation.PingException',
+        fullyQualifiedErrorId: 'TestConnectionException,Microsoft.PowerShell.Commands.TestConnectionCommand',
+        category: 'ResourceUnavailable',
+        targetObject: target,
+      }) as unknown as PSValue);
+      return null;
+    };
+    const probe = net.testPingProbe?.(target, 1) ?? null;
+    const tracing = ctx.named['traceroute'] === true;
+    if (probe === null) {
+      if (!quiet) failWith('Cannot resolve the target name.');
+      if (tracing) return quiet ? null : false;
+      return quiet ? false : null;
+    }
+    if (ctx.named['ipv6'] === true && !target.includes(':')) {
+      if (!quiet) failWith('Target IPv4/IPv6 address absent.');
+      return quiet ? false : null;
+    }
+    if (tcpPort !== undefined) return this.tcpPortTest(ctx, net, target, probe.resolvedIp, source, Number(tcpPort), count);
+    if (tracing) return this.traceRouteTest(net, target, probe.resolvedIp, source, quiet);
+    const results = net.testPingProbe?.(target, count)?.probes ?? [];
+    if (quiet) return results.every((attempt) => attempt.success);
+    return results.map((attempt, index) => ({
+      Ping: index + 1,
+      Source: source,
+      Destination: target,
+      Address: attempt.success ? probe.resolvedIp : null,
+      DisplayAddress: attempt.success ? probe.resolvedIp : '*',
+      Latency: attempt.success ? Math.max(1, Math.round(attempt.rttMs)) : 0,
+      Status: attempt.success ? 'Success' : 'TimedOut',
+      BufferSize: 32,
+    } as Record<string, PSValue>)) as PSValue;
+  }
+
+  private tcpPortTest(
+    ctx: CmdletContext, net: INetworkProvider, target: string, address: string, source: string, port: number, count: number,
+  ): PSValue {
+    const detailed = ctx.named['detailed'] === true;
+    const rows: PSValue[] = [];
+    for (let attempt = 1; attempt <= count; attempt++) {
+      const connected = net.testTcpProbe?.(target, port) ?? false;
+      if (!detailed) return connected;
+      rows.push({
+        Id: attempt, Source: source, Target: target, TargetAddress: address, Port: port,
+        Latency: connected ? 1 : 0, Connected: connected, Status: connected ? 'Success' : 'SocketError',
+      } as Record<string, PSValue>);
+    }
+    return rows as PSValue;
+  }
+
+  private traceRouteTest(net: INetworkProvider, target: string, address: string, source: string, quiet: boolean): PSValue {
+    if (quiet) return null;
+    const rows: PSValue[] = [];
+    (net.traceRoute?.(target) ?? []).forEach((hop, index) => {
+      const answered = hop !== '0.0.0.0';
+      for (let ping = 1; ping <= 3; ping++) {
+        rows.push({
+          Hop: index + 1, Hostname: answered ? hop : null, Ping: ping, HopAddress: answered ? hop : null,
+          Latency: answered ? 1 : 0, Status: answered ? 'Success' : 'TimedOut', Source: source, Target: target, TargetAddress: address,
+        } as Record<string, PSValue>);
+      }
+    });
+    return rows as PSValue;
   }
 }
 

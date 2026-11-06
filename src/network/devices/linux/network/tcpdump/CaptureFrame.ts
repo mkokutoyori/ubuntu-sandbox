@@ -322,7 +322,7 @@ function synthIcmpBytes(icmp: ICMPPacket, expectedLength: number): number[] {
   const message = icmpWireBytes({
     type: icmpTypeNumber(icmp.icmpType), code: icmp.code, id: icmp.id, sequence: icmp.sequence,
     mtu: icmp.mtu, pointer: icmp.pointer, gateway: icmp.gateway === undefined ? undefined : ipBytes(icmp.gateway.toString()),
-    timestamps: icmp.timestamps, quoted, dataSize: icmp.dataSize ?? 0,
+    timestamps: icmp.timestamps, quoted, data: icmp.data, dataSize: icmp.dataSize ?? 0,
   });
   if (message.length >= expectedLength) return message;
   return icmpWireBytes({

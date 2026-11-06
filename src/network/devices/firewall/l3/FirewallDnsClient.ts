@@ -43,10 +43,15 @@ export interface FirewallDnsDeps {
 interface PendingQuery {
   readonly id: number;
   readonly qtype: number;
+  readonly fqdn: string;
   readonly records: ResourceRecord<ResourceRecordData>[];
   rcode?: number;
   soa?: ResourceRecord<SoaRecordData>;
+  late: boolean;
 }
+
+const LATE_REPLY_BACKLOG = 64;
+const LATE_REPLY_POLLS = 2000;
 
 function addressesOf(records: readonly ResourceRecord<ResourceRecordData>[], qtype: number): string[] {
   return records.flatMap(record => {
@@ -60,7 +65,7 @@ export class FirewallDnsClient {
   private settings: FirewallDnsSettings = { primary: '', secondary: '', domain: '' };
   private readonly cache: DnsCache;
   private readonly asked = new Map<string, string>();
-  private pending: PendingQuery | null = null;
+  private readonly inflight = new Map<number, PendingQuery>();
   private sourcePort = EPHEMERAL_BASE;
 
   constructor(private readonly deps: FirewallDnsDeps) {
@@ -85,8 +90,7 @@ export class FirewallDnsClient {
   }
 
   observe(packet: IPv4Packet): boolean {
-    const waiting = this.pending;
-    if (!waiting || packet.protocol !== IP_PROTO_UDP) return false;
+    if (packet.protocol !== IP_PROTO_UDP) return false;
 
     const udp = packet.payload as UDPPacket | undefined;
     if (udp?.type !== 'udp' || udp.sourcePort !== DNS_PORT) return false;
@@ -98,7 +102,8 @@ export class FirewallDnsClient {
     } catch {
       return false;
     }
-    if (response.id !== waiting.id) return false;
+    const waiting = this.inflight.get(response.id);
+    if (!waiting) return false;
 
     for (const answer of response.answers) {
       if (answer.data.type === waiting.qtype) waiting.records.push(answer);
@@ -106,7 +111,32 @@ export class FirewallDnsClient {
     waiting.rcode = response.flags.rcode;
     const soa = response.authorities.find(record => record.data.type === RRType.SOA);
     if (soa !== undefined) waiting.soa = soa as ResourceRecord<SoaRecordData>;
+    if (waiting.late) this.settleLate(waiting);
     return true;
+  }
+
+  private settleLate(query: PendingQuery): void {
+    this.inflight.delete(query.id);
+    if (query.records.length > 0) this.cache.storePositive(query.records, query.fqdn);
+    else if (query.rcode !== undefined && query.soa !== undefined) this.cache.storeNegative(query.fqdn, query.qtype, query.rcode, query.soa);
+  }
+
+  awaitingReply(fqdn: string, family: DnsAddressFamily = 'ipv4'): boolean {
+    const code = QUERY_TYPE[family].code;
+    return [...this.inflight.values()].some(query => query.fqdn === fqdn && query.qtype === code);
+  }
+
+  async resolveAwaiting(fqdn: string, family: DnsAddressFamily = 'ipv4'): Promise<readonly string[]> {
+    const known = this.resolve(fqdn, family);
+    if (known.length > 0) return known;
+    const code = QUERY_TYPE[family].code;
+    for (let poll = 0; poll < LATE_REPLY_POLLS; poll++) {
+      const outstanding = [...this.inflight.values()].some(query => query.fqdn === fqdn && query.qtype === code);
+      if (!outstanding) break;
+      await Promise.resolve();
+    }
+    const cached = this.cache.lookup(fqdn, code);
+    return cached.kind === 'hit' ? addressesOf(cached.records, code) : [];
   }
 
   resolve(fqdn: string, family: DnsAddressFamily = 'ipv4'): readonly string[] {
@@ -124,21 +154,32 @@ export class FirewallDnsClient {
       const message = buildLegacyQueryMessage(id, fqdn, type.name);
       if (!message) return [];
 
-      const collected: PendingQuery = { id, qtype: type.code, records: [] };
-      this.pending = collected;
+      const collected: PendingQuery = { id, qtype: type.code, fqdn, records: [], late: false };
+      this.inflight.set(id, collected);
       this.deps.send(server, this.nextSourcePort(), encodeDnsMessage(message));
-      this.pending = null;
 
       if (collected.records.length > 0) {
+        this.inflight.delete(id);
         this.cache.storePositive(collected.records, fqdn);
         return addressesOf(collected.records, type.code);
       }
       if (collected.rcode !== undefined && collected.soa !== undefined) {
+        this.inflight.delete(id);
         this.cache.storeNegative(fqdn, type.code, collected.rcode, collected.soa);
         return [];
       }
+      collected.late = true;
+      this.trimLateBacklog();
     }
     return [];
+  }
+
+  private trimLateBacklog(): void {
+    while (this.inflight.size > LATE_REPLY_BACKLOG) {
+      const oldest = this.inflight.keys().next().value;
+      if (oldest === undefined) return;
+      this.inflight.delete(oldest);
+    }
   }
 
   forget(fqdn: string): void {

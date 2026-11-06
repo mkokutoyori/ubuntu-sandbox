@@ -14,6 +14,7 @@
  * session level, not at the device level. This device only handles cmd.exe.
  */
 
+import { windowsEchoData } from '../icmp/EchoPayload';
 import { synProbeSegment, type TcpSegment } from '../tcp/types';
 import { INTERNATIONAL_KEY, regionalFormatsFrom } from './windows/WindowsRegionalSettings';
 import { ScriptedTerminalIO } from '@/network/protocols/ssh/session/ScriptedTerminalIO';
@@ -106,7 +107,6 @@ import {
 } from '@/network/protocols/ssh/SshAgentCommands';
 import { runSshKeyscanCommand } from '@/network/protocols/ssh/SshKeyscanCommand';
 import { probeSshHostKey } from '@/network/protocols/ssh/SshHostKeyProbe';
-import { findHostByAddress } from './linux/network/HostLookup';
 import { SftpLocalPort } from '@/network/protocols/ssh/sftp/client/SftpLocalPort';
 import type { ITerminalIO } from '@/network/protocols/ssh/session/TerminalSshInteractionHandler';
 import { runSftpCommand, SftpClientSession, type SftpCommandHost } from '@/network/protocols/ssh/sftp/client/SftpClientCommand';
@@ -172,6 +172,7 @@ import { cmdNetsh } from './windows/WinNetsh';
 import { cmdPing, pingExitCode } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
+import { REMOTE_CAPABLE_COMMANDS, extractRemoteTarget, credentialWithoutComputer, invalidSyntax, type RemoteTarget } from './windows/WinRemoteTarget';
 import { findInvalidWindowsArgument, invalidArgumentError, SYSTEMINFO_SWITCHES } from './windows/WinSwitchGuard';
 import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
@@ -380,6 +381,10 @@ const WINDOWS_CLIENT_CACHE_LIMITS: DnsCacheLimits = {
 };
 
 export class WindowsPC extends EndHost implements UserAccountHost {
+  protected override echoPayload(dataSize: number): readonly number[] {
+    return windowsEchoData(dataSize);
+  }
+
   protected readonly defaultTTL = 128;
 
   protected override registersOwnForwardDns(): boolean { return true; }
@@ -1648,6 +1653,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     const authentication = this.winRmAuthentication(computerName, credential);
     if (authentication === null) return { ok: false, error: 'Access is denied.' };
     return runWinRmRequest({ tcpStack: this.getTcpStack(), targetIp: target.toString(), request, ...authentication });
+  }
+
+  private runRemoteTool(command: string, remote: RemoteTarget): string {
+    const line = [command, ...remote.rest].join(' ');
+    const outcome = this.runRemoteCommand(remote.host, line, remote.credential);
+    if (outcome.ok) return outcome.output ?? '';
+    this.commandExitStatus = 1;
+    const unreachable = outcome.error === undefined || outcome.error.includes('could not be resolved') || outcome.error.startsWith('WinRM cannot complete');
+    return `ERROR: ${unreachable ? 'The RPC server is unavailable.' : outcome.error}`;
   }
 
   runRemoteCommand(computerName: string, line: string, credential?: { username: string; password: string }): WinRmRunResult {
@@ -3165,13 +3179,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (!sourceIp) {
       return WINDOWS_TELNET.unreachable(host, host, port).join('\n');
     }
-    const reach = await wireReachOutcomeRetransmitting(this, host, port);
-    if (reach !== 'open') {
-      return telnetWireFailure(WINDOWS_TELNET, reach, host, host, port).join('\n');
+    const address = (await this.resolveHostname(host))?.toString();
+    if (address === undefined) {
+      return WINDOWS_TELNET.unresolved(host, port).join('\n');
     }
-    const sock = await this.tcpConnect(host, port);
+    const reach = await wireReachOutcomeRetransmitting(this, address, port);
+    if (reach !== 'open') {
+      return telnetWireFailure(WINDOWS_TELNET, reach, host, address, port).join('\n');
+    }
+    const sock = await this.tcpConnect(address, port);
     if (!sock) {
-      return WINDOWS_TELNET.refused(host, host, port).join('\n');
+      return WINDOWS_TELNET.refused(host, address, port).join('\n');
     }
     const header = `Connecting To ${host}...\nWelcome to Microsoft Telnet Client\n\nEscape Character is 'CTRL+]'`;
     const session = new TelnetClientSession(sock as unknown as TelnetClientTransport);
@@ -3821,7 +3839,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
     const stem = this.programStemOf(parts[0]);
     const cmd = stem ?? parts[0].toLowerCase();
-    const args = parts.slice(1);
+    let args = parts.slice(1);
 
     // Bare drive letter (e.g. "D:" or "D:\\path") — change current drive
     // and restore the per-drive last cwd. Real cmd.exe: typing `D:` at the
@@ -3832,6 +3850,19 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (stem === null && (driveOnly || drivePath) && args.length === 0) {
       const letter = (driveOnly ? driveOnly[1] : drivePath![1]).toUpperCase();
       return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
+    }
+
+    if (credentialWithoutComputer(cmd, args)) {
+      this.commandExitStatus = 1;
+      return invalidSyntax(cmd);
+    }
+    if (REMOTE_CAPABLE_COMMANDS.has(cmd)) {
+      const remote = extractRemoteTarget(args);
+      if (remote !== null) {
+        const local = remote.host.toLowerCase() === 'localhost' || remote.host.toLowerCase() === this.hostname.toLowerCase() || remote.host === '127.0.0.1';
+        if (!local) return this.runRemoteTool(cmd, remote);
+        args = [...remote.rest];
+      }
     }
 
     // File commands (use file context)
@@ -3852,10 +3883,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'del':
       case 'erase':   return cmdDel(fileCtx, args);
       case 'tree':    return cmdTree(fileCtx, args);
-      case 'tasklist': return cmdTasklistDynamic(
-        { processManager: this.procMgr, currentUser: this.userMgr.currentUser, hostname: this.hostname }, args);
-      case 'taskkill': return cmdTaskkill(
-        { processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
+      case 'tasklist': return this.cmdTasklist(args);
+      case 'taskkill': return this.cmdTaskkillLocal(args);
       case 'sc':
       case 'sc.exe': return cmdSc(
         { serviceManager: this.svcMgr, processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin(), currentUser: this.userMgr.currentUser }, args);
@@ -4666,7 +4695,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       default:
         return runSshKeyscanCommand(args, {
-          resolve: (target: string) => findHostByAddress(target, undefined, this)?.ip ?? null,
+          resolve: (target: string) => this.resolveHostnameSync(target)?.toString() ?? null,
           probe: (ip, port, hostKeyAlgorithms) =>
             probeSshHostKey(this.getTcpStack().connect(ip, port) as unknown as TcpStream | null, hostKeyAlgorithms),
         }).lines.map((line) => line.text).join('\n');
@@ -4695,6 +4724,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return this.runOpenSshTool(lower, args);
     }
     if (lower === 'systeminfo') return this.cmdSysteminfoChecked(args);
+    if (lower === 'tasklist') return this.cmdTasklist(args);
+    if (lower === 'taskkill') return this.cmdTaskkillLocal(args);
+    if (lower === 'schtasks') return this.cmdSchtasks(args);
     if (lower === 'ver') return WindowsPC.VER_STRING;
     if (lower === 'hostname') return this.hostname;
     if (lower === 'vol')  return this.cmdVol(args);
@@ -5141,6 +5173,14 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   private cmdSetx(args: string[]): string {
     return WinSys.cmdSetx(this.buildSystemContext(), args);
+  }
+
+  private cmdTasklist(args: string[]): string {
+    return cmdTasklistDynamic({ processManager: this.procMgr, currentUser: this.userMgr.currentUser, hostname: this.hostname }, args);
+  }
+
+  private cmdTaskkillLocal(args: string[]): string {
+    return cmdTaskkill({ processManager: this.procMgr, isAdmin: this.userMgr.isCurrentUserAdmin() }, args);
   }
 
   private cmdSchtasks(args: string[]): string {

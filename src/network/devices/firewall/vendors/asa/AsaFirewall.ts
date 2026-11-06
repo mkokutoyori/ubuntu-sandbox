@@ -3,7 +3,7 @@ import type { SshKeyAlgorithm } from '../../../../protocols/ssh/SshHostKey';
 import { Firewall, type FirewallOptions } from '../../Firewall';
 import { ASA_PROFILE } from './AsaProfile';
 import { AsaShell } from './AsaShell';
-import { AsaRunningState, ASA_KEY_EXCHANGE_GROUPS } from './AsaRunningState';
+import { AsaRunningState, ASA_KEY_EXCHANGE_GROUPS, ASA_DEFAULT_DNS_GROUP } from './AsaRunningState';
 import { ciscoSshIdentification } from '../../../../protocols/ssh/serverIdentification';
 
 const ASA_HOST_KEY_ALGORITHMS = ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'];
@@ -62,7 +62,9 @@ export class AsaFirewall extends Firewall {
   }
 
   executeCommand(command: string): Promise<string> {
-    return Promise.resolve(this.getShell().execute(command));
+    const shell = this.getShell();
+    const output = shell.execute(command);
+    return shell.takePendingAsync() ?? Promise.resolve(output);
   }
 
   getPrompt(): string {
@@ -93,6 +95,25 @@ export class AsaFirewall extends Firewall {
 
   cliTabComplete(input: string): string | null {
     return this.getShell().tabComplete(input);
+  }
+
+  applyDnsConfiguration(): void {
+    const group = this.state.dnsGroups.get(ASA_DEFAULT_DNS_GROUP);
+    const reachable = (group?.servers ?? []).filter((server) => {
+      const port = this.egressInterfaceOf(server);
+      const nameif = port === undefined ? undefined : this.getZoneTable().zoneOf(port);
+      return nameif !== undefined && this.state.dnsLookupInterfaces.has(nameif);
+    });
+    this.getDnsClient().applySettings({ primary: reachable[0] ?? '', secondary: reachable[1] ?? '', domain: group?.domain ?? '' });
+  }
+
+  addRoute(nameif: string, network: string, mask: string, gateway: string, metric: number): void {
+    const port = this.getZoneTable().interfacesOf(nameif)[0];
+    this.getVdom().routes.addStatic(network, mask, gateway, { iface: port, distance: metric });
+  }
+
+  removeRoute(network: string, mask: string, gateway: string): void {
+    this.getVdom().routes.removeStatic(network, mask, gateway);
   }
 
   nameif(iface: string, zoneName: string, securityLevel: number): void {

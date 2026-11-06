@@ -45,6 +45,8 @@ import {
 import { EquipmentParamResolver } from './EquipmentParamResolver';
 import type { TcpStack } from '@/network/tcp/TcpStack';
 import { findHostByAddress } from '../linux/network/HostLookup';
+import { resolveHostnameFor } from '../NameResolution';
+import { registerHuaweiDnsConfigCommands, registerHuaweiDnsDisplayCommands, withTargetResolved } from './huawei/HuaweiDnsCommands';
 import { huaweiDecipher, looksLikeReversibleCipher } from '@/crypto/passwords/huawei';
 import { HUAWEI_ERRORS, parsePipeFilter, applyPipeFilter, resolveHuaweiNav, huaweiRipExtras, huaweiDisplayInterfaceName, normaliserErreurVrp, tropDeParametres, rendreErreurVrp } from './cli-utils';
 import { analyserVrrp, appliquerVrrp } from './huawei/huaweiVrrpViews';
@@ -915,16 +917,18 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     if (positional.length === 0) return 'Error: Incomplete command.';
     const display = positional[0];
     const port = positional[1] ? parseInt(positional[1], 10) : 23;
-    const router = this.routerRef as unknown as {
+    const device = this.routerRef;
+    if (!device) return 'Error: device not bound';
+    this._pendingAsync = resolveHostnameFor(device, display)
+      .then((address) => this.telnetTo(device, display, address ?? display, port));
+    return '';
+  }
+
+  private telnetTo(device: unknown, display: string, host: string, port: number): string {
+    const router = device as {
       _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
-      _getHostsTable?: () => { resolve: (n: string) => string | null };
       getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'>;
     };
-    if (!router) return 'Error: device not bound';
-    let host = display;
-    const resolved = router._getHostsTable?.().resolve(host);
-    if (resolved) host = resolved;
-
     const failure = `Trying ${display} ...\nError: Failed to connect to the remote host.`;
     let hasSource = false;
     for (const [, p] of router._getPortsInternal()) {
@@ -932,7 +936,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
     }
     if (!hasSource) return failure;
 
-    const remote = findHostByAddress(host, undefined, this.routerRef as never);
+    const remote = findHostByAddress(host, undefined, device as never);
     if (!remote || remote.poweredOff || remote.interfaceDown) return failure;
     const stack = router.getTcpStack?.();
     if (!stack || !stack.hasEgressTo(remote.ip)) return failure;
@@ -1777,34 +1781,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       renderHuaweiTcpStatus(this.r()));
     t.register('display sockets', 'Display open sockets', () =>
       renderHuaweiSockets(this.r()));
-    t.register('display dns server', 'Display DNS servers', () => {
-      const servers = this.r()._getDnsConfig().nameServers;
-      if (servers.length === 0) return 'No DNS server configured.';
-      return [
-        ' Type: D:Dynamic  S:Static',
-        ' Domain-name-server           Type',
-        ...servers.map((s) => ` ${padToWidth(s, 29)}S`),
-      ].join('\n');
-    });
-    t.register('display dns domain', 'Display DNS domain suffixes', () => {
-      const cfg = this.r()._getDnsConfig();
-      const suffixes = cfg.suffixesDeRecherche();
-      if (suffixes.length === 0) return 'No domain name configured.';
-      return [
-        ' Type: D:Dynamic  S:Static',
-        ' No.   Domain-name                             Type',
-        ...suffixes.map((s, i) => ` ${padToWidth(String(i + 1), 6)}${padToWidth(s, 40)}S`),
-      ].join('\n');
-    });
-    t.register('display dns dynamic-host', 'Display the dynamic DNS cache', () => {
-      const entrees = this.r()._getHostsTable().entries().filter((e) => !e.permanent);
-      if (entrees.length === 0) return 'No dynamic host resolved.';
-      return [
-        ' No.  Host                     TTL         IpAddress',
-        ...entrees.map((e, i) =>
-          ` ${padToWidth(String(i + 1), 5)}${padToWidth(e.name, 25)}${padToWidth(String(86400 - e.ageSeconds), 12)}${e.ips.join(' ')}`),
-      ].join('\n');
-    });
+    registerHuaweiDnsDisplayCommands(t, { config: () => this.r()._getDnsConfig(), hosts: () => this.r()._getHostsTable() });
 
     registerDhcpDisplayCommands(t, getRouter);
     registerDhcpDebugCommands(t, getRouter);
@@ -1873,33 +1850,7 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
       return '';
     });
 
-    t.register('dns resolve', 'Enable dynamic DNS resolution', () => {
-      this.r()._getDnsConfig().lookupEnabled = true;
-      return '';
-    });
-    t.register('undo dns resolve', 'Disable dynamic DNS resolution', () => {
-      this.r()._getDnsConfig().lookupEnabled = false;
-      return '';
-    });
-    t.registerGreedy('dns server', 'Configure a DNS server', (args) => {
-      const err = this.r()._getDnsConfig().setNameServers(args);
-      if (!err) return '';
-      return err.kind === 'incomplete'
-        ? 'Error: Incomplete command found at \'^\' position.'
-        : 'Error: Wrong parameter found at \'^\' position.';
-    });
-    t.registerGreedy('undo dns server', 'Remove a DNS server', (args) => {
-      this.r()._getDnsConfig().removeNameServers(args);
-      return '';
-    });
-    t.registerGreedy('dns domain', 'Configure a DNS domain suffix', (args) => {
-      const err = this.r()._getDnsConfig().addDomainToList(args[0]);
-      return err ? 'Error: Incomplete command found at \'^\' position.' : '';
-    });
-    t.registerGreedy('undo dns domain', 'Remove a DNS domain suffix', (args) => {
-      this.r()._getDnsConfig().removeDomainFromList(args[0]);
-      return '';
-    });
+    registerHuaweiDnsConfigCommands(t, { config: () => this.r()._getDnsConfig(), hosts: () => this.r()._getHostsTable() });
 
     t.registerGreedy('ip host', 'Configure a static host entry', (args) => {
       if (args.length < 2) return 'Error: Incomplete command.';
@@ -3221,29 +3172,40 @@ export class HuaweiVRPShell implements IRouterShell, HuaweiShellContext, HuaweiD
 
   // ─── Tracert command ──────────────────────────────────────────────
 
+  private withResolvedTarget(args: string[], run: (router: Router, resolved: string[]) => string | Promise<string>): string {
+    const router = this.r();
+    this._pendingAsync = withTargetResolved(router, args).then((resolved) => run(router, resolved));
+    return '';
+  }
+
   private _handleTracert(args: string[]): string {
+    return this.withResolvedTarget(args, (router, resolved) => this.tracertNow(router, resolved));
+  }
+
+  private tracertNow(router: Router, args: string[]): string | Promise<string> {
     const request = parseHuaweiTracert(args);
     if (typeof request === 'string') return request;
     const { target, maxHops, timeoutMs, probesPerHop } = request;
     const hops = request.ipv6
-      ? this.r().executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
-      : this.r().executeTraceroute(new IPAddress(target), maxHops, timeoutMs, probesPerHop);
-    this._pendingAsync = hops.then((reached) => formatHuaweiTracert(target, maxHops, reached));
-    return '';
+      ? router.executeTraceroute6(new IPv6Address(target), maxHops, timeoutMs, probesPerHop)
+      : router.executeTraceroute(new IPAddress(target), maxHops, timeoutMs, probesPerHop);
+    return hops.then((reached) => formatHuaweiTracert(target, maxHops, reached));
   }
 
   // ─── Ping command ─────────────────────────────────────────────────
 
   private _handlePing(args: string[]): string {
+    return this.withResolvedTarget(args, (router, resolved) => this.pingNow(router, resolved));
+  }
+
+  private pingNow(router: Router, args: string[]): string | Promise<string> {
     const request = parseHuaweiPing(args);
     if (typeof request === 'string') return request;
     const { target, count, timeoutMs, sourceIP } = request;
-    const router = this.r();
-    this._pendingAsync = request.ipv6
+    return request.ipv6
       ? router.executePing6Sequence(new IPv6Address(target), count, timeoutMs, sourceIP ?? undefined)
         .then((results) => formatHuaweiPing6(target, count, results))
       : router.executePingSequence(new IPAddress(target), count, timeoutMs, sourceIP ?? undefined)
         .then((results) => formatHuaweiPing(target, count, results));
-    return '';
   }
 }

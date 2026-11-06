@@ -4584,3 +4584,30 @@ tput 6.4. Not modelled: bytes above 0x7f (`tput acsc` on ansi/cygwin) leave the 
 print is1/is2/is3 and rs1/rs2/rs3 but skip the tab-stop setting; a terminal the container does not install (only the 19 are carried) answers
 `unknown terminal`; `tput cols`/`lines` use the window size when the terminal comes from $TERM and terminfo when given with -T (measured, not understood in
 ncurses terms); and the capability names known to tput are the union of the installed terminals plus the probed boolean/numeric names.
+
+## DNS: the name-resolution gaps still open after the Linux clients were unified
+
+Linux clients (nc, wget, openssl, arping, logger, chronyc, telnet, ssh, ping) resolve through `LinuxMachine.resolveHostname`, pre-resolved at `executeCommand`.
+Still private or synchronous: `HostLookup.findHostByAddress` still answers names from /etc/hosts and topology device names; `LinuxCommandExecutor.hostidAddress`
+and `fuser` read /etc/hosts or `resolveHostnameSync` and cannot see a DNS answer; NmapProbes, LinuxIpCommand, HuaweiVRPShell and WindowsPC keep their own lookups
+(audit in progress). wget covers -q -nv -O -T -t --spider -S -V -P only: redirect lines, retries and the progress bar are not modelled. The ICMPv6 echo payload is
+not the iputils one. `mtr` prints its header with the typed name, not the resolved one. `ping -i` paces at 0.92 s where iputils paces at 1 s.
+
+## DNS: gaps still open after auditing the other equipment (Windows, Cisco, Huawei, FortiGate, ASA)
+
+Measured in the DNS lab. PowerShell `[System.Net.Dns]`, `System.Net.Sockets.TcpClient` and `System.Net.WebClient` are not implemented and answer nothing, silently; official_docs/microsoft/powershell does not document the .NET API (no occurrence), so by rule 8 they are not written from memory; (only `systeminfo`, `getmac`, `tasklist`, `taskkill`, `schtasks` with `/s` cross the wire, and over WinRM 5985 where real Windows uses RPC/DCOM: the target must have WinRM enabled); the ASA shell has no outbound `telnet`/`ssh` client, no `ping ... size|data|validate|source`, no `names`/`name` mapping and no `dns retries|timeout` (reference: official_docs/cisco/asa); the Cisco switch has no `traceroute`; IP SLA reads names from the router's host table only (a name the DNS
+knows resolves at the first `ping`, not for a probe configured before it).
+
+## Cisco `ip domain lookup`: documented forms that change nothing observable
+
+Reference: official_docs/cisco/ios-xe-catalyst-9600 'ip domain lookup [nsap | recursive | source-interface | vrf]'. `source-interface` now sets the source address of the DNS query (router and switch).
+`nsap` (the simulator has no CLNS) and `recursive` (every query already carries RD=1) are accepted, stored and rendered, and change nothing; `vrf NAME source-interface`
+is stored and rendered, and the DNS client has no per-VRF source selection.
+
+## PowerShell 7 Test-Connection: what the real source holds and is not reproduced
+
+Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects and errors of PowerShell 7 (PingStatus, TcpPortStatus, TraceStatus,
+'Cannot resolve the target name.'), but: the table view of the real format file (columns Ping, Source, Address, Latency(ms), BufferSize(B), Status with the widths 4/16/25/7/10/16 and a '*' latency
+for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -TimeoutSeconds, -BufferSize, -MaxHops, -DontFragment, -Repeat, -MtuSizeDetect
+are not evaluated; -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
+boolean, the real code carries the SocketError code).

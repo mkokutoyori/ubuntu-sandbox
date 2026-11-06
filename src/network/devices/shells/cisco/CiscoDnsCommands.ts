@@ -8,6 +8,7 @@ export interface DnsCommandContext {
   config(): CiscoDnsConfig | null;
   hosts(): RouterHostsTable | null;
   afterApply?(): void;
+  canonicalInterface?(typed: string): string | null;
 }
 
 export const DNS_RETRY_RANGE: readonly [number, number] = [0, 100];
@@ -63,18 +64,40 @@ export function ciscoDnsConfigSpecs(ctx: DnsCommandContext): CommandSpec[] {
     command(tag, root, 'Enable IP Domain Name System hostname translation',
       () => { const c = cfg(); if (c) c.lookupEnabled = true; return ''; },
       () => { const c = cfg(); if (c) c.lookupEnabled = false; return ''; });
+    const canonical = (typed: string): string | null => (ctx.canonicalInterface ? ctx.canonicalInterface(typed) : typed);
     command(`${tag}-source-interface`, [...root, 'source-interface', {
       name: 'interface', type: 'INTERFACE', description: 'Interface used as the source address',
     }], 'Source interface for packets',
     (args) => {
       const c = cfg();
-      if (c) { c.lookupSourceInterface = args.interface; c.lookupEnabled = true; }
+      const name = canonical(args.interface);
+      if (name === null) return INVALID;
+      if (c) { c.lookupSourceInterface = name; c.lookupEnabled = true; }
       return '';
     },
     () => { const c = cfg(); if (c) c.lookupSourceInterface = null; return ''; });
     bareUndo(`${tag}-source-interface`, [...root, 'source-interface'],
       'Source interface for packets',
       () => { const c = cfg(); if (c) c.lookupSourceInterface = null; return ''; });
+    command(`${tag}-recursive`, [...root, 'recursive'], 'Enable IP DNS recursive lookup',
+      () => { const c = cfg(); if (c) { c.lookupRecursive = true; c.lookupEnabled = true; } return ''; },
+      () => { const c = cfg(); if (c) c.lookupRecursive = false; return ''; });
+    command(`${tag}-nsap`, [...root, 'nsap'], 'Enable IP DNS queries for CLNS NSAP addresses',
+      () => { const c = cfg(); if (c) { c.lookupNsap = true; c.lookupEnabled = true; } return ''; },
+      () => { const c = cfg(); if (c) c.lookupNsap = false; return ''; });
+    command(`${tag}-vrf-source-interface`, [...root, 'vrf', {
+      name: 'vrf', type: 'WORD', description: 'VRF name',
+    }, 'source-interface', {
+      name: 'interface', type: 'INTERFACE', description: 'Interface used as the source address',
+    }], 'Source interface for the DNS resolver in a VRF',
+    (args) => {
+      const c = cfg();
+      const name = canonical(args.interface);
+      if (name === null) return INVALID;
+      if (c) c.vrfSourceInterfaces.set(args.vrf, name);
+      return '';
+    },
+    (args) => { cfg()?.vrfSourceInterfaces.delete(args.vrf); return ''; });
   }
 
   for (const root of [['ip', 'domain-name'], ['ip', 'domain', 'name']]) {

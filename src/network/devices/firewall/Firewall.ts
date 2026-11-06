@@ -168,6 +168,7 @@ import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
 import { FirewallPing, hostAddressOf, isPingRefusal, type FirewallPingEgress } from './diag/FirewallPing';
+import type { TracedRoute } from './diag/FirewallTraceroute';
 import { isValidIPv4, isValidIPv6 } from '../../core/ip';
 import { Logger } from '../../core/Logger';
 import { Nat64Prefix } from '@/network/nat/nat64/Nat64Prefix';
@@ -944,6 +945,19 @@ export class Firewall extends Equipment {
 
   runPing(target: string, count?: number): string { return this.ping.run(target, count); }
 
+  resolvedAddressOf(target: string): string | null { return hostAddressOf(target, { resolveName: (name) => this.resolveHostName(name) }); }
+
+  probeTcp(address: string, port: number): boolean {
+    const socket = this.tcp.connect(address, port);
+    const established = socket !== null && socket.state === 'established';
+    socket?.close();
+    return established;
+  }
+
+  localAddressToward(address: string): string | undefined { return this.resolveEgress(address)?.source; }
+
+  egressInterfaceOf(address: string): string | undefined { return this.routedEgress(address, this.activeVdom)?.iface; }
+
   runTelnet(target: string, rawPort: string | undefined): string {
     const port = rawPort === undefined ? 23 : Number(rawPort);
     if (!Number.isInteger(port) || !PortNumber.isValid(port)) return `telnet: ${rawPort}: bad port`;
@@ -1036,6 +1050,17 @@ export class Firewall extends Equipment {
     return this.dnsClient.resolve(name).find(isValidIPv4) ?? null;
   }
 
+  settlesLater(name: string, family: 'ipv4' | 'ipv6' = 'ipv4'): boolean {
+    const literal = family === 'ipv4' ? isValidIPv4(name) : isValidIPv6(name);
+    if (literal) return false;
+    const answered = family === 'ipv4' ? this.resolveHostName(name) : this.resolveHostName6(name);
+    return answered === null && this.dnsClient.awaitingReply(name, family);
+  }
+
+  async awaitHostName(name: string, family: 'ipv4' | 'ipv6' = 'ipv4'): Promise<void> {
+    await this.dnsClient.resolveAwaiting(name, family);
+  }
+
   private resolveHostName6(name: string): string | null {
     return this.dnsClient.resolve(name, 'ipv6').find(isValidIPv6) ?? null;
   }
@@ -1064,6 +1089,8 @@ export class Firewall extends Equipment {
   });
 
   runTraceroute(target: string): string { return this.traceroute.run(target); }
+
+  traceRoute(target: string, maxHops?: number): TracedRoute | null { return this.traceroute.trace(target, maxHops); }
 
   private readonly dnsClient = new FirewallDnsClient({
     send: (destination, sourcePort, payload) => this.sendUdpDatagram({

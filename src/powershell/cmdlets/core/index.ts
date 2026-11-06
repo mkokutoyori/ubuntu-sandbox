@@ -118,7 +118,7 @@ import {
 } from './EventLogCmdlets';
 import {
   IpconfigCmdlet, NetshCmdlet, ArpCmdlet, RouteCmdlet, FindstrCmdlet,
-  GetmacCmdlet, SysteminfoCmdlet, VerCmdlet, NslookupCmdlet,
+  GetmacCmdlet, SysteminfoCmdlet, TasklistCmdlet, TaskkillCmdlet, SchtasksCmdlet, VerCmdlet, NslookupCmdlet,
   NetCmdlet, VolCmdlet, ChcpCmdlet, ScCmdlet,
   SshKeygenCmdlet, SshAgentCmdlet, SshAddCmdlet, SshKeyscanCmdlet,
 } from './NativeShimCmdlets';
@@ -438,7 +438,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new GetPSProviderCmdlet());
 
   // ── Services (provider-backed) ────────────────────────────────────────────
-  registry.register(new GetServiceCmdlet());
+  registry.register(remotable('Get-Service', new GetServiceCmdlet()));
   registry.register(new StartServiceCmdlet());
   registry.register(new StopServiceCmdlet());
   registry.register(new RestartServiceCmdlet());
@@ -450,7 +450,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new RegisterWmiEventCmdlet());
 
   // ── Processes (provider-backed) ───────────────────────────────────────────
-  registry.register(new GetProcessCmdlet());
+  registry.register(remotable('Get-Process', new GetProcessCmdlet()));
   registry.register(new StopProcessCmdlet());
   registry.register(new StartProcessCmdlet());
 
@@ -584,7 +584,7 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(new FormatVolumeCmdlet());
   registry.register(new GetVolumeCmdlet());
   registry.register(new GetPartitionCmdlet());
-  registry.register(new GetCimInstanceCmdlet());
+  registry.register(remotable('Get-CimInstance', new GetCimInstanceCmdlet()));
   registry.register(new GetCounterCmdlet());
 
   registry.register(new GetWindowsCapabilityCmdlet());
@@ -646,6 +646,9 @@ export function registerCoreCmdlets(registry: CmdletRegistry, opts: { includeSer
   registry.register(RouteCmdlet);
   registry.register(GetmacCmdlet);
   registry.register(SysteminfoCmdlet);
+  registry.register(TasklistCmdlet);
+  registry.register(TaskkillCmdlet);
+  registry.register(SchtasksCmdlet);
   registry.register(VerCmdlet);
   registry.register(NslookupCmdlet);
   registry.register(NetCmdlet);

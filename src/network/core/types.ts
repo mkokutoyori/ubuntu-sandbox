@@ -943,6 +943,28 @@ export function nextIPv4Id(): number {
 
 export function resetIPv4IdCounter(): void {
   ipIdCounter = 0;
+  hostIpIdCounters.clear();
+}
+
+const hostIpIdCounters = new Map<string, number>();
+
+function identificationSeed(address: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < address.length; i++) hash = Math.imul(hash ^ address.charCodeAt(i), 16777619);
+  return (hash >>> 0) & 0xffff;
+}
+
+/**
+ * The identification a host stamps on a datagram it originates: one counter
+ * per source address, seeded from the address, so two machines never share
+ * a sequence (RFC 6864 asks only that an id be unique per source,
+ * destination and protocol while the datagram is alive).
+ */
+export function nextIPv4IdFor(source: IPAddress): number {
+  const key = source.toString();
+  const next = ((hostIpIdCounters.get(key) ?? identificationSeed(key)) + 1) & 0xffff;
+  hostIpIdCounters.set(key, next);
+  return next;
 }
 
 let ipv6FragmentIdCounter = 0;
@@ -1059,7 +1081,7 @@ export function createIPv4Packet(
     ihl: headerSize >> 2,
     tos: options.tos ?? 0,
     totalLength: headerSize + payloadSize,
-    identification: options.identification ?? nextIPv4Id(),
+    identification: options.identification ?? nextIPv4IdFor(sourceIP),
     flags: options.flags ?? 0b010, // DF (Don't Fragment) set by default
     fragmentOffset: 0,
     ttl,
@@ -1162,6 +1184,7 @@ export interface ICMPPacket extends NetworkPdu {
    * 84 bytes total with IPv4 header).
    */
   dataSize: number;
+  data?: readonly number[];
   /**
    * Next-Hop MTU — included in ICMP Type 3, Code 4 (Fragmentation Needed
    * and Don't Fragment was Set) per RFC 1191 §4.
@@ -1853,6 +1876,7 @@ export function generateId(): string {
 export function resetCounters(): void {
   idCounter = 0;
   ipIdCounter = 0;
+  hostIpIdCounters.clear();
   ipv6FragmentIdCounter = 0;
   MACAddress.resetCounter();
 }

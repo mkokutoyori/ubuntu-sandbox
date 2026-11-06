@@ -178,7 +178,8 @@ describe('et elles acceptent toujours une vraie interface', () => {
   it.each(PLACES)('`%s Gi0/0` — la forme abregee — aussi', async (place) => {
     const d = routeur(`D${cle(place)}`);
     expect(await conf(d, `${place} Gi0/0`)).not.toContain('%');
-    expect(await config(d)).toContain(`${place} Gi0/0`);
+    const rendered = place === 'ip domain-lookup source-interface' ? 'GigabitEthernet0/0' : 'Gi0/0';
+    expect(await config(d)).toContain(`${place} ${rendered}`);
   });
 
   it.each(PLACES)('`%s Loopback9` : la place controle la FORME, pas l existence',

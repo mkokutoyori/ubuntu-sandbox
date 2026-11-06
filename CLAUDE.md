@@ -38,6 +38,15 @@ Three traps break this rule in good faith. **A partial reuse is still a duplicat
 
 **Check before you implement — every time, no exception.** Before adding a function, constant, table, message, command, type or test helper, run the search first and state in your working notes what it returned: grep the name AND the behaviour (the literal message text, the numeric constants, the RFC/section number, the CLI keyword) across `src/`, not only the file you are in. A hit means you delegate or extend it; a miss means you may write it, and only where the subsystem that should carry it lives. Writing first and discovering the twin afterwards is the failure this rule exists to stop (an `isMulticast` copy beside `isMulticastIpv4`, a second `ttl - 1` beside `decrementForForwarding`, a package declared on both the command and the table, a second `SALifetime` string beside the engine's). The commit message names what was searched and what was reused.
 
+### 1b. A host name is resolved by the machine's resolver — never by a private lookup
+
+Any command that takes a host name (ping, telnet, ssh, curl, wget, nc, arping, traceroute, openssl, logger, chronyc, ssh-keyscan, a PowerShell cmdlet, an IOS or
+VRP or FortiOS `execute`) asks the machine's resolver: `LinuxMachine`/`WindowsPC`/`Router`/`Switch` `resolveHostname`, or `resolveHostnameFor(device, name)`
+(`devices/NameResolution.ts`). Never read `/etc/hosts`, the topology or a host table to turn a name into an address: a private lookup does not see what only the DNS
+knows. A synchronous engine resolves ahead of time at the single async entry (`executor.resolvedNames` on Linux, `pendingAsync` on the network OS shells) and
+consumes the answers. `findHostByAddress` locates a DEVICE from an address already resolved; it is not a name resolver. The guard
+`unit/architecture/guard-no-private-name-resolvers.test.ts` is a ratchet: a new direct reader fails it.
+
 ### 2. A duplicate is a defect, and closing it is part of the task
 
 When you meet the same fact written twice — two parsers for one grammar, two stores for one setting, two renderers for one view, two tables of the same constants — remove one **in the same change**. Two writings of one fact do not stay equal: they diverge, and then the machine answers two different things to the same question with nothing to say which is right. Delete the duplicate rather than keep it in sync; a comment asking the reader to update both is not a fix. If a duplicate genuinely cannot be closed in that change, say so in the commit message and open a `TODO.md` entry naming both sites — never leave it silent.
@@ -67,6 +76,10 @@ Type the command, read the state back, record the gap — then fix. A long-stand
 ### 8. Choose the authority BEFORE citing it
 
 A RFC is not automatically the reference. What governs is the **officially adopted standard** and, failing that, the **vendor's documentation**; a captured transcript beats both when they diverge, because that is what a learner compares their own output against. Three cases, and confusing them invokes a text that does not apply: an adopted open standard is cited (VRRP RFC 5798, PIM-SM RFC 7761, IANA assignments); a PROPRIETARY protocol is not cited by RFC — HSRP is Cisco's and RFC 2281 is INFORMATIVE and v1-only, GLBP has no RFC at all, so the authority is Cisco's documentation. When the source cannot be reached, say so and do not implement rather than guess. Documentation HTML collapses whitespace, so for column layouts use captured text (e.g. `ntc-templates`), not doc examples.
+
+**The official documentation is in the repository, under `official_docs/`** — Cisco command references (IOS security, management, IP routing, IOS XE Catalyst 9600, ASA), Microsoft `windows-commands` and PowerShell 7.6. It is the authority of this rule for CLI syntax, defaults, keywords and error wording: read the page of the command you touch (`pdftotext -layout`, extracted into your scratchpad, not committed) before changing its grammar, and align on it. `docs/rfc/` holds the adopted standards.
+
+**For PowerShell 7 and the .NET behaviour behind a cmdlet, the real source on GitHub (`github.com/PowerShell/PowerShell`, read-only shallow clone, outside the repository) is a reference too**: parameter sets, aliases under `#if !CORECLR`, error resources (`*Resources.resx`). Windows PowerShell 5.1 is closed-source: for it, only the Microsoft documentation applies.
 
 ### 9. Do not write comments — absolute
 

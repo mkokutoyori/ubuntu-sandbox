@@ -1,6 +1,7 @@
 import type { Equipment } from '@/network/equipment/Equipment';
 import type { KeyEvent } from '@/terminal/sessions/TerminalSession';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { resolveHostnameFor } from '@/network/devices/NameResolution';
 import { isDialFailure } from '@/network/tcp/types';
 import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
 import { PortNumber } from '@/network/core/ports/PortNumber';
@@ -25,7 +26,7 @@ export function deviceWireDeps(
     tcpConnect?: (h: string, p: number) => Promise<NetkitTelnetTransport | null>;
   };
   return {
-    lookupHost: (name) => findHostByAddress(name, resolverVfs, device)?.ip ?? null,
+    lookupHost: async (name) => (await resolveHostnameFor(device, name)) ?? findHostByAddress(name, resolverVfs, device)?.ip ?? null,
     servicePort: (name) => IanaServiceRegistry.standard().resolvePort(name, 'tcp') ?? null,
     reach: (ip, port) => wireReachOutcomeRetransmitting(device, ip, port),
     dial: async (ip, port) => {

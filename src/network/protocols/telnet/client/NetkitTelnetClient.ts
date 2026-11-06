@@ -2396,7 +2396,7 @@ export class NetkitTelnetClient {
 
     let source: NetkitAddress | null = null;
     if (sourceHost !== null) {
-      const resolved = this.host.resolve(sourceHost, '0', family, true);
+      const resolved = await this.host.resolve(sourceHost, '0', family, true);
       if (!resolved.ok) {
         this.err(`telnet: could not resolve ${sourceHost}: ${resolved.message}\n`);
         return false;
@@ -2404,8 +2404,8 @@ export class NetkitTelnetClient {
       source = resolved.addresses[0];
     }
 
-    let resolution = this.host.resolve(hostText, portText, family, true);
-    if (!resolution.ok && resolution.noName) resolution = this.host.resolve(hostText, portText, family, false);
+    let resolution = await this.host.resolve(hostText, portText, family, true);
+    if (!resolution.ok && resolution.noName) resolution = await this.host.resolve(hostText, portText, family, false);
     if (!resolution.ok || resolution.addresses.length === 0) {
       const reason = resolution.ok ? 'Name or service not known' : resolution.message;
       this.err(`telnet: could not resolve ${hostText}/${portText}: ${reason}\n`);

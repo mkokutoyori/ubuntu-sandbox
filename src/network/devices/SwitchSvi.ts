@@ -77,6 +77,7 @@ export interface SviHost {
   egressOnVlan(vlan: number, frame: EthernetFrame): void;
   /** True when the VLAN has at least one up, connected member port. */
   vlanHasActivePort(vlan: number): boolean;
+  defaultGateway(): IPAddress | null;
   dhcpClientDeliver?(vlan: number, pkt: DHCPPacket): boolean;
   /** Read the switch's shared management ARP cache. */
   lookupArp(ip: string): MACAddress | null;
@@ -293,7 +294,7 @@ export class SwitchSvi {
     return null;
   }
 
-  private lookupRoute(dst: IPAddress): { nextHop: IPAddress; egress: SviInterface } | null {
+  lookupRoute(dst: IPAddress): { nextHop: IPAddress; egress: SviInterface } | null {
     const direct = this.svisFor(dst);
     if (direct) return { nextHop: dst, egress: direct };
     const candidates = this.staticRoutes
@@ -303,7 +304,9 @@ export class SwitchSvi {
       const egress = this.svisFor(route.nextHop);
       if (egress) return { nextHop: route.nextHop, egress };
     }
-    return null;
+    const gateway = this.host.defaultGateway();
+    const egress = gateway === null ? null : this.svisFor(gateway);
+    return gateway !== null && egress !== null ? { nextHop: gateway, egress } : null;
   }
 
   /** Line protocol is up when admin-up and the VLAN has a live member port. */
@@ -590,11 +593,11 @@ export class SwitchSvi {
 
   sendUdpBytes(
     destination: IPAddress, destinationPort: number,
-    sourcePort: number, payload: Uint8Array,
+    sourcePort: number, payload: Uint8Array, source?: IPAddress,
   ): boolean {
     return this.sendUdpDatagram({
       destination, destinationPort, sourcePort,
-      payload, payloadBytes: payload.length,
+      payload, payloadBytes: payload.length, source,
     });
   }
 

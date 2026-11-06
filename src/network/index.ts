@@ -7,7 +7,7 @@ export {
   IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP,
   UDP_PORT_RIP, RIP_METRIC_INFINITY, RIP_MAX_ENTRIES_PER_MESSAGE,
   generateId, resetCounters,
-  nextIPv4Id, resetIPv4IdCounter,
+  nextIPv4Id, nextIPv4IdFor, resetIPv4IdCounter,
   computeIPv4Checksum, verifyIPv4Checksum, createIPv4Packet,
 } from './core/types';
 export type {

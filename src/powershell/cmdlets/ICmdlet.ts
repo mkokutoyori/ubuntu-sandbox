@@ -80,6 +80,8 @@ export interface ICmdlet {
   readonly coreOnly?: true;
   /** Parameters (canonical case) that exist only in PowerShell 7 (Core). */
   readonly coreOnlyParameters?: readonly string[];
+  readonly desktopOnlyParameters?: readonly string[];
+  readonly desktopOnlyAliases?: readonly string[];
 
   /**
    * Parameters (canonical case) that take no value. The parser cannot know it and hands

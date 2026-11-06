@@ -142,8 +142,8 @@ describe('exit garde ce que le script a deja ecrit', () => {
 describe('les refus nomment la brique absente', () => {
   it('Get-Service et Get-Process refusent -ComputerName', async () => {
     const { ps } = lab();
-    expect(await ps('Get-Service -ComputerName ailleurs')).toContain('no remote service control');
-    expect(await ps('Get-Process -ComputerName ailleurs')).toContain('no remote process channel');
+    expect(await ps('Get-Service -ComputerName ailleurs')).toContain('Cannot connect to');
+    expect(await ps('Get-Process -ComputerName ailleurs')).toContain('Cannot connect to');
   });
 
   it('New-Item refuse un lien symbolique', async () => {

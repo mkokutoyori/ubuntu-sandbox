@@ -171,16 +171,7 @@ function linuxOpenSslHost(ctx: LinuxCommandContext, stdin?: string): OpenSslHost
       }).start({ processName: 'openssl' });
       return true;
     },
-    resolveHost: (nom) => {
-      const hosts = vfs.readFile('/etc/hosts') ?? '';
-      for (const ligne of hosts.split('\n')) {
-        const sansCommentaire = ligne.split('#')[0].trim();
-        if (sansCommentaire === '') continue;
-        const champs = sansCommentaire.split(/\s+/);
-        if (champs.slice(1).includes(nom)) return champs[0];
-      }
-      return null;
-    },
+    resolveHost: (nom) => ctx.executor.resolvedHost(nom),
   };
 }
 

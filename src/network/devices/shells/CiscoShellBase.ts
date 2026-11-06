@@ -181,6 +181,7 @@ const NTP_SOUS_COMMANDES: ReadonlyArray<{
 ];
 import { CISCO_ERRORS, parsePipeFilter, applyPipeFilter, PIPE_WRITERS, PIPE_MODIFIERS, type PipeFilter } from './cli-utils';
 import { isValidIPv4 } from '../../core/ip';
+import { resolveHostnameFor } from '../NameResolution';
 import { LLDP_OPTIONAL_TLVS, type LldpOptionalTlv } from '@/network/lldp/types';
 
 const LLDP_TLV_DESCRIPTIONS: Readonly<Record<LldpOptionalTlv, string>> = {
@@ -8263,7 +8264,18 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
         _getHostsTable?: () => RouterHostsTable;
       } | null)?._getHostsTable?.() ?? null,
       afterApply: () => { this.syncDnsService(); },
+      canonicalInterface: (typed) => this.canonicalSourceInterface(typed),
     };
+  }
+
+  protected canonicalSourceInterface(typed: string): string | null {
+    const device = this.deviceRef as unknown as { getPortNames?: () => Iterable<string> } | null;
+    const known = resolveCiscoInterfaceName(device?.getPortNames?.() ?? [], typed);
+    if (known !== null) return known;
+    const vlan = /^vl(?:an)?\s*(\d+)$/i.exec(typed.trim());
+    if (vlan !== null) return `Vlan${vlan[1]}`;
+    const loopback = /^lo(?:opback)?\s*(\d+)$/i.exec(typed.trim());
+    return loopback === null ? null : `Loopback${loopback[1]}`;
   }
 
   protected syncDnsService(): void {
@@ -9402,24 +9414,29 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   private runOutboundTelnet(args: string[]): string {
     const positional = args.filter((a) => !a.startsWith('-'));
     if (positional.length === 0) return '% Incomplete command.';
+    const device = this.d();
+    this._pendingAsync = resolveHostnameFor(device, positional[0])
+      .then((address) => this.telnetTo(device, positional, address));
+    return '';
+  }
+
+  private telnetTo(device: TDevice, positional: string[], address: string | null): string {
     const display = positional[0];
     const port = positional[1] ? parseInt(positional[1], 10) : 23;
-    const router = this.d() as unknown as {
-      _getPortsInternal: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
-      _getHostsTable?: () => { resolve: (n: string) => string | null };
+    const host = address ?? display;
+    const holder = device as unknown as {
+      _getPortsInternal?: () => Map<string, { getIPAddress: () => { toString: () => string } | null; getIsUp: () => boolean }>;
+      getSvis?: () => ReadonlyArray<{ ip?: { toString: () => string } | null; adminUp?: boolean }>;
     };
-    let host = display;
-    const resolved = router._getHostsTable?.().resolve(host);
-    if (resolved) host = resolved;
-
     let sourceIp: string | null = null;
-    for (const [, p] of router._getPortsInternal()) {
+    for (const [, p] of holder._getPortsInternal?.() ?? []) {
       const ip = p.getIPAddress();
       if (ip && p.getIsUp()) { sourceIp = ip.toString(); break; }
     }
+    if (!sourceIp) sourceIp = holder.getSvis?.().find((svi) => svi.ip && svi.adminUp)?.ip?.toString() ?? null;
     if (!sourceIp) return `Trying ${display} ...\n% Destination unreachable; no source interface for outbound Telnet`;
 
-    const stack = (this.d() as unknown as { getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'> }).getTcpStack?.();
+    const stack = (device as unknown as { getTcpStack?: () => Pick<TcpStack, 'connect' | 'hasEgressTo'> }).getTcpStack?.();
     const target = positional[1] ? `${display}, ${port}` : display;
     if (!IPAddress.tryParse(host)) {
       return `Translating "${display}"\n\n% Unknown command or computer name, or unable to find computer address`;
@@ -9500,12 +9517,7 @@ export abstract class CiscoShellBase<TDevice extends CiscoDevice> {
   }
 
   protected resoudreCible(appareil: unknown, cible: string): Promise<string | null> {
-    if (isValidIPv4(cible)) return Promise.resolve(cible);
-    const svc = (appareil as {
-      getDnsService?: () => { resolve(n: string): Promise<string | null> };
-    }).getDnsService?.();
-    if (!svc) return Promise.resolve(null);
-    return svc.resolve(cible);
+    return resolveHostnameFor(appareil, cible);
   }
 
   private async runOutboundSshClient(args: string[], offeredPassword?: string): Promise<string> {

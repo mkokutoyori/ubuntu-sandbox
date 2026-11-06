@@ -4,6 +4,7 @@ import { parseCommand } from '../../CommandParser';
 import { complete, type CompletionTrigger } from '../../CompletionEngine';
 import { ASA_MODES, ASA_PROMPTS, ASA_TOP_LEVEL, ASA_EXEC_LEVEL } from './asaModes';
 import { asaShowFamily, type AsaShowHost } from './asaShowFamily';
+import { asaNetworkFamily, type AsaNetworkHost } from './asaNetworkFamily';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
 
 export interface HelpLine {
@@ -28,9 +29,10 @@ export class AsaSocle {
   constructor(
     private readonly hostname: () => string,
     private readonly device: unknown,
-    host: () => AsaShowHost,
+    host: () => AsaShowHost & AsaNetworkHost,
   ) {
     for (const spec of asaShowFamily(host)) this.table.declare(spec);
+    for (const spec of asaNetworkFamily(host)) this.table.declare(spec);
   }
 
   private session(mode: string): CliSession {

@@ -30,6 +30,9 @@ export class CiscoDnsConfig {
   retry = DNS_RETRY_DEFAUT;
   roundRobin = false;
   lookupSourceInterface: string | null = null;
+  lookupRecursive = false;
+  lookupNsap = false;
+  readonly vrfSourceInterfaces = new Map<string, string>();
   serverEnabled = false;
   spoofing = false;
   spoofingAddress: string | null = null;
@@ -100,6 +103,9 @@ export class CiscoDnsConfig {
     if (this.lookupSourceInterface) {
       l.push(`ip domain-lookup source-interface ${this.lookupSourceInterface}`);
     }
+    if (this.lookupRecursive) l.push('ip domain-lookup recursive');
+    if (this.lookupNsap) l.push('ip domain-lookup nsap');
+    for (const [vrf, iface] of this.vrfSourceInterfaces) l.push(`ip domain-lookup vrf ${vrf} source-interface ${iface}`);
     if (this.domainName) l.push(`ip domain-name ${this.domainName}`);
     for (const d of this.domainList) l.push(`ip domain list ${d}`);
     if (this.nameServers.length > 0) l.push(`ip name-server ${this.nameServers.join(' ')}`);

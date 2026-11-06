@@ -15,6 +15,7 @@
 
 import type { Equipment } from '@/network/equipment/Equipment';
 import { findHostByAddress } from '@/network/devices/linux/network/HostLookup';
+import { resolveHostnameFor } from '@/network/devices/NameResolution';
 import { isDialFailure } from '@/network/tcp/types';
 import { parseDialAddress, type DialAddress } from '@/network/tcp/dial';
 import { PortNumber } from '@/network/core/ports/PortNumber';
@@ -66,7 +67,7 @@ export async function launchTelnet(
   const port = declaredPort.value;
 
   const literal = parseDialAddress(host);
-  const found = literal !== null ? { ip: host } : findHostByAddress(host, deps.resolverVfs, deps.device);
+  const found = literal !== null ? { ip: host } : await resolvedOrTopology(host, deps);
   if (!found) return fail(dialect.unresolved(host, port));
 
   const destination = literal ?? parseDialAddress(found.ip);
@@ -95,6 +96,12 @@ export async function launchTelnet(
 
   for (const line of dialect.connected(host, found.ip)) deps.emit(line);
   return new TelnetInteractiveSubShell(new TelnetClientSession(socket), host, undefined, dialect.closedByPeer?.(host));
+}
+
+async function resolvedOrTopology(host: string, deps: TelnetLaunchDeps): Promise<{ ip: string } | null> {
+  const address = await resolveHostnameFor(deps.device, host);
+  if (address !== null) return { ip: address };
+  return findHostByAddress(host, deps.resolverVfs, deps.device);
 }
 
 function telnetPort(): number {

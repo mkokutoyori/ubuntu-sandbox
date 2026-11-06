@@ -5159,6 +5159,10 @@ export abstract class EndHost extends Equipment {
     return { id, ...this.echoPacket(id, source, target, seq, ttl, opts) };
   }
 
+  protected echoPayload(_dataSize: number): readonly number[] | undefined {
+    return undefined;
+  }
+
   private echoRefusal(port: Port, target: IPAddress, ttl: number | undefined, opts?: EchoOptions): LocalSocketError | null {
     const { packet } = this.echoPacket(0, opts?.socket?.sourceIp ?? port.getIPAddress() ?? target, target, 0, ttl, opts);
     return ipv4SendRefusal(packet.totalLength, this.pathMtuTo(target, port.getMTU()), (packet.flags & IPV4_FLAG_DF) !== 0);
@@ -5168,9 +5172,11 @@ export abstract class EndHost extends Equipment {
     id: number, source: IPAddress, target: IPAddress, seq: number, ttl: number | undefined, opts?: EchoOptions,
   ): { packet: IPv4Packet; icmpSize: number } {
     const dataSize = opts?.dataSize ?? 56;
+    const data = this.echoPayload(dataSize);
     const icmp: ICMPPacket = {
       type: 'icmp', icmpType: 'echo-request', code: 0,
       id, sequence: seq, dataSize,
+      ...(data === undefined ? {} : { data }),
     };
     const icmpSize = 8 + dataSize;
     const built = createIPv4Packet(

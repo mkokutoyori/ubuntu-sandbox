@@ -134,6 +134,8 @@ import { SshSessionRegistry } from './router/aaa/SshSessionRegistry';
 import { RouterSshKnownHosts } from './router/ssh/RouterSshKnownHosts';
 import { CiscoDnsConfig } from './router/dns/CiscoDnsConfig';
 import { RouterHostsTable } from './router/dns/RouterHostsTable';
+import { RouterDnsService } from './router/dns/RouterDnsService';
+import { controlPlaneDnsTransport } from './router/dns/ControlPlaneDnsTransport';
 import { NetworkOsAccount, applyCiscoUsernamePatch } from './router/aaa/NetworkOsAccount';
 import type { AccountServiceType, CiscoUsernamePatch, PasswordHashAlgorithm } from './router/aaa/NetworkOsAccount';
 import { VtyLineConfigStore } from './router/vty/VtyLineConfigStore';
@@ -584,6 +586,7 @@ export abstract class Switch extends Equipment {
     getBridgeMac: () => this.getBridgeMac(),
     egressOnVlan: (vlan, frame) => this.egressOnVlan(vlan, frame),
     vlanHasActivePort: (vlan) => this.vlanHasActivePort(vlan),
+    defaultGateway: () => IPAddress.tryParse(this._ipDefaultGateway),
     dhcpClientDeliver: (vlan, pkt) => {
       const iface = this.sviClientIface(vlan);
       if (iface === null) return false;
@@ -651,8 +654,8 @@ export abstract class Switch extends Equipment {
   getUdpEndpoint(): ControlPlaneUdpEndpoint {
     if (!this.udpEndpoint) {
       this.udpEndpoint = new ControlPlaneUdpEndpoint({
-        sendUdpBytes: (dst, dstPort, srcPort, payload) =>
-          this.svi.sendUdpBytes(dst, dstPort, srcPort, payload),
+        sendUdpBytes: (dst, dstPort, srcPort, payload, source) =>
+          this.svi.sendUdpBytes(dst, dstPort, srcPort, payload, source),
       });
     }
     return this.udpEndpoint;
@@ -3373,10 +3376,9 @@ export abstract class Switch extends Equipment {
       getPorts: () => [...this.getPorts(), ...this.sviPorts()],
       sendFrame: (portName: string, frame: EthernetFrame) => { this.sendFrame(portName, frame); },
       resolveRoute: (targetIp: string) => {
-        const source = this.svi.sourceAddressFor(new IPAddress(targetIp));
-        if (!source) return null;
-        const svi = this.getSvis().find((s) => s.ip?.toString() === source.toString());
-        return svi ? { iface: `Vlan${svi.vlan}`, nextHopIp: targetIp } : null;
+        const target = IPAddress.tryParse(targetIp);
+        const route = target === null ? null : this.svi.lookupRoute(target);
+        return route === null ? null : { iface: `Vlan${route.egress.vlan}`, nextHopIp: route.nextHop.toString() };
       },
       sendIpv4FrameArpAware: (_outPortName: string, ipPkt: IPv4Packet, nextHopIP: IPAddress) => {
         this.svi.sendIpv4FrameArpAware(ipPkt, nextHopIP);
@@ -4072,6 +4074,31 @@ export abstract class Switch extends Equipment {
   private readonly dnsConfig = new CiscoDnsConfig();
   _getDnsConfig(): CiscoDnsConfig { return this.dnsConfig; }
   _syncDnsService(): void { /* un commutateur n'a pas de pile UDP a lier */ }
+
+  private dnsService: RouterDnsService | null = null;
+  getDnsService(): RouterDnsService {
+    if (!this.dnsService) {
+      this.dnsService = new RouterDnsService(
+        () => this.dnsConfig,
+        () => this.dnsHostsTable,
+        () => controlPlaneDnsTransport(() => this.getUdpEndpoint(), () => this.addressOfNamedInterface(this.dnsConfig.lookupSourceInterface)),
+      );
+    }
+    return this.dnsService;
+  }
+
+  private addressOfNamedInterface(name: string | null): IPAddress | null {
+    const vlan = name === null ? null : /^Vlan(\d+)$/.exec(name);
+    if (vlan !== null && vlan !== undefined) return this.getSvi(Number(vlan[1]))?.ip ?? null;
+    const loopback = name === null ? undefined : [...this.loopbacks.values()].find((l) => l.name.toLowerCase() === name.toLowerCase());
+    return loopback?.ip ?? null;
+  }
+
+  async resolveHostname(name: string): Promise<IPAddress | null> {
+    const literal = IPAddress.tryParse(name);
+    if (literal !== null) return literal;
+    return IPAddress.tryParse((await this.getDnsService().resolve(name)) ?? '');
+  }
 
   private readonly dnsHostsTable = new RouterHostsTable();
   _getHostsTable(): RouterHostsTable { return this.dnsHostsTable; }

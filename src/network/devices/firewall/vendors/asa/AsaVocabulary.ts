@@ -18,6 +18,7 @@ export const ASA_VOCABULARY: Readonly<Record<AsaMode, readonly string[]>> = Obje
   ]),
   'config-object': Object.freeze(['end', 'exit', 'host', 'nat', 'range', 'subnet']),
   'config-group': Object.freeze(['end', 'exit', 'network-object object']),
+  'config-dns-server-group': Object.freeze(['domain-name', 'end', 'exit', 'name-server']),
 });
 
 export const ASA_COMMAND_HELP: Readonly<Record<string, string>> = Object.freeze({

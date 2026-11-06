@@ -6,7 +6,7 @@ import type { CurlHost } from '@/network/http/curl/CurlHost';
 import { runCurl, CURL_FLAGS, CURL_USAGE } from '@/network/http/curl/CurlEngine';
 import { linuxCurlHost } from './LinuxCurlHost';
 
-function commandCurlHost(ctx: LinuxCommandContext, signal: AbortSignal): CurlHost {
+export function commandCurlHost(ctx: LinuxCommandContext, signal: AbortSignal): CurlHost {
   return linuxCurlHost({
     signal,
     net: ctx.net,
