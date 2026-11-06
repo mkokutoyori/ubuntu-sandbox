@@ -1498,6 +1498,7 @@ export interface PingProbeOptions {
   readonly bufferSize?: number;
   readonly timeoutSeconds?: number;
   readonly delaySeconds?: number;
+  readonly dontFragment?: boolean;
 }
 
 export type PingProbeStatus = 'Success' | 'TimedOut' | 'TtlExpired' | 'DestinationNetworkUnreachable' | 'DestinationHostUnreachable' | 'PacketTooBig';

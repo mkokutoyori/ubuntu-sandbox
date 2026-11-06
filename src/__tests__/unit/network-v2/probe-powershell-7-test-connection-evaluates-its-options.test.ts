@@ -5,8 +5,7 @@
  * Before this change the cmdlet declared -Delay and read it nowhere, ignored -BufferSize (the echo was always 56 bytes and the object said 32), had no -TimeoutSeconds and no -MaxHops
  * (the cmdlet accepted any parameter without refusing it), and answered only Success or TimedOut.
  *
- * Measured against the commit before (git stash of src/network and src/powershell): 10 of the 12 cases fall. The 2 that pass either way: the WITNESS that a plain ping answers Success (the
- * lab is sound) and the NON-REGRESSION that -Count 2 sends two echoes.
+ * Measured against the commit before (git stash of src/network and src/powershell): see the commit message for the count; the cases that pass either way are named there.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
@@ -84,6 +83,19 @@ describe('Test-Connection evaluates what it accepts', () => {
     }
     expect((await run(`(Test-Connection ${TARGET} -Count 1 -TimeoutSeconds 1).Status`)).trim()).toBe('TimedOut');
     expect((await run(`(Test-Connection ${TARGET} -Count 1 -TimeoutSeconds 5).Status`)).trim()).toBe('Success');
+  });
+
+  it('-DontFragment with an echo larger than the path MTU answers PacketTooBig, one that fits answers Success', async () => {
+    const { run } = await lab();
+    expect((await run(`(Test-Connection ${TARGET} -Count 1 -BufferSize 1500 -DontFragment).Status`)).trim()).toBe('PacketTooBig');
+    expect((await run(`(Test-Connection ${TARGET} -Count 1 -BufferSize 1400 -DontFragment).Status`)).trim()).toBe('Success');
+    expect((await run(`(Test-Connection ${TARGET} -Count 1 -BufferSize 1500).Status`)).trim()).not.toBe('PacketTooBig');
+    expect((await run(`(Test-Connection ${TARGET} -Count 1 -BufferSize 100 -DontFragment).Status`)).trim()).toBe('Success');
+  });
+
+  it('-Quiet followed by the target still reads -Quiet as a switch', async () => {
+    const { run } = await lab();
+    expect((await run(`Test-Connection -Quiet ${TARGET} -Count 1`)).trim()).toBe('True');
   });
 
   it.each([

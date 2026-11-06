@@ -4600,6 +4600,15 @@ is stored and rendered, and the DNS client has no per-VRF source selection.
 
 Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects and errors of PowerShell 7 (PingStatus, TcpPortStatus, TraceStatus,
 'Cannot resolve the target name.'), but: the table view of the real format file (columns Ping, Source, Address, Latency(ms), BufferSize(B), Status with the widths 4/16/25/7/10/16 and a '*' latency
-for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -DontFragment, -Repeat, -MtuSizeDetect
-are not evaluated (-TimeoutSeconds, -BufferSize, -MaxHops and -Delay are); -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
+for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -Repeat, -MtuSizeDetect
+are not evaluated (-TimeoutSeconds, -BufferSize, -MaxHops, -Delay and -DontFragment are); -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
 boolean, the real code carries the SocketError code).
+
+### [icmp] Un echo plus grand que la MTU, sans DF, reste sans reponse dans le laboratoire Banque Horizon
+
+**Mesure** : depuis `PC-GUICHET1`, `ping -n 1 -l 1400 web.banquehorizon.com` repond, `ping -n 1 -l 1500 web.banquehorizon.com`
+rend `Request timed out.` ; `Test-Connection web.banquehorizon.com -BufferSize 1500` rend `TimedOut`. Un vrai Windows fragmente la demande et recoit
+la reponse reassemblee. Les deux commandes passent par `EndHost.echoRequest` et lisent donc le meme resultat.
+
+**Non corrige ici** : la cause n'est pas isolee (fragmentation de la demande, routage des fragments par les equipements du laboratoire ou
+reassemblage de la reponse). La sonde `probe-powershell-7-test-connection-evaluates-its-options` n'affirme que ce qui est vrai : sans `-DontFragment`, l'echo n'est pas refuse en `PacketTooBig`.

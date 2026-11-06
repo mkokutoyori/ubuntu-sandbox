@@ -407,7 +407,8 @@ export class TestConnectionCmdlet implements ICmdlet {
   readonly name = 'test-connection';
   readonly displayName = 'Test-Connection';
   readonly aliases = [] as const;
-  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'BufferSize', 'TimeoutSeconds', 'MaxHops', 'Ttl', 'TimeToLive', 'Hops'] as const;
+  readonly parameters = ['ComputerName', 'Count', 'Quiet', 'Delay', 'TargetName', 'TcpPort', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'BufferSize', 'TimeoutSeconds', 'MaxHops', 'Ttl', 'TimeToLive', 'Hops', 'DontFragment'] as const;
+  readonly switchParameters = ['Quiet', 'Detailed', 'IPv4', 'IPv6', 'Traceroute', 'DontFragment'] as const;
 
   private readonly ranged = [
     { parameter: 'BufferSize', keys: ['buffersize'], minimum: 0, maximum: 65500 },
@@ -429,7 +430,7 @@ export class TestConnectionCmdlet implements ICmdlet {
       }
       values[parameter] = value;
     }
-    return { ttl: values['MaxHops'], bufferSize: values['BufferSize'], timeoutSeconds: values['TimeoutSeconds'], delaySeconds: values['Delay'] };
+    return { ttl: values['MaxHops'], bufferSize: values['BufferSize'], timeoutSeconds: values['TimeoutSeconds'], delaySeconds: values['Delay'], dontFragment: ctx.named['dontfragment'] === true };
   }
 
   execute(ctx: CmdletContext): PSValue {

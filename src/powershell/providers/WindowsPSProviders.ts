@@ -57,13 +57,14 @@ import type { ReplayAwait } from '@/powershell/nativeAsync';
  * WellKnown/Link, matching a real host that failed to reach a DHCP server.
  */
 function pingAnswerOf(
-  reply: { success: boolean; rttMs: number; error?: string },
+  reply: { success: boolean; rttMs: number; error?: string; localError?: { errno: string } },
   timeoutSeconds: number | undefined,
 ): PingProbeAnswer {
   if (reply.success) {
     const late = timeoutSeconds !== undefined && reply.rttMs > timeoutSeconds * 1000;
     return { success: !late, rttMs: reply.rttMs, status: late ? 'TimedOut' : 'Success', replyFrom: null };
   }
+  if (reply.localError?.errno === 'EMSGSIZE') return { success: false, rttMs: 0, status: 'PacketTooBig', replyFrom: null };
   const error = reply.error;
   const from = /from ([\d.]+)/.exec(error ?? '')?.[1] ?? null;
   if (error?.includes('Time to live exceeded')) return { success: false, rttMs: 0, status: 'TtlExpired', replyFrom: from };
@@ -2487,7 +2488,7 @@ class WindowsNetworkAdapter implements INetworkProvider {
     const probes: PingProbeAnswer[] = [];
     for (let sent = 0; sent < Math.max(0, count); sent++) {
       if (sent > 0 && options.delaySeconds !== undefined) PathClock.wait(options.delaySeconds * 1000);
-      const r = this.pc.sendPingProbeSync(ip, { ttl: options.ttl, dataSize: options.bufferSize });
+      const r = this.pc.sendPingProbeSync(ip, { ttl: options.ttl, dataSize: options.bufferSize, df: options.dontFragment });
       probes.push(pingAnswerOf(r, options.timeoutSeconds));
     }
     return { resolvedIp: ip.toString(), probes };

@@ -5563,7 +5563,9 @@ export abstract class EndHost extends Equipment {
     return { sourceIp, interfaceName: route.port.getName(), nextHopIP: route.nextHopIP };
   }
 
-  sendPingProbeSync(targetIP: IPAddress, opts?: { ttl?: number; dataSize?: number }): { success: boolean; rttMs: number; ttl: number; error?: string } {
+  sendPingProbeSync(
+    targetIP: IPAddress, opts?: { ttl?: number; dataSize?: number; df?: boolean },
+  ): { success: boolean; rttMs: number; ttl: number; error?: string; localError?: LocalSocketError } {
     if (this.isLocalAddress(targetIP)) {
       return { success: true, rttMs: 0.02, ttl: this.defaultTTL };
     }
@@ -5572,12 +5574,14 @@ export abstract class EndHost extends Equipment {
     const myIP = route.port.getIPAddress();
     if (!myIP) return { success: false, rttMs: 0, ttl: 0 };
 
-    this.pingIdCounter++;
-    const id = this.pingIdCounter;
-    const targetIpStr = targetIP.toString();
+    const echoOptions: EchoOptions = { dataSize: opts?.dataSize, df: opts?.df };
+    const localError = this.echoRefusal(route.port, targetIP, opts?.ttl, echoOptions);
+    if (localError !== null) return { success: false, rttMs: 0, ttl: 0, localError };
+
     const seq = 1;
-    const useTtl = opts?.ttl ?? this.defaultTTL;
-    const dataSize = opts?.dataSize ?? 56;
+    const request = this.echoRequest(myIP, targetIP, seq, opts?.ttl, echoOptions);
+    const id = request.id;
+    const targetIpStr = targetIP.toString();
 
     let reply: { rttMs: number; ttl: number } | null = null;
     let failed: string | null = null;
@@ -5595,16 +5599,13 @@ export abstract class EndHost extends Equipment {
       }
     });
 
-    const icmp: ICMPPacket = { type: 'icmp', icmpType: 'echo-request', code: 0, id, sequence: seq, dataSize };
-    const ipPkt = createIPv4Packet(myIP, targetIP, IP_PROTO_ICMP, useTtl, icmp, dataSize + 8);
     const sentAt = PathClock.now();
-
     this.emitIcmpEchoSent({
       fromIp: myIP.toString(), toIp: targetIpStr,
-      id, seq, ttl: useTtl, size: dataSize + 8,
+      id, seq, ttl: request.packet.ttl, size: request.icmpSize,
     });
 
-    const origin = this.originate(ipPkt, route);
+    const origin = this.originate(request.packet, route);
     if (origin.outcome === 'refused') {
       unsubReply(); unsubFailed();
       return { success: false, rttMs: 0, ttl: 0 };
