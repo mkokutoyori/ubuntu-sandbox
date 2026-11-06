@@ -40,6 +40,7 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `ipsec-crypto-counters` | `get vpn ipsec stats crypto` compte le trafic AES-256 / SHA-256 reellement echange. |
 | `external-security-assessment` | Le prestataire d'audit déroule `/opt/audit/run-all.sh` depuis Internet : seuls les VIP web (80) et mail (25) répondent, ni SSH sur le VIP mail, ni Oracle 1521, ni le LAN privé. |
 | `management-plane-not-on-wan` | Constat d'audit corrigé : le plan d'administration (GUI HTTPS, SSH) est retiré de `allowaccess` sur `wan1` ; seul `ping` reste. Sans ce durcissement, le script échoue. |
+| `flood-resistance` | Deuxième durcissement issu de l'audit : la DoS-policy `wan-flood-protection` (icmp_flood 50/s, tcp_syn_flood 500/s, action block) freine une rafale visant le pare-feu lui-même, sans interrompre le site publié. Sans elle, le script échoue. |
 | `visitor-reaches-published-web` | VIP `vip-web` (203.0.113.10:80 → WEB-DMZ) et politique `internet-to-web`. |
 | `visitor-reaches-published-mail` | VIP `vip-mail` (:25 → MAIL-DMZ) ; Exchange écoute dès l'installation (connecteur *Default Frontend*). |
 | `visitor-cannot-reach-oracle` | Seuls les ports publiés par un VIP traversent. |

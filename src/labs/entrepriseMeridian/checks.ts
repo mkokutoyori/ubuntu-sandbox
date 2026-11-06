@@ -49,6 +49,11 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     lesson: 'Les compteurs de chiffrement sont ceux du trafic reellement echange (AES-256 / SHA-256 de la proposition).',
   },
   {
+    id: 'flood-resistance', device: 'PC-AUDIT', shell: 'bash', command: 'bash /opt/audit/check-flood-resistance.sh',
+    expects: [/PASS: ICMP flood throttled/, /PASS: published site still served after the burst/],
+    lesson: 'La DoS-policy wan-flood-protection (icmp_flood a 50/s, tcp_syn_flood a 500/s, action block) freine une rafale visant le pare-feu lui-meme, sans interrompre le service publie.',
+  },
+  {
     id: 'visitor-reaches-published-web', device: 'PC-VISITEUR', shell: 'bash', command: `curl -s http://${INTERNET.web.replace(/\d+$/, '10')}/`,
     expects: [/Meridian Industries/],
     lesson: 'Le VIP vip-web publie 203.0.113.10:80 vers WEB-DMZ ; la politique internet-to-web l\'autorise.',

@@ -37,6 +37,15 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     ...interfaceBlock('port1', HQ.lanGateway),
     ...interfaceBlock('port2', HQ.dmzGateway),
   );
+  await bench.shell(
+    hq,
+    'config firewall DoS-policy', 'edit 1', 'set comments "wan-flood-protection"', 'set interface "wan1"',
+    'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
+    'config anomaly',
+    'edit "icmp_flood"', 'set status enable', 'set action block', 'set threshold 50', 'next',
+    'edit "tcp_syn_flood"', 'set status enable', 'set action block', 'set threshold 500', 'next',
+    'end', 'next', 'end',
+  );
   for (const site of SITES) {
     await bench.shell(
       hq,
