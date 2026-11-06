@@ -172,7 +172,7 @@ import { cmdNetsh } from './windows/WinNetsh';
 import { cmdPing, pingExitCode } from './windows/WinPing';
 import { cmdArp } from './windows/WinArp';
 import { cmdGetmac } from './windows/WinGetmac';
-import { REMOTE_CAPABLE_COMMANDS, extractRemoteTarget, type RemoteTarget } from './windows/WinRemoteTarget';
+import { REMOTE_CAPABLE_COMMANDS, extractRemoteTarget, credentialWithoutComputer, invalidSyntax, type RemoteTarget } from './windows/WinRemoteTarget';
 import { findInvalidWindowsArgument, invalidArgumentError, SYSTEMINFO_SWITCHES } from './windows/WinSwitchGuard';
 import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracert';
 import { cmdRoute } from './windows/WinRoute';
@@ -3852,6 +3852,10 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       return this.switchActiveDrive(letter, drivePath ? parts[0] : null);
     }
 
+    if (credentialWithoutComputer(cmd, args)) {
+      this.commandExitStatus = 1;
+      return invalidSyntax(cmd);
+    }
     if (REMOTE_CAPABLE_COMMANDS.has(cmd)) {
       const remote = extractRemoteTarget(args);
       if (remote !== null) {

@@ -23,3 +23,15 @@ export function extractRemoteTarget(args: readonly string[]): RemoteTarget | nul
   const credential = username !== null && password !== null ? { username, password } : undefined;
   return { host, credential, rest };
 }
+
+const CREDENTIAL_NEEDS_COMPUTER: ReadonlySet<string> = new Set(['tasklist', 'taskkill', 'getmac', 'systeminfo']);
+
+export function credentialWithoutComputer(command: string, args: readonly string[]): boolean {
+  if (!CREDENTIAL_NEEDS_COMPUTER.has(command)) return false;
+  const flags = args.map((word) => word.toLowerCase());
+  return !flags.includes('/s') && (flags.includes('/u') || flags.includes('/p'));
+}
+
+export function invalidSyntax(command: string): string {
+  return `ERROR: Invalid syntax.\nType "${command.toUpperCase()} /?" for usage.`;
+}

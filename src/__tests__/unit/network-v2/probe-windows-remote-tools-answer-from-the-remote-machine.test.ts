@@ -6,7 +6,9 @@
  * answers 'ERROR: The RPC server is unavailable.', a missing or wrong credential 'ERROR: Access is denied.'. Limit stated: real Windows carries these tools over
  * RPC/DCOM, not WinRM; this simulator has no RPC endpoint mapper, so the one remote-execution channel it has is reused and WinRM must be enabled on the target.
  *
- * Measured against the commit before (worktree): 5 of the 7 cases fall (systeminfo, getmac and tasklist show the local machine, an unknown name and a wrong password are answered with local data); the 2 that pass either way are the WITNESSES: the local 'systeminfo' and 'systeminfo /s localhost' (which real Windows runs locally).
+ * Reference (official_docs/microsoft/windows-server/windows-commands): '/u' and '/p' belong to '/s <computer> [/u [/p]]'; tasklist and taskkill state that /u 'can be specified only if /s is also specified'. The four
+ * added cases check that, with the generic 'ERROR: Invalid syntax.' wording (the page does not give the message). They fall at base (the switch was ignored and the command ran locally).
+ * Measured against the commit before (worktree): 5 of the first 7 cases fall (systeminfo, getmac and tasklist show the local machine, an unknown name and a wrong password are answered with local data); the 2 that pass either way are the WITNESSES: the local 'systeminfo' and 'systeminfo /s localhost' (which real Windows runs locally).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useNetworkStore } from '@/store/networkStore';
@@ -75,5 +77,10 @@ describe('remote switches of the Windows tools', () => {
 
   it('a wrong password is refused by the remote machine', async () => {
     expect(await (await lab()).executeCommand('systeminfo /s dc1.horizon.local /u rmt /p wrong')).toContain('ERROR');
+  });
+
+  it.each(['tasklist /u rmt', 'taskkill /u rmt /im x.exe', 'getmac /p secret', 'systeminfo /u rmt /p secret'])('%s without /s is a syntax error (reference: /u only with /s)', async (line) => {
+    const out = await (await lab()).executeCommand(line);
+    expect(out).toContain('ERROR: Invalid syntax.');
   });
 });
