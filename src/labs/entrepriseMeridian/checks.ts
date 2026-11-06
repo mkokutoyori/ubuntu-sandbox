@@ -49,6 +49,11 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     lesson: 'Les compteurs de chiffrement sont ceux du trafic reellement echange (AES-256 / SHA-256 de la proposition).',
   },
   {
+    id: 'flood-resistance', device: 'PC-AUDIT', shell: 'bash', command: 'bash /opt/audit/check-flood-resistance.sh',
+    expects: [/PASS: ICMP flood throttled/, /PASS: published site still served after the burst/],
+    lesson: 'La DoS-policy wan-flood-protection (icmp_flood a 50/s, tcp_syn_flood a 500/s, action block) freine une rafale visant le pare-feu lui-meme, sans interrompre le service publie.',
+  },
+  {
     id: 'visitor-reaches-published-web', device: 'PC-VISITEUR', shell: 'bash', command: `curl -s http://${INTERNET.web.replace(/\d+$/, '10')}/`,
     expects: [/Meridian Industries/],
     lesson: 'Le VIP vip-web publie 203.0.113.10:80 vers WEB-DMZ ; la politique internet-to-web l\'autorise.',
@@ -77,6 +82,16 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     id: 'internal-dns-from-lan', device: 'PC-HQ', shell: 'bash', command: 'nslookup www.meridian.local',
     expects: [/172\.16\.0\.10/],
     lesson: 'Les postes du siege resolvent les noms internes aupres de DC1.',
+  },
+  {
+    id: 'external-security-assessment', device: 'PC-AUDIT', shell: 'bash', command: 'bash /opt/audit/run-all.sh',
+    expects: [/PASS: site identified/, /PASS: SMTP reachable as scoped/, /PASS: SSH not exposed/, /PASS: database port not exposed/, /PASS: internal LAN not routable/],
+    lesson: 'Le prestataire d\'audit mandate par la banque verifie depuis Internet que seul le perimetre publie (VIP web et mail) repond, et que rien d\'autre n\'est expose.',
+  },
+  {
+    id: 'management-plane-not-on-wan', device: 'PC-AUDIT', shell: 'bash', command: 'bash /opt/audit/check-mgmt-exposure.sh',
+    expects: [/PASS: admin HTTPS not exposed on WAN/, /PASS: admin SSH not exposed on WAN/],
+    lesson: 'Suite au constat d\'audit, le plan d\'administration (GUI HTTPS, SSH) est retire de allowaccess sur wan1 : seul ping reste, l\'admin passe par le LAN ou le VPN.',
   },
 ];
 

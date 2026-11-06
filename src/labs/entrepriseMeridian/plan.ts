@@ -43,3 +43,7 @@ export const INTERNET = {
   web: '203.0.113.80',
   visitor: '203.0.113.99',
 } as const;
+
+export const AUDITOR = {
+  address: '203.0.113.90',
+} as const;
