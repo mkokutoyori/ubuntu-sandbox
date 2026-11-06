@@ -165,6 +165,7 @@ function ipconfigRouteDel(ctx: LinuxCommandContext, args: string[]): string {
 
 export const routeCommand: LinuxCommand = {
   name: 'route',
+  ignoresStdin: true,
   needsNetworkContext: true,
   manSection: 8,
   usage: 'route [-n] | route add/del [-net|-host] target [netmask Nm] [gw Gw] [dev If] [metric M]',

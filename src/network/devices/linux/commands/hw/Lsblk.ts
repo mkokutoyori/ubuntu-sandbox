@@ -318,6 +318,7 @@ function helpText(): string {
 
 export const lsblkCommand: LinuxCommand = {
   name: 'lsblk',
+  ignoresStdin: true,
   needsNetworkContext: true,
   usage: 'lsblk [options] [<device> ...]',
   run(ctx: LinuxCommandContext, args: string[]): string {

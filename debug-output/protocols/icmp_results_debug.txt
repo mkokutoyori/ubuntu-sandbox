@@ -1509,21 +1509,21 @@ Total steps: 301
 --- [189] § sécurité — politique pare-feu hôte (iptables) bloque ICMP ---
 [189/301] srvdc srvdc$ iptables -L -n
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [190/301] srvdc srvdc$ iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
 <empty>
 
 [191/301] srvdc srvdc$ iptables -L INPUT -n -v
   Chain INPUT (policy ACCEPT 54 packets, 10476 bytes)
-   pkts bytes target     prot opt in     out     source               destination
-      0     0 DROP       icmp --  *      *      0.0.0.0/0            0.0.0.0/0 icmptype 8
+   pkts bytes target     prot opt in     out     source               destination         
+      0     0 DROP       icmp --  *      *       0.0.0.0/0            0.0.0.0/0            icmptype 8
 
 [192/301] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1548,13 +1548,13 @@ Total steps: 301
 
 [197/301] srvdc srvdc$ iptables -L -n
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [198/301] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -1813,7 +1813,7 @@ Total steps: 301
 --- [254] § ICMP — compteurs & statistiques ---
 [254/301] rhq R-HQ# show ip traffic
   IP statistics:
-    Rcvd:  345 total, 345 local destination
+    Rcvd:  347 total, 347 local destination
            0 format errors, 0 checksum errors, 0 bad hop count
            0 unknown protocol, 0 not a gateway, 0 security failures
            0 bad options, 0 with options, 0 dropped

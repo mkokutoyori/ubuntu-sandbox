@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-10-27T16:41:26.922Z
+Generated: 2026-11-06T17:02:55.328Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -667,7 +667,7 @@ $ [102/302]> ping -c 2 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=2 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  2 packets transmitted, 2 received, 0% packet loss, time 1003ms
+  2 packets transmitted, 2 received, 0% packet loss, time 1001ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [103/302]> ping -c 1 192.168.10.2
@@ -680,7 +680,7 @@ $ [104/302]> ping -c 3 -i 1 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  3 packets transmitted, 3 received, 0% packet loss, time 2003ms
+  3 packets transmitted, 3 received, 0% packet loss, time 2004ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [105/302]> ping -c 1 -W 1 192.168.10.99
@@ -764,7 +764,7 @@ $ [120/302]> tracepath 127.0.0.1
        Resume: pmtu 65535 hops 1 back 1 
 
 $ [121/302]> mtr -r -c 1 127.0.0.1
-  Start: 2026-10-27T16:41:30.095Z
+  Start: 2026-11-06T17:02:58.469Z
   L-PC-NET-DBG (127.0.0.1)
                                          Packets               Pings
    Host                                Loss%   Snt   Last   Avg  Best  Wrst StDev
@@ -776,43 +776,68 @@ $ [122/302]> mtr --report 192.168.10.1
 
 --- [123] § DNS — dig / nslookup / host ---
 $ [123/302]> dig example.com
-  ; <<>> DiG <<>> example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [124/302]> dig +short example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> +short example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [125/302]> dig A example.com
-  ; <<>> DiG <<>> example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> A example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [126/302]> dig AAAA example.com
-  ; <<>> DiG <<>> example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> AAAA example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [127/302]> dig MX example.com
-  ; <<>> DiG <<>> example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> MX example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [128/302]> dig NS example.com
-  ; <<>> DiG <<>> example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> NS example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [129/302]> dig TXT example.com
-  ; <<>> DiG <<>> example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> TXT example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [130/302]> dig @8.8.8.8 example.com
-  ; <<>> DiG <<>> @8.8.8.8 example.com
-  ;; connection timed out; no servers could be reached
+  ;; communications error to 8.8.8.8#53: timed out
+  ;; communications error to 8.8.8.8#53: timed out
+  ;; communications error to 8.8.8.8#53: timed out
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> @8.8.8.8 example.com
+  ; (1 server found)
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [131/302]> dig -x 8.8.8.8
-  ; <<>> DiG <<>> 8.8.8.8
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> -x 8.8.8.8
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [132/302]> dig +trace example.com
-  ; <<>> DiG <<>> example.com
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> +trace example.com
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 $ [133/302]> nslookup example.com
   ** server can't find example.com: REFUSED
@@ -824,13 +849,22 @@ $ [135/302]> nslookup 8.8.8.8
   ** server can't find 8.8.8.8: REFUSED
 
 $ [136/302]> host example.com
-  Host example.com not found: 5(REFUSED)
+  ;; communications error to ::1#53: connection refused
+  ;; communications error to ::1#53: connection refused
+  ;; communications error to 127.0.0.1#53: connection refused
+  ;; no servers could be reached
 
 $ [137/302]> host -t MX example.com
-  Host example.com not found: 5(REFUSED)
+  ;; communications error to ::1#53: connection refused
+  ;; communications error to ::1#53: connection refused
+  ;; communications error to 127.0.0.1#53: connection refused
+  ;; no servers could be reached
 
 $ [138/302]> host 8.8.8.8
-  Host 8.8.8.8 not found: 5(REFUSED)
+  ;; communications error to ::1#53: connection refused
+  ;; communications error to ::1#53: connection refused
+  ;; communications error to 127.0.0.1#53: connection refused
+  ;; no servers could be reached
 
 $ [139/302]> getent hosts localhost
   127.0.0.1       localhost
@@ -847,8 +881,10 @@ $ [141/302]> cat /etc/hosts
   ::1	localhost ip6-localhost ip6-loopback
 
 $ [142/302]> dig domaine_inexistant_xyz.invalid
-  ; <<>> DiG <<>> domaine_inexistant_xyz.invalid
-  ;; connection timed out; no servers could be reached
+  
+  ; <<>> DiG 9.18.12-0ubuntu0.22.04.1-Ubuntu <<>> domaine_inexistant_xyz.invalid
+  ;; global options: +cmd
+  ;; no servers could be reached
 
 
 --- [143] § sockets — ss / netstat ---
@@ -963,13 +999,13 @@ $ [157/302]> netstat -an | head
 $ [158/302]> netstat -s | head
   Ip:
       Forwarding: 2
-      22 total packets received
+      28 total packets received
       0 forwarded
       0 incoming packets discarded
-      22 incoming packets delivered
-      22 requests sent out
+      28 incoming packets delivered
+      28 requests sent out
   Icmp:
-      21 ICMP messages received
+      24 ICMP messages received
       0 input ICMP message failed
 
 $ [159/302]> netstat -i
@@ -979,7 +1015,7 @@ $ [159/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
-  lo           65536       24      0      0 0               24      0      0      0 LRU
+  lo           65536       42      0      0 0               42      0      0      0 LRU
 
 $ [160/302]> netstat -rn
   Kernel IP routing table
@@ -988,9 +1024,9 @@ $ [160/302]> netstat -rn
   127.0.0.0       0.0.0.0         255.0.0.0       U         0 0          0 lo
 
 $ [161/302]> lsof -i :22
-  COMMAND     PID   USER   FD    TYPE DEVICE SIZE/OFF NODE NAME
-  sshd          22  root     3u  IPv4     3      0t0  TCP *:22 (LISTEN)
-  sshd          22  root     4u  IPv6     4      0t0  TCP *:22 (LISTEN)
+  COMMAND PID USER FD   TYPE DEVICE SIZE/OFF NODE NAME
+  sshd     22 root 3u   IPv4      3      0t0  TCP *:22 (LISTEN)
+  sshd     22 root 4u   IPv6      4      0t0  TCP *:22 (LISTEN)
 
 $ [162/302]> ss -tln sport = :22
   State    Recv-Q   Send-Q     Local Address:Port     Peer Address:Port  Process  
@@ -1000,7 +1036,7 @@ $ [162/302]> ss -tln sport = :22
 
 --- [163] § HTTP — curl / wget ---
 $ [163/302]> curl http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 2 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [164/302]> curl -I http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
@@ -1010,33 +1046,33 @@ $ [165/302]> curl -s http://192.168.10.1
 
 $ [166/302]> curl -v http://192.168.10.1
   *   Trying 192.168.10.1:80...
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [168/302]> curl -L http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 5 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
 
 $ [169/302]> curl --max-time 2 http://192.168.10.99
-  curl: (7) Failed to connect to 192.168.10.99 port 80 after 1 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.99 port 80 after 0 ms: Couldn't connect to server
 
 $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-10-27 16:41:30--  http://192.168.10.1
+  --2026-11-06 17:02:58--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-10-27 16:41:30--  http://192.168.10.1
+  --2026-11-06 17:02:58--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-10-27 16:41:30--  http://192.168.10.99
+  --2026-11-06 17:02:58--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1069,7 +1105,7 @@ $ [183/302]> sysctl net.ipv4.tcp_syncookies
   sysctl: cannot stat /proc/sys/net/ipv4/tcp_syncookies: No such file or directory
 
 $ [184/302]> sysctl net.ipv6.conf.all.disable_ipv6
-  sysctl: cannot stat /proc/sys/net/ipv6/conf/all/disable_ipv6: No such file or directory
+  net.ipv6.conf.all.disable_ipv6 = 0
 
 $ [185/302]> sysctl -a 2>/dev/null | grep ip_forward
   net.ipv4.ip_forward = 0
@@ -1191,57 +1227,57 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:AZEcwifiEEWNN9yFkL24pRfLSwNLNb7Al+jUhAp8D/4 user@L-PC-NET-DBG
+  SHA256:cr70h8ubs9n941rjHmCOXTY8S8RMs0og/bwQqu4jgJo user@L-PC-NET-DBG
   The key's randomart image is:
   +---[RSA 2048]----+
-  |o+o=oB+*.        |
-  |o.ooX.@.         |
-  | +o=o@ +.        |
-  |  o.O.O  .       |
-  |   +.X +S        |
-  |    =EB          |
-  |     o o         |
-  |      .          |
-  |                 |
+  |         ...   o |
+  |          .o. + o|
+  |          . +. = |
+  |         . ..o+  |
+  |  .   . S   .+.B |
+  | . .   =    =.= +|
+  |..  . . o  o o = |
+  |E    . + +o+..o.o|
+  |      o.o O*..==o|
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 1823 Oct 27 16:41 /tmp/id_rsa
-  -rw-r--r-- 1 user user 399 Oct 27 16:41 /tmp/id_rsa.pub
+  -rw------- 1 user user 1823 Nov  6 17:03 /tmp/id_rsa
+  -rw-r--r-- 1 user user  399 Nov  6 17:03 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0DvgmQnmn9ODssIIBX1Zbbg+NYZLf0b68eP+Uga2N6L30AhOIBe/1CYwx7FEVX7MBF3OouxUrLjfa36jpQ8V86KIaUGo6Xl4ZSSuZyZ3HpKHkNhosGNWCHP9ZqaDXFdjexnmg4x6/Vb0oQYpQh+VNOdHtYVRgjvk1MUUt9yCMwyVh4LB5A4jx0PLRsLOdPI5g5zcu0jbUipHf4jVFdHXDGcRfb6sG2IypBYe6L9lPBte/Xzfq1VPNIY1C0r0+QqejJjcSuzPOfIxbKy21wOd4Sn8QvDZ1fGndsgy7ipvI0uSKaQ04SZsuN2Rxz2wTgyet6UX6HM0bT6PIWrMOMu7b user@L-PC-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDbVIVmR4/NEovFcvrVrRl/D9NxjVNqDRvMV/YSEZaBRaLuDlE5zLrqDDGYRxMWu8UJGZjtbFy4a33qMOSLBnOcjapZZ/ARsksvWT9zqWlJsioxQbx3sPkDGRoKm1PF4tFe3vcF0raz3SIxPKTnedCQm7L20cVPrj2NBAcnQOMnpL+whJxCCqXJs+oFQVL4pm2Kau1ZVX3fqiX3nEkKnGXhKcOorKXui3jFFaXaYq5XL6HNhcCb+rpWfb0ifIZEAY9TIwSUMYWmskZT8DQxAGw14xCRdaKPVkCfoOmRyzXb1rze1do/KlnHQPwjRFYUp/4koNFUiApYFwN7kaO75FCx user@L-PC-NET-DBG
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:IPGxDvTnmIR5nYeXDzNHYGYviDNJAv5GgmhkHvOTrt0 user@L-PC-NET-DBG
+  SHA256:egAHzirsTDlwz8myXCIsvzmeOH+vOKSMNuRGW3OKxUc user@L-PC-NET-DBG
   The key's randomart image is:
   +--[ED25519 256]--+
-  | =..+ o   =..    |
-  |=o+..O * B +     |
-  |ooo+* % * O o    |
-  |. .+.* O o B     |
-  |   .o + S   .    |
-  |  o..            |
-  | . . E           |
-  |                 |
-  |                 |
+  |    .            |
+  |   o .           |
+  |. . + .          |
+  |+..= E           |
+  |+*= B . S        |
+  |=BoX o o         |
+  |*=O = . .        |
+  |+Xo*.  .         |
+  |++O+.o.          |
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
-  2048 SHA256:AZEcwifiEEWNN9yFkL24pRfLSwNLNb7Al+jUhAp8D/4 user@L-PC-NET-DBG (RSA)
+  2048 SHA256:cr70h8ubs9n941rjHmCOXTY8S8RMs0og/bwQqu4jgJo user@L-PC-NET-DBG (RSA)
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0DvgmQnmn9ODssIIBX1Zbbg+NYZLf0b68eP+Uga2N6L30AhOIBe/1CYwx7FEVX7MBF3OouxUrLjfa36jpQ8V86KIaUGo6Xl4ZSSuZyZ3HpKHkNhosGNWCHP9ZqaDXFdjexnmg4x6/Vb0oQYpQh+VNOdHtYVRgjvk1MUUt9yCMwyVh4LB5A4jx0PLRsLOdPI5g5zcu0jbUipHf4jVFdHXDGcRfb6sG2IypBYe6L9lPBte/Xzfq1VPNIY1C0r0+QqejJjcSuzPOfIxbKy21wOd4Sn8QvDZ1fGndsgy7ipvI0uSKaQ04SZsuN2Rxz2wTgyet6UX6HM0bT6PIWrMOMu7b user@L-PC-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDbVIVmR4/NEovFcvrVrRl/D9NxjVNqDRvMV/YSEZaBRaLuDlE5zLrqDDGYRxMWu8UJGZjtbFy4a33qMOSLBnOcjapZZ/ARsksvWT9zqWlJsioxQbx3sPkDGRoKm1PF4tFe3vcF0raz3SIxPKTnedCQm7L20cVPrj2NBAcnQOMnpL+whJxCCqXJs+oFQVL4pm2Kau1ZVX3fqiX3nEkKnGXhKcOorKXui3jFFaXaYq5XL6HNhcCb+rpWfb0ifIZEAY9TIwSUMYWmskZT8DQxAGw14xCRdaKPVkCfoOmRyzXb1rze1do/KlnHQPwjRFYUp/4koNFUiApYFwN7kaO75FCx user@L-PC-NET-DBG
 
 $ [224/302]> ssh -V
   OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022
 
 $ [225/302]> ssh root@192.168.10.99
-  ssh: connect to host 192.168.10.99 port 22: Connection timed out
+  ssh: connect to host 192.168.10.99 port 22: Network is unreachable
 
 $ [226/302]> ssh-keyscan 192.168.10.1
 <empty>
@@ -1260,12 +1296,12 @@ $ [228/302]> dhclient -v eth0
   Listening on LPF/eth0/02:00:00:aa:bb:cc
   Sending on   LPF/eth0/02:00:00:aa:bb:cc
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xbcf645f0)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0xbcf645f0)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0xbcf645f0)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xbcf645f0)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xbcf645f0)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0xbcf645f0)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xdf6f33e7)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0xdf6f33e7)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0xdf6f33e7)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xdf6f33e7)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xdf6f33e7)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0xdf6f33e7)
   No DHCPOFFERS received.
   No working leases in persistent database - sleeping.
 
@@ -1367,13 +1403,13 @@ $ [248/302]> cat /proc/net/dev | head
     eth1:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth2:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth3:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
-      lo:    68255      26    0    0    0     0          0         0    68255      26    0    0    0     0       0          0
+      lo:    69707      44    0    0    0     0          0         0    69707      44    0    0    0     0       0          0
 
 $ [249/302]> cat /proc/net/route | head
   cat: /proc/net/route: No such file or directory
 
 $ [250/302]> hostname -I
-  127.0.1.1
+  192.168.50.10 
 
 $ [251/302]> hostname
   L-PC-NET-DBG
@@ -1466,7 +1502,7 @@ $ [265/302]> ip -6 route flush
   Command "flush" is unknown, try "ip route help".
 
 $ [266/302]> cat /proc/sys/net/ipv6/conf/all/disable_ipv6
-  cat: /proc/sys/net/ipv6/conf/all/disable_ipv6: No such file or directory
+  0
 
 $ [267/302]> ip link show eth0 | grep -i link
       link/ether 02:00:00:aa:bb:cc brd ff:ff:ff:ff:ff:ff
@@ -1488,7 +1524,7 @@ $ [269/302]> cat /proc/net/dev
     eth1:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth2:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
     eth3:        0       0    0    0    0     0          0         0        0       0    0    0    0     0       0          0
-      lo:    68671      30    0    0    0     0          0         0    68671      30    0    0    0     0       0          0
+      lo:    70123      48    0    0    0     0          0         0    70123      48    0    0    0     0       0          0
 
 $ [270/302]> ifconfig eth0 | grep -E "RX|TX"
           RX packets 0  bytes 0 (0.0 KiB)
@@ -1503,7 +1539,7 @@ $ [271/302]> netstat -i
   eth1          1500        0      0      0 0                0      0      0      0 BMU
   eth2          1500        0      0      0 0                0      0      0      0 BMU
   eth3          1500        0      0      0 0                0      0      0      0 BMU
-  lo           65536       30      0      0 0               30      0      0      0 LRU
+  lo           65536       48      0      0 0               48      0      0      0 LRU
 
 $ [272/302]> ss -s
   Total: 8
@@ -1519,15 +1555,15 @@ $ [272/302]> ss -s
 
 $ [273/302]> cat /proc/net/snmp | head
   Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates
-  Ip: 2 64 24 0 0 0 0 0 24 36 0 0 0 0 0 0 0 0 0
+  Ip: 2 64 30 0 0 0 0 0 30 42 0 0 0 0 0 0 0 0 0
   Icmp: InMsgs InErrors InCsumErrors InDestUnreachs InTimeExcds InParmProbs InSrcQuenchs InRedirects InEchos InEchoReps InTimestamps InTimestampReps InAddrMasks InAddrMaskReps OutMsgs OutErrors OutDestUnreachs OutTimeExcds OutParmProbs OutSrcQuenchs OutRedirects OutEchos OutEchoReps OutTimestamps OutTimestampReps OutAddrMasks OutAddrMaskReps
-  Icmp: 23 0 0 1 0 0 0 0 11 11 0 0 0 0 23 0 1 0 0 0 0 11 11 0 0 0 0
+  Icmp: 26 0 0 4 0 0 0 0 11 11 0 0 0 0 26 0 4 0 0 0 0 11 11 0 0 0 0
   IcmpMsg: InType0 InType3 InType8 OutType0 OutType3 OutType8
-  IcmpMsg: 11 1 11 11 1 11
+  IcmpMsg: 11 4 11 11 4 11
   Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
   Tcp: 1 200 120000 -1 0 0 0 0 0 0 0 0 0 0 0
   Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti MemErrors
-  Udp: 0 1 0 13 0 0 0 0 0
+  Udp: 0 4 0 16 0 0 0 0 0
 
 $ [274/302]> cat /proc/net/sockstat
   sockets: used 8
@@ -1557,7 +1593,7 @@ $ [278/302]> hostname -i
   127.0.1.1
 
 $ [279/302]> hostname -I
-  127.0.1.1
+  192.168.50.10 
 
 $ [280/302]> hostname -s
   L-PC-NET-DBG
@@ -1655,7 +1691,7 @@ $ [288/302]> ethtool -S eth0
        rx_errors: 0
        tx_errors: 0
        rx_dropped: 0
-       tx_dropped: 16
+       tx_dropped: 20
        rx_crc_errors: 0
        collisions: 0
 
@@ -1672,7 +1708,7 @@ $ [292/302]> cat /sys/class/net/eth0/operstate
   down
 
 $ [293/302]> ls /sys/class/net
-  eth0  eth1  eth2  eth3  lo
+  eth0  eth1  eth2  eth3	lo
 
 
 --- [294] § mal formées — fin de transcript ---

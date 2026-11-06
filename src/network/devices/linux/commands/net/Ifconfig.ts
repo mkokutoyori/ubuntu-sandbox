@@ -22,6 +22,7 @@ import { classfulMask } from '@/network/core/ip';
 
 export const ifconfigCommand: LinuxCommand = {
   name: 'ifconfig',
+  ignoresStdin: true,
   needsNetworkContext: true,
   manSection: 8,
   usage: 'ifconfig [interface] [address [netmask mask]]',

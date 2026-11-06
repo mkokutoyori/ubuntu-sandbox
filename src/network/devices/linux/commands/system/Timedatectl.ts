@@ -56,6 +56,7 @@ function statut(ctx: LinuxCommandContext): string {
 
 export const timedatectlCommand: LinuxCommand = {
   name: 'timedatectl',
+  ignoresStdin: true,
   needsNetworkContext: true,
   binaryPath: '/usr/bin/timedatectl',
   usage: 'timedatectl [status|show|list-timezones|set-timezone ZONE|set-ntp BOOL]',

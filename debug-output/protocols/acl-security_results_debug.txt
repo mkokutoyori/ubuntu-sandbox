@@ -623,13 +623,13 @@ Total steps: 400
 --- [130] § pare-feu Linux — iptables filter (serveur DC) ---
 [130/400] srvdc srvdc$ iptables -L -n -v
   Chain INPUT (policy ACCEPT 5 packets, 420 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain OUTPUT (policy ACCEPT 5 packets, 420 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
 
 [131/400] srvdc srvdc$ iptables -P INPUT ACCEPT
 <empty>
@@ -645,10 +645,10 @@ Total steps: 400
 
 [135/400] srvdc srvdc$ iptables -L INPUT -n -v --line-numbers
   Chain INPUT (policy ACCEPT 5 packets, 420 bytes)
-  num    pkts bytes target     prot opt in     out     source               destination
-  1         0     0 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0 icmptype 8
-  2         0     0 REJECT     tcp  --  *      *      10.1.1.0/24          0.0.0.0/0 tcp dpt:22
-  3         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:80
+  num   pkts bytes target     prot opt in     out     source               destination         
+  1        0     0 DROP       icmp --  *      *       10.1.1.0/24          0.0.0.0/0            icmptype 8
+  2        0     0 REJECT     tcp  --  *      *       10.1.1.0/24          0.0.0.0/0            tcp dpt:22
+  3        0     0 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80
 
 [136/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -667,31 +667,31 @@ Total steps: 400
 
 [138/400] srvdc srvdc$ iptables -L INPUT -n -v
   Chain INPUT (policy ACCEPT 7 packets, 588 bytes)
-   pkts bytes target     prot opt in     out     source               destination
-      2   168 DROP       icmp --  *      *      10.1.1.0/24          0.0.0.0/0 icmptype 8
-      0     0 REJECT     tcp  --  *      *      10.1.1.0/24          0.0.0.0/0 tcp dpt:22
-      0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:80
+   pkts bytes target     prot opt in     out     source               destination         
+      2   168 DROP       icmp --  *      *       10.1.1.0/24          0.0.0.0/0            icmptype 8
+      0     0 REJECT     tcp  --  *      *       10.1.1.0/24          0.0.0.0/0            tcp dpt:22
+      0     0 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:80
 
 [139/400] srvdc srvdc$ iptables -S
   -P INPUT ACCEPT
-  -A INPUT -s 10.1.1.0/24 -p icmp --icmp-type 8 -j DROP
-  -A INPUT -s 10.1.1.0/24 -p tcp --dport 22 -j REJECT
-  -A INPUT -p tcp --dport 80 -j ACCEPT
   -P FORWARD ACCEPT
   -P OUTPUT ACCEPT
+  -A INPUT -s 10.1.1.0/24 -p icmp -m icmp --icmp-type 8 -j DROP
+  -A INPUT -s 10.1.1.0/24 -p tcp -m tcp --dport 22 -j REJECT
+  -A INPUT -p tcp -m tcp --dport 80 -j ACCEPT
 
 [140/400] srvdc srvdc$ iptables -F INPUT
 <empty>
 
 [141/400] srvdc srvdc$ iptables -L -n
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [142/400] lhq lhq$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -721,17 +721,17 @@ Total steps: 400
 
 [148/400] srvdc srvdc$ iptables -L -n -v
   Chain INPUT (policy DROP 9 packets, 756 bytes)
-   pkts bytes target     prot opt in     out     source               destination
-      0     0 ACCEPT     all  --  lo     *      0.0.0.0/0            0.0.0.0/0
-      0     0 ACCEPT     all  --  *      *      0.0.0.0/0            0.0.0.0/0 state ESTABLISHED,RELATED
-      0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22
-      0     0 ACCEPT     icmp --  *      *      0.0.0.0/0            0.0.0.0/0 icmptype 8
+   pkts bytes target     prot opt in     out     source               destination         
+      0     0 ACCEPT     all  --  lo     *       0.0.0.0/0            0.0.0.0/0           
+      0     0 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            state ESTABLISHED,RELATED
+      0     0 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22
+      0     0 ACCEPT     icmp --  *      *       0.0.0.0/0            0.0.0.0/0            icmptype 8
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain OUTPUT (policy ACCEPT 9 packets, 756 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
 
 [149/400] ldc ldc$ ping -c 2 10.3.3.10
   PING 10.3.3.10 (10.3.3.10) 56(84) bytes of data.
@@ -750,8 +750,8 @@ Total steps: 400
   :OUTPUT ACCEPT [11:924]
   -A INPUT -i lo -j ACCEPT
   -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-  -A INPUT -p tcp --dport 22 -j ACCEPT
-  -A INPUT -p icmp --icmp-type 8 -j ACCEPT
+  -A INPUT -p tcp -m tcp --dport 22 -j ACCEPT
+  -A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT
   COMMIT
 
 [151/400] srvdc srvdc$ iptables -P INPUT ACCEPT
@@ -765,44 +765,44 @@ Total steps: 400
 
 [154/400] srvdc srvdc$ iptables -L -n
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 
 --- [155] § pare-feu Linux — NAT/mangle/conntrack & ufw/nft ---
 [155/400] srvdc srvdc$ iptables -t nat -L -n
   Chain PREROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain POSTROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [156/400] srvdc srvdc$ iptables -t mangle -L -n
   Chain PREROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain POSTROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [157/400] srvdc srvdc$ conntrack -L
   icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=3 mark=0 use=1
@@ -811,8 +811,8 @@ Total steps: 400
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=2 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=2 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=12 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=12 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=3 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44948 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44948 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=33972 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=33972 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44350 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44350 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50416 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50416 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 8 flow entries have been shown.
 
 [158/400] srvdc srvdc$ cat /proc/net/nf_conntrack
@@ -840,7 +840,7 @@ Total steps: 400
 <empty>
 
 [166/400] srvdc srvdc$ sysctl net.ipv4.conf.all.rp_filter
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
+  net.ipv4.conf.all.rp_filter = 2
 
 
 --- [167] § port-security — Cisco SW-HQ ---
@@ -1131,13 +1131,13 @@ Total steps: 400
 
 [225/400] srvdc srvdc$ iptables -L -n
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [226/400] srvdc srvdc$ iptables -S
   -P INPUT ACCEPT
@@ -1356,29 +1356,29 @@ Total steps: 400
 
 [271/400] srvdc srvdc$ iptables -L INPUT -n -v --line-numbers
   Chain INPUT (policy ACCEPT 9 packets, 756 bytes)
-  num    pkts bytes target     prot opt in     out     source               destination
-  1         0     0 DROP       tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:23
-  2         0     0 ACCEPT     tcp  --  *      *      0.0.0.0/0            0.0.0.0/0 tcp dpt:22 state NEW
+  num   pkts bytes target     prot opt in     out     source               destination         
+  1        0     0 DROP       tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:23
+  2        0     0 ACCEPT     tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            tcp dpt:22 state NEW
 
 [272/400] srvdc srvdc$ iptables -S INPUT
   -P INPUT ACCEPT
-  -A INPUT -p tcp --dport 23 -j DROP
-  -A INPUT -p tcp --dport 22 -m state --state NEW -j ACCEPT
+  -A INPUT -p tcp -m tcp --dport 23 -j DROP
+  -A INPUT -p tcp -m tcp --dport 22 -m state --state NEW -j ACCEPT
 
 [273/400] srvdc srvdc$ iptables -F INPUT
 <empty>
 
 [274/400] srvdc srvdc$ iptables -L INPUT -n
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 
 --- [275] § SEC — anti-spoofing & durcissement noyau (Linux) ---
 [275/400] srvdc srvdc$ sysctl net.ipv4.conf.all.rp_filter
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
+  net.ipv4.conf.all.rp_filter = 2
 
 [276/400] lhq lhq$ sysctl -w net.ipv4.conf.all.rp_filter=1
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
+  net.ipv4.conf.all.rp_filter = 1
 
 [277/400] lhq lhq$ sysctl net.ipv4.conf.all.accept_redirects
   net.ipv4.conf.all.accept_redirects = 1
@@ -1390,7 +1390,7 @@ Total steps: 400
   net.ipv4.icmp_echo_ignore_broadcasts = 1
 
 [280/400] lbr lbr$ sysctl -w net.ipv4.conf.all.rp_filter=1
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
+  net.ipv4.conf.all.rp_filter = 1
 
 [281/400] lbr lbr$ sysctl net.ipv4.conf.all.accept_redirects
   net.ipv4.conf.all.accept_redirects = 1
@@ -1402,7 +1402,7 @@ Total steps: 400
   net.ipv4.icmp_echo_ignore_broadcasts = 1
 
 [284/400] ldc ldc$ sysctl -w net.ipv4.conf.all.rp_filter=1
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
+  net.ipv4.conf.all.rp_filter = 1
 
 [285/400] ldc ldc$ sysctl net.ipv4.conf.all.accept_redirects
   net.ipv4.conf.all.accept_redirects = 1
@@ -1414,7 +1414,7 @@ Total steps: 400
   net.ipv4.icmp_echo_ignore_broadcasts = 1
 
 [288/400] srvdc srvdc$ sysctl -w net.ipv4.conf.all.rp_filter=1
-  sysctl: cannot stat /proc/sys/net/ipv4/conf/all/rp_filter: No such file or directory
+  net.ipv4.conf.all.rp_filter = 1
 
 [289/400] srvdc srvdc$ sysctl net.ipv4.conf.all.accept_redirects
   net.ipv4.conf.all.accept_redirects = 1
@@ -1545,7 +1545,7 @@ Total steps: 400
   icmp     1 29 src=10.1.1.10 dst=10.3.3.1 type=8 code=0 id=2 src=10.3.3.1 dst=10.1.1.10 type=0 code=0 id=2 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=3 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=10.2.2.10 type=8 code=0 id=4 src=10.2.2.10 dst=10.1.1.10 type=0 code=0 id=4 mark=0 use=1
-  udp      17 29 src=10.1.1.11 dst=224.0.0.251 sport=59815 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=59815 mark=0 use=1
+  udp      17 29 src=10.1.1.11 dst=224.0.0.251 sport=61756 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.1.1.11 sport=5353 dport=61756 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=203.0.113.10 type=8 code=0 id=5 src=203.0.113.10 dst=10.1.1.10 type=0 code=0 id=5 mark=0 use=1
   icmp     1 29 src=203.0.113.10 dst=10.1.1.10 type=8 code=0 id=1 src=10.1.1.10 dst=203.0.113.10 type=0 code=0 id=1 mark=0 use=1
   icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=6 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=6 mark=0 use=1
@@ -1564,8 +1564,8 @@ Total steps: 400
   icmp     1 30 src=10.1.1.10 dst=10.1.1.1 type=8 code=0 id=16 src=10.1.1.1 dst=10.1.1.10 type=0 code=0 id=16 mark=0 use=1
   icmp     1 30 src=10.1.1.10 dst=10.2.2.1 type=8 code=0 id=17 src=10.2.2.1 dst=10.1.1.10 type=0 code=0 id=17 mark=0 use=1
   icmp     1 30 src=203.0.113.10 dst=10.1.1.10 type=8 code=0 id=4 src=10.1.1.10 dst=203.0.113.10 type=0 code=0 id=4 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:47 dst=ff02::1:3 sport=52073 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:47 sport=5355 dport=52073 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:4b dst=ff02::1:3 sport=61627 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4b sport=5355 dport=61627 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:47 dst=ff02::1:3 sport=40526 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:47 sport=5355 dport=40526 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:4b dst=ff02::1:3 sport=55977 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4b sport=5355 dport=55977 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 25 flow entries have been shown.
 
 [310/400] lhq lhq$ conntrack -S
@@ -1585,7 +1585,7 @@ Total steps: 400
   iptables: Permission denied
 
 [315/400] lbr lbr$ conntrack -L
-  udp      17 29 src=10.2.2.10 dst=224.0.0.251 sport=64379 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=64379 mark=0 use=1
+  udp      17 29 src=10.2.2.10 dst=224.0.0.251 sport=60832 dport=5353 [UNREPLIED] src=224.0.0.251 dst=10.2.2.10 sport=5353 dport=60832 mark=0 use=1
   icmp     1 29 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=1 src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=1 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=2 [UNREPLIED] src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=2 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=198.51.100.10 type=8 code=0 id=3 src=198.51.100.10 dst=10.2.2.11 type=0 code=0 id=3 mark=0 use=1
@@ -1594,8 +1594,8 @@ Total steps: 400
   icmp     1 30 src=10.2.2.11 dst=10.1.1.1 type=8 code=0 id=5 src=10.1.1.1 dst=10.2.2.11 type=0 code=0 id=5 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=10.2.2.1 type=8 code=0 id=6 src=10.2.2.1 dst=10.2.2.11 type=0 code=0 id=6 mark=0 use=1
   icmp     1 30 src=198.51.100.10 dst=10.2.2.11 type=8 code=0 id=2 src=10.2.2.11 dst=198.51.100.10 type=0 code=0 id=2 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:4f dst=ff02::1:3 sport=60723 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4f sport=5355 dport=60723 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:53 dst=ff02::1:3 sport=42084 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:53 sport=5355 dport=42084 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:4f dst=ff02::1:3 sport=63814 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:4f sport=5355 dport=63814 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:53 dst=ff02::1:3 sport=37377 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:53 sport=5355 dport=37377 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 11 flow entries have been shown.
 
 [316/400] lbr lbr$ conntrack -S
@@ -1621,8 +1621,8 @@ Total steps: 400
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=4 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.1.1.1 type=8 code=0 id=5 src=10.1.1.1 dst=10.3.3.11 type=0 code=0 id=5 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.2.2.1 type=8 code=0 id=6 src=10.2.2.1 dst=10.3.3.11 type=0 code=0 id=6 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44948 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44948 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=33972 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=33972 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44350 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44350 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50416 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50416 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 8 flow entries have been shown.
 
 [322/400] ldc ldc$ conntrack -S
@@ -1631,49 +1631,49 @@ Total steps: 400
 
 [323/400] srvdc srvdc$ iptables -t filter -L -n -v
   Chain INPUT (policy ACCEPT 12 packets, 1008 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain OUTPUT (policy ACCEPT 14 packets, 1176 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
 
 [324/400] srvdc srvdc$ iptables -t nat -L -n
   Chain PREROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain POSTROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [325/400] srvdc srvdc$ iptables -t mangle -L -n
   Chain PREROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain POSTROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [326/400] srvdc srvdc$ iptables -t raw -L -n
   Chain PREROUTING (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [327/400] srvdc srvdc$ conntrack -L
   icmp     1 29 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=3 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=3 mark=0 use=1
@@ -1685,8 +1685,8 @@ Total steps: 400
   icmp     1 30 src=10.1.1.10 dst=10.3.3.10 type=8 code=0 id=15 src=10.3.3.10 dst=10.1.1.10 type=0 code=0 id=15 mark=0 use=1
   icmp     1 30 src=10.2.2.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.2.2.11 type=0 code=0 id=4 mark=0 use=1
   icmp     1 30 src=10.3.3.11 dst=10.3.3.10 type=8 code=0 id=4 src=10.3.3.10 dst=10.3.3.11 type=0 code=0 id=4 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44948 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44948 mark=0 use=1
-  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=33972 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=33972 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:57 dst=ff02::1:3 sport=44350 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:57 sport=5355 dport=44350 mark=0 use=1
+  udp      17 29 src=fe80::ff:fe00:5b dst=ff02::1:3 sport=50416 dport=5355 [UNREPLIED] src=ff02::1:3 dst=fe80::ff:fe00:5b sport=5355 dport=50416 mark=0 use=1
   conntrack v1.4.7 (conntrack-tools): 11 flow entries have been shown.
 
 [328/400] srvdc srvdc$ conntrack -S
@@ -1697,13 +1697,13 @@ Total steps: 400
 --- [329] § SEC — politiques de chaîne & compteurs ---
 [329/400] srvdc srvdc$ iptables -L -n -v
   Chain INPUT (policy ACCEPT 12 packets, 1008 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain OUTPUT (policy ACCEPT 14 packets, 1176 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
 
 [330/400] lhq lhq$ iptables -Z
   iptables: Permission denied
@@ -1746,13 +1746,13 @@ Total steps: 400
 
 [343/400] srvdc srvdc$ iptables -L -n -v
   Chain INPUT (policy ACCEPT 0 packets, 0 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain FORWARD (policy ACCEPT 0 packets, 0 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
   
   Chain OUTPUT (policy ACCEPT 0 packets, 0 bytes)
-   pkts bytes target     prot opt in     out     source               destination
+   pkts bytes target     prot opt in     out     source               destination         
 
 [344/400] srvdc srvdc$ iptables -P FORWARD DROP
 <empty>
@@ -2040,13 +2040,13 @@ Total steps: 400
 
 [391/400] srvdc srvdc$ iptables -L -n
   Chain INPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain FORWARD (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
   
   Chain OUTPUT (policy ACCEPT)
-  target     prot opt source               destination
+  target     prot opt source               destination         
 
 [392/400] rhq R-HQ# show access-lists
   Extended IP access list INTERNET-IN

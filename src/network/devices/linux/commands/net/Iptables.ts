@@ -4,6 +4,7 @@ import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
 
 export const iptablesCommand: LinuxCommand = {
   name: 'iptables',
+  ignoresStdin: true,
   needsNetworkContext: true,
   usage: 'iptables [-t table] COMMAND [args...]',
   privilege: { satisfiedBy: Satisfy.root },
