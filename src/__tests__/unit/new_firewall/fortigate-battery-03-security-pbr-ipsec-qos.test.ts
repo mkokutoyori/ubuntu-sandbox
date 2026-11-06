@@ -523,14 +523,16 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(srvProd as unknown as Cli, ['systemctl start nginx']); // Nginx écoute en clair sur le port 80
       await taper(fw, [
         'config firewall vip', 'edit "VIP_SSL_OFFLOAD"',
-        'set extip 203.0.113.1', 'set mappedip "203.0.113.10"',
-        'set portforward enable', 'set extport 443', 'set mappedport 80',
+        'set type server-load-balance', 'set server-type https',
+        'set extip 192.168.1.100', 'set extintf "port1"', 'set extport 443',
+        'set ssl-mode half', 'set ssl-certificate "Fortinet_Factory"',
+        'config realservers', 'edit 1', 'set ip 203.0.113.10', 'set port 80', 'next', 'end',
         'next', 'end',
         'config firewall policy', 'edit 91',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "VIP_SSL_OFFLOAD"',
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
-      const res = await pc.executeCommand('curl -k -s https://203.0.113.1/');
+      const res = await pc.executeCommand('curl -k -s -m 5 https://192.168.1.100/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
     });
 
