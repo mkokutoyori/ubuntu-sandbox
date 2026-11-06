@@ -147,7 +147,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('56. Flux de sauvegarde : Serveur DMZ pousse une archive vers le serveur FTP LAN via port 21', async () => {
       const { pc, fw, dmzSrv } = await creerLaboAvance();
-      await taper(pc as unknown as Cli, ['apt install -y vsftpd']);
+      await taper(pc as unknown as Cli, ['sudo apt install -y vsftpd']);
       await taper(fw, [
         'config firewall policy', 'edit 14',
         'set srcintf "dmz"', 'set dstintf "port1"',
@@ -613,7 +613,7 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
         'set action accept', 'set service "TELNET"', 'next', 'end',
       ]);
-      await pc.executeCommand('echo "exit" | nc 203.0.113.9 23');
+      await pc.executeCommand('echo "exit" | nc -w 2 203.0.113.9 23');
       const sock = await wanSrv.executeCommand('ss -ant | grep :23');
       expect(sock).not.toMatch(/ESTAB/);
     });
@@ -728,9 +728,21 @@ describe('Batterie 2 : Tests 51 à 100 — Flux Réseau Traversants Avancés', (
 
     it('98. Détection et journalisation d\'un balayage de ports (Port Scan)', async () => {
       const { pc, fw } = await creerLaboAvance();
-      await pc.executeCommand('nc -zv -w 1 203.0.113.1 80 81 82 83');
-      const logs = await fw.executeCommand('diagnose log test');
-      expect(refuse(logs)).toBe(false);
+      await taper(fw, [
+        'config firewall policy', 'edit 60',
+        'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
+        'set action accept', 'set service "ALL"', 'next', 'end',
+        'config firewall DoS-policy', 'edit 1',
+        'set interface "port1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
+        'config anomaly', 'edit "tcp_port_scan"',
+        'set status enable', 'set action block', 'set log enable', 'set threshold 2',
+        'next', 'end', 'next', 'end',
+      ]);
+      await pc.executeCommand('nc -zv -w 1 203.0.113.9 80 81 82 83 84 85');
+      const store = (fw as unknown as { getLogStore(): { all(): { type: string; subtype: string; fields: Map<string, string> }[] } }).getLogStore();
+      const journal = store.all().filter(e => e.type === 'utm' && e.subtype === 'anomaly');
+      expect(journal.length).toBeGreaterThan(0);
+      expect(journal[0].fields.get('attack')).toBe('tcp_port_scan');
     });
 
     it('99. Réassemblage transparent de trames IP fragmentées lors du transit', async () => {
