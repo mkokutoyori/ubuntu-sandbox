@@ -4616,3 +4616,14 @@ TcpPortStatus, TraceStatus) and the errors of PowerShell 7, and evaluates every 
 -Repeat (interactive terminal only, where it can be stopped). `-Source` is accepted and ignored, as in the source ("Remoting is not yet implemented internally in the cmdlet"). -IPv6 always answers 'Target IPv4/IPv6 address
 absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a boolean, the real code carries the SocketError code). The hostname column of a -Traceroute
 hop is the address, where the real code reverse-resolves the router first.
+
+### [nat] Virtual Fragmentation Reassembly: ce qui n'est pas reproduit
+
+**Mesure** : `NATEngine` fait suivre aux fragments non initiaux la reecriture du fragment initial (`FragmentRewriteMemory`, duree de vie = `timeout` de VFR, 3 s par defaut) et `VirtualReassembly`
+tient les limites de `ip virtual-reassembly` (max-reassemblies, max-fragments, timeout, drop-fragments), le chevauchement et les compteurs de `show ip virtual-reassembly`. Sources : la reference de commande IOS
+(`official_docs/cisco/ios-security`) et le guide « Virtual Fragmentation Reassembly » de Cisco.
+
+**Non reproduit** : (1) un fragment non initial qui arrive AVANT le fragment initial n'est pas mis en tampon, il passe tel quel (le simulateur livre les fragments dans l'ordre, et le guide ne decrit pas la file
+de reordonnancement) ; (2) la « tiny fragment attack » (VFR-3-TINY_FRAGMENTS) n'est pas detectee : aucune page du depot ne donne la taille en dessous de laquelle un fragment est « minuscule » ; (3) VFR ne
+fait pas encore partie de l'inspection (`ip inspect`) ni du pare-feu a zones, seul NAT l'active ; (4) `debug ip virtual-reassembly` n'existe pas ; (5) un switch L3 avec `NATEngine` suit les fragments mais n'a ni
+`ip virtual-reassembly` ni limites.
