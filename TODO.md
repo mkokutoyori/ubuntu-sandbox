@@ -4604,11 +4604,14 @@ for a timeout) is not reproduced, the default table of the simulator prints the 
 are not evaluated (-TimeoutSeconds, -BufferSize, -MaxHops, -Delay and -DontFragment are); -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
 boolean, the real code carries the SocketError code).
 
-### [icmp] Un echo plus grand que la MTU, sans DF, reste sans reponse dans le laboratoire Banque Horizon
+### [nat] Le NAT d'un `CiscoRouter` ne traduit que le premier fragment d'une reponse
 
-**Mesure** : depuis `PC-GUICHET1`, `ping -n 1 -l 1400 web.banquehorizon.com` repond, `ping -n 1 -l 1500 web.banquehorizon.com`
-rend `Request timed out.` ; `Test-Connection web.banquehorizon.com -BufferSize 1500` rend `TimedOut`. Un vrai Windows fragmente la demande et recoit
-la reponse reassemblee. Les deux commandes passent par `EndHost.echoRequest` et lisent donc le meme resultat.
+**Mesure** : depuis `PC-GUICHET1` (derriere `R-AGENCE`, qui fait du PAT), `ping -n 1 -l 1500 web.banquehorizon.com` rend `Request timed out.`
+(`-l 1472` repond, `-l 1500` vers un routeur repond : le routeur reassemble ce qui lui est destine). Le journal montre les deux fragments de la demande
+traduits (source 192.0.2.2), les deux fragments de la reponse transmis par `R-ISP`, puis un SEUL `router:forward R-AGENCE: 203.0.113.20 -> 10.20.10.50` :
+`NATEngine.translateInboundPacket` cherche la session par (protocole, destination, identifiant ICMP) ; le second fragment ne porte pas l'en-tete ICMP, la session n'est pas
+trouvee, il reste adresse a 192.0.2.2 et le routeur le prend pour lui. `Test-Connection -BufferSize 1500` et `ping -l 1500` lisent ce meme resultat.
 
-**Non corrige ici** : la cause n'est pas isolee (fragmentation de la demande, routage des fragments par les equipements du laboratoire ou
-reassemblage de la reponse). La sonde `probe-powershell-7-test-connection-evaluates-its-options` n'affirme que ce qui est vrai : sans `-DontFragment`, l'echo n'est pas refuse en `PacketTooBig`.
+**Non corrige ici** : aucune page de `official_docs/` ne decrit le traitement des fragments par le NAT d'IOS (table de fragments, reassemblage virtuel) ; sans source, le
+comportement n'est pas implemente de memoire. Le NAT iptables, lui, reassemble avant les hooks (voir les limites connues). La sonde
+`probe-powershell-7-test-connection-evaluates-its-options` n'affirme que ce qui est vrai : sans `-DontFragment`, l'echo n'est pas refuse en `PacketTooBig`.
