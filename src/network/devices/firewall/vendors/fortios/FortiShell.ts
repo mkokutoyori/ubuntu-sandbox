@@ -86,7 +86,7 @@ import { PkiKeyPair } from '../../../../pki/PkiKeyPair';
 import { buildCertificateRequest } from '../../../../pki/CertificateSigningRequest';
 import { csrToPem, privateKeyToPem, pemToCert } from '../../../../pki/pem';
 import { renderHaChecksum, renderHaStatus, ROLE_LABEL } from './diag/haRenderer';
-import type { FortiLogFormat } from './log/fortiLogFormat';
+import { collectorFormat, formatLogRecord, type FortiLogFormat } from './log/fortiLogFormat';
 import {
   configChangeLog,
   shouldLogTraffic, shouldLogTrafficStart, trafficCloseLog, trafficStartLog,
@@ -330,8 +330,13 @@ export class FortiShell {
       adminSessions: () => this.fw.getAdminSessions().list(),
       disconnectAdminSession: (index) => this.disconnectAdminSession(index),
     });
+    this.fw.bindLogRecordRelay((record) => {
+      this.fw.getSyslogCollectors().forwardRecord(record, (format, facility) =>
+        formatLogRecord(record, collectorFormat(format), { ...this.logContext(), facility }));
+    });
     this.fw.bindIngressInterfaceOptions((iface) => ({
-      srcCheck: this.interfaceSetting(iface, 'src-check') !== 'disable',
+      srcCheck: this.interfaceSetting(iface, 'src-check') !== 'disable'
+        && !this.fw.concentratorDisablesSrcCheck(iface),
       dropFragment: this.interfaceSetting(iface, 'drop-fragment') === 'enable',
       dropOverlappedFragment:
         this.interfaceSetting(iface, 'drop-overlapped-fragment') === 'enable',
@@ -2224,9 +2229,7 @@ export class FortiShell {
   }
 
   private logFormat(): FortiLogFormat {
-    const declared = this.tree.setting('log syslogd setting', 'format')[0];
-    if (declared === 'csv' || declared === 'cef' || declared === 'rfc5424') return declared;
-    return 'default';
+    return collectorFormat(this.tree.setting('log syslogd setting', 'format')[0]);
   }
 
   private logContext() {

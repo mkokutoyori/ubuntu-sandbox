@@ -96,11 +96,13 @@ export interface NetFlowCollector {
   exportedPackets: number;
   exportedFlows: number;
   lastExportMs: number;
+  lastTemplateMs: number | null;
 }
 
 export interface NetFlowConfig {
   version: 5 | 9;
   templateRefreshPackets: number;
+  templateRefreshSeconds: number | null;
   enabled: boolean;
   collectors: Map<string, NetFlowCollector>;
   activeTimeoutSec: number;
@@ -116,6 +118,7 @@ export function createDefaultNetFlowConfig(): NetFlowConfig {
   return {
     version: 5,
     templateRefreshPackets: 20,
+    templateRefreshSeconds: null,
     enabled: false,
     collectors: new Map(),
     activeTimeoutSec: 1800,
@@ -128,7 +131,7 @@ export function createDefaultNetFlowConfig(): NetFlowConfig {
 }
 
 export function defaultCollector(ip: string, port = UDP_PORT_NETFLOW): NetFlowCollector {
-  return { ip, port, enabled: true, exportedPackets: 0, exportedFlows: 0, lastExportMs: 0 };
+  return { ip, port, enabled: true, exportedPackets: 0, exportedFlows: 0, lastExportMs: 0, lastTemplateMs: null };
 }
 
 export function flowKey(r: { sourceIp: string; destinationIp: string; sourcePort: number; destinationPort: number; protocol: number; inputIfIndex: number; tos: number }): string {

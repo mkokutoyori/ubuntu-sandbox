@@ -1676,6 +1676,7 @@ export async function importTopology(json: TopologyExport): Promise<ImportResult
       if (devData.linuxServices) restoreLinuxServices(device, devData.linuxServices);
       if (devData.linuxBonds) restoreLinuxBonds(device, devData.linuxBonds);
       device.restartTimeDaemonFromFiles();
+      device.restartSyslogDaemonFromFiles();
     }
     if (devData.oracle) restoreOracleState(device.getId(), devData.oracle);
     if (device instanceof WindowsPC) {

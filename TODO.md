@@ -76,6 +76,19 @@ help.fortinet.com sont refuses par le proxy de cet environnement. Le
 simulateur ecrit `never` dans les deux champs ; c'est un choix, pas une
 transcription.
 
+### [fortios] sur un VIP qui traduit le port, la `service` d'une politique porte-t-elle le port d'origine ou le port traduit ?
+MESURE : un VIP `extport 443 -> mappedport 80` avec une politique `set service "HTTPS"` ne laisse rien passer, alors que
+`set service "HTTP"` laisse passer (le simulateur compare le port APRES la traduction). La meme chose pour un VIP
+`server-load-balance` dont le serveur reel ecoute sur 80. Aucune source du depot ne dit lequel des deux ports la politique
+FortiOS compare (docs.fortinet.com est refuse par le proxy de cet environnement) : le comportement actuel est conserve,
+et le lab Meridian utilise `service "ALL"` sur cette politique pour n'enseigner ni l'un ni l'autre. A trancher des
+qu'une transcription d'un `diagnose debug flow` sur un VIP a port traduit est disponible.
+
+### [fortios] `config log syslogd setting` : `source-ip` et `enc-algorithm` sont refuses
+Le collecteur emet maintenant l'enregistrement de journal lui-meme dans le `format` declare. Restent refuses, faute de brique :
+une adresse source par collecteur (l'agent syslog estampille l'adresse de l'interface de sortie ou nommee, et le transport TCP
+ne la controle pas) et le TLS (`enc-algorithm`, qui demande un ecouteur TLS cote collecteur, absent de `rsyslog` ici).
+
 ### [fortios] seul l'assistant de session `ftp` agit
 `config system session-helper` porte la table d'usine de FortiOS (vingt
 entrees, source : un `show full-configuration` FortiOS 5.04 publie dans

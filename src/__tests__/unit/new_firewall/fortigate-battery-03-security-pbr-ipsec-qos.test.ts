@@ -381,12 +381,13 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       const { fw } = await creerLaboEntreprise();
       await taper(fw, [
         'config firewall shaper traffic-shaper',
-        'edit "PRIO_HAUTE"', 'set priority high', 'next',
-        'edit "PRIO_BASSE"', 'set priority low', 'next',
+        'edit "PRIO_HAUTE"', 'set guaranteed-bandwidth 1000', 'next',
+        'edit "PRIO_BASSE"', 'set maximum-bandwidth 100', 'next',
         'end',
       ]);
       const check = await fw.executeCommand('show firewall shaper traffic-shaper');
-      expect(check).toContain('priority high');
+      expect(check).toContain('set guaranteed-bandwidth 1000');
+      expect(check).toContain('set maximum-bandwidth 100');
     });
 
     it('124. Limitation du nombre maximal de connexions TCP simultanées par client', async () => {
@@ -430,8 +431,12 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
 
     it('127. Rejet des paquets excédentaires (Drop Tail) lorsque la file d\'attente de shaping est pleine', async () => {
       const { fw } = await creerLaboEntreprise();
-      const diag = await fw.executeCommand('diagnose firewall shaper status');
-      expect(refuse(diag)).toBe(false);
+      await taper(fw, [
+        'config firewall shaper traffic-shaper',
+        'edit "FILE_PLEINE"', 'set maximum-bandwidth 64', 'next', 'end',
+      ]);
+      const shaper = await fw.executeCommand('show firewall shaper traffic-shaper FILE_PLEINE');
+      expect(shaper).toContain('set maximum-bandwidth 64');
     });
   });
 
@@ -467,9 +472,9 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       const { fw } = await creerLaboEntreprise();
       await taper(fw, [
         'config system netflow',
-        'set collector-ip 10.10.10.254',
-        'set collector-port 2055',
-        'end',
+        'config collectors', 'edit 1',
+        'set collector-ip 10.10.10.254', 'set collector-port 2055',
+        'next', 'end', 'end',
       ]);
       const netflow = await fw.executeCommand('show system netflow');
       expect(netflow).toContain('10.10.10.254');
@@ -518,14 +523,16 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       await taper(srvProd as unknown as Cli, ['systemctl start nginx']); // Nginx écoute en clair sur le port 80
       await taper(fw, [
         'config firewall vip', 'edit "VIP_SSL_OFFLOAD"',
-        'set extip 203.0.113.1', 'set mappedip "203.0.113.10"',
-        'set portforward enable', 'set extport 443', 'set mappedport 80',
+        'set type server-load-balance', 'set server-type https',
+        'set extip 192.168.1.100', 'set extintf "port1"', 'set extport 443',
+        'set ssl-mode half', 'set ssl-certificate "Fortinet_Factory"',
+        'config realservers', 'edit 1', 'set ip 203.0.113.10', 'set port 80', 'next', 'end',
         'next', 'end',
         'config firewall policy', 'edit 91',
         'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "VIP_SSL_OFFLOAD"',
         'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
-      const res = await pc.executeCommand('curl -k -s https://203.0.113.1/');
+      const res = await pc.executeCommand('curl -k -s -m 5 https://192.168.1.100/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
     });
 
@@ -636,12 +643,15 @@ describe('Batterie 3 : Tests 101 à 150 — Sécurité Avancée, PBR, IPsec, QoS
       const { pc, fw, srvProd } = await creerLaboEntreprise();
       await taper(srvProd as unknown as Cli, ['systemctl start nginx']);
       await taper(fw, [
-        'config system settings',
-        'set tcp-syn-flood-threshold 100',
-        'end',
+        'config firewall DoS-policy', 'edit 1',
+        'set interface "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
+        'config anomaly', 'edit "tcp_syn_flood"',
+        'set status enable', 'set action block', 'set threshold 100',
+        'next', 'end', 'next', 'end',
       ]);
-      const status = await fw.executeCommand('get system settings');
-      expect(status).toContain('tcp-syn-flood-threshold');
+      const status = await fw.executeCommand('show firewall DoS-policy');
+      expect(status).toContain('tcp_syn_flood');
+      expect(status).toContain('set threshold 100');
       // Le client régulier peut toujours se connecter
       await taper(fw, [
         'config firewall policy', 'edit 99', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next', 'end',

@@ -1,5 +1,5 @@
 import { VID_WILDCARD } from '../../../../layers/link/vlan/VlanId';
-import { IPAddress, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
+import { IPAddress, IP_PROTO_AH, IP_PROTO_ESP, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
 import { isMulticastIpv4 } from '@/network/core/ip';
 import type { CaptureFrame } from './CaptureFrame';
 import { RejectPacket, parseRelation, relexFilter, startsArithmetic } from './TcpdumpExpression';
@@ -239,8 +239,11 @@ class Parser {
         return this.parsePort(dir);
       case 'portrange':
         return this.parsePortrange(dir);
-      default:
+      default: {
+        const protocol = PCAP_PROTOCOL_NAMES[token];
+        if (protocol !== undefined) return { ok: true, predicate: (f) => f.ipProtocol === protocol };
         return this.parseBareValue(token, dir);
+      }
     }
   }
 
@@ -465,7 +468,12 @@ function netPredicate(network: string, mask: number, dir: 'src' | 'dst' | null):
   return (f) => matches(f.srcIp) || matches(f.dstIp) || matches(f.arpSenderIp) || matches(f.arpTargetIp);
 }
 
+const PCAP_PROTOCOL_NAMES: Readonly<Record<string, number>> = {
+  igmp: 2, igrp: 9, pim: 103, vrrp: 112, sctp: 132, esp: IP_PROTO_ESP, ah: IP_PROTO_AH,
+};
+
 const KEYWORDS = new Set([
+  ...Object.keys(PCAP_PROTOCOL_NAMES),
   'ip', 'ip6', 'arp', 'tcp', 'udp', 'icmp', 'icmp6', 'vlan', 'multicast', 'broadcast',
   'less', 'greater', 'proto', 'ether', 'host', 'net', 'port', 'portrange', 'mask',
   'and', 'or', 'not', '&&', '||', '!', '(', ')', 'src', 'dst',

@@ -39,6 +39,13 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
   );
   await bench.shell(
     hq,
+    'config log syslogd setting', 'set status enable', `set server "${HQ.siem}"`, 'set facility local7',
+    'set format default', 'end',
+    'config log syslogd filter', 'set severity information', 'set forward-traffic enable', 'end',
+    'config log setting', 'set fwpolicy-implicit-log enable', 'end',
+  );
+  await bench.shell(
+    hq,
     'config firewall DoS-policy', 'edit 1', 'set comments "wan-flood-protection"', 'set interface "wan1"',
     'set srcaddr "all"', 'set dstaddr "all"', 'set service "ALL"',
     'config anomaly',
@@ -62,10 +69,16 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     'set portforward enable', 'set protocol tcp', 'set extport 80', 'set mappedport 80', 'next',
     'edit "vip-mail"', `set extip ${HQ.wanVip.mail}`, `set mappedip "${HQ.mail}"`, 'set extintf "wan1"',
     'set portforward enable', 'set protocol tcp', 'set extport 25', 'set mappedport 25', 'next',
+    'edit "vip-web-https"', 'set type server-load-balance', 'set server-type https',
+    `set extip ${HQ.wanVip.web}`, 'set extintf "wan1"', 'set extport 443',
+    'set ssl-mode half', 'set ssl-certificate "Fortinet_Factory"',
+    'config realservers', 'edit 1', `set ip ${HQ.web}`, 'set port 80', 'next', 'end', 'next',
     'end',
     'config firewall policy',
     'edit 10', 'set name "internet-to-web"', 'set srcintf "wan1"', 'set dstintf "port2"', 'set srcaddr "all"',
     'set dstaddr "vip-web"', 'set service "HTTP"', 'set action accept', 'set schedule "always"', 'next',
+    'edit 12', 'set name "internet-to-web-https"', 'set srcintf "wan1"', 'set dstintf "port2"', 'set srcaddr "all"',
+    'set dstaddr "vip-web-https"', 'set service "ALL"', 'set action accept', 'set schedule "always"', 'next',
     'edit 11', 'set name "internet-to-mail"', 'set srcintf "wan1"', 'set dstintf "port2"', 'set srcaddr "all"',
     'set dstaddr "vip-mail"', 'set service "SMTP"', 'set action accept', 'set schedule "always"', 'next',
     'end',

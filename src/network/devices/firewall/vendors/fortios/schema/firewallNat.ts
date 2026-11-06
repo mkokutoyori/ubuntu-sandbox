@@ -1,7 +1,7 @@
 import { VIP_REFERENCE_ATTRIBUTES } from './firewallVipReference';
 import {
   address, choice, count, enable, reference, refList, text, word,
-  type FortiObjectView, type FortiTableSpec,
+  type FortiBalancedVipPatch, type FortiObjectView, type FortiTableSpec,
 } from './types';
 
 const INTERFACE_TARGETS = ['system interface', 'system zone', 'system sdwan zone'];
@@ -123,6 +123,10 @@ function forwardsPorts(object: FortiObjectView): boolean {
   return isStaticNat(object) && object.effective('portforward')[0] === 'enable';
 }
 
+function hasExternalPort(object: FortiObjectView): boolean {
+  return forwardsPorts(object) || isBalancedVip(object);
+}
+
 function isBlockPool(object: FortiObjectView): boolean {
   return object.effective('type')[0] === 'port-block-allocation';
 }
@@ -231,6 +235,15 @@ export const FIREWALL_IPPOOL: FortiTableSpec = {
   },
 };
 
+function sslOffloadOf(object: FortiObjectView): FortiBalancedVipPatch['sslOffload'] {
+  const certificate = object.effective('ssl-certificate')[0];
+  if (object.effective('server-type')[0] !== 'https' || certificate === undefined) return undefined;
+  return {
+    mode: object.effective('ssl-mode')[0] === 'full' ? 'full' : 'half',
+    certificate,
+  };
+}
+
 export const FIREWALL_VIP: FortiTableSpec = {
   path: ['firewall', 'vip'],
   kind: 'table',
@@ -331,7 +344,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
         description: 'External port or port range.',
       }],
       defaultValue: ['0'],
-      availableWhen: forwardsPorts,
+      availableWhen: hasExternalPort,
     },
     {
       name: 'mappedport', help: 'Port number range on the destination network to which '
@@ -383,6 +396,7 @@ export const FIREWALL_VIP: FortiTableSpec = {
         externalPort: splitPortRange(object.effective('extport')[0]).from,
         method: (object.effective('ldb-method')[0] ?? 'static') as never,
         monitors: [...object.effective('monitor')],
+        sslOffload: sslOffloadOf(object),
         servers,
         comment: object.effective('comment')[0] || undefined,
       });

@@ -13,6 +13,10 @@ const SYSLOG_SEVERITY: Readonly<Record<string, number>> = Object.freeze({
   warning: 4, notice: 5, information: 6, debug: 7,
 });
 
+export function collectorFormat(declared: string | undefined): FortiLogFormat {
+  return declared === 'csv' || declared === 'cef' || declared === 'rfc5424' ? declared : 'default';
+}
+
 export interface FortiLogContext {
   readonly hostname: string;
   readonly serial: string;

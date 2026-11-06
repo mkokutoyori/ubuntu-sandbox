@@ -148,6 +148,7 @@ import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { PkiPeerStore } from './vpn/PkiPeers';
+import type { IpsecConcentratorStore } from './vpn/IpsecConcentratorStore';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
@@ -164,6 +165,7 @@ import { ManagementPlane, type ManagementSource, type PasswordExpiryPolicy } fro
 import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
+import { SslOffload, type SslOffloadMode } from './inspection/SslOffload';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
@@ -206,7 +208,7 @@ import { bringUpTunnel, programIpsecEngine } from './vpn/IpsecProgramming';
 import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
-import { FirewallLogStore } from './logging/FirewallLogStore';
+import { FirewallLogStore, type FirewallLogRecord } from './logging/FirewallLogStore';
 import { PolicyCaptureStore } from './diag/PolicyCaptureStore';
 import type { LocalTrafficKind, LogSettings } from './logging/LogSettings';
 import { flowKeyFromPacket, type FlowKey } from './session/FlowKey';
@@ -416,6 +418,16 @@ export class Firewall extends Equipment {
     claimPort: (port) => { this.adminServer?.yieldPort(port); },
     releasePort: (port) => { this.adminServer?.reclaimPort(port); },
   });
+  private readonly sslOffload = new SslOffload({
+    tcp: () => this.tcp,
+    localCertificate: (name) => this.getCertificateStore().local(name),
+    trustAnchors: () => this.getCertificateStore().trustAnchors(),
+    claimPort: (port) => { this.adminServer?.yieldPort(port); },
+    releasePort: (port) => { this.adminServer?.reclaimPort(port); },
+  });
+  private readonly sslOffloadVips = new Map<string, {
+    name: string; mode: SslOffloadMode; certificate: string; port: number;
+  }>();
   private adminServer: AdminHttpServer | null = null;
   private readonly management: ManagementPlane;
   private readonly load: SystemLoad;
@@ -506,7 +518,7 @@ export class Firewall extends Equipment {
     this.load.addWorkload(() => this.measureWorkload());
     this.revisions = new RevisionStore({ now });
     this.syslog = new SyslogAgent(this, () => this.getBus());
-    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
+    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog, () => this.now());
     this.vdoms = new VdomRegistry({
       now,
       monotonicNow: () => this.getMonotonicClockMs(),
@@ -527,6 +539,7 @@ export class Firewall extends Equipment {
           local: new IPAddress(local), remote: new IPAddress(tunnel.remoteGateway),
         });
       },
+      onLogRecord: (record) => { this.logRecordRelay?.(record); },
       policyKeyedBy: profile.policyKeyedBy,
       policyNamesZones: profile.policyNamesZones,
       implicitPolicy: profile.implicitPolicy,
@@ -1472,12 +1485,35 @@ export class Firewall extends Equipment {
   getSdwanTable(): SdwanTable { return this.sdwan.getTable(); }
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
 
+  private readonly bfdStaticRoutes = new Map<string, DeclaredStaticRoute>();
+  private readonly bfdDownGateways = new Set<string>();
+
+  private trackStaticRouteBfd(route: DeclaredStaticRoute): boolean {
+    this.bfdStaticRoutes.delete(route.id);
+    const watched = route.bfd === true && route.gateway !== '0.0.0.0'
+      && route.iface !== '' && this.getPort(route.iface) !== undefined;
+    if (!watched) return false;
+
+    this.bfdStaticRoutes.set(route.id, route);
+    this.getBfdAgent().ensureSession(route.iface, route.gateway);
+    return this.bfdDownGateways.has(`${route.iface}|${route.gateway}`);
+  }
+
+  private onBfdSessionChanged(iface: string, neighborIp: string, up: boolean): void {
+    const key = `${iface}|${neighborIp}`;
+    if (up) this.bfdDownGateways.delete(key); else this.bfdDownGateways.add(key);
+    for (const route of [...this.bfdStaticRoutes.values()]) {
+      if (route.iface === iface && route.gateway === neighborIp) this.applySdwanStaticRoute(route);
+    }
+  }
+
   applySdwanStaticRoute(route: DeclaredStaticRoute): void {
     this.sdwanRoutes.delete(route.id);
     const routes = this.getRouteTable();
     routes.removeStaticById(route.id);
     routes.removeStaticsBySource(route.id);
-    if (!route.enabled || route.blackhole) return;
+    const withdrawn = this.trackStaticRouteBfd(route);
+    if (!route.enabled || route.blackhole || withdrawn) return;
 
     if (this.sdwan.getTable().membersOfZone(route.iface).length > 0) {
       this.sdwanRoutes.set(route.id, route);
@@ -1493,7 +1529,10 @@ export class Firewall extends Equipment {
       });
   }
 
-  forgetSdwanStaticRoute(id: string): void { this.sdwanRoutes.delete(id); }
+  forgetSdwanStaticRoute(id: string): void {
+    this.sdwanRoutes.delete(id);
+    this.bfdStaticRoutes.delete(id);
+  }
 
   private installSdwanRoute(route: DeclaredStaticRoute): void {
     const table = this.sdwan.getTable();
@@ -1557,6 +1596,27 @@ export class Firewall extends Equipment {
   }
 
   getPkiPeers(v?: string): PkiPeerStore { return this.getVdom(v).pkiPeers; }
+
+  getIpsecConcentrators(v?: string): IpsecConcentratorStore { return this.getVdom(v).ipsecConcentrators; }
+
+  applyIpsecConcentrator(
+    id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }, v?: string,
+  ): string | undefined {
+    const tunnels = this.getVdom(v).tunnels;
+    for (const member of concentrator.members) {
+      if (tunnels.getPhase1(member) === undefined) return `interface ${member} is not a declared IPsec tunnel.`;
+    }
+    this.getVdom(v).ipsecConcentrators.set({ id, ...concentrator });
+    return undefined;
+  }
+
+  removeIpsecConcentrator(id: number, v?: string): void {
+    this.getVdom(v).ipsecConcentrators.remove(id);
+  }
+
+  concentratorDisablesSrcCheck(iface: string, v?: string): boolean {
+    return this.getVdom(v).ipsecConcentrators.disablesSrcCheck(iface);
+  }
 
   getModeCfgPool(): ModeCfgPool { return this.modeCfg; }
 
@@ -1881,6 +1941,12 @@ export class Firewall extends Equipment {
   getSyslogAgent(): SyslogAgent { return this.syslog; }
   getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
 
+  private logRecordRelay: ((record: FirewallLogRecord) => void) | undefined;
+
+  bindLogRecordRelay(relay: (record: FirewallLogRecord) => void): void {
+    this.logRecordRelay = relay;
+  }
+
   syncSyslogAgent(): void { projectLoggingOntoSyslogAgent(this.logging, this.syslog); }
 
   logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
@@ -1889,6 +1955,7 @@ export class Firewall extends Equipment {
       osName: this.profile.osName,
       logging: this.logging,
       syslog: this.syslog,
+      relayToSyslog: this.profile.structuredRemoteSyslog !== true,
     }, event, facts);
   }
 
@@ -2297,9 +2364,11 @@ export class Firewall extends Equipment {
       this.bfdAgentInstance.start();
       this.getBus().subscribe('bfd.session.changed', (event) => {
         if (event.payload.deviceId !== this.id) return;
+        const up = event.payload.newState === 'up';
+        this.onBfdSessionChanged(event.payload.iface, event.payload.neighborIp, up);
         const bgp = this.getRouting().getBgp();
         if (!bgp.bfdNeighbours().includes(event.payload.neighborIp)) return;
-        bgp.holdDown(event.payload.neighborIp, event.payload.newState !== 'up');
+        bgp.holdDown(event.payload.neighborIp, !up);
       });
     }
     return this.bfdAgentInstance;
@@ -2369,13 +2438,14 @@ export class Firewall extends Equipment {
   }
 
   applyNetflow(settings: {
-    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number;
+    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; templateTxTimeoutSec: number;
     collectors: ReadonlyArray<{ ip: string; port: number }>;
   }): void {
     const agent = this.getNetflowAgent();
     agent.setActiveTimeoutSec(settings.activeTimeoutSec);
     agent.setInactiveTimeoutSec(settings.inactiveTimeoutSec);
     agent.setTemplateRefreshPackets(settings.templateTxCounter);
+    agent.setTemplateRefreshSeconds(settings.templateTxTimeoutSec);
     const wanted = new Set(settings.collectors.map(collector => collector.ip));
     for (const present of agent.listCollectors()) if (!wanted.has(present.ip)) agent.removeCollector(present.ip);
     for (const collector of settings.collectors) agent.addCollector(collector.ip, collector.port);
@@ -3056,6 +3126,10 @@ export class Firewall extends Equipment {
       this.deepInspection.resume(portName, packet);
       return;
     }
+    if (this.sslOffload.owns(packet)) {
+      this.sslOffload.resume(portName, packet);
+      return;
+    }
 
     const context = makePacketContext({
       ingressPort: portName, packet, arrivedAt: this.services.now(),
@@ -3084,6 +3158,7 @@ export class Firewall extends Equipment {
 
     const forwarded = outcome.payload ?? context;
     if (this.interceptForDeepInspection(portName, packet, context)) return;
+    if (this.interceptForSslOffload(portName, packet, context)) return;
     if (forwarded.egressPort === undefined) return;
     const recorded = this.recordRouteOnEgress(
       forwarded.egressPort, forwarded.packet as IPv4Packet);
@@ -3183,6 +3258,30 @@ export class Firewall extends Equipment {
   }
 
   getDeepInspection(): SslDeepInspection { return this.deepInspection; }
+
+  setSslOffload(
+    ruleId: string, name: string,
+    config: { mode: SslOffloadMode; certificate: string; port: number } | undefined,
+  ): void {
+    if (config === undefined) this.sslOffloadVips.delete(ruleId);
+    else this.sslOffloadVips.set(ruleId, { name, ...config });
+  }
+
+  private interceptForSslOffload(
+    portName: string, packet: IPv4Packet, context: PacketContext,
+  ): boolean {
+    const ruleId = context.destinationNatRuleId;
+    const vip = ruleId === undefined ? undefined : this.sslOffloadVips.get(ruleId);
+    if (vip === undefined) return false;
+
+    return this.sslOffload.capture(portName, packet, {
+      name: vip.name,
+      ports: [vip.port],
+      mode: vip.mode,
+      certificate: vip.certificate,
+      pickServer: () => this.serverPools.get(vip.name)?.pick(),
+    });
+  }
 
   private interceptForDeepInspection(
     portName: string, packet: IPv4Packet, context: PacketContext,

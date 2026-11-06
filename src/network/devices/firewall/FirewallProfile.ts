@@ -47,6 +47,7 @@ export interface FirewallPortSpec {
 
 export interface FirewallProfile {
   readonly syslogCatalog?: FirewallSyslogCatalog;
+  readonly structuredRemoteSyslog?: boolean;
   readonly vendor: VendorId;
   readonly displayName: string;
   readonly osName: string;

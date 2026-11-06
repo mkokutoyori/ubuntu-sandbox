@@ -1,11 +1,8 @@
-import { IP_PROTO_TCP, type IPv4Packet } from '../../../core/types';
-import type { TcpStack, TcpListener, TcpSocket } from '../../../tcp/TcpStack';
+import type { TcpStack, TcpSocket } from '../../../tcp/TcpStack';
 import { TlsServerSession } from '../../../tls/TlsServerSession';
-import { TlsClientSession } from '../../../tls/TlsClientSession';
 import { CertificateAuthority } from '../../../pki/CertificateAuthority';
-import { CertificateVerifier } from '../../../pki/CertificateVerifier';
 import {
-  encodeRecords, decodeRecords, runTlsHandshakeOverSocket, attachTlsRecordPump,
+  encodeRecords, decodeRecords, attachTlsRecordPump,
 } from '../../../http/https/TlsRecordWire';
 import {
   encryptApplicationData, decryptApplicationData,
@@ -16,6 +13,8 @@ import type { LocalCertificate } from '../vpn/CertificateStore';
 import type { UntrustedCertAction } from './UtmProfiles';
 import { decodeHandshakeMessage } from '../../../tls/messages';
 import { categoryOfDomain } from './UtmProfiles';
+import { TcpInterceptor } from './TcpInterceptor';
+import { openTlsUpstream, type TlsUpstream } from './TlsUpstream';
 import { binaryStringToBytes, bytesToBinaryString } from '@/crypto/encoding';
 
 export interface SslExemption {
@@ -106,81 +105,16 @@ const LEAF_VALIDITY_MS = 365 * 24 * 3600 * 1000;
 
 
 
-function flowKey(packet: IPv4Packet): string | null {
-  const segment = packet.payload as {
-    type?: string; sourcePort?: number; destinationPort?: number;
-  } | undefined;
-  if (segment?.type !== 'tcp') return null;
-  return `${packet.sourceIP.toString()}:${segment.sourcePort}`
-    + `>${packet.destinationIP.toString()}:${segment.destinationPort}`;
-}
-
-function destinationPort(packet: IPv4Packet): number | null {
-  if (packet.protocol !== IP_PROTO_TCP) return null;
-  const segment = packet.payload as { type?: string; destinationPort?: number } | undefined;
-  return segment?.type === 'tcp' ? segment.destinationPort ?? null : null;
-}
-
-export class SslDeepInspection {
-  private readonly listeners = new Map<number, TcpListener>();
-  private readonly captured = new Set<string>();
-  private readonly pending = new Map<string, DeepInspectionProfile>();
-
-  constructor(private readonly deps: DeepInspectionDeps) {}
-
-  owns(packet: IPv4Packet): boolean {
-    const key = flowKey(packet);
-    return key !== null && this.captured.has(key);
+export class SslDeepInspection extends TcpInterceptor<DeepInspectionProfile> {
+  constructor(private readonly deps: DeepInspectionDeps) {
+    super(deps, 'sslvpnd');
   }
 
-  resume(iface: string, packet: IPv4Packet): boolean {
-    if (!this.owns(packet)) return false;
-    return this.deps.tcp().handleIp(iface, packet.sourceIP, packet);
+  protected accept(socket: TcpSocket, profile: DeepInspectionProfile): void {
+    this.intercept(socket, profile);
   }
 
-  capture(iface: string, packet: IPv4Packet, profile: DeepInspectionProfile): boolean {
-    const port = destinationPort(packet);
-    if (port === null || !profile.ports.includes(port)) return false;
-
-    this.arm(port);
-    const key = flowKey(packet);
-    if (key === null) return false;
-    this.captured.add(key);
-    this.pending.set(
-      `${packet.destinationIP.toString()}:${port}|${packet.sourceIP.toString()}`, profile);
-    return this.deps.tcp().handleIp(iface, packet.sourceIP, packet);
-  }
-
-  isArmed(port: number): boolean { return this.listeners.has(port); }
-
-  disarm(): void {
-    for (const port of [...this.listeners.keys()]) {
-      this.deps.tcp().closeListener(port);
-      this.listeners.delete(port);
-      this.deps.releasePort?.(port);
-    }
-    this.captured.clear();
-    this.pending.clear();
-  }
-
-  private arm(port: number): void {
-    if (this.listeners.has(port)) return;
-    this.deps.claimPort?.(port);
-    const listener = this.deps.tcp().listen(port, {
-      onAccept: (socket) => { this.intercept(socket); },
-      identity: { processName: 'sslvpnd' },
-    });
-    if (listener) this.listeners.set(port, listener);
-  }
-
-  private profileOf(socket: TcpSocket): DeepInspectionProfile | undefined {
-    return this.pending.get(`${socket.localIp}:${socket.localPort}|${socket.remoteIp}`);
-  }
-
-  private intercept(clientSocket: TcpSocket): void {
-    const profile = this.profileOf(clientSocket);
-    if (!profile) { clientSocket.close(); return; }
-
+  private intercept(clientSocket: TcpSocket, profile: DeepInspectionProfile): void {
     let started = false;
     let relay: ((records: readonly TlsRecord[], raw: string) => void) | null = null;
 
@@ -194,12 +128,6 @@ export class SslDeepInspection {
           : this.terminate(clientSocket, profile);
       }
       relay?.(records, raw);
-    });
-
-    clientSocket.onClose(() => {
-      this.captured.delete(
-        `${clientSocket.remoteIp}:${clientSocket.remotePort}`
-        + `>${clientSocket.localIp}:${clientSocket.localPort}`);
     });
   }
 
@@ -293,24 +221,8 @@ export class SslDeepInspection {
     };
   }
 
-  private openUpstream(ip: string, port: number): {
-    socket: TcpSocket; session: TlsClientSession;
-    certificate: X509Certificate; verified: boolean;
-  } | null {
-    const socket = this.deps.tcp().connect(ip, port);
-    if (!socket || socket.state !== 'established') return null;
-
-    const session = new TlsClientSession({
-      verifier: new CertificateVerifier({ trustAnchors: this.deps.trustAnchors(), clock: () => this.deps.tcp().nowMs() }),
-      allowUntrustedPeer: true,
-      alpn: ['http/1.1'],
-    });
-    runTlsHandshakeOverSocket(socket, session);
-
-    const certificate = session.peerCertificate;
-    if (!certificate) { socket.close(); return null; }
-    if (session.result !== 'success') { socket.close(); return null; }
-    return { socket, session, certificate, verified: session.peerVerified };
+  private openUpstream(ip: string, port: number): TlsUpstream | null {
+    return openTlsUpstream(this.deps.tcp(), this.deps.trustAnchors(), ip, port);
   }
 
   private reSign(server: X509Certificate, authorityName: string) {
