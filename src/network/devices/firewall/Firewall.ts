@@ -518,7 +518,7 @@ export class Firewall extends Equipment {
     this.load.addWorkload(() => this.measureWorkload());
     this.revisions = new RevisionStore({ now });
     this.syslog = new SyslogAgent(this, () => this.getBus());
-    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
+    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog, () => this.now());
     this.vdoms = new VdomRegistry({
       now,
       monotonicNow: () => this.getMonotonicClockMs(),

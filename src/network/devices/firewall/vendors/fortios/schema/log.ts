@@ -69,6 +69,7 @@ function syslogSetting(
         { keyword: 'reliable', description: 'Enable reliable syslogging (RFC 6587).' },
       ], 'udp'),
       choice('facility', 'Remote syslog facility.', FACILITIES, 'local7'),
+      count('max-log-rate', 'Syslog maximum log rate in MBps (0 = unlimited).', 0, 100000, 0),
       { ...choice('format', 'Log format.', FORMATS, 'default'), unimplementedValues: { json: NO_JSON_LOG } },
       {
         ...address('source-ip', 'Source IP address of syslog.'),
@@ -98,6 +99,7 @@ function syslogSetting(
         transport: object.effective('mode')[0] === 'udp' ? 'udp' : 'tcp',
         facility: object.effective('facility')[0] ?? 'local7',
         format: object.effective('format')[0] ?? 'default',
+        maxLogRateMegabytesPerSecond: Number.parseInt(object.effective('max-log-rate')[0] ?? '0', 10),
         sourceInterface: object.effective('interface')[0] ?? '',
       });
     },

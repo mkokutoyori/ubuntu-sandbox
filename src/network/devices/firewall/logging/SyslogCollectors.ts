@@ -15,6 +15,7 @@ export interface SyslogCollectorSettings {
   readonly transport: 'udp' | 'tcp';
   readonly facility: string;
   readonly format: string;
+  readonly maxLogRateMegabytesPerSecond: number;
   readonly sourceInterface: string;
 }
 
@@ -50,7 +51,12 @@ export class SyslogCollectorTable {
   private readonly settings = new Map<string, SyslogCollectorSettings>();
   private readonly filters = new Map<string, SyslogFilterSettings>();
 
-  constructor(private readonly agent: () => SyslogAgent) {}
+  private readonly budgets = new Map<string, { tokens: number; at: number }>();
+
+  constructor(
+    private readonly agent: () => SyslogAgent,
+    private readonly now: () => number = () => 0,
+  ) {}
 
   applySettings(patch: SyslogCollectorSettings): void {
     this.settings.set(patch.collector, patch);
@@ -75,8 +81,24 @@ export class SyslogCollectorTable {
       const text = render(entry.format, facility);
       const line = text.startsWith('<') ? text
         : `<${facility * 8 + SYSLOG_SEVERITY[severity]}>${text}`;
+      if (!this.withinRate(entry, line.length)) continue;
       this.agent().sendVerbatim(entry.server, severity, line);
     }
+  }
+
+  private withinRate(entry: SyslogCollectorSettings, bytes: number): boolean {
+    if (entry.maxLogRateMegabytesPerSecond <= 0) return true;
+
+    const capacity = entry.maxLogRateMegabytesPerSecond * 1_000_000;
+    const now = this.now();
+    const budget = this.budgets.get(entry.collector) ?? { tokens: capacity, at: now };
+    budget.tokens = Math.min(capacity, budget.tokens + ((now - budget.at) / 1000) * capacity);
+    budget.at = now;
+    this.budgets.set(entry.collector, budget);
+    if (budget.tokens < bytes) return false;
+
+    budget.tokens -= bytes;
+    return true;
   }
 
   private accepts(collector: string, record: FirewallLogRecord): boolean {

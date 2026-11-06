@@ -10,6 +10,9 @@
  * rsyslog stamps the receive time and the sender address on a line that carries no header, which is what the
  * collector's /var/log/syslog shows here as it does on a real host.
  *
+ * `max-log-rate` (MBps, 0 = unlimited) caps what a collector is sent per second; the three cases at the end measure it on the
+ * collector table with a fake agent and a fake clock, and 2 of those 3 fall before it existed (the unlimited default passes either way).
+ *
  * Discriminated with git stash on src/network: 8 of 9 fall before the fix (six measured against the tree before the forwarding, two against the tree before the facility and refusal work); the witness (a collector that is
  * declared receives the deny of a `logtraffic all` policy) passes either way, in the old text and the new record.
  */
@@ -150,12 +153,67 @@ describe('config log syslogd setting forwards the structured log records', () =>
     const table = new SyslogCollectorTable(() => agent);
     table.applySettings({
       collector: 'syslogd', enabled: true, server: '10.0.0.1', port: 514, transport: 'udp',
-      facility, format: 'default', sourceInterface: '',
+      facility, format: 'default', maxLogRateMegabytesPerSecond: 0, sourceInterface: '',
     });
     const record: FirewallLogRecord = {
       at: 0, type: 'traffic', subtype: 'forward', level: 'warning', id: '0000000015', vdom: 'root', fields: new Map(),
     };
     table.forwardRecord(record, () => 'date=2026-01-01');
     expect(lines).toEqual([`<${priority}>date=2026-01-01`]);
+  });
+
+  it('max-log-rate is accepted, bounded to 0-100000 and shown', async () => {
+    const { fgt } = await lab();
+    await fgt.executeCommand('config log syslogd setting');
+    const accepted = await fgt.executeCommand('set max-log-rate 5');
+    const refused = await fgt.executeCommand('set max-log-rate 100001');
+    await fgt.executeCommand('end');
+    expect(accepted).not.toMatch(/Command fail|Unknown action|invalid/i);
+    expect(refused).toMatch(/Command fail|range|invalid/i);
+    expect(await fgt.executeCommand('show log syslogd setting')).toContain('set max-log-rate 5');
+  });
+
+  describe('max-log-rate', () => {
+    const line = 'x'.repeat(395);
+    const record: FirewallLogRecord = {
+      at: 0, type: 'traffic', subtype: 'forward', level: 'warning', id: '0000000015', vdom: 'root', fields: new Map(),
+    };
+
+    function collector(maxLogRateMegabytesPerSecond: number) {
+      const sent: string[] = [];
+      let clock = 0;
+      const agent = {
+        listServers: () => [], removeServer: () => undefined, setEnabled: () => undefined, addServer: () => undefined,
+        setSourceInterface: () => undefined, start: () => undefined,
+        sendVerbatim: (_ip: string, _severity: string, text: string) => { sent.push(text); },
+      } as unknown as SyslogAgent;
+      const table = new SyslogCollectorTable(() => agent, () => clock);
+      table.applySettings({
+        collector: 'syslogd', enabled: true, server: '10.0.0.1', port: 514, transport: 'udp',
+        facility: 'local7', format: 'default', maxLogRateMegabytesPerSecond, sourceInterface: '',
+      });
+      const burst = (count: number) => { for (let i = 0; i < count; i++) table.forwardRecord(record, () => line); };
+      return { sent, burst, advance: (ms: number) => { clock += ms; } };
+    }
+
+    it('unlimited by default: a burst of 3000 records is all sent', () => {
+      const { sent, burst } = collector(0);
+      burst(3000);
+      expect(sent).toHaveLength(3000);
+    });
+
+    it('1 MBps caps a burst at what one second of budget carries (400 bytes a record)', () => {
+      const { sent, burst } = collector(1);
+      burst(3000);
+      expect(sent).toHaveLength(2500);
+    });
+
+    it('the budget refills with time: a second later the same burst is carried again', () => {
+      const { sent, burst, advance } = collector(1);
+      burst(3000);
+      advance(1000);
+      burst(3000);
+      expect(sent).toHaveLength(5000);
+    });
   });
 });

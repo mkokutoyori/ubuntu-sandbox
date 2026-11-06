@@ -18,6 +18,14 @@ interface LaboSupervision {
   siem: LinuxServer;
 }
 
+async function ecouteSyslogUdp(siem: LinuxServer): Promise<void> {
+  await taper(siem as unknown as Cli, [
+    'sed -i \'s/^#module(load="imudp")/module(load="imudp")/\' /etc/rsyslog.conf',
+    'sed -i \'s/^#input(type="imudp" port="514")/input(type="imudp" port="514")/\' /etc/rsyslog.conf',
+    'systemctl restart rsyslog',
+  ]);
+}
+
 async function creerLaboSupervision(): Promise<LaboSupervision> {
   const pc = new LinuxPC('linux-pc', 'PC-Admin', 100, 0);
   const sw1 = new CiscoSwitch('switch-cisco', 'SW-Core', 16, 300, 0);
@@ -71,7 +79,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
   describe('Transport Syslog : Acheminement des trames vers le SIEM', () => {
     it('151. Acheminement d\'un message Syslog standard UDP 514 depuis le pare-feu vers le SIEM', async () => {
       const { fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config log syslogd setting',
         'set status enable', 'set server "203.0.113.50"', 'set mode udp', 'set port 514',
@@ -84,7 +92,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('152. Syslog fiable en mode TCP 514 avec établissement de 3-way handshake traversant', async () => {
       const { fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config log syslogd setting',
         'set status enable', 'set server "203.0.113.50"', 'set mode reliable', 'set port 514',
@@ -108,7 +116,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('154. Préservation intégrale du format RFC 5424 (PRI, VERSION, TIMESTAMP, HOSTNAME, APP-NAME)', async () => {
       const { srvProd, fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config firewall policy', 'edit 154',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -122,11 +130,11 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('155. Fragmentation et réassemblage de logs Syslog volumineux excédant la MTU 1500', async () => {
       const { srvProd, fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config firewall policy', 'edit 155',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       const longPayload = 'A'.repeat(2000);
       await srvProd.executeCommand(`logger -n 203.0.113.50 -P 514 "${longPayload}"`);
@@ -136,11 +144,11 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('156. Réception simultanée de flux Syslog concurrents (Switch + FW + Serveurs) sans entrelacement', async () => {
       const { srvProd, fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config firewall policy', 'edit 156',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
-        'set action accept', 'next', 'end',
+        'set action accept', 'set service "ALL"', 'next', 'end',
       ]);
       await Promise.all([
         fw.executeCommand('diagnose log test'),
@@ -161,7 +169,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       ]);
       await fw.executeCommand('diagnose log test');
       // SIEM de retour
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       const logs = await siem.executeCommand('tail -n 5 /var/log/syslog');
       expect(logs.length).toBeGreaterThanOrEqual(0);
     });
@@ -208,7 +216,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('161. Journalisation instantanée des paquets rejetés (DROP/DENY) avec IP source et port cibles', async () => {
       const { pc, fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config log syslogd setting', 'set status enable', 'set server "203.0.113.50"', 'end',
         'config firewall policy', 'edit 161',
@@ -222,7 +230,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('162. Journalisation Nginx en DMZ transmise en flux continu vers le SIEM centralisé', async () => {
       const { srvProd, fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config firewall policy', 'edit 162',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -239,7 +247,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('163. Audit Oracle DB : Échec de connexion (ORA-01017) notifié au SIEM à travers le firewall', async () => {
       const { srvProd, fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config firewall policy', 'edit 163',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -252,7 +260,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('164. Détection de tentative d\'attaque brute force SSH générant une alerte Syslog authpriv', async () => {
       const { srvProd, fw, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config firewall policy', 'edit 164',
         'set srcintf "dmz"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -265,7 +273,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
 
     it('165. Alerte Port-Security Violation issue du switch Cisco acheminée au SIEM', async () => {
       const { sw1, siem } = await creerLaboSupervision();
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(sw1 as unknown as Cli, [
         'enable', 'configure terminal',
         'logging host 203.0.113.50',
@@ -280,11 +288,11 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
       const { fw } = await creerLaboSupervision();
       await taper(fw, [
         'config log syslogd setting',
-        'set max-log-rate 50', // 50 logs/seconde max
+        'set max-log-rate 5',
         'end',
       ]);
       const res = await fw.executeCommand('get log syslogd setting');
-      expect(res).toContain('50');
+      expect(res).toMatch(/max-log-rate\s*:\s*5\b/);
     });
   });
 
@@ -579,8 +587,13 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
     });
 
     it('193. Détection de transition d\'état de service (UP -> DOWN) et génération d\'une alerte immédiate', async () => {
-      const { srvProd, siem } = await creerLaboSupervision();
+      const { srvProd, siem, fw } = await creerLaboSupervision();
       await taper(srvProd as unknown as Cli, ['systemctl stop nginx']);
+      await taper(fw, [
+        'config firewall policy', 'edit 193',
+        'set srcintf "wan1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
+        'set action accept', 'set service "ALL"', 'next', 'end',
+      ]);
       const res = await siem.executeCommand('nc -zv -w 1 10.10.10.5 80');
       expect(res).toMatch(/refused|failed/i);
     });
@@ -643,7 +656,7 @@ describe('Batterie 4 : Tests 151 à 200 — Supervision Réseau, Télémétrie &
     it('198. Corrélation Temporelle : Le log Nginx concorde temporellement avec le log de session Pare-feu', async () => {
       const { pc, fw, srvProd, siem } = await creerLaboSupervision();
       await taper(srvProd as unknown as Cli, ['systemctl start nginx']);
-      await taper(siem as unknown as Cli, ['systemctl start rsyslog']);
+      await ecouteSyslogUdp(siem);
       await taper(fw, [
         'config firewall policy', 'edit 198',
         'set srcintf "port1"', 'set dstintf "dmz"', 'set srcaddr "all"', 'set dstaddr "all"',
