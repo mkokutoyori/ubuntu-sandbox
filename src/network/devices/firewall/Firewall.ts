@@ -148,6 +148,7 @@ import type { UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { PkiPeerStore } from './vpn/PkiPeers';
+import type { IpsecConcentratorStore } from './vpn/IpsecConcentratorStore';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
@@ -1557,6 +1558,27 @@ export class Firewall extends Equipment {
   }
 
   getPkiPeers(v?: string): PkiPeerStore { return this.getVdom(v).pkiPeers; }
+
+  getIpsecConcentrators(v?: string): IpsecConcentratorStore { return this.getVdom(v).ipsecConcentrators; }
+
+  applyIpsecConcentrator(
+    id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }, v?: string,
+  ): string | undefined {
+    const tunnels = this.getVdom(v).tunnels;
+    for (const member of concentrator.members) {
+      if (tunnels.getPhase1(member) === undefined) return `interface ${member} is not a declared IPsec tunnel.`;
+    }
+    this.getVdom(v).ipsecConcentrators.set({ id, ...concentrator });
+    return undefined;
+  }
+
+  removeIpsecConcentrator(id: number, v?: string): void {
+    this.getVdom(v).ipsecConcentrators.remove(id);
+  }
+
+  concentratorDisablesSrcCheck(iface: string, v?: string): boolean {
+    return this.getVdom(v).ipsecConcentrators.disablesSrcCheck(iface);
+  }
 
   getModeCfgPool(): ModeCfgPool { return this.modeCfg; }
 

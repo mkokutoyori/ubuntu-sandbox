@@ -331,7 +331,8 @@ export class FortiShell {
       disconnectAdminSession: (index) => this.disconnectAdminSession(index),
     });
     this.fw.bindIngressInterfaceOptions((iface) => ({
-      srcCheck: this.interfaceSetting(iface, 'src-check') !== 'disable',
+      srcCheck: this.interfaceSetting(iface, 'src-check') !== 'disable'
+        && !this.fw.concentratorDisablesSrcCheck(iface),
       dropFragment: this.interfaceSetting(iface, 'drop-fragment') === 'enable',
       dropOverlappedFragment:
         this.interfaceSetting(iface, 'drop-overlapped-fragment') === 'enable',

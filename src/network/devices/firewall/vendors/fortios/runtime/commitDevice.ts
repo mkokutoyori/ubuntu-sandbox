@@ -411,6 +411,12 @@ export function buildCommitDevice(
       removeGreTunnel(name) {
         fw.removeGreTunnel(name);
       },
+      applyIpsecConcentrator(id, concentrator) {
+        return fw.applyIpsecConcentrator(id, concentrator);
+      },
+      removeIpsecConcentrator(id) {
+        fw.removeIpsecConcentrator(id);
+      },
       applyPkiPeer(peer) {
         fw.getPkiPeers().setPeer(peer);
         fw.syncIpsecTunnels();

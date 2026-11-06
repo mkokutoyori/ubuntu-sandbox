@@ -457,6 +457,8 @@ export interface FortiCommitDevice {
     sequenceTransmission: boolean; sequenceReception: boolean;
   }): string | void;
   removeGreTunnel(name: string): void;
+  applyIpsecConcentrator(id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }): string | void;
+  removeIpsecConcentrator(id: number): void;
   applyPkiPeer(peer: { name: string; ca: string; subject: string; cn: string }): void;
   removePkiPeer(name: string): void;
   applyPkiPeerGroup(name: string, members: readonly string[]): void;
