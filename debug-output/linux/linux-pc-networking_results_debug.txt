@@ -1,6 +1,6 @@
 ============================================================
 Shell debug transcript — linux-pc-networking
-Generated: 2026-11-06T17:02:55.328Z
+Generated: 2026-11-07T10:16:24.902Z
 Engine: linux
 host=L-PC-NET-DBG (linux-pc) — focus: réseau (ip/ping/route/dns/sockets/firewall)
 Total commands: 302
@@ -680,7 +680,7 @@ $ [104/302]> ping -c 3 -i 1 127.0.0.1
   64 bytes from 127.0.0.1: icmp_seq=3 ttl=64 time=0.010 ms
   
   --- 127.0.0.1 ping statistics ---
-  3 packets transmitted, 3 received, 0% packet loss, time 2004ms
+  3 packets transmitted, 3 received, 0% packet loss, time 2001ms
   rtt min/avg/max/mdev = 0.010/0.010/0.010/0.000 ms
 
 $ [105/302]> ping -c 1 -W 1 192.168.10.99
@@ -764,7 +764,7 @@ $ [120/302]> tracepath 127.0.0.1
        Resume: pmtu 65535 hops 1 back 1 
 
 $ [121/302]> mtr -r -c 1 127.0.0.1
-  Start: 2026-11-06T17:02:58.469Z
+  Start: 2026-11-07T10:16:28.072Z
   L-PC-NET-DBG (127.0.0.1)
                                          Packets               Pings
    Host                                Loss%   Snt   Last   Avg  Best  Wrst StDev
@@ -1036,7 +1036,7 @@ $ [162/302]> ss -tln sport = :22
 
 --- [163] § HTTP — curl / wget ---
 $ [163/302]> curl http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 6 ms: Couldn't connect to server
 
 $ [164/302]> curl -I http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
@@ -1046,33 +1046,33 @@ $ [165/302]> curl -s http://192.168.10.1
 
 $ [166/302]> curl -v http://192.168.10.1
   *   Trying 192.168.10.1:80...
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [167/302]> curl -o /tmp/page.html http://192.168.10.1
   curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [168/302]> curl -L http://192.168.10.1
-  curl: (7) Failed to connect to 192.168.10.1 port 80 after 0 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.1 port 80 after 1 ms: Couldn't connect to server
 
 $ [169/302]> curl --max-time 2 http://192.168.10.99
-  curl: (7) Failed to connect to 192.168.10.99 port 80 after 0 ms: Couldn't connect to server
+  curl: (7) Failed to connect to 192.168.10.99 port 80 after 1 ms: Couldn't connect to server
 
 $ [170/302]> curl http://hote_inexistant_xyz
   curl: (6) Could not resolve host: hote_inexistant_xyz
 
 $ [171/302]> wget http://192.168.10.1
-  --2026-11-06 17:02:58--  http://192.168.10.1
+  --2026-11-07 10:16:28--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [172/302]> wget -q http://192.168.10.1
 <empty>
 
 $ [173/302]> wget -O /tmp/dl.html http://192.168.10.1
-  --2026-11-06 17:02:58--  http://192.168.10.1
+  --2026-11-07 10:16:28--  http://192.168.10.1
   Connecting to 192.168.10.1:80... failed: Connection refused.
 
 $ [174/302]> wget --timeout=2 http://192.168.10.99
-  --2026-11-06 17:02:58--  http://192.168.10.99
+  --2026-11-07 10:16:28--  http://192.168.10.99
   Connecting to 192.168.10.99:80... failed: Connection refused.
 
 $ [175/302]> curl
@@ -1227,51 +1227,51 @@ $ [218/302]> ssh-keygen -t rsa -b 2048 -f /tmp/id_rsa -N ""
   Your identification has been saved in /tmp/id_rsa
   Your public key has been saved in /tmp/id_rsa.pub
   The key fingerprint is:
-  SHA256:cr70h8ubs9n941rjHmCOXTY8S8RMs0og/bwQqu4jgJo user@L-PC-NET-DBG
+  SHA256:5IJWCoSMO5e6lIU4i6ZY/e9VMijvPa3PPjzluEohuOo user@L-PC-NET-DBG
   The key's randomart image is:
   +---[RSA 2048]----+
-  |         ...   o |
-  |          .o. + o|
-  |          . +. = |
-  |         . ..o+  |
-  |  .   . S   .+.B |
-  | . .   =    =.= +|
-  |..  . . o  o o = |
-  |E    . + +o+..o.o|
-  |      o.o O*..==o|
+  |o..              |
+  |oo               |
+  |..o.  . .        |
+  |=.oo + + .       |
+  |.*o.+ + S + .    |
+  |++...  = . =  .  |
+  |=o   .. . oo +   |
+  |+    ... +..* .  |
+  |   .E  o+ +*=+   |
   +----[SHA256]-----+
 
 $ [219/302]> ls -l /tmp/id_rsa /tmp/id_rsa.pub
-  -rw------- 1 user user 1823 Nov  6 17:03 /tmp/id_rsa
-  -rw-r--r-- 1 user user  399 Nov  6 17:03 /tmp/id_rsa.pub
+  -rw------- 1 user user 1823 Nov  7 10:16 /tmp/id_rsa
+  -rw-r--r-- 1 user user  399 Nov  7 10:16 /tmp/id_rsa.pub
 
 $ [220/302]> cat /tmp/id_rsa.pub
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDbVIVmR4/NEovFcvrVrRl/D9NxjVNqDRvMV/YSEZaBRaLuDlE5zLrqDDGYRxMWu8UJGZjtbFy4a33qMOSLBnOcjapZZ/ARsksvWT9zqWlJsioxQbx3sPkDGRoKm1PF4tFe3vcF0raz3SIxPKTnedCQm7L20cVPrj2NBAcnQOMnpL+whJxCCqXJs+oFQVL4pm2Kau1ZVX3fqiX3nEkKnGXhKcOorKXui3jFFaXaYq5XL6HNhcCb+rpWfb0ifIZEAY9TIwSUMYWmskZT8DQxAGw14xCRdaKPVkCfoOmRyzXb1rze1do/KlnHQPwjRFYUp/4koNFUiApYFwN7kaO75FCx user@L-PC-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDR08Bhkq5SwapHIgZFjHvkZvQogt0PC7SRiWdD/aupFzQX3xBMXCSd/zXoQx0agYFhCpX7PYnGNFZ6ynZnXq8scP/TnmS4V5afijiLww9QZQOp0F0H3edpa8O+Nl/9M7qhO9yZ43lpw8kO2yjeRz3jPS7RI0SlyTjIcNy3EoAwgosZzRHNZB+WrFZx5VLiBeF3ORcTFDBcTh6J9+bHiiduDb5PxsjvFPYXkVxbzqYcjSY4PqRXljARmR03APv0rjRPeC5wkR+1Q+kgKjsyG/nBUvbPKoX2P0nsIzxTf4hjvXUORoJpJ5yAVNug3rJ5Bxu8PJzgHHDvsJOtNdKrCuPt user@L-PC-NET-DBG
 
 $ [221/302]> ssh-keygen -t ed25519 -f /tmp/id_ed25519 -N ""
   Generating public/private ed25519 key pair.
   Your identification has been saved in /tmp/id_ed25519
   Your public key has been saved in /tmp/id_ed25519.pub
   The key fingerprint is:
-  SHA256:egAHzirsTDlwz8myXCIsvzmeOH+vOKSMNuRGW3OKxUc user@L-PC-NET-DBG
+  SHA256:0aee8MqQEnBdvoJojujWFU1MJjDBG6Bbnw7awKVfqHc user@L-PC-NET-DBG
   The key's randomart image is:
   +--[ED25519 256]--+
-  |    .            |
-  |   o .           |
-  |. . + .          |
-  |+..= E           |
-  |+*= B . S        |
-  |=BoX o o         |
-  |*=O = . .        |
-  |+Xo*.  .         |
-  |++O+.o.          |
+  | .o+o.oo.        |
+  |.  o..o= .       |
+  |. o.+ + o . .    |
+  |.oo*.+ . o o     |
+  |oo+.=.o S .      |
+  |.Boo.o o + .     |
+  |+.+o+Eo   +      |
+  |...... o .       |
+  |..      o        |
   +----[SHA256]-----+
 
 $ [222/302]> ssh-keygen -lf /tmp/id_rsa.pub
-  2048 SHA256:cr70h8ubs9n941rjHmCOXTY8S8RMs0og/bwQqu4jgJo user@L-PC-NET-DBG (RSA)
+  2048 SHA256:5IJWCoSMO5e6lIU4i6ZY/e9VMijvPa3PPjzluEohuOo user@L-PC-NET-DBG (RSA)
 
 $ [223/302]> ssh-keygen -y -f /tmp/id_rsa
-  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDbVIVmR4/NEovFcvrVrRl/D9NxjVNqDRvMV/YSEZaBRaLuDlE5zLrqDDGYRxMWu8UJGZjtbFy4a33qMOSLBnOcjapZZ/ARsksvWT9zqWlJsioxQbx3sPkDGRoKm1PF4tFe3vcF0raz3SIxPKTnedCQm7L20cVPrj2NBAcnQOMnpL+whJxCCqXJs+oFQVL4pm2Kau1ZVX3fqiX3nEkKnGXhKcOorKXui3jFFaXaYq5XL6HNhcCb+rpWfb0ifIZEAY9TIwSUMYWmskZT8DQxAGw14xCRdaKPVkCfoOmRyzXb1rze1do/KlnHQPwjRFYUp/4koNFUiApYFwN7kaO75FCx user@L-PC-NET-DBG
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDR08Bhkq5SwapHIgZFjHvkZvQogt0PC7SRiWdD/aupFzQX3xBMXCSd/zXoQx0agYFhCpX7PYnGNFZ6ynZnXq8scP/TnmS4V5afijiLww9QZQOp0F0H3edpa8O+Nl/9M7qhO9yZ43lpw8kO2yjeRz3jPS7RI0SlyTjIcNy3EoAwgosZzRHNZB+WrFZx5VLiBeF3ORcTFDBcTh6J9+bHiiduDb5PxsjvFPYXkVxbzqYcjSY4PqRXljARmR03APv0rjRPeC5wkR+1Q+kgKjsyG/nBUvbPKoX2P0nsIzxTf4hjvXUORoJpJ5yAVNug3rJ5Bxu8PJzgHHDvsJOtNdKrCuPt user@L-PC-NET-DBG
 
 $ [224/302]> ssh -V
   OpenSSH_8.9p1 Ubuntu-3ubuntu0.6, OpenSSL 3.0.2 15 Mar 2022
@@ -1296,12 +1296,12 @@ $ [228/302]> dhclient -v eth0
   Listening on LPF/eth0/02:00:00:aa:bb:cc
   Sending on   LPF/eth0/02:00:00:aa:bb:cc
   Sending on   Socket/fallback
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xdf6f33e7)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0xdf6f33e7)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0xdf6f33e7)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xdf6f33e7)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xdf6f33e7)
-  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0xdf6f33e7)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 3 (xid=0xfac10375)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 6 (xid=0xfac10375)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 12 (xid=0xfac10375)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xfac10375)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 15 (xid=0xfac10375)
+  DHCPDISCOVER on eth0 to 255.255.255.255 port 67 interval 9 (xid=0xfac10375)
   No DHCPOFFERS received.
   No working leases in persistent database - sleeping.
 
