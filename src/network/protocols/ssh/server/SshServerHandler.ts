@@ -565,10 +565,16 @@ export class SshServerHandler {
                 channel.close();
                 return;
               }
+              if (forcedShell === 'internal-sftp') {
+                channel.write('This service allows sftp connections only.\n');
+                void channel.request('exit-status', encodeExitStatus(1));
+                channel.eof();
+                channel.close();
+                return;
+              }
               if (forcedShell !== null) {
                 const runner = this.ctx.getShell(user, user.homeDirectory);
-                const forcedLine = forcedShell === 'internal-sftp'
-                  ? 'echo This service allows sftp connections only.' : forcedShell;
+                const forcedLine = forcedShell;
                 void runner.execute(forcedLine).then((result) => {
                   runner.dispose?.();
                   channel.write(result.stdout);
