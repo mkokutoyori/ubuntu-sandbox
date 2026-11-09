@@ -240,13 +240,13 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
     propre(await taper(fgt, [
       'config router ospf', 'config ospf-interface', 'edit "vers-R1"',
       'set interface "port1"',
-      'set authentication md5',
-      'config md5-keys', 'edit 1', 'set key "CleOspfLab2026"', 'next', 'end',
+      'set authentication message-digest',
+      'config md5-keys', 'edit 1', 'set key-string "CleOspfLab2026"', 'next', 'end',
       'next', 'end', 'end',
     ]));
 
     const conf = await fgt.executeCommand('show router ospf');
-    expect(conf).toContain('set authentication md5');
+    expect(conf).toContain('set authentication message-digest');
     expect(conf).toContain('edit 1');
     expect(conf).not.toContain('CleOspfLab2026');
   });
@@ -261,8 +261,8 @@ describe('TP 19 — OSPF entre le pare-feu et R1', () => {
 
     await taper(fgt, [
       'config router ospf', 'config ospf-interface', 'edit "vers-R1"',
-      'set interface "port1"', 'set authentication md5',
-      'config md5-keys', 'edit 1', 'set key "CleOspfLab2026"', 'next', 'end',
+      'set interface "port1"', 'set authentication message-digest',
+      'config md5-keys', 'edit 1', 'set key-string "CleOspfLab2026"', 'next', 'end',
       'next', 'end', 'end',
     ]);
     converger();

@@ -237,12 +237,13 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       await taper(fw, [
         'config router ospf',
         'config ospf-interface', 'edit "wan1_md5"',
-        'set interface "wan1"', 'set authentication md5',
-        'config md5-key', 'edit 1', 'set key-string "OspfSecret2026"', 'next', 'end',
+        'set interface "wan1"', 'set authentication message-digest',
+        'config md5-keys', 'edit 1', 'set key-string "OspfSecret2026"', 'next', 'end',
         'next', 'end', 'end',
       ]);
       const check = await fw.executeCommand('show router ospf');
-      expect(check).toContain('OspfSecret2026');
+      expect(check).toContain('set authentication message-digest');
+      expect(check).toMatch(/set key-string ENC \S+/);
     });
 
     it('265. Session BGP Peering (TCP 179) établie entre FortiGate (AS 65001) et le routeur WAN (AS 65002)', async () => {
