@@ -286,7 +286,7 @@ const OSPF_MD5_KEYS: FortiTableSpec = {
   help: 'MD5 key.',
   attributes: [
     { ...word('id', 'Key identifier.'), readOnly: true },
-    { ...text('key', 'Authentication key.'), quoted: true, secret: true },
+    { ...text('key-string', 'Password for the key.'), quoted: true, secret: true },
   ],
 };
 
@@ -314,7 +314,7 @@ const OSPF_INTERFACE: FortiTableSpec = {
     choice('authentication', 'Authentication expected on this interface.', [
       { keyword: 'none', description: 'No authentication.' },
       { keyword: 'text', description: 'Cleartext password.' },
-      { keyword: 'md5', description: 'Keyed MD5 digest (RFC 2328 §D).' },
+      { keyword: 'message-digest', description: 'Message digest (keyed MD5, RFC 2328 §D).' },
     ], 'none'),
     {
       ...text('authentication-key', 'Cleartext authentication password.'),
@@ -372,7 +372,7 @@ export const ROUTER_OSPF: FortiTableSpec = {
         authentication: entry.effective('authentication')[0] ?? 'none',
         md5Keys: entry.childEntries('md5-keys').map(key => ({
           id: Number.parseInt(key.key, 10),
-          key: key.effective('key')[0] ?? '',
+          key: key.effective('key-string')[0] ?? '',
         })),
       })),
       passiveInterfaces: [...object.effective('passive-interface')],

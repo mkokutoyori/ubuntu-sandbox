@@ -86,7 +86,7 @@ interface RipRibRoute {
 const OSPF_DISTANCE = 110;
 
 function authTypeOf(mode: string | undefined): number {
-  if (mode === 'md5') return 2;
+  if (mode === 'message-digest') return 2;
   if (mode === 'text') return 1;
   return 0;
 }

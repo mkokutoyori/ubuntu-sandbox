@@ -37,6 +37,7 @@ export const FIREWALL_ADDRESS: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'fwgrp',
   renderOrder: 90,
+  maxUserEntries(context) { return context.device.vdomCeiling('firewall-address'); },
   help: 'Configure IPv4 addresses.',
   predefined: ['all'],
   attributes: [
@@ -247,6 +248,7 @@ export const FIREWALL_ADDRGRP: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'fwgrp',
   renderOrder: 100,
+  maxUserEntries(context) { return context.device.vdomCeiling('firewall-addrgrp'); },
   help: 'Configure IPv4 address groups.',
   attributes: [
     { ...word('name', 'Address group name.'), readOnly: true },
@@ -283,6 +285,7 @@ export const FIREWALL_SERVICE_CUSTOM: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'fwgrp',
   renderOrder: 110,
+  maxUserEntries(context) { return context.device.vdomCeiling('custom-service'); },
   help: 'Configure custom services.',
   predefined: PREDEFINED_SERVICE_NAMES,
   attributes: [
@@ -386,6 +389,7 @@ export const FIREWALL_SERVICE_GROUP: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'fwgrp',
   renderOrder: 120,
+  maxUserEntries(context) { return context.device.vdomCeiling('service-group'); },
   help: 'Configure service groups.',
   attributes: [
     { ...word('name', 'Service group name.'), readOnly: true },
@@ -424,6 +428,7 @@ export const FIREWALL_SCHEDULE_RECURRING: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'fwgrp',
   renderOrder: 130,
+  maxUserEntries(context) { return context.device.vdomCeiling('recurring-schedule'); },
   help: 'Recurring schedule configuration.',
   predefined: ['always'],
   attributes: [
@@ -460,6 +465,7 @@ export const FIREWALL_SCHEDULE_ONETIME: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'fwgrp',
   renderOrder: 131,
+  maxUserEntries(context) { return context.device.vdomCeiling('onetime-schedule'); },
   help: 'Onetime schedule configuration.',
   attributes: [
     { ...word('name', 'Onetime schedule name.'), readOnly: true },

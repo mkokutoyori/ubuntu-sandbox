@@ -25,6 +25,7 @@ export const USER_LOCAL: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'authgrp',
   renderOrder: 500,
+  maxUserEntries(context) { return context.device.vdomCeiling('user'); },
   help: 'Configure local users.',
   attributes: [
     { ...word('name', 'User name.'), readOnly: true },
@@ -59,6 +60,7 @@ export const USER_GROUP: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'authgrp',
   renderOrder: 510,
+  maxUserEntries(context) { return context.device.vdomCeiling('user-group'); },
   help: 'Configure user groups.',
   attributes: [
     { ...word('name', 'Group name.'), readOnly: true },

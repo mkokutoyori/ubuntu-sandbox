@@ -1,3 +1,4 @@
+import type { VdomResource, VdomResourceLimits } from '../../../vdom/VdomLimits';
 import type { ConsoleSettingsPatch } from '../../../mgmt/ConsoleSettings';
 import type { SshAlgorithmPreferences } from '../../../../../protocols/ssh/transport/SshTransport';
 import type { SessionHelperEntry } from '../../../session/SessionHelperTable';
@@ -473,6 +474,8 @@ export interface FortiCommitDevice {
   removeCommunityList(name: string): void;
   removePrefixList(name: string): void;
   maxVirtualDomains(): number;
+  applyVdomProperty(vdom: string, limits: VdomResourceLimits): string | void;
+  vdomCeiling(resource: VdomResource): number | undefined;
   applyVdom(name: string): void;
   removeVdom(name: string): void;
   applyVdomLink(name: string): void;
@@ -845,6 +848,7 @@ export interface FortiTableSpec {
   readonly scopeOnly?: boolean;
   readonly unavailable?: string;
   readonly maxEntries?: (context: FortiCommitContext) => number;
+  readonly maxUserEntries?: (context: FortiCommitContext) => number | undefined;
   readonly onCommit?: (
     object: FortiObjectView, context: FortiCommitContext) => string | void;
   readonly onDelete?: (key: string, context: FortiCommitContext) => void;
