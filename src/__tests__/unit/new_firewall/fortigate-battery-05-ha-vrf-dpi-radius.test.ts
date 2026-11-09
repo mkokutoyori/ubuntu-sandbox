@@ -257,6 +257,7 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     it('215. Filtrage d\'un flux traversant un lien Inter-VDOM par une politique de sécurité dédiée', async () => {
       const { fwMaster } = await creerLaboHA();
       await taper(fwMaster, [
+        'config system vdom-link', 'edit vlink_prod_guest', 'next', 'end',
         'config firewall policy',
         'edit 10', 'set srcintf "vlink_prod_guest0"', 'set dstintf "vlink_prod_guest1"',
         'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "HTTP"', 'next',
