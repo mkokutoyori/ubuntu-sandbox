@@ -88,6 +88,7 @@ export interface RouteMapRulePatch {
   readonly matchCommunity?: string;
   readonly setCommunity?: readonly string[];
   readonly setCommunityAdditive?: boolean;
+  readonly setAsPath?: { readonly action: 'prepend' | 'replace'; readonly asns: readonly number[] };
   readonly setLocalPreference?: number;
   readonly setMetric?: number;
   readonly setWeight?: number;
@@ -99,6 +100,7 @@ export interface RouteMapPatch {
 }
 
 export interface BgpConfiguration {
+  readonly gracefulRestart?: { readonly restartTimeSec: number; readonly stalePathTimeSec: number; readonly endOnTimerOnly: boolean };
   readonly defaultLocalPreference?: number;
   readonly enabled: boolean;
   readonly asn: number;

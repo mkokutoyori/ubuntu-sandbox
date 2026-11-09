@@ -293,6 +293,7 @@ export class FortiShell {
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
     this.seedFactoryVdoms();
+    this.seedVdomProperties();
     const validator = new FortiValidator(
       (target, name) => this.referenceExists(target, name), this.tree);
     this.nav = new FortiNavigator({
@@ -777,7 +778,23 @@ export class FortiShell {
   }
 
   private commitDevice(): FortiCommitDevice {
-    return buildCommitDevice(this.fw, this.tree);
+    const device = buildCommitDevice(this.fw, this.tree);
+    return {
+      ...device,
+      applyVdom: (name) => { device.applyVdom(name); this.vdomProperties()?.ensure(name); },
+      removeVdom: (name) => { device.removeVdom(name); this.vdomProperties()?.remove(name); },
+    };
+  }
+
+  private vdomProperties() {
+    const spec = this.tree.spec(['system', 'vdom-property']);
+    return spec === undefined ? undefined : this.tree.table(spec);
+  }
+
+  private seedVdomProperties(): void {
+    const table = this.vdomProperties();
+    if (table === undefined) return;
+    for (const name of this.fw.vdomNames()) table.ensure(name);
   }
 
   private candidatesFor(targets: readonly string[]): readonly EnumValue[] {
@@ -1291,6 +1308,7 @@ export class FortiShell {
     this.seedFactoryCertificates();
     this.seedFactoryAdmin();
     this.seedFactoryVdoms();
+    this.seedVdomProperties();
     this.seedChassisInterfaces();
     const interfaces = this.tree.spec(['system', 'interface']);
     if (interfaces) this.nav.commitEntries(interfaces);

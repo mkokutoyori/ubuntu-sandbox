@@ -47,6 +47,7 @@ import type { ResourceRecord, ResourceRecordData, NsRecordData, ARecordData } fr
 import type { ForwardMode, NamedConfig, NamedRemoteServer, NamedZone } from './NamedConfig';
 import { DOT_PORT } from '@/network/dns/transport/DnsTlsTransport';
 import { DNS_PORT } from '@/network/dns/transport/DnsUdpTransport';
+import { timeoutsFromTenths, type DnsStreamTimeouts } from '@/network/dns/transport/DnsStreamTimeouts';
 import type { TransferEndpoint, TransferTls } from '@/network/dns/transfer/TransferEndpoint';
 import { pemToCertChain } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -331,12 +332,17 @@ export class Bind9Service {
     return { ok: true };
   }
 
+  private streamTimeouts(transport: 'tcp' | 'tls'): DnsStreamTimeouts {
+    return timeoutsFromTenths(this.config!.options.tcpTimeouts, transport);
+  }
+
   private newPlainListeners(): Bind9PlainListeners {
     return new Bind9PlainListeners({
       host: this.host,
       processName: PROCESS_NAME,
       udpHandler: this.handleUdpQuery,
       tcpHandler: this.handleTcpQuery,
+      timeouts: () => this.streamTimeouts('tcp'),
       environment: () => this.aclEnvironment(),
     });
   }
@@ -346,6 +352,7 @@ export class Bind9Service {
       host: this.host,
       processName: PROCESS_NAME,
       handler: this.handleTcpQuery,
+      timeouts: () => this.streamTimeouts('tls'),
       readFile: this.readFile,
       log: (message) => this.files.log?.(message),
       environment: () => this.aclEnvironment(),
@@ -435,6 +442,7 @@ export class Bind9Service {
     this.forwardZones = this.buildForwardZones(config);
     this.queryLogEnabled = config.options.queryLog;
     this.dnssecValidationEnabled = config.options.dnssecValidation !== 'no';
+    for (const warning of config.warnings) this.files.log?.(warning);
   }
 
   private positiveTrim(recursionDesired: boolean): PositiveTrim {

@@ -10,8 +10,7 @@ import { DNS_PORT, queryDnsOverUdp, answersQuestion, releaseResolvedStub } from 
 import type { DnsMessageHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
-
-export const DNS_TCP_IDLE_TIMEOUT_MS = 10000;
+import { DnsStreamLifetime, LEGACY_STREAM_TIMEOUTS, type DnsStreamTimeouts } from '@/network/dns/transport/DnsStreamTimeouts';
 
 export type DnsStreamReply = DnsMessage | readonly DnsMessage[] | null;
 
@@ -33,7 +32,7 @@ export function bindDnsTcpServer(
   port: number = DNS_PORT,
   options: {
     address?: string; processName?: string; boundDevice?: string; pid?: number; service?: string;
-    observer?: DnsPacketObserver; onConnection?: () => void;
+    observer?: DnsPacketObserver; onConnection?: () => void; timeouts?: () => DnsStreamTimeouts;
   } = {},
 ): void {
   if (options.address === undefined || options.address === '0.0.0.0') releaseResolvedStub(host, 'tcp', port);
@@ -43,16 +42,11 @@ export function bindDnsTcpServer(
     onAccept: (socket: TcpSocket) => {
       options.onConnection?.();
       const reader = new DnsStreamReader();
-      let idle: ReturnType<typeof setTimeout> | null = null;
-      const rearm = (): void => {
-        if (idle) clearTimeout(idle);
-        idle = setTimeout(() => socket.close(), DNS_TCP_IDLE_TIMEOUT_MS);
-      };
-      socket.onClose(() => { if (idle) clearTimeout(idle); });
-      rearm();
+      const lifetime = new DnsStreamLifetime(() => socket.close(), options.timeouts?.() ?? LEGACY_STREAM_TIMEOUTS);
+      socket.onClose(() => lifetime.stop());
       socket.onData((data) => {
         if (!(data instanceof Uint8Array)) return;
-        rearm();
+        lifetime.activity();
         for (const raw of reader.push(data)) {
           let query: DnsMessage;
           try {
@@ -65,9 +59,11 @@ export function bindDnsTcpServer(
             socket.close();
             return;
           }
+          lifetime.requested(query);
           const exchange = {};
           options.observer?.({ direction: 'receive', transport: 'tcp', remote: socket.remoteIp, message: query, exchange });
-          const send = (response: DnsStreamReply): void => {
+          const send = (reply: DnsStreamReply): void => {
+            const response = lifetime.answered(query, reply);
             if (response === null) return;
             const messages = Array.isArray(response) ? response : [response as DnsMessage];
             for (const message of messages) {

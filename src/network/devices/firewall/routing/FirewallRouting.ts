@@ -86,7 +86,7 @@ interface RipRibRoute {
 const OSPF_DISTANCE = 110;
 
 function authTypeOf(mode: string | undefined): number {
-  if (mode === 'md5') return 2;
+  if (mode === 'message-digest') return 2;
   if (mode === 'text') return 1;
   return 0;
 }
@@ -208,6 +208,7 @@ export class FirewallRouting {
       node.applySet({
         ...(rule.setLocalPreference !== undefined ? { localPreference: rule.setLocalPreference } : {}),
         ...(rule.setMetric !== undefined ? { cost: rule.setMetric } : {}),
+        ...(rule.setAsPath !== undefined ? { asPathEdit: rule.setAsPath } : {}),
         ...(rule.setWeight !== undefined ? { weight: rule.setWeight } : {}),
         ...(rule.setCommunity !== undefined && rule.setCommunity.length > 0 ? { communities: rule.setCommunity, communityAdditive: rule.setCommunityAdditive === true } : {}),
       });

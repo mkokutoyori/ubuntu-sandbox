@@ -3,6 +3,7 @@ import type { EndHost } from '@/network/devices/EndHost';
 import { bindDnsUdpServer, unbindDnsUdpServer, type DnsDatagramHandler } from '@/network/dns/transport/DnsUdpTransport';
 import { bindDnsTcpServer, unbindDnsTcpServer, type DnsStreamHandler } from '@/network/dns/transport/DnsTcpTransport';
 import type { OperationResult } from '../LinuxServiceManager';
+import type { DnsStreamTimeouts } from '@/network/dns/transport/DnsStreamTimeouts';
 import type { AclHostEnvironment } from './NamedAcl';
 import type { NamedPlainListen } from './NamedConfig';
 import { listenAddresses } from './Bind9ListenAddresses';
@@ -12,6 +13,7 @@ export interface PlainListenerDeps {
   readonly processName: string;
   readonly udpHandler: DnsDatagramHandler;
   readonly tcpHandler: DnsStreamHandler;
+  readonly timeouts: () => DnsStreamTimeouts;
   readonly environment: () => AclHostEnvironment;
 }
 
@@ -67,7 +69,7 @@ export class Bind9PlainListeners {
   }
 
   private bind(wanted: readonly PlainBinding[]): OperationResult {
-    const { host, processName, udpHandler, tcpHandler } = this.deps;
+    const { host, processName, udpHandler, tcpHandler, timeouts } = this.deps;
     for (const port of new Set(wanted.map((binding) => binding.port))) {
       const here = wanted.filter((binding) => binding.port === port);
       const families = new Set(here.filter((binding) => isWildcard(binding.address)).map((binding) => (isV6(binding.address) ? 'ipv6' : 'ipv4')));
@@ -88,7 +90,7 @@ export class Bind9PlainListeners {
     }
     for (const { port, address } of wanted) {
       try {
-        bindDnsTcpServer(host, tcpHandler, port, { address, processName });
+        bindDnsTcpServer(host, tcpHandler, port, { address, processName, timeouts });
       } catch {
         this.stop();
         return { ok: false, error: 'could not listen on TCP socket: address already in use' };

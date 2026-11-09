@@ -5,6 +5,7 @@ import {
   bindDnsHttpServer, bindDnsHttpsServer, unbindDnsHttpServer, unbindDnsHttpsServer,
 } from '@/network/dns/transport/DnsHttpsTransport';
 import type { DnsStreamHandler } from '@/network/dns/transport/DnsTcpTransport';
+import type { DnsStreamTimeouts } from '@/network/dns/transport/DnsStreamTimeouts';
 import type { ServerIdentity } from '@/network/http/https/ServerTlsToolkit';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
 import { pemToCertChain, pemToDhParameters, pemToPrivateKey } from '@/network/pki/pem';
@@ -28,6 +29,7 @@ export interface EncryptedListenerDeps {
   readonly host: EndHost;
   readonly processName: string;
   readonly handler: DnsStreamHandler;
+  readonly timeouts: () => DnsStreamTimeouts;
   readonly readFile: (path: string) => string | null;
   readonly log: (message: string) => void;
   readonly environment: () => AclHostEnvironment;
@@ -133,10 +135,10 @@ export class Bind9EncryptedListeners {
   }
 
   private bindOne(listener: NamedListener, identity: ServerIdentity | null, settings: DnsTlsServerSettings | undefined, address: string): void {
-    const { host, handler, processName } = this.deps;
+    const { host, handler, processName, timeouts } = this.deps;
     const common = { port: listener.port, address, processName };
     if (listener.http === null) {
-      bindDnsTlsServer(host, handler, { ...common, identity: identity!, settings, requireAlpn: false, silentRejection: true });
+      bindDnsTlsServer(host, handler, { ...common, identity: identity!, settings, requireAlpn: false, silentRejection: true, timeouts });
       this.undo.push(() => unbindDnsTlsServer(host, listener.port, address));
       return;
     }

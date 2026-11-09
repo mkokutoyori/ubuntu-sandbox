@@ -234,8 +234,8 @@ describe('la FortiGate range ses cles sous leur identifiant, comme le routeur Ci
       'config system interface', 'edit port1', 'set mode static', 'set ip 192.168.100.99 255.255.255.0', 'next', 'end',
       'config router ospf', 'set router-id 10.255.255.1', 'config area', 'edit 0.0.0.0', 'next', 'end',
       'config network', 'edit 1', 'set prefix 192.168.100.0 255.255.255.0', 'set area 0.0.0.0', 'next', 'end',
-      'config ospf-interface', 'edit "vers-R1"', 'set interface "port1"', 'set authentication md5',
-      'config md5-keys', `edit ${fortigateKeyId}`, 'set key "CleOspfLab2026"', 'next', 'end', 'next', 'end', 'end',
+      'config ospf-interface', 'edit "vers-R1"', 'set interface "port1"', 'set authentication message-digest',
+      'config md5-keys', `edit ${fortigateKeyId}`, 'set key-string "CleOspfLab2026"', 'next', 'end', 'next', 'end', 'end',
     ]) await fgt.executeCommand(line);
     await configure(r1, [
       'interface GigabitEthernet0/1', 'ip address 192.168.100.1 255.255.255.0', 'no shutdown',

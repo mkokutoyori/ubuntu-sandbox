@@ -4,6 +4,7 @@ import { RRType, DnsClass } from '@/network/dns/wire/RRType';
 import { RR_TYPE_NAMES as REGISTERED_RR_TYPE_NAMES, rrTypeNumber } from '@/network/dns/wire/RRTypeNames';
 import { DnsRcode as WireRcode, DnsOpcode } from '@/network/dns/wire/DnsHeaderFlags';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
+import type { EdnsOption } from '@/network/dns/wire/ResourceRecord';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
 import { IPv6Address } from '@/network/core/types';
 import {
@@ -47,6 +48,7 @@ export interface DnsQueryOptions {
   readonly tls?: boolean;
   readonly dnssecOk?: boolean;
   readonly udpPayloadSize?: number;
+  readonly ednsOptions?: readonly EdnsOption[];
   /** Destination port override (`dig -p <port>`). Defaults to 53. */
   readonly port?: number;
   /** Name the server certificate must carry (DNS-over-TLS, `systemd-resolved` `ADDRESS#NAME`). */
@@ -276,7 +278,7 @@ export function buildLegacyQueryMessage(
   if (options.dnssecOk || options.udpPayloadSize !== undefined) {
     additionals.push(makeOptRecord(
       options.udpPayloadSize ?? DEFAULT_EDNS_PAYLOAD_SIZE,
-      { dnssecOk: options.dnssecOk === true },
+      { dnssecOk: options.dnssecOk === true, ...(options.ednsOptions === undefined ? {} : { options: options.ednsOptions }) },
     ));
   }
   return {

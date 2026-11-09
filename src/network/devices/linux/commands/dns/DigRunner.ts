@@ -4,7 +4,7 @@ import { DnsRcode } from '@/network/dns/wire/DnsHeaderFlags';
 import { PathClock } from '@/network/core/time/PathClock';
 import { DnsClass, RRType } from '@/network/dns/wire/RRType';
 import { encodeDnsMessage } from '@/network/dns/wire/DnsMessageCodec';
-import { findOpt } from '@/network/dns/wire/EdnsOptRecord';
+import { findOpt, tcpKeepaliveOption, tcpKeepaliveUnits } from '@/network/dns/wire/EdnsOptRecord';
 import { rrTypeFromName, rcodeFromWire, isIpLiteral } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsQueryFn, DnsQueryOptions } from '@/network/dns/compat/DnsWireCompat';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
@@ -58,6 +58,7 @@ interface DigInvocation {
   tlsKeyFile: string | null;
   recurse: boolean;
   dnssec: boolean;
+  keepalive: boolean;
   bufsize: number | null;
   port: number | null;
   tries: number;
@@ -96,6 +97,7 @@ function newInvocation(): DigInvocation {
     tlsKeyFile: null,
     recurse: true,
     dnssec: false,
+    keepalive: false,
     bufsize: null,
     port: null,
     tries: DEFAULT_TRIES,
@@ -131,6 +133,7 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
   let tlsKeyFile: string | null = null;
   let recurse = true;
   let dnssec = false;
+  let keepalive = false;
   let bufsize: number | null = null;
   let port: number | null = null;
   let tries = DEFAULT_TRIES;
@@ -155,6 +158,8 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     else if (arg === '+noshort') short = false;
     else if (arg === '+all' || arg === '+noall') setDisplay(arg === '+all', DISPLAY_FLAGS);
     else if (displayOption) display[displayOption[2] as keyof DigDisplay] = displayOption[1] === undefined;
+    else if (arg === '+keepalive') keepalive = true;
+    else if (arg === '+nokeepalive') keepalive = false;
     else if (arg === '+noedns') noEdns = true;
     else if (arg === '+edns' || arg.startsWith('+edns=')) noEdns = false;
     else if (arg === '+tcp' || arg === '+vc') tcp = true;
@@ -232,6 +237,7 @@ function parseDigInvocations(args: string[], resolverIP: string | undefined): Di
     g.tlsKeyFile = tlsKeyFile;
     g.recurse = recurse;
     g.dnssec = dnssec;
+    g.keepalive = keepalive;
     g.bufsize = bufsize;
     g.port = port;
     g.tries = tries;
@@ -351,6 +357,8 @@ function fullOutput(invocation: DigInvocation, message: DnsMessage, elapsedMs: n
     if (opt) {
       const doFlag = opt.data.dnssecOk ? 'flags: do;' : 'flags:;';
       lines.push(';; OPT PSEUDOSECTION:', `; EDNS: version: ${opt.data.version}, ${doFlag} udp: ${opt.data.udpPayloadSize}`);
+      const keepaliveUnits = tcpKeepaliveUnits(message);
+      if (keepaliveUnits !== null) lines.push(`; TCP KEEPALIVE: ${Math.floor(keepaliveUnits / 10)}.${keepaliveUnits % 10} secs`);
     }
   }
   if (display.question) {
@@ -577,6 +585,7 @@ async function executeSingleQuery(
     ...(authentication === null ? { tlsVerify: false } : { tlsVerify: true, tlsAnchors: authentication.anchors, serverName: authentication.serverName }),
     ...(identity === null ? {} : { tlsClientIdentity: identity }),
     dnssecOk: invocation.dnssec,
+    ...(invocation.keepalive ? { ednsOptions: [tcpKeepaliveOption()] } : {}),
     udpPayloadSize: invocation.bufsize ?? (invocation.dnssec ? 4096 : invocation.noEdns ? undefined : DEFAULT_EDNS_BUFFER),
     port: invocation.port ?? undefined,
     qclass: invocation.qclass,

@@ -466,6 +466,12 @@ export function buildCommitDevice(
       maxVirtualDomains() {
         return fw.maxVdoms();
       },
+      applyVdomProperty(vdom, limits) {
+        return fw.applyVdomProperty(vdom, limits);
+      },
+      vdomCeiling(resource) {
+        return fw.vdomCeiling(resource);
+      },
       applyVdom(name) {
         fw.getVdomRegistry().create(name);
       },

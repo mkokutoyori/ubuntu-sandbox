@@ -54,6 +54,7 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'vpngrp',
   renderOrder: 119,
+  maxUserEntries(context) { return context.device.vdomCeiling('ipsec-phase1-interface'); },
   help: 'Configure VPN remote gateway.',
   attributes: [
     { ...word('name', 'IPsec remote gateway name.'), readOnly: true },
@@ -242,6 +243,7 @@ export const VPN_PHASE2_INTERFACE: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'vpngrp',
   renderOrder: 121,
+  maxUserEntries(context) { return context.device.vdomCeiling('ipsec-phase2-interface'); },
   help: 'Configure VPN autokey tunnel.',
   attributes: [
     { ...word('name', 'IPsec tunnel name.'), readOnly: true },

@@ -145,6 +145,7 @@ import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
 import type { RemoteServer, UserDirectory } from './identity/UserDirectory';
+import { ceilingOf, type VdomResource, type VdomResourceLimits } from './vdom/VdomLimits';
 import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { PkiPeerStore } from './vpn/PkiPeers';
@@ -2151,6 +2152,19 @@ export class Firewall extends Equipment {
   vdomNames(): readonly string[] { return this.vdoms.names(); }
 
   maxVdoms(): number { return this.profile.maxVirtualDomains ?? 1; }
+
+  private readonly vdomLimits = new Map<string, VdomResourceLimits>();
+
+  applyVdomProperty(vdom: string, limits: VdomResourceLimits): string | undefined {
+    if (!this.vdoms.has(vdom)) return `vdom ${vdom} does not exist.`;
+    this.vdomLimits.set(vdom, limits);
+    this.vdoms.require(vdom).sessions.setMaxSessions(ceilingOf(limits, 'session'));
+    return undefined;
+  }
+
+  vdomCeiling(resource: VdomResource, vdom: string = this.activeVdom): number | undefined {
+    return ceilingOf(this.vdomLimits.get(vdom), resource);
+  }
   setMultiVdom(enabled: boolean): void { this.multiVdom = enabled; }
   multiVdomEnabled(): boolean { return this.multiVdom; }
   assignInterfaceToVdom(i: string, v: string): void { this.vdoms.assignInterface(i, v); }

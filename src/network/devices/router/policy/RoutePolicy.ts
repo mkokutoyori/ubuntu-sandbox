@@ -43,6 +43,7 @@ export interface RoutePolicyApply {
   weight?: number;
   communities?: readonly string[];
   communityAdditive?: boolean;
+  asPathEdit?: { readonly action: 'prepend' | 'replace'; readonly asns: readonly number[] };
   origin?: 'igp' | 'egp' | 'incomplete';
   metricType?: 'type-1' | 'type-2';
 }
