@@ -5,7 +5,7 @@ import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
 import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
-import { type Cli, refuse, taper } from './fortigateBatteryHarness';
+import { type Cli, refuse, taper, grantKeyAccess } from './fortigateBatteryHarness';
 
 // Topologie Haute Disponibilité & Inspection Réseau :
 // PC-Client <-> SW-Access <-> [FW-Master / FW-Slave (Cluster HA)] <-> SW-Core <-> SRV-Web, SRV-DB, SRV-Radius
@@ -149,31 +149,34 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     });
 
     it('205. Bascule à chaud (Failover HA) : coupure du Master, le Slave prend le relais sans interruption de ping', async () => {
-      const { pc, fwMaster, battre } = await creerLaboHA();
-      // Arrêt brutal de l'interface LAN du Master
-      await taper(fwMaster, ['config system interface', 'edit port1', 'set status down', 'next', 'end']);
+      const { pc, swAccess, battre } = await creerLaboHA();
+      // Coupure du lien du Master (la configuration d'interface est synchronisée dans la grappe : on coupe le câble, pas le port)
+      await taper(swAccess as unknown as Cli, ['enable', 'configure terminal', 'interface FastEthernet0/1', 'shutdown', 'end']);
       battre();
       const ping = await pc.executeCommand('ping -c 2 -W 1 10.0.0.10');
       expect(ping).toMatch(/0% packet loss|, 0% loss/);
     });
 
     it('206. Maintien d\'une session SSH persistante après bascule du Master vers le Slave', async () => {
-      const { pc, fwMaster, srvWeb } = await creerLaboHA();
+      const { pc, swAccess, srvWeb, battre } = await creerLaboHA();
       await taper(srvWeb as unknown as Cli, ['systemctl start sshd']);
-      await pc.executeCommand('ssh -o StrictHostKeyChecking=no 10.0.0.10 "echo PRE_FAILOVER"');
+      await grantKeyAccess(pc as unknown as Cli, srvWeb as unknown as Cli);
+      const pre = await pc.executeCommand('ssh -o StrictHostKeyChecking=no user@10.0.0.10 "echo PRE_FAILOVER"');
+      expect(pre).toContain('PRE_FAILOVER');
       // Déclenchement de bascule
-      await fwMaster.executeCommand('diagnose sys ha reset-uptime');
-      const post = await pc.executeCommand('ssh -o StrictHostKeyChecking=no 10.0.0.10 "echo POST_FAILOVER"');
+      await taper(swAccess as unknown as Cli, ['enable', 'configure terminal', 'interface FastEthernet0/1', 'shutdown', 'end']);
+      battre();
+      const post = await pc.executeCommand('ssh -o StrictHostKeyChecking=no user@10.0.0.10 "echo POST_FAILOVER"');
       expect(post).toContain('POST_FAILOVER');
     });
 
     it('207. Gratuitous ARP émis lors de la bascule pour mettre à jour la table CAM du commutateur', async () => {
-      const { swAccess, fwMaster, battre } = await creerLaboHA();
-      await taper(fwMaster, ['config system interface', 'edit port1', 'set status down', 'next', 'end']);
+      const { swAccess, battre } = await creerLaboHA();
+      await taper(swAccess as unknown as Cli, ['enable', 'configure terminal', 'interface FastEthernet0/1', 'shutdown', 'end']);
       battre();
       const table = await swAccess.executeCommand('show mac address-table');
-      // Le port Fa0/3 (lié au Slave) apprend la MAC virtuelle
-      expect(table).toMatch(/FastEthernet0\/3/);
+      // Le port Fa0/3 (lié au Slave) apprend la MAC virtuelle du cluster
+      expect(table).toMatch(/0009\.0f09\.0100\s+DYNAMIC\s+Fa0\/3/i);
     });
 
     it('208. VRRP : Bascule de passerelle virtuelle Cisco IOS configurée sur deux routeurs', async () => {
