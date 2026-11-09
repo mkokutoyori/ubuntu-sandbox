@@ -146,13 +146,12 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       const { fw } = await creerLaboSDWAN();
       await taper(fw, [
         'config system sdwan',
-        'config service', 'edit 10',
-        'set name "DUPLICATE_VOICE"',
-        'set packet-duplication enable',
+        'config duplication', 'edit 1',
+        'set packet-duplication force',
         'next', 'end', 'end',
       ]);
       const dup = await fw.executeCommand('show system sdwan');
-      expect(dup).toContain('packet-duplication enable');
+      expect(dup).toContain('set packet-duplication force');
     });
 
     it('455. Dé-duplication automatique en réception sur le commutateur de coeur de réseau', async () => {
