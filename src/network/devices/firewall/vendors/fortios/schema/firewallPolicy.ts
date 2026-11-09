@@ -52,7 +52,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
   ordered: true,
   scope: 'vdom',
   accessGroup: 'fwgrp',
-  renderOrder: 240,
+  renderOrder: 710,
   help: 'Configure IPv4/IPv6 policies.',
   attributes: [
     {

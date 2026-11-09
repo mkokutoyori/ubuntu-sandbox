@@ -20,7 +20,7 @@ export const FIREWALL_SHAPING_POLICY: FortiTableSpec = {
   ordered: true,
   scope: 'vdom',
   accessGroup: 'fwgrp',
-  renderOrder: 153,
+  renderOrder: 705,
   help: 'Configure shaping policies.',
   attributes: [
     { ...word('id', 'Shaping policy ID (0 - 4294967295).'), readOnly: true },

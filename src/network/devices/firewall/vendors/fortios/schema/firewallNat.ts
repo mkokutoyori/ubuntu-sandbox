@@ -458,7 +458,7 @@ export const FIREWALL_CENTRAL_SNAT_MAP: FortiTableSpec = {
   ordered: true,
   scope: 'vdom',
   accessGroup: 'fwgrp',
-  renderOrder: 250,
+  renderOrder: 720,
   help: 'Configure IPv4 and IPv6 central SNAT policies.',
   attributes: [
     {

@@ -122,7 +122,7 @@ function localInSpec(family: LocalInFamily): FortiTableSpec {
 export const FIREWALL_LOCAL_IN_POLICY = localInSpec({
   path: ['firewall', 'local-in-policy'],
   help: 'Configure user defined IPv4 local-in policies.',
-  renderOrder: 241,
+  renderOrder: 711,
   addressTargets: ADDRESS_TARGETS,
   store: 'localIn',
   extra: [enable('ha-mgmt-intf-only',
@@ -132,7 +132,7 @@ export const FIREWALL_LOCAL_IN_POLICY = localInSpec({
 export const FIREWALL_LOCAL_IN_POLICY6 = localInSpec({
   path: ['firewall', 'local-in-policy6'],
   help: 'Configure user defined IPv6 local-in policies.',
-  renderOrder: 242,
+  renderOrder: 712,
   addressTargets: ADDRESS6_TARGETS,
   store: 'localIn6',
   extra: [],
