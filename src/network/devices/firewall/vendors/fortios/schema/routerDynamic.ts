@@ -433,6 +433,10 @@ export const ROUTER_BGP: FortiTableSpec = {
     count('as', 'Local autonomous system number.', 0, AS_NUMBER_MAX, 0),
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
     count('default-local-preference', 'Default local preference.', 0, 4294967295, 100),
+    enable('graceful-restart', 'Enable/disable BGP graceful restart capabilities.'),
+    count('graceful-restart-time', 'Time needed for neighbors to restart (sec).', 1, 3600, 120),
+    count('graceful-stalepath-time', 'Time to hold stale paths of restarting neighbor (sec).', 1, 3600, 360),
+    enable('graceful-end-on-timer', 'Enable/disable to exit graceful restart on timer only.'),
   ],
   children: [BGP_NEIGHBOR, BGP_NETWORK],
   onCommit(object, context) {
@@ -453,6 +457,13 @@ export const ROUTER_BGP: FortiTableSpec = {
       asn,
       routerId: object.effective('router-id')[0] ?? '0.0.0.0',
       defaultLocalPreference: Number.parseInt(object.effective('default-local-preference')[0] ?? '100', 10),
+      gracefulRestart: object.effective('graceful-restart')[0] === 'enable'
+        ? {
+          restartTimeSec: Number.parseInt(object.effective('graceful-restart-time')[0] ?? '120', 10),
+          stalePathTimeSec: Number.parseInt(object.effective('graceful-stalepath-time')[0] ?? '360', 10),
+          endOnTimerOnly: object.effective('graceful-end-on-timer')[0] === 'enable',
+        }
+        : undefined,
       neighbours: neighbours.map(entry => ({
         ip: entry.key,
         remoteAs: Number.parseInt(entry.effective('remote-as')[0] ?? '0', 10),

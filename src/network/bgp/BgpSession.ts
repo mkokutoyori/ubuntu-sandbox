@@ -48,6 +48,7 @@ export interface BgpSessionConfig {
   /** Expected peer AS (`neighbor <ip> remote-as`); a mismatch is rejected. */
   readonly expectedPeerAsn?: number;
   readonly capabilities?: readonly BgpAddressFamily[];
+  readonly gracefulRestartSec?: number;
 }
 
 export interface BgpSessionCallbacks {
@@ -74,6 +75,7 @@ export class BgpSession {
   private peerAsn: number | null = null;
   private peerRouterId: string | null = null;
   private peerFamilies: readonly BgpAddressFamily[] = [];
+  private peerRestartSec: number | null = null;
   private sentOpen = false;
   private negotiatedHoldSec: number;
   private readonly timers: TimerSet;
@@ -102,6 +104,7 @@ export class BgpSession {
   get state(): BgpFsmState { return this._state; }
   get remoteAsn(): number | null { return this.peerAsn; }
   get remoteRouterId(): string | null { return this.peerRouterId; }
+  get remoteGracefulRestartSec(): number | null { return this.peerRestartSec; }
   isEstablished(): boolean { return this._state === 'Established'; }
   negotiatedFamily(afi: number, safi: number): boolean {
     const offered = (this.cfg.capabilities ?? []).some(f => f.afi === afi && f.safi === safi);
@@ -182,6 +185,7 @@ export class BgpSession {
     this.peerAsn = open.asn;
     this.peerRouterId = open.bgpIdentifier;
     this.peerFamilies = open.capabilities?.multiprotocol ?? [];
+    this.peerRestartSec = open.capabilities?.gracefulRestartSec ?? null;
     // Negotiate the Hold Time down to the smaller of the two (§4.2).
     this.negotiatedHoldSec = Math.min(
       this.cfg.holdTimeSec ?? BGP_DEFAULT_HOLD_SEC, open.holdTimeSec);
@@ -218,10 +222,19 @@ export class BgpSession {
       asn: this.cfg.localAsn,
       holdTimeSec: this.cfg.holdTimeSec ?? BGP_DEFAULT_HOLD_SEC,
       bgpIdentifier: this.cfg.localRouterId,
-      ...(this.cfg.capabilities && this.cfg.capabilities.length > 0
-        ? { capabilities: { multiprotocol: this.cfg.capabilities } } : {}),
+      ...(this.offersCapabilities()
+        ? {
+          capabilities: {
+            multiprotocol: this.cfg.capabilities ?? [],
+            ...(this.cfg.gracefulRestartSec !== undefined ? { gracefulRestartSec: this.cfg.gracefulRestartSec } : {}),
+          },
+        } : {}),
     };
     this.emit(open);
+  }
+
+  private offersCapabilities(): boolean {
+    return (this.cfg.capabilities?.length ?? 0) > 0 || this.cfg.gracefulRestartSec !== undefined;
   }
 
   private reject(errorCode: number, errorSubcode: number): void {

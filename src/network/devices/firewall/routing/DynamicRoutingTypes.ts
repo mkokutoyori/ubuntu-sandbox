@@ -100,6 +100,7 @@ export interface RouteMapPatch {
 }
 
 export interface BgpConfiguration {
+  readonly gracefulRestart?: { readonly restartTimeSec: number; readonly stalePathTimeSec: number; readonly endOnTimerOnly: boolean };
   readonly defaultLocalPreference?: number;
   readonly enabled: boolean;
   readonly asn: number;

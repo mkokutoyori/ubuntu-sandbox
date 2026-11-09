@@ -73,7 +73,13 @@ export interface BgpNeighborCfg {
   vpnv4?: boolean;
   vpls?: boolean;
 }
+export interface BgpGracefulRestart {
+  readonly restartTimeSec: number;
+  readonly stalePathTimeSec: number;
+  readonly endOnTimerOnly: boolean;
+}
 export interface BGPConfig {
+  gracefulRestart?: BgpGracefulRestart;
   asn: number;
   routerId?: string;
   networks: BgpNetworkStmt[];
@@ -131,6 +137,11 @@ interface BgpRibEntry {
 }
 
 /** RFC 4271 §8.2.2 — the FSM's retry clock and counter, per neighbour. */
+interface StalePaths {
+  readonly routes: Map<string, BgpRibEntry>;
+  timer: symbol;
+}
+
 interface ConnectRetryState {
   timer: symbol | null;
   counter: number;
@@ -174,6 +185,8 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
    *  finish peering with — they read Active rather than Idle. */
   private readonly attempted = new Set<string>();
   private readonly lastErrors = new Map<string, BgpErrorCode>();
+  private readonly stalePaths = new Map<string, StalePaths>();
+  private readonly peerRestartSec = new Map<string, number>();
   /** Re-entrancy guard for the synchronous triggered-update cascade. */
   private propagating = false;
   /** True while {@link refreshFromCache} runs: recompute, never dial. */
@@ -305,6 +318,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     for (const [ip, ps] of this.peers) this.closeAndAnnounce(ip, ps, ceaseSubcode);
     this.peers.clear();
     this.shutdownTimers();
+    this.stalePaths.clear();
     this.attempted.clear();
     super.disable();
   }
@@ -461,6 +475,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
         localAsn: this.config.asn,
         localRouterId: this.routerId(),
         expectedPeerAsn: cfg?.remoteAs,
+        ...(this.config.gracefulRestart ? { gracefulRestartSec: this.config.gracefulRestart.restartTimeSec } : {}),
         ...(cfg?.vpnv4 || cfg?.vpls ? { capabilities: this.capabilitiesFor(cfg) } : {}),
       }, {
         onEstablished: () => this.onEstablished(ip),
@@ -485,8 +500,14 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     // and this is the one place that covers both directions, since an
     // inbound connection establishes a peering we never dialled.
     this.clearConnectRetry(ip);
-    // Advertise our full table to the freshly-up peer.
+    const session = this.peers.get(ip)?.session;
+    const peerRestart = session?.remoteGracefulRestartSec ?? null;
+    if (peerRestart === null) this.peerRestartSec.delete(ip); else this.peerRestartSec.set(ip, peerRestart);
+    this.awaitEndOfRib(ip);
     this.advertiseTo(ip);
+    if (this.config.gracefulRestart && peerRestart !== null) {
+      session?.sendUpdate({ type: 'bgp', message: 'update', withdrawn: [], announced: [] });
+    }
     if (this.vpnPeerOf(ip)) this.vpn?.peerUp(ip);
     if (this.vplsPeerOf(ip)) this.vplsSpeaker?.peerUp(ip);
   }
@@ -505,9 +526,49 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     });
   }
 
+  private awaitEndOfRib(ip: string): void {
+    const stale = this.stalePaths.get(ip);
+    const graceful = this.config.gracefulRestart;
+    if (!stale || !graceful) return;
+    this.timers.clear(stale.timer);
+    stale.timer = this.timers.setTimeout(() => { this.purgeStale(ip); }, graceful.stalePathTimeSec * 1000);
+  }
+
+  private purgeStale(ip: string): void {
+    const stale = this.stalePaths.get(ip);
+    if (!stale) return;
+    this.timers.clear(stale.timer);
+    this.stalePaths.delete(ip);
+    this.propagate();
+    this.onRibChange?.();
+  }
+
+  private retainAsStale(ip: string, ps: PeerSession): void {
+    const graceful = this.config.gracefulRestart;
+    const restart = this.peerRestartSec.get(ip);
+    if (!graceful || restart === undefined || ps.adjRibIn.size === 0) return;
+    if (ps.session.messageCounts().notificationsReceived > 0) return;
+    const held = this.stalePaths.get(ip);
+    if (held) this.timers.clear(held.timer);
+    const routes = held?.routes ?? new Map<string, BgpRibEntry>();
+    for (const [key, entry] of ps.adjRibIn) routes.set(key, entry);
+    this.stalePaths.set(ip, {
+      routes,
+      timer: this.timers.setTimeout(() => { this.purgeStale(ip); }, restart * 1000),
+    });
+  }
+
   private onUpdate(ip: string, update: BgpUpdateMessage): void {
     const ps = this.peers.get(ip);
     if (!ps) return;
+    const stale = this.stalePaths.get(ip);
+    if (stale) {
+      for (const w of update.withdrawn) stale.routes.delete(`${w.network}/${this.maskOf(w)}`);
+      for (const n of update.announced) stale.routes.delete(`${n.network}/${this.maskOf(n)}`);
+      const endOfRib = update.withdrawn.length === 0 && update.announced.length === 0
+        && update.attributes === undefined && update.mpReach === undefined;
+      if (endOfRib && this.config.gracefulRestart?.endOnTimerOnly !== true) this.purgeStale(ip);
+    }
     this.traceUpdate('bgp.update.received', ip, update);
     if (update.vplsReach || update.vplsUnreach) {
       const vplsPeer = this.vplsPeerOf(ip);
@@ -548,6 +609,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   private onPeerClosed(ip: string): void {
     const ps = this.peers.get(ip);
     if (!ps) return;
+    this.retainAsStale(ip, ps);
     ps.adjRibIn.clear();
     ps.adjRibOut.clear();
     this.peers.delete(ip);
@@ -669,6 +731,9 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     for (const ps of this.peers.values()) {
       if (!ps.session.isEstablished()) continue;
       for (const e of ps.adjRibIn.values()) consider(e);
+    }
+    for (const stale of this.stalePaths.values()) {
+      for (const e of stale.routes.values()) consider(e);
     }
     return [...byPrefix.values()];
   }
