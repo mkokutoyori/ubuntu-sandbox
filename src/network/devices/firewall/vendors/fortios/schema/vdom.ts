@@ -1,7 +1,8 @@
 import {
-  choice, count, enable, reference, refList, word,
-  type FortiTableSpec,
+  choice, count, enable, reference, refList, text, word,
+  type FortiAttributeSpec, type FortiTableSpec,
 } from './types';
+import { VDOM_RESOURCES, type VdomResource, type VdomResourceLimits } from '../../../vdom/VdomLimits';
 import type {
   IntraSwitchPolicy, SpanDirection, SwitchGroupType,
 } from '../../../l3/SwitchGroupTable';
@@ -29,6 +30,59 @@ export const SYSTEM_VDOM: FortiTableSpec = {
   },
   onDelete(key, context) {
     context.device.removeVdom(key);
+  },
+};
+
+function resourceLimit(name: VdomResource, help: string): FortiAttributeSpec {
+  return {
+    name, help, quoted: false, optionalParts: 1, defaultValue: [],
+    parts: [
+      { name: 'maximum', type: 'INT', description: 'Maximum number (0 = not specified).', range: [0, 4294967295] },
+      { name: 'guaranteed', type: 'INT', optional: true, description: 'Guaranteed number.', range: [0, 4294967295] },
+    ],
+  };
+}
+
+const RESOURCE_HELP: Readonly<Record<VdomResource, string>> = {
+  session: 'Maximum guaranteed number of sessions.',
+  'firewall-policy': 'Maximum guaranteed number of firewall policies (policy, DoS-policy4, DoS-policy6, multicast).',
+  'firewall-address': 'Maximum guaranteed number of firewall addresses (IPv4, IPv6, multicast).',
+  'firewall-addrgrp': 'Maximum guaranteed number of firewall address groups (IPv4, IPv6).',
+  'custom-service': 'Maximum guaranteed number of firewall custom services.',
+  'service-group': 'Maximum guaranteed number of firewall service groups.',
+  'onetime-schedule': 'Maximum guaranteed number of firewall one-time schedules.',
+  'recurring-schedule': 'Maximum guaranteed number of firewall recurring schedules.',
+  user: 'Maximum guaranteed number of local users.',
+  'user-group': 'Maximum guaranteed number of user groups.',
+  'ipsec-phase1-interface': 'Maximum guaranteed number of VPN IPsec phase1 interface tunnels.',
+  'ipsec-phase2-interface': 'Maximum guaranteed number of VPN IPsec phase2 interface tunnels.',
+};
+
+export const SYSTEM_VDOM_PROPERTY: FortiTableSpec = {
+  path: ['system', 'vdom-property'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'global',
+  accessGroup: 'sysgrp',
+  renderOrder: 6,
+  help: 'Configure VDOM property.',
+  attributes: [
+    { ...word('name', 'VDOM name.'), readOnly: true },
+    text('description', 'Description.'),
+    ...VDOM_RESOURCES.map(resource => resourceLimit(resource, RESOURCE_HELP[resource])),
+  ],
+  onCommit(object, context) {
+    const limits: Record<string, { maximum: number; guaranteed: number }> = {};
+    for (const resource of VDOM_RESOURCES) {
+      const declared = object.effective(resource);
+      if (declared.length === 0) continue;
+      const maximum = Number.parseInt(declared[0], 10);
+      const guaranteed = Number.parseInt(declared[1] ?? '0', 10);
+      if (maximum > 0 && guaranteed > maximum) return `${resource}: the guaranteed number exceeds the maximum.`;
+      limits[resource] = { maximum, guaranteed };
+    }
+    return context.device.applyVdomProperty(object.key, limits as VdomResourceLimits);
   },
 };
 
@@ -124,6 +178,7 @@ export const SYSTEM_SWITCH_INTERFACE: FortiTableSpec = {
 };
 
 export const VDOM_SPECS: readonly FortiTableSpec[] = Object.freeze([
+  SYSTEM_VDOM_PROPERTY,
   SYSTEM_VDOM,
   SYSTEM_VDOM_LINK,
   SYSTEM_SWITCH_INTERFACE,

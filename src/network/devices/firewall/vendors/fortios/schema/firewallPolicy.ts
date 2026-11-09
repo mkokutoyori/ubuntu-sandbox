@@ -53,6 +53,7 @@ export const FIREWALL_POLICY: FortiTableSpec = {
   scope: 'vdom',
   accessGroup: 'fwgrp',
   renderOrder: 710,
+  maxUserEntries(context) { return context.device.vdomCeiling('firewall-policy'); },
   help: 'Configure IPv4/IPv6 policies.',
   attributes: [
     {

@@ -193,6 +193,10 @@ export class SessionTable {
     return this.sessions.size;
   }
 
+  setMaxSessions(max: number | undefined): void {
+    this.limits.maxSessions = max;
+  }
+
   hasRoom(): boolean {
     const max = this.limits.maxSessions;
     return max === undefined || this.sessions.size < max;

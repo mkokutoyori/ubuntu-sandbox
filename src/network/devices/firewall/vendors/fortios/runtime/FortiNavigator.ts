@@ -374,12 +374,21 @@ export class FortiNavigator {
   }
 
   private refusedWhenFull(table: FortiTable, key: string): string | null {
-    const ceiling = table.spec.maxEntries?.(
-      { ...this.deps.commitContext(), position: -1 });
-    if (ceiling === undefined || table.has(key)) return null;
-    if (table.keys().length < ceiling) return null;
+    if (table.has(key)) return null;
+
+    const context = { ...this.deps.commitContext(), position: -1 };
+    const ceiling = table.spec.maxEntries?.(context);
+    if (ceiling !== undefined && table.keys().length >= ceiling) {
+      return FortiMessages.commandFail(
+        `maximum number of entries has been reached (${ceiling}).`);
+    }
+
+    const configuredCeiling = table.spec.maxUserEntries?.(context);
+    if (configuredCeiling === undefined) return null;
+    const configured = table.keys().filter(name => !isPredefined(table, name)).length;
+    if (configured < configuredCeiling) return null;
     return FortiMessages.commandFail(
-      `maximum number of entries has been reached (${ceiling}).`);
+      `maximum number of entries has been reached (${configuredCeiling}).`);
   }
 
   private refusedKey(key: string): string | null {
