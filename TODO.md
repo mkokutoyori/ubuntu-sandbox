@@ -4635,3 +4635,6 @@ en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatect
 (un programme du registre qui n'a ni `readsStdin` ni `ignoresStdin`) recoit encore le mot en trop.
 
 **Non corrige ici** : inverser le defaut demande de classer chaque commande du registre (lit son tube, l'ignore, ou lit un mot de fin comme fichier) ; ce n'est pas faisable sans une mesure commande par commande.
+
+- **dnsfilter `block-action redirect` without `redirect-portal`.** The reference gives the default `0.0.0.0` and says nothing of the address the unit then answers with (the built-in FortiGuard SDNS portal). The simulator keeps dropping such a query in silence rather than invent an address; setting `redirect-portal` (or `block-action block` / `block-sevrfail`) makes the firewall answer. Seen with battery 06 test 274. Closing it needs the portal address from a captured transcript or a vendor page.
+- **dnsfilter `block-botnet`.** Refused, naming the missing brick: no FortiGuard botnet C&C domain feed exists here.

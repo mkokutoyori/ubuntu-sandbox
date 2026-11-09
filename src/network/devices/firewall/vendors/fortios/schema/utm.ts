@@ -1,7 +1,8 @@
 import {
-  choice, count, enable, reference, text, word,
+  address, choice, count, enable, reference, text, word,
   type FortiAttributeSpec, type FortiObjectView, type FortiTableSpec,
 } from './types';
+import { isValidIPv6 } from '../../../../../core/ip';
 import { parseIpsSignature } from '../../../inspection/IpsEngine';
 import { APPLICATION_SIGNATURES } from '../../../inspection/ApplicationSignatures';
 import {
@@ -143,6 +144,8 @@ export const WEBFILTER_PROFILE: FortiTableSpec = {
   },
 };
 
+const DNS_NO_BOTNET_FEED = 'this firewall carries no FortiGuard botnet C&C domain feed, so no lookup could be classified as botnet; blocked domains come from the domain filter table and the FortiGuard categories (config ftgd-dns).';
+
 export const DNSFILTER_PROFILE: FortiTableSpec = {
   path: ['dnsfilter', 'profile'],
   kind: 'table',
@@ -158,6 +161,18 @@ export const DNSFILTER_PROFILE: FortiTableSpec = {
     choice('unclassified-action', 'Action for domains this build cannot classify.',
       FILTER_ACTIONS, 'allow'),
     enable('log-all-domain', 'Enable/disable logging of all domains visited.'),
+    choice('block-action', 'Action to take for blocked domains.', [
+      { keyword: 'block', description: 'Return NXDOMAIN for blocked domains.' },
+      { keyword: 'redirect', description: 'Redirect blocked domains to SDNS portal.' },
+      { keyword: 'block-sevrfail', description: 'Return SERVFAIL for blocked domains.' },
+    ], 'redirect'),
+    address('redirect-portal', 'IPv4 address of the SDNS redirect portal.', '0.0.0.0'),
+    {
+      name: 'redirect-portal6', help: 'IPv6 address of the SDNS redirect portal.', quoted: false,
+      parts: [{ name: 'redirect-portal6', type: 'WORD', description: 'IPv6 address of the SDNS redirect portal.' }],
+      defaultValue: ['::'],
+    },
+    { ...enable('block-botnet', 'Enable/disable blocking botnet C&C DNS lookups.', false), unimplemented: DNS_NO_BOTNET_FEED },
   ],
   children: [
     {
@@ -185,8 +200,13 @@ export const DNSFILTER_PROFILE: FortiTableSpec = {
     },
   ],
   onCommit(object, context) {
+    const portal6 = object.effective('redirect-portal6')[0] ?? '::';
+    if (portal6 !== '::' && !isValidIPv6(portal6)) return `value parse error: ${portal6} is not an IPv6 address`;
     context.device.applyDnsFilterProfile({
       name: object.key,
+      blockAction: (object.effective('block-action')[0] ?? 'redirect') as 'block' | 'redirect' | 'block-sevrfail',
+      redirectPortal: object.effective('redirect-portal')[0] ?? '0.0.0.0',
+      redirectPortal6: portal6 === '::' ? undefined : portal6,
       domainFilterTable: tableReference(object, 'domain-filter', 'domain-filter-table'),
       categoryFilters: categoryEntries(object, 'ftgd-dns'),
       unclassifiedAction: object.effective('unclassified-action')[0] ?? 'allow',

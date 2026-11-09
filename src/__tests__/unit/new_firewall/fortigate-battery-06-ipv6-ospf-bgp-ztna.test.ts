@@ -349,7 +349,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       const { pc, fw } = await creerLaboNextGen();
       await taper(fw, [
         'config dnsfilter profile', 'edit "SINKHOLE_PROF"',
-        'set block-botnet enable',
+        'set block-action redirect',
         'set redirect-portal 203.0.113.250',
         'next', 'end',
       ]);

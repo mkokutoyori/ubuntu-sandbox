@@ -544,6 +544,9 @@ export function buildCommitDevice(
         fw.getUtmProfiles().setDnsFilter({
           name: profile.name,
           domainFilterTable: profile.domainFilterTable,
+          blockAction: profile.blockAction,
+          redirectPortal: profile.redirectPortal,
+          redirectPortal6: profile.redirectPortal6,
           categoryFilters: profile.categoryFilters.map(categoryEntry),
           unclassifiedAction: utmAction(profile.unclassifiedAction),
           comment: profile.comment,

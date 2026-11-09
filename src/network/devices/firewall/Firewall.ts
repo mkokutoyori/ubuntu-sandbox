@@ -92,6 +92,8 @@ import type { SessionTtlTable } from './session/SessionTtlTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
 import { PipelineCache } from './pipeline/PipelineCache';
 import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
+import { blockedDnsReply } from './inspection/DnsBlockReply';
+import type { UtmVerdict } from './inspection/ContentInspector';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
 import { buildSimulatedPacket } from './pipeline/SimulatedPacket';
 import {
@@ -629,6 +631,7 @@ export class Firewall extends Equipment {
       onInspection: () => { this.load.recordPacket('inspection'); },
       onUtmVerdict: (verdict, context) => {
         if (verdict.kind === 'virus') this.raiseOncePerSession(context, { kind: 'virus', name: verdict.detail });
+        if (verdict.kind === 'dns-blocked' && verdict.blocked) this.answerBlockedDns(verdict, context);
       },
       onOversize: (blocked, context) => { this.raiseOncePerSession(context, { kind: 'oversize', blocked }); },
       onDosAnomaly: (finding, iface, packet) => {
@@ -3337,6 +3340,28 @@ export class Firewall extends Equipment {
   private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {
     this.sendIcmpError(ingressPort, packet, 'time-exceeded',
       ICMP_TTL_EXPIRED_IN_TRANSIT, {});
+  }
+
+  private answerBlockedDns(verdict: UtmVerdict, context: PacketContext): void {
+    const profile = verdict.profile === undefined ? undefined : this.getUtmProfiles().getDnsFilter(verdict.profile);
+    const query = context.originalPacket;
+    if (query.type !== 'ipv4') return;
+    const udp = query.payload as { type?: string; sourcePort?: number; destinationPort?: number; payload?: unknown };
+    if (profile === undefined || udp?.type !== 'udp' || !(udp.payload instanceof Uint8Array)) return;
+
+    const answer = blockedDnsReply(udp.payload, profile);
+    if (answer === undefined) return;
+
+    const reply = buildUdpOverIpv4(query.destinationIP, {
+      destination: query.sourceIP,
+      destinationPort: udp.sourcePort ?? 0,
+      sourcePort: udp.destinationPort ?? 53,
+      payload: answer,
+      payloadBytes: answer.length,
+    });
+    const route = this.vdoms.contextOfInterface(context.ingressPort).routes
+      .resolveNextHop(query.sourceIP.toString());
+    this.forward(route?.iface ?? context.ingressPort, reply, route?.nextHop);
   }
 
   private sendIcmpError(
