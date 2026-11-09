@@ -461,10 +461,23 @@ export function renderBgpNeighbors(facts: BgpSummaryFacts): string {
     lines.push(
       `  BGP state = ${peer.state}${peer.isUp ? `, up for ${uptimeClock(peer.uptimeSec)}` : ''}`,
       `  Local router ID ${facts.routerId}`,
+      ...(peer.holdTimeSec === undefined ? [] : [
+        `  Configured hold time is ${peer.holdTimeSec}, keepalive interval is ${peer.keepaliveSec} seconds`,
+      ]),
+      ...(peer.isUp ? ['  Neighbor capabilities:', '    Address family IPv4 Unicast: advertised and received'] : []),
       `  Received ${peer.messages.received} messages,`
       + ` ${peer.messages.notificationsReceived} notifications, 0 in queue`,
       `  Sent ${peer.messages.sent} messages,`
       + ` ${peer.messages.notificationsSent} notifications, 0 in queue`,
+      '',
+      ' For address family: IPv4 Unicast',
+      `  BGP table version ${facts.tableVersion}, neighbor version ${peer.tableVersionSent}`,
+      ...(peer.routeMapIn === undefined ? [] : [
+        '  Inbound path policy configured',
+        `  Route map for incoming advertisements is *${peer.routeMapIn}`,
+      ]),
+      `  ${peer.prefixesReceived} accepted prefixes, ${peer.prefixesInRib ?? 0} prefixes in rib`,
+      `  ${peer.prefixesAnnounced ?? 0} announced prefixes`,
       '',
     );
   }

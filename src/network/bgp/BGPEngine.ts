@@ -782,6 +782,14 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     };
   }
 
+  prefixesAnnouncedTo(peerIp: string): number {
+    return this.peers.get(peerIp)?.adjRibOut.size ?? 0;
+  }
+
+  prefixesSelectedFrom(peerIp: string): number {
+    return this.refreshTableVersion().filter(entry => entry.peerIp === peerIp).length;
+  }
+
   tableVersionSentTo(peerIp: string): number {
     return this.peers.get(peerIp)?.tableVersionSent ?? 0;
   }

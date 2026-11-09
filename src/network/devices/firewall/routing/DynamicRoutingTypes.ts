@@ -163,6 +163,11 @@ export interface BgpPeerSummary {
   readonly remoteRouterId: string;
   readonly messages: BgpMessageTally;
   readonly tableVersionSent: number;
+  readonly prefixesAnnounced?: number;
+  readonly prefixesInRib?: number;
+  readonly routeMapIn?: string;
+  readonly holdTimeSec?: number;
+  readonly keepaliveSec?: number;
 }
 
 
