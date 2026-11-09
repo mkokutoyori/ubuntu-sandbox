@@ -45,7 +45,11 @@ export function fortiSystemTime(fw: Firewall, at?: number): string {
 }
 
 export function runExecuteTime(rest: readonly string[], fw: Firewall): string {
-  if (rest.length === 0) return `current time is: ${localClockText(fw)}`;
+  if (rest.length === 0) {
+    const synced = fw.getNtpAgent().getConfig().lastSyncMs;
+    return `current time is: ${localClockText(fw)}\n`
+      + `last ntp sync: ${synced === 0 ? 'never' : fortiSystemTime(fw, synced)}`;
+  }
 
   const parsed = TIME_OF_DAY.exec(rest[0]);
   if (!parsed) return FortiMessages.valueError(rest[0], 'expected <hh:mm:ss>.');
