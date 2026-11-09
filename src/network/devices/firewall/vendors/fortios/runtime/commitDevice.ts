@@ -411,6 +411,12 @@ export function buildCommitDevice(
       removeGreTunnel(name) {
         fw.removeGreTunnel(name);
       },
+      applyVxlan(name, device) {
+        return fw.applyVxlan(name, device);
+      },
+      removeVxlan(name) {
+        fw.removeVxlan(name);
+      },
       applyIpsecConcentrator(id, concentrator) {
         return fw.applyIpsecConcentrator(id, concentrator);
       },

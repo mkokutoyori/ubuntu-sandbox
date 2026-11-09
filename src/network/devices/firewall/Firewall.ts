@@ -5,6 +5,7 @@ import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshT
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
 import { BfdAgent } from '@/network/bfd/BfdAgent';
+import { VxlanAgent } from '@/network/vxlan/VxlanAgent';
 import { GreAgent } from '@/network/gre/GreAgent';
 import { NetFlowAgent } from '@/network/netflow/NetFlowAgent';
 import { IP_PROTO_GRE } from '@/network/gre/types';
@@ -2513,6 +2514,84 @@ export class Firewall extends Equipment {
     return true;
   }
 
+  private vxlanAgentInstance: VxlanAgent | null = null;
+  private readonly vxlanDevices = new Map<string, { vni: number; underlay: string; remoteIps: readonly string[]; port: number }>();
+
+  getVxlanAgent(): VxlanAgent {
+    if (!this.vxlanAgentInstance) {
+      this.vxlanAgentInstance = new VxlanAgent({
+        id: this.id, name: this.name,
+        getHostname: () => this.getHostname(),
+        getPort: (n: string) => this.getPort(n),
+        getPorts: () => [...this.getPorts().values()],
+        sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+        sendIpv4Packet: (request) => this.sendLocalIpv4(request),
+        onVxlanDecapsulated: (vni, inner) => { this.receiveVxlan(vni, inner); },
+      }, () => this.getBus());
+      this.vxlanAgentInstance.start();
+    }
+    return this.vxlanAgentInstance;
+  }
+
+  applyVxlan(
+    name: string,
+    device: { interface: string; vni: number; port: number; remoteIps: readonly string[]; learn: boolean },
+  ): string | void {
+    for (const [other, known] of this.vxlanDevices) {
+      if (other !== name && known.vni === device.vni) return `VNI ${device.vni} is already carried by ${other}.`;
+      if (other !== name && known.port !== device.port) return `every VXLAN device of this unit shares one destination port (${known.port} is set by ${other}).`;
+    }
+    const agent = this.getVxlanAgent();
+    const previous = this.vxlanDevices.get(name);
+    if (previous) {
+      agent.unbindVni(name, previous.vni);
+      for (const ip of previous.remoteIps) agent.removeRemoteVtep(previous.vni, ip);
+    }
+    if (!this.getPort(name)) {
+      const nic = new Port(name, 'ethernet', undefined, { carrierless: true });
+      nic.setUp(true);
+      this.addPort(nic);
+      this.interfaces.reproject(name);
+    }
+    this.vxlanDevices.set(name, { vni: device.vni, underlay: device.interface, remoteIps: [...device.remoteIps], port: device.port });
+    agent.setPort(device.port);
+    agent.setLearning(device.learn);
+    agent.bindVni(name, device.vni, this.interfaces.get(device.interface)?.ip ?? '');
+    for (const ip of device.remoteIps) agent.addRemoteVtep(device.vni, ip);
+  }
+
+  removeVxlan(name: string): void {
+    const known = this.vxlanDevices.get(name);
+    if (!known) return;
+    const agent = this.getVxlanAgent();
+    agent.unbindVni(name, known.vni);
+    for (const ip of known.remoteIps) agent.removeRemoteVtep(known.vni, ip);
+    this.vxlanDevices.delete(name);
+    this.ports.delete(name);
+    this.interfaces.remove(name);
+  }
+
+  private encapsulateVxlan(name: string, frame: EthernetFrame): boolean {
+    const device = this.vxlanDevices.get(name);
+    if (!device) return false;
+    const agent = this.getVxlanAgent();
+    agent.ensureInterface(name, this.interfaces.get(device.underlay)?.ip ?? null);
+    return agent.encapsulateAndSend(device.vni, frame);
+  }
+
+  private receiveVxlan(vni: number, inner: EthernetFrame): void {
+    for (const [name, device] of this.vxlanDevices) {
+      if (device.vni === vni) { this.handleFrame(name, inner); return; }
+    }
+  }
+
+  private answeredByVxlan(iface: string, packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP || this.vxlanAgentInstance === null) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    if (udp?.type !== 'udp') return false;
+    return this.vxlanAgentInstance.handleUdp(iface, packet.sourceIP, udp);
+  }
+
   private answeredByBfd(iface: string, packet: IPv4Packet): boolean {
     if (packet.protocol !== IP_PROTO_UDP || this.bfdAgentInstance === null) return false;
     const udp = packet.payload as UDPPacket | undefined;
@@ -2914,6 +2993,7 @@ export class Firewall extends Equipment {
     if (this.subordinateIsSilentOn(portName) && !this.secondarySpeaksLacpOn(portName, frame)) {
       return false;
     }
+    if (this.vxlanDevices.has(portName)) return this.encapsulateVxlan(portName, frame);
     const sent = super.sendFrame(portName, frame);
     if (sent) this.mirrorEgressToSpan(portName, frame);
     return sent;
@@ -3464,6 +3544,7 @@ export class Firewall extends Equipment {
       },
       answeredByNtp: (iface, p) => this.ntp.observe(iface, p),
       answeredByBfd: (iface, p) => this.answeredByBfd(iface, p),
+      answeredByVxlan: (iface, p) => this.answeredByVxlan(iface, p),
       snmpListens: (p) => this.snmpService?.listensOn(p) ?? false,
       allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
       handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },

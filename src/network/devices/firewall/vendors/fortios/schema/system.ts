@@ -1741,6 +1741,60 @@ export const SYSTEM_PROXY_ARP: FortiTableSpec = {
   },
 };
 
+export const SYSTEM_VXLAN: FortiTableSpec = {
+  path: ['system', 'vxlan'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 86,
+  help: 'Configure VXLAN devices.',
+  attributes: [
+    { ...word('name', 'VXLAN device or interface name.'), readOnly: true },
+    reference('interface', 'Outgoing interface for VXLAN encapsulated traffic.', INTERFACE_ONLY),
+    count('vni', 'VXLAN network ID.', 1, 16777215, 0),
+    count('dstport', 'VXLAN destination port (1 - 65535, default = 4789).', 1, 65535, 4789),
+    {
+      ...choice('ip-version', 'IP version to use for the VXLAN interface and so for communication over the VXLAN.', [
+        { keyword: 'ipv4-unicast', description: 'Use IPv4 unicast addressing over the VXLAN.' },
+        { keyword: 'ipv6-unicast', description: 'Use IPv6 unicast addressing over the VXLAN.' },
+        { keyword: 'ipv4-multicast', description: 'Use IPv4 multicast addressing over the VXLAN.' },
+        { keyword: 'ipv6-multicast', description: 'Use IPv6 multicast addressing over the VXLAN.' },
+      ], 'ipv4-unicast'),
+      unimplementedValues: {
+        'ipv6-unicast': 'the VXLAN agent encapsulates over IPv4 only.',
+        'ipv4-multicast': 'the VXLAN agent floods to the declared remote-ip list; no multicast group is joined.',
+        'ipv6-multicast': 'the VXLAN agent encapsulates over IPv4 only.',
+      },
+    },
+    {
+      name: 'remote-ip', help: 'IPv4 address of the VXLAN interface on the device at the remote end of the VXLAN.',
+      quoted: true, multiValue: true,
+      parts: [{ name: 'remote-ip', type: 'IP_ADDR', description: 'IPv4 address.' }],
+      defaultValue: [],
+    },
+    enable('learn-from-traffic', 'Enable/disable VXLAN MAC learning from traffic.'),
+    { ...count('evpn-id', 'EVPN instance.', 1, 65535, 0), unimplemented: 'no BGP EVPN control plane exists here; VTEPs come from remote-ip.' },
+    { ...count('multicast-ttl', 'VXLAN multicast TTL (1-255, default = 0).', 1, 255, 0), unimplemented: 'multicast VXLAN is not built; remote-ip carries the VTEP list.' },
+  ],
+  onCommit(object, context) {
+    const vni = Number.parseInt(object.effective('vni')[0] ?? '0', 10);
+    const underlay = object.effective('interface')[0] ?? '';
+    if (vni === 0 || underlay === '') return 'a VXLAN device needs an interface and a vni.';
+    return context.device.applyVxlan(object.key, {
+      interface: underlay,
+      vni,
+      port: Number.parseInt(object.effective('dstport')[0] ?? '4789', 10),
+      remoteIps: [...object.effective('remote-ip')],
+      learn: object.effective('learn-from-traffic')[0] === 'enable',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeVxlan(key);
+  },
+};
+
 const NETFLOW_COLLECTOR: FortiTableSpec = {
   path: ['system', 'netflow', 'collectors'],
   kind: 'table',
@@ -1843,6 +1897,7 @@ export const SYSTEM_SPECS: readonly FortiTableSpec[] = Object.freeze([
   SYSTEM_CONSOLE,
   SYSTEM_SETTINGS,
   SYSTEM_INTERFACE,
+  SYSTEM_VXLAN,
   SYSTEM_ZONE,
   SYSTEM_DNS,
   SYSTEM_DNS_SERVER,

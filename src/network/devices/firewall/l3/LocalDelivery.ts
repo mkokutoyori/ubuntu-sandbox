@@ -19,6 +19,7 @@ export interface LocalDeliveryDeps {
   logLocalIn?(iface: string, packet: IPv4Packet, accepted: boolean): void;
   answeredByNtp?(iface: string, packet: IPv4Packet): boolean;
   answeredByBfd?(iface: string, packet: IPv4Packet): boolean;
+  answeredByVxlan?(iface: string, packet: IPv4Packet): boolean;
 }
 
 export function deliverLocally(
@@ -47,6 +48,11 @@ export function deliverLocally(
   }
 
   if (deps.answeredByBfd?.(iface, packet)) {
+    deps.logLocalIn?.(iface, packet, true);
+    return;
+  }
+
+  if (deps.answeredByVxlan?.(iface, packet)) {
     deps.logLocalIn?.(iface, packet, true);
     return;
   }

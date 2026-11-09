@@ -460,6 +460,8 @@ export interface FortiCommitDevice {
     sequenceTransmission: boolean; sequenceReception: boolean;
   }): string | void;
   removeGreTunnel(name: string): void;
+  applyVxlan(name: string, device: { interface: string; vni: number; port: number; remoteIps: readonly string[]; learn: boolean }): string | void;
+  removeVxlan(name: string): void;
   applyIpsecConcentrator(id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }): string | void;
   removeIpsecConcentrator(id: number): void;
   applyPkiPeer(peer: { name: string; ca: string; subject: string; cn: string }): void;
