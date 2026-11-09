@@ -158,6 +158,7 @@ export class FirewallBgp {
       return {
         localPref: verdict.apply?.localPreference, weight: verdict.apply?.weight, med: verdict.apply?.cost,
         communities: verdict.apply?.communities, communityAdditive: verdict.apply?.communityAdditive,
+        asPathEdit: verdict.apply?.asPathEdit,
       };
     };
     return {

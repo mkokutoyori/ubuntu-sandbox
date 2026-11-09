@@ -44,6 +44,7 @@ export interface BgpNetworkStmt { network: string; mask: string; }
 export interface BgpRouteDecision {
   communities?: readonly string[];
   communityAdditive?: boolean;
+  asPathEdit?: { readonly action: 'prepend' | 'replace'; readonly asns: readonly number[] };
   localPref?: number;
   weight?: number;
   med?: number;
@@ -51,6 +52,12 @@ export interface BgpRouteDecision {
 export function withCommunities(held: readonly string[], decision: BgpRouteDecision): readonly string[] {
   if (decision.communities === undefined) return held;
   return decision.communityAdditive === true ? [...new Set([...held, ...decision.communities])] : [...decision.communities];
+}
+
+export function withAsPath(held: readonly number[], decision: BgpRouteDecision): number[] {
+  const edit = decision.asPathEdit;
+  if (edit === undefined) return [...held];
+  return edit.action === 'replace' ? [...edit.asns] : [...edit.asns, ...held];
 }
 
 export interface BgpNeighborCfg {
@@ -527,6 +534,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
             localPref: decision.localPref ?? entry.localPref,
             weight: decision.weight ?? entry.weight,
             med: decision.med ?? entry.med,
+            asPath: withAsPath(entry.asPath, decision),
             communities: withCommunities(entry.communities, decision),
           });
         }
@@ -722,7 +730,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       const key = `${e.network}/${e.mask}`;
       const attrs: BgpPathAttributes = {
         origin: e.origin,
-        asPath: ibgpReceiver ? e.asPath : [this.config.asn, ...e.asPath],
+        asPath: ibgpReceiver ? withAsPath(e.asPath, decision) : [this.config.asn, ...withAsPath(e.asPath, decision)],
         nextHop: ps.link.localIp,
         med: decision.med ?? e.med,
         ...(communities.length > 0 ? { communities } : {}),

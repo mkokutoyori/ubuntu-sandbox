@@ -88,6 +88,7 @@ export interface RouteMapRulePatch {
   readonly matchCommunity?: string;
   readonly setCommunity?: readonly string[];
   readonly setCommunityAdditive?: boolean;
+  readonly setAsPath?: { readonly action: 'prepend' | 'replace'; readonly asns: readonly number[] };
   readonly setLocalPreference?: number;
   readonly setMetric?: number;
   readonly setWeight?: number;

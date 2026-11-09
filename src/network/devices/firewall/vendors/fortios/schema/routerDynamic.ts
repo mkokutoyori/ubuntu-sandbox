@@ -474,6 +474,12 @@ export const ROUTER_BGP: FortiTableSpec = {
   },
 };
 
+function asPathNumbers(values: readonly string[]): number[] | null {
+  const tokens = values.flatMap(value => value.split(/[\s,]+/)).filter(token => token !== '');
+  const numbers = tokens.map(token => (/^\d+$/.test(token) ? Number.parseInt(token, 10) : Number.NaN));
+  return tokens.length > 0 && numbers.every(n => n <= AS_NUMBER_MAX) ? numbers : null;
+}
+
 const ROUTE_MAP_RULE: FortiTableSpec = {
   path: ['router', 'route-map', 'rule'],
   kind: 'table',
@@ -495,6 +501,14 @@ const ROUTE_MAP_RULE: FortiTableSpec = {
       name: 'set-community', help: 'BGP community attribute.', quoted: true, multiValue: true,
       parts: [{ name: 'set-community', type: 'WORD', description: 'Community.' }],
     },
+    {
+      ...text('set-aspath', 'Prepend BGP AS path attribute. AS number (0 - 4294967295). Use quotes for repeating numbers, For example, "1 1 2".'),
+      defaultValue: [],
+    },
+    choice('set-aspath-action', 'Specify preferred action of set-aspath.', [
+      { keyword: 'prepend', description: 'Prepend.' },
+      { keyword: 'replace', description: 'Replace.' },
+    ], 'prepend'),
     enable('set-community-additive', 'Enable/disable adding set-community to existing community.'),
     reference('match-ip-address', 'Match IP address permitted by access-list or prefix-list.', ['router prefix-list']),
     count('set-local-preference', 'BGP local preference path attribute.', 0, 4294967295, 0),
@@ -666,6 +680,11 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
   ],
   children: [ROUTE_MAP_RULE],
   onCommit(object, context) {
+    for (const entry of object.childEntries('rule')) {
+      if (entry.isExplicit('set-aspath') && asPathNumbers(entry.effective('set-aspath')) === null) {
+        return `value parse error: set-aspath must list AS numbers between 0 and ${AS_NUMBER_MAX}`;
+      }
+    }
     context.device.applyRouteMap({
       name: object.key,
       rules: object.childEntries('rule').map(entry => ({
@@ -676,6 +695,12 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
         matchCommunity: entry.effective('match-community')[0] || undefined,
         setCommunity: entry.isExplicit('set-community') ? [...entry.effective('set-community')] : undefined,
         setCommunityAdditive: entry.effective('set-community-additive')[0] === 'enable',
+        setAsPath: entry.isExplicit('set-aspath')
+          ? {
+            action: entry.effective('set-aspath-action')[0] === 'replace' ? 'replace' as const : 'prepend' as const,
+            asns: asPathNumbers(entry.effective('set-aspath')) ?? [],
+          }
+          : undefined,
         setLocalPreference: entry.isExplicit('set-local-preference')
           ? Number.parseInt(entry.effective('set-local-preference')[0] ?? '0', 10) : undefined,
         setMetric: entry.isExplicit('set-metric')
