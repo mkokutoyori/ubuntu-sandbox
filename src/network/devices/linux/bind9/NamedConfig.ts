@@ -75,6 +75,7 @@ export interface NamedOptions {
   readonly notify: NotifyMode;
   readonly notifyToSoa: boolean;
   readonly alsoNotify: readonly NamedRemoteServer[] | null;
+  readonly tcpTimeouts: NamedTcpTimeouts;
 }
 
 export interface NamedZone {
@@ -92,6 +93,13 @@ export interface NamedZone {
   readonly forwarders: readonly string[];
   readonly forward: ForwardMode | null;
   readonly declaredAt: { readonly file: string; readonly line: number };
+}
+
+export interface NamedTcpTimeouts {
+  readonly initial: number;
+  readonly idle: number;
+  readonly keepalive: number;
+  readonly advertised: number;
 }
 
 export interface NamedLoggingChannel {
@@ -129,6 +137,7 @@ export interface NamedConfig {
   readonly controls: readonly NamedControls[];
   readonly trustAnchors: readonly ResourceRecord<DsRecordData>[];
   readonly tlsProfiles: ReadonlyMap<string, NamedTlsProfile>;
+  readonly warnings: readonly string[];
 }
 
 const DEFAULT_DIRECTORY = '/var/cache/bind';
@@ -230,6 +239,7 @@ interface MutableOptions {
   notify: NotifyMode;
   notifyToSoa: boolean;
   alsoNotify: NamedRemoteServer[] | null;
+  tcpTimeouts: { initial: number; idle: number; keepalive: number; advertised: number };
 }
 
 function defaultOptions(): MutableOptions {
@@ -256,6 +266,7 @@ function defaultOptions(): MutableOptions {
     notify: 'yes',
     notifyToSoa: false,
     alsoNotify: null,
+    tcpTimeouts: { initial: DEFAULT_TCP_TIMEOUT, idle: DEFAULT_TCP_TIMEOUT, keepalive: DEFAULT_TCP_TIMEOUT, advertised: DEFAULT_TCP_TIMEOUT },
   };
 }
 
@@ -265,6 +276,7 @@ function parseOptions(
   acls: ReadonlyMap<string, AddressMatchList>,
   pendingListeners: PendingListener[],
   pendingAlsoNotify: NamedConfStatement[],
+  warnings: string[],
 ): void {
   for (const entry of requireBlock(statement)) {
     const keyword = keywordOf(entry);
@@ -364,6 +376,14 @@ function parseOptions(
       case 'also-notify':
         pendingAlsoNotify.push(entry);
         break;
+      case 'tcp-initial-timeout':
+      case 'tcp-idle-timeout':
+      case 'tcp-keepalive-timeout':
+      case 'tcp-advertised-timeout': {
+        const bounds = TCP_TIMEOUT_BOUNDS[keyword];
+        options.tcpTimeouts[bounds.field] = parseTcpTimeout(entry, bounds, warnings);
+        break;
+      }
       default:
         fail(entry, `unknown option '${keyword}'`);
     }
@@ -441,6 +461,39 @@ interface ZoneDraft {
 }
 
 const AUTHORITATIVE_ONLY_OPTIONS: readonly string[] = ['notify', 'notify-to-soa', 'allow-query'];
+
+const DEFAULT_TCP_TIMEOUT = 300;
+
+interface TcpTimeoutBounds {
+  readonly label: string;
+  readonly min: number;
+  readonly max: number;
+  readonly field: keyof NamedTcpTimeouts;
+}
+
+const TCP_TIMEOUT_BOUNDS: Readonly<Record<string, TcpTimeoutBounds>> = {
+  'tcp-initial-timeout': { label: 'tcp-initial-timeout', min: 25, max: 1200, field: 'initial' },
+  'tcp-idle-timeout': { label: 'tcp-idle-timeout', min: 1, max: 1200, field: 'idle' },
+  'tcp-keepalive-timeout': { label: 'tcp-keepalive-timeout', min: 1, max: 65535, field: 'keepalive' },
+  'tcp-advertised-timeout': { label: 'tcp-advertized-timeout', min: 0, max: 65535, field: 'advertised' },
+};
+
+function parseTcpTimeout(entry: NamedConfStatement, bounds: TcpTimeoutBounds, warnings: string[]): number {
+  const args = argsOf(entry);
+  const value = Number(args[0]);
+  if (args[0] === undefined || !/^\d+$/.test(args[0])) fail(entry, `expected number near '${args[0] ?? ';'}'`);
+  rejectExtraWords(entry, 1);
+  const where = `${entry.file}:${entry.line}: ${bounds.label} value is out of range`;
+  if (value < bounds.min) {
+    warnings.push(`${where}: raising to ${bounds.min}`);
+    return bounds.min;
+  }
+  if (value > bounds.max) {
+    warnings.push(`${where}: lowering to ${bounds.max}`);
+    return bounds.max;
+  }
+  return value;
+}
 
 function parsePortWord(item: NamedConfStatement, word: string | undefined, message: string): number {
   const parsed = Number(word);
@@ -798,6 +851,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const httpProfiles = new Map<string, NamedHttpProfile>();
   const pendingListeners: PendingListener[] = [];
   const pendingAlsoNotify: NamedConfStatement[] = [];
+  const warnings: string[] = [];
   let optionsSeen = false;
 
   for (const statement of statements) {
@@ -813,7 +867,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
       case 'options':
         if (optionsSeen) fail(statement, "'options' redefined near 'options'");
         optionsSeen = true;
-        parseOptions(statement, options, acls, pendingListeners, pendingAlsoNotify);
+        parseOptions(statement, options, acls, pendingListeners, pendingAlsoNotify, warnings);
         break;
       case 'tls':
         registerProfile(tlsProfiles, parseTlsProfile(statement), 'tls', statement);
@@ -878,5 +932,6 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     controls,
     trustAnchors,
     tlsProfiles,
+    warnings,
   };
 }

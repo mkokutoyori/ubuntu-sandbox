@@ -35,6 +35,7 @@ import { TlsClientChannel } from '@/network/tls/TlsClientChannel';
 import type { TlsRecord } from '@/network/tls/recordLayer';
 import { runTlsHandshakeOverSocket } from '@/network/http/https/TlsRecordWire';
 import { DnsStreamReader, frameDnsMessage } from '@/network/dns/transport/DnsStreamFraming';
+import { DnsStreamLifetime, type DnsStreamTimeouts } from '@/network/dns/transport/DnsStreamTimeouts';
 import type { DohClientIdentity } from '@/network/dns/transport/DnsHttpsTransport';
 import { dnsTlsServerOptions, type DnsTlsServerSettings } from '@/network/dns/transport/DnsTlsServerSettings';
 
@@ -64,6 +65,7 @@ export interface DotOptions {
   readonly silentRejection?: boolean;
   readonly onStreamFailure?: (failure: DnsStreamFailure) => void;
   readonly clientIdentity?: DohClientIdentity;
+  readonly timeouts?: () => DnsStreamTimeouts;
 }
 
 function concatenated(parts: readonly Uint8Array[]): Uint8Array {
@@ -102,6 +104,9 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsStreamHandler, optio
         ...tlsOptions, ...(protocols === undefined ? {} : { protocols }),
       });
       const reader = new DnsStreamReader();
+      const timeouts = options.timeouts?.();
+      const lifetime = timeouts === undefined ? null : new DnsStreamLifetime(() => socket.close(), timeouts);
+      socket.onClose(() => lifetime?.stop());
       const serve = (raw: Uint8Array): void => {
         let query: DnsMessage;
         try {
@@ -110,7 +115,8 @@ export function bindDnsTlsServer(host: EndHost, handler: DnsStreamHandler, optio
           socket.close();
           return;
         }
-        const send = (reply: DnsStreamReply): void => channel.write(framedReply(reply));
+        lifetime?.requested(query);
+        const send = (reply: DnsStreamReply): void => channel.write(framedReply(lifetime?.answered(query, reply) ?? reply));
         const answer = handler(query, addressOf(socket.remoteIp), socket.remotePort, raw, addressOf(socket.localIp));
         if (answer instanceof Promise) void answer.then(send, () => socket.close());
         else send(answer);
