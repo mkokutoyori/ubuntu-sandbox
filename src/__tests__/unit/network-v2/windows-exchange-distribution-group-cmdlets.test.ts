@@ -107,6 +107,6 @@ describe('New/Set/Get-DistributionGroup, Add/Get-DistributionGroupMember (docs/P
     await run(ps(dc), 'Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools');
     await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     const out = await run(ps(dc), 'Get-DistributionGroup');
-    expect(out).toContain('is not recognized as the name of a cmdlet');
+    expect(out).toContain('is not recognized as a name of a cmdlet');
   });
 });

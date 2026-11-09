@@ -71,6 +71,7 @@ describe('Lab Entreprise Meridian', () => {
     it.skipIf(!existsSync(LAB_FILE))('passes every check once reopened, exactly like the lab that was exported', async () => {
       const topology = JSON.parse(readFileSync(LAB_FILE, 'utf8')) as TopologyExport;
       const result = await importTopology(topology);
+      expect(result.warnings).toEqual([]);
       useNetworkStore.getState().replaceTopology(result.deviceInstances, result.connections);
       expect(await failedChecks(byName())).toEqual([]);
     }, 300000);

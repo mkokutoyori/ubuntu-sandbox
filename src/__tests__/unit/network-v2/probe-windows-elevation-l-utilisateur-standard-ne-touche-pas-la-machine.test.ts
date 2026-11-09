@@ -90,7 +90,7 @@ describe('PowerShell writes the machine hive under the same rule as reg.exe', ()
   it('refuses New-Item under HKLM', async () => {
     const { ps } = machine('User');
 
-    expect(await ps('New-Item -Path HKLM:\\SOFTWARE\\Lab')).toBe(`New-Item : ${REFUSED}`);
+    expect(await ps('New-Item -Path HKLM:\\SOFTWARE\\Lab')).toBe(`New-Item: ${REFUSED}`);
   });
 
   it('refuses Set-ItemProperty and leaves the value alone', async () => {
@@ -98,14 +98,14 @@ describe('PowerShell writes the machine hive under the same rule as reg.exe', ()
     pc.getFileSystem();
     const out = await ps('Set-ItemProperty -Path HKLM:\\SOFTWARE\\Microsoft -Name x -Value 1');
 
-    expect(out).toBe(`Set-ItemProperty : ${REFUSED}`);
+    expect(out).toBe(`Set-ItemProperty: ${REFUSED}`);
     expect(await ps('(Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft).x')).toBe('');
   });
 
   it('refuses Remove-ItemProperty and Remove-Item, and shows why', async () => {
     const { ps } = machine('User');
 
-    expect(await ps('Remove-Item -Path HKLM:\\SOFTWARE\\Microsoft -Recurse')).toContain(`Remove-Item : ${REFUSED}`);
+    expect(await ps('Remove-Item -Path HKLM:\\SOFTWARE\\Microsoft -Recurse')).toContain(`Remove-Item: ${REFUSED}`);
     expect(await ps('Test-Path HKLM:\\SOFTWARE\\Microsoft')).toBe('True');
   });
 
@@ -180,7 +180,7 @@ describe('execution policy and scripts', () => {
     const out = await ps('Set-ExecutionPolicy RemoteSigned');
 
     expect(out).toContain("Access to the registry key 'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell' is denied.");
-    expect(out).toContain('start Windows PowerShell with the "Run as administrator" option');
+    expect(out).toContain('start PowerShell with the "Run as administrator" option');
   });
 
   it('accepts the CurrentUser scope, and the machine scope for an administrator', async () => {
@@ -197,9 +197,9 @@ describe('execution policy and scripts', () => {
     const ps = await scripted('User');
 
     expect(await ps('C:\\s\\admin.ps1')).toBe(
-      'The script \'admin.ps1\' cannot be run because it contains a "#requires" statement for running as Administrator. '
-      + 'The current Windows PowerShell session is not running as Administrator. '
-      + 'Start Windows PowerShell by using the Run as Administrator option, and then try running the script again.');
+      'RuntimeException: The script \'admin.ps1\' cannot be run because it contains a "#requires" statement for running as Administrator. '
+      + 'The current PowerShell session is not running as Administrator. '
+      + 'Start PowerShell by using the Run as Administrator option, and then try running the script again.');
   });
 
   it('runs it for the Administrator, and runs an ordinary script for both', async () => {

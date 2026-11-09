@@ -66,7 +66,9 @@ import type { IShell } from '@/shell/IShell';
 import { verifyRemoteCredentials } from '@/terminal/ssh/remoteCredentials';
 import { parseRunasArgs, validateRunasUser, runasIncorrectPasswordMessage } from '@/network/devices/windows/WinRunas';
 import type { RunasUserSource } from '@/network/devices/windows/WinRunas';
-import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { pingStatusHeader, pingStatusRow } from '@/network/devices/windows/TestConnectionViews';
+import { probeEchoes, pingStatusObject } from '@/network/devices/windows/TestConnectionProbe';
+import type { PSObject } from '@/network/devices/windows/PSPipeline';
 
 const WINDOWS_THEME: TerminalTheme = {
   sessionType: 'windows',
@@ -479,7 +481,7 @@ export class WindowsTerminalSession extends TerminalSession {
     return job !== null;
   }
 
-  private tryStartTestConnectionContinuous(line: string): boolean {
+  private tryStartTestConnectionRepeat(line: string): boolean {
     if (this.hasForegroundAsyncJob) return false;
     if (this.shellMode !== 'powershell') return false;
     const dev = this.device;
@@ -489,49 +491,40 @@ export class WindowsTerminalSession extends TerminalSession {
     if (toks.length === 0 || toks[0].toLowerCase() !== 'test-connection') return false;
 
     let target = '';
-    let continuous = false;
+    let repeat = false;
     let delaySec = 1;
+    let bufferSize: number | undefined;
     for (let i = 1; i < toks.length; i++) {
       const a = toks[i];
       const al = a.toLowerCase();
-      if (al === '-continuous') continuous = true;
-      else if (al === '-count' && toks[i + 1]) {
-        const v = parseInt(toks[++i], 10);
-        if (v === 0) continuous = true;
-      } else if (al === '-delay' && toks[i + 1]) {
+      if (al === '-repeat') repeat = true;
+      else if (al === '-delay' && toks[i + 1]) {
         const v = parseInt(toks[++i], 10);
         if (Number.isFinite(v) && v > 0) delaySec = v;
+      } else if (al === '-buffersize' && toks[i + 1]) {
+        const v = parseInt(toks[++i], 10);
+        if (Number.isFinite(v) && v >= 0 && v <= 65500) bufferSize = v;
       } else if ((al === '-computername' || al === '-targetname') && toks[i + 1]) {
         target = stripQuotes(toks[++i]);
       } else if (!al.startsWith('-') && !target) {
         target = stripQuotes(a);
       }
     }
-    if (!continuous || !target) return false;
+    if (!repeat || !target) return false;
 
     const job = this.startAsyncCommand({
       mode: 'foreground',
       kind: 'streaming',
       command: line,
       run: async (ctx) => {
-        ctx.sink.line('');
-        ctx.sink.line('Source        Destination     IPV4Address      Bytes    Time(ms)');
-        ctx.sink.line('------        -----------     -----------      -----    --------');
+        const source = dev.getHostname();
+        for (const header of pingStatusHeader(target)) ctx.sink.line(header);
+        let index = 0;
         while (!ctx.cancelled()) {
           const ip = dev.resolveHostnameSync(target);
-          if (!ip) {
-            ctx.sink.line(padToWidth('localhost', 13) + ' ' + padToWidth(target, 15) + ' ' + padToWidth('', 15) + '  ' + padToWidth('32', 5, 'right') + '  ' + padToWidth('TimedOut', 8, 'right'));
-          } else {
-            const ipStr = ip.toString();
-            const ping = dev.sendPingProbeSync(ip);
-            if (ping.success) {
-              const egress = dev.getEgressFor(ip);
-              const src = egress?.sourceIp.toString() ?? 'localhost';
-              ctx.sink.line(padToWidth(src, 13) + ' ' + padToWidth(target, 15) + ' ' + padToWidth(ipStr, 15) + '  ' + padToWidth('32', 5, 'right') + '  ' + padToWidth(String(Math.max(1, Math.round(ping.rttMs))), 8, 'right'));
-            } else {
-              ctx.sink.line(padToWidth('localhost', 13) + ' ' + padToWidth(target, 15) + ' ' + padToWidth(ipStr, 15) + '  ' + padToWidth('32', 5, 'right') + '  ' + padToWidth('TimedOut', 8, 'right'));
-            }
-          }
+          const [answer] = ip ? probeEchoes(dev, ip, 1, { bufferSize }) : [];
+          const row = pingStatusObject(++index, source, target, ip?.toString() ?? '', answer ?? { success: false, rttMs: 0, status: 'TimedOut', replyFrom: null }, bufferSize);
+          ctx.sink.line(pingStatusRow(row as unknown as PSObject));
           await ctx.delay(Math.max(100, delaySec * 1000));
         }
       },
@@ -703,7 +696,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // Detect PowerShell launch from root cmd
     const lower = trimmed.toLowerCase();
     if (lower === 'powershell' || lower === 'powershell.exe' || lower === 'pwsh' || lower === 'pwsh.exe') {
-      this.enterPowerShell(lower.startsWith('pwsh') ? 'core' : 'desktop');
+      this.enterPowerShell();
       return;
     }
 
@@ -720,7 +713,7 @@ export class WindowsTerminalSession extends TerminalSession {
     // returns straight to cmd (no banner, no nested sub-shell).
     const psExecMatch = /^(powershell(?:\.exe)?|pwsh(?:\.exe)?)\s+(.+)$/i.exec(trimmed);
     if (psExecMatch) {
-      await this.runPowerShellOneShot(psExecMatch[2], psExecMatch[1].toLowerCase().startsWith('pwsh') ? 'core' : 'desktop');
+      await this.runPowerShellOneShot(psExecMatch[2]);
       return;
     }
 
@@ -1144,7 +1137,7 @@ export class WindowsTerminalSession extends TerminalSession {
    * `WindowsPowerShellShell` through a single `processLine()` instead of
    * pushing it onto the sub-shell stack.
    */
-  private async runPowerShellOneShot(argsText: string, language: 'desktop' | 'core' = 'desktop'): Promise<void> {
+  private async runPowerShellOneShot(argsText: string): Promise<void> {
     let command = argsText.trim();
     const commandFlag = /^-(?:command|c)\b\s*(.*)$/is.exec(command);
     if (commandFlag) command = commandFlag[1].trim();
@@ -1153,7 +1146,7 @@ export class WindowsTerminalSession extends TerminalSession {
       command = command.slice(1, -1);
     }
     if (!command) {
-      this.enterPowerShell(language);
+      this.enterPowerShell();
       return;
     }
 
@@ -1171,7 +1164,7 @@ export class WindowsTerminalSession extends TerminalSession {
     if (this.tryStartWinNetstatStream(command)) return;
 
     installDefaultShells();
-    const shell = ShellFactory.create(language === 'core' ? 'pwsh' : 'powershell', {
+    const shell = ShellFactory.create('powershell', {
       device: this.device,
       user: 'User',
       cwd: this.shell?.cwd,
@@ -1192,14 +1185,14 @@ export class WindowsTerminalSession extends TerminalSession {
 
   // ── Sub-shell management ───────────────────────────────────────
 
-  private enterPowerShell(language: 'desktop' | 'core' = 'desktop'): void {
+  private enterPowerShell(): void {
     // Build a real `WindowsPowerShellShell` through the new shell layer
     // and wrap it in the adapter so it plugs into the existing sub-shell
     // stack mechanics (history, completion, special keys). The per-
     // terminal `WindowsShellSession` travels via `extras` so cwd / env
     // isolation between sibling terminals is preserved.
     installDefaultShells();
-    const shell = ShellFactory.create(language === 'core' ? 'pwsh' : 'powershell', {
+    const shell = ShellFactory.create('powershell', {
       device: this.device,
       user: 'User',
       cwd: this.shell?.cwd,
@@ -1353,7 +1346,7 @@ export class WindowsTerminalSession extends TerminalSession {
       // whether they're typed at cmd.exe or inside powershell.exe on real
       // Windows — reuse the SAME interceptors the root cmd loop uses
       // instead of a PowerShell-specific reimplementation. PS-only
-      // constructs (Test-Connection -Continuous, Get-Content -Wait, …)
+      // constructs (Test-Connection -Repeat, Get-Content -Wait, …)
       // keep their own checks right below, unaffected.
       if (this.tryStartWinPingStream(line)) {
         this.notify();
@@ -1371,7 +1364,7 @@ export class WindowsTerminalSession extends TerminalSession {
         this.notify();
         return true;
       }
-      if (this.tryStartTestConnectionContinuous(line)) {
+      if (this.tryStartTestConnectionRepeat(line)) {
         this.notify();
         return true;
       }
@@ -1399,7 +1392,7 @@ export class WindowsTerminalSession extends TerminalSession {
         };
         const maybePromise = this.holdSubShellForeground(processSubShellLine(this.activeSubShell, line, onProgress));
 
-        const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _powerShellLanguage?: 'desktop' | 'core'; _enterCmd?: boolean; childShell?: IShell }) => {
+        const applyResult = (result: SubShellResult & { _enterPowerShell?: boolean; _enterCmd?: boolean; childShell?: IShell }) => {
           if (result.clearScreen) {
             this.clear();
             this.bannerCleared = true;
@@ -1427,7 +1420,7 @@ export class WindowsTerminalSession extends TerminalSession {
           }
 
           if (result._enterPowerShell) {
-            this.enterPowerShell(result._powerShellLanguage ?? 'desktop');
+            this.enterPowerShell();
             return;
           }
           if (result._enterCmd) {

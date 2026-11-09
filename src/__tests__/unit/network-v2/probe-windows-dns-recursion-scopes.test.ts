@@ -37,7 +37,7 @@ const MISSING = 'The scope does not exist.';
 const EXISTS = 'The scope already exists.';
 const IS_DEFAULT = 'The scope is the same as the default scope.';
 const REFERENCED = 'The server scope cannot be deleted because it is referenced by a DNS Policy.';
-const NON_INTERACTIVE = 'Windows PowerShell is in NonInteractive mode.';
+const NON_INTERACTIVE = 'PowerShell is in NonInteractive mode.';
 
 const tidy = (text: string): string => text.split('\n').map(line => line.trimEnd()).join('\n');
 
@@ -136,9 +136,9 @@ describe('the cmdlets of the examples', () => {
   it('ask before they remove, whether or not the scope exists, and name their target under -WhatIf', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name S`);
-    expect(await cmd(`${REMOVE} -Name S`)).toContain(`${REMOVE} : ${NON_INTERACTIVE}`);
-    expect(await cmd(`${REMOVE} -Name Nope`)).toContain(`${REMOVE} : ${NON_INTERACTIVE}`);
-    expect(await cmd(`${REMOVE} -Name Nope -Force`)).toContain(`${REMOVE} : ${MISSING}`);
+    expect(await cmd(`${REMOVE} -Name S`)).toContain(`${REMOVE}: ${NON_INTERACTIVE}`);
+    expect(await cmd(`${REMOVE} -Name Nope`)).toContain(`${REMOVE}: ${NON_INTERACTIVE}`);
+    expect(await cmd(`${REMOVE} -Name Nope -Force`)).toContain(`${REMOVE}: ${MISSING}`);
     expect(await cmd(`${REMOVE} -Name S -WhatIf`)).toContain(`What if: Performing the operation "${REMOVE}" on target "S".`);
     expect(await cmd(`${ADD} -Name T -WhatIf`)).toContain(`What if: Performing the operation "${ADD}" on target "T".`);
     expect(await cmd(`${SET} -Name S -EnableRecursion $False -WhatIf`)).toContain(`What if: Performing the operation "${SET}" on target "S".`);
@@ -200,7 +200,7 @@ describe('the refusals', () => {
   ])('refuse %s with the text of the Win32 error and change nothing', async (_label, command, cmdlet, message) => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name Taken -Forwarder 10.0.0.1`);
-    expect(await cmd(command)).toContain(`${cmdlet} : ${message}`);
+    expect(await cmd(command)).toContain(`${cmdlet}: ${message}`);
     expect(await cmd(`(${GET}).Name -join ","`)).toBe('.,Taken');
     expect(await cmd(`(${GET} -Name Taken).Forwarder`)).toBe('10.0.0.1');
     expect(await cmd('(Get-DnsServerForwarder).IPAddress -join ","')).toBe('');
@@ -218,7 +218,7 @@ describe('the policies name the scopes', () => {
   it('accept a recursion scope that exists, whatever its case, and refuse one that does not', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name InternalClients`);
-    expect(await cmd(`${POLICY} -Name Missing -Action ALLOW -ApplyOnRecursion -RecursionScope "Nope" -ClientSubnet "EQ,Lan"`)).toContain(`${POLICY} : ${MISSING}`);
+    expect(await cmd(`${POLICY} -Name Missing -Action ALLOW -ApplyOnRecursion -RecursionScope "Nope" -ClientSubnet "EQ,Lan"`)).toContain(`${POLICY}: ${MISSING}`);
     expect(await cmd(`${POLICY} -Name Split -Action ALLOW -ApplyOnRecursion -RecursionScope "internalclients" -ClientSubnet "EQ,Lan"`)).toBe('');
     expect(await cmd('(Get-DnsServerQueryResolutionPolicy -Name Split).Content | ForEach-Object { $_.ScopeName }')).toBe('internalclients');
   });
@@ -227,7 +227,7 @@ describe('the policies name the scopes', () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name InternalClients`);
     await cmd(`${POLICY} -Name Split -Action ALLOW -ApplyOnRecursion -RecursionScope "INTERNALCLIENTS" -ClientSubnet "EQ,Lan"`);
-    expect(await cmd(`${REMOVE} -Name InternalClients -Force`)).toContain(`${REMOVE} : ${REFERENCED}`);
+    expect(await cmd(`${REMOVE} -Name InternalClients -Force`)).toContain(`${REMOVE}: ${REFERENCED}`);
     expect(await cmd(`(${GET}).Name -join ","`)).toBe('.,InternalClients');
     await cmd('Remove-DnsServerQueryResolutionPolicy -Name Split -Force');
     expect(await cmd(`${REMOVE} -Name InternalClients -Force`)).toBe('');
@@ -238,8 +238,8 @@ describe('the policies name the scopes', () => {
     await cmd(`${ADD} -Name A`);
     await cmd(`${ADD} -Name B`);
     await cmd(`${POLICY} -Name Split -Action ALLOW -ApplyOnRecursion -RecursionScope "A,2;B,1" -ClientSubnet "EQ,Lan"`);
-    expect(await cmd(`${REMOVE} -Name B -Force`)).toContain(`${REMOVE} : ${REFERENCED}`);
-    expect(await cmd(`${REMOVE} -Name A -Force`)).toContain(`${REMOVE} : ${REFERENCED}`);
+    expect(await cmd(`${REMOVE} -Name B -Force`)).toContain(`${REMOVE}: ${REFERENCED}`);
+    expect(await cmd(`${REMOVE} -Name A -Force`)).toContain(`${REMOVE}: ${REFERENCED}`);
   });
 
   it('let a scope go that a policy of another kind does not name', async () => {

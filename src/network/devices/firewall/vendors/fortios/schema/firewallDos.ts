@@ -23,7 +23,7 @@ const ANOMALY: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'fwgrp',
-  renderOrder: 236,
+  renderOrder: 703,
   help: 'Anomaly name.',
   fixedKeys: ANOMALY_CATALOG.map(entry => entry.name),
   attributes: [
@@ -141,7 +141,7 @@ function dosSpec(family: DosFamily): FortiTableSpec {
 export const FIREWALL_DOS_POLICY = dosSpec({
   path: ['firewall', 'DoS-policy'],
   help: 'Configure IPv4 DoS policies.',
-  renderOrder: 235,
+  renderOrder: 702,
   addressTargets: ADDRESS_TARGETS,
   store: 'dos',
   v6: false,
@@ -150,7 +150,7 @@ export const FIREWALL_DOS_POLICY = dosSpec({
 export const FIREWALL_DOS_POLICY6 = dosSpec({
   path: ['firewall', 'DoS-policy6'],
   help: 'Configure IPv6 DoS policies.',
-  renderOrder: 237,
+  renderOrder: 704,
   addressTargets: ADDRESS6_TARGETS,
   store: 'dos6',
   v6: true,

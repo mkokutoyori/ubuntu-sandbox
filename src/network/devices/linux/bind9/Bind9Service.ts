@@ -16,13 +16,13 @@ import { normalizeDnsName, parentName } from '@/network/dns/wire/DnsName';
 import {
   isTransferQuery, refuseTransfer,
 } from '@/network/dns/transfer/AxfrSession';
-import { isNotify, makeNotifyAck } from '@/network/dns/transfer/NotifyProtocol';
+import { isNotify, makeNotifyAck, type NotifyTarget } from '@/network/dns/transfer/NotifyProtocol';
 import { isUpdateMessage } from '@/network/dns/update/DnsUpdate';
 import type { DnsUpdateRequest } from '@/network/dns/update/DnsUpdate';
 import {
   authorizeUpdate, evaluateUpdate, parseOrFormerr, signIfKeyed, updateResponse, DnsUpdateRcode,
 } from '@/network/dns/update/UpdateResponder';
-import { TsigKeyring, tsigKeyFromBase64, canonicalKeyName, type TsigKey } from '@/network/dns/tsig/Tsig';
+import { TsigKeyring, tsigKeyFromBase64, tsigFailureText, canonicalKeyName, type TsigKey } from '@/network/dns/tsig/Tsig';
 import { serialAdd } from '@/network/dns/zone/SerialNumber';
 import { RRType } from '@/network/dns/wire/RRType';
 import { echoedOpt, findOpt } from '@/network/dns/wire/EdnsOptRecord';
@@ -44,8 +44,9 @@ import { Bind9EncryptedListeners } from './Bind9EncryptedListeners';
 import { Bind9PlainListeners } from './Bind9PlainListeners';
 import type { Zone } from '@/network/dns/zone/Zone';
 import type { ResourceRecord, ResourceRecordData, NsRecordData, ARecordData } from '@/network/dns/wire/ResourceRecord';
-import type { ForwardMode, NamedConfig, NamedPrimary, NamedZone } from './NamedConfig';
+import type { ForwardMode, NamedConfig, NamedRemoteServer, NamedZone } from './NamedConfig';
 import { DOT_PORT } from '@/network/dns/transport/DnsTlsTransport';
+import { DNS_PORT } from '@/network/dns/transport/DnsUdpTransport';
 import type { TransferEndpoint, TransferTls } from '@/network/dns/transfer/TransferEndpoint';
 import { pemToCertChain } from '@/network/pki/pem';
 import type { X509Certificate } from '@/network/pki/X509Certificate';
@@ -292,6 +293,7 @@ export class Bind9Service {
     this.plainListeners = plain;
     this.running = true;
     this.startRndc(loaded.config);
+    for (const name of this.loadedZones.keys()) this.notifySecondaries(name);
     this.refreshAllSecondaryZones();
     return { ok: true };
   }
@@ -749,7 +751,7 @@ export class Bind9Service {
     const config = this.config!;
 
     if (isNotify(query)) {
-      return this.handleNotify(query, sourceIP);
+      return this.handleNotify(query, sourceIP, sourcePort, raw);
     }
     if (isUpdateMessage(query)) {
       return this.handleUpdate(query, sourceIP, raw);
@@ -925,14 +927,28 @@ export class Bind9Service {
     return serveZoneTransfer(this.store, query) ?? [this.refuse(query, false)];
   }
 
-  private handleNotify(query: DnsMessage, sourceIP?: IPAddress | IPv6Address): DnsMessage {
+  private handleNotify(
+    query: DnsMessage, sourceIP?: IPAddress | IPv6Address, sourcePort?: number, raw?: Uint8Array,
+  ): DnsMessage {
+    const now = Math.floor(simulationNowMs() / 1000);
+    const auth = authorizeUpdate(raw, 'none', this.keyring, now);
+    const client = `client @0x0 ${sourceIP?.toString() ?? LOOPBACK}#${sourcePort ?? 0}`;
+    if (auth.failure !== null) {
+      this.files.log?.(`${client}: request has invalid signature: TSIG ${auth.failure.keyName}: ${tsigFailureText(auth.failure)}`);
+    }
+    if (auth.rcode !== DnsRcode.NOERROR) {
+      const refusal = makeNotifyAck(query);
+      return signIfKeyed({ ...refusal, flags: { ...refusal.flags, rcode: auth.rcode } }, auth, now);
+    }
     const qname = normalizeDnsName(query.questions[0]?.qname ?? '');
+    const signer = auth.key === null ? '' : `/key ${auth.key.name}`;
+    this.files.log?.(`${client}${signer}: received notify for zone '${qname}'${auth.key === null ? '' : `: TSIG '${auth.key.name}'`}`);
     const zone = this.config?.zones.find((z) => z.name === qname && z.type === 'secondary');
     const source = sourceIP?.toString();
     if (zone && source && zone.primaries.some((primary) => primary.address === source)) {
       void this.refreshSecondaryZone(zone);
     }
-    return makeNotifyAck(query);
+    return signIfKeyed(makeNotifyAck(query), auth, now);
   }
 
   private refreshAllSecondaryZones(): void {
@@ -983,7 +999,7 @@ export class Bind9Service {
     return endpoints;
   }
 
-  private transferTlsOf(zone: NamedZone, primary: NamedPrimary): TransferTls {
+  private transferTlsOf(zone: NamedZone, primary: NamedRemoteServer): TransferTls {
     const profile = primary.tls === 'ephemeral' ? undefined : this.config?.tlsProfiles.get(primary.tls!);
     const caFile = profile?.caFile ?? null;
     const strict = caFile !== null || (profile?.remoteHostname ?? null) !== null;
@@ -1013,28 +1029,38 @@ export class Bind9Service {
     void this.notifyTargets(zone, loaded).then((targets) => notifyZoneTargets(this.host, loaded, targets));
   }
 
-  private async notifyTargets(zone: NamedZone, loaded: Zone): Promise<IPAddress[]> {
+  private async notifyTargets(zone: NamedZone, loaded: Zone): Promise<NotifyTarget[]> {
     const options = this.config!.options;
     const mode = zone.notify ?? options.notify;
     if (mode === 'no') return [];
-    const listed = zone.alsoNotify
-      .map((target) => IPAddress.tryParse(target))
-      .filter((ip): ip is IPAddress => ip !== null);
-    if (mode === 'explicit') return listed;
-
-    const toSoa = zone.notifyToSoa ?? options.notifyToSoa;
-    const soaServer = normalizeDnsName(loaded.soa.data.mname);
-    const own = new Set(this.aclEnvironment().localAddresses);
-    const targets = new Map<string, IPAddress>();
-    for (const record of (loaded.getRRSet(loaded.origin, RRType.NS) ?? []) as ResourceRecord<NsRecordData>[]) {
-      const server = normalizeDnsName(record.data.nsdname);
-      if (server === soaServer && !toSoa) continue;
-      for (const address of await this.addressesOfServer(loaded, server)) {
-        if (!own.has(address.toString())) targets.set(address.toString(), address);
+    const targets = new Map<string, NotifyTarget>();
+    if (mode !== 'explicit') {
+      const toSoa = zone.notifyToSoa ?? options.notifyToSoa;
+      const soaServer = normalizeDnsName(loaded.soa.data.mname);
+      const own = new Set(this.aclEnvironment().localAddresses);
+      for (const record of (loaded.getRRSet(loaded.origin, RRType.NS) ?? []) as ResourceRecord<NsRecordData>[]) {
+        const server = normalizeDnsName(record.data.nsdname);
+        if (server === soaServer && !toSoa) continue;
+        for (const address of await this.addressesOfServer(loaded, server)) {
+          if (!own.has(address.toString())) targets.set(`${address}#${DNS_PORT}`, { address });
+        }
       }
     }
-    for (const address of listed) targets.set(address.toString(), address);
+    for (const server of zone.alsoNotify ?? options.alsoNotify ?? []) {
+      const target = this.notifyTargetOf(server);
+      targets.set(`${target.address}#${target.port ?? DNS_PORT}`, target);
+    }
     return [...targets.values()];
+  }
+
+  private notifyTargetOf(server: NamedRemoteServer): NotifyTarget {
+    const key = server.key === null ? undefined : this.keyring.get(server.key);
+    const port = server.port ?? (server.tls === null ? undefined : DOT_PORT);
+    return {
+      address: new IPAddress(server.address),
+      ...(port === undefined ? {} : { port }),
+      ...(key === undefined ? {} : { key }),
+    };
   }
 
   private async addressesOfServer(zone: Zone, server: string): Promise<IPAddress[]> {

@@ -30,7 +30,7 @@ describe('Install-ExchangeServer / Get-ExchangeServer (docs/PRD-Exchange.md §2.
     const dc = new WindowsServer('DC01');
     await promoteDc(dc);
     const out = await run(ps(dc), 'Get-ExchangeServer');
-    expect(out).toContain('is not recognized as the name of a cmdlet');
+    expect(out).toContain('is not recognized as a name of a cmdlet');
   });
 
   it('Install-ExchangeServer fails on a server that is not domain-joined, with a specific message (not "not recognized")', async () => {
@@ -44,7 +44,7 @@ describe('Install-ExchangeServer / Get-ExchangeServer (docs/PRD-Exchange.md §2.
   it('a non-server WindowsPC always gets "not recognized", even for Install-ExchangeServer itself', async () => {
     const pc = new WindowsPC('windows-pc', 'PC01');
     const out = await run(ps(pc), 'Install-ExchangeServer -Roles Mailbox -OrganizationName "Mandeng"');
-    expect(out).toContain('is not recognized as the name of a cmdlet');
+    expect(out).toContain('is not recognized as a name of a cmdlet');
   });
 
   it('succeeds on a domain controller (already domain-joined) and Get-ExchangeServer then lists it', async () => {

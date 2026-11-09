@@ -76,6 +76,19 @@ help.fortinet.com sont refuses par le proxy de cet environnement. Le
 simulateur ecrit `never` dans les deux champs ; c'est un choix, pas une
 transcription.
 
+### [fortios] sur un VIP qui traduit le port, la `service` d'une politique porte-t-elle le port d'origine ou le port traduit ?
+MESURE : un VIP `extport 443 -> mappedport 80` avec une politique `set service "HTTPS"` ne laisse rien passer, alors que
+`set service "HTTP"` laisse passer (le simulateur compare le port APRES la traduction). La meme chose pour un VIP
+`server-load-balance` dont le serveur reel ecoute sur 80. Aucune source du depot ne dit lequel des deux ports la politique
+FortiOS compare (docs.fortinet.com est refuse par le proxy de cet environnement) : le comportement actuel est conserve,
+et le lab Meridian utilise `service "ALL"` sur cette politique pour n'enseigner ni l'un ni l'autre. A trancher des
+qu'une transcription d'un `diagnose debug flow` sur un VIP a port traduit est disponible.
+
+### [fortios] `config log syslogd setting` : `source-ip` et `enc-algorithm` sont refuses
+Le collecteur emet maintenant l'enregistrement de journal lui-meme dans le `format` declare. Restent refuses, faute de brique :
+une adresse source par collecteur (l'agent syslog estampille l'adresse de l'interface de sortie ou nommee, et le transport TCP
+ne la controle pas) et le TLS (`enc-algorithm`, qui demande un ecouteur TLS cote collecteur, absent de `rsyslog` ici).
+
 ### [fortios] seul l'assistant de session `ftp` agit
 `config system session-helper` porte la table d'usine de FortiOS (vingt
 entrees, source : un `show full-configuration` FortiOS 5.04 publie dans
@@ -118,7 +131,7 @@ Mesure contre named et dig 9.18.39 reels (`probe-bind9-dot-doh-listeners`, `prob
 les options `ciphers`, `prefer-server-ciphers`, `session-tickets`, `dhparam-file`, `ca-file`, `listener-clients`, `streams-per-connection` agissent, le DoH ne parle que HTTP/2 (h2 sur TLS, h2c sur `tls none http`),
 `dig +tls`, `+https`, `+http-plain` (et `-get`), `+tls-ca`, `+tls-hostname`, `+tls-certfile`, `+tls-keyfile` rendent les memes lignes, `primaries { ... tls NOM; }` transfere la zone par TLS (RFC 9103). Restent :
 - `remote-hostname` d'un bloc `tls` ne sert qu'aux `primaries` ; named l'accepte sur un listener sans rien en faire, le simulateur aussi (mesure : aucune difference d'effet).
-- `also-notify { ADRESSE tls NOM; }` (NOTIFY par TLS) n'est pas lu : le NOTIFY part en clair.
+- `also-notify` et `primaries` : `dscp N` est accepte et n'est pas applique (le simulateur n'a pas de DSCP sur ses datagrammes DNS) ; une adresse IPv6 est refusee (« expected IP address ») alors que named l'accepte ; les listes nommees (`also-notify { liste; }`, `primaries liste { ... }` au niveau racine) ne sont pas lues. Le journal « zone Z/IN: sending notifies (serial N) » que named ecrit au chargement d'une zone primaire n'est pas ecrit (la condition exacte, avec `notify no` ou `explicit` sans cible, n'est pas mesuree). `also-notify` d'une zone secondaire n'envoie rien : seules les zones primaires notifient.
 - Le serveur DoT garde la connexion ouverte apres une reponse mais n'a pas de delai d'inactivite (`tcp-idle-timeout`) ; le client DoT la ferme apres sa reponse.
 - L'IPv6 de named n'a pas pu etre mesure : le noyau du banc n'a pas d'interface IPv6 (named dit « no IPv6 interfaces found »). `listen-on-v6` suit les memes regles que `listen-on`, ce que dit le manuel de reference de BIND .
 - `dig` : le journal horodate ecrit sur stderr avant `;; TLS context cannot be created` n'est pas rejoue, le code de sortie 9 n'est pas rendu.
@@ -699,21 +712,26 @@ depuis un LinuxPC.
 colonnes est partage par tout le moteur SQL*Plus et merite sa propre
 mesure.
 
-### [fortigate] l'assistant de session FTP ne couvre que le mode passif sans DNAT
-L'assistant `ftp` (lecture de `227`/`229` sur une session vers le port 21,
-connexion de donnees admise sous la politique parente et rattachee a la
-session de controle) est pose. Il ne couvre pas encore :
-- le mode ACTIF (`PORT`/`EPRT`) : le serveur ouvre la connexion de donnees
-  vers le client, qu'il faudrait attendre dans l'autre sens et, sous SNAT,
-  reecrire l'adresse annoncee ;
+### [fortigate] l'assistant de session FTP ne reecrit pas le flux sous NAT
+L'assistant `ftp` (lecture de `227`/`229` ET, desormais, de `PORT`/`EPRT` sur
+une session vers le port 21, connexion de donnees admise dans le sens
+correspondant et rattachee a la session de controle ;
+`probe-fortigate-ftp-mode-actif.test.ts`) couvre le mode passif et le mode
+actif sous une politique routee (pas de traduction du cote qui annonce
+l'adresse). `config system session-helper` est deja une table CLI
+(`SYSTEM_SESSION_HELPER`, probee par `fortigate-session-helper-table.test.ts`).
+Il ne couvre pas encore, et ne peut pas sans reecrire les octets du flux
+(ajuster les numeros de sequence TCP a une longueur de commande qui change) :
+- une session de controle traduite en SOURCE (SNAT) : le client annonce par
+  `PORT`/`EPRT` son adresse privee, que le serveur ne peut pas atteindre —
+  l'assistant le detecte (`activeDataFlow` refuse si `translatedSource !==
+  originalSource`) et n'admet rien plutot que d'admettre sur une mauvaise
+  attente ; mesure par le cas « boundary » de la sonde ;
 - une session de controle traduite en DESTINATION (VIP) : l'adresse privee
   annoncee par `227` devrait etre reecrite et le port de donnees traduit ;
-- la table `config system session-helper` en CLI : ses valeurs par defaut
-  (numeros, protocoles, ports de chaque assistant) n'ont pas pu etre
-  consultees depuis cet environnement ; l'assistant ftp est donc toujours
-  actif, comme sur un boitier par defaut, mais ni affiche ni configurable.
-**Mesure** : batterie 1, test 28 (PASV sous politique `service "FTP"`),
-vert ; batterie 2, test 547 (`curl --no-pasv`) non couvert.
+  meme garde cote passif (`passiveDataFlow`), meme limite.
+**Mesure** : batterie 1, test 28 (PASV sous politique `service "FTP"`), vert ;
+batterie 2, test 547 (`curl --no-pasv`) non couvert.
 
 ### [ping] les mots de `ping.exe` pour le code 13 restent non attestés
 Depuis le lot « le code ICMP decide de ce que ping ecrit », la moitie
@@ -3550,19 +3568,6 @@ services du DC distant comptent comme inaccessibles.
 machines, sur le fil, comme le reste du projet — pas un raccourci qui
 appellerait la methode de l'objet distant.
 
-### [powershell] `Test-Connection` sur un hote injoignable : ligne ou erreur ?
-
-**Mesure** : le simulateur rend UNE LIGNE par tentative, portant
-`Status : Failure`, et `-Quiet` rend `False`. Un vrai PowerShell 5.1
-semble plutot lever `Test-Connection : Testing connection to computer 'x'
-failed: Error due to lack of resources` et ne rien rendre. La bascule a
-ete essayee : elle casse les ateliers AD qui lisent les lignes
-(`scenario-ad-fsmo-roles`), et surtout **aucune transcription n'a pu etre
-atteinte** pour trancher — la documentation de Microsoft ne publie pas la
-sortie d'echec, et les pages qui la portent sont bloquees par le proxy de
-sortie. Le contrat en place est donc conserve, et la question reste
-ouverte.
-
 ### [powershell] quatre criteres REFUSES faute de la brique en dessous
 
 **Mesure** : ce lot a ferme quatre parametres qui etaient ACCEPTES et
@@ -4606,8 +4611,27 @@ is stored and rendered, and the DNS client has no per-VRF source selection.
 
 ## PowerShell 7 Test-Connection: what the real source holds and is not reproduced
 
-Reference: PowerShell/PowerShell TestConnectionCommand.cs and PowerShellCore_format_ps1xml.cs. The simulated pwsh answers the objects and errors of PowerShell 7 (PingStatus, TcpPortStatus, TraceStatus,
-'Cannot resolve the target name.'), but: the table view of the real format file (columns Ping, Source, Address, Latency(ms), BufferSize(B), Status with the widths 4/16/25/7/10/16 and a '*' latency
-for a timeout) is not reproduced, the default table of the simulator prints the property names; -ResolveDestination, -TimeoutSeconds, -BufferSize, -MaxHops, -DontFragment, -Repeat, -MtuSizeDetect
-are not evaluated; -IPv6 always answers 'Target IPv4/IPv6 address absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a
-boolean, the real code carries the SocketError code).
+Reference: PowerShell/PowerShell TestConnectionCommand.cs, PowerShellCore_format_ps1xml.cs and dotnet/runtime Dns.cs / NameResolutionPal.Windows.cs. The simulated pwsh answers the objects, the table views (PingStatus, PingMtuStatus,
+TcpPortStatus, TraceStatus) and the errors of PowerShell 7, and evaluates every parameter of its closed set: -Count, -Delay, -BufferSize, -TimeoutSeconds, -MaxHops, -DontFragment, -MtuSize, -ResolveDestination, -Traceroute and
+-Repeat (interactive terminal only, where it can be stopped). `-Source` is accepted and ignored, as in the source ("Remoting is not yet implemented internally in the cmdlet"). -IPv6 always answers 'Target IPv4/IPv6 address
+absent.' for a name (the simulator resolves IPv4 only); the failure status of -TcpPort is always 'SocketError' (the probe returns a boolean, the real code carries the SocketError code). The hostname column of a -Traceroute
+hop is the address, where the real code reverse-resolves the router first.
+
+### [nat] Virtual Fragmentation Reassembly: ce qui n'est pas reproduit
+
+**Mesure** : `NATEngine` fait suivre aux fragments non initiaux la reecriture du fragment initial (`FragmentRewriteMemory`, duree de vie = `timeout` de VFR, 3 s par defaut) et `VirtualReassembly`
+tient les limites de `ip virtual-reassembly` (max-reassemblies, max-fragments, timeout, drop-fragments), le chevauchement et les compteurs de `show ip virtual-reassembly`. Sources : la reference de commande IOS
+(`official_docs/cisco/ios-security`) et le guide « Virtual Fragmentation Reassembly » de Cisco.
+
+**Non reproduit** : (1) un fragment non initial qui arrive AVANT le fragment initial n'est pas mis en tampon, il passe tel quel (le simulateur livre les fragments dans l'ordre, et le guide ne decrit pas la file
+de reordonnancement) ; (2) la « tiny fragment attack » (VFR-3-TINY_FRAGMENTS) n'est pas detectee : aucune page du depot ne donne la taille en dessous de laquelle un fragment est « minuscule » ; (3) VFR ne
+fait pas encore partie de l'inspection (`ip inspect`) ni du pare-feu a zones, seul NAT l'active ; (4) `debug ip virtual-reassembly` n'existe pas ; (5) un switch L3 avec `NATEngine` suit les fragments mais n'a ni
+`ip virtual-reassembly` ni limites.
+
+### [linux] La convention « stdin ajoute en dernier mot » reste le defaut du registre
+
+**Mesure** : `splitRegistryStdin` ajoute le contenu d'un tube en dernier mot de `argv` pour toute commande du registre qui ne declare pas `readsStdin`. Sur 50 commandes d'administration, huit
+en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatectl, hostnamectl, route, dpkg) et portent maintenant `ignoresStdin`. Toute autre commande qui ignore son tube
+(un programme du registre qui n'a ni `readsStdin` ni `ignoresStdin`) recoit encore le mot en trop.
+
+**Non corrige ici** : inverser le defaut demande de classer chaque commande du registre (lit son tube, l'ignore, ou lit un mot de fin comme fichier) ; ce n'est pas faisable sans une mesure commande par commande.

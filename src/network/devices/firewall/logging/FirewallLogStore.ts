@@ -56,9 +56,14 @@ export class FirewallLogStore {
   private thresholds: Record<LogFullLevel, number> = { ...DEFAULT_LOG_FULL_THRESHOLDS };
   private announced = new Set<LogFullLevel>();
   private announcing = false;
+  private readonly sinks: Array<(record: FirewallLogRecord) => void> = [];
 
   constructor(private readonly vdom: string, capacity = DEFAULT_CAPACITY) {
     this.capacity = Math.max(1, capacity);
+  }
+
+  addSink(sink: (record: FirewallLogRecord) => void): void {
+    this.sinks.push(sink);
   }
 
   setCapacity(capacity: number): void {
@@ -139,6 +144,7 @@ export class FirewallLogStore {
     this.records.push(record);
     this.trim();
     this.announceFullness(draft.at);
+    for (const sink of this.sinks) sink(record);
     return record;
   }
 

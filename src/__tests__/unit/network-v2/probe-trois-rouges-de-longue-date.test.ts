@@ -58,7 +58,7 @@ describe('PowerShell rend l erreur .NET, pas celle de Win32', () => {
     const out = (await sh.processLine(
       '1 | Export-Csv -Path "C:\\Absent\\x.csv" -NoTypeInformation')).output.join('\n');
 
-    expect(out).toContain("Export-Csv : Could not find a part of the path 'C:\\Absent\\x.csv'.");
+    expect(out).toContain("Export-Csv: Could not find a part of the path 'C:\\Absent\\x.csv'.");
     expect(out).not.toContain('The system cannot find the path specified');
   });
 

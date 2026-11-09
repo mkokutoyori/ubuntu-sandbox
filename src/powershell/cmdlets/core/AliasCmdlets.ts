@@ -102,7 +102,6 @@ export class SetAliasCmdlet extends WriteAliasCmdlet {
 export class RemoveAliasCmdlet implements ICmdlet {
   readonly name = 'remove-alias';
   readonly aliases = [] as const;
-  readonly coreOnly = true as const;
   readonly parameters = ['Name', 'Scope', 'Force'] as const;
 
   execute(ctx: CmdletContext): PSValue {

@@ -16,6 +16,7 @@
  */
 
 import { renderTable, type TableColumn, padToWidth } from '../shells/cli/TextTable';
+import { testConnectionView } from './TestConnectionViews';
 import { registeredDisplay } from '@/powershell/runtime/PSExpansion';
 import { formatDouble } from '@/powershell/runtime/dotnetNumber';
 import { formatTimeSpan, isTimeSpan } from '@/powershell/runtime/dotnetTimeSpan';
@@ -736,6 +737,8 @@ export function formatDefault(objects: PSObject[]): string {
   if (objects.length === 0) return '';
   const matchInfo = matchInfoView(objects);
   if (matchInfo !== null) return matchInfo;
+  const testConnection = testConnectionView(objects);
+  if (testConnection !== null) return testConnection;
   const serverManager = serverManagerView(objects);
   if (serverManager !== null) return serverManager;
   const partitions = partitionDiskGroups(objects);

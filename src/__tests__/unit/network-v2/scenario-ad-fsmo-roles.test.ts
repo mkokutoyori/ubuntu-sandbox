@@ -103,9 +103,8 @@ describe('Scénario 10 — rôles FSMO : vérification, transfert et saisie (man
     it('Test-Connection DC01.mandeng.lan échoue une fois le câble de DC01 débranché', async () => {
       const { dc2, cDc1 } = await buildTwoDcs();
       cDc1.disconnect();
-      const out = await run(ps(dc2), 'Test-Connection DC01.mandeng.lan -Count 2 -ErrorAction SilentlyContinue');
-      expect(out).toMatch(/Status\s*:\s*Failure/);
-      expect(out).not.toMatch(/Status\s*:\s*Success/);
+      const out = await run(ps(dc2), 'Test-Connection DC01.mandeng.lan -Count 2 -Quiet');
+      expect(out.trim()).toBe('False');
     });
 
     it('Move-ADDirectoryServerOperationMasterRole -Force saisit SchemaMaster/DomainNamingMaster/InfrastructureMaster sur DC02 même avec DC01 hors ligne', async () => {

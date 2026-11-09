@@ -4,7 +4,7 @@
  * Bug from debug-output/ps-pipelines_results_debug.txt:
  *
  *     PS> 1..20 | ForEach-Object { $_ * $_ }
- *       1 : The term '1' is not recognized as the name of a cmdlet ...
+ *       1 : The term '1' is not recognized as a name of a cmdlet ...
  *
  * Real PowerShell evaluates `$_ * $_` as arithmetic for each item.
  * Our pipeline was substituting `$_` then routing the result to

@@ -178,45 +178,30 @@ export class PSEnvironment {
 // ─── Built-in Variable Initialiser ───────────────────────────────────────────
 
 /** Seeds the global scope with PowerShell built-in automatic variables. */
-export function seedBuiltins(env: PSEnvironment, edition: 'desktop' | 'core' = 'desktop'): void {
+export function seedBuiltins(env: PSEnvironment): void {
   env.set('true',  true);
   env.set('false', false);
   env.set('null',  null);
 
-  const psVersion = {
-    Major: 5, Minor: 1, Build: 0, Revision: -1,
-    MajorRevision: -1, MinorRevision: -1,
-    toString() { return '5.1.0'; },
+  const version = {
+    Major: 7, Minor: 6, Patch: 0, PreReleaseLabel: null, BuildLabel: null,
+    toString() { return '7.6.0'; },
   } as unknown as PSValue;
-  if (edition === 'core') {
-    const coreVersion = {
-      Major: 7, Minor: 6, Patch: 0, PreReleaseLabel: null, BuildLabel: null,
-      toString() { return '7.6.0'; },
-    } as unknown as PSValue;
-    env.set('PSVersionTable', {
-      PSVersion: coreVersion,
-      PSEdition: 'Core',
-      GitCommitId: '7.6.0',
-      PSCompatibleVersions: ['1.0', '2.0', '3.0', '4.0', '5.0', '5.1', '6.0', '7.0'],
-      SerializationVersion: '1.1.0.1',
-      PSRemotingProtocolVersion: '2.3',
-      WSManStackVersion: '3.0',
-      Platform: 'Win32NT',
-      OS: 'Microsoft Windows 10.0.19045',
-    } as Record<string, PSValue>);
-    env.set('IsWindows', true);
-    env.set('IsLinux', false);
-    env.set('IsMacOS', false);
-    env.set('IsCoreCLR', true);
-  } else env.set('PSVersionTable', {
-    PSVersion:           psVersion,
-    PSEdition:           'Desktop',
-    BuildVersion:        '10.0.19041.1',
-    CLRVersion:          '4.0.30319.42000',
-    WSManStackVersion:   '3.0',
-    PSCompatibleVersions: ['1.0', '2.0', '3.0', '4.0', '5.0', '5.1.0'],
+  env.set('PSVersionTable', {
+    PSVersion: version,
+    PSEdition: 'Core',
+    GitCommitId: '7.6.0',
+    PSCompatibleVersions: ['1.0', '2.0', '3.0', '4.0', '5.0', '5.1', '6.0', '7.0'],
     SerializationVersion: '1.1.0.1',
+    PSRemotingProtocolVersion: '2.3',
+    WSManStackVersion: '3.0',
+    Platform: 'Win32NT',
+    OS: 'Microsoft Windows 10.0.19045',
   } as Record<string, PSValue>);
+  env.set('IsWindows', true);
+  env.set('IsLinux', false);
+  env.set('IsMacOS', false);
+  env.set('IsCoreCLR', true);
 
   env.set('PSScriptRoot', '');
   env.set('PSCommandPath', '');
@@ -233,7 +218,7 @@ export function seedBuiltins(env: PSEnvironment, edition: 'desktop' | 'core' = '
   // $Error — accumulates error records
   env.set('Error', [] as PSValue[]);
 
-  // Preference variables — default values matching PS 5.1
+  // Preference variables — default values of PowerShell 7
   env.set('ErrorActionPreference', 'Continue');
   env.set('VerbosePreference',     'SilentlyContinue');
   env.set('DebugPreference',       'SilentlyContinue');
@@ -245,8 +230,8 @@ export function seedBuiltins(env: PSEnvironment, edition: 'desktop' | 'core' = '
 
   // Automatic path variables (generic defaults; host overrides via envVarHook)
   env.set('HOME',    'C:\\Users\\User');
-  env.set('PSHOME',  'C:\\Windows\\System32\\WindowsPowerShell\\v1.0');
-  env.set('PROFILE', 'C:\\Users\\User\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1');
+  env.set('PSHOME',  'C:\\Program Files\\PowerShell\\7');
+  env.set('PROFILE', 'C:\\Users\\User\\Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1');
 
   // Process / context automatic variables
   env.set('PID', 1234 as PSValue);

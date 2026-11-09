@@ -6,7 +6,7 @@ Meridian Industries a un siège et trois agences. Chaque site est protégé par 
 
 Barre d'outils → **Importer** → `topology.json`. Le fichier est généré par `src/labs/entrepriseMeridian/` : chaque équipement est configuré en tapant les mêmes commandes qu'un utilisateur (CLI FortiOS, PowerShell, bash).
 
-## Équipements (17)
+## Équipements (18)
 
 | Site | Équipement | Rôle | Adresse |
 |------|-----------|------|---------|
@@ -18,6 +18,7 @@ Barre d'outils → **Importer** → `topology.json`. Le fichier est généré pa
 | Siège | DC1 | Windows Server : AD DS + DNS `meridian.local` | 10.0.0.10 |
 | Siège | ORA-DB | Linux : listener Oracle (1521) | 10.0.0.30 |
 | Siège | PC-HQ | poste du siège | 10.0.0.50 |
+| Siège | SIEM | Linux : collecteur rsyslog (UDP 514) des journaux de FGT-HQ | 10.0.0.40 |
 | Siège (DMZ) | WEB-DMZ | Linux + nginx | 172.16.0.10 |
 | Siège (DMZ) | MAIL-DMZ | Windows Server + **Microsoft Exchange** (rôle Mailbox), membre de `meridian.local` | 172.16.0.25 |
 | Agence 1-3 | FGT-AGENCE1..3 | FortiGate : WAN `wan1` (203.0.113.2-4), LAN `port1` | 10.n.0.1 |
@@ -44,6 +45,10 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `visitor-reaches-published-web` | VIP `vip-web` (203.0.113.10:80 → WEB-DMZ) et politique `internet-to-web`. |
 | `visitor-reaches-published-mail` | VIP `vip-mail` (:25 → MAIL-DMZ) ; Exchange écoute dès l'installation (connecteur *Default Frontend*). |
 | `visitor-cannot-reach-oracle` | Seuls les ports publiés par un VIP traversent. |
+| `siem-receives-denied-probe` | FGT-HQ envoie au SIEM l'enregistrement de journal FortiOS lui-même (`config log syslogd setting`, format `default` en key=value), pas un message libre : la sonde refusée du visiteur vers 1521 y est lisible avec sa source, sa destination et son action. Le refus implicite n'est journalisé que parce que `fwpolicy-implicit-log` est activé. |
+| `visitor-reaches-published-web-over-tls` | VIP `vip-web-https` (`server-load-balance`, `ssl-mode half`, certificat `Fortinet_Factory`) : le pare-feu termine le TLS et relaie du HTTP en clair vers WEB-DMZ, qui n'a aucun certificat à gérer. |
+| `web-injection-cut-by-ips` | Constat d'audit corrigé : la politique `internet-to-web` applique le capteur IPS `web-protect` (signature personnalisée `Meridian.Injection`, action `block`, mode flux). Le prestataire d'audit lance `/opt/audit/check-web-injection.sh` : la sonde d'injection est coupée, une requête légitime est servie. |
+| `siem-receives-ips-event` | Le blocage est journalisé (type `utm`, sous-type `ips`) et le SIEM le reçoit avec l'adresse du prestataire comme source. |
 | `visitor-cannot-reach-lan` | Le LAN privé n'est pas joignable depuis Internet. |
 | `lan-to-internet-nat` | Le LAN sort sous l'adresse WAN (SNAT de la politique `lan-to-internet`). |
 | `internal-dns-from-lan` | Les postes résolvent `www.meridian.local` auprès de DC1. |

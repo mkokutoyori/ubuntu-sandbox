@@ -22,7 +22,6 @@ import type { ProviderFailure } from './core/ProviderFailures';
 // PSRuntime is referenced here via a forward-declaration interface to avoid
 // circular imports (PSRuntime imports CmdletContext, CmdletContext imports PSRuntime).
 export interface IRuntimeRef {
-  readonly edition: 'desktop' | 'core';
   readonly locations: PSLocationState;
   execute(code: string): string;
   executeInteractive(code: string): string;

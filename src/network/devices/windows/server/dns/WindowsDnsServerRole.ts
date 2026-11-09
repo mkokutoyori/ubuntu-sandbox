@@ -1064,7 +1064,8 @@ export class WindowsDnsServerRole {
     const targets = wanted
       .filter(address => !own.includes(address) && !settings.masters.includes(address))
       .map(address => IPAddress.tryParse(address))
-      .filter((ip): ip is IPAddress => ip !== null);
+      .filter((ip): ip is IPAddress => ip !== null)
+      .map((address) => ({ address }));
     notifyZoneTargets(this.host, zone, targets, this.notifyObserver);
   }
 

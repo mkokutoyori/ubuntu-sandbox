@@ -98,6 +98,7 @@ export interface SyslogPacket extends NetworkPdu {
   tag: string;
   message: string;
   timestamp: string;
+  verbatim?: string;
 }
 
 export interface SyslogServer {
@@ -174,6 +175,7 @@ export function shouldForward(threshold: SyslogSeverityName, severity: SyslogSev
 }
 
 export function formatBsdSyslog(packet: SyslogPacket): string {
+  if (packet.verbatim !== undefined) return packet.verbatim;
   const pri = priValue(packet.facility, packet.severity);
   return `<${pri}>${packet.timestamp} ${packet.hostname} ${packet.tag}: ${packet.message}`;
 }

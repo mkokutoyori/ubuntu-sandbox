@@ -15,7 +15,6 @@ export class JoinStringCmdlet implements ICmdlet {
   readonly displayName = 'Join-String';
   readonly description = 'Combines objects from the pipeline into a single string.';
   readonly aliases = [] as const;
-  readonly coreOnly = true as const;
   readonly parameters = ['Property', 'Separator', 'OutputPrefix', 'OutputSuffix', 'SingleQuote', 'DoubleQuote', 'FormatString', 'UseCulture', 'InputObject'] as const;
 
   execute(ctx: CmdletContext): PSValue {
@@ -59,7 +58,6 @@ export class TestJsonCmdlet implements ICmdlet {
   readonly displayName = 'Test-Json';
   readonly description = 'Tests whether a string is a valid JSON document.';
   readonly aliases = [] as const;
-  readonly coreOnly = true as const;
   readonly parameters = ['Json'] as const;
 
   execute(ctx: CmdletContext): PSValue {

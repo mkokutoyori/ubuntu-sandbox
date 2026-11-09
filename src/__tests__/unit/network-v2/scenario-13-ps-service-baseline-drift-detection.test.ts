@@ -39,7 +39,7 @@ async function buildBaseline(pc: WindowsPC): Promise<{ execute: (l: string) => P
   if (!pc.getFileSystem().exists('C:\\Baselines')) pc.getFileSystem().mkdirp('C:\\Baselines');
 
   await ps.execute(
-    'Get-WmiObject Win32_Service | Select-Object Name, DisplayName, PathName, StartName, StartMode, State | Export-Csv "C:\\Baselines\\baseline-services.csv" -NoTypeInformation',
+    'Get-CimInstance Win32_Service | Select-Object Name, DisplayName, PathName, StartName, StartMode, State | Export-Csv "C:\\Baselines\\baseline-services.csv" -NoTypeInformation',
   );
   await ps.execute(
     '(Get-FileHash "C:\\Baselines\\baseline-services.csv" -Algorithm SHA256).Hash | Out-File "C:\\Baselines\\baseline-services.sha256"',
@@ -88,7 +88,7 @@ $actualHash = (Get-FileHash $baselineCsv -Algorithm SHA256).Hash
 $integrityOk = $storedHash -eq $actualHash
 
 $baseline = Get-Content $baselineCsv | ConvertFrom-Csv
-$current = Get-WmiObject Win32_Service | Select-Object Name, DisplayName, PathName, StartName, StartMode, State
+$current = Get-CimInstance Win32_Service | Select-Object Name, DisplayName, PathName, StartName, StartMode, State
 
 $diff = Compare-Object -ReferenceObject $baseline -DifferenceObject $current -Property Name
 $added = $diff | Where-Object { $_.SideIndicator -eq "=>" }
@@ -103,7 +103,7 @@ foreach ($a in $added) { Write-Output "Added=$($a.Name)" }
       expect(detectOut).toContain('Added=WinUpdateHelper');
 
       const suspectOut = await ps.execute(
-        'Get-WmiObject Win32_Service | Where-Object { $_.Name -eq "WinUpdateHelper" } | Select-Object Name, PathName, StartName',
+        'Get-CimInstance Win32_Service | Where-Object { $_.Name -eq "WinUpdateHelper" } | Select-Object Name, PathName, StartName',
       );
       expect(suspectOut).toContain('WinUpdateHelper');
       expect(suspectOut).toContain('C:\\Users\\Public\\svc32.exe');

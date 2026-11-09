@@ -18,7 +18,7 @@ import { WindowsPC } from '@/network/devices/WindowsPC';
 import { LinuxPC } from '@/network/devices/LinuxPC';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
-import { PS_BANNER } from '@/network/devices/windows/PSConstants';
+import { PWSH_BANNER } from '@/network/devices/windows/PSConstants';
 import { PowerShellSubShell } from '@/terminal/subshells/PowerShellSubShell';
 import { MACAddress, resetCounters } from '@/network/core/types';
 import { resetDeviceCounters } from '@/network/devices/DeviceFactory';
@@ -313,9 +313,7 @@ describe('Group 3: PS cmdlets produce different format than CMD equivalents', ()
     // PS Test-Connection format
     expect(psOutput).toContain('Source');
     expect(psOutput).toContain('Destination');
-    expect(psOutput).toContain('IPV4Address');
-    expect(psOutput).toContain('Bytes');
-    expect(psOutput).toContain('Time(ms)');
+    expect(psOutput).toMatch(/Ping Source +Address +Latency +BufferSize +Status/);
 
     // Should NOT have CMD ping format
     expect(psOutput).not.toContain('Pinging');
@@ -355,8 +353,7 @@ describe('Group 4: PS-specific cmdlets return valid data', () => {
   });
 
   it('PSC-21: PS banner is well-formed', () => {
-    expect(PS_BANNER).toContain('Windows PowerShell');
-    expect(PS_BANNER).toContain('Microsoft Corporation');
+    expect(PWSH_BANNER).toContain('PowerShell 7.6.0');
   });
 
   it('PSC-22: $env variables return correct values', async () => {

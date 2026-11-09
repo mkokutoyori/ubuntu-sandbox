@@ -29,7 +29,7 @@ describe('a UInt32 parameter that is not a number', () => {
     const dns = await server();
     await run(dns, 'Set-DnsServerCache -MaxKBSize 4096');
     const out = await run(dns, 'Set-DnsServerCache -MaxKBSize abc');
-    expect(out).toContain(`Set-DnsServerCache : Cannot process argument transformation on parameter 'MaxKBSize'. Cannot convert value "abc" to type "System.UInt32".`);
+    expect(out).toContain(`Set-DnsServerCache: Cannot process argument transformation on parameter 'MaxKBSize'. Cannot convert value "abc" to type "System.UInt32".`);
     expect(await run(dns, '(Get-DnsServerCache).MaxKBSize')).toBe('4096');
   });
 

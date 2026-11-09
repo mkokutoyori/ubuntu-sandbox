@@ -24,6 +24,8 @@ import { tryIpToUint32, uint32ToIp, prefixLengthToMaskUint32 } from '../../core/
 import { type IEventBus } from '@/events/EventBus';
 import { BusHolder } from '@/events/BusHolder';
 import { Logger } from '../../core/Logger';
+import type { VirtualReassembly } from './VirtualReassembly';
+import { FragmentRewriteMemory, applyFragmentRewrite, fragmentRole, type FragmentStage } from './FragmentRewriteMemory';
 import { inspectAndRewriteFtpAlg } from './nat/FtpAlg';
 import { DNS_PORT } from '../../dns/transport/DnsUdpTransport';
 import {
@@ -180,6 +182,8 @@ export interface NatTranslationEntry {
 /** Lower bound of the PAT ephemeral range (Cisco IOS overload default). */
 const NAT_EPHEMERAL_MIN = 1024;
 
+const DEFAULT_FRAGMENT_LIFETIME_MS = 3000;
+
 export const DEFAULT_NAT_TIMEOUTS: Readonly<NatTimeouts> = Object.freeze({
   tcp:         86_400_000,   // 24 h  — RFC 2663 §2.3.1
   tcpHalfOpen:     30_000,   // 30 s  — RFC 6146 §4
@@ -239,6 +243,9 @@ export class NATEngine {
   getMaxEntriesAllHost(): number | null { return this.maxEntriesAllHost; }
 
   private outboundRefused = false;
+  private readonly fragmentRewrites = new FragmentRewriteMemory();
+  private reassembly: VirtualReassembly | null = null;
+  private fragmentLifetimeMs: (iface: string) => number = () => DEFAULT_FRAGMENT_LIFETIME_MS;
   private translationErrors = 0;
   private readonly hostBindings = new Map<string, NatHostBinding>();
 
@@ -317,10 +324,16 @@ export class NATEngine {
 
   // ─── Configuration API ────────────────────────────────────────────
 
-  setInsideInterface(iface: string): void   { this.insideIfaces.add(iface); }
-  setOutsideInterface(iface: string): void  { this.outsideIfaces.add(iface); }
-  removeInsideInterface(iface: string): void  { this.insideIfaces.delete(iface); }
-  removeOutsideInterface(iface: string): void { this.outsideIfaces.delete(iface); }
+  setInsideInterface(iface: string): void   { if (!this.insideIfaces.has(iface)) this.reassembly?.retain(iface); this.insideIfaces.add(iface); }
+  setOutsideInterface(iface: string): void  { if (!this.outsideIfaces.has(iface)) this.reassembly?.retain(iface); this.outsideIfaces.add(iface); }
+  removeInsideInterface(iface: string): void  { if (this.insideIfaces.delete(iface)) this.reassembly?.release(iface); }
+  removeOutsideInterface(iface: string): void { if (this.outsideIfaces.delete(iface)) this.reassembly?.release(iface); }
+
+  attachVirtualReassembly(reassembly: VirtualReassembly): void {
+    this.reassembly = reassembly;
+    for (const iface of [...this.insideIfaces, ...this.outsideIfaces]) reassembly.retain(iface);
+    this.fragmentLifetimeMs = (iface) => reassembly.lifetimeMs(iface);
+  }
 
   isInsideInterface(iface: string): boolean  { return this.insideIfaces.has(iface); }
   isOutsideInterface(iface: string): boolean { return this.outsideIfaces.has(iface); }
@@ -510,7 +523,27 @@ export class NATEngine {
     return session?.seqAdjust ? this.shiftSequence(translated, 'inbound', session) : translated;
   }
 
+  private followingFragments(
+    stage: FragmentStage, pkt: IPv4Packet, iface: string, translate: (datagram: IPv4Packet) => IPv4Packet | null,
+  ): IPv4Packet | null {
+    const role = fragmentRole(pkt);
+    if (role === 'subsequent') {
+      const rewrite = this.fragmentRewrites.recall(stage, iface, pkt);
+      if (rewrite === undefined) return null;
+      const followed = applyFragmentRewrite(pkt, rewrite);
+      if (followed !== pkt) this.hitCount++;
+      return followed !== pkt ? followed : null;
+    }
+    const translated = translate(pkt);
+    if (role === 'initial') this.fragmentRewrites.remember(stage, iface, pkt, translated, this.fragmentLifetimeMs(iface));
+    return translated;
+  }
+
   private translateInboundPacket(pkt: IPv4Packet, inIface: string): IPv4Packet | null {
+    return this.followingFragments('inbound', pkt, inIface, (datagram) => this.translateInboundDatagram(datagram, inIface));
+  }
+
+  private translateInboundDatagram(pkt: IPv4Packet, inIface: string): IPv4Packet | null {
     // Standard path: packet arrives on outside interface
     // Hairpin path (RFC 5382 §5): packet arrives on inside interface but targets
     // one of our global/public IPs — DNAT it back to the inside server.
@@ -700,6 +733,13 @@ export class NATEngine {
   }
 
   private translateOutboundPacket(
+    pkt: IPv4Packet, outIface: string, inIface: string,
+    opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
+  ): IPv4Packet | null {
+    return this.followingFragments('outbound', pkt, inIface, (datagram) => this.translateOutboundDatagram(datagram, outIface, inIface, opts));
+  }
+
+  private translateOutboundDatagram(
     pkt: IPv4Packet, outIface: string, inIface: string,
     opts?: { isHairpin?: boolean; aclMatchPkt?: IPv4Packet },
   ): IPv4Packet | null {

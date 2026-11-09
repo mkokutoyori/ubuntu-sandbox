@@ -121,20 +121,20 @@ describe('config log syslogd setting', () => {
     await evenementJournalise(sh, poste);
 
     const journal = await collecteur.executeCommand('cat /var/log/syslog');
-    expect(journal).toMatch(/FGT .*Deny ICMP src port1:192\.168\.1\.10/);
+    expect(journal).toMatch(/logid="0000000015" type="traffic".*srcip=192\.168\.1\.10.*action="deny"/);
   });
 
   it('`set status disable` eteint vraiment l`emission', async () => {
     const { sh, collecteur, poste } = await laboratoire();
     collecteurDeclare(sh);
     await evenementJournalise(sh, poste);
-    expect(await collecteur.executeCommand('cat /var/log/syslog')).toMatch(/FGT .*Deny/);
+    expect(await collecteur.executeCommand('cat /var/log/syslog')).toMatch(/type="traffic".*action="deny"/);
 
     run(sh, 'config log syslogd setting', 'set status disable', 'end');
     await runOn(collecteur, ['truncate -s 0 /var/log/syslog']);
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
 
-    expect(await collecteur.executeCommand('cat /var/log/syslog')).not.toMatch(/FGT .*Deny/);
+    expect(await collecteur.executeCommand('cat /var/log/syslog')).not.toMatch(/type="traffic".*action="deny"/);
   });
 
   it('sans collecteur declare, rien ne part', async () => {
@@ -142,7 +142,7 @@ describe('config log syslogd setting', () => {
 
     await evenementJournalise(sh, poste);
 
-    expect(await collecteur.executeCommand('cat /var/log/syslog')).not.toMatch(/FGT .*Deny/);
+    expect(await collecteur.executeCommand('cat /var/log/syslog')).not.toMatch(/type="traffic".*action="deny"/);
   });
 
   it('le port declare est celui utilise', async () => {
@@ -158,13 +158,13 @@ describe('config log syslogd setting', () => {
     const { sh, collecteur, poste } = await laboratoire();
     collecteurDeclare(sh);
     await evenementJournalise(sh, poste);
-    expect(await collecteur.executeCommand('cat /var/log/syslog')).toMatch(/FGT .*Deny/);
+    expect(await collecteur.executeCommand('cat /var/log/syslog')).toMatch(/type="traffic".*action="deny"/);
 
     run(sh, 'config log syslogd filter', 'set severity emergency', 'end');
     await runOn(collecteur, ['truncate -s 0 /var/log/syslog']);
     await pingOnSimulatedClock(poste, 'ping -c 1 203.0.113.10');
 
-    expect(await collecteur.executeCommand('cat /var/log/syslog')).not.toMatch(/FGT .*Deny/);
+    expect(await collecteur.executeCommand('cat /var/log/syslog')).not.toMatch(/type="traffic".*action="deny"/);
   });
 
   it('les quatre collecteurs sont quatre destinations distinctes', async () => {

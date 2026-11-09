@@ -13,13 +13,13 @@
 import { describe, it, expect } from 'vitest';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 
-function run(code: string, language: 'core' | 'desktop' = 'core'): string {
-  const interp = new PSInterpreter(undefined, { language });
+function run(code: string): string {
+  const interp = new PSInterpreter();
   interp.beginInteractive(code);
   return interp.resumeInteractive().replace(/\r?\n/g, '|');
 }
 
-const CASES: Array<[string, string, ('core' | 'desktop')?]> = [
+const CASES: Array<[string, string]> = [
   ['function f { param($T, $V) $V -as $T }; f -T ([int]) -V $true', '1'],
   ['function f { param($T, $V) $V -is $T }; f -T ([int]) -V 5', 'True'],
   ['$t = [int]; $t -is [type]', 'True'],
@@ -41,7 +41,6 @@ const CASES: Array<[string, string, ('core' | 'desktop')?]> = [
   ['[int]"5"', '5'],
   ['[bigint]5 + 1', '6'],
   ['[string](1.1*3)', '3.3'],
-  ['(1.1*3).ToString()', '3.3', 'desktop'],
   ['$null -as [int]', '0'],
   ['$true -as [int]', '1'],
   ['$a = [Collections.ArrayList]::new(); $a.Add(1) > $null; $a.Count', '1'],
@@ -49,9 +48,9 @@ const CASES: Array<[string, string, ('core' | 'desktop')?]> = [
 ];
 
 describe('conversions de types', () => {
-  for (const [code, expected, language] of CASES) {
-    it(`${language ?? 'core'}: ${code.slice(0, 80)}`, () => {
-      expect(run(code, language ?? 'core')).toBe(expected);
+  for (const [code, expected] of CASES) {
+    it(code.slice(0, 80), () => {
+      expect(run(code)).toBe(expected);
     });
   }
 });

@@ -119,13 +119,13 @@ describe('Server Manager cmdlets do not exist on a Windows client (PRD §2.1.2)'
     const pc = new WindowsPC('windows-pc', 'DESKTOP-01');
     pc.setCurrentUser('Administrator');
     const out = await run(ps(pc), 'Get-WindowsFeature');
-    expect(out).toMatch(/is not recognized as the name of a cmdlet/i);
+    expect(out).toMatch(/is not recognized as a name of a cmdlet/i);
   });
 
   it('Install-WindowsFeature is "not recognized" on a windows-pc', async () => {
     const pc = new WindowsPC('windows-pc', 'DESKTOP-01');
     pc.setCurrentUser('Administrator');
     const out = await run(ps(pc), 'Install-WindowsFeature FS-FileServer');
-    expect(out).toMatch(/is not recognized as the name of a cmdlet/i);
+    expect(out).toMatch(/is not recognized as a name of a cmdlet/i);
   });
 });

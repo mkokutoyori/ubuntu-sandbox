@@ -2873,9 +2873,7 @@ Resolve-DnsName nexiste.banquehorizon.com
 ```
 
 ```
-Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist
-    + CategoryInfo          : ResourceUnavailable: (nexiste.banquehorizon.com:String) [Resolve-DnsName], Win32Exception
-    + FullyQualifiedErrorId : DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName
+Resolve-DnsName: nexiste.banquehorizon.com : DNS name does not exist
 ```
 
 ```powershell
@@ -2884,9 +2882,7 @@ Resolve-DnsName web.banquehorizon.com -Type AAAA
 ```
 
 ```
-Resolve-DnsName : web.banquehorizon.com : DNS record does not exist
-    + CategoryInfo          : ResourceUnavailable: (web.banquehorizon.com:String) [Resolve-DnsName], Win32Exception
-    + FullyQualifiedErrorId : DNS_ERROR_RECORD_DOES_NOT_EXIST,Microsoft.DnsClient.Commands.ResolveDnsName
+Resolve-DnsName: web.banquehorizon.com : DNS record does not exist
 ```
 
 PowerShell affiche une erreur rouge dans les deux cas, mais les deux messages ne sont pas les mêmes : `DNS name does not exist` (le nom n'existe pas) pour NXDOMAIN, `DNS record does not exist` (le nom existe, la fiche non) pour NODATA. Cherche le mot après `FullyQualifiedErrorId` : `DNS_ERROR_RCODE_NAME_ERROR` ou `DNS_ERROR_RECORD_DOES_NOT_EXIST`.
@@ -5042,9 +5038,7 @@ Resolve-DnsName nexiste.banquehorizon.com
 ```
 
 ```
-Resolve-DnsName : nexiste.banquehorizon.com : DNS name does not exist
-    + CategoryInfo          : ResourceUnavailable: (nexiste.banquehorizon.com:String) [Resolve-DnsName], Win32Exception
-    + FullyQualifiedErrorId : DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName
+Resolve-DnsName: nexiste.banquehorizon.com : DNS name does not exist
 ```
 
 C'est l'erreur que tu connais (TP 13, `DNS name does not exist`). Maintenant regarde si le poste l'a retenue :
@@ -5910,9 +5904,7 @@ Resolve-DnsName dc1.horizon.local
 ```
 
 ```
-Resolve-DnsName : dc1.horizon.local : This operation returned because the timeout period expired
-    + CategoryInfo          : ResourceUnavailable: (dc1.horizon.local:String) [Resolve-DnsName], Win32Exception
-    + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName
+Resolve-DnsName: dc1.horizon.local : This operation returned because the timeout period expired
 ```
 
 L'erreur est `ERROR_TIMEOUT` : « le délai est dépassé ». **Personne n'a répondu.** Ce n'est pas `DNS name does not exist` (TP 13) : ce message-là veut dire qu'un serveur a répondu « ce nom n'existe pas ». Ici, il n'y a pas de serveur.
@@ -5981,9 +5973,7 @@ Resolve-DnsName www.banquehorizon.com
 ```
 
 ```
-Resolve-DnsName : www.banquehorizon.com : This operation returned because the timeout period expired
-    + CategoryInfo          : ResourceUnavailable: (www.banquehorizon.com:String) [Resolve-DnsName], Win32Exception
-    + FullyQualifiedErrorId : ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName
+Resolve-DnsName: www.banquehorizon.com : This operation returned because the timeout period expired
 ```
 
 Le nom **public** reste en panne : la règle ne concerne que `.horizon.local`. Pour les autres noms, le poste utilise toujours le serveur cassé. C'est l'intérêt d'une règle **par suffixe** : elle ne répare, et ne casse, que ce qu'elle nomme.

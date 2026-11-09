@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 
 function run(code: string): string {
-  return new PSInterpreter(undefined, { language: 'core' }).execute(code).replace(/\r?\n/g, '|');
+  return new PSInterpreter().execute(code).replace(/\r?\n/g, '|');
 }
 
 const VALUES: Array<[string, string]> = [
@@ -93,6 +93,6 @@ describe('probe operateurs lot D : valeurs', () => {
 
 describe('probe operateurs lot D : erreurs', () => {
   it.each(FAILURES)('%s', (code, fragment) => {
-    expect(() => new PSInterpreter(undefined, { language: 'core' }).execute(code)).toThrow(fragment);
+    expect(() => new PSInterpreter().execute(code)).toThrow(fragment);
   });
 });

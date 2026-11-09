@@ -134,9 +134,9 @@ describe('Get-Queue/Retry-Queue/Suspend-Queue/Resume-Queue (docs/PRD-Exchange.md
     const retry = await run(ps(dc), 'Retry-Queue -Identity partner.example');
     const suspend = await run(ps(dc), 'Suspend-Queue -Identity partner.example');
     const resume = await run(ps(dc), 'Resume-Queue -Identity partner.example');
-    expect(get).toContain('is not recognized as the name of a cmdlet');
-    expect(retry).toContain('is not recognized as the name of a cmdlet');
-    expect(suspend).toContain('is not recognized as the name of a cmdlet');
-    expect(resume).toContain('is not recognized as the name of a cmdlet');
+    expect(get).toContain('is not recognized as a name of a cmdlet');
+    expect(retry).toContain('is not recognized as a name of a cmdlet');
+    expect(suspend).toContain('is not recognized as a name of a cmdlet');
+    expect(resume).toContain('is not recognized as a name of a cmdlet');
   });
 });

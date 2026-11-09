@@ -37,7 +37,7 @@
  *  - `TEMOIN : Get-Service repond` — TEMOIN : prouve que le labo repond,
  *    sans quoi une salve de refus ne prouverait rien.
  *  - `Write-Output seul imprime ses valeurs` et `Write-Host garde ses
- *    lignes` — NON-REGRESSION : la regle du tuyau ne doit pas faire
+ *    lignes` — NON-REGRESSION: la regle du tuyau ne doit pas faire
  *    taire une etape unique, ni une etape qui ne rend rien.
  *  - les trois cas `exit` / `if` — NON-REGRESSION eux aussi. La premiere
  *    ecriture de la regle du tuyau (Write-Output rendant sa valeur SANS
@@ -140,10 +140,10 @@ describe('exit garde ce que le script a deja ecrit', () => {
 });
 
 describe('les refus nomment la brique absente', () => {
-  it('Get-Service et Get-Process refusent -ComputerName', async () => {
+  it('Get-Service et Get-Process n ont pas -ComputerName sous PowerShell 7', async () => {
     const { ps } = lab();
-    expect(await ps('Get-Service -ComputerName ailleurs')).toContain('Cannot connect to');
-    expect(await ps('Get-Process -ComputerName ailleurs')).toContain('Cannot connect to');
+    expect(await ps('Get-Service -ComputerName ailleurs')).toContain("A parameter cannot be found that matches parameter name 'ComputerName'.");
+    expect(await ps('Get-Process -ComputerName ailleurs')).toContain("A parameter cannot be found that matches parameter name 'ComputerName'.");
   });
 
   it('New-Item refuse un lien symbolique', async () => {
@@ -152,7 +152,7 @@ describe('les refus nomment la brique absente', () => {
       .toContain('the file system has no links');
   });
 
-  it('une cmdlet qui refuse n annonce PAS un What-if : Initialize-Disk et Format-Volume', async () => {
+  it('une cmdlet qui refuse n annonce PAS un What-if: Initialize-Disk et Format-Volume', async () => {
     const { ps } = lab();
     const disque = await ps('Initialize-Disk -Number 0 -WhatIf');
     expect(disque).toContain('no partition table');
@@ -171,10 +171,10 @@ describe('les refus nomment la brique absente', () => {
   });
 });
 
-describe('Test-Connection : la forme de l echec reste celle du simulateur', () => {
-  it('un hote injoignable rend une LIGNE par tentative portant Status Failure, et -Quiet rend False', async () => {
+describe('Test-Connection: la forme de l echec reste celle du simulateur', () => {
+  it('un hote injoignable rend une LIGNE par tentative portant Status TimedOut, et -Quiet rend False', async () => {
     const { ps } = lab();
-    expect(await ps('Test-Connection 10.255.255.1 -Count 1')).toMatch(/Status\s*:\s*Failure/);
+    expect(await ps('Test-Connection 10.255.255.1 -Count 1')).toMatch(/ +\* +\* +TimedOut/);
     expect((await ps('Test-Connection 10.255.255.1 -Count 1 -Quiet')).trim()).toBe('False');
   });
 });

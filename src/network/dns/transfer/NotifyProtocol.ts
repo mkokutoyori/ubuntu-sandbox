@@ -6,6 +6,8 @@ import { queryDnsOverUdp, DNS_PORT } from '@/network/dns/transport/DnsUdpTranspo
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 import type { DnsMessage } from '@/network/dns/wire/DnsMessage';
 import type { ResourceRecord, ResourceRecordData, SoaRecordData } from '@/network/dns/wire/ResourceRecord';
+import { simulationNowMs } from '@/network/core/SystemClock';
+import { signedDnsMessage, type TsigKey } from '@/network/dns/tsig/Tsig';
 
 const NOTIFY_TIMEOUT_MS = 1000;
 const ID_SPACE = 0x10000;
@@ -50,6 +52,12 @@ export function makeNotifyAck(notify: DnsMessage): DnsMessage {
   };
 }
 
+export interface NotifyTarget {
+  readonly address: IPAddress;
+  readonly port?: number;
+  readonly key?: TsigKey;
+}
+
 export async function sendNotify(
   host: EndHost,
   secondaryIP: IPAddress,
@@ -57,7 +65,12 @@ export async function sendNotify(
   soa: ResourceRecord<SoaRecordData>,
   timeoutMs: number = NOTIFY_TIMEOUT_MS,
   observer?: DnsPacketObserver,
+  target: Omit<NotifyTarget, 'address'> = {},
 ): Promise<boolean> {
-  const ack = await queryDnsOverUdp(host, secondaryIP, makeNotify(origin, soa), DNS_PORT, timeoutMs, undefined, observer);
+  const notify = makeNotify(origin, soa);
+  const message = target.key === undefined
+    ? notify
+    : signedDnsMessage(notify, { key: target.key, timeSigned: Math.floor(simulationNowMs() / 1000) });
+  const ack = await queryDnsOverUdp(host, secondaryIP, message, target.port ?? DNS_PORT, timeoutMs, undefined, observer);
   return ack !== null;
 }

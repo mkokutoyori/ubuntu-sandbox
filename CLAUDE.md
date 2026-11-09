@@ -79,7 +79,7 @@ A RFC is not automatically the reference. What governs is the **officially adopt
 
 **The official documentation is in the repository, under `official_docs/`** — Cisco command references (IOS security, management, IP routing, IOS XE Catalyst 9600, ASA), Microsoft `windows-commands` and PowerShell 7.6. It is the authority of this rule for CLI syntax, defaults, keywords and error wording: read the page of the command you touch (`pdftotext -layout`, extracted into your scratchpad, not committed) before changing its grammar, and align on it. `docs/rfc/` holds the adopted standards.
 
-**For PowerShell 7 and the .NET behaviour behind a cmdlet, the real source on GitHub (`github.com/PowerShell/PowerShell`, read-only shallow clone, outside the repository) is a reference too**: parameter sets, aliases under `#if !CORECLR`, error resources (`*Resources.resx`). Windows PowerShell 5.1 is closed-source: for it, only the Microsoft documentation applies.
+**For PowerShell 7 and the .NET behaviour behind a cmdlet, the real source on GitHub (`github.com/PowerShell/PowerShell`, read-only shallow clone, outside the repository) is a reference too**: parameter sets, aliases under `#if !CORECLR`, error resources (`*Resources.resx`). **PowerShell 7 is the only PowerShell of the project**: `powershell`, `powershell.exe`, `pwsh` and `pwsh.exe` all open PowerShell 7.6 (`$PSVersionTable.PSEdition` is `Core`), there is no Windows PowerShell 5.1 edition and no `desktop`/`core` switch to reintroduce. Errors use the ConciseView form `Cmdlet: message`; `Get-WmiObject`, `-ComputerName` on `Get-Process`/`Get-Service` and the other 5.1-only surface do not exist.
 
 ### 9. Do not write comments — absolute
 

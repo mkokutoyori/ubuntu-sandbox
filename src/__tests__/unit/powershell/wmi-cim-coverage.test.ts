@@ -1,5 +1,5 @@
 /**
- * Get-CimInstance/Get-WmiObject coverage (rapport 06, item #47). Only
+ * Get-CimInstance/Get-CimInstance coverage (rapport 06, item #47). Only
  * Win32_Process/Win32_Service/Win32_PerfFormattedData_PerfProc_Process/
  * SoftwareLicensingProduct were wired to real per-device state; every other
  * class name threw "not recognized". Adds Win32_NetworkAdapter,
@@ -43,12 +43,6 @@ describe('Win32_NetworkAdapter', () => {
     expect(mac).toMatch(/^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/im);
     expect(fromGetNetAdapter).toMatch(/^(?:[0-9A-F]{2}-){5}[0-9A-F]{2}$/im);
     expect(mac.replace(/:/g, '-')).toBe(fromGetNetAdapter);
-  });
-
-  it('gwmi alias resolves the same class', async () => {
-    const pc = new WindowsPC('windows-pc', 'PC1');
-    const out = await run(ps(pc), 'gwmi Win32_NetworkAdapter | Select-Object -ExpandProperty Name');
-    expect(out.trim().length).toBeGreaterThan(0);
   });
 });
 

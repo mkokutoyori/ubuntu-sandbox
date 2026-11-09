@@ -109,7 +109,7 @@ export function writeExecutionPolicy(
   }
   if (outcomes.some(outcome => outcome.includes('Requested registry access is not allowed'))) {
     return `Access to the registry key '${key.replace(/^HKLM:\\/, 'HKEY_LOCAL_MACHINE\\')}' is denied. `
-      + 'To change the execution policy for the default (LocalMachine) scope, start Windows PowerShell '
+      + 'To change the execution policy for the default (LocalMachine) scope, start PowerShell '
       + 'with the "Run as administrator" option. To change the execution policy for the current user, '
       + 'run "Set-ExecutionPolicy -Scope CurrentUser".';
   }

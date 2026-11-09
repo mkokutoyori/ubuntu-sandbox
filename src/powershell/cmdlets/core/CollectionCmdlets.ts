@@ -235,7 +235,6 @@ function isTruthy(val: PSValue): boolean {
 export class ForEachObjectCmdlet implements ICmdlet {
   readonly name = 'foreach-object';
   readonly parameters = ['Process', 'InputObject', 'Begin', 'End', 'MemberName', 'ArgumentList', 'Parallel', 'ThrottleLimit'] as const;
-  readonly coreOnlyParameters = ['Parallel', 'ThrottleLimit'] as const;
   readonly aliases = ['foreach', '%'] as const;
 
   execute(ctx: CmdletContext): PSValue {

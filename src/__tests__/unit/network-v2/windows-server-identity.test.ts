@@ -57,10 +57,7 @@ describe('4-source identity coherence — windows-server', () => {
     expect(gci).toContain('Windows Server 2022 Standard');
     expect(gci).toMatch(/WindowsInstallationType\s+: Server/);
 
-    // $PSVersionTable.BuildVersion — same registry-backed build as the
-    // three checks above. Windows PowerShell 5.1 has no `OS` key (that is
-    // PowerShell Core's), so the build is read where 5.1 publishes it.
-    const psVersion = await run(ps(srv), '$PSVersionTable.BuildVersion');
+    const psVersion = await run(ps(srv), '$PSVersionTable.OS');
     expect(psVersion).toContain('10.0.20348');
     expect(await run(ps(srv), '(Get-ComputerInfo).OsVersion')).toContain('10.0.20348');
   });
@@ -88,7 +85,7 @@ describe('4-source identity coherence — windows-pc (unaffected by server chang
     expect(gci).toContain('Windows 10 Pro');
     expect(gci).toMatch(/WindowsInstallationType\s+: Client/);
 
-    const psVersion = await run(ps(pc), '$PSVersionTable.BuildVersion');
+    const psVersion = await run(ps(pc), '$PSVersionTable.OS');
     expect(psVersion).toContain('10.0.22631');
   });
 });

@@ -113,7 +113,7 @@ describe('Transport connector cmdlets fail with "not recognized" before Install-
     await run(ps(dc), 'Install-ADDSForest -DomainName "mandeng.lan" -DomainNetBiosName "MANDENG" -SafeModeAdministratorPassword (ConvertTo-SecureString "DSRM@Mandeng2025!" -AsPlainText -Force) -Force:$true');
     const recv = await run(ps(dc), 'Get-ReceiveConnector');
     const send = await run(ps(dc), 'Get-SendConnector');
-    expect(recv).toContain('is not recognized as the name of a cmdlet');
-    expect(send).toContain('is not recognized as the name of a cmdlet');
+    expect(recv).toContain('is not recognized as a name of a cmdlet');
+    expect(send).toContain('is not recognized as a name of a cmdlet');
   });
 });

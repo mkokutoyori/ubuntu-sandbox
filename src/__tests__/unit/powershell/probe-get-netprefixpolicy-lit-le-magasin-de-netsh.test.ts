@@ -3,7 +3,7 @@
  * `WindowsPC.destinationPolicy()` donne a l'ordre des destinations. La cmdlet rend la table ACTIVE, celle que la pile utilise.
  *
  * Mesure de depart (ed7e539e, un WindowsPC administrateur) : `netsh interface ipv6 show prefixpolicies` rend la table de neuf lignes,
- * mais `Get-NetPrefixPolicy` n'existe pas (« is not recognized as the name of a cmdlet ») : une machine a un magasin et une seule de
+ * mais `Get-NetPrefixPolicy` n'existe pas (« is not recognized as a name of a cmdlet ») : une machine a un magasin et une seule de
  * ses deux interfaces le lit.
  *
  * Autorites : la page Microsoft Learn `Get-NetPrefixPolicy` (module NetTCPIP, windowsserver2022-ps) pour la syntaxe
@@ -127,7 +127,7 @@ describe('the filters of the documented syntax', () => {
   it('a filter that selects nothing is an error that names the property, as every CIM cmdlet says it', async () => {
     const { ps } = lab();
     expect(await ps("Get-NetPrefixPolicy -Prefix '2001:db8::/32'"))
-      .toContain("Get-NetPrefixPolicy : No MSFT_NetPrefixPolicy objects found with property 'Prefix' equal to '2001:db8::/32'.  Verify the value of the property and retry.");
+      .toContain("Get-NetPrefixPolicy: No MSFT_NetPrefixPolicy objects found with property 'Prefix' equal to '2001:db8::/32'.  Verify the value of the property and retry.");
     expect(await ps('Get-NetPrefixPolicy -Precedence 1,2 -Label 99'))
       .toContain("No MSFT_NetPrefixPolicy objects found with property 'Label' equal to '99'.");
   });

@@ -126,18 +126,14 @@ describe('Move-Item moves what the provider would move', () => {
   it('reports a missing source by its full path', async () => {
     const shell = await lab();
     const out = await shell.run('Move-Item src\\nope.txt dest');
-    expect(out).toContain("Move-Item : Cannot find path 'C:\\Users\\User\\src\\nope.txt' because it does not exist.");
-    expect(out).toContain('ObjectNotFound: (C:\\Users\\User\\src\\nope.txt:String) [Move-Item], ItemNotFoundException');
-    expect(out).toContain('PathNotFound,Microsoft.PowerShell.Commands.MoveItemCommand');
+    expect(out).toContain("Move-Item: Cannot find path 'C:\\Users\\User\\src\\nope.txt' because it does not exist.");
   });
 
   it('refuses a destination file that exists and leaves both files alone', async () => {
     const shell = await lab();
     await shell.run('Set-Content dest\\a.txt kept');
     const out = await shell.run('Move-Item src\\a.txt dest');
-    expect(out).toContain('Move-Item : Cannot create a file when that file already exists.');
-    expect(out).toContain('WriteError: (C:\\Users\\User\\src\\a.txt:String) [Move-Item], IOException');
-    expect(out).toContain('MoveFileInfoItemIOError,Microsoft.PowerShell.Commands.MoveItemCommand');
+    expect(out).toContain("Move-Item: Cannot create 'C:\\Users\\User\\dest\\a.txt' because a file or directory with the same name already exists.");
     expect(await shell.run('Get-Content dest\\a.txt')).toBe('kept');
     expect(await shell.run('Get-Content src\\a.txt')).toBe('first');
   });
@@ -155,9 +151,7 @@ describe('Move-Item moves what the provider would move', () => {
     const shell = await lab();
     await shell.run('New-Item -Path src -Name inner -ItemType Directory');
     const out = await shell.run('Move-Item src src\\inner');
-    expect(out).toContain('Move-Item : Destination path cannot be a subdirectory of the source: C:\\Users\\User\\src.');
-    expect(out).toContain('InvalidArgument: (C:\\Users\\User\\src:String) [Move-Item], ArgumentException');
-    expect(out).toContain('MoveItemArgumentError,Microsoft.PowerShell.Commands.MoveItemCommand');
+    expect(out).toContain('Move-Item: Destination path cannot be a subdirectory of the source: C:\\Users\\User\\src.');
     expect(await shell.run('Test-Path src\\a.txt')).toBe('True');
   });
 
@@ -218,19 +212,15 @@ describe('Rename-Item renames what the provider would rename', () => {
   it('refuses a new name that is a path', async () => {
     const shell = await lab();
     const out = await shell.run('Rename-Item src\\a.txt src\\y.txt');
-    expect(out).toContain('Rename-Item : Cannot rename the specified target, because it represents a path or device name.');
-    expect(out).toContain('Parameter name: newName');
-    expect(out).toContain('InvalidArgument: (C:\\Users\\User\\src\\a.txt:String) [Rename-Item], ArgumentException');
-    expect(out).toContain('RenameItemArgumentError,Microsoft.PowerShell.Commands.RenameItemCommand');
+    expect(out).toContain('Rename-Item: Cannot rename the specified target, because it represents a path or device name.');
+    expect(out).toContain("(Parameter 'newName')");
     expect(await names(shell, 'src')).toEqual(['a.txt', 'b.txt', 'c.log']);
   });
 
   it('refuses a name that is already taken', async () => {
     const shell = await lab();
     const out = await shell.run('Rename-Item src\\a.txt b.txt');
-    expect(out).toContain('Rename-Item : Cannot create a file when that file already exists.');
-    expect(out).toContain('WriteError: (C:\\Users\\User\\src\\a.txt:String) [Rename-Item], IOException');
-    expect(out).toContain('RenameItemIOError,Microsoft.PowerShell.Commands.RenameItemCommand');
+    expect(out).toContain("Rename-Item: Cannot create 'C:\\Users\\User\\src\\b.txt' because a file or directory with the same name already exists.");
     expect(await shell.run('Get-Content src\\b.txt')).toBe('second');
   });
 
@@ -243,8 +233,7 @@ describe('Rename-Item renames what the provider would rename', () => {
   it('reports a missing item by its full path', async () => {
     const shell = await lab();
     const out = await shell.run('Rename-Item src\\nope.txt z.txt');
-    expect(out).toContain("Rename-Item : Cannot find path 'C:\\Users\\User\\src\\nope.txt' because it does not exist.");
-    expect(out).toContain('PathNotFound,Microsoft.PowerShell.Commands.RenameItemCommand');
+    expect(out).toContain("Rename-Item: Cannot find path 'C:\\Users\\User\\src\\nope.txt' because it does not exist.");
   });
 
   it('refuses an empty new name', async () => {
@@ -264,9 +253,7 @@ describe('Copy-Item refuses to copy an item onto itself with the provider wordin
   it('names the item and the provider identifier', async () => {
     const shell = await lab();
     const out = await shell.run('Copy-Item src\\a.txt src\\a.txt');
-    expect(out).toContain('Copy-Item : Cannot overwrite the item C:\\Users\\User\\src\\a.txt with itself.');
-    expect(out).toContain('WriteError: (C:\\Users\\User\\src\\a.txt:String) [Copy-Item], IOException');
-    expect(out).toContain('CopyError,Microsoft.PowerShell.Commands.CopyItemCommand');
+    expect(out).toContain('Copy-Item: Cannot overwrite the item C:\\Users\\User\\src\\a.txt with itself.');
   });
 
   it('refuses it too when the destination is the folder the item is in', async () => {

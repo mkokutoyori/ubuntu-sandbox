@@ -63,6 +63,7 @@ function mapV4Origin(origin: 'manual' | 'dhcp' | 'link-local'): { prefixOrigin: 
     default:           return { prefixOrigin: 'Manual', suffixOrigin: 'Manual' };
   }
 }
+import { probeEchoes } from '@/network/devices/windows/TestConnectionProbe';
 import { JobProvider } from '@/powershell/providers/JobProvider';
 import { WindowsDnsClientAdapter } from '@/powershell/providers/WindowsDnsClientAdapter';
 import { generateSelfSignedCertificate } from '@/network/pki/SelfSignedCertificate';
@@ -70,7 +71,7 @@ import { WINDOWS_LOOPBACK_ROUTES, WINDOWS_LOOPBACK_ROUTES_V6, LOOPBACK_IFALIAS }
 import type {
   PSProviders,
   IFileSystemProvider, IRegistryProvider, IServiceProvider,
-  INetworkProvider, IProcessProvider, IUserProvider, IEventLogProvider,
+  INetworkProvider, PingProbeOptions, IProcessProvider, IUserProvider, IEventLogProvider,
   IVpnProvider, IScheduledTaskProvider, IDiskProvider, IEnvironmentProvider,
   IRemotingProvider, IRemoteComputer, ICapabilityProvider, CapabilityInfo,
   IRoleProvider, WindowsFeatureInfo,
@@ -1745,7 +1746,7 @@ class WindowsRegistryAdapter implements IRegistryProvider {
   private refused(cmdlet: string, path: string, mustExist: boolean): string | null {
     if (!this.reg.targetsMachineHive(path) || this.mayWriteMachineHive()) return null;
     if (mustExist && !this.reg.testPath(path)) return null;
-    return `${cmdlet} : Requested registry access is not allowed.`;
+    return `${cmdlet}: Requested registry access is not allowed.`;
   }
 
   testPath(path: string): boolean              { return this.reg.testPath(path); }
@@ -2461,15 +2462,10 @@ class WindowsNetworkAdapter implements INetworkProvider {
   invokeWebRequest(url: string) { return this.pc.invokeWebRequest(url); }
   sendMailMessage(opts: Parameters<WindowsPC['sendMailMessage']>[0]) { return this.pc.sendMailMessage(opts); }
   sendSyslogMessage(opts: Parameters<WindowsPC['sendSyslogMessage']>[0]) { return this.pc.sendSyslogMessage(opts); }
-  testPingProbe(target: string, count = 1) {
+  testPingProbe(target: string, count = 1, options: PingProbeOptions = {}) {
     const ip = this.resolveTargetSync(target);
     if (!ip) return null;
-    const probes: Array<{ success: boolean; rttMs: number }> = [];
-    for (let sent = 0; sent < Math.max(1, count); sent++) {
-      const r = this.pc.sendPingProbeSync(ip);
-      probes.push({ success: r.success, rttMs: r.rttMs });
-    }
-    return { resolvedIp: ip.toString(), probes };
+    return { resolvedIp: ip.toString(), probes: probeEchoes(this.pc, ip, count, options) };
   }
   traceRoute(target: string): string[] {
     const ip = this.resolveTargetSync(target);

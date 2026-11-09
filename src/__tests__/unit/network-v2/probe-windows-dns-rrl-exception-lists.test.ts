@@ -102,7 +102,7 @@ describe('the exception list cmdlets', () => {
 
   it('reports a list that does not exist with the text of 9972', async () => {
     const { rrl } = await lab();
-    expect(await rrl(`${GET} -Name Nope`)).toContain(`${GET} : ${MISSING}`);
+    expect(await rrl(`${GET} -Name Nope`)).toContain(`${GET}: ${MISSING}`);
   });
 
   it('binds the positional parameters in the order of the pages: name, client subnet, FQDN, interface, condition', async () => {
@@ -147,9 +147,9 @@ describe('the exception list cmdlets', () => {
   it('asks before it removes, and goes on with -Confirm:$false, with -Force and with -PassThru', async () => {
     const { rrl } = await lab();
     await rrl(`${ADD} -Name L -Fqdn "EQ,a.test"`);
-    expect(await rrl(`${REMOVE} -Name L`)).toContain(`${REMOVE} : Windows PowerShell is in NonInteractive mode.`);
-    expect(await rrl(`${REMOVE} -Name Nope`)).toContain(`${REMOVE} : Windows PowerShell is in NonInteractive mode.`);
-    expect(await rrl(`${REMOVE} -Name Nope -Confirm:$false`)).toContain(`${REMOVE} : ${MISSING}`);
+    expect(await rrl(`${REMOVE} -Name L`)).toContain(`${REMOVE}: PowerShell is in NonInteractive mode.`);
+    expect(await rrl(`${REMOVE} -Name Nope`)).toContain(`${REMOVE}: PowerShell is in NonInteractive mode.`);
+    expect(await rrl(`${REMOVE} -Name Nope -Confirm:$false`)).toContain(`${REMOVE}: ${MISSING}`);
     expect(await rrl(`(${GET} -Name L).Name`)).toBe('L');
     expect(await rrl(`${REMOVE} -Name L -Confirm:$false`)).toBe('');
     await rrl(`${ADD} -Name M -Fqdn "EQ,a.test"`);
@@ -180,7 +180,7 @@ describe('the exception list cmdlets', () => {
   ])('refuses %s with the text of the Win32 error and keeps the first list', async (_label, command, message) => {
     const { rrl } = await lab();
     await rrl(`${ADD} -Name Taken -Fqdn "EQ,a.test"`);
-    expect(await rrl(command('Taken'))).toContain(`${ADD} : ${message}`);
+    expect(await rrl(command('Taken'))).toContain(`${ADD}: ${message}`);
     expect(await rrl('(Get-DnsServerResponseRateLimitingExceptionlist).Name -join ","')).toBe('Taken');
   });
 
@@ -193,7 +193,7 @@ describe('the exception list cmdlets', () => {
   ])('%s with the text of the Win32 error', async (_label, command, cmdlet, message) => {
     const { rrl } = await lab();
     await rrl(`${ADD} -Name Held -Fqdn "EQ,a.test"`);
-    expect(await rrl(command)).toContain(`${cmdlet} : ${message}`);
+    expect(await rrl(command)).toContain(`${cmdlet}: ${message}`);
     expect(await rrl(`(${GET} -Name Held).Fqdn`)).toBe('EQ,a.test');
   });
 
@@ -201,7 +201,7 @@ describe('the exception list cmdlets', () => {
     const { rrl } = await lab();
     expect(await rrl(`${ADD} -Name L -Fqdn "EQ,a.test" -Condition XOR`)).toContain(`Cannot validate argument on parameter 'Condition'. The argument "XOR" does not belong to the set "AND,OR".`);
     await rrl(`${ADD} -Name Held -Fqdn "EQ,a.test"`);
-    expect(await rrl(`${SET} -Name Held -Condition XOR`)).toContain(`${SET} : Cannot validate argument on parameter 'Condition'. The argument "XOR" does not belong to the set "AND,OR".`);
+    expect(await rrl(`${SET} -Name Held -Condition XOR`)).toContain(`${SET}: Cannot validate argument on parameter 'Condition'. The argument "XOR" does not belong to the set "AND,OR".`);
     expect(await rrl(`(${GET} -Name Held).Condition`)).toBe('And');
     expect(await rrl(`${ADD} -Fqdn "EQ,a.test"`)).toContain('missing mandatory parameters: Name.');
     expect(await rrl(`${SET} -Fqdn "EQ,a.test"`)).toContain('missing mandatory parameters: Name.');
@@ -359,7 +359,7 @@ describe('the client subnet records the lists name', () => {
     await run(server, 'Add-DnsServerClientSubnet -Name Asia -IPv4Subnet 10.2.0.0/16');
     await run(server, 'Add-DnsServerClientSubnet -Name Europe -IPv4Subnet 10.3.0.0/16');
     await rrl(`${ADD} -Name L -ClientSubnet "EQ,Asia,NE,Europe"`);
-    expect(await run(server, 'Remove-DnsServerClientSubnet -Name asia -Force')).toContain(`Remove-DnsServerClientSubnet : ${SUBNET_ACCESSED}`);
+    expect(await run(server, 'Remove-DnsServerClientSubnet -Name asia -Force')).toContain(`Remove-DnsServerClientSubnet: ${SUBNET_ACCESSED}`);
     expect(await run(server, 'Remove-DnsServerClientSubnet -Name Europe -Force')).toContain(SUBNET_ACCESSED);
     expect(await run(server, '(Get-DnsServerClientSubnet).Name -join ","')).toBe('Asia,Europe');
     await rrl(`${SET} -Name L -ClientSubnet "EQ,Europe"`);

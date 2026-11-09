@@ -61,7 +61,7 @@ const INVALID_FQDN = 'The criterion FQDN provided in the policy is invalid.';
 const INVALID_QTYPE = 'The criterion query type provided in the policy is invalid.';
 const INVALID_TIME = 'The criterion time of day provided in the policy is invalid.';
 const ZONE_MISSING = 'Zone "nowhere.test" does not exist on this server.';
-const NON_INTERACTIVE = 'Windows PowerShell is in NonInteractive mode.';
+const NON_INTERACTIVE = 'PowerShell is in NonInteractive mode.';
 
 function members(values: Record<string, string | number>): string {
   const all: Record<string, string | number> = {
@@ -191,9 +191,9 @@ describe('the cmdlets of the examples', () => {
   it('ask before they remove, whether or not the policy exists, and go on with -Force', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name A -Action DENY -QType "EQ,ANY"`);
-    expect(await cmd(`${REMOVE} -Name A`)).toContain(`${REMOVE} : ${NON_INTERACTIVE}`);
-    expect(await cmd(`${REMOVE} -Name Nope`)).toContain(`${REMOVE} : ${NON_INTERACTIVE}`);
-    expect(await cmd(`${REMOVE} -Name Nope -Force`)).toContain(`${REMOVE} : ${MISSING}`);
+    expect(await cmd(`${REMOVE} -Name A`)).toContain(`${REMOVE}: ${NON_INTERACTIVE}`);
+    expect(await cmd(`${REMOVE} -Name Nope`)).toContain(`${REMOVE}: ${NON_INTERACTIVE}`);
+    expect(await cmd(`${REMOVE} -Name Nope -Force`)).toContain(`${REMOVE}: ${MISSING}`);
     expect(await cmd(`(${GET} -Name A).Name`)).toBe('A');
     expect(await cmd(`${REMOVE} -Name A -Force`)).toBe('');
   });
@@ -354,7 +354,7 @@ describe('the refusals', () => {
   ])('refuse %s with the text of the Win32 error and change nothing', async (_label, command, cmdlet, message) => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name Taken -Action DENY -QType "EQ,ANY"`);
-    expect(await cmd(command)).toContain(`${cmdlet} : ${message}`);
+    expect(await cmd(command)).toContain(`${cmdlet}: ${message}`);
     expect(await cmd(`(${GET}).Name -join ","`)).toBe('Taken');
     expect(await cmd(`(${GET} -Name Taken).Criteria.Criteria`)).toBe('EQ,ANY');
   });
@@ -408,7 +408,7 @@ describe('Enable-DnsServerPolicy and Disable-DnsServerPolicy', () => {
   it('ask before they act, and name the zone of a zone-level call', async () => {
     const { cmd } = await governed();
     await cmd(`${ADD} -Name A -Action DENY -QType "EQ,ANY"`);
-    expect(await cmd(`${DISABLE} -Level Server -Name A`)).toContain(`${DISABLE} : ${NON_INTERACTIVE}`);
+    expect(await cmd(`${DISABLE} -Level Server -Name A`)).toContain(`${DISABLE}: ${NON_INTERACTIVE}`);
     expect(await cmd(`(${GET} -Name A).IsEnabled`)).toBe('True');
     expect(await cmd(`${ENABLE} -Level Zone -Name A -Force`)).toContain('missing mandatory parameters: ZoneName');
     expect(await cmd(`${ENABLE} -Name A -Force`)).toContain('missing mandatory parameters: Level');
@@ -589,7 +589,7 @@ describe('the policies of a zone', () => {
     expect(await cmd(`${REMOVE} Same corp.test -Force`)).toBe('');
     expect(await cmd(`${GET} -ZoneName corp.test`)).toBe('');
     expect(await cmd(`(${GET}).Name`)).toBe('Same');
-    expect(await cmd(`(${GET} Same corp.test)`)).toContain(`${GET} : ${MISSING}`);
+    expect(await cmd(`(${GET} Same corp.test)`)).toContain(`${GET}: ${MISSING}`);
   });
 
   it('end the search with an ALLOW that holds, so that a later DENY does not apply', async () => {

@@ -6,7 +6,7 @@ export type ConfirmImpact = 'None' | 'Low' | 'Medium' | 'High';
 const IMPACT_RANK: Record<ConfirmImpact, number> = { None: 0, Low: 1, Medium: 2, High: 3 };
 
 export const NON_INTERACTIVE_HOST =
-  'Windows PowerShell is in NonInteractive mode. Read and Prompt functionality is not available.';
+  'PowerShell is in NonInteractive mode. Read and Prompt functionality is not available.';
 
 function rankOf(raw: string): number {
   const key = (Object.keys(IMPACT_RANK) as ConfirmImpact[])

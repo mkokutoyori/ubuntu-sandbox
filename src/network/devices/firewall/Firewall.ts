@@ -135,7 +135,7 @@ import { FirewallDhcp6, type Dhcp6Scope } from './l3/FirewallDhcp6';
 import type { PolicyProbe } from './policy/PolicyProbe';
 import { isDenyAction } from './model/SecurityRule';
 import { FirewallPing6 } from './diag/FirewallPing6';
-import { getDefaultScheduler } from '@/events/Scheduler';
+import { getDefaultScheduler, type TimerHandle } from '@/events/Scheduler';
 import type { IEventBus } from '@/events/EventBus';
 import type { BgpNeighborStateChangedPayload } from '../../bgp/events';
 import type { OspfNeighborStateChangedPayload } from '../../ospf/events';
@@ -144,10 +144,11 @@ import type { Ipv6Counters } from '../router/IPv6DataPlane';
 import type { RadiusClientAgent } from '../../radius/RadiusClientAgent';
 import type { TacacsClientAgent } from '../../tacacs/TacacsClientAgent';
 import type { IdentityTable } from './identity/IdentityTable';
-import type { UserDirectory } from './identity/UserDirectory';
+import type { RemoteServer, UserDirectory } from './identity/UserDirectory';
 import type { IpsecTunnelTable, Phase1Tunnel } from './vpn/IpsecTunnelTable';
 import type { CertificateStore } from './vpn/CertificateStore';
 import type { PkiPeerStore } from './vpn/PkiPeers';
+import type { IpsecConcentratorStore } from './vpn/IpsecConcentratorStore';
 import type { FirewallRouting } from './routing/FirewallRouting';
 import { buildL3Services, type L3Services } from './l3/L3ServiceWiring';
 import { classifyIpv4, ingressHostOf, type Ipv4IngressHost } from './l3/Ipv4Ingress';
@@ -164,6 +165,7 @@ import { ManagementPlane, type ManagementSource, type PasswordExpiryPolicy } fro
 import { MANAGEMENT_SERVICES, type ManagementPorts } from './mgmt/ManagementAccess';
 import type { CaptivePortalRedirect } from './auth/CaptivePortalRedirect';
 import { SslDeepInspection } from './inspection/SslDeepInspection';
+import { SslOffload, type SslOffloadMode } from './inspection/SslOffload';
 import { ModeCfgPool } from './vpn/ModeCfgPool';
 import type { IkeConfigReply, IkeConfigRequest } from '../../ipsec/IPSecTypes';
 import type { NtpAgent } from '../../ntp/NtpAgent';
@@ -206,7 +208,7 @@ import { bringUpTunnel, programIpsecEngine } from './vpn/IpsecProgramming';
 import { RouterHostsTable } from '../router/dns/RouterHostsTable';
 import type { VdomServices } from './pipeline/stages/coreStages';
 import { ScheduleStore, type ScheduleObject } from './model/ScheduleObject';
-import { FirewallLogStore } from './logging/FirewallLogStore';
+import { FirewallLogStore, type FirewallLogRecord } from './logging/FirewallLogStore';
 import { PolicyCaptureStore } from './diag/PolicyCaptureStore';
 import type { LocalTrafficKind, LogSettings } from './logging/LogSettings';
 import { flowKeyFromPacket, type FlowKey } from './session/FlowKey';
@@ -284,6 +286,8 @@ export interface ReplayRejection {
 }
 
 const REPLAY_REFUSAL = /Command fail|Unknown action|parse error|^% ?Invalid|Invalid input|unknown command/im;
+
+const HA_HEARTBEAT_UNIT_MS = 100;
 
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
@@ -416,6 +420,16 @@ export class Firewall extends Equipment {
     claimPort: (port) => { this.adminServer?.yieldPort(port); },
     releasePort: (port) => { this.adminServer?.reclaimPort(port); },
   });
+  private readonly sslOffload = new SslOffload({
+    tcp: () => this.tcp,
+    localCertificate: (name) => this.getCertificateStore().local(name),
+    trustAnchors: () => this.getCertificateStore().trustAnchors(),
+    claimPort: (port) => { this.adminServer?.yieldPort(port); },
+    releasePort: (port) => { this.adminServer?.reclaimPort(port); },
+  });
+  private readonly sslOffloadVips = new Map<string, {
+    name: string; mode: SslOffloadMode; certificate: string; port: number;
+  }>();
   private adminServer: AdminHttpServer | null = null;
   private readonly management: ManagementPlane;
   private readonly load: SystemLoad;
@@ -506,7 +520,7 @@ export class Firewall extends Equipment {
     this.load.addWorkload(() => this.measureWorkload());
     this.revisions = new RevisionStore({ now });
     this.syslog = new SyslogAgent(this, () => this.getBus());
-    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog);
+    this.syslogCollectors = new SyslogCollectorTable(() => this.syslog, () => this.now());
     this.vdoms = new VdomRegistry({
       now,
       monotonicNow: () => this.getMonotonicClockMs(),
@@ -527,6 +541,7 @@ export class Firewall extends Equipment {
           local: new IPAddress(local), remote: new IPAddress(tunnel.remoteGateway),
         });
       },
+      onLogRecord: (record) => { this.logRecordRelay?.(record); },
       policyKeyedBy: profile.policyKeyedBy,
       policyNamesZones: profile.policyNamesZones,
       implicitPolicy: profile.implicitPolicy,
@@ -758,7 +773,10 @@ export class Firewall extends Equipment {
     this.portal = mgmt.portals.auth;
     this.sslVpn = mgmt.portals.sslVpn;
     this.haService = mgmt.ha;
-    this.haService.agent.onTransition((transition) => { this.raiseHaTrap(transition); });
+    this.haService.agent.onTransition((transition) => {
+      this.raiseHaTrap(transition);
+      this.announceTakeover(transition);
+    });
     this.ntp = mgmt.ntp;
     this.captivePortal = mgmt.captivePortal;
     this.management.attachCliServer(mgmt.cli);
@@ -1241,6 +1259,24 @@ export class Firewall extends Equipment {
     return { sysObjectId: '0.0', objects: new Map(), tables: () => new Map(), traps: () => [] };
   }
 
+  private announceTakeover(transition: HaTransition): void {
+    if (transition.kind !== 'takeover') return;
+
+    const { gratuitousArps, gratuitousArpIntervalSec, heartbeatDevices } = this.haConfiguration;
+    const heartbeat = new Set(heartbeatDevices.map(device => device.iface));
+    const announce = (): void => {
+      for (const { name, ip } of this.interfaces.all()) {
+        if (ip === undefined || heartbeat.has(name) || this.getPort(name)?.isOperationallyUp() !== true) continue;
+        const packet = this.arp.buildGratuitous(name);
+        if (packet !== undefined) this.emitArp(packet, name);
+      }
+    };
+    announce();
+    for (let sent = 1; sent < gratuitousArps; sent++) {
+      this.getScheduler().setTimeout(announce, sent * gratuitousArpIntervalSec * 1000);
+    }
+  }
+
   private raiseHaTrap(transition: HaTransition): void {
     const snmp = this.snmpService;
     if (!snmp) return;
@@ -1370,7 +1406,21 @@ export class Firewall extends Equipment {
     this.haConfiguration = c;
     this.haService.agent.configure(c);
     this.applyClusterVirtualMacs(c);
+    this.syncHaClock(c);
     return undefined;
+  }
+
+  private haClock: TimerHandle | null = null;
+  private haClockPeriodMs = 0;
+
+  private syncHaClock(c: HaConfiguration): void {
+    const period = c.mode === 'standalone' ? 0 : c.heartbeatIntervalTicks * HA_HEARTBEAT_UNIT_MS;
+    if (period === this.haClockPeriodMs) return;
+    if (this.haClock !== null) this.getScheduler().clear(this.haClock);
+    this.haClock = period === 0
+      ? null
+      : this.getScheduler().setInterval(() => { this.haService.agent.tick(); }, period);
+    this.haClockPeriodMs = period;
   }
 
   applyNat64Prefix(text: string): string | undefined {
@@ -1472,12 +1522,35 @@ export class Firewall extends Equipment {
   getSdwanTable(): SdwanTable { return this.sdwan.getTable(); }
   runSdwanHealthChecks(): Promise<void> { return this.sdwan.runHealthChecks(); }
 
+  private readonly bfdStaticRoutes = new Map<string, DeclaredStaticRoute>();
+  private readonly bfdDownGateways = new Set<string>();
+
+  private trackStaticRouteBfd(route: DeclaredStaticRoute): boolean {
+    this.bfdStaticRoutes.delete(route.id);
+    const watched = route.bfd === true && route.gateway !== '0.0.0.0'
+      && route.iface !== '' && this.getPort(route.iface) !== undefined;
+    if (!watched) return false;
+
+    this.bfdStaticRoutes.set(route.id, route);
+    this.getBfdAgent().ensureSession(route.iface, route.gateway);
+    return this.bfdDownGateways.has(`${route.iface}|${route.gateway}`);
+  }
+
+  private onBfdSessionChanged(iface: string, neighborIp: string, up: boolean): void {
+    const key = `${iface}|${neighborIp}`;
+    if (up) this.bfdDownGateways.delete(key); else this.bfdDownGateways.add(key);
+    for (const route of [...this.bfdStaticRoutes.values()]) {
+      if (route.iface === iface && route.gateway === neighborIp) this.applySdwanStaticRoute(route);
+    }
+  }
+
   applySdwanStaticRoute(route: DeclaredStaticRoute): void {
     this.sdwanRoutes.delete(route.id);
     const routes = this.getRouteTable();
     routes.removeStaticById(route.id);
     routes.removeStaticsBySource(route.id);
-    if (!route.enabled || route.blackhole) return;
+    const withdrawn = this.trackStaticRouteBfd(route);
+    if (!route.enabled || route.blackhole || withdrawn) return;
 
     if (this.sdwan.getTable().membersOfZone(route.iface).length > 0) {
       this.sdwanRoutes.set(route.id, route);
@@ -1493,7 +1566,10 @@ export class Firewall extends Equipment {
       });
   }
 
-  forgetSdwanStaticRoute(id: string): void { this.sdwanRoutes.delete(id); }
+  forgetSdwanStaticRoute(id: string): void {
+    this.sdwanRoutes.delete(id);
+    this.bfdStaticRoutes.delete(id);
+  }
 
   private installSdwanRoute(route: DeclaredStaticRoute): void {
     const table = this.sdwan.getTable();
@@ -1557,6 +1633,27 @@ export class Firewall extends Equipment {
   }
 
   getPkiPeers(v?: string): PkiPeerStore { return this.getVdom(v).pkiPeers; }
+
+  getIpsecConcentrators(v?: string): IpsecConcentratorStore { return this.getVdom(v).ipsecConcentrators; }
+
+  applyIpsecConcentrator(
+    id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }, v?: string,
+  ): string | undefined {
+    const tunnels = this.getVdom(v).tunnels;
+    for (const member of concentrator.members) {
+      if (tunnels.getPhase1(member) === undefined) return `interface ${member} is not a declared IPsec tunnel.`;
+    }
+    this.getVdom(v).ipsecConcentrators.set({ id, ...concentrator });
+    return undefined;
+  }
+
+  removeIpsecConcentrator(id: number, v?: string): void {
+    this.getVdom(v).ipsecConcentrators.remove(id);
+  }
+
+  concentratorDisablesSrcCheck(iface: string, v?: string): boolean {
+    return this.getVdom(v).ipsecConcentrators.disablesSrcCheck(iface);
+  }
 
   getModeCfgPool(): ModeCfgPool { return this.modeCfg; }
 
@@ -1745,9 +1842,54 @@ export class Firewall extends Equipment {
     return remoteAuthenticate({
       tcp: this.tcp,
       server: (n) => this.getVdom(vdom).users.getServer(n),
-      radius: this.radius,
+      radiusRound: (address, name, secret, authType) => this.radiusRound(address, name, secret, authType),
       tacacs: this.tacacs,
     }, server, user, password);
+  }
+
+  private async radiusRound(
+    address: string, user: string, password: string, authType: string | undefined,
+  ): Promise<'accept' | 'reject' | 'timeout'> {
+    const methods = authType === 'pap' ? ['pap']
+      : authType === 'chap' ? ['chap']
+        : authType === 'ms_chap_v2' ? ['ms_chap_v2']
+          : ['pap', 'ms_chap_v2', 'chap'];
+    for (const method of methods) {
+      const round = method === 'pap' ? await this.radius.authenticateWithOutcome(user, password, address)
+        : method === 'chap' ? await this.radius.authenticateChapWithOutcome(user, password, address)
+          : (await this.radius.authenticateMsChapV2(user, password, address)).kind;
+      if (round !== 'reject') return round;
+    }
+    return 'reject';
+  }
+
+  registerRadiusServer(server: Pick<RemoteServer,
+    'address' | 'secret' | 'port' | 'secondaryAddress' | 'secondarySecret' | 'tertiaryAddress' | 'tertiarySecret'>,
+  ): void {
+    const declared: ReadonlyArray<readonly [string | undefined, string | undefined]> = [
+      [server.address, server.secret],
+      [server.secondaryAddress, server.secondarySecret],
+      [server.tertiaryAddress, server.tertiarySecret],
+    ];
+    for (const [address, secret] of declared) {
+      if (address === undefined || address === '' || address === '0.0.0.0') continue;
+      this.radius.addServer(address, secret ?? '', { port: server.port });
+    }
+  }
+
+  forgetRadiusServer(server: Pick<RemoteServer, 'address' | 'secondaryAddress' | 'tertiaryAddress'>): void {
+    const stillDeclared = new Set<string>();
+    const directory = this.getUserDirectory();
+    for (const name of directory.serverNames()) {
+      const other = directory.getServer(name);
+      if (other?.kind !== 'radius') continue;
+      for (const address of [other.address, other.secondaryAddress, other.tertiaryAddress]) {
+        if (address !== undefined) stillDeclared.add(address);
+      }
+    }
+    for (const address of [server.address, server.secondaryAddress, server.tertiaryAddress]) {
+      if (address !== undefined && !stillDeclared.has(address)) this.radius.removeServer(address);
+    }
   }
 
   setAuthPortalPorts(httpPort: number, httpsPort: number): void {
@@ -1881,6 +2023,12 @@ export class Firewall extends Equipment {
   getSyslogAgent(): SyslogAgent { return this.syslog; }
   getSyslogCollectors(): SyslogCollectorTable { return this.syslogCollectors; }
 
+  private logRecordRelay: ((record: FirewallLogRecord) => void) | undefined;
+
+  bindLogRecordRelay(relay: (record: FirewallLogRecord) => void): void {
+    this.logRecordRelay = relay;
+  }
+
   syncSyslogAgent(): void { projectLoggingOntoSyslogAgent(this.logging, this.syslog); }
 
   logFirewallEvent(event: FirewallLogEvent, facts: FirewallLogFacts): void {
@@ -1889,6 +2037,7 @@ export class Firewall extends Equipment {
       osName: this.profile.osName,
       logging: this.logging,
       syslog: this.syslog,
+      relayToSyslog: this.profile.structuredRemoteSyslog !== true,
     }, event, facts);
   }
 
@@ -2297,9 +2446,11 @@ export class Firewall extends Equipment {
       this.bfdAgentInstance.start();
       this.getBus().subscribe('bfd.session.changed', (event) => {
         if (event.payload.deviceId !== this.id) return;
+        const up = event.payload.newState === 'up';
+        this.onBfdSessionChanged(event.payload.iface, event.payload.neighborIp, up);
         const bgp = this.getRouting().getBgp();
         if (!bgp.bfdNeighbours().includes(event.payload.neighborIp)) return;
-        bgp.holdDown(event.payload.neighborIp, event.payload.newState !== 'up');
+        bgp.holdDown(event.payload.neighborIp, !up);
       });
     }
     return this.bfdAgentInstance;
@@ -2331,6 +2482,16 @@ export class Firewall extends Equipment {
       agent.ensureSession(entry.interface, entry.ip);
     }
     return undefined;
+  }
+
+  private answeredByRadius(packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    const reply = udp?.payload as { type?: string; code?: string } | undefined;
+    if (udp?.type !== 'udp' || reply?.type !== 'radius') return false;
+    if (reply.code !== 'access-accept' && reply.code !== 'access-reject' && reply.code !== 'access-challenge') return false;
+    this.radius.handleUdp('', packet.sourceIP, udp);
+    return true;
   }
 
   private answeredByBfd(iface: string, packet: IPv4Packet): boolean {
@@ -2369,13 +2530,14 @@ export class Firewall extends Equipment {
   }
 
   applyNetflow(settings: {
-    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number;
+    activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; templateTxTimeoutSec: number;
     collectors: ReadonlyArray<{ ip: string; port: number }>;
   }): void {
     const agent = this.getNetflowAgent();
     agent.setActiveTimeoutSec(settings.activeTimeoutSec);
     agent.setInactiveTimeoutSec(settings.inactiveTimeoutSec);
     agent.setTemplateRefreshPackets(settings.templateTxCounter);
+    agent.setTemplateRefreshSeconds(settings.templateTxTimeoutSec);
     const wanted = new Set(settings.collectors.map(collector => collector.ip));
     for (const present of agent.listCollectors()) if (!wanted.has(present.ip)) agent.removeCollector(present.ip);
     for (const collector of settings.collectors) agent.addCollector(collector.ip, collector.port);
@@ -3056,6 +3218,10 @@ export class Firewall extends Equipment {
       this.deepInspection.resume(portName, packet);
       return;
     }
+    if (this.sslOffload.owns(packet)) {
+      this.sslOffload.resume(portName, packet);
+      return;
+    }
 
     const context = makePacketContext({
       ingressPort: portName, packet, arrivedAt: this.services.now(),
@@ -3084,6 +3250,7 @@ export class Firewall extends Equipment {
 
     const forwarded = outcome.payload ?? context;
     if (this.interceptForDeepInspection(portName, packet, context)) return;
+    if (this.interceptForSslOffload(portName, packet, context)) return;
     if (forwarded.egressPort === undefined) return;
     const recorded = this.recordRouteOnEgress(
       forwarded.egressPort, forwarded.packet as IPv4Packet);
@@ -3184,6 +3351,30 @@ export class Firewall extends Equipment {
 
   getDeepInspection(): SslDeepInspection { return this.deepInspection; }
 
+  setSslOffload(
+    ruleId: string, name: string,
+    config: { mode: SslOffloadMode; certificate: string; port: number } | undefined,
+  ): void {
+    if (config === undefined) this.sslOffloadVips.delete(ruleId);
+    else this.sslOffloadVips.set(ruleId, { name, ...config });
+  }
+
+  private interceptForSslOffload(
+    portName: string, packet: IPv4Packet, context: PacketContext,
+  ): boolean {
+    const ruleId = context.destinationNatRuleId;
+    const vip = ruleId === undefined ? undefined : this.sslOffloadVips.get(ruleId);
+    if (vip === undefined) return false;
+
+    return this.sslOffload.capture(portName, packet, {
+      name: vip.name,
+      ports: [vip.port],
+      mode: vip.mode,
+      certificate: vip.certificate,
+      pickServer: () => this.serverPools.get(vip.name)?.pick(),
+    });
+  }
+
   private interceptForDeepInspection(
     portName: string, packet: IPv4Packet, context: PacketContext,
   ): boolean {
@@ -3222,7 +3413,7 @@ export class Firewall extends Equipment {
       ikeDatagram: (p) => ikeDatagram(p),
       msOfDay: () => millisecondsSinceUtcMidnight(this.getSystemClockMs()),
       handleIke: (iface, p, d) => { this.ipsec.handleIkeUdp(iface, p, d as never); },
-      observedBySdwan: (p) => this.dnsClient.observe(p) || this.ddns.observe(p)
+      observedBySdwan: (p) => this.answeredByRadius(p) || this.dnsClient.observe(p) || this.ddns.observe(p)
         || this.traceroute.observe(p) || this.ping.observeReply(p)
         || this.sdwan.observeReply(p) || this.deliverToUdpSocket(p),
       answeredByDnsServer: (iface, p) => {

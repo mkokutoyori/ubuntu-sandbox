@@ -502,18 +502,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   readonly doskey: DoskeyTable = new DoskeyTable();
   /** Per-device PowerShell shim state (functions, aliases, vars). */
   readonly psShimState: PsShimState = createShimState();
-  readonly psCoreShimState: PsShimState = createShimState();
   /** Lazy full PowerShell interpreter reused across `powershell -Command`. */
   private psInterpreter: PSInterpreter | null = null;
-  private psCoreInterpreter: PSInterpreter | null = null;
 
   readonly rsatCapabilities = new Set<string>();
   readonly cmdletOverlay = createClientCmdletOverlay();
 
   getWindowsEdition(): 'client' | 'server' { return 'client'; }
 
-  private async runPowerShellCode(code: string, language: 'desktop' | 'core' = 'desktop'): Promise<string> {
-    const interpreter = this.getPowerShellInterpreter(language);
+  private async runPowerShellCode(code: string): Promise<string> {
+    const interpreter = this.getPowerShellInterpreter();
     interpreter.beginInteractive(code);
     for (;;) {
       try {
@@ -526,7 +524,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
         }
         const answer = await this.runProgram(e.commandLine, e.stdin ?? undefined);
         interpreter.provideNativeResult({
-          output: translateNativeAnswer(e.command, answer.output, language === 'core'),
+          output: translateNativeAnswer(e.command, answer.output),
           exitCode: answer.exitCode,
           notRecognized: nativeNotRecognized(e.command, answer.output),
         });
@@ -534,24 +532,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     }
   }
 
-  private powerShellKnows(word: string, language: 'desktop' | 'core' = 'desktop'): boolean {
+  private powerShellKnows(word: string): boolean {
     const lower = word.toLowerCase();
-    return this.getPowerShellInterpreter(language).listCommandNames().some(name => name.toLowerCase() === lower);
+    return this.getPowerShellInterpreter().listCommandNames().some(name => name.toLowerCase() === lower);
   }
 
-  getPowerShellInterpreter(language: 'desktop' | 'core' = 'desktop'): PSInterpreter {
-    if (language === 'core') {
-      if (!this.psCoreInterpreter) {
-        this.psCoreInterpreter = new PSInterpreter(
-          createWindowsPSProviders(this), { edition: this.getWindowsEdition(), registry: this.cmdletOverlay, language: 'core' },
-        );
-      }
-      return this.psCoreInterpreter;
-    }
+  getPowerShellInterpreter(): PSInterpreter {
     if (!this.psInterpreter) {
-      // No `shared` bag: the factory already defaults every store to this
-      // device's own registry / event log / network tables, so `reg` and
-      // the cmdlets cannot end up on two different copies of the machine.
       this.psInterpreter = new PSInterpreter(
         createWindowsPSProviders(this), { edition: this.getWindowsEdition(), registry: this.cmdletOverlay },
       );
@@ -3911,19 +3898,13 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       case 'doskey':  return this.cmdDoskey(args);
       case 'powershell':
       case 'powershell.exe':
+      case 'pwsh':
+      case 'pwsh.exe':
         return this.inChildProcess(() => runPowerShellShim({
           executeCmdCommand: (l) => this.executeCmdCommand(l),
           shimState: this.psShimState,
           runFullPs: (code) => this.runPowerShellCode(code),
           isPowerShellCommand: (word) => this.powerShellKnows(word),
-        }, args, splitCmdArgs(expanded, true).slice(1)));
-      case 'pwsh':
-      case 'pwsh.exe':
-        return this.inChildProcess(() => runPowerShellShim({
-          executeCmdCommand: (l) => this.executeCmdCommand(l),
-          shimState: this.psCoreShimState,
-          runFullPs: (code) => this.runPowerShellCode(code, 'core'),
-          isPowerShellCommand: (word) => this.powerShellKnows(word, 'core'),
         }, args, splitCmdArgs(expanded, true).slice(1)));
       case 'ver':     return WindowsPC.VER_STRING;
       case 'hostname': return this.hostname;

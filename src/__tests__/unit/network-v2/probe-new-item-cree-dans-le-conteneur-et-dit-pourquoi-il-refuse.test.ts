@@ -115,9 +115,7 @@ describe('New-Item refuses with the words of the file system provider', () => {
     const shell = await powershell();
     await shell.run('New-Item f9.txt -ItemType File');
     const out = await shell.run('New-Item f9.txt -ItemType File');
-    expect(out).toContain("New-Item : The file 'C:\\Users\\User\\f9.txt' already exists.");
-    expect(out).toContain('WriteError: (C:\\Users\\User\\f9.txt:String) [New-Item], IOException');
-    expect(out).toContain('NewItemIOError,Microsoft.PowerShell.Commands.NewItemCommand');
+    expect(out).toContain("New-Item: The file 'C:\\Users\\User\\f9.txt' already exists.");
   });
 
   it('truncates an existing file with -Force', async () => {
@@ -132,9 +130,7 @@ describe('New-Item refuses with the words of the file system provider', () => {
     const shell = await powershell();
     await shell.run('New-Item d11 -ItemType Directory');
     const out = await shell.run('New-Item d11 -ItemType Directory');
-    expect(out).toContain('New-Item : An item with the specified name C:\\Users\\User\\d11 already exists.');
-    expect(out).toContain('ResourceExists: (C:\\Users\\User\\d11:String) [New-Item], IOException');
-    expect(out).toContain('DirectoryExist,Microsoft.PowerShell.Commands.NewItemCommand');
+    expect(out).toContain('New-Item: An item with the specified name C:\\Users\\User\\d11 already exists.');
   });
 
   it('returns the existing directory with -Force', async () => {
@@ -146,8 +142,7 @@ describe('New-Item refuses with the words of the file system provider', () => {
   it('refuses a file whose parent does not exist', async () => {
     const shell = await powershell();
     const out = await shell.run('New-Item -Path nope13 -Name f.txt -ItemType File');
-    expect(out).toContain("New-Item : Could not find a part of the path 'C:\\Users\\User\\nope13\\f.txt'.");
-    expect(out).toContain('NewItemIOError,Microsoft.PowerShell.Commands.NewItemCommand');
+    expect(out).toContain("New-Item: Could not find a part of the path 'C:\\Users\\User\\nope13\\f.txt'.");
     expect(await shell.run('Test-Path nope13')).toBe('False');
   });
 
@@ -166,9 +161,7 @@ describe('New-Item refuses with the words of the file system provider', () => {
   it('refuses an item type the file system does not know', async () => {
     const shell = await powershell();
     const out = await shell.run('New-Item bogus16.txt -ItemType Bogus');
-    expect(out).toContain('New-Item : The type is not a known type for the file system. Only "file","directory" or "symboliclink" can be specified.');
-    expect(out).toContain('InvalidArgument: (:) [New-Item], ParentContainsErrorRecordException');
-    expect(out).toContain('Argument,Microsoft.PowerShell.Commands.NewItemCommand');
+    expect(out).toContain('New-Item: The type is not a known type for the file system. Only "file","directory" or "symboliclink" can be specified.');
     expect(await shell.run('Test-Path bogus16.txt')).toBe('False');
   });
 

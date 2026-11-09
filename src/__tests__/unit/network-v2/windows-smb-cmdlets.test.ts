@@ -30,7 +30,7 @@ describe('New-SmbShare needs no role', () => {
     srv.setCurrentUser('Administrator');
     const out = await run(ps(srv), 'New-SmbShare -Name Data -Path C:\\Shares\\Data');
     expect(out).toContain('Data');
-    expect(out).not.toMatch(/is not recognized as the name of a cmdlet/i);
+    expect(out).not.toMatch(/is not recognized as a name of a cmdlet/i);
   });
 
   it('creates a share on a workstation and lists the administrative ones', async () => {

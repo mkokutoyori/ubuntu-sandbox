@@ -61,6 +61,7 @@ export function remotable(displayName: string, cmdlet: ICmdlet, parameter = 'Com
   const key = parameter.toLowerCase();
   const wrapped: ICmdlet = {
     ...cmdlet,
+    displayName: cmdlet.displayName ?? displayName,
     execute(ctx: CmdletContext): PSValue {
       const raw = ctx.named[key];
       const remoting = ctx.providers.remoting;

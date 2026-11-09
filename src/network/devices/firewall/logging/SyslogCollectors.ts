@@ -1,7 +1,11 @@
 import type { SyslogAgent } from '../../../syslog/SyslogAgent';
-import type {
-  SyslogFacilityName, SyslogSeverityName,
+import {
+  SYSLOG_FACILITY, SYSLOG_SEVERITY,
+  type SyslogFacilityName, type SyslogSeverityName,
 } from '../../../syslog/types';
+import {
+  logLevelAtLeast, type FirewallLogLevel, type FirewallLogRecord,
+} from './FirewallLogStore';
 
 export interface SyslogCollectorSettings {
   readonly collector: string;
@@ -10,6 +14,8 @@ export interface SyslogCollectorSettings {
   readonly port: number;
   readonly transport: 'udp' | 'tcp';
   readonly facility: string;
+  readonly format: string;
+  readonly maxLogRateMegabytesPerSecond: number;
   readonly sourceInterface: string;
 }
 
@@ -23,11 +29,34 @@ export interface SyslogFilterSettings {
 
 const DEFAULT_SEVERITY: SyslogSeverityName = 'informational';
 
+const RECORD_SEVERITY: Readonly<Record<FirewallLogLevel, SyslogSeverityName>> = Object.freeze({
+  emergency: 'emergency', alert: 'alert', critical: 'critical', error: 'error',
+  warning: 'warning', notice: 'notification', information: 'informational', debug: 'debugging',
+});
+
+const FILTER_LEVEL: Readonly<Record<string, FirewallLogLevel>> = Object.freeze({
+  emergency: 'emergency', alert: 'alert', critical: 'critical', error: 'error',
+  warning: 'warning', notification: 'notice', information: 'information', debug: 'debug',
+});
+
+const FORTIOS_FACILITY: Readonly<Record<string, number>> = Object.freeze({
+  kernel: 0, user: 1, mail: 2, daemon: 3, auth: 4, syslog: 5, lpr: 6, news: 7, uucp: 8, cron: 9,
+  authpriv: 10, ftp: 11, ntp: 12, audit: 13, alert: 14, clock: 15,
+  local0: 16, local1: 17, local2: 18, local3: 19, local4: 20, local5: 21, local6: 22, local7: 23,
+});
+
+export type RecordRenderer = (format: string, facility: number) => string;
+
 export class SyslogCollectorTable {
   private readonly settings = new Map<string, SyslogCollectorSettings>();
   private readonly filters = new Map<string, SyslogFilterSettings>();
 
-  constructor(private readonly agent: () => SyslogAgent) {}
+  private readonly budgets = new Map<string, { tokens: number; at: number }>();
+
+  constructor(
+    private readonly agent: () => SyslogAgent,
+    private readonly now: () => number = () => 0,
+  ) {}
 
   applySettings(patch: SyslogCollectorSettings): void {
     this.settings.set(patch.collector, patch);
@@ -41,6 +70,48 @@ export class SyslogCollectorTable {
 
   filterOf(collector: string): SyslogFilterSettings | undefined {
     return this.filters.get(collector);
+  }
+
+  forwardRecord(record: FirewallLogRecord, render: RecordRenderer): void {
+    const severity = RECORD_SEVERITY[record.level];
+    for (const entry of this.active()) {
+      if (!this.accepts(entry.collector, record)) continue;
+
+      const facility = FORTIOS_FACILITY[entry.facility] ?? FORTIOS_FACILITY.local7;
+      const text = render(entry.format, facility);
+      const line = text.startsWith('<') ? text
+        : `<${facility * 8 + SYSLOG_SEVERITY[severity]}>${text}`;
+      if (!this.withinRate(entry, line.length)) continue;
+      this.agent().sendVerbatim(entry.server, severity, line);
+    }
+  }
+
+  private withinRate(entry: SyslogCollectorSettings, bytes: number): boolean {
+    if (entry.maxLogRateMegabytesPerSecond <= 0) return true;
+
+    const capacity = entry.maxLogRateMegabytesPerSecond * 1_000_000;
+    const now = this.now();
+    const budget = this.budgets.get(entry.collector) ?? { tokens: capacity, at: now };
+    budget.tokens = Math.min(capacity, budget.tokens + ((now - budget.at) / 1000) * capacity);
+    budget.at = now;
+    this.budgets.set(entry.collector, budget);
+    if (budget.tokens < bytes) return false;
+
+    budget.tokens -= bytes;
+    return true;
+  }
+
+  private accepts(collector: string, record: FirewallLogRecord): boolean {
+    const filter = this.filters.get(collector);
+    const threshold = FILTER_LEVEL[filter?.severity ?? 'information'] ?? 'information';
+    if (!logLevelAtLeast(record.level, threshold)) return false;
+    if (record.type !== 'traffic') return true;
+
+    switch (record.subtype) {
+      case 'local': return filter?.localTraffic === true;
+      case 'multicast': return filter?.multicastTraffic !== false;
+      default: return filter?.forwardTraffic !== false;
+    }
   }
 
   active(): readonly SyslogCollectorSettings[] {
@@ -65,6 +136,7 @@ export class SyslogCollectorTable {
         severityThreshold: severityOf(this.filters.get(entry.collector)?.severity),
         port: entry.port,
         transport: entry.transport,
+        delimiter: true,
       });
     }
 
@@ -89,9 +161,6 @@ export function severityOf(declared: string | undefined): SyslogSeverityName {
 }
 
 function facilityOf(declared: string): SyslogFacilityName {
-  return declared === 'kernel' ? 'kern'
-    : declared === 'user' ? 'user'
-      : declared === 'daemon' ? 'daemon'
-        : declared === 'syslog' ? 'syslog'
-          : 'local7';
+  if (declared === 'kernel') return 'kern';
+  return declared in SYSLOG_FACILITY ? declared as SyslogFacilityName : 'local7';
 }

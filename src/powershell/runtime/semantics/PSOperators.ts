@@ -3,8 +3,7 @@ import {
   type ArithmeticOperator,
 } from './PSNumber';
 import {
-  DESKTOP_CONVERSION, PSConversionError, castToNumeric, conversionFailure, parseNumericString,
-  type ConversionOptions,
+  PSConversionError, castToNumeric, conversionFailure, parseNumericString,
 } from './PSConvert';
 import { psValueToString } from '../PSExpansion';
 import type { PSValue } from '../PSEnvironment';
@@ -34,7 +33,7 @@ function missingOperator(op: ArithmeticOperator, value: unknown): PSConversionEr
 }
 
 export function arithmeticOperand(
-  value: PSValue, options: ConversionOptions = DESKTOP_CONVERSION,
+  value: PSValue,
 ): Operand | null {
   if (typeof value === 'number' || value instanceof PSNumber) return value;
   if (value instanceof PSChar) return value.code;
@@ -42,7 +41,7 @@ export function arithmeticOperand(
   if (typeof value === 'boolean') return value ? 1 : 0;
   if (typeof value === 'string') {
     const parsed = parseNumericString(value);
-    if (parsed === null) return castToNumeric('int32', value, options);
+    if (parsed === null) return castToNumeric('int32', value);
     return parsed;
   }
   return null;
@@ -53,27 +52,27 @@ export function isNumericLike(value: PSValue): boolean {
 }
 
 export function numericArithmetic(
-  op: ArithmeticOperator, left: PSValue, right: PSValue, options: ConversionOptions = DESKTOP_CONVERSION,
+  op: ArithmeticOperator, left: PSValue, right: PSValue,
 ): PSValue {
   if (typeof left === 'boolean' || (typeof left === 'object' && left !== null && !(left instanceof PSNumber) && !(left instanceof PSChar))) {
     throw missingOperator(op, left);
   }
-  const a = arithmeticOperand(left, options);
-  const b = arithmeticOperand(right, options);
+  const a = arithmeticOperand(left);
+  const b = arithmeticOperand(right);
   if (a === null || b === null) {
     throw missingOperator(op, a === null ? left : right);
   }
   return arithmetic(op, a, b) as PSValue;
 }
 
-export function negateValue(value: PSValue, options: ConversionOptions = DESKTOP_CONVERSION): PSValue {
+export function negateValue(value: PSValue): PSValue {
   if (typeof value === 'object' && value !== null && !isNumericLike(value)) {
     throw new PSConversionError(
       'System.Management.Automation.RuntimeException',
       `Method invocation failed because [${typeNameForMethod(value)}] does not contain a method named 'op_UnaryNegation'.`,
     );
   }
-  const operand = arithmeticOperand(value, options);
+  const operand = arithmeticOperand(value);
   if (operand === null) throw conversionFailure(value, 'System.Int32', 'Input string was not in a correct format.');
   return negate(operand) as PSValue;
 }
@@ -96,18 +95,18 @@ export function repeatArray(items: PSValue[], count: number | PSNumber): PSValue
   return out;
 }
 
-export function multiply(left: PSValue, right: PSValue, options: ConversionOptions = DESKTOP_CONVERSION): PSValue {
+export function multiply(left: PSValue, right: PSValue): PSValue {
   if (typeof left === 'string') {
-    const count = arithmeticOperand(right, options);
+    const count = arithmeticOperand(right);
     if (count === null) throw missingOperator('*', right);
     return repeatString(left, count);
   }
   if (Array.isArray(left)) {
-    const count = arithmeticOperand(right, options);
+    const count = arithmeticOperand(right);
     if (count === null) throw missingOperator('*', right);
     return repeatArray(left, count);
   }
-  return numericArithmetic('*', left, right, options);
+  return numericArithmetic('*', left, right);
 }
 
 export function describeOperand(value: PSValue): string {

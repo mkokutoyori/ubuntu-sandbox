@@ -28,10 +28,10 @@ interface WindowsDevice {
 
 const CMD_EXIT_WITH_CODE = /^exit(?:\s+\/b)?\s+(-?\d+)$/i;
 
-const CHILD_LAUNCHERS: Readonly<Record<string, 'cmd' | 'powershell' | 'pwsh'>> = {
+const CHILD_LAUNCHERS: Readonly<Record<string, 'cmd' | 'powershell'>> = {
   cmd: 'cmd', 'cmd.exe': 'cmd',
   powershell: 'powershell', 'powershell.exe': 'powershell',
-  pwsh: 'pwsh', 'pwsh.exe': 'pwsh',
+  pwsh: 'powershell', 'pwsh.exe': 'powershell',
 };
 
 /** Canonical cmd.exe activation banner — matches the real CLI banner. */

@@ -42,7 +42,7 @@ const CASES: Array<[string, string]> = [
   ["'Hello'.IndexOf('L', [StringComparison]::OrdinalIgnoreCase)", "2"],
   ["'Hello'.Replace('L','x')", "Hello"],
   ["'a,b,,c'.Split(',', [StringSplitOptions]::RemoveEmptyEntries) -join '|'", "a|b|c"],
-  ["'Hello'.Substring(9)", "Exception calling \"Substring\" with \"1\" argument(s): \"startIndex cannot be larger than length of string.\nParameter name: startIndex\""],
+  ["'Hello'.Substring(9)", "MethodInvocationException: Exception calling \"Substring\" with \"1\" argument(s): \"startIndex cannot be larger than length of string.\nParameter name: startIndex\""],
   ["'xxhixx'.Trim('x')", "hi"],
   ["$h = [ordered]@{a=1;b=2}; $h.GetType().Name", "OrderedDictionary"],
   ["[datetime]'2020-01-02' | Get-Date -Format 'yyyy/MM/dd'", "2020/01/02"],

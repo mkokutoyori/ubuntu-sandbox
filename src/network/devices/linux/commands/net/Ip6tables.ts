@@ -4,6 +4,7 @@ import { Satisfy } from '../../iam/policy/CommandPrivilegePolicy';
 
 export const ip6tablesCommand: LinuxCommand = {
   name: 'ip6tables',
+  ignoresStdin: true,
   needsNetworkContext: true,
   usage: 'ip6tables [-t table] COMMAND [args...]',
   privilege: { satisfiedBy: Satisfy.root },

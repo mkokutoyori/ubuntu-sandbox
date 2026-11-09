@@ -42,7 +42,7 @@ const EXPORT = 'Export-DnsServerZone';
 const RESTORE_PRIMARY = 'Restore-DnsServerPrimaryZone';
 const RESTORE_SECONDARY = 'Restore-DnsServerSecondaryZone';
 
-const NON_INTERACTIVE = 'Windows PowerShell is in NonInteractive mode.';
+const NON_INTERACTIVE = 'PowerShell is in NonInteractive mode.';
 const NO_ZONE = (name: string): string => `Zone "${name}" does not exist on this server.`;
 const DNS_DIRECTORY = 'C:\\Windows\\System32\\dns';
 
@@ -77,20 +77,20 @@ describe('Suspend-DnsServerZone and Resume-DnsServerZone', () => {
 
   it('ask before they act unless -Force is given, and name their target under -WhatIf', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${SUSPEND} -Name corp.test`)).toContain(`${SUSPEND} : ${NON_INTERACTIVE}`);
+    expect(await cmd(`${SUSPEND} -Name corp.test`)).toContain(`${SUSPEND}: ${NON_INTERACTIVE}`);
     expect(await cmd(`${SUSPEND} -Name corp.test -WhatIf`)).toContain(`What if: Performing the operation "${SUSPEND}" on target "corp.test".`);
     expect(await cmd('(Get-DnsServerZone -Name corp.test).IsPaused')).toBe('False');
     await cmd(`${SUSPEND} -Name corp.test -Force`);
-    expect(await cmd(`${RESUME} -Name corp.test`)).toContain(`${RESUME} : ${NON_INTERACTIVE}`);
+    expect(await cmd(`${RESUME} -Name corp.test`)).toContain(`${RESUME}: ${NON_INTERACTIVE}`);
     expect(await cmd(`${RESUME} -Name corp.test -WhatIf`)).toContain(`What if: Performing the operation "${RESUME}" on target "corp.test".`);
     expect(await cmd('(Get-DnsServerZone -Name corp.test).IsPaused')).toBe('True');
   });
 
   it('refuse a zone that is not on the server and ask for the name that is missing', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${SUSPEND} -Name nope.test -Force`)).toContain(`${SUSPEND} : ${NO_ZONE('nope.test')}`);
-    expect(await cmd(`${RESUME} -Name nope.test -Force`)).toContain(`${RESUME} : ${NO_ZONE('nope.test')}`);
-    expect(await cmd(`${SUSPEND} -Force`)).toContain(`${SUSPEND} : Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${SUSPEND} -Name nope.test -Force`)).toContain(`${SUSPEND}: ${NO_ZONE('nope.test')}`);
+    expect(await cmd(`${RESUME} -Name nope.test -Force`)).toContain(`${RESUME}: ${NO_ZONE('nope.test')}`);
+    expect(await cmd(`${SUSPEND} -Force`)).toContain(`${SUSPEND}: Cannot process command because of one or more missing mandatory parameters: Name.`);
   });
 
   it('can be repeated: suspending a suspended zone or resuming a running one is not an error', async () => {
@@ -228,7 +228,7 @@ describe('Sync-DnsServerZone', () => {
   it('takes the zone by position, refuses a zone that is not on the server and names its target under -WhatIf', async () => {
     const { cmd } = await governed();
     expect(await cmd(`${SYNC} corp.test`)).toBe('');
-    expect(await cmd(`${SYNC} nope.test`)).toContain(`${SYNC} : ${NO_ZONE('nope.test')}`);
+    expect(await cmd(`${SYNC} nope.test`)).toContain(`${SYNC}: ${NO_ZONE('nope.test')}`);
     await cmd(`Remove-Item ${DNS_DIRECTORY}\\corp.test.dns`);
     expect(await cmd(`${SYNC} -Name corp.test -WhatIf`)).toContain(`What if: Performing the operation "${SYNC}" on target "corp.test".`);
     expect(await cmd(`Test-Path ${DNS_DIRECTORY}\\corp.test.dns`)).toBe('False');
@@ -254,15 +254,15 @@ describe('Export-DnsServerZone', () => {
   it('does not overwrite a file that exists, and refuses a zone that is not on the server', async () => {
     const { cmd } = await governed();
     await cmd(`${EXPORT} -Name corp.test -FileName once.dns`);
-    expect(await cmd(`${EXPORT} -Name corp.test -FileName once.dns`)).toContain(`${EXPORT} : Cannot create a file when that file already exists.`);
-    expect(await cmd(`${EXPORT} -Name nope.test -FileName other.dns`)).toContain(`${EXPORT} : ${NO_ZONE('nope.test')}`);
+    expect(await cmd(`${EXPORT} -Name corp.test -FileName once.dns`)).toContain(`${EXPORT}: Cannot create a file when that file already exists.`);
+    expect(await cmd(`${EXPORT} -Name nope.test -FileName other.dns`)).toContain(`${EXPORT}: ${NO_ZONE('nope.test')}`);
     expect(await cmd(`Test-Path ${DNS_DIRECTORY}\\other.dns`)).toBe('False');
   });
 
   it('asks for the name and the file that are missing', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${EXPORT} -Name corp.test`)).toContain(`${EXPORT} : Cannot process command because of one or more missing mandatory parameters: FileName.`);
-    expect(await cmd(`${EXPORT} -FileName x.dns`)).toContain(`${EXPORT} : Cannot process command because of one or more missing mandatory parameters: Name.`);
+    expect(await cmd(`${EXPORT} -Name corp.test`)).toContain(`${EXPORT}: Cannot process command because of one or more missing mandatory parameters: FileName.`);
+    expect(await cmd(`${EXPORT} -FileName x.dns`)).toContain(`${EXPORT}: Cannot process command because of one or more missing mandatory parameters: Name.`);
   });
 });
 
@@ -282,7 +282,7 @@ describe('Restore-DnsServerPrimaryZone', () => {
   it('asks before it reloads unless -Force is given, and names its target under -WhatIf', async () => {
     const { cmd, ask, clientA } = await governed();
     await edit(cmd);
-    expect(await cmd(`${RESTORE_PRIMARY} -Name corp.test`)).toContain(`${RESTORE_PRIMARY} : ${NON_INTERACTIVE}`);
+    expect(await cmd(`${RESTORE_PRIMARY} -Name corp.test`)).toContain(`${RESTORE_PRIMARY}: ${NON_INTERACTIVE}`);
     expect(await cmd(`${RESTORE_PRIMARY} -Name corp.test -WhatIf`)).toContain(`What if: Performing the operation "${RESTORE_PRIMARY}" on target "corp.test".`);
     expect(addressesOf(await ask(clientA, 'web.corp.test'))).toEqual(['10.0.9.1']);
   });
@@ -299,17 +299,17 @@ describe('Restore-DnsServerPrimaryZone', () => {
   it('leaves the zone as it was when the file does not load, and says why', async () => {
     const { cmd, ask, clientA } = await governed();
     await cmd(`Set-Content -Path ${DNS_DIRECTORY}\\corp.test.dns -Value "garbage garbage garbage"`);
-    expect(await cmd(`${RESTORE_PRIMARY} -Name corp.test -Force`)).toContain(`${RESTORE_PRIMARY} : The zone file "corp.test.dns" is invalid`);
+    expect(await cmd(`${RESTORE_PRIMARY} -Name corp.test -Force`)).toContain(`${RESTORE_PRIMARY}: The zone file "corp.test.dns" is invalid`);
     expect(addressesOf(await ask(clientA, 'web.corp.test'))).toEqual(['10.0.9.1']);
     await cmd(`Remove-Item ${DNS_DIRECTORY}\\corp.test.dns`);
-    expect(await cmd(`${RESTORE_PRIMARY} -Name corp.test -Force`)).toContain(`${RESTORE_PRIMARY} : The zone file "corp.test.dns" does not exist in C:\\Windows\\System32\\dns.`);
+    expect(await cmd(`${RESTORE_PRIMARY} -Name corp.test -Force`)).toContain(`${RESTORE_PRIMARY}: The zone file "corp.test.dns" does not exist in C:\\Windows\\System32\\dns.`);
   });
 
   it('refuses a zone that is not a primary zone, and a zone that is not on the server', async () => {
     const { cmd, master } = await governed();
     await run(master, 'Add-DnsServerSecondaryZone -Name corp.test -MasterServers 10.0.1.10');
-    expect(await run(master, `${RESTORE_PRIMARY} -Name corp.test -Force`)).toContain(`${RESTORE_PRIMARY} : Zone "corp.test" is not a primary zone.`);
-    expect(await cmd(`${RESTORE_PRIMARY} -Name nope.test -Force`)).toContain(`${RESTORE_PRIMARY} : ${NO_ZONE('nope.test')}`);
+    expect(await run(master, `${RESTORE_PRIMARY} -Name corp.test -Force`)).toContain(`${RESTORE_PRIMARY}: Zone "corp.test" is not a primary zone.`);
+    expect(await cmd(`${RESTORE_PRIMARY} -Name nope.test -Force`)).toContain(`${RESTORE_PRIMARY}: ${NO_ZONE('nope.test')}`);
   });
 });
 
@@ -337,14 +337,14 @@ describe('Restore-DnsServerSecondaryZone', () => {
 
   it('refuses a zone that is not a secondary zone, and a zone that is not on the server', async () => {
     const { cmd } = await governed();
-    expect(await cmd(`${RESTORE_SECONDARY} -Name corp.test -Force`)).toContain(`${RESTORE_SECONDARY} : Zone "corp.test" is not a secondary zone.`);
-    expect(await cmd(`${RESTORE_SECONDARY} -Name nope.test -Force`)).toContain(`${RESTORE_SECONDARY} : ${NO_ZONE('nope.test')}`);
+    expect(await cmd(`${RESTORE_SECONDARY} -Name corp.test -Force`)).toContain(`${RESTORE_SECONDARY}: Zone "corp.test" is not a secondary zone.`);
+    expect(await cmd(`${RESTORE_SECONDARY} -Name nope.test -Force`)).toContain(`${RESTORE_SECONDARY}: ${NO_ZONE('nope.test')}`);
   });
 
   it('asks before it copies unless -Force is given, and names its target under -WhatIf', async () => {
     const { master } = await governed();
     await run(master, 'Add-DnsServerSecondaryZone -Name corp.test -MasterServers 10.0.1.10');
-    expect(await run(master, `${RESTORE_SECONDARY} -Name corp.test`)).toContain(`${RESTORE_SECONDARY} : ${NON_INTERACTIVE}`);
+    expect(await run(master, `${RESTORE_SECONDARY} -Name corp.test`)).toContain(`${RESTORE_SECONDARY}: ${NON_INTERACTIVE}`);
     expect(await run(master, `${RESTORE_SECONDARY} -Name corp.test -WhatIf`)).toContain(`What if: Performing the operation "${RESTORE_SECONDARY}" on target "corp.test".`);
   });
 });

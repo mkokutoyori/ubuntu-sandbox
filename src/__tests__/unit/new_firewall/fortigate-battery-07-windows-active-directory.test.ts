@@ -169,7 +169,7 @@ describe('Batterie 7 : Tests 301 à 350 — Hybridation Windows Server, Active D
       await ps('Set-DnsClientServerAddress -InterfaceAlias "Ethernet 0" -ServerAddresses 10.10.10.10');
       const join = await ps(`$cred = New-Object System.Management.Automation.PSCredential("CORP\\Administrator", (ConvertTo-SecureString "P@ssw0rd!" -AsPlainText -Force)); Add-Computer -DomainName "corp.local" -Credential $cred -Restart:$false`);
       expect(join).not.toMatch(/failed|error/i);
-      expect(await ps('(Get-WmiObject Win32_ComputerSystem).Domain')).toBe('corp.local');
+      expect(await ps('(Get-CimInstance Win32_ComputerSystem).Domain')).toBe('corp.local');
     });
 
     it('307. Accès aux partages d\'infrastructure AD (SYSVOL et NETLOGON) via port 445 traversant', async () => {

@@ -56,7 +56,6 @@ export function expandString(
   env: PSEnvironment,
   evalSubExpr?: SubExprEvaluator,
   resolver: VariableResolver = resolveVar,
-  unicodeEscapes = false,
 ): string {
   let result = '';
   let i = 0;
@@ -67,7 +66,7 @@ export function expandString(
     // ── Backtick escape ──────────────────────────────────────────────────
     if (ch === '`' && i + 1 < raw.length) {
       const next = raw[i + 1];
-      if (unicodeEscapes && next === 'u' && raw[i + 2] === '{') {
+      if (next === 'u' && raw[i + 2] === '{') {
         const close = raw.indexOf('}', i + 3);
         const digits = close > 0 ? raw.slice(i + 3, close) : '';
         if (/^[0-9a-fA-F]{1,6}$/.test(digits) && parseInt(digits, 16) <= 0x10FFFF) {
@@ -76,7 +75,7 @@ export function expandString(
           continue;
         }
       }
-      result += (unicodeEscapes && next === 'e' ? '\x1b' : BACKTICK[next]) ?? next;
+      result += (next === 'e' ? '\x1b' : BACKTICK[next]) ?? next;
       i += 2;
       continue;
     }

@@ -26,6 +26,11 @@
  *   - ni l'envoi ni la reception ne portaient d'options IP jusqu'a
  *     l'application.
  *
+ * Correction d'une premisse fausse : les sources 255.255.255.255, 224.0.0.1, 240.0.0.1 et 127.0.0.1 etaient attendues dans ipInAddrErrors. Dans le noyau Linux (net/ipv4/route.c,
+ * ip_route_input_slow : `martian_source` -> ip_handle_martian_source) une telle source est jetee par la couche IP sans incrementer INADDRERRORS, que ip_error() ne compte que pour une
+ * destination inatteignable ; le simulateur la jette de la meme facon (rp-filter/martien avant UDP). Ces quatre cas attendent donc 0 ; les trois autres (10.0.0.255, notre adresse, 0.0.0.0)
+ * atteignent le controle de la couche UDP (RFC 1122 §4.1.3.6) et restent comptes.
+ *
  * Autorite : RFC 768 (« Length is the length in octets of this user
  * datagram including this header and the data. (This means the minimum
  * value of the length is eight.) ») ; RFC 1122 §4.1.3.4 (une somme nulle
@@ -179,12 +184,20 @@ describe('the length field is read on arrival (RFC 768)', () => {
 });
 
 describe('a datagram with an invalid source is discarded (RFC 1122 §4.1.3.6)', () => {
-  it.each(['255.255.255.255', '224.0.0.1', '10.0.0.255', '240.0.0.1', '127.0.0.1', DUT_ADDRESS, '0.0.0.0'])(
-    'a datagram from %s does not reach the application', (source) => {
+  it.each(['10.0.0.255', DUT_ADDRESS, '0.0.0.0'])(
+    'a datagram from %s does not reach the application and is counted by UDP', (source) => {
       const { peer, deliveries } = listening();
       peer.sendIpv4(datagram(source, DUT_ADDRESS));
       expect(deliveries).toHaveLength(0);
       expect(peer.dut.getProtocolCounters().ipInAddrErrors).toBe(1);
+    });
+
+  it.each(['255.255.255.255', '224.0.0.1', '240.0.0.1', '127.0.0.1'])(
+    'a martian datagram from %s does not reach the application and is dropped by the IP layer, uncounted', (source) => {
+      const { peer, deliveries } = listening();
+      peer.sendIpv4(datagram(source, DUT_ADDRESS));
+      expect(deliveries).toHaveLength(0);
+      expect(peer.dut.getProtocolCounters().ipInAddrErrors).toBe(0);
     });
 
   it('WITNESS: a DHCP-shaped datagram, from 0.0.0.0 to the limited broadcast, is delivered', () => {

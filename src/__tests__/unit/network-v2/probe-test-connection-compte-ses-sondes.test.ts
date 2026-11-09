@@ -23,7 +23,7 @@
  * Les 4 qui passent DES DEUX COTES, et pourquoi ils sont la :
  *  - `ping -n 4` — TEMOIN : il emet ses quatre echos avant comme apres.
  *    Sans lui, un compteur casse rendrait la sonde verte pour rien.
- *  - `Test-NetConnection` — NON-REGRESSION : il sonde UNE fois et doit le
+ *  - `Test-NetConnection` — NON-REGRESSION: il sonde UNE fois et doit le
  *    rester. Le port partage prend desormais un NOMBRE ; il ne devient pas
  *    une sequence pour autant, et ce cas garde la porte.
  *  - `-Quiet` et le temps des lignes injoignables — STRUCTUREL : avec une
@@ -72,7 +72,7 @@ describe('Test-Connection met sur le fil ce qu il annonce', () => {
     const before = echoes();
     const out = await ps('Test-Connection 10.0.0.2 -Count 4');
     expect(echoes() - before).toBe(4);
-    expect(out.split('\n').filter(l => /Destination\s*:/.test(l))).toHaveLength(4);
+    expect(out.split('\n').filter(l => /^ +\d+ .*Success$/.test(l))).toHaveLength(4);
   });
 
   it('-Count 1 n en emet qu un, et le defaut en emet quatre', async () => {
@@ -85,7 +85,7 @@ describe('Test-Connection met sur le fil ce qu il annonce', () => {
     expect(echoes() - avantDefaut).toBe(4);
   });
 
-  it('NON-REGRESSION : Test-NetConnection sonde UNE seule fois', async () => {
+  it('NON-REGRESSION: Test-NetConnection sonde UNE seule fois', async () => {
     const { ps, echoes } = lab();
     const before = echoes();
     await ps('Test-NetConnection -ComputerName 10.0.0.2');
@@ -101,8 +101,8 @@ describe('Test-Connection met sur le fil ce qu il annonce', () => {
   it('chaque ligne porte SA mesure : un hote injoignable ne rend aucun temps', async () => {
     const { ps } = lab();
     const out = await ps('Test-Connection 10.255.255.7 -Count 2');
-    const lignes = out.split('\n').filter(l => /Time\(ms\)\s*:/.test(l));
+    const lignes = out.split('\n').filter(l => /^ +\d+ .*TimedOut$/.test(l));
     expect(lignes).toHaveLength(2);
-    for (const l of lignes) expect(l).toMatch(/Time\(ms\)\s*:\s*0\s*$/);
+    for (const l of lignes) expect(l).toMatch(/ \* +\* +TimedOut$/);
   });
 });

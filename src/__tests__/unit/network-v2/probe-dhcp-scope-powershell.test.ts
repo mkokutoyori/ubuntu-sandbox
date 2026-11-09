@@ -58,10 +58,9 @@ describe('l\'etendue DHCP se declare avant ses options', () => {
 
     const vu = await ps('Set-DhcpServerv4OptionValue -ScopeId 192.168.2.1 -Router 1.1.1.1');
 
-    expect(vu).toContain('Set-DhcpServerv4OptionValue : ');
+    expect(vu).toContain('Set-DhcpServerv4OptionValue: ');
     expect(vu).not.toContain('Set-Dhcpserverv4Optionvalue');
-    expect(vu.match(/Set-DhcpServerv4OptionValue : /g)).toHaveLength(1);
-    expect(vu).toContain('[Set-DhcpServerv4OptionValue]');
+    expect(vu.match(/Set-DhcpServerv4OptionValue: /g)).toHaveLength(1);
   });
 
   it('les options se posent sur le bon ScopeId et se relisent', async () => {

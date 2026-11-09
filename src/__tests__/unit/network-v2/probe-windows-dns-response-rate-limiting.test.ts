@@ -153,7 +153,7 @@ describe('the settings of response rate limiting', () => {
     ['-MaximumResponsesPerWindow 0', 'The parameter is incorrect.'],
   ])('refuses %s with the text of the Win32 error', async (parameters, message) => {
     const { rrl } = await lab();
-    expect(await rrl(`Set-DnsServerResponseRateLimiting ${parameters}`)).toContain(`Set-DnsServerResponseRateLimiting : ${message}`);
+    expect(await rrl(`Set-DnsServerResponseRateLimiting ${parameters}`)).toContain(`Set-DnsServerResponseRateLimiting: ${message}`);
   });
 
   it('accepts the limits of the ranges and a Leak Rate equal to the TC Rate', async () => {
@@ -189,7 +189,7 @@ describe('the settings of response rate limiting', () => {
   it('asks for confirmation when the preference reaches the impact, and -Force goes without', async () => {
     const { rrl } = await lab();
     const asked = await rrl('$ConfirmPreference = "Medium"; Set-DnsServerResponseRateLimiting -Mode LogOnly');
-    expect(asked).toContain('Set-DnsServerResponseRateLimiting : Windows PowerShell is in NonInteractive mode.');
+    expect(asked).toContain('Set-DnsServerResponseRateLimiting: PowerShell is in NonInteractive mode.');
     expect(await rrl('(Get-DnsServerRRL).Mode')).toBe('Disable');
     expect(await rrl('$ConfirmPreference = "Medium"; Set-DnsServerRRL -Mode LogOnly -Force')).toBe('');
     expect(await rrl('(Get-DnsServerRRL).Mode')).toBe('LogOnly');

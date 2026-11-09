@@ -505,6 +505,38 @@ export const VPN_SSL_SETTINGS: FortiTableSpec = {
   },
 };
 
+export const VPN_IPSEC_CONCENTRATOR: FortiTableSpec = {
+  path: ['vpn', 'ipsec', 'concentrator'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'vpngrp',
+  renderOrder: 122,
+  help: 'Concentrator configuration.',
+  attributes: [
+    {
+      name: 'id', help: 'ID.', quoted: false, readOnly: true,
+      parts: [{ name: 'id', type: 'INT', description: 'ID.', range: [0, 4294967295] }],
+    },
+    text('name', 'Concentrator name.'),
+    refList('member', 'IPsec tunnels to concentrate.', ['vpn ipsec phase1-interface']),
+    enable('src-check', 'Enable/disable source IP check between concentrator members.', true),
+  ],
+  onCommit(object, context) {
+    const members = [...object.effective('member')];
+    if (members.length < 2) return 'a concentrator needs at least two member tunnels.';
+    return context.device.applyIpsecConcentrator(Number(object.key), {
+      name: object.effective('name')[0] ?? '',
+      members,
+      srcCheck: object.effective('src-check')[0] !== 'disable',
+    });
+  },
+  onDelete(key, context) {
+    context.device.removeIpsecConcentrator(Number(key));
+  },
+};
+
 export const VPN_SPECS: readonly FortiTableSpec[] = Object.freeze([
   VPN_SSL_WEB_PORTAL,
   VPN_SSL_SETTINGS,
@@ -513,6 +545,7 @@ export const VPN_SPECS: readonly FortiTableSpec[] = Object.freeze([
   VPN_PHASE1_INTERFACE,
   VPN_PHASE2_INTERFACE,
   VPN_PHASE1_POLICY,
+  VPN_IPSEC_CONCENTRATOR,
 ]);
 
 export { POLICY_BASED_HINT };

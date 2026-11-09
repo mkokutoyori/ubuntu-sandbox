@@ -79,13 +79,7 @@ const BAREWORD_GLUE: ReadonlySet<PSTokenType> = new Set([
   PSTokenType.MINUS,
 ]);
 
-export interface PSParserOptions {
-  readonly core: boolean;
-}
-
 export class PSParser {
-  constructor(private readonly options: PSParserOptions = { core: false }) {}
-
   private tokens: PSToken[] = [];
   private pos: number = 0;
   private source: string | null = null;
@@ -96,7 +90,6 @@ export class PSParser {
 
   parse(tokens: PSToken[], source?: string): PSProgram {
     this.source = source ?? null;
-    if (!this.options.core) this.rejectPowerShell7Syntax(tokens);
     this.tokens = tokens;
     this.pos = 0;
     this.skipTerminators();
@@ -161,19 +154,6 @@ export class PSParser {
     if (this.checkValue(PSTokenType.WORD, 'class')) return this.parseClassDef();
     this.pos = saved;
     return null;
-  }
-
-  private rejectPowerShell7Syntax(tokens: PSToken[]): void {
-    for (const token of tokens) {
-      if (token.type === PSTokenType.AND_AND || token.type === PSTokenType.OR_OR) {
-        throw new PSParserError(`The token '${token.value}' is not a valid statement separator in this version.`, token.position, token.value.length, 'InvalidEndOfLine');
-      }
-      if (token.type === PSTokenType.QUESTION || token.type === PSTokenType.NULL_COALESCE
-          || token.type === PSTokenType.NULL_COALESCE_ASSIGN || token.type === PSTokenType.NULL_COND_DOT
-          || token.type === PSTokenType.NULL_COND_INDEX) {
-        throw new PSParserError(`Unexpected token '${token.value}' in expression or statement.`, token.position, token.value.length, 'UnexpectedToken');
-      }
-    }
   }
 
   // ─── Statement dispatcher ──────────────────────────────────────────────────
@@ -1542,7 +1522,7 @@ export class PSParser {
     if (this.checkValue(PSTokenType.WORD, 'begin')
         || this.checkValue(PSTokenType.WORD, 'process')
         || this.checkValue(PSTokenType.WORD, 'end')
-        || (this.options.core && this.check(PSTokenType.WORD) && this.peek().value.toLowerCase() === 'clean' && this.peekAt(1)?.type === PSTokenType.LBRACE)
+        || (this.check(PSTokenType.WORD) && this.peek().value.toLowerCase() === 'clean' && this.peekAt(1)?.type === PSTokenType.LBRACE)
         || this.checkValue(PSTokenType.WORD, 'dynamicparam')) {
       while (!this.check(PSTokenType.RBRACE) && !this.isAtEnd()) {
         const blockKw = this.peek().value.toLowerCase();
@@ -2100,8 +2080,8 @@ export class PSParser {
     if (tok.type === PSTokenType.SUBEXPR) {
       this.advance();
       // Parse the inner content recursively
-      const innerTokens = new PSLexer_(this.options).tokenize(tok.value);
-      const innerParser = new PSParser(this.options);
+      const innerTokens = new PSLexer_().tokenize(tok.value);
+      const innerParser = new PSParser();
       const innerAst = innerParser.parse(innerTokens);
       return { type: 'SubExpression', body: innerAst.body, position: pos };
     }
@@ -2220,7 +2200,7 @@ export class PSParser {
   }
 
   private makeNumberLiteral(raw: string, pos: SourcePosition): PSLiteralExpression {
-    const value = parseNumberLiteral(raw, this.options);
+    const value = parseNumberLiteral(raw);
     if (value === null) throw new PSParserError(`The numeric constant ${raw} is not valid.`, pos, raw.length, 'BadNumericConstant');
     return makeLiteral(value as unknown as number, raw, 'number', pos);
   }

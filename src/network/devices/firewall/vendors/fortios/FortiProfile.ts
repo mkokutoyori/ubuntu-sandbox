@@ -142,6 +142,8 @@ export const FORTIOS_PROFILE: FirewallProfile = Object.freeze({
     packetsPerSecondPerCpu: 700_000,
   }),
 
+  structuredRemoteSyslog: true,
+
   syslogCatalog: Object.freeze({
     'session-built': Object.freeze({ id: '0000000013', severity: 'notifications' as const }),
     'session-torn-down': Object.freeze({ id: '0000000014', severity: 'notifications' as const }),

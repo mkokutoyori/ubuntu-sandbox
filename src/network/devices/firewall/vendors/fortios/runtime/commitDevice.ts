@@ -411,6 +411,12 @@ export function buildCommitDevice(
       removeGreTunnel(name) {
         fw.removeGreTunnel(name);
       },
+      applyIpsecConcentrator(id, concentrator) {
+        return fw.applyIpsecConcentrator(id, concentrator);
+      },
+      removeIpsecConcentrator(id) {
+        fw.removeIpsecConcentrator(id);
+      },
       applyPkiPeer(peer) {
         fw.getPkiPeers().setPeer(peer);
         fw.syncIpsecTunnels();
@@ -642,6 +648,7 @@ export function buildCommitDevice(
       },
       removeVip(name) {
         fw.getNatPolicy().remove(vipRuleId(name));
+        fw.setSslOffload(vipRuleId(name), name, undefined);
         fw.getObjectStore().removeAddress(name);
         fw.clearProxyArpEntries(proxyOwnerKey('vip', name));
       },

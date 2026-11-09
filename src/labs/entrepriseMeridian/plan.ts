@@ -34,6 +34,7 @@ export const HQ = {
   dmzGateway: '172.16.0.1',
   dc1: '10.0.0.10',
   oracle: '10.0.0.30',
+  siem: '10.0.0.40',
   workstation: '10.0.0.50',
   web: '172.16.0.10',
   mail: '172.16.0.25',

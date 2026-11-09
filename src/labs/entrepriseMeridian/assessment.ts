@@ -47,6 +47,13 @@ export async function configureAuditWorkstation(bench: LabWorkbench, pc: Equipme
     `curl -s -o /dev/null -w "%{http_code}\\n" "http://${HQ.wanVip.web}/" | grep -q 200 && echo "PASS: published site still served after the burst"`,
   ].join('\n'), '755');
 
+  await bench.writeFile(pc, `${AUDIT_DIRECTORY}/check-web-injection.sh`, [
+    '#!/bin/bash',
+    'echo "Scope item 6: an injection probe against the published web VIP must be cut by the firewall, the site must keep serving"',
+    `curl -sS --connect-timeout 3 "http://${HQ.wanVip.web}/?id=1=1" 2>&1 | grep -qi "reset\\|empty reply\\|recv failure" && echo "PASS: injection probe cut"`,
+    `curl -s -o /dev/null -w "%{http_code}\\n" "http://${HQ.wanVip.web}/" | grep -q 200 && echo "PASS: legitimate request still served"`,
+  ].join('\n'), '755');
+
   await bench.writeFile(pc, `${AUDIT_DIRECTORY}/run-all.sh`, [
     '#!/bin/bash',
     'for script in check-web-vip.sh check-mail-vip.sh check-out-of-scope.sh check-mgmt-exposure.sh; do',

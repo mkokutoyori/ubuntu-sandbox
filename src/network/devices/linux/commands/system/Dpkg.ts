@@ -36,6 +36,7 @@ function runDpkg(ctx: LinuxCommandContext, args: string[]): { output: string; ex
 
 export const dpkgCommand: LinuxCommand = {
   name: 'dpkg',
+  ignoresStdin: true,
   needsNetworkContext: true,
   manSection: 1,
   usage: 'dpkg -l [package-name-pattern ...]',

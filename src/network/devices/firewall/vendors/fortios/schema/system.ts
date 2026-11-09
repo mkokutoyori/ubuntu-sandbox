@@ -1768,6 +1768,7 @@ export const SYSTEM_NETFLOW: FortiTableSpec = {
     count('active-flow-timeout', 'Timeout to report information about ongoing flows, in seconds.', 60, 3600, 1800),
     count('inactive-flow-timeout', 'Timeout for periodic report of finished flows, in seconds.', 10, 600, 15),
     count('template-tx-counter', 'Counter of flowset records before resending a template flowset record.', 10, 6000, 20),
+    count('template-tx-timeout', 'Timeout for periodic template flowset transmission, in seconds.', 60, 86400, 1800),
   ],
   children: [NETFLOW_COLLECTOR],
   onCommit(object, context) {
@@ -1781,6 +1782,7 @@ export const SYSTEM_NETFLOW: FortiTableSpec = {
       activeTimeoutSec: Number.parseInt(object.effective('active-flow-timeout')[0] ?? '1800', 10),
       inactiveTimeoutSec: Number.parseInt(object.effective('inactive-flow-timeout')[0] ?? '15', 10),
       templateTxCounter: Number.parseInt(object.effective('template-tx-counter')[0] ?? '20', 10),
+      templateTxTimeoutSec: Number.parseInt(object.effective('template-tx-timeout')[0] ?? '1800', 10),
       collectors,
     });
   },

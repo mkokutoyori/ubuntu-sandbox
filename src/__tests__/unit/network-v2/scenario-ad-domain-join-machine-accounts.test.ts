@@ -126,10 +126,10 @@ describe('Scénario 3 — jonction de machines et comptes machine (mandeng.lan)'
   });
 
   describe('diagnostic post-jonction', () => {
-    it('(Get-WmiObject Win32_ComputerSystem).Domain retourne mandeng.lan après redémarrage', async () => {
+    it('(Get-CimInstance Win32_ComputerSystem).Domain retourne mandeng.lan après redémarrage', async () => {
       const { client } = await buildLan();
       await run(ps(client), 'Add-Computer -DomainName "mandeng.lan" -Credential "Administrator:DSRM@Mandeng2025!" -OUPath "OU=Postes,OU=Ordinateurs,OU=Mandeng,DC=mandeng,DC=lan" -NewName "PC-WIN-01"');
-      const out = await run(ps(client), '(Get-WmiObject Win32_ComputerSystem).Domain');
+      const out = await run(ps(client), '(Get-CimInstance Win32_ComputerSystem).Domain');
       expect(out.trim()).toBe('mandeng.lan');
     });
 

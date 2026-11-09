@@ -126,12 +126,30 @@ export const USER_RADIUS: FortiTableSpec = {
       ...text('secret', 'Pre-shared secret to access the RADIUS server.'),
       quoted: true, secret: true,
     },
+    address('secondary-server', 'Secondary RADIUS server IP address, tried when the primary does not answer.'),
+    {
+      ...text('secondary-secret', 'Secret key to access the secondary server.'),
+      quoted: true, secret: true,
+    },
+    address('tertiary-server', 'Tertiary RADIUS server IP address, tried when the secondary does not answer.'),
+    {
+      ...text('tertiary-secret', 'Secret key to access the tertiary server.'),
+      quoted: true, secret: true,
+    },
     count('radius-port', 'RADIUS service port number.', 0, 65535, 1812),
-    choice('auth-type', 'Authentication methods.', [
-      { keyword: 'auto', description: 'Try PAP, then MS-CHAPv2, then CHAP.' },
-      { keyword: 'pap', description: 'PAP only.' },
-      { keyword: 'chap', description: 'CHAP only.' },
-    ], 'auto'),
+    {
+      ...choice('auth-type', 'Authentication methods/protocols permitted for this RADIUS server.', [
+        { keyword: 'auto', description: 'Use PAP, MSCHAP_v2, and CHAP (in that order).' },
+        { keyword: 'ms_chap_v2', description: 'Microsoft Challenge Handshake Authentication Protocol version 2.' },
+        { keyword: 'ms_chap', description: 'Microsoft Challenge Handshake Authentication Protocol.' },
+        { keyword: 'chap', description: 'Challenge Handshake Authentication Protocol.' },
+        { keyword: 'pap', description: 'Password Authentication Protocol.' },
+      ], 'auto'),
+      unimplementedValues: {
+        ms_chap: 'the RADIUS client implements MS-CHAPv2 (RFC 2759) but not the original MS-CHAP (RFC 2433), '
+          + 'so a server told to use it could never be answered.',
+      },
+    },
   ],
   onCommit(object, context) {
     context.device.applyRemoteAuthServer({
@@ -141,6 +159,10 @@ export const USER_RADIUS: FortiTableSpec = {
       secret: object.effective('secret')[0] ?? '',
       port: Number.parseInt(object.effective('radius-port')[0] ?? '1812', 10),
       authType: object.effective('auth-type')[0],
+      secondaryAddress: object.effective('secondary-server')[0],
+      secondarySecret: object.effective('secondary-secret')[0],
+      tertiaryAddress: object.effective('tertiary-server')[0],
+      tertiarySecret: object.effective('tertiary-secret')[0],
     });
   },
   onDelete(key, context) {

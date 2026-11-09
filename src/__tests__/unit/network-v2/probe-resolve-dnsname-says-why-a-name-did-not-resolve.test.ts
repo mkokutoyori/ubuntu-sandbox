@@ -3,7 +3,7 @@
  *
  * Measured first (a Windows PC, a BIND9 server holding example.com, a zone that refuses this client, and a
  * second address where no DNS server listens): every failure — a name that does not exist, a name that has no
- * record of the asked type, a server that refuses, a server that never answers — printed the same line `Resolve-DnsName : x : DNS name does not exist`, with CategoryInfo `NotSpecified: (:)
+ * record of the asked type, a server that refuses, a server that never answers — printed the same line `Resolve-DnsName: x : DNS name does not exist`, with CategoryInfo `NotSpecified: (:)
  * [Resolve-DnsName], WriteErrorException` and FullyQualifiedErrorId `Microsoft.PowerShell.Commands.WriteErrorException`.
  * A dead server therefore looked like a typo in the name, and `$_.FullyQualifiedErrorId` could not tell the cases apart.
  *
@@ -91,7 +91,7 @@ describe('the reason a lookup failed reaches the error', () => {
 
   it('NON-REGRESSION: a name that does not exist says "DNS name does not exist"', async () => {
     const { ps } = await lab();
-    expect(await ps('Resolve-DnsName nexiste.example.com')).toContain('Resolve-DnsName : nexiste.example.com : DNS name does not exist');
+    expect(await ps('Resolve-DnsName nexiste.example.com')).toContain('Resolve-DnsName: nexiste.example.com : DNS name does not exist');
   });
 
   it('a name with no record of the asked type says "DNS record does not exist"', async () => {
@@ -135,11 +135,10 @@ describe('the reason a lookup failed reaches the error', () => {
 });
 
 describe('the error record carries the Win32 error', () => {
-  it('the error block names the category, the exception type and the symbolic error', async () => {
+  it('the error record names the category, the exception type and the symbolic error', async () => {
     const { ps } = await lab();
-    const out = await ps('Resolve-DnsName nexiste.example.com');
-    expect(out).toContain('CategoryInfo          : ResourceUnavailable: (nexiste.example.com:String) [Resolve-DnsName], Win32Exception');
-    expect(out).toContain('FullyQualifiedErrorId : DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName');
+    const out = await ps('try { Resolve-DnsName nexiste.example.com -ErrorAction Stop } catch { "$($_.CategoryInfo.Category)|$($_.Exception.GetType().Name)|$($_.FullyQualifiedErrorId)" }');
+    expect(out.trim()).toBe('ResourceUnavailable|Win32Exception|DNS_ERROR_RCODE_NAME_ERROR,Microsoft.DnsClient.Commands.ResolveDnsName');
   });
 
   it('a catch block sees the symbolic error of a dead server', async () => {

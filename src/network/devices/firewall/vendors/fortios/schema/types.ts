@@ -147,6 +147,7 @@ export interface FortiStaticRoute {
   readonly priority: number;
   readonly blackhole: boolean;
   readonly enabled: boolean;
+  readonly bfd: boolean;
 }
 
 export interface FortiSchedulePatch {
@@ -338,6 +339,7 @@ export interface FortiBalancedVipPatch {
   readonly method: LdbMethod;
   readonly monitors: readonly string[];
   readonly servers: readonly FortiRealServerPatch[];
+  readonly sslOffload?: { readonly mode: 'half' | 'full'; readonly certificate: string };
   readonly comment?: string;
 }
 
@@ -457,11 +459,13 @@ export interface FortiCommitDevice {
     sequenceTransmission: boolean; sequenceReception: boolean;
   }): string | void;
   removeGreTunnel(name: string): void;
+  applyIpsecConcentrator(id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }): string | void;
+  removeIpsecConcentrator(id: number): void;
   applyPkiPeer(peer: { name: string; ca: string; subject: string; cn: string }): void;
   removePkiPeer(name: string): void;
   applyPkiPeerGroup(name: string, members: readonly string[]): void;
   removePkiPeerGroup(name: string): void;
-  applyNetflow(settings: { activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; collectors: ReadonlyArray<{ ip: string; port: number }> }): void;
+  applyNetflow(settings: { activeTimeoutSec: number; inactiveTimeoutSec: number; templateTxCounter: number; templateTxTimeoutSec: number; collectors: ReadonlyArray<{ ip: string; port: number }> }): void;
   applyBfdNeighbors(neighbours: ReadonlyArray<{ ip: string; interface: string }>): string | void;
   applyKeyChain(patch: import('../../../routing/DynamicRoutingTypes').KeyChainPatch): void;
   removeKeyChain(name: string): void;
@@ -603,6 +607,10 @@ export interface FortiRemoteServerPatch {
   readonly secret: string;
   readonly port: number;
   readonly authType?: string;
+  readonly secondaryAddress?: string;
+  readonly secondarySecret?: string;
+  readonly tertiaryAddress?: string;
+  readonly tertiarySecret?: string;
 }
 
 export interface FortiSslVpnRulePatch {

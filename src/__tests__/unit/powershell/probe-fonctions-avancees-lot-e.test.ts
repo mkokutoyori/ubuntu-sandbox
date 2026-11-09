@@ -22,7 +22,7 @@ import { describe, it, expect } from 'vitest';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 
 function run(code: string): string {
-  return new PSInterpreter(undefined, { language: 'core' }).execute(code).replace(/\r?\n/g, '|');
+  return new PSInterpreter().execute(code).replace(/\r?\n/g, '|');
 }
 
 const ADVANCED = 'function g { [CmdletBinding()] param() ';

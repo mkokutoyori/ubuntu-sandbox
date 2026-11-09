@@ -8,6 +8,7 @@ const outcome = (ctx: LinuxCommandContext, args: string[]) => runHostnamectl(ctx
 
 export const hostnamectlCommand: LinuxCommand = {
   name: 'hostnamectl',
+  ignoresStdin: true,
   package: 'systemd',
   needsNetworkContext: true,
   ownsHelpOption: true,

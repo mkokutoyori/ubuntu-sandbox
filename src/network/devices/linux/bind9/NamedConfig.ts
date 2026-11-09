@@ -39,7 +39,7 @@ export interface NamedDns64 {
   readonly breakDnssec: boolean;
 }
 
-export interface NamedPrimary {
+export interface NamedRemoteServer {
   readonly address: string;
   readonly port: number | null;
   readonly key: string | null;
@@ -74,14 +74,15 @@ export interface NamedOptions {
   readonly forwardMode: ForwardMode;
   readonly notify: NotifyMode;
   readonly notifyToSoa: boolean;
+  readonly alsoNotify: readonly NamedRemoteServer[] | null;
 }
 
 export interface NamedZone {
   readonly name: string;
   readonly type: ZoneType;
   readonly file: string | null;
-  readonly primaries: readonly NamedPrimary[];
-  readonly alsoNotify: readonly string[];
+  readonly primaries: readonly NamedRemoteServer[];
+  readonly alsoNotify: readonly NamedRemoteServer[] | null;
   readonly notify: NotifyMode | null;
   readonly notifyToSoa: boolean | null;
   readonly allowQuery: AddressMatchList | null;
@@ -228,6 +229,7 @@ interface MutableOptions {
   forwardMode: ForwardMode;
   notify: NotifyMode;
   notifyToSoa: boolean;
+  alsoNotify: NamedRemoteServer[] | null;
 }
 
 function defaultOptions(): MutableOptions {
@@ -253,6 +255,7 @@ function defaultOptions(): MutableOptions {
     forwardMode: 'first',
     notify: 'yes',
     notifyToSoa: false,
+    alsoNotify: null,
   };
 }
 
@@ -261,6 +264,7 @@ function parseOptions(
   options: MutableOptions,
   acls: ReadonlyMap<string, AddressMatchList>,
   pendingListeners: PendingListener[],
+  pendingAlsoNotify: NamedConfStatement[],
 ): void {
   for (const entry of requireBlock(statement)) {
     const keyword = keywordOf(entry);
@@ -357,6 +361,9 @@ function parseOptions(
       case 'notify-to-soa':
         options.notifyToSoa = parseBoolean(entry);
         break;
+      case 'also-notify':
+        pendingAlsoNotify.push(entry);
+        break;
       default:
         fail(entry, `unknown option '${keyword}'`);
     }
@@ -420,8 +427,8 @@ function parseDns64(
 interface ZoneDraft {
   type: ZoneType | null;
   file: string | null;
-  primaries: NamedPrimary[];
-  alsoNotify: string[];
+  primaries: NamedRemoteServer[];
+  alsoNotify: NamedRemoteServer[] | null;
   notify: NotifyMode | null;
   notifyToSoa: boolean | null;
   allowQuery: AddressMatchList | null;
@@ -435,22 +442,26 @@ interface ZoneDraft {
 
 const AUTHORITATIVE_ONLY_OPTIONS: readonly string[] = ['notify', 'notify-to-soa', 'allow-query'];
 
-function parsePrimary(item: NamedConfStatement, tlsNames: ReadonlySet<string>): NamedPrimary {
+function parsePortWord(item: NamedConfStatement, word: string | undefined, message: string): number {
+  const parsed = Number(word);
+  if (word === undefined || !Number.isInteger(parsed)) fail(item, `${message} near '${word ?? ';'}'`);
+  if (parsed < 0 || parsed > 65535) fail(item, `port number out of range near '${word}'`);
+  return parsed;
+}
+
+function parseRemoteServer(item: NamedConfStatement, tlsNames: ReadonlySet<string>, defaultPort: number | null): NamedRemoteServer {
   const words = item.values.map((value) => value.text);
   if (!IPAddress.isValid(words[0])) fail(item, `expected IP address near '${words[0]}'`);
-  let port: number | null = null;
+  let port: number | null = defaultPort;
   let key: string | null = null;
   let tls: string | null = null;
   let index = 1;
   if (words[index] === 'port') {
-    const parsed = Number(words[index + 1]);
-    if (!Number.isInteger(parsed)) fail(item, `expected port number or '*' near '${words[index + 1] ?? ';'}'`);
-    if (parsed < 0 || parsed > 65535) fail(item, `port number out of range near '${words[index + 1]}'`);
-    port = parsed;
+    port = parsePortWord(item, words[index + 1], "expected port number or '*'");
     index += 2;
   }
   if (words[index] === 'key') {
-    if (words[index + 1] === undefined) fail(item, "unexpected token near ';'");
+    if (words[index + 1] === undefined) fail(item, "expected string near ';'");
     key = words[index + 1];
     index += 2;
   }
@@ -460,8 +471,24 @@ function parsePrimary(item: NamedConfStatement, tlsNames: ReadonlySet<string>): 
     if (tls !== 'ephemeral' && !tlsNames.has(tls)) fail(item, `tls '${tls}' is not defined`);
     index += 2;
   }
-  if (index < words.length) fail(item, `unexpected '${words[index]}'`);
+  if (index < words.length) fail(item, `missing ';' before '${words[index]}'`);
   return { address: words[0], port, key, tls };
+}
+
+function parseRemoteServers(statement: NamedConfStatement, tlsNames: ReadonlySet<string>): NamedRemoteServer[] {
+  const header = argsOf(statement);
+  let defaultPort: number | null = null;
+  let index = 0;
+  if (header[index] === 'port') {
+    defaultPort = parsePortWord(statement, header[index + 1], 'expected number');
+    index += 2;
+  }
+  if (header[index] === 'dscp') {
+    parsePortWord(statement, header[index + 1], 'expected number');
+    index += 2;
+  }
+  if (index < header.length) fail(statement, `'{' expected near '${header[index]}'`);
+  return requireBlock(statement).map((item) => parseRemoteServer(item, tlsNames, defaultPort));
 }
 
 function parseZoneEntries(
@@ -471,7 +498,7 @@ function parseZoneEntries(
   tlsNames: ReadonlySet<string>,
 ): ZoneDraft {
   const draft: ZoneDraft = {
-    type: null, file: null, primaries: [], alsoNotify: [], notify: null, notifyToSoa: null,
+    type: null, file: null, primaries: [], alsoNotify: null, notify: null, notifyToSoa: null,
     allowQuery: null, allowTransfer: null, allowUpdate: null, updatePolicy: null, forwarders: [], forward: null,
     authoritativeOnly: new Map(),
   };
@@ -493,11 +520,11 @@ function parseZoneEntries(
         break;
       case 'primaries':
       case 'masters': {
-        for (const item of requireBlock(entry)) draft.primaries.push(parsePrimary(item, tlsNames));
+        draft.primaries.push(...parseRemoteServers(entry, tlsNames));
         break;
       }
       case 'also-notify':
-        draft.alsoNotify = parseAddressList(entry);
+        draft.alsoNotify = parseRemoteServers(entry, tlsNames);
         break;
       case 'notify':
         draft.notify = parseNotifyMode(entry);
@@ -770,6 +797,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const tlsProfiles = new Map<string, NamedTlsProfile>();
   const httpProfiles = new Map<string, NamedHttpProfile>();
   const pendingListeners: PendingListener[] = [];
+  const pendingAlsoNotify: NamedConfStatement[] = [];
   let optionsSeen = false;
 
   for (const statement of statements) {
@@ -785,7 +813,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
       case 'options':
         if (optionsSeen) fail(statement, "'options' redefined near 'options'");
         optionsSeen = true;
-        parseOptions(statement, options, acls, pendingListeners);
+        parseOptions(statement, options, acls, pendingListeners, pendingAlsoNotify);
         break;
       case 'tls':
         registerProfile(tlsProfiles, parseTlsProfile(statement), 'tls', statement);
@@ -821,6 +849,9 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
     }
   }
 
+  const tlsNames = new Set(tlsProfiles.keys());
+  for (const statement of pendingAlsoNotify) options.alsoNotify = parseRemoteServers(statement, tlsNames);
+
   for (const pending of pendingListeners) {
     options.listeners.push(resolveListener(pending.header, pending.addresses, pending.statement, keywordOf(pending.statement) === 'listen-on-v6', tlsProfiles, httpProfiles));
   }
@@ -828,7 +859,7 @@ export function buildNamedConfig(statements: readonly NamedConfStatement[]): Nam
   const zoneMap = new Map<string, NamedZone>();
   const zones: NamedZone[] = [];
   for (const statement of zoneStatements) {
-    const zone = parseZone(statement, options.directory, acls, zoneMap, new Set(tlsProfiles.keys()));
+    const zone = parseZone(statement, options.directory, acls, zoneMap, tlsNames);
     zoneMap.set(zone.name, zone);
     zones.push(zone);
   }

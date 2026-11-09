@@ -31,6 +31,15 @@ export async function configureWindows(
   );
 }
 
+export async function configureSiem(bench: LabWorkbench, siem: Equipment): Promise<void> {
+  await bench.shell(
+    siem,
+    'sudo sed -i \'s/^#module(load="imudp")/module(load="imudp")/\' /etc/rsyslog.conf',
+    'sudo sed -i \'s/^#input(type="imudp" port="514")/input(type="imudp" port="514")/\' /etc/rsyslog.conf',
+    'sudo systemctl restart rsyslog',
+  );
+}
+
 export async function publishWebSite(bench: LabWorkbench, server: Equipment, title: string): Promise<void> {
   await bench.shell(server, 'sudo apt install -y nginx', 'sudo mkdir -p /var/www/site');
   await bench.writeFile(server, '/var/www/site/index.html', `<html><body><h1>${title}</h1></body></html>`);

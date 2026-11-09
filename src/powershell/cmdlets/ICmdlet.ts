@@ -76,12 +76,8 @@ export interface ICmdlet {
    */
   readonly parameterValues?: Readonly<Record<string, ParameterValueKind>>;
 
-  /** Exists only in PowerShell 7 (Core); Windows PowerShell 5.1 does not know the command. */
-  readonly coreOnly?: true;
-  /** Parameters (canonical case) that exist only in PowerShell 7 (Core). */
-  readonly coreOnlyParameters?: readonly string[];
-  readonly desktopOnlyParameters?: readonly string[];
-  readonly desktopOnlyAliases?: readonly string[];
+  /** Parameters (canonical case) that PowerShell 7 does not have and that are refused with the binding error. */
+  readonly absentParameters?: readonly string[];
 
   /**
    * Parameters (canonical case) that take no value. The parser cannot know it and hands

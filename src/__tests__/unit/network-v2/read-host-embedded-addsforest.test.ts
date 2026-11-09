@@ -5,7 +5,7 @@
  *
  * Before: `Install-ADDSForest … -SafeModeAdministratorPassword (Read-Host
  * -AsSecureString "Entrez le mot de passe DSRM") -Force` answered "The term
- * 'read-host' is not recognized as the name of a cmdlet". Read-Host was
+ * 'read-host' is not recognized as a name of a cmdlet". Read-Host was
  * intercepted at the sub-shell only when it was the WHOLE line ($x =
  * Read-Host / bare Read-Host); nested in a sub-expression it slipped past
  * the interception and reached the interpreter, which had no such cmdlet.

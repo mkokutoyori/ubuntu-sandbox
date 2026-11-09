@@ -56,13 +56,13 @@ describe('PowerShell Test-Connection — real RTT via the sync probe', () => {
     const out = r.output.join('\n');
     expect(out).toContain('Success');
     expect(out).toContain('192.168.1.20');
-    expect(out).toMatch(/192\.168\.1\.10/);
+    expect(out).toMatch(new RegExp(` 1 ${win.getHostname()} +192\\.168\\.1\\.20`));
   });
 
-  it('unreachable host: Status Failure', async () => {
+  it('unreachable host: Status TimedOut', async () => {
     const sh = PowerShellSubShell.create(win).subShell;
     const r = await sh.processLine('Test-Connection 192.168.99.99 -Count 1');
-    expect(r.output.join('\n')).toContain('Failure');
+    expect(r.output.join('\n')).toContain('TimedOut');
   });
 
   it('-Quiet returns just True/False', async () => {
@@ -72,10 +72,10 @@ describe('PowerShell Test-Connection — real RTT via the sync probe', () => {
   });
 });
 
-describe('PowerShell Test-Connection -Continuous — streams rows on the async pipeline', () => {
+describe('PowerShell Test-Connection -Repeat — streams rows on the async pipeline', () => {
   it('streams a header + a reply row per delay tick until Ctrl+C', async () => {
-    await typePsLine(session, 'Test-Connection 192.168.1.20 -Continuous -Delay 1');
-    await waitFor(session, (l) => l.some((t) => /^Source\s+Destination/.test(t)));
+    await typePsLine(session, 'Test-Connection 192.168.1.20 -Repeat -Delay 1');
+    await waitFor(session, (l) => l.some((t) => /^Ping\s+Source\s+Address/.test(t)));
     expect(session.hasForegroundAsyncJob).toBe(true);
     expect(session.listAttachedStreams().length).toBe(1);
 
@@ -89,17 +89,15 @@ describe('PowerShell Test-Connection -Continuous — streams rows on the async p
     expect(texts(session).some((t) => t === '^C')).toBe(true);
   });
 
-  it('-Count 0 is treated as continuous', async () => {
-    await typePsLine(session, 'Test-Connection 192.168.1.20 -Count 0 -Delay 1');
-    await waitFor(session, (l) => l.some((t) => /^Source\s+Destination/.test(t)));
-    expect(session.hasForegroundAsyncJob).toBe(true);
-    session.handleKey(key('c', { ctrlKey: true }));
+  it('-Count 0 is refused, PowerShell 7 asks for a positive count', async () => {
+    await typePsLine(session, 'Test-Connection 192.168.1.20 -Count 0');
     await tick();
     expect(session.hasForegroundAsyncJob).toBe(false);
+    expect(texts(session).some((t) => t.includes("The argument \"0\" cannot be validated because its value is not greater than zero."))).toBe(true);
   });
 
   it('unreachable host: TimedOut shown per tick', async () => {
-    await typePsLine(session, 'Test-Connection 192.168.99.99 -Continuous -Delay 1');
+    await typePsLine(session, 'Test-Connection 192.168.99.99 -Repeat -Delay 1');
     await waitFor(session, (l) => l.some((t) => /TimedOut/.test(t)));
     expect(texts(session).some((t) => /TimedOut/.test(t))).toBe(true);
     session.handleKey(key('c', { ctrlKey: true }));

@@ -44,7 +44,7 @@ beforeEach(() => {
 
 const MDP = '-SafeModeAdministratorPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)';
 const PWD = '-AccountPassword (ConvertTo-SecureString "P@ssw0rd" -AsPlainText -Force)';
-const NON_INTERACTIF = 'Windows PowerShell is in NonInteractive mode.';
+const NON_INTERACTIF = 'PowerShell is in NonInteractive mode.';
 
 type Shell = ReturnType<typeof PowerShellSubShell.create>['subShell'];
 const shellOf = (d: WindowsServer): Shell => PowerShellSubShell.create(d).subShell;

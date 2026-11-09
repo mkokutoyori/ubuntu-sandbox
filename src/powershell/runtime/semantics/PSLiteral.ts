@@ -2,10 +2,6 @@ import {
   PSNumber, boxDouble, boxInteger, decimalFromText, fitsKind, makeDecimal, type IntegerKind,
 } from './PSNumber';
 
-export interface LiteralOptions {
-  readonly core: boolean;
-}
-
 type NumberFormat = 'decimal' | 'hex' | 'binary';
 
 const UNSIGNED = 0x1;
@@ -44,7 +40,7 @@ function isHexDigit(char: string | undefined): boolean {
   return char !== undefined && /^[0-9a-fA-F]$/.test(char);
 }
 
-export function scanNumericLiteral(input: string, start: number, options: LiteralOptions): NumericScan | null {
+export function scanNumericLiteral(input: string, start: number): NumericScan | null {
   let index = start;
   let digits = '';
   let notNumber = false;
@@ -82,7 +78,7 @@ export function scanNumericLiteral(input: string, start: number, options: Litera
     return null;
   } else {
     const marker = input[index + 1];
-    if (first === '0' && (marker === 'x' || marker === 'X' || (options.core && (marker === 'b' || marker === 'B')))) {
+    if (first === '0' && (marker === 'x' || marker === 'X' || marker === 'b' || marker === 'B')) {
       index += 2;
       if (marker === 'x' || marker === 'X') {
         digits += '0';
@@ -112,7 +108,7 @@ export function scanNumericLiteral(input: string, start: number, options: Litera
   }
 
   const typeSuffix = (char: string | undefined): boolean =>
-    char !== undefined && (options.core ? /^[uUsSlLdDyYnN]$/ : /^[lLdD]$/).test(char);
+    char !== undefined && /^[uUsSlLdDyYnN]$/.test(char);
   let c = peek();
   if (typeSuffix(c)) {
     index++;
@@ -242,8 +238,8 @@ export function numberFromScan(scan: NumericScan): number | PSNumber | null {
   return null;
 }
 
-export function parseNumberLiteral(raw: string, options: LiteralOptions = { core: false }): number | PSNumber | null {
-  const scan = scanNumericLiteral(raw, 0, options);
+export function parseNumberLiteral(raw: string): number | PSNumber | null {
+  const scan = scanNumericLiteral(raw, 0);
   if (scan === null || scan.length !== raw.length) return null;
   return numberFromScan(scan);
 }

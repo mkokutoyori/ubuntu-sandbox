@@ -14,8 +14,8 @@
 import { describe, it, expect } from 'vitest';
 import { PSInterpreter } from '@/powershell/interpreter/PSInterpreter';
 
-function run(code: string, language: 'core' | 'desktop' = 'core'): string {
-  return new PSInterpreter(undefined, { language }).execute(code).replace(/\r?\n/g, '|');
+function run(code: string): string {
+  return new PSInterpreter().execute(code).replace(/\r?\n/g, '|');
 }
 
 const VALUES: Array<[string, string]> = [
@@ -62,11 +62,5 @@ describe('lot D3 — refus', () => {
   });
   it('tuyau vide au debut', () => {
     expect(() => run('| Get-Date')).toThrow(/empty pipe element/);
-  });
-});
-
-describe('lot D3 — edition 5.1', () => {
-  it('`e n\'est pas un echappement ESC', () => {
-    expect(run('[int][char]"`e"[0]', 'desktop')).toBe('101');
   });
 });

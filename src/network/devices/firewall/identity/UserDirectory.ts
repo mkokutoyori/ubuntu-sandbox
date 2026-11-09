@@ -40,6 +40,10 @@ export interface RemoteServer {
   readonly secret: string;
   readonly port?: number;
   readonly authType?: string;
+  readonly secondaryAddress?: string;
+  readonly secondarySecret?: string;
+  readonly tertiaryAddress?: string;
+  readonly tertiarySecret?: string;
   readonly baseDn?: string;
   readonly cnid?: string;
   readonly bindType?: string;

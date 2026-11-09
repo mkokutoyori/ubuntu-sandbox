@@ -49,7 +49,6 @@ export class ConvertFromJsonCmdlet implements ICmdlet {
   readonly name = 'convertfrom-json';
   readonly aliases = [] as const;
   readonly parameters = ['InputObject', 'AsHashtable', 'Depth', 'NoEnumerate'] as const;
-  readonly coreOnlyParameters = ['AsHashtable', 'Depth', 'NoEnumerate'] as const;
 
   execute(ctx: CmdletContext): PSValue {
     const src = psValueToString(ctx.named['inputobject'] ?? ctx.pipeInput ?? ctx.positional[0] ?? '');

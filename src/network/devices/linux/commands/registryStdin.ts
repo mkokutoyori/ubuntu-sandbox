@@ -27,6 +27,7 @@ export function splitRegistryStdin(
   if (stdin === undefined) return { argv: args };
   if (stdin === '' && !cmd.readsStdin) return { argv: args };
   const trailing = args.length > 0 && args[args.length - 1] === stdin;
+  if (cmd.ignoresStdin) return { argv: trailing ? args.slice(0, -1) : args };
   if (cmd.readsStdin) {
     return { argv: trailing ? args.slice(0, -1) : args, input: stdin };
   }
