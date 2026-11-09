@@ -106,6 +106,7 @@ export function programIpsecEngine(
     entry.transformSets = [transformSetName(tunnel.name)];
     entry.saLifetimeSeconds = selectors[0]?.keyLifeSeconds ?? tunnel.keyLifeSeconds;
     entry.localIdentity = tunnel.localId;
+    entry.ppk = tunnel.ppk;
     entry.acceptedPeerIdentities = acceptedIdentities(tunnel, identities);
     entry.requirePeerIdentity = tunnel.peerType === 'one';
     entry.trafficSelectors = selectorsOf(selectors[0]);

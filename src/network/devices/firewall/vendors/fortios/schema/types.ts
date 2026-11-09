@@ -679,6 +679,7 @@ export interface FortiPhase1Patch {
   readonly authUser?: string;
   readonly authPassword?: string;
   readonly dnsServers?: readonly string[];
+  readonly ppk?: { readonly mode: 'disable' | 'allow' | 'require'; readonly identity: string; readonly secret: string };
   readonly comments?: string;
 }
 

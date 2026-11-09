@@ -36,6 +36,7 @@ export function vpnCommitHandlers(fw: Firewall): VpnHandlers {
         peerName: tunnel.peerName,
         peerGroupName: tunnel.peerGroupName,
         localId: tunnel.localId,
+        ppk: tunnel.ppk,
         policyBased: tunnel.policyBased,
         modeCfg: tunnel.modeCfg,
         authUserGroup: tunnel.authUserGroup,

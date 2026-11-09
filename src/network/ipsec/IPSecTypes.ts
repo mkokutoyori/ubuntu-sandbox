@@ -80,7 +80,14 @@ export interface TransformSet {
 
 export type NatTraversalPolicy = 'enable' | 'disable' | 'forced';
 
+export interface PostQuantumPresharedKey {
+  readonly mode: 'disable' | 'allow' | 'require';
+  readonly identity: string;
+  readonly secret: string;
+}
+
 export interface CryptoMapEntry {
+  ppk?: PostQuantumPresharedKey;
   seq: number;
   type: 'ipsec-isakmp';
   peers: string[];                   // configured peer IP addresses
@@ -301,6 +308,7 @@ export interface IkeOfferMessage {
   keyExchange?: IkeKeyExchangePayload;
   trafficSelectors?: SATrafficSelector;
   configRequest?: IkeConfigRequest;
+  ppkIdentity?: string;
 }
 
 export interface IkeConfigRequest {
@@ -347,6 +355,7 @@ export interface IkeKeyExchangePayload {
 export interface IkeAcceptMessage {
   type: 'ike';
   step: 'accept';
+  ppkUsed?: boolean;
   childRejected?: string;
   configReply?: IkeConfigReply;
   configRefused?: string;
