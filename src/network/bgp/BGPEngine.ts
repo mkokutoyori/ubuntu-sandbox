@@ -78,7 +78,27 @@ export interface BgpGracefulRestart {
   readonly stalePathTimeSec: number;
   readonly endOnTimerOnly: boolean;
 }
+export interface BgpDampening {
+  readonly suppressLimit: number;
+  readonly reuseLimit: number;
+  readonly reachabilityHalfLifeMin: number;
+  readonly unreachabilityHalfLifeMin: number;
+  readonly maxSuppressMin: number;
+}
+const DAMPING_WITHDRAWAL_PENALTY = 1000;
+const DAMPING_ATTRIBUTE_CHANGE_PENALTY = 500;
+const MS_PER_MINUTE = 60_000;
+
+interface FlapState {
+  penalty: number;
+  at: number;
+  reachable: boolean;
+  suppressed: boolean;
+  timer: symbol | null;
+}
+
 export interface BGPConfig {
+  dampening?: BgpDampening;
   gracefulRestart?: BgpGracefulRestart;
   asn: number;
   routerId?: string;
@@ -186,6 +206,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
   private readonly attempted = new Set<string>();
   private readonly lastErrors = new Map<string, BgpErrorCode>();
   private readonly stalePaths = new Map<string, StalePaths>();
+  private readonly flaps = new Map<string, FlapState>();
   private readonly peerRestartSec = new Map<string, number>();
   /** Re-entrancy guard for the synchronous triggered-update cascade. */
   private propagating = false;
@@ -319,6 +340,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     this.peers.clear();
     this.shutdownTimers();
     this.stalePaths.clear();
+    this.flaps.clear();
     this.attempted.clear();
     super.disable();
   }
@@ -526,6 +548,62 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     });
   }
 
+  private flapKey(ip: string, key: string): string { return `${ip}|${key}`; }
+
+  private halfLifeMs(state: FlapState, damping: BgpDampening): number {
+    return (state.reachable ? damping.reachabilityHalfLifeMin : damping.unreachabilityHalfLifeMin) * MS_PER_MINUTE;
+  }
+
+  private decayed(state: FlapState, damping: BgpDampening, now: number): number {
+    return state.penalty * 0.5 ** ((now - state.at) / this.halfLifeMs(state, damping));
+  }
+
+  private recordFlap(ip: string, key: string, increment: number, reachable: boolean): void {
+    const damping = this.config.dampening;
+    const neighbour = this.config.neighbors.get(ip);
+    if (!damping || neighbour?.remoteAs === undefined || neighbour.remoteAs === this.config.asn) return;
+
+    const now = this.getScheduler().now();
+    const id = this.flapKey(ip, key);
+    const state = this.flaps.get(id) ?? { penalty: 0, at: now, reachable, suppressed: false, timer: null };
+    const ceiling = damping.reuseLimit * 2 ** (damping.maxSuppressMin / damping.reachabilityHalfLifeMin);
+    state.penalty = Math.min(this.decayed(state, damping, now) + increment, ceiling);
+    state.at = now;
+    state.reachable = reachable;
+    if (state.penalty > damping.suppressLimit) state.suppressed = true;
+    this.flaps.set(id, state);
+    if (state.suppressed) this.armReuse(id, state, damping);
+  }
+
+  private armReuse(id: string, state: FlapState, damping: BgpDampening): void {
+    if (state.timer !== null) this.timers.clear(state.timer);
+    const wait = this.halfLifeMs(state, damping) * Math.log2(Math.max(state.penalty / damping.reuseLimit, 1));
+    state.timer = this.timers.setTimeout(() => { this.releaseIfReusable(id); }, Math.max(wait, 1));
+  }
+
+  private releaseIfReusable(id: string): void {
+    const state = this.flaps.get(id);
+    const damping = this.config.dampening;
+    if (!state || !damping) return;
+    state.timer = null;
+    const now = this.getScheduler().now();
+    state.penalty = this.decayed(state, damping, now);
+    state.at = now;
+    if (state.penalty > damping.reuseLimit) { this.armReuse(id, state, damping); return; }
+    state.suppressed = false;
+    this.propagate();
+    this.onRibChange?.();
+  }
+
+  private isDampened(entry: BgpRibEntry): boolean {
+    return this.flaps.get(this.flapKey(entry.peerIp, `${entry.network}/${entry.mask}`))?.suppressed === true;
+  }
+
+  private sameAttributes(a: BgpRibEntry, b: BgpRibEntry): boolean {
+    return a.asPath.join(' ') === b.asPath.join(' ') && String(a.nextHop) === String(b.nextHop)
+      && a.med === b.med && a.localPref === b.localPref && a.communities.join(' ') === b.communities.join(' ');
+  }
+
   private awaitEndOfRib(ip: string): void {
     const stale = this.stalePaths.get(ip);
     const graceful = this.config.gracefulRestart;
@@ -579,7 +657,9 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
       if (vpnPeer) this.vpn?.onUpdate(vpnPeer, update);
     }
     for (const w of update.withdrawn) {
-      ps.adjRibIn.delete(`${w.network}/${this.maskOf(w)}`);
+      const withdrawnKey = `${w.network}/${this.maskOf(w)}`;
+      if (ps.adjRibIn.has(withdrawnKey)) this.recordFlap(ip, withdrawnKey, DAMPING_WITHDRAWAL_PENALTY, false);
+      ps.adjRibIn.delete(withdrawnKey);
     }
     if (update.announced.length > 0 && update.attributes) {
       // §6.3 loop prevention: never accept a path that already lists us.
@@ -590,6 +670,12 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
           const key = `${entry.network}/${entry.mask}`;
           const decision = inbound === undefined ? {} : inbound(nlri.network, nlri.prefixLength, update.attributes.asPath, update.attributes.communities ?? []);
           if (decision === null) { ps.adjRibIn.delete(key); continue; }
+          const previous = ps.adjRibIn.get(key);
+          if (previous !== undefined && !this.sameAttributes(previous, entry)) {
+            this.recordFlap(ip, key, DAMPING_ATTRIBUTE_CHANGE_PENALTY, true);
+          } else if (previous === undefined && this.flaps.has(this.flapKey(ip, key))) {
+            this.recordFlap(ip, key, 0, true);
+          }
           ps.adjRibIn.set(key, {
             ...entry,
             localPref: decision.localPref ?? entry.localPref,
@@ -610,6 +696,9 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     const ps = this.peers.get(ip);
     if (!ps) return;
     this.retainAsStale(ip, ps);
+    if (!this.stalePaths.has(ip)) {
+      for (const key of ps.adjRibIn.keys()) this.recordFlap(ip, key, DAMPING_WITHDRAWAL_PENALTY, false);
+    }
     ps.adjRibIn.clear();
     ps.adjRibOut.clear();
     this.peers.delete(ip);
@@ -730,7 +819,7 @@ export class BGPEngine extends AbstractRoutingProtocolEngine<BGPConfig> {
     }
     for (const ps of this.peers.values()) {
       if (!ps.session.isEstablished()) continue;
-      for (const e of ps.adjRibIn.values()) consider(e);
+      for (const e of ps.adjRibIn.values()) if (!this.isDampened(e)) consider(e);
     }
     for (const stale of this.stalePaths.values()) {
       for (const e of stale.routes.values()) consider(e);

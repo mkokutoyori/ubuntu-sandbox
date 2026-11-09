@@ -102,6 +102,13 @@ export interface RouteMapPatch {
 }
 
 export interface BgpConfiguration {
+  readonly dampening?: {
+    readonly suppressLimit: number;
+    readonly reuseLimit: number;
+    readonly reachabilityHalfLifeMin: number;
+    readonly unreachabilityHalfLifeMin: number;
+    readonly maxSuppressMin: number;
+  };
   readonly gracefulRestart?: { readonly restartTimeSec: number; readonly stalePathTimeSec: number; readonly endOnTimerOnly: boolean };
   readonly defaultLocalPreference?: number;
   readonly enabled: boolean;

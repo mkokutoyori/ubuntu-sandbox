@@ -441,6 +441,13 @@ export const ROUTER_BGP: FortiTableSpec = {
     count('as', 'Local autonomous system number.', 0, AS_NUMBER_MAX, 0),
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
     count('default-local-preference', 'Default local preference.', 0, 4294967295, 100),
+    enable('dampening', 'Enable/disable route-flap dampening.'),
+    count('dampening-max-suppress-time', 'Maximum minutes a route can be suppressed.', 1, 255, 60),
+    count('dampening-reachability-half-life', 'Reachability half-life time for penalty (min).', 1, 45, 15),
+    count('dampening-reuse', 'Threshold to reuse routes.', 1, 20000, 750),
+    count('dampening-suppress', 'Threshold to suppress routes.', 1, 20000, 2000),
+    count('dampening-unreachability-half-life', 'Unreachability half-life time for penalty (min).', 1, 45, 15),
+    { ...word('dampening-route-map', 'Criteria for dampening.'), unimplemented: 'dampening criteria select routes through route-map rules carrying set-dampening-* values, which the route-map evaluator here does not carry; dampening applies to every eBGP route.' },
     enable('graceful-restart', 'Enable/disable BGP graceful restart capabilities.'),
     count('graceful-restart-time', 'Time needed for neighbors to restart (sec).', 1, 3600, 120),
     count('graceful-stalepath-time', 'Time to hold stale paths of restarting neighbor (sec).', 1, 3600, 360),
@@ -465,6 +472,15 @@ export const ROUTER_BGP: FortiTableSpec = {
       asn,
       routerId: object.effective('router-id')[0] ?? '0.0.0.0',
       defaultLocalPreference: Number.parseInt(object.effective('default-local-preference')[0] ?? '100', 10),
+      dampening: object.effective('dampening')[0] === 'enable'
+        ? {
+          suppressLimit: Number.parseInt(object.effective('dampening-suppress')[0] ?? '2000', 10),
+          reuseLimit: Number.parseInt(object.effective('dampening-reuse')[0] ?? '750', 10),
+          reachabilityHalfLifeMin: Number.parseInt(object.effective('dampening-reachability-half-life')[0] ?? '15', 10),
+          unreachabilityHalfLifeMin: Number.parseInt(object.effective('dampening-unreachability-half-life')[0] ?? '15', 10),
+          maxSuppressMin: Number.parseInt(object.effective('dampening-max-suppress-time')[0] ?? '60', 10),
+        }
+        : undefined,
       gracefulRestart: object.effective('graceful-restart')[0] === 'enable'
         ? {
           restartTimeSec: Number.parseInt(object.effective('graceful-restart-time')[0] ?? '120', 10),

@@ -134,8 +134,10 @@ export class FirewallBgp {
     neighbors: Map<string, BgpNeighborCfg>;
     defaultLocalPref: number;
     gracefulRestart?: BgpConfiguration['gracefulRestart'];
+    dampening?: BgpConfiguration['dampening'];
   } {
     return {
+      ...(config.dampening ? { dampening: config.dampening } : {}),
       ...(config.gracefulRestart ? { gracefulRestart: config.gracefulRestart } : {}),
       asn: config.asn,
       routerId: config.routerId.length > 0 ? config.routerId : this.derivedRouterId(),
