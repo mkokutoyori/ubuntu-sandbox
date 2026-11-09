@@ -135,7 +135,7 @@ import { FirewallDhcp6, type Dhcp6Scope } from './l3/FirewallDhcp6';
 import type { PolicyProbe } from './policy/PolicyProbe';
 import { isDenyAction } from './model/SecurityRule';
 import { FirewallPing6 } from './diag/FirewallPing6';
-import { getDefaultScheduler } from '@/events/Scheduler';
+import { getDefaultScheduler, type TimerHandle } from '@/events/Scheduler';
 import type { IEventBus } from '@/events/EventBus';
 import type { BgpNeighborStateChangedPayload } from '../../bgp/events';
 import type { OspfNeighborStateChangedPayload } from '../../ospf/events';
@@ -286,6 +286,8 @@ export interface ReplayRejection {
 }
 
 const REPLAY_REFUSAL = /Command fail|Unknown action|parse error|^% ?Invalid|Invalid input|unknown command/im;
+
+const HA_HEARTBEAT_UNIT_MS = 100;
 
 export class Firewall extends Equipment {
   private readonly logDisk = new LogDisk();
@@ -771,7 +773,10 @@ export class Firewall extends Equipment {
     this.portal = mgmt.portals.auth;
     this.sslVpn = mgmt.portals.sslVpn;
     this.haService = mgmt.ha;
-    this.haService.agent.onTransition((transition) => { this.raiseHaTrap(transition); });
+    this.haService.agent.onTransition((transition) => {
+      this.raiseHaTrap(transition);
+      this.announceTakeover(transition);
+    });
     this.ntp = mgmt.ntp;
     this.captivePortal = mgmt.captivePortal;
     this.management.attachCliServer(mgmt.cli);
@@ -1254,6 +1259,24 @@ export class Firewall extends Equipment {
     return { sysObjectId: '0.0', objects: new Map(), tables: () => new Map(), traps: () => [] };
   }
 
+  private announceTakeover(transition: HaTransition): void {
+    if (transition.kind !== 'takeover') return;
+
+    const { gratuitousArps, gratuitousArpIntervalSec, heartbeatDevices } = this.haConfiguration;
+    const heartbeat = new Set(heartbeatDevices.map(device => device.iface));
+    const announce = (): void => {
+      for (const { name, ip } of this.interfaces.all()) {
+        if (ip === undefined || heartbeat.has(name) || this.getPort(name)?.isOperationallyUp() !== true) continue;
+        const packet = this.arp.buildGratuitous(name);
+        if (packet !== undefined) this.emitArp(packet, name);
+      }
+    };
+    announce();
+    for (let sent = 1; sent < gratuitousArps; sent++) {
+      this.getScheduler().setTimeout(announce, sent * gratuitousArpIntervalSec * 1000);
+    }
+  }
+
   private raiseHaTrap(transition: HaTransition): void {
     const snmp = this.snmpService;
     if (!snmp) return;
@@ -1383,7 +1406,21 @@ export class Firewall extends Equipment {
     this.haConfiguration = c;
     this.haService.agent.configure(c);
     this.applyClusterVirtualMacs(c);
+    this.syncHaClock(c);
     return undefined;
+  }
+
+  private haClock: TimerHandle | null = null;
+  private haClockPeriodMs = 0;
+
+  private syncHaClock(c: HaConfiguration): void {
+    const period = c.mode === 'standalone' ? 0 : c.heartbeatIntervalTicks * HA_HEARTBEAT_UNIT_MS;
+    if (period === this.haClockPeriodMs) return;
+    if (this.haClock !== null) this.getScheduler().clear(this.haClock);
+    this.haClock = period === 0
+      ? null
+      : this.getScheduler().setInterval(() => { this.haService.agent.tick(); }, period);
+    this.haClockPeriodMs = period;
   }
 
   applyNat64Prefix(text: string): string | undefined {

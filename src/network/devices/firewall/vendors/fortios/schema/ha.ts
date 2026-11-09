@@ -43,6 +43,8 @@ export const SYSTEM_HA: FortiTableSpec = {
       ['system interface']),
     count('hb-interval', 'Heartbeat interval, in 100 ms units.', 1, 20, 2),
     count('hb-lost-threshold', 'Missed heartbeats before a peer is lost.', 1, 60, 6),
+    count('arps', 'Number of gratuitous ARPs sent by the new primary (1 - 60). Lower to reduce traffic. Higher to reduce failover time.', 1, 60, 5),
+    count('arps-interval', 'Time between gratuitous ARPs (1 - 20 sec). Lower to reduce failover time. Higher to reduce traffic.', 1, 20, 8),
     enable('ha-mgmt-status',
       'Enable to reserve interfaces to manage individual cluster units.'),
     { ...word('unicast-hb', 'Use unicast heartbeats.'), unimplemented:
@@ -88,6 +90,8 @@ export const SYSTEM_HA: FortiTableSpec = {
         Number.parseInt(object.effective('hb-interval')[0] ?? '2', 10),
       lostThreshold:
         Number.parseInt(object.effective('hb-lost-threshold')[0] ?? '6', 10),
+      gratuitousArps: Number.parseInt(object.effective('arps')[0] ?? '5', 10),
+      gratuitousArpIntervalSec: Number.parseInt(object.effective('arps-interval')[0] ?? '8', 10),
       managementStatus: object.effective('ha-mgmt-status')[0] === 'enable',
       managementInterfaces: object.childEntries('ha-mgmt-interfaces')
         .map(entry => entry.effective('interface')[0] ?? '')

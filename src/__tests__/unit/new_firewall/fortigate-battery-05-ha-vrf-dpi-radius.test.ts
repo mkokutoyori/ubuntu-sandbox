@@ -4,6 +4,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 // Topologie Haute Disponibilité & Inspection Réseau :
@@ -17,9 +18,12 @@ interface LaboHA {
   srvWeb: LinuxServer;
   srvDb: LinuxServer;
   srvRadius: LinuxServer;
+  battre: (tours?: number) => void;
 }
 
 async function creerLaboHA(): Promise<LaboHA> {
+  const horloge = new VirtualTimeScheduler();
+  __setDefaultScheduler(horloge);
   const pc = new LinuxPC('linux-pc', 'PC-Client', 50, 0);
   const swAccess = new CiscoSwitch('switch-cisco', 'SW-Access', 16, 200, 0);
   const fwMaster = createDevice('firewall-fortinet', 400, -100) as unknown as Cli;
@@ -74,7 +78,7 @@ async function creerLaboHA(): Promise<LaboHA> {
       'end',
       'config system ha',
       'set group-id 1', 'set group-name "HA-CLUSTER"', 'set mode a-p', 'set hbdev "port4" 50',
-      `set priority ${priorite}`,
+      'set monitor "port1" "wan1"', `set priority ${priorite}`,
       'end',
       'config firewall policy',
       'edit 1', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -83,7 +87,15 @@ async function creerLaboHA(): Promise<LaboHA> {
     ]);
   }
 
-  return { pc, swAccess, fwMaster, fwSlave, swCore, srvWeb, srvDb, srvRadius };
+  horloge.advance(3_000);
+  __setDefaultScheduler(null);
+  const battre = (tours = 8): void => {
+    for (let tour = 0; tour < tours; tour++) {
+      for (const unite of [fwMaster, fwSlave]) (unite as unknown as { getHa(): { tick(): void } }).getHa().tick();
+    }
+  };
+
+  return { pc, swAccess, fwMaster, fwSlave, swCore, srvWeb, srvDb, srvRadius, battre };
 }
 
 describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, RADIUS & Chaos', () => {
@@ -123,9 +135,10 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     });
 
     it('205. Bascule à chaud (Failover HA) : coupure du Master, le Slave prend le relais sans interruption de ping', async () => {
-      const { pc, fwMaster } = await creerLaboHA();
+      const { pc, fwMaster, battre } = await creerLaboHA();
       // Arrêt brutal de l'interface LAN du Master
       await taper(fwMaster, ['config system interface', 'edit port1', 'set status down', 'next', 'end']);
+      battre();
       const ping = await pc.executeCommand('ping -c 2 -W 1 10.0.0.10');
       expect(ping).toMatch(/0% packet loss|, 0% loss/);
     });
@@ -141,8 +154,9 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     });
 
     it('207. Gratuitous ARP émis lors de la bascule pour mettre à jour la table CAM du commutateur', async () => {
-      const { swAccess, fwMaster } = await creerLaboHA();
+      const { swAccess, fwMaster, battre } = await creerLaboHA();
       await taper(fwMaster, ['config system interface', 'edit port1', 'set status down', 'next', 'end']);
+      battre();
       const table = await swAccess.executeCommand('show mac address-table');
       // Le port Fa0/3 (lié au Slave) apprend la MAC virtuelle
       expect(table).toMatch(/FastEthernet0\/3/);
