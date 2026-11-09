@@ -1,11 +1,12 @@
 import type { Equipment } from '@/network';
 import type { LabWorkbench } from '../LabWorkbench';
-import { HQ, PRE_SHARED_KEY, SITES, type Site } from './plan';
+import { HQ, OVERLAY, POST_QUANTUM_KEY, PRE_SHARED_KEY, SITES, type Site } from './plan';
 
 const tunnelPhase1 = (name: string, remoteGateway: string): string[] => [
   'config vpn ipsec phase1-interface', `edit "${name}"`,
   'set interface "wan1"', 'set ike-version 2', `set remote-gw ${remoteGateway}`,
-  `set psksecret ${PRE_SHARED_KEY}`, 'set proposal aes256-sha256', 'set dhgrp 14', 'next', 'end',
+  `set psksecret ${PRE_SHARED_KEY}`, 'set proposal aes256-sha256', 'set dhgrp 14',
+  'set ppk require', `set ppk-identity "${POST_QUANTUM_KEY.identity}"`, `set ppk-secret ${POST_QUANTUM_KEY.secret}`, 'next', 'end',
 ];
 
 const tunnelPhase2 = (name: string, source: string, destination: string): string[] => [
@@ -21,6 +22,12 @@ const interfaceBlock = (port: string, address: string, extra: string[] = []): st
     `set allowaccess ${wan ? 'ping' : 'ping https ssh'}`, ...extra, 'next', 'end',
   ];
 };
+
+const overlay = (remoteGateway: string, address: string): string[] => [
+  'config system vxlan', `edit "${OVERLAY.device}"`, 'set interface "wan1"', `set vni ${OVERLAY.vni}`,
+  `set remote-ip "${remoteGateway}"`, 'next', 'end',
+  ...interfaceBlock(OVERLAY.device, address, ['set allowaccess ping']),
+];
 
 const policy = (id: number, name: string, source: string, destination: string, extra: string[] = []): string[] => [
   'config firewall policy', `edit ${id}`, `set name "${name}"`,
@@ -53,6 +60,7 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     'edit "tcp_syn_flood"', 'set status enable', 'set action block', 'set threshold 500', 'next',
     'end', 'next', 'end',
   );
+  await bench.shell(hq, ...overlay(SITES[0].wan, OVERLAY.hub));
   for (const site of SITES) {
     await bench.shell(
       hq,
@@ -115,6 +123,7 @@ export async function configureAgency(bench: LabWorkbench, fortigate: Equipment,
     'config system global', `set hostname FGT-${site.name}`, 'end',
     ...interfaceBlock('wan1', site.wan),
     ...interfaceBlock('port1', site.lanGateway),
+    ...(site === SITES[0] ? overlay(HQ.wan, OVERLAY.spoke) : []),
     ...tunnelPhase1(site.tunnelOnSpoke, HQ.wan),
     ...tunnelPhase2(site.tunnelOnSpoke, site.lanRoute, '0.0.0.0 0.0.0.0'),
     'config router static',

@@ -1,6 +1,6 @@
 import type { Equipment } from '@/network';
 import { runChecks, type LabCheck, type LabCheckResult } from '../LabChecks';
-import { HQ, INTERNET } from './plan';
+import { HQ, INTERNET, OVERLAY, POST_QUANTUM_KEY } from './plan';
 
 export const MERIDIAN_CHECKS: readonly LabCheck[] = [
   {
@@ -32,6 +32,16 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     id: 'tunnels-up', device: 'FGT-HQ', shell: 'bash', command: 'get vpn ipsec tunnel summary',
     expects: [/'to-ag1'.*selectors\(total,up\): 1\/1/, /'to-ag2'.*selectors\(total,up\): 1\/1/, /'to-ag3'.*selectors\(total,up\): 1\/1/],
     lesson: 'Le siege voit ses trois tunnels etablis, un selecteur par agence.',
+  },
+  {
+    id: 'tunnels-carry-post-quantum-key', device: 'FGT-HQ', shell: 'bash', command: 'show vpn ipsec phase1-interface to-ag1',
+    expects: [/set ppk require/, new RegExp(`set ppk-identity "${POST_QUANTUM_KEY.identity}"`), /set ppk-secret ENC /],
+    lesson: 'Les tunnels sont proteges par une cle pre-partagee post-quantique (RFC 8784, ppk require) : le secret est melange a la derivation des cles, il est affiche chiffre (ENC) et jamais en clair.',
+  },
+  {
+    id: 'overlay-vxlan-ping', device: 'FGT-HQ', shell: 'bash', command: `execute ping ${OVERLAY.spoke}`,
+    expects: [/5 packets received/],
+    lesson: 'Un VXLAN (system vxlan, VNI 5001) etend un segment L2 entre le siege et l\'agence 1 : le ping et l\'ARP traversent l\'Internet simule encapsules en UDP 4789.',
   },
   {
     id: 'hub-routing-entry-details', device: 'FGT-HQ', shell: 'bash', command: 'get router info routing-table details 10.1.0.50',

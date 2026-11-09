@@ -24,7 +24,7 @@ Barre d'outils → **Importer** → `topology.json`. Le fichier est généré pa
 | Agence 1-3 | FGT-AGENCE1..3 | FortiGate : WAN `wan1` (203.0.113.2-4), LAN `port1` | 10.n.0.1 |
 | Agence 1-3 | PC-AGENCE1..3 | poste d'agence | 10.n.0.50 |
 
-Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-partagée des tunnels : `Mer1dian-VPN-2026`.
+Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-partagée des tunnels : `Mer1dian-VPN-2026`. Clé pré-partagée post-quantique (RFC 8784, `ppk require`) : identité `meridian-ppk-1`, secret `Qu4ntum-Mer1dian-2026`. Superposition VXLAN siège ↔ agence 1 : appareil `vx-ag1`, VNI 5001, `192.168.250.1` / `192.168.250.2`.
 
 ## Ce que le lab démontre
 
@@ -37,6 +37,8 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `spoke-to-spoke-through-hub` | Deux agences se parlent par le siège : le concentrateur retransmet de tunnel à tunnel. |
 | `tunnels-up` | `get vpn ipsec tunnel summary` montre un sélecteur monté par agence. |
 | `hub-routing-entry-details` | `get router info routing-table details` : la route vers l'agence 1 sort par l'interface IPsec `to-ag1`. |
+| `tunnels-carry-post-quantum-key` | Les tunnels exigent une clé post-quantique (`ppk require`) ; le secret est affiché chiffré (`ENC`). |
+| `overlay-vxlan-ping` | `system vxlan` (VNI 5001) étend un segment L2 entre le siège et l'agence 1 ; le ping traverse Internet encapsulé en UDP 4789. |
 | `hub-originates-into-tunnel` | `execute ping` depuis le pare-feu vers la passerelle d'une agence traverse le tunnel. |
 | `ipsec-crypto-counters` | `get vpn ipsec stats crypto` compte le trafic AES-256 / SHA-256 reellement echange. |
 | `external-security-assessment` | Le prestataire d'audit déroule `/opt/audit/run-all.sh` depuis Internet : seuls les VIP web (80) et mail (25) répondent, ni SSH sur le VIP mail, ni Oracle 1521, ni le LAN privé. |
