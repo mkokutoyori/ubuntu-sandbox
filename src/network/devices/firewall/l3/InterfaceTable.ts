@@ -24,9 +24,11 @@ export interface InterfaceConfig {
   description?: string;
   up?: boolean;
   remoteIp?: string;
+  vrf?: number;
 }
 
 export interface ConnectedRoute {
+  readonly vrf?: number;
   readonly network: string;
   readonly mask: string;
   readonly iface: string;
@@ -70,13 +72,17 @@ function assignedAddress(ip: string | undefined): string | undefined {
 
 export class InterfaceTable {
   private readonly interfaces = new Map<string, InterfaceRecord>();
+  private readonly vrfs = new Map<string, number>();
   private readonly portOf: InterfacePortLookup;
 
   constructor(portOf: InterfacePortLookup = () => undefined) {
     this.portOf = portOf;
   }
 
+  vrfOf(name: string): number { return this.vrfs.get(name) ?? 0; }
+
   configure(name: string, config: InterfaceConfig): void {
+    if (config.vrf !== undefined) this.vrfs.set(name, config.vrf);
     const existing = this.read(name);
     const ip = assignedAddress(config.ip ?? existing?.ip);
     const mask = config.mask ?? (config.prefixLength !== undefined
@@ -167,12 +173,13 @@ export class InterfaceTable {
         kind: 'connected' as const,
         distance: 0 as const,
         priority: 0 as const,
+        vrf: this.vrfOf(iface.name),
       }));
       const remote = this.interfaces.get(iface.name)?.remoteIp;
       if (remote !== undefined) {
         routes.push(Object.freeze({
           network: remote, mask: '255.255.255.255', iface: iface.name,
-          kind: 'connected' as const, distance: 0 as const, priority: 0 as const,
+          kind: 'connected' as const, distance: 0 as const, priority: 0 as const, vrf: this.vrfOf(iface.name),
         }));
       }
     }

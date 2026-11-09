@@ -103,6 +103,7 @@ export type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 import type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 
 export interface FortiInterfacePatch {
+  readonly vrf?: number;
   readonly vdom?: string;
   readonly addressingMode?: 'static' | 'dhcp' | 'pppoe';
   readonly leasePolicy?: {
@@ -149,6 +150,7 @@ export interface FortiStaticRoute {
   readonly blackhole: boolean;
   readonly enabled: boolean;
   readonly bfd: boolean;
+  readonly vrf?: number;
 }
 
 export interface FortiSchedulePatch {

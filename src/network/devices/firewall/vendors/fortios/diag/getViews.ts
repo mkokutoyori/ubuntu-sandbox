@@ -267,6 +267,19 @@ export function renderRoutingTable(routes: RouteTable, view: RoutingView, now: n
     { header: '', width: 0, value: row => row.destination },
   ], FIXED_TABLE).filter(line => line.trim().length > 0));
 
+  for (const vrf of routes.vrfs().filter(id => id !== 0)) {
+    const vrfRows = routes.selected(vrf)
+      .filter(route => keptBy(view, route))
+      .map(route => ({
+        code: routeCode(route),
+        destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route, now)}`,
+      }));
+    lines.push('', `Routing table for VRF=${vrf}`, ...renderTable(vrfRows, [
+      { header: '', width: 8, value: row => row.code },
+      { header: '', width: 0, value: row => row.destination },
+    ], FIXED_TABLE).filter(line => line.trim().length > 0));
+  }
+
   return lines.join('\n');
 }
 

@@ -80,6 +80,7 @@ export const ROUTER_STATIC: FortiTableSpec = {
     count('distance', 'Administrative distance.', 1, 255, 10),
     count('priority', 'Administrative priority.', 0, 65535, 0),
     count('weight', 'Administrative weight.', 0, 255, 0),
+    count('vrf', 'Virtual Routing Forwarding ID.', 0, 251, 0),
     enable('bfd', 'Enable/disable Bidirectional Forwarding Detection (BFD).'),
     enable('blackhole', 'Enable/disable black hole.'),
     enable('status', 'Enable/disable this static route.', true),
@@ -89,6 +90,7 @@ export const ROUTER_STATIC: FortiTableSpec = {
     const destination = object.effective('dst');
     context.device.applyStaticRoute({
       bfd: object.effective('bfd')[0] === 'enable',
+      vrf: Number.parseInt(object.effective('vrf')[0] ?? '0', 10),
       id: object.key,
       destination: destination[0] ?? '0.0.0.0',
       mask: destination[1] ?? '0.0.0.0',

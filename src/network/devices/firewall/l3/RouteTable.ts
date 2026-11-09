@@ -17,6 +17,7 @@ export interface FirewallRoute {
   readonly protocol?: string;
   readonly routeType?: string;
   readonly installedAt?: number;
+  readonly vrf?: number;
 }
 
 export interface ResolvedNextHop {
@@ -36,6 +37,7 @@ export interface DeclaredStaticRoute {
   readonly blackhole: boolean;
   readonly enabled: boolean;
   readonly bfd?: boolean;
+  readonly vrf?: number;
 }
 
 export interface StaticRouteOptions {
@@ -45,6 +47,7 @@ export interface StaticRouteOptions {
   iface?: string;
   id?: string;
   routeType?: string;
+  vrf?: number;
 }
 
 export interface LearnedRouteRecord {
@@ -72,6 +75,7 @@ interface StaticRecord {
   isDefault: boolean;
   id?: string;
   routeType?: string;
+  vrf: number;
   installedAt: number;
 }
 
@@ -132,6 +136,7 @@ export class RouteTable {
       isDefault: mask === '0.0.0.0' && network === '0.0.0.0',
       id: options.id,
       routeType: options.routeType,
+      vrf: options.vrf ?? 0,
       installedAt: this.deps.now(),
     });
   }
@@ -197,12 +202,18 @@ export class RouteTable {
     this.statics.length = 0;
   }
 
-  lookup(destination: string): FirewallRoute | undefined {
-    return longestMatch(this.selected(), destination);
+  lookup(destination: string, vrf = 0): FirewallRoute | undefined {
+    return longestMatch(this.selected(vrf), destination);
   }
 
-  resolveNextHop(destination: string): ResolvedNextHop | undefined {
-    const route = this.lookup(destination);
+  vrfs(): readonly number[] {
+    const found = new Set<number>(this.deps.connectedRoutes().map(route => route.vrf ?? 0));
+    for (const record of this.statics) found.add(record.vrf);
+    return Object.freeze([...found].sort((a, b) => a - b));
+  }
+
+  resolveNextHop(destination: string, vrf = 0): ResolvedNextHop | undefined {
+    const route = this.lookup(destination, vrf);
     if (!route) return undefined;
 
     return Object.freeze({
@@ -224,10 +235,11 @@ export class RouteTable {
     return mask === null ? undefined : prefixBits(mask);
   }
 
-  all(): readonly FirewallRoute[] {
-    const routes: FirewallRoute[] = [...this.deps.connectedRoutes()];
+  all(vrf = 0): readonly FirewallRoute[] {
+    const routes: FirewallRoute[] = this.deps.connectedRoutes().filter(route => (route.vrf ?? 0) === vrf);
 
     for (const route of this.statics) {
+      if (route.vrf !== vrf) continue;
       const iface = this.egressInterface(route);
       if (iface === undefined) continue;
       routes.push(Object.freeze({
@@ -242,14 +254,15 @@ export class RouteTable {
         protocol: protocolOf(route),
         routeType: route.routeType,
         installedAt: route.installedAt,
+        vrf: route.vrf,
       }));
     }
     return Object.freeze(routes);
   }
 
-  selected(): readonly FirewallRoute[] {
+  selected(vrf = 0): readonly FirewallRoute[] {
     const best = new Map<string, FirewallRoute>();
-    for (const route of this.all()) {
+    for (const route of this.all(vrf)) {
       const prefix = `${route.network}/${route.mask}`;
       const held = best.get(prefix);
       if (held === undefined || outranks(route, held)) best.set(prefix, route);
@@ -271,16 +284,17 @@ export class RouteTable {
       return up === false ? undefined : route.iface;
     }
     if (route.nextHop === undefined) return undefined;
-    return this.connectedInterfaceFor(route.nextHop);
+    return this.connectedInterfaceFor(route.nextHop, route.vrf);
   }
 
-  private connectedInterfaceFor(address: string): string | undefined {
-    if (this.deps.interfaceForDestination) return this.deps.interfaceForDestination(address);
+  private connectedInterfaceFor(address: string, vrf = 0): string | undefined {
+    if (this.deps.interfaceForDestination && vrf === 0) return this.deps.interfaceForDestination(address);
 
     const value = tryIpToUint32(address);
     if (value === null) return undefined;
 
     for (const connected of this.deps.connectedRoutes()) {
+      if ((connected.vrf ?? 0) !== vrf) continue;
       const mask = tryIpToUint32(connected.mask);
       const network = tryIpToUint32(connected.network);
       if (mask === null || network === null) continue;
