@@ -93,6 +93,9 @@ export function buildCommitDevice(
       applyOspf(patch) {
         return fw.getRouting().applyOspf(patch);
       },
+      applyVrfLeaks(leaks) {
+        fw.applyVrfLeaks(leaks);
+      },
       applyBgp(patch) {
         return fw.applyBgpWithBfd(patch);
       },

@@ -57,6 +57,15 @@ export interface LearnedRouteRecord {
   readonly options: StaticRouteOptions;
 }
 
+export interface VrfLeak {
+  readonly origin: number;
+  readonly target: number;
+  readonly iface: string;
+  readonly routeMap?: string;
+}
+
+const LEAKED_ROUTE_DISTANCE = 20;
+
 export interface RouteTableDeps {
   now: () => number;
   connectedRoutes: () => readonly ConnectedRoute[];
@@ -117,6 +126,15 @@ function longestMatch(routes: readonly FirewallRoute[], destination: string): Fi
 export class RouteTable {
   private readonly statics: StaticRecord[] = [];
   private readonly deps: RouteTableDeps;
+  private leaks: readonly VrfLeak[] = [];
+  private leakPermits: (routeMap: string, network: string, mask: string) => boolean = () => false;
+
+  setLeaks(
+    leaks: readonly VrfLeak[], permits: (routeMap: string, network: string, mask: string) => boolean,
+  ): void {
+    this.leaks = Object.freeze([...leaks]);
+    this.leakPermits = permits;
+  }
 
   constructor(deps: RouteTableDeps) {
     this.deps = deps;
@@ -236,6 +254,22 @@ export class RouteTable {
   }
 
   all(vrf = 0): readonly FirewallRoute[] {
+    const routes: FirewallRoute[] = [...this.own(vrf)];
+    for (const leak of this.leaks) {
+      if (leak.target !== vrf) continue;
+      for (const route of this.own(leak.origin)) {
+        if (leak.routeMap !== undefined && !this.leakPermits(leak.routeMap, route.network, route.mask)) continue;
+        routes.push(Object.freeze({
+          network: route.network, mask: route.mask, nextHop: route.nextHop,
+          iface: leak.iface, kind: 'dynamic' as const, distance: LEAKED_ROUTE_DISTANCE, priority: 0,
+          metric: 0, protocol: 'bgp', installedAt: route.installedAt, vrf,
+        }));
+      }
+    }
+    return Object.freeze(routes);
+  }
+
+  private own(vrf: number): readonly FirewallRoute[] {
     const routes: FirewallRoute[] = this.deps.connectedRoutes().filter(route => (route.vrf ?? 0) === vrf);
 
     for (const route of this.statics) {

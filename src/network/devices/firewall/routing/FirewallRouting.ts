@@ -198,6 +198,13 @@ export class FirewallRouting {
 
   getRoutePolicies(): RoutePolicyStore { return this.routePolicies; }
 
+  routeMapPermits(name: string, network: string, mask: string): boolean {
+    const verdict = this.routePolicies.get(name)?.evaluate(
+      { network, prefixLength: maskPrefixLength(mask), asPath: [], communities: [] },
+      this.prefixLists, this.asPathLists, this.communityLists);
+    return verdict !== undefined && verdict.action !== 'deny';
+  }
+
   applyRouteMap(patch: RouteMapPatch): void {
     this.routePolicies.remove(patch.name);
     const policy = this.routePolicies.upsert(patch.name);

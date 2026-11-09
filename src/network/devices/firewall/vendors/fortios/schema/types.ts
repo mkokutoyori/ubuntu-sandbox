@@ -520,6 +520,7 @@ export interface FortiCommitDevice {
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
   applyBgp(settings: BgpConfiguration): string | void;
+  applyVrfLeaks(leaks: ReadonlyArray<{ origin: number; target: number; iface: string; routeMap?: string }>): void;
   applyDhcpScope(scope: DhcpScope): string | void;
   removeDhcpScope(id: string): void;
   applyIpv6RouterAdvertisement(iface: string, options: {

@@ -415,6 +415,51 @@ const BGP_NEIGHBOR: FortiTableSpec = {
   ],
 };
 
+const BGP_LEAK_TARGET: FortiTableSpec = {
+  path: ['router', 'bgp', 'vrf', 'leak-target'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Target VRF table.',
+  attributes: [
+    { ...word('vrf', 'Target VRF ID (0 - 251).'), readOnly: true },
+    reference('interface', 'Interface which is used to leak routes to target VRF.', ['system interface']),
+    reference('route-map', 'Route map of VRF leaking.', ['router route-map']),
+  ],
+};
+
+const RT_UNSUPPORTED = 'route targets, route distinguishers and import maps belong to MPLS/VPN VRFs; this build leaks between VRFs of the unit through `config leak-target`, which is built.';
+
+const BGP_VRF: FortiTableSpec = {
+  path: ['router', 'bgp', 'vrf'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 3,
+  help: 'BGP VRF leaking table.',
+  attributes: [
+    { ...word('vrf', 'Origin VRF ID (0 - 251).'), readOnly: true },
+    { ...word('export-rt', 'List of export route target.'), multiValue: true, unimplemented: RT_UNSUPPORTED },
+    { ...word('import-rt', 'List of import route target.'), multiValue: true, unimplemented: RT_UNSUPPORTED },
+    { ...word('import-route-map', 'Import route map.'), unimplemented: RT_UNSUPPORTED },
+    { ...word('rd', 'Route Distinguisher: AA:NN|A.B.C.D:NN.'), unimplemented: RT_UNSUPPORTED },
+    {
+      ...choice('role', 'VRF role.', [
+        { keyword: 'standalone', description: 'Stand-alone VRF.' },
+        { keyword: 'ce', description: 'CE VRF.' },
+        { keyword: 'pe', description: 'PE VRF.' },
+      ], 'standalone'),
+      unimplementedValues: { ce: RT_UNSUPPORTED, pe: RT_UNSUPPORTED },
+    },
+  ],
+  children: [BGP_LEAK_TARGET],
+};
+
 const BGP_NETWORK: FortiTableSpec = {
   path: ['router', 'bgp', 'network'],
   kind: 'table',
@@ -453,9 +498,21 @@ export const ROUTER_BGP: FortiTableSpec = {
     count('graceful-stalepath-time', 'Time to hold stale paths of restarting neighbor (sec).', 1, 3600, 360),
     enable('graceful-end-on-timer', 'Enable/disable to exit graceful restart on timer only.'),
   ],
-  children: [BGP_NEIGHBOR, BGP_NETWORK],
+  children: [BGP_NEIGHBOR, BGP_NETWORK, BGP_VRF],
   onCommit(object, context) {
     const asn = Number.parseInt(object.effective('as')[0] ?? '0', 10);
+    const leaks = object.childEntries('vrf').flatMap(origin => origin.childEntries('leak-target').map(target => ({
+      origin: Number.parseInt(origin.key, 10),
+      target: Number.parseInt(target.key, 10),
+      iface: target.effective('interface')[0] ?? '',
+      routeMap: target.effective('route-map')[0] || undefined,
+    })));
+    for (const leak of leaks) {
+      if (leak.iface === '') return `leak-target ${leak.target} of vrf ${leak.origin} needs an interface.`;
+      if (leak.origin === leak.target) return `vrf ${leak.origin} cannot leak into itself.`;
+    }
+    if (leaks.length > 0 && asn === 0) return 'VRF leaking is a BGP function: a local AS number is required.';
+    context.device.applyVrfLeaks(leaks);
     const neighbours = object.childEntries('neighbor');
 
     if (neighbours.length > 0 && asn === 0) {

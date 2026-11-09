@@ -76,7 +76,7 @@ import { localMsAt, offsetMinutesAt, utcMsForLocal } from '../../core/time/TimeZ
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
-import { RouteTable, type DeclaredStaticRoute } from './l3/RouteTable';
+import { RouteTable, type DeclaredStaticRoute, type VrfLeak } from './l3/RouteTable';
 import {
   ProxyArpTable, proxyOwnerKey, publishPoolProxyArp, type ProxyArpEntry,
 } from './l3/ProxyArpTable';
@@ -1538,6 +1538,11 @@ export class Firewall extends Equipment {
       if (other.iface === egress || !this.interfaces.isUp(other.iface)) continue;
       this.forward(other.iface, { ...packet }, other.gateway === '0.0.0.0' ? undefined : other.gateway);
     }
+  }
+
+  applyVrfLeaks(leaks: readonly VrfLeak[]): void {
+    this.getRouteTable().setLeaks(leaks, (routeMap, network, mask) =>
+      this.getRouting().routeMapPermits(routeMap, network, mask));
   }
 
   applySdwan(c: SdwanConfiguration): string | undefined {
