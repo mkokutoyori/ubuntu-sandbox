@@ -30,6 +30,7 @@ export interface L3ServiceHost {
   resolvedMac(ip: string): MACAddress | undefined;
   emitFrame(iface: string, frame: EthernetFrame): void;
   emitArpAware(iface: string, packet: IPv4Packet, nextHop: IPAddress): void;
+  ensureBfdSession(iface: string, neighborIp: string): void;
   probeAddress(iface: string, address: string): boolean;
   assignAddress(iface: string, ip: string, mask: string): void;
   forward(iface: string, packet: IPv4Packet, gateway?: string): void;
@@ -87,6 +88,7 @@ export function buildL3Services(host: L3ServiceHost): L3Services {
       listenBgp: (accept) => { listenBgp(vdom, accept); },
       emitFrame: (iface, frame) => { host.emitFrame(iface, frame); },
       emitArpAware: (iface, packet, nextHop) => { host.emitArpAware(iface, packet, nextHop); },
+      ensureBfdSession: (iface, neighborIp) => { host.ensureBfdSession(iface, neighborIp); },
     });
     instances.set(vdom, created);
     return created;

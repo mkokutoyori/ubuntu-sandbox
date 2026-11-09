@@ -38,6 +38,7 @@ export interface OspfInterfaceSettings {
   readonly networkType: string;
   readonly authentication: string;
   readonly md5Keys: readonly { readonly id: number; readonly key: string }[];
+  readonly bfd: 'global' | 'enable' | 'disable';
 }
 
 export interface OspfArea {
@@ -51,6 +52,7 @@ export interface OspfConfiguration {
   readonly areas: readonly OspfArea[];
   readonly networks: readonly DynamicNetwork[];
   readonly interfaces: readonly OspfInterfaceSettings[];
+  readonly bfd?: boolean;
   readonly passiveInterfaces: readonly string[];
   readonly redistributeConnected: boolean;
   readonly redistributeStatic: boolean;

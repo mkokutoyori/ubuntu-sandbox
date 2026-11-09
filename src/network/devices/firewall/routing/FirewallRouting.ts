@@ -59,6 +59,7 @@ export interface FirewallRoutingDeps {
   readonly tcp: () => TcpStack;
   readonly egressToward?: (ip: string) => { localIp: string; localIface: string } | null;
   readonly listenBgp: (accept: (socket: TcpSocket) => void) => void;
+  readonly ensureBfdSession: (iface: string, neighborIp: string) => void;
 }
 
 export type RoutingSource = 'rip' | 'ospf' | 'bgp';
@@ -433,8 +434,31 @@ export class FirewallRouting {
     }
   }
 
+  private ospfBfdWanted(iface: string): boolean {
+    const setting = this.ospfConfig.interfaces.find(entry => entry.iface === iface)?.bfd ?? 'global';
+    return setting === 'enable' || (setting === 'global' && this.ospfConfig.bfd === true);
+  }
+
+  private provisionOspfBfd(): void {
+    if (!this.ospf) return;
+    for (const [name, iface] of this.ospf.getInterfaces()) {
+      if (!this.ospfBfdWanted(name)) continue;
+      for (const neighbor of iface.neighbors.values()) {
+        if (neighbor.state === 'Full') this.deps.ensureBfdSession(name, neighbor.ipAddress);
+      }
+    }
+  }
+
+  onBfdSessionDown(iface: string, neighborIp: string): void {
+    if (!this.ospf || !this.ospfBfdWanted(iface)) return;
+    const ospfIface = this.ospf.getInterface(iface);
+    const neighbor = [...(ospfIface?.neighbors.values() ?? [])].find(entry => entry.ipAddress === neighborIp);
+    if (ospfIface && neighbor) this.ospf.neighborEvent(ospfIface, neighbor, 'KillNbr');
+  }
+
   private installOspfRoutes(): void {
     if (!this.ospf) return;
+    this.provisionOspfBfd();
 
     const named = this.ospfConfig.distributeListIn;
 

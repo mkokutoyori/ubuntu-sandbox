@@ -805,6 +805,7 @@ export class Firewall extends Equipment {
       },
       emitArpAware: (iface, packet, nextHop) =>
         this.sendIpv4FrameArpAware(iface, packet, nextHop),
+      ensureBfdSession: (iface, neighborIp) => { this.getBfdAgent().ensureSession(iface, neighborIp); },
       probeAddress: (iface, address) => this.probeAddressOnLink(iface, address),
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
@@ -2465,6 +2466,7 @@ export class Firewall extends Equipment {
         if (event.payload.deviceId !== this.id) return;
         const up = event.payload.newState === 'up';
         this.onBfdSessionChanged(event.payload.iface, event.payload.neighborIp, up);
+        if (!up) this.getRouting().onBfdSessionDown(event.payload.iface, event.payload.neighborIp);
         const bgp = this.getRouting().getBgp();
         if (!bgp.bfdNeighbours().includes(event.payload.neighborIp)) return;
         bgp.holdDown(event.payload.neighborIp, !up);

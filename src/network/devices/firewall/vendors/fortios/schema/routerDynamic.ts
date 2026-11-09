@@ -321,6 +321,11 @@ const OSPF_INTERFACE: FortiTableSpec = {
       quoted: true, secret: true,
       availableWhen: (view) => view.effective('authentication')[0] === 'text',
     },
+    choice('bfd', 'Bidirectional Forwarding Detection (BFD).', [
+      { keyword: 'global', description: 'Use the global BFD setting of the OSPF process.' },
+      { keyword: 'enable', description: 'Enable BFD on this interface.' },
+      { keyword: 'disable', description: 'Disable BFD on this interface.' },
+    ], 'global'),
   ],
   children: [OSPF_MD5_KEYS],
 };
@@ -334,6 +339,7 @@ export const ROUTER_OSPF: FortiTableSpec = {
   help: 'Configure OSPF.',
   attributes: [
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
+    enable('bfd', 'Bidirectional Forwarding Detection (BFD).'),
     {
       ...text('passive-interface', 'Interfaces that listen without advertising.'),
       multiValue: true,
@@ -370,11 +376,13 @@ export const ROUTER_OSPF: FortiTableSpec = {
         priority: Number.parseInt(entry.effective('priority')[0] ?? '1', 10),
         networkType: entry.effective('network-type')[0] ?? 'broadcast',
         authentication: entry.effective('authentication')[0] ?? 'none',
+        bfd: (entry.effective('bfd')[0] ?? 'global') as 'global' | 'enable' | 'disable',
         md5Keys: entry.childEntries('md5-keys').map(key => ({
           id: Number.parseInt(key.key, 10),
           key: key.effective('key-string')[0] ?? '',
         })),
       })),
+      bfd: object.effective('bfd')[0] === 'enable',
       passiveInterfaces: [...object.effective('passive-interface')],
       redistributeConnected: false,
       redistributeStatic: false,
