@@ -156,6 +156,10 @@ export interface CaptureFrame {
   rawLinkOffset: number;
   ifindex?: number;
   truncatedLink?: boolean;
+  bsdFamily?: number;
+  invalidHeader?: string;
+  linkBytes?: readonly number[];
+  rawIpVersion?: number;
   appPayload?: number[];
   vlanId?: number;
   vlanPriority?: number;
@@ -1126,4 +1130,12 @@ export function makeLoopbackIcmpFrame(
     raw: [...header, ...icmp],
     rawLinkOffset: 0,
   };
+}
+
+const LINK_HEADER_BYTES: Readonly<Record<string, number>> = { LINUX_SLL: 16, LINUX_SLL2: 20, NULL: 4, LOOP: 4, RAW: 0 };
+const ETHERNET_HEADER_BYTES = 14;
+
+export function linkLength(frame: CaptureFrame): number {
+  const header = LINK_HEADER_BYTES[frame.linkType];
+  return header === undefined ? frame.length : frame.length - ETHERNET_HEADER_BYTES + header;
 }

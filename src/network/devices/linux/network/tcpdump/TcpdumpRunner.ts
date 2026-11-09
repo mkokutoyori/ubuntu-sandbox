@@ -1,5 +1,6 @@
 import type { CaptureFrame } from './CaptureFrame';
-import { compileFilter } from './TcpdumpFilter';
+import { compileFilter, type FilterLink } from './TcpdumpFilter';
+import { isBsdLink, unsupportedBsdPrinter } from './TcpdumpBsdLink';
 import {
   parseInvocation,
   listInterfacesText,
@@ -40,7 +41,7 @@ export interface TcpdumpDeps {
 
 const CAPTURE_WINDOW_MS = 200;
 const CAPTURE_DEADLINE_WITH_TARGET_MS = 3000;
-const PRINTED_LINK_TYPES = new Set(['EN10MB', 'LINUX_SLL', 'LINUX_SLL2']);
+const PRINTED_LINK_TYPES = new Set(['EN10MB', 'LINUX_SLL', 'LINUX_SLL2', 'NULL', 'LOOP', 'RAW']);
 
 export interface TranscriptEntry {
   fd: 1 | 2;
@@ -186,7 +187,7 @@ function renderStateFor(
   const namer = opt.numeric || deps.names === undefined
     ? null
     : new CaptureNamer(deps.names, { stripDomain: opt.stripDomain, isLocal });
-  return { state: new TcpdumpRenderState(namer, cookedInterfacesOf(linkType, interfaces)), namer };
+  return { state: new TcpdumpRenderState(namer, cookedInterfacesOf(linkType, interfaces), isBsdLink(linkType) ? linkType : null), namer };
 }
 
 function filterTokensOf(opt: TcpdumpOptions, deps: TcpdumpDeps): string[] | string {
@@ -197,13 +198,21 @@ function filterTokensOf(opt: TcpdumpOptions, deps: TcpdumpDeps): string[] | stri
   return expandFilterTokens([uncommented]);
 }
 
+function filterLinkOf(linkType: string): FilterLink {
+  const description = linkTypeDescription(linkType);
+  if (linkType === 'LINUX_SLL' || linkType === 'LINUX_SLL2') return { kind: 'cooked', description };
+  if (linkType === 'NULL' || linkType === 'LOOP') return { kind: 'loopback', description };
+  return linkType === 'RAW' ? { kind: 'raw', description } : { kind: 'ethernet', description };
+}
+
 async function compileCaptureFilter(
   opt: TcpdumpOptions, deps: TcpdumpDeps,
 ): Promise<ReturnType<typeof compileFilter>> {
   const tokens = filterTokensOf(opt, deps);
   if (typeof tokens === 'string') return { ok: false, message: tokens };
-  const names = await filterNamesFor(deps.names, (probe) => compileFilter(tokens, probe));
-  return compileFilter(tokens, names);
+  const link = filterLinkOf(opt.linkType);
+  const names = await filterNamesFor(deps.names, (probe) => compileFilter(tokens, probe, link));
+  return compileFilter(tokens, names, link);
 }
 
 function activationErrorOf(opt: TcpdumpOptions, deps: TcpdumpDeps): string | null {
@@ -410,6 +419,11 @@ async function readCaptureFiles(
     for (const frame of file.frames) {
       if (opt.count !== null && printed >= opt.count) break;
       if (!filter.predicate(frame)) continue;
+      const missing = frame.bsdFamily === undefined ? null : unsupportedBsdPrinter(frame.bsdFamily);
+      if (missing !== null) {
+        transcript.err(`tcpdump: ${linkType}: this simulator has no ${missing} printer`);
+        return transcript.result(1);
+      }
       printed++;
       if (writer !== null && writer.add(frame) === 'limit-reached') {
         limitReached = true;

@@ -489,7 +489,8 @@ commutateur une commande que son materiel n'a pas.
 **Mesure** : `tcpdump-savefile-oracle` rejoue 24 cas ou le fichier (ou `-s`) coupe le paquet au milieu
 d'un en-tete (`lab-snapshot-14` a `-128`, `snapshot-shorter-than-the-ip-header`) ; le simulateur imprime
 `[|tcp]`, `[|icmp6]`, `[|arp]` ou la longueur d'un echo ICMPv6 coupe autrement que tcpdump 4.99.4, sur un
-fichier comme sur une capture vivante avec `-s`. Les cas sont ignores (`PRINTS_TRUNCATED_PACKETS_DIFFERENTLY`).
+fichier comme sur une capture vivante avec `-s`. Les cas sont ignores (`PRINTS_TRUNCATED_PACKETS_DIFFERENTLY`). Meme defaut pour NULL, LOOP et RAW
+(mesure sur `cut4`, `cut6` et `cutraw4` : `IP  [|ip]` sous 20 octets d'en-tete IPv4, `IP truncated-ip - N bytes missing! ... [|tcp]` au-dela, `IP6 truncated-ip6 - N bytes missing!`).
 **Pourquoi ce n'est pas ferme** : chaque imprimeur de protocole doit connaitre la limite de ce qui est
 capture, ce que la trame decodee ne porte pas aujourd'hui (`CaptureFrame.truncatedLink` ne sert que la liaison).
 `tcpreplay -v` sur un fichier a instantane coupe (`verbose-loop` de `tcpreplay-oracle`, attendu en echec) imprime
@@ -498,10 +499,12 @@ capture, ce que la trame decodee ne porte pas aujourd'hui (`CaptureFrame.truncat
 ### [pcap] pcapng, et les types de liaison que le simulateur n'imprime pas
 `decodePcap` ne lit que les savefiles classiques (magics 0xa1b2c3d4, 0xa1b23c4d, 0xa1b2cd34) : un fichier
 pcapng (magic 0x0a0d0d0a, ce qu'ecrivent Wireshark et `dumpcap`) repond `unknown file format`, la ou
-libpcap 1.10.4 le lit. Et les types de liaison RAW (101), NULL (0) et LOOP (108) sont lus puis refuses avec le
-message de libpcap pour un type sans imprimeur : le simulateur ne sait imprimer que Ethernet et Linux cooked
-v1/v2. **Pourquoi ce n'est pas ferme** : pcapng est un autre format (blocs, options, interfaces multiples)
-et chaque type de liaison demande son imprimeur d'en-tete.
+libpcap 1.10.4 le lit. Les types de liaison Ethernet, Linux cooked v1 et v2, NULL, LOOP et RAW sont lus et
+imprimes (`tcpdump-linktypes-oracle`, mesure contre tcpdump 4.99.4) ; les autres sont lus puis refuses avec le
+message de libpcap pour un type sans imprimeur. NULL et LOOP portent une famille que print-null.c imprime avec
+d'autres imprimeurs : AF_ISO (7), AF_APPLETALK (16) et AF_IPX (23) arretent la lecture avec « this simulator has no
+OSI | AppleTalk | IPX printer » apres les paquets deja imprimes. **Pourquoi ce n'est pas ferme** : pcapng est un autre
+format (blocs, options, interfaces multiples) et chaque type de liaison restant demande son imprimeur d'en-tete.
 
 ### [capture] ce que la trame du simulateur ne porte pas en octets
 La trame est un objet, les octets de `CaptureFrame.raw` sont synthetises : une option TCP inconnue est perdue

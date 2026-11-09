@@ -1,4 +1,4 @@
-import type { CaptureFrame } from './CaptureFrame';
+import { linkLength, type CaptureFrame } from './CaptureFrame';
 import type { CapturePredicate } from './TcpdumpFilter';
 
 export interface RelationOk {
@@ -337,7 +337,7 @@ function baseOf(frame: CaptureFrame, protocol: SliceProtocol): number {
 function evaluate(node: Arithmetic, frame: CaptureFrame): number {
   switch (node.kind) {
     case 'constant': return node.value;
-    case 'length': return frame.length >>> 0;
+    case 'length': return linkLength(frame) >>> 0;
     case 'negate': return (-evaluate(node.operand, frame)) >>> 0;
     case 'binary': return apply(node.operator, evaluate(node.left, frame), evaluate(node.right, frame));
     case 'load': {

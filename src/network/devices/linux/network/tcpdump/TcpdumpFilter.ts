@@ -1,7 +1,7 @@
 import { VID_WILDCARD } from '../../../../layers/link/vlan/VlanId';
 import { IPAddress, IP_PROTO_AH, IP_PROTO_ESP, IP_PROTO_ICMP, IP_PROTO_TCP, IP_PROTO_UDP } from '@/network/core/types';
 import { isMulticastIpv4 } from '@/network/core/ip';
-import type { CaptureFrame } from './CaptureFrame';
+import { linkLength, type CaptureFrame } from './CaptureFrame';
 import { RejectPacket, parseRelation, relexFilter, startsArithmetic } from './TcpdumpExpression';
 
 export type CapturePredicate = (f: CaptureFrame) => boolean;
@@ -22,6 +22,17 @@ const MAC_RE = /^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/;
 const SYNTAX_ERROR = "tcpdump: can't parse filter expression: syntax error";
 const MAXIMUM_VLAN_TAG = VID_WILDCARD;
 const MAXIMUM_PORT = 65535;
+
+export interface FilterLink {
+  readonly kind: 'ethernet' | 'cooked' | 'loopback' | 'raw';
+  readonly description: string;
+}
+
+const ETHERNET_LINK: FilterLink = { kind: 'ethernet', description: 'Ethernet' };
+
+const ETHERNET_ADDRESSES_ONLY = 'ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel';
+const MULTICAST_FILTERS_ONLY = 'link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel';
+const NOT_A_BROADCAST_LINK = 'not a broadcast link';
 
 export interface FilterNames {
   servicePort(name: string, protocol?: 'tcp' | 'udp'): number | null;
@@ -93,7 +104,7 @@ function isInt(token: string): boolean {
 
 class Parser {
   private pos = 0;
-  constructor(private readonly tokens: string[], private readonly names?: FilterNames) {}
+  constructor(private readonly tokens: string[], private readonly names?: FilterNames, private readonly link: FilterLink = ETHERNET_LINK) {}
 
   parse(): FilterResult {
     if (this.tokens.length === 0) return { ok: true, predicate: ALWAYS };
@@ -208,7 +219,7 @@ class Parser {
       case 'ip6':
         return { ok: true, predicate: (f) => f.l3 === 'ipv6' };
       case 'arp':
-        return { ok: true, predicate: (f) => f.l3 === 'arp' };
+        return this.hasArp() ? { ok: true, predicate: (f) => f.l3 === 'arp' } : { ok: true, predicate: () => false, constant: false };
       case 'tcp':
         return this.protoOrPort((f) => f.l4 === 'tcp' || f.ipProtocol === IP_PROTO_TCP, dir, 'tcp');
       case 'udp':
@@ -218,11 +229,11 @@ class Parser {
       case 'icmp6':
         return { ok: true, predicate: (f) => f.l4 === 'icmp6' };
       case 'vlan':
-        return this.parseVlan();
+        return this.link.kind === 'ethernet' ? this.parseVlan() : failure(`no VLAN support for ${this.link.description}`);
       case 'multicast':
-        return { ok: true, predicate: IS_MULTICAST };
+        return this.link.kind === 'ethernet' ? { ok: true, predicate: IS_MULTICAST } : failure(MULTICAST_FILTERS_ONLY);
       case 'broadcast':
-        return { ok: true, predicate: IS_BROADCAST };
+        return this.link.kind === 'ethernet' ? { ok: true, predicate: IS_BROADCAST } : failure(NOT_A_BROADCAST_LINK);
       case 'less':
         return this.parseSize('less');
       case 'greater':
@@ -304,8 +315,8 @@ class Parser {
     const value = this.next();
     if (value === undefined || !isInt(value)) return syntaxError();
     const n = parseInt(value, 10);
-    if (kind === 'less') return { ok: true, predicate: (f) => f.length <= n };
-    return { ok: true, predicate: (f) => f.length >= n };
+    if (kind === 'less') return { ok: true, predicate: (f) => linkLength(f) <= n };
+    return { ok: true, predicate: (f) => linkLength(f) >= n };
   }
 
   private parseProto(): FilterResult {
@@ -329,7 +340,24 @@ class Parser {
     };
   }
 
+  private hasArp(): boolean {
+    return this.link.kind === 'ethernet' || this.link.kind === 'cooked';
+  }
+
   private parseEther(): FilterResult {
+    if (this.link.kind !== 'ethernet') {
+      const following = this.peek();
+      if (following === 'broadcast') return failure(NOT_A_BROADCAST_LINK);
+      if (following === 'multicast') return failure(MULTICAST_FILTERS_ONLY);
+      if (following === 'src' || following === 'dst' || following === 'host') return failure(ETHERNET_ADDRESSES_ONLY);
+    }
+    if (this.peek() === 'proto') {
+      this.next();
+      const word = this.next();
+      if (word === undefined || !/^(0[xX][0-9a-fA-F]+|[0-9]+)$/.test(word)) return syntaxError();
+      const ethertype = Number(word);
+      return { ok: true, predicate: (f) => f.etherType === ethertype };
+    }
     let which: 'src' | 'dst' | 'host' = 'host';
     if (this.peek() === 'src' || this.peek() === 'dst' || this.peek() === 'host') {
       which = this.next() as 'src' | 'dst' | 'host';
@@ -506,8 +534,8 @@ function guardedAgainstRejection(predicate: CapturePredicate): CapturePredicate 
   };
 }
 
-export function compileFilter(tokens: string[], names?: FilterNames): FilterResult {
-  const result = new Parser(relexFilter(tokens.join(' ')), names).parse();
+export function compileFilter(tokens: string[], names?: FilterNames, link?: FilterLink): FilterResult {
+  const result = new Parser(relexFilter(tokens.join(' ')), names, link).parse();
   if (!result.ok) return result;
   if (result.constant === false) return failure('expression rejects all packets');
   return { ok: true, predicate: guardedAgainstRejection(result.predicate) };
