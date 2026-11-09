@@ -231,6 +231,10 @@ export function verifyDnsMessage(bytes: Uint8Array, options: TsigVerifyOptions):
   return { status: 'ok', key, mac: tsig.mac, tsig };
 }
 
+export function tsigFailureText(failure: TsigFailure): string {
+  return `tsig verify failure (${failure.status.toUpperCase()})`;
+}
+
 export function tsigErrorCodeFor(status: TsigVerdict['status']): number {
   switch (status) {
     case 'badkey': return TsigErrorCode.BADKEY;

@@ -132,7 +132,7 @@ zone "example.com" {
 `);
 
     expect(config.zones[0].primaries.map((primary) => primary.address)).toEqual(['10.0.1.10', '10.0.1.11']);
-    expect(config.zones[0].alsoNotify).toEqual(['10.0.1.12']);
+    expect(config.zones[0].alsoNotify).toEqual([{ address: '10.0.1.12', port: null, key: null, tls: null }]);
   });
 
   it('parses a forward zone', () => {

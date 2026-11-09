@@ -6,7 +6,7 @@ import type { ZoneStore } from '@/network/dns/zone/ZoneStore';
 import { udpClientOf } from '@/network/dns/transport/DnsUdpTransport';
 import type { DnsPacketObserver } from '@/network/dns/transport/DnsPacketObserver';
 import { buildAxfrAnswers, buildTransferMessages } from '@/network/dns/transfer/AxfrSession';
-import { sendNotify } from '@/network/dns/transfer/NotifyProtocol';
+import { sendNotify, type NotifyTarget } from '@/network/dns/transfer/NotifyProtocol';
 import { ZoneTransferClient, transferTransportOf } from '@/network/dns/transfer/ZoneTransferClient';
 import { secureTransferClientOf } from '@/network/dns/transfer/SecureTransferClient';
 import type { TransferEndpoint } from '@/network/dns/transfer/TransferEndpoint';
@@ -46,9 +46,9 @@ export function signTransferResponse(
 }
 
 export function notifyZoneTargets(
-  host: EndHost, zone: Zone, targets: readonly IPAddress[], observer?: DnsPacketObserver,
+  host: EndHost, zone: Zone, targets: readonly NotifyTarget[], observer?: DnsPacketObserver,
 ): void {
-  for (const target of targets) void sendNotify(host, target, zone.origin, zone.soa, undefined, observer);
+  for (const target of targets) void sendNotify(host, target.address, zone.origin, zone.soa, undefined, observer, target);
 }
 
 export interface SecondaryRefreshOutcome {
