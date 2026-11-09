@@ -351,11 +351,6 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
       ['vpn certificate local'], 'Fortinet_CA_Untrusted'),
     reference('server-cert', 'Certificate presented under `replace` mode.',
       ['vpn certificate local']),
-    choice('untrusted-cert', 'What to do with an untrusted server certificate.', [
-      { keyword: 'allow', description: 'Allow the session.' },
-      { keyword: 'block', description: 'Block the session.' },
-      { keyword: 'ignore', description: 'Ignore the server certificate.' },
-    ], 'allow'),
   ],
   children: [
     {
@@ -411,6 +406,11 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
             },
           ], 'certificate-inspection'),
         },
+        choice('untrusted-server-cert', 'Action based on server certificate is not issued by a trusted CA.', [
+          { keyword: 'allow', description: 'Allow the server certificate.' },
+          { keyword: 'block', description: 'Block the session.' },
+          { keyword: 'ignore', description: 'Re-sign the server certificate as trusted.' },
+        ], 'allow'),
       ],
       onCommit() {},
     },
@@ -425,7 +425,7 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
       caName: object.effective('caname')[0] ?? 'Fortinet_CA_SSL',
       untrustedCaName: object.effective('untrusted-caname')[0] ?? 'Fortinet_CA_Untrusted',
       serverCertMode: object.effective('server-cert-mode')[0] ?? 're-sign',
-      untrustedCert: object.effective('untrusted-cert')[0] ?? 'allow',
+      untrustedCert: object.childSetting('https', 'untrusted-server-cert')[0] ?? 'allow',
       exemptions: object.childEntries('ssl-exempt').map(entry => ({
         type: entry.effective('type')[0] ?? 'fortiguard-category',
         category: Number.parseInt(entry.effective('fortiguard-category')[0] ?? '0', 10),

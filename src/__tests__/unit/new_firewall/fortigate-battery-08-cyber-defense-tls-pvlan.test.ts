@@ -139,10 +139,10 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       const { fw } = await creerLaboCyberDefense();
       await taper(fw, [
         'config firewall ssl-ssh-profile', 'edit "DPI_DEEP_INSPECT"',
-        'set untrusted-caname "block"', 'next', 'end',
+        'config https', 'set untrusted-server-cert block', 'end', 'next', 'end',
       ]);
       const check = await fw.executeCommand('show firewall ssl-ssh-profile DPI_DEEP_INSPECT');
-      expect(check).toContain('set untrusted-caname "block"');
+      expect(check).toContain('set untrusted-server-cert block');
     });
 
     it('356. Inspection du payload HTTPS déchiffré : blocage d\'une attaque web cachée dans le tunnel TLS', async () => {
@@ -297,11 +297,11 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
     it('372. Micro-segmentation FortiGate : Proxy-ARP et filtrage inter-machines au sein d\'un même sous-réseau', async () => {
       const { fw } = await creerLaboCyberDefense();
       await taper(fw, [
-        'config system interface', 'edit port1',
-        'set proxy-arp enable', 'end',
+        'config system proxy-arp', 'edit 1',
+        'set interface "port1"', 'set ip 10.10.10.100', 'set end-ip 10.10.10.110', 'next', 'end',
       ]);
-      const conf = await fw.executeCommand('show system interface port1');
-      expect(conf).toContain('proxy-arp enable');
+      const conf = await fw.executeCommand('show system proxy-arp');
+      expect(conf).toContain('set end-ip 10.10.10.110');
     });
 
     it('373. Blocage de l\'évasion PVLAN : Rejet strict des trames 802.1Q doublement taggées (Double Tagging Attack)', async () => {

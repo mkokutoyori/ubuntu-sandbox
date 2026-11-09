@@ -203,7 +203,7 @@ async function inspectionProfonde(
     'set server-cert-mode re-sign',
     'set caname "Fortinet_CA_SSL"',
     'set untrusted-caname "Fortinet_CA_Untrusted"',
-    `set untrusted-cert ${action}`,
+    'config https', `set untrusted-server-cert ${action}`, 'end',
     'next', 'end',
     'config firewall policy', 'edit 2',
     'set utm-status enable', 'set inspection-mode flow',
@@ -258,12 +258,12 @@ describe('other-application-action decide du sort des applications hors liste', 
   });
 });
 
-describe('untrusted-cert decide du sort d une session au certificat non fiable', () => {
+describe('untrusted-server-cert decide du sort d une session au certificat non fiable', () => {
   it('le CLI accepte le reglage et le rend dans la configuration', async () => {
     const { fgt } = await laboratoire();
     propre(await inspectionProfonde(fgt, 'block'));
     const rendu = await fgt.executeCommand('show firewall ssl-ssh-profile Deep-Lab');
-    expect(rendu).toMatch(/set untrusted-cert block/);
+    expect(rendu).toMatch(/set untrusted-server-cert block/);
   });
 
   it('le reglage atteint le profil que le moteur lit', async () => {
