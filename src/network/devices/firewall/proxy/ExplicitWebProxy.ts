@@ -118,14 +118,17 @@ export class ExplicitWebProxy {
   private serve(client: TcpSocket): void {
     let buffer = '';
     let handled = false;
+    let tunnel: TcpSocket | null = null;
+    client.onClose(() => { tunnel?.close(); });
     client.onData((chunk) => {
+      if (tunnel !== null) { tunnel.write(String(chunk)); return; }
       if (handled) return;
       buffer += String(chunk);
       const parsed = parseProxiedRequest(buffer);
       if (parsed === 'incomplete') return;
       handled = true;
       if (parsed === 'malformed') { this.finish(client, reply(400, 'Bad Request')); return; }
-      void this.handle(client, parsed);
+      void this.handle(client, parsed).then((opened) => { tunnel = opened; });
     });
   }
 
@@ -148,21 +151,30 @@ export class ExplicitWebProxy {
     return true;
   }
 
-  private async handle(client: TcpSocket, request: ProxiedRequest): Promise<void> {
-    if (request.method === 'CONNECT') { this.finish(client, reply(501, 'Not Implemented')); return; }
+  private async handle(client: TcpSocket, request: ProxiedRequest): Promise<TcpSocket | null> {
+    const tunnelling = request.method === 'CONNECT';
+    const name = tunnelling ? request.host.replace(/:\d+$/, '') : request.host;
+    const port = tunnelling ? Number(/:(\d+)$/.exec(request.host)?.[1] ?? 443) : request.port;
 
-    const destination = await this.host.resolve(request.host);
-    if (destination === null) { this.finish(client, reply(502, 'Bad Gateway')); return; }
+    const destination = await this.host.resolve(name);
+    if (destination === null) { this.finish(client, reply(502, 'Bad Gateway')); return null; }
 
     const ingress = this.host.ingressInterface(client.localIp) ?? '';
     const egress = this.host.egressInterface(destination);
     const policy = this.policies.find(entry => this.matches(entry, ingress, destination, egress, client.remoteIp));
     const action = policy?.action ?? this.settings.defaultAction;
-    this.host.onDecision?.({ client: client.remoteIp, host: request.host, policyId: policy?.id, action });
-    if (action === 'deny') { this.finish(client, reply(403, 'Forbidden', DENIED_BODY)); return; }
+    this.host.onDecision?.({ client: client.remoteIp, host: name, policyId: policy?.id, action });
+    if (action === 'deny') { this.finish(client, reply(403, 'Forbidden', DENIED_BODY)); return null; }
 
-    const upstream = this.host.tcp().connect(destination, request.port);
-    if (!upstream || upstream.state !== 'established') { this.finish(client, reply(502, 'Bad Gateway')); return; }
+    const upstream = this.host.tcp().connect(destination, port);
+    if (!upstream || upstream.state !== 'established') { this.finish(client, reply(502, 'Bad Gateway')); return null; }
+
+    if (tunnelling) {
+      upstream.onData((chunk) => { client.write(String(chunk)); });
+      upstream.onClose(() => { client.close(); });
+      client.write('HTTP/1.1 200 Connection established\r\n\r\n');
+      return upstream;
+    }
 
     const forwarded = request.headers
       .filter(([name]) => !/^(proxy-|connection$)/i.test(name))
@@ -174,5 +186,6 @@ export class ExplicitWebProxy {
     stop();
     upstream.close();
     this.finish(client, answer.length > 0 ? answer : reply(502, 'Bad Gateway'));
+    return null;
   }
 }

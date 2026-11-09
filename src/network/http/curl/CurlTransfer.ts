@@ -249,6 +249,23 @@ export function proxyHopOf(proxy: string | null): ProxyHop | null {
   return { host: bare, port: CURL_DEFAULT_PROXY_PORT };
 }
 
+async function openTunnel(socket: TcpSocket, url: CurlUrl): Promise<string | null> {
+  const authority = `${hostInAuthority(url.host)}:${url.port}`;
+  const answer = await new Promise<string>((resolve) => {
+    let received = '';
+    const settle = (): void => { stop(); stopClose(); resolve(received); };
+    const stop = socket.onData((chunk) => {
+      received += String(chunk);
+      if (received.includes('\r\n\r\n')) settle();
+    });
+    const stopClose = socket.onClose(settle);
+    socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`);
+  });
+  const status = /^HTTP\/1\.[01] (\d{3})/.exec(answer);
+  if (status === null) return '000';
+  return status[1] === '200' ? null : status[1];
+}
+
 function buildRequest(
   url: CurlUrl, method: string, opts: CurlOptions, body: string | null,
   jar?: CookieJar, formContentType?: string,
@@ -524,13 +541,6 @@ async function performHttpRequest(
 
   for (;;) {
     const via = proxyHopOf(opts.proxy);
-    if (via !== null && url.scheme === 'https') {
-      return {
-        ok: false, code: 2,
-        message: 'curl: option --proxy: https through a proxy needs CONNECT tunnelling, which is not implemented in this simulator',
-        url, remoteIp, method, numRedirects: redirects, trace,
-      };
-    }
     const override = via === null ? resolvedOverride(opts, url) : undefined;
     let address = override;
     if (!address) {
@@ -563,13 +573,23 @@ async function performHttpRequest(
       const verifier = opts.insecure
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
         : new CertificateVerifier({ trustAnchors: anchors, clock: () => host.tcpStack().nowMs() });
-      const porte = await dial(host, address, url.port, budget);
+      const porte = await dial(host, address, via?.port ?? url.port, budget);
       if (porte.kind !== 'open') {
-        return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
+        return connectFailure(porte, url, via?.port ?? url.port, remoteIp, method, redirects, trace);
       }
       local = { ip: porte.socket.localIp, port: porte.socket.localPort };
       stats.connects++;
       stats.connectAt = simulationNowMs();
+      if (via !== null) {
+        const refused = await openTunnel(porte.socket, url);
+        if (refused !== null) {
+          porte.socket.close();
+          return {
+            ok: false, code: 56, message: `curl: (56) CONNECT tunnel failed, response ${refused}`,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
+      }
       sentBytes();
 
       let session: HttpsClientSession | null = null;
@@ -589,7 +609,7 @@ async function performHttpRequest(
           };
         }
         const credential = clientCredential.credential;
-        session = new HttpsClientSession(host.tcpStack(), address, url.port, {
+        session = new HttpsClientSession(host.tcpStack(), via === null ? address : url.host, url.port, {
           verifier, ...tlsPolicy.config, ...(opts.certStatus ? { collectOcspStaple: true } : {}),
           ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
         });

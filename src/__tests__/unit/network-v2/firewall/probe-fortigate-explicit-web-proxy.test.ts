@@ -5,12 +5,13 @@
  * `set explicit-web-proxy enable` on a system interface. curl now sends a plain-HTTP request to the proxy in absolute form
  * (`GET http://host/path HTTP/1.1`), and the unit listens on the proxy port of the interfaces that enable it, picks the first
  * matching proxy policy (disabled and out-of-schedule ones skipped; the default action when none matches), answers 403 on deny,
- * and otherwise relays the request to the origin over a real connection and returns its answer. CONNECT (https through the proxy) is
- * refused on both sides naming the missing brick, and `redirect` plus the non-explicit proxy types are refused in the schema.
+ * and otherwise relays the request to the origin over a real connection and returns its answer. HTTPS is relayed as a tunnel (curl sends CONNECT host:port, the proxy applies the same policy, answers 200 and relays the TLS bytes, or
+ * refuses with its status and curl says `(56) CONNECT tunnel failed, response 403`); `redirect` plus the non-explicit proxy types
+ * are refused in the schema.
  * The 403 body text is the simulator's own: the replacement page of FortiOS is not in any source here.
  *
  * PC -- port2 [FGT] port3 -- server; NO ordinary firewall policy exists, so only the proxy path can carry the request.
- * Discriminated with git stash on src/network: 6 of 9 fall before the change; the witness (the origin answers its own network),
+ * Discriminated with git stash on src/network: 7 of 10 fall before the proxy existed (the last two only before CONNECT); the witness (the origin answers its own network),
  * the direct-curl case (no firewall policy: no answer) and the disabled-proxy case (nothing is served either way) pass either way.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -54,6 +55,17 @@ async function lab(proxyLines: readonly string[], interfaceFlag = true) {
     ...proxyLines,
   ]);
   return { fgt, pc, srv, replies };
+}
+
+const SITE_HTTPS =
+  'server {\\n  listen 443 ssl;\\n  server_name _;\\n  root /var/www/html;\\n  index index.nginx-debian.html;\\n'
+  + '  ssl_certificate /etc/ssl/certs/srv.crt;\\n  ssl_certificate_key /etc/ssl/private/srv.key;\\n}\\n';
+
+async function serveHttps(srv: LinuxServer): Promise<void> {
+  await srv.executeCommand('mkdir -p /etc/ssl/certs /etc/ssl/private');
+  await srv.executeCommand('openssl req -x509 -newkey rsa:1024 -keyout /etc/ssl/private/srv.key -out /etc/ssl/certs/srv.crt -days 365 -nodes -subj "/CN=192.168.20.10"');
+  await srv.executeCommand(`sh -c 'printf "${SITE_HTTPS}" > /etc/nginx/sites-available/default'`);
+  await srv.executeCommand('systemctl restart nginx');
 }
 
 const ENABLE = ['config web-proxy explicit', 'set status enable', 'set http-incoming-port 8080', 'end'];
@@ -100,9 +112,16 @@ describe('explicit web proxy', () => {
     expect(await viaProxy(bare.pc)).not.toMatch(/HTTP\/1\.1 (200|403)/);
   });
 
-  it('https through the proxy is refused naming CONNECT', async () => {
-    const { pc } = await lab([...ENABLE, ...policy(1, 'accept')]);
-    expect(await pc.executeCommand('curl -sS -m 5 -x http://192.168.10.1:8080 https://192.168.20.10/')).toMatch(/CONNECT tunnelling/);
+  it('https goes through a CONNECT tunnel the proxy opens and relays', async () => {
+    const { pc, srv } = await lab([...ENABLE, ...policy(1, 'accept')]);
+    await serveHttps(srv);
+    expect(await pc.executeCommand('curl -sS -k -m 8 -x http://192.168.10.1:8080 https://192.168.20.10/')).toMatch(/nginx/i);
+  });
+
+  it('a CONNECT the policy refuses fails the tunnel with the proxy status', async () => {
+    const { pc, srv } = await lab(ENABLE);
+    await serveHttps(srv);
+    expect(await pc.executeCommand('curl -sS -k -m 8 -x http://192.168.10.1:8080 https://192.168.20.10/')).toContain('curl: (56) CONNECT tunnel failed, response 403');
   });
 
   it('redirect and the other proxy types are refused in the schema', async () => {
