@@ -4641,3 +4641,5 @@ en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatect
 
 - **dnsfilter `block-action redirect` without `redirect-portal`.** The reference gives the default `0.0.0.0` and says nothing of the address the unit then answers with (the built-in FortiGuard SDNS portal). The simulator keeps dropping such a query in silence rather than invent an address; setting `redirect-portal` (or `block-action block` / `block-sevrfail`) makes the firewall answer. Seen with battery 06 test 274. Closing it needs the portal address from a captured transcript or a vendor page.
 - **dnsfilter `block-botnet`.** Refused, naming the missing brick: no FortiGuard botnet C&C domain feed exists here.
+
+- **`get router info bgp neighbors <ip> [advertised-routes|routes|received-routes]`.** Refused as an unknown path. The BGP engine holds what these views print (Adj-RIB-Out per peer, `adjRibIn`, the routes it keeps stale or dampened), but the column layout is in neither the 7.4.12 reference nor a captured transcript, and CLAUDE.md rule 8 forbids inventing it. Seen with battery 06 test 266. Closing it needs a captured FortiOS output for each of the three views.

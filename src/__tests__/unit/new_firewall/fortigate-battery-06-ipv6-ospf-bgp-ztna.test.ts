@@ -176,12 +176,13 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
     it('258. NAT64 / DNS64 : client IPv6 pur accédant à un serveur IPv4 exclusif via préfixe Well-Known 64:ff9b::/96', async () => {
       const { fw } = await creerLaboNextGen();
       await taper(fw, [
-        'config firewall nat64',
-        'set status enable',
+        'config system nat64',
+        'set nat64-prefix 64:ff9b::/96',
         'end',
       ]);
-      const nat64 = await fw.executeCommand('get firewall nat64');
+      const nat64 = await fw.executeCommand('show system nat64');
       expect(refuse(nat64)).toBe(false);
+      expect(nat64).toContain('64:ff9b::/96');
     });
 
     it('259. Path MTU Discovery IPv6 : gestion du paquet ICMPv6 Type 2 "Packet Too Big" (MTU 1280 min)', async () => {
