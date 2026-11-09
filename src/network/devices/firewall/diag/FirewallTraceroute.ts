@@ -7,9 +7,10 @@ export const TRACEROUTE_MAX_HOPS = 32;
 export const TRACEROUTE_PROBES = 3;
 
 export function tracerouteHeader(
-  target: string, maxHops: number, bytes: number, address: string = target,
+  target: string, maxHops: number, bytes: number, address: string = target, probes?: number,
 ): string {
-  return `traceroute to ${target} (${address}), ${maxHops} hops max, ${bytes} byte packets`;
+  const perHop = probes === undefined ? '' : ` ${probes} probe packets per hop,`;
+  return `traceroute to ${target} (${address}), ${maxHops} hops max,${perHop} ${bytes} byte packets`;
 }
 
 export function tracerouteHopLine(
@@ -94,7 +95,7 @@ export class FirewallTraceroute {
     const route = this.trace(target, maxHops);
     if (route === null) return 'traceroute: unknown host';
     return [
-      tracerouteHeader(target, maxHops, 84, route.address),
+      tracerouteHeader(target, maxHops, 84, route.address, TRACEROUTE_PROBES),
       ...route.hops.map((hop) => tracerouteHopLine(
         hop.ttl, hop.from, Array.from({ length: TRACEROUTE_PROBES }, () => (hop.from === undefined ? '*' : '0.0 ms')))),
     ].join('\n');
