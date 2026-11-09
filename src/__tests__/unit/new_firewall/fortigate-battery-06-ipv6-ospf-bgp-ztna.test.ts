@@ -335,7 +335,9 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       const { pc, fw, srvCluster } = await creerLaboNextGen();
       await taper(srvCluster as unknown as Cli, ['systemctl start nginx']);
       await taper(fw, [
-        'config web-proxy explicit', 'set status enable', 'set http-incoming-port 8080', 'end',
+        'config router static', 'edit 50', 'set dst 10.50.0.0 255.255.255.0', 'set gateway 203.0.113.2', 'set device "wan1"', 'next', 'end',
+        'config system interface', 'edit port1', 'set explicit-web-proxy enable', 'next', 'end',
+        'config web-proxy explicit', 'set status enable', 'set http-incoming-port 8080', 'set sec-default-action accept', 'end',
       ]);
       const res = await pc.executeCommand('curl -x http://192.168.1.1:8080 -s http://10.50.0.50/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);

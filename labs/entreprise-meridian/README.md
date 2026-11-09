@@ -41,6 +41,8 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `tunnels-carry-post-quantum-key` | Les tunnels exigent une clé post-quantique (`ppk require`) ; le secret est affiché chiffré (`ENC`). |
 | `overlay-vxlan-ping` | `system vxlan` (VNI 5001) étend un segment L2 entre le siège et l'agence 1 ; le ping traverse Internet encapsulé en UDP 4789. |
 | `guest-reaches-internet-through-vrf-leak` | Le réseau invité (VRF 30) n'atteint Internet que par une fuite du VRF 0 (`router bgp` > `vrf 0` > `leak-target 30`), filtrée par la route-map `leak-internet`. |
+| `guest-browses-through-explicit-proxy` | Le proxy web explicite de `port3` (8080) relaie la requête de l'invité ; la `proxy-policy` `guest-web` accepte `port3` vers `wan1`. |
+| `guest-proxy-refuses-internal-web` | `sec-default-action deny` : le proxy répond 403 pour la DMZ, que la politique n'autorise pas. |
 | `guest-isolated-from-lan` | Le LAN du siège n'existe pas dans le VRF invité : aucun ping, même si une politique l'autoriserait. |
 | `guest-vrf-routing-table` | `get router info routing-table all` a une section `Routing table for VRF=30` où la route Internet fuitée figure en `B`. |
 | `hub-originates-into-tunnel` | `execute ping` depuis le pare-feu vers la passerelle d'une agence traverse le tunnel. |

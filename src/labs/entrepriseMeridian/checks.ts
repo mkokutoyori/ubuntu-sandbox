@@ -49,6 +49,16 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     lesson: 'Le reseau invite vit dans son propre VRF (30) : il n\'atteint Internet que parce que le VRF 0 y fuit ses routes WAN (router bgp > vrf 0 > leak-target 30), filtrees par une route-map.',
   },
   {
+    id: 'guest-browses-through-explicit-proxy', device: 'PC-INVITE', shell: 'bash', command: `curl -s -m 10 -x http://${GUEST.gateway}:8080 http://${INTERNET.web}/`,
+    expects: [/Internet - site de demonstration/],
+    lesson: 'Le proxy web explicite du pare-feu (port 8080 de port3) relaie la requete de l\'invite : la proxy-policy guest-web accepte port3 vers wan1, la requete part du pare-feu et non du poste.',
+  },
+  {
+    id: 'guest-proxy-refuses-internal-web', device: 'PC-INVITE', shell: 'bash', command: `curl -s -m 10 -i -x http://${GUEST.gateway}:8080 http://${HQ.web}/`,
+    expects: [/HTTP\/1\.1 403 Forbidden/],
+    lesson: 'Le proxy refuse (403) ce que sa politique ne permet pas : sec-default-action deny, et seule la sortie vers wan1 est acceptee, donc la DMZ du siege reste fermee a l\'invite meme par le proxy.',
+  },
+  {
     id: 'guest-isolated-from-lan', device: 'PC-INVITE', shell: 'bash', command: `ping -c 2 -W 1 ${HQ.workstation}`,
     expects: [/100% packet loss|Network is unreachable/],
     lesson: 'La route-map de fuite ne laisse passer que le prefixe Internet : le LAN du siege n\'existe pas dans le VRF invite, meme si une politique le permettrait.',
