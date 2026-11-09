@@ -92,6 +92,7 @@ export interface IpNeighborEntry {
   mac: string;
   iface: string;
   state: string;
+  router?: boolean;
 }
 
 export interface IpV6RouteEntry {
@@ -179,6 +180,7 @@ export interface IpNetworkContext {
     filter?: { nextHop?: IPAddress | null; metric?: number; table?: number },
   ): string;
   getNeighborTable(): IpNeighborEntry[];
+  getNeighborTable6?(): IpNeighborEntry[];
   addNeighbor(ip: IPAddress, mac: MACAddress, ifName: string): string;
   deleteNeighbor(ip: IPAddress, ifName: string): string;
   flushNeighbors(ifName?: string): string;
@@ -1852,12 +1854,15 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
   let devFilter: string | null = null;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === 'dev' && args[i + 1]) { devFilter = args[++i]; }
-    else if (/^\d{1,3}(\.\d{1,3}){3}$/.test(args[i])) addr = args[i];
+    else if (/^\d{1,3}(\.\d{1,3}){3}$/.test(args[i]) || args[i].includes(':')) addr = args[i];
     else return `Error: any valid prefix is expected rather than "${args[i]}".`;
   }
   if (devFilter && !ctx.getInterfaceInfo(devFilter)) return `Cannot find device "${devFilter}"`;
 
-  let neighbors = ctx.getNeighborTable();
+  let neighbors = [
+    ...(opts.family === 'inet6' ? [] : ctx.getNeighborTable()),
+    ...(opts.family === 'inet' ? [] : ctx.getNeighborTable6?.() ?? []),
+  ];
   if (devFilter) neighbors = neighbors.filter(n => n.iface === devFilter);
   if (addr) neighbors = neighbors.filter(n => n.ip === addr);
   if (neighbors.length > 0) {
@@ -1866,7 +1871,7 @@ function ipNeighShow(ctx: IpNetworkContext, args: string[], opts: IpOutputOption
     return neighbors
       .map(n => n.state === 'FAILED'
         ? `${c.inet(`${n.ip} `)}dev ${c.ifname(`${n.iface} `)} FAILED`
-        : `${c.inet(`${n.ip} `)}dev ${c.ifname(`${n.iface} `)}lladdr ${c.mac(`${n.mac} `)}${n.state}`)
+        : `${c.inet(`${n.ip} `)}dev ${c.ifname(`${n.iface} `)}lladdr ${c.mac(`${n.mac} `)}${n.router === true ? 'router ' : ''}${n.state}`)
       .join('\n');
   }
 

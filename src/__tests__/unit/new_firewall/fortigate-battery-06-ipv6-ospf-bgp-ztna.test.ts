@@ -50,7 +50,7 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'set mode static',
     'set ip 203.0.113.1 255.255.255.0',
     'config ipv6',
-    'set ip6-address 2001:db8:wan::1/64',
+    'set ip6-address 2001:db8:a::1/64',
     'set ip6-allowaccess ping',
     'end',
     'set allowaccess ping',
@@ -73,7 +73,7 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'interface FastEthernet0/1',
     'no switchport',
     'ip address 203.0.113.2 255.255.255.0',
-    'ipv6 address 2001:db8:wan::2/64',
+    'ipv6 address 2001:db8:a::2/64',
     'no shutdown',
     'exit',
     'interface FastEthernet0/2',
@@ -81,6 +81,8 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'ip address 10.50.0.1 255.255.255.0',
     'ipv6 address 2001:db8:srv::1/64',
     'no shutdown',
+    'exit',
+    'ip route 192.168.1.0 255.255.255.0 203.0.113.1',
     'end',
   ]);
 
@@ -98,8 +100,8 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'config firewall policy',
     'edit 1', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next',
     'end',
-    'config firewall policy6',
-    'edit 1', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next',
+    'config firewall policy',
+    'edit 2', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr6 "all6"', 'set dstaddr6 "all6"', 'set action accept', 'set schedule "always"', 'set service "ALL"', 'next',
     'end',
   ]);
 
@@ -121,7 +123,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
 
     it('252. Ping IPv6 (ICMPv6 Echo Request/Reply) traversant le switch et le pare-feu', async () => {
       const { pc } = await creerLaboNextGen();
-      const res = await pc.executeCommand('ping6 -c 2 2001:db8:wan::2');
+      const res = await pc.executeCommand('ping6 -c 2 2001:db8:a::2');
       expect(res).toMatch(/, 0% packet loss/);
     });
 
@@ -184,7 +186,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
 
     it('259. Path MTU Discovery IPv6 : gestion du paquet ICMPv6 Type 2 "Packet Too Big" (MTU 1280 min)', async () => {
       const { pc } = await creerLaboNextGen();
-      const res = await pc.executeCommand('ping6 -c 1 -M do -s 1400 2001:db8:wan::2');
+      const res = await pc.executeCommand('ping6 -c 1 -M do -s 1400 2001:db8:a::2');
       expect(res).not.toMatch(/error/i);
     });
 

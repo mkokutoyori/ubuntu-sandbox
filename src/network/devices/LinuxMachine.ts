@@ -4996,6 +4996,7 @@ export abstract class LinuxMachine extends EndHost
       getArpTable: (): ReadonlyMap<string, ARPEntry> => {
         return this.arpTable;
       },
+      getNeighborCache: () => this.getNeighborCache(),
       addStaticARP: (ip: IPAddress, mac: MACAddress, iface: string): void => {
         this.addStaticARP(ip, mac, iface);
       },
