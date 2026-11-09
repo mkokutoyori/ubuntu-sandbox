@@ -60,6 +60,7 @@ export interface BgpAddressFamily {
 
 export interface BgpCapabilities {
   readonly multiprotocol: readonly BgpAddressFamily[];
+  readonly gracefulRestartSec?: number;
 }
 
 export interface BgpVpnv4Nlri {

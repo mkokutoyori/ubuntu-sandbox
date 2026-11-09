@@ -133,8 +133,10 @@ export class FirewallBgp {
     networks: Array<{ network: string; mask: string }>;
     neighbors: Map<string, BgpNeighborCfg>;
     defaultLocalPref: number;
+    gracefulRestart?: BgpConfiguration['gracefulRestart'];
   } {
     return {
+      ...(config.gracefulRestart ? { gracefulRestart: config.gracefulRestart } : {}),
       asn: config.asn,
       routerId: config.routerId.length > 0 ? config.routerId : this.derivedRouterId(),
       networks: config.networks.map(network => ({
@@ -158,6 +160,7 @@ export class FirewallBgp {
       return {
         localPref: verdict.apply?.localPreference, weight: verdict.apply?.weight, med: verdict.apply?.cost,
         communities: verdict.apply?.communities, communityAdditive: verdict.apply?.communityAdditive,
+        asPathEdit: verdict.apply?.asPathEdit,
       };
     };
     return {

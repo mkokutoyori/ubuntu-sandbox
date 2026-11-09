@@ -769,6 +769,9 @@ export interface FortiWebFilterPatch {
 export interface FortiDnsFilterPatch {
   readonly name: string;
   readonly domainFilterTable?: string;
+  readonly blockAction: 'block' | 'redirect' | 'block-sevrfail';
+  readonly redirectPortal?: string;
+  readonly redirectPortal6?: string;
   readonly categoryFilters: readonly FortiCategoryFilterPatch[];
   readonly unclassifiedAction: string;
   readonly comment?: string;

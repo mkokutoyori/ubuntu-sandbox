@@ -414,10 +414,10 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       const { fw } = await creerLaboCyberDefense();
       await taper(fw, [
         'config dnsfilter profile', 'edit "ANTI_TUNNEL"',
-        'set block-botnet enable', 'next', 'end',
+        'set log-all-domain enable', 'next', 'end',
       ]);
       const dnsProf = await fw.executeCommand('show dnsfilter profile ANTI_TUNNEL');
-      expect(dnsProf).toContain('block-botnet enable');
+      expect(dnsProf).toContain('set log-all-domain enable');
     });
 
     it('384. Détection d\'exfiltration par payload ICMP (Ping Tunneling) avec taille anormale de données', async () => {

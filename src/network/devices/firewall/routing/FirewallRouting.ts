@@ -208,6 +208,7 @@ export class FirewallRouting {
       node.applySet({
         ...(rule.setLocalPreference !== undefined ? { localPreference: rule.setLocalPreference } : {}),
         ...(rule.setMetric !== undefined ? { cost: rule.setMetric } : {}),
+        ...(rule.setAsPath !== undefined ? { asPathEdit: rule.setAsPath } : {}),
         ...(rule.setWeight !== undefined ? { weight: rule.setWeight } : {}),
         ...(rule.setCommunity !== undefined && rule.setCommunity.length > 0 ? { communities: rule.setCommunity, communityAdditive: rule.setCommunityAdditive === true } : {}),
       });
