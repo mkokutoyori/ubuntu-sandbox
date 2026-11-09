@@ -123,6 +123,7 @@ export interface SslSshProfile {
   readonly untrustedCaName?: string;
   readonly serverCertMode?: string;
   readonly untrustedCert?: UntrustedCertAction;
+  readonly minSslVersion?: string;
   readonly exemptions?: readonly SslExemptEntry[];
   readonly comment?: string;
 }

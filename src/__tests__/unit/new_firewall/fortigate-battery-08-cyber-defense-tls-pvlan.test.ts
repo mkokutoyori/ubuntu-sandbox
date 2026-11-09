@@ -166,7 +166,7 @@ describe('Batterie 8 : Tests 351 à 400 — Cyber-Défense, MitM TLS, Détection
       const { fw } = await creerLaboCyberDefense();
       await taper(fw, [
         'config firewall ssl-ssh-profile', 'edit "DPI_DEEP_INSPECT"',
-        'set min-allowed-ssl-version tls-1.2', 'next', 'end',
+        'config https', 'set min-allowed-ssl-version tls-1.2', 'end', 'next', 'end',
       ]);
       const tls = await fw.executeCommand('show firewall ssl-ssh-profile DPI_DEEP_INSPECT');
       expect(tls).toContain('min-allowed-ssl-version tls-1.2');

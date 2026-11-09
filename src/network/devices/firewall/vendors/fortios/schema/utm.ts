@@ -406,6 +406,13 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
             },
           ], 'certificate-inspection'),
         },
+        choice('min-allowed-ssl-version', 'Minimum SSL version to be allowed. Flow-based inspection does not support SSL version control.', [
+          { keyword: 'ssl-3.0', description: 'SSL 3.0.' },
+          { keyword: 'tls-1.0', description: 'TLS 1.0.' },
+          { keyword: 'tls-1.1', description: 'TLS 1.1.' },
+          { keyword: 'tls-1.2', description: 'TLS 1.2.' },
+          { keyword: 'tls-1.3', description: 'TLS 1.3.' },
+        ], 'tls-1.1'),
         choice('untrusted-server-cert', 'Action based on server certificate is not issued by a trusted CA.', [
           { keyword: 'allow', description: 'Allow the server certificate.' },
           { keyword: 'block', description: 'Block the session.' },
@@ -426,6 +433,7 @@ export const SSL_SSH_PROFILE: FortiTableSpec = {
       untrustedCaName: object.effective('untrusted-caname')[0] ?? 'Fortinet_CA_Untrusted',
       serverCertMode: object.effective('server-cert-mode')[0] ?? 're-sign',
       untrustedCert: object.childSetting('https', 'untrusted-server-cert')[0] ?? 'allow',
+      minSslVersion: object.childSetting('https', 'min-allowed-ssl-version')[0] ?? 'tls-1.1',
       exemptions: object.childEntries('ssl-exempt').map(entry => ({
         type: entry.effective('type')[0] ?? 'fortiguard-category',
         category: Number.parseInt(entry.effective('fortiguard-category')[0] ?? '0', 10),

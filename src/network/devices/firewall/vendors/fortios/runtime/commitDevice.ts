@@ -591,6 +591,7 @@ export function buildCommitDevice(
           untrustedCaName: profile.untrustedCaName,
           serverCertMode: profile.serverCertMode,
           untrustedCert: untrustedCertAction(profile.untrustedCert),
+          minSslVersion: profile.minSslVersion,
           exemptions: profile.exemptions?.map(entry => ({ ...entry })),
           comment: profile.comment,
         });

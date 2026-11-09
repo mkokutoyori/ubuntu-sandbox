@@ -802,6 +802,7 @@ export interface FortiSslSshPatch {
   readonly untrustedCaName?: string;
   readonly serverCertMode?: string;
   readonly untrustedCert?: string;
+  readonly minSslVersion?: string;
   readonly exemptions?: readonly FortiSslExemptPatch[];
   readonly comment?: string;
 }

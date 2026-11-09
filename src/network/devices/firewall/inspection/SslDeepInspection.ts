@@ -31,7 +31,27 @@ export interface DeepInspectionProfile {
   readonly untrustedCaName: string;
   readonly serverCertMode: string;
   readonly untrustedCert: UntrustedCertAction;
+  readonly minSslVersion?: string;
   readonly exemptions: readonly SslExemption[];
+}
+
+const TLS_ORDER = ['ssl-3.0', 'tls-1.0', 'tls-1.1', 'tls-1.2', 'tls-1.3'];
+
+export function offersBelowMinimum(records: readonly TlsRecord[], minimum: string | undefined): boolean {
+  const floor = TLS_ORDER.indexOf(minimum ?? '');
+  if (floor < 0) return false;
+  for (const record of records) {
+    if (record.contentType !== 'handshake') continue;
+    try {
+      const message = decodeHandshakeMessage(record.fragment);
+      if (message.kind !== 'client_hello') continue;
+      const highest = message.extensions.supportedVersions.includes('1.3') ? 'tls-1.3' : `tls-${message.legacyVersion}`;
+      return TLS_ORDER.indexOf(highest) < floor;
+    } catch {
+      continue;
+    }
+  }
+  return false;
 }
 
 export function serverNameOf(records: readonly TlsRecord[]): string | null {
@@ -122,6 +142,11 @@ export class SslDeepInspection extends TcpInterceptor<DeepInspectionProfile> {
       if (!started) {
         started = true;
         const serverName = serverNameOf(records);
+        if (offersBelowMinimum(records, profile.minSslVersion)) {
+          clientSocket.close();
+          relay = () => undefined;
+          return;
+        }
         relay = isExempt(profile, serverName, clientSocket.localIp,
           (name, candidate) => this.deps.matchesAddress(name, candidate))
           ? this.passThrough(clientSocket)

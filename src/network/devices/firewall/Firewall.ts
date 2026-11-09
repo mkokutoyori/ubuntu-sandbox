@@ -3560,6 +3560,7 @@ export class Firewall extends Equipment {
       untrustedCaName: profile.untrustedCaName ?? 'Fortinet_CA_Untrusted',
       serverCertMode: profile.serverCertMode ?? 're-sign',
       untrustedCert: profile.untrustedCert ?? 'allow',
+      minSslVersion: rule?.inspectionMode === 'proxy' ? profile.minSslVersion : undefined,
       exemptions: (profile.exemptions ?? []).map(entry => ({
         type: entry.type,
         category: entry.category,
