@@ -47,6 +47,8 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `visitor-cannot-reach-oracle` | Seuls les ports publiés par un VIP traversent. |
 | `siem-receives-denied-probe` | FGT-HQ envoie au SIEM l'enregistrement de journal FortiOS lui-même (`config log syslogd setting`, format `default` en key=value), pas un message libre : la sonde refusée du visiteur vers 1521 y est lisible avec sa source, sa destination et son action. Le refus implicite n'est journalisé que parce que `fwpolicy-implicit-log` est activé. |
 | `visitor-reaches-published-web-over-tls` | VIP `vip-web-https` (`server-load-balance`, `ssl-mode half`, certificat `Fortinet_Factory`) : le pare-feu termine le TLS et relaie du HTTP en clair vers WEB-DMZ, qui n'a aucun certificat à gérer. |
+| `web-injection-cut-by-ips` | Constat d'audit corrigé : la politique `internet-to-web` applique le capteur IPS `web-protect` (signature personnalisée `Meridian.Injection`, action `block`, mode flux). Le prestataire d'audit lance `/opt/audit/check-web-injection.sh` : la sonde d'injection est coupée, une requête légitime est servie. |
+| `siem-receives-ips-event` | Le blocage est journalisé (type `utm`, sous-type `ips`) et le SIEM le reçoit avec l'adresse du prestataire comme source. |
 | `visitor-cannot-reach-lan` | Le LAN privé n'est pas joignable depuis Internet. |
 | `lan-to-internet-nat` | Le LAN sort sous l'adresse WAN (SNAT de la politique `lan-to-internet`). |
 | `internal-dns-from-lan` | Les postes résolvent `www.meridian.local` auprès de DC1. |

@@ -21,6 +21,8 @@ export interface HaConfiguration {
   readonly monitored: readonly string[];
   readonly heartbeatIntervalTicks: number;
   readonly lostThreshold: number;
+  readonly gratuitousArps: number;
+  readonly gratuitousArpIntervalSec: number;
   readonly managementStatus: boolean;
   readonly managementInterfaces: readonly string[];
 }
@@ -37,6 +39,8 @@ export const HA_DEFAULTS: HaConfiguration = Object.freeze({
   monitored: Object.freeze([]),
   heartbeatIntervalTicks: 2,
   lostThreshold: 6,
+  gratuitousArps: 5,
+  gratuitousArpIntervalSec: 8,
   managementStatus: false,
   managementInterfaces: Object.freeze([]),
 });

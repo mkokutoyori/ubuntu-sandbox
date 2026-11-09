@@ -4,6 +4,7 @@ import { LinuxPC } from '@/network/devices/LinuxPC';
 import { LinuxServer } from '@/network/devices/LinuxServer';
 import { CiscoSwitch } from '@/network/devices/CiscoSwitch';
 import { Cable } from '@/network/hardware/Cable';
+import { VirtualTimeScheduler, __setDefaultScheduler } from '@/events/Scheduler';
 import { type Cli, refuse, taper } from './fortigateBatteryHarness';
 
 // Topologie Haute Disponibilité & Inspection Réseau :
@@ -17,9 +18,12 @@ interface LaboHA {
   srvWeb: LinuxServer;
   srvDb: LinuxServer;
   srvRadius: LinuxServer;
+  battre: (tours?: number) => void;
 }
 
 async function creerLaboHA(): Promise<LaboHA> {
+  const horloge = new VirtualTimeScheduler();
+  __setDefaultScheduler(horloge);
   const pc = new LinuxPC('linux-pc', 'PC-Client', 50, 0);
   const swAccess = new CiscoSwitch('switch-cisco', 'SW-Access', 16, 200, 0);
   const fwMaster = createDevice('firewall-fortinet', 400, -100) as unknown as Cli;
@@ -74,7 +78,7 @@ async function creerLaboHA(): Promise<LaboHA> {
       'end',
       'config system ha',
       'set group-id 1', 'set group-name "HA-CLUSTER"', 'set mode a-p', 'set hbdev "port4" 50',
-      `set priority ${priorite}`,
+      'set monitor "port1" "wan1"', `set priority ${priorite}`,
       'end',
       'config firewall policy',
       'edit 1', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"',
@@ -83,8 +87,30 @@ async function creerLaboHA(): Promise<LaboHA> {
     ]);
   }
 
-  return { pc, swAccess, fwMaster, fwSlave, swCore, srvWeb, srvDb, srvRadius };
+  horloge.advance(3_000);
+  __setDefaultScheduler(null);
+  const battre = (tours = 8): void => {
+    for (let tour = 0; tour < tours; tour++) {
+      for (const unite of [fwMaster, fwSlave]) (unite as unknown as { getHa(): { tick(): void } }).getHa().tick();
+    }
+  };
+
+  return { pc, swAccess, fwMaster, fwSlave, swCore, srvWeb, srvDb, srvRadius, battre };
 }
+
+async function protegerParIps(
+  fw: Cli, name: string, pattern: string, context: 'uri' | 'header' | 'body',
+): Promise<void> {
+  await taper(fw, [
+    'config ips custom', `edit "${name}"`,
+    `set signature 'F-SBID( --name "${name}"; --protocol tcp; --service HTTP; --flow from_client; --pattern "${pattern}"; --context ${context}; --no_case; --severity high; )'`,
+    'set action block', 'next', 'end',
+    'config ips sensor', 'edit "PROTECT"', 'config entries', 'edit 1', 'set severity high', 'next', 'end', 'next', 'end',
+    'config firewall policy', 'edit 1', 'set utm-status enable', 'set inspection-mode flow', 'set ips-sensor "PROTECT"', 'next', 'end',
+  ]);
+}
+
+const COUPEE = /reset|empty reply|recv failure|closed connection/i;
 
 describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, RADIUS & Chaos', () => {
 
@@ -123,9 +149,10 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     });
 
     it('205. Bascule à chaud (Failover HA) : coupure du Master, le Slave prend le relais sans interruption de ping', async () => {
-      const { pc, fwMaster } = await creerLaboHA();
+      const { pc, fwMaster, battre } = await creerLaboHA();
       // Arrêt brutal de l'interface LAN du Master
       await taper(fwMaster, ['config system interface', 'edit port1', 'set status down', 'next', 'end']);
+      battre();
       const ping = await pc.executeCommand('ping -c 2 -W 1 10.0.0.10');
       expect(ping).toMatch(/0% packet loss|, 0% loss/);
     });
@@ -141,8 +168,9 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     });
 
     it('207. Gratuitous ARP émis lors de la bascule pour mettre à jour la table CAM du commutateur', async () => {
-      const { swAccess, fwMaster } = await creerLaboHA();
+      const { swAccess, fwMaster, battre } = await creerLaboHA();
       await taper(fwMaster, ['config system interface', 'edit port1', 'set status down', 'next', 'end']);
+      battre();
       const table = await swAccess.executeCommand('show mac address-table');
       // Le port Fa0/3 (lié au Slave) apprend la MAC virtuelle
       expect(table).toMatch(/FastEthernet0\/3/);
@@ -268,14 +296,9 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     it('219. Blocage inline d\'une injection SQL (SQLi) traversant le pare-feu vers Nginx', async () => {
       const { pc, fwMaster, srvWeb } = await creerLaboHA();
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
-      await taper(fwMaster, [
-        'config ips sensor', 'edit "SENSOR_SQLI"',
-        'config entries', 'edit 1', 'set rule 1001', 'set action block', 'next', 'end',
-        'next', 'end',
-        'config firewall policy', 'edit 1', 'set utm-status enable', 'set ips-sensor "SENSOR_SQLI"', 'set service "ALL"', 'next', 'end',
-      ]);
-      const res = await pc.executeCommand('curl -s -i "http://10.0.0.10/login?user=admin%27%20OR%201=1--"');
-      expect(res).toMatch(/403 Forbidden|Connection reset|reset by peer/i);
+      await protegerParIps(fwMaster, 'Evil.SQLi', '1=1', 'uri');
+      const res = await pc.executeCommand('curl -sS --connect-timeout 2 "http://10.0.0.10/login?user=admin%27%20OR%201=1--"');
+      expect(res).toMatch(COUPEE);
     });
 
     it('220. Rejet d\'une tentative de Path Traversal (/../../etc/passwd) en transit HTTP', async () => {
@@ -291,9 +314,10 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     it('221. Détection et blocage d\'une attaque Cross-Site Scripting (XSS) dans un payload POST HTTP', async () => {
       const { pc, fwMaster, srvWeb } = await creerLaboHA();
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
+      await protegerParIps(fwMaster, 'Evil.XSS', '<script', 'body');
       const xssPayload = '<script>alert(document.cookie)</script>';
-      const res = await pc.executeCommand(`curl -s -d "comment=${xssPayload}" http://10.0.0.10/comment`);
-      expect(res).toMatch(/Forbidden|rejected|blocked/i);
+      const res = await pc.executeCommand(`curl -sS --connect-timeout 2 -d "comment=${xssPayload}" http://10.0.0.10/comment`);
+      expect(res).toMatch(COUPEE);
     });
 
     it('222. Application Control : blocage sélectif du transfert de fichiers Torrent tout en autorisant le Web HTTP', async () => {
@@ -329,17 +353,19 @@ describe('Batterie 5 : Tests 201 à 250 — Haute Disponibilité, VRF, DPI/IPS, 
     });
 
     it('225. Blocage de requêtes HTTP basées sur des User-Agents suspects ou outils d\'attaque (sqlmap, nikto)', async () => {
-      const { pc, srvWeb } = await creerLaboHA();
+      const { pc, fwMaster, srvWeb } = await creerLaboHA();
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
-      const res = await pc.executeCommand('curl -s -A "sqlmap/1.5" http://10.0.0.10/');
-      expect(res).toMatch(/403 Forbidden|Access Denied/i);
+      await protegerParIps(fwMaster, 'Evil.Scanner', 'sqlmap', 'header');
+      const res = await pc.executeCommand('curl -sS --connect-timeout 2 -A "sqlmap/1.5" http://10.0.0.10/');
+      expect(res).toMatch(COUPEE);
     });
 
     it('226. Émission d\'une trame TCP RST bidirectionnelle par l\'IPS lors de l\'interception d\'une menace', async () => {
-      const { pc, srvWeb } = await creerLaboHA();
+      const { pc, fwMaster, srvWeb } = await creerLaboHA();
       await taper(srvWeb as unknown as Cli, ['systemctl start nginx']);
+      await protegerParIps(fwMaster, 'Evil.Payload', 'malicious_payload', 'uri');
       const res = await pc.executeCommand('curl -v http://10.0.0.10/malicious_payload 2>&1');
-      expect(res).toMatch(/reset by peer|closed connection/i);
+      expect(res).toMatch(COUPEE);
     });
 
     it('227. Décompression GZIP en mémoire par le moteur DPI pour inspecter le contenu HTTP zippé', async () => {
