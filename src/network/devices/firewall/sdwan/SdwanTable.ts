@@ -1,3 +1,4 @@
+import type { DuplicationRule } from './SdwanDuplication';
 export type SdwanProtocol = 'ping' | 'http' | 'dns' | 'tcp-echo' | 'udp-echo' | 'tcp-connect';
 
 export type SdwanServiceMode = 'auto' | 'manual' | 'priority' | 'sla' | 'load-balance';
@@ -75,6 +76,7 @@ export interface SdwanConfiguration {
   readonly members: readonly SdwanMember[];
   readonly healthChecks: readonly SdwanHealthCheck[];
   readonly services: readonly SdwanService[];
+  readonly duplications?: readonly DuplicationRule[];
 }
 
 export interface SdwanHealthTransition {

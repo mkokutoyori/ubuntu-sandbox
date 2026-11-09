@@ -6,6 +6,7 @@ import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
 import { BfdAgent } from '@/network/bfd/BfdAgent';
 import { VxlanAgent } from '@/network/vxlan/VxlanAgent';
+import { SdwanDuplication, type DuplicationRule } from './sdwan/SdwanDuplication';
 import { GreAgent } from '@/network/gre/GreAgent';
 import { NetFlowAgent } from '@/network/netflow/NetFlowAgent';
 import { IP_PROTO_GRE } from '@/network/gre/types';
@@ -1495,9 +1496,54 @@ export class Firewall extends Equipment {
   private readonly serial: string = serialNumberOf(this.name);
 
   serialNumber(): string { return this.serial; }
+  private readonly sdwanDuplication = new SdwanDuplication();
+
+  private duplicationMatches(
+    rule: DuplicationRule, ingress: string, egress: string | undefined, packet: IPv4Packet,
+  ): boolean {
+    const objects = this.getVdom().objects;
+    const names = (iface: string): readonly string[] => {
+      const zone = this.getVdom().zones.zoneOf(iface);
+      return zone === undefined ? [iface] : [iface, zone];
+    };
+    if (rule.srcIntf.length > 0 && !names(ingress).some(name => rule.srcIntf.includes(name))) return false;
+    if (egress !== undefined && rule.dstIntf.length > 0 && !names(egress).some(name => rule.dstIntf.includes(name))) return false;
+    if (rule.srcAddr.length > 0 && !objects.matchesAnyAddress(rule.srcAddr, packet.sourceIP.toString())) return false;
+    if (rule.dstAddr.length > 0 && !objects.matchesAnyAddress(rule.dstAddr, packet.destinationIP.toString())) return false;
+    if (rule.services.length === 0) return true;
+    const l4 = packet.payload as { sourcePort?: number; destinationPort?: number; icmpType?: number } | undefined;
+    return objects.matchesAnyService(rule.services, {
+      protocol: packet.protocol, sourcePort: l4?.sourcePort, destPort: l4?.destinationPort,
+    });
+  }
+
+  private discardsDuplicate(ingress: string, packet: IPv4Packet): boolean {
+    for (const rule of this.sdwanDuplication.list()) {
+      if (!rule.deDuplicate || !this.duplicationMatches(rule, ingress, undefined, packet)) continue;
+      const l4 = packet.payload as { sequence?: number; seq?: number; sourcePort?: number } | undefined;
+      const key = `${packet.sourceIP}>${packet.destinationIP}|${packet.protocol}|${packet.identification}|${packet.fragmentOffset}|${l4?.sequence ?? l4?.seq ?? ''}`;
+      if (this.sdwanDuplication.seenBefore(key)) return true;
+    }
+    return false;
+  }
+
+  private duplicateOverZone(ingress: string, egress: string, packet: IPv4Packet): void {
+    const table = this.sdwan.getTable();
+    const member = table.allMembers().find(entry => entry.iface === egress);
+    if (member === undefined) return;
+    const rule = this.sdwanDuplication.list().find(entry =>
+      entry.mode === 'force' && this.duplicationMatches(entry, ingress, egress, packet));
+    if (rule === undefined) return;
+    for (const other of table.membersOfZone(member.zone)) {
+      if (other.iface === egress || !this.interfaces.isUp(other.iface)) continue;
+      this.forward(other.iface, { ...packet }, other.gateway === '0.0.0.0' ? undefined : other.gateway);
+    }
+  }
+
   applySdwan(c: SdwanConfiguration): string | undefined {
     const refusal = this.sdwan.apply(c);
     if (refusal !== undefined) return refusal;
+    this.sdwanDuplication.replace(c.duplications ?? []);
     this.publishSdwanZones();
     this.refreshSdwanRoutes();
     return undefined;
@@ -3313,6 +3359,7 @@ export class Firewall extends Equipment {
     }
     if (decision.kind === 'local') { this.deliverLocally(portName, packet); return; }
 
+    if (this.discardsDuplicate(portName, packet)) return;
     if (this.deepInspection.owns(packet)) {
       this.deepInspection.resume(portName, packet);
       return;
@@ -3358,6 +3405,7 @@ export class Firewall extends Equipment {
       forwarded.policyRouteGateway,
       bridgedFrameOf(frame, forwarded.bridged === true
         || vdom.settings.opmode === 'transparent'));
+    this.duplicateOverZone(portName, forwarded.egressPort, recorded);
   }
 
   private timestampStampFor(address: IPAddress): TimestampStamp {

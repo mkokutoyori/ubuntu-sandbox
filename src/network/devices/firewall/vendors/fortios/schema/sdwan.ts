@@ -155,6 +155,36 @@ const SDWAN_HEALTH_CHECK: FortiTableSpec = {
   children: [SDWAN_SLA],
 };
 
+const SDWAN_DUPLICATION: FortiTableSpec = {
+  path: ['system', 'sdwan', 'duplication'],
+  kind: 'table',
+  keyType: 'integer',
+  ordered: true,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 5,
+  help: 'Create SD-WAN duplication rule.',
+  attributes: [
+    { ...word('id', 'Duplication rule ID (1 - 255).'), readOnly: true },
+    refList('srcaddr', 'Source address or address group names.', ['firewall address']),
+    refList('dstaddr', 'Destination address or address group names.', ['firewall address']),
+    refList('srcintf', 'Incoming (ingress) interfaces or zones.', ['system interface', 'system zone']),
+    refList('dstintf', 'Outgoing (egress) interfaces or zones.', ['system interface', 'system zone']),
+    refList('service', 'Service and service group name.', ['firewall service custom', 'firewall service group']),
+    {
+      ...choice('packet-duplication', 'Configure packet duplication method.', [
+        { keyword: 'disable', description: 'Disable packet duplication.' },
+        { keyword: 'force', description: 'Duplicate packets across all interface members of the SD-WAN zone.' },
+        { keyword: 'on-demand', description: 'Duplicate packets across all interface members of the SD-WAN zone based on the link quality.' },
+      ], 'disable'),
+      unimplementedValues: {
+        'on-demand': 'duplicating only while a link is degraded needs the rule to read the SLA of the member in use, which a duplication rule does not reference here; `force` is built.',
+      },
+    },
+    enable('packet-de-duplication', 'Enable/disable discarding of packets that have been duplicated.'),
+  ],
+};
+
 const SDWAN_SERVICE_SLA: FortiTableSpec = {
   path: ['system', 'sdwan', 'service', 'sla'],
   kind: 'table',
@@ -232,7 +262,7 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
     },
     count('neighbor-hold-down-time', 'Seconds a neighbour is held down.', 0, 10000000, 0),
   ],
-  children: [SDWAN_ZONE, SDWAN_MEMBER, SDWAN_HEALTH_CHECK, SDWAN_SERVICE],
+  children: [SDWAN_ZONE, SDWAN_MEMBER, SDWAN_HEALTH_CHECK, SDWAN_SERVICE, SDWAN_DUPLICATION],
   onCommit(object, context) {
     for (const member of object.childEntries('members')) {
       const refusal = context.device.refuseBoundInterface(
@@ -280,6 +310,17 @@ export const SYSTEM_SDWAN: FortiTableSpec = {
           packetLossThresholdPercent:
             Number.parseInt(sla.effective('packetloss-threshold')[0] ?? '0', 10),
         })),
+      })),
+      duplications: object.childEntries('duplication').map(rule => ({
+        id: rule.key,
+        srcIntf: [...rule.effective('srcintf')],
+        dstIntf: [...rule.effective('dstintf')],
+        srcAddr: [...rule.effective('srcaddr')],
+        dstAddr: [...rule.effective('dstaddr')],
+        services: [...rule.effective('service')],
+        mode: (rule.effective('packet-duplication')[0] ?? 'disable') as 'disable' | 'force',
+        deDuplicate: rule.effective('packet-de-duplication')[0] === 'enable',
+        maxCopies: 1,
       })),
       services: object.childEntries('service').map(service => ({
         id: service.key,
