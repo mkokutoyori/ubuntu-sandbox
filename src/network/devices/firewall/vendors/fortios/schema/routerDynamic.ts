@@ -418,7 +418,7 @@ const BGP_NEIGHBOR: FortiTableSpec = {
 const BGP_LEAK_TARGET: FortiTableSpec = {
   path: ['router', 'bgp', 'vrf', 'leak-target'],
   kind: 'table',
-  keyType: 'integer',
+  keyType: 'name',
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
@@ -436,7 +436,7 @@ const RT_UNSUPPORTED = 'route targets, route distinguishers and import maps belo
 const BGP_VRF: FortiTableSpec = {
   path: ['router', 'bgp', 'vrf'],
   kind: 'table',
-  keyType: 'integer',
+  keyType: 'name',
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
@@ -635,7 +635,7 @@ export const ROUTER_ASPATH_LIST: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
-  renderOrder: 239,
+  renderOrder: 230.2,
   help: 'Configure Autonomous System (AS) path lists.',
   attributes: [
     { ...word('name', 'AS path list name.'), readOnly: true },
@@ -683,7 +683,7 @@ export const ROUTER_COMMUNITY_LIST: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
-  renderOrder: 243,
+  renderOrder: 230.4,
   help: 'Configure community lists.',
   attributes: [
     { ...word('name', 'Community list name.'), readOnly: true },
@@ -764,7 +764,7 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
-  renderOrder: 238,
+  renderOrder: 235,
   help: 'Configure route maps.',
   attributes: [
     { ...word('name', 'Name.'), readOnly: true },

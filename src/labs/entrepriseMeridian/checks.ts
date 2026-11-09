@@ -1,6 +1,6 @@
 import type { Equipment } from '@/network';
 import { runChecks, type LabCheck, type LabCheckResult } from '../LabChecks';
-import { HQ, INTERNET, OVERLAY, POST_QUANTUM_KEY } from './plan';
+import { GUEST, HQ, INTERNET, OVERLAY, POST_QUANTUM_KEY } from './plan';
 
 export const MERIDIAN_CHECKS: readonly LabCheck[] = [
   {
@@ -42,6 +42,21 @@ export const MERIDIAN_CHECKS: readonly LabCheck[] = [
     id: 'overlay-vxlan-ping', device: 'FGT-HQ', shell: 'bash', command: `execute ping ${OVERLAY.spoke}`,
     expects: [/5 packets received/],
     lesson: 'Un VXLAN (system vxlan, VNI 5001) etend un segment L2 entre le siege et l\'agence 1 : le ping et l\'ARP traversent l\'Internet simule encapsules en UDP 4789.',
+  },
+  {
+    id: 'guest-reaches-internet-through-vrf-leak', device: 'PC-INVITE', shell: 'bash', command: `curl -s -m 10 http://${INTERNET.web}/`,
+    expects: [/Internet - site de demonstration/],
+    lesson: 'Le reseau invite vit dans son propre VRF (30) : il n\'atteint Internet que parce que le VRF 0 y fuit ses routes WAN (router bgp > vrf 0 > leak-target 30), filtrees par une route-map.',
+  },
+  {
+    id: 'guest-isolated-from-lan', device: 'PC-INVITE', shell: 'bash', command: `ping -c 2 -W 1 ${HQ.workstation}`,
+    expects: [/100% packet loss|Network is unreachable/],
+    lesson: 'La route-map de fuite ne laisse passer que le prefixe Internet : le LAN du siege n\'existe pas dans le VRF invite, meme si une politique le permettrait.',
+  },
+  {
+    id: 'guest-vrf-routing-table', device: 'FGT-HQ', shell: 'bash', command: 'get router info routing-table all',
+    expects: [new RegExp(`Routing table for VRF=${GUEST.vrf}`), /B\s+203\.0\.113\.0\/24/],
+    lesson: 'La table de routage a une section par VRF ; la route Internet fuitee y figure comme route BGP.',
   },
   {
     id: 'hub-routing-entry-details', device: 'FGT-HQ', shell: 'bash', command: 'get router info routing-table details 10.1.0.50',

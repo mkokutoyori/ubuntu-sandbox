@@ -1,6 +1,8 @@
 import type { Equipment } from '@/network';
 import type { LabWorkbench } from '../LabWorkbench';
-import { HQ, OVERLAY, POST_QUANTUM_KEY, PRE_SHARED_KEY, SITES, type Site } from './plan';
+import { GUEST, HQ, OVERLAY, POST_QUANTUM_KEY, PRE_SHARED_KEY, SITES, type Site } from './plan';
+
+const INTERNET_NETWORK = '203.0.113.0';
 
 const tunnelPhase1 = (name: string, remoteGateway: string): string[] => [
   'config vpn ipsec phase1-interface', `edit "${name}"`,
@@ -43,6 +45,13 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     ...interfaceBlock('wan1', `${HQ.wan}`),
     ...interfaceBlock('port1', HQ.lanGateway),
     ...interfaceBlock('port2', HQ.dmzGateway),
+    ...interfaceBlock('port3', GUEST.gateway, [`set vrf ${GUEST.vrf}`, 'set allowaccess ping']),
+    'config router prefix-list', 'edit "internet-only"', 'config rule', 'edit 1',
+    `set prefix ${INTERNET_NETWORK} 255.255.255.0`, 'set action permit', 'next', 'end', 'next', 'end',
+    'config router route-map', 'edit "leak-internet"', 'config rule', 'edit 1', 'set match-ip-address "internet-only"', 'next', 'end', 'next', 'end',
+    'config router bgp', 'set as 65000',
+    'config vrf', 'edit 0', 'config leak-target', `edit ${GUEST.vrf}`, 'set interface "wan1"', 'set route-map "leak-internet"', 'next', 'end', 'next', 'end',
+    'end',
   );
   await bench.shell(
     hq,
@@ -99,6 +108,7 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     ...policy(21, 'dmz-to-internet', 'port2', 'wan1', ['set nat enable']),
     ...policy(22, 'lan-to-dmz', 'port1', 'port2'),
     ...policy(23, 'dmz-to-lan', 'port2', 'port1'),
+    ...policy(24, 'guest-to-internet', 'port3', 'wan1', ['set nat enable']),
   );
   for (const site of SITES) {
     await bench.shell(
