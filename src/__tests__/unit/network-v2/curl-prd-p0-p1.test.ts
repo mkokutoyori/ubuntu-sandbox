@@ -93,11 +93,11 @@ describe('§P0 — aucune option acceptée n\'est sans effet observable', () => 
   it('une option que curl connaît mais que ce simulateur n\'implémente pas est refusée en le disant', async () => {
     const { client } = lab();
 
-    // `curl: option -x: is unknown` serait faux dans l'autre sens : curl
-    // connaît parfaitement `-x`. Le refus doit dire ce qui est vrai.
-    const out = await client.executeCommand(`curl -x http://proxy:3128 ${url()}`);
+    // `curl: option --limit-rate: is unknown` serait faux dans l'autre sens : curl
+    // connaît parfaitement `--limit-rate`. Le refus doit dire ce qui est vrai.
+    const out = await client.executeCommand(`curl --limit-rate 1k ${url()}`);
 
-    expect(out).toContain('curl: option -x: is not implemented in this simulator');
+    expect(out).toContain('curl: option --limit-rate: is not implemented in this simulator');
     expect(out).not.toContain('is unknown');
   });
 

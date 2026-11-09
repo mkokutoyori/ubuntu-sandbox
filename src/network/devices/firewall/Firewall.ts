@@ -6,6 +6,7 @@ import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
 import { BfdAgent } from '@/network/bfd/BfdAgent';
 import { VxlanAgent } from '@/network/vxlan/VxlanAgent';
+import { ExplicitWebProxy, type ExplicitProxySettings, type ProxyPolicy } from './proxy/ExplicitWebProxy';
 import { SdwanDuplication, type DuplicationRule } from './sdwan/SdwanDuplication';
 import { GreAgent } from '@/network/gre/GreAgent';
 import { NetFlowAgent } from '@/network/netflow/NetFlowAgent';
@@ -2565,6 +2566,47 @@ export class Firewall extends Equipment {
     return true;
   }
 
+  private readonly explicitProxyInterfaces = new Set<string>();
+  private readonly explicitProxy = new ExplicitWebProxy({
+    tcp: () => this.tcp,
+    claimPort: (port) => { this.adminServer?.yieldPort(port); },
+    releasePort: (port) => { this.adminServer?.reclaimPort(port); },
+    resolve: async (name) => {
+      await this.awaitHostName(name);
+      return this.resolveHostName(name) ?? (isValidIPv4(name) ? name : null);
+    },
+    ingressInterface: (localIp) => this.interfaces.owningInterface(localIp),
+    egressInterface: (destination) => this.getRouteTable().resolveNextHop(destination)?.iface,
+    zoneOf: (iface) => this.getVdom().zones.zoneOf(iface),
+    matchesAddress: (names, candidate) => this.getVdom().objects.matchesAnyAddress(names, candidate),
+    scheduleActive: (name) => this.getVdom().schedules?.activeAt(name, this.services.now()) ?? name === 'always',
+  });
+
+  applyExplicitProxy(settings: ExplicitProxySettings): void { this.explicitProxy.apply(settings); }
+
+  private readonly proxyPolicies = new Map<string, ProxyPolicy>();
+
+  applyProxyPolicy(id: string, policy: ProxyPolicy): void {
+    this.proxyPolicies.set(id, policy);
+    this.explicitProxy.setPolicies([...this.proxyPolicies.values()]);
+  }
+
+  removeProxyPolicy(id: string): void {
+    this.proxyPolicies.delete(id);
+    this.explicitProxy.setPolicies([...this.proxyPolicies.values()]);
+  }
+
+  setExplicitProxyInterface(name: string, enabled: boolean): void {
+    if (enabled) this.explicitProxyInterfaces.add(name); else this.explicitProxyInterfaces.delete(name);
+  }
+
+  private admitsExplicitProxy(iface: string, packet: IPv4Packet): boolean {
+    const port = this.explicitProxy.port();
+    const l4 = packet.payload as { destinationPort?: number } | undefined;
+    if (port === null || l4?.destinationPort !== port) return true;
+    return this.explicitProxyInterfaces.has(iface);
+  }
+
   private vxlanAgentInstance: VxlanAgent | null = null;
   private readonly vxlanDevices = new Map<string, { vni: number; underlay: string; remoteIps: readonly string[]; port: number }>();
 
@@ -3603,7 +3645,8 @@ export class Firewall extends Equipment {
       allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
       handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
-      admitsTcp: (iface, p) => this.management.admitsTcp(this.servingInterface(iface, p), p),
+      admitsTcp: (iface, p) => this.admitsExplicitProxy(this.servingInterface(iface, p), p)
+        && this.management.admitsTcp(this.servingInterface(iface, p), p),
       allowsPing: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
       localInVerdict: (iface, p) => this.localInVerdict(iface, p),

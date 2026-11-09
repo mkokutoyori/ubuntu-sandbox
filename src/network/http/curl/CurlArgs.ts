@@ -6,6 +6,7 @@ export interface CurlResolveEntry {
 }
 
 export interface CurlOptions {
+  proxy: string | null;
   head: boolean;
   include: boolean;
   insecure: boolean;
@@ -80,7 +81,7 @@ export const LITTERAL = '\u0000';
 
 const SHORT_NO_ARG = 'IksSvfLOiVl';
 
-const SHORT_WITH_ARG = 'owXdHuAbceDTFmEP';
+const SHORT_WITH_ARG = 'owXdHuAbceDTFmEPx';
 
 const LONG_NO_ARG: Record<string, string> = {
   head: 'I',
@@ -113,6 +114,7 @@ const LONG_WITH_ARG: Record<string, string> = {
   output: 'o',
   'write-out': 'w',
   request: 'X',
+  proxy: 'x',
   data: 'd',
   'data-raw': 'd',
   'data-binary': 'd',
@@ -149,7 +151,7 @@ const UNSUPPORTED_SHORT: Record<string, true> = {
   // `b` et `c` ont quitté cette liste : ils ouvrent la porte du bocal
   // à témoins (`http/cookies/`), un moteur RFC 6265 complet qui
   // n'avait aucun appelant.
-  x: true, C: true, '#': true,
+  C: true, '#': true,
   y: true, Y: true, z: true, R: true, j: true, N: true, g: true,
   K: true, r: true, Q: true, p: true, U: true,
 };
@@ -159,7 +161,7 @@ const NEEDS_ABSENT_LIBCURL_FEATURE: ReadonlySet<string> = new Set([
 ]);
 
 const UNSUPPORTED_LONG: Record<string, true> = {
-  proxy: true, 'retry-delay': true,
+  'retry-delay': true,
   'retry-max-time': true,
   'http0.9': true,
   'limit-rate': true, 'continue-at': true, 'progress-bar': true,
@@ -219,6 +221,7 @@ function defaults(): CurlOptions {
     include: false,
     insecure: false,
     certStatus: false,
+    proxy: null,
     tlsMin: null,
     tlsMax: null,
     ciphers: null,
@@ -305,6 +308,7 @@ function applyValued(
     case 'o': opts.outputs.push(value); break;
     case 'w': opts.writeOut = value; break;
     case 'X': opts.method = value.toUpperCase(); break;
+    case 'x': opts.proxy = value; break;
     case 'd': opts.data.push(value); break;
     case 'H': opts.headers.push(value); break;
     case 'u': opts.user = value; break;

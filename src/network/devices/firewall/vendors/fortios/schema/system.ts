@@ -687,6 +687,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
       { keyword: 'captive-portal', description: 'Capture unauthenticated HTTP.' },
     ], 'none'),
     count('vrf', 'Virtual Routing Forwarding ID.', 0, 251, 0),
+    enable('explicit-web-proxy', 'Enable/disable the explicit web proxy on this interface.'),
     enable('mtu-override', 'Enable to set a custom MTU for this interface.'),
     count('mtu', 'MTU value for this interface.', 68, 9216, 1500),
     {
@@ -739,6 +740,7 @@ export const SYSTEM_INTERFACE: FortiTableSpec = {
         ? Number.parseInt(object.effective('mtu')[0] ?? '', 10) || undefined
         : undefined,
       vrf: Number.parseInt(object.effective('vrf')[0] ?? '0', 10),
+      explicitWebProxy: object.effective('explicit-web-proxy')[0] === 'enable',
       deviceIdentification: object.effective('device-identification')[0] === 'enable',
       macOverride: object.effective('macaddr')[0],
       lldp: {

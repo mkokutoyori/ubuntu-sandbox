@@ -235,12 +235,26 @@ function parseCustomHeaders(specs: readonly string[]): CustomHeader[] {
   return parsed;
 }
 
+export interface ProxyHop { readonly host: string; readonly port: number }
+
+const CURL_DEFAULT_PROXY_PORT = 1080;
+
+export function proxyHopOf(proxy: string | null): ProxyHop | null {
+  if (proxy === null || proxy === '') return null;
+  const bare = proxy.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/.*$/, '');
+  const colon = bare.lastIndexOf(':');
+  if (colon > 0 && /^\d+$/.test(bare.slice(colon + 1))) {
+    return { host: bare.slice(0, colon), port: Number(bare.slice(colon + 1)) };
+  }
+  return { host: bare, port: CURL_DEFAULT_PROXY_PORT };
+}
+
 function buildRequest(
   url: CurlUrl, method: string, opts: CurlOptions, body: string | null,
   jar?: CookieJar, formContentType?: string,
 ): HttpMessage {
   const verb: HttpMethod = isKnownMethod(method) ? method : 'GET';
-  const request = createRequest(verb, url.path);
+  const request = createRequest(verb, proxyHopOf(opts.proxy) !== null && url.scheme === 'http' ? `http://${hostInAuthority(url.host)}${url.port === 80 ? '' : `:${url.port}`}${url.path}` : url.path);
   const custom = parseCustomHeaders(opts.headers);
   const overridden = (name: string): boolean => custom.some((h) => h.name.toLowerCase() === name.toLowerCase());
   const authority = (url.scheme === 'https' && url.port === 443) || (url.scheme === 'http' && url.port === 80)
@@ -509,10 +523,18 @@ async function performHttpRequest(
   }
 
   for (;;) {
-    const override = resolvedOverride(opts, url);
+    const via = proxyHopOf(opts.proxy);
+    if (via !== null && url.scheme === 'https') {
+      return {
+        ok: false, code: 2,
+        message: 'curl: option --proxy: https through a proxy needs CONNECT tunnelling, which is not implemented in this simulator',
+        url, remoteIp, method, numRedirects: redirects, trace,
+      };
+    }
+    const override = via === null ? resolvedOverride(opts, url) : undefined;
     let address = override;
     if (!address) {
-      const resolved = await host.resolveHostname(url.host);
+      const resolved = await host.resolveHostname(via?.host ?? url.host);
       if (!resolved) {
         return {
           ok: false, code: 6, message: `curl: (6) Could not resolve host: ${url.host}`,
@@ -524,7 +546,7 @@ async function performHttpRequest(
     const hopStartedAt = simulationNowMs();
     stats.namelookupAt ??= hopStartedAt;
     remoteIp = address;
-    trace.push(`*   Trying ${address}:${url.port}...`);
+    trace.push(`*   Trying ${address}:${via?.port ?? url.port}...`);
 
     const request = buildRequest(
       url, method, opts, sendBody ? (corpsForm ?? body) : null, jar, formContentType);
@@ -647,8 +669,8 @@ async function performHttpRequest(
         session?.close();
       }
     } else {
-      const session = new Http1ClientSession(host.tcpStack(), address, url.port);
-      const porte = await dial(host, address, url.port, budget);
+      const session = new Http1ClientSession(host.tcpStack(), address, via?.port ?? url.port);
+      const porte = await dial(host, address, via?.port ?? url.port, budget);
       if (porte.kind !== 'open') {
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }

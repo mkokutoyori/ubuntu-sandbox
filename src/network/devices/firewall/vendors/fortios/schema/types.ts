@@ -103,6 +103,7 @@ export type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 import type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 
 export interface FortiInterfacePatch {
+  readonly explicitWebProxy?: boolean;
   readonly vrf?: number;
   readonly vdom?: string;
   readonly addressingMode?: 'static' | 'dhcp' | 'pppoe';
@@ -462,6 +463,9 @@ export interface FortiCommitDevice {
     sequenceTransmission: boolean; sequenceReception: boolean;
   }): string | void;
   removeGreTunnel(name: string): void;
+  applyExplicitProxy(settings: { status: boolean; port: number; defaultAction: 'accept' | 'deny' }): void;
+  applyProxyPolicy(id: string, policy: { id: string; name: string; srcIntf: readonly string[]; dstIntf: readonly string[]; srcAddr: readonly string[]; dstAddr: readonly string[]; schedule: string; action: 'accept' | 'deny'; enabled: boolean }): void;
+  removeProxyPolicy(id: string): void;
   applyVxlan(name: string, device: { interface: string; vni: number; port: number; remoteIps: readonly string[]; learn: boolean }): string | void;
   removeVxlan(name: string): void;
   applyIpsecConcentrator(id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }): string | void;

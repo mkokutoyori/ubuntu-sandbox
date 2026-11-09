@@ -207,8 +207,8 @@ describe('`--retry` — le serveur voit la nouvelle tentative', () => {
 });
 
 describe('ce qui reste hors périmètre le dit encore', () => {
-  it('`-x` reste refusée — rien à traverser', async () => {
-    expect(await cli.executeCommand('curl -s -x http://10.0.0.2:3128 http://10.0.0.2:8080/'))
-      .toContain('curl: option -x: is not implemented in this simulator');
+  it('`--proxy-user` reste refusée — le proxy existe, pas son authentification', async () => {
+    expect(await cli.executeCommand('curl -s --proxy-user a:b http://10.0.0.2:8080/'))
+      .toContain('curl: option --proxy-user: is not implemented in this simulator');
   });
 });

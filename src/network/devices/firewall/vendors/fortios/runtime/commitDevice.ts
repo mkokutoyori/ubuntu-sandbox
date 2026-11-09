@@ -35,6 +35,7 @@ export function buildCommitDevice(
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
         if (patch.vrf !== undefined) fw.configureInterface(name, { vrf: patch.vrf });
+        if (patch.explicitWebProxy !== undefined) fw.setExplicitProxyInterface(name, patch.explicitWebProxy);
         if (patch.macOverride !== undefined) fw.setInterfaceMacOverride(name, patch.macOverride);
         if (patch.netflowSampler !== undefined) fw.setNetflowSampler(name, patch.netflowSampler);
         if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
@@ -414,6 +415,15 @@ export function buildCommitDevice(
       },
       removeGreTunnel(name) {
         fw.removeGreTunnel(name);
+      },
+      applyExplicitProxy(settings) {
+        fw.applyExplicitProxy(settings);
+      },
+      applyProxyPolicy(id, policy) {
+        fw.applyProxyPolicy(id, policy);
+      },
+      removeProxyPolicy(id) {
+        fw.removeProxyPolicy(id);
       },
       applyVxlan(name, device) {
         return fw.applyVxlan(name, device);
