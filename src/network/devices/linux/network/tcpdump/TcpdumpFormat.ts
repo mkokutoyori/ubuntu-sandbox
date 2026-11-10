@@ -31,6 +31,7 @@ import {
   IP_PROTO_ICMP, IP_PROTO_ICMPV6, IP_PROTO_IPV6_FRAGMENT, IP_PROTO_TCP, IP_PROTO_UDP,
 } from '@/network/core/types';
 import { padToWidth } from '@/network/devices/shells/cli/TextTable';
+import { bsdLinkPrefix, bsdUnknownLine, isBsdLink, type BsdLinkType } from './TcpdumpBsdLink';
 import { linkTypeDescriptionOf, linkTypeNumber } from '@/network/capture/pcap/PcapFile';
 
 export interface AddressNames {
@@ -55,6 +56,7 @@ export class TcpdumpRenderState {
   constructor(
     readonly names: AddressNames | null = null,
     readonly cooked: CookedInterfaces | null = null,
+    readonly bsd: BsdLinkType | null = null,
   ) {}
 
   host(ip: string): string {
@@ -737,9 +739,10 @@ function cookedHeader(frame: CaptureFrame, cooked: CookedInterfaces): number[] {
 
 export function hexDump(frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState, truncated = false): string[] {
   const network = Array.from(frame.raw.slice(frame.rawLinkOffset));
-  const link = state.cooked !== null
-    ? [...cookedHeader(frame, state.cooked), ...frame.raw.slice(frame.rawLinkOffset - vlanTagLength(frame), frame.rawLinkOffset)]
-    : Array.from(frame.raw.slice(0, frame.rawLinkOffset));
+  const link = state.bsd !== null ? [...(frame.linkBytes ?? [])]
+    : state.cooked !== null
+      ? [...cookedHeader(frame, state.cooked), ...frame.raw.slice(frame.rawLinkOffset - vlanTagLength(frame), frame.rawLinkOffset)]
+      : Array.from(frame.raw.slice(0, frame.rawLinkOffset));
   const withLink = opt.hexLink || truncated;
   const bytes = (withLink ? [...link, ...network] : network).slice(0, opt.snaplen);
   if (opt.hex === 'ascii') return bytes.length === 0 || (!withLink && network.length === 0) ? [] : asciiPrintLines(bytes).slice(1).split('\n');
@@ -761,17 +764,26 @@ function unknownEthertypeLine(frame: CaptureFrame, opt: TcpdumpOptions, state: T
 export function formatFrame(
   frame: CaptureFrame, opt: TcpdumpOptions, state: TcpdumpRenderState,
 ): string {
+  if (frame.invalidHeader !== undefined) {
+    state.count++;
+    return frame.invalidHeader;
+  }
   const ts = timestamp(frame, opt, state);
   state.prev = frame;
   state.first ??= frame;
   state.count++;
   const number = opt.packetNumbers ? `${padToWidth(String(state.count), 5, 'right')}  ` : '';
   const cooked = state.cooked;
-  const link = cooked !== null
-    ? cookedPrefix(frame, opt, state, cooked)
-    : opt.linkLevel ? ethPrefix(frame, opt, state) : '';
+  const link = state.bsd !== null ? bsdLinkPrefix(frame, opt)
+    : cooked !== null
+      ? cookedPrefix(frame, opt, state, cooked)
+      : opt.linkLevel ? ethPrefix(frame, opt, state) : '';
   let body: string;
-  if (frame.l3 === 'arp') {
+  if (state.bsd !== null && frame.truncatedLink === true) {
+    body = ' [|null]';
+  } else if (state.bsd !== null && frame.l3 !== 'ipv4' && frame.l3 !== 'ipv6') {
+    body = bsdUnknownLine(frame, opt);
+  } else if (frame.l3 === 'arp') {
     body = `${link}${arpLine(frame, opt, state)}`;
   } else if (frame.l3 === 'ipv4') {
     body = `${link}${ipLine(frame, opt, state)}`;

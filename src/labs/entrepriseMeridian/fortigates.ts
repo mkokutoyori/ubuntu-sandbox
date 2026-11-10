@@ -1,11 +1,14 @@
 import type { Equipment } from '@/network';
 import type { LabWorkbench } from '../LabWorkbench';
-import { HQ, PRE_SHARED_KEY, SITES, type Site } from './plan';
+import { GUEST, HQ, OVERLAY, POST_QUANTUM_KEY, PRE_SHARED_KEY, SITES, type Site } from './plan';
+
+const INTERNET_NETWORK = '203.0.113.0';
 
 const tunnelPhase1 = (name: string, remoteGateway: string): string[] => [
   'config vpn ipsec phase1-interface', `edit "${name}"`,
   'set interface "wan1"', 'set ike-version 2', `set remote-gw ${remoteGateway}`,
-  `set psksecret ${PRE_SHARED_KEY}`, 'set proposal aes256-sha256', 'set dhgrp 14', 'next', 'end',
+  `set psksecret ${PRE_SHARED_KEY}`, 'set proposal aes256-sha256', 'set dhgrp 14',
+  'set ppk require', `set ppk-identity "${POST_QUANTUM_KEY.identity}"`, `set ppk-secret ${POST_QUANTUM_KEY.secret}`, 'next', 'end',
 ];
 
 const tunnelPhase2 = (name: string, source: string, destination: string): string[] => [
@@ -22,6 +25,12 @@ const interfaceBlock = (port: string, address: string, extra: string[] = []): st
   ];
 };
 
+const overlay = (remoteGateway: string, address: string): string[] => [
+  'config system vxlan', `edit "${OVERLAY.device}"`, 'set interface "wan1"', `set vni ${OVERLAY.vni}`,
+  `set remote-ip "${remoteGateway}"`, 'next', 'end',
+  ...interfaceBlock(OVERLAY.device, address, ['set allowaccess ping']),
+];
+
 const policy = (id: number, name: string, source: string, destination: string, extra: string[] = []): string[] => [
   'config firewall policy', `edit ${id}`, `set name "${name}"`,
   `set srcintf "${source}"`, `set dstintf "${destination}"`,
@@ -36,6 +45,16 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     ...interfaceBlock('wan1', `${HQ.wan}`),
     ...interfaceBlock('port1', HQ.lanGateway),
     ...interfaceBlock('port2', HQ.dmzGateway),
+    ...interfaceBlock('port3', GUEST.gateway, [`set vrf ${GUEST.vrf}`, 'set allowaccess ping', 'set explicit-web-proxy enable']),
+    'config web-proxy explicit', 'set status enable', 'set http-incoming-port 8080', 'set sec-default-action deny', 'end',
+    'config firewall proxy-policy', 'edit 1', 'set name "guest-web"', 'set proxy explicit-web', 'set srcintf "port3"', 'set dstintf "wan1"',
+    'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set schedule "always"', 'next', 'end',
+    'config router prefix-list', 'edit "internet-only"', 'config rule', 'edit 1',
+    `set prefix ${INTERNET_NETWORK} 255.255.255.0`, 'set action permit', 'next', 'end', 'next', 'end',
+    'config router route-map', 'edit "leak-internet"', 'config rule', 'edit 1', 'set match-ip-address "internet-only"', 'next', 'end', 'next', 'end',
+    'config router bgp', 'set as 65000',
+    'config vrf', 'edit 0', 'config leak-target', `edit ${GUEST.vrf}`, 'set interface "wan1"', 'set route-map "leak-internet"', 'next', 'end', 'next', 'end',
+    'end',
   );
   await bench.shell(
     hq,
@@ -53,6 +72,7 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     'edit "tcp_syn_flood"', 'set status enable', 'set action block', 'set threshold 500', 'next',
     'end', 'next', 'end',
   );
+  await bench.shell(hq, ...overlay(SITES[0].wan, OVERLAY.hub));
   for (const site of SITES) {
     await bench.shell(
       hq,
@@ -91,6 +111,7 @@ export async function configureHeadquarters(bench: LabWorkbench, hq: Equipment):
     ...policy(21, 'dmz-to-internet', 'port2', 'wan1', ['set nat enable']),
     ...policy(22, 'lan-to-dmz', 'port1', 'port2'),
     ...policy(23, 'dmz-to-lan', 'port2', 'port1'),
+    ...policy(24, 'guest-to-internet', 'port3', 'wan1', ['set nat enable']),
   );
   for (const site of SITES) {
     await bench.shell(
@@ -115,6 +136,7 @@ export async function configureAgency(bench: LabWorkbench, fortigate: Equipment,
     'config system global', `set hostname FGT-${site.name}`, 'end',
     ...interfaceBlock('wan1', site.wan),
     ...interfaceBlock('port1', site.lanGateway),
+    ...(site === SITES[0] ? overlay(HQ.wan, OVERLAY.spoke) : []),
     ...tunnelPhase1(site.tunnelOnSpoke, HQ.wan),
     ...tunnelPhase2(site.tunnelOnSpoke, site.lanRoute, '0.0.0.0 0.0.0.0'),
     'config router static',

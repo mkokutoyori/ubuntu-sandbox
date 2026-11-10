@@ -5,6 +5,9 @@ import type { SshAlgorithmPreferences } from '../../protocols/ssh/transport/SshT
 import { LacpAgent } from '@/network/lacp/LacpAgent';
 import type { BgpConfiguration } from './routing/DynamicRoutingTypes';
 import { BfdAgent } from '@/network/bfd/BfdAgent';
+import { VxlanAgent } from '@/network/vxlan/VxlanAgent';
+import { ExplicitWebProxy, type ExplicitProxySettings, type ProxyPolicy } from './proxy/ExplicitWebProxy';
+import { SdwanDuplication, type DuplicationRule } from './sdwan/SdwanDuplication';
 import { GreAgent } from '@/network/gre/GreAgent';
 import { NetFlowAgent } from '@/network/netflow/NetFlowAgent';
 import { IP_PROTO_GRE } from '@/network/gre/types';
@@ -74,7 +77,7 @@ import { localMsAt, offsetMinutesAt, utcMsForLocal } from '../../core/time/TimeZ
 import { decryptFromTunnel, sealedLegs } from './vpn/IpsecDataPlane';
 import { ikeDatagram, ipsecHostFacts } from './vpn/FirewallIpsecHost';
 import { InterfaceTable, type InterfaceConfig } from './l3/InterfaceTable';
-import { RouteTable, type DeclaredStaticRoute } from './l3/RouteTable';
+import { RouteTable, type DeclaredStaticRoute, type VrfLeak } from './l3/RouteTable';
 import {
   ProxyArpTable, proxyOwnerKey, publishPoolProxyArp, type ProxyArpEntry,
 } from './l3/ProxyArpTable';
@@ -92,6 +95,8 @@ import type { SessionTtlTable } from './session/SessionTtlTable';
 import { FirewallPipeline, PipelineStageRegistry } from './pipeline/FirewallPipeline';
 import { PipelineCache } from './pipeline/PipelineCache';
 import { makePacketContext, type PacketContext } from './pipeline/PacketContext';
+import { blockedDnsReply } from './inspection/DnsBlockReply';
+import type { UtmVerdict } from './inspection/ContentInspector';
 import { createCoreStages, type FirewallServices } from './pipeline/stages/coreStages';
 import { buildSimulatedPacket } from './pipeline/SimulatedPacket';
 import {
@@ -629,6 +634,7 @@ export class Firewall extends Equipment {
       onInspection: () => { this.load.recordPacket('inspection'); },
       onUtmVerdict: (verdict, context) => {
         if (verdict.kind === 'virus') this.raiseOncePerSession(context, { kind: 'virus', name: verdict.detail });
+        if (verdict.kind === 'dns-blocked' && verdict.blocked) this.answerBlockedDns(verdict, context);
       },
       onOversize: (blocked, context) => { this.raiseOncePerSession(context, { kind: 'oversize', blocked }); },
       onDosAnomaly: (finding, iface, packet) => {
@@ -802,6 +808,7 @@ export class Firewall extends Equipment {
       },
       emitArpAware: (iface, packet, nextHop) =>
         this.sendIpv4FrameArpAware(iface, packet, nextHop),
+      ensureBfdSession: (iface, neighborIp) => { this.getBfdAgent().ensureSession(iface, neighborIp); },
       probeAddress: (iface, address) => this.probeAddressOnLink(iface, address),
       assignAddress: (iface, ip, mask) => { this.configureInterface(iface, { ip, mask }); },
       forward: (iface, packet, gateway) => { this.forward(iface, packet, gateway); },
@@ -1490,9 +1497,59 @@ export class Firewall extends Equipment {
   private readonly serial: string = serialNumberOf(this.name);
 
   serialNumber(): string { return this.serial; }
+  private readonly sdwanDuplication = new SdwanDuplication();
+
+  private duplicationMatches(
+    rule: DuplicationRule, ingress: string, egress: string | undefined, packet: IPv4Packet,
+  ): boolean {
+    const objects = this.getVdom().objects;
+    const names = (iface: string): readonly string[] => {
+      const zone = this.getVdom().zones.zoneOf(iface);
+      return zone === undefined ? [iface] : [iface, zone];
+    };
+    if (rule.srcIntf.length > 0 && !names(ingress).some(name => rule.srcIntf.includes(name))) return false;
+    if (egress !== undefined && rule.dstIntf.length > 0 && !names(egress).some(name => rule.dstIntf.includes(name))) return false;
+    if (rule.srcAddr.length > 0 && !objects.matchesAnyAddress(rule.srcAddr, packet.sourceIP.toString())) return false;
+    if (rule.dstAddr.length > 0 && !objects.matchesAnyAddress(rule.dstAddr, packet.destinationIP.toString())) return false;
+    if (rule.services.length === 0) return true;
+    const l4 = packet.payload as { sourcePort?: number; destinationPort?: number; icmpType?: number } | undefined;
+    return objects.matchesAnyService(rule.services, {
+      protocol: packet.protocol, sourcePort: l4?.sourcePort, destPort: l4?.destinationPort,
+    });
+  }
+
+  private discardsDuplicate(ingress: string, packet: IPv4Packet): boolean {
+    for (const rule of this.sdwanDuplication.list()) {
+      if (!rule.deDuplicate || !this.duplicationMatches(rule, ingress, undefined, packet)) continue;
+      const l4 = packet.payload as { sequence?: number; seq?: number; sourcePort?: number } | undefined;
+      const key = `${packet.sourceIP}>${packet.destinationIP}|${packet.protocol}|${packet.identification}|${packet.fragmentOffset}|${l4?.sequence ?? l4?.seq ?? ''}`;
+      if (this.sdwanDuplication.seenBefore(key)) return true;
+    }
+    return false;
+  }
+
+  private duplicateOverZone(ingress: string, egress: string, packet: IPv4Packet): void {
+    const table = this.sdwan.getTable();
+    const member = table.allMembers().find(entry => entry.iface === egress);
+    if (member === undefined) return;
+    const rule = this.sdwanDuplication.list().find(entry =>
+      entry.mode === 'force' && this.duplicationMatches(entry, ingress, egress, packet));
+    if (rule === undefined) return;
+    for (const other of table.membersOfZone(member.zone)) {
+      if (other.iface === egress || !this.interfaces.isUp(other.iface)) continue;
+      this.forward(other.iface, { ...packet }, other.gateway === '0.0.0.0' ? undefined : other.gateway);
+    }
+  }
+
+  applyVrfLeaks(leaks: readonly VrfLeak[]): void {
+    this.getRouteTable().setLeaks(leaks, (routeMap, network, mask) =>
+      this.getRouting().routeMapPermits(routeMap, network, mask));
+  }
+
   applySdwan(c: SdwanConfiguration): string | undefined {
     const refusal = this.sdwan.apply(c);
     if (refusal !== undefined) return refusal;
+    this.sdwanDuplication.replace(c.duplications ?? []);
     this.publishSdwanZones();
     this.refreshSdwanRoutes();
     return undefined;
@@ -1563,7 +1620,7 @@ export class Firewall extends Equipment {
       route.gateway === '0.0.0.0' ? undefined : route.gateway,
       {
         iface: route.iface || undefined, distance: route.distance,
-        priority: route.priority, id: route.id,
+        priority: route.priority, id: route.id, vrf: route.vrf,
       });
   }
 
@@ -2462,6 +2519,7 @@ export class Firewall extends Equipment {
         if (event.payload.deviceId !== this.id) return;
         const up = event.payload.newState === 'up';
         this.onBfdSessionChanged(event.payload.iface, event.payload.neighborIp, up);
+        if (!up) this.getRouting().onBfdSessionDown(event.payload.iface, event.payload.neighborIp);
         const bgp = this.getRouting().getBgp();
         if (!bgp.bfdNeighbours().includes(event.payload.neighborIp)) return;
         bgp.holdDown(event.payload.neighborIp, !up);
@@ -2506,6 +2564,125 @@ export class Firewall extends Equipment {
     if (reply.code !== 'access-accept' && reply.code !== 'access-reject' && reply.code !== 'access-challenge') return false;
     this.radius.handleUdp('', packet.sourceIP, udp);
     return true;
+  }
+
+  private readonly explicitProxyInterfaces = new Set<string>();
+  private readonly explicitProxy = new ExplicitWebProxy({
+    tcp: () => this.tcp,
+    claimPort: (port) => { this.adminServer?.yieldPort(port); },
+    releasePort: (port) => { this.adminServer?.reclaimPort(port); },
+    resolve: async (name) => {
+      await this.awaitHostName(name);
+      return this.resolveHostName(name) ?? (isValidIPv4(name) ? name : null);
+    },
+    ingressInterface: (localIp) => this.interfaces.owningInterface(localIp),
+    egressInterface: (destination) => this.getRouteTable().resolveNextHop(destination)?.iface,
+    zoneOf: (iface) => this.getVdom().zones.zoneOf(iface),
+    matchesAddress: (names, candidate) => this.getVdom().objects.matchesAnyAddress(names, candidate),
+    scheduleActive: (name) => this.getVdom().schedules?.activeAt(name, this.services.now()) ?? name === 'always',
+  });
+
+  applyExplicitProxy(settings: ExplicitProxySettings): void { this.explicitProxy.apply(settings); }
+
+  private readonly proxyPolicies = new Map<string, ProxyPolicy>();
+
+  applyProxyPolicy(id: string, policy: ProxyPolicy): void {
+    this.proxyPolicies.set(id, policy);
+    this.explicitProxy.setPolicies([...this.proxyPolicies.values()]);
+  }
+
+  removeProxyPolicy(id: string): void {
+    this.proxyPolicies.delete(id);
+    this.explicitProxy.setPolicies([...this.proxyPolicies.values()]);
+  }
+
+  setExplicitProxyInterface(name: string, enabled: boolean): void {
+    if (enabled) this.explicitProxyInterfaces.add(name); else this.explicitProxyInterfaces.delete(name);
+  }
+
+  private admitsExplicitProxy(iface: string, packet: IPv4Packet): boolean {
+    const port = this.explicitProxy.port();
+    const l4 = packet.payload as { destinationPort?: number } | undefined;
+    if (port === null || l4?.destinationPort !== port) return true;
+    return this.explicitProxyInterfaces.has(iface);
+  }
+
+  private vxlanAgentInstance: VxlanAgent | null = null;
+  private readonly vxlanDevices = new Map<string, { vni: number; underlay: string; remoteIps: readonly string[]; port: number }>();
+
+  getVxlanAgent(): VxlanAgent {
+    if (!this.vxlanAgentInstance) {
+      this.vxlanAgentInstance = new VxlanAgent({
+        id: this.id, name: this.name,
+        getHostname: () => this.getHostname(),
+        getPort: (n: string) => this.getPort(n),
+        getPorts: () => [...this.getPorts().values()],
+        sendFrame: (iface, frame) => { this.sendFrame(iface, frame); },
+        sendIpv4Packet: (request) => this.sendLocalIpv4(request),
+        onVxlanDecapsulated: (vni, inner) => { this.receiveVxlan(vni, inner); },
+      }, () => this.getBus());
+      this.vxlanAgentInstance.start();
+    }
+    return this.vxlanAgentInstance;
+  }
+
+  applyVxlan(
+    name: string,
+    device: { interface: string; vni: number; port: number; remoteIps: readonly string[]; learn: boolean },
+  ): string | void {
+    for (const [other, known] of this.vxlanDevices) {
+      if (other !== name && known.vni === device.vni) return `VNI ${device.vni} is already carried by ${other}.`;
+      if (other !== name && known.port !== device.port) return `every VXLAN device of this unit shares one destination port (${known.port} is set by ${other}).`;
+    }
+    const agent = this.getVxlanAgent();
+    const previous = this.vxlanDevices.get(name);
+    if (previous) {
+      agent.unbindVni(name, previous.vni);
+      for (const ip of previous.remoteIps) agent.removeRemoteVtep(previous.vni, ip);
+    }
+    if (!this.getPort(name)) {
+      const nic = new Port(name, 'ethernet', undefined, { carrierless: true });
+      nic.setUp(true);
+      this.addPort(nic);
+      this.interfaces.reproject(name);
+    }
+    this.vxlanDevices.set(name, { vni: device.vni, underlay: device.interface, remoteIps: [...device.remoteIps], port: device.port });
+    agent.setPort(device.port);
+    agent.setLearning(device.learn);
+    agent.bindVni(name, device.vni, this.interfaces.get(device.interface)?.ip ?? '');
+    for (const ip of device.remoteIps) agent.addRemoteVtep(device.vni, ip);
+  }
+
+  removeVxlan(name: string): void {
+    const known = this.vxlanDevices.get(name);
+    if (!known) return;
+    const agent = this.getVxlanAgent();
+    agent.unbindVni(name, known.vni);
+    for (const ip of known.remoteIps) agent.removeRemoteVtep(known.vni, ip);
+    this.vxlanDevices.delete(name);
+    this.ports.delete(name);
+    this.interfaces.remove(name);
+  }
+
+  private encapsulateVxlan(name: string, frame: EthernetFrame): boolean {
+    const device = this.vxlanDevices.get(name);
+    if (!device) return false;
+    const agent = this.getVxlanAgent();
+    agent.ensureInterface(name, this.interfaces.get(device.underlay)?.ip ?? null);
+    return agent.encapsulateAndSend(device.vni, frame);
+  }
+
+  private receiveVxlan(vni: number, inner: EthernetFrame): void {
+    for (const [name, device] of this.vxlanDevices) {
+      if (device.vni === vni) { this.handleFrame(name, inner); return; }
+    }
+  }
+
+  private answeredByVxlan(iface: string, packet: IPv4Packet): boolean {
+    if (packet.protocol !== IP_PROTO_UDP || this.vxlanAgentInstance === null) return false;
+    const udp = packet.payload as UDPPacket | undefined;
+    if (udp?.type !== 'udp') return false;
+    return this.vxlanAgentInstance.handleUdp(iface, packet.sourceIP, udp);
   }
 
   private answeredByBfd(iface: string, packet: IPv4Packet): boolean {
@@ -2909,6 +3086,7 @@ export class Firewall extends Equipment {
     if (this.subordinateIsSilentOn(portName) && !this.secondarySpeaksLacpOn(portName, frame)) {
       return false;
     }
+    if (this.vxlanDevices.has(portName)) return this.encapsulateVxlan(portName, frame);
     const sent = super.sendFrame(portName, frame);
     if (sent) this.mirrorEgressToSpan(portName, frame);
     return sent;
@@ -3228,6 +3406,7 @@ export class Firewall extends Equipment {
     }
     if (decision.kind === 'local') { this.deliverLocally(portName, packet); return; }
 
+    if (this.discardsDuplicate(portName, packet)) return;
     if (this.deepInspection.owns(packet)) {
       this.deepInspection.resume(portName, packet);
       return;
@@ -3273,6 +3452,7 @@ export class Firewall extends Equipment {
       forwarded.policyRouteGateway,
       bridgedFrameOf(frame, forwarded.bridged === true
         || vdom.settings.opmode === 'transparent'));
+    this.duplicateOverZone(portName, forwarded.egressPort, recorded);
   }
 
   private timestampStampFor(address: IPAddress): TimestampStamp {
@@ -3337,6 +3517,28 @@ export class Firewall extends Equipment {
   private sendTimeExceeded(ingressPort: string, packet: IPv4Packet): void {
     this.sendIcmpError(ingressPort, packet, 'time-exceeded',
       ICMP_TTL_EXPIRED_IN_TRANSIT, {});
+  }
+
+  private answerBlockedDns(verdict: UtmVerdict, context: PacketContext): void {
+    const profile = verdict.profile === undefined ? undefined : this.getUtmProfiles().getDnsFilter(verdict.profile);
+    const query = context.originalPacket;
+    if (query.type !== 'ipv4') return;
+    const udp = query.payload as { type?: string; sourcePort?: number; destinationPort?: number; payload?: unknown };
+    if (profile === undefined || udp?.type !== 'udp' || !(udp.payload instanceof Uint8Array)) return;
+
+    const answer = blockedDnsReply(udp.payload, profile);
+    if (answer === undefined) return;
+
+    const reply = buildUdpOverIpv4(query.destinationIP, {
+      destination: query.sourceIP,
+      destinationPort: udp.sourcePort ?? 0,
+      sourcePort: udp.destinationPort ?? 53,
+      payload: answer,
+      payloadBytes: answer.length,
+    });
+    const route = this.vdoms.contextOfInterface(context.ingressPort).routes
+      .resolveNextHop(query.sourceIP.toString());
+    this.forward(route?.iface ?? context.ingressPort, reply, route?.nextHop);
   }
 
   private sendIcmpError(
@@ -3405,6 +3607,7 @@ export class Firewall extends Equipment {
       untrustedCaName: profile.untrustedCaName ?? 'Fortinet_CA_Untrusted',
       serverCertMode: profile.serverCertMode ?? 're-sign',
       untrustedCert: profile.untrustedCert ?? 'allow',
+      minSslVersion: rule?.inspectionMode === 'proxy' ? profile.minSslVersion : undefined,
       exemptions: (profile.exemptions ?? []).map(entry => ({
         type: entry.type,
         category: entry.category,
@@ -3437,11 +3640,13 @@ export class Firewall extends Equipment {
       },
       answeredByNtp: (iface, p) => this.ntp.observe(iface, p),
       answeredByBfd: (iface, p) => this.answeredByBfd(iface, p),
+      answeredByVxlan: (iface, p) => this.answeredByVxlan(iface, p),
       snmpListens: (p) => this.snmpService?.listensOn(p) ?? false,
       allowsSnmp: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'snmp'),
       handleSnmp: (iface, p) => { this.snmpService?.handleUdp(iface, p); },
       handleTcp: (iface, p) => { this.tcp.handleIp(iface, p.sourceIP, p); },
-      admitsTcp: (iface, p) => this.management.admitsTcp(this.servingInterface(iface, p), p),
+      admitsTcp: (iface, p) => this.admitsExplicitProxy(this.servingInterface(iface, p), p)
+        && this.management.admitsTcp(this.servingInterface(iface, p), p),
       allowsPing: (iface, p) => this.allowsAccess(this.servingInterface(iface, p), 'ping'),
       reply: (iface, p) => { this.forward(iface, p); },
       localInVerdict: (iface, p) => this.localInVerdict(iface, p),

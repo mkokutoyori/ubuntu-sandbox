@@ -103,6 +103,8 @@ export type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 import type { LldpSetting, LldpVdomSetting } from '../../../l2/LldpIntent';
 
 export interface FortiInterfacePatch {
+  readonly explicitWebProxy?: boolean;
+  readonly vrf?: number;
   readonly vdom?: string;
   readonly addressingMode?: 'static' | 'dhcp' | 'pppoe';
   readonly leasePolicy?: {
@@ -149,6 +151,7 @@ export interface FortiStaticRoute {
   readonly blackhole: boolean;
   readonly enabled: boolean;
   readonly bfd: boolean;
+  readonly vrf?: number;
 }
 
 export interface FortiSchedulePatch {
@@ -460,6 +463,11 @@ export interface FortiCommitDevice {
     sequenceTransmission: boolean; sequenceReception: boolean;
   }): string | void;
   removeGreTunnel(name: string): void;
+  applyExplicitProxy(settings: { status: boolean; port: number; defaultAction: 'accept' | 'deny' }): void;
+  applyProxyPolicy(id: string, policy: { id: string; name: string; srcIntf: readonly string[]; dstIntf: readonly string[]; srcAddr: readonly string[]; dstAddr: readonly string[]; schedule: string; action: 'accept' | 'deny'; enabled: boolean }): void;
+  removeProxyPolicy(id: string): void;
+  applyVxlan(name: string, device: { interface: string; vni: number; port: number; remoteIps: readonly string[]; learn: boolean }): string | void;
+  removeVxlan(name: string): void;
   applyIpsecConcentrator(id: number, concentrator: { name: string; members: readonly string[]; srcCheck: boolean }): string | void;
   removeIpsecConcentrator(id: number): void;
   applyPkiPeer(peer: { name: string; ca: string; subject: string; cn: string }): void;
@@ -516,6 +524,7 @@ export interface FortiCommitDevice {
   applyRip(settings: RipConfiguration): string | void;
   applyOspf(settings: OspfConfiguration): string | void;
   applyBgp(settings: BgpConfiguration): string | void;
+  applyVrfLeaks(leaks: ReadonlyArray<{ origin: number; target: number; iface: string; routeMap?: string }>): void;
   applyDhcpScope(scope: DhcpScope): string | void;
   removeDhcpScope(id: string): void;
   applyIpv6RouterAdvertisement(iface: string, options: {
@@ -677,6 +686,7 @@ export interface FortiPhase1Patch {
   readonly authUser?: string;
   readonly authPassword?: string;
   readonly dnsServers?: readonly string[];
+  readonly ppk?: { readonly mode: 'disable' | 'allow' | 'require'; readonly identity: string; readonly secret: string };
   readonly comments?: string;
 }
 
@@ -769,6 +779,9 @@ export interface FortiWebFilterPatch {
 export interface FortiDnsFilterPatch {
   readonly name: string;
   readonly domainFilterTable?: string;
+  readonly blockAction: 'block' | 'redirect' | 'block-sevrfail';
+  readonly redirectPortal?: string;
+  readonly redirectPortal6?: string;
   readonly categoryFilters: readonly FortiCategoryFilterPatch[];
   readonly unclassifiedAction: string;
   readonly comment?: string;
@@ -796,6 +809,7 @@ export interface FortiSslSshPatch {
   readonly untrustedCaName?: string;
   readonly serverCertMode?: string;
   readonly untrustedCert?: string;
+  readonly minSslVersion?: string;
   readonly exemptions?: readonly FortiSslExemptPatch[];
   readonly comment?: string;
 }

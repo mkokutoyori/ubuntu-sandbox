@@ -1,0 +1,1770 @@
+{
+ "tcpdump": "4.99.4",
+ "libpcap": "1.10.4",
+ "cases": [
+  {
+   "name": "raw",
+   "hex": "d4c3b2a1020004000000000000000000000004006500000000f1536500000000340000003400000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a086010024000000240000004500002412344000400114a30a0000010a0000020800234843210001616263646566676802f15365400d03003d0000003d0000004500003d123440004011147a0a0000010a00000214e900350029cd2fbeef0100000100000000000003777777076578616d706c6503636f6d000001000103f15365e09304003a0000003a0000004500003a12344000400614880a0000010a00000204d20050000003e9000013885018faf0a5940000474554202f20485454502f312e300d0a0d0a04f15365801a060038000000380000006000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c7111100013132333435363738",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 ip: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 ip: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 ip: 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 ip: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 ip: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 ip: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 ip: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 ip: 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 ip: 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n22:13:24.400000 ip: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto ICMP (1), length 36)\n    10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto UDP (17), length 61)\n    10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 58)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], cksum 0xa594 (correct), seq 1001:1019, ack 5000, win 64240, length 18: HTTP, length: 18\n\tGET / HTTP/1.0\n\t\n22:13:24.400000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001  E..=.4@.@..z....\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100  .......5.)./....\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861  .........www.exa\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01         mple.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001  E..:.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388  .......P........\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854  P.......GET./.HT\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a                 TP/1.0....\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001  E..=.4@.@..z....\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100  .......5.)./....\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861  .........www.exa\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01         mple.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001  E..:.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388  .......P........\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854  P.......GET./.HT\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a                 TP/1.0....\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nE..$.4@.@...\n...\n.....#HC!..abcdefgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nE..=.4@.@..z\n...\n......5.)./.............www.example.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\nE..:.4@.@...\n...\n......P........P.......GET / HTTP/1.0\n\n\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nIP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nIP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n1700000000.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n1700000001.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n1700000002.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n1700000003.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n1700000004.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp port 80",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp and not port 22",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "icmp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "udp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "host 10.0.0.1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "len > 50",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip[0] = 0x45",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "proto 1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: expression rejects all packets\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: no VLAN support for Raw IP\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan 5",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: no VLAN support for Raw IP\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether host 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether src 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether dst 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip multicast",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether proto 0x800",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "not arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp or ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6 or arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 ip: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 ip: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 ip: 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 ip: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:24.400000 ip: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "tcp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 ip: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 ip: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    }
+   ],
+   "written": "d4c3b2a1020004000000000000000000000004006500000000f1536500000000340000003400000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a086010024000000240000004500002412344000400114a30a0000010a0000020800234843210001616263646566676802f15365400d03003d0000003d0000004500003d123440004011147a0a0000010a00000214e900350029cd2fbeef0100000100000000000003777777076578616d706c6503636f6d0000010001"
+  },
+  {
+   "name": "null",
+   "hex": "d4c3b2a1020004000000000000000000000004000000000000f153650000000038000000380000000200000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a08601002800000028000000020000004500002412344000400114a30a0000010a0000020800234843210001616263646566676802f15365400d03004100000041000000020000004500003d123440004011147a0a0000010a00000214e900350029cd2fbeef0100000100000000000003777777076578616d706c6503636f6d000001000103f15365e09304003e0000003e000000020000004500003a12344000400614880a0000010a00000204d20050000003e9000013885018faf0a5940000474554202f20485454502f312e300d0a0d0a04f15365801a06003c0000003c000000180000006000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c711110001313233343536373805f1536520a107003c0000003c0000001c0000006000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c711110001313233343536373806f15365c02709003c0000003c0000001e0000006000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c7111100013132333435363738",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 AF IPv4 (2), length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 AF IPv4 (2), length 65: 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 AF IPv4 (2), length 62: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 AF IPv6 (24), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 AF IPv6 (28), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 AF IPv6 (30), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IPv4, length 56: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IPv4, length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IPv4, length 65: 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 IPv4, length 62: 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n22:13:24.400000 IPv6, length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IPv6, length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IPv6, length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto ICMP (1), length 36)\n    10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto UDP (17), length 61)\n    10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 58)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], cksum 0xa594 (correct), seq 1001:1019, ack 5000, win 64240, length 18: HTTP, length: 18\n\tGET / HTTP/1.0\n\t\n22:13:24.400000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n22:13:25.500000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n22:13:26.600000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0200 0000 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0200 0000 4500 0024 1234 4000 4001 14a3\n\t0x0010:  0a00 0001 0a00 0002 0800 2348 4321 0001\n\t0x0020:  6162 6364 6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  0200 0000 4500 003d 1234 4000 4011 147a\n\t0x0010:  0a00 0001 0a00 0002 14e9 0035 0029 cd2f\n\t0x0020:  beef 0100 0001 0000 0000 0000 0377 7777\n\t0x0030:  0765 7861 6d70 6c65 0363 6f6d 0000 0100\n\t0x0040:  01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  0200 0000 4500 003a 1234 4000 4006 1488\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e9\n\t0x0020:  0000 1388 5018 faf0 a594 0000 4745 5420\n\t0x0030:  2f20 4854 5450 2f31 2e30 0d0a 0d0a\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  1800 0000 6000 0000 0010 3a40 fd00 0001\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7\n\t0x0030:  1111 0001 3132 3334 3536 3738\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  1c00 0000 6000 0000 0010 3a40 fd00 0001\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7\n\t0x0030:  1111 0001 3132 3334 3536 3738\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  1e00 0000 6000 0000 0010 3a40 fd00 0001\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7\n\t0x0030:  1111 0001 3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001  E..=.4@.@..z....\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100  .......5.)./....\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861  .........www.exa\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01         mple.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001  E..:.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388  .......P........\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854  P.......GET./.HT\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a                 TP/1.0....\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0200 0000 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0200 0000 4500 0024 1234 4000 4001 14a3  ....E..$.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 0800 2348 4321 0001  ..........#HC!..\n\t0x0020:  6162 6364 6566 6768                      abcdefgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  0200 0000 4500 003d 1234 4000 4011 147a  ....E..=.4@.@..z\n\t0x0010:  0a00 0001 0a00 0002 14e9 0035 0029 cd2f  ...........5.)./\n\t0x0020:  beef 0100 0001 0000 0000 0000 0377 7777  .............www\n\t0x0030:  0765 7861 6d70 6c65 0363 6f6d 0000 0100  .example.com....\n\t0x0040:  01                                       .\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  0200 0000 4500 003a 1234 4000 4006 1488  ....E..:.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e9  ...........P....\n\t0x0020:  0000 1388 5018 faf0 a594 0000 4745 5420  ....P.......GET.\n\t0x0030:  2f20 4854 5450 2f31 2e30 0d0a 0d0a       /.HTTP/1.0....\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  1800 0000 6000 0000 0010 3a40 fd00 0001  ....`.....:@....\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001  ................\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7  ................\n\t0x0030:  1111 0001 3132 3334 3536 3738            ....12345678\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  1c00 0000 6000 0000 0010 3a40 fd00 0001  ....`.....:@....\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001  ................\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7  ................\n\t0x0030:  1111 0001 3132 3334 3536 3738            ....12345678\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  1e00 0000 6000 0000 0010 3a40 fd00 0001  ....`.....:@....\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001  ................\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7  ................\n\t0x0030:  1111 0001 3132 3334 3536 3738            ....12345678\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nE..$.4@.@...\n...\n.....#HC!..abcdefgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nE..=.4@.@..z\n...\n......5.)./.............www.example.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\nE..:.4@.@...\n...\n......P........P.......GET / HTTP/1.0\n\n\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nIP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nIP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n1700000000.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n1700000001.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n1700000002.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n1700000003.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n1700000004.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n1700000005.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n1700000006.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp port 80",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp and not port 22",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "icmp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "udp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "host 10.0.0.1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "len > 50",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip[0] = 0x45",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "proto 1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: expression rejects all packets\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: no VLAN support for BSD loopback\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan 5",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: no VLAN support for BSD loopback\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether host 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether src 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether dst 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip multicast",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether proto 0x800",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "not arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp or ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6 or arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 AF IPv4 (2), length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 AF IPv4 (2), length 65: 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 AF IPv4 (2), length 62: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:24.400000 AF IPv6 (24), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 AF IPv6 (28), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 AF IPv6 (30), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "tcp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 AF IPv4 (2), length 62: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    }
+   ],
+   "written": "d4c3b2a1020004000000000000000000000004000000000000f153650000000038000000380000000200000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a08601002800000028000000020000004500002412344000400114a30a0000010a0000020800234843210001616263646566676802f15365400d03004100000041000000020000004500003d123440004011147a0a0000010a00000214e900350029cd2fbeef0100000100000000000003777777076578616d706c6503636f6d0000010001"
+  },
+  {
+   "name": "loop",
+   "hex": "d4c3b2a1020004000000000000000000000004006c00000000f153650000000038000000380000000000000245000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a08601002800000028000000000000024500002412344000400114a30a0000010a0000020800234843210001616263646566676802f15365400d03004100000041000000000000024500003d123440004011147a0a0000010a00000214e900350029cd2fbeef0100000100000000000003777777076578616d706c6503636f6d000001000103f15365e09304003e0000003e000000000000024500003a12344000400614880a0000010a00000204d20050000003e9000013885018faf0a5940000474554202f20485454502f312e300d0a0d0a04f15365801a06003c0000003c000000000000186000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c711110001313233343536373805f1536520a107003c0000003c0000000000001c6000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c711110001313233343536373806f15365c02709003c0000003c0000000000001e6000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c7111100013132333435363738",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 AF IPv4 (2), length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 AF IPv4 (2), length 65: 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 AF IPv4 (2), length 62: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 AF IPv6 (24), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 AF IPv6 (28), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 AF IPv6 (30), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IPv4, length 56: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IPv4, length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IPv4, length 65: 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 IPv4, length 62: 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n22:13:24.400000 IPv6, length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IPv6, length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IPv6, length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto ICMP (1), length 36)\n    10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto UDP (17), length 61)\n    10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 58)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], cksum 0xa594 (correct), seq 1001:1019, ack 5000, win 64240, length 18: HTTP, length: 18\n\tGET / HTTP/1.0\n\t\n22:13:24.400000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n22:13:25.500000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n22:13:26.600000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0000 0002 4500 0024 1234 4000 4001 14a3\n\t0x0010:  0a00 0001 0a00 0002 0800 2348 4321 0001\n\t0x0020:  6162 6364 6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  0000 0002 4500 003d 1234 4000 4011 147a\n\t0x0010:  0a00 0001 0a00 0002 14e9 0035 0029 cd2f\n\t0x0020:  beef 0100 0001 0000 0000 0000 0377 7777\n\t0x0030:  0765 7861 6d70 6c65 0363 6f6d 0000 0100\n\t0x0040:  01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  0000 0002 4500 003a 1234 4000 4006 1488\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e9\n\t0x0020:  0000 1388 5018 faf0 a594 0000 4745 5420\n\t0x0030:  2f20 4854 5450 2f31 2e30 0d0a 0d0a\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  0000 0018 6000 0000 0010 3a40 fd00 0001\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7\n\t0x0030:  1111 0001 3132 3334 3536 3738\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  0000 001c 6000 0000 0010 3a40 fd00 0001\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7\n\t0x0030:  1111 0001 3132 3334 3536 3738\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  0000 001e 6000 0000 0010 3a40 fd00 0001\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7\n\t0x0030:  1111 0001 3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001  E..=.4@.@..z....\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100  .......5.)./....\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861  .........www.exa\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01         mple.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001  E..:.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388  .......P........\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854  P.......GET./.HT\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a                 TP/1.0....\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0000 0002 4500 0024 1234 4000 4001 14a3  ....E..$.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 0800 2348 4321 0001  ..........#HC!..\n\t0x0020:  6162 6364 6566 6768                      abcdefgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  0000 0002 4500 003d 1234 4000 4011 147a  ....E..=.4@.@..z\n\t0x0010:  0a00 0001 0a00 0002 14e9 0035 0029 cd2f  ...........5.)./\n\t0x0020:  beef 0100 0001 0000 0000 0000 0377 7777  .............www\n\t0x0030:  0765 7861 6d70 6c65 0363 6f6d 0000 0100  .example.com....\n\t0x0040:  01                                       .\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  0000 0002 4500 003a 1234 4000 4006 1488  ....E..:.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e9  ...........P....\n\t0x0020:  0000 1388 5018 faf0 a594 0000 4745 5420  ....P.......GET.\n\t0x0030:  2f20 4854 5450 2f31 2e30 0d0a 0d0a       /.HTTP/1.0....\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  0000 0018 6000 0000 0010 3a40 fd00 0001  ....`.....:@....\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001  ................\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7  ................\n\t0x0030:  1111 0001 3132 3334 3536 3738            ....12345678\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  0000 001c 6000 0000 0010 3a40 fd00 0001  ....`.....:@....\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001  ................\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7  ................\n\t0x0030:  1111 0001 3132 3334 3536 3738            ....12345678\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  0000 001e 6000 0000 0010 3a40 fd00 0001  ....`.....:@....\n\t0x0010:  0000 0000 0000 0000 0000 0001 fd00 0001  ................\n\t0x0020:  0000 0000 0000 0000 0000 0002 8000 a3c7  ................\n\t0x0030:  1111 0001 3132 3334 3536 3738            ....12345678\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nE..$.4@.@...\n...\n.....#HC!..abcdefgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nE..=.4@.@..z\n...\n......5.)./.............www.example.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\nE..:.4@.@...\n...\n......P........P.......GET / HTTP/1.0\n\n\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nIP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nIP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n1700000000.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n1700000001.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n1700000002.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n1700000003.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n1700000004.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n1700000005.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n1700000006.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp port 80",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp and not port 22",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "icmp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "udp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "host 10.0.0.1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "len > 50",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip[0] = 0x45",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "proto 1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: expression rejects all packets\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: no VLAN support for OpenBSD loopback\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan 5",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: no VLAN support for OpenBSD loopback\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether host 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether src 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether dst 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip multicast",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether proto 0x800",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "not arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp or ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6 or arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:24.400000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 AF IPv4 (2), length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 AF IPv4 (2), length 65: 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 AF IPv4 (2), length 62: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:24.400000 AF IPv6 (24), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:25.500000 AF IPv6 (28), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n22:13:26.600000 AF IPv6 (30), length 60: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "tcp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:23.300000 AF IPv4 (2), length 62: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    }
+   ],
+   "written": "d4c3b2a1020004000000000000000000000004006c00000000f153650000000038000000380000000000000245000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a08601002800000028000000000000024500002412344000400114a30a0000010a0000020800234843210001616263646566676802f15365400d03004100000041000000000000024500003d123440004011147a0a0000010a00000214e900350029cd2fbeef0100000100000000000003777777076578616d706c6503636f6d0000010001"
+  },
+  {
+   "name": "null-big-endian-file",
+   "hex": "a1b2c3d400020004000000000000000000040000000000006553f1000000000000000038000000380000000245000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b404020103030700006553f101000186a00000002800000028000000024500002412344000400114a30a0000010a000002080023484321000161626364656667686553f10200030d400000004100000041000000024500003d123440004011147a0a0000010a00000214e900350029cd2fbeef0100000100000000000003777777076578616d706c6503636f6d00000100016553f103000493e00000003e0000003e000000024500003a12344000400614880a0000010a00000204d20050000003e9000013885018faf0a5940000474554202f20485454502f312e300d0a0d0a",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 AF IPv4 (2), length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 AF IPv4 (2), length 65: 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 AF IPv4 (2), length 62: 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IPv4, length 56: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IPv4, length 40: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IPv4, length 65: 10.0.0.1.5353 > 10.0.0.2.53: UDP, length 33\n22:13:23.300000 IPv4, length 62: 10.0.0.1.1234 > 10.0.0.2.80: tcp 18\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto ICMP (1), length 36)\n    10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto UDP (17), length 61)\n    10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 58)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], cksum 0xa594 (correct), seq 1001:1019, ack 5000, win 64240, length 18: HTTP, length: 18\n\tGET / HTTP/1.0\n\t\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0000 0002 4500 0024 1234 4000 4001 14a3\n\t0x0010:  0a00 0001 0a00 0002 0800 2348 4321 0001\n\t0x0020:  6162 6364 6566 6768\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  0000 0002 4500 003d 1234 4000 4011 147a\n\t0x0010:  0a00 0001 0a00 0002 14e9 0035 0029 cd2f\n\t0x0020:  beef 0100 0001 0000 0000 0000 0377 7777\n\t0x0030:  0765 7861 6d70 6c65 0363 6f6d 0000 0100\n\t0x0040:  01\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  0000 0002 4500 003a 1234 4000 4006 1488\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e9\n\t0x0020:  0000 1388 5018 faf0 a594 0000 4745 5420\n\t0x0030:  2f20 4854 5450 2f31 2e30 0d0a 0d0a\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  4500 003d 1234 4000 4011 147a 0a00 0001  E..=.4@.@..z....\n\t0x0010:  0a00 0002 14e9 0035 0029 cd2f beef 0100  .......5.)./....\n\t0x0020:  0001 0000 0000 0000 0377 7777 0765 7861  .........www.exa\n\t0x0030:  6d70 6c65 0363 6f6d 0000 0100 01         mple.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  4500 003a 1234 4000 4006 1488 0a00 0001  E..:.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e9 0000 1388  .......P........\n\t0x0020:  5018 faf0 a594 0000 4745 5420 2f20 4854  P.......GET./.HT\n\t0x0030:  5450 2f31 2e30 0d0a 0d0a                 TP/1.0....\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0000 0002 4500 0024 1234 4000 4001 14a3  ....E..$.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 0800 2348 4321 0001  ..........#HC!..\n\t0x0020:  6162 6364 6566 6768                      abcdefgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n\t0x0000:  0000 0002 4500 003d 1234 4000 4011 147a  ....E..=.4@.@..z\n\t0x0010:  0a00 0001 0a00 0002 14e9 0035 0029 cd2f  ...........5.)./\n\t0x0020:  beef 0100 0001 0000 0000 0000 0377 7777  .............www\n\t0x0030:  0765 7861 6d70 6c65 0363 6f6d 0000 0100  .example.com....\n\t0x0040:  01                                       .\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n\t0x0000:  0000 0002 4500 003a 1234 4000 4006 1488  ....E..:.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e9  ...........P....\n\t0x0020:  0000 1388 5018 faf0 a594 0000 4745 5420  ....P.......GET.\n\t0x0030:  2f20 4854 5450 2f31 2e30 0d0a 0d0a       /.HTTP/1.0....\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nE..$.4@.@...\n...\n.....#HC!..abcdefgh\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nE..=.4@.@..z\n...\n......5.)./.............www.example.com.....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\nE..:.4@.@...\n...\n......P........P.......GET / HTTP/1.0\n\n\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nIP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nIP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n1700000000.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n1700000001.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n1700000002.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n1700000003.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n22:13:22.200000 IP 10.0.0.1.5353 > 10.0.0.2.53: 48879+ A? www.example.com. (33)\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [P.], seq 1001:1019, ack 5000, win 64240, length 18: HTTP: GET / HTTP/1.0\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "null-unknown-families",
+   "hex": "d4c3b2a1020004000000000000000000000004000000000000f153650000000038000000380000000a00000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a086010038000000380000006300000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000002f15365400d030038000000380000000000000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000003f15365e093040038000000380000000200000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b40402010303070000",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:23.300000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 Unknown AF 10, length 56: \n22:13:21.100000 Unknown AF 99, length 56: \n22:13:22.200000 Unknown AF 0, length 56: \n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 Unknown AF 10, length 56: \n22:13:21.100000 Unknown AF 99, length 56: \n22:13:22.200000 Unknown AF 0, length 56: \n22:13:23.300000 IPv4, length 56: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:23.300000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  0a00 0000 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  6300 0000 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  0000 0000 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0200 0000 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  0a00 0000 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  6300 0000 4500 0034 1234 4000 4006 148e  c...E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  0000 0000 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0200 0000 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nE..4.4@.@...\n...\n......P............X...............\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nE..4.4@.@...\n...\n......P............X...............\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\nAF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nAF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nAF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n1700000000.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n1700000001.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n1700000002.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n1700000003.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 AF Unknown (0), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:23.300000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "loop-unknown-families",
+   "hex": "d4c3b2a1020004000000000000000000000004006c00000000f153650000000038000000380000000000000a45000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a086010038000000380000000000006345000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000002f15365400d030038000000380000000000000245000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b40402010303070000",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 Unknown AF 10, length 56: \n22:13:21.100000 Unknown AF 99, length 56: \n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 Unknown AF 10, length 56: \n22:13:21.100000 Unknown AF 99, length 56: \n22:13:22.200000 IPv4, length 56: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  0000 000a 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  0000 0063 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  0000 000a 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  0000 0063 4500 0034 1234 4000 4006 148e  ...cE..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nE..4.4@.@...\n...\n......P............X...............\n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\nAF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nAF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n1700000000.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n1700000001.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n1700000002.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000 AF Unknown (10), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 AF Unknown (99), length 56: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "raw-unknown-versions",
+   "hex": "d4c3b2a1020004000000000000000000000004006500000000f1536500000000340000003400000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a0860100340000003400000000000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000002f15365400d0300340000003400000030000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000003f15365e093040038000000380000006000000000103a40fd000001000000000000000000000001fd0000010000000000000000000000028000a3c7111100013132333435363738",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 unknown ip 0\n22:13:22.200000 unknown ip 3\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 ip: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 ip: unknown ip 0\n22:13:22.200000 ip: unknown ip 3\n22:13:23.300000 ip: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 unknown ip 0\n22:13:22.200000 unknown ip 3\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 ip: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 ip: unknown ip 0\n22:13:22.200000 ip: unknown ip 3\n22:13:23.300000 ip: fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 unknown ip 0\n22:13:22.200000 unknown ip 3\n22:13:23.300000 IP6 (hlim 64, next-header ICMPv6 (58) payload length: 16) fd00:1::1 > fd00:1::2: [icmp6 sum ok] ICMP6, echo request, id 4369, seq 1\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 unknown ip 0\n\t0x0000:  0000 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:22.200000 unknown ip 3\n\t0x0000:  3000 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 unknown ip 0\n\t0x0000:  0000 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:22.200000 unknown ip 3\n\t0x0000:  3000 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001\n\t0x0030:  3132 3334 3536 3738\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 unknown ip 0\n\t0x0000:  0000 0034 1234 4000 4006 148e 0a00 0001  ...4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 unknown ip 3\n\t0x0000:  3000 0034 1234 4000 4006 148e 0a00 0001  0..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 unknown ip 0\n\t0x0000:  0000 0034 1234 4000 4006 148e 0a00 0001  ...4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:22.200000 unknown ip 3\n\t0x0000:  3000 0034 1234 4000 4006 148e 0a00 0001  0..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n\t0x0000:  6000 0000 0010 3a40 fd00 0001 0000 0000  `.....:@........\n\t0x0010:  0000 0000 0000 0001 fd00 0001 0000 0000  ................\n\t0x0020:  0000 0000 0000 0002 8000 a3c7 1111 0001  ................\n\t0x0030:  3132 3334 3536 3738                      12345678\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 unknown ip 0\n...4.4@.@...\n...\n......P............X...............\n22:13:22.200000 unknown ip 3\n0..4.4@.@...\n...\n......P............X...............\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n`.....:@........................................12345678\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nunknown ip 0\nunknown ip 3\nIP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n1700000000.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n1700000001.100000 unknown ip 0\n1700000002.200000 unknown ip 3\n1700000003.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 unknown ip 0\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 unknown ip 0\n22:13:22.200000 unknown ip 3\n22:13:23.300000 IP6 fd00:1::1 > fd00:1::2: ICMP6, echo request, id 4369, seq 1, length 16\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "null-cut-in-the-family",
+   "hex": "d4c3b2a1020004000000000000000000000004000000000000f15365000000000200000002000000020001f15365a0860100340000003400000045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b40402010303070000",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 Unknown AF 1157627956, length 52: \n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 Unknown AF 1157627956, length 52: \n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0200\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0200\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0200                                     ..\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0200                                     ..\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n..\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n.4@.@...\n...\n......P............X...............\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n [|null]\nAF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n1700000000.000000  [|null]\n1700000001.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type NULL (BSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 AF Unknown (1157627956), length 52: \n\t0x0000:  1234 4000 4006 148e 0a00 0001 0a00 0002  .4@.@...........\n\t0x0010:  04d2 0050 0000 03e8 0000 0000 8002 faf0  ...P............\n\t0x0020:  5815 0000 0204 05b4 0402 0103 0307 0000  X...............\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "loop-cut-in-the-family",
+   "hex": "d4c3b2a1020004000000000000000000000004006c00000000f15365000000000200000002000000000001f15365a086010038000000380000000000000245000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b40402010303070000",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 AF IPv4 (2), length 56: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 IPv4, length 56: 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0000\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0000\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4\n\t0x0030:  0402 0103 0307 0000\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0000                                     ..\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n\t0x0000:  0000                                     ..\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0002 4500 0034 1234 4000 4006 148e  ....E..4.4@.@...\n\t0x0010:  0a00 0001 0a00 0002 04d2 0050 0000 03e8  ...........P....\n\t0x0020:  0000 0000 8002 faf0 5815 0000 0204 05b4  ........X.......\n\t0x0030:  0402 0103 0307 0000                      ........\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n..\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n [|null]\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n1700000000.000000  [|null]\n1700000001.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LOOP (OpenBSD loopback), snapshot length 262144\n22:13:20.000000  [|null]\n22:13:21.100000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "invalid-headers-raw",
+   "hex": "d4c3b2a1020004000000000000000000000004006500000000f1536500000000000000003c00000001f15365a08601000a000000000000004500003412344000400602f15365400d03000a000000050000004500003412344000400603f15365e0930400000000000000000004f15365801a060024000000240000004500002412344000400114a30a0000010a00000208002348432100016162636465666768",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 ip: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 ip: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto ICMP (1), length 36)\n    10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nE..$.4@.@...\n...\n.....#HC!..abcdefgh\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\nIP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n1700000004.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type RAW (Raw IP), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "invalid-headers-ethernet",
+   "hex": "d4c3b2a1020004000000000000000000000004000100000000f1536500000000000000003c00000001f15365a08601000a000000000000004500003412344000400602f15365400d03000a000000050000004500003412344000400603f15365e0930400000000000000000004f15365801a060024000000240000004500002412344000400114a30a0000010a00000208002348432100016162636465666768",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, Unknown Ethertype (0x0a00), length 36: \n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, Unknown Ethertype (0x0a00), length 36: \n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162\n\t0x0010:  6364 6566 6768\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n..\n.....#HC!..abcdefgh\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n1700000004.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type EN10MB (Ethernet), snapshot length 262144\n[Invalid header: caplen==0]\n[Invalid header: len==0]\n[Invalid header: len(5) < caplen(10)]\n[Invalid header: caplen==0, len==0]\n22:13:24.400000 40:00:40:01:14:a3 > 45:00:00:24:12:34, ethertype Unknown (0x0a00), length 36: \n\t0x0000:  0001 0a00 0002 0800 2348 4321 0001 6162  ........#HC!..ab\n\t0x0010:  6364 6566 6768                           cdefgh\n"
+    }
+   ],
+   "written": null
+  },
+  {
+   "name": "cooked-v1",
+   "hex": "d4c3b2a1020004000000000000000000000004007100000000f153650000000044000000440000000000000100060011223344550000080045000034123440004006148e0a0000010a00000204d20050000003e8000000008002faf058150000020405b4040201030307000001f15365a08601003400000034000000000000010006001122334455000008004500002412344000400114a30a0000010a00000208002348432100016162636465666768",
+   "runs": [
+    {
+     "flags": "-nn",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000  In 00:11:22:33:44:55 ethertype IPv4 (0x0800), length 68: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000  In 00:11:22:33:44:55 ethertype IPv4 (0x0800), length 52: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -q -e",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000  In 00:11:22:33:44:55 10.0.0.1.1234 > 10.0.0.2.80: tcp 0\n22:13:21.100000  In 00:11:22:33:44:55 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -v",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto TCP (6), length 52)\n    10.0.0.1.1234 > 10.0.0.2.80: Flags [S], cksum 0x5815 (correct), seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP (tos 0x0, ttl 64, id 4660, offset 0, flags [DF], proto ICMP (1), length 36)\n    10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -x",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0030:  0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0020:  6566 6768\n"
+    },
+    {
+     "flags": "-nn -xx",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0001 0006 0011 2233 4455 0000 0800\n\t0x0010:  4500 0034 1234 4000 4006 148e 0a00 0001\n\t0x0020:  0a00 0002 04d2 0050 0000 03e8 0000 0000\n\t0x0030:  8002 faf0 5815 0000 0204 05b4 0402 0103\n\t0x0040:  0307 0000\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0000 0001 0006 0011 2233 4455 0000 0800\n\t0x0010:  4500 0024 1234 4000 4001 14a3 0a00 0001\n\t0x0020:  0a00 0002 0800 2348 4321 0001 6162 6364\n\t0x0030:  6566 6768\n"
+    },
+    {
+     "flags": "-nn -X",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0010:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0020:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0030:  0307 0000                                ....\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0010:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0020:  6566 6768                                efgh\n"
+    },
+    {
+     "flags": "-nn -XX",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n\t0x0000:  0000 0001 0006 0011 2233 4455 0000 0800  ........\"3DU....\n\t0x0010:  4500 0034 1234 4000 4006 148e 0a00 0001  E..4.4@.@.......\n\t0x0020:  0a00 0002 04d2 0050 0000 03e8 0000 0000  .......P........\n\t0x0030:  8002 faf0 5815 0000 0204 05b4 0402 0103  ....X...........\n\t0x0040:  0307 0000                                ....\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n\t0x0000:  0000 0001 0006 0011 2233 4455 0000 0800  ........\"3DU....\n\t0x0010:  4500 0024 1234 4000 4001 14a3 0a00 0001  E..$.4@.@.......\n\t0x0020:  0a00 0002 0800 2348 4321 0001 6162 6364  ......#HC!..abcd\n\t0x0030:  6566 6768                                efgh\n"
+    },
+    {
+     "flags": "-nn -A",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nE..4.4@.@...\n...\n......P............X...............\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\nE..$.4@.@...\n...\n.....#HC!..abcdefgh\n"
+    },
+    {
+     "flags": "-nn -t",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\nIP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\nIP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -tt",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n1700000000.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n1700000001.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -c 2",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -s 40",
+     "expression": "",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp port 80",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "tcp and not port 22",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "icmp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "udp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "host 10.0.0.1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "len > 50",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip[0] = 0x45",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "proto 1",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: no VLAN support for Linux cooked v1\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "vlan 5",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: no VLAN support for Linux cooked v1\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether host 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether src 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether dst 00:11:22:33:44:55",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: ethernet addresses supported only on ethernet/FDDI/token ring/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "broadcast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: not a broadcast link\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "multicast",
+     "status": 1,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\ntcpdump: link-layer multicast filters supported only on ethernet/FDDI/token ring/ARCNET/802.11/ATM LANE/Fibre Channel\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip multicast",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ether proto 0x800",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "not arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "arp or ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000 IP 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000 IP 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn",
+     "expression": "ip6 or arp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000  In 00:11:22:33:44:55 ethertype IPv4 (0x0800), length 68: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n22:13:21.100000  In 00:11:22:33:44:55 ethertype IPv4 (0x0800), length 52: 10.0.0.1 > 10.0.0.2: ICMP echo request, id 17185, seq 1, length 16\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "ip6",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n"
+    },
+    {
+     "flags": "-nn -e",
+     "expression": "tcp",
+     "status": 0,
+     "output": "reading from file /tmp/tmpfkqvtnr7/capture.pcap, link-type LINUX_SLL (Linux cooked v1), snapshot length 262144\n22:13:20.000000  In 00:11:22:33:44:55 ethertype IPv4 (0x0800), length 68: 10.0.0.1.1234 > 10.0.0.2.80: Flags [S], seq 1000, win 64240, options [mss 1460,sackOK,nop,wscale 7,eol], length 0\n"
+    }
+   ],
+   "written": null
+  }
+ ]
+}

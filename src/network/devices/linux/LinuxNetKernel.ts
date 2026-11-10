@@ -16,6 +16,7 @@
  * See `linux_gap.md` §7.3.
  */
 
+import type { NeighborCacheEntry } from '../host/NeighborCache';
 import type { DestinationPolicy, DestinationSelectionPort } from '../../layers/internet/DestinationSelection';
 import type { Port } from '../../hardware/Port';
 import type { TcpWireOutcome } from '../../tcp/types';
@@ -140,6 +141,7 @@ export interface LinuxNetKernel {
 
   // ─── ARP ─────────────────────────────────────────────────────────
   getArpTable(): ReadonlyMap<string, ARPEntry>;
+  getNeighborCache(): ReadonlyMap<string, NeighborCacheEntry>;
   addStaticARP(ip: IPAddress, mac: MACAddress, iface: string): void;
   deleteARP(ip: IPAddress): boolean;
   clearARPTable(): void;

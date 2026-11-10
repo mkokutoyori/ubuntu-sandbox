@@ -50,7 +50,7 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'set mode static',
     'set ip 203.0.113.1 255.255.255.0',
     'config ipv6',
-    'set ip6-address 2001:db8:wan::1/64',
+    'set ip6-address 2001:db8:a::1/64',
     'set ip6-allowaccess ping',
     'end',
     'set allowaccess ping',
@@ -73,7 +73,7 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'interface FastEthernet0/1',
     'no switchport',
     'ip address 203.0.113.2 255.255.255.0',
-    'ipv6 address 2001:db8:wan::2/64',
+    'ipv6 address 2001:db8:a::2/64',
     'no shutdown',
     'exit',
     'interface FastEthernet0/2',
@@ -81,6 +81,8 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'ip address 10.50.0.1 255.255.255.0',
     'ipv6 address 2001:db8:srv::1/64',
     'no shutdown',
+    'exit',
+    'ip route 192.168.1.0 255.255.255.0 203.0.113.1',
     'end',
   ]);
 
@@ -98,8 +100,8 @@ async function creerLaboNextGen(): Promise<LaboNextGen> {
     'config firewall policy',
     'edit 1', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next',
     'end',
-    'config firewall policy6',
-    'edit 1', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr "all"', 'set dstaddr "all"', 'set action accept', 'set service "ALL"', 'next',
+    'config firewall policy',
+    'edit 2', 'set srcintf "port1"', 'set dstintf "wan1"', 'set srcaddr6 "all6"', 'set dstaddr6 "all6"', 'set action accept', 'set schedule "always"', 'set service "ALL"', 'next',
     'end',
   ]);
 
@@ -121,7 +123,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
 
     it('252. Ping IPv6 (ICMPv6 Echo Request/Reply) traversant le switch et le pare-feu', async () => {
       const { pc } = await creerLaboNextGen();
-      const res = await pc.executeCommand('ping6 -c 2 2001:db8:wan::2');
+      const res = await pc.executeCommand('ping6 -c 2 2001:db8:a::2');
       expect(res).toMatch(/, 0% packet loss/);
     });
 
@@ -174,17 +176,18 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
     it('258. NAT64 / DNS64 : client IPv6 pur accédant à un serveur IPv4 exclusif via préfixe Well-Known 64:ff9b::/96', async () => {
       const { fw } = await creerLaboNextGen();
       await taper(fw, [
-        'config firewall nat64',
-        'set status enable',
+        'config system nat64',
+        'set nat64-prefix 64:ff9b::/96',
         'end',
       ]);
-      const nat64 = await fw.executeCommand('get firewall nat64');
+      const nat64 = await fw.executeCommand('show system nat64');
       expect(refuse(nat64)).toBe(false);
+      expect(nat64).toContain('64:ff9b::/96');
     });
 
     it('259. Path MTU Discovery IPv6 : gestion du paquet ICMPv6 Type 2 "Packet Too Big" (MTU 1280 min)', async () => {
       const { pc } = await creerLaboNextGen();
-      const res = await pc.executeCommand('ping6 -c 1 -M do -s 1400 2001:db8:wan::2');
+      const res = await pc.executeCommand('ping6 -c 1 -M do -s 1400 2001:db8:a::2');
       expect(res).not.toMatch(/error/i);
     });
 
@@ -332,7 +335,9 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       const { pc, fw, srvCluster } = await creerLaboNextGen();
       await taper(srvCluster as unknown as Cli, ['systemctl start nginx']);
       await taper(fw, [
-        'config web-proxy explicit', 'set status enable', 'set http-incoming-port 8080', 'end',
+        'config router static', 'edit 50', 'set dst 10.50.0.0 255.255.255.0', 'set gateway 203.0.113.2', 'set device "wan1"', 'next', 'end',
+        'config system interface', 'edit port1', 'set explicit-web-proxy enable', 'next', 'end',
+        'config web-proxy explicit', 'set status enable', 'set http-incoming-port 8080', 'set sec-default-action accept', 'end',
       ]);
       const res = await pc.executeCommand('curl -x http://192.168.1.1:8080 -s http://10.50.0.50/');
       expect(res).toMatch(/Welcome to nginx|nginx/i);
@@ -349,7 +354,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
       const { pc, fw } = await creerLaboNextGen();
       await taper(fw, [
         'config dnsfilter profile', 'edit "SINKHOLE_PROF"',
-        'set block-botnet enable',
+        'set block-action redirect',
         'set redirect-portal 203.0.113.250',
         'next', 'end',
       ]);
@@ -547,7 +552,7 @@ describe('Batterie 6 : Tests 251 à 300 — IPv6, Routage Dynamique OSPF/BGP, ZT
     it('297. Protection contre la saturation de la table de session : SYN Proxy actif protégeant le serveur', async () => {
       const { fw } = await creerLaboNextGen();
       await taper(fw, [
-        'config firewall policy', 'edit 1', 'set tcp-session-without-syn enable', 'set service "ALL"', 'next', 'end',
+        'config firewall policy', 'edit 1', 'set tcp-session-without-syn all', 'set service "ALL"', 'next', 'end',
       ]);
       const synStat = await fw.executeCommand('show firewall policy 1');
       expect(synStat).toContain('tcp-session-without-syn');

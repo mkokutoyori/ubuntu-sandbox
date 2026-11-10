@@ -102,6 +102,13 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
       valueRefusal: (value, env) =>
         passwordPolicyRefusal(value, env, 'ipsec-preshared-key'),
     },
+    choice('ppk', 'Enable/disable IKEv2 Postquantum Preshared Key (PPK).', [
+      { keyword: 'disable', description: 'Disable use of IKEv2 Postquantum Preshared Key (PPK).' },
+      { keyword: 'allow', description: 'Allow, but do not require, use of IKEv2 Postquantum Preshared Key (PPK).' },
+      { keyword: 'require', description: 'Require use of IKEv2 Postquantum Preshared Key (PPK).' },
+    ], 'disable'),
+    text('ppk-identity', 'IKEv2 Postquantum Preshared Key Identity.'),
+    { ...text('ppk-secret', 'IKEv2 Postquantum Preshared Key (ASCII string or hexadecimal encoded with a leading 0x).'), quoted: true, secret: true },
     reference('certificate', 'Local certificate presented for signature authentication.',
       ['vpn certificate local']),
     proposalAttribute('Phase 1 proposals.'),
@@ -175,7 +182,19 @@ export const VPN_PHASE1_INTERFACE: FortiTableSpec = {
     }
     const poolFault = poolProblem(object);
     if (poolFault) return poolFault;
+    const ppkMode = (object.effective('ppk')[0] ?? 'disable') as 'disable' | 'allow' | 'require';
+    if (ppkMode !== 'disable') {
+      if (object.effective('ike-version')[0] !== '2') return 'a post-quantum preshared key is an IKEv2 extension (RFC 8784): set ike-version 2.';
+      if ((object.effective('ppk-secret')[0] ?? '') === '' || (object.effective('ppk-identity')[0] ?? '') === '') {
+        return `ppk ${ppkMode} needs both ppk-identity and ppk-secret.`;
+      }
+    }
     context.device.applyPhase1({
+      ppk: ppkMode === 'disable' ? undefined : {
+        mode: ppkMode,
+        identity: object.effective('ppk-identity')[0] ?? '',
+        secret: object.effective('ppk-secret')[0] ?? '',
+      },
       name: object.key,
       boundInterface: object.effective('interface')[0] ?? '',
       ikeVersion: object.effective('ike-version')[0] === '2' ? 2 : 1,

@@ -1035,6 +1035,12 @@ export class FortiShell {
     if (path === 'router info bgp neighbors') {
       return renderBgpNeighbors(this.fw.getRouting().getBgp().summaryFacts());
     }
+    const single = /^router info bgp neighbors (\d{1,3}(?:\.\d{1,3}){3})$/.exec(path);
+    if (single) {
+      const facts = this.fw.getRouting().getBgp().summaryFacts();
+      if (!facts.neighbours.some(peer => peer.address === single[1])) return null;
+      return renderBgpNeighbors({ ...facts, neighbours: facts.neighbours.filter(peer => peer.address === single[1]) });
+    }
     return null;
   }
 

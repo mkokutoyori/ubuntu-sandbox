@@ -1,6 +1,7 @@
 import { IPAddress, SubnetMask } from '../../../core/types';
 import { ipToUint32, tryIpToUint32, prefixLengthToMaskUint32 } from '../../../core/ip';
 import { BGPEngine, type BgpPeerLink, type BgpNeighborCfg, type BgpRouteDecision } from '../../../bgp/BGPEngine';
+import { BGP_DEFAULT_HOLD_SEC, BGP_DEFAULT_KEEPALIVE_SEC } from '../../../bgp/messages';
 import { BGP_PORT, CEASE_SUBCODE } from '../../../bgp/messages';
 import { BGP_DEFAULT_LOCAL_PREF } from '../../../bgp/bestPath';
 import type { IpPrefixListStore } from '../../router/policy/IpPrefixList';
@@ -134,8 +135,10 @@ export class FirewallBgp {
     neighbors: Map<string, BgpNeighborCfg>;
     defaultLocalPref: number;
     gracefulRestart?: BgpConfiguration['gracefulRestart'];
+    dampening?: BgpConfiguration['dampening'];
   } {
     return {
+      ...(config.dampening ? { dampening: config.dampening } : {}),
       ...(config.gracefulRestart ? { gracefulRestart: config.gracefulRestart } : {}),
       asn: config.asn,
       routerId: config.routerId.length > 0 ? config.routerId : this.derivedRouterId(),
@@ -210,6 +213,11 @@ export class FirewallBgp {
           remoteRouterId: this.engine?.remoteRouterIdOf(peer.ip) ?? '',
           messages: this.engine?.messageCountsFor(peer.ip) ?? NO_MESSAGES,
           tableVersionSent: this.engine?.tableVersionSentTo(peer.ip) ?? 0,
+          prefixesAnnounced: this.engine?.prefixesAnnouncedTo(peer.ip) ?? 0,
+          prefixesInRib: this.engine?.prefixesSelectedFrom(peer.ip) ?? 0,
+          routeMapIn: peer.routeMapIn || undefined,
+          holdTimeSec: BGP_DEFAULT_HOLD_SEC,
+          keepaliveSec: BGP_DEFAULT_KEEPALIVE_SEC,
         };
       }),
     };

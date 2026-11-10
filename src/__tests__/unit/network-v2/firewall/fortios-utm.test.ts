@@ -391,6 +391,7 @@ describe('categories locales', () => {
 describe('filtre DNS', () => {
   const profile: DnsFilterProfile = {
     name: 'DNS',
+    blockAction: 'redirect',
     categoryFilters: [{ id: '1', category: 14, action: 'block' }],
     domainFilterTable: '1',
     unclassifiedAction: 'allow',

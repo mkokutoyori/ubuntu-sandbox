@@ -25,6 +25,7 @@ import { VPN_SPECS } from './vpn';
 import { SDWAN_SPECS } from './sdwan';
 import { HA_SPECS } from './ha';
 import { NAT64_SPECS } from './nat64';
+import { WEB_PROXY_SPECS } from './webProxy';
 import { ROUTER_DYNAMIC_SPECS } from './routerDynamic';
 import { SNMP_SPECS } from './snmp';
 
@@ -35,6 +36,7 @@ export const FORTIOS_SCHEMA: readonly FortiTableSpec[] = Object.freeze([
   ...SDWAN_SPECS,
   ...HA_SPECS,
   ...NAT64_SPECS,
+  ...WEB_PROXY_SPECS,
   ...ROUTER_DYNAMIC_SPECS,
   FIREWALL_ADDRESS,
   FIREWALL_ADDRESS6,

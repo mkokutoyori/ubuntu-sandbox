@@ -24,6 +24,7 @@ export interface RoutingWiringHost {
   tcp(): TcpStack;
   egressToward?(ip: string): { localIp: string; localIface: string } | null;
   listenBgp(accept: (socket: TcpSocket) => void): void;
+  ensureBfdSession(iface: string, neighborIp: string): void;
 }
 
 export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting {
@@ -63,6 +64,7 @@ export function createFirewallRouting(host: RoutingWiringHost): FirewallRouting 
     tcp: () => host.tcp(),
     egressToward: host.egressToward === undefined ? undefined : (ip) => host.egressToward!(ip),
     listenBgp: (accept) => { host.listenBgp(accept); },
+    ensureBfdSession: (iface, neighborIp) => { host.ensureBfdSession(iface, neighborIp); },
   });
 }
 

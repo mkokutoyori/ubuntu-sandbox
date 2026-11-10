@@ -564,7 +564,7 @@ function srcCheckStage(services: FirewallServices): PipelineStage {
       }
 
       const reverse = vdom(services, context).routes
-        .resolveNextHop(packet.sourceIP.toString());
+        .resolveNextHop(packet.sourceIP.toString(), services.interfaces.vrfOf(context.ingressPort));
       if (!reverse) return deny(context, 'src-check', 'reverse-path-failed');
       if (reverse.iface !== context.ingressPort) {
         return deny(context, 'src-check', 'reverse-path-failed');
@@ -965,7 +965,8 @@ function routeLookupStage(services: FirewallServices): PipelineStage {
         return proceed(context, 'route-lookup', 'policy-routed');
       }
 
-      const resolved = vdom(services, context).routes.resolveNextHop(packet.destinationIP.toString());
+      const resolved = vdom(services, context).routes.resolveNextHop(
+        packet.destinationIP.toString(), services.interfaces.vrfOf(context.ingressPort));
       if (!resolved) return deny(context, 'route-lookup', 'no-route');
 
       context.egressPort = resolved.iface;

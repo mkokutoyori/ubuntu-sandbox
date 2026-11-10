@@ -200,7 +200,7 @@ describe('§P4 — ce que la ligne de commande accepte', () => {
     // `--retry` et `-F` ont quitté cette liste en étant IMPLÉMENTÉES
     // (`curl-form-et-retry.test.ts`) : ce cas est tombé quand elles le
     // sont devenues, ce qui est précisément son rôle.
-    for (const option of ['-x']) {
+    for (const option of ['-C']) {
       expect(await cli.executeCommand(`curl -s ${option} zorglub http://10.0.0.2:8080/`), option)
         .toContain(`curl: option ${option}: is not implemented in this simulator`);
     }

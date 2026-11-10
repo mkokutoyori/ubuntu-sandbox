@@ -46,6 +46,9 @@ export interface DnsFilterProfile {
   readonly name: string;
   readonly categoryFilters: readonly CategoryFilterEntry[];
   readonly domainFilterTable?: string;
+  readonly blockAction: 'block' | 'redirect' | 'block-sevrfail';
+  readonly redirectPortal?: string;
+  readonly redirectPortal6?: string;
   readonly unclassifiedAction: UtmAction;
   readonly comment?: string;
 }
@@ -120,6 +123,7 @@ export interface SslSshProfile {
   readonly untrustedCaName?: string;
   readonly serverCertMode?: string;
   readonly untrustedCert?: UntrustedCertAction;
+  readonly minSslVersion?: string;
   readonly exemptions?: readonly SslExemptEntry[];
   readonly comment?: string;
 }

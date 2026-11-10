@@ -43,6 +43,11 @@ export class VxlanAgent {
   getConfig(): Readonly<VxlanConfig> { return this.config; }
   setEnabled(on: boolean): void { this.config.enabled = on; }
   setLearning(on: boolean): void { this.config.learning = on; }
+  setPort(port: number): void { this.config.port = port; }
+  hasVni(vni: number): boolean {
+    for (const i of this.config.interfaces.values()) if (i.enabled && i.vnis.has(vni)) return true;
+    return false;
+  }
 
   ensureInterface(ifaceName: string, localVtepIp: string | null = null): VxlanInterface {
     let i = this.config.interfaces.get(ifaceName);
@@ -142,6 +147,10 @@ export class VxlanAgent {
     }
     if ((payload.header.flags & VXLAN_FLAG_I) === 0) {
       this.dropped(vni, srcIp.toString(), 'invalid-frame');
+      return true;
+    }
+    if (!this.hasVni(vni)) {
+      this.dropped(vni, srcIp.toString(), 'no-vni');
       return true;
     }
     const remoteVtepIp = srcIp.toString();

@@ -410,6 +410,15 @@ export function buildIpCtx(
       }
       return entries;
     },
+    getNeighborTable6(): IpNeighborEntry[] {
+      return [...net.getNeighborCache()].map(([ip, entry]) => ({
+        ip,
+        mac: entry.mac.toString(),
+        iface: entry.iface,
+        state: entry.state.toUpperCase(),
+        router: entry.isRouter,
+      }));
+    },
     addNeighbor(ip: IPAddress, mac: MACAddress, ifName: string): string {
       const port = net.getPorts().get(ifName);
       if (!port) return 'RTNETLINK answers: No such device';

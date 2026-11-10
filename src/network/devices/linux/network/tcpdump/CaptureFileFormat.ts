@@ -4,6 +4,9 @@ import {
 } from '@/network/capture/pcap/PcapFile';
 import { decodeCapturedBytes, type CaptureDirection, type CaptureFrame } from './CaptureFrame';
 import {
+  bsdEtherTypeOf, bsdFamilyHeaderBytes, bsdFamilyOf, bsdOriginalLength, isBsdLink, type BsdLinkType,
+} from './TcpdumpBsdLink';
+import {
   SLL2_HEADER_LENGTH, SLL_HEADER_LENGTH, cookedInterfacesOf, cookedLength, cookedRecordBytes, type CookedInterfaces,
 } from './TcpdumpFormat';
 
@@ -41,6 +44,7 @@ const COOKED_PACKET_TYPE = { host: 0, broadcast: 1, multicast: 2, otherHost: 3, 
 const BROADCAST_MAC = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
 const MULTICAST_MAC = [0x01, 0x00, 0x5e, 0x00, 0x00, 0x00];
 const UNKNOWN_MAC = [0, 0, 0, 0, 0, 0];
+const NO_ETHERTYPE = 0xffff;
 const OTHER_HOST_MAC = [0x02, 0, 0, 0, 0, 0xff];
 
 function micros(frame: CaptureFrame): number {
@@ -51,8 +55,10 @@ function recordOf(frame: CaptureFrame, header: CaptureFileHeader, cooked: Cooked
   const microsecond = micros(frame);
   const wholeMicros = frame.subsecondMicros ?? microsecond % 1_000_000;
   const subsecond = header.nanosecond === true ? wholeMicros * 1000 + (frame.atSubMicroNanos ?? 0) : wholeMicros;
-  const bytes = cooked === null ? frame.raw : cookedRecordBytes(frame, cooked);
-  const originalLength = cooked === null ? frame.length : cookedLength(frame, cooked);
+  const bsd = isBsdLink(header.linkType);
+  const bytes = bsd ? [...(frame.linkBytes ?? []), ...frame.raw.slice(frame.rawLinkOffset)]
+    : cooked === null ? frame.raw : cookedRecordBytes(frame, cooked);
+  const originalLength = bsd ? bsdOriginalLength(frame) : cooked === null ? frame.length : cookedLength(frame, cooked);
   const padded = bytes.length >= originalLength ? bytes : [...bytes, ...new Array<number>(originalLength - bytes.length).fill(0)];
   return {
     seconds: Math.floor(microsecond / 1_000_000),
@@ -162,12 +168,52 @@ function cookedFrame(
   return frame;
 }
 
+function loopbackFrame(record: PcapRecord, linkType: BsdLinkType, instant: Instant): CaptureFrame | null {
+  const headerBytes = bsdFamilyHeaderBytes(linkType);
+  if (record.data.length < headerBytes || (linkType === 'RAW' && record.data.length === 0)) {
+    const cut = truncatedLinkFrame(record, instant);
+    cut.linkType = linkType;
+    cut.bsdFamily = 0;
+    cut.linkBytes = [];
+    cut.rawLinkOffset = 0;
+    cut.length = record.originalLength + ETHERNET_HEADER_BYTES;
+    return cut;
+  }
+  const family = linkType === 'RAW' ? 0 : bsdFamilyOf(linkType, record.data);
+  const network = record.data.subarray(headerBytes);
+  const etherType = bsdEtherTypeOf(linkType, family, network.length === 0 ? null : network[0]);
+  const ethernet = Uint8Array.from([...UNKNOWN_MAC, ...UNKNOWN_MAC, (etherType ?? NO_ETHERTYPE) >> 8, (etherType ?? NO_ETHERTYPE) & 0xff, ...network]);
+  const wireLength = Math.max(ETHERNET_HEADER_BYTES, record.originalLength - headerBytes + ETHERNET_HEADER_BYTES);
+  const frame = decodeCapturedBytes(ethernet, wireLength, '', 'in', instant.at, instant.atMicros);
+  if (frame === null) return null;
+  frame.linkType = linkType;
+  frame.bsdFamily = family;
+  frame.linkBytes = Array.from(record.data.subarray(0, headerBytes));
+  if (linkType === 'RAW' && etherType === null) frame.rawIpVersion = network[0] >> 4;
+  return frame;
+}
+
+function invalidHeaderText(record: PcapRecord): string | null {
+  const reasons: string[] = [];
+  if (record.capturedLength === 0) reasons.push('caplen==0');
+  if (record.originalLength === 0) reasons.push('len==0');
+  else if (record.originalLength < record.capturedLength) reasons.push(`len(${record.originalLength}) < caplen(${record.capturedLength})`);
+  return reasons.length === 0 ? null : `[Invalid header: ${reasons.join(', ')}]`;
+}
+
 function frameOf(
   record: PcapRecord, linkType: string | null, nanosecond: boolean, context: CaptureFileContext,
 ): CaptureFrame | null {
   const instant = instantOf(record, nanosecond);
+  const invalid = invalidHeaderText(record);
+  if (invalid !== null) {
+    const stub = truncatedLinkFrame(record, instant);
+    stub.invalidHeader = invalid;
+    return stamped(stub, instant);
+  }
   if (linkType === 'LINUX_SLL') return stamped(cookedFrame(record, 1, instant, context), instant);
   if (linkType === 'LINUX_SLL2') return stamped(cookedFrame(record, 2, instant, context), instant);
+  if (linkType !== null && isBsdLink(linkType)) return stamped(loopbackFrame(record, linkType, instant), instant);
   if (linkType !== ETHERNET_LINK_TYPE) return null;
   return stamped(
     decodeCapturedBytes(record.data, record.originalLength, '', 'in', instant.at, instant.atMicros) ?? truncatedLinkFrame(record, instant),

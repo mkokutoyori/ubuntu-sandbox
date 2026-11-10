@@ -235,12 +235,43 @@ function parseCustomHeaders(specs: readonly string[]): CustomHeader[] {
   return parsed;
 }
 
+export interface ProxyHop { readonly host: string; readonly port: number }
+
+const CURL_DEFAULT_PROXY_PORT = 1080;
+
+export function proxyHopOf(proxy: string | null): ProxyHop | null {
+  if (proxy === null || proxy === '') return null;
+  const bare = proxy.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/.*$/, '');
+  const colon = bare.lastIndexOf(':');
+  if (colon > 0 && /^\d+$/.test(bare.slice(colon + 1))) {
+    return { host: bare.slice(0, colon), port: Number(bare.slice(colon + 1)) };
+  }
+  return { host: bare, port: CURL_DEFAULT_PROXY_PORT };
+}
+
+async function openTunnel(socket: TcpSocket, url: CurlUrl): Promise<string | null> {
+  const authority = `${hostInAuthority(url.host)}:${url.port}`;
+  const answer = await new Promise<string>((resolve) => {
+    let received = '';
+    const settle = (): void => { stop(); stopClose(); resolve(received); };
+    const stop = socket.onData((chunk) => {
+      received += String(chunk);
+      if (received.includes('\r\n\r\n')) settle();
+    });
+    const stopClose = socket.onClose(settle);
+    socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`);
+  });
+  const status = /^HTTP\/1\.[01] (\d{3})/.exec(answer);
+  if (status === null) return '000';
+  return status[1] === '200' ? null : status[1];
+}
+
 function buildRequest(
   url: CurlUrl, method: string, opts: CurlOptions, body: string | null,
   jar?: CookieJar, formContentType?: string,
 ): HttpMessage {
   const verb: HttpMethod = isKnownMethod(method) ? method : 'GET';
-  const request = createRequest(verb, url.path);
+  const request = createRequest(verb, proxyHopOf(opts.proxy) !== null && url.scheme === 'http' ? `http://${hostInAuthority(url.host)}${url.port === 80 ? '' : `:${url.port}`}${url.path}` : url.path);
   const custom = parseCustomHeaders(opts.headers);
   const overridden = (name: string): boolean => custom.some((h) => h.name.toLowerCase() === name.toLowerCase());
   const authority = (url.scheme === 'https' && url.port === 443) || (url.scheme === 'http' && url.port === 80)
@@ -509,10 +540,11 @@ async function performHttpRequest(
   }
 
   for (;;) {
-    const override = resolvedOverride(opts, url);
+    const via = proxyHopOf(opts.proxy);
+    const override = via === null ? resolvedOverride(opts, url) : undefined;
     let address = override;
     if (!address) {
-      const resolved = await host.resolveHostname(url.host);
+      const resolved = await host.resolveHostname(via?.host ?? url.host);
       if (!resolved) {
         return {
           ok: false, code: 6, message: `curl: (6) Could not resolve host: ${url.host}`,
@@ -524,7 +556,7 @@ async function performHttpRequest(
     const hopStartedAt = simulationNowMs();
     stats.namelookupAt ??= hopStartedAt;
     remoteIp = address;
-    trace.push(`*   Trying ${address}:${url.port}...`);
+    trace.push(`*   Trying ${address}:${via?.port ?? url.port}...`);
 
     const request = buildRequest(
       url, method, opts, sendBody ? (corpsForm ?? body) : null, jar, formContentType);
@@ -541,13 +573,23 @@ async function performHttpRequest(
       const verifier = opts.insecure
         ? new InsecureCertificateVerifier({ trustAnchors: [] })
         : new CertificateVerifier({ trustAnchors: anchors, clock: () => host.tcpStack().nowMs() });
-      const porte = await dial(host, address, url.port, budget);
+      const porte = await dial(host, address, via?.port ?? url.port, budget);
       if (porte.kind !== 'open') {
-        return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
+        return connectFailure(porte, url, via?.port ?? url.port, remoteIp, method, redirects, trace);
       }
       local = { ip: porte.socket.localIp, port: porte.socket.localPort };
       stats.connects++;
       stats.connectAt = simulationNowMs();
+      if (via !== null) {
+        const refused = await openTunnel(porte.socket, url);
+        if (refused !== null) {
+          porte.socket.close();
+          return {
+            ok: false, code: 56, message: `curl: (56) CONNECT tunnel failed, response ${refused}`,
+            url, remoteIp, method, numRedirects: redirects, trace,
+          };
+        }
+      }
       sentBytes();
 
       let session: HttpsClientSession | null = null;
@@ -567,7 +609,7 @@ async function performHttpRequest(
           };
         }
         const credential = clientCredential.credential;
-        session = new HttpsClientSession(host.tcpStack(), address, url.port, {
+        session = new HttpsClientSession(host.tcpStack(), via === null ? address : url.host, url.port, {
           verifier, ...tlsPolicy.config, ...(opts.certStatus ? { collectOcspStaple: true } : {}),
           ...(credential ? { clientCert: credential.cert, clientChain: credential.chain, clientPrivateKey: credential.key } : {}),
         });
@@ -647,8 +689,8 @@ async function performHttpRequest(
         session?.close();
       }
     } else {
-      const session = new Http1ClientSession(host.tcpStack(), address, url.port);
-      const porte = await dial(host, address, url.port, budget);
+      const session = new Http1ClientSession(host.tcpStack(), address, via?.port ?? url.port);
+      const porte = await dial(host, address, via?.port ?? url.port, budget);
       if (porte.kind !== 'open') {
         return connectFailure(porte, url, url.port, remoteIp, method, redirects, trace);
       }

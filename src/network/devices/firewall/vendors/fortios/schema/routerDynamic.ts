@@ -321,6 +321,11 @@ const OSPF_INTERFACE: FortiTableSpec = {
       quoted: true, secret: true,
       availableWhen: (view) => view.effective('authentication')[0] === 'text',
     },
+    choice('bfd', 'Bidirectional Forwarding Detection (BFD).', [
+      { keyword: 'global', description: 'Use the global BFD setting of the OSPF process.' },
+      { keyword: 'enable', description: 'Enable BFD on this interface.' },
+      { keyword: 'disable', description: 'Disable BFD on this interface.' },
+    ], 'global'),
   ],
   children: [OSPF_MD5_KEYS],
 };
@@ -334,6 +339,7 @@ export const ROUTER_OSPF: FortiTableSpec = {
   help: 'Configure OSPF.',
   attributes: [
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
+    enable('bfd', 'Bidirectional Forwarding Detection (BFD).'),
     {
       ...text('passive-interface', 'Interfaces that listen without advertising.'),
       multiValue: true,
@@ -370,11 +376,13 @@ export const ROUTER_OSPF: FortiTableSpec = {
         priority: Number.parseInt(entry.effective('priority')[0] ?? '1', 10),
         networkType: entry.effective('network-type')[0] ?? 'broadcast',
         authentication: entry.effective('authentication')[0] ?? 'none',
+        bfd: (entry.effective('bfd')[0] ?? 'global') as 'global' | 'enable' | 'disable',
         md5Keys: entry.childEntries('md5-keys').map(key => ({
           id: Number.parseInt(key.key, 10),
           key: key.effective('key-string')[0] ?? '',
         })),
       })),
+      bfd: object.effective('bfd')[0] === 'enable',
       passiveInterfaces: [...object.effective('passive-interface')],
       redistributeConnected: false,
       redistributeStatic: false,
@@ -407,6 +415,51 @@ const BGP_NEIGHBOR: FortiTableSpec = {
   ],
 };
 
+const BGP_LEAK_TARGET: FortiTableSpec = {
+  path: ['router', 'bgp', 'vrf', 'leak-target'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 1,
+  help: 'Target VRF table.',
+  attributes: [
+    { ...word('vrf', 'Target VRF ID (0 - 251).'), readOnly: true },
+    reference('interface', 'Interface which is used to leak routes to target VRF.', ['system interface']),
+    reference('route-map', 'Route map of VRF leaking.', ['router route-map']),
+  ],
+};
+
+const RT_UNSUPPORTED = 'route targets, route distinguishers and import maps belong to MPLS/VPN VRFs; this build leaks between VRFs of the unit through `config leak-target`, which is built.';
+
+const BGP_VRF: FortiTableSpec = {
+  path: ['router', 'bgp', 'vrf'],
+  kind: 'table',
+  keyType: 'name',
+  ordered: false,
+  scope: 'vdom',
+  accessGroup: 'netgrp',
+  renderOrder: 3,
+  help: 'BGP VRF leaking table.',
+  attributes: [
+    { ...word('vrf', 'Origin VRF ID (0 - 251).'), readOnly: true },
+    { ...word('export-rt', 'List of export route target.'), multiValue: true, unimplemented: RT_UNSUPPORTED },
+    { ...word('import-rt', 'List of import route target.'), multiValue: true, unimplemented: RT_UNSUPPORTED },
+    { ...word('import-route-map', 'Import route map.'), unimplemented: RT_UNSUPPORTED },
+    { ...word('rd', 'Route Distinguisher: AA:NN|A.B.C.D:NN.'), unimplemented: RT_UNSUPPORTED },
+    {
+      ...choice('role', 'VRF role.', [
+        { keyword: 'standalone', description: 'Stand-alone VRF.' },
+        { keyword: 'ce', description: 'CE VRF.' },
+        { keyword: 'pe', description: 'PE VRF.' },
+      ], 'standalone'),
+      unimplementedValues: { ce: RT_UNSUPPORTED, pe: RT_UNSUPPORTED },
+    },
+  ],
+  children: [BGP_LEAK_TARGET],
+};
+
 const BGP_NETWORK: FortiTableSpec = {
   path: ['router', 'bgp', 'network'],
   kind: 'table',
@@ -433,14 +486,33 @@ export const ROUTER_BGP: FortiTableSpec = {
     count('as', 'Local autonomous system number.', 0, AS_NUMBER_MAX, 0),
     address('router-id', 'Router ID, in dotted form.', '0.0.0.0'),
     count('default-local-preference', 'Default local preference.', 0, 4294967295, 100),
+    enable('dampening', 'Enable/disable route-flap dampening.'),
+    count('dampening-max-suppress-time', 'Maximum minutes a route can be suppressed.', 1, 255, 60),
+    count('dampening-reachability-half-life', 'Reachability half-life time for penalty (min).', 1, 45, 15),
+    count('dampening-reuse', 'Threshold to reuse routes.', 1, 20000, 750),
+    count('dampening-suppress', 'Threshold to suppress routes.', 1, 20000, 2000),
+    count('dampening-unreachability-half-life', 'Unreachability half-life time for penalty (min).', 1, 45, 15),
+    { ...word('dampening-route-map', 'Criteria for dampening.'), unimplemented: 'dampening criteria select routes through route-map rules carrying set-dampening-* values, which the route-map evaluator here does not carry; dampening applies to every eBGP route.' },
     enable('graceful-restart', 'Enable/disable BGP graceful restart capabilities.'),
     count('graceful-restart-time', 'Time needed for neighbors to restart (sec).', 1, 3600, 120),
     count('graceful-stalepath-time', 'Time to hold stale paths of restarting neighbor (sec).', 1, 3600, 360),
     enable('graceful-end-on-timer', 'Enable/disable to exit graceful restart on timer only.'),
   ],
-  children: [BGP_NEIGHBOR, BGP_NETWORK],
+  children: [BGP_NEIGHBOR, BGP_NETWORK, BGP_VRF],
   onCommit(object, context) {
     const asn = Number.parseInt(object.effective('as')[0] ?? '0', 10);
+    const leaks = object.childEntries('vrf').flatMap(origin => origin.childEntries('leak-target').map(target => ({
+      origin: Number.parseInt(origin.key, 10),
+      target: Number.parseInt(target.key, 10),
+      iface: target.effective('interface')[0] ?? '',
+      routeMap: target.effective('route-map')[0] || undefined,
+    })));
+    for (const leak of leaks) {
+      if (leak.iface === '') return `leak-target ${leak.target} of vrf ${leak.origin} needs an interface.`;
+      if (leak.origin === leak.target) return `vrf ${leak.origin} cannot leak into itself.`;
+    }
+    if (leaks.length > 0 && asn === 0) return 'VRF leaking is a BGP function: a local AS number is required.';
+    context.device.applyVrfLeaks(leaks);
     const neighbours = object.childEntries('neighbor');
 
     if (neighbours.length > 0 && asn === 0) {
@@ -457,6 +529,15 @@ export const ROUTER_BGP: FortiTableSpec = {
       asn,
       routerId: object.effective('router-id')[0] ?? '0.0.0.0',
       defaultLocalPreference: Number.parseInt(object.effective('default-local-preference')[0] ?? '100', 10),
+      dampening: object.effective('dampening')[0] === 'enable'
+        ? {
+          suppressLimit: Number.parseInt(object.effective('dampening-suppress')[0] ?? '2000', 10),
+          reuseLimit: Number.parseInt(object.effective('dampening-reuse')[0] ?? '750', 10),
+          reachabilityHalfLifeMin: Number.parseInt(object.effective('dampening-reachability-half-life')[0] ?? '15', 10),
+          unreachabilityHalfLifeMin: Number.parseInt(object.effective('dampening-unreachability-half-life')[0] ?? '15', 10),
+          maxSuppressMin: Number.parseInt(object.effective('dampening-max-suppress-time')[0] ?? '60', 10),
+        }
+        : undefined,
       gracefulRestart: object.effective('graceful-restart')[0] === 'enable'
         ? {
           restartTimeSec: Number.parseInt(object.effective('graceful-restart-time')[0] ?? '120', 10),
@@ -554,7 +635,7 @@ export const ROUTER_ASPATH_LIST: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
-  renderOrder: 239,
+  renderOrder: 230.2,
   help: 'Configure Autonomous System (AS) path lists.',
   attributes: [
     { ...word('name', 'AS path list name.'), readOnly: true },
@@ -602,7 +683,7 @@ export const ROUTER_COMMUNITY_LIST: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
-  renderOrder: 243,
+  renderOrder: 230.4,
   help: 'Configure community lists.',
   attributes: [
     { ...word('name', 'Community list name.'), readOnly: true },
@@ -683,7 +764,7 @@ export const ROUTER_ROUTE_MAP: FortiTableSpec = {
   ordered: false,
   scope: 'vdom',
   accessGroup: 'netgrp',
-  renderOrder: 238,
+  renderOrder: 235,
   help: 'Configure route maps.',
   attributes: [
     { ...word('name', 'Name.'), readOnly: true },

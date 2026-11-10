@@ -6,7 +6,7 @@ Meridian Industries a un siège et trois agences. Chaque site est protégé par 
 
 Barre d'outils → **Importer** → `topology.json`. Le fichier est généré par `src/labs/entrepriseMeridian/` : chaque équipement est configuré en tapant les mêmes commandes qu'un utilisateur (CLI FortiOS, PowerShell, bash).
 
-## Équipements (18)
+## Équipements (20)
 
 | Site | Équipement | Rôle | Adresse |
 |------|-----------|------|---------|
@@ -19,12 +19,13 @@ Barre d'outils → **Importer** → `topology.json`. Le fichier est généré pa
 | Siège | ORA-DB | Linux : listener Oracle (1521) | 10.0.0.30 |
 | Siège | PC-HQ | poste du siège | 10.0.0.50 |
 | Siège | SIEM | Linux : collecteur rsyslog (UDP 514) des journaux de FGT-HQ | 10.0.0.40 |
+| Siège (invité) | PC-INVITE | poste invité dans son propre VRF (30), sur `port3` de FGT-HQ | 192.168.30.50 |
 | Siège (DMZ) | WEB-DMZ | Linux + nginx | 172.16.0.10 |
 | Siège (DMZ) | MAIL-DMZ | Windows Server + **Microsoft Exchange** (rôle Mailbox), membre de `meridian.local` | 172.16.0.25 |
 | Agence 1-3 | FGT-AGENCE1..3 | FortiGate : WAN `wan1` (203.0.113.2-4), LAN `port1` | 10.n.0.1 |
 | Agence 1-3 | PC-AGENCE1..3 | poste d'agence | 10.n.0.50 |
 
-Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-partagée des tunnels : `Mer1dian-VPN-2026`.
+Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-partagée des tunnels : `Mer1dian-VPN-2026`. Clé pré-partagée post-quantique (RFC 8784, `ppk require`) : identité `meridian-ppk-1`, secret `Qu4ntum-Mer1dian-2026`. Superposition VXLAN siège ↔ agence 1 : appareil `vx-ag1`, VNI 5001, `192.168.250.1` / `192.168.250.2`.
 
 ## Ce que le lab démontre
 
@@ -37,6 +38,13 @@ Comptes : domaine `MERIDIAN`, `Administrator` / `DSRM@Mer1dian!`. Clé pré-part
 | `spoke-to-spoke-through-hub` | Deux agences se parlent par le siège : le concentrateur retransmet de tunnel à tunnel. |
 | `tunnels-up` | `get vpn ipsec tunnel summary` montre un sélecteur monté par agence. |
 | `hub-routing-entry-details` | `get router info routing-table details` : la route vers l'agence 1 sort par l'interface IPsec `to-ag1`. |
+| `tunnels-carry-post-quantum-key` | Les tunnels exigent une clé post-quantique (`ppk require`) ; le secret est affiché chiffré (`ENC`). |
+| `overlay-vxlan-ping` | `system vxlan` (VNI 5001) étend un segment L2 entre le siège et l'agence 1 ; le ping traverse Internet encapsulé en UDP 4789. |
+| `guest-reaches-internet-through-vrf-leak` | Le réseau invité (VRF 30) n'atteint Internet que par une fuite du VRF 0 (`router bgp` > `vrf 0` > `leak-target 30`), filtrée par la route-map `leak-internet`. |
+| `guest-browses-through-explicit-proxy` | Le proxy web explicite de `port3` (8080) relaie la requête de l'invité ; la `proxy-policy` `guest-web` accepte `port3` vers `wan1`. |
+| `guest-proxy-refuses-internal-web` | `sec-default-action deny` : le proxy répond 403 pour la DMZ, que la politique n'autorise pas. |
+| `guest-isolated-from-lan` | Le LAN du siège n'existe pas dans le VRF invité : aucun ping, même si une politique l'autoriserait. |
+| `guest-vrf-routing-table` | `get router info routing-table all` a une section `Routing table for VRF=30` où la route Internet fuitée figure en `B`. |
 | `hub-originates-into-tunnel` | `execute ping` depuis le pare-feu vers la passerelle d'une agence traverse le tunnel. |
 | `ipsec-crypto-counters` | `get vpn ipsec stats crypto` compte le trafic AES-256 / SHA-256 reellement echange. |
 | `external-security-assessment` | Le prestataire d'audit déroule `/opt/audit/run-all.sh` depuis Internet : seuls les VIP web (80) et mail (25) répondent, ni SSH sur le VIP mail, ni Oracle 1521, ni le LAN privé. |

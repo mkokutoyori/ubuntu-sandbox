@@ -146,13 +146,12 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       const { fw } = await creerLaboSDWAN();
       await taper(fw, [
         'config system sdwan',
-        'config service', 'edit 10',
-        'set name "DUPLICATE_VOICE"',
-        'set packet-duplication enable',
+        'config duplication', 'edit 1',
+        'set packet-duplication force',
         'next', 'end', 'end',
       ]);
       const dup = await fw.executeCommand('show system sdwan');
-      expect(dup).toContain('packet-duplication enable');
+      expect(dup).toContain('set packet-duplication force');
     });
 
     it('455. Dé-duplication automatique en réception sur le commutateur de coeur de réseau', async () => {
@@ -372,10 +371,10 @@ describe('Batterie 10 : Tests 451 à 500 — SD-WAN, VXLAN, Cryptographie Post-Q
       const { fw } = await creerLaboSDWAN();
       await taper(fw, [
         'config vpn ipsec phase1-interface', 'edit "PQC_VPN"',
-        'set ppk enable', 'set ppk-identity "PQC-KEY-01"', 'next', 'end',
+        'set ike-version 2', 'set ppk require', 'set ppk-identity "PQC-KEY-01"', 'set ppk-secret "QuantumSecret01"', 'next', 'end',
       ]);
       const vpn = await fw.executeCommand('show vpn ipsec phase1-interface PQC_VPN');
-      expect(vpn).toContain('ppk enable');
+      expect(vpn).toContain('set ppk require');
     });
 
     it('480. Protection contre l\'interception HNDL (Harvest Now, Decrypt Later) garantie par le double chiffrement', async () => {

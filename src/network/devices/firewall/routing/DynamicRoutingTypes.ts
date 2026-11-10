@@ -38,6 +38,7 @@ export interface OspfInterfaceSettings {
   readonly networkType: string;
   readonly authentication: string;
   readonly md5Keys: readonly { readonly id: number; readonly key: string }[];
+  readonly bfd: 'global' | 'enable' | 'disable';
 }
 
 export interface OspfArea {
@@ -51,6 +52,7 @@ export interface OspfConfiguration {
   readonly areas: readonly OspfArea[];
   readonly networks: readonly DynamicNetwork[];
   readonly interfaces: readonly OspfInterfaceSettings[];
+  readonly bfd?: boolean;
   readonly passiveInterfaces: readonly string[];
   readonly redistributeConnected: boolean;
   readonly redistributeStatic: boolean;
@@ -100,6 +102,13 @@ export interface RouteMapPatch {
 }
 
 export interface BgpConfiguration {
+  readonly dampening?: {
+    readonly suppressLimit: number;
+    readonly reuseLimit: number;
+    readonly reachabilityHalfLifeMin: number;
+    readonly unreachabilityHalfLifeMin: number;
+    readonly maxSuppressMin: number;
+  };
   readonly gracefulRestart?: { readonly restartTimeSec: number; readonly stalePathTimeSec: number; readonly endOnTimerOnly: boolean };
   readonly defaultLocalPreference?: number;
   readonly enabled: boolean;
@@ -154,6 +163,11 @@ export interface BgpPeerSummary {
   readonly remoteRouterId: string;
   readonly messages: BgpMessageTally;
   readonly tableVersionSent: number;
+  readonly prefixesAnnounced?: number;
+  readonly prefixesInRib?: number;
+  readonly routeMapIn?: string;
+  readonly holdTimeSec?: number;
+  readonly keepaliveSec?: number;
 }
 
 

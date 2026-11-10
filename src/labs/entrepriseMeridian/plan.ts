@@ -4,6 +4,15 @@ export const INTERNAL_DOMAIN = 'meridian.local';
 export const PUBLIC_DOMAIN = 'meridian-industries.com';
 export const DOMAIN_PASSWORD = 'DSRM@Mer1dian!';
 export const PRE_SHARED_KEY = 'Mer1dian-VPN-2026';
+export const POST_QUANTUM_KEY = { identity: 'meridian-ppk-1', secret: 'Qu4ntum-Mer1dian-2026' } as const;
+
+export const GUEST = {
+  vrf: 30, gateway: '192.168.30.1', client: '192.168.30.50', network: '192.168.30.0',
+} as const;
+
+export const OVERLAY = {
+  device: 'vx-ag1', vni: 5001, hub: '192.168.250.1', spoke: '192.168.250.2',
+} as const;
 
 export interface Site {
   readonly name: string;

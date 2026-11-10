@@ -195,10 +195,11 @@ const AH_OVERHEAD_BASE = 24;
  */
 export function ikeKeymatSeed(
   psk: string, dhSecret: string | null, loSpi: number, hiSpi: number,
-  transforms: readonly string[],
+  transforms: readonly string[], ppk?: string,
 ): string {
   const agreed = dhSecret ?? 'no-dh';
-  return `ipsec-keymat|${psk}|${agreed}|${loSpi}|${hiSpi}|${transforms.join(',')}`;
+  const mixed = ppk === undefined ? '' : `|ppk:${ppk}`;
+  return `ipsec-keymat|${psk}|${agreed}|${loSpi}|${hiSpi}|${transforms.join(',')}${mixed}`;
 }
 
 function deriveKeymatHex(secret: string, label: string, bits: number): string {
@@ -3805,6 +3806,7 @@ export class IPSecEngine implements IProtocolEngine {
       ipsecSpiIn: spiInitIn,
       natTHint: this.natTraversalDecision(apparentSrcIP !== localIP),
       keyExchange: exchange?.payload,
+      ppkIdentity: entry.ppk && entry.ppk.mode !== 'disable' && entry.ppk.secret.length > 0 ? entry.ppk.identity : undefined,
       trafficSelectors: this.selectorsForEntry(entry),
       configRequest: this.configRequests.get(peerIP)
         ?? (this.mapClientPolicies.get(this.ifaceCryptoMap.get(egressIface) ?? '')?.initiate ? { wantAddress: true } : undefined),
@@ -4095,7 +4097,14 @@ export class IPSecEngine implements IProtocolEngine {
       dhSecret = ikeSharedSecret(responderExchange.pair, offer.keyExchange);
       if (!dhSecret) { this.rejectIke(srcIp, 'INVALID_KE_PAYLOAD'); return; }
     }
-    const keymatSeed = ikeKeymatSeed(myPSK, dhSecret, loSpi, hiSpi, transforms);
+    const ppkPolicy = peerEntry?.ppk;
+    const ppkAgreed = ppkPolicy !== undefined && ppkPolicy.mode !== 'disable' && ppkPolicy.secret.length > 0
+      && offer.ppkIdentity === ppkPolicy.identity;
+    if (ppkPolicy?.mode === 'require' && !ppkAgreed) {
+      this.rejectIke(srcIp, 'AUTHENTICATION_FAILED');
+      return;
+    }
+    const keymatSeed = ikeKeymatSeed(myPSK, dhSecret, loSpi, hiSpi, transforms, ppkAgreed ? ppkPolicy?.secret : undefined);
     const cryptoKeys = deriveCryptoKeys(transforms, keymatSeed);
     const saMode = chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
     const hasESP = transforms.some((t) => t.startsWith('esp'));
@@ -4161,6 +4170,7 @@ export class IPSecEngine implements IProtocolEngine {
         ipsecSpiIn: spiRespIn, ikeLifetimeSec: ikeLifetime,
         lifetimeSec, lifetimeKB, natT,
         keyExchange: responderExchange?.payload,
+        ppkUsed: ppkAgreed,
         childRejected: childAccepted ? undefined : 'TS_UNACCEPTABLE',
         narrowedSelectors: trafficSelectors ? mirrorSelectors(trafficSelectors) : undefined,
         configReply: typeof configVerdict === 'string' ? undefined : configVerdict,
@@ -4249,7 +4259,14 @@ export class IPSecEngine implements IProtocolEngine {
         return;
       }
     }
-    const keymatSeed = ikeKeymatSeed(myPSK, dhSecret, loSpi, hiSpi, transforms);
+    const ppkPolicy = pending.entry?.ppk;
+    const ppkWanted = ppkPolicy !== undefined && ppkPolicy.mode !== 'disable' && ppkPolicy.secret.length > 0;
+    if (ppkPolicy?.mode === 'require' && accept.ppkUsed !== true) {
+      this.createFailedIKESA(srcIp, pending.egressIface, 'AUTHENTICATION_FAILED');
+      return;
+    }
+    const keymatSeed = ikeKeymatSeed(myPSK, dhSecret, loSpi, hiSpi, transforms,
+      ppkWanted && accept.ppkUsed === true ? ppkPolicy?.secret : undefined);
     const cryptoKeys = deriveCryptoKeys(transforms, keymatSeed);
     const saMode = accept.chosenTransform.mode === 'transport' ? 'Transport' : 'Tunnel';
     const hasESP = transforms.some((t) => t.startsWith('esp'));

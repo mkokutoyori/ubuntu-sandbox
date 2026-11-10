@@ -267,6 +267,19 @@ export function renderRoutingTable(routes: RouteTable, view: RoutingView, now: n
     { header: '', width: 0, value: row => row.destination },
   ], FIXED_TABLE).filter(line => line.trim().length > 0));
 
+  for (const vrf of routes.vrfs().filter(id => id !== 0)) {
+    const vrfRows = routes.selected(vrf)
+      .filter(route => keptBy(view, route))
+      .map(route => ({
+        code: routeCode(route),
+        destination: `${route.network}/${prefixLength(route.mask)} ${reachedBy(route, now)}`,
+      }));
+    lines.push('', `Routing table for VRF=${vrf}`, ...renderTable(vrfRows, [
+      { header: '', width: 8, value: row => row.code },
+      { header: '', width: 0, value: row => row.destination },
+    ], FIXED_TABLE).filter(line => line.trim().length > 0));
+  }
+
   return lines.join('\n');
 }
 
@@ -448,10 +461,23 @@ export function renderBgpNeighbors(facts: BgpSummaryFacts): string {
     lines.push(
       `  BGP state = ${peer.state}${peer.isUp ? `, up for ${uptimeClock(peer.uptimeSec)}` : ''}`,
       `  Local router ID ${facts.routerId}`,
+      ...(peer.holdTimeSec === undefined ? [] : [
+        `  Configured hold time is ${peer.holdTimeSec}, keepalive interval is ${peer.keepaliveSec} seconds`,
+      ]),
+      ...(peer.isUp ? ['  Neighbor capabilities:', '    Address family IPv4 Unicast: advertised and received'] : []),
       `  Received ${peer.messages.received} messages,`
       + ` ${peer.messages.notificationsReceived} notifications, 0 in queue`,
       `  Sent ${peer.messages.sent} messages,`
       + ` ${peer.messages.notificationsSent} notifications, 0 in queue`,
+      '',
+      ' For address family: IPv4 Unicast',
+      `  BGP table version ${facts.tableVersion}, neighbor version ${peer.tableVersionSent}`,
+      ...(peer.routeMapIn === undefined ? [] : [
+        '  Inbound path policy configured',
+        `  Route map for incoming advertisements is *${peer.routeMapIn}`,
+      ]),
+      `  ${peer.prefixesReceived} accepted prefixes, ${peer.prefixesInRib ?? 0} prefixes in rib`,
+      `  ${peer.prefixesAnnounced ?? 0} announced prefixes`,
       '',
     );
   }

@@ -34,6 +34,8 @@ export function buildCommitDevice(
         if (patch.up !== undefined) fw.setInterfaceUp(name, patch.up);
         if (patch.allowAccess) fw.setAllowedAccess(name, patch.allowAccess);
         fw.setInterfaceMtu(name, patch.mtu);
+        if (patch.vrf !== undefined) fw.configureInterface(name, { vrf: patch.vrf });
+        if (patch.explicitWebProxy !== undefined) fw.setExplicitProxyInterface(name, patch.explicitWebProxy);
         if (patch.macOverride !== undefined) fw.setInterfaceMacOverride(name, patch.macOverride);
         if (patch.netflowSampler !== undefined) fw.setNetflowSampler(name, patch.netflowSampler);
         if (patch.lldp) fw.setInterfaceLldp(name, patch.lldp.transmission, patch.lldp.reception);
@@ -91,6 +93,9 @@ export function buildCommitDevice(
       },
       applyOspf(patch) {
         return fw.getRouting().applyOspf(patch);
+      },
+      applyVrfLeaks(leaks) {
+        fw.applyVrfLeaks(leaks);
       },
       applyBgp(patch) {
         return fw.applyBgpWithBfd(patch);
@@ -411,6 +416,21 @@ export function buildCommitDevice(
       removeGreTunnel(name) {
         fw.removeGreTunnel(name);
       },
+      applyExplicitProxy(settings) {
+        fw.applyExplicitProxy(settings);
+      },
+      applyProxyPolicy(id, policy) {
+        fw.applyProxyPolicy(id, policy);
+      },
+      removeProxyPolicy(id) {
+        fw.removeProxyPolicy(id);
+      },
+      applyVxlan(name, device) {
+        return fw.applyVxlan(name, device);
+      },
+      removeVxlan(name) {
+        fw.removeVxlan(name);
+      },
       applyIpsecConcentrator(id, concentrator) {
         return fw.applyIpsecConcentrator(id, concentrator);
       },
@@ -544,6 +564,9 @@ export function buildCommitDevice(
         fw.getUtmProfiles().setDnsFilter({
           name: profile.name,
           domainFilterTable: profile.domainFilterTable,
+          blockAction: profile.blockAction,
+          redirectPortal: profile.redirectPortal,
+          redirectPortal6: profile.redirectPortal6,
           categoryFilters: profile.categoryFilters.map(categoryEntry),
           unclassifiedAction: utmAction(profile.unclassifiedAction),
           comment: profile.comment,
@@ -582,6 +605,7 @@ export function buildCommitDevice(
           untrustedCaName: profile.untrustedCaName,
           serverCertMode: profile.serverCertMode,
           untrustedCert: untrustedCertAction(profile.untrustedCert),
+          minSslVersion: profile.minSslVersion,
           exemptions: profile.exemptions?.map(entry => ({ ...entry })),
           comment: profile.comment,
         });
