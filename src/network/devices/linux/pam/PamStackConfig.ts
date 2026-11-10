@@ -145,7 +145,7 @@ class StackBuilder {
     const tokens = tokenizePamLine(line);
     if (tokens.length === 0) return;
     if (tokens[0] === '@include') {
-      if (tokens[1] !== undefined) this.loadFile(tokens[1], null, stackLevel, depth + 1, knownService);
+      if (tokens[1] !== undefined) this.loadFile(tokens[1], requested, stackLevel, depth + 1, knownService);
       return;
     }
     let kind: PamHandlerKind = 'module';

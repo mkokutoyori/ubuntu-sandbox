@@ -5301,9 +5301,16 @@ export class LinuxCommandExecutor {
       if (e instanceof DaemonParkSignal || e instanceof ExitSignal) { closeSudo(); throw e; }
       result = { output: `${actualCmd}: error`, exitCode: 1 };
     }
-    closeSudo();
-
     const suLeftSessionOpen = actualCmd === 'su' && this.suStack.length > 0;
+    if (isSudo && suLeftSessionOpen) {
+      const shell = this.suStack[this.suStack.length - 1];
+      this.suStack[this.suStack.length - 1] = {
+        ...shell, release: () => { shell.release(); closeSudo(); },
+      };
+    } else {
+      closeSudo();
+    }
+
     if (savedUser && !suLeftSessionOpen) {
       this.userMgr.currentUser = savedUser.user;
       this.userMgr.currentUid = savedUser.uid;
