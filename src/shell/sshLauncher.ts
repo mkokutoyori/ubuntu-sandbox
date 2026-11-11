@@ -213,6 +213,7 @@ function startLoginRun(auth: PendingSshAuth): LoginRun {
     localUser: auth.sourceUser ?? auth.user,
     user: auth.user,
     host: auth.host,
+    address: auth.address,
     port: auth.port,
     io,
     strict: 'accept-new' as const,
