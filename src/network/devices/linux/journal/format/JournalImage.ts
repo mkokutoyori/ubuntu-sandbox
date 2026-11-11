@@ -2,6 +2,7 @@ import { sipHash24 } from '@/network/rsyslog/SipHash';
 import { zstdCompress } from '@/network/compression/zstd/ZstdEncoder';
 import { zstdDecompress } from '@/network/compression/zstd/ZstdDecoder';
 import { jenkinsHash64 } from './JenkinsHash';
+import { GappedBytes } from './GappedBytes';
 import {
   alignObject, COMPATIBLE_SEALED, COMPATIBLE_SEALED_CONTINUOUS, COMPATIBLE_TAIL_ENTRY_BOOT_ID, DATA, DATA_OBJECT_SIZE, ENTRY, ENTRY_ARRAY, ENTRY_ARRAY_OBJECT_SIZE,
   ENTRY_OBJECT_SIZE, FIELD, FIELD_HASH_TABLE_ITEMS, FIELD_OBJECT_SIZE, HASH_ITEM_SIZE, HEADER, HEADER_SIZE, INCOMPATIBLE_COMPACT, INCOMPATIBLE_COMPRESSED_ZSTD,
@@ -48,8 +49,7 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 export class JournalImage {
-  private bytes = new Uint8Array(INITIAL_CAPACITY);
-  private view = new DataView(this.bytes.buffer);
+  private readonly store = new GappedBytes(INITIAL_CAPACITY);
   private sealer: ImageSealer | null = null;
   private tailLength = HEADER_SIZE;
   private readonly fieldTableOffset: number;
@@ -70,20 +70,18 @@ export class JournalImage {
   }
 
   snapshot(): Uint8Array {
-    return this.bytes.slice(0, this.tailLength);
+    return this.store.slice(0, this.tailLength);
   }
 
   load(bytes: Uint8Array): void {
-    this.bytes = new Uint8Array(Math.max(INITIAL_CAPACITY, bytes.length));
-    this.bytes.set(bytes);
-    this.view = new DataView(this.bytes.buffer);
+    this.store.load(bytes);
     const tail = bytes.length >= HEADER_SIZE ? this.u64(HEADER.tailObjectOffset) : 0;
     const end = tail >= HEADER_SIZE && tail + OBJECT_HEADER_SIZE <= bytes.length ? tail + alignObject(this.u64(tail + 8)) : HEADER_SIZE;
     this.tailLength = Math.min(Math.max(end, HEADER_SIZE), Math.max(bytes.length, HEADER_SIZE));
   }
 
   readEntries(): ReadonlyArray<{ readonly offset: number; readonly seqnum: number; readonly realtime: number; readonly monotonic: number; readonly bootId: Uint8Array; readonly xorHash: bigint; readonly payloads: Uint8Array[] }> {
-    const limit = this.bytes.length;
+    const limit = this.store.capacity;
     const total = this.u64(HEADER.nEntries);
     const offsets: number[] = [];
     const visited = new Set<number>();
@@ -118,7 +116,7 @@ export class JournalImage {
   }
 
   setSeqnumId(seqnumId: Uint8Array): void {
-    this.bytes.set(seqnumId, HEADER.seqnumId);
+    this.store.set(seqnumId, HEADER.seqnumId);
   }
 
   attachSealer(sealer: ImageSealer): void {
@@ -131,24 +129,24 @@ export class JournalImage {
   private writeHeader(): void {
     const { identity } = this.options;
     this.ensure(HEADER_SIZE);
-    this.bytes.set(new TextEncoder().encode(SIGNATURE), HEADER.signature);
+    this.store.set(new TextEncoder().encode(SIGNATURE), HEADER.signature);
     const compatible = COMPATIBLE_TAIL_ENTRY_BOOT_ID | (this.options.sealed ? COMPATIBLE_SEALED | COMPATIBLE_SEALED_CONTINUOUS : 0);
-    this.view.setUint32(HEADER.compatibleFlags, compatible, true);
-    this.view.setUint32(HEADER.incompatibleFlags, INCOMPATIBLE_KEYED_HASH | INCOMPATIBLE_COMPACT | (this.options.compressEnabled ? INCOMPATIBLE_COMPRESSED_ZSTD : 0), true);
-    this.bytes[HEADER.state] = STATE_OFFLINE;
-    this.bytes.set(identity.fileId, HEADER.fileId);
-    this.bytes.set(identity.machineId, HEADER.machineId);
-    this.bytes.set(identity.seqnumId, HEADER.seqnumId);
+    this.store.setU32(HEADER.compatibleFlags, compatible);
+    this.store.setU32(HEADER.incompatibleFlags, INCOMPATIBLE_KEYED_HASH | INCOMPATIBLE_COMPACT | (this.options.compressEnabled ? INCOMPATIBLE_COMPRESSED_ZSTD : 0));
+    this.store.setU8(HEADER.state, STATE_OFFLINE);
+    this.store.set(identity.fileId, HEADER.fileId);
+    this.store.set(identity.machineId, HEADER.machineId);
+    this.store.set(identity.seqnumId, HEADER.seqnumId);
     this.setU64(HEADER.headerSize, HEADER_SIZE);
     this.setU64(HEADER.arenaSize, 0);
   }
 
   sealedHeader(): Uint8Array {
     const parts = [
-      this.bytes.slice(HEADER.signature, HEADER.state),
-      this.bytes.slice(HEADER.fileId, HEADER.tailEntryBootId),
-      this.bytes.slice(HEADER.seqnumId, HEADER.arenaSize),
-      this.bytes.slice(HEADER.dataHashTableOffset, HEADER.tailObjectOffset),
+      this.store.slice(HEADER.signature, HEADER.state - HEADER.signature),
+      this.store.slice(HEADER.fileId, HEADER.tailEntryBootId - HEADER.fileId),
+      this.store.slice(HEADER.seqnumId, HEADER.arenaSize - HEADER.seqnumId),
+      this.store.slice(HEADER.dataHashTableOffset, HEADER.tailObjectOffset - HEADER.dataHashTableOffset),
     ];
     const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
     let at = 0;
@@ -160,64 +158,58 @@ export class JournalImage {
   }
 
   private ensure(length: number): void {
-    if (length <= this.bytes.length) return;
-    let capacity = this.bytes.length;
-    while (capacity < length) capacity *= 2;
-    const grown = new Uint8Array(capacity);
-    grown.set(this.bytes);
-    this.bytes = grown;
-    this.view = new DataView(grown.buffer);
+    this.store.ensure(length);
   }
 
   u64(offset: number): number {
-    return this.view.getUint32(offset + 4, true) * 0x100000000 + this.view.getUint32(offset, true);
+    return this.store.u64(offset);
   }
 
   setU64(offset: number, value: number): void {
-    this.view.setUint32(offset, value % 0x100000000, true);
-    this.view.setUint32(offset + 4, Math.floor(value / 0x100000000), true);
+    this.store.setU64(offset, value);
   }
 
   bigU64(offset: number): bigint {
-    return this.view.getBigUint64(offset, true);
+    return this.store.bigU64(offset);
   }
 
   setBigU64(offset: number, value: bigint): void {
-    this.view.setBigUint64(offset, value, true);
+    this.store.setBigU64(offset, value);
   }
 
   u32(offset: number): number {
-    return this.view.getUint32(offset, true);
+    return this.store.u32(offset);
   }
 
   setU32(offset: number, value: number): void {
-    this.view.setUint32(offset, value, true);
+    this.store.setU32(offset, value);
   }
 
   slice(offset: number, length: number): Uint8Array {
-    return this.bytes.slice(offset, offset + length);
+    return this.store.slice(offset, length);
   }
 
   get state(): number {
-    return this.bytes[HEADER.state];
+    return this.store.u8(HEADER.state);
   }
 
   setState(state: typeof STATE_OFFLINE | typeof STATE_ONLINE | typeof STATE_ARCHIVED): void {
-    this.bytes[HEADER.state] = state;
+    this.store.setU8(HEADER.state, state);
   }
 
   private objectHeaderBytes(offset: number): Uint8Array {
     return this.slice(offset, OBJECT_HEADER_SIZE);
   }
 
-  private appendObject(type: number, size: number): number {
+  private appendObject(type: number, size: number, bodyIsSparse = false): number {
     const tail = this.u64(HEADER.tailObjectOffset);
     const offset = tail === 0 ? HEADER_SIZE : tail + alignObject(this.u64(tail + 8));
     const allocated = this.options.allocate(offset, size);
     this.setU64(HEADER.arenaSize, allocated - HEADER_SIZE);
     const end = offset + alignObject(size);
+    if (bodyIsSparse) this.store.openGap(offset + OBJECT_HEADER_SIZE, end - offset - OBJECT_HEADER_SIZE);
     this.ensure(end);
-    this.bytes[offset] = type;
+    this.store.setU8(offset, type);
     this.setU64(offset + 8, size);
     this.setU64(HEADER.tailObjectOffset, offset);
     this.setU64(HEADER.nObjects, this.u64(HEADER.nObjects) + 1);
@@ -226,7 +218,7 @@ export class JournalImage {
   }
 
   private appendHashTable(type: number, items: number): number {
-    return this.appendObject(type, OBJECT_HEADER_SIZE + items * HASH_ITEM_SIZE);
+    return this.appendObject(type, OBJECT_HEADER_SIZE + items * HASH_ITEM_SIZE, type === OBJECT_DATA_HASH_TABLE);
   }
 
   hashOf(bytes: Uint8Array): bigint {
@@ -260,9 +252,9 @@ export class JournalImage {
 
   dataPayloadAt(offset: number): Uint8Array | null {
     const size = this.u64(offset + 8) - DATA.payload;
-    if (size < 0 || offset + DATA.payload + size > this.bytes.length) return null;
+    if (size < 0 || offset + DATA.payload + size > this.store.capacity) return null;
     const stored = this.slice(offset + DATA.payload, this.u64(offset + 8) - DATA.payload);
-    if ((this.bytes[offset + 1] & OBJECT_COMPRESSED_ZSTD) === 0) return stored;
+    if ((this.store.u8(offset + 1) & OBJECT_COMPRESSED_ZSTD) === 0) return stored;
     const result = zstdDecompress(stored);
     return result.ok ? result.bytes : null;
   }
@@ -295,7 +287,7 @@ export class JournalImage {
     if (existing !== 0) return existing;
     const offset = this.appendObject(OBJECT_FIELD, FIELD_OBJECT_SIZE + name.length);
     this.setBigU64(offset + FIELD.hash, hash);
-    this.bytes.set(name, offset + FIELD.payload);
+    this.store.set(name, offset + FIELD.payload);
     this.sealField(offset);
     this.linkHash(this.fieldTableOffset, FIELD_HASH_TABLE_ITEMS, hash, offset, FIELD.nextHashOffset);
     this.setU64(HEADER.nFields, this.u64(HEADER.nFields) + 1);
@@ -315,9 +307,9 @@ export class JournalImage {
     const equals = payload.indexOf(0x3d);
     const stored = this.storedForm(payload);
     const offset = this.appendObject(OBJECT_DATA, DATA_OBJECT_SIZE + stored.bytes.length);
-    this.bytes[offset + 1] = stored.flags;
+    this.store.setU8(offset + 1, stored.flags);
     this.setBigU64(offset + DATA.hash, hash);
-    this.bytes.set(stored.bytes, offset + DATA.payload);
+    this.store.set(stored.bytes, offset + DATA.payload);
     this.sealData(offset);
     this.linkHash(this.dataTableOffset, this.options.dataTableItems, hash, offset, DATA.nextHashOffset);
     this.setU64(HEADER.nData, this.u64(HEADER.nData) + 1);
@@ -379,7 +371,7 @@ export class JournalImage {
     this.setU64(entry + ENTRY.seqnum, seqnum);
     this.setU64(entry + ENTRY.realtime, realtimeUsec);
     this.setU64(entry + ENTRY.monotonic, monotonicUsec);
-    this.bytes.set(bootId, entry + ENTRY.bootId);
+    this.store.set(bootId, entry + ENTRY.bootId);
     this.setBigU64(entry + ENTRY.xorHash, xorHash);
     sorted.forEach((offset, index) => this.setU32(entry + ENTRY.items + index * COMPACT_ITEM, offset));
     this.sealEntry(entry);
@@ -395,7 +387,7 @@ export class JournalImage {
     if (this.u64(HEADER.headEntryRealtime) === 0) this.setU64(HEADER.headEntryRealtime, realtimeUsec);
     this.setU64(HEADER.tailEntryRealtime, realtimeUsec);
     this.setU64(HEADER.tailEntryMonotonic, monotonicUsec);
-    this.bytes.set(bootId, HEADER.tailEntryBootId);
+    this.store.set(bootId, HEADER.tailEntryBootId);
     this.setU64(HEADER.tailEntrySeqnum, seqnum);
     if (this.u64(HEADER.headEntrySeqnum) === 0) this.setU64(HEADER.headEntrySeqnum, seqnum);
     this.setU64(HEADER.tailEntryOffset, entry);
@@ -428,7 +420,7 @@ export class JournalImage {
   writeTag(offset: number, seqnum: number, epoch: number, tag: Uint8Array): void {
     this.setU64(offset + TAG.seqnum, seqnum);
     this.setU64(offset + TAG.epoch, epoch);
-    this.bytes.set(tag.subarray(0, TAG_LENGTH), offset + TAG.tag);
+    this.store.set(tag.subarray(0, TAG_LENGTH), offset + TAG.tag);
     this.setU64(HEADER.nTags, seqnum);
   }
 
