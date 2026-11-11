@@ -91,6 +91,7 @@ export interface WireSshLoginRequest {
   /** Remote account being logged into. */
   readonly user: string;
   readonly host: string;
+  readonly address?: string;
   readonly port: number;
   /**
    * Reactive IO the auth exchange prompts through, for terminals that
@@ -225,18 +226,22 @@ export async function resolveSshTarget(
 
 function unreachableMessage(req: WireSshLoginRequest): string {
   return `ssh: connect to host ${req.host} port ${req.port}: `
-    + sshUnreachableReason(req.device, req.host);
+    + sshUnreachableReason(req.device, req.address ?? req.host);
 }
 
 export async function openWireSshConnection(
   req: WireSshLoginRequest,
 ): Promise<WireSshConnectOutcome> {
-  const tcpConnector = req.connector ?? tcpConnectorFor(req.device);
+  const dialled = req.address ?? req.host;
+  const deviceConnector = req.connector ?? tcpConnectorFor(req.device);
+  const tcpConnector: TcpConnector | null = deviceConnector === null || dialled === req.host
+    ? deviceConnector
+    : (((host: string, port: number) => deviceConnector(host === req.host ? dialled : host, port)) as TcpConnector);
   if (!tcpConnector) {
     return { kind: 'unreachable', message: `ssh: connect to host ${req.host} port ${req.port}: Network is unreachable` };
   }
 
-  if (req.connector === undefined && IPAddress.tryParse(req.host) && !peerLiveness(req.device, req.host)()) {
+  if (req.connector === undefined && IPAddress.tryParse(dialled) && !peerLiveness(req.device, dialled)()) {
     return { kind: 'unreachable', message: unreachableMessage(req) };
   }
 
