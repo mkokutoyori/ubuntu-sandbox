@@ -4819,8 +4819,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       scheduledTasks: this.scheduledTasks,
       now: () => this.simulatedDate(),
       elevationContext: () => this.resolveElevationForCurrentUser(),
-      onTaskRegistered: (t) => this.logTaskRegistered(t.taskName),
-      onTaskDeleted: (name) => this.logTaskDeleted(name),
+      onTaskRegistered: (t) => this.announceTaskRegistered(t.taskName, t.command ?? ''),
+      onTaskDeleted: (name) => this.announceTaskDeleted(name),
       runTaskNow: (t) => this.runScheduledTaskNow(t),
     };
   }
@@ -4838,6 +4838,15 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.writeEventLog(
       'Microsoft-Windows-TaskScheduler/Operational', 'Microsoft-Windows-TaskScheduler',
       eventId, 'Information', message, data);
+  }
+
+  announceTaskRegistered(taskName: string, command: string): void {
+    this.logTaskRegistered(taskName);
+    this.auditScheduledTaskCreated(taskName, command);
+  }
+
+  announceTaskDeleted(taskName: string): void {
+    this.logTaskDeleted(taskName);
   }
 
   private logTaskRegistered(taskName: string): void {

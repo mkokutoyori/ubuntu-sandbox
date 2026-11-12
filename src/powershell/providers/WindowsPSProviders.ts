@@ -2871,14 +2871,15 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     task.author ??= `${this.pc.getHostname()}\\${this.pc.getCurrentUser()}`;
     task.runAsUser ??= this.pc.getCurrentUser();
     this.store().set(task.taskName.toLowerCase(), task);
-    // 4698 — une tâche planifiée est un mécanisme de persistance
-    // courant : la créer sans laisser de trace laissait un angle mort
-    // complet dans la piste d'audit.
-    this.pc.auditScheduledTaskCreated?.(task.taskName, task.command ?? '');
+    this.pc.announceTaskRegistered(task.taskName, task.command ?? '');
     return `\\${task.taskName}`;
   }
   unregisterTask(name: string): string {
-    return this.store().delete(name.toLowerCase()) ? '' : `Cannot find scheduled task '${name}'.`;
+    const task = this.store().get(name.toLowerCase());
+    if (!task) return `Cannot find scheduled task '${name}'.`;
+    this.store().delete(name.toLowerCase());
+    this.pc.announceTaskDeleted(task.taskName);
+    return '';
   }
   updateTask(name: string, patch: Partial<ScheduledTaskInfo>): string {
     const task = this.store().get(name.toLowerCase());
