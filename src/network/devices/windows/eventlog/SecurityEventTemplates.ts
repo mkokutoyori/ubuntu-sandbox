@@ -212,7 +212,17 @@ function firewallSettingChanged(d: EventFields): string {
   ].join('\n\n');
 }
 
+function systemTimeChanged(d: EventFields): string {
+  return [
+    'The system time was changed.',
+    subject(d),
+    `Process Information:\n\tProcess ID:\t${field(d, 'ProcessId')}\n\tName:\t\t${field(d, 'ProcessName')}`,
+    `Previous Time:\t\t${field(d, 'PreviousTime')}\nNew Time:\t\t${field(d, 'NewTime')}`,
+  ].join('\n\n');
+}
+
 const TEMPLATES: Record<number, (d: EventFields) => string> = {
+  4616: systemTimeChanged,
   4624: logon,
   4625: logonFailed,
   4634: logoff,

@@ -59,6 +59,7 @@ export const SECURITY_EVENT = {
   SHARE_ACCESSED: 5140,
   SHARE_ADDED: 5142,
   AUDIT_LOG_CLEARED: 1102,
+  SYSTEM_TIME_CHANGED: 4616,
   AUDIT_POLICY_CHANGED: 4719,
   FIREWALL_RULE_ADDED: 4946,
   FIREWALL_RULE_MODIFIED: 4947,
@@ -597,6 +598,15 @@ export class WindowsSecurityAudit {
       `A service was installed in the system.\n\nService Information:\n\tService Name:\t${serviceName}\n\t` +
       `Service File Name:\t${binaryPath}\n\tService Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`,
       undefined, installedBy);
+  }
+
+  systemTimeChanged(actor: string, previousMs: number, newMs: number, processId: number, processName: string): void {
+    const stamp = (ms: number): string => `${new Date(ms).toISOString().slice(0, 19)}.${String(ms % 1000).padStart(3, '0')}000000Z`;
+    this.record(SECURITY_EVENT.SYSTEM_TIME_CHANGED, 'SuccessAudit', {
+      ...this.subjectFields(actor),
+      PreviousTime: stamp(previousMs), NewTime: stamp(newMs),
+      ProcessId: `0x${processId.toString(16)}`, ProcessName: processName,
+    });
   }
 
   firewallRuleChanged(change: 'added' | 'modified' | 'deleted', ruleId: string, ruleName: string, profile: string): void {
