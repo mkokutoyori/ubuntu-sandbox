@@ -4820,7 +4820,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       now: () => this.simulatedDate(),
       elevationContext: () => this.resolveElevationForCurrentUser(),
       onTaskRegistered: (t) => this.announceTaskRegistered(t.taskName, t.command ?? ''),
-      onTaskDeleted: (name) => this.announceTaskDeleted(name),
+      onTaskDeleted: (task) => this.announceTaskDeleted(task.taskName, task.command ?? ''),
+      onTaskStateChanged: (task, enabled) => this.announceTaskStateChange(task.taskName, task.command ?? '', enabled),
       runTaskNow: (t) => this.runScheduledTaskNow(t),
     };
   }
@@ -4845,8 +4846,17 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.auditScheduledTaskCreated(taskName, command);
   }
 
-  announceTaskDeleted(taskName: string): void {
+  announceTaskDeleted(taskName: string, command: string): void {
     this.logTaskDeleted(taskName);
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    this.securityAudit().scheduledTaskDeleted(taskName, command, this.userMgr.currentUser || 'Administrator');
+  }
+
+  announceTaskStateChange(taskName: string, command: string, enabled: boolean): void {
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    const actor = this.userMgr.currentUser || 'Administrator';
+    if (enabled) this.securityAudit().scheduledTaskEnabled(taskName, command, actor);
+    else this.securityAudit().scheduledTaskDisabled(taskName, command, actor);
   }
 
   private logTaskRegistered(taskName: string): void {

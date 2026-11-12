@@ -2878,13 +2878,16 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     const task = this.store().get(name.toLowerCase());
     if (!task) return `Cannot find scheduled task '${name}'.`;
     this.store().delete(name.toLowerCase());
-    this.pc.announceTaskDeleted(task.taskName);
+    this.pc.announceTaskDeleted(task.taskName, task.command ?? '');
     return '';
   }
   updateTask(name: string, patch: Partial<ScheduledTaskInfo>): string {
     const task = this.store().get(name.toLowerCase());
     if (!task) return `Cannot find scheduled task '${name}'.`;
+    const wasDisabled = task.state === 'Disabled';
     Object.assign(task, patch);
+    const isDisabled = task.state === 'Disabled';
+    if (wasDisabled !== isDisabled) this.pc.announceTaskStateChange(task.taskName, task.command ?? '', !isDisabled);
     return '';
   }
   runTask(name: string): string {

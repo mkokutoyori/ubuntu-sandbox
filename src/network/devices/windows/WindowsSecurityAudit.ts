@@ -55,6 +55,9 @@ export const SECURITY_EVENT = {
   PROCESS_TERMINATED: 4689,
   PRIVILEGED_SERVICE_CALLED: 4673,
   SCHEDULED_TASK_CREATED: 4698,
+  SCHEDULED_TASK_DELETED: 4699,
+  SCHEDULED_TASK_ENABLED: 4700,
+  SCHEDULED_TASK_DISABLED: 4701,
   OBJECT_ACCESSED: 4663,
   SHARE_ACCESSED: 5140,
   SHARE_ADDED: 5142,
@@ -502,12 +505,26 @@ export class WindowsSecurityAudit {
 
   /** 4698 — une tâche planifiée a été créée. */
   scheduledTaskCreated(taskName: string, command: string, createdBy: string): void {
-    this.success(SECURITY_EVENT.SCHEDULED_TASK_CREATED,
-      `A scheduled task was created.\n\nTask Information:\n\tTask Name:\t${taskName}\n\t` +
-      `Task Content:\t${command}\n\nSubject:\n\tAccount Name:\t${createdBy}`,
-      {
-        TaskName: taskName, TaskContent: command, ...splitAccount(createdBy),
-      }, createdBy);
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_CREATED, 'A scheduled task was created.', taskName, command, createdBy);
+  }
+
+  scheduledTaskDeleted(taskName: string, command: string, deletedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_DELETED, 'A scheduled task was deleted.', taskName, command, deletedBy);
+  }
+
+  scheduledTaskEnabled(taskName: string, command: string, changedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_ENABLED, 'A scheduled task was enabled.', taskName, command, changedBy);
+  }
+
+  scheduledTaskDisabled(taskName: string, command: string, changedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_DISABLED, 'A scheduled task was disabled.', taskName, command, changedBy);
+  }
+
+  private scheduledTaskEntry(eventId: number, title: string, taskName: string, command: string, actor: string): void {
+    const path = `\\${taskName}`;
+    this.success(eventId,
+      `${title}\n\nTask Information:\n\tTask Name:\t${path}\n\tTask Content:\t${command}`,
+      { TaskName: path, TaskContent: command, ...splitAccount(actor) }, actor);
   }
 
   /**
