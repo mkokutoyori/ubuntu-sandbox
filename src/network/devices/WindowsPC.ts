@@ -230,7 +230,7 @@ import { ClusterSignalStore } from './windows/server/cluster/observables';
 import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/ClusterSignalRefreshActor';
 import { DfsSignalStore } from './windows/server/dfs/observables';
 import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
-import { dialWinRm, type WinRmDialResult, pushForwardedEvent, runWinRmRequest, type WinRmRunResult, WinRmRunspace, type WinRmRunspaceOpening, WINRM_UNREACHABLE } from './windows/server/winrm/WinRmClient';
+import { dialWinRm, dialWinRmWithTicket, type WinRmDialResult, pushForwardedEvent, runWinRmRequest, type WinRmRunResult, WinRmRunspace, type WinRmRunspaceOpening, WINRM_UNREACHABLE } from './windows/server/winrm/WinRmClient';
 import type { WinRmIdentity, WinRmCommandResult } from './windows/server/winrm/WinRmServer';
 import type { WinRmShellHost } from './windows/server/winrm/WinRmShell';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
@@ -2034,6 +2034,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
     return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
+  }
+
+  dialWinRmAsCurrentIdentity(computerName: string, targetIp: string): WinRmDialResult {
+    const apReq = this.kerberosApReqFor(computerName.split('.')[0]);
+    if (apReq === null) return { ok: false, error: 'Access is denied.' };
+    return dialWinRmWithTicket({ tcpStack: this.getTcpStack(), targetIp, apReq });
   }
 
   async openWinRmRunspace(computerName: string, credential?: { username: string; password: string }): Promise<WinRmRunspaceOpening> {

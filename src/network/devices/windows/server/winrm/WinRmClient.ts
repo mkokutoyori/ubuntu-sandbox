@@ -63,6 +63,20 @@ function openWinRmChannel(opts: WinRmChannelRequest): WinRmChannel {
   return { ok: true, socket };
 }
 
+export function dialWinRmWithTicket(opts: { tcpStack: TcpStack; targetIp: string; apReq: Uint8Array }): WinRmDialResult {
+  const channel = openWinRmChannel({
+    tcpStack: opts.tcpStack,
+    targetIp: opts.targetIp,
+    apReq: opts.apReq,
+    unreachable: 'Connecting to remote server failed: WinRM cannot complete the operation. '
+      + 'Verify that the specified computer name is valid, that the computer is accessible over the network, '
+      + 'and that a firewall exception for the WinRM service is enabled and allows access from this computer.',
+  });
+  if (channel.ok === false) return { ok: false, error: channel.error };
+  channel.socket.close();
+  return { ok: true };
+}
+
 /** Dial WinRM on `targetIp`, negotiate, and authenticate. Always closes the probe socket. */
 export function dialWinRm(opts: {
   tcpStack: TcpStack;

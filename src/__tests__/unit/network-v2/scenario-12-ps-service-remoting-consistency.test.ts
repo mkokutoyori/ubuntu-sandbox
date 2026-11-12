@@ -49,13 +49,14 @@ async function getServicePid(pc: WindowsPC, serviceName: string): Promise<number
 }
 
 const SERVICE_NAME = 'AppClusterSvc';
+const OPERATOR = 'ops:Passw0rd!';
 const COLLECT_SCRIPT = `
-$results = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType }
+$results = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -Credential "${OPERATOR}" -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType }
 $results | ForEach-Object { "$($_.PSComputerName)|$($_.Status)|$($_.StartType)" }
 `;
 
 const REMEDIATION_SCRIPT = `
-$results = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType }
+$results = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -Credential "${OPERATOR}" -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType }
 $reference = @{ Status = "Running"; StartType = "Automatic" }
 $machinesEnEcart = @()
 foreach ($r in $results) {
@@ -63,7 +64,7 @@ foreach ($r in $results) {
     $machinesEnEcart += $r.PSComputerName
   }
 }
-Invoke-Command -ComputerName $machinesEnEcart -ArgumentList $env:COMPUTERNAME -ScriptBlock {
+Invoke-Command -ComputerName $machinesEnEcart -Credential "${OPERATOR}" -ArgumentList $env:COMPUTERNAME -ScriptBlock {
   param($AdminMachine)
   Set-Service -Name "${SERVICE_NAME}" -StartupType Automatic
   Start-Service -Name "${SERVICE_NAME}"
@@ -96,6 +97,10 @@ async function buildScenario(): Promise<Scenario> {
   await psWin1.execute('Enable-PSRemoting');
   await psWin2.execute('Enable-PSRemoting');
   await psWin3.execute('Enable-PSRemoting');
+  for (const ps of [psWin1, psWin2, psWin3]) {
+    await ps.execute('New-LocalUser -Name ops -Password (ConvertTo-SecureString "Passw0rd!" -AsPlainText -Force) | Out-Null');
+    await ps.execute('Add-LocalGroupMember -Group Administrators -Member ops');
+  }
 
   for (const ps of [psWin1, psWin2, psWin3]) {
     await ps.execute(
@@ -134,7 +139,7 @@ describe('Scénario 5 — Gestion des services multi-machines via PowerShell Rem
       const { psAdmin } = await buildScenario();
 
       const jobScript = `
-$job = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType } -AsJob
+$job = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -Credential "${OPERATOR}" -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType } -AsJob
 $jobResults = Receive-Job -Job $job -Wait
 $jobResults | ForEach-Object { "$($_.PSComputerName)|$($_.Status)|$($_.StartType)" }
 `;
@@ -154,7 +159,7 @@ $jobResults | ForEach-Object { "$($_.PSComputerName)|$($_.Status)|$($_.StartType
       const { psAdmin } = await buildScenario();
 
       const script = `
-$results = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType }
+$results = Invoke-Command -ComputerName @("PC-WIN-1","PC-WIN-2","PC-WIN-3") -Credential "${OPERATOR}" -ScriptBlock { Get-Service -Name "${SERVICE_NAME}" | Select-Object Name, Status, StartType }
 $reference = @{ Status = "Running"; StartType = "Automatic" }
 $drift = @()
 foreach ($r in $results) {

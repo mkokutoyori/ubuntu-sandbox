@@ -3915,21 +3915,28 @@ class WindowsRemotingAdapter implements IRemotingProvider {
   localComputerName(): string { return this.pc.getHostname(); }
 
   resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null {
+    return this.reachComputer(name, (targetIp) => credential
+      ? this.pc.dialWinRm(targetIp, credential.username, credential.password).ok
+      : this.pc.dialWinRmAsCurrentIdentity(name, targetIp).ok);
+  }
+
+  identifyComputer(name: string): IRemoteComputer | null {
+    return this.reachComputer(name, (targetIp) => {
+      const probe = this.pc.getTcpStack().connect(targetIp, 5985);
+      if (!probe || probe.state !== 'established') return false;
+      probe.close();
+      return true;
+    });
+  }
+
+  private reachComputer(name: string, admits: (targetIp: string) => boolean): IRemoteComputer | null {
     const targetIp = this.pc.resolveHostnameSync(name);
     if (!targetIp) return null;
     const found = findHostByAddress(targetIp.toString());
     if (!found || found.poweredOff || found.interfaceDown) return null;
     const device = found.device as unknown as Partial<RemotableDevice>;
     if (typeof device.getPowerShellInterpreter !== 'function' || !device.winrm) return null;
-
-    if (credential) {
-      const dial = this.pc.dialWinRm(targetIp.toString(), credential.username, credential.password);
-      if (!dial.ok) return null;
-    } else {
-      const probe = this.pc.getTcpStack().connect(targetIp.toString(), 5985);
-      if (!probe || probe.state !== 'established') return null;
-      probe.close();
-    }
+    if (!admits(targetIp.toString())) return null;
 
     const interp = device.getPowerShellInterpreter();
     const hostname = device.getHostname?.() ?? name;
