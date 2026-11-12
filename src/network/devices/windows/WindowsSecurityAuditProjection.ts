@@ -27,6 +27,8 @@ import type {
   WindowsWorkstationLockEventPayload,
   WindowsSessionLinkEventPayload,
   WindowsExplicitCredentialsEventPayload,
+  WindowsFirewallRuleChangedPayload,
+  WindowsFirewallSettingChangedPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -59,11 +61,25 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.service.account-changed', (e) => this.onServiceAccountChanged(e.payload)),
       bus.subscribe('windows.filesystem.acl-changed', (e) => this.onAclChanged(e.payload)),
       bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
+      bus.subscribe('windows.firewall.rule-changed', (e) => this.onFirewallRuleChanged(e.payload)),
+      bus.subscribe('windows.firewall.setting-changed', (e) => this.onFirewallSettingChanged(e.payload)),
     );
   }
 
   private gated(subcategory: string, kind: 'success' | 'failure'): boolean {
     return this.auditPolicy ? this.auditPolicy.isEnabled(subcategory, kind) : true;
+  }
+
+  private onFirewallRuleChanged(p: WindowsFirewallRuleChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('MPSSVC Rule-Level Policy Change', 'success')) return;
+    this.audit.firewallRuleChanged(p.change, p.ruleId, p.ruleName, p.profile);
+  }
+
+  private onFirewallSettingChanged(p: WindowsFirewallSettingChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated('MPSSVC Rule-Level Policy Change', 'success')) return;
+    this.audit.firewallSettingChanged(p.profile, p.setting, p.value);
   }
 
   private onServiceCreated(p: WindowsServiceCreatedPayload): void {

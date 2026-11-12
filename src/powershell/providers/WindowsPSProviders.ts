@@ -2663,20 +2663,26 @@ class WindowsNetworkAdapter implements INetworkProvider {
       return `Cannot create a file when that file already exists. Rule '${rule.name}' already exists.`;
     }
     this.state.firewallRules.set(key, { ...rule });
+    this.pc.announceFirewallRuleChange('added', rule);
     return '';
   }
   updateFirewallRule(name: string, patch: Partial<NetFirewallRuleEntry>): void {
     const key = firewallRuleKey(name);
     const rule = this.state.firewallRules.get(key);
     if (!rule) return;
+    const changed = (Object.keys(patch) as Array<keyof NetFirewallRuleEntry>).some((field) => patch[field] !== rule[field]);
     Object.assign(rule, patch);
+    if (changed) this.pc.announceFirewallRuleChange('modified', rule);
     if (patch.name !== undefined && firewallRuleKey(patch.name) !== key) {
       this.state.firewallRules.delete(key);
       this.state.firewallRules.set(firewallRuleKey(patch.name), rule);
     }
   }
   removeFirewallRule(name: string): void {
-    this.state.firewallRules.delete(firewallRuleKey(name));
+    const key = firewallRuleKey(name);
+    const rule = this.state.firewallRules.get(key);
+    this.state.firewallRules.delete(key);
+    if (rule) this.pc.announceFirewallRuleChange('deleted', rule);
   }
 
   // ─ Adapter actions ──────────────────────────────────────────────────────
@@ -2705,7 +2711,9 @@ class WindowsNetworkAdapter implements INetworkProvider {
   }
   updateFirewallProfile(name: FirewallProfileName, patch: Partial<NetFirewallProfileRow>): void {
     const row = this.pc.firewallProfiles.get(name);
-    if (row) Object.assign(row, patch);
+    if (!row) return;
+    this.pc.announceFirewallProfileChange(row, patch);
+    Object.assign(row, patch);
   }
   setNetworkProfile(ifIndex: number, category: string): void {
     this.state.networkProfiles.set(ifIndex, category);

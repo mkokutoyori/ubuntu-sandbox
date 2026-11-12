@@ -1108,6 +1108,31 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   private _processSocketReaperOff: (() => void) | null = null;
   private _portProxyChangesOff: (() => void) | null = null;
 
+  announceFirewallRuleChange(change: 'added' | 'modified' | 'deleted', rule: NetFirewallRuleEntry): void {
+    this.getBus().publish({
+      topic: 'windows.firewall.rule-changed',
+      payload: {
+        deviceId: this.id, change, ruleId: rule.name, ruleName: rule.displayName,
+        profile: rule.profile === 'Any' ? 'All' : rule.profile,
+      },
+    });
+  }
+
+  announceFirewallProfileChange(profile: NetFirewallProfileRow, patch: Partial<NetFirewallProfileRow>): void {
+    const settings: ReadonlyArray<readonly [keyof NetFirewallProfileRow, string]> = [
+      ['defaultInboundAction', 'Default Inbound Action'],
+      ['defaultOutboundAction', 'Default Outbound Action'],
+    ];
+    for (const [field, label] of settings) {
+      const value = patch[field];
+      if (value === undefined || value === profile[field] || value === 'NotConfigured') continue;
+      this.getBus().publish({
+        topic: 'windows.firewall.setting-changed',
+        payload: { deviceId: this.id, profile: profile.name, setting: label, value: String(value) },
+      });
+    }
+  }
+
   private onPortProxyChange(deviceId: string): void {
     if (deviceId === this.id) this.reconcileListeners();
   }
@@ -4573,6 +4598,8 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       isElevated: () => this.userMgr.isCurrentUserAdmin(),
       firewallRules: this.firewallRules,
       firewallProfiles: this.firewallProfiles,
+      firewallRuleChanged: (change, rule) => this.announceFirewallRuleChange(change, rule),
+      firewallProfileChanged: (profile, patch) => this.announceFirewallProfileChange(profile, patch),
       currentFirewallProfile: () =>
         this.activeFirewallProfileName(this.getPorts()[0]?.getName() ?? ''),
       eventLog: this.eventLog,

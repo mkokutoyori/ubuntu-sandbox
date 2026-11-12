@@ -60,6 +60,10 @@ export const SECURITY_EVENT = {
   SHARE_ADDED: 5142,
   AUDIT_LOG_CLEARED: 1102,
   AUDIT_POLICY_CHANGED: 4719,
+  FIREWALL_RULE_ADDED: 4946,
+  FIREWALL_RULE_MODIFIED: 4947,
+  FIREWALL_RULE_DELETED: 4948,
+  FIREWALL_SETTING_CHANGED: 4950,
   EVENT_LOG_CLEARED: 104,
   REGISTRY_VALUE_MODIFIED: 4657,
   PERMISSION_CHANGED: 4670,
@@ -593,6 +597,16 @@ export class WindowsSecurityAudit {
       `A service was installed in the system.\n\nService Information:\n\tService Name:\t${serviceName}\n\t` +
       `Service File Name:\t${binaryPath}\n\tService Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`,
       undefined, installedBy);
+  }
+
+  firewallRuleChanged(change: 'added' | 'modified' | 'deleted', ruleId: string, ruleName: string, profile: string): void {
+    const eventId = change === 'added' ? SECURITY_EVENT.FIREWALL_RULE_ADDED
+      : change === 'modified' ? SECURITY_EVENT.FIREWALL_RULE_MODIFIED : SECURITY_EVENT.FIREWALL_RULE_DELETED;
+    this.record(eventId, 'SuccessAudit', { ProfileChanged: profile, RuleId: ruleId, RuleName: ruleName });
+  }
+
+  firewallSettingChanged(profile: string, setting: string, value: string): void {
+    this.record(SECURITY_EVENT.FIREWALL_SETTING_CHANGED, 'SuccessAudit', { ProfileChanged: profile, SettingType: setting, SettingValue: value });
   }
 
   // ─── Internals ─────────────────────────────────────────────────────────

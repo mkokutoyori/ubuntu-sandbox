@@ -3113,7 +3113,9 @@ function handleAdvfwSet(ctx: WinCommandContext, args: string[]): string {
   if (typeof patch === 'string') return patch;
   for (const name of names) {
     const row = ctx.firewallProfiles.get(name);
-    if (row) Object.assign(row, patch);
+    if (!row) continue;
+    ctx.firewallProfileChanged?.(row, patch);
+    Object.assign(row, patch);
   }
   return 'Ok.';
 }
@@ -3177,7 +3179,7 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
         || remoteAddress === null || profile === null) {
         return NETSH_ADVFW_FIREWALL_ADD_RULE_HELP;
       }
-      ctx.firewallRules.set(key, {
+      const added = {
         name,
         displayName: name,
         description: '',
@@ -3192,7 +3194,9 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
         localAddress,
         remoteAddress,
         builtIn: false,
-      });
+      };
+      ctx.firewallRules.set(key, added);
+      ctx.firewallRuleChanged?.('added', added);
       return 'Ok.';
     }
     return NETSH_ADVFW_FIREWALL_HELP;
@@ -3235,6 +3239,7 @@ function handleAdvfwFirewall(ctx: WinCommandContext, args: string[]): string {
         if (!name || name.toLowerCase() === 'all'
           || firewallRuleKey(rule.name) === firewallRuleKey(name)) {
           ctx.firewallRules.delete(key);
+          ctx.firewallRuleChanged?.('deleted', rule);
           removed++;
         }
       }

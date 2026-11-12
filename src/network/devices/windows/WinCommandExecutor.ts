@@ -254,6 +254,10 @@ export interface WinCommandContext {
     import('./netFirewallProfile').FirewallProfileName,
     import('./netFirewallProfile').NetFirewallProfileRow>;
   currentFirewallProfile?(): import('./netFirewallProfile').FirewallProfileName;
+  firewallRuleChanged?: (change: 'added' | 'modified' | 'deleted', rule: import('./netFirewallRule').NetFirewallRuleEntry) => void;
+  firewallProfileChanged?: (
+    profile: import('./netFirewallProfile').NetFirewallProfileRow,
+    patch: Partial<import('./netFirewallProfile').NetFirewallProfileRow>) => void;
 
   /** Per-device SMB share table (`net share` / `New-SmbShare`) — instance-owned. */
   smbShares: import('./server/smb/SmbShareTable').SmbShareTable;

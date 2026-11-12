@@ -4656,3 +4656,13 @@ en changeaient de comportement (iptables, ip6tables, ifconfig, lsblk, timedatect
 - `powershell "<commande> | Format-List *"` depuis cmd ignore `Format-List` (mesure : `powershell "Get-Service | Select-Object -First 1 | Format-List *"` rend la table de tous les services) : la coquille `runPowerShellShim` traite le pipeline hors de l'interpreteur.
 - Une date dans `Format-List` s'ecrit sans les secondes (`renderPSCellValue`, vue courte du systeme de fichiers) ; un `DateTime.ToString()` reel les porte.
 - Le registre n'a pas `HKLM\SYSTEM\CurrentControlSet\Services\EventLog\<journal>\<source>` apres `New-EventLog`.
+
+### [windows] pare-feu : ce que le journal de sécurité ne dit pas encore (4946-4950)
+**Mesure** : `New-NetFirewallRule`, `Set-NetFirewallRule`, `Remove-NetFirewallRule`, `Set-NetFirewallProfile` et `netsh advfirewall` ecrivent maintenant 4946, 4947, 4948 et 4950 quand la sous-categorie « MPSSVC Rule-Level Policy Change » audite les succes (`auditpol /set /subcategory:"MPSSVC Rule-Level Policy Change" /success:enable`). Champs, tache 13571 et mots-cles viennent de la reference Microsoft ; le rendu du message (blancs et tabulations) n'est pas sur ces pages et suit les modeles voisins, sans transcription pour le confirmer.
+**Restent** :
+- Le defaut de la sous-categorie sur une machine neuve n'est pas atteste ici : la machine simulee la laisse sans audit (comme `auditpol /get` le disait deja) ; si un vrai poste la livre a « Success », il faut l'ajouter a `CLIENT_SERVER_BASELINE`.
+- 4950 ne couvre que `DefaultInboundAction` et `DefaultOutboundAction` (les seuls intitules de reglage que la reference donne : « Default Outbound Action » / « Block ») ; `Enabled`, la journalisation et les autres reglages de profil ne produisent rien.
+- `netsh advfirewall reset` vide les regles sans evenement, et le demarrage du service ne journalise pas la configuration active (4944/4945/4957).
+- Une regle creee par `netsh advfirewall firewall add rule` porte comme identifiant son nom (`RuleId` = `T2`) au lieu d'un GUID, parce que le magasin confond `name` et `displayName` pour ce chemin.
+- `Set-NetFirewallProfile -Profile Domain` accepte `-Profile` sans le lire (le profil n'est choisi que par `-Name`) et applique le changement aux trois profils ; plus generalement un parametre nomme inconnu d'un cmdlet est ignore au lieu d'etre refuse (« A parameter cannot be found that matches parameter name »).
+- Sans elevation, `New-LocalUser`, `sc.exe create`, etc. repondent « Access is denied » : le relevé complet des evenements d'une session administrateur reste a faire pour les actions qui ne journalisent rien (heure, fuseau, partage hors audit « File Share »).
