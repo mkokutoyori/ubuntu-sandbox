@@ -40,6 +40,7 @@ const TASK_IDS: Record<string, number> = {
   'Security System Extension': 12289,
   Logon: 12544,
   Logoff: 12545,
+  'Credential Validation': 14336,
   'Account Lockout': 12546,
   'Special Logon': 12548,
   'Other Logon/Logoff Events': 12551,
@@ -74,7 +75,7 @@ const ACCOUNT_MANAGEMENT_EXTRA = new Map<number, string>([
 const EVENTLOG_PROVIDER = 'microsoft-windows-eventlog';
 const AUDITING_PROVIDER = 'microsoft-windows-security-auditing';
 
-const EVENT_VERSIONS: Record<number, number> = { 4616: 1, 4624: 2, 4625: 0, 4634: 0, 4672: 0, 4688: 2, 4689: 0 };
+const EVENT_VERSIONS: Record<number, number> = { 4616: 1, 4624: 2, 4625: 0, 4776: 0, 4634: 0, 4672: 0, 4688: 2, 4689: 0 };
 
 function auditTaskName(eventId: number): string | null {
   const explicit = ACCOUNT_MANAGEMENT_EXTRA.get(eventId);

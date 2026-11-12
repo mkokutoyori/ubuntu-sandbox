@@ -145,6 +145,10 @@ export class WindowsSecurityAuditProjection {
 
   private onLogon(p: WindowsLogonEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (p.details?.authenticationPackage === 'NTLM' && p.details.validatedElsewhere !== true
+      && this.gated('Credential Validation', p.success ? 'success' : 'failure')) {
+      this.audit.credentialValidation(p.account, p.details.workstation ?? '-', p.success ? undefined : p.failure ?? 'bad-password');
+    }
     if (p.success) {
       if (!this.gated('Logon', 'success')) return;
       const logonId = nextLogonId();

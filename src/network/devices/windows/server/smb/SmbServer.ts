@@ -185,7 +185,7 @@ export class SmbServerHandler {
             const domain = this.ctx.domainAuth?.(rawUsername, password);
             if (domain?.ok) { authedUser = domain.sam; authedGroups = domain.groups; }
           }
-          if (authedUser) this.ctx.userMgr.recordNetworkLogon(authedUser, true, details);
+          if (authedUser) this.ctx.userMgr.recordNetworkLogon(authedUser, true, { ...details, validatedElsewhere: authedGroups !== null });
           else {
             const cause = account === undefined ? 'unknown-user' : !account.enabled ? 'disabled' : 'bad-password';
             this.ctx.userMgr.recordNetworkLogon(username, false, details, cause);

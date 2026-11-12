@@ -221,6 +221,13 @@ function systemTimeChanged(d: EventFields): string {
   ].join('\n\n');
 }
 
+function credentialValidation(d: EventFields): string {
+  return [
+    'The computer attempted to validate the credentials for an account.',
+    `Authentication Package:\t${field(d, 'PackageName')}\nLogon Account:\t${field(d, 'TargetUserName')}\nSource Workstation:\t${field(d, 'Workstation')}\nError Code:\t${field(d, 'Status')}`,
+  ].join('\n\n');
+}
+
 const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4616: systemTimeChanged,
   4624: logon,
@@ -228,6 +235,7 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4634: logoff,
   4672: specialPrivileges,
   4719: auditPolicyChanged,
+  4776: credentialValidation,
   4720: accountCreated,
   4722: accountChange('A user account was enabled.'),
   4723: accountChange('An attempt was made to change an account\'s password.'),

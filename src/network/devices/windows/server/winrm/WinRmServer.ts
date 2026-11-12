@@ -50,7 +50,8 @@ export class WinRmServerHandler {
     let identity: WinRmIdentity | null = null;
     let shell: WinRmShellHost | null = null;
 
-    const connection = (package_: 'NTLM' | 'Kerberos') => (clientIp === undefined ? undefined : {
+    const connection = (package_: 'NTLM' | 'Kerberos', validatedElsewhere = false) => (clientIp === undefined ? undefined : {
+      ...(validatedElsewhere ? { validatedElsewhere } : {}),
       workstation: clientName ?? clientIp, ipAddress: clientIp, processId: '0x0', processName: '-',
       ...(package_ === 'NTLM'
         ? { logonProcess: 'NtLmSsp', authenticationPackage: 'NTLM', lmPackage: 'NTLM V2', keyLength: 128 }
@@ -78,7 +79,7 @@ export class WinRmServerHandler {
         const localOk = account?.enabled && this.ctx.userMgr.checkPassword(username, password, 3, false, false);
         const domainOk = !localOk && this.ctx.domainAuth?.(username, password)?.ok;
         const sam = username.includes('\\') ? username.slice(username.indexOf('\\') + 1) : username.split('@')[0];
-        if (localOk || domainOk) this.ctx.userMgr.recordNetworkLogon?.(localOk ? username : sam, true, connection('NTLM'));
+        if (localOk || domainOk) this.ctx.userMgr.recordNetworkLogon?.(localOk ? username : sam, true, connection('NTLM', !localOk));
         else {
           const cause = account === undefined ? 'unknown-user' : !account.enabled ? 'disabled' : 'bad-password';
           this.ctx.userMgr.recordNetworkLogon?.(username, false, connection('NTLM'), cause);

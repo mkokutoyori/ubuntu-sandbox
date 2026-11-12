@@ -108,6 +108,7 @@ export interface WindowsLogonDetails {
   readonly ipAddress?: string;
   readonly ipPort?: string;
   readonly elevated?: boolean;
+  readonly validatedElsewhere?: boolean;
 }
 
 export type WindowsLogonFailureCause =

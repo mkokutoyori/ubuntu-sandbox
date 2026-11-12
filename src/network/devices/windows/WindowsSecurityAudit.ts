@@ -64,6 +64,7 @@ export const SECURITY_EVENT = {
   SHARE_ADDED: 5142,
   AUDIT_LOG_CLEARED: 1102,
   SYSTEM_TIME_CHANGED: 4616,
+  CREDENTIAL_VALIDATION: 4776,
   AUDIT_POLICY_CHANGED: 4719,
   FIREWALL_RULE_ADDED: 4946,
   FIREWALL_RULE_MODIFIED: 4947,
@@ -333,6 +334,14 @@ export class WindowsSecurityAudit {
       ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
       IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
     }, undefined, failureReasonOf(codes.status, codes.subStatus));
+  }
+
+  credentialValidation(name: string, workstation: string, cause?: LogonFailureCause): void {
+    const codes = cause === undefined ? undefined : FAILURE_STATUS[cause];
+    this.record(SECURITY_EVENT.CREDENTIAL_VALIDATION, cause === undefined ? 'SuccessAudit' : 'FailureAudit', {
+      PackageName: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0', TargetUserName: name, Workstation: workstation,
+      Status: codes === undefined ? '0x0' : codes.subStatus !== '0x0' ? codes.subStatus : codes.status,
+    });
   }
 
   logoff(name: string, logonType = 2, logonId?: string): void {
