@@ -29,7 +29,7 @@ export const AUDIT_CATEGORY_NAMES: readonly AuditCategoryName[] = [
 ];
 
 export const AUDIT_CATEGORIES: readonly AuditSubcategoryDef[] = [
-  { name: 'Security State Change', guid: '{0CCE9210-69AE-11D9-BED3-505054503030}', category: 'System', governs: [] },
+  { name: 'Security State Change', guid: '{0CCE9210-69AE-11D9-BED3-505054503030}', category: 'System', governs: [4616] },
   { name: 'Security System Extension', guid: '{0CCE9211-69AE-11D9-BED3-505054503030}', category: 'System', governs: [] },
   { name: 'System Integrity', guid: '{0CCE9212-69AE-11D9-BED3-505054503030}', category: 'System', governs: [] },
   { name: 'IPsec Driver', guid: '{0CCE9213-69AE-11D9-BED3-505054503030}', category: 'System', governs: [] },

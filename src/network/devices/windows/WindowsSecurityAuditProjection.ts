@@ -28,6 +28,7 @@ import type {
   WindowsSessionLinkEventPayload,
   WindowsExplicitCredentialsEventPayload,
   WindowsFirewallRuleChangedPayload,
+  WindowsSystemTimeChangedPayload,
   WindowsFirewallSettingChangedPayload,
 } from './events';
 
@@ -61,6 +62,7 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.service.account-changed', (e) => this.onServiceAccountChanged(e.payload)),
       bus.subscribe('windows.filesystem.acl-changed', (e) => this.onAclChanged(e.payload)),
       bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
+      bus.subscribe('windows.system.time-changed', (e) => this.onSystemTimeChanged(e.payload)),
       bus.subscribe('windows.firewall.rule-changed', (e) => this.onFirewallRuleChanged(e.payload)),
       bus.subscribe('windows.firewall.setting-changed', (e) => this.onFirewallSettingChanged(e.payload)),
     );
@@ -68,6 +70,11 @@ export class WindowsSecurityAuditProjection {
 
   private gated(subcategory: string, kind: 'success' | 'failure'): boolean {
     return this.auditPolicy ? this.auditPolicy.isEnabled(subcategory, kind) : true;
+  }
+
+  private onSystemTimeChanged(p: WindowsSystemTimeChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    this.audit.systemTimeChanged(p.actor, p.previousMs, p.newMs, p.processId, p.processName);
   }
 
   private onFirewallRuleChanged(p: WindowsFirewallRuleChangedPayload): void {

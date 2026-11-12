@@ -4880,7 +4880,16 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   setSystemTime(epochMs: number): void {
+    const previousMs = this.clockPort.wall();
     this.clockPort.set(epochMs);
+    const host = this.procMgr.getProcessesByName('pwsh.exe')[0] ?? this.procMgr.getProcessesByName('powershell.exe')[0];
+    this.getBus().publish({
+      topic: 'windows.system.time-changed',
+      payload: {
+        deviceId: this.id, previousMs, newMs: this.clockPort.wall(), actor: this.userMgr.currentUser,
+        processId: host?.pid ?? 0, processName: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+      },
+    });
   }
 
   stepClock(deltaMs: number): void {

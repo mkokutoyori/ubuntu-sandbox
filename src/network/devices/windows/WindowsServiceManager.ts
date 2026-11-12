@@ -646,7 +646,14 @@ export class WindowsServiceManager {
     if (!isAdmin) return 'Access is denied.';
     const svc = this.services.get(name.toLowerCase());
     if (!svc) return `The specified service does not exist.`;
+    const previous = svc.startType;
     svc.startType = startType;
+    if (previous !== startType) {
+      this.bus?.publish({
+        topic: 'windows.service.start-type-changed',
+        payload: { deviceId: this.deviceId, serviceName: svc.name, displayName: svc.displayName, previous, current: startType },
+      });
+    }
     // The `Start` value IS this setting on a real machine; leaving it
     // behind is what made `sc qc` and `reg query` contradict each other.
     this.syncRegistry(name);

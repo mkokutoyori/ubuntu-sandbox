@@ -13,7 +13,7 @@ import type { IEventBus, Unsubscribe } from '@/events/EventBus';
 import type { WindowsAuditPolicy } from './WindowsAuditPolicy';
 import type {
   WindowsServiceEventPayload, WindowsServiceCrashedPayload, WindowsServiceRecoveryCriticalPayload,
-  WindowsServiceCreatedPayload,
+  WindowsServiceCreatedPayload, WindowsServiceStartTypeChangedPayload,
 } from './events';
 
 /** SCM event ID for a service state transition (System log). */
@@ -22,6 +22,12 @@ const SCM_STATE_CHANGE = 7036;
 const SCM_UNEXPECTED_TERMINATION = 7034;
 /** SCM event ID announcing the corrective action about to be taken (System log). */
 const SCM_RECOVERY_ACTION = 7031;
+const SCM_START_TYPE_CHANGED = 7040;
+
+const START_TYPE_WORDS: Readonly<Record<string, string>> = {
+  Automatic: 'auto start', AutomaticDelayedStart: 'auto start', Manual: 'demand start', Disabled: 'disabled',
+  Boot: 'boot start', System: 'system start',
+};
 /** SCM event ID for a new service installed in the system (System log). */
 const SCM_SERVICE_INSTALLED = 7045;
 /** Windows Filtering Platform — packet blocked (Security log). */
@@ -55,6 +61,7 @@ export class WindowsEventLogProjection {
       bus.subscribe('windows.service.stopped', (e) => this.onService(e.payload)),
       bus.subscribe('windows.service.crashed', (e) => this.onServiceCrashed(e.payload)),
       bus.subscribe('windows.service.created', (e) => this.onServiceCreated(e.payload)),
+      bus.subscribe('windows.service.start-type-changed', (e) => this.onStartTypeChanged(e.payload)),
       bus.subscribe('windows.service.recovery-critical', (e) => this.onRecoveryCritical(e.payload)),
       bus.subscribe('tcp.listener.changed', (e) => this.onTcpListener(e.payload)),
       bus.subscribe('tcp.connection.opened', (e) => this.onTcpAccepted(e.payload)),
@@ -176,6 +183,18 @@ export class WindowsEventLogProjection {
       SCM_STATE_CHANGE,
       'Information',
       `The ${p.displayName} service entered the ${p.running ? 'running' : 'stopped'} state.`,
+    );
+  }
+
+  private onStartTypeChanged(p: WindowsServiceStartTypeChangedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    const from = START_TYPE_WORDS[p.previous] ?? p.previous;
+    const to = START_TYPE_WORDS[p.current] ?? p.current;
+    if (from === to) return;
+    this.sink.writeEventLog(
+      'System', 'Service Control Manager', SCM_START_TYPE_CHANGED, 'Information',
+      `The start type of the ${p.displayName} service was changed from ${from} to ${to}.`,
+      { param1: p.displayName, param2: from, param3: to },
     );
   }
 

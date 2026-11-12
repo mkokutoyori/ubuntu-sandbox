@@ -31,6 +31,13 @@ export interface WindowsServiceEventPayload extends WindowsDeviceRef {
 }
 
 /** A service's hosting process died out from under it (not a graceful stop). */
+export interface WindowsServiceStartTypeChangedPayload extends WindowsDeviceRef {
+  serviceName: string;
+  displayName: string;
+  previous: string;
+  current: string;
+}
+
 export interface WindowsServiceCrashedPayload extends WindowsDeviceRef {
   serviceName: string;
   displayName: string;
@@ -223,6 +230,8 @@ export type WindowsDomainEvent =
   | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }
   | { topic: 'windows.portproxy.removed'; payload: WindowsPortProxyEventPayload }
   | { topic: 'windows.firewall.drop'; payload: WindowsFirewallDropPayload }
+  | { topic: 'windows.system.time-changed'; payload: WindowsSystemTimeChangedPayload }
+  | { topic: 'windows.service.start-type-changed'; payload: WindowsServiceStartTypeChangedPayload }
   | { topic: 'windows.firewall.rule-changed'; payload: WindowsFirewallRuleChangedPayload }
   | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload };
 
@@ -233,6 +242,15 @@ export interface WindowsFileAclChangedPayload extends WindowsDeviceRef {
   permissions: string;
   /** The username that made the change (for 4670 audit attribution). */
   changedBy: string;
+}
+
+export interface WindowsSystemTimeChangedPayload {
+  deviceId: string;
+  previousMs: number;
+  newMs: number;
+  actor: string;
+  processId: number;
+  processName: string;
 }
 
 export interface WindowsFirewallRuleChangedPayload {
