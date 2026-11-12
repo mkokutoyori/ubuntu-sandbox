@@ -108,6 +108,6 @@ describe('Scénario 2 — `el` et `Get-WinEvent -ListLog` voient le même lien',
     // C'est précisément le canal qui a révélé l'écart : ajouté au
     // fournisseur, il restait invisible de `wevtutil`.
     expect(await dc.executeCmdCommand('wevtutil el'))
-      .toContain('Microsoft-Windows-PowerShell/Operational');
+      .toContain('PowerShellCore/Operational');
   });
 });

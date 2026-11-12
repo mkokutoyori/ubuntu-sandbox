@@ -228,8 +228,8 @@ export class PSEventLogProvider {
     // Windows moderne, vide tant que la stratégie de journalisation
     // n'est pas posée — un journal absent et un journal vide ne se
     // disent pas de la même façon à qui l'interroge.
-    this.logs.set('microsoft-windows-powershell/operational', {
-      logName: 'Microsoft-Windows-PowerShell/Operational',
+    this.logs.set('powershellcore/operational', {
+      logName: 'PowerShellCore/Operational',
       maxSizeKB: 15360, overflow: 'OverwriteAsNeeded',
       entries: [],
     });

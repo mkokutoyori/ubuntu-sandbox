@@ -76,6 +76,8 @@ export interface WindowsServiceCreatedPayload extends WindowsDeviceRef {
   displayName: string;
   binaryPath: string;
   account: string;
+  startType: string;
+  sharedProcess: boolean;
   /** The username that ran the install (for 4697 audit attribution). */
   installedBy: string;
 }
@@ -100,10 +102,13 @@ export interface WindowsLogonDetails {
   readonly processName?: string;
   readonly logonProcess?: string;
   readonly authenticationPackage?: string;
+  readonly lmPackage?: string;
+  readonly keyLength?: number;
   readonly workstation?: string;
   readonly ipAddress?: string;
   readonly ipPort?: string;
   readonly elevated?: boolean;
+  readonly validatedElsewhere?: boolean;
 }
 
 export type WindowsLogonFailureCause =
@@ -149,6 +154,14 @@ export interface WindowsSessionLinkEventPayload extends WindowsDeviceRef {
 export interface WindowsGroupEventPayload extends WindowsDeviceRef {
   group: string;
   actor?: string;
+}
+
+export interface WindowsGroupEnumeratedPayload extends WindowsDeviceRef {
+  kind: 'user-groups' | 'group-members';
+  target: string;
+  actor: string;
+  processId: number;
+  processName: string;
 }
 
 export interface WindowsGroupMemberEventPayload extends WindowsGroupEventPayload {
@@ -225,6 +238,7 @@ export type WindowsDomainEvent =
   | { topic: 'windows.group.created'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.deleted'; payload: WindowsGroupEventPayload }
   | { topic: 'windows.group.membership-changed'; payload: WindowsGroupMemberEventPayload }
+  | { topic: 'windows.group.enumerated'; payload: WindowsGroupEnumeratedPayload }
   | { topic: 'windows.process.started'; payload: WindowsProcessEventPayload }
   | { topic: 'windows.process.stopped'; payload: WindowsProcessEventPayload }
   | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }

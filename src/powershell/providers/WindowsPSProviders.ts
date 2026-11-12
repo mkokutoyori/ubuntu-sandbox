@@ -1692,6 +1692,7 @@ class WindowsUserAdapter implements IUserProvider {
   getGroupMembers(group: string): UserInfo[] {
     const g = this.mgr().getGroup(group);
     if (!g) return [];
+    this.pc.announceGroupEnumeration('group-members', g.name, 'C:\\Program Files\\PowerShell\\7\\pwsh.exe');
     const out: UserInfo[] = [];
     for (const memberName of g.members) {
       const u = this.mgr().getUser(memberName);
@@ -2871,19 +2872,23 @@ class WindowsScheduledTaskAdapter implements IScheduledTaskProvider {
     task.author ??= `${this.pc.getHostname()}\\${this.pc.getCurrentUser()}`;
     task.runAsUser ??= this.pc.getCurrentUser();
     this.store().set(task.taskName.toLowerCase(), task);
-    // 4698 — une tâche planifiée est un mécanisme de persistance
-    // courant : la créer sans laisser de trace laissait un angle mort
-    // complet dans la piste d'audit.
-    this.pc.auditScheduledTaskCreated?.(task.taskName, task.command ?? '');
+    this.pc.announceTaskRegistered(task.taskName, task.command ?? '');
     return `\\${task.taskName}`;
   }
   unregisterTask(name: string): string {
-    return this.store().delete(name.toLowerCase()) ? '' : `Cannot find scheduled task '${name}'.`;
+    const task = this.store().get(name.toLowerCase());
+    if (!task) return `Cannot find scheduled task '${name}'.`;
+    this.store().delete(name.toLowerCase());
+    this.pc.announceTaskDeleted(task.taskName, task.command ?? '');
+    return '';
   }
   updateTask(name: string, patch: Partial<ScheduledTaskInfo>): string {
     const task = this.store().get(name.toLowerCase());
     if (!task) return `Cannot find scheduled task '${name}'.`;
+    const wasDisabled = task.state === 'Disabled';
     Object.assign(task, patch);
+    const isDisabled = task.state === 'Disabled';
+    if (wasDisabled !== isDisabled) this.pc.announceTaskStateChange(task.taskName, task.command ?? '', !isDisabled);
     return '';
   }
   runTask(name: string): string {
@@ -3911,21 +3916,28 @@ class WindowsRemotingAdapter implements IRemotingProvider {
   localComputerName(): string { return this.pc.getHostname(); }
 
   resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null {
+    return this.reachComputer(name, (targetIp) => credential
+      ? this.pc.dialWinRm(targetIp, credential.username, credential.password).ok
+      : this.pc.dialWinRmAsCurrentIdentity(name, targetIp).ok);
+  }
+
+  identifyComputer(name: string): IRemoteComputer | null {
+    return this.reachComputer(name, (targetIp) => {
+      const probe = this.pc.getTcpStack().connect(targetIp, 5985);
+      if (!probe || probe.state !== 'established') return false;
+      probe.close();
+      return true;
+    });
+  }
+
+  private reachComputer(name: string, admits: (targetIp: string) => boolean): IRemoteComputer | null {
     const targetIp = this.pc.resolveHostnameSync(name);
     if (!targetIp) return null;
     const found = findHostByAddress(targetIp.toString());
     if (!found || found.poweredOff || found.interfaceDown) return null;
     const device = found.device as unknown as Partial<RemotableDevice>;
     if (typeof device.getPowerShellInterpreter !== 'function' || !device.winrm) return null;
-
-    if (credential) {
-      const dial = this.pc.dialWinRm(targetIp.toString(), credential.username, credential.password);
-      if (!dial.ok) return null;
-    } else {
-      const probe = this.pc.getTcpStack().connect(targetIp.toString(), 5985);
-      if (!probe || probe.state !== 'established') return null;
-      probe.close();
-    }
+    if (!admits(targetIp.toString())) return null;
 
     const interp = device.getPowerShellInterpreter();
     const hostname = device.getHostname?.() ?? name;

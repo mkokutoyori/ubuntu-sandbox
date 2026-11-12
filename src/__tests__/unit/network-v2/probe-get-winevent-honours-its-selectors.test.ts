@@ -97,7 +97,7 @@ describe('Get-WinEvent selectors', () => {
 
   it('-ListLog filters by name and by wildcard', async () => {
     expect((await machine.ps('Get-WinEvent -ListLog Security | ForEach-Object { $_.LogName }')).trim()).toBe('Security');
-    expect((await machine.ps('Get-WinEvent -ListLog *PowerShell* | ForEach-Object { $_.LogName }')).trim()).toBe('Microsoft-Windows-PowerShell/Operational');
+    expect((await machine.ps('Get-WinEvent -ListLog *PowerShell* | ForEach-Object { $_.LogName }')).trim()).toBe('PowerShellCore/Operational');
   });
 
   it('-ListLog and -LogName name an unknown log', async () => {

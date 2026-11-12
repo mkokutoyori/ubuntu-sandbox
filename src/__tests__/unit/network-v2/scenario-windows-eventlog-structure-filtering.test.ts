@@ -62,7 +62,8 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
       expect(Number(patternOut)).toBeLessThan(Number(allOut));
 
       const names = await run(sh, "Get-WinEvent -ListLog 'Microsoft-Windows-*' | Select-Object -ExpandProperty LogName");
-      expect(names).toMatch(/Microsoft-Windows-PowerShell\/Operational/);
+      expect(names).toMatch(/Microsoft-Windows-TaskScheduler\/Operational/);
+      expect(names).not.toMatch(/PowerShellCore/);
       expect(names).not.toMatch(/^Security$/m);
     });
 
@@ -152,9 +153,9 @@ describe('Scénario 1 (Windows) — observateur d\'événements : structure, Eve
       // n'est pas demandé. Un canal absent et un canal vide ne se disent
       // pas de la même façon, et c'est bien la stratégie qui décide.
       const logs = await run(sh, "Get-WinEvent -ListLog * | Select-Object -ExpandProperty LogName");
-      expect(logs).toMatch(/Microsoft-Windows-PowerShell\/Operational/);
+      expect(logs).toMatch(/PowerShellCore\/Operational/);
 
-      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-PowerShell/Operational'; Id = 4104 }");
+      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'PowerShellCore/Operational'; Id = 4104 }");
       expect(out).toMatch(/No events were found/i);
     });
 

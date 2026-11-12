@@ -219,6 +219,13 @@ export class WindowsUserManager {
     });
   }
 
+  recordGroupEnumeration(kind: 'user-groups' | 'group-members', target: string, processId: number, processName: string): void {
+    this.bus?.publish({
+      topic: 'windows.group.enumerated',
+      payload: { deviceId: this.deviceId, kind, target, actor: this.currentUser, processId, processName },
+    });
+  }
+
   private initDefaults(): void {
     // Built-in users
     this.addUser({
@@ -822,6 +829,22 @@ export class WindowsUserManager {
       },
     });
     return ok;
+  }
+
+  recordNetworkLogon(
+    account: string, success: boolean, details?: WindowsLogonDetails, failure?: WindowsLogonFailureCause,
+  ): void {
+    this.bus?.publish({
+      topic: 'windows.account.logon',
+      payload: { deviceId: this.deviceId, account, success, logonType: 3, details, ...(failure === undefined ? {} : { failure }) },
+    });
+  }
+
+  recordNetworkLogoff(account: string): void {
+    this.bus?.publish({
+      topic: 'windows.account.logoff',
+      payload: { deviceId: this.deviceId, account, logonType: 3 },
+    });
   }
 
   // ─── `runas /savecred` vault (PRD-Nslookup-Dig-Rndc-Runas.md P12) ──

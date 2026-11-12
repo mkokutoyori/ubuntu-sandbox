@@ -148,7 +148,7 @@ describe('Scénario 4 — le journal du planificateur', () => {
   // Le nom de canal est entre guillemets : l'analyseur d'arguments
   // PowerShell coupe un mot nu sur `/`, et rendrait « Microsoft-Windows-
   // TaskScheduler ». C'est un défaut de l'analyseur, commun à tous les
-  // canaux — `Microsoft-Windows-PowerShell/Operational` a le même — et
+  // canaux — `PowerShellCore/Operational` a le même — et
   // non du planificateur ; le vrai PowerShell accepte les deux formes.
   const lire = (pc: WindowsPC) => pc.executeCommand(
     "powershell -Command \"Get-WinEvent -LogName 'Microsoft-Windows-TaskScheduler/Operational'\"");

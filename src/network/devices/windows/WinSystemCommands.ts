@@ -121,7 +121,8 @@ export interface WinSystemContext {
    * Optionnel : `cmdSchtasks` reste utilisable sans journal.
    */
   onTaskRegistered?(task: WinScheduledTask): void;
-  onTaskDeleted?(taskName: string): void;
+  onTaskDeleted?(task: WinScheduledTask): void;
+  onTaskStateChanged?(task: WinScheduledTask, enabled: boolean): void;
   /** Démarrage manuel — le même que celui de `Start-ScheduledTask`. */
   runTaskNow?(task: WinScheduledTask): void;
   now(): Date;
@@ -420,8 +421,9 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
   }
   if (action === '/delete') {
     if (!tn) return 'ERROR: The required parameter "/TN" is missing.';
+    const found = ctx.scheduledTasks.get(tn.toLowerCase());
     const removed = ctx.scheduledTasks.delete(tn.toLowerCase());
-    if (removed) ctx.onTaskDeleted?.(tn);
+    if (removed && found) ctx.onTaskDeleted?.(found);
     return removed
       ? `SUCCESS: The scheduled task "${tn}" was successfully deleted.`
       : `ERROR: The system cannot find the file specified.`;
@@ -443,8 +445,11 @@ export function cmdSchtasks(ctx: WinSystemContext, args: string[]): string {
     const has = (name: string) => flagIdx(name) >= 0;
     // L'état demandé était jusqu'ici accepté puis perdu : la commande
     // répondait SUCCESS et `/query` affichait toujours Ready.
+    const wasDisabled = task.state === 'Disabled';
     if (has('/disable')) task.state = 'Disabled';
     if (has('/enable')) task.state = 'Ready';
+    const isDisabled = task.state === 'Disabled';
+    if (wasDisabled !== isDisabled) ctx.onTaskStateChanged?.(task, !isDisabled);
     const tr = flagVal('/tr');
     if (tr !== undefined) task.command = tr;
     const st = flagVal('/st');

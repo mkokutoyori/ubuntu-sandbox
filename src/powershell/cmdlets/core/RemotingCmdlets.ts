@@ -75,7 +75,7 @@ export class TestWSManCmdlet implements ICmdlet {
       return identity();
     }
 
-    const remote = remoting.resolveComputer(target);
+    const remote = remoting.identifyComputer(target);
     if (!remote || !remote.isRemotingEnabled()) {
       ctx.emitError(
         `Test-WSMan : <f:WSManFault xmlns:f="http://schemas.microsoft.com/wbem/wsman/1/wsmanfault" Code="2150858770" Machine="${target}">` +

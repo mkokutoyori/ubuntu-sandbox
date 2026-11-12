@@ -44,13 +44,22 @@ export interface WinRmServerContext {
 export class WinRmServerHandler {
   constructor(private readonly ctx: WinRmServerContext) {}
 
-  register(conn: TcpConnection): void {
+  register(conn: TcpConnection, clientIp?: string, clientName?: string): void {
     const reply = (msg: Record<string, unknown>) => conn.write(JSON.stringify(msg));
     const assembler = new JsonMessageAssembler();
     let identity: WinRmIdentity | null = null;
     let shell: WinRmShellHost | null = null;
 
+    const connection = (package_: 'NTLM' | 'Kerberos', validatedElsewhere = false) => (clientIp === undefined ? undefined : {
+      ...(validatedElsewhere ? { validatedElsewhere } : {}),
+      workstation: clientName ?? clientIp, ipAddress: clientIp, processId: '0x0', processName: '-',
+      ...(package_ === 'NTLM'
+        ? { logonProcess: 'NtLmSsp', authenticationPackage: 'NTLM', lmPackage: 'NTLM V2', keyLength: 128 }
+        : { logonProcess: 'Kerberos', authenticationPackage: 'Kerberos' }),
+    });
+
     conn.onClose?.(() => {
+      if (identity !== null) this.ctx.userMgr.recordNetworkLogoff?.(identity.sam);
       shell?.close();
       shell = null;
     });
@@ -67,8 +76,14 @@ export class WinRmServerHandler {
         const username = String(parsed.username ?? '');
         const password = String(parsed.password ?? '');
         const account = this.ctx.userMgr.getUser(username);
-        const localOk = account?.enabled && this.ctx.userMgr.checkPassword(username, password);
+        const localOk = account?.enabled && this.ctx.userMgr.checkPassword(username, password, 3, false, false);
         const domainOk = !localOk && this.ctx.domainAuth?.(username, password)?.ok;
+        const sam = username.includes('\\') ? username.slice(username.indexOf('\\') + 1) : username.split('@')[0];
+        if (localOk || domainOk) this.ctx.userMgr.recordNetworkLogon?.(localOk ? username : sam, true, connection('NTLM', !localOk));
+        else {
+          const cause = account === undefined ? 'unknown-user' : !account.enabled ? 'disabled' : 'bad-password';
+          this.ctx.userMgr.recordNetworkLogon?.(username, false, connection('NTLM'), cause);
+        }
         if (!localOk && !domainOk) {
           reply({ ok: false, message: 'The user name or password is incorrect.' });
           return;
@@ -86,6 +101,7 @@ export class WinRmServerHandler {
           return;
         }
         identity = { sam, viaDomain: true };
+        this.ctx.userMgr.recordNetworkLogon?.(sam, true, connection('Kerberos'));
         reply({ ok: true });
         return;
       }

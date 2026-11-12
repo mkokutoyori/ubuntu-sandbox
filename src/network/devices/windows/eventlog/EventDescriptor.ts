@@ -33,6 +33,7 @@ const PROVIDER_GUIDS: Record<string, string> = {
   'microsoft-windows-eventlog': '{FC65DDD8-D6EF-4962-83D5-6E5CFE9CE148}',
   'service control manager': '{555908D1-A6D7-4695-8E1E-26931D2012F4}',
   'microsoft-windows-kernel-general': '{A68CA8B7-004F-D7B6-A698-07E2DE0F1F5D}',
+  powershellcore: '{F90714A8-5509-434A-BF6D-B1624C8A19A2}',
 };
 
 const TASK_IDS: Record<string, number> = {
@@ -40,6 +41,7 @@ const TASK_IDS: Record<string, number> = {
   'Security System Extension': 12289,
   Logon: 12544,
   Logoff: 12545,
+  'Credential Validation': 14336,
   'Account Lockout': 12546,
   'Special Logon': 12548,
   'Other Logon/Logoff Events': 12551,
@@ -73,8 +75,10 @@ const ACCOUNT_MANAGEMENT_EXTRA = new Map<number, string>([
 
 const EVENTLOG_PROVIDER = 'microsoft-windows-eventlog';
 const AUDITING_PROVIDER = 'microsoft-windows-security-auditing';
+const POWERSHELL_PROVIDER = 'powershellcore';
+const SCRIPT_BLOCK_EVENT = 4104;
 
-const EVENT_VERSIONS: Record<number, number> = { 4616: 1, 4624: 2, 4625: 0, 4634: 0, 4672: 0, 4688: 2, 4689: 0 };
+const EVENT_VERSIONS: Record<number, number> = { 4616: 1, 4624: 2, 4625: 0, 4776: 0, 4634: 0, 4672: 0, 4688: 2, 4689: 0 };
 
 function auditTaskName(eventId: number): string | null {
   const explicit = ACCOUNT_MANAGEMENT_EXTRA.get(eventId);
@@ -115,6 +119,13 @@ export function describeEvent(event: EventClassified): EventDescriptor {
   } else if (!audit && !provider.startsWith('microsoft-windows-')) {
     keywords = '0x80000000000000';
     keywordNames = ['Classic'];
+  }
+
+  if (provider === POWERSHELL_PROVIDER && event.eventId === SCRIPT_BLOCK_EVENT) {
+    return {
+      level: 5, levelName: 'Verbose', taskId: 0x66, taskName: 'CommandStart', opcode: 0xf, opcodeName: 'Create',
+      keywords: '0x1', keywordNames: ['Runspace'], version: 0, providerGuid: PROVIDER_GUIDS[provider],
+    };
   }
 
   return {

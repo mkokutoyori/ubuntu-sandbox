@@ -40,11 +40,11 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
       // Le Script Block Logging est éteint par défaut sur un Windows
       // réel : sans la stratégie, l'énoncé attendait un 4104 que rien
       // n'avait demandé. C'est bien elle qui commande.
-      await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Force');
-      await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Name "EnableScriptBlockLogging" -Value 1');
+      await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\ScriptBlockLogging" -Force');
+      await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\ScriptBlockLogging" -Name "EnableScriptBlockLogging" -Value 1');
       await run(sh, '$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(\'Get-Process | Select-Object Name, Id\'))');
 
-      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-PowerShell/Operational'; Id = 4104; StartTime = (Get-Date).AddHours(-2) }");
+      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'PowerShellCore/Operational'; Id = 4104; StartTime = (Get-Date).AddHours(-2) }");
       expect(out).not.toMatch(/No events were found|does not exist/i);
     });
 
@@ -109,8 +109,8 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
       // simulateur mais l'absence de tout durcissement.
       await dc.executeCmdCommand('auditpol /set /subcategory:"Registry" /success:enable');
       await dc.executeCmdCommand('auditpol /set /subcategory:"Other Object Access Events" /success:enable');
-      await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Force');
-      await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging" -Name "EnableScriptBlockLogging" -Value 1');
+      await run(sh, 'New-Item -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\ScriptBlockLogging" -Force');
+      await run(sh, 'Set-ItemProperty -Path "HKLM:\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\ScriptBlockLogging" -Name "EnableScriptBlockLogging" -Value 1');
 
       // Rejoue les 6 phases de l'incident.
       dc.getUserManager().checkPassword('bob', 'stolen-password');
@@ -126,7 +126,7 @@ describe('Scénario 9 (Windows) — piste d\'audit complète : reconstruction d\
 
       const out = await run(sh, [
         '$Connexion = (Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = @(4624, 4625, 4648); StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
-        '$PowerShellCount = (Get-WinEvent -FilterHashtable @{ LogName = \'Microsoft-Windows-PowerShell/Operational\'; Id = 4104; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
+        '$PowerShellCount = (Get-WinEvent -FilterHashtable @{ LogName = \'PowerShellCore/Operational\'; Id = 4104; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
         '$Registre = (Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = 4657; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
         '$TachePlanifiee = (Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = @(4698, 4699, 4702); StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',
         '$JournalEfface = (Get-WinEvent -FilterHashtable @{ LogName = \'System\'; Id = 104; StartTime = (Get-Date).AddHours(-2) } -ErrorAction SilentlyContinue | Measure-Object).Count',

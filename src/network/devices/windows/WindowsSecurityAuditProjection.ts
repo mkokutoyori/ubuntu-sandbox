@@ -30,6 +30,7 @@ import type {
   WindowsFirewallRuleChangedPayload,
   WindowsSystemTimeChangedPayload,
   WindowsFirewallSettingChangedPayload,
+  WindowsGroupEnumeratedPayload,
 } from './events';
 
 export class WindowsSecurityAuditProjection {
@@ -57,6 +58,7 @@ export class WindowsSecurityAuditProjection {
       bus.subscribe('windows.group.created', (e) => this.onGroupCreated(e.payload)),
       bus.subscribe('windows.group.deleted', (e) => this.onGroupDeleted(e.payload)),
       bus.subscribe('windows.group.membership-changed', (e) => this.onMembership(e.payload)),
+      bus.subscribe('windows.group.enumerated', (e) => this.onGroupEnumerated(e.payload)),
       bus.subscribe('windows.process.started', (e) => this.onProcess(e.payload)),
       bus.subscribe('windows.process.stopped', (e) => this.onProcess(e.payload)),
       bus.subscribe('windows.service.account-changed', (e) => this.onServiceAccountChanged(e.payload)),
@@ -91,7 +93,7 @@ export class WindowsSecurityAuditProjection {
 
   private onServiceCreated(p: WindowsServiceCreatedPayload): void {
     if (p.deviceId !== this.deviceId) return;
-    this.audit.serviceInstalled(p.serviceName, p.binaryPath, p.account, p.installedBy);
+    this.audit.serviceInstalled(p.serviceName, p.binaryPath, p.account, p.installedBy, p.startType, p.sharedProcess);
   }
 
   private onServiceAccountChanged(p: WindowsServiceAccountChangedPayload): void {
@@ -145,6 +147,10 @@ export class WindowsSecurityAuditProjection {
 
   private onLogon(p: WindowsLogonEventPayload): void {
     if (p.deviceId !== this.deviceId) return;
+    if (p.details?.authenticationPackage === 'NTLM' && p.details.validatedElsewhere !== true
+      && this.gated('Credential Validation', p.success ? 'success' : 'failure')) {
+      this.audit.credentialValidation(p.account, p.details.workstation ?? '-', p.success ? undefined : p.failure ?? 'bad-password');
+    }
     if (p.success) {
       if (!this.gated('Logon', 'success')) return;
       const logonId = nextLogonId();
@@ -222,6 +228,12 @@ export class WindowsSecurityAuditProjection {
     if (p.deviceId !== this.deviceId) return;
     if (!this.gated('Security Group Management', 'success')) return;
     this.audit.groupDeleted(p.group, p.actor);
+  }
+
+  private onGroupEnumerated(p: WindowsGroupEnumeratedPayload): void {
+    if (p.deviceId !== this.deviceId) return;
+    if (!this.gated(p.kind === 'user-groups' ? 'User Account Management' : 'Security Group Management', 'success')) return;
+    this.audit.groupEnumerated(p.kind, p.target, p.actor, p.processId, p.processName);
   }
 
   private onMembership(p: WindowsGroupMemberEventPayload): void {

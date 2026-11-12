@@ -1258,13 +1258,14 @@ export interface IRemotingProvider {
   /**
    * Resolve a computer name/IP to a remoting-capable target — over the
    * REAL network (TCP/5985 dial through cables/routing/firewalls, not a
-   * topology-wide lookup). Without `credential`, only reachability and a
-   * listening WinRM service are checked (Test-WSMan's semantics — no
-   * auth). With `credential`, a full connect+negotiate+auth handshake is
-   * required (Invoke-Command/Enter-PSSession's semantics); returns null
-   * on any failure (unreachable, WinRM not listening, or bad credentials).
+   * topology-wide lookup). A full connect+negotiate+auth handshake is
+   * required (Invoke-Command/Enter-PSSession's semantics): with `credential`
+   * the NTLM one, without it the caller's Kerberos identity; returns null
+   * on any failure (unreachable, WinRM not listening, or refused identity).
    */
   resolveComputer(name: string, credential?: { username: string; password: string }): IRemoteComputer | null;
+  /** Reachability and a listening WinRM service only — Test-WSMan's anonymous Identify, no authentication. */
+  identifyComputer(name: string): IRemoteComputer | null;
   /** Run a PowerShell line on another computer over a real WinRM session (implicit Kerberos identity unless a credential is given) and return its raw text output. */
   runCommand(computerName: string, line: string, credential?: { username: string; password: string }): { ok: boolean; output?: string; error?: string };
   /** Ask another computer to refresh its Group Policy over a real WinRM session (implicit Kerberos identity). */

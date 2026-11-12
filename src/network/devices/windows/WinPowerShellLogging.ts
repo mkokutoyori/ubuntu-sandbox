@@ -5,9 +5,9 @@
  * Les deux sont éteints par défaut et s'allument par la base de
  * registre, sous les clés de stratégie que Microsoft documente :
  *
- *   HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging
+ *   HKLM\SOFTWARE\Policies\Microsoft\PowerShellCore\ScriptBlockLogging
  *       EnableScriptBlockLogging : REG_DWORD  1 → 4104 pour chaque bloc
- *   HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription
+ *   HKLM\SOFTWARE\Policies\Microsoft\PowerShellCore\Transcription
  *       EnableTranscripting      : REG_DWORD  1
  *       OutputDirectory          : REG_SZ     où déposer les fichiers
  *
@@ -18,13 +18,13 @@
  */
 
 export const SCRIPT_BLOCK_LOGGING_KEY =
-  'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging';
+  'HKLM\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\ScriptBlockLogging';
 export const TRANSCRIPTION_KEY =
-  'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\Transcription';
+  'HKLM\\SOFTWARE\\Policies\\Microsoft\\PowerShellCore\\Transcription';
 
 /** Le journal où atterrissent les 4104. */
-export const POWERSHELL_OPERATIONAL_LOG = 'Microsoft-Windows-PowerShell/Operational';
-export const POWERSHELL_PROVIDER = 'Microsoft-Windows-PowerShell';
+export const POWERSHELL_OPERATIONAL_LOG = 'PowerShellCore/Operational';
+export const POWERSHELL_PROVIDER = 'PowerShellCore';
 export const SCRIPT_BLOCK_LOGGED = 4104;
 
 export interface RegistryValueReader {

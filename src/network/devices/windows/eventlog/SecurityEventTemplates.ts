@@ -221,6 +221,35 @@ function systemTimeChanged(d: EventFields): string {
   ].join('\n\n');
 }
 
+function credentialValidation(d: EventFields): string {
+  return [
+    'The computer attempted to validate the credentials for an account.',
+    `Authentication Package:\t${field(d, 'PackageName')}\nLogon Account:\t${field(d, 'TargetUserName')}\nSource Workstation:\t${field(d, 'Workstation')}\nError Code:\t${field(d, 'Status')}`,
+  ].join('\n\n');
+}
+
+function processInformation(d: EventFields): string {
+  return `Process Information:\n\tProcess ID:\t\t${field(d, 'CallerProcessId')}\n\tProcess Name:\t\t${field(d, 'CallerProcessName')}`;
+}
+
+function userGroupsEnumerated(d: EventFields): string {
+  return [
+    'A user\'s local group membership was enumerated.',
+    subject(d),
+    `User:\n\tSecurity ID:\t\t${field(d, 'TargetSid')}\n\tAccount Name:\t\t${field(d, 'TargetUserName')}\n\tAccount Domain:\t\t${field(d, 'TargetDomainName')}`,
+    processInformation(d),
+  ].join('\n\n');
+}
+
+function groupMembersEnumerated(d: EventFields): string {
+  return [
+    'A security-enabled local group membership was enumerated.',
+    subject(d),
+    `Group:\n\tSecurity ID:\t\t${field(d, 'TargetSid')}\n\tGroup Name:\t\t${field(d, 'TargetUserName')}\n\tGroup Domain:\t\t${field(d, 'TargetDomainName')}`,
+    processInformation(d),
+  ].join('\n\n');
+}
+
 const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4616: systemTimeChanged,
   4624: logon,
@@ -228,6 +257,9 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4634: logoff,
   4672: specialPrivileges,
   4719: auditPolicyChanged,
+  4776: credentialValidation,
+  4798: userGroupsEnumerated,
+  4799: groupMembersEnumerated,
   4720: accountCreated,
   4722: accountChange('A user account was enabled.'),
   4723: accountChange('An attempt was made to change an account\'s password.'),

@@ -178,7 +178,7 @@ import { cmdTracert, tracertHostOf, type TracertHost } from './windows/WinTracer
 import { cmdRoute } from './windows/WinRoute';
 import { cmdWevtutil } from './windows/WinWevtutil';
 import { cmdWhoami } from './windows/WinWhoami';
-import { cmdNetUser, cmdNetLocalgroup } from './windows/WinNetUser';
+import { cmdNetUser, cmdNetLocalgroup, type NetUserContext } from './windows/WinNetUser';
 import { cmdIcacls } from './windows/WinIcacls';
 import { cmdTasklist as cmdTasklistDynamic } from './windows/WinTasklist';
 import { cmdTaskkill } from './windows/WinTaskkill';
@@ -230,7 +230,7 @@ import { ClusterSignalStore } from './windows/server/cluster/observables';
 import { ClusterSignalRefreshActor } from './windows/server/cluster/actors/ClusterSignalRefreshActor';
 import { DfsSignalStore } from './windows/server/dfs/observables';
 import { DfsSignalRefreshActor } from './windows/server/dfs/actors/DfsSignalRefreshActor';
-import { dialWinRm, type WinRmDialResult, pushForwardedEvent, runWinRmRequest, type WinRmRunResult, WinRmRunspace, type WinRmRunspaceOpening, WINRM_UNREACHABLE } from './windows/server/winrm/WinRmClient';
+import { dialWinRm, dialWinRmWithTicket, type WinRmDialResult, pushForwardedEvent, runWinRmRequest, type WinRmRunResult, WinRmRunspace, type WinRmRunspaceOpening, WINRM_UNREACHABLE } from './windows/server/winrm/WinRmClient';
 import type { WinRmIdentity, WinRmCommandResult } from './windows/server/winrm/WinRmServer';
 import type { WinRmShellHost } from './windows/server/winrm/WinRmShell';
 import { peerLiveness } from '@/network/protocols/ssh/sessionLiveness';
@@ -1154,7 +1154,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
   }
 
   private serveWinRm(socket: TcpSocket): void {
-    this.getWinRmServerHandler().register(socket as unknown as TcpStream);
+    this.getWinRmServerHandler().register(socket as unknown as TcpStream, socket.remoteIp, this.reverseLookupClient(socket.remoteIp));
   }
 
   private serveKdc(socket: TcpSocket): void {
@@ -2034,6 +2034,12 @@ export class WindowsPC extends EndHost implements UserAccountHost {
    */
   dialWinRm(targetIp: string, username: string, password: string): WinRmDialResult {
     return dialWinRm({ tcpStack: this.getTcpStack(), targetIp, username, password });
+  }
+
+  dialWinRmAsCurrentIdentity(computerName: string, targetIp: string): WinRmDialResult {
+    const apReq = this.kerberosApReqFor(computerName.split('.')[0]);
+    if (apReq === null) return { ok: false, error: 'Access is denied.' };
+    return dialWinRmWithTicket({ tcpStack: this.getTcpStack(), targetIp, apReq });
   }
 
   async openWinRmRunspace(computerName: string, credential?: { username: string; password: string }): Promise<WinRmRunspaceOpening> {
@@ -4134,7 +4140,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       }
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netCtx2 = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
+      const netCtx2 = this.netUserContext();
       if (subCmd === 'user') return cmdNetUser(netCtx2, subArgs);
       if (subCmd === 'localgroup') return cmdNetLocalgroup(netCtx2, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -4766,7 +4772,7 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     if (lower === 'net' && args.length > 0) {
       const subCmd = args[0].toLowerCase();
       const subArgs = args.slice(1);
-      const netUserCtx = { hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone };
+      const netUserCtx = this.netUserContext();
       if (subCmd === 'user')        return cmdNetUser(netUserCtx, subArgs);
       if (subCmd === 'localgroup')  return cmdNetLocalgroup(netUserCtx, subArgs);
       const netSvcCtx = { serviceManager: this.svcMgr, isAdmin: this.userMgr.isCurrentUserAdmin() };
@@ -4819,8 +4825,9 @@ export class WindowsPC extends EndHost implements UserAccountHost {
       scheduledTasks: this.scheduledTasks,
       now: () => this.simulatedDate(),
       elevationContext: () => this.resolveElevationForCurrentUser(),
-      onTaskRegistered: (t) => this.logTaskRegistered(t.taskName),
-      onTaskDeleted: (name) => this.logTaskDeleted(name),
+      onTaskRegistered: (t) => this.announceTaskRegistered(t.taskName, t.command ?? ''),
+      onTaskDeleted: (task) => this.announceTaskDeleted(task.taskName, task.command ?? ''),
+      onTaskStateChanged: (task, enabled) => this.announceTaskStateChange(task.taskName, task.command ?? '', enabled),
       runTaskNow: (t) => this.runScheduledTaskNow(t),
     };
   }
@@ -4838,6 +4845,24 @@ export class WindowsPC extends EndHost implements UserAccountHost {
     this.eventLog.writeEventLog(
       'Microsoft-Windows-TaskScheduler/Operational', 'Microsoft-Windows-TaskScheduler',
       eventId, 'Information', message, data);
+  }
+
+  announceTaskRegistered(taskName: string, command: string): void {
+    this.logTaskRegistered(taskName);
+    this.auditScheduledTaskCreated(taskName, command);
+  }
+
+  announceTaskDeleted(taskName: string, command: string): void {
+    this.logTaskDeleted(taskName);
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    this.securityAudit().scheduledTaskDeleted(taskName, command, this.userMgr.currentUser || 'Administrator');
+  }
+
+  announceTaskStateChange(taskName: string, command: string, enabled: boolean): void {
+    if (!this.auditPolicy.isEnabled('Other Object Access Events', 'success')) return;
+    const actor = this.userMgr.currentUser || 'Administrator';
+    if (enabled) this.securityAudit().scheduledTaskEnabled(taskName, command, actor);
+    else this.securityAudit().scheduledTaskDisabled(taskName, command, actor);
   }
 
   private logTaskRegistered(taskName: string): void {
@@ -4877,6 +4902,18 @@ export class WindowsPC extends EndHost implements UserAccountHost {
 
   simulatedNow(): number {
     return this.clockPort.monotonic() - this.bootMonotonicMs;
+  }
+
+  private netUserContext(): NetUserContext {
+    return {
+      hostname: this.hostname, userManager: this.userMgr, directoryStore: this.getDirectoryStore(), timezone: this.identity.timezone,
+      enumerated: (kind, target) => this.announceGroupEnumeration(kind, target, 'C:\\Windows\\System32\\net1.exe'),
+    };
+  }
+
+  announceGroupEnumeration(kind: 'user-groups' | 'group-members', target: string, processName: string): void {
+    const image = processName.slice(processName.lastIndexOf('\\') + 1);
+    this.userMgr.recordGroupEnumeration(kind, target, this.procMgr.getProcessesByName(image)[0]?.pid ?? 0, processName);
   }
 
   setSystemTime(epochMs: number): void {

@@ -13,6 +13,7 @@
  */
 
 import type { WindowsLogonDetails, WindowsLogonFailureCause } from './events';
+import { START_TYPE_CODES, type ServiceStartType } from './WindowsServiceManager';
 import { createAuditIdentity, nextLogonId, type AuditIdentity } from './eventlog/AuditIdentity';
 import { renderSecurityMessage, clearedChannelMessage, failureReasonOf } from './eventlog/SecurityEventTemplates';
 
@@ -55,11 +56,17 @@ export const SECURITY_EVENT = {
   PROCESS_TERMINATED: 4689,
   PRIVILEGED_SERVICE_CALLED: 4673,
   SCHEDULED_TASK_CREATED: 4698,
+  SCHEDULED_TASK_DELETED: 4699,
+  SCHEDULED_TASK_ENABLED: 4700,
+  SCHEDULED_TASK_DISABLED: 4701,
   OBJECT_ACCESSED: 4663,
   SHARE_ACCESSED: 5140,
   SHARE_ADDED: 5142,
   AUDIT_LOG_CLEARED: 1102,
   SYSTEM_TIME_CHANGED: 4616,
+  CREDENTIAL_VALIDATION: 4776,
+  USER_GROUPS_ENUMERATED: 4798,
+  GROUP_MEMBERS_ENUMERATED: 4799,
   AUDIT_POLICY_CHANGED: 4719,
   FIREWALL_RULE_ADDED: 4946,
   FIREWALL_RULE_MODIFIED: 4947,
@@ -295,7 +302,7 @@ export class WindowsSecurityAudit {
       AuthenticationPackageName: details.authenticationPackage ?? 'Negotiate',
       WorkstationName: details.workstation ?? this.identity.machine,
       LogonGuid: '{00000000-0000-0000-0000-000000000000}',
-      TransmittedServices: '-', LmPackageName: '-', KeyLength: '0',
+      TransmittedServices: '-', LmPackageName: details.lmPackage ?? '-', KeyLength: String(details.keyLength ?? 0),
       ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
       IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
       ImpersonationLevel: '%%1833', RestrictedAdminMode: '-',
@@ -325,10 +332,26 @@ export class WindowsSecurityAudit {
       LogonProcessName: details.logonProcess ?? 'User32',
       AuthenticationPackageName: details.authenticationPackage ?? 'Negotiate',
       WorkstationName: details.workstation ?? this.identity.machine,
-      TransmittedServices: '-', LmPackageName: '-', KeyLength: '0',
+      TransmittedServices: '-', LmPackageName: details.lmPackage ?? '-', KeyLength: String(details.keyLength ?? 0),
       ProcessId: details.processId ?? '0x0', ProcessName: details.processName ?? '-',
       IpAddress: details.ipAddress ?? '-', IpPort: details.ipPort ?? '-',
     }, undefined, failureReasonOf(codes.status, codes.subStatus));
+  }
+
+  groupEnumerated(kind: 'user-groups' | 'group-members', target: string, actor: string, processId: number, processName: string): void {
+    const userGroups = kind === 'user-groups';
+    this.record(userGroups ? SECURITY_EVENT.USER_GROUPS_ENUMERATED : SECURITY_EVENT.GROUP_MEMBERS_ENUMERATED, 'SuccessAudit', {
+      ...(userGroups ? this.targetFields(target) : this.groupFields(target)), ...this.subjectFields(actor),
+      CallerProcessId: `0x${processId.toString(16)}`, CallerProcessName: processName,
+    });
+  }
+
+  credentialValidation(name: string, workstation: string, cause?: LogonFailureCause): void {
+    const codes = cause === undefined ? undefined : FAILURE_STATUS[cause];
+    this.record(SECURITY_EVENT.CREDENTIAL_VALIDATION, cause === undefined ? 'SuccessAudit' : 'FailureAudit', {
+      PackageName: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0', TargetUserName: name, Workstation: workstation,
+      Status: codes === undefined ? '0x0' : codes.subStatus !== '0x0' ? codes.subStatus : codes.status,
+    });
   }
 
   logoff(name: string, logonType = 2, logonId?: string): void {
@@ -502,12 +525,26 @@ export class WindowsSecurityAudit {
 
   /** 4698 — une tâche planifiée a été créée. */
   scheduledTaskCreated(taskName: string, command: string, createdBy: string): void {
-    this.success(SECURITY_EVENT.SCHEDULED_TASK_CREATED,
-      `A scheduled task was created.\n\nTask Information:\n\tTask Name:\t${taskName}\n\t` +
-      `Task Content:\t${command}\n\nSubject:\n\tAccount Name:\t${createdBy}`,
-      {
-        TaskName: taskName, TaskContent: command, ...splitAccount(createdBy),
-      }, createdBy);
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_CREATED, 'A scheduled task was created.', taskName, command, createdBy);
+  }
+
+  scheduledTaskDeleted(taskName: string, command: string, deletedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_DELETED, 'A scheduled task was deleted.', taskName, command, deletedBy);
+  }
+
+  scheduledTaskEnabled(taskName: string, command: string, changedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_ENABLED, 'A scheduled task was enabled.', taskName, command, changedBy);
+  }
+
+  scheduledTaskDisabled(taskName: string, command: string, changedBy: string): void {
+    this.scheduledTaskEntry(SECURITY_EVENT.SCHEDULED_TASK_DISABLED, 'A scheduled task was disabled.', taskName, command, changedBy);
+  }
+
+  private scheduledTaskEntry(eventId: number, title: string, taskName: string, command: string, actor: string): void {
+    const path = `\\${taskName}`;
+    this.success(eventId,
+      `${title}\n\nTask Information:\n\tTask Name:\t${path}\n\tTask Content:\t${command}`,
+      { TaskName: path, TaskContent: command, ...splitAccount(actor) }, actor);
   }
 
   /**
@@ -593,11 +630,20 @@ export class WindowsSecurityAudit {
       undefined, changedBy);
   }
 
-  serviceInstalled(serviceName: string, binaryPath: string, account: string, installedBy: string): void {
+  serviceInstalled(
+    serviceName: string, binaryPath: string, account: string, installedBy: string,
+    startType: string = 'Manual', sharedProcess = false,
+  ): void {
+    const type = sharedProcess ? '0x20' : '0x10';
+    const start = String(START_TYPE_CODES[startType as ServiceStartType] ?? 3);
     this.success(SECURITY_EVENT.SERVICE_INSTALLED,
       `A service was installed in the system.\n\nService Information:\n\tService Name:\t${serviceName}\n\t` +
-      `Service File Name:\t${binaryPath}\n\tService Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`,
-      undefined, installedBy);
+      `Service File Name:\t${binaryPath}\n\tService Type:\t${type}\n\tService Start Type:\t${start}\n\t` +
+      `Service Account:\t${account}\n\nSubject:\n\tAccount Name:\t${installedBy}`,
+      {
+        ServiceName: serviceName, ServiceFileName: binaryPath, ServiceType: type, ServiceStartType: start,
+        ServiceAccount: account, ...splitAccount(installedBy),
+      }, installedBy);
   }
 
   systemTimeChanged(actor: string, previousMs: number, newMs: number, processId: number, processName: string): void {

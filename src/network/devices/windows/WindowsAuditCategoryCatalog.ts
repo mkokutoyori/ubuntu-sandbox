@@ -79,9 +79,9 @@ export const AUDIT_CATEGORIES: readonly AuditSubcategoryDef[] = [
   { name: 'Filtering Platform Policy Change', guid: '{0CCE9233-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
   { name: 'Other Policy Change Events', guid: '{0CCE9234-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
 
-  { name: 'User Account Management', guid: '{0CCE9235-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [4720, 4722, 4724, 4725, 4726, 4738, 4740] },
+  { name: 'User Account Management', guid: '{0CCE9235-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [4720, 4722, 4724, 4725, 4726, 4738, 4740, 4798] },
   { name: 'Computer Account Management', guid: '{0CCE9236-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [4741, 4742, 4743] },
-  { name: 'Security Group Management', guid: '{0CCE9237-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [4727, 4728, 4729, 4730, 4731, 4732, 4733, 4734, 4735, 4737, 4754, 4755, 4756, 4757, 4764] },
+  { name: 'Security Group Management', guid: '{0CCE9237-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [4727, 4728, 4729, 4730, 4731, 4732, 4733, 4734, 4735, 4737, 4754, 4755, 4756, 4757, 4764, 4799] },
   { name: 'Distribution Group Management', guid: '{0CCE9238-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [] },
   { name: 'Application Group Management', guid: '{0CCE9239-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [] },
   { name: 'Other Account Management Events', guid: '{0CCE923A-69AE-11D9-BED3-505054503030}', category: 'Account Management', governs: [] },
