@@ -88,7 +88,7 @@ describe('Scénario 5 — Kerberos : tickets, flux d\'authentification et audit 
 
       const out = await run(ps(dc), [
         '$StartTime = (Get-Date).AddHours(-1)',
-        "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4768; StartTime = $StartTime }",
+        "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4768; StartTime = $StartTime } | Format-List *",
       ].join('\n'));
       expect(out).toContain('4768');
       expect(out).toMatch(/jadmin/);
@@ -116,7 +116,7 @@ describe('Scénario 5 — Kerberos : tickets, flux d\'authentification et audit 
       const { dc, client } = await buildLan();
       client.logonDomain('MANDENG\\jadmin', 'WrongPassword!');
 
-      const out = await run(ps(dc), 'Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = 4771 } -MaxEvents 5');
+      const out = await run(ps(dc), 'Get-WinEvent -FilterHashtable @{ LogName = \'Security\'; Id = 4771 } -MaxEvents 5 | Format-List *');
       expect(out).toContain('4771');
       expect(out).toMatch(/0x18/);
     });

@@ -222,7 +222,9 @@ export type WindowsDomainEvent =
   | { topic: 'windows.process.stopped'; payload: WindowsProcessEventPayload }
   | { topic: 'windows.portproxy.added'; payload: WindowsPortProxyEventPayload }
   | { topic: 'windows.portproxy.removed'; payload: WindowsPortProxyEventPayload }
-  | { topic: 'windows.firewall.drop'; payload: WindowsFirewallDropPayload };
+  | { topic: 'windows.firewall.drop'; payload: WindowsFirewallDropPayload }
+  | { topic: 'windows.firewall.rule-changed'; payload: WindowsFirewallRuleChangedPayload }
+  | { topic: 'windows.firewall.setting-changed'; payload: WindowsFirewallSettingChangedPayload };
 
 /** `Set-Acl`/`icacls` changed the discretionary ACL on a filesystem object. */
 export interface WindowsFileAclChangedPayload extends WindowsDeviceRef {
@@ -231,6 +233,21 @@ export interface WindowsFileAclChangedPayload extends WindowsDeviceRef {
   permissions: string;
   /** The username that made the change (for 4670 audit attribution). */
   changedBy: string;
+}
+
+export interface WindowsFirewallRuleChangedPayload {
+  deviceId: string;
+  change: 'added' | 'modified' | 'deleted';
+  ruleId: string;
+  ruleName: string;
+  profile: string;
+}
+
+export interface WindowsFirewallSettingChangedPayload {
+  deviceId: string;
+  profile: string;
+  setting: string;
+  value: string;
 }
 
 export interface WindowsFirewallDropPayload {

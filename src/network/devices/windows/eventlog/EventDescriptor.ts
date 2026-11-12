@@ -51,6 +51,7 @@ const TASK_IDS: Record<string, number> = {
   'Process Creation': 13312,
   'Process Termination': 13313,
   'Audit Policy Change': 13568,
+  'MPSSVC Rule-Level Policy Change': 13571,
   'User Account Management': 13824,
   'Security Group Management': 13826,
 };

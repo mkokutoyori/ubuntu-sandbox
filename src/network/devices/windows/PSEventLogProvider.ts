@@ -49,6 +49,7 @@ export interface EventLogMetadata {
   levelFilter?: string;
   keywordsFilter?: string;
   created?: Date;
+  sources?: string[];
 }
 
 // ─── Seed helpers ─────────────────────────────────────────────────────────────
@@ -283,6 +284,19 @@ export class PSEventLogProvider {
     return entries;
   }
 
+  getProvidersStructured(): Array<{ name: string; logNames: string[] }> {
+    const providers = new Map<string, { name: string; logNames: string[] }>();
+    for (const meta of this.logs.values()) {
+      const names = new Set([...meta.entries.map((entry) => entry.source), ...(meta.sources ?? [])]);
+      for (const name of names) {
+        const known = providers.get(name.toLowerCase()) ?? { name, logNames: [] };
+        if (!known.logNames.includes(meta.logName)) known.logNames.push(meta.logName);
+        providers.set(name.toLowerCase(), known);
+      }
+    }
+    return [...providers.values()];
+  }
+
   /** All known logs as structured metadata. */
   getAllLogsStructured(): Array<{ logName: string; entries: number; maxSizeKB: number }> {
     return Array.from(this.logs.values()).map(m => ({
@@ -458,6 +472,25 @@ export class PSEventLogProvider {
     const r = this.fs?.readFile?.(path);
     if (!r || !r.ok || r.content === undefined) return null;
     return r.content;
+  }
+
+  readExportedEntries(path: string): { channel: string; entries: EventLogEntry[] } | null {
+    const content = this.readExportedLog(path);
+    if (content === null) return null;
+    const lines = content.split('\n');
+    const channel = /^# Windows Event Log: (.+)$/.exec(lines[0] ?? '')?.[1] ?? path;
+    const entries: EventLogEntry[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const head = /^Record #(\d+)\s+(\S+)\s+\[(\w+)\]$/.exec(lines[i]);
+      if (!head) continue;
+      const meta = /^\s+Source: (.+?)\s+Event ID: (\d+)\s+Category: (.*)$/.exec(lines[i + 1] ?? '');
+      if (!meta) continue;
+      entries.push({
+        index: Number(head[1]), timeGenerated: new Date(head[2]), entryType: head[3] as EntryType,
+        source: meta[1], eventId: Number(meta[2]), category: meta[3], message: (lines[i + 2] ?? '').trim(),
+      });
+    }
+    return { channel, entries };
   }
 
   /**
@@ -654,6 +687,8 @@ export class PSEventLogProvider {
         enabled,
       });
     }
+    const meta = this.logs.get(key)!;
+    if (!(meta.sources ?? []).some((known) => known.toLowerCase() === source.toLowerCase())) meta.sources = [...(meta.sources ?? []), source];
     return '';
   }
 

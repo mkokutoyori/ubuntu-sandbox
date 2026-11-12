@@ -387,15 +387,17 @@ describe('partie 5 : l\'Event Log Windows', () => {
   it('`Get-WinEvent -LogName Security` rend des evenements', async () => {
     const w = poste();
     const out = await w.executeCommand('powershell Get-WinEvent -LogName Security -MaxEvents 3');
-    expect(out).toContain('LogName');
-    expect(out).toContain('Security');
-    expect(out).toMatch(/Id\s+:\s+\d+/);
+    expect(out).toContain('ProviderName: Microsoft-Windows-Security-Auditing');
+    expect(out).toMatch(/TimeCreated\s+Id LevelDisplayName Message/);
+    expect(out).toMatch(/\s\d{4}\s+Information/);
   }, 30_000);
 
   it('les journaux System et Security sont distincts', async () => {
     const w = poste();
-    const sys = await w.executeCommand('powershell Get-WinEvent -LogName System -MaxEvents 2');
-    expect(sys).toContain('System');
+    const sys = await w.executeCommand('powershell "(Get-WinEvent -LogName System -MaxEvents 1).LogName"');
+    const sec = await w.executeCommand('powershell "(Get-WinEvent -LogName Security -MaxEvents 1).LogName"');
+    expect(sys.trim()).toBe('System');
+    expect(sec.trim()).toBe('Security');
   }, 30_000);
 
   it('`Get-EventLog` et `wevtutil` repondent aussi', async () => {

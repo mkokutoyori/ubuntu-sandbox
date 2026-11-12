@@ -73,7 +73,7 @@ describe('Scénario 9 — audit des événements de sécurité AD (mandeng.lan)'
       const sh = ps(dc);
       await run(sh, 'New-ADUser -Name "Audit Test" -SamAccountName "audittest" -Path "OU=Utilisateurs,OU=Mandeng,DC=mandeng,DC=lan" -Enabled $true -AccountPassword (ConvertTo-SecureString "Test@2025!" -AsPlainText -Force)');
 
-      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4720; StartTime = (Get-Date).AddMinutes(-10) }");
+      const out = await run(sh, "Get-WinEvent -FilterHashtable @{ LogName = 'Security'; Id = 4720; StartTime = (Get-Date).AddMinutes(-10) } | Format-List *");
       expect(out).toContain('4720');
       expect(out).toMatch(/audittest/);
     });

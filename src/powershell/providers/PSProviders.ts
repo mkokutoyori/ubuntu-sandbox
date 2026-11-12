@@ -1801,6 +1801,13 @@ export interface IVpnProvider {
 
 export interface IEventLogProvider {
   listLogs(): Array<{ logName: string; entries: number; maxSizeKB: number }>;
+  getLogStatus?(logName: string): {
+    logName: string; enabled: boolean; maxSizeKB: number; overflow: string; autoBackup: boolean; isolation: string;
+    channelAccess: string; fileName: string; levelFilter: string | null; keywordsFilter: string | null;
+    numberOfLogRecords: number; oldestRecordNumber: number; fileSize: number; created: Date; lastWriteTime: Date | null;
+  } | null;
+  providers?(): Array<{ name: string; logNames: string[] }>;
+  readExportedEntries?(path: string): { channel: string; entries: EventLogEntryInfo[] } | null;
   getEntries(logName: string, opts?: { newest?: number; entryType?: string; source?: string }): EventLogEntryInfo[];
   writeEntry(logName: string, source: string, eventId: number, entryType: string, message: string, data?: Record<string, string>): string;
   clearLog(logName: string): string;

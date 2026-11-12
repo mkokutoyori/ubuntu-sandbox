@@ -196,6 +196,22 @@ function auditPolicyChanged(d: EventFields): string {
   ].join('\n\n');
 }
 
+function firewallRule(title: string, heading: string): (d: EventFields) => string {
+  return (d) => [
+    title,
+    `Profile Changed:\t${field(d, 'ProfileChanged')}`,
+    `${heading}\n\tRule ID:\t${field(d, 'RuleId')}\n\tRule Name:\t${field(d, 'RuleName')}`,
+  ].join('\n\n');
+}
+
+function firewallSettingChanged(d: EventFields): string {
+  return [
+    'A Windows Firewall setting has changed.',
+    `Changed Profile:\t${field(d, 'ProfileChanged')}`,
+    `New Setting:\n\tType:\t${field(d, 'SettingType')}\n\tValue:\t${field(d, 'SettingValue')}`,
+  ].join('\n\n');
+}
+
 const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4624: logon,
   4625: logonFailed,
@@ -215,6 +231,10 @@ const TEMPLATES: Record<number, (d: EventFields) => string> = {
   4738: accountChanged,
   4740: accountLockedOut,
   4767: accountChange('A user account was unlocked.'),
+  4946: firewallRule('A change has been made to Windows Firewall exception list. A rule was added.', 'Added Rule:'),
+  4947: firewallRule('A change has been made to Windows Firewall exception list. A rule was modified.', 'Modified Rule:'),
+  4948: firewallRule('A change has been made to Windows Firewall exception list. A rule was deleted.', 'Deleted Rule:'),
+  4950: firewallSettingChanged,
   1102: auditCleared,
 };
 

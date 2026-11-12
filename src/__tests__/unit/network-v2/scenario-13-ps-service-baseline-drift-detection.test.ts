@@ -113,13 +113,13 @@ foreach ($a in $added) { Write-Output "Added=$($a.Name)" }
       expect(sigOut.trim()).toBe('NotSigned');
 
       const secLog = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4697 } | Select-Object -First 1',
+        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4697 } | Select-Object -First 1 | Format-List *',
       );
       expect(secLog).toContain('WinUpdateHelper');
       expect(secLog).toContain('Administrator');
 
       const sysLog = await ps.execute(
-        'Get-WinEvent -LogName System | Where-Object { $_.Id -eq 7045 } | Select-Object -First 1',
+        'Get-WinEvent -LogName System | Where-Object { $_.Id -eq 7045 } | Select-Object -First 1 | Format-List *',
       );
       expect(sysLog).toContain('WinUpdateHelper');
     });
@@ -160,7 +160,7 @@ $storedHash -eq $actualHash
       await ps.execute('Start-Service -Name WinUpdateHelper');
 
       const installEvt = await ps.execute(
-        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4697 -and $_.Message -like "*WinUpdateHelper*" } | Select-Object -First 1',
+        'Get-WinEvent -LogName Security | Where-Object { $_.Id -eq 4697 -and $_.Message -like "*WinUpdateHelper*" } | Select-Object -First 1 | Format-List *',
       );
       expect(installEvt).toContain('WinUpdateHelper');
 

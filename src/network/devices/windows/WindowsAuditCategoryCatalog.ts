@@ -75,7 +75,7 @@ export const AUDIT_CATEGORIES: readonly AuditSubcategoryDef[] = [
   { name: 'Audit Policy Change', guid: '{0CCE922F-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
   { name: 'Authentication Policy Change', guid: '{0CCE9230-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
   { name: 'Authorization Policy Change', guid: '{0CCE9231-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
-  { name: 'MPSSVC Rule-Level Policy Change', guid: '{0CCE9232-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
+  { name: 'MPSSVC Rule-Level Policy Change', guid: '{0CCE9232-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [4946, 4947, 4948, 4950] },
   { name: 'Filtering Platform Policy Change', guid: '{0CCE9233-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
   { name: 'Other Policy Change Events', guid: '{0CCE9234-69AE-11D9-BED3-505054503030}', category: 'Policy Change', governs: [] },
 

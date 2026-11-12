@@ -16,6 +16,7 @@
  * Voir `docs/PRD-Wevtutil.md`.
  */
 
+import { channelType, isolationOf } from './eventlog/ChannelFacts';
 import { simulationDate, simulationNowMs } from '@/network/core/SystemClock';
 import { ZonedDate } from '@/network/core/time/ZonedDate';
 import { formatDotNetDate } from '@/powershell/runtime/dotnetDateFormat';
@@ -225,21 +226,6 @@ export function cmdWevtutil(ctx: WinCommandContext, args: string[]): string {
 function enumLogs(ctx: WinCommandContext): string {
   const logs = ctx.eventLog?.getAllLogsStructured?.() ?? [];
   return logs.map((l) => l.logName).join('\n');
-}
-
-const SYSTEM_ISOLATED = new Map([['system', 'System'], ['security', 'Custom']]);
-
-const CHANNEL_TYPES: ReadonlyMap<string, string> = new Map([
-  ['operational', 'Operational'], ['analytic', 'Analytic'], ['analytical', 'Analytic'], ['debug', 'Debug'],
-]);
-
-function channelType(logName: string): string {
-  return CHANNEL_TYPES.get(logName.slice(logName.lastIndexOf('/') + 1).toLowerCase()) ?? 'Admin';
-}
-
-function isolationOf(logName: string, configured: string): string {
-  if (configured !== 'Application') return configured[0].toUpperCase() + configured.slice(1).toLowerCase();
-  return SYSTEM_ISOLATED.get(logName.toLowerCase()) ?? 'Application';
 }
 
 function getLog(ctx: WinCommandContext, cmd: ParsedCommand): string {
@@ -504,30 +490,20 @@ function readChannel(ctx: WinCommandContext, logName: string): SourceEvent[] | n
 }
 
 function readExportedLog(ctx: WinCommandContext, path: string): SourceEvent[] | null {
-  const content = ctx.eventLog?.readExportedLog?.(path);
-  if (content === null || content === undefined) return null;
-  const lines = content.split('\n');
-  const channel = /^# Windows Event Log: (.+)$/.exec(lines[0] ?? '')?.[1] ?? path;
-  const out: SourceEvent[] = [];
+  const exported = ctx.eventLog?.readExportedEntries?.(path);
+  if (exported === null || exported === undefined) return null;
   const computer = ctx.hostname.toUpperCase();
-  for (let i = 0; i < lines.length; i++) {
-    const head = /^Record #(\d+)\s+(\S+)\s+\[(\w+)\]$/.exec(lines[i]);
-    if (!head) continue;
-    const meta = /^\s+Source: (.+?)\s+Event ID: (\d+)\s+Category: (.*)$/.exec(lines[i + 1] ?? '');
-    if (!meta) continue;
-    out.push({
-      index: Number(head[1]),
-      timeGenerated: new Date(head[2]),
-      entryType: head[3],
-      source: meta[1],
-      eventId: Number(meta[2]),
-      message: (lines[i + 2] ?? '').trim(),
-      computer,
-      channel,
-      ordinal: 0,
-    });
-  }
-  return out.reverse();
+  return exported.entries.map((entry) => ({
+    index: entry.index,
+    timeGenerated: entry.timeGenerated,
+    entryType: entry.entryType,
+    source: entry.source,
+    eventId: entry.eventId,
+    message: entry.message,
+    computer,
+    channel: exported.channel,
+    ordinal: 0,
+  })).reverse();
 }
 
 function exportLog(ctx: WinCommandContext, cmd: ParsedCommand): string {

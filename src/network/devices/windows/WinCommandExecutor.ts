@@ -85,6 +85,7 @@ export interface WinCommandContext {
     exportLog?: (logName: string, destination: string, overwrite: boolean) => string | null;
     /** `wevtutil qe /lf:` — relit un fichier exporté. */
     readExportedLog?: (path: string) => string | null;
+    readExportedEntries?: (path: string) => { channel: string; entries: import('./PSEventLogProvider').EventLogEntry[] } | null;
     /** `wevtutil al` — rend `null` en cas de succès, le refus sinon. */
     archiveExportedLog?: (path: string) => string | null;
     /** `wevtutil cl` — vide réellement le journal. */
@@ -253,6 +254,10 @@ export interface WinCommandContext {
     import('./netFirewallProfile').FirewallProfileName,
     import('./netFirewallProfile').NetFirewallProfileRow>;
   currentFirewallProfile?(): import('./netFirewallProfile').FirewallProfileName;
+  firewallRuleChanged?: (change: 'added' | 'modified' | 'deleted', rule: import('./netFirewallRule').NetFirewallRuleEntry) => void;
+  firewallProfileChanged?: (
+    profile: import('./netFirewallProfile').NetFirewallProfileRow,
+    patch: Partial<import('./netFirewallProfile').NetFirewallProfileRow>) => void;
 
   /** Per-device SMB share table (`net share` / `New-SmbShare`) — instance-owned. */
   smbShares: import('./server/smb/SmbShareTable').SmbShareTable;
